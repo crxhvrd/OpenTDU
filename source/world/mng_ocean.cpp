@@ -194,7 +194,18 @@ void MngOcean::draw() {
     }
 
     if ( bDrawArea ) {
-        OTDU_UNIMPLEMENTED; // TODO: AREA
+        StreamingManager *pStreamingManager = gpWorld->getStreamingManager();
+        if ( pStreamingManager != nullptr ) {
+            for ( Area &area : pStreamingManager->areaGrid.areas ) {
+                if ( area.state != 1 ) {
+                    continue;
+                }
+                if ( area.geometry.pHeightmapInstance != nullptr ) {
+                    scnReflNear.enqueueDynamicInstance(
+                        area.geometry.pHeightmapInstance );
+                }
+            }
+        }
     }
 
     if ( bDrawAreaObject ) {
@@ -209,8 +220,9 @@ void MngOcean::draw() {
                 if ( sector.state != 1 ) {
                     continue;
                 }
-                for ( Instance *pInstance : sector.geometry.renderInstances ) {
-                    scnReflNear.enqueueDynamicInstance( pInstance );
+                if ( sector.geometry.pHeightmapInstance != nullptr ) {
+                    scnReflNear.enqueueDynamicInstance(
+                        sector.geometry.pHeightmapInstance );
                 }
             }
         }
