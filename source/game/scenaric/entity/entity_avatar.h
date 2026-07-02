@@ -1,8 +1,13 @@
 #pragma once
 
 #include "entity_actor.h"
+#include "game/avatar/avatar_clothes.h"
+
+class GSAvatar;
 
 class EntityAvatar : public EntityActor {
+    friend class GSAvatar;
+
 public:
     const char *GetName() override { return "Avatar"; /* FUN_00424660 */ }
 
@@ -55,7 +60,7 @@ protected:
     int32_t LightingMode;
     void *pLightingAttenuation;
     void *pSerializedData;
-    void *pAvatarRsc;
+    PooledAvatarEntry *pPooledAvatarEntry;
     void *pBehavior;
     void *pVoiceEmitter;
     void *pCineInterface;

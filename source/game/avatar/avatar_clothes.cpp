@@ -1,7 +1,7 @@
 #include "shared.h"
-#include "avatar_rsc.h"
+#include "avatar_clothes.h"
 
-void AvatarLoadingPipe::decreaseRef() {
+void AvatarStreamingRequest::decreaseReferenceCount() {
     // FUN_008ec230
     if ( State == AVT_Ready ) {
         State = AVT_LoadCompleted;
@@ -10,11 +10,11 @@ void AvatarLoadingPipe::decreaseRef() {
         State = AVT_LoadPending;
     }
     if ( State == AVT_LoadPending ) {
-        pDescInLoading = nullptr;
+        pPartInLoading = nullptr;
         State = AVT_Unloaded;
     }
     if ( State == AVT_Unloaded ) {
-        pDescRequesting = nullptr;
+        pPartRequesting = nullptr;
         if ( pLoadingBnk != nullptr && pLoadingBnk->bLoaded ) {
             if ( pLoadingBnk->NumReferences > 0 ) {
                 pLoadingBnk->NumReferences--;
@@ -25,7 +25,7 @@ void AvatarLoadingPipe::decreaseRef() {
     }
 }
 
-void AvatarClotheRsc::decreaseRef() {
+void AvatarClothe::decreaseReferenceCount() {
     // FUN_008f24b0
     if ( LoadingState == AVT_Ready ) {
         OTDU_UNIMPLEMENTED;
@@ -39,12 +39,42 @@ void AvatarClotheRsc::decreaseRef() {
         LoadingState = AVT_Unloaded;
     }
     if ( LoadingState == AVT_Unloaded ) {
-        LoadingPipe.decreaseRef();
+        StreamingRequest.decreaseReferenceCount();
         LoadingState = AVT_Unknown;
     }
 }
 
-void AvatarRsc::decreaseRenderRef() {
+void PooledAvatarEntry::decreaseRenderRef() {
     // FUN_008f2ef0
     OTDU_UNIMPLEMENTED;
+}
+
+void RenderAvatarBase::tickEyeMaterial() {
+    // FUN_00411870
+    OTDU_UNIMPLEMENTED;
+}
+
+void RenderAvatarBase::tickBodyMaterial() {
+    // FUN_00411690
+    OTDU_UNIMPLEMENTED;
+}
+
+void PooledAvatarEntry::tickEyeMaterials() {
+    // FUN_00411540
+    for ( AvatarClothe &slot : Slots ) {
+        slot.tickEyeMaterial();
+    }
+    Body.tickEyeMaterial();
+    Impostor.tickEyeMaterial();
+    CarBelt.tickEyeMaterial();
+}
+
+void PooledAvatarEntry::tickBodyMaterials() {
+    // FUN_004114a0
+    for ( AvatarClothe &slot : Slots ) {
+        slot.tickBodyMaterial();
+    }
+    Body.tickBodyMaterial();
+    Impostor.tickBodyMaterial();
+    CarBelt.tickBodyMaterial();
 }

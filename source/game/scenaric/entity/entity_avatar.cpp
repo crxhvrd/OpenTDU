@@ -15,7 +15,7 @@ EntityAvatar::EntityAvatar()
       LightingMode( 0 ),
       pLightingAttenuation( nullptr ),
       pSerializedData( nullptr ),
-      pAvatarRsc( nullptr ),
+      pPooledAvatarEntry( nullptr ),
       pBehavior( nullptr ),
       pVoiceEmitter( nullptr ),
       pCineInterface( nullptr ),
@@ -64,16 +64,14 @@ void EntityAvatar::initializeForCinematicKeyframed( void *param_2,
 
 bool EntityAvatar::isValid() const {
     // FUN_007f7530
-    if ( pAvatarRsc != nullptr ) {
+    if ( pPooledAvatarEntry != nullptr ) {
         OTDU_UNIMPLEMENTED; // TODO: AVATAR
     }
-    return false;
+    return true;
 }
 
 void EntityAvatar::initialize() {
     // FUN_007f9070
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
-
     if ( pMechanism != nullptr ) {
         pMechanism->setEntity( this );
     }
@@ -94,7 +92,7 @@ void EntityAvatar::tick() {
     RenderLOD = chooseLODLevel();
 
     if ( RenderLOD != 0 ) {
-        if ( pAvatarRsc != nullptr ) {
+        if ( pPooledAvatarEntry != nullptr ) {
             OTDU_UNIMPLEMENTED; // TODO: AVATAR — skeleton/resource/attachment
                                 // sync
         }
@@ -103,23 +101,23 @@ void EntityAvatar::tick() {
 
         unknownActorFunc();
 
-        if ( pAvatarRsc != nullptr ) {
+        if ( pPooledAvatarEntry != nullptr ) {
             OTDU_UNIMPLEMENTED; // TODO: AVATAR — head update + shadow caster
         }
     }
 
-    if ( gpMngCarAlpha != nullptr && pAvatarRsc != nullptr ) {
+    if ( gpMngCarAlpha != nullptr && pPooledAvatarEntry != nullptr ) {
         updateCarAlpha();
     }
 }
 
 bool EntityAvatar::draw( RenderScene *pScene ) {
     // FUN_007f8e20
-    if ( pAvatarRsc == nullptr || InstanceRefCount < 1 ) {
-        return true;
+    if ( pPooledAvatarEntry == nullptr ) {
+        return EntityActor::draw( pScene );
     }
 
-    if ( ( flags & 1 ) == 0 ) {
+    if ( InstanceRefCount < 1 || ( flags & 1 ) == 0 ) {
         return true;
     }
 
@@ -135,17 +133,13 @@ void EntityAvatar::deserialize( BinaryReader *param_2 ) {
 void EntityAvatar::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     // FUN_007f8d90
     EntityActor::instanciate( pMngActor, param_1 );
-
-    // Original allocates a baked avatar instance for the clone here.
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
-
+    static_cast<EntityAvatar *>( param_1 )->pPooledAvatarEntry = nullptr;
     param_1->setTransform( modelMatrix, true );
 }
 
 void EntityAvatar::deinstanciate() {
     // FUN_007f8d20
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
-    pAvatarRsc = nullptr;
+    pPooledAvatarEntry = nullptr;
 
     if ( pMechanism != nullptr && pMechanism->isCreated() ) {
         pMechanism->removeAndDestroy();
@@ -171,7 +165,7 @@ void EntityAvatar::unknownActorFunc() {
     worldMatrix( 3, 3 ) = 1.0f;
     bLightingValid = false;
 
-    if ( pAvatarRsc != nullptr ) {
+    if ( pPooledAvatarEntry != nullptr ) {
         OTDU_UNIMPLEMENTED; // TODO: AVATAR
     }
 }
@@ -184,7 +178,7 @@ int32_t EntityAvatar::getRenderSceneID() {
 
 void EntityAvatar::setHeadVisible( bool bVisible ) {
     // FUN_007f8b60
-    if ( pAvatarRsc != nullptr && bLastShowHead != bVisible ) {
+    if ( pPooledAvatarEntry != nullptr && bLastShowHead != bVisible ) {
         OTDU_UNIMPLEMENTED; // TODO: AVATAR — toggle head/helmet mesh visibility
         bLastShowHead = bVisible;
     }
@@ -212,8 +206,8 @@ void EntityAvatar::getLightingFactor( Eigen::Vector4f &outFactor ) {
 
 int32_t EntityAvatar::chooseLODLevel() {
     // FUN_007f7d10
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR — distance-based LOD selection
-    return 0;
+    OTDU_UNIMPLEMENTED;
+    return 2;
 }
 
 void EntityAvatar::onSkeletonChange( void *pSkeleton ) {
@@ -246,5 +240,5 @@ void EntityAvatar::updateCarAlpha() {
 
 bool EntityAvatar::isShadowCaster() {
     // FUN_007f7120
-    return pAvatarRsc != nullptr && InstanceRefCount > 0;
+    return pPooledAvatarEntry != nullptr && InstanceRefCount > 0;
 }

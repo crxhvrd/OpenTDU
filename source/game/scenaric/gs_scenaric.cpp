@@ -48,6 +48,8 @@ GSScenaric::GSScenaric()
         objective.Type = "";
     }
 
+    randomGenerator.setSeed( 0x3039 );
+
     OTDU_UNIMPLEMENTED;
     gpScenaric = this;
 }

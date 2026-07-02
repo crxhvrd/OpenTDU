@@ -53,6 +53,7 @@ public:
     }
     inline LocalPlayer &getLocalPlayer() { return localPlayer; }
     inline Spots &getSpotList() { return spotList; }
+    inline AvatarManager &getAvatarManager() { return avatarManager; }
     inline ScenaricBank &getPedestrianBank() { return pedestrianBank; }
     inline ScenaricBank &getSpotMeshBank() { return spotMeshBank; }
     inline ScenaricBank &getWorldLifeSetBank() { return worldLifeSetBank; }
