@@ -3146,11 +3146,20 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     if ( bDepthStencilAttachmentValid ) {
         if ( pDepthStencilAttachment->CurrentLayout[frameIndex] !=
              VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ) {
-            insertMemoryBarrier(
-                pDepthStencilAttachment,
+            insertImageBarrier(
+                pDepthStencilAttachment, frameIndex,
                 pDepthStencilAttachment->CurrentLayout[frameIndex],
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, frameIndex );
+                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                    VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT );
             bNeedRestartRenderPass = true; // Can't insert memory barriers
                                            // inside active renderpass
         }
@@ -3188,11 +3197,18 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
                          pFramebufferAttachments[i]->ImageView[frameIndex] );
             if ( pFramebufferAttachments[i]->CurrentLayout[frameIndex] !=
                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ) {
-                insertMemoryBarrier(
-                    pFramebufferAttachments[i],
+                insertImageBarrier(
+                    pFramebufferAttachments[i], frameIndex,
                     pFramebufferAttachments[i]->CurrentLayout[frameIndex],
                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, frameIndex );
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                        VK_ACCESS_COLOR_ATTACHMENT_READ_BIT );
                 bNeedRestartRenderPass = true; // Can't insert memory barriers
                                                // inside active renderpass
             }

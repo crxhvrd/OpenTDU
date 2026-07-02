@@ -15,7 +15,7 @@ static constexpr uint32_t kVulkanBindingSlotPSShared = 12;
 static constexpr uint32_t kVulkanBindingSlotPSTextures = 13;
 static constexpr uint32_t kVulkanBindingSlotShaderSpec = 31;
 
-static constexpr uint32_t kVulkanNumSetPerPool = 2048;
+static constexpr uint32_t kVulkanNumSetPerPool = 4096;
 
 static constexpr uint32_t kVulkanClipInfosSize = 6 * 4 * sizeof( float );
 static constexpr uint32_t kVulkanShaderSpecsUBOSize = 15 * sizeof( uint32_t );
