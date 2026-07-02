@@ -27,7 +27,7 @@ GSAvatar::GSAvatar()
       pBodyMorphDB( nullptr ),
       pBeltDB( nullptr ),
       pEyeDB( nullptr ),
-      faceParaameterCount( 0 ) {
+      faceParameterCount( 0 ) {
     // FUN_008f6f00
     OTDU_UNIMPLEMENTED;
     gpAvatar = this;
