@@ -260,6 +260,27 @@ RenderFile::Section *Render3DD::getHiearchyEntry( uint32_t index ) {
     return pTableEntries[index].pEntry;
 }
 
+uint64_t Render3DD::getHiearchyHashcode( uint32_t index ) {
+    if ( pHiearchyArray == nullptr ) {
+        return 0ull;
+    }
+
+    uint8_t *piVar1 = (uint8_t *)pHiearchyArray + pHiearchyArray->DataSize;
+    RenderFile::Section *pHashcodeSection = (RenderFile::Section *)piVar1;
+    OTDU_ASSERT( pHashcodeSection->Type == kHashcodesMagic );
+
+    uint32_t numHashcodes =
+        ( pHashcodeSection->Size - 0x10 ) / sizeof( Render3DDHashEntry );
+    Render3DDHashEntry *pTableEntries =
+        (Render3DDHashEntry *)( pHashcodeSection + 1 );
+
+    if ( index >= numHashcodes ) {
+        return 0ull;
+    }
+
+    return pTableEntries[index].Hashcode;
+}
+
 RenderFile::Section *Render3DD::findInstance( uint64_t hashcode ) {
     // FUN_00413960
     if ( pInstanceArray == nullptr ) {

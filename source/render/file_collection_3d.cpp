@@ -154,12 +154,12 @@ void FileCollection3D::uninstantiate( Instance *param_1 ) {
 
 void FileCollection3D::register3DG( Render3DG *render3DG ) {
     // FUN_0050a9f0
-    Render3DGs.insert( render3DG );
+    Render3DGs.push_front( render3DG );
 }
 
 void FileCollection3D::register3DD( Render3DD *render3DD ) {
     // FUN_0050a900
-    Render3DDs.insert( render3DD );
+    Render3DDs.push_front( render3DD );
 
     for ( Render3DG *pRender3DG : Render3DGs ) {
         render3DD->bindGeometryReferences( pRender3DG );
@@ -168,12 +168,12 @@ void FileCollection3D::register3DD( Render3DD *render3DD ) {
 
 void FileCollection3D::unregister3DG( Render3DG *render3DG ) {
     // FUN_0050aa50
-    Render3DGs.erase( render3DG );
+    Render3DGs.remove( render3DG );
 }
 
 void FileCollection3D::unregister3DD( Render3DD *render3DD ) {
     // FUN_0050a9a0
-    Render3DDs.erase( render3DD );
+    Render3DDs.remove( render3DD );
 }
 
 RenderFile::Section *FileCollection3D::findNode( uint64_t objectHashcode,

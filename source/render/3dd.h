@@ -103,6 +103,7 @@ public:
     RenderFile::Section *getInstanceEntry( uint32_t param_2 );
     uint32_t getNumInstances();
     RenderFile::Section *getHiearchyEntry( uint32_t index );
+    uint64_t getHiearchyHashcode( uint32_t index );
     uint32_t getNumHiearchy();
     RenderFile::Section *findInstance( uint64_t hashcode );
     void replaceAllMaterialInstances( uint64_t hashcode,

@@ -9,8 +9,8 @@
 struct InstanceEntry;
 
 struct FileCollection3D {
-    std::set<Render3DD *> Render3DDs;
-    std::set<Render3DG *> Render3DGs;
+    std::list<Render3DD *> Render3DDs;
+    std::list<Render3DG *> Render3DGs;
     std::list<Instance *> Instances;
     std::list<HiearchyNode *> HiearchyNodes;
 

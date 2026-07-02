@@ -6,9 +6,9 @@
 #include "uva.h"
 
 struct FileCollection2D {
-    std::set<Render2DM *> Render2DMs;
-    std::set<Render2DB *> Render2DBs;
-    std::set<RenderUVA *> RenderUVAs;
+    std::list<Render2DM *> Render2DMs;
+    std::list<Render2DB *> Render2DBs;
+    std::list<RenderUVA *> RenderUVAs;
 
     FileCollection2D();
 
