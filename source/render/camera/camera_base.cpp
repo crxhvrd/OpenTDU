@@ -145,7 +145,7 @@ void Camera::setFOVAndAspectRatio( float param_1, float param_2 ) {
 
 int32_t Camera::sphereInFrustum( Eigen::Vector4f *param_2, float param_3 ) {
     // FUN_0050b3b0
-    Eigen::Vector4f local_20 = worldToCam * *param_2;
+    Eigen::Vector4f local_20 = TDUMat4x4MulVec( worldToCam, *param_2 );
 
     float fVar1 = abs( local_20.x() ) * invAspectRatio;
     float fVar2 = abs( local_20.y() ) * invAspectRatio;

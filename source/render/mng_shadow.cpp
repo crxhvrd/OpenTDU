@@ -1115,7 +1115,7 @@ void MngShadow::updateShadowCameraFrustum( bool bCockpit ) {
                     Eigen::Vector4f corner( xi ? bbMax.x() : bbMin.x(),
                                             yi ? bbMax.y() : bbMin.y(),
                                             zi ? bbMax.z() : bbMin.z(), 1.0f );
-                    Eigen::Vector4f vs = worldToCam * corner;
+                    Eigen::Vector4f vs = TDUMat4x4MulVec( worldToCam, corner );
                     if ( first ) {
                         vsMin = vsMax = vs;
                         first = false;
