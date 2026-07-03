@@ -206,7 +206,7 @@ inline void FillDescriptor( const SamplerDesc &desc,
     if ( desc.MipFilter == eTextureFiltering::TF_Anisotropic ) {
         samplerDesc.anisotropyEnable = VK_TRUE;
         samplerDesc.maxAnisotropy =
-            8.0f; // TODO: Figure out anisotropy on PC (quality based I guess?)
+            16.0f; // TODO: Figure out anisotropy on PC (quality based I guess?)
     } else {
         samplerDesc.anisotropyEnable = VK_FALSE;
         samplerDesc.maxAnisotropy = 1.0f;
@@ -224,14 +224,15 @@ inline void FillDescriptor( const SamplerDesc &desc,
 }
 
 inline void PatchDescriptor( SamplerDesc &sampler ) {
+    // TODO: Texture filtering should be exposed in the options menu
     if ( sampler.MinFilter == eTextureFiltering::TF_None ) {
-        sampler.MinFilter = eTextureFiltering::TF_Linear;
+        sampler.MinFilter = eTextureFiltering::TF_Anisotropic;
     }
     if ( sampler.MagFilter == eTextureFiltering::TF_None ) {
-        sampler.MagFilter = eTextureFiltering::TF_Linear;
+        sampler.MagFilter = eTextureFiltering::TF_Anisotropic;
     }
     if ( sampler.MipFilter == eTextureFiltering::TF_None ) {
-        sampler.MipFilter = eTextureFiltering::TF_Linear;
+        sampler.MipFilter = eTextureFiltering::TF_Anisotropic;
     }
 }
 
