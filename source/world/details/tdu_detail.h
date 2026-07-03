@@ -10,7 +10,6 @@
 // Base class for details
 class TDUDetail {
 public:
-    inline void setEnabled( bool bEnable ) { bEnabled = bEnable; }
     inline bool isInitialized() const { return bInitialized; }
     inline bool isEnabled() const { return bEnabled; }
     inline const char *getName() const { return pName; }
@@ -23,6 +22,7 @@ public:
     virtual void tick( float deltaTime ) {}
     virtual void draw() = 0;
     virtual void terminate() = 0;
+    virtual void setEnabled( bool bEnable ) { bEnabled = bEnable; }
 
 protected:
     void loadBank( const char *pBankName );

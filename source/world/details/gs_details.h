@@ -3,6 +3,7 @@
 #include "game/gs_base.h"
 
 #include "birds.h"
+#include "papers.h"
 #include "road_patch.h"
 
 // World details (Birds, Papers, RoadPatch, Particles) manager
@@ -25,6 +26,7 @@ private:
 private:
     RoadPatch detailRoadPatch;
     Birds detailBirds;
+    Papers detailPaper;
 
     TDUDetail *pDetailsList[kMaxDetails];
     int32_t numDetails;
