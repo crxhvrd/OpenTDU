@@ -132,6 +132,7 @@ private:
     void submitSector( Sector &sector );
     void submitSectorHeightmap( Sector &sector );
     void submitSectorImpostors( Sector &sector, RenderScene *pScene );
+    void submitDynamicProps( Sector &sector, RenderScene *pScene );
     void submitArea( Area &area );
     void submitAreaHeightmap( Area &area );
     void submitAreaHeightmaps();
@@ -141,6 +142,12 @@ private:
     void stitchActiveAreaSeams();
     void stitchSectorEdgeToArea( Sector &sector, eCardinalDirection direction );
     void stitchSectorsToArea();
+    void stitchSectorToSector( Sector &a,
+                               Sector &b,
+                               eCardinalDirection direction );
+    void stitchSectorToSectorSeams();
+    void stitchAreaToArea( Area &a, Area &b, int32_t dx, int32_t dy );
+    void stitchAreaToAreaSeams();
     Area *findAreaEntry( const GridPos2D &areaCell );
     void loadActiveLevel();
     void reinit();

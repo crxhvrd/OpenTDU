@@ -15,7 +15,6 @@ SectorGeometry::SectorGeometry()
       pBlockString( "BLOCK" ),
       entityGrid() {
     // FUN_006fd960
-    OTDU_UNIMPLEMENTED;
 }
 
 void SectorGeometry::rebaseRenderInstances(
@@ -41,6 +40,8 @@ void SectorGeometry::rebaseHeightmapInstance(
 
 void SectorGeometry::rebaseImpostors( const Eigen::Vector4f &streamOrigin ) {
     // FUN_006fed80/FUN_007000c0
+    const float uvOriginX = impostorUVAbsOrigin.x() - streamOrigin.x();
+    const float uvOriginZ = impostorUVAbsOrigin.z() - streamOrigin.z();
     for ( ImpostorGrid &grid : impostorGrids ) {
         for ( MassInstanceImpostor &mi : grid.instances ) {
             const float x = mi.AbsPos.x() - streamOrigin.x();
@@ -54,6 +55,34 @@ void SectorGeometry::rebaseImpostors( const Eigen::Vector4f &streamOrigin ) {
             mi.SpherePos.x() = x;
             mi.SpherePos.z() = z;
         }
+
+        for ( Material *pMaterial : grid.uvOriginMaterials ) {
+            WriteImpostorUVOrigin( pMaterial, uvOriginX, uvOriginZ, false );
+        }
+    }
+}
+
+void SectorGeometry::WriteImpostorUVOrigin( Material *pMaterial,
+                                            float originX,
+                                            float originZ,
+                                            bool bInit ) {
+    if ( pMaterial == nullptr ) {
+        return;
+    }
+    MaterialShaderParameterArray *pArray =
+        static_cast<MaterialShaderParameterArray *>(
+            pMaterial->getParameterByIndex( 0 ) );
+    if ( pArray == nullptr ) {
+        return;
+    }
+    float *pSlot = (float *)pArray->getParameterDataByIndex( 0 );
+    if ( pSlot == nullptr ) {
+        return;
+    }
+    pSlot[0] = originX;
+    pSlot[2] = originZ;
+    if ( bInit ) {
+        pSlot[3] = 768.0f;
     }
 }
 

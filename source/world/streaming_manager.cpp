@@ -437,15 +437,10 @@ void StreamingManager::tick( Eigen::Vector4f *pStreamPosition,
     submitLevelHeightmap();
 
     updateHeightmapExclusionMasks();
-
+    stitchSectorToSectorSeams();
     stitchSectorsToArea();
+    stitchAreaToAreaSeams();
     stitchActiveAreaSeams();
-
-    // NOT PORTED: the sector tiers of FUN_009b9250 (FUN_00704f20
-    // sector<->sector and FUN_007086d0 sector<->area, via FUN_00704be0 /
-    // FUN_00707a50). Those write the sector heightmaps' pLODValue, which the
-    // port does not model (sectors are the finest tier and carry no
-    // exclusion/override mask). Only the area<->level seam is stitched here.
 }
 
 void StreamingManager::tickSectors( float totalTime, float deltaTime ) {
@@ -591,6 +586,49 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
             }
         }
     }
+
+    DynamicPropStream &dp = sector.geometry.dynamicProps;
+    if ( dp.bValid ) {
+        const SectorHeightmap &hm = sector.heightmap;
+
+        std::vector<Entity *> promoted;
+        for ( uint32_t cellIdx = 0; cellIdx < DynamicPropStream::kNumCells;
+              cellIdx++ ) {
+            std::vector<Entity *> &bucket = dp.buckets[cellIdx];
+            for ( size_t i = 0; i < bucket.size(); ) {
+                Entity *pProp = bucket[i];
+                pProp->tick();
+                if ( pProp->PMICanBeTileManaged( &hm, (int32_t)cellIdx ) ) {
+                    i++; // still at rest in its tile
+                } else {
+                    pProp->setStreamActive( true );
+                    promoted.push_back( pProp );
+                    bucket[i] = bucket.back();
+                    bucket.pop_back();
+                }
+            }
+        }
+
+        for ( size_t i = 0; i < dp.active.size(); ) {
+            Entity *pProp = dp.active[i];
+            pProp->tick();
+            const int32_t key = pProp->getTileKey();
+            if ( pProp->PMICanBeTileManaged( &hm, key ) ) {
+                pProp->setStreamActive( false );
+                if ( key >= 0 && key < (int32_t)DynamicPropStream::kNumCells ) {
+                    dp.buckets[key].push_back( pProp );
+                }
+                dp.active[i] = dp.active.back();
+                dp.active.pop_back();
+            } else {
+                i++;
+            }
+        }
+
+        for ( Entity *pProp : promoted ) {
+            dp.active.push_back( pProp );
+        }
+    }
 }
 
 void StreamingManager::submitSector( Sector &sector ) {
@@ -614,6 +652,7 @@ void StreamingManager::submitSector( Sector &sector ) {
     }
 
     submitSectorImpostors( sector, pScene );
+    submitDynamicProps( sector, pScene );
 
     sector.geometry.mngActor.draw();
 }
@@ -983,8 +1022,6 @@ void StreamingManager::stitchSectorEdgeToArea( Sector &sector,
         return;
     }
 
-    // TODO:( sector -> covering area-tile x2 marking, FUN_00707a50
-    // lines 135+).
     const int32_t N = kHeightmapNumTile;          // NumTileX == NumTileZ == 16
     const int32_t stride = kHeightmapNumRealTile; // NumRealTileX == 18
     std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile> &mask =
@@ -1034,6 +1071,68 @@ void StreamingManager::stitchSectorEdgeToArea( Sector &sector,
     default: // North/South: the staggered sector grid has no such neighbour
         break;
     }
+
+    GridPos2D nbArea;
+    GridPos2D nbSector;
+    if ( !sectorManager.resolveNeighbour( direction, sector.installedArea,
+                                          sector.installedSector, nbArea,
+                                          nbSector ) ) {
+        return;
+    }
+    Area *pArea = findAreaEntry( nbArea );
+    if ( pArea == nullptr || pArea->state != 1 ||
+         pArea->geometry.pHeightmapInstance == nullptr ) {
+        return;
+    }
+
+    // Each sector maps to a 2x2 block of area tiles (16 tiles / 8 sectors).
+    const int32_t tilesPerSector =
+        kHeightmapNumTile / (int32_t)sectorManager.numSectors;
+    const int32_t baseCol = nbSector.posX * tilesPerSector;
+    const int32_t baseRow = nbSector.posY * tilesPerSector;
+
+    const auto &areaLOD = pArea->geometry.heightmapLODCache;
+    auto &areaMask = pArea->geometry.heightmapTileMask;
+
+    auto markAreaTile = [&]( int32_t col, int32_t row ) {
+        if ( col < 0 || col >= N || row < 0 || row >= N ) {
+            return;
+        }
+        const int32_t idx = ( row + 1 ) * stride + ( col + 1 );
+        const uint8_t computed = areaLOD[idx];
+        if ( computed == kHeightmapMaskCull || computed == 0xfe ) {
+            return;
+        }
+        uint8_t &m = areaMask[idx];
+        if ( m == kHeightmapMaskCull ) {
+            return;
+        }
+        m = HeightmapMaskForceLOD( 1 );
+    };
+
+    switch ( direction ) {
+    case CD_East: // neighbour east -> its west column, both block rows
+        markAreaTile( baseCol, baseRow );
+        markAreaTile( baseCol, baseRow + 1 );
+        break;
+    case CD_West: // neighbour west -> its east column
+        markAreaTile( baseCol + 1, baseRow );
+        markAreaTile( baseCol + 1, baseRow + 1 );
+        break;
+    case CD_SouthEast:
+    case CD_SouthWest: // south diagonal -> the block's near (top) row, both
+                       // cols
+        markAreaTile( baseCol, baseRow );
+        markAreaTile( baseCol + 1, baseRow );
+        break;
+    case CD_NorthEast:
+    case CD_NorthWest: // north diagonal -> the block's near (bottom) row
+        markAreaTile( baseCol, baseRow + 1 );
+        markAreaTile( baseCol + 1, baseRow + 1 );
+        break;
+    default:
+        break;
+    }
 }
 
 void StreamingManager::stitchSectorsToArea() {
@@ -1065,7 +1164,212 @@ void StreamingManager::stitchSectorsToArea() {
     }
 }
 
-// gSectorHmapCoords (0x010dfec0) — per-cell clipmap coordinate table. Each of
+void StreamingManager::stitchSectorToSector( Sector &a,
+                                             Sector &b,
+                                             eCardinalDirection direction ) {
+    // FUN_00704be0
+    if ( a.state != 1 || b.state != 1 ) {
+        return;
+    }
+    if ( a.geometry.pHeightmapInstance == nullptr ||
+         b.geometry.pHeightmapInstance == nullptr ) {
+        return;
+    }
+
+    const int32_t N = kHeightmapNumTile;          // 16
+    const int32_t stride = kHeightmapNumRealTile; // 18
+
+    const auto &lodA = a.geometry.heightmapLODCache;
+    const auto &lodB = b.geometry.heightmapLODCache;
+    auto &maskA = a.geometry.heightmapTileMask;
+    auto &maskB = b.geometry.heightmapTileMask;
+
+    // Compare A's bordered tile (bcolA,browA) against B's (bcolB,browB); if
+    // their clamped LODs differ, force both to LOD 4.
+    auto differ = [&]( int32_t bcolA, int32_t browA, int32_t bcolB,
+                       int32_t browB ) {
+        uint8_t la = lodA[browA * stride + bcolA];
+        uint8_t lb = lodB[browB * stride + bcolB];
+        if ( la > 4 ) {
+            la = 4;
+        }
+        if ( lb > 4 ) {
+            lb = 4;
+        }
+        if ( la == lb ) {
+            return;
+        }
+        uint8_t &ta = maskA[browA * stride + bcolA];
+        if ( ta != kHeightmapMaskCull ) {
+            ta = HeightmapMaskForceLOD( 4 );
+        }
+        uint8_t &tb = maskB[browB * stride + bcolB];
+        if ( tb != kHeightmapMaskCull ) {
+            tb = HeightmapMaskForceLOD( 4 );
+        }
+    };
+
+    switch ( direction ) {
+    case CD_East: // A right border column (N+1), B left border column (0)
+        for ( int32_t r = 1; r <= N; r++ ) {
+            differ( N + 1, r, 0, r );
+        }
+        break;
+    case CD_West: // A left border column (0), B right border column (N+1)
+        for ( int32_t r = 1; r <= N; r++ ) {
+            differ( 0, r, N + 1, r );
+        }
+        break;
+    case CD_NorthEast: // A top row right half, B bottom row left half
+        for ( int32_t c = 0; c < N / 2; c++ ) {
+            differ( N / 2 + 1 + c, 0, 1 + c, N + 1 );
+        }
+        break;
+    case CD_NorthWest: // A top row left half, B bottom row right half
+        for ( int32_t c = 0; c < N / 2; c++ ) {
+            differ( 1 + c, 0, N / 2 + 1 + c, N + 1 );
+        }
+        break;
+    case CD_SouthEast: // A bottom row right half, B top row left half
+        for ( int32_t c = 0; c < N / 2; c++ ) {
+            differ( N / 2 + 1 + c, N + 1, 1 + c, 0 );
+        }
+        break;
+    case CD_SouthWest: // A bottom row left half, B top row right half
+        for ( int32_t c = 0; c < N / 2; c++ ) {
+            differ( 1 + c, N + 1, N / 2 + 1 + c, 0 );
+        }
+        break;
+    default: // North/South: the staggered sector grid has no such neighbour
+        break;
+    }
+}
+
+void StreamingManager::stitchSectorToSectorSeams() {
+    // FUN_00704f20
+    if ( sectorManager.pCurrentSector == nullptr ) {
+        return;
+    }
+
+    const eCardinalDirection kDirs[6] = { CD_East,      CD_West,
+                                          CD_NorthEast, CD_NorthWest,
+                                          CD_SouthEast, CD_SouthWest };
+    for ( Sector &sector : sectorManager.sectors ) {
+        if ( sector.state != 1 ) {
+            continue;
+        }
+        for ( eCardinalDirection dir : kDirs ) {
+            GridPos2D nbArea;
+            GridPos2D nbSector;
+            if ( !sectorManager.resolveNeighbour( dir, sector.installedArea,
+                                                  sector.installedSector,
+                                                  nbArea, nbSector ) ) {
+                continue;
+            }
+            Sector *pNb = findSectorByFootprint( nbArea, nbSector );
+            if ( pNb == nullptr || pNb->state != 1 ) {
+                continue;
+            }
+            stitchSectorToSector( sector, *pNb, dir );
+        }
+    }
+}
+
+void StreamingManager::stitchAreaToArea( Area &a,
+                                         Area &b,
+                                         int32_t dx,
+                                         int32_t dy ) {
+    // FUN_007075f0
+    if ( a.state != 1 || b.state != 1 ) {
+        return;
+    }
+    if ( a.geometry.pHeightmapInstance == nullptr ||
+         b.geometry.pHeightmapInstance == nullptr ) {
+        return;
+    }
+
+    const int32_t N = kHeightmapNumTile;          // 16
+    const int32_t stride = kHeightmapNumRealTile; // 18
+
+    const auto &lodA = a.geometry.heightmapLODCache;
+    const auto &lodB = b.geometry.heightmapLODCache;
+    auto &maskA = a.geometry.heightmapTileMask;
+    auto &maskB = b.geometry.heightmapTileMask;
+
+    auto writeForcedLOD = []( uint8_t &mask, uint8_t lodValue ) {
+        if ( mask == kHeightmapMaskCull ) {
+            return;
+        }
+        if ( lodValue == kHeightmapMaskCull ) {
+            mask = kHeightmapMaskCull;
+        } else if ( lodValue == 0xfe ) {
+            mask = HeightmapMaskForceLOD( 4 );
+        } else {
+            mask = HeightmapMaskForceLOD( lodValue > 4 ? 4 : lodValue );
+        }
+    };
+
+    auto propagate = [&]( int32_t idxA, int32_t idxB ) {
+        const uint8_t la = lodA[idxA];
+        const uint8_t lb = lodB[idxB];
+        if ( lb < la ) {
+            if ( lb != kHeightmapMaskCull && lb != 0xfe ) {
+                writeForcedLOD( maskB[idxB], la );
+            }
+        } else {
+            if ( la != kHeightmapMaskCull && la != 0xfe ) {
+                writeForcedLOD( maskA[idxA], lb );
+            }
+        }
+    };
+
+    if ( dx > 0 ) { // B east of A: A right border column, B left border column
+        for ( int32_t r = 0; r <= N; r++ ) {
+            propagate( r * stride + ( N + 1 ), r * stride + 0 );
+        }
+    } else if ( dx < 0 ) { // B west of A
+        for ( int32_t r = 0; r <= N; r++ ) {
+            propagate( r * stride + 0, r * stride + ( N + 1 ) );
+        }
+    } else if ( dy > 0 ) { // B at higher row: A bottom border row, B top row
+        for ( int32_t c = 0; c <= N; c++ ) {
+            propagate( ( N + 1 ) * stride + c, 0 * stride + c );
+        }
+    } else { // dy < 0: B at lower row: A top border row, B bottom row
+        for ( int32_t c = 0; c <= N; c++ ) {
+            propagate( 0 * stride + c, ( N + 1 ) * stride + c );
+        }
+    }
+}
+
+void StreamingManager::stitchAreaToAreaSeams() {
+    // FUN_007075f0
+    if ( !areaGrid.bActiveAreasSet ) {
+        return;
+    }
+
+    for ( Area &a : areaGrid.areas ) {
+        if ( a.state != 1 || a.coords.posX < 0 || a.coords.posY < 0 ) {
+            continue;
+        }
+        for ( Area &b : areaGrid.areas ) {
+            if ( &b == &a || b.state != 1 || b.coords.posX < 0 ||
+                 b.coords.posY < 0 ) {
+                continue;
+            }
+            const int32_t dx = b.coords.posX - a.coords.posX;
+            const int32_t dy = b.coords.posY - a.coords.posY;
+            const int32_t manhattan =
+                ( dx < 0 ? -dx : dx ) + ( dy < 0 ? -dy : dy );
+            if ( manhattan != 1 ) {
+                continue;
+            }
+            stitchAreaToArea( a, b, dx, dy );
+        }
+    }
+}
+
+// gSectorHmapCoords (DAT_010dfec0) — per-cell clipmap coordinate table. Each of
 // the 409 cells stores (col*scale, row*scale, scale*0.5) within its LOD tier;
 // ComputeCellWorldPosition adds the heightmap origin to get the cell centre.
 struct SectorHmapCoord {
@@ -1264,6 +1568,58 @@ void StreamingManager::submitSectorImpostors( Sector &sector,
     }
 }
 
+void StreamingManager::submitDynamicProps( Sector &sector,
+                                           RenderScene *pScene ) {
+    // FUN_006fe580
+    DynamicPropStream &dp = sector.geometry.dynamicProps;
+    if ( pScene == nullptr || !dp.bValid ) {
+        return;
+    }
+    Camera *pCamera = pScene->getCamera();
+    if ( pCamera == nullptr ) {
+        return;
+    }
+
+    if ( !gHmapCoordsLUTInitialized ) {
+        InitHeightmapCoordsLUT();
+    }
+
+    const Eigen::Vector4f camWorldPos = pCamera->getCamToWorld().row( 3 );
+    const Eigen::Vector4f streamPos = gpWorldStreaming->isEnabled()
+                                          ? gpWorldStreaming->getPosition()
+                                          : Eigen::Vector4f::Zero();
+    const float originX = sector.heightmap.worldOriginX - streamPos.x();
+    const float originZ = sector.heightmap.worldOriginZ - streamPos.z();
+
+    struct CellDistance {
+        uint32_t cell;
+        float distanceSq;
+    };
+    std::vector<CellDistance> cells;
+    for ( uint32_t cell = 0; cell < DynamicPropStream::kNumCells; cell++ ) {
+        if ( dp.buckets[cell].empty() ) {
+            continue;
+        }
+        const Eigen::Vector4f cellPos =
+            ComputeCellWorldPosition( originX, originZ, cell );
+        const float dx = cellPos.x() - camWorldPos.x();
+        const float dz = cellPos.z() - camWorldPos.z();
+        cells.push_back( { cell, dx * dx + dz * dz } );
+    }
+    std::sort( cells.begin(), cells.end(),
+               []( const CellDistance &lhs, const CellDistance &rhs ) {
+                   return lhs.distanceSq < rhs.distanceSq;
+               } );
+
+    for ( const CellDistance &entry : cells ) {
+        for ( Entity *pProp : dp.buckets[entry.cell] ) {
+            if ( pProp != nullptr && pProp->getGeometryData() != nullptr ) {
+                pProp->draw( pScene );
+            }
+        }
+    }
+}
+
 Area *StreamingManager::findAreaEntry( const GridPos2D &areaCell ) {
     // FUN_00706e30
     for ( Area &area : areaGrid.areas ) {
@@ -1402,6 +1758,10 @@ bool StreamingManager::updateSectorStreaming(
     // FUN_007055b0
     if ( !sectorManager.bStreamSector ) {
         return false;
+    }
+
+    if ( bForce && gpFile != nullptr ) {
+        gpFile->flushPendingAsync();
     }
 
     for ( const Sector &sector : sectorManager.sectors ) {
@@ -1718,7 +2078,6 @@ void StreamingManager::render() {
         for ( Area &area : areaGrid.areas ) {
             submitArea( area );
         }
-        OTDU_UNIMPLEMENTED;
     }
 
     if ( activeRenderLayers != 0 ) {
@@ -1976,8 +2335,6 @@ bool StreamingManager::computeGroundColor( Eigen::Vector4f *pOutColor,
     }
 
     const SectorHeightmap &desc = pSector->heightmap;
-
-    // TODO: FIXME:
     if ( desc.pColorBitmap == nullptr || desc.worldExtent <= 0.0f ) {
         return false;
     }

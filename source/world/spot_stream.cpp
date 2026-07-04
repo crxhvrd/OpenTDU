@@ -8,6 +8,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/spots.h"
+#include "render/material.h"
 #include "render/render_scene.h"
 #include "sector_manager.h"
 #include "tdu_instance.h"
@@ -89,8 +90,26 @@ bool Spot::onWorldStreamed( Eigen::Vector4f *param_1,
                             Eigen::Vector4f *param_2,
                             Eigen::Vector4f *param_3 ) {
     // FUN_006fd020
-    OTDU_UNIMPLEMENTED;
-    return false;
+    for ( int32_t i = 0; i < numGroundMaterial; i++ ) {
+        Material *pMaterial = pMaterials[i];
+        if ( pMaterial == nullptr ) {
+            continue;
+        }
+        MaterialParameter *pParam = pMaterial->getParameterByIndex( 0 );
+        if ( pParam == nullptr ) {
+            continue;
+        }
+        MaterialShaderParameterArray *pArray =
+            static_cast<MaterialShaderParameterArray *>( pParam );
+        float *pSlot = (float *)pArray->getParameterDataByIndex( 0 );
+        if ( pSlot != nullptr ) {
+            pSlot[0] -= param_1->x();
+            pSlot[1] -= param_1->y();
+            pSlot[2] -= param_1->z();
+            pSlot[3] -= param_1->w();
+        }
+    }
+    return true;
 }
 
 bool Spot::loadFromSource( const char *pSourceName ) {

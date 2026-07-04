@@ -154,12 +154,13 @@ bool MngOcean::initialize( TestDriveGameInstance * ) {
     if ( pStreamingManager != nullptr ) {
         for ( Sector &sector : pStreamingManager->sectorManager.sectors ) {
             if ( sector.state == 1 ) {
-                setupSectorWaterMaterials(
-                    &sector.geometry.impostorRenderSet.render2DM, true );
-                // TODO: FIXME: Update the 2DM bound to the sector 3DD (with
-                // updated/patches materials). The logic diverges from the
-                // original pcode (the original uses the waterRes 2DM instead).
+                setupSectorWaterMaterials( &sector.geometry.render2DM, true );
+                sector.geometry.render3DD.bindMaterialsBank(
+                    &sector.geometry.render2DM );
+
                 if ( sector.geometry.impostorRenderSet.bValid ) {
+                    setupSectorWaterMaterials(
+                        &sector.geometry.impostorRenderSet.render2DM, true );
                     sector.geometry.impostorRenderSet.render3DD
                         .bindMaterialsBank(
                             &sector.geometry.impostorRenderSet.render2DM );

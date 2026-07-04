@@ -31,6 +31,22 @@ struct SectorEntityGrid {
     std::vector<std::vector<Entity *>> cells;
 };
 
+struct DynamicPropStream {
+    static constexpr uint32_t kNumCells = 0x199; // 409 clipmap tiles
+
+    std::array<std::vector<Entity *>, kNumCells> buckets;
+    std::vector<Entity *> active;
+    bool bValid = false;
+
+    void reset() {
+        for ( std::vector<Entity *> &cell : buckets ) {
+            cell.clear();
+        }
+        active.clear();
+        bValid = false;
+    }
+};
+
 class SectorGeometry {
 public:
     // A render resource paired with the bank entry it was instanciated from
@@ -92,6 +108,10 @@ public:
     void rebaseRenderInstances( const Eigen::Vector4f &streamOrigin );
     void rebaseHeightmapInstance( const Eigen::Vector4f &streamOrigin );
     void rebaseImpostors( const Eigen::Vector4f &streamOrigin );
+    static void WriteImpostorUVOrigin( Material *pMaterial,
+                                       float originX,
+                                       float originZ,
+                                       bool bInit );
     void instanciateObjectNodes( float offsetX,
                                  float offsetZ,
                                  const Eigen::Vector4f &streamOrigin );
@@ -146,6 +166,7 @@ public:
     static constexpr int32_t kMaxDetail2Materials = 0x20;
     std::vector<Material *> detail2Materials;
     Eigen::Vector4f detail2AbsOrigin = Eigen::Vector4f::Zero();
+    Eigen::Vector4f impostorUVAbsOrigin = Eigen::Vector4f::Zero();
 
     AssetPtr<RenderFile::Section> pStaticShadowSection = {};
 
@@ -161,6 +182,7 @@ public:
     RoadResourceRegistry roadRegistry;
 
     SectorEntityGrid entityGrid;
+    DynamicPropStream dynamicProps;
     // Per-sector impostor (tree/prop billboard) instances. The original code
     // builds two grids from the .PMI impostor sections (subtypes 10 and 0xd);
     // the streaming driver walks them each frame and MngImpostor draws the

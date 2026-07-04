@@ -39,11 +39,18 @@ struct ImpostorGrid {
 
     bool bBuilt = false;
 
+    std::list<std::vector<uint8_t>> materialBankCopies;
+    std::list<std::vector<uint8_t>> materialCopies;
+    std::vector<Material *> uvOriginMaterials;
+
     void reset() {
         instances.clear();
         for ( std::vector<MassInstanceImpostor *> &cell : cells ) {
             cell.clear();
         }
+        materialBankCopies.clear();
+        materialCopies.clear();
+        uvOriginMaterials.clear();
         bBuilt = false;
     }
 };

@@ -26,6 +26,9 @@ public:
 class GSWorldStreaming : public GameSystem {
 public:
     inline const Eigen::Vector4f &getPosition() const { return position; }
+    inline const Eigen::Vector4f &getLastPosition() const {
+        return prevPosition;
+    }
     inline bool isEnabled() const { return bEnabled; }
     inline bool isStreamingActive() const { return bStreamingActive; }
 
