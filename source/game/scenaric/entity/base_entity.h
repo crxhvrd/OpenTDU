@@ -14,6 +14,7 @@ class SerializedEntity;
 struct BinaryReader;
 class RenderScene;
 class MngActor;
+class SectorHeightmap;
 
 struct SerializedTransform {
     float RotationX = 0.0f;
@@ -83,6 +84,12 @@ public:
     }
     inline const std::string &getInstanceName() const { return name; }
     inline Entity *getParent() const { return pParent; }
+    inline bool isStreamManaged() const { return bStreamManaged; }
+    inline void setStreamManaged( bool b ) { bStreamManaged = b; }
+    inline bool isStreamActive() const { return bStreamActive; }
+    inline void setStreamActive( bool b ) { bStreamActive = b; }
+    inline int32_t getTileKey() const { return defaultTileIndex; }
+    inline void setTileKey( int32_t key ) { defaultTileIndex = key; }
 
     inline void bindDebugDescriptor( EntityDesc *pNewDesc,
                                      const char *pNewName ) {
@@ -130,7 +137,8 @@ public:
     virtual void *getGeometryData() { return nullptr; }
     virtual void setColor( ColorRGBA color ) { /* NOP */ }
     virtual void onGeometrySubmitted() { /* NOP */ }
-    virtual void unknownFunc5();
+    virtual bool isPMIInTile( const SectorHeightmap *pHeightmap,
+                              int32_t tileKey );
 
 protected:
     static constexpr const FlashMessage kEnableParticles =
@@ -153,6 +161,8 @@ protected:
 
     uint8_t bPrimaryInstance : 1;
     uint8_t bShifted : 1;
+    uint8_t bStreamManaged : 1;
+    uint8_t bStreamActive : 1;
 
     std::vector<Entity *> children;
     int32_t defaultTileIndex;

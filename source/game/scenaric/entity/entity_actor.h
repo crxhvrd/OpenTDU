@@ -33,7 +33,8 @@ public:
     void *getGeometryData() override;
     void setColor( ColorRGBA color ) override;
     void onGeometrySubmitted() override;
-    void unknownFunc5() override;
+    bool isPMIInTile( const SectorHeightmap *pHeightmap,
+                      int32_t tileKey ) override;
 
     // Vtable entries specific to actor entities
     virtual void *getAnimation();

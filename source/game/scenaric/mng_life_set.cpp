@@ -224,6 +224,4 @@ void MngLifeSet::manageLifeSets() {
         }
         slot++;
     }
-
-    OTDU_UNIMPLEMENTED;
 }

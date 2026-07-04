@@ -28,6 +28,10 @@ public:
     ~GameMechanism();
 
     inline bool isCreated() const { return bInitialized; }
+    inline bool isStaticController() const {
+        return pPureDynamicController != nullptr &&
+               pPureDynamicController->bStatic != 0;
+    }
 
     void setEntity( Entity *pEntityInstance );
 

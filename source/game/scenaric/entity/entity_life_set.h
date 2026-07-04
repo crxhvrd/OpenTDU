@@ -8,6 +8,23 @@ class EntityCinematic;
 class EntityLifeSet : public Entity {
 public:
     inline bool isLoaded() const { return bLoaded; }
+    inline bool isPlaying() const { return bPlaying; }
+    inline uint32_t getCinematicGroupCount() const {
+        return bank.NumLifeSetCinematics;
+    }
+    inline uint32_t getMinPlayed() const { return cinematicIndexRange[0]; }
+    inline uint32_t debugOrientationMask() const {
+        uint32_t mask = 0;
+        for ( uint32_t g = 0; g < bank.NumLifeSetCinematics; g++ ) {
+            const LifeSetCinematic &grp = bank.pLifeSetCinematics[g];
+            for ( uint32_t c = 0; c < grp.NumLifeCinematics; c++ ) {
+                mask |= grp.pLifeCinematics[c].Orientation;
+            }
+        }
+        return mask;
+    }
+    inline void setOrientation( uint32_t orientation ) { flags = orientation; }
+    inline void markInterior() { bLoaded = true; }
 
 public:
     EntityLifeSet();
@@ -46,18 +63,23 @@ private:
         uint32_t NumPositions = 0;
         SerializedCinematic CinematicResource;
         int32_t AvatarStyleIndex = 0;
+
+        void deserialize( BinaryReader *pReader );
     };
 
     struct LifeSetCinematic {
         LifeCinematic pLifeCinematics[10];
         uint32_t NumLifeCinematics = 0;
+
+        void prepare( ScenaricBank *pBank );
     };
 
     struct LifeSetBank {
         LifeSetCinematic pLifeSetCinematics[10];
         uint32_t NumLifeSetCinematics = 0;
 
-        LifeSetBank(); // FUN_007ddf40
+        LifeSetBank();
+        void deserialize( BinaryReader *pReader );
         void prepare( ScenaricBank *pBank );
     };
 

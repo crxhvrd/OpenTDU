@@ -943,7 +943,17 @@ void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
         return pExisting;
     }
 
-    void *pEntity = spawnActorEntity( pName );
+    const uint8_t *pRaw = reinterpret_cast<const uint8_t *>( pMedia );
+    const uint32_t hashLow = *reinterpret_cast<const uint32_t *>( pRaw + 0x34 );
+    const uint32_t hashHigh =
+        *reinterpret_cast<const uint32_t *>( pRaw + 0x38 );
+    const uint64_t key = ( static_cast<uint64_t>( hashLow ) << 32 ) | hashHigh;
+
+    void *pEntity = findActorByHashcode( key );
+    if ( pEntity == nullptr ) {
+        pEntity = spawnActorEntity( pName, key );
+    }
+
     return registerActor( pName, pMedia, pEntity );
 }
 
@@ -976,24 +986,58 @@ CinematicActor *CinResCollection::registerActor( const char *pName,
     return &actor;
 }
 
-void *CinResCollection::spawnActorEntity( const char *pName ) {
+void *CinResCollection::findActorByHashcode( uint64_t key ) {
+    // FUN_007e5360
+    if ( key == 0 || gpScenaric == nullptr ) {
+        return nullptr;
+    }
+
+    Entity *pEntity = gpScenaric->getSCVolume( key );
+    if ( pEntity == nullptr ) {
+        return nullptr;
+    }
+
+    const eEntityType type = pEntity->getType();
+
+    if ( type == eEntityType::ET_AVPL ) {
+        OTDU_UNIMPLEMENTED;
+        return pEntity;
+    }
+    if ( type == eEntityType::ET_CPNJ ) {
+        OTDU_UNIMPLEMENTED;
+        return pEntity;
+    }
+    if ( type == eEntityType::ET_POCA ) {
+        return nullptr;
+    }
+
+    return pEntity;
+}
+
+void *CinResCollection::spawnActorEntity( const char *pName,
+                                          uint64_t hashcode ) {
     // FUN_007e6cb0
     if ( pName != nullptr ) {
-        // "Pietonne" (female) is tested before "Pieton" (male) — the longer
-        // prefix first, since it begins with the shorter one.
-
-        // FIXME: Should use strincmp/be case insensitive
         if ( std::strncmp( pName, "Pietonne", 8 ) == 0 ) {
             return spawnPedestrian( 1 );
         }
         if ( std::strncmp( pName, "Pieton", 6 ) == 0 ) {
             return spawnPedestrian( 0 );
         }
+        if ( std::strncmp( pName, "Enfant", 6 ) == 0 ) {
+            return spawnPedestrian( 0 );
+        }
+        if ( std::strncmp( pName, "Avatar", 6 ) == 0 ) {
+            return spawnAvatar( eEntityType::ET_AVPL, ~0ull );
+        }
+        if ( std::strncmp( pName, "Hostess", 7 ) == 0 ||
+             std::strstr( pName, "PoliceWoman" ) != nullptr ) {
+            return spawnAvatar( eEntityType::ET_AVAT, hashcode );
+        }
+        if ( std::strncmp( pName, "Seller", 6 ) == 0 ) {
+            return spawnAvatar( eEntityType::ET_AVAT, hashcode );
+        }
     }
-
-    // TODO: "Enfant" / "Hostess" / "Seller" / "Avatar" / "*_Intro*" / "PLANE" /
-    // car — avatar manager / GMIntro / driver-IK paths
-    OTDU_UNIMPLEMENTED;
 
     return nullptr;
 }
@@ -1004,7 +1048,16 @@ void *CinResCollection::spawnPedestrian( int32_t /*gender*/ ) {
         return nullptr;
     }
 
-    OTDU_UNIMPLEMENTED;
-
     return gpScenaric->getPedestrianBank().getFirst( eEntityType::ET_PTDR );
+}
+
+void *CinResCollection::spawnAvatar( eEntityType type, uint64_t hashcode ) {
+    // FUN_007e5010 / FUN_007e54f0
+    if ( gpScenaric == nullptr ) {
+        return nullptr;
+    }
+
+    const int32_t avatarType = ( type == eEntityType::ET_AVPL ) ? 1 : 0;
+    const uint64_t key = ( avatarType == 1 ) ? ~0ull : hashcode;
+    return gpScenaric->getAvatarManager().allocateAvatar( key, avatarType );
 }

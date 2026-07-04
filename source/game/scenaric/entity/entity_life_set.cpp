@@ -2,19 +2,94 @@
 #include "entity_life_set.h"
 
 #include "core/random/bcpl.h"
+#include "filesystem/binary.h"
 #include "game/game_mechanism.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/mng_life_set.h"
+#include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "world/gs_world_streaming.h"
+
+inline uint32_t ReadStreamU32( BinaryReader *pReader ) {
+    const uint32_t value =
+        *reinterpret_cast<const uint32_t *>( pReader->pCursor );
+    pReader->pCursor += sizeof( uint32_t );
+    return value;
+}
+
+void EntityLifeSet::LifeCinematic::deserialize( BinaryReader *pReader ) {
+    // FUN_007dddd0
+    bFocusOn = ReadStreamU32( pReader ) != 0;
+    bRandomTimeStart = ReadStreamU32( pReader ) != 0;
+    bAlignToTerrain = ReadStreamU32( pReader ) != 0;
+    Orientation = ReadStreamU32( pReader );
+
+    NumPositions = ReadStreamU32( pReader );
+    for ( uint32_t i = 0; i < NumPositions; i++ ) {
+        pPositions[i].pPosMatrix =
+            reinterpret_cast<SerializedTransform *>( pReader->pCursor );
+        pReader->pCursor += sizeof( SerializedTransform );
+    }
+
+    CinematicResource.pBinRefCinematic =
+        reinterpret_cast<EntityCinematic *>( pReader->pCursor );
+    pReader->pCursor += 8;
+
+    if ( gpScenaric->getVersion() < 0x22 ) {
+        AvatarStyleIndex = 2;
+    } else {
+        AvatarStyleIndex = static_cast<int32_t>( ReadStreamU32( pReader ) );
+    }
+}
+
+void EntityLifeSet::LifeSetCinematic::prepare( ScenaricBank *pBank ) {
+    // FUN_007de0e0
+    for ( uint32_t i = 0; i < NumLifeCinematics; i++ ) {
+        SerializedCinematic &ref = pLifeCinematics[i].CinematicResource;
+
+        const uint32_t *pHashcodeBlob =
+            reinterpret_cast<const uint32_t *>( ref.pBinRefCinematic );
+        Entity *pResolved = nullptr;
+        if ( pHashcodeBlob != nullptr ) {
+            const uint64_t hashcode =
+                static_cast<uint64_t>( pHashcodeBlob[0] ) |
+                ( static_cast<uint64_t>( pHashcodeBlob[1] ) << 32 );
+            if ( hashcode != 0 ) {
+                if ( pBank != nullptr ) {
+                    pResolved = pBank->getEntityByHashcode( hashcode );
+                }
+                if ( pResolved == nullptr && gpScenaric != nullptr ) {
+                    pResolved = gpScenaric->findEntityByHashcode( hashcode );
+                }
+            }
+        }
+        ref.pBinRefCinematic = static_cast<EntityCinematic *>( pResolved );
+    }
+}
 
 EntityLifeSet::LifeSetBank::LifeSetBank() : NumLifeSetCinematics( 0 ) {
     // FUN_007ddf40
 }
 
-void EntityLifeSet::LifeSetBank::prepare( ScenaricBank * ) {
+void EntityLifeSet::LifeSetBank::deserialize( BinaryReader *pReader ) {
+    // FUN_00427a90
+    NumLifeSetCinematics = ReadStreamU32( pReader );
+    for ( uint32_t i = 0; i < NumLifeSetCinematics; i++ ) {
+        LifeSetCinematic &exclusive = pLifeSetCinematics[i];
+        const uint32_t numLifeCinematics = ReadStreamU32( pReader );
+        for ( uint32_t j = 0; j < numLifeCinematics; j++ ) {
+            exclusive.pLifeCinematics[j].deserialize( pReader );
+        }
+        exclusive.NumLifeCinematics = numLifeCinematics;
+    }
+}
+
+void EntityLifeSet::LifeSetBank::prepare( ScenaricBank *pBank ) {
     // FUN_007de200
-    OTDU_UNIMPLEMENTED;
+    for ( uint32_t i = 0; i < NumLifeSetCinematics; i++ ) {
+        pLifeSetCinematics[i].prepare( pBank );
+    }
 }
 
 EntityLifeSet::EntityLifeSet()
@@ -35,10 +110,7 @@ EntityLifeSet::~EntityLifeSet() {}
 
 void EntityLifeSet::initialize() {
     // FUN_007de1e0
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
-    if ( pMechanism != nullptr ) {
-        pMechanism->setEntity( this );
-    }
+    Entity::initialize();
 }
 
 void EntityLifeSet::loadResources( ScenaricBank *pBank ) {
@@ -46,7 +118,7 @@ void EntityLifeSet::loadResources( ScenaricBank *pBank ) {
     if ( pMechanism != nullptr ) {
         pMechanism->loadResources( pBank );
     }
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
+    OTDU_UNIMPLEMENTED; // TODO: AUDIO
     bank.prepare( pBank );
 }
 
@@ -77,22 +149,33 @@ void EntityLifeSet::unknownFunc() {
 void EntityLifeSet::deserialize( BinaryReader *pReader ) {
     // FUN_007de060
     Entity::deserialize( pReader );
-    OTDU_UNIMPLEMENTED;
+
+    bLoaded = ReadStreamU32( pReader ) != 0;
+    cinematicIndexRange[0] = ReadStreamU32( pReader );
+    cinematicIndexRange[1] = ReadStreamU32( pReader );
+    bank.deserialize( pReader );
+    flags = ReadStreamU32( pReader );
 }
 
 void EntityLifeSet::instanciate( MngActor *pMngActor, Entity *param_1 ) {
-    // LAB_007ddee0
-    OTDU_UNIMPLEMENTED;
+    // FUN_007ddee0
+    Entity::instanciate( pMngActor, param_1 );
+
+    EntityLifeSet *pInstance = static_cast<EntityLifeSet *>( param_1 );
+    pInstance->cinematicIndexRange[0] = cinematicIndexRange[0];
+    pInstance->cinematicIndexRange[1] = cinematicIndexRange[1];
+    pInstance->bank = bank;
+    pInstance->flags = flags;
 }
 
 void EntityLifeSet::deinstanciate() {
     // FUN_007ddfc0
-    OTDU_UNIMPLEMENTED;
+    Entity::deinstanciate();
 }
 
 void EntityLifeSet::unknownFunc2( void *param_2 ) {
     // FUN_007ddc90
-    OTDU_UNIMPLEMENTED;
+    flags = *static_cast<uint32_t *>( param_2 );
 }
 
 uint32_t EntityLifeSet::stopPlaying() {
@@ -116,7 +199,27 @@ bool EntityLifeSet::startPlayingLifeCinematic( LifeCinematic *pLifeCinematic,
         return false;
     }
 
-    OTDU_UNIMPLEMENTED;
+    const Matrix4x4f_t &model = getModelMatrix();
+    const Eigen::Vector4f shift = gpWorldStreaming->isEnabled()
+                                      ? gpWorldStreaming->getPosition()
+                                      : Eigen::Vector4f::Zero();
+    float anchorX = model( 3, 0 ) - shift.x();
+    float anchorY = model( 3, 1 ) - shift.y();
+    float anchorZ = model( 3, 2 ) - shift.z();
+    if ( pLifeCinematic->NumPositions != 0 ) {
+        uint32_t index = RandomBelow( gpScenaric->getRandomGenerator(),
+                                      pLifeCinematic->NumPositions );
+        if ( index >= pLifeCinematic->NumPositions ) {
+            index = pLifeCinematic->NumPositions - 1;
+        }
+        const SerializedTransform *pSpawn =
+            pLifeCinematic->pPositions[index].pPosMatrix;
+        if ( pSpawn != nullptr ) {
+            anchorX += pSpawn->PositionX;
+            anchorY += pSpawn->PositionY;
+            anchorZ += pSpawn->PositionZ;
+        }
+    }
 
     Entity *pInstance =
         EntityFactory::DoAction( nullptr, pTemplate->getType(), nullptr,
@@ -130,12 +233,14 @@ bool EntityLifeSet::startPlayingLifeCinematic( LifeCinematic *pLifeCinematic,
     pInstance->initialize();
 
     EntityCinematic *pCinematic = static_cast<EntityCinematic *>( pInstance );
-    OTDU_UNIMPLEMENTED; // TODO: CINEMATICS
+    pCinematic->setPlaybackAnchor(
+        Eigen::Vector3f( anchorX, anchorY, anchorZ ) );
     pCinematic->setLoop( true );
     if ( pLifeCinematic->bRandomTimeStart ) {
         pCinematic->setStartTime(
             RandomUnit( gpScenaric->getRandomGenerator() ) );
     }
+    // TODO: CINEMATICS — set the pedestrian style (AvatarStyleIndex)
     pCinematic->start( true );
 
     pCurrentlyPlayingCinematics[numCinematicsPlaying] = pCinematic;

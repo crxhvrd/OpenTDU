@@ -228,24 +228,26 @@ namespace {
     void buildResourceList( BankInstance &bank,
                             const uint32_t *pStructs,
                             const uint64_t *pHashcodes,
-                            std::vector<BankRenderResource<T>> &out ) {
+                            std::vector<BankRenderResource<T>> &out,
+                            const char *label = "" ) {
         if ( pStructs == nullptr ) {
             return;
         }
         const uint32_t count = pStructs[0];
         out.reserve( count );
         for ( uint32_t i = 0; i < count; ++i ) {
+            const int32_t entryIdx = static_cast<int32_t>( pStructs[1 + i] );
             ParsedBankEntry entry;
             entry.bResolveFilename = false;
-            if ( bank.getEntry( static_cast<int32_t>( pStructs[1 + i] ),
-                                entry ) != 0 ) {
+            if ( bank.getEntry( entryIdx, entry ) != 0 ) {
                 continue;
             }
 
             auto pResource = std::make_unique<T>();
-            if ( pResource->initialize( entry.pData ) ) {
-                out.push_back( { pHashcodes[i], std::move( pResource ) } );
+            if ( !pResource->initialize( entry.pData ) ) {
+                continue;
             }
+            out.push_back( { pHashcodes[i], std::move( pResource ) } );
         }
     }
 
@@ -264,9 +266,9 @@ namespace {
 void ScenaricBank::constructResourceLists() {
     // FUN_007db5e0
     buildResourceList( bank, fileRefs[FR_3DD].pStructs,
-                       fileRefs[FR_3DD].pHashcodes, lists3DD );
+                       fileRefs[FR_3DD].pHashcodes, lists3DD, "3DD" );
     buildResourceList( bank, fileRefs[FR_3DG].pStructs,
-                       fileRefs[FR_3DG].pHashcodes, lists3DG );
+                       fileRefs[FR_3DG].pHashcodes, lists3DG, "3DG" );
     buildResourceList( bank, fileRefs[FR_2DM].pStructs,
                        fileRefs[FR_2DM].pHashcodes, lists2DM );
     buildResourceList( bank, fileRefs[FR_2DB].pStructs,
@@ -419,6 +421,56 @@ ClipInstance *ScenaricBank::debugCompatibleClip( SkeletonInstance *pSkel,
     return compatible[i];
 }
 
+// TODO: REMOVE ME
+ClipInstance *ScenaricBank::debugPickCalmestClip( SkeletonInstance *pSkel,
+                                                  float minMatchFraction ) {
+    if ( pSkel == nullptr ) {
+        return nullptr;
+    }
+    const int numNodes = pSkel->getNumNodes();
+    const int minMatches =
+        ( numNodes > 0 && minMatchFraction > 0.0f )
+            ? static_cast<int>( numNodes * minMatchFraction ) + 1
+            : 1;
+    ClipInstance *pBest = nullptr;
+    float leastMotion = -1.0f;
+    for ( auto &c : listsClip ) {
+        ClipInstance *pClip = c.object.get();
+        if ( pClip == nullptr ||
+             countChannelMatches( pSkel, pClip ) < minMatches ) {
+            continue;
+        }
+
+        Animation anim;
+        anim.initialize( pSkel, pClip );
+        const int32_t numNodes = anim.getNumNodes();
+        const Matrix4x4f_t *pPalette = anim.getPalette();
+        if ( pPalette == nullptr || numNodes <= 0 ) {
+            continue;
+        }
+        std::vector<Eigen::Vector3f> startTranslations( numNodes );
+        for ( int32_t i = 0; i < numNodes; i++ ) {
+            startTranslations[i] = Eigen::Vector3f(
+                pPalette[i]( 3, 0 ), pPalette[i]( 3, 1 ), pPalette[i]( 3, 2 ) );
+        }
+
+        anim.update( pClip->getTotalDuration() * 0.5f );
+        pPalette = anim.getPalette();
+        float motion = 0.0f;
+        for ( int32_t i = 0; i < numNodes; i++ ) {
+            const Eigen::Vector3f mid( pPalette[i]( 3, 0 ), pPalette[i]( 3, 1 ),
+                                       pPalette[i]( 3, 2 ) );
+            motion += ( mid - startTranslations[i] ).norm();
+        }
+
+        if ( leastMotion < 0.0f || motion < leastMotion ) {
+            leastMotion = motion;
+            pBest = pClip;
+        }
+    }
+    return pBest;
+}
+
 void ScenaricBank::pushResources2D() {
     // FUN_007d9660
     for ( auto &r : lists2DB ) {
@@ -434,8 +486,26 @@ void ScenaricBank::pushResources2D() {
 
 void ScenaricBank::pushResources3D() {
     // FUN_007d9c20
+    const uint64_t dgRef =
+        pActiveScenery != nullptr
+            ? ( ( static_cast<uint64_t>( pActiveScenery->field_0x54 ) << 32 ) |
+                pActiveScenery->field_0x50 )
+            : 0ull;
+    int registeredCount = 0;
     for ( auto &r : lists3DG ) {
-        collection3D.register3DG( r.object.get() );
+        bool bRegister = true;
+        if ( bankVersion >= 0x11 ) {
+            bRegister = false;
+            if ( pActiveScenery != nullptr ) {
+                if ( r.hashcode == dgRef ) {
+                    bRegister = true;
+                }
+            }
+        }
+        if ( bRegister ) {
+            collection3D.register3DG( r.object.get() );
+            registeredCount++;
+        }
     }
     for ( auto &r : lists3DD ) {
         collection3D.register3DD( r.object.get() );
@@ -449,27 +519,43 @@ void ScenaricBank::pushResources3D() {
 }
 
 void ScenaricBank::instanciateSceneries() {
-    // FUN_007e9a30
-    const int32_t count = sceneries.getCount();
-    for ( int32_t i = 0; i < count; i++ ) {
-        SceneryBinary *pScenery =
-            static_cast<SceneryBinary *>( sceneries.getElement( i ) );
-        if ( pScenery == nullptr || pScenery->pName == nullptr ) {
-            continue;
-        }
-
-        HiearchyNode *pNode =
-            collection3D.instantiate( GetIdentifier64bit( pScenery->pName ) );
-        if ( pNode == nullptr ) {
-            continue;
-        }
-
-        if ( bTransform ) {
-            pNode->TransformMatrix = bankTransform;
-        }
-
-        sceneryNodes.push_back( pNode );
+    // FUN_004288e0
+    if ( pActiveScenery == nullptr || pActiveScenery->pName == nullptr ) {
+        return;
     }
+
+    const uint64_t searchHash = GetIdentifier64bit( pActiveScenery->pName );
+    for ( auto &r : lists3DD ) {
+        const uint32_t n = r.object->getNumHiearchy();
+        for ( uint32_t i = 0; i < n; i++ ) {
+            const uint64_t h = r.object->getHiearchyHashcode( i );
+        }
+    }
+
+    HiearchyNode *pNode = collection3D.instantiate( searchHash );
+    if ( pNode == nullptr ) {
+        for ( auto &r : lists3DD ) {
+            if ( r.object->getNumHiearchy() > 0 ) {
+                RenderFile::Section *pSec = r.object->getHiearchyEntry( 0 );
+                if ( pSec != nullptr ) {
+                    pNode = collection3D.instantiate( r.object.get(), pSec );
+                    if ( pNode != nullptr ) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if ( pNode == nullptr ) {
+        return;
+    }
+
+    if ( bTransform ) {
+        pNode->TransformMatrix = bankTransform;
+    }
+
+    sceneryNodes.push_back( pNode );
 }
 
 Entity *ScenaricBank::getFirst( eEntityType type ) {
@@ -638,12 +724,15 @@ void ScenaricBank::loadContent() {
             // Funny magic number :-)
             //          |
             //          v
-            if ( tag == 0xB16B00B5 && gpScenaric != nullptr ) {
+            if ( tag == 0xB16B00B5 ) {
                 const uint8_t *v = p + 8;
                 const uint32_t version =
                     ( uint32_t( v[0] ) << 24 ) | ( uint32_t( v[1] ) << 16 ) |
                     ( uint32_t( v[2] ) << 8 ) | uint32_t( v[3] );
-                gpScenaric->setAssetsVersion( version );
+                bankVersion = version;
+                if ( gpScenaric != nullptr ) {
+                    gpScenaric->setAssetsVersion( version );
+                }
             }
             break;
         }
@@ -659,6 +748,12 @@ void ScenaricBank::loadContent() {
             break;
         case 7:
             sceneries.deserialize( reader, this );
+            {
+                const int32_t n = sceneries.getCount();
+                pActiveScenery = ( n > 0 ) ? static_cast<SceneryBinary *>(
+                                                 sceneries.getElement( n - 1 ) )
+                                           : nullptr;
+            }
             break;
         case 8:
             paths.deserialize( reader, this );
@@ -683,10 +778,7 @@ void ScenaricBank::deserializeFileReferences( BinaryReader &reader ) {
 
     const uint32_t tag = *reinterpret_cast<const uint32_t *>( pBlockStart );
     if ( tag == 0x8A58C0DE ) {
-        // 2DB..Wav are always present; UVA appears from version 4, and
-        // CIN/SCE from version 7
-        const uint32_t version =
-            gpScenaric != nullptr ? gpScenaric->getVersion() : 0;
+        const uint32_t version = bankVersion;
 
         int32_t tableCount = FR_Wav + 1;
         if ( version > 3 ) {

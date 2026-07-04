@@ -3,6 +3,7 @@
 #include <array>
 
 #include "cinematic_format.h"
+#include "game/scenaric/entity/entity_factory.h"
 
 class BankInstance;
 class ClipInstance;
@@ -123,8 +124,10 @@ private:
     CinematicActor *findActor( const char *pName );
     CinematicActor *
     registerActor( const char *pName, const void *pSceneData, void *pEntity );
-    void *spawnActorEntity( const char *pName );
+    void *findActorByHashcode( uint64_t key );
+    void *spawnActorEntity( const char *pName, uint64_t hashcode );
     void *spawnPedestrian( int32_t gender );
+    void *spawnAvatar( eEntityType type, uint64_t hashcode );
 
 private:
     static constexpr int32_t kMaxActors = 128;

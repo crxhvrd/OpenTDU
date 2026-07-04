@@ -275,11 +275,23 @@ void EntityActor::deinstanciate() {
 
 void EntityActor::onWorldStreamed() {
     // FUN_007fa480
-    if ( bShifted && Model.pInstance != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: MODEL/PHYSICS streaming shift
-    } else {
-        unknownActorFunc();
+    if ( bShifted && Model.pInstance != nullptr && pMechanism != nullptr &&
+         pMechanism->isStaticController() ) {
+        const bool bEnabled = gpWorldStreaming->isEnabled();
+        const Eigen::Vector4f pos = bEnabled ? gpWorldStreaming->getPosition()
+                                             : Eigen::Vector4f::Zero();
+        const Eigen::Vector4f lastPos =
+            bEnabled ? gpWorldStreaming->getLastPosition()
+                     : Eigen::Vector4f::Zero();
+
+        Matrix4x4f_t m = modelMatrix;
+        m( 3, 0 ) += lastPos.x() - pos.x();
+        m( 3, 1 ) += lastPos.y() - pos.y();
+        m( 3, 2 ) += lastPos.z() - pos.z();
+        propagateTransform( m, false );
+        return;
     }
+    unknownActorFunc();
 }
 
 void *EntityActor::getGeometryData() {
@@ -313,11 +325,13 @@ void EntityActor::onGeometrySubmitted() {
     bLightingValid = true;
 }
 
-void EntityActor::unknownFunc5() {
+bool EntityActor::isPMIInTile( const SectorHeightmap *pHeightmap,
+                               int32_t tileKey ) {
     // FUN_007fa440
     if ( pMechanism == nullptr || !pMechanism->isCreated() ) {
-        Entity::unknownFunc5();
+        return Entity::isPMIInTile( pHeightmap, tileKey );
     }
+    return false;
 }
 
 void *EntityActor::getAnimation() {

@@ -33,7 +33,11 @@ void MngActor::draw() {
     // FUN_006de8f0
     RenderScene *pScene = getRenderPass();
     for ( int32_t i = 0; i < numActors; i++ ) {
-        pActors[i]->draw( pScene );
+        Entity *pActor = pActors[i];
+        if ( pActor->isStreamManaged() && !pActor->isStreamActive() ) {
+            continue;
+        }
+        pActor->draw( pScene );
     }
 }
 
@@ -59,10 +63,6 @@ bool MngActor::onWorldStreamed( Eigen::Vector4f *param_1,
                                 Eigen::Vector4f *param_2,
                                 Eigen::Vector4f *param_3 ) {
     // FUN_006ded70
-    if ( pParent != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: SCENARIC
-    }
-
     for ( int32_t i = 0; i < numActors; i++ ) {
         pActors[i]->onWorldStreamed();
     }

@@ -51,6 +51,7 @@ public:
     inline const std::vector<HiearchyNode *> &getSceneryNodes() const {
         return sceneryNodes;
     }
+    inline const std::string &getFilename() const { return filename; }
 
 public:
     ScenaricBank();
@@ -98,6 +99,9 @@ public:
     ClipInstance *debugCompatibleClip( SkeletonInstance *pSkel,
                                        int index,
                                        int *pCompatibleCount );
+    // TODO: REMOVE ME
+    ClipInstance *debugPickCalmestClip( SkeletonInstance *pSkel,
+                                        float minMatchFraction = 0.0f );
 
 protected:
     // One parsed render/asset file-reference table (FUN_007d98d0).
@@ -161,6 +165,9 @@ protected:
     std::vector<BankRenderResource<SkeletonInstance>> listsSkeleton;
     std::vector<BankRenderResource<ClipInstance>> listsClip;
     std::vector<HiearchyNode *> sceneryNodes;
+
+    uint32_t bankVersion = 0;
+    SceneryBinary *pActiveScenery = nullptr;
 
     uint8_t bIsSpotBank : 1;
     uint8_t bExternalBuffer : 1;
