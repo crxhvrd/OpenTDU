@@ -598,7 +598,7 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
             for ( size_t i = 0; i < bucket.size(); ) {
                 Entity *pProp = bucket[i];
                 pProp->tick();
-                if ( pProp->PMICanBeTileManaged( &hm, (int32_t)cellIdx ) ) {
+                if ( pProp->isPMIInTile( &hm, (int32_t)cellIdx ) ) {
                     i++; // still at rest in its tile
                 } else {
                     pProp->setStreamActive( true );
@@ -613,7 +613,7 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
             Entity *pProp = dp.active[i];
             pProp->tick();
             const int32_t key = pProp->getTileKey();
-            if ( pProp->PMICanBeTileManaged( &hm, key ) ) {
+            if ( pProp->isPMIInTile( &hm, key ) ) {
                 pProp->setStreamActive( false );
                 if ( key >= 0 && key < (int32_t)DynamicPropStream::kNumCells ) {
                     dp.buckets[key].push_back( pProp );

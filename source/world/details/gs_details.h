@@ -4,6 +4,7 @@
 
 #include "birds.h"
 #include "papers.h"
+#include "particles.h"
 #include "road_patch.h"
 
 // World details (Birds, Papers, RoadPatch, Particles) manager
@@ -27,6 +28,7 @@ private:
     RoadPatch detailRoadPatch;
     Birds detailBirds;
     Papers detailPaper;
+    Particles detailParticles;
 
     TDUDetail *pDetailsList[kMaxDetails];
     int32_t numDetails;

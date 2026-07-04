@@ -5,7 +5,7 @@ GSDetails *gpDetails = nullptr;
 
 GSDetails::GSDetails()
     : GameSystem(), detailRoadPatch(), detailBirds(), detailPaper(),
-      pDetailsList{}, numDetails( 0 ) {
+      detailParticles(), pDetailsList{}, numDetails( 0 ) {
     // FUN_008a79d0
     OTDU_ASSERT( gpDetails == nullptr );
     gpDetails = this;
@@ -13,6 +13,7 @@ GSDetails::GSDetails()
     pDetailsList[numDetails++] = &detailRoadPatch;
     pDetailsList[numDetails++] = &detailBirds;
     pDetailsList[numDetails++] = &detailPaper;
+    pDetailsList[numDetails++] = &detailParticles;
 }
 
 GSDetails::~GSDetails() {

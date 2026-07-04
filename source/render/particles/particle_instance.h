@@ -1,5 +1,16 @@
 #pragma once
 
+#include "shared.h"
+
+#include "core/maths_helper.h"
+
+#include "particle_file.h"
+#include "render/draw_list.h"
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
 struct ParticleInstance;
 
 enum class eParticleSimulationType { PST_Default = 0, PST_Sparkle = 1 };
@@ -20,6 +31,8 @@ enum class eParticleType : uint32_t {
     PT_Plastic = 12,
     PT_Stone = 13,
     PT_Metal = 14,
+    PT_Factory = 15,
+    PT_Old = 16,
 
     PT_Invalid = 0xffffffff
 };
@@ -36,6 +49,9 @@ struct Particle {
     uint64_t Hashcode;
     eParticleType Type;
     eParticleSimulationType SimuType;
+    DrawList drawList;
+
+    ParticleInstance *activateParticles( bool bReset );
 };
 
 struct ParticleInstance {
@@ -46,4 +62,13 @@ struct ParticleInstance {
     float Scale;
     float Density;
     float Speed;
+    float StopTimer;
+    float Alpha;
+
+    std::vector<uint8_t> blob;
+    ParticleFile file;
+    uint8_t *pPrimaryEmitter;
+
+    void activate( bool bReset );
+    void stop();
 };

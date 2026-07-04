@@ -2,6 +2,7 @@
 #include "papers.h"
 
 #include "render/camera/gs_camera.h"
+#include "render/particles/gs_particles.h"
 
 #include "world/weather/gs_weather.h"
 
@@ -85,7 +86,9 @@ void Papers::setEnabled( bool bEnable ) {
     // FUN_008a63d0
     bEnabled = bEnable;
     if ( !bEnable && pLeafParticle != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: PARTICLES
+        // Release the flying-leaf particle instance back to GSParticles.
+        pLeafParticle->State = eParticleState::PS_Dead;
+        pLeafParticle->stop();
         pLeafParticle = nullptr;
     }
 }
@@ -137,14 +140,24 @@ void Papers::updateLeaf() {
         isAmbianceRegionActive( 0 );
 
     if ( bAmbianceActive ) {
-        if ( pLeafParticle == nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: PARTICLES
+        if ( pLeafParticle == nullptr ||
+             pLeafParticle->State != eParticleState::PS_Alive ) {
+            // Activate the FlyingLeaf particle. The original also binds a
+            // per-emitter geometry callback (FUN_008a64d0) to the activated
+            // instance; deferred with the ed particle engine.
+            pLeafParticle = ( gpParticles != nullptr )
+                                ? gpParticles->activateParticles(
+                                      eParticleType::PT_Leaf2, true )
+                                : nullptr;
         }
         if ( pLeafParticle != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: PARTICLES
+            // Reposition the leaf ahead of the camera each frame (FUN_008a7700
+            // + matrix translate); deferred with computeSpawnPosition.
         }
     } else if ( pLeafParticle != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: PARTICLES
+        // Deactivate the leaf particle when leaving the region.
+        pLeafParticle->State = eParticleState::PS_Killed;
+        pLeafParticle->stop();
         pLeafParticle = nullptr;
     }
 }

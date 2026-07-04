@@ -212,7 +212,7 @@ void GameMode::mainLoop( TestDriveGameInstance *param_1 ) {
     gEdRender.flushDrawCommands( false );
 
     gpFile->flushPendingAsync();
-    gpParticles->FUN_0080d330();
+    gpParticles->stopAllParticleSystems();
     gpTestDriveInstance->flushPendingFileInstanciation( false );
 
     for ( Manager *pMVar4 : registeredManagers ) {

@@ -6,6 +6,8 @@
 
 #include "core/maths_helper.h"
 
+struct ParticleInstance;
+
 struct Paper {
     float lifetime;
     const char *pName;
@@ -51,5 +53,5 @@ private:
     float paperMaxDistance;
     float leftMinDistance;
     float leafMaxDistance;
-    void *pLeafParticle; // TODO: Particles (strongly type this)
+    ParticleInstance *pLeafParticle;
 };

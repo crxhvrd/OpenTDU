@@ -5,8 +5,11 @@
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "filesystem/binary.h"
+#include "render/particles/gs_particles.h"
 #include "world/gs_world_streaming.h"
 #include "world/mng_zone.h"
+#include "world/sector_manager.h"
+#include "render/heightmap_renderer.h"
 
 static constexpr uint32_t kBinControllerPureDynSize = 28;
 static constexpr uint32_t kSoundRuntimeHeaderSize = 8;
@@ -24,6 +27,8 @@ Entity::Entity()
       pMechanism( nullptr ),
       bPrimaryInstance( false ),
       bShifted( false ),
+      bStreamManaged( false ),
+      bStreamActive( false ),
       defaultTileIndex( 0 ) {
     // FUN_007fb510
 }
@@ -43,13 +48,23 @@ bool Entity::onMessage( FlashMessage *pMessage ) {
         }
 
         uint64_t uVar3 = GetIdentifier64bit( pParticleName->pAsChar + 1 );
-        OTDU_UNIMPLEMENTED; // TODO: PARTICLES
+        if ( pParticleInstance != nullptr ) {
+            pParticleInstance->State = eParticleState::PS_Dead;
+            pParticleInstance->stop();
+        }
+        if ( gpParticles != nullptr ) {
+            ParticleInstance *pActivated =
+                gpParticles->activateParticles( uVar3, true );
+            if ( pActivated != nullptr ) {
+                pParticleInstance = pActivated;
+            }
+        }
         return true;
     }
     case kDisableParticles: {
         if ( pParticleInstance != nullptr ) {
             pParticleInstance->State = eParticleState::PS_Killed;
-            OTDU_UNIMPLEMENTED; // TODO: PARTICLES
+            pParticleInstance->stop();
         }
         return true;
     }
@@ -300,7 +315,16 @@ void Entity::unknownFunc4() {
     OTDU_UNIMPLEMENTED; // TODO: GAME EDITOR
 }
 
-void Entity::unknownFunc5() {
+bool Entity::isPMIInTile( const SectorHeightmap *pHeightmap, int32_t tileKey ) {
     // FUN_007faf00
-    OTDU_UNIMPLEMENTED; // TODO: HEIGHTMAP/PMI
+    if ( children.empty() ) {
+        return false;
+    }
+    const float inv = 1.0f / pHeightmap->tileSize;
+    const int32_t col =
+        (int32_t)( ( modelMatrix( 3, 0 ) - pHeightmap->worldOriginX ) * inv );
+    const int32_t row =
+        (int32_t)( ( modelMatrix( 3, 2 ) - pHeightmap->worldOriginZ ) * inv );
+    const int32_t tileIndex = ( 1 - row ) * kHeightmapNumRealTile - col + 1;
+    return tileIndex == tileKey;
 }

@@ -13,6 +13,7 @@
 #include "world/streaming_manager.h"
 #include "mng_electrical_network.h"
 #include "mng_ocean.h"
+#include "world/details/particles.h"
 #include "world/details/road_patch.h"
 #include "world/pst.h"
 
@@ -85,6 +86,9 @@ static inline void InstanciatePMI( SectorGeometry &geometry,
     grid.originZ = offsetZ - kPositionOffset;
     grid.bValid = true;
 
+    geometry.dynamicProps.reset();
+    geometry.dynamicProps.bValid = true;
+
     const uint32_t numTypes =
         *reinterpret_cast<const uint32_t *>( pHeader + 0x10 );
     const uint16_t *pType = pHeader + 0xe8;
@@ -153,6 +157,17 @@ static inline void InstanciatePMI( SectorGeometry &geometry,
                              kGridDim - 1 );
                     grid.cells[cellZ * kGridDim + cellX].push_back(
                         pInstanceEntity );
+
+                    const int32_t tileIndex =
+                        static_cast<int32_t>( pInstance[9] );
+                    pInstanceEntity->setTileKey( tileIndex );
+                    if ( tileIndex >= 0 &&
+                         tileIndex < (int32_t)DynamicPropStream::kNumCells ) {
+                        pInstanceEntity->setStreamManaged( true );
+                        pInstanceEntity->setStreamActive( false );
+                        geometry.dynamicProps.buckets[tileIndex].push_back(
+                            pInstanceEntity );
+                    }
                 }
             }
 
@@ -378,6 +393,93 @@ static void PreComputeImpostorDeltaUV( MassInstanceImpostor &inst,
     inst.SpriteSizeDelta = sqrtf( bs.x() * bs.x() + bs.z() * bs.z() );
 }
 
+static constexpr uint64_t kImpostorDetail2Hash = 0xb0f1234b0f123473ull;
+static constexpr uint32_t kImpostorUVMaterialCap = 0x40; // FUN_006ffd60 cap
+
+static Material *RegisterImpostorUVMaterial(
+    ImpostorGrid &grid,
+    std::vector<std::pair<Material *, Material *>> &dedup,
+    Material *pOrig,
+    float originX,
+    float originZ ) {
+    // FUN_006ffd60
+    for ( const std::pair<Material *, Material *> &e : dedup ) {
+        if ( e.first == pOrig ) {
+            return e.second;
+        }
+    }
+    if ( grid.uvOriginMaterials.size() >= kImpostorUVMaterialCap ) {
+        return nullptr;
+    }
+    const uint32_t size = pOrig->FUN_00504bc0( 2 );
+    if ( size == 0 ) {
+        return nullptr;
+    }
+    grid.materialCopies.emplace_back( size + 0x10 );
+    Material *pCopy = pOrig->copyTo( grid.materialCopies.back().data(), 2 );
+    if ( pCopy == nullptr ) {
+        grid.materialCopies.pop_back();
+        return nullptr;
+    }
+    SectorGeometry::WriteImpostorUVOrigin( pCopy, originX, originZ, true );
+    dedup.emplace_back( pOrig, pCopy );
+    grid.uvOriginMaterials.push_back( pCopy );
+    return pCopy;
+}
+
+static void SetupImpostorGrid1Materials(
+    ImpostorGrid &grid,
+    MassInstanceImpostor &inst,
+    std::vector<std::pair<Material *, Material *>> &dedup,
+    float originX,
+    float originZ ) {
+    // FUN_006fff20
+    Instance *pInstance = inst.pInstance;
+    if ( pInstance == nullptr ) {
+        return;
+    }
+    const uint32_t bankSize = pInstance->getMaterialBankSize();
+    if ( bankSize <= 0x10 ) {
+        return;
+    }
+    const uint32_t numMat =
+        ( bankSize - 0x10 ) / (uint32_t)sizeof( Render3DDHashEntry );
+    bool bBankPrivatized = false;
+
+    for ( uint32_t i = 0; i < numMat; i++ ) {
+        Material *pMat = pInstance->getMaterial( i );
+        if ( pMat == nullptr ) {
+            continue;
+        }
+        MaterialParameter *pParam = pMat->getParameterByIndex( 0 );
+        if ( pParam == nullptr || pParam->Hashcode != kImpostorDetail2Hash ) {
+            continue;
+        }
+
+        // Give this instance a private MBNK table before repointing entries so
+        // the shared template (used by other sectors) is not modified.
+        if ( !bBankPrivatized ) {
+            grid.materialBankCopies.emplace_back( bankSize );
+            RenderFile::Section *pCopyBank = pInstance->copyMaterialBank(
+                grid.materialBankCopies.back().data() );
+            if ( pCopyBank == nullptr ) {
+                grid.materialBankCopies.pop_back();
+                return;
+            }
+            pInstance->setMaterialBank( pCopyBank );
+            bBankPrivatized = true;
+        }
+
+        Material *pCopy =
+            RegisterImpostorUVMaterial( grid, dedup, pMat, originX, originZ );
+        if ( pCopy != nullptr ) {
+            Render3DDHashEntry *pEntries =
+                (Render3DDHashEntry *)( pInstance->getMaterialBank() + 1 );
+            pEntries[i].pEntry = (RenderFile::Section *)pCopy - 1;
+        }
+    }
+}
+
 static void BuildImpostorGrid( SectorGeometry &geometry,
                                uint32_t gridIndex,
                                const void *pPMI,
@@ -388,6 +490,8 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
     SectorGeometry::ImpostorRenderSet &set = geometry.impostorRenderSet;
     ImpostorGrid &grid = geometry.impostorGrids[gridIndex];
     grid.reset();
+
+    std::vector<std::pair<Material *, Material *>> uvDedup;
 
     const uint16_t *pHeader = static_cast<const uint16_t *>( pPMI );
     if ( pHeader == nullptr || pmiSize < 0x1d0 ) {
@@ -504,6 +608,10 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
                 if ( gridIndex == 0 ) {
                     PreComputeImpostorDeltaUV( inst, geometry.pImpostorTable );
                     InstallImpostorMaterial( inst );
+                }
+                if ( gridIndex == 1 ) {
+                    SetupImpostorGrid1Materials(
+                        grid, inst, uvDedup, gridOrigin.x(), gridOrigin.z() );
                 }
                 PreComputeImpostorLOD( inst, pInst );
 
@@ -697,6 +805,7 @@ void SectorBank::instanciate() {
                 static_cast<float>( pOwner->offsetX ), 0.0f,
                 static_cast<float>( pOwner->offsetY ), 0.0f );
             const Eigen::Vector4f gridOrigin = worldCorner - streamPos;
+            geometry.impostorUVAbsOrigin = worldCorner;
 
             uint32_t impSize = 0;
             void *pImpostorPMI =
@@ -763,12 +872,12 @@ void SectorBank::instanciate() {
         }
 
         if ( gpMngOcean != nullptr ) {
-            gpMngOcean->setupSectorWaterMaterials(
-                &geometry.impostorRenderSet.render2DM, true );
-            // TODO: FIXME: Update the 2DM bound to the sector 3DD (with
-            // updated/patches materials). The logic diverges from the original
-            // pcode (the original uses the waterRes 2DM instead).
+            gpMngOcean->setupSectorWaterMaterials( &geometry.render2DM, true );
+            geometry.render3DD.bindMaterialsBank( &geometry.render2DM );
+
             if ( geometry.impostorRenderSet.bValid ) {
+                gpMngOcean->setupSectorWaterMaterials(
+                    &geometry.impostorRenderSet.render2DM, true );
                 geometry.impostorRenderSet.render3DD.bindMaterialsBank(
                     &geometry.impostorRenderSet.render2DM );
             }
@@ -791,6 +900,29 @@ void SectorBank::instanciate() {
                 gpRoadPatch->installSectorProps( pOwner, pPlacement );
             }
         }
+
+        // The placed particle-emitter detail shares the same .PMI placement
+        // resource; it activates GSParticles systems for its own entries.
+        if ( gpParticlesDetail != nullptr ) {
+            uint32_t placementSize = 0;
+            void *pPlacement = getFirstEntry( static_cast<eAssetGroup>( 5 ),
+                                              static_cast<eAssetType>( 0x18 ),
+                                              &placementSize );
+#if OTDU_PARTICLES_DIAG
+            OTDU_LOG_ALWAYS( "[PART-DIAG] instanciate sector=%p "
+                             "placement(5,0x18)=%p size=%u\n",
+                             (void *)pOwner, pPlacement, placementSize );
+#endif
+            if ( pPlacement != nullptr ) {
+                gpParticlesDetail->installSector( pOwner, pPlacement );
+            }
+        }
+#if OTDU_PARTICLES_DIAG
+        else {
+            OTDU_LOG_ALWAYS( "[PART-DIAG] instanciate: gpParticlesDetail is "
+                             "null\n" );
+        }
+#endif
 
         if ( gpScenaric != nullptr && gpWorld != nullptr &&
              gpWorld->getStreamingManager() != nullptr ) {
@@ -1236,6 +1368,7 @@ void Sector::reset() {
     geometry.mngActor.terminate();
     geometry.entityGrid.cells.clear();
     geometry.entityGrid.bValid = false;
+    geometry.dynamicProps.reset();
 
     if ( pSpotBlob != nullptr ) {
         if ( gpScenaric != nullptr ) {
@@ -1248,6 +1381,9 @@ void Sector::reset() {
     // slot's ribbon items point directly into the bank resource).
     if ( gpRoadPatch != nullptr ) {
         gpRoadPatch->uninstallSector( this );
+    }
+    if ( gpParticlesDetail != nullptr ) {
+        gpParticlesDetail->uninstallSector( this );
     }
 
     bank.unload();
