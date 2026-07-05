@@ -735,8 +735,7 @@ namespace {
 #elif OTDU_MSVC
             unsigned long orientationIndex;
             _BitScanForward( &orientationIndex, mask );
-            pInstanceLifeSet->setOrientation(
-                (uint32_t *)( orientationIndex ) );
+            pInstanceLifeSet->setOrientation( (uint32_t)( orientationIndex ) );
 #endif
             OTDU_LOG_ALWAYS(
                 "[LIFESET] aligned SetOrientation=%u (mask=0x%x)\n",
