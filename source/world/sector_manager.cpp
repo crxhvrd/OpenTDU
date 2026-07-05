@@ -239,6 +239,10 @@ static void BuildImpostorRenderSet( BankInstance &bank,
             for ( uint32_t b = 0; b < set.num2DB; b++ ) {
                 set.render2DM.bindBitmapReference( &set.set2DB[b].Resource );
             }
+            for ( uint32_t b = 0; b < geometry.num2DB; b++ ) {
+                set.render2DM.bindBitmapReference(
+                    &geometry.set2DB[b].Resource );
+            }
             for ( uint32_t u = 0; u < set.numUVA; u++ ) {
                 set.render2DM.bindUVAnimationReference( &set.setUVA[u] );
             }

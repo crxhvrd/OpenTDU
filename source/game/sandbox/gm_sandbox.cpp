@@ -180,6 +180,11 @@ void GMSandbox::drawDebug( float deltaTime ) {
         gpCamera->getMouseCamera()->setPosition(
             { 9122.41f, 0.65f, 9847.77f, 1.0f } );
     }
+    ImGui::SameLine();
+    if ( ImGui::Button( "Tunnel" ) ) {
+        gpCamera->getMouseCamera()->setPosition(
+            { 50037.879f, 356.729f, 40454.828f, 1.0f } );
+    }
 }
 #endif
 
