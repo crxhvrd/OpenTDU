@@ -1,10 +1,19 @@
 #include "shared.h"
 #include "papers.h"
 
+#include "game/avatar/gs_cloth_system.h"
+
+#include "render/2dm.h"
+#include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
 #include "render/particles/gs_particles.h"
 
 #include "world/weather/gs_weather.h"
+
+#include <cstdlib>
+
+// DEBUG: Force papers spawning without GSAmbiance (unimplemented)
+bool gDebugForcePapers = false;
 
 static constexpr const char *kPaperNames[Papers::kNumPapers] = { // DAT_00f7f3b8
     "J_01", "J_02", "J_04", "J_05", "J_06", "J_07", "J_08", "J_09" };
@@ -115,19 +124,48 @@ void Papers::updatePapers( float deltaTime ) {
         paperNextSpawnTime = paperSpawnTime;
     }
 
+    const Eigen::Vector4f testWind( 4.0f, 0.0f, 1.0f, 0.0f );
+
     for ( int32_t i = 0; i < kNumPapers; i++ ) {
         Paper &paper = papers[i];
 
         if ( paper.pCloth != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: CLOTH
-            paper.lifetime -= scaledDt;
-        } else if ( paper.lifetime < 0.0f && spawnBudget > 0 ) {
-            Eigen::Vector4f spawnPos;
-            computeSpawnPosition( paperMinDistance, paperMaxDistance,
-                                  paperMedDistance, spawnPos );
-            OTDU_UNIMPLEMENTED;    // TODO: CLOTH
-            paper.lifetime = 0.5f; // FLOAT_00f41674
-            spawnBudget--;
+            ClothInstance *pCloth =
+                static_cast<ClothInstance *>( paper.pCloth );
+            if ( pCloth->State == 0 ) {
+                paper.lifetime = -1.0f;
+                paper.pCloth = nullptr;
+            } else {
+                paper.lifetime -= scaledDt;
+                if ( paper.lifetime < 0.0f ) {
+                    pCloth->State = 0;
+                    pCloth->bVisible = 0;
+                    pCloth->pMaterial = nullptr;
+                    paper.pCloth = nullptr;
+                } else {
+                    pCloth->Acceleration = testWind;
+                }
+            }
+        } else if ( paper.lifetime < 0.0f && spawnBudget > 0 &&
+                    gpClothSystem != nullptr ) {
+            ClothInstance *pCloth = gpClothSystem->allocateCloth();
+            paper.pCloth = pCloth;
+            if ( pCloth != nullptr ) {
+                Eigen::Vector4f spawnPos;
+                computeSpawnPosition( paperMinDistance, paperMaxDistance,
+                                      paperMedDistance, spawnPos );
+
+                Matrix4x4f_t transform = Matrix4x4f_t::Identity();
+                transform.row( 3 ) = spawnPos;
+
+                Material *pMat = render2DM.getMaterialAtIndex( 0 );
+                pCloth->setup( 8, 8, 1.5f, 2.0f, transform, pMat, 4 );
+                pCloth->SolverIterations = 2; // FUN_008a7070 spawn override
+                OTDU_UNIMPLEMENTED;           // TODO: PHYSICS
+
+                paper.lifetime = 0.5f; // FLOAT_00f41674
+                spawnBudget--;
+            }
         }
     }
 }
@@ -168,7 +206,11 @@ void Papers::releasePapers() {
         Paper &paper = papers[i];
         paper.lifetime = -1.0f; // FLOAT_00f41664
         if ( paper.pCloth != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: CLOTH
+            ClothInstance *pCloth =
+                static_cast<ClothInstance *>( paper.pCloth );
+            pCloth->State = 0;
+            pCloth->bVisible = 0;
+            pCloth->pMaterial = nullptr;
             paper.pCloth = nullptr;
         }
     }
@@ -176,6 +218,9 @@ void Papers::releasePapers() {
 
 bool Papers::isAmbianceRegionActive( int32_t regionId ) {
     // FUN_00901c10
+    if ( gDebugForcePapers ) {
+        return true;
+    }
     (void)regionId;
     OTDU_UNIMPLEMENTED; // TODO: WORLD
     return false;
@@ -186,9 +231,21 @@ void Papers::computeSpawnPosition( float minDistance,
                                    float mediumDistance,
                                    Eigen::Vector4f &outPos ) {
     // FUN_008a7700
-    OTDU_UNIMPLEMENTED; // TODO: WORLD
-    (void)minDistance;
-    (void)maxDistance;
-    (void)mediumDistance;
-    outPos = Eigen::Vector4f::Zero();
+    auto rand01 = []() { return ( rand() & 0x7fff ) / 32768.0f; };
+
+    CameraGame *pCam = gpCamera->getDefaultCamera();
+    const Matrix4x4f_t &camToWorld = pCam->getCamToWorld();
+    const Eigen::Vector3f camPos = pCam->getWorldPositionOffset();
+    const Eigen::Vector3f right = camToWorld.row( 0 ).head<3>();
+    const Eigen::Vector3f up = camToWorld.row( 1 ).head<3>();
+    const Eigen::Vector3f forward = -camToWorld.row( 2 ).head<3>();
+
+    const float distance =
+        minDistance + rand01() * ( maxDistance - minDistance );
+    const float lateral = ( rand01() - 0.5f ) * mediumDistance;
+    const float height = 2.0f + rand01() * 8.0f;
+
+    const Eigen::Vector3f pos =
+        camPos + forward * distance + right * lateral + up * height;
+    outPos = Eigen::Vector4f( pos.x(), pos.y(), pos.z(), 1.0f );
 }
