@@ -272,6 +272,32 @@ void GSWorld::drawDebug( float deltaTime ) {
         spacer();
         ImGui::SameLine();
         shiftButton( "SE", CD_SouthEast );
+
+        // Drive the stream centre from the free camera so a remote sector can
+        // be loaded with freecam.
+        static bool sFollowCamera = false;
+        ImGui::Checkbox( "Stream follows camera", &sFollowCamera );
+        const bool bClicked = ImGui::Button( "Recenter @ camera" );
+        if ( sFollowCamera || bClicked ) {
+            const Eigen::Vector3f camPos =
+                gpCamera->getActiveCamera()->getWorldPosition();
+            pStreaming->requestDebugJump(
+                Eigen::Vector4f( camPos.x(), camPos.y(), camPos.z(), 1.0f ) );
+        }
+
+        // Jump the stream centre to a named cell (areaX, areaY, sectorX,
+        // sectorY) regardless of where the camera is.
+        static int sCell[4] = { 0, 0, 0, 0 };
+        ImGui::PushItemWidth( 200.0f );
+        ImGui::InputInt4( "areaXY / sectorXY", sCell );
+        ImGui::PopItemWidth();
+        if ( ImGui::Button( "Jump to cell" ) ) {
+            const GridPos2D areaCell{ sCell[0], sCell[1] };
+            const GridPos2D sectorCell{ sCell[2], sCell[3] };
+            Eigen::Vector4f pos = Eigen::Vector4f::Zero();
+            pStreaming->computeCellWorldPosition( pos, sectorCell, areaCell );
+            pStreaming->requestDebugJump( pos );
+        }
     }
 }
 #endif

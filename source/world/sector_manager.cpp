@@ -564,6 +564,7 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
         if ( pDef == nullptr ) {
             pDef = set.render3DD.findInstance( hashcode );
         }
+
         if ( pDef == nullptr || kind == 0 || kind == 2 ) {
             pType =
                 advanceInstances( pInstance, instanceStride, instanceCount );
@@ -589,6 +590,14 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
             Instance *pInst = set.collection.instantiate(
                 reinterpret_cast<InstanceEntry *>( pDef + 1 ), hashcode );
             if ( pInst != nullptr ) {
+                // Bind bones for skinned near-props (eg. railguards)
+                if ( kind == 3 ) {
+                    pInst->setBones(
+                        reinterpret_cast<Matrix4x4f_t *>( const_cast<uint8_t *>(
+                            reinterpret_cast<const uint8_t *>( pInstance ) +
+                            0x20 ) ) );
+                }
+
                 pInst->setColor( color );
                 pInst->setModelMatrix( m );
                 pInst->getFlagsWrite() = ( pInst->getFlags() | 0x30 ) & ~0x3u;

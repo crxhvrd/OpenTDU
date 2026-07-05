@@ -185,6 +185,11 @@ void GMSandbox::drawDebug( float deltaTime ) {
         gpCamera->getMouseCamera()->setPosition(
             { 50037.879f, 356.729f, 40454.828f, 1.0f } );
     }
+    ImGui::SameLine();
+    if ( ImGui::Button( "Diamond Head" ) ) {
+        gpCamera->getMouseCamera()->setPosition(
+            { 48442.840f, 190.627f, 52137.379f, 1.0f } );
+    }
 }
 #endif
 

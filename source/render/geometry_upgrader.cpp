@@ -165,7 +165,7 @@ namespace {
             n->NumBones = d->NumBones;
             n->MaterialID = d->MaterialID;
             n->IndexType = d->IndexType;
-            n->VertexAttributesLayout = d->VertexAttributesLayout;
+            n->VertexAttributesLayout = PVL_Default;
             n->VertexOffset = d->VertexOffset;
             n->NumVertex = d->NumVertex;
             n->IndexOffset = d->IndexOffset;
