@@ -619,12 +619,12 @@ namespace {
     }
 
     // Instantiate a life set (ET_LSET) straight out of the worldlifeset pack:
-    // load + prepare the templates (deserialize -> resolve cinematic refs), grab
-    // the first ET_LSET template, then run it through MngActor::instanciateActor
-    // (instanciate -> initializeInstance -> initialize). The instance is the
-    // logical ambient-life spawner; it has no geometry of its own, so the log is
-    // the result. Cinematic playback (startPlaying) is a separate step still
-    // blocked on EntityCinematic.
+    // load + prepare the templates (deserialize -> resolve cinematic refs),
+    // grab the first ET_LSET template, then run it through
+    // MngActor::instanciateActor (instanciate -> initializeInstance ->
+    // initialize). The instance is the logical ambient-life spawner; it has no
+    // geometry of its own, so the log is the result. Cinematic playback
+    // (startPlaying) is a separate step still blocked on EntityCinematic.
     void spawnLifeSet() {
         if ( gpScenaric == nullptr || gpActiveGMScene == nullptr ) {
             OTDU_LOG_ALWAYS( "[LIFESET] no scenaric / active scene\n" );
@@ -674,9 +674,10 @@ namespace {
                 playable.push_back( pCandidate );
             }
         }
-        OTDU_LOG_ALWAYS( "[LIFESET] worldlifeset: %d ET_LSET (%d populated, %zu "
-                         "playable)\n",
-                         numLifeSets, numPopulated, playable.size() );
+        OTDU_LOG_ALWAYS(
+            "[LIFESET] worldlifeset: %d ET_LSET (%d populated, %zu "
+            "playable)\n",
+            numLifeSets, numPopulated, playable.size() );
         if ( playable.empty() ) {
             OTDU_LOG_ALWAYS( "[LIFESET] no playable ET_LSET\n" );
             return;
@@ -704,7 +705,8 @@ namespace {
 
         // Position it at the camera target so its cinematics play where we are
         // looking. startPlayingLifeCinematic anchors on (lifeSetPos - streaming
-        // shift), so add the shift back to land the anchor on the camera target.
+        // shift), so add the shift back to land the anchor on the camera
+        // target.
         Eigen::Vector3f camTarget = Eigen::Vector3f::Zero();
         if ( gpCamera != nullptr ) {
             camTarget = gpCamera->getRenderCamera()->getTarget();
@@ -713,31 +715,36 @@ namespace {
                     ? gpWorldStreaming->getPosition()
                     : Eigen::Vector4f::Zero();
             Matrix4x4f_t m = Matrix4x4f_t::Identity();
-            m.row( 3 ) =
-                Eigen::Vector4f( camTarget.x() + shift.x(),
-                                 camTarget.y() + shift.y(),
-                                 camTarget.z() + shift.z(), 1.0f );
+            m.row( 3 ) = Eigen::Vector4f( camTarget.x() + shift.x(),
+                                          camTarget.y() + shift.y(),
+                                          camTarget.z() + shift.z(), 1.0f );
             pInstance->setTransform( m, true );
         }
 
         // Align SetOrientation to a cinematic that has content so the play gate
-        // passes (the spot/approach trigger normally sets this). Pick the lowest
-        // set bit of the orientation mask.
+        // passes (the spot/approach trigger normally sets this). Pick the
+        // lowest set bit of the orientation mask.
         EntityLifeSet *pInstanceLifeSet =
             static_cast<EntityLifeSet *>( pInstance );
         const uint32_t mask = pLifeSet->debugOrientationMask();
         if ( mask != 0 ) {
+#ifdef OTDU_CLANG
             const uint32_t orientationIndex =
                 static_cast<uint32_t>( __builtin_ctz( mask ) );
+#elif OTDU_MSVC
+            uint32_t orientationIndex;
+            _BitScanForward( &orientationIndex, mask );
+#endif
             pInstanceLifeSet->setOrientation( orientationIndex );
-            OTDU_LOG_ALWAYS( "[LIFESET] aligned SetOrientation=%u (mask=0x%x)\n",
-                             orientationIndex, mask );
+            OTDU_LOG_ALWAYS(
+                "[LIFESET] aligned SetOrientation=%u (mask=0x%x)\n",
+                orientationIndex, mask );
         }
 
         // Mark it as an interior life cinematic: on the next manager tick,
         // EntityLifeSet::tick self-registers it (addLifeSet -> startPlaying),
-        // which spawns + plays its cinematics. This is the auto-play trigger the
-        // interior/spot streaming would set on load.
+        // which spawns + plays its cinematics. This is the auto-play trigger
+        // the interior/spot streaming would set on load.
         pInstanceLifeSet->markInterior();
         gLiveLifeSet.pInstance = pInstanceLifeSet;
         gLiveLifeSet.name = pTemplate->getInstanceName();
@@ -749,11 +756,12 @@ namespace {
     }
 
     // Drive a full EntityCinematic (the entity wrapper, not the raw player) the
-    // way the life-set and cin-viewer paths do: new -> setBank -> setCutsceneName
+    // way the life-set and cin-viewer paths do: new -> setBank ->
+    // setCutsceneName
     // -> initialize -> start. start() -> begin() builds the media stack and
-    // instanciates the cinematic actor into the scene actor manager; the per-frame
-    // tick() runs the evaluator that places/animates it. Validates the wrapper
-    // lifecycle (ctor/start/begin/stop no longer assert).
+    // instanciates the cinematic actor into the scene actor manager; the
+    // per-frame tick() runs the evaluator that places/animates it. Validates
+    // the wrapper lifecycle (ctor/start/begin/stop no longer assert).
     struct LiveEntityCinematic {
         EntityCinematic *pCine = nullptr;
         bool latchCamera = true;
@@ -795,10 +803,10 @@ namespace {
         }
         pCine->start( true );
         gLiveEntityCine.pCine = pCine;
-        OTDU_LOG_ALWAYS(
-            "[CINENT] '%s' via EntityCinematic: flags=0x%x dur=%.2f playing=%d\n",
-            pCutsceneName, pCine->getFlags(), pCine->getDuration(),
-            pCine->isPlaying() ? 1 : 0 );
+        OTDU_LOG_ALWAYS( "[CINENT] '%s' via EntityCinematic: flags=0x%x "
+                         "dur=%.2f playing=%d\n",
+                         pCutsceneName, pCine->getFlags(), pCine->getDuration(),
+                         pCine->isPlaying() ? 1 : 0 );
     }
 
     void tickLiveEntityCinematic() {
@@ -1090,8 +1098,10 @@ namespace TestDrive {
         ImGui::SeparatorText( "Life set (auto-play)" );
         ImGui::TextWrapped(
             "Instantiate the first ET_LSET template from worldlifeset at the "
-            "camera, mark it interior, and let the manager tick auto-activate it "
-            "(EntityLifeSet::tick -> addLifeSet -> startPlaying), which spawns + "
+            "camera, mark it interior, and let the manager tick auto-activate "
+            "it "
+            "(EntityLifeSet::tick -> addLifeSet -> startPlaying), which spawns "
+            "+ "
             "plays its cinematics with NO further input. This is the in-world "
             "trigger the interior/spot streaming sets on load." );
         if ( ImGui::Button( "Spawn + auto-play life set" ) ) {
@@ -1114,7 +1124,8 @@ namespace TestDrive {
         ImGui::TextWrapped(
             "Play a cutscene through the full EntityCinematic lifecycle "
             "(initialize -> start -> begin -> tick): builds the media stack, "
-            "spawns the actor into the scene, and runs the evaluator each frame. "
+            "spawns the actor into the scene, and runs the evaluator each "
+            "frame. "
             "This is the path a life set uses to play its cinematics." );
         ImGui::Checkbox( "Latch camera##entcine",
                          &gLiveEntityCine.latchCamera );

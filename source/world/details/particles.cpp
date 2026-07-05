@@ -38,8 +38,7 @@ Particles::~Particles() {
 }
 
 bool Particles::initialize() {
-    // FUN_008a4f00 - the detail owns no assets; it only drives GSParticles for
-    // the per-sector emitter placements streamed in installSector().
+    // FUN_008a4f00
     bInitialized = true;
     return true;
 }
@@ -53,7 +52,7 @@ void Particles::tick( float ) {
 }
 
 void Particles::draw() {
-    // FUN_008a4ef0 (TestDrive::NOP) - the placements are rendered by GSParticles.
+    // FUN_008a4ef0
 }
 
 void Particles::terminate() {
@@ -116,40 +115,15 @@ void Particles::updateGroup( ParticleSectorGroup &group,
     const Eigen::Vector4f camPos = camMat.row( 3 );
     const float fadeStart = visibilityDistSquared * kFadeStartFactor;
 
-#if OTDU_PARTICLES_DIAG
-    const bool bLogNow = !group.bDiagLogged;
-    if ( bLogNow ) {
-        OTDU_LOG_ALWAYS(
-            "[PART-DIAG] updateGroup active pSector=%p state=%d records=%d "
-            "camPos=(%.1f, %.1f, %.1f) visDist2=%.0f gpParticles=%p\n",
-            (void *)group.pSector, group.pSector->state, group.numRecords,
-            camPos.x(), camPos.y(), camPos.z(), visibilityDistSquared,
-            (void *)gpParticles );
-    }
-#endif
-
     const auto &lodCache = group.pSector->geometry.heightmapLODCache;
 
     for ( int32_t i = 0; i < group.numRecords; i++ ) {
         ParticleEmitterPlacement &rec = group.records[i];
 
-        // Per-tile heightmap visibility cull (FUN_008a5060): the original skips
-        // emitters whose heightmap clipmap tile is frustum / far-plane-footprint
-        // culled this frame (LOD byte == 0xff). RenderContext::drawHeightmap
-        // computes that per-tile LOD each frame and caches it on the sector
-        // geometry (the level-0 18x18 grid), indexed by the emitter's authored
-        // .PMI tile index (record.visibilityIndex). 0xfe (below-sea flat) and the
-        // real LOD levels 0..4 all count as visible.
         const uint8_t tileLod = ( rec.visibilityIndex < lodCache.size() )
                                     ? lodCache[rec.visibilityIndex]
                                     : 0;
         if ( tileLod == 0xff ) {
-#if OTDU_PARTICLES_DIAG
-            if ( bLogNow ) {
-                OTDU_LOG_ALWAYS( "[PART-DIAG]   rec[%d] LODCULL visIdx=%u\n", i,
-                                 rec.visibilityIndex );
-            }
-#endif
             releaseEmitter( rec );
             continue;
         }
@@ -159,33 +133,17 @@ void Particles::updateGroup( ParticleSectorGroup &group,
         const float dist2 = delta.x() * delta.x() + delta.y() * delta.y() +
                             delta.z() * delta.z();
         if ( dist2 > visibilityDistSquared ) {
-#if OTDU_PARTICLES_DIAG
-            if ( bLogNow ) {
-                OTDU_LOG_ALWAYS( "[PART-DIAG]   rec[%d] OUT dist2=%.0f\n", i,
-                                 dist2 );
-            }
-#endif
             releaseEmitter( rec );
             continue;
         }
 
         if ( rec.pInstance == nullptr ||
              rec.pInstance->State != eParticleState::PS_Alive ) {
-            rec.pInstance = ( gpParticles != nullptr )
-                                ? gpParticles->activateParticles( rec.hashcode,
-                                                                  false )
-                                : nullptr;
+            rec.pInstance =
+                ( gpParticles != nullptr )
+                    ? gpParticles->activateParticles( rec.hashcode, false )
+                    : nullptr;
         }
-
-#if OTDU_PARTICLES_DIAG
-        if ( bLogNow ) {
-            OTDU_LOG_ALWAYS( "[PART-DIAG]   rec[%d] IN dist2=%.0f visIdx=%u "
-                             "lod=0x%02x hash=%016llx activated=%p\n",
-                             i, dist2, rec.visibilityIndex, tileLod,
-                             (unsigned long long)rec.hashcode,
-                             (void *)rec.pInstance );
-        }
-#endif
 
         if ( rec.pInstance != nullptr ) {
             rec.pInstance->Matrix = rec.transform;
@@ -204,44 +162,21 @@ void Particles::updateGroup( ParticleSectorGroup &group,
             }
         }
     }
-
-#if OTDU_PARTICLES_DIAG
-    if ( bLogNow ) {
-        group.bDiagLogged = true;
-    }
-#endif
 }
 
 void Particles::installSector( Sector *pSector, void *pPMIResource ) {
-    // FUN_008a54a0 + FUN_008a52c0. The placement blob is the same .PMI resource
-    // (asset group 5, type 0x18) consumed by RoadPatch::installSectorProps; each
-    // subsystem keeps the entries whose hashcode it can resolve.
+    // FUN_008a54a0 + FUN_008a52c0
     if ( !bInitialized || pPMIResource == nullptr ) {
-#if OTDU_PARTICLES_DIAG
-        OTDU_LOG_ALWAYS( "[PART-DIAG] installSector SKIP: bInitialized=%d res=%p\n",
-                         (int)bInitialized, pPMIResource );
-#endif
         return;
     }
     const int32_t slotIndex = findSectorSlot( pSector );
     if ( slotIndex < 0 ) {
-#if OTDU_PARTICLES_DIAG
-        OTDU_LOG_ALWAYS(
-            "[PART-DIAG] installSector SKIP: sector %p not in slot array\n",
-            (void *)pSector );
-#endif
         return;
     }
 
     const uint16_t *pHeader = static_cast<const uint16_t *>( pPMIResource );
     if ( pHeader[0] != 0 || pHeader[1] != 6 ||
          *reinterpret_cast<const uint32_t *>( pHeader + 6 ) != kPMIMagic ) {
-#if OTDU_PARTICLES_DIAG
-        OTDU_LOG_ALWAYS( "[PART-DIAG] installSector SKIP: bad header "
-                         "hdr0=%u hdr1=%u magic=%08x\n",
-                         pHeader[0], pHeader[1],
-                         *reinterpret_cast<const uint32_t *>( pHeader + 6 ) );
-#endif
         return;
     }
 
@@ -254,9 +189,6 @@ void Particles::installSector( Sector *pSector, void *pPMIResource ) {
 
     ParticleSectorGroup &group = groups[slotIndex];
     group.numRecords = 0;
-#if OTDU_PARTICLES_DIAG
-    group.bDiagLogged = false;
-#endif
 
     const uint32_t numTypes =
         *reinterpret_cast<const uint32_t *>( pHeader + 0x10 );
@@ -317,20 +249,6 @@ void Particles::installSector( Sector *pSector, void *pPMIResource ) {
     }
 
     group.pSector = pSector;
-
-#if OTDU_PARTICLES_DIAG
-    OTDU_LOG_ALWAYS( "[PART-DIAG] installSector slot=%d parsed %d records "
-                     "(sectorOffset=%d,%d)\n",
-                     slotIndex, group.numRecords, pSector->offsetX,
-                     pSector->offsetY );
-    for ( int32_t d = 0; d < group.numRecords; d++ ) {
-        const ParticleEmitterPlacement &r = group.records[d];
-        OTDU_LOG_ALWAYS( "[PART-DIAG]   rec[%d] hash=%016llx "
-                         "pos=(%.1f, %.1f, %.1f) scale=%.3f\n",
-                         d, (unsigned long long)r.hashcode, r.transform( 3, 0 ),
-                         r.transform( 3, 1 ), r.transform( 3, 2 ), r.scale );
-    }
-#endif
 }
 
 void Particles::uninstallSector( Sector *pSector ) {

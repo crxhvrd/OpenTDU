@@ -912,21 +912,11 @@ void SectorBank::instanciate() {
             void *pPlacement = getFirstEntry( static_cast<eAssetGroup>( 5 ),
                                               static_cast<eAssetType>( 0x18 ),
                                               &placementSize );
-#if OTDU_PARTICLES_DIAG
-            OTDU_LOG_ALWAYS( "[PART-DIAG] instanciate sector=%p "
-                             "placement(5,0x18)=%p size=%u\n",
-                             (void *)pOwner, pPlacement, placementSize );
-#endif
+
             if ( pPlacement != nullptr ) {
                 gpParticlesDetail->installSector( pOwner, pPlacement );
             }
         }
-#if OTDU_PARTICLES_DIAG
-        else {
-            OTDU_LOG_ALWAYS( "[PART-DIAG] instanciate: gpParticlesDetail is "
-                             "null\n" );
-        }
-#endif
 
         if ( gpScenaric != nullptr && gpWorld != nullptr &&
              gpWorld->getStreamingManager() != nullptr ) {
