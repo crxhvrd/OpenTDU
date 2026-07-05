@@ -731,11 +731,13 @@ namespace {
 #ifdef OTDU_CLANG
             const uint32_t orientationIndex =
                 static_cast<uint32_t>( __builtin_ctz( mask ) );
-#elif OTDU_MSVC
-            uint32_t orientationIndex;
-            _BitScanForward( &orientationIndex, mask );
-#endif
             pInstanceLifeSet->setOrientation( orientationIndex );
+#elif OTDU_MSVC
+            unsigned long orientationIndex;
+            _BitScanForward( &orientationIndex, mask );
+            pInstanceLifeSet->setOrientation(
+                static_cast<uint32_t *>( orientationIndex ) );
+#endif
             OTDU_LOG_ALWAYS(
                 "[LIFESET] aligned SetOrientation=%u (mask=0x%x)\n",
                 orientationIndex, mask );
