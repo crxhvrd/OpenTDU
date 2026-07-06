@@ -3,10 +3,8 @@
 
 EntityFlag::EntityFlag() : Entity(), Field0( 0 ), Field1( 0 ), Field2( 0 ) {
     // FUN_00424280
-    OTDU_UNIMPLEMENTED;
 }
 
 EntityFlag::~EntityFlag() {
     // FUN_00424120
-    OTDU_UNIMPLEMENTED;
 }
