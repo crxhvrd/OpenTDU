@@ -92,7 +92,10 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED; // TODO: IK-offset DB (FUN_008007f0) + Woosh (needs
+                        // GSAudio)
+
+    introTutorial.initialize( spotList );
 
     avatarManager.initialize();
 
@@ -262,6 +265,7 @@ void GSScenaric::prepareWorldEntityTemplates() {
             spotsBank.getFirstEntry( static_cast<eAssetGroup>( 8 ),
                                      static_cast<eAssetType>( 0x13 ), nullptr );
         spotList.installWorldSpots( pSpotResource );
+        introTutorial.initialize( spotList );
 
         // The initial sectors streamed in before gpScenaric existed, so they
         // never installed their per-sector spot lists; do it now.
