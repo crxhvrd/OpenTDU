@@ -16,6 +16,7 @@
 #include "world/details/particles.h"
 #include "world/details/road_patch.h"
 #include "world/pst.h"
+#include "physics/gs_physics.h"
 
 constexpr uint32_t kPMIMagic = 0x494d502e; // ".PMI"
 
@@ -936,6 +937,18 @@ void SectorBank::instanciate() {
         // Mark the sector as loaded (the original sets this from the async
         // geometry callback); computeGroundColor gates on state == 1.
         pOwner->state = 1;
+        if ( gpPhysics != nullptr && geometry.pHeightmapInstance != nullptr ) {
+            const float *pHeights = nullptr;
+            int32_t stride = 0;
+            float quadSize = 0.0f;
+            if ( GetHeightmapSampleGrid( geometry.pHeightmapInstance, &pHeights,
+                                         &stride, &quadSize ) ) {
+                gpPhysics->addHeightfield( geometry.pHeightmapInstance,
+                                           pHeights, stride, quadSize,
+                                           pOwner->heightmap.worldOriginX,
+                                           pOwner->heightmap.worldOriginZ );
+            }
+        }
     }
 
     markAsInstanciated();
@@ -1349,6 +1362,9 @@ void Sector::reset() {
     geometry.renderInstanceAbsPos.clear();
 
     if ( geometry.pHeightmapInstance != nullptr ) {
+        if ( gpPhysics != nullptr ) {
+            gpPhysics->removeHeightfield( geometry.pHeightmapInstance );
+        }
         geometry.collection.uninstantiate( geometry.pHeightmapInstance );
         geometry.pHeightmapInstance = nullptr;
     }

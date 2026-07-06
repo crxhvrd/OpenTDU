@@ -240,6 +240,52 @@ float SampleGroundHeight( Instance *pHeightmapInstance,
     return ( bot < top ) ? top - ( top - bot ) * fz : ( bot - top ) * fz + top;
 }
 
+bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
+                             const float **ppHeights,
+                             int32_t *pStride,
+                             float *pQuadSize ) {
+    if ( pHeightmapInstance == nullptr ||
+         pHeightmapInstance->getNumLODs() == 0 ) {
+        return false;
+    }
+
+    InstanceLOD &lod = pHeightmapInstance->getLOD( 0 );
+    if ( lod.pHashcode == nullptr ) {
+        return false;
+    }
+
+    RenderFile::Section *pSection = lod.pHashcode->pEntry;
+    if ( pSection == nullptr || pSection->Type != kHeightmapMagic ) {
+        return false;
+    }
+
+    Heightmap *pHmap =
+        (Heightmap *)( (uint8_t *)pSection + sizeof( RenderFile::Section ) );
+    if ( pHmap->PrimitiveSection == nullptr ) {
+        return false;
+    }
+
+    Primitive *pPrimitive =
+        (Primitive *)( (uint8_t *)pHmap->PrimitiveSection + 0x10 );
+    void *pContent = Render3DG::GetContentAfterOffsets( pPrimitive );
+    if ( pContent == nullptr ) {
+        return false;
+    }
+
+    const int32_t stride =
+        (int32_t)pHmap->NumTileX * (int32_t)pHmap->NumTiles + 1;
+    const float quadSize = pHmap->TileSize;
+    if ( stride <= 1 || quadSize <= 0.0f ) {
+        return false;
+    }
+
+    *ppHeights =
+        (const float *)( (uint8_t *)pContent + kHeightmapHeightsOffset );
+    *pStride = stride;
+    *pQuadSize = quadSize;
+    return true;
+}
+
 struct SectorShiftRow {
     eCardinalDirection trailing[3];
     eCardinalDirection leading[3];

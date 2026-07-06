@@ -20,6 +20,10 @@ float SampleGroundHeight( Instance *pHeightmapInstance,
                           const SectorHeightmap &heightmap,
                           float worldX,
                           float worldZ );
+bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
+                             const float **ppHeights,
+                             int32_t *pStride,
+                             float *pQuadSize );
 // TODO: Move to helper header
 
 class StreamingManager {
@@ -142,9 +146,8 @@ private:
     void stitchActiveAreaSeams();
     void stitchSectorEdgeToArea( Sector &sector, eCardinalDirection direction );
     void stitchSectorsToArea();
-    void stitchSectorToSector( Sector &a,
-                               Sector &b,
-                               eCardinalDirection direction );
+    void
+    stitchSectorToSector( Sector &a, Sector &b, eCardinalDirection direction );
     void stitchSectorToSectorSeams();
     void stitchAreaToArea( Area &a, Area &b, int32_t dx, int32_t dy );
     void stitchAreaToAreaSeams();

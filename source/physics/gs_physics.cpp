@@ -23,6 +23,7 @@
 #include <Jolt/Physics/Body/BodyID.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/EActivation.h>
@@ -48,10 +49,12 @@ static bool gbShowGMeter = false;        // DAT — G-meter overlay visibility
 static float gPhysicsTimeScale = 1.0f; // DAT_00f8a2ec
 
 // If incoming dt exceeds this, clamp to kPhysicsMaxDt.
-static constexpr float kPhysicsDtClampThreshold = 0.1f; // DAT_00f41c08 (~1/10s)
+static constexpr float kPhysicsDtClampThreshold =
+    1.0f / 45.0f; // DAT_00f41c08 (0x3cb60b61)
 
 // Clamped dt value used when the step would be too large.
-static constexpr float kPhysicsMaxDt = 1.0f / 30.0f; // DAT_00f41c04 (~33 ms)
+static constexpr float kPhysicsMaxDt =
+    1.0f / 90.0f; // DAT_00f41c04 (0x3c360b61)
 
 static void FUN_00607370() {
     // FUN_00607370
@@ -305,6 +308,9 @@ bool GSPhysics::initialize( TestDriveGameInstance *param_2 ) {
         OTDU_UNIMPLEMENTED;
     }
 
+    bFreezeSimulation = false;
+    BOOL_010e7644 = true;
+
     return true;
 }
 
@@ -394,6 +400,16 @@ void GSPhysics::terminate() {
             infinitePlaneBodyID = JPH::BodyID::cInvalidBodyID;
         }
 
+        for ( auto &hf : pHeightfields ) {
+            if ( hf.pBody != nullptr ) {
+                JPH::Body *pBody = static_cast<JPH::Body *>( hf.pBody );
+                bodyInterface.RemoveBody( pBody->GetID() );
+                bodyInterface.DestroyBody( pBody->GetID() );
+                hf.pBody = nullptr;
+                hf.pKey = nullptr;
+            }
+        }
+
         delete pPhysicsSystem;
         pPhysicsSystem = nullptr;
     }
@@ -425,9 +441,10 @@ void GSPhysics::terminate() {
 void GSPhysics::tick( float totalTime, float deltaTime ) {
     // FUN_0084de60
 
-    // Pause toggle: a totalTime of 0 is the engine's sentinel for "simulation
-    // frozen" (first frame before any wall-clock time has elapsed).
-    bPauseJoltTick = ( totalTime == 0.0f );
+    // Pause toggle: a deltaTime of 0 is the engine's sentinel for "simulation
+    // frozen" (paused frame / hitch with no elapsed time). The original tests
+    // the delta argument, not the accumulated total.
+    bPauseJoltTick = ( deltaTime == 0.0f );
 
     // Update world-streaming position from the active player vehicle / camera.
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC/CAMERA
@@ -485,15 +502,25 @@ void GSPhysics::draw( float deltaTime ) {
 
 void GSPhysics::FUN_00843b40() {
     // FUN_00843b40
-    // Iterates Heightfields objects and removes each from the Jolt physics
-    // world. Requires heightfield to be defined and integrated first.
-    OTDU_UNIMPLEMENTED;
+    if ( pPhysicsSystem == nullptr )
+        return;
+
+    lockMutex();
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    for ( auto &hf : pHeightfields ) {
+        if ( hf.pBody != nullptr ) {
+            JPH::Body *pBody = static_cast<JPH::Body *>( hf.pBody );
+            bodyInterface.RemoveBody( pBody->GetID() );
+            bodyInterface.DestroyBody( pBody->GetID() );
+            hf.pBody = nullptr;
+            hf.pKey = nullptr;
+        }
+    }
+    unlockMutex();
 }
 
 PhysFactory *GSPhysics::createFromBinary( void *param_3, int32_t param_2 ) {
-    // FUN_008450b0 / FUN_00845240 — both hand a TDU serialized-physics blob to
-    // FUN_00419530. Stage 1: parse the container so the regions (entries +
-    // vehicle/desc buffers + the embedded Havok scene) are resolved.
+    // FUN_008450b0 / FUN_00845240
     HavokContainer container;
     if ( !container.parse( param_3, static_cast<uint32_t>( param_2 ) ) ) {
         OTDU_LOG_WARN( "Failed to parse physics container blob\n" );
@@ -507,9 +534,6 @@ PhysFactory *GSPhysics::createFromBinary( void *param_3, int32_t param_2 ) {
         return nullptr;
     }
 
-    // Reconstruct the collision bodies (shape + vehicle-local transform). This
-    // factory is a per-vehicle-type template; live Jolt bodies are created per
-    // placed instance by instantiateFactory().
     HavokFactoryData *pData = new HavokFactoryData();
     HavokToJolt::buildBodies( packfile, pData->Bodies );
     if ( pData->Bodies.empty() ) {
@@ -518,7 +542,6 @@ PhysFactory *GSPhysics::createFromBinary( void *param_3, int32_t param_2 ) {
         return nullptr;
     }
 
-    // Claim a free factory slot (mirrors the original's free-slot search).
     PhysFactory *pFactory = nullptr;
     for ( PhysFactory &factory : pFactories ) {
         if ( !factory.isInitialized() ) {
@@ -674,6 +697,7 @@ void GSPhysics::addInfinitePlane( float planeHeight ) {
         new JPH::BoxShapeSettings( JPH::Vec3( 10000.0f, 1.0f, 10000.0f ) ),
         JPH::RVec3( 0.0f, planeHeight - 1.0f, 0.0f ), JPH::Quat::sIdentity(),
         JPH::EMotionType::Static, TDUPhysLayers::NON_MOVING );
+    settings.mFriction = 1.0f; // FLOAT_00f4165c
 
     lockMutex();
     JPH::BodyID id = pPhysicsSystem->GetBodyInterface().CreateAndAddBody(
@@ -701,17 +725,15 @@ void GSPhysics::removeAndDestroyFactory( PhysFactory *param_2 ) {
     unlockMutex();
 }
 
-RigidBody_t GSPhysics::createSphere( const uint32_t collisionGroup,
+RigidBody_t GSPhysics::createSphere( uint32_t collisionGroup,
                                      const Eigen::Vector4f &worldPosition,
-                                     const float radius,
-                                     const float mass,
-                                     int32_t param_6,
-                                     float param_7,
-                                     float param_8,
-                                     const float restitution,
-                                     Eigen::Vector4f *param_10,
-                                     const bool bDeferRegistration ) {
+                                     float radius,
+                                     float mass,
+                                     float massScale,
+                                     bool registerNow ) {
     // FUN_0081d660
+    (void)collisionGroup;
+
     if ( pPhysicsSystem == nullptr )
         return nullptr;
 
@@ -720,15 +742,15 @@ RigidBody_t GSPhysics::createSphere( const uint32_t collisionGroup,
 
     JPH::BodyCreationSettings settings( new JPH::SphereShapeSettings( radius ),
                                         position, JPH::Quat::sIdentity(),
-                                        JPH::EMotionType::Dynamic,
+                                        JPH::EMotionType::Kinematic,
                                         TDUPhysLayers::MOVING );
-    settings.mRestitution = restitution;
-    if ( mass > 0.0f )
-        settings.mMassPropertiesOverride.mMass = mass;
+    settings.mFriction = 1.0f; // FLOAT_00f4165c
+    settings.mOverrideMassProperties =
+        JPH::EOverrideMassProperties::CalculateInertia;
+    settings.mMassPropertiesOverride.mMass = mass * massScale;
 
-    JPH::EActivation activation = bDeferRegistration
-                                      ? JPH::EActivation::DontActivate
-                                      : JPH::EActivation::Activate;
+    JPH::EActivation activation = registerNow ? JPH::EActivation::Activate
+                                              : JPH::EActivation::DontActivate;
 
     JPH::Body *pBody =
         pPhysicsSystem->GetBodyInterface().CreateBody( settings );
@@ -804,7 +826,113 @@ GSPhysics::queryCameraCollisions( const Eigen::Vector4f &center,
 
 void GSPhysics::createHeightfields() {
     // FUN_00842b10
-    OTDU_UNIMPLEMENTED;
+    for ( auto &hf : pHeightfields ) {
+        hf.pBody = nullptr;
+        hf.pKey = nullptr;
+    }
+}
+
+RigidBody_t GSPhysics::addHeightfield( const void *pKey,
+                                       const float *pHeights,
+                                       int32_t stride,
+                                       float cellSize,
+                                       float originX,
+                                       float originZ ) {
+    // FUN_0084a390 -> FUN_00848b50
+    if ( pPhysicsSystem == nullptr || pHeights == nullptr || stride <= 1 ||
+         cellSize <= 0.0f )
+        return nullptr;
+
+    // Guard against a malformed heightmap descriptor before sizing buffers off
+    // it (a garbage stride would allocate gigabytes and crash inside Jolt).
+    if ( stride > 1025 ) {
+        OTDU_LOG_WARN( "Skipping terrain heightfield: implausible stride %d\n",
+                       stride );
+        return nullptr;
+    }
+
+    constexpr uint32_t kBlockSize = 2;
+    uint32_t sampleCount = kBlockSize;
+    while ( sampleCount < static_cast<uint32_t>( stride ) )
+        sampleCount <<= 1;
+
+    std::vector<float> samples(
+        static_cast<size_t>( sampleCount ) * sampleCount,
+        JPH::HeightFieldShapeConstants::cNoCollisionValue );
+    for ( int32_t row = 0; row < stride; row++ ) {
+        for ( int32_t col = 0; col < stride; col++ ) {
+            float h = pHeights[row * stride + col];
+            // Drop non-finite samples and terrain holes (orig block flag 0xFE
+            // -> -100000) to no-collision cells.
+            if ( !std::isfinite( h ) || h < -50000.0f || h > 50000.0f )
+                h = JPH::HeightFieldShapeConstants::cNoCollisionValue;
+            samples[static_cast<size_t>( row ) * sampleCount + col] = h;
+        }
+    }
+
+    JPH::HeightFieldShapeSettings shapeSettings(
+        samples.data(), JPH::Vec3( originX, 0.0f, originZ ),
+        JPH::Vec3( cellSize, 1.0f, cellSize ), sampleCount );
+    shapeSettings.mBlockSize = kBlockSize;
+
+    JPH::ShapeSettings::ShapeResult shapeResult = shapeSettings.Create();
+    if ( !shapeResult.IsValid() ) {
+        OTDU_LOG_WARN( "Failed to build terrain heightfield shape\n" );
+        return nullptr;
+    }
+
+    PhysicsHeightfield *pSlot = nullptr;
+    for ( auto &hf : pHeightfields ) {
+        if ( hf.pBody == nullptr ) {
+            pSlot = &hf;
+            break;
+        }
+    }
+    if ( pSlot == nullptr ) {
+        OTDU_LOG_WARN( "No free physics heightfield slot\n" );
+        return nullptr;
+    }
+
+    // Static ground body: friction 1.0 (FLOAT_00f4165c), non-moving layer, as
+    // in the original heightfield/infinite-plane material.
+    JPH::BodyCreationSettings bodySettings(
+        shapeResult.Get(), JPH::RVec3( 0.0f, 0.0f, 0.0f ),
+        JPH::Quat::sIdentity(), JPH::EMotionType::Static,
+        TDUPhysLayers::NON_MOVING );
+    bodySettings.mFriction = 1.0f; // FLOAT_00f4165c
+
+    lockMutex();
+    JPH::Body *pBody =
+        pPhysicsSystem->GetBodyInterface().CreateBody( bodySettings );
+    if ( pBody != nullptr ) {
+        pPhysicsSystem->GetBodyInterface().AddBody(
+            pBody->GetID(), JPH::EActivation::DontActivate );
+        pSlot->pBody = pBody;
+        pSlot->pKey = pKey;
+    }
+    unlockMutex();
+
+    return pBody;
+}
+
+void GSPhysics::removeHeightfield( const void *pKey ) {
+    if ( pPhysicsSystem == nullptr || pKey == nullptr )
+        return;
+
+    for ( auto &hf : pHeightfields ) {
+        if ( hf.pKey == pKey && hf.pBody != nullptr ) {
+            JPH::Body *pBody = static_cast<JPH::Body *>( hf.pBody );
+            lockMutex();
+            JPH::BodyInterface &bodyInterface =
+                pPhysicsSystem->GetBodyInterface();
+            bodyInterface.RemoveBody( pBody->GetID() );
+            bodyInterface.DestroyBody( pBody->GetID() );
+            unlockMutex();
+            hf.pBody = nullptr;
+            hf.pKey = nullptr;
+            return;
+        }
+    }
 }
 
 void GSPhysics::physicsStep( float dt, float accTime ) {
@@ -853,7 +981,7 @@ void GSPhysics::initializeJolt() {
     pObjectVsBPLayerFilter = new TDUObjectVsBroadPhaseLayerFilter();
     pObjectLayerPairFilter = new TDUObjectLayerPairFilter();
 
-    pTempAllocator = new JPH::TempAllocatorImpl( 16 * 1024 * 1024 );
+    pTempAllocator = new JPH::TempAllocatorImpl( 32 * 1024 * 1024 );
     pJobSystem = new JPH::JobSystemThreadPool(
         JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers,
         static_cast<int>( std::thread::hardware_concurrency() ) - 1 );
@@ -870,8 +998,7 @@ void GSPhysics::initializeJolt() {
     // Create world-reference body (equivalent of the Havok sphere at origin
     // stored in DAT_010e749c; used as a stable anchor in the physics world).
     Eigen::Vector4f origin = Eigen::Vector4f::Zero();
-    worldRefBody = createSphere( 2, origin, 1.0f, 1.0f, 0, 0.0f, 0.0f, 1.0f,
-                                 nullptr, false );
+    worldRefBody = createSphere( 2, origin, 0.5f, 1.0f, 1.0f, false );
 
     bJoltInit = true;
     unlockMutex();

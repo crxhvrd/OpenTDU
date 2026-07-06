@@ -91,6 +91,13 @@ public:
     PhysFactory *createFromBinary( void *param_3, int32_t param_2 );
     void addInfinitePlane( float planeHeight );
     void removeAndDestroyFactory( PhysFactory *param_2 );
+    RigidBody_t addHeightfield( const void *pKey,
+                                const float *pHeights,
+                                int32_t stride,
+                                float cellSize,
+                                float originX,
+                                float originZ );
+    void removeHeightfield( const void *pKey );
 
     // Create live Jolt bodies for an instance of a factory at its world
     // transform (called when a vehicle is placed). The created body IDs are
@@ -106,16 +113,12 @@ public:
                                const Matrix4x4f_t &worldTransform,
                                const DBEntryCarPhysicsData &db );
 
-    RigidBody_t createSphere( const uint32_t collisionGroup,
+    RigidBody_t createSphere( uint32_t collisionGroup,
                               const Eigen::Vector4f &worldPosition,
-                              const float radius,
-                              const float mass,
-                              int32_t param_6,
-                              float param_7,
-                              float param_8,
-                              const float restitution,
-                              Eigen::Vector4f *param_10,
-                              const bool bDeferRegistration );
+                              float radius,
+                              float mass,
+                              float massScale,
+                              bool registerNow );
 
     void destroyRigidBody( RigidBody_t pRigidBody );
 
@@ -134,6 +137,7 @@ private:
     static constexpr int32_t kMaxNumPhysicsCars = 32;
     static constexpr int32_t kMaxNumPhysicsFactory = 64; // World/scene entities
     static constexpr int32_t kMaxNumObjectsPerSector = 100;
+    static constexpr int32_t kNumHeightfields = 7; // One per streamed sector
 
 private:
     TestDriveThread simulationThread;
@@ -196,6 +200,12 @@ private:
     // JPH::BodyID::cInvalidBodyID when invalid)
     RigidBody_t worldRefBody = nullptr;
     uint32_t infinitePlaneBodyID = 0xffffffff;
+
+    struct PhysicsHeightfield {
+        RigidBody_t pBody = nullptr;
+        const void *pKey = nullptr;
+    };
+    std::array<PhysicsHeightfield, kNumHeightfields> pHeightfields;
 
 private:
     void createHeightfields();

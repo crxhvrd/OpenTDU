@@ -110,10 +110,14 @@ namespace TestDrive {
 
     inline void Free( void *pMemory ) { free( pMemory ); }
 
-    // TODO: For now we'll stick with what CRT offers (probably good enough)
     inline void *AllocAligned( const size_t size,
                                const size_t alignment = 0x10 ) {
-        return aligned_alloc( alignment, size );
+        size_t a = alignment < sizeof( void * ) ? sizeof( void * ) : alignment;
+        void *pMemory = nullptr;
+        if ( posix_memalign( &pMemory, a, size ) != 0 ) {
+            return nullptr;
+        }
+        return pMemory;
     }
 
     inline void FreeAligned( void *pMemory ) { free( pMemory ); }

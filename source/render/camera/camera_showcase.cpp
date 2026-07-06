@@ -71,7 +71,7 @@ CameraShowcase::CameraShowcase()
     // FUN_008d8f60
     Eigen::Vector4f local_20( 0, 0, 0, 1 );
     pPhysicsBoundingSphere = gpPhysics->createSphere(
-        2, local_20, 1.0f, 1.0f, 0, 0.0f, 0.0f, 1.0f, nullptr, false );
+        2, local_20, 1.0f, 1.0f, 1.0f, false );
 }
 
 CameraShowcase::~CameraShowcase() {
@@ -248,7 +248,7 @@ bool CameraShowcase::FUN_008d90e0( Eigen::Vector4f *param_2,
     if ( pPhysicsBoundingSphere == nullptr ) {
         Eigen::Vector4f local_d30( 0.0f, 0.0f, 0.0f, 1.0f );
         pPhysicsBoundingSphere = gpPhysics->createSphere(
-            2, local_d30, 1.0f, 1.0f, 0, 0.0f, 0.0f, 1.0f, nullptr, false );
+            2, local_d30, 1.0f, 1.0f, 1.0f, false );
     } else {
         float local_da4 = -3.4028235e+38f;
 
