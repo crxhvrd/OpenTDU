@@ -12,6 +12,8 @@
 
 #include "core/random/bcpl.h"
 
+class MngHud;
+
 // This is used as a safe fallback to initialize player start pos (points to
 // south lighthouse)
 static const Eigen::Vector4f kDefaultPosition = { 48783.555f, 32.11759f,
@@ -118,6 +120,8 @@ public:
     void setDefaultIGE( const char *param_1 );
 
 private:
+    void pushObjectivesToCompass( MngHud *pHud );
+
     GameIntroTutorial introTutorial;
     LocalPlayer localPlayer;
     AvatarManager avatarManager;

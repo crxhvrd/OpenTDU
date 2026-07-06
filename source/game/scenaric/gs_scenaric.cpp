@@ -4,6 +4,7 @@
 #include "config/gs_config.h"
 #include "filesystem/gs_boot_datas.h"
 #include "game/scenaric/scenaric_bank.h"
+#include "game/mng_hud.h"
 #include "render/animation/skeleton.h"
 #include "render/animation/clip.h"
 #include "game/gm_base.h"
@@ -123,8 +124,23 @@ void GSScenaric::tick( float totalTime, float deltaTime ) {
             objectives[1].Position =
                 Eigen::Vector4f( pSector->X, pSector->Y, pSector->Z, 1.0f );
             objectiveSpotHashcode = 0;
-            OTDU_UNIMPLEMENTED;
+
+            if ( gpMngHud != nullptr ) {
+                pushObjectivesToCompass( gpMngHud );
+            }
         }
+    }
+}
+
+void GSScenaric::pushObjectivesToCompass( MngHud *pHud ) {
+    // FUN_008036f0
+    int32_t slot = 0;
+    for ( const ObjectiveMarker &objective : objectives ) {
+        if ( objective.Type == nullptr || objective.Type[0] == '\0' ) {
+            continue;
+        }
+        pHud->setObjectiveMarker( slot, objective.Position, objective.Type );
+        slot++;
     }
 }
 

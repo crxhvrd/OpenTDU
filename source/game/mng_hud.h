@@ -124,9 +124,17 @@ struct HudGaugeRange {
     float MidAngle = 0.0f;
 };
 
+struct HudObjectiveMarker {
+    Eigen::Vector4f Position = Eigen::Vector4f::Zero();
+    const char *Type = nullptr;
+};
+
 class MngHud : public Manager {
 public:
     using MovieFilterCallback_t = bool ( * )( const char *pMovieName );
+
+public:
+    static constexpr int32_t kMaxObjectiveMarkers = 8;
 
 public:
     const char *getName() const override {
@@ -146,6 +154,10 @@ public:
 
     void updateUnitSystem();
     void FUN_006e6a00( CarState *param_2 );
+
+    void setObjectiveMarker( const int32_t slot,
+                             const Eigen::Vector4f &pPosition,
+                             const char *pType );
 
     inline void setEnabled( const bool value ) { bEnabled = value; }
 
@@ -202,6 +214,8 @@ protected:
     int32_t customGaugesMode;
     void *pGaugesFileBuffer;
     MovieFilterCallback_t pMovieFilter;
+
+    HudObjectiveMarker objectiveMarkers[kMaxObjectiveMarkers];
 };
 
 class MngHudChallenge : public MngHud {

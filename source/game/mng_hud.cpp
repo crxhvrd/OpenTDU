@@ -585,6 +585,17 @@ void MngHud::updateUnitSystem() {
     }
 }
 
+void MngHud::setObjectiveMarker( const int32_t slot,
+                                 const Eigen::Vector4f &pPosition,
+                                 const char *pType ) {
+    if ( slot < 0 || slot >= kMaxObjectiveMarkers ) {
+        return;
+    }
+
+    objectiveMarkers[slot].Position = pPosition;
+    objectiveMarkers[slot].Type = pType;
+}
+
 void MngHud::FUN_006e6a00( CarState *param_2 ) {
     // FUN_006e6a00
     // The original skips AI driven cars (param_2->pAIVehicle != nullptr).
