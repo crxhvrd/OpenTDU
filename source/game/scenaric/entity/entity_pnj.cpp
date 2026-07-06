@@ -5,7 +5,6 @@
 
 EntityPnj::EntityPnj() : Entity(), pName( nullptr ) {
     // FUN_009da130
-    OTDU_UNIMPLEMENTED;
 }
 
 EntityPnj::~EntityPnj() {
