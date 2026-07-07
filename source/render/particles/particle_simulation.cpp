@@ -1011,19 +1011,20 @@ void ParticleFile::spawnShape( uint8_t *pDef,
     }
 
     Matrix4x4f_t *pMat = (Matrix4x4f_t *)( pDef + 0x40 );
-    if ( transformDir ) {
-        dir = TDUMat4x4MulVec( *pMat, dir );
-    }
 
     if ( pOutPosition != nullptr ) {
-        auto spawnPos =
-            transformDir
-                ? dir
-                : TDUMat4x4MulVec( *pMat, Eigen::Vector4f( 0, 0, 0, 0 ) );
+        const Eigen::Vector4f localPoint =
+            transformDir ? Eigen::Vector4f( dir[0], dir[1], dir[2], 1.0f )
+                         : Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
+        const Eigen::Vector4f spawnPos = TDUMat4x4MulVec( *pMat, localPoint );
         pOutPosition[0] = spawnPos.x();
         pOutPosition[1] = spawnPos.y();
         pOutPosition[2] = spawnPos.z();
         pOutPosition[3] = 0.0f;
+    }
+
+    if ( transformDir ) {
+        dir = TDUMat4x4MulVec( *pMat, dir );
     }
 
     Eigen::Vector4f velocity;
