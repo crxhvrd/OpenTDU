@@ -2219,8 +2219,8 @@ void StreamingManager::installArea( Area &area, const GridPos2D &areaCell ) {
         const int32_t areaBaseZ =
             (int32_t)sectorManager.numSubSectors * areaCell.posY * 0x300;
 
-        loadAreaBank( area, subPath, areaBaseX, areaBaseZ );
         area.coords = areaCell;
+        loadAreaBank( area, subPath, areaBaseX, areaBaseZ );
     } else {
         area.coords = { -1, -1 };
     }
