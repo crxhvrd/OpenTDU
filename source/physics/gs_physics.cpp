@@ -26,6 +26,8 @@
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/EActivation.h>
 
 GSPhysics gPhysics = {}; // DAT_0129c0ac
@@ -619,20 +621,36 @@ void GSPhysics::instantiateFactory( PhysFactory *pFactory,
 PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
                                       const Matrix4x4f_t &worldTransform,
                                       const DBEntryCarPhysicsData &db ) {
-    if ( pFactory == nullptr || pPhysicsSystem == nullptr ) {
-        return nullptr;
-    }
-    HavokFactoryData *pData = pFactory->getHavokData();
-    if ( pData == nullptr || pData->Bodies.empty() ) {
+    // FUN_0082fc80
+    if ( pPhysicsSystem == nullptr ) {
         return nullptr;
     }
 
-    // Combine the reconstructed collision bodies into a single chassis shape.
-    JPH::StaticCompoundShapeSettings compound;
-    for ( const HavokToJolt::RigidBody &body : pData->Bodies ) {
-        compound.AddShape( body.Position, body.Rotation, body.Shape );
+    HavokFactoryData *pData =
+        ( pFactory != nullptr ) ? pFactory->getHavokData() : nullptr;
+    const bool bHasFactoryShape =
+        ( pData != nullptr && !pData->Bodies.empty() );
+
+    JPH::ShapeSettings::ShapeResult shapeResult;
+    if ( bHasFactoryShape ) {
+        // Combine the reconstructed collision bodies into a single chassis
+        // shape.
+        JPH::StaticCompoundShapeSettings compound;
+        for ( const HavokToJolt::RigidBody &body : pData->Bodies ) {
+            compound.AddShape( body.Position, body.Rotation, body.Shape );
+        }
+        shapeResult = compound.Create();
+    } else {
+        // DB body dimensions are in millimetres (X=Width, Y=Height, Z=Length).
+        const float kMmToM = 0.001f;
+        const float halfW = ( db.Width > 0 ? db.Width : 1800 ) * 0.5f * kMmToM;
+        const float halfH =
+            ( db.Height > 0 ? db.Height : 1300 ) * 0.5f * kMmToM;
+        const float halfL =
+            ( db.Length > 0 ? db.Length : 4000 ) * 0.5f * kMmToM;
+        JPH::BoxShapeSettings box( JPH::Vec3( halfW, halfH, halfL ) );
+        shapeResult = box.Create();
     }
-    JPH::ShapeSettings::ShapeResult shapeResult = compound.Create();
     if ( !shapeResult.IsValid() ) {
         return nullptr;
     }
@@ -680,8 +698,8 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
         OTDU_LOG_WARN( "Failed to create vehicle (no chassis or free slot)\n" );
         return nullptr;
     }
-    OTDU_LOG_INFO( "Created vehicle: %d-body chassis, mass=%.0f kg\n",
-                   static_cast<int>( pData->Bodies.size() ),
+    OTDU_LOG_INFO( "Created vehicle: %s chassis, mass=%.0f kg\n",
+                   bHasFactoryShape ? "havok" : "db-box",
                    settings.mMassPropertiesOverride.mMass );
     return pCar;
 }
@@ -822,6 +840,27 @@ GSPhysics::queryCameraCollisions( const Eigen::Vector4f &center,
     }
 
     return static_cast<int32_t>( hits.size() );
+}
+
+float GSPhysics::getGroundHeight( float x, float z ) {
+    if ( pPhysicsSystem == nullptr ) {
+        return -3.0e38f;
+    }
+
+    const float kTop = 10000.0f;
+    const float kLength = 20000.0f;
+    JPH::RRayCast ray( JPH::RVec3( x, kTop, z ),
+                       JPH::Vec3( 0.0f, -kLength, 0.0f ) );
+    JPH::RayCastResult hit;
+
+    lockMutex();
+    const bool bHit = pPhysicsSystem->GetNarrowPhaseQuery().CastRay( ray, hit );
+    unlockMutex();
+
+    if ( !bHit ) {
+        return -3.0e38f;
+    }
+    return kTop - kLength * hit.mFraction;
 }
 
 void GSPhysics::createHeightfields() {

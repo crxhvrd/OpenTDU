@@ -20,6 +20,12 @@ public:
     inline void setDisableStreamingOnCar( const bool value ) {
         bDisableStreamingOnCar = value;
     }
+    inline bool getDisableStreamingOnCar() const {
+        return bDisableStreamingOnCar;
+    }
+    inline bool getDisableStreamingOnCamera() const {
+        return bDisableStreamingOnCamera;
+    }
 
 private:
     bool bDraw;

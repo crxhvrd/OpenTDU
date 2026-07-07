@@ -2,23 +2,27 @@
 #include "camera_vehicle.h"
 
 #include "config/gs_config.h"
+#include "gs_camera.h"
+#include "game/vehicle/car_state.h"
+#include "physics/gs_physics.h"
+
+#include <cmath>
+
+// Minimum height the chase camera is kept above the terrain surface so it does
+// not clip through hills behind the car.
+static constexpr float kCamGroundClearance = 0.5f;
 
 uint32_t gEditCameraFlags = 0; // DAT_010e7498
 
-// Rounds a float to the nearest integer and clamps to int8_t range.
 static inline int8_t floatRoundToInt8( float value ) {
     return static_cast<int8_t>( std::lroundf( value ) );
 }
 
-// Adjusts a uint8_t spring field by a float delta; prevents the result from
-// becoming zero (original binary enforces a minimum of 1 for spring values).
 static inline void adjustSpringField( uint8_t &field, float delta ) {
     uint8_t newVal = static_cast<uint8_t>( field + floatRoundToInt8( delta ) );
     field = ( newVal == 0 ) ? 1 : newVal;
 }
 
-// FUN_008d06e0 — edits one SpringParam using the device state in ESI/EDI.
-// Here we take explicit parameters instead of relying on untracked registers.
 static inline void editSpringParam( SpringParam *sp,
                                     const EditCamDevState *state ) {
     // FUN_008d06e0
@@ -52,13 +56,64 @@ CameraVehicle::~CameraVehicle() {
 
 void CameraVehicle::initialize() {
     // FUN_008d1fb0
-    OTDU_UNIMPLEMENTED;
+    follow.LastAngleY = 0.0f;
+    followFast.LastAngleY = 0.0f;
+    lastAngleHorizontal = 0.0f;
+    lastAngleVertical = 0.0f;
+    brakeG = 0.0f;
+    bInitialized = true;
 }
 
 bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
     // FUN_008d5fd0
-    OTDU_UNIMPLEMENTED;
-    return false;
+    // TODO: Incomplete
+    CarState *pCar =
+        ( gpCamera != nullptr ) ? gpCamera->getBoundCarState() : nullptr;
+    if ( pCar == nullptr ) {
+        return false;
+    }
+
+    // Car body ABSOLUTE world matrix
+    const Matrix4x4f_t &carMat = pCar->getBody()->WorldMatrix;
+    const Eigen::Vector3f carForward = carMat.row( 2 ).head<3>();
+    const Eigen::Vector3f carUp = carMat.row( 1 ).head<3>();
+    const Eigen::Vector3f carPos = carMat.row( 3 ).head<3>();
+
+    // Chase offsets from the DB follow params (PosZ = negative back-distance).
+    const float posZ = follow.PosZ;
+    const float posH = follow.PosHeight;
+    const float trgD = follow.Trg;
+    const float trgH = follow.TrgHeight;
+
+    // Ground-stabilized car frame (ground-normal smoothing TODO; use car up).
+    Eigen::Vector3f up = carUp;
+    if ( up.squaredNorm() < 1e-6f ) {
+        up = Eigen::Vector3f( 0.0f, 1.0f, 0.0f );
+    }
+    up.normalize();
+    Eigen::Vector3f right = up.cross( carForward );
+    if ( right.squaredNorm() < 1e-6f ) {
+        right = Eigen::Vector3f( 1.0f, 0.0f, 0.0f );
+    }
+    right.normalize();
+    const Eigen::Vector3f fwd = right.cross( up ).normalized();
+
+    Eigen::Vector3f pos = carPos + fwd * posZ + up * posH;
+    const Eigen::Vector3f target = carPos + fwd * trgD + up * trgH;
+
+    if ( gpPhysics != nullptr ) {
+        const float groundY = gpPhysics->getGroundHeight( pos.x(), pos.z() );
+        if ( groundY > -1.0e30f && pos.y() < groundY + kCamGroundClearance ) {
+            pos.y() = groundY + kCamGroundClearance;
+        }
+    }
+
+    setPosition( Eigen::Vector4f( pos.x(), pos.y(), pos.z(), 1.0f ) );
+    setTarget( Eigen::Vector4f( target.x(), target.y(), target.z(), 1.0f ) );
+    upVector = Eigen::Vector4f( up.x(), up.y(), up.z(), 0.0f );
+
+    updateMatrix( pos, up, target );
+    return true;
 }
 
 void CameraVehicle::destroy() {
@@ -503,8 +558,9 @@ uint8_t *CameraVehicle::load( uint8_t *param_1 ) {
 
     puVar1 += 28;
 
-    puVar1 = ParseFollowParams( puVar1, follow );
-    puVar1 = ParseFollowParams( puVar1, followFast );
+    ParseFollowParams( puVar1 + 8, follow );
+    ParseFollowParams( puVar1 + 8 + 0x20, followFast );
+    puVar1 += 0x38;
 
     puVar1 = ParseCameraParams( puVar1, params );
     puVar1 = ParseLerpParams( puVar1, fovLerp );
@@ -594,5 +650,14 @@ uint8_t *CameraVehicle::load( uint8_t *param_1 ) {
 
 void CameraVehicle::resetTransform() {
     // FUN_008d1f60
-    OTDU_UNIMPLEMENTED;
+    CarState *pCar =
+        ( gpCamera != nullptr ) ? gpCamera->getBoundCarState() : nullptr;
+    if ( pCar != nullptr ) {
+        const Eigen::Vector3f fwd =
+            pCar->getBody()->OffsetedWorldMatrix.row( 2 ).head<3>();
+        lastAngleHorizontal = std::atan2( fwd.x(), fwd.z() );
+        follow.LastAngleY = lastAngleHorizontal;
+    }
+    lastAngleVertical = 0.0f;
+    brakeG = 0.0f;
 }

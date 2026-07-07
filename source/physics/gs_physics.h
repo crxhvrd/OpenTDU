@@ -129,6 +129,7 @@ public:
     int32_t queryCameraCollisions( const Eigen::Vector4f &center,
                                    float radius,
                                    std::vector<CameraCollisionHit> &hits );
+    float getGroundHeight( float x, float z );
 
     void setWorldOrigin( const Eigen::Vector4f *param_1 );
 

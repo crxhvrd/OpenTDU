@@ -222,6 +222,7 @@ private:
     static constexpr const uint32_t kMaxNumWheels = 4;
 
     friend class GMCarShowcase;
+    friend class GameModeWorld; // installs the local-player car on reset
     friend class GSCarState; // TODO: Remove once visibility for bInstanceAlive
                              // is fixed
     friend class VehicleCar;

@@ -694,6 +694,13 @@ CameraGame *GSCamera::findCamera( CarState *pState ) {
     return nullptr;
 }
 
+void GSCamera::restoreDefaultVehicleCamera( CarState *pCar ) {
+    CameraGame *pChase = findCamera( pCar );
+    if ( pChase != nullptr ) {
+        setCameraMode( pChase->getType(), nullptr, 0.0f );
+    }
+}
+
 void GSCamera::bindCamera( CameraGame *param_1,
                            CameraGame *param_2,
                            float param_3 ) {

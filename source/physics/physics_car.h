@@ -1,5 +1,7 @@
 #pragma once
 
+#include "shared.h"
+
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Vehicle/VehicleConstraint.h>
 #include <Jolt/Physics/Vehicle/VehicleCollisionTester.h>
@@ -30,6 +32,8 @@ public:
     // Driver input: throttle/brake in [0,1], steer in [-1,1].
     void setInput( float throttle, float brake, float steer );
     void tick( float deltaTime );
+
+    Matrix4x4f_t getChassisWorldMatrix() const;
 
 private:
     JPH::PhysicsSystem *pPhysicsSystem;

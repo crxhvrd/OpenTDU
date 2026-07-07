@@ -20,6 +20,7 @@
 #include "render/mng_env_map.h"
 
 class EventParameters;
+class PhysicsCar;
 
 // Game Mode running with the world active.
 // e.g. GMShop; GMHome; GMBoatTour
@@ -106,6 +107,7 @@ protected:
     bool createGameMech( uint32_t mechID, int32_t mechType );
     void destroyGameMech();
     void updatePauseFade();
+    void installLocalPlayerCar();
 
 protected:
     MngHudChallenge mngHudChallenge;
@@ -130,6 +132,11 @@ protected:
 
     float initializeTime; // GSTimer total time at initialize()
     float pauseFadeTimer; // Pause radial-blur fade countdown
+
+    // HACK: REMOVE ME:
+    bool bCarGrounded = false;
+    PhysicsCar *pPlayerPhysicsCar = nullptr;
+    // HACK: REMOVE ME:
 };
 
 extern float gFXPFadeInDelay;

@@ -5,6 +5,11 @@
 
 #include "render/camera/gs_camera.h"
 #include "render/mng_shadow.h"
+#include "world/mng_world.h"
+#include "world/gs_world.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/local_player.h"
+#include "car_state.h"
 
 GSCarState *gpCarState = nullptr; // DAT_010e7518
 
@@ -87,7 +92,25 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         carToDeinstanciate.pop();
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: MngWorld
+    if ( gpMngWorld != nullptr && gpWorld != nullptr &&
+         gpScenaric != nullptr ) {
+        CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+        if ( pLocalCar == nullptr || pLocalCar->getResource() == nullptr ||
+             gpMngWorld->getDisableStreamingOnCar() ) {
+            if ( !gpMngWorld->getDisableStreamingOnCamera() &&
+                 gpCamera != nullptr ) {
+                const Eigen::Vector3f c =
+                    gpCamera->getActiveCamera()->getWorldPosition();
+                Eigen::Vector4f center( c.x(), c.y(), c.z(), 1.0f );
+                gpWorld->setStreamingPosition( &center );
+            }
+        } else {
+            Eigen::Vector4f carWorldPos =
+                pLocalCar->getBody()->WorldMatrix.row( 3 );
+            gpWorld->setStreamingPosition( &carWorldPos );
+        }
+    }
+
     OTDU_UNIMPLEMENTED; // TODO: Physics
 
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {

@@ -4,6 +4,7 @@
 #include "car_state.h"
 #include "mng_car_alpha.h"
 #include "world/weather/gs_weather.h"
+#include "world/gs_world_streaming.h"
 
 #include "database/gs_database.h"
 #include "gs_timer.h"
@@ -1493,23 +1494,14 @@ void VehicleBase::updateVisibilityFlag( float param_2 ) {
     }
 
     HiearchyNode *peVar1 = displayInstances[3].pNode;
+
+    CameraGame *pCam = gpCamera->getDefaultCamera();
     Eigen::Vector4f local_60 = Eigen::Vector4f::Zero();
-    local_60.head( 3 ) = gpCamera->getDefaultCamera()->getTarget();
     Eigen::Vector4f local_70 = pCarState->getBody()->WorldMatrix.row( 3 );
+    Eigen::Vector4f local_80 = Eigen::Vector4f::Zero();
 
-    Eigen::Vector4f fVar8;
-    fVar8.x() =
-        ( local_70.x() - local_60.x() ) * ( local_70.x() - local_60.x() );
-    fVar8.y() =
-        ( local_70.y() - local_60.y() ) * ( local_70.y() - local_60.y() );
-    fVar8.y() =
-        ( local_70.y() - local_60.y() ) * ( local_70.y() - local_60.y() );
-    fVar8.w() =
-        ( local_70.w() - local_60.w() ) * ( local_70.w() - local_60.w() );
-
-    Eigen::Vector4f local_80 = fVar8.array().sqrt();
-    if ( param_2 <
-         gpCamera->getDefaultCamera()->getTanHalfFov() * local_80.x() ) {
+    const float dist = ( local_70.head<3>() - pCam->getWorldPosition() ).norm();
+    if ( param_2 < pCam->getTanHalfFov() * dist ) {
         bVisible = false;
         return;
     }
@@ -1552,6 +1544,9 @@ void VehicleBase::updateVisibilityFlag( float param_2 ) {
         }
     }
 
+    if ( gpWorldStreaming != nullptr ) {
+        local_60.head<3>() += gpWorldStreaming->getPosition().head<3>();
+    }
     bVisible = gpCamera->getActiveCamera()->sphereInFrustum( &local_60,
                                                              local_a0 ) != 0;
 }

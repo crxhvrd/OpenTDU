@@ -9,18 +9,10 @@
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Vehicle/WheeledVehicleController.h>
 
-// --- TDU car-DB (DBEntryCarPhysicsData) unit assumptions ---
-// Linear dimensions (Track*, WheelBase, RideHeight*, SuspensionLength*) are in
-// millimetres; Weight in kg; Torque in Nm; RPM in rpm; SteerLock in degrees;
-// GearRatios are raw ratios. These match TDU's known DB conventions; any field
-// that proves mis-scaled once driven can be corrected at this single mapping.
 namespace {
     constexpr float kMmToM = 0.001f;
     constexpr float kDefaultWheelRadius = 0.34f; // TODO: from the rim/tire DB
     constexpr float kDefaultWheelWidth = 0.22f;
-    // Suspension attachment height relative to the chassis body origin. TODO:
-    // tune from RideHeight + the chassis CoM once the car can be driven and
-    // observed.
     constexpr float kSuspensionAttachY = -0.10f;
 } // namespace
 
@@ -42,6 +34,23 @@ void PhysicsCar::setInput( float throttle, float brake, float steer ) {
     inputThrottle = throttle;
     inputBrake = brake;
     inputSteer = steer;
+}
+
+Matrix4x4f_t PhysicsCar::getChassisWorldMatrix() const {
+    Matrix4x4f_t m = Matrix4x4f_t::Identity();
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return m;
+    }
+    // Inverse of createVehicle's placement: Jolt column c == TDU row c.
+    JPH::RMat44 world = pPhysicsSystem->GetBodyInterface().GetWorldTransform(
+        pChassisBody->GetID() );
+    for ( int32_t c = 0; c < 4; c++ ) {
+        JPH::Vec3 col = world.GetColumn3( c );
+        m( c, 0 ) = col.GetX();
+        m( c, 1 ) = col.GetY();
+        m( c, 2 ) = col.GetZ();
+    }
+    return m;
 }
 
 bool PhysicsCar::create( JPH::PhysicsSystem *pSystem,
@@ -66,6 +75,11 @@ bool PhysicsCar::create( JPH::PhysicsSystem *pSystem,
     const float travelRear =
         db.SuspensionLengthRear > 0 ? db.SuspensionLengthRear * kMmToM : 0.20f;
 
+    const float bodyHalfHeight =
+        ( db.Height > 0 ? db.Height : 1300 ) * kMmToM * 0.5f;
+    const float suspensionAttachY =
+        -Max( 0.0f, bodyHalfHeight - kDefaultWheelRadius );
+
     JPH::VehicleConstraintSettings constraintSettings;
     constraintSettings.mUp = JPH::Vec3( 0, 1, 0 );
     constraintSettings.mForward = JPH::Vec3( 0, 0, 1 );
@@ -86,17 +100,30 @@ bool PhysicsCar::create( JPH::PhysicsSystem *pSystem,
         {+halfTrackRear,  -halfWheelBase, false},
     };
 
+    auto axleSpring = [&]( int32_t suspRate,
+                           int32_t dampRate ) -> JPH::SpringSettings {
+        const float sr = Max( 0.01f, suspRate * 0.01f );
+        const float omega = std::sqrt( 72.0f * sr );
+        JPH::SpringSettings s;
+        s.mMode = JPH::ESpringMode::FrequencyAndDamping;
+        s.mFrequency = JPH::Clamp( omega * 0.15915494f, 0.5f, 4.0f );
+        s.mDamping =
+            JPH::Clamp( omega * 0.0339f * ( dampRate * 0.01f ), 0.05f, 1.5f );
+        return s;
+    };
+    const JPH::SpringSettings frontSpring =
+        axleSpring( db.SuspensionRateFront, db.DamperRateFront );
+    const JPH::SpringSettings rearSpring =
+        axleSpring( db.SuspensionRateRear, db.DamperRateRear );
+
     for ( const WheelLayout &wl : layout ) {
         JPH::WheelSettingsWV *pWheel = new JPH::WheelSettingsWV();
-        pWheel->mPosition = JPH::Vec3( wl.X, kSuspensionAttachY, wl.Z );
+        pWheel->mPosition = JPH::Vec3( wl.X, suspensionAttachY, wl.Z );
         pWheel->mSuspensionDirection = JPH::Vec3( 0, -1, 0 );
         pWheel->mSuspensionMinLength = 0.10f;
         pWheel->mSuspensionMaxLength =
             0.10f + ( wl.bFront ? travelFront : travelRear );
-        // TODO: derive the spring frequency/damping from SuspensionRate* /
-        // DamperRate* once their DB units are confirmed.
-        pWheel->mSuspensionSpring = JPH::SpringSettings(
-            JPH::ESpringMode::FrequencyAndDamping, 1.5f, 0.5f );
+        pWheel->mSuspensionSpring = wl.bFront ? frontSpring : rearSpring;
         pWheel->mRadius = kDefaultWheelRadius;
         pWheel->mWidth = kDefaultWheelWidth;
         pWheel->mMaxSteerAngle = wl.bFront ? steerLock : 0.0f;
@@ -159,9 +186,9 @@ bool PhysicsCar::create( JPH::PhysicsSystem *pSystem,
     constraintSettings.mController = pController;
 
     pConstraint = new JPH::VehicleConstraint( *pChassis, constraintSettings );
-    // Wheels cast against the static world (terrain/buildings) for suspension.
-    pCollisionTester = new JPH::VehicleCollisionTesterCastCylinder(
-        TDUPhysLayers::NON_MOVING );
+
+    pCollisionTester =
+        new JPH::VehicleCollisionTesterCastCylinder( TDUPhysLayers::MOVING );
     static_cast<JPH::VehicleConstraint *>( pConstraint )
         ->SetVehicleCollisionTester( pCollisionTester );
 
