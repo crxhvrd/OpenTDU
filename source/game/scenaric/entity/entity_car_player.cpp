@@ -10,7 +10,6 @@ EntityCarPlayer::EntityCarPlayer()
 
 EntityCarPlayer::~EntityCarPlayer() {
     // FUN_00424120
-    OTDU_UNIMPLEMENTED;
 }
 
 void EntityCarPlayer::deserialize( BinaryReader *param_2 ) {
