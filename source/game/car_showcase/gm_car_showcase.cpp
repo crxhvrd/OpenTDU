@@ -423,7 +423,7 @@ bool GMCarShowcase::loadCar() {
     state.rimID = pCarState->RimID;
     state.body.BackOnTrackState = 0;
     state.body.resetBackOnTrack();
-    if ( state.field_0x39b4 != nullptr ) {
+    if ( state.pPhysicsCar != nullptr ) {
         OTDU_UNIMPLEMENTED; // TODO: PHYSICS
         // ( gGSCarState.pCarStates[0].field17_0x39b4 )->field_0xbf1 = 0;
         // ( gGSCarState.pCarStates[0].field17_0x39b4 )->field_0xbf2 = 0;
@@ -465,7 +465,7 @@ bool GMCarShowcase::loadCar() {
     //     GSCarDisplay::BindEnvMap( local_d0 );
     // }
 
-    VehiclePhysics *local_c4 = nullptr;
+    PhysicsCar *local_c4 = nullptr;
     if ( pCarState->bUseGamePhysics != 0 ) {
         OTDU_UNIMPLEMENTED; // TODO: PHYSICS:
     }
@@ -479,7 +479,7 @@ bool GMCarShowcase::loadCar() {
     state.field_0x39d8 = nullptr;
     state.field_0x39cc = nullptr;
     state.bIsIndoor = false;
-    state.field_0x39b4 = local_c4;
+    state.pPhysicsCar = local_c4;
     state.field_0x39bc = local_cc;
     state.pResource = pCarState;
     pCarState->RefCount++;

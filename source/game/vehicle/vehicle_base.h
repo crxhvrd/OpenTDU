@@ -397,6 +397,7 @@ protected:
     size_t tireBufferOffset;
 
     friend class GSCarDisplay;
+    friend class VehicleParticles;
 
 protected:
     void updateLights();

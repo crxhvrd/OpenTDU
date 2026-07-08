@@ -1005,6 +1005,16 @@ void VehicleCar::setupHiearchy() {
                     wheelNode.pInstance->getModelMatrix().row( 3 )[1];
             }
         }
+
+        if ( pCarState != nullptr ) {
+            pCarState->numWheels = kMaxNumWheels;
+            const float bodyHalfHeight =
+                pCarState->getBody()->BodyDimensions.y() * 0.5f;
+            for ( uint32_t i = 0; i < kMaxNumWheels; i++ ) {
+                pCarState->wheels[i].Position =
+                    pWheelOffsets[i] - bodyHalfHeight;
+            }
+        }
     }
 
     kitHiearchyNodes.clear();

@@ -50,7 +50,7 @@ bool MngWorld::initialize( TestDriveGameInstance * ) {
 void MngWorld::pause() {
     // FUN_0070a520
     CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
-    if ( pCarState != nullptr && pCarState->getfield_0x39b4() != nullptr ) {
+    if ( pCarState != nullptr && pCarState->getPhysicsCar() != nullptr ) {
         OTDU_UNIMPLEMENTED; // TODO: Physics
     }
     gpWorld->getStreamingManager()->pauseSectorActors();

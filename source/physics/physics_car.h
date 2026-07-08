@@ -35,6 +35,26 @@ public:
 
     Matrix4x4f_t getChassisWorldMatrix() const;
 
+    struct WheelReadout {
+        Eigen::Vector3f LocalPosition; // suspension attach point, body space
+        float AngularVelocity;         // rad/s (+ = rolling forward)
+        float SteerAngle;              // rad
+        float RotationAngle;           // rad
+        float SuspensionLength;        // m (current, from the hard point)
+        float SuspensionDeflection;    // m, rest - current (+ = compressed/up)
+        float LongitudinalSlip;
+        float LateralSlip;
+        float LongitudinalGroundSpeed; // m/s along contact-forward (0 airborne)
+        float Radius;                  // m
+        bool bGrounded;
+    };
+
+    uint32_t getNumWheels() const;
+    WheelReadout getWheelReadout( uint32_t index ) const;
+    float getChassisSpeed() const; // chassis linear-velocity magnitude, m/s
+    float getEngineAngularVelocity() const; // rad/s (CarBodyState::Omega unit)
+    int32_t getCurrentGear() const;
+
 private:
     JPH::PhysicsSystem *pPhysicsSystem;
     JPH::Body *pChassisBody;
@@ -44,4 +64,7 @@ private:
     float inputThrottle;
     float inputBrake;
     float inputSteer;
+
+    // Per-wheel ride-height suspension length.
+    float restSuspensionLength[4];
 };

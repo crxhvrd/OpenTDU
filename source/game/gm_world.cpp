@@ -271,6 +271,7 @@ void GameModeWorld::installLocalPlayerCar() {
         if ( pDB != nullptr ) {
             pPlayerPhysicsCar =
                 gpPhysics->createVehicle( pFactory, spawn, *pDB );
+            state.pPhysicsCar = pPlayerPhysicsCar;
         }
     }
 
@@ -304,18 +305,6 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
                 ( pKb->getChannelValueBinary( "LEFT" ) ? 1.0f : 0.0f );
             pPlayerPhysicsCar->setInput( throttle, brake, steer );
         }
-
-        CarBodyState *pBody = pCar->getBody();
-        const Matrix4x4f_t wm = pPlayerPhysicsCar->getChassisWorldMatrix();
-        pBody->WorldMatrix = wm;
-        Matrix4x4f_t om = wm;
-        if ( gpWorldStreaming != nullptr ) {
-            const Eigen::Vector4f &shift = gpWorldStreaming->getPosition();
-            om( 3, 0 ) -= shift.x();
-            om( 3, 1 ) -= shift.y();
-            om( 3, 2 ) -= shift.z();
-        }
-        pBody->OffsetedWorldMatrix = om;
     } else if ( !bCarGrounded && pCar != nullptr && gpPhysics != nullptr ) {
         // Fallback (no physics vehicle): one-shot cast-to-ground so the static
         // car settles onto the streamed terrain instead of clipping. (The

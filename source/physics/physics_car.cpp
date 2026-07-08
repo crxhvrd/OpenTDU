@@ -14,6 +14,8 @@ namespace {
     constexpr float kDefaultWheelRadius = 0.34f; // TODO: from the rim/tire DB
     constexpr float kDefaultWheelWidth = 0.22f;
     constexpr float kSuspensionAttachY = -0.10f;
+    // Safety clamp on the wheel-node suspension-bob deflection.
+    constexpr float kMaxSuspensionBob = 0.25f;
 } // namespace
 
 PhysicsCar::PhysicsCar()
@@ -21,7 +23,11 @@ PhysicsCar::PhysicsCar()
       pChassisBody( nullptr ),
       inputThrottle( 0.0f ),
       inputBrake( 0.0f ),
-      inputSteer( 0.0f ) {}
+      inputSteer( 0.0f ) {
+    for ( float &rest : restSuspensionLength ) {
+        rest = -1.0f;
+    }
+}
 
 PhysicsCar::~PhysicsCar() { destroy(); }
 
@@ -51,6 +57,77 @@ Matrix4x4f_t PhysicsCar::getChassisWorldMatrix() const {
         m( c, 2 ) = col.GetZ();
     }
     return m;
+}
+
+uint32_t PhysicsCar::getNumWheels() const {
+    if ( pConstraint == nullptr ) {
+        return 0;
+    }
+    return static_cast<uint32_t>( pConstraint->GetWheels().size() );
+}
+
+PhysicsCar::WheelReadout PhysicsCar::getWheelReadout( uint32_t index ) const {
+    WheelReadout out = {};
+    out.LocalPosition = Eigen::Vector3f::Zero();
+    if ( pConstraint == nullptr || index >= pConstraint->GetWheels().size() ) {
+        return out;
+    }
+
+    const JPH::WheelWV *pWheel =
+        static_cast<const JPH::WheelWV *>( pConstraint->GetWheel( index ) );
+    out.bGrounded = pWheel->HasContact();
+    out.AngularVelocity = pWheel->GetAngularVelocity();
+    out.SteerAngle = pWheel->GetSteerAngle();
+    out.RotationAngle = pWheel->GetRotationAngle();
+    out.SuspensionLength = pWheel->GetSuspensionLength();
+    out.SuspensionDeflection =
+        ( restSuspensionLength[index] >= 0.0f )
+            ? JPH::Clamp( restSuspensionLength[index] - out.SuspensionLength,
+                          -kMaxSuspensionBob, kMaxSuspensionBob )
+            : 0.0f;
+    out.LongitudinalSlip = pWheel->mLongitudinalSlip;
+    out.LateralSlip = pWheel->mLateralSlip;
+
+    const JPH::WheelSettings *pSettings = pWheel->GetSettings();
+    out.Radius = pSettings->mRadius;
+    const JPH::Vec3 p = pSettings->mPosition;
+    out.LocalPosition = Eigen::Vector3f( p.GetX(), p.GetY(), p.GetZ() );
+
+    if ( out.bGrounded ) {
+        const JPH::Vec3 v = pWheel->GetContactPointVelocity();
+        const JPH::Vec3 fwd = pWheel->GetContactLongitudinal();
+        out.LongitudinalGroundSpeed = v.Dot( fwd );
+    }
+    return out;
+}
+
+float PhysicsCar::getChassisSpeed() const {
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return 0.0f;
+    }
+    return pPhysicsSystem->GetBodyInterface()
+        .GetLinearVelocity( pChassisBody->GetID() )
+        .Length();
+}
+
+float PhysicsCar::getEngineAngularVelocity() const {
+    if ( pConstraint == nullptr ) {
+        return 0.0f;
+    }
+    const JPH::WheeledVehicleController *pController =
+        static_cast<const JPH::WheeledVehicleController *>(
+            pConstraint->GetController() );
+    return pController->GetEngine().GetAngularVelocity();
+}
+
+int32_t PhysicsCar::getCurrentGear() const {
+    if ( pConstraint == nullptr ) {
+        return 0;
+    }
+    const JPH::WheeledVehicleController *pController =
+        static_cast<const JPH::WheeledVehicleController *>(
+            pConstraint->GetController() );
+    return pController->GetTransmission().GetCurrentGear();
 }
 
 bool PhysicsCar::create( JPH::PhysicsSystem *pSystem,
@@ -116,19 +193,39 @@ bool PhysicsCar::create( JPH::PhysicsSystem *pSystem,
     const JPH::SpringSettings rearSpring =
         axleSpring( db.SuspensionRateRear, db.DamperRateRear );
 
-    for ( const WheelLayout &wl : layout ) {
+    // Static equilibrium suspension length per axle: maxLength - g/omega^2,
+    // where omega = 2pi * the (clamped) spring frequency and g/omega^2 is the
+    // gravity static deflection (mass-independent for a frequency spring).
+    constexpr float kTwoPi = 6.28318530718f;
+    constexpr float kGravity = 9.81f;
+    auto restLength = [&]( float maxLength,
+                           const JPH::SpringSettings &spring ) -> float {
+        const float omega = kTwoPi * spring.mFrequency;
+        const float deflection =
+            ( omega > 1.0e-3f ) ? kGravity / ( omega * omega ) : 0.0f;
+        return JPH::Clamp( maxLength - deflection, 0.10f, maxLength );
+    };
+
+    for ( int32_t i = 0; i < 4; i++ ) {
+        const WheelLayout &wl = layout[i];
+        const JPH::SpringSettings &spring =
+            wl.bFront ? frontSpring : rearSpring;
+        const float maxLength =
+            0.10f + ( wl.bFront ? travelFront : travelRear );
+
         JPH::WheelSettingsWV *pWheel = new JPH::WheelSettingsWV();
         pWheel->mPosition = JPH::Vec3( wl.X, suspensionAttachY, wl.Z );
         pWheel->mSuspensionDirection = JPH::Vec3( 0, -1, 0 );
         pWheel->mSuspensionMinLength = 0.10f;
-        pWheel->mSuspensionMaxLength =
-            0.10f + ( wl.bFront ? travelFront : travelRear );
-        pWheel->mSuspensionSpring = wl.bFront ? frontSpring : rearSpring;
+        pWheel->mSuspensionMaxLength = maxLength;
+        pWheel->mSuspensionSpring = spring;
         pWheel->mRadius = kDefaultWheelRadius;
         pWheel->mWidth = kDefaultWheelWidth;
         pWheel->mMaxSteerAngle = wl.bFront ? steerLock : 0.0f;
         pWheel->mMaxBrakeTorque = 1500.0f; // TODO: from BrakesFront/Rear
         pWheel->mMaxHandBrakeTorque = wl.bFront ? 0.0f : 4000.0f;
+
+        restSuspensionLength[i] = restLength( maxLength, spring );
         constraintSettings.mWheels.push_back( pWheel );
     }
 

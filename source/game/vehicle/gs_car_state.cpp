@@ -7,8 +7,10 @@
 #include "render/mng_shadow.h"
 #include "world/mng_world.h"
 #include "world/gs_world.h"
+#include "world/gs_world_streaming.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
+#include "physics/physics_car.h"
 #include "car_state.h"
 
 GSCarState *gpCarState = nullptr; // DAT_010e7518
@@ -111,7 +113,64 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: Physics
+    Eigen::Vector4f streamShift = Eigen::Vector4f::Zero();
+    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+        streamShift = gpWorldStreaming->getPosition();
+    }
+    for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+        if ( ( ( bUsedSlot >> i ) & 1u ) == 0 ) {
+            continue;
+        }
+        CarState &carState = carStates[i];
+        PhysicsCar *pPhysicsCar = carState.pPhysicsCar;
+        if ( pPhysicsCar == nullptr || !pPhysicsCar->isActive() ) {
+            continue;
+        }
+
+        CarBodyState &body = carState.body;
+        const Matrix4x4f_t worldMatrix = pPhysicsCar->getChassisWorldMatrix();
+        body.WorldMatrix = worldMatrix;
+        Matrix4x4f_t offseted = worldMatrix;
+        offseted( 3, 0 ) -= streamShift.x();
+        offseted( 3, 1 ) -= streamShift.y();
+        offseted( 3, 2 ) -= streamShift.z();
+        body.OffsetedWorldMatrix = offseted;
+
+        body.SpeedInKmh = pPhysicsCar->getChassisSpeed();
+        body.Omega = pPhysicsCar->getEngineAngularVelocity();
+        body.Gears = pPhysicsCar->getCurrentGear();
+
+        const uint32_t physNumWheels =
+            Min( pPhysicsCar->getNumWheels(), CarState::kMaxNumWheels );
+
+        int32_t numGrounded = 0;
+        for ( uint32_t w = 0; w < physNumWheels; w++ ) {
+            const PhysicsCar::WheelReadout ro =
+                pPhysicsCar->getWheelReadout( w );
+            WheelState &wheel = carState.wheels[w];
+            wheel.bInitialized = true;
+            wheel.bGrounded = ro.bGrounded;
+            wheel.Omega = ro.AngularVelocity;
+            wheel.SteerAngle = ro.SteerAngle;
+            wheel.SlipRatio = ro.LongitudinalSlip;
+            wheel.SlipAngle = ro.LateralSlip;
+            wheel.LongitudinalSpeed = ro.LongitudinalGroundSpeed;
+
+            wheel.SuspensionTravelLength = ro.SuspensionDeflection;
+            wheel.WheelRadius = ro.Radius;
+            wheel.RelativeWorldPosition =
+                Eigen::Vector4f( ro.LocalPosition.x(), ro.LocalPosition.y(),
+                                 ro.LocalPosition.z(), 1.0f );
+
+            // TODO: FIXME: Proper asphalt/grass/dirt classification (not
+            // implemented yet)
+            wheel.ContactMaterial = eMaterialType::MT_Dirt;
+            if ( ro.bGrounded ) {
+                numGrounded++;
+            }
+        }
+        body.NumWheelsGrounded = numGrounded;
+    }
 
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
         if ( ( bUsedSlot >> i ) & 1u ) {
@@ -316,8 +375,9 @@ void GSCarState::releaseCarState( CarState *param_2, bool param_3 ) {
         param_2->field_0x39cc = nullptr;
     }
 
-    if ( param_2->field_0x39b4 != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    if ( param_2->pPhysicsCar != nullptr ) {
+        param_2->pPhysicsCar->destroy();
+        param_2->pPhysicsCar = nullptr;
     }
 
     if ( param_2->pVehicleBase != nullptr ) {
@@ -334,7 +394,7 @@ void GSCarState::releaseCarState( CarState *param_2, bool param_3 ) {
     param_2->carID = -1;
     param_2->tireID = -1;
     param_2->rimID = -1;
-    param_2->field_0x39b4 = nullptr;
+    param_2->pPhysicsCar = nullptr;
     param_2->pVehicleBase = nullptr;
     param_2->field_0x39bc = nullptr;
     param_2->field_0x39cc = nullptr;

@@ -9,7 +9,7 @@
 
 class CameraGame;
 class CarState;
-class VehiclePhysics;
+class PhysicsCar;
 class CameraVehicle;
 class CameraMouse;
 
@@ -47,7 +47,7 @@ public:
         bDepthAwareInterior = value;
     }
 
-    inline VehiclePhysics *getTargetPhysEntity() { return pTargetPhysEntity; }
+    inline PhysicsCar *getTargetPhysEntity() { return pTargetPhysEntity; }
     inline CarState *getBoundCarState() const { return pTarget; }
 
     inline CameraGame *getActiveCamera() { return pActiveVehicleCamera; }
@@ -180,7 +180,7 @@ private:
     uint32_t numVehicleEntries;
     uint32_t numVehicleCamera;
 
-    VehiclePhysics *pTargetPhysEntity;
+    PhysicsCar *pTargetPhysEntity;
 
     Eigen::Vector2f angleX;
     Eigen::Vector2f seatPos;

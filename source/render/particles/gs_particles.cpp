@@ -46,8 +46,12 @@ static constexpr const PrtDescriptor kPrtDescriptors[] = {
 
 const PrtDescriptor *FindDescriptor( const char *pName ) {
     // FUN_0080c8d0
+    std::string upper( pName );
+    for ( char &c : upper ) {
+        c = static_cast<char>( std::toupper( (unsigned char)c ) );
+    }
     for ( const PrtDescriptor &descriptor : kPrtDescriptors ) {
-        if ( std::strcmp( descriptor.pName, pName ) == 0 ) {
+        if ( std::strcmp( descriptor.pName, upper.c_str() ) == 0 ) {
             return &descriptor;
         }
     }

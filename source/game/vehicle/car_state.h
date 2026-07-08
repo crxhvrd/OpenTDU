@@ -8,7 +8,7 @@
 class DynamicRigidBody;
 class VehicleBase;
 struct VehicleBaseResources;
-class VehiclePhysics;
+class PhysicsCar;
 struct DirectionalLight;
 
 struct WheelState {
@@ -176,7 +176,7 @@ public:
 
     inline uint32_t getNumWheels() const { return numWheels; }
     inline const WheelState &getWheel( uint32_t i ) const { return wheels[i]; }
-    inline VehiclePhysics *getfield_0x39b4() { return field_0x39b4; }
+    inline PhysicsCar *getPhysicsCar() const { return pPhysicsCar; }
 
     inline eOwner getOwner() const { return owner; }
     inline eSimulationType getSimulationType() const { return simulationType; }
@@ -249,7 +249,6 @@ private:
     int32_t colorID;
 
     VehicleBase *pVehicleBase;
-    VehiclePhysics *field_0x39b4;
     void *field_0x39bc;
     void *field_0x39c0; // TODO: AVATAR
     void *field_0x39cc;
@@ -266,4 +265,5 @@ private:
 
     uint64_t packHashcode;
     VehicleBaseResources *pResource;
+    PhysicsCar *pPhysicsCar;
 };

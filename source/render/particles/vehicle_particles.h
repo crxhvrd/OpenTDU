@@ -1,5 +1,9 @@
 #pragma once
 
+#include "shared.h"
+
+#include <array>
+
 struct ParticleInstance;
 class VehicleBase;
 
@@ -16,16 +20,13 @@ private:
     static constexpr const uint32_t kNumInstancePerType = 4;
 
 private:
-    std::array<ParticleInstance *, kNumInstancePerType>
-        burnParticles; // 0x00f29d80
-    std::array<ParticleInstance *, kNumInstancePerType>
-        smokeParticles; // 0x00f29d74
-    std::array<ParticleInstance *, kNumInstancePerType>
-        dustParticles; // 0x00f29d5c
-    std::array<ParticleInstance *, kNumInstancePerType>
-        gravelParticles; // 0x00f29d44
-    std::array<ParticleInstance *, kNumInstancePerType>
-        grassParticles; // 0x00f29d50
-    std::array<ParticleInstance *, kNumInstancePerType>
-        startExhaustParticles; // 0x00f29d50
+    std::array<ParticleInstance *, kNumInstancePerType> burnParticles;
+    std::array<ParticleInstance *, kNumInstancePerType> smokeParticles;
+    std::array<ParticleInstance *, kNumInstancePerType> dustParticles;
+    std::array<ParticleInstance *, kNumInstancePerType> gravelParticles;
+    std::array<ParticleInstance *, kNumInstancePerType> grassParticles;
+    std::array<ParticleInstance *, kNumInstancePerType> startExhaustParticles;
+
+private:
+    void stopAll( bool bImmediate );
 };

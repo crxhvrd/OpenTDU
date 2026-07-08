@@ -25,7 +25,6 @@ CarState::CarState()
       rimID( 0xffffffff ),
       colorID( 0xffffffff ),
       pVehicleBase( nullptr ),
-      field_0x39b4( nullptr ),
       field_0x39bc( nullptr ),
       field_0x39c0( nullptr ),
       field_0x39cc( nullptr ),
@@ -39,7 +38,8 @@ CarState::CarState()
       bIsIndoor( false ),
       bUseShowcaseControl( false ),
       packHashcode( 0 ),
-      pResource( nullptr ) {
+      pResource( nullptr ),
+      pPhysicsCar( nullptr ) {
     // FUN_00414270
     body.reset();
     for ( WheelState &wheelState : wheels ) {
@@ -78,7 +78,7 @@ void CarState::reset() {
     bInstanceAlive = false;
     bUseShowcaseControl = false;
 
-    field_0x39b4 = nullptr;
+    pPhysicsCar = nullptr;
     pVehicleBase = nullptr;
     field_0x39bc = nullptr;
     field_0x39cc = nullptr;
