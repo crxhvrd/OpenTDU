@@ -8,11 +8,21 @@ class TestDriveGameInstance;
 
 class GameSystem {
 public:
+    inline void setStaticallyAllocated( bool param_1 ) {
+        bStaticallyAllocated = param_1;
+    }
+    inline bool isStaticallyAllocated() const { return bStaticallyAllocated; }
+
+#ifdef OTDU_USE_IMGUI
+    inline bool hasDebugMenu() const { return bDebugMenuImplemented; }
+#endif
+
+public:
     GameSystem();
     virtual ~GameSystem() {}
 
     virtual const char *getName() const { return "NoName"; }
-    virtual bool initialize( TestDriveGameInstance * ) = 0;
+    virtual bool initialize( TestDriveGameInstance * );
     virtual void tick( float totalTime, float deltaTime ) {};
     virtual void draw( float deltaTime ) {};
     virtual void terminate() = 0;
@@ -22,13 +32,8 @@ public:
     bool isPaused() const;
     uint32_t getIndex() const;
 
-    inline void setStaticallyAllocated( bool param_1 ) {
-        bStaticallyAllocated = param_1;
-    }
-    inline bool isStaticallyAllocated() { return bStaticallyAllocated; }
-
 #ifdef OTDU_USE_IMGUI
-    virtual void drawDebug( float deltaTime ) {}
+    virtual void drawDebug( float deltaTime ) { bDebugMenuImplemented = false; }
 #endif
 
 protected:
@@ -36,4 +41,8 @@ protected:
     uint32_t index;
     uint8_t bPaused : 1;
     uint8_t bStaticallyAllocated : 1;
+
+#ifdef OTDU_USE_IMGUI
+    bool bDebugMenuImplemented;
+#endif
 };

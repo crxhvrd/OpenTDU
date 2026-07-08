@@ -544,10 +544,6 @@ bool TestDriveGameInstance::initialize() {
         return false;
     }
 
-    for ( GameSystem *pSystem : registeredServices ) {
-        pSystem->reset();
-    }
-
     return true;
 }
 
@@ -744,9 +740,12 @@ void TestDriveGameInstance::drawDebugMenu( float deltaTime ) {
 
         if ( ImGui::CollapsingHeader( "Game Services" ) ) {
             for ( GameSystem *pService : registeredServices ) {
-                if ( ImGui::CollapsingHeader( pService->getName() ) ) {
-                    pService->drawDebug( deltaTime );
+                if ( !pService->hasDebugMenu() ) {
+                    continue;
                 }
+
+                ImGui::SeparatorText( pService->getName() );
+                pService->drawDebug( deltaTime );
             }
         }
 

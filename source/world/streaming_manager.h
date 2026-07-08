@@ -44,6 +44,7 @@ public:
     void pause();
     void pauseSectorActors();
     void resume();
+    void reinit();
 
     bool computeGroundColor( Eigen::Vector4f *pOutColor,
                              const Eigen::Vector4f *pWorldPos );
@@ -153,7 +154,6 @@ private:
     void stitchAreaToAreaSeams();
     Area *findAreaEntry( const GridPos2D &areaCell );
     void loadActiveLevel();
-    void reinit();
     void restreamAroundStartSector();
     void setupActiveAreas( const GridPos2D &areaCell,
                            const GridPos2D &sectorCell );
