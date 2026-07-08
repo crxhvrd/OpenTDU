@@ -10,12 +10,17 @@
 #include "havok/havok_to_jolt.h"
 #include "database/gs_database.h"
 
+#include "imgui.h"
+
+#include <cmath>
+
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -23,6 +28,7 @@
 #include <Jolt/Physics/Body/BodyID.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
@@ -36,9 +42,11 @@ GSPhysics *gpPhysics = nullptr;
 ePhysicsThreadMode gPhysicsThreadPriority = PTM_Off; // DAT_010e765c
 int32_t gPhysicsThreadFrequency = 0x64;              // DAT_00f87ffc
 
-int32_t DAT_010e7640 = 0;     // DAT_010e7640
-int32_t INT_00f87fec = 0x200; // DAT_00f87fec
-bool BOOL_010e7644 = false;   // DAT_010e7644
+int32_t DAT_010e7640 = 0;        // DAT_010e7640
+int32_t INT_00f87fec = 0x200;    // DAT_00f87fec
+int32_t INT_00f87ff4 = 0x500000; // DAT_00f87ff4
+int32_t INT_00f87ff8 = 0x1;      // INT_00f87ff8
+bool BOOL_010e7644 = false;      // DAT_010e7644
 
 static float gPhysicsRefreshRate = 0.0f; // DAT_0168d6b4
 
@@ -655,6 +663,30 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
         return nullptr;
     }
 
+    const float bodyHalfHeight =
+        ( db.Height > 0 ? db.Height : 1300 ) * 0.5f * 0.001f;
+
+    const float gcHeight = JPH::Clamp(
+        db.GravityCenterHeight > 0 ? db.GravityCenterHeight * 0.01f : 0.40f,
+        0.15f, 0.60f );
+    const float comOffsetY =
+        JPH::Clamp( gcHeight - bodyHalfHeight, -0.9f * bodyHalfHeight, -0.02f );
+
+    const float wheelBaseM =
+        ( db.WheelBase > 0 ? db.WheelBase : 2600 ) * 0.001f;
+    const float gcLengthFrac =
+        db.GravityCenterLength > 0 ? db.GravityCenterLength * 0.01f : 0.5f;
+    const float comOffsetZ =
+        JPH::Clamp( ( gcLengthFrac - 0.5f ) * wheelBaseM, -0.175f * wheelBaseM,
+                    0.175f * wheelBaseM );
+
+    JPH::OffsetCenterOfMassShapeSettings comShapeSettings(
+        JPH::Vec3( 0.0f, comOffsetY, comOffsetZ ), shapeResult.Get() );
+    JPH::ShapeSettings::ShapeResult comResult = comShapeSettings.Create();
+    if ( !comResult.IsValid() ) {
+        return nullptr;
+    }
+
     // World placement (row-major Matrix4x4f_t -> column-major Jolt).
     JPH::Mat44 world = JPH::Mat44::sIdentity();
     for ( int32_t c = 0; c < 4; c++ ) {
@@ -664,7 +696,7 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
     }
 
     JPH::BodyCreationSettings settings(
-        shapeResult.Get(), JPH::RVec3( world.GetTranslation() ),
+        comResult.Get(), JPH::RVec3( world.GetTranslation() ),
         world.GetQuaternion().Normalized(), JPH::EMotionType::Dynamic,
         TDUPhysLayers::MOVING );
     settings.mOverrideMassProperties =
@@ -702,6 +734,79 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
                    bHasFactoryShape ? "havok" : "db-box",
                    settings.mMassPropertiesOverride.mMass );
     return pCar;
+}
+
+void GSPhysics::drawDebug( float ) {
+    int32_t carIndex = 0;
+    if ( pPhysicsCarsBegin != nullptr ) {
+        for ( PhysicsCar *it = pPhysicsCarsBegin; it != pPhysicsCarsEnd;
+              ++it ) {
+            if ( !it->isActive() ) {
+                continue;
+            }
+
+            const float speedKmh = it->getChassisSpeed() * 3.6f;
+            const float rpm = it->getEngineAngularVelocity() * 9.549296f;
+            ImGui::Text( "Vehicle %d", carIndex );
+            ImGui::Text( "Speed %6.1f km/h   Gear %d   RPM %5.0f", speedKmh,
+                         it->getCurrentGear(), rpm );
+            ImGui::Text( "Lateral G %+5.2f   Longitudinal G %+5.2f",
+                         it->getLateralG(), it->getLongitudinalG() );
+
+            const Matrix4x4f_t chassis = it->getChassisWorldMatrix();
+            const float rollDeg =
+                atan2f( chassis( 1, 0 ), chassis( 1, 1 ) ) * 57.29578f;
+            const float pitchDeg =
+                atan2f( chassis( 1, 2 ), chassis( 1, 1 ) ) * 57.29578f;
+            ImGui::Text( "Roll %+5.1f deg   Pitch %+5.1f deg", rollDeg,
+                         pitchDeg );
+
+            const char *pWheelNames[4] = { "FL", "FR", "RL", "RR" };
+            if ( ImGui::BeginTable( "wheels", 6,
+                                    ImGuiTableFlags_Borders |
+                                        ImGuiTableFlags_RowBg ) ) {
+                ImGui::TableSetupColumn( "Wheel" );
+                ImGui::TableSetupColumn( "Ground" );
+                ImGui::TableSetupColumn( "Load" );
+                ImGui::TableSetupColumn( "Susp" );
+                ImGui::TableSetupColumn( "SlipLong" );
+                ImGui::TableSetupColumn( "SlipLat" );
+                ImGui::TableHeadersRow();
+
+                static float smoothedLoad[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+                const uint32_t numWheels = it->getNumWheels();
+                for ( uint32_t w = 0; w < numWheels; w++ ) {
+                    const PhysicsCar::WheelReadout wheel =
+                        it->getWheelReadout( w );
+                    if ( w < 4 ) {
+                        smoothedLoad[w] +=
+                            ( wheel.SuspensionLoad - smoothedLoad[w] ) * 0.1f;
+                    }
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::Text( "%s", w < 4 ? pWheelNames[w] : "?" );
+                    ImGui::TableNextColumn();
+                    ImGui::Text( "%s", wheel.bGrounded ? "yes" : "AIR" );
+                    ImGui::TableNextColumn();
+                    ImGui::Text( "%.0f", w < 4 ? smoothedLoad[w]
+                                               : wheel.SuspensionLoad );
+                    ImGui::TableNextColumn();
+                    ImGui::Text( "%.3f", wheel.SuspensionLength );
+                    ImGui::TableNextColumn();
+                    ImGui::Text( "%+.2f", wheel.LongitudinalSlip );
+                    ImGui::TableNextColumn();
+                    ImGui::Text( "%+.1f", wheel.LateralSlip * 57.29578f );
+                }
+                ImGui::EndTable();
+            }
+            ImGui::Separator();
+            carIndex++;
+        }
+    }
+
+    if ( carIndex == 0 ) {
+        ImGui::Text( "No active vehicle" );
+    }
 }
 
 void GSPhysics::addInfinitePlane( float planeHeight ) {
@@ -1031,6 +1136,11 @@ void GSPhysics::initializeJolt() {
     pPhysicsSystem = new JPH::PhysicsSystem();
     pPhysicsSystem->Init( 65536, 0, 65536, 20480, *pBpLayerInterface,
                           *pObjectVsBPLayerFilter, *pObjectLayerPairFilter );
+
+    JPH::PhysicsSettings physicsSettings = pPhysicsSystem->GetPhysicsSettings();
+    physicsSettings.mNumVelocitySteps = 24;
+    physicsSettings.mNumPositionSteps = 4;
+    pPhysicsSystem->SetPhysicsSettings( physicsSettings );
 
     pPhysicsSystem->SetGravity( JPH::Vec3( 0.0f, -9.81f, 0.0f ) );
 

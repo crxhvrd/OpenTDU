@@ -52,6 +52,10 @@ static CmdLineArg CmdLineArgVBL( "vbl", []( const char *pArg ) {
     }
 } );
 
+inline bool IsWordDelimiter( char c ) {
+    return c == ' ' || c == '\t' || c == '=' || c == '\r' || c == '\n';
+}
+
 GSConfig *gpConfig = nullptr;
 
 GSConfig::GSConfig()
@@ -640,6 +644,17 @@ Eigen::Vector4f GSConfig::ParseVector4( std::string &argStr, size_t &it ) {
         vec4[i] = ParseFloat( argStr, it );
     }
     return vec4;
+}
+
+std::string GSConfig::ParseStringNoQuotes( std::string &argStr, size_t &it ) {
+    while ( it < argStr.length() && IsWordDelimiter( argStr[it] ) ) {
+        it++;
+    }
+    size_t start = it;
+    while ( it < argStr.length() && !IsWordDelimiter( argStr[it] ) ) {
+        it++;
+    }
+    return argStr.substr( start, it - start );
 }
 
 DeviceAction *PlayerConfiguration::findActionInList( const char *param_1 ) {

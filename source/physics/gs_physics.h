@@ -74,6 +74,10 @@ public:
     }
 
     friend void *FUN_0081f0b0( void *pArg );
+    inline void setDebugModeEnabled( bool bState ) {
+        bHavokDebugEnabled = bState;
+    }
+    inline void setDebugDrawEnabled( bool bState ) { bDrawDebugInfos = bState; }
 
 public:
     GSPhysics();
@@ -83,6 +87,7 @@ public:
     void terminate() override;
     void tick( float totalTime, float deltaTime ) override;
     void draw( float deltaTime ) override;
+    void drawDebug( float deltaTime ) override;
     void pause() override { /* FUN_00841760 (NOP) */ }
     void reset() override { /* FUN_00841850 (NOP) */ }
 
@@ -226,3 +231,7 @@ struct PhysicsLock {
     PhysicsLock() { gpPhysics->lockMutex(); }
     ~PhysicsLock() { gpPhysics->unlockMutex(); }
 };
+
+extern int32_t INT_00f87fec;
+extern int32_t INT_00f87ff4;
+extern int32_t INT_00f87ff8;

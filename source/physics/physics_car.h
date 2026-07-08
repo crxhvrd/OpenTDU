@@ -45,7 +45,8 @@ public:
         float LongitudinalSlip;
         float LateralSlip;
         float LongitudinalGroundSpeed; // m/s along contact-forward (0 airborne)
-        float Radius;                  // m
+        float SuspensionLoad;
+        float Radius; // m
         bool bGrounded;
     };
 
@@ -54,6 +55,8 @@ public:
     float getChassisSpeed() const; // chassis linear-velocity magnitude, m/s
     float getEngineAngularVelocity() const; // rad/s (CarBodyState::Omega unit)
     int32_t getCurrentGear() const;
+    float getLateralG() const;
+    float getLongitudinalG() const;
 
 private:
     JPH::PhysicsSystem *pPhysicsSystem;
@@ -67,4 +70,16 @@ private:
 
     // Per-wheel ride-height suspension length.
     float restSuspensionLength[4];
+
+    float axleDriveGrip[2];
+    float axleBrakeGrip[2];
+
+    float prevWorldVelocity[3];
+    float localAccelLong;
+    float localAccelLat;
+
+    float aeroDragCoef;
+    float aeroDownforceCoef;
+    float aeroHalfWheelBase;
+    float aeroFrontFraction;
 };

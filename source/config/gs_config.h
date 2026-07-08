@@ -213,6 +213,7 @@ public:
     static int32_t ParseInteger( std::string &argStr, size_t &it );
     static float ParseFloat( std::string &argStr, size_t &it );
     static Eigen::Vector4f ParseVector4( std::string &argStr, size_t &it );
+    static std::string ParseStringNoQuotes( std::string &argStr, size_t &it );
 
 private:
     using CommandCallback_t = std::function<void( const char * )>;
