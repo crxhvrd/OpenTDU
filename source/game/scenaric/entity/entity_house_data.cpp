@@ -4,10 +4,8 @@
 EntityHouseData::EntityHouseData()
     : Entity(), Field0( 0 ), Field1( 0 ), Field2( 0 ) {
     // FUN_00424180
-    OTDU_UNIMPLEMENTED;
 }
 
 EntityHouseData::~EntityHouseData() {
     // FUN_00424120
-    OTDU_UNIMPLEMENTED;
 }
