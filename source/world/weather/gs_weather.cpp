@@ -429,6 +429,18 @@ HDRIConfig *GSWeather::getHDRConfigByName( const char *pName ) {
     return nullptr;
 }
 
+HDRIConfig *GSWeather::registerHDRConfig() {
+    // FUN_007d0f60
+    if ( registeredHDRIConfigs.size() >= 16 ) {
+        return nullptr;
+    }
+
+    HDRIConfig *pConfig =
+        new ( TestDrive::Alloc( sizeof( HDRIConfig ) ) ) HDRIConfig();
+    registeredHDRIConfigs.push_back( pConfig );
+    return pConfig;
+}
+
 #ifdef OTDU_USE_IMGUI
 void GSWeather::drawDebug( float deltaTime ) {
     ImGui::SeparatorText( "Time of day" );

@@ -90,3 +90,7 @@ private:
 };
 
 extern GSAvatar *gpAvatar;
+
+extern float gAvatarInCarLightFactor[6];
+extern float gAvatarConvertibleLightFactor[6];
+extern float gAvatarOutCarLightFactor[6];

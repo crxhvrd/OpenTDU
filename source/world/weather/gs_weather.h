@@ -74,6 +74,7 @@ public:
     int32_t getNumRegisteredWeatherConfig() const;
 
     HDRIConfig *getHDRConfigByName( const char *pName );
+    HDRIConfig *registerHDRConfig();
 
 private:
     uint8_t bEnabled : 1;

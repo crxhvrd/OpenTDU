@@ -15,6 +15,10 @@ uint64_t gHashcodeTeeth = 0;
 uint64_t gHashcodeTorso = 0;
 uint64_t gHashcodeHideable = 0;
 
+float gAvatarInCarLightFactor[6] = {};       // DAT_010c44d8
+float gAvatarConvertibleLightFactor[6] = {}; // DAT_010c44c0
+float gAvatarOutCarLightFactor[6] = {};      // DAT_010c44f0
+
 GSAvatar *gpAvatar = nullptr; // DAT_010e7460
 
 GSAvatar::GSAvatar()

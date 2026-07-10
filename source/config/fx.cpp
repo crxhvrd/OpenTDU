@@ -10,6 +10,12 @@
 #include "world/mng_ocean.h"
 #include "world/mng_tall_grass.h"
 
+#include "world/weather/gs_weather.h"
+
+#include "game/avatar/gs_avatar.h"
+
+static HDRIConfig *gpParsingHDRConfig = nullptr; // DAT_010e7298
+
 void GSConfig::registerFXCommands() {
     registerCommand( "FXO_REFLECTIONBLURINESS", [&]( const char *pArg ) {
         // FUN_00983a10
@@ -184,27 +190,47 @@ void GSConfig::registerFXCommands() {
 
     registerCommand( "HDRCONF_NAME", [&]( const char *pArg ) {
         // FUN_009871f0
-        OTDU_UNIMPLEMENTED
+        gpParsingHDRConfig = gpWeather->registerHDRConfig();
+        if ( gpParsingHDRConfig != nullptr ) {
+            std::string argStr( pArg );
+            size_t it = 0;
+
+            std::string name = ParseString( argStr, it );
+            if ( name.size() > 15 ) {
+                name.resize( 15 );
+            }
+            gpParsingHDRConfig->Name = name;
+        }
     } );
 
     registerCommand( "HDRCONF_GLOW_MOD", [&]( const char *pArg ) {
         // FUN_00983680
-        OTDU_UNIMPLEMENTED
+        if ( gpParsingHDRConfig != nullptr ) {
+            gpParsingHDRConfig->GlowMod = static_cast<float>( atof( pArg ) );
+        }
     } );
 
     registerCommand( "HDRCONF_STAR_MOD", [&]( const char *pArg ) {
         // FUN_00983660
-        OTDU_UNIMPLEMENTED
+        if ( gpParsingHDRConfig != nullptr ) {
+            gpParsingHDRConfig->StarMod = static_cast<float>( atof( pArg ) );
+        }
     } );
 
     registerCommand( "HDRCONF_BRIGHT_THRESHOLD_GLOW", [&]( const char *pArg ) {
         // FUN_00983640
-        OTDU_UNIMPLEMENTED
+        if ( gpParsingHDRConfig != nullptr ) {
+            gpParsingHDRConfig->BrightThresholdGlow =
+                static_cast<float>( atof( pArg ) );
+        }
     } );
 
     registerCommand( "HDRCONF_BRIGHT_THRESHOLD_STAR", [&]( const char *pArg ) {
         // FUN_00983620
-        OTDU_UNIMPLEMENTED
+        if ( gpParsingHDRConfig != nullptr ) {
+            gpParsingHDRConfig->BrightThresholdStar =
+                static_cast<float>( atof( pArg ) );
+        }
     } );
 
     registerCommand( "FXREFL_BG_COLOR", [&]( const char *pArg ) {
@@ -223,107 +249,122 @@ void GSConfig::registerFXCommands() {
 
     registerCommand( "AVATAROUTCARLIGHTFACTOR", [&]( const char *pArg ) {
         // FUN_00983b70
-        OTDU_UNIMPLEMENTED;
+        size_t it = 0;
+        std::string argStr( pArg );
+
+        for ( int32_t i = 0; i < 6; i++ ) {
+            gAvatarOutCarLightFactor[i] = ParseFloat( argStr, it );
+        }
     } );
 
     registerCommand( "AVATARCONVERTIBLELIGHTFACTOR", [&]( const char *pArg ) {
         // FUN_00983b00
-        OTDU_UNIMPLEMENTED
+        size_t it = 0;
+        std::string argStr( pArg );
+
+        for ( int32_t i = 0; i < 6; i++ ) {
+            gAvatarConvertibleLightFactor[i] = ParseFloat( argStr, it );
+        }
     } );
 
     registerCommand( "AVATARINCARLIGHTFACTOR", [&]( const char *pArg ) {
         // FUN_00983a90
-        OTDU_UNIMPLEMENTED
+        size_t it = 0;
+        std::string argStr( pArg );
+
+        for ( int32_t i = 0; i < 6; i++ ) {
+            gAvatarInCarLightFactor[i] = ParseFloat( argStr, it );
+        }
     } );
 
     registerCommand( "NBELTULTRANEAR", [&]( const char *pArg ) {
         // FUN_00987790
-        OTDU_UNIMPLEMENTED
+        gGrassNumElementUltraNear = atoi( pArg );
     } );
 
     registerCommand( "NBELTNEAR", [&]( const char *pArg ) {
         // FUN_00987770
-        OTDU_UNIMPLEMENTED
+        gGrassNumElementNear = atoi( pArg );
     } );
 
     registerCommand( "NBELTFAR", [&]( const char *pArg ) {
         // FUN_00987750
-        OTDU_UNIMPLEMENTED
+        gGrassNumElementFar = atoi( pArg );
     } );
 
     registerCommand( "ALPHASTARTULTRANEAR", [&]( const char *pArg ) {
         // FUN_00987610
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaStartUltraNear = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "ALPHALENGTHULTRANEAR", [&]( const char *pArg ) {
         // FUN_009875f0
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaLengthUltraNear = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "SCALESTARTULTRANEAR", [&]( const char *pArg ) {
         // FUN_009876d0
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaScaleUltraNear = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "SCALELENGTHULTRANEAR", [&]( const char *pArg ) {
         // FUN_009876b0
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaScaleLengthUltraNear = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "SCALEFACTORULTRANEAR", [&]( const char *pArg ) {
         // FUN_00987730
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaScaleFactorUltraNear = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "ALPHASTARTNEAR", [&]( const char *pArg ) {
         // FUN_009875d0
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaStartNear = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "ALPHALENGTHNEAR", [&]( const char *pArg ) {
         // FUN_009875b0
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaLengthNear = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "SCALESTARTNEAR", [&]( const char *pArg ) {
         // FUN_00987690
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaScaleNear = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "SCALELENGTHNEAR", [&]( const char *pArg ) {
         // FUN_00987670
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaScaleLengthNear = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "SCALEFACTORNEAR", [&]( const char *pArg ) {
         // FUN_00987710
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaScaleFactorNear = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "ALPHASTARTFAR", [&]( const char *pArg ) {
-        // FUN_00987570
-        OTDU_UNIMPLEMENTED
+        // FUN_00987590
+        gGrassAlphaStartFar = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "ALPHALENGTHFAR", [&]( const char *pArg ) {
         // FUN_00987570
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaLengthFar = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "SCALESTARTFAR", [&]( const char *pArg ) {
         // FUN_00987650
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaScaleFar = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "SCALELENGTHFAR", [&]( const char *pArg ) {
         // FUN_00987630
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaScaleLengthFar = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "SCALEFACTORFAR", [&]( const char *pArg ) {
         // FUN_009876f0
-        OTDU_UNIMPLEMENTED
+        gGrassAlphaScaleFactorFar = static_cast<float>( atof( pArg ) );
     } );
 
     registerCommand( "ALPHAREF", [&]( const char *pArg ) {

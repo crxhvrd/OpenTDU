@@ -134,6 +134,27 @@ private:
 extern bool gbGrassEnabled;
 extern MngTallGrass *gpMngTallGrass;
 
+extern int32_t gGrassNumElementUltraNear;
+extern int32_t gGrassNumElementNear;
+extern int32_t gGrassNumElementFar;
+
+extern float gGrassAlphaStartUltraNear;
+extern float gGrassAlphaLengthUltraNear;
+extern float gGrassAlphaScaleUltraNear;
+extern float gGrassAlphaScaleLengthUltraNear;
+extern float gGrassAlphaScaleFactorUltraNear;
+
+extern float gGrassAlphaStartNear;
+extern float gGrassAlphaLengthNear;
+extern float gGrassAlphaScaleNear;
+extern float gGrassAlphaScaleLengthNear;
+extern float gGrassAlphaScaleFactorNear;
+
+extern float gGrassAlphaStartFar;
+extern float gGrassAlphaLengthFar;
+extern float gGrassAlphaScaleFar;
+extern float gGrassAlphaScaleLengthFar;
+extern float gGrassAlphaScaleFactorFar;
 extern int32_t gGrassAlphaRef;
 extern float gGrassWindFactor;
 extern float gGrassWindSpeedLimit;
