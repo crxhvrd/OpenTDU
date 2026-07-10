@@ -10,6 +10,16 @@ public:
     EntityTransporter();
     ~EntityTransporter();
 
-protected:
+    void loadResources( ScenaricBank *param_2 ) override;
+    void deserialize( BinaryReader *param_2 ) override;
+
+private:
     const char *pMapName;
+    uint32_t Reward;
+    uint32_t Coupon;
+    uint64_t GoodiesHashcode;
+    Entity *pGoodies;
+    AvatarConfiguration DstAvatarConfig;
+    uint32_t ConditionType;
+    ChallengeCondition Condition;
 };
