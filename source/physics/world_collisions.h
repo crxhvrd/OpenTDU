@@ -30,6 +30,7 @@ struct PhysicsSHK {
         nullptr; // TODO: Pointer to some havok class instance. We will
                  // have to either RE how it works or find a way to
                  // dynamically generate colliders at runtime
+    const void *pKey = nullptr;
     int32_t MaxNumObjects = 0;
     int32_t NumObjects = 0;
     PhysicsSectorObj *pObjects = nullptr;

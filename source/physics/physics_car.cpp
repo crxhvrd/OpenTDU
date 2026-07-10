@@ -112,6 +112,11 @@ PhysicsCar::WheelReadout PhysicsCar::getWheelReadout( uint32_t index ) const {
         const JPH::Vec3 v = pWheel->GetContactPointVelocity();
         const JPH::Vec3 fwd = pWheel->GetContactLongitudinal();
         out.LongitudinalGroundSpeed = v.Dot( fwd );
+        if ( pPhysicsSystem != nullptr ) {
+            out.ContactSurface = static_cast<uint32_t>(
+                pPhysicsSystem->GetBodyInterface().GetUserData(
+                    pWheel->GetContactBodyID() ) );
+        }
     }
     return out;
 }

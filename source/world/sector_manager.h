@@ -41,6 +41,8 @@ public:
 
     void buildRenderDescriptor();
     float getQuadScale() const { return quadSize; }
+    float getAreaOriginX() const { return static_cast<float>( areaOffsetX ); }
+    float getAreaOriginZ() const { return static_cast<float>( areaOffsetY ); }
 
 public:
     Render2DB *pColorBitmap = nullptr;  // ground colour (DXT1)

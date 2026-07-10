@@ -11,6 +11,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
 #include "physics/physics_car.h"
+#include "physics/gs_physics.h" // TDUSurface
 #include "car_state.h"
 
 GSCarState *gpCarState = nullptr; // DAT_010e7518
@@ -162,9 +163,21 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 Eigen::Vector4f( ro.LocalPosition.x(), ro.LocalPosition.y(),
                                  ro.LocalPosition.z(), 1.0f );
 
-            // TODO: FIXME: Proper asphalt/grass/dirt classification (not
-            // implemented yet)
-            wheel.ContactMaterial = eMaterialType::MT_Dirt;
+            switch ( ro.ContactSurface ) {
+            case TDUSurface::Road:
+                wheel.ContactMaterial = eMaterialType::MT_Asphalt;
+                wheel.bOnRoad = true;
+                break;
+            case TDUSurface::Object:
+                wheel.ContactMaterial = eMaterialType::MT_Concrete;
+                wheel.bOnRoad = false;
+                break;
+            case TDUSurface::Terrain:
+            default:
+                wheel.ContactMaterial = eMaterialType::MT_Dirt;
+                wheel.bOnRoad = false;
+                break;
+            }
             if ( ro.bGrounded ) {
                 numGrounded++;
             }

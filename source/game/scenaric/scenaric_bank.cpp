@@ -706,8 +706,9 @@ void ScenaricBank::loadContent() {
         bank.getEntry( i, entry );
 
         if ( entry.Type == 0 ) {
-            if ( !bIsSpotBank ) {
-                OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+            if ( !bIsSpotBank && entry.SubType == 0xc &&
+                 gpPhysics != nullptr ) {
+                gpPhysics->queuePropCollisionFactory( entry.pData, entry.Size );
             }
             continue;
         }

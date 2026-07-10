@@ -15,6 +15,7 @@
 #include <cmath>
 
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Factory.h>
@@ -57,6 +58,11 @@ static bool gbShowGMeter = false;        // DAT — G-meter overlay visibility
 
 // Global time multiplier (1.0 = real-time; < 1.0 = slow-mo).
 static float gPhysicsTimeScale = 1.0f; // DAT_00f8a2ec
+
+// TEMP bring-up diagnostic counters for sector collision orientation.
+static int32_t gTallBodyCount = 0;
+static int32_t gFlatBodyCount = 0;
+static float gMaxBodyY = 0.0f;
 
 // If incoming dt exceeds this, clamp to kPhysicsMaxDt.
 static constexpr float kPhysicsDtClampThreshold =
@@ -109,6 +115,84 @@ void *FUN_0081f0b0( void *pArg ) {
 static void *
 JoltReallocate( void *inBlock, size_t inOldSize, size_t inNewSize ) {
     return TestDrive::Realloc( inBlock, inNewSize );
+}
+
+void BuildMechaMembers( const HavokContainer &container,
+                        int32_t entryCount,
+                        HavokFactoryData *pData ) {
+    const uint8_t *pBuf = container.getVehicleBuffer();
+    const uint32_t bufSize = container.getVehicleBufferSize();
+    if ( pBuf == nullptr || bufSize < 0x40 ) {
+        return; // no descriptors (e.g. a plain vehicle factory)
+    }
+
+    auto readU32 = [&]( uint32_t off ) -> uint32_t {
+        return *reinterpret_cast<const uint32_t *>( pBuf + off );
+    };
+
+    uint32_t o = 0;
+    bool bLayoutOk = true;
+
+    while ( o + 0x40 <= bufSize ) {
+        const uint32_t regIdx = readU32( o + 0x00 );
+        const uint32_t flags = readU32( o + 0x04 );
+        const uint32_t marker = readU32( o + 0x10 );
+
+        if ( regIdx >= static_cast<uint32_t>( entryCount ) ||
+             container.getEntry( static_cast<int32_t>( regIdx ) ).Type !=
+                 ePhysEntityType::PET_Vehicle ||
+             marker != 0xFFFFFFFFu ) {
+            bLayoutOk = false;
+            break;
+        }
+
+        const uint32_t rbCount = readU32( o + 0x30 );
+        const uint32_t rbCount2 = readU32( o + 0x34 );
+        const uint32_t refsOff = o + 0x40;
+        if ( rbCount > 4096 || rbCount2 > 4096 ||
+             refsOff + ( static_cast<uint64_t>( rbCount ) + rbCount2 ) * 0x10 >
+                 bufSize ) {
+            bLayoutOk = false;
+            break;
+        }
+
+        std::vector<uint64_t> members;
+        members.reserve( rbCount );
+        for ( uint32_t r = 0; r < rbCount; r++ ) {
+            const uint64_t member = *reinterpret_cast<const uint64_t *>(
+                pBuf + refsOff + r * 0x10 );
+            members.push_back( member );
+        }
+
+        uint32_t next = refsOff + ( rbCount + rbCount2 ) * 0x10;
+        if ( ( flags & 1u ) != 0 ) {
+            if ( next + 0x10 > bufSize ) {
+                bLayoutOk = false;
+                break;
+            }
+            const uint32_t cCount = readU32( next + 0x00 );
+            const uint32_t cCount2 = readU32( next + 0x04 );
+            next += 0x10 + ( cCount + cCount2 ) * 0x10;
+        }
+        if ( next > bufSize ) {
+            bLayoutOk = false;
+            break;
+        }
+
+        const PhysFactory::Entry e =
+            container.getEntry( static_cast<int32_t>( regIdx ) );
+        if ( !members.empty() ) {
+            pData->MechaMembers.emplace_back( e.Hashcode,
+                                              std::move( members ) );
+        }
+        o = next;
+    }
+
+    if ( !bLayoutOk || o != bufSize ) {
+        OTDU_LOG_WARN( "Prop factory: Mecha buffer parse drifted (consumed "
+                       "%u/%u bytes)\n",
+                       o, bufSize );
+    }
 }
 
 GSPhysics::GSPhysics()
@@ -223,8 +307,8 @@ bool GSPhysics::initialize( TestDriveGameInstance *param_2 ) {
         factory.reset();
     }
 
-    numFreeSectors = 0xe;
-    maxNumSectors = 0xe;
+    numFreeSectors = 0x20;
+    maxNumSectors = 0x20;
     DAT_010e7640 = 0;
 
     pSectors = new ( TestDrive::Alloc( sizeof( PhysicsSHK ) * maxNumSectors ) )
@@ -456,6 +540,9 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
     // the delta argument, not the accumulated total.
     bPauseJoltTick = ( deltaTime == 0.0f );
 
+    // Build any prop-collision factory queued before Jolt was ready.
+    buildProcessPendingProps();
+
     // Update world-streaming position from the active player vehicle / camera.
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC/CAMERA
 
@@ -552,6 +639,27 @@ PhysFactory *GSPhysics::createFromBinary( void *param_3, int32_t param_2 ) {
         return nullptr;
     }
 
+    const int32_t entryCount = container.getEntryCount();
+    for ( HavokToJolt::RigidBody &b : pData->Bodies ) {
+        if ( b.RegistryIndex >= static_cast<uint32_t>( entryCount ) ) {
+            continue;
+        }
+        const PhysFactory::Entry e =
+            container.getEntry( static_cast<int32_t>( b.RegistryIndex ) );
+        if ( e.Type == ePhysEntityType::PET_RigidBody ) {
+            b.Hashcode = e.Hashcode;
+        }
+    }
+
+    pData->Registry.reserve( entryCount );
+    for ( int32_t i = 0; i < entryCount; i++ ) {
+        const PhysFactory::Entry e = container.getEntry( i );
+        pData->Registry.emplace_back( e.Hashcode,
+                                      static_cast<uint32_t>( e.Type ) );
+    }
+
+    BuildMechaMembers( container, entryCount, pData );
+
     PhysFactory *pFactory = nullptr;
     for ( PhysFactory &factory : pFactories ) {
         if ( !factory.isInitialized() ) {
@@ -620,10 +728,10 @@ void GSPhysics::instantiateFactory( PhysFactory *pFactory,
     unlockMutex();
 
     const JPH::Vec3 origin = world.GetTranslation();
-    OTDU_LOG_INFO( "Instantiated %d vehicle collision bodies at (%.2f, %.2f, "
-                   "%.2f)\n",
-                   static_cast<int>( pData->LiveBodyIDs.size() - firstNewBody ),
-                   origin.GetX(), origin.GetY(), origin.GetZ() );
+    OTDU_LOG_DEBUG(
+        "Instantiated %d collision bodies at (%.2f, %.2f, %.2f)\n",
+        static_cast<int>( pData->LiveBodyIDs.size() - firstNewBody ),
+        origin.GetX(), origin.GetY(), origin.GetZ() );
 }
 
 PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
@@ -703,6 +811,7 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
         JPH::EOverrideMassProperties::CalculateInertia;
     settings.mMassPropertiesOverride.mMass =
         db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f;
+    settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
 
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
     lockMutex();
@@ -1043,7 +1152,8 @@ RigidBody_t GSPhysics::addHeightfield( const void *pKey,
         shapeResult.Get(), JPH::RVec3( 0.0f, 0.0f, 0.0f ),
         JPH::Quat::sIdentity(), JPH::EMotionType::Static,
         TDUPhysLayers::NON_MOVING );
-    bodySettings.mFriction = 1.0f; // FLOAT_00f4165c
+    bodySettings.mUserData = TDUSurface::Terrain;
+    bodySettings.mFriction = TDUSurface::friction( TDUSurface::Terrain );
 
     lockMutex();
     JPH::Body *pBody =
@@ -1077,6 +1187,334 @@ void GSPhysics::removeHeightfield( const void *pKey ) {
             return;
         }
     }
+}
+
+void GSPhysics::addSectorCollision( const void *pKey,
+                                    void *pBlob,
+                                    uint32_t blobSize,
+                                    float baseX,
+                                    float baseZ,
+                                    uint32_t surfaceClass ) {
+    // Sector static world collision
+    if ( pPhysicsSystem == nullptr || pBlob == nullptr || pKey == nullptr )
+        return;
+
+    HavokPackfile packfile;
+    bool bParsed = false;
+    HavokContainer container;
+    if ( container.parse( pBlob, blobSize ) ) {
+        bParsed = packfile.parse( container.getHavokScene(),
+                                  container.getHavokSceneSize() );
+    }
+    if ( !bParsed ) {
+        bParsed =
+            packfile.parse( static_cast<const uint8_t *>( pBlob ), blobSize );
+    }
+    if ( !bParsed ) {
+        OTDU_LOG_WARN( "Sector collision: blob is neither a physics container "
+                       "nor a Havok packfile (size=%u)\n",
+                       blobSize );
+        return;
+    }
+
+    std::vector<HavokToJolt::RigidBody> bodies;
+    HavokToJolt::buildBodies( packfile, bodies );
+    if ( bodies.empty() ) {
+        // Expected until the MOPP/triangle-mesh converter lands: world/road
+        // shells are hkMoppBvTreeShape-wrapped meshes (type 0x18) which
+        // HavokToJolt::buildShape does not yet handle.
+        OTDU_LOG_WARN( "Sector collision: Havok scene produced no collidable "
+                       "bodies (mesh converter pending?)\n" );
+        return;
+    }
+
+    // Claim a free sector slot.
+    PhysicsSHK *pSlot = nullptr;
+    for ( PhysicsSHK *it = pSectorsBegin; it != pSectorsEnd; ++it ) {
+        if ( it->pKey == nullptr && it->NumObjects == 0 ) {
+            pSlot = it;
+            break;
+        }
+    }
+    if ( pSlot == nullptr ) {
+        OTDU_LOG_WARN( "Sector collision: no free sector slot\n" );
+        return;
+    }
+
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    lockMutex();
+    for ( const HavokToJolt::RigidBody &body : bodies ) {
+        if ( pSlot->NumObjects >= pSlot->MaxNumObjects )
+            break;
+
+        const JPH::RVec3 position( baseX + body.Position.GetX(),
+                                   body.Position.GetY(),
+                                   baseZ + body.Position.GetZ() );
+
+        JPH::BodyCreationSettings settings( body.Shape, position, body.Rotation,
+                                            JPH::EMotionType::Static,
+                                            TDUPhysLayers::NON_MOVING );
+        // Surface material tag (read back by the vehicle to pick tire grip /
+        // FX)
+        settings.mUserData = surfaceClass;
+        settings.mFriction = TDUSurface::friction( surfaceClass );
+
+        JPH::Body *pBody = bodyInterface.CreateBody( settings );
+        if ( pBody != nullptr ) {
+            bodyInterface.AddBody( pBody->GetID(),
+                                   JPH::EActivation::DontActivate );
+            PhysicsSectorObj &obj = pSlot->pObjects[pSlot->NumObjects++];
+            obj.pRigidBody = pBody;
+            obj.pShape = body.Shape;
+
+            // TEMP: REMOVEME:
+            if ( !body.Rotation.IsClose( JPH::Quat::sIdentity(), 1.0e-4f ) ) {
+                const JPH::Vec3 sz = pBody->GetWorldSpaceBounds().GetSize();
+                // Bucket by vertical (Y) size: >8m = an upright wall/building.
+                if ( sz.GetY() > 8.0f )
+                    gTallBodyCount++;
+                else
+                    gFlatBodyCount++;
+                if ( sz.GetY() > gMaxBodyY )
+                    gMaxBodyY = sz.GetY();
+            }
+        }
+    }
+    pSlot->pKey = pKey;
+    unlockMutex();
+
+    // TEMP: REMOVEME: absolute AABB of body positions + how many carry a
+    // non-identity rotation (road-surface meshes are axis-aligned; .shk world
+    // objects rotate — a placement/rotation regression shows up here).
+    JPH::Vec3 lo( 1e18f, 1e18f, 1e18f ), hi( -1e18f, -1e18f, -1e18f );
+    int32_t nonIdentityRot = 0;
+    for ( const HavokToJolt::RigidBody &body : bodies ) {
+        const JPH::Vec3 p( baseX + body.Position.GetX(), body.Position.GetY(),
+                           baseZ + body.Position.GetZ() );
+        lo = JPH::Vec3::sMin( lo, p );
+        hi = JPH::Vec3::sMax( hi, p );
+        if ( !body.Rotation.IsClose( JPH::Quat::sIdentity(), 1.0e-4f ) )
+            nonIdentityRot++;
+    }
+    OTDU_LOG_DEBUG(
+        "Sector collision: %d bodies; areaBase (%.0f,%.0f); body0 "
+        "abs (%.0f,%.0f,%.0f); AABB (%.0f,%.0f,%.0f)..(%.0f,%.0f,"
+        "%.0f); %d/%d rotated\n",
+        pSlot->NumObjects, baseX, baseZ, baseX + bodies[0].Position.GetX(),
+        bodies[0].Position.GetY(), baseZ + bodies[0].Position.GetZ(), lo.GetX(),
+        lo.GetY(), lo.GetZ(), hi.GetX(), hi.GetY(), hi.GetZ(), nonIdentityRot,
+        (int)bodies.size() );
+    OTDU_LOG_DEBUG( "  orientation tally so far: %d tall(>8m Y) / %d flat; max "
+                    "Y-size %.1f m\n",
+                    gTallBodyCount, gFlatBodyCount, gMaxBodyY );
+}
+
+void GSPhysics::removeSectorCollision( const void *pKey ) {
+    if ( pPhysicsSystem == nullptr || pKey == nullptr )
+        return;
+
+    // A sector may own more than one collision slot (its .shk world blob and
+    // its -R.shk road blob are both keyed by the Sector), so tear down every
+    // match.
+    for ( PhysicsSHK *it = pSectorsBegin; it != pSectorsEnd; ++it ) {
+        if ( it->pKey != pKey )
+            continue;
+
+        lockMutex();
+        JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+        for ( int32_t i = 0; i < it->NumObjects; i++ ) {
+            PhysicsSectorObj &obj = it->pObjects[i];
+            if ( obj.pRigidBody != nullptr ) {
+                JPH::Body *pBody = static_cast<JPH::Body *>( obj.pRigidBody );
+                bodyInterface.RemoveBody( pBody->GetID() );
+                bodyInterface.DestroyBody( pBody->GetID() );
+                obj.pRigidBody = nullptr;
+            }
+            obj.pShape = nullptr; // release the shape ref
+        }
+        it->NumObjects = 0;
+        it->pKey = nullptr;
+        unlockMutex();
+    }
+}
+
+void GSPhysics::queuePropCollisionFactory( const void *pBlob,
+                                           uint32_t blobSize ) {
+    // Copy the blob — the scenaric bank buffer that owns it may not stay valid,
+    // and the build is deferred until Jolt is ready (see
+    // buildProcessPendingProps).
+    if ( pBlob == nullptr || blobSize == 0 || !pendingPropBlob.empty() ||
+         pPropFactory != nullptr ) {
+        return;
+    }
+    pendingPropBlob.assign( static_cast<const uint8_t *>( pBlob ),
+                            static_cast<const uint8_t *>( pBlob ) + blobSize );
+}
+
+void GSPhysics::buildProcessPendingProps() {
+    if ( pendingPropBlob.empty() || !bJoltInit || pPropFactory != nullptr ) {
+        return;
+    }
+    pPropFactory =
+        createFromBinary( pendingPropBlob.data(),
+                          static_cast<int32_t>( pendingPropBlob.size() ) );
+    pendingPropBlob.clear();
+    pendingPropBlob.shrink_to_fit();
+    if ( pPropFactory == nullptr ) {
+        OTDU_LOG_WARN( "Prop collision: factory parse failed\n" );
+        return;
+    }
+}
+
+void GSPhysics::placeProp( uint64_t hashcode,
+                           const Matrix4x4f_t &worldTransform,
+                           bool bDynamic,
+                           float linearDamping,
+                           float angularDamping,
+                           std::vector<RigidBody_t> &outBodies ) {
+    if ( pPropFactory == nullptr || pPhysicsSystem == nullptr ||
+         hashcode == 0 ) {
+        return;
+    }
+    HavokFactoryData *pData = pPropFactory->getHavokData();
+    if ( pData == nullptr ) {
+        return;
+    }
+
+    // Resolve the entity's own-ref hashcode to the list of rigid-body hashcodes
+    // to place: a Mecha expands to its member bodies; otherwise the hashcode is
+    // itself a bare rigid body.
+    const std::vector<uint64_t> *pMembers = nullptr;
+    for ( const auto &mm : pData->MechaMembers ) {
+        if ( mm.first == hashcode ) {
+            pMembers = &mm.second;
+            break;
+        }
+    }
+    const uint64_t single[1] = { hashcode };
+    const uint64_t *pList = pMembers ? pMembers->data() : single;
+    const size_t count = pMembers ? pMembers->size() : 1;
+
+    // Gather the member body templates that actually built a shape.
+    std::vector<const HavokToJolt::RigidBody *> members;
+    members.reserve( count );
+    for ( size_t i = 0; i < count; i++ ) {
+        for ( const HavokToJolt::RigidBody &b : pData->Bodies ) {
+            if ( b.Hashcode == pList[i] && b.Shape.GetPtr() != nullptr ) {
+                members.push_back( &b );
+                break;
+            }
+        }
+    }
+
+    // Matrix4x4f_t row-major -> Jolt column-major
+    JPH::Mat44 world = JPH::Mat44::sIdentity();
+    for ( int32_t c = 0; c < 4; c++ ) {
+        world.SetColumn3( c, JPH::Vec3( worldTransform( c, 0 ),
+                                        worldTransform( c, 1 ),
+                                        worldTransform( c, 2 ) ) );
+    }
+
+    lockMutex();
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+
+    if ( bDynamic && !members.empty() ) {
+        JPH::ShapeRefC shape;
+        if ( members.size() == 1 ) {
+            const HavokToJolt::RigidBody *m = members[0];
+            if ( m->Position.IsNearZero() &&
+                 m->Rotation.IsClose( JPH::Quat::sIdentity() ) ) {
+                shape = m->Shape;
+            } else {
+                JPH::RotatedTranslatedShapeSettings s( m->Position, m->Rotation,
+                                                       m->Shape );
+                JPH::ShapeSettings::ShapeResult r = s.Create();
+                if ( r.IsValid() ) {
+                    shape = r.Get();
+                }
+            }
+        } else {
+            JPH::StaticCompoundShapeSettings cs;
+            for ( const HavokToJolt::RigidBody *m : members ) {
+                cs.AddShape( m->Position, m->Rotation, m->Shape );
+            }
+            JPH::ShapeSettings::ShapeResult r = cs.Create();
+            if ( r.IsValid() ) {
+                shape = r.Get();
+            }
+        }
+
+        if ( shape.GetPtr() != nullptr ) {
+            JPH::BodyCreationSettings settings(
+                shape, world.GetTranslation(),
+                world.GetQuaternion().Normalized(), JPH::EMotionType::Dynamic,
+                TDUPhysLayers::MOVING );
+            settings.mOverrideMassProperties =
+                JPH::EOverrideMassProperties::CalculateInertia;
+            settings.mMassPropertiesOverride.mMass =
+                kDynamicPropMass; // TODO: FIXME: Read mass from Havok data
+            settings.mLinearDamping =
+                std::min( std::max( linearDamping, 0.0f ), 1.0f );
+            settings.mAngularDamping =
+                std::min( std::max( angularDamping, 0.05f ), 1.0f );
+            settings.mUserData = TDUSurface::Object;
+            settings.mFriction = TDUSurface::friction( TDUSurface::Object );
+
+            JPH::Body *pBody = bodyInterface.CreateBody( settings );
+            if ( pBody != nullptr ) {
+                bodyInterface.AddBody( pBody->GetID(),
+                                       JPH::EActivation::Activate );
+                outBodies.push_back( pBody );
+            }
+        }
+    } else {
+        for ( const HavokToJolt::RigidBody *m : members ) {
+            const JPH::Mat44 local =
+                JPH::Mat44::sRotationTranslation( m->Rotation, m->Position );
+            const JPH::Mat44 placedM = world * local;
+            JPH::BodyCreationSettings settings(
+                m->Shape, placedM.GetTranslation(),
+                placedM.GetQuaternion().Normalized(), JPH::EMotionType::Static,
+                TDUPhysLayers::NON_MOVING );
+            settings.mUserData = TDUSurface::Object;
+            settings.mFriction = TDUSurface::friction( TDUSurface::Object );
+
+            JPH::Body *pBody = bodyInterface.CreateBody( settings );
+            if ( pBody != nullptr ) {
+                bodyInterface.AddBody( pBody->GetID(),
+                                       JPH::EActivation::DontActivate );
+                outBodies.push_back( pBody );
+            }
+        }
+    }
+    unlockMutex();
+}
+
+bool GSPhysics::getBodyPose( RigidBody_t body,
+                             Matrix4x4f_t &outMatrix,
+                             bool &outActive ) {
+    outActive = false;
+    if ( body == nullptr || pPhysicsSystem == nullptr ) {
+        return false;
+    }
+    JPH::Body *pBody = static_cast<JPH::Body *>( body );
+    lockMutex();
+    const JPH::BodyID id = pBody->GetID();
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    outActive = bodyInterface.IsActive( id );
+    const JPH::Mat44 t = bodyInterface.GetWorldTransform( id );
+    unlockMutex();
+
+    // Jolt column-major -> Matrix4x4f_t row-major (inverse of the placement
+    // conversion: Jolt column c == our row c; column 3 == translation).
+    for ( int32_t c = 0; c < 4; c++ ) {
+        const JPH::Vec3 v = t.GetColumn3( c );
+        outMatrix( c, 0 ) = v.GetX();
+        outMatrix( c, 1 ) = v.GetY();
+        outMatrix( c, 2 ) = v.GetZ();
+        outMatrix( c, 3 ) = ( c == 3 ) ? 1.0f : 0.0f;
+    }
+    return true;
 }
 
 void GSPhysics::physicsStep( float dt, float accTime ) {

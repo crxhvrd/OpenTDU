@@ -11,11 +11,12 @@
 //
 // On-disk layout (little-endian, 32-bit pointers), in this exact order:
 //   +0x00  SerializedPhysicsHeader (0x20 bytes)
-//          Entry table          : NumEntries * 0x20   (SerializedPhysicsEntryDisk)
-//          VehicleDescBuffer     : VehicleDescBufferSize
-//          VehicleBuffer         : VehicleBufferSize
+//          Entry table          : NumEntries * 0x20
+//          (SerializedPhysicsEntryDisk) VehicleDescBuffer     :
+//          VehicleDescBufferSize VehicleBuffer         : VehicleBufferSize
 //          HavokScene            : HavokSceneSize   <- the actual Havok physics
-//                                                      scene (future Jolt input)
+//                                                      scene (future Jolt
+//                                                      input)
 // References between objects inside the buffers are stored by 64-bit hashcode
 // and resolved against the factory registry during load (FUN_00452c90); that
 // binding, and the Havok-scene -> Jolt translation, are later increments.
@@ -69,6 +70,13 @@ public:
 
     inline const uint8_t *getHavokScene() const { return data.pHavokScene; }
     inline uint32_t getHavokSceneSize() const { return data.HavokSceneSize; }
+
+    inline const uint8_t *getVehicleBuffer() const {
+        return data.pVehicleBuffer;
+    }
+    inline uint32_t getVehicleBufferSize() const {
+        return data.VehicleBufferSize;
+    }
 
 private:
     SerializedPhysics data = {};

@@ -29,6 +29,27 @@ struct DBEntryCarPhysicsData;
 
 using RigidBody_t = JPH::Body *;
 
+namespace TDUSurface {
+    enum Class : uint32_t {
+        Unknown = 0,
+        Road = 1,    // -R.shk road mesh -> asphalt, on-road
+        Terrain = 2, // heightfield -> off-road (dirt/grass)
+        Object = 3,  // .shk world object -> wall/post (not driven on)
+    };
+
+    inline float friction( uint32_t surfaceClass ) {
+        switch ( surfaceClass ) {
+        case Road:
+            return 1.0f; // asphalt: full grip (FLOAT_00f4165c)
+        case Terrain:
+            return 0.75f; // off-road: reduced grip
+        case Object:      // walls: grip irrelevant (not a drive surface)
+        default:
+            return 1.0f;
+        }
+    }
+} // namespace TDUSurface
+
 struct CameraCollisionHit {
     Eigen::Vector4f contactPoint; // World-space contact point on the geometry
     Eigen::Vector4f exitNormal; // normalize(-mPenetrationAxis): push sphere OUT
@@ -104,16 +125,29 @@ public:
                                 float originZ );
     void removeHeightfield( const void *pKey );
 
-    // Create live Jolt bodies for an instance of a factory at its world
-    // transform (called when a vehicle is placed). The created body IDs are
-    // tracked on the factory for teardown.
+    void addSectorCollision( const void *pKey,
+                             void *pBlob,
+                             uint32_t blobSize,
+                             float baseX,
+                             float baseZ,
+                             uint32_t surfaceClass );
+    void removeSectorCollision( const void *pKey );
+
+    void queuePropCollisionFactory( const void *pBlob, uint32_t blobSize );
+
+    void placeProp( uint64_t hashcode,
+                    const Matrix4x4f_t &worldTransform,
+                    bool bDynamic,
+                    float linearDamping,
+                    float angularDamping,
+                    std::vector<RigidBody_t> &outBodies );
+
+    bool
+    getBodyPose( RigidBody_t body, Matrix4x4f_t &outMatrix, bool &outActive );
+
     void instantiateFactory( PhysFactory *pFactory,
                              const Matrix4x4f_t &worldTransform );
 
-    // Build a driveable vehicle for a placed car: a dynamic chassis body (the
-    // factory's combined collision, mass from the DB) + a PhysicsCar claimed
-    // from the pool. Returns the PhysicsCar (owned by the pool; the caller
-    // feeds it input and destroys it on unstream) or nullptr.
     PhysicsCar *createVehicle( PhysFactory *pFactory,
                                const Matrix4x4f_t &worldTransform,
                                const DBEntryCarPhysicsData &db );
@@ -129,8 +163,6 @@ public:
 
     void moveSphereBody( RigidBody_t body, const Eigen::Vector4f &position );
 
-    // Returns number of hits found. Uses NarrowPhaseQuery::CollideShape with a
-    // temporary SphereShape so no persistent phantom body is needed.
     int32_t queryCameraCollisions( const Eigen::Vector4f &center,
                                    float radius,
                                    std::vector<CameraCollisionHit> &hits );
@@ -142,8 +174,10 @@ private:
     static constexpr int32_t kMaxNumTireProfiles = 16;
     static constexpr int32_t kMaxNumPhysicsCars = 32;
     static constexpr int32_t kMaxNumPhysicsFactory = 64; // World/scene entities
-    static constexpr int32_t kMaxNumObjectsPerSector = 100;
+    static constexpr int32_t kMaxNumObjectsPerSector = 256;
     static constexpr int32_t kNumHeightfields = 7; // One per streamed sector
+    // Fixed mass for a destructible prop body (temp for test; to be removed)
+    static constexpr float kDynamicPropMass = 40.0f;
 
 private:
     TestDriveThread simulationThread;
@@ -213,13 +247,13 @@ private:
     };
     std::array<PhysicsHeightfield, kNumHeightfields> pHeightfields;
 
+    std::vector<uint8_t> pendingPropBlob;
+    PhysFactory *pPropFactory = nullptr;
+
 private:
     void createHeightfields();
     void initializeJolt();
-
-    // Jolt equivalent of FUN_0081dfd0: one fixed-dt sub-step of the physics
-    // world. Acquires the physics mutex, steps the Jolt simulation, and ticks
-    // per-vehicle / road-phantom systems.
+    void buildProcessPendingProps();
     void physicsStep( float dt, float accTime );
 };
 

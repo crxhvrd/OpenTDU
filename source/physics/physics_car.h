@@ -48,6 +48,7 @@ public:
         float SuspensionLoad;
         float Radius; // m
         bool bGrounded;
+        uint32_t ContactSurface;
     };
 
     uint32_t getNumWheels() const;

@@ -1,12 +1,14 @@
 #pragma once
 
+#include <vector>
+
 class Entity;
 class ScenaricBank;
 class PhysicsDynamicController;
 
+#pragma pack( push, 1 )
 struct SerializedObject {
     uint64_t Hashcode;
-    void *pPointer;
 };
 
 struct SerializedDynamicController : public SerializedObject {
@@ -21,6 +23,8 @@ struct SerializedPureDynamicController : public SerializedObject {
     float AngularDamping;
     int32_t bStatic;
 };
+#pragma pack( pop )
+OTDU_SIZE_MUST_MATCH( SerializedPureDynamicController, 28 );
 
 class GameMechanism {
 public:
@@ -66,7 +70,15 @@ private:
     GameMechanism *pParent;
     int32_t numInstance;
 
+    uint64_t propCollisionHashcode;
+    std::vector<void *> propBodies;
+
     uint8_t bControlledByAvatar : 1;
     uint8_t bInitialized : 1;
     uint8_t bTransformSet : 1;
+    uint8_t bPlacementTried : 1;
+    uint8_t bDynamicProp : 1; // placed as a simulated body (bStatic == 0)
+
+private:
+    void placeCollisionBody( const Matrix4x4f_t &worldTransform );
 };

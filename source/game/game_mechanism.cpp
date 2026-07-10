@@ -2,6 +2,7 @@
 #include "game_mechanism.h"
 
 #include "game/scenaric/entity/base_entity.h"
+#include "physics/gs_physics.h"
 
 GameMechanism::GameMechanism()
     : initialTransformMatrix( Matrix4x4f_t::Identity() ),
@@ -15,9 +16,12 @@ GameMechanism::GameMechanism()
       pEntity( nullptr ),
       pParent( nullptr ),
       numInstance( 0u ),
+      propCollisionHashcode( 0u ),
       bControlledByAvatar( false ),
       bInitialized( false ),
-      bTransformSet( false ) {}
+      bTransformSet( false ),
+      bPlacementTried( false ),
+      bDynamicProp( false ) {}
 
 GameMechanism::~GameMechanism() {}
 
@@ -49,17 +53,70 @@ void GameMechanism::setPureDynamicControllerDesc(
 
 void GameMechanism::loadResources( ScenaricBank *param_2 ) {
     // FUN_007d8a40
+    (void)param_2;
     if ( bControlledByAvatar ) {
         numInstance = 0;
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    if ( pPureDynamicController == nullptr || gpPhysics == nullptr ) {
+        return;
+    }
+
+    propCollisionHashcode = pPureDynamicController->Hashcode;
+    bInitialized = true;
 }
 
 void GameMechanism::tick() {
     // FUN_007d9070
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    if ( bControlledByAvatar || pEntity == nullptr || gpPhysics == nullptr ) {
+        return;
+    }
+    if ( propCollisionHashcode == 0 && pPureDynamicController != nullptr ) {
+        propCollisionHashcode = pPureDynamicController->Hashcode;
+    }
+    if ( propCollisionHashcode != 0 && !bPlacementTried ) {
+        bPlacementTried = true;
+        placeCollisionBody( pEntity->getWorldMatrix() );
+    }
+
+    if ( bDynamicProp && !propBodies.empty() ) {
+        Matrix4x4f_t pose;
+        bool bActive = false;
+        if ( gpPhysics->getBodyPose( static_cast<RigidBody_t>( propBodies[0] ),
+                                     pose, bActive ) &&
+             bActive ) {
+            // The simulated body lives in absolute world space, so publish the
+            // pose as unshifted (bShifted = false via the setTransform bool).
+            pEntity->setTransform( pose, true );
+        }
+    }
+}
+
+void GameMechanism::placeCollisionBody( const Matrix4x4f_t &worldTransform ) {
+    // FUN_004563a0
+    if ( propCollisionHashcode == 0 || gpPhysics == nullptr ) {
+        return;
+    }
+    for ( void *pBody : propBodies ) {
+        gpPhysics->destroyRigidBody( static_cast<RigidBody_t>( pBody ) );
+    }
+    propBodies.clear();
+
+    bDynamicProp = !isStaticController();
+
+    std::vector<RigidBody_t> placedBodies;
+    gpPhysics->placeProp( propCollisionHashcode, worldTransform, bDynamicProp,
+                          pPureDynamicController != nullptr
+                              ? pPureDynamicController->LinearDamping
+                              : linearDamping,
+                          pPureDynamicController != nullptr
+                              ? pPureDynamicController->AngularDamping
+                              : angularDamping,
+                          placedBodies );
+    for ( RigidBody_t pBody : placedBodies ) {
+        propBodies.push_back( static_cast<void *>( pBody ) );
+    }
 }
 
 void GameMechanism::terminate() {
@@ -116,6 +173,9 @@ void GameMechanism::instanciate( GameMechanism *pInstance ) {
     pInstance->pParent = this;
     pInstance->transformMatrix = transformMatrix;
     pInstance->initialTransformMatrix = initialTransformMatrix;
+    pInstance->propCollisionHashcode = propCollisionHashcode;
+    pInstance->bPlacementTried = false;
+    pInstance->propBodies.clear();
 }
 
 void GameMechanism::initInstance() {
@@ -138,8 +198,12 @@ void GameMechanism::initInstance() {
 
 void GameMechanism::removeAndDestroy() {
     // FUN_007d8810
-    OTDU_UNIMPLEMENTED; // TODO: requires the physics controller / car-state
-                        // systems
+    if ( gpPhysics != nullptr ) {
+        for ( void *pBody : propBodies ) {
+            gpPhysics->destroyRigidBody( static_cast<RigidBody_t>( pBody ) );
+        }
+    }
+    propBodies.clear();
     bInitialized = false;
 }
 

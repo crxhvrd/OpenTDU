@@ -666,6 +666,7 @@ void SectorBank::instanciate() {
         bool bHas2DM = false;
 
         const int32_t numEntries = bank.getNumElements();
+
         for ( int32_t i = 0; i < numEntries; i++ ) {
             ParsedBankEntry entry;
             if ( bank.getEntry( i, entry ) != 0 ) {
@@ -947,6 +948,30 @@ void SectorBank::instanciate() {
                                            pHeights, stride, quadSize,
                                            pOwner->heightmap.worldOriginX,
                                            pOwner->heightmap.worldOriginZ );
+            }
+        }
+
+        if ( gpPhysics != nullptr ) {
+            uint32_t shkSize = 0;
+            void *pSHK = getFirstEntry( static_cast<eAssetGroup>( 5 ),
+                                        AT_PhysicsBinary, &shkSize );
+            uint32_t roadSize = 0;
+            void *pRoadSHK =
+                getFirstEntry( static_cast<eAssetGroup>( 5 ),
+                               static_cast<eAssetType>( 27 ), &roadSize );
+
+            const float areaX = pOwner->heightmap.getAreaOriginX();
+            const float areaZ = pOwner->heightmap.getAreaOriginZ();
+
+            if ( pSHK != nullptr ) {
+                // .shk = world objects (buildings/walls/posts).
+                gpPhysics->addSectorCollision( pOwner, pSHK, shkSize, areaX,
+                                               areaZ, TDUSurface::Object );
+            }
+            // -R.shk = road collision
+            if ( pRoadSHK != nullptr ) {
+                gpPhysics->addSectorCollision( pOwner, pRoadSHK, roadSize,
+                                               areaX, areaZ, TDUSurface::Road );
             }
         }
     }
@@ -1360,6 +1385,10 @@ void Sector::reset() {
     }
     geometry.renderInstances.clear();
     geometry.renderInstanceAbsPos.clear();
+
+    if ( gpPhysics != nullptr ) {
+        gpPhysics->removeSectorCollision( this );
+    }
 
     if ( geometry.pHeightmapInstance != nullptr ) {
         if ( gpPhysics != nullptr ) {

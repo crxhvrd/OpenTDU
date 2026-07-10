@@ -83,6 +83,14 @@ public:
 
     inline const uint8_t *getDataBytes() const { return pDataBytes; }
 
+    // Size (bytes) of the cached __data__ section, for bounds-checking reads of
+    // pointer-resolved arrays (mesh vertex/index buffers) that live inside it.
+    inline uint32_t getDataSize() const {
+        return pDataSection != nullptr
+                   ? static_cast<uint32_t>( pDataSection->EndOffset )
+                   : 0;
+    }
+
 private:
     void dumpShape( int32_t shapeOffset, int32_t depth ) const;
 
