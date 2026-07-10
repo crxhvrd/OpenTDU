@@ -174,5 +174,6 @@ protected:
 };
 
 void ResolveVolumeList( uint32_t *pList );
+void ResolveEntityRefList( uint32_t *pList );
 void ResolveVolumeBlock( uint8_t *pBlock );
 void ResolveEntityRef( uint8_t *pBlock );

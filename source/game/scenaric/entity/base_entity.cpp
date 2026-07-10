@@ -352,6 +352,17 @@ void ResolveVolumeList( uint32_t *pList ) {
     }
 }
 
+void ResolveEntityRefList( uint32_t *pList ) {
+    // FUN_004258d0
+    uint64_t *pEntry = reinterpret_cast<uint64_t *>( pList + 1 );
+    for ( int32_t remaining = static_cast<int32_t>( *pList ); remaining != 0;
+          remaining-- ) {
+        Entity *pEntity = gpScenaric->findEntityByHashcode( *pEntry );
+        *reinterpret_cast<Entity **>( pEntry ) = pEntity;
+        pEntry++;
+    }
+}
+
 void ResolveVolumeBlock( uint8_t *pBlock ) {
     // FUN_00428e00
     Entity *pVolume =
