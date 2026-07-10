@@ -2,6 +2,21 @@
 
 #include "entity_actor.h"
 
+class CarState;
+struct HiearchyNode;
+struct IKOffset;
+
+enum ePassengerGoodies : int32_t {
+    PG_MovementFree = 0,
+    PG_MovementInCar = 1,
+};
+
+// One car-relative IK point
+struct IKPoint {
+    HiearchyNode *pHiearchNode;
+    IKOffset *pOffset;
+};
+
 class EntityPassengerGoodies : public EntityActor {
 public:
     const char *GetName() override {
@@ -12,9 +27,21 @@ public:
     EntityPassengerGoodies();
     ~EntityPassengerGoodies();
 
+    void tick() override;
+    bool draw( RenderScene *pScene ) override;
+    void deserialize( BinaryReader *param_2 ) override;
+
 protected:
-    void *pCarState;
-    void *pCarPsgSeatHeight;
-    void *pCarPsgSeatFrontBack;
-    int32_t CurrentBehavior;
+    static constexpr int32_t kNumCarIKPoints = 27;
+
+protected:
+    ePassengerGoodies CurrentBehavior;
+    CarState *pCarState;
+    Eigen::Vector4f Translation;
+    IKPoint CarIKPoints[kNumCarIKPoints];
+    float *pCarPsgSeatHeight;
+    float *pCarPsgSeatFrontBack;
+    Matrix4x4f_t PsgSeatModelInitMatrix;
+    HiearchyNode *pPsgSeatModel;
+    HiearchyNode *pPsgSeatModelRoot;
 };
