@@ -1,21 +1,110 @@
 #include "shared.h"
 #include "entity_extra_challenge.h"
 
+#include "game/game_mechanism.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "filesystem/binary.h"
 
-EntityExtraChallenge::EntityExtraChallenge() : EntityActor() {
+EntityExtraChallenge::EntityExtraChallenge()
+    : Entity(),
+      Index( 0 ),
+      TimeLimit( 0.0f ),
+      pGoalMatrix( nullptr ),
+      pGoodiesBinMatrix( nullptr ),
+      GoodiesMatrix( Matrix4x4f_t::Identity() ),
+      TriggerHashcode( 0 ),
+      pTrigger( nullptr ),
+      AvatarVoiceType( 0 ),
+      bInZone( false ),
+      RoadID( -1 ),
+      RoadEntityID( -1 ) {
     // FUN_007dd170
-    OTDU_UNIMPLEMENTED;
 }
 
 EntityExtraChallenge::~EntityExtraChallenge() {
     // FUN_00424120
-    OTDU_UNIMPLEMENTED;
+}
+
+void EntityExtraChallenge::initialize() {
+    // FUN_007dd9e0
+    setTransformFromDesc();
+
+    if ( pMechanism != nullptr ) {
+        pMechanism->setEntity( this );
+    }
+}
+
+void EntityExtraChallenge::loadResources( ScenaricBank *param_2 ) {
+    // FUN_007dd7e0
+    if ( pMechanism != nullptr ) {
+        pMechanism->loadResources( param_2 );
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: AUDIO
+
+    pTrigger = gpScenaric->getSCVolume( TriggerHashcode );
+}
+
+void EntityExtraChallenge::initializeInstance( void *param_2, void *param_3 ) {
+    // FUN_007dcc60
+    Entity::initializeInstance( param_2, param_3 );
+}
+
+void EntityExtraChallenge::tick() {
+    // FUN_007dd8d0
+    if ( ( flags & 2 ) == 0 ) {
+        return;
+    }
+
+    Entity::tick();
+
+    OTDU_UNIMPLEMENTED; // TODO: PLAYERSAVE/GAME
 }
 
 void EntityExtraChallenge::deserialize( BinaryReader *param_2 ) {
     // FUN_007dce20
     Entity::deserialize( param_2 );
 
-    OTDU_UNIMPLEMENTED;
+    TimeLimit = *reinterpret_cast<float *>( param_2->pCursor );
+    param_2->pCursor += sizeof( float );
+
+    pGoalMatrix = reinterpret_cast<SerializedTransform *>( param_2->pCursor );
+    param_2->pCursor += sizeof( SerializedTransform );
+
+    pGoodiesBinMatrix =
+        reinterpret_cast<SerializedTransform *>( param_2->pCursor );
+    param_2->pCursor += sizeof( SerializedTransform );
+
+    Eigen::Quaternionf goodiesRotation(
+        pGoodiesBinMatrix->RotationW, pGoodiesBinMatrix->RotationX,
+        pGoodiesBinMatrix->RotationY, pGoodiesBinMatrix->RotationZ );
+    Eigen::Matrix3f goodiesRotationMatrix = goodiesRotation.toRotationMatrix();
+
+    GoodiesMatrix = Matrix4x4f_t::Zero();
+    GoodiesMatrix.row( 0 ).head( 3 ) = goodiesRotationMatrix.row( 0 );
+    GoodiesMatrix.row( 1 ).head( 3 ) = goodiesRotationMatrix.row( 1 );
+    GoodiesMatrix.row( 2 ).head( 3 ) = goodiesRotationMatrix.row( 2 );
+    GoodiesMatrix.row( 3 ) = Eigen::Vector4f(
+        pGoodiesBinMatrix->PositionX, pGoodiesBinMatrix->PositionY,
+        pGoodiesBinMatrix->PositionZ, 1.0f );
+
+    TriggerHashcode = *reinterpret_cast<uint64_t *>( param_2->pCursor );
+    param_2->pCursor += sizeof( uint64_t );
+
+    AvatarVoiceType = *reinterpret_cast<uint32_t *>( param_2->pCursor );
+    param_2->pCursor += sizeof( uint32_t );
+
+    // Avatar/PNJ name
+    const char *pAvatarName =
+        reinterpret_cast<const char *>( param_2->pCursor );
+    while ( *param_2->pCursor != '\0' ) {
+        param_2->pCursor++;
+    }
+    param_2->pCursor++;
+    param_2->pCursor = reinterpret_cast<uint8_t *>(
+        ( reinterpret_cast<uintptr_t>( param_2->pCursor ) + 3 ) &
+        ~static_cast<uintptr_t>( 3 ) );
+    (void)pAvatarName;
+
+    OTDU_UNIMPLEMENTED; // TODO: AVATAR (PNJ-name AvatarConfig resolution)
 }
