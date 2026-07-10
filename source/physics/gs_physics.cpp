@@ -10,9 +10,22 @@
 #include "havok/havok_to_jolt.h"
 #include "database/gs_database.h"
 
+#include "render/draw_list.h"
+#include "render/gs_render.h"
+#include "render/file_collection_3d.h"
+#include "render/instance.h"
+#include "render/3dd.h"
+#include "world/gs_world.h"
+#include "world/gs_world_streaming.h"
+#include "world/streaming_manager.h"
+#include "world/world_level.h"
+
 #include "imgui.h"
 
 #include <cmath>
+#include <vector>
+
+#include <Jolt/Physics/Collision/Shape/Shape.h>
 
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
@@ -41,6 +54,9 @@
 
 GSPhysics gPhysics = {}; // DAT_0129c0ac
 GSPhysics *gpPhysics = nullptr;
+
+bool gDrawCollisionVis = false;
+bool gDrawCollisionVisTerrain = false;
 
 ePhysicsThreadMode gPhysicsThreadPriority = PTM_Off; // DAT_010e765c
 int32_t gPhysicsThreadFrequency = 0x64;              // DAT_00f87ffc
@@ -463,6 +479,12 @@ void GSPhysics::terminate() {
     bFreezeSimulation = true;
     bPauseJoltTick = true;
 
+    if ( pCollisionDebugList != nullptr ) {
+        pCollisionDebugList->destroy();
+        delete pCollisionDebugList;
+        pCollisionDebugList = nullptr;
+    }
+
     // Reset all factories (destroy any Havok/physics objects they hold)
     for ( auto &factory : pFactories ) {
         factory.reset();
@@ -635,8 +657,200 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
     }
 }
 
+#if OTDU_DEVBUILD
+inline ColorRGBA PackDebugColor( uint8_t r, uint8_t g, uint8_t b ) {
+    return ColorRGBA( b, g, r, 0xff );
+}
+
+// Per-collision-body color
+static uint32_t CollisionBodyColor( JPH::EShapeSubType subType,
+                                    JPH::ObjectLayer layer,
+                                    uint64_t userData ) {
+    if ( subType == JPH::EShapeSubType::HeightField ) {
+        return PackDebugColor( 90, 90, 90 ).Color; // terrain: grey
+    }
+    if ( layer == TDUPhysLayers::MOVING ) {
+        return PackDebugColor( 255, 140, 0 ).Color; // props / car: orange
+    }
+    switch ( userData ) {
+    case TDUSurface::Road:
+        return PackDebugColor( 60, 120, 255 ).Color; // road: blue
+    case TDUSurface::Object:
+        return PackDebugColor( 40, 230, 40 ).Color; // world .shk: green
+    default:
+        return PackDebugColor( 200, 200, 40 ).Color; // other static: yellow
+    }
+}
+
+constexpr uint32_t kMaxDebugLineVerts = 300000u; // 150k segments
+
+void GSPhysics::drawCollisionShapes() {
+    if ( pPhysicsSystem == nullptr || gpRender == nullptr ) {
+        return;
+    }
+
+    Eigen::Vector4f shift = Eigen::Vector4f::Zero();
+    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+        shift = gpWorldStreaming->getPosition();
+    }
+    const float sx = shift.x(), sy = shift.y(), sz = shift.z();
+
+    struct BodySnapshot {
+        JPH::RefConst<JPH::Shape> shape;
+        JPH::Mat44 com;
+        uint32_t color;
+        bool bMesh;
+    };
+    std::vector<BodySnapshot> snapshots;
+
+    lockMutex();
+    JPH::BodyIDVector bodyIDs;
+    pPhysicsSystem->GetBodies( bodyIDs );
+    const JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterfaceNoLock();
+    snapshots.reserve( bodyIDs.size() );
+    for ( const JPH::BodyID id : bodyIDs ) {
+        JPH::RefConst<JPH::Shape> shape = bi.GetShape( id );
+        if ( shape.GetPtr() == nullptr ) {
+            continue;
+        }
+        const JPH::EShapeSubType st = shape->GetSubType();
+        if ( st == JPH::EShapeSubType::HeightField &&
+             !gDrawCollisionVisTerrain ) {
+            continue;
+        }
+        BodySnapshot s;
+        s.shape = shape;
+        s.com = bi.GetCenterOfMassTransform( id );
+        s.color = CollisionBodyColor( st, bi.GetObjectLayer( id ),
+                                      bi.GetUserData( id ) );
+        s.bMesh = ( st == JPH::EShapeSubType::Mesh );
+        snapshots.push_back( std::move( s ) );
+    }
+    unlockMutex();
+
+    // Lazily create the dynamic line list.
+    if ( pCollisionDebugList == nullptr ) {
+        pCollisionDebugList = new DrawList();
+        if ( !pCollisionDebugList->initialize( 1, kMaxDebugLineVerts, 0, true,
+                                               nullptr, "CollisionDebug",
+                                               false ) ) {
+            pCollisionDebugList->destroy();
+            delete pCollisionDebugList;
+            pCollisionDebugList = nullptr;
+            return;
+        }
+    }
+
+    // Gather line-segment endpoints (render space) into a reusable buffer.
+    struct LineVert {
+        float x, y, z;
+        uint32_t color;
+    };
+    static std::vector<LineVert> verts;
+    verts.clear();
+
+    auto pushSeg = [&]( const JPH::Vec3 &a, const JPH::Vec3 &b,
+                        uint32_t color ) {
+        if ( verts.size() + 2 > kMaxDebugLineVerts ) {
+            return;
+        }
+        verts.push_back(
+            { a.GetX() - sx, a.GetY() - sy, a.GetZ() - sz, color } );
+        verts.push_back(
+            { b.GetX() - sx, b.GetY() - sy, b.GetZ() - sz, color } );
+    };
+
+    for ( const BodySnapshot &s : snapshots ) {
+        if ( verts.size() + 2 > kMaxDebugLineVerts ) {
+            break;
+        }
+        if ( s.bMesh ) {
+            // Actual triangle wireframe (buildings/walls/road surfaces).
+            JPH::Shape::GetTrianglesContext ctx;
+            s.shape->GetTrianglesStart(
+                ctx, JPH::AABox::sBiggest(), s.com.GetTranslation(),
+                s.com.GetQuaternion(), JPH::Vec3::sReplicate( 1.0f ) );
+            constexpr int kBatch = 64;
+            JPH::Float3 tri[3 * kBatch];
+            for ( ;; ) {
+                const int n = s.shape->GetTrianglesNext( ctx, kBatch, tri );
+                if ( n == 0 ) {
+                    break;
+                }
+                for ( int t = 0; t < n; t++ ) {
+                    const JPH::Vec3 a( tri[3 * t + 0].x, tri[3 * t + 0].y,
+                                       tri[3 * t + 0].z );
+                    const JPH::Vec3 b( tri[3 * t + 1].x, tri[3 * t + 1].y,
+                                       tri[3 * t + 1].z );
+                    const JPH::Vec3 c( tri[3 * t + 2].x, tri[3 * t + 2].y,
+                                       tri[3 * t + 2].z );
+                    pushSeg( a, b, s.color );
+                    pushSeg( b, c, s.color );
+                    pushSeg( c, a, s.color );
+                }
+                if ( verts.size() + 2 > kMaxDebugLineVerts ) {
+                    break;
+                }
+            }
+        } else {
+            // OBB from the shape's local bounds (posts, boxes, capsules,
+            // props, car)
+            const JPH::AABox lb = s.shape->GetLocalBounds();
+            JPH::Vec3 corner[8];
+            for ( int i = 0; i < 8; i++ ) {
+                const JPH::Vec3 local(
+                    ( i & 1 ) ? lb.mMax.GetX() : lb.mMin.GetX(),
+                    ( i & 2 ) ? lb.mMax.GetY() : lb.mMin.GetY(),
+                    ( i & 4 ) ? lb.mMax.GetZ() : lb.mMin.GetZ() );
+                corner[i] = s.com * local;
+            }
+            static const int kEdges[12][2] = {
+                {0, 1},
+                {1, 3},
+                {3, 2},
+                {2, 0}, // bottom
+                {4, 5},
+                {5, 7},
+                {7, 6},
+                {6, 4}, // top
+                {0, 4},
+                {1, 5},
+                {2, 6},
+                {3, 7}
+            }; // verticals
+            for ( const auto &e : kEdges ) {
+                pushSeg( corner[e[0]], corner[e[1]], s.color );
+            }
+        }
+    }
+
+    pCollisionDebugList->reset();
+    if ( verts.empty() ) {
+        return;
+    }
+    pCollisionDebugList->setIdentityTransform();
+    if ( !pCollisionDebugList->beginPrimitive(
+             ePrimitiveType::PT_Line, static_cast<int32_t>( verts.size() ) ) ) {
+        return;
+    }
+    for ( const LineVert &v : verts ) {
+        pCollisionDebugList->setDiffuse( 0, ColorRGBA( v.color ) );
+        pCollisionDebugList->pushVertex( v.x, v.y, v.z );
+    }
+    pCollisionDebugList->commitPrimitive();
+    gpRender->getRenderPass<eRenderPass::RP_Near>()
+        .pScene->enqueueDynamicDrawList( pCollisionDebugList );
+}
+#endif
+
 void GSPhysics::draw( float deltaTime ) {
     // FUN_0084b650
+    if ( gDrawCollisionVis ) {
+#if OTDU_DEVBUILD
+        drawCollisionShapes();
+#endif
+    }
+
     // Both debug flags must be set for any rendering to occur.
     // bHavokDebugEnabled is set by AI trainer (GMAITrainer::tick);
     // bDrawDebugInfos is a secondary opt-in. Both start false so this function
@@ -915,6 +1129,14 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
 }
 
 void GSPhysics::drawDebug( float ) {
+    ImGui::Checkbox( "Collision wireframe (green=world blue=road orange=props)",
+                     &gDrawCollisionVis );
+    if ( gDrawCollisionVis ) {
+        ImGui::SameLine();
+        ImGui::Checkbox( "+terrain", &gDrawCollisionVisTerrain );
+    }
+    ImGui::Separator();
+
     int32_t carIndex = 0;
     if ( pPhysicsCarsBegin != nullptr ) {
         for ( PhysicsCar *it = pPhysicsCarsBegin; it != pPhysicsCarsEnd;
@@ -1424,6 +1646,159 @@ void GSPhysics::queuePropCollisionFactory( const void *pBlob,
                             static_cast<const uint8_t *>( pBlob ) + blobSize );
 }
 
+void GSPhysics::placeSceneryInstance( const void *pSectorKey,
+                                      uint64_t hashcode,
+                                      const Matrix4x4f_t &worldTransform,
+                                      const Eigen::Vector3f &objectOrigin ) {
+    static constexpr size_t kMaxSceneryBodies = 20000;
+    if ( hashcode == 0 || sceneryInstanceBodies.size() >= kMaxSceneryBodies ) {
+        return;
+    }
+
+    if ( pSceneryFactory == nullptr && pPropFactory == nullptr ) {
+        if ( pendingSceneryInstances.size() < kMaxSceneryBodies ) {
+            pendingSceneryInstances.push_back(
+                { pSectorKey, hashcode, worldTransform, objectOrigin } );
+        }
+        return;
+    }
+    if ( !isPropCollisionType( hashcode ) ) {
+        return;
+    }
+    std::vector<std::pair<uint64_t, RigidBody_t>> outBodies;
+    placeProp( hashcode, worldTransform, /*bDynamic=*/false, 0.0f, 0.0f,
+               outBodies, /*outPrimaryLocalInv=*/nullptr,
+               /*bSceneryInstance=*/true, objectOrigin );
+    for ( const auto &ob : outBodies ) {
+        sceneryInstanceBodies.emplace_back( pSectorKey, ob.second );
+    }
+}
+
+void GSPhysics::removeSceneryInstances( const void *pSectorKey ) {
+    if ( pSectorKey == nullptr || pPhysicsSystem == nullptr ) {
+        return;
+    }
+    for ( auto it = sceneryInstanceBodies.begin();
+          it != sceneryInstanceBodies.end(); ) {
+        if ( it->first == pSectorKey ) {
+            destroyRigidBody( it->second );
+            it = sceneryInstanceBodies.erase( it );
+        } else {
+            ++it;
+        }
+    }
+
+    for ( auto it = pendingSceneryInstances.begin();
+          it != pendingSceneryInstances.end(); ) {
+        if ( it->pSectorKey == pSectorKey ) {
+            it = pendingSceneryInstances.erase( it );
+        } else {
+            ++it;
+        }
+    }
+}
+
+void GSPhysics::queueSceneryCollisionFactory( const void *pBlob,
+                                              uint32_t blobSize ) {
+    if ( pBlob == nullptr || blobSize == 0 || !pendingSceneryBlob.empty() ||
+         pSceneryFactory != nullptr ) {
+        return;
+    }
+    pendingSceneryBlob.assign( static_cast<const uint8_t *>( pBlob ),
+                               static_cast<const uint8_t *>( pBlob ) +
+                                   blobSize );
+}
+
+bool GSPhysics::isPropCollisionType( uint64_t hashcode ) const {
+    if ( hashcode == 0 ) {
+        return false;
+    }
+    const PhysFactory *factories[2] = { pPropFactory, pSceneryFactory };
+    for ( const PhysFactory *pF : factories ) {
+        if ( pF == nullptr ) {
+            continue;
+        }
+        HavokFactoryData *pData = pF->getHavokData();
+        if ( pData == nullptr ) {
+            continue;
+        }
+        for ( const auto &m : pData->MechaMembers ) {
+            if ( m.first == hashcode ) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void GSPhysics::installSceneryCollision() {
+    // FUN_008480d0
+    if ( pPropFactory == nullptr || pPhysicsSystem == nullptr ||
+         gpWorld == nullptr || gpWorld->getStreamingManager() == nullptr ) {
+        return;
+    }
+    HavokFactoryData *pData = pPropFactory->getHavokData();
+    if ( pData == nullptr ) {
+        return;
+    }
+    FileCollection3D &collection =
+        gpWorld->getStreamingManager()->getLevel().getGlobalCollection();
+
+    Eigen::Vector4f shift = Eigen::Vector4f::Zero();
+    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+        shift = gpWorldStreaming->getPosition();
+    }
+
+    int scanned = 0, matched = 0, placed = 0;
+    for ( const auto &mecha : pData->MechaMembers ) {
+        const uint64_t mechaHash = mecha.first;
+        if ( mechaHash == 0 ) {
+            continue;
+        }
+        scanned++;
+        bool bAlready = false;
+        for ( const uint64_t h : sceneryPlacedHashes ) {
+            if ( h == mechaHash ) {
+                bAlready = true;
+                break;
+            }
+        }
+        if ( bAlready ) {
+            continue;
+        }
+
+        Render3DD *p3DD = nullptr;
+        RenderFile::Section *pSection =
+            collection.findInstance( mechaHash, &p3DD );
+        if ( pSection == nullptr ) {
+            continue;
+        }
+        matched++;
+        sceneryPlacedHashes.push_back( mechaHash );
+
+        const InstanceEntry *pEntry =
+            reinterpret_cast<const InstanceEntry *>( pSection + 1 );
+        Matrix4x4f_t world = pEntry->Matrix;
+        world( 3, 0 ) += shift.x();
+        world( 3, 1 ) += shift.y();
+        world( 3, 2 ) += shift.z();
+
+        std::vector<std::pair<uint64_t, RigidBody_t>> outBodies;
+        placeProp( mechaHash, world, /*bDynamic=*/false, 0.0f, 0.0f,
+                   outBodies );
+        for ( const auto &ob : outBodies ) {
+            sceneryCollisionBodies.push_back( ob.second );
+            placed++;
+        }
+    }
+
+    OTDU_UNIMPLEMENTED;
+
+    (void)scanned;
+    (void)matched;
+    (void)placed;
+}
+
 void GSPhysics::buildProcessPendingProps() {
     if ( pendingPropBlob.empty() || !bJoltInit || pPropFactory != nullptr ) {
         return;
@@ -1437,6 +1812,41 @@ void GSPhysics::buildProcessPendingProps() {
         OTDU_LOG_WARN( "Prop collision: factory parse failed\n" );
         return;
     }
+
+    installSceneryCollision();
+
+    // Build the full CommonWorld scenery library.
+    if ( pSceneryFactory == nullptr && !pendingSceneryBlob.empty() ) {
+        pSceneryFactory = createFromBinary(
+            pendingSceneryBlob.data(),
+            static_cast<int32_t>( pendingSceneryBlob.size() ) );
+        pendingSceneryBlob.clear();
+        pendingSceneryBlob.shrink_to_fit();
+
+        if ( pSceneryFactory != nullptr ) {
+            HavokFactoryData *pD = pSceneryFactory->getHavokData();
+            OTDU_LOG_DEBUG(
+                "Scenery collision library: %zu mechas, %zu bodies\n",
+                pD ? pD->MechaMembers.size() : 0, pD ? pD->Bodies.size() : 0 );
+
+        } else {
+            OTDU_LOG_WARN( "Scenery collision library parse failed\n" );
+        }
+    }
+
+    // Drain scenery instances parked while the factory was still building.
+    if ( !pendingSceneryInstances.empty() &&
+         ( pSceneryFactory != nullptr || pPropFactory != nullptr ) ) {
+        std::vector<PendingSceneryInstance> pending;
+        pending.swap( pendingSceneryInstances );
+        for ( const PendingSceneryInstance &p : pending ) {
+            placeSceneryInstance( p.pSectorKey, p.hashcode, p.transform,
+                                  p.objectOrigin );
+        }
+        OTDU_LOG_DEBUG(
+            "Scenery collision: placed %zu deferred instances (%zu bodies)\n",
+            pending.size(), sceneryInstanceBodies.size() );
+    }
 }
 
 void GSPhysics::placeProp(
@@ -1446,13 +1856,47 @@ void GSPhysics::placeProp(
     float linearDamping,
     float angularDamping,
     std::vector<std::pair<uint64_t, RigidBody_t>> &outBodies,
-    Matrix4x4f_t *outPrimaryLocalInv ) {
+    Matrix4x4f_t *outPrimaryLocalInv,
+    bool bSceneryInstance,
+    const Eigen::Vector3f &objectOrigin ) {
     // FUN_00453690
-    if ( pPropFactory == nullptr || pPhysicsSystem == nullptr ||
-         hashcode == 0 ) {
+    if ( pPhysicsSystem == nullptr || hashcode == 0 ) {
         return;
     }
-    HavokFactoryData *pData = pPropFactory->getHavokData();
+
+    HavokFactoryData *pData = nullptr;
+    {
+        PhysFactory *factories[2] = { pPropFactory, pSceneryFactory };
+        for ( PhysFactory *pF : factories ) {
+            if ( pF == nullptr ) {
+                continue;
+            }
+            HavokFactoryData *pd = pF->getHavokData();
+            if ( pd == nullptr ) {
+                continue;
+            }
+            bool bHas = false;
+            for ( const auto &mm : pd->MechaMembers ) {
+                if ( mm.first == hashcode ) {
+                    bHas = true;
+                    break;
+                }
+            }
+            if ( !bHas ) {
+                for ( const HavokToJolt::RigidBody &b : pd->Bodies ) {
+                    if ( b.Hashcode == hashcode &&
+                         b.Shape.GetPtr() != nullptr ) {
+                        bHas = true;
+                        break;
+                    }
+                }
+            }
+            if ( bHas ) {
+                pData = pd;
+                break;
+            }
+        }
+    }
     if ( pData == nullptr ) {
         return;
     }
@@ -1604,11 +2048,17 @@ void GSPhysics::placeProp(
             gPropConstraints.push_back( rec );
         }
     } else {
-        // Static prop
+        // Static prop.
+        const JPH::Vec3 base =
+            bSceneryInstance ? JPH::Vec3( objectOrigin.x(), objectOrigin.y(),
+                                          objectOrigin.z() )
+                             : JPH::Vec3::sZero();
         for ( const GatheredMember &gm : members ) {
             const HavokToJolt::RigidBody *m = gm.pBody;
+            const JPH::Vec3 memberPos =
+                bSceneryInstance ? ( m->Position - base ) : m->Position;
             const JPH::Mat44 local =
-                JPH::Mat44::sRotationTranslation( m->Rotation, m->Position );
+                JPH::Mat44::sRotationTranslation( m->Rotation, memberPos );
             const JPH::Mat44 placedM = world * local;
             JPH::BodyCreationSettings settings(
                 m->Shape, placedM.GetTranslation(),

@@ -76,7 +76,9 @@ void GameMechanism::tick() {
     if ( propCollisionHashcode == 0 && pPureDynamicController != nullptr ) {
         propCollisionHashcode = pPureDynamicController->Hashcode;
     }
-    if ( propCollisionHashcode != 0 && !bPlacementTried ) {
+    // Defer placement until the shared prop-collision factory has been built.
+    if ( propCollisionHashcode != 0 && !bPlacementTried &&
+         gpPhysics->isPropFactoryReady() ) {
         bPlacementTried = true;
         placeCollisionBody( pEntity->getWorldMatrix() );
     }

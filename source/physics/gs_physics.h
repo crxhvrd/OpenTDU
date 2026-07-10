@@ -24,6 +24,7 @@ class TDUObjectVsBroadPhaseLayerFilter;
 class TDUObjectLayerPairFilter;
 
 class PhysicsCar;
+class DrawList;
 struct PhysicsSHK;
 struct PhysicsSHKRoad;
 struct DBEntryCarPhysicsData;
@@ -100,6 +101,7 @@ public:
         bHavokDebugEnabled = bState;
     }
     inline void setDebugDrawEnabled( bool bState ) { bDrawDebugInfos = bState; }
+    inline bool isPropFactoryReady() const { return pPropFactory != nullptr; }
 
 public:
     GSPhysics();
@@ -135,14 +137,28 @@ public:
     void removeSectorCollision( const void *pKey );
 
     void queuePropCollisionFactory( const void *pBlob, uint32_t blobSize );
+    void queueSceneryCollisionFactory( const void *pBlob, uint32_t blobSize );
 
-    void placeProp( uint64_t hashcode,
-                    const Matrix4x4f_t &worldTransform,
-                    bool bDynamic,
-                    float linearDamping,
-                    float angularDamping,
-                    std::vector<std::pair<uint64_t, RigidBody_t>> &outBodies,
-                    Matrix4x4f_t *outPrimaryLocalInv = nullptr );
+    void placeSceneryInstance(
+        const void *pSectorKey,
+        uint64_t hashcode,
+        const Matrix4x4f_t &worldTransform,
+        const Eigen::Vector3f &objectOrigin = Eigen::Vector3f::Zero() );
+    void removeSceneryInstances( const void *pSectorKey );
+
+    void installSceneryCollision();
+    bool isPropCollisionType( uint64_t hashcode ) const;
+
+    void
+    placeProp( uint64_t hashcode,
+               const Matrix4x4f_t &worldTransform,
+               bool bDynamic,
+               float linearDamping,
+               float angularDamping,
+               std::vector<std::pair<uint64_t, RigidBody_t>> &outBodies,
+               Matrix4x4f_t *outPrimaryLocalInv = nullptr,
+               bool bSceneryInstance = false,
+               const Eigen::Vector3f &objectOrigin = Eigen::Vector3f::Zero() );
 
     void removePropConstraintsFor( RigidBody_t pBody );
 
@@ -182,6 +198,14 @@ private:
     static constexpr int32_t kNumHeightfields = 7; // One per streamed sector
     // Fixed mass for a destructible prop body (temp for test; to be removed)
     static constexpr float kDynamicPropMass = 40.0f;
+
+private:
+    struct PendingSceneryInstance {
+        const void *pSectorKey;
+        uint64_t hashcode;
+        Matrix4x4f_t transform;
+        Eigen::Vector3f objectOrigin;
+    };
 
 private:
     TestDriveThread simulationThread;
@@ -254,14 +278,30 @@ private:
     std::vector<uint8_t> pendingPropBlob;
     PhysFactory *pPropFactory = nullptr;
 
+    std::vector<uint8_t> pendingSceneryBlob;
+    PhysFactory *pSceneryFactory = nullptr;
+
+#if OTDU_DEVBUILD
+    DrawList *pCollisionDebugList = nullptr;
+#endif
+
+    std::vector<RigidBody_t> sceneryCollisionBodies;
+    std::vector<uint64_t> sceneryPlacedHashes;
+
+    std::vector<std::pair<const void *, RigidBody_t>> sceneryInstanceBodies;
+    std::vector<PendingSceneryInstance> pendingSceneryInstances;
+
 private:
     void createHeightfields();
     void initializeJolt();
     void buildProcessPendingProps();
     void physicsStep( float dt, float accTime );
+    void drawCollisionShapes();
 };
 
 extern GSPhysics *gpPhysics;
+extern bool gDrawCollisionVis;
+extern bool gDrawCollisionVisTerrain;
 
 // Mirrors ScopedMutexLock. This is required; as GSPhysics uses a
 // separate integer to track the mutex lock state.

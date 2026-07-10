@@ -604,6 +604,20 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
                 pInst->getFlagsWrite() = ( pInst->getFlags() | 0x30 ) & ~0x3u;
                 pInst->calculateBiggestScale();
 
+                if ( gpPhysics != nullptr ) {
+                    const InstanceEntry *pIE =
+                        reinterpret_cast<const InstanceEntry *>( pDef + 1 );
+                    const Eigen::Vector3f objectOrigin =
+                        pIE->Matrix.row( 3 ).head<3>();
+
+                    Matrix4x4f_t worldM = MakeRotationMatY( angleY );
+                    worldM( 3, 0 ) = m( 3, 0 ) + buildOrigin.x();
+                    worldM( 3, 1 ) = m( 3, 1 ) + buildOrigin.y();
+                    worldM( 3, 2 ) = m( 3, 2 ) + buildOrigin.z();
+                    gpPhysics->placeSceneryInstance( &geometry, hashcode,
+                                                     worldM, objectOrigin );
+                }
+
                 MassInstanceImpostor inst{};
                 inst.pInstance = pInst;
                 inst.TileIndex = tileIndex;
@@ -973,6 +987,8 @@ void SectorBank::instanciate() {
                 gpPhysics->addSectorCollision( pOwner, pRoadSHK, roadSize,
                                                areaX, areaZ, TDUSurface::Road );
             }
+
+            gpPhysics->installSceneryCollision();
         }
     }
 
@@ -1388,6 +1404,7 @@ void Sector::reset() {
 
     if ( gpPhysics != nullptr ) {
         gpPhysics->removeSectorCollision( this );
+        gpPhysics->removeSceneryInstances( &geometry );
     }
 
     if ( geometry.pHeightmapInstance != nullptr ) {

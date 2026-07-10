@@ -28,6 +28,14 @@ void GSConfig::registerPhysicsCommands() {
         gpPhysics->setDebugDrawEnabled( atoi( pArg ) != 0 );
     } );
 
+    // Debug collision wireframe overlay (also toggleable from the GSPhysics
+    // ImGui debug panel). COLLISIONVIS 1 / 2 (2 = also draw terrain).
+    registerCommand( "COLLISIONVIS", []( const char *pArg ) {
+        const int32_t mode = atoi( pArg );
+        gDrawCollisionVis = mode != 0;
+        gDrawCollisionVisTerrain = mode >= 2;
+    } );
+
     registerCommand( "GRASSASTARMAC", [&]( const char *pArg ) {
         // FUN_009847c0
         gbGrassAsTarmac = atoi( pArg ) != 0;

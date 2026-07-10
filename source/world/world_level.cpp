@@ -5,6 +5,7 @@
 
 #include "config/gs_config.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "physics/gs_physics.h"
 #include "tdu_instance.h"
 
 void LevelRenderSet::reset() {
@@ -125,6 +126,18 @@ void Level::loadBanks() {
 
 void Level::installRenderContent() {
     // FUN_00709b40
+
+    // CommonWorld\Library\Library.dhk
+    if ( gpPhysics != nullptr ) {
+        uint32_t dhkSize = 0;
+        void *pLibraryDhk = commonWorldBank.getFirstEntry(
+            static_cast<eAssetGroup>( 16 ), static_cast<eAssetType>( 0 ),
+            &dhkSize );
+        if ( pLibraryDhk != nullptr && dhkSize > 0 ) {
+            gpPhysics->queueSceneryCollisionFactory( pLibraryDhk, dhkSize );
+        }
+    }
+
     renderSets[0].renderGroup = AG_Common;
     renderSets[1].renderGroup = static_cast<eAssetGroup>( 13 );
 
