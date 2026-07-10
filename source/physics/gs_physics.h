@@ -9,6 +9,7 @@
 #include "physics_factory.h"
 #include "road_phantom_manager.h"
 
+#include <utility>
 #include <vector>
 
 namespace JPH {
@@ -140,7 +141,10 @@ public:
                     bool bDynamic,
                     float linearDamping,
                     float angularDamping,
-                    std::vector<RigidBody_t> &outBodies );
+                    std::vector<std::pair<uint64_t, RigidBody_t>> &outBodies,
+                    Matrix4x4f_t *outPrimaryLocalInv = nullptr );
+
+    void removePropConstraintsFor( RigidBody_t pBody );
 
     bool
     getBodyPose( RigidBody_t body, Matrix4x4f_t &outMatrix, bool &outActive );

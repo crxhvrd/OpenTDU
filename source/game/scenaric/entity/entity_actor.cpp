@@ -9,6 +9,7 @@
 #include "render/instance.h"
 #include "render/hiearchy_node.h"
 #include "world/gs_world_streaming.h"
+#include "physics/gs_physics.h"
 
 static constexpr FlashMessage kProjectOnHMapOff =
     FlashMessage( 0x666f7270 ); // prof
@@ -377,4 +378,51 @@ void EntityActor::unknownActorFunc() {
     if ( Model.MIInpostor.pInstance != nullptr ) {
         OTDU_UNIMPLEMENTED; // TODO: IMPOSTOR
     }
+}
+
+int32_t EntityActor::refreshMechanismRender(
+    const std::vector<std::pair<uint64_t, void *>> &members ) {
+    // FUN_004560c0
+    if ( Model.pHiearchNode == nullptr || gpPhysics == nullptr ) {
+        return 0;
+    }
+
+    Eigen::Vector4f shift = Eigen::Vector4f::Zero();
+    if ( !bShifted && gpWorldStreaming->isEnabled() ) {
+        shift = gpWorldStreaming->getPosition();
+    }
+    shift.w() = 0.0f;
+
+    int32_t driven = 0;
+    for ( const auto &member : members ) {
+        HiearchyNode *pNode = Model.pHiearchNode->findChild( member.first );
+        if ( pNode == nullptr || pNode->pInstance == nullptr ) {
+            continue;
+        }
+        Matrix4x4f_t pose;
+        bool bActive = false;
+        if ( !gpPhysics->getBodyPose( static_cast<RigidBody_t>( member.second ),
+                                      pose, bActive ) ) {
+            continue;
+        }
+        if ( !bShifted ) {
+            pose.row( 3 ) -= shift;
+        }
+        pose( 3, 3 ) = 1.0f;
+        pNode->TransformMatrix = pose;
+        pNode->Flags |= 1; // absolute: don't compose with the parent
+        driven++;
+    }
+
+    if ( driven == 0 ) {
+        return 0; // nothing to overlay
+    }
+
+    if ( Model.pHiearchNode->pInstance != nullptr ) {
+        Model.pHiearchNode->pInstance->setModelMatrix(
+            Model.pHiearchNode->TransformMatrix );
+    }
+    Model.pHiearchNode->propagateTransformMatricesWithFlag();
+    bLightingValid = false;
+    return driven;
 }

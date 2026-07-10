@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include <vector>
 
 class Entity;
@@ -36,6 +37,12 @@ public:
         return pPureDynamicController != nullptr &&
                pPureDynamicController->bStatic != 0;
     }
+    inline bool hasDynamicController() const {
+        return pPureDynamicController != nullptr;
+    }
+    inline uint64_t getPropCollisionHashcode() const {
+        return propCollisionHashcode;
+    }
 
     void setEntity( Entity *pEntityInstance );
 
@@ -71,7 +78,8 @@ private:
     int32_t numInstance;
 
     uint64_t propCollisionHashcode;
-    std::vector<void *> propBodies;
+    std::vector<std::pair<uint64_t, void *>> propBodies;
+    Matrix4x4f_t primaryLocalInv;
 
     uint8_t bControlledByAvatar : 1;
     uint8_t bInitialized : 1;

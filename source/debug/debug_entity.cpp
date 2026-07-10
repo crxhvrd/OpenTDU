@@ -15,6 +15,7 @@
 #include "game/scenaric/entity/entity_life_set.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/base_entity.h"
+#include "game/game_mechanism.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/mng_life_set.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -393,6 +394,126 @@ namespace {
                          placed, candidateCount, totalScanned,
                          candidateCount - toPlace, cols, rows );
     }
+    // ----- Breakable-prop spawner: clone knockable scenaric props in a row in
+    // front of the car so the destructible-prop collision + per-piece shatter
+    // render can be drive-tested next to spawn (no sector-chasing) -----
+
+    int gPropCount = 6;
+    float gPropSpacing = 3.0f;   // metres between props (lateral)
+    float gPropFrontDist = 14.0f; // metres ahead of the look-at
+    std::vector<Entity *> gPropClones;
+    MngActor *gpPropManager = nullptr;
+
+    // A knockable scenaric prop template: an actor whose mechanism owns a
+    // pure-dynamic controller that is NOT static (bStatic == 0). These are the
+    // bins/cones/signs/etc. that place a simulated collision body on their first
+    // tick and can be knocked + shattered by the car.
+    bool isBreakablePropTemplate( Entity *pTemplate ) {
+        if ( pTemplate == nullptr ) {
+            return false;
+        }
+        GameMechanism *pMech = pTemplate->getMechanism();
+        return pMech != nullptr && pMech->hasDynamicController() &&
+               !pMech->isStaticController();
+    }
+
+    void despawnProps() {
+        if ( gpActiveGMScene == nullptr ) {
+            gPropClones.clear();
+            gpPropManager = nullptr;
+            return;
+        }
+        MngActor &mngActor = gpActiveGMScene->getActorManager();
+        // Only tear our clones down if the scene (and its actor manager) is the
+        // one we spawned into; otherwise they died with the old scene already.
+        if ( &mngActor == gpPropManager ) {
+            for ( Entity *pClone : gPropClones ) {
+                if ( isActorLive( mngActor, pClone ) ) {
+                    MngActor::Uninstanciate( &mngActor, pClone );
+                }
+            }
+        }
+        const size_t removed = gPropClones.size();
+        gPropClones.clear();
+        gpPropManager = nullptr;
+        OTDU_LOG_ALWAYS( "[PropTest] despawned %zu props\n", removed );
+    }
+
+    void spawnBreakableProps() {
+        if ( gpActiveGMScene == nullptr || gpScenaric == nullptr ||
+             gpCamera == nullptr ) {
+            return;
+        }
+        despawnProps(); // replace any previous row
+
+        MngActor &mngActor = gpActiveGMScene->getActorManager();
+        gpPropManager = &mngActor;
+
+        // Gather every breakable-prop template across the loaded banks (the
+        // worldactors pack is registered globally, so these resolve anywhere in
+        // the world without streaming the sector that authored them).
+        std::vector<Entity *> templates;
+        int32_t totalScanned = 0;
+        for ( ScenaricBank *pBank : gpScenaric->getRegisteredBanks() ) {
+            if ( pBank == nullptr || !pBank->isLoaded() ) {
+                continue;
+            }
+            const int32_t count = pBank->getEntityCount();
+            for ( int32_t i = 0; i < count; ++i ) {
+                Entity *pTemplate = pBank->getEntity( i );
+                ++totalScanned;
+                if ( isBreakablePropTemplate( pTemplate ) ) {
+                    templates.push_back( pTemplate );
+                }
+            }
+        }
+        if ( templates.empty() ) {
+            OTDU_LOG_ALWAYS( "[PropTest] no breakable-prop templates in the "
+                             "loaded banks (%d scanned)\n",
+                             totalScanned );
+            return;
+        }
+
+        // Lay a row perpendicular to the view direction, a few metres ahead of
+        // the look-at, so driving forward rams the whole row. Coordinates match
+        // the entity zoo (render-space look-at + setTransform(_, true), which
+        // EntityActor rebases onto the floating origin).
+        CameraGame *pCam = gpCamera->getRenderCamera();
+        const Eigen::Vector3f eye = pCam->getWorldPosition();
+        const Eigen::Vector3f tgt = pCam->getTarget();
+        Eigen::Vector3f fwd( tgt.x() - eye.x(), 0.0f, tgt.z() - eye.z() );
+        if ( fwd.norm() < 1e-3f ) {
+            fwd = Eigen::Vector3f( 0.0f, 0.0f, 1.0f );
+        }
+        fwd.normalize();
+        const Eigen::Vector3f rightv( -fwd.z(), 0.0f, fwd.x() );
+        const Eigen::Vector3f origin = tgt + fwd * gPropFrontDist;
+
+        const int n = gPropCount > 0 ? gPropCount : 1;
+        for ( int i = 0; i < n; ++i ) {
+            // Cycle through the distinct templates so a small row still shows
+            // variety when few prop types are loaded.
+            Entity *pTemplate = templates[i % templates.size()];
+            Entity *pClone = mngActor.instanciateActor( pTemplate );
+            if ( pClone == nullptr ) {
+                continue;
+            }
+            const float lateral = ( i - ( n - 1 ) * 0.5f ) * gPropSpacing;
+            const Eigen::Vector3f pos = origin + rightv * lateral;
+            Matrix4x4f_t m = Matrix4x4f_t::Identity();
+            m.row( 3 ) =
+                Eigen::Vector4f( pos.x(), origin.y(), pos.z(), 1.0f );
+            pClone->setTransform( m, true );
+            gPropClones.push_back( pClone );
+        }
+
+        OTDU_LOG_ALWAYS(
+            "[PropTest] spawned %zu breakable props (%zu distinct templates, %d "
+            "scanned) in a row %.0fm ahead — drive forward to knock them\n",
+            gPropClones.size(), templates.size(), totalScanned,
+            gPropFrontDist );
+    }
+
     // TEMP harness: drive the cinematic media-stack pipeline end-to-end (parse
     // -> sources -> nested scenes -> ped spawn) on a hardcoded *.cin from the
     // worldlifeset pack, and log what it found. Bypasses EntityCinematic (whose
@@ -1236,6 +1357,35 @@ namespace TestDrive {
             }
             ImGui::SameLine();
             ImGui::TextDisabled( "%d placed", (int)gZooClones.size() );
+        }
+
+        // --- Breakable props (drive-test) ----------------------------------
+        ImGui::SeparatorText( "Breakable props (drive-test)" );
+        if ( gpActiveGMScene == nullptr || gpScenaric == nullptr ) {
+            ImGui::TextDisabled( "Needs an active GameModeScene." );
+        } else {
+            ImGui::TextWrapped(
+                "Clone knockable scenaric props (dynamic-collision actors) into "
+                "a row a few metres ahead of the view, so the destructible-prop "
+                "collision + per-piece shatter render can be tested next to "
+                "spawn. Drive forward to ram them; watch the log for "
+                "'Prop place'/'Prop render: .. (PER-PIECE/fallback)'." );
+            ImGui::SetNextItemWidth( 160.0f );
+            ImGui::SliderInt( "Count", &gPropCount, 1, 24 );
+            ImGui::SetNextItemWidth( 160.0f );
+            ImGui::SliderFloat( "Spacing (m)", &gPropSpacing, 1.0f, 10.0f );
+            ImGui::SetNextItemWidth( 160.0f );
+            ImGui::SliderFloat( "Distance ahead (m)", &gPropFrontDist, 3.0f,
+                                40.0f );
+            if ( ImGui::Button( "Spawn breakable props" ) ) {
+                spawnBreakableProps();
+            }
+            ImGui::SameLine();
+            if ( ImGui::Button( "Despawn props" ) ) {
+                despawnProps();
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled( "%d placed", (int)gPropClones.size() );
         }
 
         // --- Live actor inspector ------------------------------------------

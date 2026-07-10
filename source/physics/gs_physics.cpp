@@ -35,6 +35,8 @@
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/GroupFilterTable.h>
+#include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/EActivation.h>
 
 GSPhysics gPhysics = {}; // DAT_0129c0ac
@@ -117,6 +119,38 @@ JoltReallocate( void *inBlock, size_t inOldSize, size_t inNewSize ) {
     return TestDrive::Realloc( inBlock, inNewSize );
 }
 
+struct PropConstraintRecord {
+    JPH::Ref<JPH::FixedConstraint> pConstraint;
+    JPH::BodyID BodyA;
+    JPH::BodyID BodyB;
+    float Threshold = 0.0f;
+    bool bBreakable = false;
+};
+std::vector<PropConstraintRecord> gPropConstraints;
+
+// Shared collision filter: members of the same placed instance (same group
+// id) never collide with each other while joined; different instances (and
+// the car/world, which carry no filter) collide normally.
+JPH::Ref<JPH::GroupFilterTable> gPropGroupFilter;
+uint32_t gNextPropGroupID = 1;
+
+// Max members of one prop instance that get mutually-disabled self-collision
+// (273 member bodies / 93 mechas ~= 3 each; 32 is a safe ceiling).
+constexpr uint32_t kMaxPropMembers = 32;
+constexpr float kBreakThresholdScale = 1.0f;
+
+JPH::GroupFilterTable *GetPropGroupFilter() {
+    if ( gPropGroupFilter == nullptr ) {
+        gPropGroupFilter = new JPH::GroupFilterTable( kMaxPropMembers );
+        for ( uint32_t i = 0; i < kMaxPropMembers; i++ ) {
+            for ( uint32_t j = i + 1; j < kMaxPropMembers; j++ ) {
+                gPropGroupFilter->DisableCollision( i, j );
+            }
+        }
+    }
+    return gPropGroupFilter.GetPtr();
+}
+
 void BuildMechaMembers( const HavokContainer &container,
                         int32_t entryCount,
                         HavokFactoryData *pData ) {
@@ -156,12 +190,28 @@ void BuildMechaMembers( const HavokContainer &container,
             break;
         }
 
-        std::vector<uint64_t> members;
+        std::vector<HavokToJolt::MechaMember> members;
         members.reserve( rbCount );
         for ( uint32_t r = 0; r < rbCount; r++ ) {
-            const uint64_t member = *reinterpret_cast<const uint64_t *>(
+            HavokToJolt::MechaMember mm;
+            mm.BodyHashcode = *reinterpret_cast<const uint64_t *>(
                 pBuf + refsOff + r * 0x10 );
-            members.push_back( member );
+            members.push_back( std::move( mm ) );
+        }
+
+        const uint32_t mapOff = refsOff + rbCount * 0x10;
+        for ( uint32_t m = 0; m < rbCount2; m++ ) {
+            const uint32_t entryOff = mapOff + m * 0x10;
+            const uint64_t logicID =
+                *reinterpret_cast<const uint64_t *>( pBuf + entryOff + 0x00 );
+            const uint32_t indexByteOff = readU32( entryOff + 0x08 );
+            if ( ( indexByteOff & 0xFu ) != 0 ) {
+                continue; // not a 0x10-aligned reference offset
+            }
+            const uint32_t k = indexByteOff >> 4;
+            if ( k < rbCount ) {
+                members[k].LogicIDs.push_back( logicID );
+            }
         }
 
         uint32_t next = refsOff + ( rbCount + rbCount2 ) * 0x10;
@@ -660,6 +710,25 @@ PhysFactory *GSPhysics::createFromBinary( void *param_3, int32_t param_2 ) {
 
     BuildMechaMembers( container, entryCount, pData );
 
+    // Parse the scene's joints (hkConstraintInstance list)
+    HavokToJolt::buildConstraints( packfile, pData->Constraints );
+    for ( HavokToJolt::Constraint &c : pData->Constraints ) {
+        if ( c.BodyARegistryIndex < static_cast<uint32_t>( entryCount ) ) {
+            const PhysFactory::Entry ea = container.getEntry(
+                static_cast<int32_t>( c.BodyARegistryIndex ) );
+            if ( ea.Type == ePhysEntityType::PET_RigidBody ) {
+                c.BodyAHashcode = ea.Hashcode;
+            }
+        }
+        if ( c.BodyBRegistryIndex < static_cast<uint32_t>( entryCount ) ) {
+            const PhysFactory::Entry eb = container.getEntry(
+                static_cast<int32_t>( c.BodyBRegistryIndex ) );
+            if ( eb.Type == ePhysEntityType::PET_RigidBody ) {
+                c.BodyBHashcode = eb.Hashcode;
+            }
+        }
+    }
+
     PhysFactory *pFactory = nullptr;
     for ( PhysFactory &factory : pFactories ) {
         if ( !factory.isInitialized() ) {
@@ -1000,6 +1069,10 @@ void GSPhysics::destroyRigidBody( RigidBody_t pRigidBody ) {
     // to adopt any physics engine in the future.
     if ( pRigidBody == nullptr || pPhysicsSystem == nullptr )
         return;
+
+    // A prop member may be jointed to its siblings; drop those joints first so
+    // Jolt never references a destroyed body.
+    removePropConstraintsFor( pRigidBody );
 
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
     JPH::Body *pBody = static_cast<JPH::Body *>( pRigidBody );
@@ -1366,12 +1439,15 @@ void GSPhysics::buildProcessPendingProps() {
     }
 }
 
-void GSPhysics::placeProp( uint64_t hashcode,
-                           const Matrix4x4f_t &worldTransform,
-                           bool bDynamic,
-                           float linearDamping,
-                           float angularDamping,
-                           std::vector<RigidBody_t> &outBodies ) {
+void GSPhysics::placeProp(
+    uint64_t hashcode,
+    const Matrix4x4f_t &worldTransform,
+    bool bDynamic,
+    float linearDamping,
+    float angularDamping,
+    std::vector<std::pair<uint64_t, RigidBody_t>> &outBodies,
+    Matrix4x4f_t *outPrimaryLocalInv ) {
+    // FUN_00453690
     if ( pPropFactory == nullptr || pPhysicsSystem == nullptr ||
          hashcode == 0 ) {
         return;
@@ -1384,27 +1460,39 @@ void GSPhysics::placeProp( uint64_t hashcode,
     // Resolve the entity's own-ref hashcode to the list of rigid-body hashcodes
     // to place: a Mecha expands to its member bodies; otherwise the hashcode is
     // itself a bare rigid body.
-    const std::vector<uint64_t> *pMembers = nullptr;
+    const std::vector<HavokToJolt::MechaMember> *pMembers = nullptr;
     for ( const auto &mm : pData->MechaMembers ) {
         if ( mm.first == hashcode ) {
             pMembers = &mm.second;
             break;
         }
     }
-    const uint64_t single[1] = { hashcode };
-    const uint64_t *pList = pMembers ? pMembers->data() : single;
+    HavokToJolt::MechaMember single;
+    single.BodyHashcode = hashcode;
+    const HavokToJolt::MechaMember *pList =
+        pMembers ? pMembers->data() : &single;
     const size_t count = pMembers ? pMembers->size() : 1;
 
-    // Gather the member body templates that actually built a shape.
-    std::vector<const HavokToJolt::RigidBody *> members;
+    struct GatheredMember {
+        const HavokToJolt::RigidBody *pBody;
+        uint64_t RenderKey;
+    };
+    std::vector<GatheredMember> members;
     members.reserve( count );
     for ( size_t i = 0; i < count; i++ ) {
         for ( const HavokToJolt::RigidBody &b : pData->Bodies ) {
-            if ( b.Hashcode == pList[i] && b.Shape.GetPtr() != nullptr ) {
-                members.push_back( &b );
+            if ( b.Hashcode == pList[i].BodyHashcode &&
+                 b.Shape.GetPtr() != nullptr ) {
+                const uint64_t renderKey = pList[i].LogicIDs.empty()
+                                               ? b.Hashcode
+                                               : pList[i].LogicIDs.front();
+                members.push_back( { &b, renderKey } );
                 break;
             }
         }
+    }
+    if ( members.empty() ) {
+        return;
     }
 
     // Matrix4x4f_t row-major -> Jolt column-major
@@ -1415,60 +1503,110 @@ void GSPhysics::placeProp( uint64_t hashcode,
                                         worldTransform( c, 2 ) ) );
     }
 
+    const float linDamp = std::min( std::max( linearDamping, 0.0f ), 1.0f );
+    const float angDamp = std::min( std::max( angularDamping, 0.05f ), 1.0f );
+
     lockMutex();
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
 
-    if ( bDynamic && !members.empty() ) {
-        JPH::ShapeRefC shape;
-        if ( members.size() == 1 ) {
-            const HavokToJolt::RigidBody *m = members[0];
-            if ( m->Position.IsNearZero() &&
-                 m->Rotation.IsClose( JPH::Quat::sIdentity() ) ) {
-                shape = m->Shape;
-            } else {
-                JPH::RotatedTranslatedShapeSettings s( m->Position, m->Rotation,
-                                                       m->Shape );
-                JPH::ShapeSettings::ShapeResult r = s.Create();
-                if ( r.IsValid() ) {
-                    shape = r.Get();
-                }
-            }
-        } else {
-            JPH::StaticCompoundShapeSettings cs;
-            for ( const HavokToJolt::RigidBody *m : members ) {
-                cs.AddShape( m->Position, m->Rotation, m->Shape );
-            }
-            JPH::ShapeSettings::ShapeResult r = cs.Create();
-            if ( r.IsValid() ) {
-                shape = r.Get();
-            }
-        }
+    if ( bDynamic ) {
+        const uint32_t groupID = gNextPropGroupID++;
+        JPH::GroupFilterTable *pFilter = GetPropGroupFilter();
 
-        if ( shape.GetPtr() != nullptr ) {
+        bool bPrimarySet = false;
+        std::vector<JPH::Body *> placed( members.size(), nullptr );
+        for ( size_t i = 0; i < members.size(); i++ ) {
+            const HavokToJolt::RigidBody *m = members[i].pBody;
+            const JPH::Mat44 local =
+                JPH::Mat44::sRotationTranslation( m->Rotation, m->Position );
+            const JPH::Mat44 placedM = world * local;
+            const bool bAnchor = m->bFixedMotion;
+
             JPH::BodyCreationSettings settings(
-                shape, world.GetTranslation(),
-                world.GetQuaternion().Normalized(), JPH::EMotionType::Dynamic,
-                TDUPhysLayers::MOVING );
-            settings.mOverrideMassProperties =
-                JPH::EOverrideMassProperties::CalculateInertia;
-            settings.mMassPropertiesOverride.mMass =
-                kDynamicPropMass; // TODO: FIXME: Read mass from Havok data
-            settings.mLinearDamping =
-                std::min( std::max( linearDamping, 0.0f ), 1.0f );
-            settings.mAngularDamping =
-                std::min( std::max( angularDamping, 0.05f ), 1.0f );
+                m->Shape, placedM.GetTranslation(),
+                placedM.GetQuaternion().Normalized(),
+                bAnchor ? JPH::EMotionType::Static : JPH::EMotionType::Dynamic,
+                bAnchor ? TDUPhysLayers::NON_MOVING : TDUPhysLayers::MOVING );
+            if ( !bAnchor ) {
+                settings.mOverrideMassProperties =
+                    JPH::EOverrideMassProperties::CalculateInertia;
+                // Asset mass (hkMotion 1/mass @+0xc0); fall back to a default
+                // if the motion carried none.
+                settings.mMassPropertiesOverride.mMass =
+                    m->Mass > 0.0f ? m->Mass : kDynamicPropMass;
+                settings.mLinearDamping = linDamp;
+                settings.mAngularDamping = angDamp;
+            }
+            settings.mCollisionGroup = JPH::CollisionGroup(
+                pFilter, groupID,
+                static_cast<uint32_t>( i % kMaxPropMembers ) );
             settings.mUserData = TDUSurface::Object;
             settings.mFriction = TDUSurface::friction( TDUSurface::Object );
 
             JPH::Body *pBody = bodyInterface.CreateBody( settings );
             if ( pBody != nullptr ) {
                 bodyInterface.AddBody( pBody->GetID(),
-                                       JPH::EActivation::Activate );
-                outBodies.push_back( pBody );
+                                       JPH::EActivation::DontActivate );
+                placed[i] = pBody;
+                outBodies.emplace_back( members[i].RenderKey, pBody );
+
+                if ( !bPrimarySet && outPrimaryLocalInv != nullptr ) {
+                    Matrix4x4f_t localRow;
+                    for ( int32_t c = 0; c < 4; c++ ) {
+                        const JPH::Vec3 v = local.GetColumn3( c );
+                        localRow( c, 0 ) = v.GetX();
+                        localRow( c, 1 ) = v.GetY();
+                        localRow( c, 2 ) = v.GetZ();
+                        localRow( c, 3 ) = ( c == 3 ) ? 1.0f : 0.0f;
+                    }
+                    *outPrimaryLocalInv = localRow.inverse();
+                    bPrimarySet = true;
+                }
             }
         }
+
+        for ( const HavokToJolt::Constraint &jc : pData->Constraints ) {
+            JPH::Body *bA = nullptr;
+            JPH::Body *bB = nullptr;
+            for ( size_t i = 0; i < members.size(); i++ ) {
+                if ( placed[i] == nullptr ) {
+                    continue;
+                }
+                if ( members[i].pBody->Hashcode == jc.BodyAHashcode ) {
+                    bA = placed[i];
+                }
+                if ( members[i].pBody->Hashcode == jc.BodyBHashcode ) {
+                    bB = placed[i];
+                }
+            }
+            if ( bA == nullptr || bB == nullptr || bA == bB ) {
+                continue;
+            }
+            if ( bA->GetMotionType() == JPH::EMotionType::Static &&
+                 bB->GetMotionType() == JPH::EMotionType::Static ) {
+                continue; // nothing to simulate
+            }
+
+            JPH::FixedConstraintSettings cs;
+            cs.mAutoDetectPoint = true; // weld at the current relative pose
+            JPH::TwoBodyConstraint *pC = cs.Create( *bA, *bB );
+            if ( pC == nullptr ) {
+                continue;
+            }
+            pPhysicsSystem->AddConstraint( pC );
+
+            PropConstraintRecord rec;
+            rec.pConstraint = static_cast<JPH::FixedConstraint *>( pC );
+            rec.BodyA = bA->GetID();
+            rec.BodyB = bB->GetID();
+            rec.Threshold = jc.Threshold;
+            rec.bBreakable = jc.bBreakable;
+            gPropConstraints.push_back( rec );
+        }
     } else {
-        for ( const HavokToJolt::RigidBody *m : members ) {
+        // Static prop
+        for ( const GatheredMember &gm : members ) {
+            const HavokToJolt::RigidBody *m = gm.pBody;
             const JPH::Mat44 local =
                 JPH::Mat44::sRotationTranslation( m->Rotation, m->Position );
             const JPH::Mat44 placedM = world * local;
@@ -1483,8 +1621,27 @@ void GSPhysics::placeProp( uint64_t hashcode,
             if ( pBody != nullptr ) {
                 bodyInterface.AddBody( pBody->GetID(),
                                        JPH::EActivation::DontActivate );
-                outBodies.push_back( pBody );
+                outBodies.emplace_back( gm.RenderKey, pBody );
             }
+        }
+    }
+    unlockMutex();
+}
+
+void GSPhysics::removePropConstraintsFor( RigidBody_t pBody ) {
+    if ( pBody == nullptr || pPhysicsSystem == nullptr ) {
+        return;
+    }
+    const JPH::BodyID id = static_cast<JPH::Body *>( pBody )->GetID();
+    lockMutex();
+    for ( auto it = gPropConstraints.begin(); it != gPropConstraints.end(); ) {
+        if ( it->BodyA == id || it->BodyB == id ) {
+            if ( it->pConstraint != nullptr ) {
+                pPhysicsSystem->RemoveConstraint( it->pConstraint );
+            }
+            it = gPropConstraints.erase( it );
+        } else {
+            ++it;
         }
     }
     unlockMutex();
@@ -1536,6 +1693,26 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
         // numCollisionSteps=1 matches the original single-pass Havok
         // broadphase.
         pPhysicsSystem->Update( dt, 1, pTempAllocator, pJobSystem );
+
+        if ( !gPropConstraints.empty() ) {
+            JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+            for ( auto it = gPropConstraints.begin();
+                  it != gPropConstraints.end(); ) {
+                if ( it->bBreakable && it->pConstraint != nullptr ) {
+                    const float impulse =
+                        it->pConstraint->GetTotalLambdaPosition().Length();
+                    if ( impulse > it->Threshold * kBreakThresholdScale ) {
+                        pPhysicsSystem->RemoveConstraint( it->pConstraint );
+                        // Wake the freed pieces so they respond to gravity.
+                        bi.ActivateBody( it->BodyA );
+                        bi.ActivateBody( it->BodyB );
+                        it = gPropConstraints.erase( it );
+                        continue;
+                    }
+                }
+                ++it;
+            }
+        }
     }
 
     // Tick PhysicsCar vehicle dynamics (pushes driver input; the Jolt

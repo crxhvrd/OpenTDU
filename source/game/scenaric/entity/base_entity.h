@@ -6,6 +6,10 @@
 #include "game/cinematic/cinematic_entity.h"
 #include "entity_factory.h"
 
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 class Spot;
 struct SoundScene;
 class GameMechanism;
@@ -84,6 +88,7 @@ public:
     }
     inline const std::string &getInstanceName() const { return name; }
     inline Entity *getParent() const { return pParent; }
+    inline GameMechanism *getMechanism() const { return pMechanism; }
     inline bool isStreamManaged() const { return bStreamManaged; }
     inline void setStreamManaged( bool b ) { bStreamManaged = b; }
     inline bool isStreamActive() const { return bStreamActive; }
@@ -141,6 +146,12 @@ public:
     virtual void onGeometrySubmitted() { /* NOP */ }
     virtual bool isPMIInTile( const SectorHeightmap *pHeightmap,
                               int32_t tileKey );
+    // TEMP: Ensure dynamic prop hiearchy transform is correctly calculated.
+    virtual int32_t refreshMechanismRender(
+        const std::vector<std::pair<uint64_t, void *>> &members ) {
+        (void)members; /* NOP */
+        return 0;
+    }
 
 protected:
     static constexpr const FlashMessage kEnableParticles =

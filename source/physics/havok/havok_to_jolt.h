@@ -26,6 +26,48 @@ namespace HavokToJolt {
         // carries no such property (e.g. the world/road .shk collision, which
         // has no registry).
         uint32_t RegistryIndex = 0xFFFFFFFFu;
+        // hkFixedRigidMotion (anchor / kinematic) vs a dynamic motion
+        // (hkBoxMotion/hkSphereMotion). Anchored breakable props keep a fixed
+        // "base" member; the shatter pieces are dynamic. Recovered from the
+        // motion's class name in buildBodies.
+        bool bFixedMotion = false;
+        // Asset-authored mass in kg, recovered from the motion's inverse mass
+        // (hkMotion+0xc0 == 1/mass; verified: round 60..1000 kg values). 0 if
+        // unknown -> caller falls back to a default.
+        float Mass = 0.0f;
+    };
+
+    // A joint between two member rigid bodies of a Mecha, recovered from the
+    // scene's hkConstraintInstance list (hkPhysicsSystem.m_constraints @root+
+    // 0x14 / count @root+0x18). hkConstraintInstance: constraintData@+0x0c,
+    // bodyA@+0x10, bodyB@+0x14, registryIndex@+0x20. If the constraintData is
+    // an hkBreakableConstraintData (getType==0xc), the joint breaks when the
+    // solver impulse exceeds Threshold (constraintData+0x14). The clone path
+    // FUN_00453690 remaps bodyA/bodyB to the placed instance bodies and creates
+    // FUN_0047d410 (breakable) or FUN_0047d800 (plain fixed).
+    struct Constraint {
+        uint32_t BodyARegistryIndex = 0xFFFFFFFFu;
+        uint32_t BodyBRegistryIndex = 0xFFFFFFFFu;
+        uint64_t BodyAHashcode =
+            0; // resolved from registry in createFromBinary
+        uint64_t BodyBHashcode = 0;
+        bool bBreakable = false;
+        float Threshold =
+            0.0f; // break impulse (m_solverResultLimit); breakable
+    };
+
+    // A member body of a Mecha: its registry hashcode (which resolves to a
+    // built rigid body) plus the render sub-node hashcodes it drives. LogicIDs
+    // come from the mecha's pArrayIDMapping table (Mapping{LogicID u64,
+    // Index}), read by the original's HKGetBodyHashcode to map a body -> its
+    // render node for per-piece shatter render. A body may map to several
+    // nodes; it maps to none when LogicIDs is empty (then the body hashcode is
+    // used as the render key, matching the physics<->render same-name
+    // convention). See
+    // [[scenaric_prop_collision]].
+    struct MechaMember {
+        uint64_t BodyHashcode = 0;
+        std::vector<uint64_t> LogicIDs;
     };
 
     // Build a Jolt shape from the Havok shape at `shapeOffset` (in the
@@ -41,6 +83,12 @@ namespace HavokToJolt {
     void buildBodies( const HavokPackfile &packfile,
                       std::vector<RigidBody> &outBodies );
 
+    // Walk hkPhysicsSystem.m_constraints -> the joints linking member bodies of
+    // the breakable Mechas. Body references are stored as registry indices;
+    // createFromBinary resolves them to hashcodes.
+    void buildConstraints( const HavokPackfile &packfile,
+                           std::vector<Constraint> &outConstraints );
+
 } // namespace HavokToJolt
 
 // The payload a PhysFactory owns: the reconstructed collision bodies (a
@@ -50,5 +98,7 @@ struct HavokFactoryData {
     std::vector<HavokToJolt::RigidBody> Bodies;
     std::vector<uint32_t> LiveBodyIDs;
     std::vector<std::pair<uint64_t, uint32_t>> Registry;
-    std::vector<std::pair<uint64_t, std::vector<uint64_t>>> MechaMembers;
+    std::vector<std::pair<uint64_t, std::vector<HavokToJolt::MechaMember>>>
+        MechaMembers;
+    std::vector<HavokToJolt::Constraint> Constraints;
 };

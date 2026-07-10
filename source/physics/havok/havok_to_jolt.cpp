@@ -10,7 +10,9 @@
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <utility>
 
 namespace {
@@ -548,6 +550,40 @@ JPH::ShapeRefC HavokToJolt::buildShape( const HavokPackfile &pf,
     return JPH::ShapeRefC();
 }
 
+namespace {
+    // Recover a hkRigidBody's registry index from its 0x0FFFFFFF property
+    // (property array @body+0x44, count @body+0x48, each property 0x10 bytes
+    // { key@0x00, value@0x08 }); see FUN_00452060. 0xFFFFFFFF if absent.
+    uint32_t readRegistryIndexProperty( const HavokPackfile &pf,
+                                        int32_t bodyOffset ) {
+        const uint8_t *pData = pf.getDataBytes();
+        const uint32_t dataSize = pf.getDataSize();
+        constexpr uint32_t kRegistryIndexProperty = 0x0FFFFFFFu;
+        const int32_t propArray =
+            pf.resolvePointer( static_cast<uint32_t>( bodyOffset ) + 0x44 );
+        if ( propArray < 0 ||
+             static_cast<uint32_t>( bodyOffset ) + 0x48 + 4 > dataSize ) {
+            return 0xFFFFFFFFu;
+        }
+        const int32_t propCount =
+            *reinterpret_cast<const int32_t *>( pData + bodyOffset + 0x48 );
+        for ( int32_t p = 0; p < propCount && p < 4096; p++ ) {
+            const uint32_t propOff =
+                static_cast<uint32_t>( propArray ) + p * 0x10;
+            if ( propOff + 0x10 > dataSize ) {
+                break;
+            }
+            const uint32_t key =
+                *reinterpret_cast<const uint32_t *>( pData + propOff );
+            if ( key == kRegistryIndexProperty ) {
+                return *reinterpret_cast<const uint32_t *>( pData + propOff +
+                                                            0x08 );
+            }
+        }
+        return 0xFFFFFFFFu;
+    }
+} // namespace
+
 void HavokToJolt::buildBodies( const HavokPackfile &pf,
                                std::vector<RigidBody> &outBodies ) {
     const uint8_t *pData = pf.getDataBytes();
@@ -593,40 +629,98 @@ void HavokToJolt::buildBodies( const HavokPackfile &pf,
                 reinterpret_cast<const float *>( pData + motionOffset + 0x20 ),
                 reinterpret_cast<const float *>( pData + motionOffset +
                                                  0x30 ) );
-        }
+            // hkFixedRigidMotion = an anchored (infinite-mass) member: the
+            // "base" that breakable pieces hang off of. Dynamic pieces use
+            // hkBoxMotion / hkSphereMotion / hkKeyframedRigidMotion etc.
+            const char *pMotionClass =
+                pf.getClassName( static_cast<uint32_t>( motionOffset ) );
+            body.bFixedMotion =
+                pMotionClass != nullptr &&
+                std::strcmp( pMotionClass, "hkFixedRigidMotion" ) == 0;
 
-        // Recover the registry index from the hkRigidBody's property array
-        // (FUN_00452060 / FUN_004126e0): property array @body+0x44, count
-        // @body+0x48; each property is 0x10 bytes { key@0x00, ..., value@0x08
-        // }. The property with key 0x0FFFFFFF holds the registry index of this
-        // body's entry (== its LocalHashcode). The original uses that index to
-        // bind registry[index].pPointer = body; the port keeps it so
-        // createFromBinary can stamp registry[index].GlobalHashcode onto the
-        // body — identity-correct, unlike stamping RigidBody entries by order
-        // (which breaks whenever a body's shape fails to build).
-        constexpr uint32_t kRegistryIndexProperty = 0x0FFFFFFFu;
-        const int32_t propArray =
-            pf.resolvePointer( static_cast<uint32_t>( bodyOffset ) + 0x44 );
-        if ( propArray >= 0 &&
-             static_cast<uint32_t>( bodyOffset ) + 0x48 + 4 <= dataSize ) {
-            const int32_t propCount =
-                *reinterpret_cast<const int32_t *>( pData + bodyOffset + 0x48 );
-            for ( int32_t p = 0; p < propCount && p < 4096; p++ ) {
-                const uint32_t propOff =
-                    static_cast<uint32_t>( propArray ) + p * 0x10;
-                if ( propOff + 0x10 > dataSize ) {
-                    break;
-                }
-                const uint32_t key =
-                    *reinterpret_cast<const uint32_t *>( pData + propOff );
-                if ( key == kRegistryIndexProperty ) {
-                    body.RegistryIndex = *reinterpret_cast<const uint32_t *>(
-                        pData + propOff + 0x08 );
-                    break;
+            // Asset mass: hkMotion stores 1/mass at +0xc0 (verified: round
+            // 60..1000 kg values). Jolt derives the inertia tensor from the
+            // shape scaled to this mass. 0 -> the caller uses a default.
+            if ( static_cast<uint32_t>( motionOffset ) + 0xc4 <= dataSize ) {
+                const float invMass = *reinterpret_cast<const float *>(
+                    pData + motionOffset + 0xc0 );
+                if ( invMass > 1.0e-6f ) {
+                    body.Mass = std::min(
+                        std::max( 1.0f / invMass, 0.1f ), 1.0e5f );
                 }
             }
         }
 
+        // Recover the registry index from the hkRigidBody's property array
+        // (FUN_00452060 / FUN_004126e0), used so createFromBinary can stamp
+        // registry[index].GlobalHashcode onto the body — identity-correct,
+        // unlike stamping RigidBody entries by order (which breaks whenever a
+        // body's shape fails to build).
+        body.RegistryIndex = readRegistryIndexProperty( pf, bodyOffset );
+
         outBodies.push_back( body );
+    }
+}
+
+void HavokToJolt::buildConstraints( const HavokPackfile &pf,
+                                    std::vector<Constraint> &outConstraints ) {
+    // hkPhysicsSystem root @ __data__+0: m_constraints ptr @+0x14, count @+0x18
+    // (m_rigidBodies is @+0x08/+0x0c; see buildBodies + FUN_00452310).
+    const uint8_t *pData = pf.getDataBytes();
+    if ( pData == nullptr ) {
+        return;
+    }
+    const uint32_t dataSize = pf.getDataSize();
+
+    const int32_t constraintArray = pf.resolvePointer( 0x14 );
+    if ( constraintArray < 0 || 0x18 + 4 > dataSize ) {
+        return;
+    }
+    const int32_t numConstraints =
+        *reinterpret_cast<const int32_t *>( pData + 0x18 );
+
+    for ( int32_t i = 0; i < numConstraints && i < 65536; i++ ) {
+        const int32_t instOffset = pf.resolvePointer(
+            static_cast<uint32_t>( constraintArray ) + i * 4 );
+        if ( instOffset < 0 ) {
+            continue;
+        }
+
+        // hkConstraintInstance: constraintData@+0x0c, bodyA@+0x10, bodyB@+0x14.
+        const int32_t bodyAOffset = pf.resolvePointer(
+            static_cast<uint32_t>( instOffset ) + 0x10 );
+        const int32_t bodyBOffset = pf.resolvePointer(
+            static_cast<uint32_t>( instOffset ) + 0x14 );
+        if ( bodyAOffset < 0 || bodyBOffset < 0 ) {
+            continue;
+        }
+
+        Constraint c;
+        c.BodyARegistryIndex = readRegistryIndexProperty( pf, bodyAOffset );
+        c.BodyBRegistryIndex = readRegistryIndexProperty( pf, bodyBOffset );
+        if ( c.BodyARegistryIndex == 0xFFFFFFFFu ||
+             c.BodyBRegistryIndex == 0xFFFFFFFFu ) {
+            continue; // a constraint whose bodies we can't identify
+        }
+
+        // hkBreakableConstraintData (getType==0xc) wraps a child joint and
+        // breaks when the solver impulse exceeds m_threshold (constraintData+
+        // 0x14). Non-breakable data (hkGenericConstraintData/hkRagdoll...) is a
+        // permanent fixed joint here.
+        const int32_t dataOffset = pf.resolvePointer(
+            static_cast<uint32_t>( instOffset ) + 0x0c );
+        if ( dataOffset >= 0 ) {
+            const char *pClass =
+                pf.getClassName( static_cast<uint32_t>( dataOffset ) );
+            if ( pClass != nullptr &&
+                 std::strcmp( pClass, "hkBreakableConstraintData" ) == 0 &&
+                 static_cast<uint32_t>( dataOffset ) + 0x18 <= dataSize ) {
+                c.bBreakable = true;
+                c.Threshold = *reinterpret_cast<const float *>(
+                    pData + dataOffset + 0x14 );
+            }
+        }
+
+        outConstraints.push_back( c );
     }
 }

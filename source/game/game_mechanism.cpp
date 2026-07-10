@@ -17,6 +17,7 @@ GameMechanism::GameMechanism()
       pParent( nullptr ),
       numInstance( 0u ),
       propCollisionHashcode( 0u ),
+      primaryLocalInv( Matrix4x4f_t::Identity() ),
       bControlledByAvatar( false ),
       bInitialized( false ),
       bTransformSet( false ),
@@ -83,13 +84,15 @@ void GameMechanism::tick() {
     if ( bDynamicProp && !propBodies.empty() ) {
         Matrix4x4f_t pose;
         bool bActive = false;
-        if ( gpPhysics->getBodyPose( static_cast<RigidBody_t>( propBodies[0] ),
-                                     pose, bActive ) &&
+        if ( gpPhysics->getBodyPose(
+                 static_cast<RigidBody_t>( propBodies[0].second ), pose,
+                 bActive ) &&
              bActive ) {
-            // The simulated body lives in absolute world space, so publish the
-            // pose as unshifted (bShifted = false via the setTransform bool).
-            pEntity->setTransform( pose, true );
+            Matrix4x4f_t entityPose = primaryLocalInv * pose;
+            pEntity->setTransform( entityPose, true );
         }
+
+        pEntity->refreshMechanismRender( propBodies );
     }
 }
 
@@ -98,14 +101,16 @@ void GameMechanism::placeCollisionBody( const Matrix4x4f_t &worldTransform ) {
     if ( propCollisionHashcode == 0 || gpPhysics == nullptr ) {
         return;
     }
-    for ( void *pBody : propBodies ) {
-        gpPhysics->destroyRigidBody( static_cast<RigidBody_t>( pBody ) );
+    for ( const auto &member : propBodies ) {
+        gpPhysics->destroyRigidBody(
+            static_cast<RigidBody_t>( member.second ) );
     }
     propBodies.clear();
 
     bDynamicProp = !isStaticController();
 
-    std::vector<RigidBody_t> placedBodies;
+    primaryLocalInv = Matrix4x4f_t::Identity();
+    std::vector<std::pair<uint64_t, RigidBody_t>> placedBodies;
     gpPhysics->placeProp( propCollisionHashcode, worldTransform, bDynamicProp,
                           pPureDynamicController != nullptr
                               ? pPureDynamicController->LinearDamping
@@ -113,9 +118,10 @@ void GameMechanism::placeCollisionBody( const Matrix4x4f_t &worldTransform ) {
                           pPureDynamicController != nullptr
                               ? pPureDynamicController->AngularDamping
                               : angularDamping,
-                          placedBodies );
-    for ( RigidBody_t pBody : placedBodies ) {
-        propBodies.push_back( static_cast<void *>( pBody ) );
+                          placedBodies, &primaryLocalInv );
+    for ( const auto &placed : placedBodies ) {
+        propBodies.emplace_back( placed.first,
+                                 static_cast<void *>( placed.second ) );
     }
 }
 
@@ -199,8 +205,9 @@ void GameMechanism::initInstance() {
 void GameMechanism::removeAndDestroy() {
     // FUN_007d8810
     if ( gpPhysics != nullptr ) {
-        for ( void *pBody : propBodies ) {
-            gpPhysics->destroyRigidBody( static_cast<RigidBody_t>( pBody ) );
+        for ( const auto &member : propBodies ) {
+            gpPhysics->destroyRigidBody(
+                static_cast<RigidBody_t>( member.second ) );
         }
     }
     propBodies.clear();

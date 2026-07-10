@@ -35,6 +35,8 @@ public:
     void onGeometrySubmitted() override;
     bool isPMIInTile( const SectorHeightmap *pHeightmap,
                       int32_t tileKey ) override;
+    int32_t refreshMechanismRender(
+        const std::vector<std::pair<uint64_t, void *>> &members ) override;
 
     // Vtable entries specific to actor entities
     virtual void *getAnimation();
