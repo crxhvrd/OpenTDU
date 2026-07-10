@@ -22,6 +22,14 @@ public:
     void tick() override;
     void deserialize( BinaryReader *param_2 ) override;
 
+    virtual const char *getChallengeName() const { return nullptr; }
+
+protected:
+    union ChallengeCondition {
+        uint32_t Value;
+        const char *pValue;
+    };
+
 protected:
     int32_t Index;
     float TimeLimit;

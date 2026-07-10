@@ -10,6 +10,16 @@ public:
     EntityShoppingGirl();
     ~EntityShoppingGirl();
 
+    void loadResources( ScenaricBank *param_2 ) override;
+    void deserialize( BinaryReader *param_2 ) override;
+    const char *getChallengeName() const override { return pGirlName; }
+
 protected:
-    const char *pFirstName;
+    const char *pGirlName;
+    uint32_t Reward;
+    uint32_t Coupon;
+    uint32_t ConditionType;
+    ChallengeCondition Condition;
+    uint64_t GoodiesBinHashcode;
+    Entity *pGoodiesBin;
 };
