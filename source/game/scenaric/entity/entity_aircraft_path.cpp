@@ -19,13 +19,6 @@ EntityAircraftPath::~EntityAircraftPath() {
     // FUN_00424120
 }
 
-static void ResolveVolumeBlock( uint8_t *pBlock ) {
-    // FUN_007e9d60 / FUN_007dde80
-    Entity *pVolume =
-        gpScenaric->getSCVolume( *reinterpret_cast<uint64_t *>( pBlock ) );
-    *reinterpret_cast<Entity **>( pBlock ) = pVolume;
-}
-
 void EntityAircraftPath::loadResources( ScenaricBank *param_2 ) {
     // FUN_009c6b00
     (void)param_2;

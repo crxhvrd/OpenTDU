@@ -4,24 +4,6 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "filesystem/binary.h"
 
-static void ResolveVolumeList( uint32_t *pList ) {
-    // FUN_00425880
-    uint64_t *pEntry = reinterpret_cast<uint64_t *>( pList + 1 );
-    for ( int32_t remaining = static_cast<int32_t>( *pList ); remaining != 0;
-          remaining-- ) {
-        Entity *pVolume = gpScenaric->getSCVolume( *pEntry );
-        *reinterpret_cast<Entity **>( pEntry ) = pVolume;
-        pEntry++;
-    }
-}
-
-static void ResolveVolumeBlock( uint8_t *pBlock ) {
-    // FUN_00428e00
-    Entity *pVolume =
-        gpScenaric->getSCVolume( *reinterpret_cast<uint64_t *>( pBlock ) );
-    *reinterpret_cast<Entity **>( pBlock ) = pVolume;
-}
-
 Entity321Go::Entity321Go()
     : Entity(),
       Field0( 0 ),

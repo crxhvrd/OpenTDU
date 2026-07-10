@@ -234,6 +234,18 @@ void Entity::propagatePosition( Eigen::Vector4f &position, bool param_1 ) {
     }
 }
 
+Matrix4x4f_t Entity::getWorldMatrix() const {
+    Matrix4x4f_t worldMatrix = modelMatrix;
+    if ( bShifted ) {
+        Eigen::Vector4f shift = gpWorldStreaming->isEnabled()
+                                    ? gpWorldStreaming->getPosition()
+                                    : Eigen::Vector4f::Zero();
+        shift.w() = 0.0f;
+        worldMatrix.row( 3 ) += shift;
+    }
+    return worldMatrix;
+}
+
 void Entity::setTransformFromDesc() {
     // FUN_007fb7a0
     OTDU_ASSERT( pDesc );
@@ -327,4 +339,30 @@ bool Entity::isPMIInTile( const SectorHeightmap *pHeightmap, int32_t tileKey ) {
         (int32_t)( ( modelMatrix( 3, 2 ) - pHeightmap->worldOriginZ ) * inv );
     const int32_t tileIndex = ( 1 - row ) * kHeightmapNumRealTile - col + 1;
     return tileIndex == tileKey;
+}
+
+void ResolveVolumeList( uint32_t *pList ) {
+    // FUN_00425880
+    uint64_t *pEntry = reinterpret_cast<uint64_t *>( pList + 1 );
+    for ( int32_t remaining = static_cast<int32_t>( *pList ); remaining != 0;
+          remaining-- ) {
+        Entity *pVolume = gpScenaric->getSCVolume( *pEntry );
+        *reinterpret_cast<Entity **>( pEntry ) = pVolume;
+        pEntry++;
+    }
+}
+
+void ResolveVolumeBlock( uint8_t *pBlock ) {
+    // FUN_00428e00
+    Entity *pVolume =
+        gpScenaric->getSCVolume( *reinterpret_cast<uint64_t *>( pBlock ) );
+    *reinterpret_cast<Entity **>( pBlock ) = pVolume;
+}
+
+void ResolveEntityRef( uint8_t *pBlock ) {
+    // FUN_00425b90 lookup + a null hashcode resolves to nullptr.
+    const uint64_t hashcode = *reinterpret_cast<uint64_t *>( pBlock );
+    Entity *pEntity =
+        hashcode != 0 ? gpScenaric->findEntityByHashcode( hashcode ) : nullptr;
+    *reinterpret_cast<Entity **>( pBlock ) = pEntity;
 }

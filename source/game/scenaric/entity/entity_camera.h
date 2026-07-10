@@ -10,7 +10,10 @@ public:
     EntityCamera();
     ~EntityCamera();
 
+    void deserialize( BinaryReader *param_2 ) override;
+    void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
+
 protected:
-    float Field0;
-    float Field1;
+    float FOV;
+    float Ratio;
 };

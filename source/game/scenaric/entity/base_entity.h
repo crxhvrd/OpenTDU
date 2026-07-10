@@ -111,6 +111,8 @@ public:
     void initializeForCinematicKeyframed( void *param_2,
                                           void *param_3 ) override;
 
+    Matrix4x4f_t getWorldMatrix() const;
+
     // TODO: Some entries in the vtable are never implemented (children inherit
     // the parent no-op) and therefore remain unknown for now
     virtual void initialize();
@@ -170,3 +172,7 @@ protected:
 protected:
     void setTransformFromDesc();
 };
+
+void ResolveVolumeList( uint32_t *pList );
+void ResolveVolumeBlock( uint8_t *pBlock );
+void ResolveEntityRef( uint8_t *pBlock );

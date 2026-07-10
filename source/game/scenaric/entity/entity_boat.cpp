@@ -36,8 +36,8 @@ void EntityBoat::initialize() {
     EntityActor::initialize();
 
     if ( gpMngOcean != nullptr ) {
-        OceanHeight =
-            gpMngOcean->getOceanHeight() - gpMngOcean->getWaveAmplitude() * 0.5f;
+        OceanHeight = gpMngOcean->getOceanHeight() -
+                      gpMngOcean->getWaveAmplitude() * 0.5f;
     }
 }
 
@@ -53,7 +53,7 @@ void EntityBoat::loadResources( ScenaricBank *param_2 ) {
     }
 
     if ( pHornSound != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO — CWavHeader::Prepare
+        OTDU_UNIMPLEMENTED; // TODO: AUDIO
     }
 
     Ecume3DModel.loadResources( param_2 );
