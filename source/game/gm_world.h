@@ -108,6 +108,9 @@ protected:
     void destroyGameMech();
     void updatePauseFade();
     void installLocalPlayerCar();
+    void installLocalPlayerCar( int32_t carID,
+                                const Matrix4x4f_t *pSpawnOverride );
+    void uninstallLocalPlayerCar();
 
 protected:
     MngHudChallenge mngHudChallenge;
@@ -147,3 +150,5 @@ extern float gFXPModCoeff0;
 extern float gFXPModCoeff1;
 
 extern GameModeWorld *gpActiveGM;
+
+extern int32_t gRequestedPlayerCarID;

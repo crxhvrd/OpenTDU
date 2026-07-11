@@ -21,6 +21,10 @@ public:
     void onPauseMenuRequested( bool bOpened ) override;
     void onMenuPauseExit( bool bRestoreState ) override;
 
+#ifdef OTDU_USE_IMGUI
+    void drawDebug( float deltaTime ) override;
+#endif
+
 private:
     MngBookmark mngBookmark;
     // MngFRMeetingIC mngFRMeetingIC;

@@ -167,25 +167,29 @@ void GameModeWorld::reset() {
     OTDU_UNIMPLEMENTED; // TODO: CAMERA (full RestoreCamera)
 }
 
+constexpr int32_t kDefaultPlayerCarID = 1030;
+int32_t gRequestedPlayerCarID = -1;
+
 void GameModeWorld::installLocalPlayerCar() {
+    installLocalPlayerCar( kDefaultPlayerCarID, nullptr );
+}
+
+void GameModeWorld::installLocalPlayerCar(
+    int32_t carID, const Matrix4x4f_t *pSpawnOverride ) {
     // FUN_007bf280 (inlined) / FUN_0079da80.
     if ( gpCarState == nullptr || gpCarDisplay == nullptr ||
          gpScenaric == nullptr ) {
         return;
     }
 
-    // TODO: HACK: Force arbitrary car ID to test physics for now.
-    static constexpr int32_t kDefaultPlayerCarID = 108;
-
     VehicleBaseResources *pRes = gpCarState->grabFreeResourceEntry();
     if ( pRes == nullptr ) {
         return;
     }
-    if ( !pRes->load( kDefaultPlayerCarID, -1, 0, 4, -1, 0,
+    if ( !pRes->load( carID, -1, 0, 4, -1, 0,
                       eVehicleResourceType::VRT_Exterior ) ) {
         OTDU_LOG_ERROR(
-            "Failed to load local-player vehicle resources (car %d)\n",
-            kDefaultPlayerCarID );
+            "Failed to load local-player vehicle resources (car %d)\n", carID );
         gpCarState->releaseResourceEntry( pRes );
         return;
     }
@@ -207,7 +211,7 @@ void GameModeWorld::installLocalPlayerCar() {
                                       &pRes->FrontRims, &pRes->RearRims );
     if ( pController == nullptr ) {
         OTDU_LOG_ERROR( "instantiateCar failed for local-player car %d\n",
-                        kDefaultPlayerCarID );
+                        carID );
         gpCarState->releaseResourceEntry( pRes );
         return;
     }
@@ -216,53 +220,49 @@ void GameModeWorld::installLocalPlayerCar() {
     state.pResource = pRes;
     pRes->RefCount++;
 
-    // Seat the car at the world streaming-center transform. If it was never
-    // seeded (world entered without a savegame), re-seed it from the scenaric
-    // default start position so the car and the streaming center land on valid
-    // terrain instead of the origin.
-    if ( gpWorld != nullptr ) {
-        const Matrix4x4f_t &prev = gpWorld->getPreviousTransform();
-        const float distSq = prev( 3, 0 ) * prev( 3, 0 ) +
-                             prev( 3, 1 ) * prev( 3, 1 ) +
-                             prev( 3, 2 ) * prev( 3, 2 );
-        if ( distSq < 1.0f ) {
-            Eigen::Vector4f startPos = gpScenaric->getDefaultStartPosition();
-            gpWorld->setPlayerPosition( &startPos );
+    Matrix4x4f_t spawn;
+    if ( pSpawnOverride != nullptr ) {
+        // In-place respawn (debug switch): reuse the transform and leave the
+        // streaming centre where it is.
+        spawn = *pSpawnOverride;
+    } else {
+        if ( gpWorld != nullptr ) {
+            const Matrix4x4f_t &prev = gpWorld->getPreviousTransform();
+            const float distSq = prev( 3, 0 ) * prev( 3, 0 ) +
+                                 prev( 3, 1 ) * prev( 3, 1 ) +
+                                 prev( 3, 2 ) * prev( 3, 2 );
+            if ( distSq < 1.0f ) {
+                Eigen::Vector4f startPos =
+                    gpScenaric->getDefaultStartPosition();
+                gpWorld->setPlayerPosition( &startPos );
+            }
+        }
+        spawn = ( gpWorld != nullptr ) ? gpWorld->getPreviousTransform()
+                                       : Matrix4x4f_t::Identity();
+        // HACK: Shift from default spawn pos to prevent spawn inside the hmap
+        // (seems ok in Havok; not with Jolt).
+        spawn( 3, 0 ) -= 15.0f;
+        spawn( 3, 2 ) -= 15.0f;
+
+        // Centre streaming on the spawn so terrain loads around the car.
+        if ( gpWorldStreaming != nullptr ) {
+            const Eigen::Vector4f center( spawn( 3, 0 ), 0.0f, spawn( 3, 2 ),
+                                          0.0f );
+            gpWorldStreaming->setPosition( center );
         }
     }
-    Matrix4x4f_t spawn = ( gpWorld != nullptr )
-                             ? gpWorld->getPreviousTransform()
-                             : Matrix4x4f_t::Identity();
-    // HACK: Shift from default spawn pos to prevent spawn inside the hmap
-    // (seems to be ok in Havok; not good with Jolt).
-    spawn( 3, 0 ) -= 15.0f;
-    spawn( 3, 2 ) -= 15.0f;
     state.body.WorldMatrix = spawn;
 
-    // HACK: REMOVE ME: GROUNDWORK FOR VEHICLE PHYSICS
-    // The renderer works in streaming-shifted space (world - streaming centre).
-    // Centre streaming on the spawn so terrain loads around the car, then store
-    // the *shifted* offseted matrix that the display and the chase camera read
-    // (the physics -> render rebase is otherwise not ported yet).
-    Eigen::Vector4f shift = Eigen::Vector4f::Zero();
-    if ( gpWorldStreaming != nullptr ) {
-        const Eigen::Vector4f center( spawn( 3, 0 ), 0.0f, spawn( 3, 2 ),
-                                      0.0f );
-        gpWorldStreaming->setPosition( center );
-        shift = center;
-    }
     Matrix4x4f_t offseted = spawn;
-    offseted( 3, 0 ) -= shift.x();
-    offseted( 3, 1 ) -= shift.y();
-    offseted( 3, 2 ) -= shift.z();
+    if ( gpWorldStreaming != nullptr ) {
+        const Eigen::Vector4f &shift = gpWorldStreaming->getPosition();
+        offseted( 3, 0 ) -= shift.x();
+        offseted( 3, 1 ) -= shift.y();
+        offseted( 3, 2 ) -= shift.z();
+    }
     state.body.OffsetedWorldMatrix = offseted;
 
-    // Create the Jolt vehicle body at the spawn so the car falls, settles, and
-    // collides under physics; GameModeWorld::tick copies its pose back into
-    // CarBodyState each frame. The physics factory is on the exterior bank.
     if ( gpPhysics != nullptr && gpDatabase != nullptr ) {
-        // The physics factory (authored Havok shape) is optional; createVehicle
-        // falls back to a DB-dimensioned box chassis when it is absent.
         PhysFactory *pFactory =
             ( pRes->Exterior.pBankInstance != nullptr )
                 ? pRes->Exterior.pBankInstance->getPhysFactory()
@@ -280,12 +280,66 @@ void GameModeWorld::installLocalPlayerCar() {
 
     const Eigen::Vector4f pos = spawn.row( 3 );
     OTDU_LOG_INFO( "Installed local-player car %d at (%.1f, %.1f, %.1f)\n",
-                   kDefaultPlayerCarID, pos.x(), pos.y(), pos.z() );
+                   carID, pos.x(), pos.y(), pos.z() );
+}
+
+void GameModeWorld::uninstallLocalPlayerCar() {
+    // Mirror of GMCarShowcase::unloadCar (FUN_007b5880)
+    if ( gpCarState == nullptr || gpScenaric == nullptr ) {
+        return;
+    }
+    CarState *pCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pCar == nullptr ) {
+        return;
+    }
+    VehicleBaseResources *pRes = pCar->getResource();
+    gpCarState->releaseCarState( pCar, false );
+    if ( pRes != nullptr ) {
+        pRes->unload(); // frees the streamed banks once RefCount < 1
+        gpCarState->releaseResourceEntry( pRes );
+    }
+    pPlayerPhysicsCar = nullptr; // was destroyed by releaseCarState
+    gpScenaric->getLocalPlayer().setCarState( nullptr );
 }
 
 void GameModeWorld::tick( float deltaTime, float totalTime ) {
     // FUN_007beb90
     GameModeScene::tick( deltaTime, totalTime );
+
+#ifdef OTDU_DEVBUILD
+    // Runtime vehicle switch
+    if ( gRequestedPlayerCarID >= 0 ) {
+        const int32_t carID = gRequestedPlayerCarID;
+        gRequestedPlayerCarID = -1;
+        DBEntryCarPhysicsData *pDB = ( gpDatabase != nullptr )
+                                         ? gpDatabase->getCarDBEntry( carID )
+                                         : nullptr;
+        if ( pDB != nullptr && !gpDatabase->isBike( pDB ) ) {
+            // Respawn upright at the current position (+ a small lift).
+            Matrix4x4f_t pose = Matrix4x4f_t::Identity();
+            CarState *pCar = ( gpScenaric != nullptr )
+                                 ? gpScenaric->getLocalPlayer().getCarState()
+                                 : nullptr;
+            Matrix4x4f_t cur = Matrix4x4f_t::Identity();
+            if ( pPlayerPhysicsCar != nullptr &&
+                 pPlayerPhysicsCar->isActive() ) {
+                cur = pPlayerPhysicsCar->getChassisWorldMatrix();
+            } else if ( pCar != nullptr ) {
+                cur = pCar->getBody()->WorldMatrix;
+            }
+            pose( 3, 0 ) = cur( 3, 0 );
+            pose( 3, 1 ) = cur( 3, 1 ); // + 1.5f;
+            pose( 3, 2 ) = cur( 3, 2 );
+
+            uninstallLocalPlayerCar();
+            installLocalPlayerCar( carID, &pose );
+            OTDU_LOG_INFO( "Debug: switched player car to %d\n", carID );
+        } else {
+            OTDU_LOG_INFO(
+                "Debug: car %d not switchable (missing DB or bike)\n", carID );
+        }
+    }
+#endif
 
     // Drive the player car body from the physics simulation.
     CarState *pCar = ( gpScenaric != nullptr )

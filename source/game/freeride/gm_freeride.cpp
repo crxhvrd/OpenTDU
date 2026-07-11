@@ -4,6 +4,8 @@
 #include "gs_timer.h"
 #include "tdu_instance.h"
 
+#include "database/gs_database.h"
+
 GMFreeride::GMFreeride()
     : GameModeWorld( 6 ),
       mngBookmark(),
@@ -84,3 +86,34 @@ void GMFreeride::onMenuPauseExit( bool bRestoreState ) {
 
     OTDU_UNIMPLEMENTED; // TODO: ONLINE/PHYSICS
 }
+
+#ifdef OTDU_USE_IMGUI
+void GMFreeride::drawDebug( float deltaTime ) {
+    if ( gpDatabase != nullptr ) {
+        const GameDatabase &gdb = gpDatabase->getGameDB();
+        const int32_t numCars = static_cast<int32_t>( gdb.pNumItems[1] );
+        if ( numCars > 0 && gdb.DBCarData != nullptr ) {
+            static int32_t carSlot = 0;
+            carSlot = Clamp( carSlot, 0, numCars - 1 );
+            ImGui::Text( "Test vehicle: slot %d/%d  ->  CarID %d", carSlot,
+                         numCars - 1, gdb.DBCarData[carSlot].CarID );
+            if ( ImGui::Button( "< Prev car" ) ) {
+                carSlot = ( carSlot + numCars - 1 ) % numCars;
+                gRequestedPlayerCarID = gdb.DBCarData[carSlot].CarID;
+            }
+            ImGui::SameLine();
+            if ( ImGui::Button( "Next car >" ) ) {
+                carSlot = ( carSlot + 1 ) % numCars;
+                gRequestedPlayerCarID = gdb.DBCarData[carSlot].CarID;
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth( 140.0f );
+            ImGui::SliderInt( "##carslot", &carSlot, 0, numCars - 1 );
+            ImGui::SameLine();
+            if ( ImGui::Button( "Spawn" ) ) {
+                gRequestedPlayerCarID = gdb.DBCarData[carSlot].CarID;
+            }
+        }
+    }
+}
+#endif
