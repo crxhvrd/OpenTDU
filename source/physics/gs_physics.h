@@ -34,9 +34,10 @@ using RigidBody_t = JPH::Body *;
 namespace TDUSurface {
     enum Class : uint32_t {
         Unknown = 0,
-        Road = 1,    // -R.shk road mesh -> asphalt, on-road
-        Terrain = 2, // heightfield -> off-road (dirt/grass)
-        Object = 3,  // .shk world object -> wall/post (not driven on)
+        Road = 1,    // -R.shk road mesh (orig phys-type 3) -> asphalt, on-road
+        Terrain = 2, // heightfield (orig phys-type 4) -> off-road (dirt/grass)
+        Object = 3,  // .shk world mesh/post (orig phys-type 2/7): paved/solid
+                     // drive surface (junctions, curbs, floors) -> ON-ROAD
     };
 
     inline float friction( uint32_t surfaceClass ) {
@@ -45,7 +46,7 @@ namespace TDUSurface {
             return 1.0f; // asphalt: full grip (FLOAT_00f4165c)
         case Terrain:
             return 0.75f; // off-road: reduced grip
-        case Object:      // walls: grip irrelevant (not a drive surface)
+        case Object:      // paved/solid on-road surface: full grip
         default:
             return 1.0f;
         }

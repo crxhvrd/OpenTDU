@@ -12,6 +12,7 @@
 #include "game/scenaric/local_player.h"
 #include "physics/physics_car.h"
 #include "physics/gs_physics.h" // TDUSurface
+#include "physics/physics_config.h"
 #include "car_state.h"
 
 GSCarState *gpCarState = nullptr; // DAT_010e7518
@@ -163,6 +164,7 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 Eigen::Vector4f( ro.LocalPosition.x(), ro.LocalPosition.y(),
                                  ro.LocalPosition.z(), 1.0f );
 
+            // FUN_0083bbd0
             switch ( ro.ContactSurface ) {
             case TDUSurface::Road:
                 wheel.ContactMaterial = eMaterialType::MT_Asphalt;
@@ -170,11 +172,13 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 break;
             case TDUSurface::Object:
                 wheel.ContactMaterial = eMaterialType::MT_Concrete;
-                wheel.bOnRoad = false;
+                wheel.bOnRoad = true;
                 break;
             case TDUSurface::Terrain:
             default:
-                wheel.ContactMaterial = eMaterialType::MT_Dirt;
+                wheel.ContactMaterial = ( gbGrassAsTarmac )
+                                            ? eMaterialType::MT_Asphalt
+                                            : eMaterialType::MT_Grass;
                 wheel.bOnRoad = false;
                 break;
             }
