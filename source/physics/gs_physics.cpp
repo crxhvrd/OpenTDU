@@ -3,6 +3,7 @@
 
 #include "config/gs_config.h"
 #include "physics_car.h"
+#include "physics_config.h"
 #include "world_collisions.h"
 #include "physics_layers.h"
 #include "havok/havok_container.h"
@@ -44,6 +45,7 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -89,6 +91,10 @@ static constexpr float kPhysicsDtClampThreshold =
 // Clamped dt value used when the step would be too large.
 static constexpr float kPhysicsMaxDt =
     1.0f / 90.0f; // DAT_00f41c04 (0x3c360b61)
+
+constexpr uint32_t kSR20Magic = 0x30325253; // "SR20"
+constexpr uint32_t kER20Magic = 0x30325245; // "ER20"
+constexpr int32_t kLongSteps = 10; // Bezier longitudinal divisions/record
 
 static void FUN_00607370() {
     // FUN_00607370
@@ -669,12 +675,12 @@ static uint32_t CollisionBodyColor( JPH::EShapeSubType subType,
     if ( subType == JPH::EShapeSubType::HeightField ) {
         return PackDebugColor( 90, 90, 90 ).Color; // terrain: grey
     }
-    if ( layer == TDUPhysLayers::MOVING ) {
+    if ( layer == TDUPhysLayers::MOVING || layer == TDUPhysLayers::VEHICLE ) {
         return PackDebugColor( 255, 140, 0 ).Color; // props / car: orange
     }
     switch ( userData ) {
     case TDUSurface::Road:
-        return PackDebugColor( 60, 120, 255 ).Color; // road: blue
+        return PackDebugColor( 60, 120, 255 ).Color; // road mesh: blue
     case TDUSurface::Object:
         return PackDebugColor( 40, 230, 40 ).Color; // world .shk: green
     default:
@@ -1047,7 +1053,12 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
             ( db.Height > 0 ? db.Height : 1300 ) * 0.5f * kMmToM;
         const float halfL =
             ( db.Length > 0 ? db.Length : 4000 ) * 0.5f * kMmToM;
-        JPH::BoxShapeSettings box( JPH::Vec3( halfW, halfH, halfL ) );
+
+        const float kConvexRadius = 0.05f; // FLOAT_00f41778
+        const JPH::Vec3 halfExtents( Max( 0.10f, halfW - 0.05f ),
+                                     Max( 0.10f, halfH - 0.15f ),
+                                     Max( 0.10f, halfL - 0.55f ) );
+        JPH::BoxShapeSettings box( halfExtents, kConvexRadius );
         shapeResult = box.Create();
     }
     if ( !shapeResult.IsValid() ) {
@@ -1060,8 +1071,15 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
     const float gcHeight = JPH::Clamp(
         db.GravityCenterHeight > 0 ? db.GravityCenterHeight * 0.01f : 0.40f,
         0.15f, 0.60f );
+    const PhysicsCar::SuspensionSetup comFrontSusp =
+        PhysicsCar::ComputeAxleSuspension( db, true );
+    const PhysicsCar::SuspensionSetup comRearSusp =
+        PhysicsCar::ComputeAxleSuspension( db, false );
+    const float restLen =
+        0.5f * ( comFrontSusp.restLength + comRearSusp.restLength );
+    const float contactPlaneY = -( bodyHalfHeight + restLen );
     const float comOffsetY =
-        JPH::Clamp( gcHeight - bodyHalfHeight, -0.9f * bodyHalfHeight, -0.02f );
+        JPH::Clamp( contactPlaneY + gcHeight, contactPlaneY + 0.10f, -0.02f );
 
     const float wheelBaseM =
         ( db.WheelBase > 0 ? db.WheelBase : 2600 ) * 0.001f;
@@ -1089,7 +1107,7 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
     JPH::BodyCreationSettings settings(
         comResult.Get(), JPH::RVec3( world.GetTranslation() ),
         world.GetQuaternion().Normalized(), JPH::EMotionType::Dynamic,
-        TDUPhysLayers::MOVING );
+        TDUPhysLayers::VEHICLE );
     settings.mOverrideMassProperties =
         JPH::EOverrideMassProperties::CalculateInertia;
     settings.mMassPropertiesOverride.mMass =
@@ -1135,6 +1153,30 @@ void GSPhysics::drawDebug( float ) {
         ImGui::SameLine();
         ImGui::Checkbox( "+terrain", &gDrawCollisionVisTerrain );
     }
+    ImGui::Checkbox( "Driver aids (ABS + traction control + ESP)",
+                     &gVehicleDriverAids );
+    if ( gVehicleDriverAids ) {
+        ImGui::SetNextItemWidth( 200.0f );
+        ImGui::SliderFloat( "Aids level (0=off 1=full)", &gVehicleAidsLevel,
+                            0.0f, 1.0f, "%.2f" );
+        const int32_t numLevels =
+            JPH::Clamp( gPhysicsConfig.NumElectronicParamsValues, 0, 9 );
+        for ( int32_t i = 0; i < numLevels; i++ ) {
+            const char *pName = gPhysicsConfig.ElectronicParamsValueName[i];
+            if ( pName[0] == '\0' ) {
+                continue;
+            }
+            ImGui::SameLine();
+            if ( ImGui::SmallButton( pName ) ) {
+                gVehicleAidsLevel = JPH::Clamp(
+                    gPhysicsConfig.ElectronicParamsValue[i], 0.0f, 1.0f );
+            }
+        }
+    }
+    ImGui::Checkbox(
+        "Assisted steering filter (deadzone/expo/rate/counter-steer)",
+        &gVehicleSteeringFilter );
+
     ImGui::Separator();
 
     int32_t carIndex = 0;
@@ -1160,6 +1202,8 @@ void GSPhysics::drawDebug( float ) {
                 atan2f( chassis( 1, 2 ), chassis( 1, 1 ) ) * 57.29578f;
             ImGui::Text( "Roll %+5.1f deg   Pitch %+5.1f deg", rollDeg,
                          pitchDeg );
+            ImGui::Text( "Pos  %.1f, %.1f, %.1f", chassis( 3, 0 ),
+                         chassis( 3, 1 ), chassis( 3, 2 ) );
 
             const char *pWheelNames[4] = { "FL", "FR", "RL", "RR" };
             if ( ImGui::BeginTable( "wheels", 6,
@@ -1546,9 +1590,13 @@ void GSPhysics::addSectorCollision( const void *pKey,
                                    body.Position.GetY(),
                                    baseZ + body.Position.GetZ() );
 
+        const JPH::ObjectLayer objLayer = ( surfaceClass == TDUSurface::Road )
+                                              ? TDUPhysLayers::ROAD
+                                              : TDUPhysLayers::NON_MOVING;
+
         JPH::BodyCreationSettings settings( body.Shape, position, body.Rotation,
                                             JPH::EMotionType::Static,
-                                            TDUPhysLayers::NON_MOVING );
+                                            objLayer );
         // Surface material tag (read back by the vehicle to pick tire grip /
         // FX)
         settings.mUserData = surfaceClass;
@@ -1631,6 +1679,157 @@ void GSPhysics::removeSectorCollision( const void *pKey ) {
         it->pKey = nullptr;
         unlockMutex();
     }
+}
+
+void GSPhysics::addSectorRoadGround( const void *pKey,
+                                     void *pBlob,
+                                     uint32_t blobSize ) {
+    // FUN_00848530
+    if ( pPhysicsSystem == nullptr || pBlob == nullptr || pKey == nullptr ||
+         blobSize < 0x124u )
+        return;
+
+    const uint8_t *blob = static_cast<const uint8_t *>( pBlob );
+    auto readF = []( const uint8_t *p ) -> float {
+        float v;
+        memcpy( &v, p, 4 );
+        return v;
+    };
+    auto readU = []( const uint8_t *p ) -> uint32_t {
+        uint32_t v;
+        memcpy( &v, p, 4 );
+        return v;
+    };
+    auto readVec3 = [&]( const uint8_t *p ) -> JPH::Vec3 {
+        return JPH::Vec3( readF( p ), readF( p + 4 ), readF( p + 8 ) );
+    };
+
+    JPH::TriangleList triangles;
+    JPH::Vec3 originRef = JPH::Vec3::sZero(); // rebase for float precision
+    bool bHaveOrigin = false;
+    JPH::Vec3 prevLat( 0, 0, 1 ); // fallback lateral if the tangent degenerates
+    int32_t recordCount = 0;
+
+    uint32_t off = 0;
+    while ( off + 0x124u <= blobSize ) {
+        const uint8_t *rec = blob + off;
+        if ( readU( rec ) != kSR20Magic )
+            break;
+        const int32_t N = static_cast<int32_t>( readU( rec + 0xac ) );
+        if ( N < 2 || N > 256 )
+            break;
+        const uint32_t e0Off = readU( rec + 0xe0 ); // heights[N]
+        const uint32_t e4Off = readU( rec + 0xe4 ); // lateral[N]
+        const uint32_t footer = off + e4Off + static_cast<uint32_t>( N ) * 4u;
+        if ( off + e0Off + static_cast<uint32_t>( N ) * 4u > blobSize ||
+             footer + 4u > blobSize )
+            break;
+        if ( readU( blob + footer ) != kER20Magic )
+            break;
+
+        const JPH::Vec3 P0 = readVec3( rec + 0x10 );
+        const JPH::Vec3 P1 = readVec3( rec + 0x20 );
+        const JPH::Vec3 P2 = readVec3( rec + 0x30 );
+        const JPH::Vec3 P3 = readVec3( rec + 0x40 );
+        const float *heights = reinterpret_cast<const float *>( rec + e0Off );
+        const float *lateral = reinterpret_cast<const float *>( rec + e4Off );
+        if ( !bHaveOrigin ) {
+            originRef = P0;
+            bHaveOrigin = true;
+        }
+
+        std::vector<JPH::Vec3> grid;
+        grid.reserve( static_cast<size_t>( kLongSteps + 1 ) * N );
+        for ( int32_t j = 0; j <= kLongSteps; ++j ) {
+            const float u = static_cast<float>( j ) / kLongSteps;
+            const float iu = 1.0f - u;
+            const JPH::Vec3 S = P0 * ( iu * iu * iu ) +
+                                P1 * ( 3.0f * u * iu * iu ) +
+                                P2 * ( 3.0f * u * u * iu ) + P3 * ( u * u * u );
+            const JPH::Vec3 T = ( P1 - P0 ) * ( 3.0f * iu * iu ) +
+                                ( P2 - P1 ) * ( 6.0f * u * iu ) +
+                                ( P3 - P2 ) * ( 3.0f * u * u );
+            JPH::Vec3 latDir( -T.GetZ(), 0.0f, T.GetX() );
+            const float latLen = latDir.Length();
+            if ( latLen > 1.0e-4f )
+                prevLat = latDir / latLen;
+            for ( int32_t k = 0; k < N; ++k ) {
+                grid.push_back( ( S + prevLat * lateral[k] +
+                                  JPH::Vec3( 0.0f, heights[k], 0.0f ) ) -
+                                originRef );
+            }
+        }
+
+        auto pushTri = [&]( const JPH::Vec3 &v0, const JPH::Vec3 &v1,
+                            const JPH::Vec3 &v2 ) {
+            const JPH::Vec3 n = ( v1 - v0 ).Cross( v2 - v0 );
+            if ( n.LengthSq() < 1.0e-8f )
+                return;
+            if ( n.GetY() < 0.0f )
+                triangles.push_back( JPH::Triangle( v0, v2, v1 ) );
+            else
+                triangles.push_back( JPH::Triangle( v0, v1, v2 ) );
+        };
+        for ( int32_t j = 0; j < kLongSteps; ++j ) {
+            for ( int32_t k = 0; k < N - 1; ++k ) {
+                const JPH::Vec3 &a = grid[j * N + k];
+                const JPH::Vec3 &b = grid[( j + 1 ) * N + k];
+                const JPH::Vec3 &c = grid[( j + 1 ) * N + k + 1];
+                const JPH::Vec3 &d = grid[j * N + k + 1];
+                pushTri( a, b, c );
+                pushTri( a, c, d );
+            }
+        }
+        recordCount++;
+        off = ( footer + 4u + 0xfu ) & ~0xfu;
+    }
+
+    if ( triangles.empty() ) {
+        OTDU_LOG_WARN( "SR20 road ground: no triangles produced (size=%u)\n",
+                       blobSize );
+        return;
+    }
+
+    JPH::MeshShapeSettings meshSettings( triangles );
+    meshSettings.Sanitize();
+    JPH::ShapeSettings::ShapeResult meshResult = meshSettings.Create();
+    if ( !meshResult.IsValid() ) {
+        OTDU_LOG_WARN( "SR20 road ground: mesh build failed: %s\n",
+                       meshResult.GetError().c_str() );
+        return;
+    }
+
+    PhysicsSHK *pSlot = nullptr;
+    for ( PhysicsSHK *it = pSectorsBegin; it != pSectorsEnd; ++it ) {
+        if ( it->pKey == nullptr && it->NumObjects == 0 ) {
+            pSlot = it;
+            break;
+        }
+    }
+    if ( pSlot == nullptr ) {
+        OTDU_LOG_WARN( "SR20 road ground: no free sector slot\n" );
+        return;
+    }
+
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    lockMutex();
+    JPH::BodyCreationSettings settings(
+        meshResult.Get(), JPH::RVec3( originRef ), JPH::Quat::sIdentity(),
+        JPH::EMotionType::Static, TDUPhysLayers::NON_MOVING );
+    settings.mUserData = TDUSurface::Road;
+    settings.mFriction = TDUSurface::friction( TDUSurface::Road );
+    JPH::Body *pBody = bodyInterface.CreateBody( settings );
+    if ( pBody != nullptr ) {
+        bodyInterface.AddBody( pBody->GetID(), JPH::EActivation::DontActivate );
+        PhysicsSectorObj &obj = pSlot->pObjects[pSlot->NumObjects++];
+        obj.pRigidBody = pBody;
+        obj.pShape = meshResult.Get();
+        pSlot->pKey = pKey;
+    }
+    unlockMutex();
+
+    OTDU_LOG_DEBUG( "SR20 road ground: %d records, %u triangles\n", recordCount,
+                    (uint32_t)triangles.size() );
 }
 
 void GSPhysics::queuePropCollisionFactory( const void *pBlob,

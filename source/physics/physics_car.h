@@ -13,7 +13,42 @@ namespace JPH {
 
 struct DBEntryCarPhysicsData;
 
+// Master toggle for the electronic driver aids (ABS + traction control + ESP).
+extern bool gVehicleDriverAids;
+
+// 1 = full assistance
+// 0 = none (HyperSport / Hardcore).
+// (Scales ESP and TC intervention strength; ABS is always ON)
+extern float gVehicleAidsLevel;
+
+extern bool gVehicleSteeringFilter;
+
 class PhysicsCar {
+public:
+    struct WheelReadout {
+        Eigen::Vector3f LocalPosition; // suspension attach point, body space
+        float AngularVelocity;         // rad/s (+ = rolling forward)
+        float SteerAngle;              // rad
+        float RotationAngle;           // rad
+        float SuspensionLength;        // m (current, from the hard point)
+        float SuspensionDeflection;    // m, rest - current (+ = compressed/up)
+        float LongitudinalSlip;
+        float LateralSlip;
+        float LongitudinalGroundSpeed; // m/s along contact-forward (0 airborne)
+        float SuspensionLoad;
+        float Radius; // m
+        bool bGrounded;
+        uint32_t ContactSurface;
+    };
+
+    struct SuspensionSetup {
+        float minLength;  // full-bump length, m
+        float maxLength;  // full-droop length, m
+        float restLength; // static ride-height length, m
+        float frequency;  // ride frequency, Hz
+        float damping;    // damping ratio
+    };
+
 public:
     PhysicsCar();
     ~PhysicsCar();
@@ -35,21 +70,8 @@ public:
 
     Matrix4x4f_t getChassisWorldMatrix() const;
 
-    struct WheelReadout {
-        Eigen::Vector3f LocalPosition; // suspension attach point, body space
-        float AngularVelocity;         // rad/s (+ = rolling forward)
-        float SteerAngle;              // rad
-        float RotationAngle;           // rad
-        float SuspensionLength;        // m (current, from the hard point)
-        float SuspensionDeflection;    // m, rest - current (+ = compressed/up)
-        float LongitudinalSlip;
-        float LateralSlip;
-        float LongitudinalGroundSpeed; // m/s along contact-forward (0 airborne)
-        float SuspensionLoad;
-        float Radius; // m
-        bool bGrounded;
-        uint32_t ContactSurface;
-    };
+    static SuspensionSetup
+    ComputeAxleSuspension( const DBEntryCarPhysicsData &db, bool bFront );
 
     uint32_t getNumWheels() const;
     WheelReadout getWheelReadout( uint32_t index ) const;
@@ -75,6 +97,8 @@ private:
     float axleDriveGrip[2];
     float axleBrakeGrip[2];
 
+    bool wheelDriven[4];
+
     float prevWorldVelocity[3];
     float localAccelLong;
     float localAccelLat;
@@ -83,4 +107,13 @@ private:
     float aeroDownforceCoef;
     float aeroHalfWheelBase;
     float aeroFrontFraction;
+    float steerLockRad;
+    float filteredSteer;
+
+private:
+    void applyDriverAids( float steer,
+                          float &throttle,
+                          float &brake,
+                          float &espYawTorqueLocalUp ) const;
+    float filterSteering( float rawTarget, float deltaTime );
 };

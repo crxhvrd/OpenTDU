@@ -136,6 +136,8 @@ public:
                              float baseZ,
                              uint32_t surfaceClass );
     void removeSectorCollision( const void *pKey );
+    void
+    addSectorRoadGround( const void *pKey, void *pBlob, uint32_t blobSize );
 
     void queuePropCollisionFactory( const void *pBlob, uint32_t blobSize );
     void queueSceneryCollisionFactory( const void *pBlob, uint32_t blobSize );

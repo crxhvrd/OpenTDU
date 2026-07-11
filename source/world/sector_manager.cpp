@@ -988,6 +988,14 @@ void SectorBank::instanciate() {
                                                areaX, areaZ, TDUSurface::Road );
             }
 
+            // .rd (5,5) = SR20 road-corridor physics ground.
+            uint32_t rdSize = 0;
+            void *pRD = getFirstEntry( static_cast<eAssetGroup>( 5 ),
+                                       static_cast<eAssetType>( 5 ), &rdSize );
+            if ( pRD != nullptr ) {
+                gpPhysics->addSectorRoadGround( pOwner, pRD, rdSize );
+            }
+
             gpPhysics->installSceneryCollision();
         }
     }
