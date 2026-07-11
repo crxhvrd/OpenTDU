@@ -66,6 +66,7 @@ struct SpotsList {
     SpotData pSpotsMapOrSector = {};
     Sector *pSector = nullptr;
     bool bInstalled = false;
+    bool bMeshesSpawned = false;
 };
 
 class Spots {
@@ -93,6 +94,7 @@ public:
     bool installWorldSpots( void *pResource );
     void resetWorldSpots();
     bool installSectorSpots( Sector *pSector, Bank *pSpotsBank );
+    void spawnPendingSectorSpotMeshes();
     void removeSectorSpots( void *pBlob );
 
 private:

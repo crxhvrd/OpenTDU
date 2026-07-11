@@ -386,6 +386,7 @@ void TestDriveGameInstance::mainLoop() {
         gpCarDisplay->freeResources();
         OTDU_UNIMPLEMENTED; // TODO: AI
         SpotStream &spotStream = gpWorld->getStreamingManager()->spotStream;
+        spotStream.arm();
         spotStream.bStream = true;
         spotStream.bDraw = true;
     }

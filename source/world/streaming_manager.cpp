@@ -1797,6 +1797,7 @@ void StreamingManager::refreshSectorSpots() {
                                                           &level.spotsBank );
         }
     }
+    gpScenaric->getSpotList().spawnPendingSectorSpotMeshes();
 }
 
 bool StreamingManager::updateSectorStreaming(

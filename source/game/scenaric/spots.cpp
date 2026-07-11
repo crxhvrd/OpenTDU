@@ -212,9 +212,26 @@ bool Spots::installSectorSpots( Sector *pSector, Bank *pSpotsBank ) {
     pSector->pSpotBlob = pBlob;
 
     // Spawn the per-sector ET_SPTM marker meshes
-    spawnSectorSpotMeshes( pSector, *pSlot );
+    if ( getNumWorldSpots() > 0 ) {
+        spawnSectorSpotMeshes( pSector, *pSlot );
+        pSlot->bMeshesSpawned = true;
+    }
     pSlot->bInstalled = true;
     return true;
+}
+
+void Spots::spawnPendingSectorSpotMeshes() {
+    if ( getNumWorldSpots() == 0 ) {
+        return;
+    }
+    for ( int32_t i = 0; i < kNumSectorLists; i++ ) {
+        SpotsList &slot = spotsSectors[i];
+        if ( slot.pFile != nullptr && slot.pSector != nullptr &&
+             !slot.bMeshesSpawned ) {
+            spawnSectorSpotMeshes( slot.pSector, slot );
+            slot.bMeshesSpawned = true;
+        }
+    }
 }
 
 Entity *Spots::selectSpotTemplate( ScenaricBank &meshBank,
@@ -304,6 +321,7 @@ void Spots::removeSectorSpots( void *pBlob ) {
     for ( int32_t i = 0; i < kNumSectorLists; i++ ) {
         if ( spotsSectors[i].pFile == pBlob ) {
             spotsSectors[i].bInstalled = false;
+            spotsSectors[i].bMeshesSpawned = false;
             spotsSectors[i].pFile = nullptr;
             spotsSectors[i].NumSpots = 0;
             spotsSectors[i].pSpotsMapOrSector.pSector = nullptr;
