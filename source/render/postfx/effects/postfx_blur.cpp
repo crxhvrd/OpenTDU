@@ -158,7 +158,7 @@ void PostFXBlur::setViewportUniforms( PixelShader *pShader,
     local_20[2] = 0.0f;
     local_20[3] = 0.0f;
 
-    UploadConstant( &pShader->getConstantMap()->FloatPS, 0x22c, local_20, 1 );
+    UploadConstant( &pShader->getConstantMap()->FloatVS, 0x22c, local_20, 1 );
 }
 
 void PostFXBlur::setPixelUniforms( PixelShader *pShader,
@@ -343,7 +343,7 @@ void PostFXBlurOcean::setViewportUniforms( PixelShader *pShader,
     local_20[2] = 0.0f;
     local_20[3] = 0.0f;
 
-    UploadConstant( &pShader->getConstantMap()->FloatPS, 0x22c, local_20, 1 );
+    UploadConstant( &pShader->getConstantMap()->FloatVS, 0x22c, local_20, 1 );
 }
 
 void PostFXBlurOcean::setPixelUniforms( PixelShader *pShader,

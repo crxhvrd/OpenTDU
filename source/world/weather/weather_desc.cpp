@@ -98,7 +98,9 @@ WeatherConfig *WeatherDesc::registerHDRStaticConfig( const char *param_2,
     WeatherConfig *pCVar1 = gpWeather->getWeatherConfigByIndex( iVar2 );
     if ( ( pCVar1 != nullptr ) && ( pCVar1->getHDRConfig() == nullptr ) ) {
         const char *pHDRConfigName =
-            ( param_3 != nullptr ) ? param_3 : kDefaultHDRConfigName;
+            ( param_3 != nullptr && param_3[0] != '\0' )
+                ? param_3
+                : kDefaultHDRConfigName;
         HDRIConfig *pHDRConfig =
             gpWeather->getHDRConfigByName( pHDRConfigName );
         pCVar1->setHDRConfig( pHDRConfig );

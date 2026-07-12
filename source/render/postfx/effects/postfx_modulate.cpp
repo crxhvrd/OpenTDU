@@ -29,13 +29,13 @@ bool PostFXModulate::execute() {
     RenderTarget *peStack_2c = nullptr;
     if ( peVar5 != nullptr ) {
         uint32_t uVar6 = pOwner->getInputLinkIndex( 0 );
-        peStack_2c = pRenderTargets[uVar6];
+        peStack_2c = peVar5->getOutput( uVar6 );
     }
 
     peVar5 = pOwner->getInputNode( 1 );
     if ( peVar5 != nullptr ) {
         uint32_t uVar6 = pOwner->getInputLinkIndex( 1 );
-        peStack_28 = pRenderTargets[uVar6];
+        peStack_28 = peVar5->getOutput( uVar6 );
     }
 
     gPostFXRenderer.bindShaders( nullptr, pPixelShader );

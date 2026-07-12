@@ -8,6 +8,8 @@
 #include "render/render_context.h"
 #include "render/render_target.h"
 
+#include <cmath>
+
 PostFXLightStreak::PostFXLightStreak( PostFXNodeLightStreak *pOwner )
     : PostFX( pOwner ) {
     // FUN_005f9910
@@ -17,6 +19,22 @@ PostFXLightStreak::~PostFXLightStreak() {
     // FUN_005fc710
 }
 
+// Diagonal streak directions
+static const float kStreakDirs[4][2] = {
+    {1.0f,  1.0f },
+    {-1.0f, 1.0f },
+    {1.0f,  -1.0f},
+    {-1.0f, -1.0f},
+};
+
+// Per-tap chromatic tint for each of the 4 taps
+static const float kStreakTints[4][4] = {
+    {1.0f, 1.0f, 1.0f, 1.0f},
+    {1.0f, 0.7f, 0.7f, 1.0f},
+    {0.7f, 1.0f, 0.7f, 1.0f},
+    {0.7f, 0.7f, 1.0f, 1.0f},
+};
+
 bool PostFXLightStreak::execute() {
     // FUN_005f9960
     bool bVar1 = PostFX::execute();
@@ -24,73 +42,35 @@ bool PostFXLightStreak::execute() {
         return false;
     }
 
-    PostFXNodeLightStreak *iVar17 = (PostFXNodeLightStreak *)pOwner;
-    PostFXNodeLightStreak *iStack_138 = iVar17;
-    PostFX *ppeVar12 = iVar17->getInputNode( 0 );
+    PostFXNodeLightStreak *pNode = (PostFXNodeLightStreak *)pOwner;
+
+    // Resolve the input node's bright-pass output (the streak source image).
     RenderTarget *peStack_16c = nullptr;
-    if ( ppeVar12 != nullptr ) {
-        uint32_t uVar14 = iVar17->getInputLinkIndex( 0 );
-        peStack_16c = ppeVar12->getOutput( uVar14 );
+    PostFX *pInputEffect = pNode->getInputNode( 0 );
+    if ( pInputEffect != nullptr ) {
+        uint32_t uInputLink = pNode->getInputLinkIndex( 0 );
+        peStack_16c = pInputEffect->getOutput( uInputLink );
     }
 
     gPostFXRenderer.bindShaders( pVertexShader, pPixelShader );
 
-    uint32_t numPass = iVar17->numPass;
+    const uint32_t numPass = pNode->numPass;
 
-    float fVar20 = 0.0f;
-    int32_t iVar19 = 0;
-    float fVar1 = fVar20;
-    int32_t iVar18 = 0;
-    float afStack_50[19] = {};
-    float afStack_dc[0x1f];
-    afStack_dc[0] = 1.0f;
-    afStack_dc[1] = 0.0f;
-    afStack_dc[2] = 0.0f;
-    afStack_dc[3] = -1.0f;
-    afStack_dc[4] = 1.0f;
-    afStack_dc[5] = 0.0f;
-    afStack_dc[6] = 0.0f;
-    afStack_dc[7] = 1.0f;
-    afStack_dc[8] = -1.0f;
-    afStack_dc[9] = 0.0f;
-    afStack_dc[10] = 0.0f;
-    afStack_dc[0xb] = -1.0f;
-    afStack_dc[0xc] = -1.0f;
-    afStack_dc[0xd] = 0.0f;
-    afStack_dc[0xe] = 0.0f;
-    afStack_dc[0xf] = 1.0f;
-    afStack_dc[0x10] = 1.0f;
-    afStack_dc[0x11] = 1.0f;
-    afStack_dc[0x12] = 1.0f;
-    afStack_dc[0x13] = 1.0f;
-    afStack_dc[0x14] = 0.7f;
-    afStack_dc[0x15] = 0.7f;
-    afStack_dc[0x16] = 1.0f;
-    afStack_dc[0x17] = 0.7f;
-    afStack_dc[0x18] = 1.0f;
-    afStack_dc[0x19] = 0.7f;
-    afStack_dc[0x1a] = 1.0f;
-    afStack_dc[0x1b] = 0.7f;
-    afStack_dc[0x1c] = 0.7f;
-    afStack_dc[0x1d] = 1.0f;
-    afStack_dc[0x1e] = 1.0f;
-    float *pfStack_178 = afStack_dc;
-
-    RenderTarget **ppRenderTargets = iVar17->ppRenderTargets;
-    RenderTarget *peVar4 = iVar17->ppRenderTargets[4];
-    RenderTarget *peVar5 = iVar17->ppRenderTargets[3];
+    RenderTarget **ppRenderTargets = pNode->ppRenderTargets;
+    RenderTarget *peVar4 = ppRenderTargets[4];
+    RenderTarget *peVar5 = ppRenderTargets[3];
     RenderTarget *peVar9 = nullptr;
     RenderTarget *peStack_170 = nullptr;
     RenderTarget *peVar16 = nullptr;
     RenderTarget *peVar12 = nullptr;
     RenderTarget *peVar17 = nullptr;
+
     int32_t iStack_158 = 0;
     do {
-        uint32_t iStack_168 = 0;
         if ( 0 < numPass ) {
-            uint32_t uStack_128 = 0;
-            uint32_t uStack_130 = 0;
             peVar16 = peVar17;
+            uint32_t iStack_168 = 0;
+            // Inner loop: geometrically-growing blur passes (Kawase star).
             do {
                 peVar12 = peStack_16c;
                 if ( numPass == 1 ) {
@@ -128,22 +108,30 @@ bool PostFXLightStreak::execute() {
                 }
                 peStack_170 = peVar9;
 
-                OTDU_UNIMPLEMENTED; // TODO:
+                float fStride = std::pow( 4.0f, (float)iStack_168 );
 
-                uint32_t uVar13 = peStack_170->getHeight();
-                float fStack_124 = 1.0f / (float)uVar13;
-                uVar13 = peStack_170->getWidth();
-                float fStack_12c = 1.0f / (float)uVar13;
+                float afStack_50[16];
+                for ( int32_t s = 0; s < 4; s++ ) {
+                    float fWeight = std::pow( 0.9f, (float)s * fStride );
+                    afStack_50[s * 4 + 0] = kStreakTints[s][0] * fWeight;
+                    afStack_50[s * 4 + 1] = kStreakTints[s][1] * fWeight;
+                    afStack_50[s * 4 + 2] = kStreakTints[s][2] * fWeight;
+                    afStack_50[s * 4 + 3] = kStreakTints[s][3] * fWeight;
+                }
+
+                float fInvHeight = 1.0f / (float)peStack_170->getHeight();
+                float fInvWidth = 1.0f / (float)peStack_170->getWidth();
 
                 float fStack_120[4];
-                fStack_120[2] = fVar1 * 0.0f;
-                fStack_120[3] = fVar1 * 0.0f;
-                fStack_120[0] = pfStack_178[-1] * fStack_12c * fVar1;
-                fStack_120[1] = fStack_124 * fVar1 * pfStack_178[0];
-                uVar13 = peVar17->getHeight();
-                uint32_t uVar14 = peVar17->getWidth();
-                gPostFXRenderer.setRenderPassDimensions( (float)uVar14,
-                                                         (float)uVar13 );
+                fStack_120[0] =
+                    kStreakDirs[iStack_158][0] * fInvWidth * fStride;
+                fStack_120[1] =
+                    fInvHeight * fStride * kStreakDirs[iStack_158][1];
+                fStack_120[2] = 0.0f;
+                fStack_120[3] = 0.0f;
+
+                gPostFXRenderer.setRenderPassDimensions(
+                    (float)peVar17->getWidth(), (float)peVar17->getHeight() );
 
                 UploadConstant( &pVertexShader->getConstantMap()->FloatVS,
                                 0x22c, fStack_120, 1 );
@@ -166,17 +154,15 @@ bool PostFXLightStreak::execute() {
 
                 gEdRender.pRenderDevice->setViewport( viewport );
 
-                uVar14 = 0xffffffff;
-                uVar13 = iStack_138->getUnknownMask();
-                if ( uVar13 != 0xffffffff ) {
-                    uVar14 = 1 << ( (int8_t)uVar13 & 0x1f );
-                } else {
-                    uVar14 = 0xffffffff;
+                uint32_t uMask = pNode->getUnknownMask();
+                uint32_t uLayerBit = 0xffffffff;
+                if ( uMask != 0xffffffff ) {
+                    uLayerBit = 1 << ( (int8_t)uMask & 0x1f );
                 }
-                gPostFXRenderer.drawFullscreenQuad( uVar13 != 0xffffffff, false,
-                                                    false, uVar14 );
+                gPostFXRenderer.drawFullscreenQuad( uMask != 0xffffffff, false,
+                                                    false, uLayerBit );
 
-                if ( ( iStack_138->getFlags() & 1 ) != 0 ) {
+                if ( ( pNode->getFlags() & 1 ) != 0 ) {
                     gEdRender.pRenderDevice->resolveMSAA( peVar17, 0 );
                 }
 
@@ -184,34 +170,30 @@ bool PostFXLightStreak::execute() {
                 peVar16 = peVar17;
             } while ( iStack_168 < numPass );
         }
-        // pfStack_178 = pfStack_178 + 4;
+
         iStack_158 = iStack_158 + 1;
         if ( 3 < iStack_158 ) {
-            // TODO: This is somehow retrieved every frame?? We should probably
-            // cache the shader to avoid unecessary lookups at runtime...
-            PixelShader *pPixelShader_00 =
+            PixelShader *pCombinePS =
                 (PixelShader *)gpRenderContext->getShaderHashTable().getShader(
                     0x6c6cdc43c12bc9da );
 
-            RenderTarget *peVar3 = pRenderTargets[0];
-            gEdRender.bindRenderTarget( peVar3, 0, false );
+            RenderTarget *pOutput = pRenderTargets[0];
+            gEdRender.bindRenderTarget( pOutput, 0, false );
 
             Viewport DStack_150;
-            DStack_150.Width = (float)peVar3->getWidth();
-            DStack_150.Height = (float)peVar3->getHeight();
+            DStack_150.Width = (float)pOutput->getWidth();
+            DStack_150.Height = (float)pOutput->getHeight();
             DStack_150.Flags = 0;
 
             gEdRender.pRenderDevice->setViewport( DStack_150 );
 
-            gPostFXRenderer.bindShaders( nullptr, pPixelShader_00 );
+            gPostFXRenderer.bindShaders( nullptr, pCombinePS );
 
-            uint32_t uVar12 = peVar3->getHeight();
-            uint32_t uVar13 = peVar3->getWidth();
-            gPostFXRenderer.setRenderPassDimensions( (float)uVar13,
-                                                     (float)uVar12 );
+            gPostFXRenderer.setRenderPassDimensions(
+                (float)pOutput->getWidth(), (float)pOutput->getHeight() );
 
             for ( int32_t i = 0; i < 4; i++ ) {
-                Render2DB *peVar14 = iVar17->ppRenderTargets[i]->getBound2DB();
+                Render2DB *peVar14 = pNode->ppRenderTargets[i]->getBound2DB();
                 Texture *peVar14Tex = peVar14->getFirstBitmap();
 
                 gpRenderContext->bindTexture( peVar14Tex, i );
@@ -220,13 +202,13 @@ bool PostFXLightStreak::execute() {
                 SetSamplerFilter( peVar14Tex, i, 6, TF_Linear );
             }
 
-            uVar13 = iStack_138->getUnknownMask();
-            if ( uVar13 == 0xffffffff ) {
+            uint32_t uMask = pNode->getUnknownMask();
+            if ( uMask == 0xffffffff ) {
                 gPostFXRenderer.drawFullscreenQuad( false, false, false,
                                                     0xffffffff );
             } else {
                 gPostFXRenderer.drawFullscreenQuad(
-                    true, false, false, 1 << ( (int8_t)uVar13 & 0x1f ) );
+                    true, false, false, 1 << ( (int8_t)uMask & 0x1f ) );
             }
             gPostFXRenderer.bindShaders();
 
@@ -234,7 +216,7 @@ bool PostFXLightStreak::execute() {
                 gEdRender.pRenderDevice->resolveMSAA( pRenderTargets[0], 0 );
             }
 
-            for ( int32_t iVar17 = 0; iVar17 < 4; iVar17++ ) {
+            for ( int32_t i = 0; i < 4; i++ ) {
                 gStateCache.setSamplerStateMinMagFilter( 0, TF_Point );
             }
 
