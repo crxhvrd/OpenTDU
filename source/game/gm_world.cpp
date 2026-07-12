@@ -11,7 +11,7 @@
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "physics/gs_physics.h"
-#include "physics/physics_car.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "database/gs_database.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
@@ -267,11 +267,15 @@ void GameModeWorld::installLocalPlayerCar(
             ( pRes->Exterior.pBankInstance != nullptr )
                 ? pRes->Exterior.pBankInstance->getPhysFactory()
                 : nullptr;
+        const void *pTorqueBin =
+            ( pRes->Exterior.pBankInstance != nullptr )
+                ? pRes->Exterior.pBankInstance->getTorqueBinary()
+                : nullptr;
         DBEntryCarPhysicsData *pDB = gpDatabase->getCarDBEntry( state.carID );
         if ( pDB != nullptr ) {
-            pPlayerPhysicsCar =
-                gpPhysics->createVehicle( pFactory, spawn, *pDB );
-            state.pPhysicsCar = pPlayerPhysicsCar;
+            pPlayerPhysicsVehicle =
+                gpPhysics->createVehicle( pFactory, spawn, *pDB, pTorqueBin );
+            state.pPhysicsVehicle = pPlayerPhysicsVehicle;
         }
     }
 
@@ -298,7 +302,7 @@ void GameModeWorld::uninstallLocalPlayerCar() {
         pRes->unload(); // frees the streamed banks once RefCount < 1
         gpCarState->releaseResourceEntry( pRes );
     }
-    pPlayerPhysicsCar = nullptr; // was destroyed by releaseCarState
+    pPlayerPhysicsVehicle = nullptr; // was destroyed by releaseCarState
     gpScenaric->getLocalPlayer().setCarState( nullptr );
 }
 
@@ -321,9 +325,9 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
                                  ? gpScenaric->getLocalPlayer().getCarState()
                                  : nullptr;
             Matrix4x4f_t cur = Matrix4x4f_t::Identity();
-            if ( pPlayerPhysicsCar != nullptr &&
-                 pPlayerPhysicsCar->isActive() ) {
-                cur = pPlayerPhysicsCar->getChassisWorldMatrix();
+            if ( pPlayerPhysicsVehicle != nullptr &&
+                 pPlayerPhysicsVehicle->isActive() ) {
+                cur = pPlayerPhysicsVehicle->getChassisWorldMatrix();
             } else if ( pCar != nullptr ) {
                 cur = pCar->getBody()->WorldMatrix;
             }
@@ -345,8 +349,8 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
     CarState *pCar = ( gpScenaric != nullptr )
                          ? gpScenaric->getLocalPlayer().getCarState()
                          : nullptr;
-    if ( pPlayerPhysicsCar != nullptr && pPlayerPhysicsCar->isActive() &&
-         pCar != nullptr ) {
+    if ( pPlayerPhysicsVehicle != nullptr &&
+         pPlayerPhysicsVehicle->isActive() && pCar != nullptr ) {
         // HACK: REMOVE ME: TEST FOR VEHICLE PHYSICS
         Device *pKb = gEdDev.getDevice( eDeviceType::DT_Keyboard, 0 );
         if ( pKb != nullptr ) {
@@ -357,7 +361,7 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
             const float steer =
                 ( pKb->getChannelValueBinary( "RIGHT" ) ? 1.0f : 0.0f ) -
                 ( pKb->getChannelValueBinary( "LEFT" ) ? 1.0f : 0.0f );
-            pPlayerPhysicsCar->setInput( throttle, brake, steer );
+            pPlayerPhysicsVehicle->setInput( throttle, brake, steer );
         }
     } else if ( !bCarGrounded && pCar != nullptr && gpPhysics != nullptr ) {
         // Fallback (no physics vehicle): one-shot cast-to-ground so the static

@@ -39,7 +39,7 @@ CarState::CarState()
       bUseShowcaseControl( false ),
       packHashcode( 0 ),
       pResource( nullptr ),
-      pPhysicsCar( nullptr ) {
+      pPhysicsVehicle( nullptr ) {
     // FUN_00414270
     body.reset();
     for ( WheelState &wheelState : wheels ) {
@@ -78,7 +78,7 @@ void CarState::reset() {
     bInstanceAlive = false;
     bUseShowcaseControl = false;
 
-    pPhysicsCar = nullptr;
+    pPhysicsVehicle = nullptr;
     pVehicleBase = nullptr;
     field_0x39bc = nullptr;
     field_0x39cc = nullptr;

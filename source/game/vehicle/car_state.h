@@ -8,7 +8,7 @@
 class DynamicRigidBody;
 class VehicleBase;
 struct VehicleBaseResources;
-class PhysicsCar;
+class PhysicsVehicle;
 struct DirectionalLight;
 
 struct WheelState {
@@ -176,7 +176,7 @@ public:
 
     inline uint32_t getNumWheels() const { return numWheels; }
     inline const WheelState &getWheel( uint32_t i ) const { return wheels[i]; }
-    inline PhysicsCar *getPhysicsCar() const { return pPhysicsCar; }
+    inline PhysicsVehicle *getPhysicsVehicle() const { return pPhysicsVehicle; }
 
     inline eOwner getOwner() const { return owner; }
     inline eSimulationType getSimulationType() const { return simulationType; }
@@ -265,5 +265,5 @@ private:
 
     uint64_t packHashcode;
     VehicleBaseResources *pResource;
-    PhysicsCar *pPhysicsCar;
+    PhysicsVehicle *pPhysicsVehicle;
 };

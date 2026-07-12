@@ -20,7 +20,7 @@
 #include "render/mng_env_map.h"
 
 class EventParameters;
-class PhysicsCar;
+class PhysicsVehicle;
 
 // Game Mode running with the world active.
 // e.g. GMShop; GMHome; GMBoatTour
@@ -138,7 +138,7 @@ protected:
 
     // HACK: REMOVE ME:
     bool bCarGrounded = false;
-    PhysicsCar *pPlayerPhysicsCar = nullptr;
+    PhysicsVehicle *pPlayerPhysicsVehicle = nullptr;
     // HACK: REMOVE ME:
 };
 

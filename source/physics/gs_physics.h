@@ -23,7 +23,7 @@ class TDUBPLayerInterface;
 class TDUObjectVsBroadPhaseLayerFilter;
 class TDUObjectLayerPairFilter;
 
-class PhysicsCar;
+class PhysicsVehicle;
 class DrawList;
 struct PhysicsSHK;
 struct PhysicsSHKRoad;
@@ -104,6 +104,12 @@ public:
     inline void setDebugDrawEnabled( bool bState ) { bDrawDebugInfos = bState; }
     inline bool isPropFactoryReady() const { return pPropFactory != nullptr; }
 
+    inline int32_t getNumTireProfiles() const { return numTires; }
+    inline const TirePacejka *getTireProfile( int32_t index ) const {
+        return ( index >= 0 && index < numTires ) ? pTireProfiles[index]
+                                                  : nullptr;
+    }
+
 public:
     GSPhysics();
     ~GSPhysics();
@@ -171,9 +177,10 @@ public:
     void instantiateFactory( PhysFactory *pFactory,
                              const Matrix4x4f_t &worldTransform );
 
-    PhysicsCar *createVehicle( PhysFactory *pFactory,
-                               const Matrix4x4f_t &worldTransform,
-                               const DBEntryCarPhysicsData &db );
+    PhysicsVehicle *createVehicle( PhysFactory *pFactory,
+                                   const Matrix4x4f_t &worldTransform,
+                                   const DBEntryCarPhysicsData &db,
+                                   const void *pTorqueBinary = nullptr );
 
     RigidBody_t createSphere( uint32_t collisionGroup,
                               const Eigen::Vector4f &worldPosition,
@@ -195,7 +202,7 @@ public:
 
 private:
     static constexpr int32_t kMaxNumTireProfiles = 16;
-    static constexpr int32_t kMaxNumPhysicsCars = 32;
+    static constexpr int32_t kMaxNumPhysicsVehicles = 32;
     static constexpr int32_t kMaxNumPhysicsFactory = 64; // World/scene entities
     static constexpr int32_t kMaxNumObjectsPerSector = 256;
     static constexpr int32_t kNumHeightfields = 7; // One per streamed sector
@@ -220,10 +227,10 @@ private:
     int32_t numTires;
     std::array<TirePacejka *, kMaxNumTireProfiles> pTireProfiles;
 
-    int32_t numPhysicsCar;
-    PhysicsCar *pPhysicsCars;
-    PhysicsCar *pPhysicsCarsBegin;
-    PhysicsCar *pPhysicsCarsEnd;
+    int32_t numPhysicsVehicle;
+    PhysicsVehicle *pPhysicsVehicles;
+    PhysicsVehicle *pPhysicsVehiclesBegin;
+    PhysicsVehicle *pPhysicsVehiclesEnd;
     void *field_0x2cc;
 
     std::array<PhysFactory, kMaxNumPhysicsFactory> pFactories;

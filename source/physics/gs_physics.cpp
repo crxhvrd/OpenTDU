@@ -2,7 +2,7 @@
 #include "gs_physics.h"
 
 #include "config/gs_config.h"
-#include "physics_car.h"
+#include "vehicle/physics_vehicle.h"
 #include "physics_config.h"
 #include "world_collisions.h"
 #include "physics_layers.h"
@@ -272,10 +272,10 @@ GSPhysics::GSPhysics()
       Bank(),
       isLocked( 0 ),
       numTires( 0 ),
-      numPhysicsCar( 0 ),
-      pPhysicsCars( nullptr ),
-      pPhysicsCarsBegin( nullptr ),
-      pPhysicsCarsEnd( nullptr ),
+      numPhysicsVehicle( 0 ),
+      pPhysicsVehicles( nullptr ),
+      pPhysicsVehiclesBegin( nullptr ),
+      pPhysicsVehiclesEnd( nullptr ),
       field_0x2cc( nullptr ),
       numFreeSectors( 0 ),
       maxNumSectors( 0 ),
@@ -358,14 +358,14 @@ bool GSPhysics::initialize( TestDriveGameInstance *param_2 ) {
 
     OTDU_LOG_INFO( "Initialise Physics Cars\n" ); // DAT_00f27900
 
-    numPhysicsCar = kMaxNumPhysicsCars;
-    pPhysicsCars =
-        new ( TestDrive::Alloc( sizeof( PhysicsCar ) * numPhysicsCar ) )
-            PhysicsCar[numPhysicsCar];
-    pPhysicsCarsBegin = pPhysicsCars;
-    pPhysicsCarsEnd = pPhysicsCars + numPhysicsCar;
+    numPhysicsVehicle = kMaxNumPhysicsVehicles;
+    pPhysicsVehicles =
+        new ( TestDrive::Alloc( sizeof( PhysicsVehicle ) * numPhysicsVehicle ) )
+            PhysicsVehicle[numPhysicsVehicle];
+    pPhysicsVehiclesBegin = pPhysicsVehicles;
+    pPhysicsVehiclesEnd = pPhysicsVehicles + numPhysicsVehicle;
     field_0x2cc = nullptr;
-    for ( auto it = pPhysicsCarsBegin; it != pPhysicsCarsEnd; it++ ) {
+    for ( auto it = pPhysicsVehiclesBegin; it != pPhysicsVehiclesEnd; it++ ) {
         it->initialize();
     }
 
@@ -538,13 +538,13 @@ void GSPhysics::terminate() {
     numFreeRoadSectors = 0;
 
     // Free physics car array
-    if ( pPhysicsCars != nullptr ) {
-        TestDrive::Free( pPhysicsCars );
-        pPhysicsCars = nullptr;
-        pPhysicsCarsBegin = nullptr;
-        pPhysicsCarsEnd = nullptr;
+    if ( pPhysicsVehicles != nullptr ) {
+        TestDrive::Free( pPhysicsVehicles );
+        pPhysicsVehicles = nullptr;
+        pPhysicsVehiclesBegin = nullptr;
+        pPhysicsVehiclesEnd = nullptr;
     }
-    numPhysicsCar = 0;
+    numPhysicsVehicle = 0;
 
     // Signal physics thread to stop, then wait for acknowledgement and join
     if ( gPhysicsThreadPriority != PTM_Off && simulationThread.isValid() ) {
@@ -1023,9 +1023,10 @@ void GSPhysics::instantiateFactory( PhysFactory *pFactory,
         origin.GetX(), origin.GetY(), origin.GetZ() );
 }
 
-PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
-                                      const Matrix4x4f_t &worldTransform,
-                                      const DBEntryCarPhysicsData &db ) {
+PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
+                                          const Matrix4x4f_t &worldTransform,
+                                          const DBEntryCarPhysicsData &db,
+                                          const void *pTorqueBinary ) {
     // FUN_0082fc80
     if ( pPhysicsSystem == nullptr ) {
         return nullptr;
@@ -1071,10 +1072,10 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
     const float gcHeight = JPH::Clamp(
         db.GravityCenterHeight > 0 ? db.GravityCenterHeight * 0.01f : 0.40f,
         0.15f, 0.60f );
-    const PhysicsCar::SuspensionSetup comFrontSusp =
-        PhysicsCar::ComputeAxleSuspension( db, true );
-    const PhysicsCar::SuspensionSetup comRearSusp =
-        PhysicsCar::ComputeAxleSuspension( db, false );
+    const PhysicsVehicle::SuspensionSetup comFrontSusp =
+        PhysicsVehicle::ComputeAxleSuspension( db, true );
+    const PhysicsVehicle::SuspensionSetup comRearSusp =
+        PhysicsVehicle::ComputeAxleSuspension( db, false );
     const float restLen =
         0.5f * ( comFrontSusp.restLength + comRearSusp.restLength );
     const float contactPlaneY = -( bodyHalfHeight + restLen );
@@ -1117,18 +1118,18 @@ PhysicsCar *GSPhysics::createVehicle( PhysFactory *pFactory,
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
     lockMutex();
     JPH::Body *pChassis = bodyInterface.CreateBody( settings );
-    PhysicsCar *pCar = nullptr;
+    PhysicsVehicle *pCar = nullptr;
     if ( pChassis != nullptr ) {
         bodyInterface.AddBody( pChassis->GetID(), JPH::EActivation::Activate );
-        for ( PhysicsCar *it = pPhysicsCarsBegin; it != pPhysicsCarsEnd;
-              ++it ) {
+        for ( PhysicsVehicle *it = pPhysicsVehiclesBegin;
+              it != pPhysicsVehiclesEnd; ++it ) {
             if ( !it->isActive() ) {
                 pCar = it;
                 break;
             }
         }
         if ( pCar == nullptr ||
-             !pCar->create( pPhysicsSystem, pChassis, db ) ) {
+             !pCar->create( pPhysicsSystem, pChassis, db, pTorqueBinary ) ) {
             bodyInterface.RemoveBody( pChassis->GetID() );
             bodyInterface.DestroyBody( pChassis->GetID() );
             pCar = nullptr;
@@ -1153,36 +1154,36 @@ void GSPhysics::drawDebug( float ) {
         ImGui::SameLine();
         ImGui::Checkbox( "+terrain", &gDrawCollisionVisTerrain );
     }
-    ImGui::Checkbox( "Driver aids (ABS + traction control + ESP)",
-                     &gVehicleDriverAids );
-    if ( gVehicleDriverAids ) {
-        ImGui::SetNextItemWidth( 200.0f );
-        ImGui::SliderFloat( "Aids level (0=off 1=full)", &gVehicleAidsLevel,
-                            0.0f, 1.0f, "%.2f" );
-        const int32_t numLevels =
-            JPH::Clamp( gPhysicsConfig.NumElectronicParamsValues, 0, 9 );
-        for ( int32_t i = 0; i < numLevels; i++ ) {
-            const char *pName = gPhysicsConfig.ElectronicParamsValueName[i];
-            if ( pName[0] == '\0' ) {
-                continue;
-            }
-            ImGui::SameLine();
-            if ( ImGui::SmallButton( pName ) ) {
-                gVehicleAidsLevel = JPH::Clamp(
-                    gPhysicsConfig.ElectronicParamsValue[i], 0.0f, 1.0f );
-            }
-        }
-    }
-    ImGui::Checkbox(
-        "Assisted steering filter (deadzone/expo/rate/counter-steer)",
-        &gVehicleSteeringFilter );
+    // ImGui::Checkbox( "Driver aids (ABS + traction control + ESP)",
+    //                  &gVehicleDriverAids );
+    // if ( gVehicleDriverAids ) {
+    //     ImGui::SetNextItemWidth( 200.0f );
+    //     ImGui::SliderFloat( "Aids level (0=off 1=full)", &gVehicleAidsLevel,
+    //                         0.0f, 1.0f, "%.2f" );
+    //     const int32_t numLevels =
+    //         JPH::Clamp( gPhysicsConfig.NumElectronicParamsValues, 0, 9 );
+    //     for ( int32_t i = 0; i < numLevels; i++ ) {
+    //         const char *pName = gPhysicsConfig.ElectronicParamsValueName[i];
+    //         if ( pName[0] == '\0' ) {
+    //             continue;
+    //         }
+    //         ImGui::SameLine();
+    //         if ( ImGui::SmallButton( pName ) ) {
+    //             gVehicleAidsLevel = JPH::Clamp(
+    //                 gPhysicsConfig.ElectronicParamsValue[i], 0.0f, 1.0f );
+    //         }
+    //     }
+    // }
+    // ImGui::Checkbox(
+    //     "Assisted steering filter (deadzone/expo/rate/counter-steer)",
+    //     &gVehicleSteeringFilter );
 
     ImGui::Separator();
 
     int32_t carIndex = 0;
-    if ( pPhysicsCarsBegin != nullptr ) {
-        for ( PhysicsCar *it = pPhysicsCarsBegin; it != pPhysicsCarsEnd;
-              ++it ) {
+    if ( pPhysicsVehiclesBegin != nullptr ) {
+        for ( PhysicsVehicle *it = pPhysicsVehiclesBegin;
+              it != pPhysicsVehiclesEnd; ++it ) {
             if ( !it->isActive() ) {
                 continue;
             }
@@ -1220,7 +1221,7 @@ void GSPhysics::drawDebug( float ) {
                 static float smoothedLoad[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
                 const uint32_t numWheels = it->getNumWheels();
                 for ( uint32_t w = 0; w < numWheels; w++ ) {
-                    const PhysicsCar::WheelReadout wheel =
+                    const PhysicsVehicle::WheelReadout wheel =
                         it->getWheelReadout( w );
                     if ( w < 4 ) {
                         smoothedLoad[w] +=
@@ -2364,10 +2365,11 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
         }
     }
 
-    // Tick PhysicsCar vehicle dynamics (pushes driver input; the Jolt
+    // Tick PhysicsVehicle vehicle dynamics (pushes driver input; the Jolt
     // VehicleConstraint itself steps as a registered step listener). No-op for
     // inactive slots.
-    for ( PhysicsCar *it = pPhysicsCarsBegin; it != pPhysicsCarsEnd; ++it ) {
+    for ( PhysicsVehicle *it = pPhysicsVehiclesBegin; it != pPhysicsVehiclesEnd;
+          ++it ) {
         it->tick( dt );
     }
 

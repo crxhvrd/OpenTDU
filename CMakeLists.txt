@@ -482,7 +482,8 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/game/vehicle/vehicle_resource.cpp"
                     "${OTDU_SRC_FOLDER}/debug/mng_debug_hud.cpp"
                     "${OTDU_SRC_FOLDER}/physics/road_phantom_manager.cpp"
-                    "${OTDU_SRC_FOLDER}/physics/physics_car.cpp")
+                    "${OTDU_SRC_FOLDER}/physics/vehicle/physics_vehicle.cpp"
+                    "${OTDU_SRC_FOLDER}/physics/vehicle/vehicle_simulation.cpp")
 
 file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/gs_pub.h"
@@ -682,7 +683,6 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/online/packets_crc.h"
                     "${OTDU_SRC_FOLDER}/physics/collision_event.h"
                     "${OTDU_SRC_FOLDER}/physics/dynamic_rigid_body.h"
-                    "${OTDU_SRC_FOLDER}/physics/engine_simulation.h"
                     "${OTDU_SRC_FOLDER}/physics/physics_factory.h"
                     "${OTDU_SRC_FOLDER}/physics/gs_physics.h"
                     "${OTDU_SRC_FOLDER}/physics/gs_physicsfx.h"
@@ -883,7 +883,8 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/game/vehicle/vehicle_bike.h"
                     "${OTDU_SRC_FOLDER}/debug/mng_debug_hud.h"
                     "${OTDU_SRC_FOLDER}/physics/road_phantom_manager.h"
-                    "${OTDU_SRC_FOLDER}/physics/physics_car.h"
+                    "${OTDU_SRC_FOLDER}/physics/vehicle/physics_vehicle.h"
+                    "${OTDU_SRC_FOLDER}/physics/vehicle/vehicle_simulation.h"
                     "${OTDU_SRC_FOLDER}/physics/world_collisions.h" )
 
 file( GLOB OTDU_THIRDPARTY_SRC "${OTDU_THIRDPARTY_FOLDER}/cityhash/src/city.cc"

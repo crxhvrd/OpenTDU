@@ -76,7 +76,6 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
     // Car body ABSOLUTE world matrix
     const Matrix4x4f_t &carMat = pCar->getBody()->WorldMatrix;
     const Eigen::Vector3f carForward = carMat.row( 2 ).head<3>();
-    const Eigen::Vector3f carUp = carMat.row( 1 ).head<3>();
     const Eigen::Vector3f carPos = carMat.row( 3 ).head<3>();
 
     // Chase offsets from the DB follow params (PosZ = negative back-distance).
@@ -85,12 +84,7 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
     const float trgD = follow.Trg;
     const float trgH = follow.TrgHeight;
 
-    // Ground-stabilized car frame (ground-normal smoothing TODO; use car up).
-    Eigen::Vector3f up = carUp;
-    if ( up.squaredNorm() < 1e-6f ) {
-        up = Eigen::Vector3f( 0.0f, 1.0f, 0.0f );
-    }
-    up.normalize();
+    Eigen::Vector3f up( 0.0f, 1.0f, 0.0f );
     Eigen::Vector3f right = up.cross( carForward );
     if ( right.squaredNorm() < 1e-6f ) {
         right = Eigen::Vector3f( 1.0f, 0.0f, 0.0f );

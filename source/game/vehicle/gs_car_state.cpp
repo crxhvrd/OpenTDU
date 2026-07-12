@@ -10,7 +10,7 @@
 #include "world/gs_world_streaming.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
-#include "physics/physics_car.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "physics/gs_physics.h" // TDUSurface
 #include "physics/physics_config.h"
 #include "car_state.h"
@@ -124,13 +124,14 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             continue;
         }
         CarState &carState = carStates[i];
-        PhysicsCar *pPhysicsCar = carState.pPhysicsCar;
-        if ( pPhysicsCar == nullptr || !pPhysicsCar->isActive() ) {
+        PhysicsVehicle *pPhysicsVehicle = carState.pPhysicsVehicle;
+        if ( pPhysicsVehicle == nullptr || !pPhysicsVehicle->isActive() ) {
             continue;
         }
 
         CarBodyState &body = carState.body;
-        const Matrix4x4f_t worldMatrix = pPhysicsCar->getChassisWorldMatrix();
+        const Matrix4x4f_t worldMatrix =
+            pPhysicsVehicle->getChassisWorldMatrix();
         body.WorldMatrix = worldMatrix;
         Matrix4x4f_t offseted = worldMatrix;
         offseted( 3, 0 ) -= streamShift.x();
@@ -138,17 +139,17 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         offseted( 3, 2 ) -= streamShift.z();
         body.OffsetedWorldMatrix = offseted;
 
-        body.SpeedInKmh = pPhysicsCar->getChassisSpeed();
-        body.Omega = pPhysicsCar->getEngineAngularVelocity();
-        body.Gears = pPhysicsCar->getCurrentGear();
+        body.SpeedInKmh = pPhysicsVehicle->getChassisSpeed();
+        body.Omega = pPhysicsVehicle->getEngineAngularVelocity();
+        body.Gears = pPhysicsVehicle->getCurrentGear();
 
         const uint32_t physNumWheels =
-            Min( pPhysicsCar->getNumWheels(), CarState::kMaxNumWheels );
+            Min( pPhysicsVehicle->getNumWheels(), CarState::kMaxNumWheels );
 
         int32_t numGrounded = 0;
         for ( uint32_t w = 0; w < physNumWheels; w++ ) {
-            const PhysicsCar::WheelReadout ro =
-                pPhysicsCar->getWheelReadout( w );
+            const PhysicsVehicle::WheelReadout ro =
+                pPhysicsVehicle->getWheelReadout( w );
             WheelState &wheel = carState.wheels[w];
             wheel.bInitialized = true;
             wheel.bGrounded = ro.bGrounded;
@@ -392,9 +393,9 @@ void GSCarState::releaseCarState( CarState *param_2, bool param_3 ) {
         param_2->field_0x39cc = nullptr;
     }
 
-    if ( param_2->pPhysicsCar != nullptr ) {
-        param_2->pPhysicsCar->destroy();
-        param_2->pPhysicsCar = nullptr;
+    if ( param_2->pPhysicsVehicle != nullptr ) {
+        param_2->pPhysicsVehicle->destroy();
+        param_2->pPhysicsVehicle = nullptr;
     }
 
     if ( param_2->pVehicleBase != nullptr ) {
@@ -411,7 +412,7 @@ void GSCarState::releaseCarState( CarState *param_2, bool param_3 ) {
     param_2->carID = -1;
     param_2->tireID = -1;
     param_2->rimID = -1;
-    param_2->pPhysicsCar = nullptr;
+    param_2->pPhysicsVehicle = nullptr;
     param_2->pVehicleBase = nullptr;
     param_2->field_0x39bc = nullptr;
     param_2->field_0x39cc = nullptr;

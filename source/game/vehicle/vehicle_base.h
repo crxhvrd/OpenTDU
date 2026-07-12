@@ -4,7 +4,7 @@ class CarState;
 
 #include "filesystem/bank.h"
 #include "paint.h"
-#include "physics/engine_simulation.h"
+#include "physics/vehicle/vehicle_simulation.h"
 #include "render/hiearchy_node.h"
 #include "render/light.h"
 #include "render/particles/vehicle_particles.h"
@@ -52,8 +52,8 @@ struct VehicleBaseResources {
 
     Bank PhysicsBank;
 
-    EngineSimulation *pEngineSim;
-    std::vector<OmegaTorqueTuple> Torque;
+    PhysicsEngineSim *pEngineSim;
+    std::vector<PhysicsEngineSim::CurvePoint> Torque;
 
     StreamedInBankVehicle Exterior;
     StreamedInBankVehicle Interior;

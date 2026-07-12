@@ -37,6 +37,7 @@ public:
     inline Render3DG *get3DG() { return &render3DG; }
     inline const char *getName() const { return name; }
     inline PhysFactory *getPhysFactory() const { return pPhysFactory; }
+    inline const void *getTorqueBinary() const { return pTorqueBinary; }
 
 public:
     BankVehicle();

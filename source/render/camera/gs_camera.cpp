@@ -754,7 +754,7 @@ void GSCamera::tickActiveCamera( float param_2 ) {
         } else {
             carID = pCVar4->getCarID();
             pTarget = pCVar4;
-            pTargetPhysEntity = pCVar4->getPhysicsCar();
+            pTargetPhysEntity = pCVar4->getPhysicsVehicle();
 
             uint32_t uVar1 = 0;
             if ( bReplayMode != false ) {

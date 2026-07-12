@@ -356,6 +356,9 @@ static const Eigen::Vector4f kWorldUpVector(
 #define EIGEN_TWO_PI ( EIGEN_PI * 2.0 )
 #define EIGEN_HALF_PI ( EIGEN_PI / 2.0 )
 
+static constexpr float kPI = static_cast<float>( EIGEN_PI );
+static constexpr float kTwoPI = static_cast<float>( EIGEN_TWO_PI );
+
 struct TDUPlane {
     Eigen::Vector4f Normal = kWorldUpVector;
     float DistanceFromOrigin = 0.0f;
@@ -402,4 +405,9 @@ static bool IntersectRayWithPlane( const Eigen::Vector4f &origin,
         ( plane.Normal.dot( origin ) - plane.DistanceFromOrigin ) / denominator;
     outPoint = origin + direction * t;
     return true;
+}
+
+inline float RowDot( const Matrix4x4f_t &m, int r, const Eigen::Vector4f &v ) {
+    return m( r, 0 ) * v[0] + m( r, 1 ) * v[1] + m( r, 2 ) * v[2] +
+           m( r, 3 ) * v[3];
 }

@@ -10,8 +10,7 @@
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
 
-#include "physics/engine_simulation.h"
-#include "physics/physics_car.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 #include "world/gs_world_streaming.h"
 
@@ -133,7 +132,7 @@ void VehicleParticles::update( VehicleBase *pVehicle ) {
         return;
     }
 
-    PhysicsCar *pPhysics = pCarState->getPhysicsCar();
+    PhysicsVehicle *pPhysics = pCarState->getPhysicsVehicle();
     if ( pPhysics == nullptr || !pPhysics->isActive() ) {
         // TODO: INCOMPLETE (Original additionally gates on
         // IsPaused()/ready/disabled flags read)
@@ -307,7 +306,7 @@ void VehicleParticles::update( VehicleBase *pVehicle ) {
     const VehicleBaseResources *pResource = pCarState->getResource();
     const bool bEngineIgniting =
         ( pResource != nullptr && pResource->pEngineSim != nullptr &&
-          pResource->pEngineSim->State.State == eEngineState::ES_Igniting );
+          pResource->pEngineSim->State == eEngineState::ES_Igniting );
     if ( !bEngineIgniting ) {
         for ( uint32_t i = 0; i < kNumInstancePerType; i++ ) {
             StopParticleInstance( startExhaustParticles[i], false );

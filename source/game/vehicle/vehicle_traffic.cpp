@@ -1210,7 +1210,7 @@ void VehicleTraffic::updateRemorkMatrix() {
     }
 
     if ( pCarState->getNumWheels() > 3 &&
-         pCarState->getPhysicsCar() != nullptr ) {
+         pCarState->getPhysicsVehicle() != nullptr ) {
         OTDU_UNIMPLEMENTED; // TODO: PHYSICS (requires
                             // WheelState::ProjectedPositionOnGround)
         return;

@@ -4,7 +4,7 @@
 #include "core/maths_helper.h"
 
 class CarState;
-class PhysicsCar;
+class PhysicsVehicle;
 
 class VehicleCar : public VehicleController {
 public:
