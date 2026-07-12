@@ -48,15 +48,17 @@ public:
                 Node *piVar0 = pHead;
                 Node *piVar1 = pHead + 1;
 
-                uintptr_t contentPtr = ( uintptr_t)( (uint8_t *)pHead + sizeof( Node ) * param_2 );
+                uintptr_t contentPtr = (uintptr_t)( (uint8_t *)pHead + sizeof( Node ) * param_2 );
                 contentPtr = Align( contentPtr, 16 );
-                uint8_t* pContent = ( uint8_t* )contentPtr;
+                void* pContent = ( void* )contentPtr;
 
                 piVar0->pContent = new ( pContent ) T();
                 piVar0->pNextNode = piVar1;
                 piVar0->pPreviousNode = nullptr;
                 do {
-                    pContent += sizeof( T );
+                    contentPtr = (uintptr_t)pContent;
+                    contentPtr += sizeof( T );
+                    pContent = (void*)contentPtr;
                     piVar1->pContent = new ( pContent ) T();
                     piVar1->pPreviousNode = piVar0;
                     if ( iVar3 > 1 ) {

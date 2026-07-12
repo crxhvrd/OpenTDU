@@ -849,7 +849,7 @@ namespace {
             static_cast<EntityLifeSet *>( pInstance );
         const uint32_t mask = pLifeSet->debugOrientationMask();
         if ( mask != 0 ) {
-#ifdef OTDU_CLANG
+#if defined( OTDU_CLANG ) || defined( OTDU_GCC )
             const uint32_t orientationIndex =
                 static_cast<uint32_t>( __builtin_ctz( mask ) );
             pInstanceLifeSet->setOrientation( orientationIndex );

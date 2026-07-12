@@ -25,7 +25,7 @@ public:
 #if defined( OTDU_WIN32 )
         return hThread != 0;
 #elif defined( OTDU_UNIX )
-        return threadHandle != nullptr;
+        return threadHandle != 0;
 #endif
     }
 

@@ -54,7 +54,7 @@ EntityActor::EntityActor()
       Model(),
       AnimStand(),
       Skeleton(),
-      Animation(),
+      animation(),
       NumMaxLayers( 1 ),
       bLightingValid( false ),
       bMustProjectOnHMap( false ),
@@ -107,9 +107,9 @@ void EntityActor::initialize() {
     }
 
     if ( Skeleton.File != 0 ) {
-        Animation.initialize( Skeleton.pSkeleton, AnimStand.pClip );
+        animation.initialize( Skeleton.pSkeleton, AnimStand.pClip );
 
-        Matrix4x4f_t *pPal = Animation.getPalette();
+        Matrix4x4f_t *pPal = animation.getPalette();
         if ( pPal != nullptr ) {
             BindBones( Model, pPal );
         } else {
@@ -180,10 +180,10 @@ void EntityActor::tick() {
         Model.updateLOD( pMechanism, pDesc );
     }
 
-    if ( Animation.isValid() ) {
+    if ( animation.isValid() ) {
         const float dt =
             ( gpTimer != nullptr ) ? gpTimer->GameDeltaTime : ( 1.0f / 60.0f );
-        Animation.update( dt );
+        animation.update( dt );
     }
 }
 
@@ -337,7 +337,7 @@ bool EntityActor::isPMIInTile( const SectorHeightmap *pHeightmap,
 
 void *EntityActor::getAnimation() {
     // FUN_00423f00
-    return &Animation;
+    return &animation;
 }
 
 void EntityActor::relight() {

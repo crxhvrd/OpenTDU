@@ -13,7 +13,7 @@ TestDriveThread::TestDriveThread( const char *pThreadName /*= nullptr */ )
       hThread( 0 )
 #elif defined( OTDU_UNIX )
       ,
-      threadHandle( NULL )
+      threadHandle( 0 )
 #endif
 {
     setName( pThreadName );
@@ -46,10 +46,10 @@ void TestDriveThread::terminate() {
         threadID = 0;
     }
 #elif defined( OTDU_UNIX )
-    if ( threadHandle != NULL ) {
+    if ( threadHandle != 0 ) {
         requestStop();
         pthread_join( threadHandle, nullptr );
-        threadHandle = NULL;
+        threadHandle = 0;
     }
 #endif
 }

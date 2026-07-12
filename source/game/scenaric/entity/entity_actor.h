@@ -55,7 +55,7 @@ protected:
     SerializedSkinnedModel Model;
     RenderAnm AnimStand;
     RenderBas Skeleton;
-    Animation Animation;
+    Animation animation;
     int32_t NumMaxLayers;
     bool bLightingValid;
     bool bMustProjectOnHMap;
