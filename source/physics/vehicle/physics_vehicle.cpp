@@ -26,6 +26,17 @@ constexpr float kDegToRad = 0.01745329252f;
 constexpr float kSlipDenom =
     3.0f; // min |vLong| for the longitudinal-slip ratio
 
+constexpr int kWheelSubsteps = 5;
+
+bool gVehicleDrivingAids = true;
+
+constexpr float kEspPeakSlipAngle = 0.3f; // rad (~17 deg)
+constexpr float kEspAuthorityFrac = 0.25f;
+constexpr float kSteerRatePerSec = 4.0f; // full lock in ~0.25 s
+
+bool gVehicleYawDamper = false;
+constexpr float kYawDamping = 3000.0f; // N.m per rad/s of yaw rate
+
 inline void SeedTire( PhysicsTire &t, bool bFront ) {
     const PhysicsConfig &c = gPhysicsConfig;
     if ( bFront ) {
@@ -154,6 +165,7 @@ PhysicsVehicle::PhysicsVehicle()
       inputThrottle( 0.0f ),
       inputBrake( 0.0f ),
       inputSteer( 0.0f ),
+      filteredSteer( 0.0f ),
       engineOmega( 0.0f ),
       currentGear( 1 ),
       finalDriveRatio( 4.0f ),
@@ -514,7 +526,7 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
 
     // Contact frame.
     const JPH::Vec3 normal = collector.mNormal.NormalizedOr( up );
-    float steerAngle = ( w.bSteered ? -inputSteer * steerLockRad : 0.0f );
+    float steerAngle = ( w.bSteered ? -filteredSteer * steerLockRad : 0.0f );
     if ( w.SideFlag != 1 ) {
         // TODO:
     }
@@ -542,6 +554,8 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
     w.ContactLatAxis = ToVec4( latAxis );
     w.ForwardDir = w.ContactNormal * longSlip;
     w.WheelLinVel = ToVec4( contactVel );
+    w.ContactVelLong = vLong; // fixed for this OnStep; the sub-loop recomputes
+                              // slip from the evolving omega against it
     w.ContactPoint =
         Eigen::Vector4f( contact.GetX(), contact.GetY(), contact.GetZ(), 1.0f );
     w.WheelPos =
@@ -575,6 +589,9 @@ void PhysicsVehicle::OnStep(
 
     JPH::BodyInterface &bi = system.GetBodyInterfaceNoLock();
     const JPH::BodyID id = chassis.GetID();
+    filteredSteer +=
+        JPH::Clamp( inputSteer - filteredSteer, -kSteerRatePerSec * dt,
+                    kSteerRatePerSec * dt );
 
     vehicle.ForwardSpeed =
         chassis.GetLinearVelocity().Dot( world.GetColumn3( 2 ) );
@@ -586,9 +603,15 @@ void PhysicsVehicle::OnStep(
 
         if ( hit ) {
             ComputeSuspensionForce( w );
-            ComputeTireForces( w,
-                               vehicleMatrix ); // lateral force + slip
+        } else {
+            w.NormalLoad = 0.0f;
+            w.TireForceLong = 0.0f;
+            w.TireForceLat = 0.0f;
+            w.DragLong = 0.0f;
+            w.DragLat = 0.0f;
+            w.SuspForce.setZero();
         }
+
         if ( inputBrake > 0.0f ) {
             const float brakeTq = inputBrake * vehicle.BrakeTorque;
             if ( w.AngularVel > 0.0f ) {
@@ -597,35 +620,50 @@ void PhysicsVehicle::OnStep(
                 w.DriveTorque += brakeTq;
             }
         }
-        if ( hit ) {
-            const float driveForce =
-                w.DriveTorque / std::max( w.Radius, 0.05f );
-            const float tractionCap = 1.15f * w.NormalLoad;
-            w.TireForceLong =
-                JPH::Clamp( driveForce, -tractionCap, tractionCap );
-            const float omegaFree =
-                w.ContactVelLong / std::max( w.Radius, 0.05f );
-            if ( std::fabs( driveForce ) <= tractionCap ) {
-                w.AngularVel = omegaFree;
-            } else {
-                const float tractionTorque = w.TireForceLong * w.Radius;
-                w.AngularVel += ( ( w.DriveTorque - tractionTorque ) /
-                                  std::max( w.Inertia, 0.1f ) ) *
-                                dt;
+
+        if ( gVehicleDrivingAids && hit && w.bDriven ) {
+            const float vLong = w.ContactVelLong;
+            const float vLat = w.ContactVelLat;
+            if ( std::fabs( w.AngularVel ) > 0.1f &&
+                 std::fabs( vLong ) > 0.1f ) {
+                const float radius = std::max( w.Radius, 0.05f );
+                const float slipAngle = std::atan( vLat / vLong );
+                const float xrel =
+                    JPH::Clamp( slipAngle / kEspPeakSlipAngle, -1.0f, 1.0f );
+                const float curve =
+                    std::sqrt( std::max( 0.0f, 1.0f - xrel * xrel ) );
+                const float sOmega = ( w.AngularVel > 0.0f ) ? 1.0f : -1.0f;
+                const float speed = std::sqrt( vLat * vLat + vLong * vLong );
+                const float newVal =
+                    ( speed * curve * sOmega + vLong ) / radius; // target omega
+                const float effInertia = w.Inertia + w.ReflectedInertia;
+                const float authority =
+                    kEspAuthorityFrac * w.GripLong * w.NormalLoad * radius;
+                const float espTorque =
+                    JPH::Clamp( ( newVal - w.AngularVel ) * ( effInertia / dt ),
+                                -authority, authority );
+                // Intervene only when it reduces the forward drive (retard a
+                // wheel that is fast for its combined slip).
+                if ( sOmega * espTorque < sOmega * w.DriveTorque ) {
+                    w.DriveTorque = espTorque;
+                }
             }
-        } else {
-            w.AngularVel +=
-                ( w.DriveTorque / std::max( w.Inertia, 0.1f ) ) * dt;
-        }
-        w.SpinAngle += w.AngularVel * dt;
-        constexpr float kTwoPi = 6.2831853f;
-        if ( w.SpinAngle > kTwoPi ) {
-            w.SpinAngle -= kTwoPi;
-        } else if ( w.SpinAngle < -kTwoPi ) {
-            w.SpinAngle += kTwoPi;
         }
 
-        if ( !hit ) {
+        if ( hit ) {
+            const float hSub = dt / static_cast<float>( kWheelSubsteps );
+            const float vLong = w.ContactVelLong;
+            const float radius = std::max( w.Radius, 0.05f );
+            for ( int s = 0; s < kWheelSubsteps; ++s ) {
+                const float longSlip =
+                    ( w.AngularVel * radius - vLong ) /
+                    std::max( std::fabs( vLong ), kSlipDenom );
+                w.ForwardDir = w.ContactNormal * longSlip;
+                ComputeTireForces( w, vehicleMatrix );
+                IntegrateWheel( w, hSub );
+            }
+        } else {
+            IntegrateWheel( w, dt ); // airborne: spin freely on drive torque
             continue;
         }
 
@@ -645,10 +683,52 @@ void PhysicsVehicle::OnStep(
         bi.AddForce( id, tireForce, point );
     }
 
+    {
+        const int gg =
+            ( vehicle.GearBox.CurrentGear >= 0 &&
+              vehicle.GearBox.CurrentGear < vehicle.GearBox.NumGears )
+                ? vehicle.GearBox.CurrentGear
+                : 1;
+        const float kfb =
+            vehicle.GearBox.Ratios[gg] * vehicle.GearBox.FinalDrive;
+        if ( gg == 1 || std::fabs( kfb ) < 0.01f ) {
+            vehicle.ReflectedWheelSpeed = 0.0f;
+            vehicle.ReactionTorque = 0.0f;
+        } else {
+            float sumOmega = 0.0f, maxReact = -1.0e30f, minReact = 1.0e30f;
+            int nDriven = 0;
+            for ( int i = 0; i < vehicle.NumWheels; ++i ) {
+                if ( !vehicle.Wheels[i].bDriven ) {
+                    continue;
+                }
+                sumOmega += vehicle.Wheels[i].AngularVel;
+                maxReact = std::max( maxReact, vehicle.Wheels[i].NetTorque );
+                minReact = std::min( minReact, vehicle.Wheels[i].NetTorque );
+                ++nDriven;
+            }
+            if ( nDriven > 0 ) {
+                const float diffOmega =
+                    sumOmega / static_cast<float>( nDriven );
+                const float diffReaction =
+                    2.0f * ( ( inputThrottle > 0.0f ) ? maxReact : minReact );
+                vehicle.ReflectedWheelSpeed = kfb * diffOmega; // responsive
+                const float kTwSmooth = 0.2f;
+                vehicle.ReactionTorque +=
+                    ( diffReaction / kfb - vehicle.ReactionTorque ) * kTwSmooth;
+            }
+        }
+    }
+
     const JPH::Vec3 fwdAxis = world.GetColumn3( 2 );
     const float rollRate = chassis.GetAngularVelocity().Dot( fwdAxis );
     const float kRollDamping = 1500.0f;
     bi.AddTorque( id, fwdAxis * ( -kRollDamping * rollRate ) );
+
+    if ( gVehicleYawDamper ) {
+        const JPH::Vec3 upAxis = world.GetColumn3( 1 );
+        const float yawRate = chassis.GetAngularVelocity().Dot( upAxis );
+        bi.AddTorque( id, upAxis * ( -kYawDamping * yawRate ) );
+    }
 
     bi.ActivateBody( id );
 }
@@ -706,13 +786,13 @@ PhysicsVehicle::getWheelReadout( uint32_t index ) const {
     const PhysicsWheelState &w = vehicle.Wheels[index];
     out.LocalPosition = wheelAttach[index];
     out.AngularVelocity = w.AngularVel;
-    out.SteerAngle = w.bSteered ? -inputSteer * steerLockRad : 0.0f;
+    out.SteerAngle = w.bSteered ? -filteredSteer * steerLockRad : 0.0f;
     out.RotationAngle = w.SpinAngle;
     out.SuspensionLength = prevSuspLength[index];
     out.SuspensionDeflection = JPH::Clamp(
         suspRestLength[index] - prevSuspLength[index], -0.25f, 0.25f );
-    out.LongitudinalSlip = w.NormLong;
-    out.LateralSlip = w.NormLat;
+    out.LongitudinalSlip = w.NormLongClamped;
+    out.LateralSlip = w.NormLatClamped;
     out.LongitudinalGroundSpeed = w.ContactVelLong;
     out.SuspensionLoad = w.NormalLoad;
     out.Radius = w.Radius;

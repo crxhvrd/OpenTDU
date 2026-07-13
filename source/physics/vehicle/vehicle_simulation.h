@@ -22,6 +22,8 @@ struct PhysicsWheelState {
 
     float Radius = 0.3f;   // wheel radius (m)
     float Inertia = 1.0f;  // wheel rotational inertia
+    float ReflectedInertia = 0.0f; // drivetrain inertia reflected through the
+                                   // gear (driven wheel, clutch engaged)
     int SideFlag = 1;      // side; != 1 mirrors lateral/steer sign
     bool bDriven = false;  // driven wheel
     bool bSteered = false; // steered / handbrake wheel
@@ -152,6 +154,7 @@ struct PhysicsClutchSim {
     float LaunchRedlineMult = 0.75f;
     float LockThreshold = 0.9f;
     float EngageRate = 3.0f;
+    bool bLocked = false; // latched: slip (launch) vs locked (impulse solve)
 };
 
 struct PhysicsDifferentialSim {

@@ -11,6 +11,14 @@ static constexpr float kRadToDeg = 57.29578f;   // DAT_00f41b0c
 static constexpr float kLoadToPerMille =
     0.001f; // FLOAT_00f4167c (load -> cf50/ceb0 scale)
 
+static constexpr float kGearboxInertia = 0.05f;
+static constexpr float kDiffBaseInertia = 0.05f;
+static constexpr float kMaxCoupling = 4000.0f;
+static constexpr float kClutchLockBand = 8.0f;  // rad/s
+static constexpr float kLaunchSlipBand = 50.0f; // rad/s
+static constexpr float kSlipTransmitFrac = 0.8f;
+static constexpr float kLaunchRpmFrac = 0.6f;
+
 static float
 PacejkaLongitudinal( const PhysicsTire &tire, float L, float kappa ) {
     // FUN_0043cf50
@@ -97,7 +105,7 @@ static void NormalizeSlipsAndCurves( PhysicsWheelState &w,
     w.NormLatClamped = nLat;
 
     const float loadPM = load * kLoadToPerMille;
-    w.TireForceLong = PacejkaLongitudinal( tire, loadPM, rawLongSlip );
+    w.TireForceLong = PacejkaLongitudinal( tire, loadPM, nLong );
     const float Fy = PacejkaLateral( tire, slipAngleDeg, 0.0f, loadPM );
     w.TireForceLat = Fy;
 
@@ -202,7 +210,8 @@ void ComputeSuspensionForce( PhysicsWheelState &w ) {
 
 void IntegrateWheel( PhysicsWheelState &w, float deltaTime ) {
     // FUN_0043e440
-    const float inertia = ( w.Inertia > 1e-6f ) ? w.Inertia : 1e-6f;
+    const float totalInertia = w.Inertia + w.ReflectedInertia;
+    const float inertia = ( totalInertia > 1e-6f ) ? totalInertia : 1e-6f;
     const float omega = w.AngularVel;
     float reactTorque = -w.TireForceLong * w.Radius;
 
@@ -338,41 +347,87 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
                          ? g.CurrentGear
                          : 1;
     const bool neutral = ( gear == 1 );
-    const float gearRatio = g.Ratios[gear] * g.FinalDrive;
-
-    const float wheelRadius = std::max( v.Wheels[0].Radius, 0.05f );
-    v.ReflectedWheelSpeed =
-        neutral ? 0.0f : gearRatio * ( v.ForwardSpeed / wheelRadius );
+    const float k = g.Ratios[gear] * g.FinalDrive; // ratio * finalDrive
+    const float h = dt; // one substep per OnStep call
 
     e.TorqueOut = EngineTorqueAt( e, e.Omega, throttle );
 
-    const bool wantLock =
-        !neutral &&
-        ( gear > 2 || std::fabs( v.ReflectedWheelSpeed ) > e.OmegaIdle );
-    const float targetEngage =
-        neutral ? 0.0f : ( ( wantLock || throttle > 0.05f ) ? 1.0f : 0.0f );
+    const bool disengaged =
+        neutral || ( v.ReflectedWheelSpeed < e.OmegaIdle && throttle < 0.05f );
+    const float targetEngage = disengaged ? 0.0f : 1.0f;
     c.Engagement += Clamp( targetEngage - c.Engagement, -c.EngageRate * dt,
                            c.EngageRate * dt );
     c.Engagement = Clamp( c.Engagement, 0.0f, 1.0f );
     const float engage = neutral ? 0.0f : c.Engagement;
-    const bool locked = ( engage > 0.98f ) && wantLock;
 
-    if ( locked ) {
-        e.Omega = v.ReflectedWheelSpeed;
-        if ( e.Omega < e.OmegaIdle * 0.4f )
-            e.Omega = e.OmegaIdle * 0.4f;
+    // Driveline inertia (FUN_0043aba0): base + (2*wheelBaseI + diffBaseI)/|k|.
+    const float wheelBaseI = v.Wheels[0].Inertia;
+    const float Idl =
+        kGearboxInertia + ( neutral ? 0.0f
+                                    : ( 2.0f * wheelBaseI + kDiffBaseInertia ) /
+                                          std::max( std::fabs( k ), 0.01f ) );
+    v.DrivelineInertia = Idl;
+
+    if ( neutral ) {
+        c.bLocked = false;
     } else {
-        e.Omega += dt * ( e.TorqueOut * ( 1.0f - engage ) ) / e.Inertia;
-        if ( e.Omega < e.OmegaIdle )
-            e.Omega = e.OmegaIdle;
+        const float slip = e.Omega - v.ReflectedWheelSpeed;
+        if ( slip < kClutchLockBand ) {
+            c.bLocked = true;
+        } else if ( slip > kLaunchSlipBand ) {
+            c.bLocked = false;
+        }
     }
+    const bool slipping = !neutral && !c.bLocked;
+
+    float coupling = 0.0f; // local_2c
+    if ( !neutral ) {
+        const float invIe =
+            1.0f / std::max( e.Inertia * v.CouplingCoefE, 1e-4f );
+        const float invIw = 1.0f / std::max( Idl * v.CouplingCoefW, 1e-4f );
+        const float We = e.Omega;
+        const float Te = e.FrictionLoss * We + e.TorqueOut;
+        const float Ww = v.ReflectedWheelSpeed;
+        const float Tw = v.ReactionTorque;
+        const float denom = ( invIe + invIw ) * h;
+        if ( slipping ) {
+            coupling = kSlipTransmitFrac * e.TorqueOut;
+        } else if ( std::fabs( denom ) > 1e-8f ) {
+            coupling =
+                ( Te > 0.0f )
+                    ? ( ( ( We + invIe * Te * h ) - ( Ww + invIw * Tw * h ) ) /
+                        denom )
+                    : ( ( ( We - invIe * Te * h ) - ( Ww - invIw * Tw * h ) ) /
+                        denom );
+        }
+        if ( throttle > 0.1f ) {
+            coupling = Clamp( coupling, 0.0f, 1.5f * std::fabs( e.TorqueOut ) );
+        }
+        coupling = Clamp( coupling, -kMaxCoupling, kMaxCoupling );
+    }
+
+    e.Omega += h *
+               ( e.TorqueOut - coupling * engage - e.FrictionLoss * e.Omega ) /
+               std::max( e.Inertia, 1e-4f );
+    if ( e.Omega < e.OmegaIdle )
+        e.Omega = e.OmegaIdle;
     if ( e.Omega > e.OmegaMax )
         e.Omega = e.OmegaMax;
 
-    const float transmitted = e.TorqueOut * engage;
-    const float gearboxOut = transmitted * gearRatio * g.TransEff;
+    if ( slipping && e.Omega > kLaunchRpmFrac * e.OmegaMax ) {
+        e.Omega = kLaunchRpmFrac * e.OmegaMax;
+    }
+
+    // Drive torque = ratio*transEff*finalDrive*engage*coupling -> diff split.
+    const float gearboxOut = k * g.TransEff * engage * coupling;
+
+    // Effective wheel inertia = k^2*Idl + diffBaseI + wheelBaseI (driven).
+    const float reflectedInertia =
+        neutral ? 0.0f : ( k * k * Idl + kDiffBaseInertia );
     for ( int i = 0; i < v.NumWheels; ++i ) {
         v.Wheels[i].DriveTorque = 0.0f;
+        v.Wheels[i].ReflectedInertia =
+            v.Wheels[i].bDriven ? reflectedInertia : 0.0f;
     }
     if ( !neutral ) {
         if ( v.bCenterDrive ) {
@@ -399,15 +454,6 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
             v.Wheels[3].DriveTorque =
                 v.DiffRear.Gain * ( 1.0f - v.DiffRear.SplitRatio ) * gearboxOut;
         }
-    }
-    v.ReactionTorque = 0.0f;
-    for ( int i = 0; i < v.NumWheels; ++i ) {
-        PhysicsWheelState &w = v.Wheels[i];
-        if ( w.DriveTorque == 0.0f ) {
-            continue;
-        }
-        const float maxTorque = w.GripLong * w.NormalLoad * 1.2f * w.Radius;
-        w.DriveTorque = Clamp( w.DriveTorque, -maxTorque, maxTorque );
     }
 
     if ( g.bAutomatic ) {

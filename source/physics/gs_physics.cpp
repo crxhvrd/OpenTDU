@@ -1154,29 +1154,8 @@ void GSPhysics::drawDebug( float ) {
         ImGui::SameLine();
         ImGui::Checkbox( "+terrain", &gDrawCollisionVisTerrain );
     }
-    // ImGui::Checkbox( "Driver aids (ABS + traction control + ESP)",
-    //                  &gVehicleDriverAids );
-    // if ( gVehicleDriverAids ) {
-    //     ImGui::SetNextItemWidth( 200.0f );
-    //     ImGui::SliderFloat( "Aids level (0=off 1=full)", &gVehicleAidsLevel,
-    //                         0.0f, 1.0f, "%.2f" );
-    //     const int32_t numLevels =
-    //         JPH::Clamp( gPhysicsConfig.NumElectronicParamsValues, 0, 9 );
-    //     for ( int32_t i = 0; i < numLevels; i++ ) {
-    //         const char *pName = gPhysicsConfig.ElectronicParamsValueName[i];
-    //         if ( pName[0] == '\0' ) {
-    //             continue;
-    //         }
-    //         ImGui::SameLine();
-    //         if ( ImGui::SmallButton( pName ) ) {
-    //             gVehicleAidsLevel = JPH::Clamp(
-    //                 gPhysicsConfig.ElectronicParamsValue[i], 0.0f, 1.0f );
-    //         }
-    //     }
-    // }
-    // ImGui::Checkbox(
-    //     "Assisted steering filter (deadzone/expo/rate/counter-steer)",
-    //     &gVehicleSteeringFilter );
+    extern bool gVehicleDrivingAids;
+    ImGui::Checkbox( "ESP", &gVehicleDrivingAids );
 
     ImGui::Separator();
 

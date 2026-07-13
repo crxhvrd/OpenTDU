@@ -102,6 +102,7 @@ private:
     float inputThrottle;
     float inputBrake;
     float inputSteer;
+    float filteredSteer;
 
     float engineOmega; // rad/s, for the tacho / CarBodyState::Omega
     int32_t currentGear;
