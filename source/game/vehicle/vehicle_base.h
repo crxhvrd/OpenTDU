@@ -304,6 +304,7 @@ protected:
     uint8_t bDrawReflections : 1;
     uint8_t bDebugForceLOD : 1;
     uint8_t bDebugForcePrimVisibility : 1;
+    uint8_t bIsRealTimeEnvMap : 1;
 
     StreamedInBankVehicle *pExteriorBank;
     StreamedInBankVehicle *pInteriorBank;

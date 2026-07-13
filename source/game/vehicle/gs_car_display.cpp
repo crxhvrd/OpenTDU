@@ -395,6 +395,23 @@ void GSCarDisplay::releaseEntry( StreamedInBankVehicle *pEntry ) {
     }
 }
 
+void GSCarDisplay::SetRealTimeEnvMappedCar( VehicleBase *pCar ) {
+    // FUN_008b4500
+    if ( pCar != nullptr ) {
+        if ( gpCurEnvMappedCar != nullptr ) {
+            gpCurEnvMappedCar->setRealTimeEnvMap( nullptr, false, nullptr );
+        }
+        pCar->setRealTimeEnvMap( nullptr, true, nullptr );
+        gpCurEnvMappedCar = pCar;
+        return;
+    }
+
+    if ( gpCurEnvMappedCar != nullptr ) {
+        gpCurEnvMappedCar->setRealTimeEnvMap( nullptr, false, nullptr );
+    }
+    gpCurEnvMappedCar = nullptr;
+}
+
 void GSCarDisplay::releaseVehicle( CarState *pVehicle ) {
     // FUN_008b4370
     // TODO: Can't we pass the vehicle type here and avoid linearly iterating

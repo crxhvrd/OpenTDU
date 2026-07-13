@@ -15,6 +15,8 @@
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/gs_car_display.h"
 #include "game/vehicle/vehicle_controller.h"
+
+#include "render/mng_env_map.h"
 #include "config/gs_config.h"
 
 static uint32_t DAT_016a7ba8 = 0;           // DAT_016a7ba8
@@ -460,10 +462,9 @@ bool GMCarShowcase::loadCar() {
             &pCarState->FrontRims, &pCarState->RearRims );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: RENDER REFLECTION
-    // if ( ( local_d0 != nullptr ) && ( gpMngEnvMap != nullptr ) ) {
-    //     GSCarDisplay::BindEnvMap( local_d0 );
-    // }
+    if ( local_d0 != nullptr && gpMngEnvMap != nullptr ) {
+        GSCarDisplay::SetRealTimeEnvMappedCar( local_d0 );
+    }
 
     PhysicsVehicle *local_c4 = nullptr;
     if ( pCarState->bUseGamePhysics != 0 ) {

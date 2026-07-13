@@ -7,7 +7,8 @@
 #include "render/light.h"
 
 class PostFXNodeTexSample;
-class PostFXNode;
+class PostFXNodeCubemapToSphere;
+class PostFXNodeEnvMapScene;
 class Sector;
 class VehicleBase;
 
@@ -57,8 +58,8 @@ private:
     uint8_t bInitialized : 1;
 
     PostFXNodeTexSample *pPostFXTexSample;
-    PostFXNode *pPostFXCubemapToSphere;
-    PostFXNode *pPostFXEnvMapScene;
+    PostFXNodeCubemapToSphere *pPostFXCubemapToSphere;
+    PostFXNodeEnvMapScene *pPostFXEnvMapScene;
 
     std::array<Sector *, kNumGatheredSectors> pSectors;
 

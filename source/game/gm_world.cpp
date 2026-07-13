@@ -21,6 +21,8 @@
 #include "game/vehicle/vehicle_base.h"
 #include "game/vehicle/vehicle_car.h"
 #include "game/vehicle/car_state.h"
+
+#include "render/mng_env_map.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
 
@@ -219,6 +221,10 @@ void GameModeWorld::installLocalPlayerCar(
     state.pVehicleBase = pController;
     state.pResource = pRes;
     pRes->RefCount++;
+
+    if ( gpMngEnvMap != nullptr ) {
+        GSCarDisplay::SetRealTimeEnvMappedCar( pController );
+    }
 
     Matrix4x4f_t spawn;
     if ( pSpawnOverride != nullptr ) {

@@ -13,7 +13,13 @@
 
 #include "render/material.h"
 #include "render/2dm.h"
+#include "render/2db.h"
 #include "render/mng_shadow.h"
+#include "render/mng_env_map.h"
+#include "render/render_context.h"
+
+#include "gs_car_common.h"
+#include "world/gs_mng_resources.h"
 
 #include <unordered_map>
 
@@ -434,6 +440,7 @@ void VehicleBase::reset() {
     bDrawReflections = false;
     bDebugForceLOD = false;
     bDebugForcePrimVisibility = false;
+    bIsRealTimeEnvMap = false;
     bPaintChange = false;
 
     pExteriorBank = nullptr;
@@ -511,11 +518,118 @@ const Matrix4x4f_t *VehicleBase::getNodeTransform( const uint32_t param_2 ) {
     return &displayInstances[param_2].pNode->TransformMatrix;
 }
 
+static bool RebindReflectionTexture( MaterialParameter *pParam,
+                                     uint64_t cubemapHash,
+                                     RenderFile::Section *pCubemapSection,
+                                     uint64_t cubemapBHash,
+                                     RenderFile::Section *pCubemapBSection ) {
+    // FUN_008b5cd0
+    if ( pParam->NumLayers == 0 ) {
+        return false;
+    }
+
+    MaterialLayer *pLayer = pParam->getLayer( 0 );
+    for ( uint32_t i = 0; i < pLayer->NumTextures; i++ ) {
+        MaterialLayerTexture &texture = pLayer->pLayerTextures[i];
+        if ( texture.Hashcode == cubemapHash ) {
+            texture.pTextureSection = pCubemapSection;
+            return true;
+        }
+        if ( texture.Hashcode == cubemapBHash ) {
+            texture.pTextureSection = pCubemapBSection;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void VehicleBase::setRealTimeEnvMap( Render2DB *param_1,
                                      bool param_2,
                                      Render2DB *param_3 ) {
     // FUN_008b6380
-    OTDU_UNIMPLEMENTED;
+    if ( param_2 && gpMngEnvMap == nullptr ) {
+        return;
+    }
+
+    bIsRealTimeEnvMap = param_2;
+
+    const uint64_t cubemapHash = GetIdentifier64bit( "CUBEMAP" );
+    RenderFile::Section *pCubemapSection = nullptr;
+    if ( param_2 ) {
+        param_1 = &gpMngResources->getCubemapResources().getCubemap().Render2DB;
+        pCubemapSection = param_1->getBitmapSection();
+    } else {
+        if ( param_1 == nullptr && gpCarCommon != nullptr ) {
+            param_1 = gpCarCommon->getRender2DB( cubemapHash );
+        }
+        if ( param_1 != nullptr ) {
+            pCubemapSection = param_1->getBitmapSection();
+        }
+    }
+
+    const uint64_t cubemapBHash = GetIdentifier64bit( "CUBEMAPB" );
+    RenderFile::Section *pCubemapBSection = nullptr;
+    if ( param_2 ) {
+        param_3 =
+            &gpMngResources->getCubemapResources().getCubemapB().Render2DB;
+        pCubemapBSection = param_3->getBitmapSection();
+    } else {
+        if ( param_3 == nullptr && gpCarCommon != nullptr ) {
+            param_3 = gpCarCommon->getRender2DB( cubemapBHash );
+        }
+        if ( param_3 == nullptr ) {
+            return;
+        }
+        pCubemapBSection = param_3->getBitmapSection();
+    }
+
+    if ( pCubemapSection == nullptr || pCubemapBSection == nullptr ) {
+        return;
+    }
+
+    VehicleResource *pResourceNodes[4] = { &bodyResource, &wheelsFront,
+                                           &interiorResource, &wheelsRear };
+
+    for ( int32_t nodeIndex = 0; nodeIndex < 4; nodeIndex++ ) {
+        VehicleResource *pResource = pResourceNodes[nodeIndex];
+        Render2DM &resource2DM = pResource->Resource2DM;
+
+        const uint32_t numMaterials = resource2DM.getNumMaterials();
+        for ( uint32_t matIndex = 0; matIndex < numMaterials; matIndex++ ) {
+            Material *pMaterial = resource2DM.getMaterialAtIndex( matIndex );
+            if ( pMaterial == nullptr || pMaterial->NumParams == 0 ) {
+                continue;
+            }
+
+            MaterialParameter *pParam = pMaterial->getParameterByIndex( 0 );
+            if ( pParam->Type != eMaterialParameterType::MPT_Generic ) {
+                continue;
+            }
+
+            const uint64_t guid = pParam->Hashcode;
+            const bool bGroupA = ( guid == 0x183157b81c6c7357ull ||
+                                   guid == 0xc288dfc455ae5ef8ull ||
+                                   guid == 0x1b38348331d3942aull );
+            const bool bGroupB = ( guid == 0xb39c35015789e65cull ||
+                                   guid == 0xcab12190a00d5c4eull ||
+                                   guid == 0x69f07f72719bf862ull );
+
+            const bool bGroupBAllowed =
+                bGroupB &&
+                ( type == eType::VBT_Bike || pResource != &interiorResource );
+
+            if ( ( bGroupA || bGroupBAllowed ) &&
+                 pParam->Flags.bUsingReflection ) {
+                if ( RebindReflectionTexture( pParam, cubemapHash,
+                                              pCubemapSection, cubemapBHash,
+                                              pCubemapBSection ) ) {
+                    pParam->Flags.pCustomFlags[2] = param_2;
+                    gpRenderContext->retrieveShadersForMaterial( pMaterial, 0 );
+                }
+            }
+        }
+    }
 }
 
 void VehicleBase::updateRendering( float param_2, float param_3 ) {

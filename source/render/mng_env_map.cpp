@@ -13,6 +13,8 @@
 #include "render/camera/gs_camera.h"
 
 #include "render/postfx/gs_postfx.h"
+#include "render/postfx/effects/postfx_cubemap_to_sphere.h"
+#include "render/postfx/effects/postfx_envmap_scene.h"
 #include "render/postfx/effects/postfx_texture_sample.h"
 
 #include "game/vehicle/car_state.h"
@@ -22,6 +24,7 @@
 #include "world/gs_mng_resources.h"
 #include "world/gs_world.h"
 #include "world/mng_world.h"
+#include "world/streaming_manager.h"
 #include "world/weather/gs_weather.h"
 
 #include "core/maths_helper.h"
@@ -137,20 +140,54 @@ void MngEnvMap::tick( float, float ) {
         lumFactor =
             gpWeather->getActiveRandomizedWeatherConfig().getCarReflectionLum();
 
-        // TODO: Bind the clamped Saturation, LumFactor and hood-view factor
-        // (view == EMV_Hood ? 1.0 : 0.0) to the cubemap->spheremap effect
-        // parameters once the effect (type 0x14) is implemented.
-        OTDU_UNIMPLEMENTED;
+        pPostFXCubemapToSphere->setSaturation(
+            ( view == EMV_Cockpit ) ? cockpitSaturation : saturation );
+        pPostFXCubemapToSphere->setLumFactor( lumFactor );
+        pPostFXCubemapToSphere->setHoodFactor(
+            ( view == EMV_Hood ) ? 1.0f /* FLOAT_00f4165c */ : 0.0f );
     }
 
     if ( gpMngWorld != nullptr ) {
         updateCameras( true, true );
-
-        // FUN_0070a200: gather the indices of the 3 installed sectors
-        // nearest to the car body, then update their heightmap LODs
-        // (FUN_007022f0) and visibility (FUN_006fe9c0) for the envmap scene.
         pSectors.fill( nullptr );
-        OTDU_UNIMPLEMENTED; // TODO: WORLD (pending Sector heightmap/geometry)
+
+        StreamingManager *pStreamingManager = gpWorld->getStreamingManager();
+        if ( pStreamingManager != nullptr ) {
+            const CarState *pCarState = gpCurEnvMappedCar->getCarState();
+            const Eigen::Vector4f carPosition =
+                pCarState->getBody()->WorldMatrix.row( 3 ).transpose();
+
+            std::array<float, kNumGatheredSectors> nearestDistances;
+            nearestDistances.fill( 3.4e38f ); // DAT_00f41b80
+
+            for ( Sector &sector : pStreamingManager->sectorManager.sectors ) {
+                if ( sector.state != 1 ) {
+                    continue;
+                }
+
+                const float halfExtent = sector.heightmap.worldExtent * 0.5f;
+                const float deltaX =
+                    carPosition.x() -
+                    ( sector.heightmap.worldOriginX + halfExtent );
+                const float deltaZ =
+                    carPosition.z() -
+                    ( sector.heightmap.worldOriginZ + halfExtent );
+                const float distanceSq = deltaX * deltaX + deltaZ * deltaZ;
+
+                for ( uint32_t j = 0; j < kNumGatheredSectors; j++ ) {
+                    if ( distanceSq >= nearestDistances[j] ) {
+                        continue;
+                    }
+                    for ( uint32_t k = kNumGatheredSectors - 1; k > j; k-- ) {
+                        nearestDistances[k] = nearestDistances[k - 1];
+                        pSectors[k] = pSectors[k - 1];
+                    }
+                    nearestDistances[j] = distanceSq;
+                    pSectors[j] = &sector;
+                    break;
+                }
+            }
+        }
     }
 
     const DirectionalLight &sunLight = gpRender->getDefaultDirectionalLight();
@@ -250,13 +287,15 @@ void MngEnvMap::draw() {
 
     if ( gpMngWorld != nullptr ) {
         for ( Sector *pSector : pSectors ) {
-            if ( pSector == nullptr ) {
+            if ( pSector == nullptr || pSector->state != 1 ) {
                 continue;
             }
 
-            // FUN_006fde80 / FUN_0042f170: enqueue the sector geometry
-            // draw lists and impostors into the envmap scene.
-            OTDU_UNIMPLEMENTED; // TODO: WORLD (pending SectorGeometry port)
+            SectorGeometry &geometry = pSector->geometry;
+            if ( geometry.pHeightmapInstance != nullptr ) {
+                pScene->enqueueDynamicInstance( geometry.pHeightmapInstance );
+            }
+            geometry.submitObjectNodes( pScene );
         }
     }
 
@@ -444,14 +483,43 @@ bool MngEnvMap::createPostFXStack() {
         return true;
     }
 
-    // TODO: The original builds a 3-node chain here: a PostFXNodeTexSample
-    // sampling the CUBEMAP render target, feeding a cubemap->spheremap
-    // conversion effect (type 0x14, output bound to the ENV render target,
-    // with Saturation/LumFactor/Hood parameters), driven by a scene-render
-    // effect (type 0x13, named "MngEnvMap", six cubemap faces) inserted in
-    // the frame graph right after the RP_EnvMap scene. Neither effect type
-    // is implemented yet.
-    OTDU_UNIMPLEMENTED; // TODO: POSTFX
+    CubemapResources &cubemapResources = gpMngResources->getCubemapResources();
+
+    pPostFXEnvMapScene =
+        new ( TestDrive::Alloc( sizeof( PostFXNodeEnvMapScene ) ) )
+            PostFXNodeEnvMapScene();
+    if ( pPostFXEnvMapScene == nullptr ) {
+        return false;
+    }
+
+    pPostFXTexSample = new ( TestDrive::Alloc( sizeof( PostFXNodeTexSample ) ) )
+        PostFXNodeTexSample();
+    if ( pPostFXTexSample == nullptr ) {
+        return false;
+    }
+    pPostFXTexSample->setTextureToSample(
+        cubemapResources.getCubemap().pRenderTarget );
+
+    pPostFXCubemapToSphere =
+        new ( TestDrive::Alloc( sizeof( PostFXNodeCubemapToSphere ) ) )
+            PostFXNodeCubemapToSphere();
+    if ( pPostFXCubemapToSphere == nullptr ) {
+        return false;
+    }
+    if ( cubemapResources.getEnvmap().pRenderTarget != nullptr ) {
+        pPostFXCubemapToSphere->setOutput(
+            cubemapResources.getEnvmap().pRenderTarget, 0 );
+    }
+
+    pPostFXCubemapToSphere->connect( pPostFXTexSample, 0, 0 );
+    pPostFXEnvMapScene->connect( pPostFXCubemapToSphere, 0, 0 );
+
+    pPostFXEnvMapScene->setName( "MngEnvMap" );
+
+    gEdRender.pFrameGraph->insertAfterObject(
+        pPostFXEnvMapScene,
+        gpRender->getRenderPass<eRenderPass::RP_EnvMap>().pScene );
+
     return true;
 }
 
@@ -459,17 +527,20 @@ void MngEnvMap::destroyPostFXStack() {
     // FUN_006f0b60
     if ( pPostFXEnvMapScene != nullptr ) {
         gEdRender.pFrameGraph->removeObject( pPostFXEnvMapScene );
-        delete pPostFXEnvMapScene;
+        pPostFXEnvMapScene->~PostFXNodeEnvMapScene();
+        TestDrive::Free( pPostFXEnvMapScene );
         pPostFXEnvMapScene = nullptr;
     }
 
     if ( pPostFXCubemapToSphere != nullptr ) {
-        delete pPostFXCubemapToSphere;
+        pPostFXCubemapToSphere->~PostFXNodeCubemapToSphere();
+        TestDrive::Free( pPostFXCubemapToSphere );
         pPostFXCubemapToSphere = nullptr;
     }
 
     if ( pPostFXTexSample != nullptr ) {
-        delete pPostFXTexSample;
+        pPostFXTexSample->~PostFXNodeTexSample();
+        TestDrive::Free( pPostFXTexSample );
         pPostFXTexSample = nullptr;
     }
 }
@@ -501,10 +572,15 @@ void MngEnvMap::bindRenderTargets() {
     render2DMCubemapB.bindBitmapReference(
         &cubemapResources.getCubemapB().Render2DB );
 
-    // TODO: Rebind the cubemap RT to the texture-sample node and the ENV RT
-    // to the cubemap->spheremap effect output (PostFX stack not implemented
-    // yet, see createPostFXStack).
-    OTDU_UNIMPLEMENTED;
+    if ( pPostFXTexSample != nullptr ) {
+        pPostFXTexSample->setTextureToSample(
+            cubemapResources.getCubemap().pRenderTarget );
+    }
+    if ( pPostFXCubemapToSphere != nullptr &&
+         cubemapResources.getEnvmap().pRenderTarget != nullptr ) {
+        pPostFXCubemapToSphere->setOutput(
+            cubemapResources.getEnvmap().pRenderTarget, 0 );
+    }
 }
 
 void MngEnvMap::popLights() {

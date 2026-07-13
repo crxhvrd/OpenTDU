@@ -26,6 +26,7 @@ public:
 
     Texture *getTexture( uint64_t param_2 );
     Material *getMaterial( uint64_t param_2 );
+    Render2DB *getRender2DB( uint64_t param_2 );
 
 #ifdef OTDU_USE_IMGUI
     void drawDebug( float deltaTime ) override;

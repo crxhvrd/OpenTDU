@@ -189,6 +189,16 @@ Material *GSCarCommon::getMaterial( uint64_t param_2 ) {
     return nullptr;
 }
 
+Render2DB *GSCarCommon::getRender2DB( uint64_t param_2 ) {
+    for ( int32_t iVar4 = 0; iVar4 < num2DBs; iVar4++ ) {
+        Texture *pTexture = parsed2DBs[iVar4].getFirstBitmap();
+        if ( pTexture != nullptr && pTexture->Hashcode == param_2 ) {
+            return &parsed2DBs[iVar4];
+        }
+    }
+    return nullptr;
+}
+
 #ifdef OTDU_USE_IMGUI
 void GSCarCommon::drawDebug( float deltaTime ) {
     ImGui::Text( "Num Registered 2DBs: %i/%i", num2DBs, kMaxNum2DBs );

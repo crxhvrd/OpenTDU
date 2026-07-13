@@ -41,6 +41,8 @@ public:
     void releaseEntry( StreamedInBankVehicle *pEntry );
     void releaseVehicle( CarState *pVehicle );
 
+    static void SetRealTimeEnvMappedCar( VehicleBase *pCar );
+
     VehicleCar *instantiateCar( CarState *pCarState,
                                 StreamedInBankVehicle *pExterior,
                                 StreamedInBankVehicle *pInterior,
