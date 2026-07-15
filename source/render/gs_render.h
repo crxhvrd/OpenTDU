@@ -198,6 +198,7 @@ public:
                  uint32_t refreshRate,
                  eAntiAliasingMethod antiAliasing,
                  bool bEnableHDR );
+    bool resizeToWindow( uint32_t width, uint32_t height );
 
 #ifdef OTDU_USE_IMGUI
     void drawDebug( float deltaTime ) override;

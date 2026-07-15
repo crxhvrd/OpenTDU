@@ -84,7 +84,7 @@ GSConfig::GSConfig()
       TimerPriority( 0 ),
       pLanguage( "us" ),
       b169Ratio( false ),
-      bWindowed( true ),
+      bWindowed( false ),
       bInvertMouse( false ),
       bEnableMovie( true ),
       bAutoConnectFreeride( false ),

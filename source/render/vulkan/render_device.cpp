@@ -319,6 +319,8 @@ RenderDevice::RenderDevice()
 }
 
 RenderDevice::~RenderDevice() {
+    vkDeviceWaitIdle( device );
+
     vkDestroyCommandPool( device, commandPool, nullptr );
 
     vkDestroyCommandPool( device, textureUploadCmdPool, nullptr );
@@ -1002,6 +1004,8 @@ bool RenderDevice::resize( uint32_t width, uint32_t height ) {
         ( backbuffer.Width != width || backbuffer.Height != height );
     return true;
 }
+
+void RenderDevice::waitForIdle() { vkDeviceWaitIdle( device ); }
 
 void RenderDevice::destroyVertexLayout( GPUVertexLayout *pVertexLayout ) {
     pVertexLayout->Semantics.clear();
@@ -2075,7 +2079,12 @@ void RenderDevice::beginScene() {
             VK_NULL_HANDLE, &imageIndex );
         if ( nextImageResult == VK_ERROR_OUT_OF_DATE_KHR ) {
             recreateSwapchain();
+            nextImageResult = vkAcquireNextImageKHR(
+                device, swapchain, UINT64_MAX, nextImageSemaphore[frameIndex],
+                VK_NULL_HANDLE, &imageIndex );
         }
+        OTDU_ASSERT( nextImageResult == VK_SUCCESS ||
+                     nextImageResult == VK_SUBOPTIMAL_KHR );
 
         vkResetCommandBuffer( commandBuffer, 0 );
 
@@ -2865,10 +2874,12 @@ static constexpr VkFormat kBackbufferFormats[4] = {
 bool RenderDevice::createSwapchain() {
     // Create window surface
 #if defined( OTDU_USE_SDL )
-    bool surfCreation = SDL_Vulkan_CreateSurface(
-        (SDL_Window *)gEdSys.getWindow(), instance, nullptr, &surface );
-    if ( !surfCreation ) {
-        return false;
+    if ( surface == VK_NULL_HANDLE ) {
+        bool surfCreation = SDL_Vulkan_CreateSurface(
+            (SDL_Window *)gEdSys.getWindow(), instance, nullptr, &surface );
+        if ( !surfCreation ) {
+            return false;
+        }
     }
 #endif
 
@@ -3561,8 +3572,19 @@ void RenderDevice::recreateSwapchain() {
 }
 
 void RenderDevice::releaseSwapchain() {
-    destroyTexture( backbuffer.pTexture );
+    if ( backbuffer.pTexture != nullptr ) {
+        for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
+            if ( backbuffer.pTexture->ImageView[i] != VK_NULL_HANDLE ) {
+                vkDestroyImageView( device, backbuffer.pTexture->ImageView[i],
+                                    nullptr );
+                backbuffer.pTexture->ImageView[i] = VK_NULL_HANDLE;
+            }
+            backbuffer.pTexture->Image[i] = VK_NULL_HANDLE;
+        }
+    }
+
     vkDestroySwapchainKHR( device, swapchain, nullptr );
+    swapchain = VK_NULL_HANDLE;
 }
 
 void RenderDevice::releaseFramebufferCache() {

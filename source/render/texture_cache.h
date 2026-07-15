@@ -13,6 +13,8 @@ public:
     bool insertIntoCache( Texture *pTexture );
     void insertAndUpload( Texture *pTexture, const bool bForce = false );
 
+    void remove( Texture *pTexture );
+
 private:
     std::unordered_map<uint64_t, Texture *> cache;
 };

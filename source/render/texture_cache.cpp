@@ -33,6 +33,17 @@ bool TextureCache::insertIntoCache( Texture *pTexture ) {
     return true;
 }
 
+void TextureCache::remove( Texture *pTexture ) {
+    if ( pTexture == nullptr ) {
+        return;
+    }
+
+    auto it = cache.find( pTexture->Hashcode );
+    if ( it != cache.end() && it->second == pTexture ) {
+        cache.erase( it );
+    }
+}
+
 void TextureCache::insertAndUpload( Texture *pTexture, const bool bForce ) {
     if ( bForce || !pTexture->bUploaded ) {
         if ( pTexture->pTexture == nullptr ) {

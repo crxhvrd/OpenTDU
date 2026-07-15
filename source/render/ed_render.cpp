@@ -22,6 +22,9 @@
 #include "state_cache.h"
 #include "text_renderer.h"
 
+#include "gs_render.h"
+#include "system/ed_sys.h"
+
 static int32_t FUN_005f1760( Material *param_1 ) {
     // FUN_005f1760
     if ( param_1->DepthWrite == '\x02' ) {
@@ -385,6 +388,25 @@ void edRender::doPoolDeallocations() {
 
 int32_t edRender::flushDrawCommands( bool param_1 ) {
     // FUN_005066e0
+    if ( gWindowSizeDirty ) {
+        static uint32_t sLastWidth = 0;
+        static uint32_t sLastHeight = 0;
+        static int32_t sSettleFrames = 0;
+
+        if ( gWindowWidth != sLastWidth || gWindowHeight != sLastHeight ) {
+            // Still changing: latch the new size and restart the settle timer.
+            sLastWidth = gWindowWidth;
+            sLastHeight = gWindowHeight;
+            sSettleFrames = PendingFrameCount;
+        } else if ( --sSettleFrames <= 0 ) {
+            gWindowSizeDirty = false;
+            if ( gpRender != nullptr ) {
+                gpRender->resizeToWindow( gWindowWidth, gWindowHeight );
+                return 0;
+            }
+        }
+    }
+
     int32_t iVar1 = gpRenderContext->beginFrame();
     if ( iVar1 == 0 ) {
         pFrameGraph->submitDrawCommands( param_1 );
@@ -818,6 +840,16 @@ void edRender::bindRenderTarget( RenderTarget *pRenderTarget,
 
         pBoundRenderTargets.pAttachments[index] = pRenderTarget;
     }
+}
+
+void edRender::invalidateRenderTargetBindings() {
+    for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
+        pBoundRenderTargets.pAttachments[i] = nullptr;
+        gStateCache.pRenderTargets[i] = nullptr;
+        pRenderDevice->bindRenderTarget( nullptr, i );
+    }
+    gStateCache.pDepthStencil = nullptr;
+    pRenderDevice->bindDepthStencil( nullptr );
 }
 
 void edRender::bindToFramebuffer( RenderTarget *pRenderTarget,

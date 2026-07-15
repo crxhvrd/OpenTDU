@@ -518,10 +518,6 @@ bool GSRender::resize( uint32_t width,
     bool cVar1;
     bool bVar1;
 
-    if ( gpConfig->bWindowed ) {
-        return true;
-    }
-
     gEdRender.Config.WindowWidth = 900;
     if ( 899 < width ) {
         gEdRender.Config.WindowWidth = width;
@@ -534,6 +530,12 @@ bool GSRender::resize( uint32_t width,
     bWasHDREnabled = bHDREnabled;
     bHDREnabled = bEnableHDR;
 
+    static constexpr uint32_t kMinRenderDim = 256u;
+    renderWidth = ( width < kMinRenderDim ) ? kMinRenderDim : width;
+    renderHeight = ( height < kMinRenderDim ) ? kMinRenderDim : height;
+    aspectRatio = (float)renderWidth / (float)renderHeight;
+    invAspectRatio = 1.0f / aspectRatio;
+
     gWindowWidth = width;
     gWindowHeight = height;
     gPickedRefreshRate = refreshRate;
@@ -541,6 +543,8 @@ bool GSRender::resize( uint32_t width,
     cVar1 = gEdRender.applyVideoSettingsChange(
         gWindowWidth, gWindowHeight, eVSyncMode::VSM_Immediate, activeAA );
     if ( cVar1 ) {
+        FUN_00994330();
+
         bVar1 = allocateRenderTargets();
         if ( bVar1 ) {
             bVar1 = linkPostFXNodes();
@@ -548,10 +552,31 @@ bool GSRender::resize( uint32_t width,
                 bVar1 = notifyConfigListeners( pListeners );
             }
         }
+
+        gEdRender.invalidateRenderTargetBindings();
+
         return bVar1;
     }
 
     return true;
+}
+
+bool GSRender::resizeToWindow( uint32_t width, uint32_t height ) {
+    if ( !bInitialized ) {
+        return true;
+    }
+
+    if ( width == 0 || height == 0 ) {
+        return true;
+    }
+
+    if ( width == renderWidth && height == renderHeight ) {
+        return true;
+    }
+
+    gEdRender.pRenderDevice->waitForIdle();
+
+    return resize( width, height, gPickedRefreshRate, activeAA, bHDREnabled );
 }
 
 #ifdef OTDU_USE_IMGUI
@@ -1647,7 +1672,7 @@ bool GSRender::notifyConfigListeners(
             return cVar1;
         }
         cVar1 = puVar1->onConfigurationChanged();
-        puVar1 = param_1->pNextListener;
+        puVar1 = puVar1->pNextListener;
     } while ( cVar1 != false );
 
     return false;

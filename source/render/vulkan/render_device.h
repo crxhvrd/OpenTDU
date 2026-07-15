@@ -166,6 +166,7 @@ public:
     void destroyVertexLayout( GPUVertexLayout *pVertexLayout );
 
     bool resize( uint32_t width, uint32_t height );
+    void waitForIdle();
 
     GPUBackbuffer *getBackbuffer();
     FormatCapabilities getFormatCapabilities( eViewFormat format );

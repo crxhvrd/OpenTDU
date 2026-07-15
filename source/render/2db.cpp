@@ -48,8 +48,8 @@ inline uint32_t CalcSliceSize( Texture *param_1 ) {
 
 void FUN_005f2920( Texture *pTexture ) {
     // FUN_005f2920
-    // NOTE: Omitted call to managed resource pool lookup (FUN_005f2cb0) (since
-    // it's not really mappable to modern APIs/not worth the effort to emulate)
+    gTextureCache.remove( pTexture );
+
     if ( pTexture->pTexture != nullptr ) {
         gEdRender.pRenderDevice->destroyTexture( pTexture->pTexture );
         pTexture->pTexture = nullptr;

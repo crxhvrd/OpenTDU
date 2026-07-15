@@ -28,6 +28,8 @@ uint32_t gWindowWidth = 0u;     // DAT_00fac8d4
 uint32_t gWindowHeight = 0u;    // DAT_00fac8d8
 int32_t gPickedRefreshRate = 0; // DAT_00fac8ec
 
+bool gWindowSizeDirty = false;
+
 edSys::edSys()
     : edBase( kedSysName, 1, 0xd, 0 ),
       pWindow( nullptr )
@@ -121,6 +123,20 @@ void edSys::pollEvents() {
                 gEdDev.getDevice( eDeviceType::DT_Mouse, 0 ) );
             if ( pMouse != nullptr ) {
                 pMouse->addScrollDelta( event.wheel.y );
+            }
+            break;
+        }
+        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        case SDL_EVENT_WINDOW_RESIZED:
+        case SDL_EVENT_WINDOW_MAXIMIZED:
+        case SDL_EVENT_WINDOW_RESTORED: {
+            int32_t pixelWidth = 0;
+            int32_t pixelHeight = 0;
+            SDL_GetWindowSizeInPixels( pWindow, &pixelWidth, &pixelHeight );
+            if ( pixelWidth > 0 && pixelHeight > 0 ) {
+                gWindowWidth = static_cast<uint32_t>( pixelWidth );
+                gWindowHeight = static_cast<uint32_t>( pixelHeight );
+                gWindowSizeDirty = true;
             }
             break;
         }

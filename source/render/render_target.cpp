@@ -273,7 +273,7 @@ bool RenderTarget::createFromBackbuffer() {
 
         pParentRT = nullptr;
 
-        bOwnTexture = true;
+        bOwnTexture = false;
         bOwnZBuffer = true;
 
         // SetDebugTag("BackBuffer");
@@ -466,8 +466,8 @@ bool RenderTargetPool::flushPendingAllocations() {
                                                        peVar4->getFlags() );
                     }
                 } else {
-                    bVar1 = peVar4->createWithCopy( peVar5->getParent(),
-                                                    peVar4->getFlags() );
+                    bVar1 =
+                        peVar4->createWithCopy( peVar5, peVar4->getFlags() );
                 }
             } else {
                 bVar1 = peVar4->createFromBackbuffer();

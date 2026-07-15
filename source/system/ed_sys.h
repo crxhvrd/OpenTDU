@@ -55,3 +55,4 @@ extern edSys gEdSys;
 extern uint32_t gWindowWidth;
 extern uint32_t gWindowHeight;
 extern int32_t gPickedRefreshRate;
+extern bool gWindowSizeDirty;

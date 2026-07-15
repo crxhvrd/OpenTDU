@@ -32,6 +32,11 @@ PostFXRenderer::~PostFXRenderer() {
     if ( gEdRender.pRenderDevice != nullptr ) {
         releaseResources( gEdRender.pRenderDevice );
     }
+
+    if ( p2DMBuffer != nullptr ) {
+        TestDrive::Free( p2DMBuffer );
+        p2DMBuffer = nullptr;
+    }
 }
 
 void PostFXRenderer::destroy() {
@@ -162,8 +167,6 @@ void PostFXRenderer::releaseResources( RenderDevice *pRenderDevice ) {
     if ( p2DMBuffer != nullptr ) {
         pMaterial = nullptr;
         render2DM.destroy();
-
-        TestDrive::Free( p2DMBuffer );
     }
 
     pNextParameterAvailable = nullptr;
