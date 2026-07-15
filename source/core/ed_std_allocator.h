@@ -48,9 +48,10 @@ public:
                 Node *piVar0 = pHead;
                 Node *piVar1 = pHead + 1;
 
-                uintptr_t contentPtr = (uintptr_t)( (uint8_t *)pHead + sizeof( Node ) * param_2 );
-                contentPtr = Align( contentPtr, 16 );
-                void* pContent = ( void* )contentPtr;
+                uintptr_t contentPtr =
+                    (uintptr_t)( (uint8_t *)pHead + sizeof( Node ) * param_2 );
+                contentPtr = Align( contentPtr, alignof( T ) );
+                void *pContent = (void *)contentPtr;
 
                 piVar0->pContent = new ( pContent ) T();
                 piVar0->pNextNode = piVar1;
@@ -58,7 +59,7 @@ public:
                 do {
                     contentPtr = (uintptr_t)pContent;
                     contentPtr += sizeof( T );
-                    pContent = (void*)contentPtr;
+                    pContent = (void *)contentPtr;
                     piVar1->pContent = new ( pContent ) T();
                     piVar1->pPreviousNode = piVar0;
                     if ( iVar3 > 1 ) {
