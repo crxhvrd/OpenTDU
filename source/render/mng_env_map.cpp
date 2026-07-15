@@ -117,7 +117,7 @@ bool MngEnvMap::initialize( TestDriveGameInstance * ) {
 void MngEnvMap::tick( float, float ) {
     // FUN_006f2150
     const uint32_t showFlags = gpCamera->getActiveCamera()->getFlags();
-    bCompute = ( showFlags >> 3 ) & 1;
+    bCompute = ( ( showFlags >> 3 ) & 1 );
 
     RenderScene *pScene =
         gpRender->getRenderPass<eRenderPass::RP_EnvMap>().pScene;
@@ -374,9 +374,9 @@ void MngEnvMap::draw() {
                 }
             }
 
-            // TODO: Draw the bike rider into the envmap when the vehicle is
-            // a bike (FUN_008ef140, avatar system not ported yet).
-            OTDU_UNIMPLEMENTED; // TODO: AVATAR
+            if ( pVehicle->getType() == VehicleBase::eType::VBT_Bike ) {
+                OTDU_UNIMPLEMENTED; // TODO: AVATAR
+            }
         }
     }
 
@@ -636,7 +636,7 @@ void MngEnvMap::updateCameras( bool bUseActiveCamera, bool bUpdateBackScene ) {
         lookTarget = eyePosition - velocity * 2.0f;
     } else {
         fov = camFOV * kDegToRad;
-        position = pSourceCamera->getTarget();
+        position = pSourceCamera->getTargetOffset();
         position.y() += camHeight;
         lookTarget = eyePosition;
         if ( ( eyePosition - position ).norm() >= 1.0f ) {

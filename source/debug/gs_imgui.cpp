@@ -361,47 +361,70 @@ void GSImgui::enqueueDrawCommands( ImDrawData *pDrawData ) {
     }
 }
 
-void GSImgui::allocateTextureEntries() {
+void GSImgui::setupImguiMaterial( TextureEntry *entry, bool bOpaqueBlend ) {
     uint32_t materialSize = Render2DM::CalcSize( 0, 0 );
+    entry->pMaterialMemory = TestDrive::Alloc( materialSize );
+
+    entry->pMaterial = Render2DM::Create( entry->pMaterialMemory,
+                                          0x0000adeadbadbeef, 1, 0, 0, 0 );
+    entry->pMaterial->DepthTest = '\x01';
+    entry->pMaterial->DepthWrite = '\x02';
+    entry->pMaterial->AlphaTest = eComparisonFunction::CF_Never;
+    // Force opaque alpha for debug texture view
+    entry->pMaterial->SrcBlend =
+        bOpaqueBlend ? eBlendMode::BM_One : eBlendMode::BM_SrcAlpha;
+    entry->pMaterial->DstBlend =
+        bOpaqueBlend ? eBlendMode::BM_Zero : eBlendMode::BM_InvSrcAlpha;
+    entry->pMaterial->BlendOP = eBlendOP::BO_Add;
+    entry->pMaterial->AlphaSource = '\0';
+    entry->pMaterial->AmbientColor = Eigen::Vector4f( 1.0f, 1.0f, 1.0f, 0.0f );
+    entry->pMaterial->DiffuseColor = Eigen::Vector4f( 1.0f, 1.0f, 1.0f, 1.0f );
+    entry->pMaterial->SpecularColor = Eigen::Vector4f( 1.0f, 1.0f, 1.0f, 1.0f );
+
+    MaterialParameter *peVar8 = entry->pMaterial->getParameterByIndex( 0 );
+    ( peVar8->Flags ).NumTextures = '\x01';
+
+    MaterialLayer *iVar9 = peVar8->getLayer( 0 );
+    iVar9->NumTextures = 1;
+    iVar9->pLayerTextures[0].Hashcode = 0xdeadbeefull;
+    iVar9->pLayerTextures[0].TextureTypeHashcode = 0ull;
+    iVar9->pLayerTextures[0].pTextureSection = nullptr;
+    iVar9->pLayerTextures[0].SamplerAddress[0] = eTextureAddress::TA_Clamp;
+    iVar9->pLayerTextures[0].SamplerAddress[1] = eTextureAddress::TA_Clamp;
+    iVar9->pLayerTextures[0].MinMagFilter = eTextureFiltering::TF_Linear;
+    iVar9->pLayerTextures[0].MipFilter = eTextureFiltering::TF_Linear;
+
+    entry->render2DM.initialize( entry->pMaterialMemory );
+    entry->pMaterial->OT = 0x2c;
+}
+
+void GSImgui::allocateTextureEntries() {
     for ( int32_t i = 0; i < kMaxNumTextures; i++ ) {
         TextureEntry *entry = &textures.at( i );
-
-        entry->pMaterialMemory = TestDrive::Alloc( materialSize );
-
-        entry->pMaterial = Render2DM::Create( entry->pMaterialMemory,
-                                              0x0000adeadbadbeef, 1, 0, 0, 0 );
-        entry->pMaterial->DepthTest = '\x01';
-        entry->pMaterial->DepthWrite = '\x02';
-        entry->pMaterial->AlphaTest = eComparisonFunction::CF_Never;
-        entry->pMaterial->SrcBlend = eBlendMode::BM_SrcAlpha;
-        entry->pMaterial->DstBlend = eBlendMode::BM_InvSrcAlpha;
-        entry->pMaterial->BlendOP = eBlendOP::BO_Add;
-        entry->pMaterial->AlphaSource = '\0';
-        entry->pMaterial->AmbientColor =
-            Eigen::Vector4f( 1.0f, 1.0f, 1.0f, 0.0f );
-        entry->pMaterial->DiffuseColor =
-            Eigen::Vector4f( 1.0f, 1.0f, 1.0f, 1.0f );
-        entry->pMaterial->SpecularColor =
-            Eigen::Vector4f( 1.0f, 1.0f, 1.0f, 1.0f );
-
-        MaterialParameter *peVar8 = entry->pMaterial->getParameterByIndex( 0 );
-        ( peVar8->Flags ).NumTextures = '\x01';
-
-        MaterialLayer *iVar9 = peVar8->getLayer( 0 );
-        iVar9->NumTextures = 1;
-        iVar9->pLayerTextures[0].Hashcode = 0xdeadbeefull;
-        iVar9->pLayerTextures[0].TextureTypeHashcode = 0ull;
-        iVar9->pLayerTextures[0].pTextureSection = nullptr;
-        iVar9->pLayerTextures[0].SamplerAddress[0] = eTextureAddress::TA_Clamp;
-        iVar9->pLayerTextures[0].SamplerAddress[1] = eTextureAddress::TA_Clamp;
-        iVar9->pLayerTextures[0].MinMagFilter = eTextureFiltering::TF_Linear;
-        iVar9->pLayerTextures[0].MipFilter = eTextureFiltering::TF_Linear;
-
-        entry->render2DM.initialize( entry->pMaterialMemory );
-        entry->pMaterial->OT = 0x2c;
-
+        setupImguiMaterial( entry, false );
         availableTextures.push( entry );
     }
+
+    for ( TextureEntry &entry : debugViews ) {
+        setupImguiMaterial( &entry, true );
+    }
+    debugViewIndex = 0;
+}
+
+Material *GSImgui::getDebugViewMaterial( Render2DB *p2DB ) {
+    if ( p2DB == nullptr ) {
+        return nullptr;
+    }
+
+    TextureEntry &entry = debugViews[debugViewIndex];
+    debugViewIndex = ( debugViewIndex + 1 ) % kMaxNumDebugViews;
+
+    MaterialLayer *pLayer =
+        entry.pMaterial->getParameterByIndex( 0 )->getLayer( 0 );
+    pLayer->NumTextures = 1;
+    pLayer->pLayerTextures[0].Hashcode = p2DB->getBitmapHashcode();
+    pLayer->pLayerTextures[0].pTextureSection = p2DB->getBitmapSection();
+    return entry.pMaterial;
 }
 
 void GSImgui::releaseTextureEntries() {
@@ -419,6 +442,14 @@ void GSImgui::releaseTextureEntries() {
 
     while ( !availableTextures.empty() ) {
         availableTextures.pop();
+    }
+
+    for ( TextureEntry &entry : debugViews ) {
+        entry.render2DM.destroy();
+        if ( entry.pMaterialMemory != nullptr ) {
+            TestDrive::Free( entry.pMaterialMemory );
+            entry.pMaterialMemory = nullptr;
+        }
     }
 }
 

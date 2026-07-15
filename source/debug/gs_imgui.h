@@ -27,10 +27,12 @@ public:
     void draw( float deltaTime ) override;
     void terminate() override;
     void drawDebug( float deltaTime ) override;
+    Material *getDebugViewMaterial( Render2DB *p2DB );
 
 private:
     static constexpr int32_t kMaxNumTextures = 0x20; // Arbitrary
     static constexpr int32_t kMaxNumDrawCmds = 128;  // Arbitrary
+    static constexpr int32_t kMaxNumDebugViews = 8;
 
     // We must allocate one material per texture created by imgui (due to the
     // way TDU1 render pipeline works...).
@@ -54,11 +56,11 @@ private:
     std::array<TextureEntry, kMaxNumTextures> textures;
     std::array<DrawCommandSetup, kMaxNumDrawCmds> setups;
 
+    // Dedicated materials for getDebugViewMaterial()
+    std::array<TextureEntry, kMaxNumDebugViews> debugViews;
+    uint32_t debugViewIndex = 0;
+
     bool bVisible;
-    // Prevents non-stop toggle on key hold (required; as we read keyboard
-    // directly and don't use a deviceaction instance)
-    // TODO: Add a new DeviceAction to allow data-driven key configuration (in
-    // Device.ini)
     bool bFocusHasChanged;
 
 private:
@@ -70,6 +72,7 @@ private:
     void allocateTextureEntries();
     void releaseTextureEntries();
     void initializeSetups();
+    void setupImguiMaterial( TextureEntry *entry, bool bOpaqueBlend );
 };
 
 extern GSImgui *gpImgui;

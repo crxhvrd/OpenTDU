@@ -8,6 +8,11 @@
 #include "world/weather/gs_weather.h"
 #include "world/weather/weather_config.h"
 
+#ifdef OTDU_USE_IMGUI
+#include "debug/gs_imgui.h"
+#include "world/gs_mng_resources.h"
+#endif
+
 #include "postfx/effects/postfx_blit.h"
 #include "postfx/effects/postfx_downscale.h"
 #include "postfx/effects/postfx_texture_sample.h"
@@ -572,6 +577,27 @@ void GSRender::drawDebug( float deltaTime ) {
     ImGui::Checkbox( "Disable stitch mask", &gbDebugHmapDisableStitchMask );
     ImGui::Checkbox( "Force finest LOD", &gbDebugHmapForceFinestLOD );
     ImGui::Checkbox( "Disable seams", &gbDebugHmapDisableSeams );
+
+    if ( gpMngResources != nullptr && gpImgui != nullptr ) {
+        CubemapResources &cm = gpMngResources->getCubemapResources();
+        const ImVec2 viewSize( 192.0f, 192.0f );
+
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted( "Cubemap (env capture)" );
+        ImGui::Image( (ImTextureID)gpImgui->getDebugViewMaterial(
+                          &cm.getCubemap().Render2DB ),
+                      viewSize );
+        ImGui::EndGroup();
+
+        ImGui::SameLine();
+
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted( "Envmap (sphere)" );
+        ImGui::Image( (ImTextureID)gpImgui->getDebugViewMaterial(
+                          &cm.getEnvmap().Render2DB ),
+                      viewSize );
+        ImGui::EndGroup();
+    }
 }
 #endif
 
