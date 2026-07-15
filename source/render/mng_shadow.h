@@ -79,6 +79,9 @@ private:
         void *pMemory = nullptr;
         Render2DB Bitmap = {};
     };
+    struct GroundQuad {
+        Eigen::Vector3f v[4];
+    };
 
     static constexpr int32_t kNumCasterMaterials = 0x19;
     static constexpr int32_t kNumMaxCaster = 0x19;
@@ -86,6 +89,7 @@ private:
     static constexpr int32_t kNumMaxCockpitCaster = 8;
     static constexpr int32_t kNumMaxCockpitReceiver = 0x14;
     static constexpr int32_t kNumMaxVisibleSector = 7;
+    static constexpr int32_t kMaxRoadVerts = 0x2ee; // 750
 
 private:
     DrawList *pDrawList;
@@ -211,18 +215,15 @@ private:
     void updateSectorVisibility();
     void collectVisibleHeightmapVertices();
     void collectVisibleReceivers();
-
-    // One terrain cell gathered for the ground shadow-receiver strip: the four
-    // quad corners, already ordered for the diagonal the original picked.
-    struct GroundQuad {
-        Eigen::Vector3f v[4];
-    };
     int32_t gatherGroundQuads( Instance *pInstance,
                                const Eigen::Vector4f &bbMin,
                                const Eigen::Vector4f &bbMax,
                                GroundQuad *pOut,
                                int32_t maxQuads );
     void buildGroundStrip( const GroundQuad *pQuads, int32_t numCells );
+    void buildRoadReceiverTriangles( const Eigen::Vector4f *pVerts,
+                                     int32_t numVerts,
+                                     const Eigen::Vector3f &streamOrigin );
 
     void addShadowReceiver( HiearchyNode *pNode, bool bExclude );
 

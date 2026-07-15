@@ -171,7 +171,7 @@ void VehicleBike::setModelMatrix( Matrix4x4f_t &matrix ) {
         propagateNodeTransform( 0x13, matrix, 1 );
     }
 
-    propagateNodeTransform( 1, matrix, 1 );
+    propagateShadowDummyTransform( matrix );
 
     if ( pWheelShadowNode[0] != nullptr ) {
         Instance *peVar1 = pWheelShadowNode[0]->pInstance;

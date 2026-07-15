@@ -224,7 +224,7 @@ void VehicleTraffic::setModelMatrix( Matrix4x4f_t &matrix ) {
     propagateNodeTransform( 0u, matrix, 2 );
 
     if ( displayInstances[1].pNode != nullptr ) {
-        propagateNodeTransform( 1, matrix, 1 );
+        propagateShadowDummyTransform( matrix );
     }
 
     setRVModelMatrix( matrix );

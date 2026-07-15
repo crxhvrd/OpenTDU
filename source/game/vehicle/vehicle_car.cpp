@@ -219,7 +219,7 @@ void VehicleCar::setModelMatrix( Matrix4x4f_t &matrix ) {
         propagateNodeTransform( pDoorR, identity, 0 );
     }
 
-    propagateNodeTransform( 1, matrix, 1 );
+    propagateShadowDummyTransform( matrix );
 
     setRVModelMatrix( matrix );
     setShadowPlaneMatrix( matrix );

@@ -265,8 +265,8 @@ eRenderPass VehicleController::getRenderPass() {
     CarState *pCVar5 = nullptr;
     if ( pCVar1->getType() == 3 ) {
         CameraVehicle *pVehCam = static_cast<CameraVehicle *>( pCVar1 );
-        const uint8_t periodYSlowByte0 =
-            *reinterpret_cast<const uint8_t *>( &pVehCam->getShakePeriodYSlow() );
+        const uint8_t periodYSlowByte0 = *reinterpret_cast<const uint8_t *>(
+            &pVehCam->getShakePeriodYSlow() );
         if ( periodYSlowByte0 == 0 ) {
             if ( pVehCam->getShakeMagnitudeYSlow() == 0.0f ) {
                 pCVar9 = gpCamera->findCameraByCurrentTransition();
@@ -309,7 +309,7 @@ eRenderPass VehicleController::getRenderPass() {
                 Eigen::Vector4f vehiclePos =
                     pHier->pInstance->getWorldPosition(); // Matrix row 3
                 Eigen::Vector3f delta =
-                    gpCamera->getDefaultCamera()->getWorldPosition() -
+                    gpCamera->getDefaultCamera()->getWorldPositionOffset() -
                     vehiclePos.head( 3 );
                 fVar13 = delta.norm();
             }

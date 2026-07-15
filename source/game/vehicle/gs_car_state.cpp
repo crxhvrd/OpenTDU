@@ -130,8 +130,21 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         }
 
         CarBodyState &body = carState.body;
-        const Matrix4x4f_t worldMatrix =
-            pPhysicsVehicle->getChassisWorldMatrix();
+        Matrix4x4f_t worldMatrix = pPhysicsVehicle->getChassisWorldMatrix();
+        float liftSum = 0.0f;
+        const uint32_t liftNumWheels =
+            Min( pPhysicsVehicle->getNumWheels(), CarState::kMaxNumWheels );
+        const float liftBodyHalfH = carState.body.BodyDimensions.y() * 0.5f;
+        for ( uint32_t w = 0; w < liftNumWheels; w++ ) {
+            const float pWheelOffset =
+                carState.wheels[w].Position + liftBodyHalfH;
+            liftSum +=
+                -pPhysicsVehicle->getWheelRestCenterDrop( w ) - pWheelOffset;
+        }
+        const float lift = liftNumWheels > 0 ? liftSum / liftNumWheels : 0.0f;
+        worldMatrix( 3, 0 ) += lift * worldMatrix( 1, 0 );
+        worldMatrix( 3, 1 ) += lift * worldMatrix( 1, 1 );
+        worldMatrix( 3, 2 ) += lift * worldMatrix( 1, 2 );
         body.WorldMatrix = worldMatrix;
         Matrix4x4f_t offseted = worldMatrix;
         offseted( 3, 0 ) -= streamShift.x();
@@ -164,6 +177,10 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             wheel.RelativeWorldPosition =
                 Eigen::Vector4f( ro.LocalPosition.x(), ro.LocalPosition.y(),
                                  ro.LocalPosition.z(), 1.0f );
+            wheel.ProjectedPositionOnGround =
+                Eigen::Vector4f( ro.ContactPoint.x() - streamShift.x(),
+                                 ro.ContactPoint.y() - streamShift.y(),
+                                 ro.ContactPoint.z() - streamShift.z(), 1.0f );
 
             // FUN_0083bbd0
             switch ( ro.ContactSurface ) {

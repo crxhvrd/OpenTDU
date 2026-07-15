@@ -161,12 +161,11 @@ void GameModeWorld::reset() {
     if ( gpCamera != nullptr && gpScenaric != nullptr ) {
         CarState *pCar = gpScenaric->getLocalPlayer().getCarState();
         if ( pCar != nullptr ) {
-            gpCamera->restoreDefaultVehicleCamera( pCar );
+            gpCamera->restoreCamera();
         }
     }
 
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC (driver avatar, HUD bind)
-    OTDU_UNIMPLEMENTED; // TODO: CAMERA (full RestoreCamera)
 }
 
 constexpr int32_t kDefaultPlayerCarID = 1030;
@@ -221,6 +220,8 @@ void GameModeWorld::installLocalPlayerCar(
     state.pVehicleBase = pController;
     state.pResource = pRes;
     pRes->RefCount++;
+
+    gpCarState->registerCallback( &state, pController, nullptr );
 
     if ( gpMngEnvMap != nullptr ) {
         GSCarDisplay::SetRealTimeEnvMappedCar( pController );

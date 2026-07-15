@@ -32,6 +32,7 @@ struct WheelState {
     Eigen::Vector4f GroundColor;
     Eigen::Vector4f RelativeWorldPosition;
     Eigen::Vector4f WorldPosition;
+    Eigen::Vector4f ProjectedPositionOnGround;
     Matrix4x4f_t WorldMatrixRotor;
     Matrix4x4f_t WorldMatrixFork;
     uint8_t bInitialized : 1;

@@ -427,6 +427,7 @@ protected:
     void propagateNodeTransform( HiearchyNode *pNode,
                                  Matrix4x4f_t &matrix,
                                  const int32_t mode = 0 );
+    void propagateShadowDummyTransform( Matrix4x4f_t &bodyMatrix );
 
     void removeShaderSetup( HiearchyNode *param_2 );
     void retrieveBoundingRadius( float *pOutSphereRadius,

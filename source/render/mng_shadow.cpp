@@ -13,6 +13,9 @@
 #include "world/streaming_manager.h"
 #include "world/sector_manager.h"
 #include "world/spot_stream.h"
+#include "world/gs_world_streaming.h"
+
+#include "physics/gs_physics.h"
 
 #include "render_target.h"
 #include "instance.h"
@@ -1497,6 +1500,62 @@ void MngShadow::buildGroundStrip( const GroundQuad *pQuads, int32_t numCells ) {
     }
 }
 
+void MngShadow::buildRoadReceiverTriangles(
+    const Eigen::Vector4f *pVerts,
+    int32_t numVerts,
+    const Eigen::Vector3f &streamOrigin ) {
+    // FUN_006f5690
+    const int32_t numTris = numVerts / 3;
+    if ( numTris <= 0 ) {
+        return;
+    }
+
+    const int32_t primVerts = numTris * 3;
+
+    pDrawList->setActiveMaterial( pMaterialReceiverRoad );
+    pDrawList->setIdentityTransform();
+    if ( !pDrawList->beginPrimitive( PT_Triangle, primVerts ) ) {
+        return;
+    }
+
+    ActivePrimitive &primitive = pDrawList->getActivePrimitive();
+    primitive.pPrimitive->NumVertex = primVerts;
+    primitive.pPrimitive->NumIndex = primVerts;
+    pDrawList->commitPrimitive();
+
+    Eigen::Vector3f *pPos = primitive.pVertexPosition;
+    uint16_t *pIdx = primitive.pVertexIndices16;
+
+    constexpr float kBackFaceThreshold = 0.34f; // DAT_00f41eb4
+    const Eigen::Vector3f sunDir3 = sunDirection.head<3>();
+
+    for ( int32_t t = 0; t < numTris; t++ ) {
+        const int32_t base = t * 3;
+        const Eigen::Vector3f v0 = pVerts[base + 0].head<3>() - streamOrigin;
+        const Eigen::Vector3f v1 = pVerts[base + 1].head<3>() - streamOrigin;
+        const Eigen::Vector3f v2 = pVerts[base + 2].head<3>() - streamOrigin;
+
+        const Eigen::Vector3f e01 = ( v1 - v0 ).normalized();
+        const Eigen::Vector3f e02 = ( v2 - v0 ).normalized();
+        const Eigen::Vector3f normal = e01.cross( e02 ).normalized();
+
+        if ( sunDir3.dot( normal ) > kBackFaceThreshold ) {
+            pPos[base + 0].setZero();
+            pPos[base + 1].setZero();
+            pPos[base + 2].setZero();
+        } else {
+            const Eigen::Vector3f offset = normal * heightmapOffset;
+            pPos[base + 0] = v0 + offset;
+            pPos[base + 1] = v1 + offset;
+            pPos[base + 2] = v2 + offset;
+        }
+
+        pIdx[base + 0] = (uint16_t)( base + 0 );
+        pIdx[base + 1] = (uint16_t)( base + 1 );
+        pIdx[base + 2] = (uint16_t)( base + 2 );
+    }
+}
+
 void MngShadow::collectVisibleHeightmapVertices() {
     // FUN_006f5690
     pDrawList->reset();
@@ -1529,7 +1588,21 @@ void MngShadow::collectVisibleHeightmapVertices() {
 
     buildGroundStrip( quads, numCells );
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    if ( gpPhysics != nullptr ) {
+        const Eigen::Vector4f streamOrigin =
+            ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() )
+                ? gpWorldStreaming->getPosition()
+                : Eigen::Vector4f::Zero();
+
+        Eigen::Vector4f roadVerts[kMaxRoadVerts];
+        const int32_t numRoadVerts = gpPhysics->gatherRoadShadowTriangles(
+            casterBBMin + streamOrigin, casterBBMax + streamOrigin, roadVerts,
+            kMaxRoadVerts );
+        if ( numRoadVerts > 2 ) {
+            buildRoadReceiverTriangles( roadVerts, numRoadVerts,
+                                        streamOrigin.head<3>() );
+        }
+    }
 }
 
 void MngShadow::collectVisibleReceivers() {

@@ -3,6 +3,7 @@
 
 #include "car_state.h"
 #include "mng_car_alpha.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "world/weather/gs_weather.h"
 #include "world/gs_world_streaming.h"
 
@@ -1433,24 +1434,21 @@ void VehicleBase::setShadowPlaneMatrix( Matrix4x4f_t &modelMatrix ) {
     }
 
     HiearchyNode *shadowNode = displayInstances[2].pNode;
-    // TODO: Condition is incomplete/incorrect until Vehicle Physics is reversed
-    // (original code checks if the vehicle has a physics instance; and if this
-    // instance is active)
-    OTDU_UNIMPLEMENTED; // TODO: Physics
-    if ( !bForceDrawShadow ) {
-        // Static path (no physics / physics paused): instance matrix * model
-        // matrix
+
+    PhysicsVehicle *pPhysVehicle = pCarState->getPhysicsVehicle();
+    const bool bStaticShadow =
+        ( pPhysVehicle == nullptr ) ||
+        ( !pPhysVehicle->isActive() && !bForceDrawShadow );
+    if ( bStaticShadow ) {
+        // Static path: instance matrix * model matrix
         propagateNodeTransform( 2u, modelMatrix, 0 );
     } else {
         // Dynamic path: position shadow plane from wheel ground data
         uint32_t numWheels = pCarState->getNumWheels();
 
-        // Collect wheel projected positions on ground.
-        // Using RelativeWorldPosition as an approximation for
-        // ProjectedPositionOnGround.
         std::array<Eigen::Vector4f, kMaxNumWheels> wheelPos;
         for ( uint32_t i = 0; i < numWheels; i++ ) {
-            wheelPos[i] = pCarState->getWheel( i ).RelativeWorldPosition;
+            wheelPos[i] = pCarState->getWheel( i ).ProjectedPositionOnGround;
             wheelPos[i].w() = 0.0f;
         }
 
@@ -2286,6 +2284,22 @@ void VehicleBase::propagateNodeTransform( HiearchyNode *peVar4,
     } else if ( mode == 2 ) {
         peVar4->propagateTransformMatricesWithFlag();
     }
+}
+
+void VehicleBase::propagateShadowDummyTransform( Matrix4x4f_t &bodyMatrix ) {
+    Matrix4x4f_t m = bodyMatrix;
+    if ( pCarState != nullptr ) {
+        const uint32_t numWheels = pCarState->getNumWheels();
+        if ( numWheels > 0 ) {
+            float groundY = 0.0f;
+            for ( uint32_t i = 0; i < numWheels; i++ ) {
+                groundY +=
+                    pCarState->getWheel( i ).ProjectedPositionOnGround.y();
+            }
+            m( 3, 1 ) = groundY / (float)numWheels;
+        }
+    }
+    propagateNodeTransform( 1, m, 1 );
 }
 
 void VehicleBase::removeShaderSetup( HiearchyNode *param_2 ) {

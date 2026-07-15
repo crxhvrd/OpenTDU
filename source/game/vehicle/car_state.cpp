@@ -370,6 +370,7 @@ void WheelState::reset() {
     WheelIndex = 0;
     WorldPosition = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
     RelativeWorldPosition = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
+    ProjectedPositionOnGround = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
 }
 
 Eigen::Vector4f WheelState::getShadowColor() const {
