@@ -5,25 +5,6 @@
 class Device;
 struct InputChannel;
 
-// TODO: Move those globals to the device service instance
-static uint32_t gDefaultSensitivity = 8;
-
-static float gFFBFactor = 0.0f;
-static float gSteeringDeadZone = 0.20f;
-static float gSteeringLinearity = 50.0f;
-static float gSteeringTurn = 270.0f;
-static float gBrakeDeadZone = 0.20f;
-static float gAccelDeadZone = 0.20f; // DAT_00f8a28c
-static float gFFBLoadFactor[3] = { 0.0f, 0.0f, 0.0f };
-static float gFFBLoadFromAccel[3] = { 0.0f, 0.0f, 0.0f };
-static float gFFBSlipAngle[3][2] = {
-    // DAT_010d6ec0
-    {0.0f, 0.0f},
-    {0.0f, 0.0f},
-    {0.0f, 0.0f}
-};
-static bool gPedalsSeparated = false;
-
 struct MouseState {
     Device *pInstance = nullptr;
     InputChannel *pChannelLeft = nullptr;
@@ -73,3 +54,15 @@ private:
 
 extern GSDevice gDevice;
 extern GSDevice *gpDevice;
+
+extern uint32_t gDefaultSensitivity;
+extern float gFFBFactor;
+extern float gSteeringDeadZone;
+extern float gSteeringLinearity;
+extern float gSteeringTurn;
+extern float gBrakeDeadZone;
+extern float gAccelDeadZone;
+extern float gFFBLoadFactor[3];
+extern float gFFBLoadFromAccel[3];
+extern float gFFBSlipAngle[3][2];
+extern bool gPedalsSeparated;

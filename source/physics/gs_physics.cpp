@@ -856,7 +856,6 @@ void GSPhysics::draw( float deltaTime ) {
         drawCollisionShapes();
 #endif
     }
-
     // Both debug flags must be set for any rendering to occur.
     // bHavokDebugEnabled is set by AI trainer (GMAITrainer::tick);
     // bDrawDebugInfos is a secondary opt-in. Both start false so this function
@@ -1114,6 +1113,7 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     settings.mMassPropertiesOverride.mMass =
         db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f;
     settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
+    settings.mLinearDamping = 0.0f;
 
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
     lockMutex();
@@ -1154,8 +1154,25 @@ void GSPhysics::drawDebug( float ) {
         ImGui::SameLine();
         ImGui::Checkbox( "+terrain", &gDrawCollisionVisTerrain );
     }
+
     extern bool gVehicleDrivingAids;
+    extern bool gVehicleABS;
+    extern bool gVehicleSteeringFilter;
+    extern bool gVehicleAntiRoll;
+    extern bool gVehicleFaithfulClutch;
+    extern bool gVehicleDiff;
+    extern bool gVehicleEngineStateMachine;
+
+    ImGui::SeparatorText( "Vehicle" );
     ImGui::Checkbox( "ESP", &gVehicleDrivingAids );
+    ImGui::SameLine();
+    ImGui::Checkbox( "ABS", &gVehicleABS );
+
+    ImGui::Checkbox( "Enable steering filter", &gVehicleSteeringFilter );
+
+    ImGui::Checkbox( "Enable anti-roll bars sim", &gVehicleAntiRoll );
+    ImGui::Checkbox( "Enable differential sim", &gVehicleDiff );
+    ImGui::Checkbox( "Enable ingition sim", &gVehicleEngineStateMachine );
 
     ImGui::Separator();
 
@@ -1394,6 +1411,73 @@ float GSPhysics::getGroundHeight( float x, float z ) {
         return -3.0e38f;
     }
     return kTop - kLength * hit.mFraction;
+}
+
+int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
+                                              const Eigen::Vector4f &bbMax,
+                                              Eigen::Vector4f *pOutVerts,
+                                              int32_t maxVerts ) {
+    // FUN_00845c20
+    if ( pPhysicsSystem == nullptr || pOutVerts == nullptr || maxVerts <= 0 ) {
+        return 0;
+    }
+
+    const JPH::Vec3 p0( bbMin.x(), bbMin.y(), bbMin.z() );
+    const JPH::Vec3 p1( bbMax.x(), bbMax.y(), bbMax.z() );
+    const JPH::AABox queryBox( JPH::Vec3::sMin( p0, p1 ),
+                               JPH::Vec3::sMax( p0, p1 ) );
+
+    struct RoadBody {
+        JPH::RefConst<JPH::Shape> shape;
+        JPH::Mat44 com;
+    };
+    std::vector<RoadBody> roadBodies;
+
+    lockMutex();
+    JPH::BodyIDVector bodyIDs;
+    pPhysicsSystem->GetBodies( bodyIDs );
+    const JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterfaceNoLock();
+    roadBodies.reserve( bodyIDs.size() );
+    for ( const JPH::BodyID id : bodyIDs ) {
+        const uint64_t surf = bi.GetUserData( id );
+        if ( surf != TDUSurface::Road && surf != TDUSurface::Object ) {
+            continue;
+        }
+        JPH::RefConst<JPH::Shape> shape = bi.GetShape( id );
+        if ( shape.GetPtr() == nullptr ||
+             shape->GetSubType() != JPH::EShapeSubType::Mesh ) {
+            continue;
+        }
+        roadBodies.push_back( { shape, bi.GetCenterOfMassTransform( id ) } );
+    }
+    unlockMutex();
+
+    int32_t numVerts = 0;
+    constexpr int32_t kTriBatch = 64;
+    JPH::Float3 tri[3 * kTriBatch];
+    for ( const RoadBody &rb : roadBodies ) {
+        JPH::Shape::GetTrianglesContext ctx;
+        rb.shape->GetTrianglesStart( ctx, queryBox, rb.com.GetTranslation(),
+                                     rb.com.GetQuaternion(),
+                                     JPH::Vec3::sReplicate( 1.0f ) );
+        for ( ;; ) {
+            const int32_t n = rb.shape->GetTrianglesNext( ctx, kTriBatch, tri );
+            if ( n == 0 ) {
+                break;
+            }
+            for ( int32_t t = 0; t < n; t++ ) {
+                for ( int32_t v = 0; v < 3; v++ ) {
+                    if ( numVerts >= maxVerts ) {
+                        return numVerts;
+                    }
+                    const JPH::Float3 &f = tri[3 * t + v];
+                    pOutVerts[numVerts++] =
+                        Eigen::Vector4f( f.x, f.y, f.z, 1.0f );
+                }
+            }
+        }
+    }
+    return numVerts;
 }
 
 void GSPhysics::createHeightfields() {
@@ -1795,7 +1879,7 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
     lockMutex();
     JPH::BodyCreationSettings settings(
         meshResult.Get(), JPH::RVec3( originRef ), JPH::Quat::sIdentity(),
-        JPH::EMotionType::Static, TDUPhysLayers::NON_MOVING );
+        JPH::EMotionType::Static, TDUPhysLayers::ROAD );
     settings.mUserData = TDUSurface::Road;
     settings.mFriction = TDUSurface::friction( TDUSurface::Road );
     JPH::Body *pBody = bodyInterface.CreateBody( settings );

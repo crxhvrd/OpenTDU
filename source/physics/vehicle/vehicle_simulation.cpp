@@ -18,6 +18,124 @@ static constexpr float kClutchLockBand = 8.0f;  // rad/s
 static constexpr float kLaunchSlipBand = 50.0f; // rad/s
 static constexpr float kSlipTransmitFrac = 0.8f;
 static constexpr float kLaunchRpmFrac = 0.6f;
+static constexpr float kShiftRedlineFrac = 0.97f; // force upshift near limiter
+static constexpr float kShiftDownRpmFrac =
+    0.45f; // downshift below this*redline
+static constexpr float kShiftDecisionThrottle = 0.25f; // min throttle for eval
+static constexpr float kShiftDuration = 0.30f;         // shift window, secs
+static constexpr float kShiftLockout = 0.15f; // post-shift re-shift block, secs
+static constexpr float kShiftDeclutch = 0.90f;    // engagement dip at mid-shift
+static constexpr float kShiftThrottleCut = 0.80f; // throttle dip at mid-shift
+
+bool gVehicleDiff = true;
+static constexpr float kDiffTractionGate = 0.5f; // FLOAT_00f4167c: min |react|
+static constexpr float kClutchThrottleArm = 0.05f; // DAT_00f41778
+static constexpr float kClutchThrottleDrop = 0.1f; // FLOAT_00f41668
+static constexpr float kThousandRpmRad = 104.72f;  // FLOAT_00f41894 (1000rpm)
+static constexpr float kClutchDecel = -26.19f;     // clutch decel threshold
+
+bool gVehicleEngineStateMachine = true;
+static constexpr float kIgnitionBlipThrottle = 0.35f; // start-blip throttle
+static constexpr float kIdleGovGain =
+    3.0f; // idle-governor throttle / omega deficit
+static constexpr float kEngineStallFrac =
+    0.2f; // stall below this*idle (DAT_00f416dc)
+
+static void StepClutch( PhysicsClutchSim &c,
+                        const PhysicsEngineSim &e,
+                        int gear,
+                        float throttle,
+                        float dt ) {
+    // FUN_00440540
+    const bool neutral = ( gear == 1 );
+    const float idle = e.OmegaIdle;
+    const float omega = e.Omega;
+
+    // launchRPM = clamp(lerp(idleMult*idle, redlineMult*redline, (thr-0.5)*2)).
+    const float a = c.LaunchIdleMult * idle;
+    const float b = c.LaunchRedlineMult * e.OmegaMax;
+    float launchRPM = ( b - a ) * ( throttle - 0.5f ) * 2.0f + a;
+    launchRPM = Clamp( launchRPM, std::min( a, b ), std::max( a, b ) );
+
+    if ( neutral ) {
+        c.State = 0;
+        c.Target = 0.0f;
+    } else {
+        switch ( c.State ) {
+        case 0: // disengaged
+            c.Target = 0.0f;
+            if ( throttle > kClutchThrottleArm ) {
+                c.State = 1;
+                c.Timer = 0.0f;
+            }
+            break;
+        case 1: // armed: wait until the engine revs past launchRPM
+            if ( launchRPM < omega ) {
+                c.State = 2;
+            }
+            break;
+        case 2: { // launch/modulate
+            c.Timer += dt;
+            if ( throttle <= kClutchThrottleDrop ) {
+                c.State = 0;
+            }
+            const float engRate =
+                Clamp( ( c.EngageThrottleLo - c.EngageThrottleHi ) * throttle +
+                           c.EngageThrottleHi,
+                       std::min( c.EngageThrottleHi, c.EngageThrottleLo ),
+                       std::max( c.EngageThrottleHi, c.EngageThrottleLo ) );
+            const float dOmega = e.AngAccel;
+            const float decelRef = ( e.PeakTorqueOmega - idle ) * 0.2f;
+            const float launchFloor =
+                std::max( launchRPM - kThousandRpmRad, idle );
+
+            const bool condA =
+                ( launchFloor < omega && kClutchDecel <= dOmega ) ||
+                ( launchRPM < omega );
+            if ( condA ) {
+                if ( dOmega <= decelRef && omega <= e.OmegaMax ) {
+                    c.Target -= dt; // slowing -> ease off
+                } else {
+                    c.Target += engRate * dt; // engage
+                }
+            } else {
+                if ( omega <= idle * 2.0f ) {
+                    c.Target -= dt; // very low -> ease off
+                }
+                if ( dOmega <= decelRef ) {
+                    c.Target -= dt; // decelerating -> ease off
+                } else {
+                    c.Target += engRate * dt; // engage
+                }
+            }
+            c.Target = Clamp( c.Target, 0.0f, 1.0f );
+            if ( c.Target >= c.LockThreshold || gear > 2 ) {
+                c.Target = 1.0f;
+                c.State = 3;
+            }
+            break;
+        }
+        case 3: // locked
+            if ( omega <= idle && ( gear == 2 || gear == 0 ) ) {
+                c.State = 0; // stalling in 1st/reverse -> disengage
+            }
+            break;
+        default:
+            c.State = 0;
+            break;
+        }
+    }
+
+    const float d = c.Target - c.Engagement;
+    if ( c.EngageRate * dt < d ) {
+        c.Engagement += c.EngageRate * dt;
+    } else if ( -c.DisengageRate * dt <= d ) {
+        c.Engagement = c.Target;
+    } else {
+        c.Engagement -= c.DisengageRate * dt;
+    }
+    c.Engagement = Clamp( c.Engagement, 0.0f, 1.0f );
+}
 
 static float
 PacejkaLongitudinal( const PhysicsTire &tire, float L, float kappa ) {
@@ -310,7 +428,7 @@ void BuildEngineCurves( PhysicsEngineSim &e,
     }
     const float normScale =
         ( peakPowerPS > 1e-6f ) ? ( bhp * packBoost ) / peakPowerPS : 1.0f;
-
+    e.PeakTorqueOmega = omegaPeakTorque;
     e.CurveCount = n;
     for ( int i = 0; i < n; ++i ) {
         e.CurveMax[i].Omega = pairs[2 * i];
@@ -333,6 +451,80 @@ void BuildEngineCurves( PhysicsEngineSim &e,
     }
 }
 
+static void SplitDiffOpen( float tIn,
+                           float bias,
+                           float reactA,
+                           float reactB,
+                           float &outA,
+                           float &outB ) {
+    // FUN_004402a0
+    const float half = bias * tIn;
+    if ( gVehicleDiff && tIn > 0.0f &&
+         ( std::fabs( reactA ) >= kDiffTractionGate ||
+           std::fabs( reactB ) >= kDiffTractionGate ) ) {
+        const float gripA = std::max( 0.0f, -reactA );
+        const float gripB = std::max( 0.0f, -reactB );
+        const float total = gripA + gripB;
+        if ( gripA <= gripB ) { // wheel A lighter -> surplus goes to A
+            const float bOut = std::min( half, total );
+            outB = bOut;
+            outA = half + std::max( 0.0f, half - bOut );
+        } else { // wheel B lighter -> surplus goes to B
+            const float aOut = std::min( half, total );
+            outA = aOut;
+            outB = half + std::max( 0.0f, half - aOut );
+        }
+        return;
+    }
+    outA = half;
+    outB = ( 1.0f - bias ) * tIn;
+}
+
+static bool StepEngineState( PhysicsEngineSim &e, float dt ) {
+    // FUN_0043f660
+    if ( !gVehicleEngineStateMachine ) {
+        e.State = eEngineState::ES_Running; // always-on (pre-SM behaviour)
+        return true;
+    }
+    switch ( e.State ) {
+    case eEngineState::ES_Off:
+        e.Omega = 0.0f;
+        e.IgnTimer = 0.0f;
+        if ( e.IgnitionOn ) {
+            e.State = eEngineState::ES_Crank;
+        }
+        return false; // no torque
+    case eEngineState::ES_Crank:
+        if ( !e.IgnitionOn ) {
+            e.State = eEngineState::ES_Off;
+            return false;
+        }
+        e.IgnTimer += dt;
+        if ( e.IgnTimer >= e.CrankDuration ) { // crank done -> fire
+            e.State = eEngineState::ES_RevUp;
+            e.Omega = e.OmegaIdle; // snap to idle
+            e.IgnTimer = 0.0f;
+        }
+        return false; // cranking: starter only, no engine torque
+    case eEngineState::ES_RevUp:
+        e.IgnTimer += dt;
+        if ( e.Omega < 0.1f ) {
+            e.Omega = 0.1f; // floor (FLOAT_00f41668)
+        }
+        if ( e.IgnTimer >= e.RevUpDuration ) {
+            e.State = eEngineState::ES_Running;
+        }
+        return true; // firing (start blip)
+    case eEngineState::ES_Running:
+        if ( e.Omega < e.OmegaIdle * kEngineStallFrac ) {
+            e.State = eEngineState::ES_Off; // lugged -> stall (auto re-cranks)
+            return false;
+        }
+        return true;
+    }
+    return true;
+}
+
 void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
     // FUN_0043aba0
     PhysicsEngineSim &e = v.Engine;
@@ -342,6 +534,32 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
     if ( dt <= 0.0f ) {
         return;
     }
+    const float omega0 = e.Omega;
+
+    float shiftEngageMult = 1.0f;
+    float shiftThrottleMult = 1.0f;
+    if ( g.ShiftState == 2 ) { // mid-shift
+        const float prevTimer = g.ShiftTimer;
+        g.ShiftTimer -= dt;
+        const float p =
+            1.0f - Clamp( g.ShiftTimer / kShiftDuration, 0.0f, 1.0f );
+        const float blend = std::sin( 3.14159265f * p ); // 0 -> 1 -> 0 notch
+        shiftEngageMult = 1.0f - blend * kShiftDeclutch;
+        shiftThrottleMult = 1.0f - blend * kShiftThrottleCut;
+        const float half = kShiftDuration * 0.5f;
+        if ( prevTimer > half && g.ShiftTimer <= half ) {
+            const int tgt = g.CurrentGear + g.ShiftSubstate;
+            if ( tgt >= 2 && tgt < g.NumGears ) {
+                g.CurrentGear = tgt;
+            }
+        }
+        if ( g.ShiftTimer <= 0.0f ) {
+            g.ShiftState = 1;
+            g.ShiftTimer = kShiftLockout; // brief re-shift lockout
+        }
+    } else if ( g.ShiftTimer > 0.0f ) {
+        g.ShiftTimer -= dt; // post-shift lockout countdown
+    }
 
     const int gear = ( g.CurrentGear >= 0 && g.CurrentGear < g.NumGears )
                          ? g.CurrentGear
@@ -350,17 +568,35 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
     const float k = g.Ratios[gear] * g.FinalDrive; // ratio * finalDrive
     const float h = dt; // one substep per OnStep call
 
-    e.TorqueOut = EngineTorqueAt( e, e.Omega, throttle );
+    // Engine ignition/idle/stall state machine (sets e.State; zeroes Omega
+    // while off/cranking). engineFiring = producing torque (RevUp/Running).
+    const bool engineFiring = StepEngineState( e, dt );
 
-    const bool disengaged =
-        neutral || ( v.ReflectedWheelSpeed < e.OmegaIdle && throttle < 0.05f );
-    const float targetEngage = disengaged ? 0.0f : 1.0f;
-    c.Engagement += Clamp( targetEngage - c.Engagement, -c.EngageRate * dt,
-                           c.EngageRate * dt );
-    c.Engagement = Clamp( c.Engagement, 0.0f, 1.0f );
-    const float engage = neutral ? 0.0f : c.Engagement;
+    // Throttle to the engine: eased during a shift; a start blip during RevUp;
+    // an idle governor at zero throttle in Running (holds idle without a hard
+    // clamp, so a severe lug can stall).
+    float engThrottle = throttle * shiftThrottleMult;
+    if ( gVehicleEngineStateMachine ) {
+        if ( e.State == eEngineState::ES_RevUp ) {
+            engThrottle = std::max( engThrottle, kIgnitionBlipThrottle );
+        } else if ( e.State == eEngineState::ES_Running &&
+                    e.Omega < e.OmegaIdle ) {
+            const float gov =
+                Clamp( ( e.OmegaIdle - e.Omega ) / e.OmegaIdle * kIdleGovGain,
+                       0.0f, 1.0f );
+            engThrottle = std::max( engThrottle, gov );
+        }
+    }
+    e.TorqueOut =
+        engineFiring ? EngineTorqueAt( e, e.Omega, engThrottle ) : 0.0f;
 
-    // Driveline inertia (FUN_0043aba0): base + (2*wheelBaseI + diffBaseI)/|k|.
+    StepClutch( c, e, gear, throttle, dt );
+    float engage = neutral ? 0.0f : c.Engagement;
+    engage *= shiftEngageMult;
+    if ( !engineFiring ) {
+        engage = 0.0f;
+    }
+
     const float wheelBaseI = v.Wheels[0].Inertia;
     const float Idl =
         kGearboxInertia + ( neutral ? 0.0f
@@ -368,19 +604,9 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
                                           std::max( std::fabs( k ), 0.01f ) );
     v.DrivelineInertia = Idl;
 
-    if ( neutral ) {
-        c.bLocked = false;
-    } else {
-        const float slip = e.Omega - v.ReflectedWheelSpeed;
-        if ( slip < kClutchLockBand ) {
-            c.bLocked = true;
-        } else if ( slip > kLaunchSlipBand ) {
-            c.bLocked = false;
-        }
-    }
-    const bool slipping = !neutral && !c.bLocked;
+    bool slipping = !neutral && ( c.State != 3 );
 
-    float coupling = 0.0f; // local_2c
+    float coupling = 0.0f;
     if ( !neutral ) {
         const float invIe =
             1.0f / std::max( e.Inertia * v.CouplingCoefE, 1e-4f );
@@ -390,32 +616,35 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
         const float Ww = v.ReflectedWheelSpeed;
         const float Tw = v.ReactionTorque;
         const float denom = ( invIe + invIw ) * h;
-        if ( slipping ) {
-            coupling = kSlipTransmitFrac * e.TorqueOut;
-        } else if ( std::fabs( denom ) > 1e-8f ) {
-            coupling =
+        float impulseCoupling = 0.0f;
+        if ( std::fabs( denom ) > 1e-8f ) {
+            impulseCoupling =
                 ( Te > 0.0f )
                     ? ( ( ( We + invIe * Te * h ) - ( Ww + invIw * Tw * h ) ) /
                         denom )
                     : ( ( ( We - invIe * Te * h ) - ( Ww - invIw * Tw * h ) ) /
                         denom );
         }
-        if ( throttle > 0.1f ) {
-            coupling = Clamp( coupling, 0.0f, 1.5f * std::fabs( e.TorqueOut ) );
-        }
+
+        coupling = impulseCoupling;
         coupling = Clamp( coupling, -kMaxCoupling, kMaxCoupling );
     }
 
-    e.Omega += h *
-               ( e.TorqueOut - coupling * engage - e.FrictionLoss * e.Omega ) /
-               std::max( e.Inertia, 1e-4f );
-    if ( e.Omega < e.OmegaIdle )
-        e.Omega = e.OmegaIdle;
-    if ( e.Omega > e.OmegaMax )
-        e.Omega = e.OmegaMax;
-
-    if ( slipping && e.Omega > kLaunchRpmFrac * e.OmegaMax ) {
-        e.Omega = kLaunchRpmFrac * e.OmegaMax;
+    if ( engineFiring ) {
+        const float omegaRaw =
+            e.Omega +
+            h * ( e.TorqueOut - coupling * engage - e.FrictionLoss * e.Omega ) /
+                std::max( e.Inertia, 1e-4f );
+        e.AngAccel = ( omegaRaw - omega0 ) / dt;
+        e.Omega = omegaRaw;
+        if ( !gVehicleEngineStateMachine && e.Omega < e.OmegaIdle ) {
+            e.Omega = e.OmegaIdle;
+        }
+        if ( e.Omega > e.OmegaMax ) {
+            e.Omega = e.OmegaMax; // rev limiter
+        }
+    } else {
+        e.AngAccel = 0.0f;
     }
 
     // Drive torque = ratio*transEff*finalDrive*engage*coupling -> diff split.
@@ -432,40 +661,68 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
     if ( !neutral ) {
         if ( v.bCenterDrive ) {
             const float cs = v.DiffCenter.SplitRatio;
-            const float frontT = gearboxOut * cs;
-            const float rearT = gearboxOut * ( 1.0f - cs );
-            v.Wheels[0].DriveTorque =
-                v.DiffFront.Gain * v.DiffFront.SplitRatio * frontT;
-            v.Wheels[1].DriveTorque =
-                v.DiffFront.Gain * ( 1.0f - v.DiffFront.SplitRatio ) * frontT;
-            v.Wheels[2].DriveTorque =
-                v.DiffRear.Gain * v.DiffRear.SplitRatio * rearT;
-            v.Wheels[3].DriveTorque =
-                v.DiffRear.Gain * ( 1.0f - v.DiffRear.SplitRatio ) * rearT;
+            SplitDiffOpen( v.DiffFront.Gain * gearboxOut * cs,
+                           v.DiffFront.SplitRatio, v.Wheels[0].NetTorque,
+                           v.Wheels[1].NetTorque, v.Wheels[0].DriveTorque,
+                           v.Wheels[1].DriveTorque );
+            SplitDiffOpen( v.DiffRear.Gain * gearboxOut * ( 1.0f - cs ),
+                           v.DiffRear.SplitRatio, v.Wheels[2].NetTorque,
+                           v.Wheels[3].NetTorque, v.Wheels[2].DriveTorque,
+                           v.Wheels[3].DriveTorque );
         } else if ( v.bFrontDrive ) {
-            v.Wheels[0].DriveTorque =
-                v.DiffFront.Gain * v.DiffFront.SplitRatio * gearboxOut;
-            v.Wheels[1].DriveTorque = v.DiffFront.Gain *
-                                      ( 1.0f - v.DiffFront.SplitRatio ) *
-                                      gearboxOut;
+            SplitDiffOpen( v.DiffFront.Gain * gearboxOut,
+                           v.DiffFront.SplitRatio, v.Wheels[0].NetTorque,
+                           v.Wheels[1].NetTorque, v.Wheels[0].DriveTorque,
+                           v.Wheels[1].DriveTorque );
         } else if ( v.bRearDrive ) {
-            v.Wheels[2].DriveTorque =
-                v.DiffRear.Gain * v.DiffRear.SplitRatio * gearboxOut;
-            v.Wheels[3].DriveTorque =
-                v.DiffRear.Gain * ( 1.0f - v.DiffRear.SplitRatio ) * gearboxOut;
+            SplitDiffOpen( v.DiffRear.Gain * gearboxOut, v.DiffRear.SplitRatio,
+                           v.Wheels[2].NetTorque, v.Wheels[3].NetTorque,
+                           v.Wheels[2].DriveTorque, v.Wheels[3].DriveTorque );
         }
     }
 
-    if ( g.bAutomatic ) {
-        if ( g.ShiftTimer > 0.0f ) {
-            g.ShiftTimer -= dt;
-        } else if ( e.Omega > e.OmegaMax * 0.92f && throttle > 0.1f &&
-                    gear < g.NumGears - 1 ) {
-            g.CurrentGear = gear + 1;
-            g.ShiftTimer = g.UpshiftDelay;
-        } else if ( e.Omega < e.OmegaMax * 0.45f && gear > 2 ) {
-            g.CurrentGear = gear - 1;
-            g.ShiftTimer = g.DownshiftDelay;
+    if ( g.bAutomatic && g.ShiftState == 1 && g.ShiftTimer <= 0.0f ) {
+        if ( c.State == 3 && std::fabs( g.Ratios[gear] ) > 0.01f ) {
+            const float ratioCur = g.Ratios[gear];
+            const float dThr = std::max( throttle, kShiftDecisionThrottle );
+            const float Fcur =
+                EngineTorqueAt( e, e.Omega, dThr ) * std::fabs( ratioCur );
+
+            bool shifted = false;
+            // Upshift: the next-taller gear pulls at least as hard (crossover),
+            // or the engine is at the limiter.
+            if ( gear < g.NumGears - 1 && throttle > 0.1f ) {
+                const float ratioUp = g.Ratios[gear + 1];
+                const float omegaUp = e.Omega * ( ratioUp / ratioCur );
+                const float Fup =
+                    EngineTorqueAt( e, omegaUp, dThr ) * std::fabs( ratioUp );
+                const bool redlineGuard =
+                    e.Omega >= e.OmegaMax * kShiftRedlineFrac;
+                if ( ( Fup >= Fcur || redlineGuard ) &&
+                     omegaUp > e.OmegaIdle ) {
+                    g.ShiftState = 2;    // begin the shift window
+                    g.ShiftSubstate = 1; // upshift
+                    g.ShiftTimer = kShiftDuration;
+                    shifted = true;
+                }
+            }
+            // Downshift: a lower gear pulls clearly better (UpshiftThreshold
+            // margin = hysteresis so it can't immediately re-upshift), or the
+            // engine is lugging below the low-RPM floor.
+            if ( !shifted && gear > 2 ) {
+                const float ratioDn = g.Ratios[gear - 1];
+                const float omegaDn = e.Omega * ( ratioDn / ratioCur );
+                const float Fdn =
+                    EngineTorqueAt( e, omegaDn, dThr ) * std::fabs( ratioDn );
+                const bool lowRpm = e.Omega < e.OmegaMax * kShiftDownRpmFrac;
+                if ( ( Fdn > Fcur * g.UpshiftThreshold &&
+                       omegaDn < e.OmegaMax * kShiftRedlineFrac ) ||
+                     lowRpm ) {
+                    g.ShiftState = 2;     // begin the shift window
+                    g.ShiftSubstate = -1; // downshift
+                    g.ShiftTimer = kShiftDuration;
+                }
+            }
         }
     }
 }

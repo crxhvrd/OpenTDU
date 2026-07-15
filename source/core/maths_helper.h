@@ -411,3 +411,12 @@ inline float RowDot( const Matrix4x4f_t &m, int r, const Eigen::Vector4f &v ) {
     return m( r, 0 ) * v[0] + m( r, 1 ) * v[1] + m( r, 2 ) * v[2] +
            m( r, 3 ) * v[3];
 }
+
+inline float WrapAngle( float angle ) {
+    // Angle normalisation to [-pi, pi].
+    while ( angle < -kPI )
+        angle += kTwoPI;
+    while ( kPI < angle )
+        angle -= kTwoPI;
+    return angle;
+}

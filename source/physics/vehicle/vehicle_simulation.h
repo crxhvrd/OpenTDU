@@ -20,13 +20,13 @@ struct PhysicsTire {
 struct PhysicsWheelState {
     PhysicsTire Tire;
 
-    float Radius = 0.3f;   // wheel radius (m)
-    float Inertia = 1.0f;  // wheel rotational inertia
+    float Radius = 0.3f;           // wheel radius (m)
+    float Inertia = 1.0f;          // wheel rotational inertia
     float ReflectedInertia = 0.0f; // drivetrain inertia reflected through the
                                    // gear (driven wheel, clutch engaged)
-    int SideFlag = 1;      // side; != 1 mirrors lateral/steer sign
-    bool bDriven = false;  // driven wheel
-    bool bSteered = false; // steered / handbrake wheel
+    int SideFlag = 1;              // side; != 1 mirrors lateral/steer sign
+    bool bDriven = false;          // driven wheel
+    bool bSteered = false;         // steered / handbrake wheel
 
     bool bGroundContact = false; // has a valid ground contact this step
     Eigen::Vector4f WheelLinVel =
@@ -58,7 +58,7 @@ struct PhysicsWheelState {
     float BrakeGripLat = 1.0f;  // lateral brake-grip fallback
     float LoadScaleLong = 1.0f; // longitudinal tire-force load scale
     float LoadScaleDrag = 0.0f; // v^2 drag load scale
-    float DynamicGrip = 1.0f;   // decaying dynamic-grip accumulator
+    float DynamicGrip = 1.0f;   // dynamic-grip accumulator
     float GripMult = 1.0f;      // temperature grip multiplier
     float TireTemp = 20.0f;     // tire temperature
 
@@ -96,12 +96,11 @@ struct PhysicsWheelState {
     Eigen::Vector4f TireForcePoint = Eigen::Vector4f::Zero();
 };
 
-enum class eEngineState { ES_Stalled = 0, ES_Igniting = 1, ES_Running = 2 };
-
-enum class eIngitionStep {
-    IS_Ignite = 0,
-    IS_PressingThrottle = 1,
-    IS_WaitingForTimer = 2
+enum class eEngineState {
+    ES_Off = 0,     // stalled / key off (omega 0, no torque)
+    ES_Crank = 1,   // starter cranking (no torque, timer)
+    ES_RevUp = 2,   // fired, revving up from idle (the start blip)
+    ES_Running = 3, // normal running
 };
 
 struct PhysicsEngineSim {
@@ -112,8 +111,11 @@ struct PhysicsEngineSim {
         float Torque = 0.0f; // N.m
     };
 
-    eEngineState State;
-    eIngitionStep IgnitionState;
+    eEngineState State = eEngineState::ES_Off;
+    float IgnTimer = 0.0f;      // crank/rev-up timer, s (engine[0xb0])
+    bool IgnitionOn = true;     // key on (engine[0xcc]); drives auto-start
+    float CrankDuration = 0.5f; // starter crank time, s (IgnitionTimeIgnite)
+    float RevUpDuration = 0.4f; // start-blip time, s (IgnitionTimeRevUp)
 
     CurvePoint CurveMin[kMaxCurve]; // closed-throttle (engine brake)
     CurvePoint CurveMax[kMaxCurve]; // full-throttle (WOT)
@@ -126,6 +128,8 @@ struct PhysicsEngineSim {
     float Throttle = 0.0f;
     float Omega = 84.0f; // current engine speed (rad/s)
     float TorqueOut = 0.0f;
+    float PeakTorqueOmega = 0.0f; // omega at peak torque
+    float AngAccel = 0.0f;        // dOmega/dt (rad/s^2), 1-step lag
 };
 
 struct PhysicsGearboxSim {
@@ -149,12 +153,18 @@ struct PhysicsGearboxSim {
 };
 
 struct PhysicsClutchSim {
-    float Engagement = 0.0f;
-    float LaunchIdleMult = 1.15f;
-    float LaunchRedlineMult = 0.75f;
-    float LockThreshold = 0.9f;
-    float EngageRate = 3.0f;
-    bool bLocked = false; // latched: slip (launch) vs locked (impulse solve)
+    float Engagement = 0.0f;         // actual engagement, driveline multiplier
+    float Target = 0.0f;             // target engagement
+    int State = 0;                   // 0=disengaged 1=armed 2=launch 3=locked
+    float Timer = 0.0f;              // state-2 timer
+    float LaunchIdleMult = 1.15f;    // DAT_00f416a8
+    float LaunchRedlineMult = 0.75f; // DAT_00f416a4
+    float LockThreshold = 0.9f;      // DAT_00f416a0
+    float EngageThrottleHi = 10.0f;  // engage-rate at 0 throttle
+    float EngageThrottleLo = 1.0f;   // engage-rate at full throttle
+    float EngageRate = 3.0f;         // actual-engagement slew up (runtime-set)
+    float DisengageRate = 3.0f;      // actual-engagement slew down
+    bool bLocked = false;            // (stand-in path) slip vs locked
 };
 
 struct PhysicsDifferentialSim {

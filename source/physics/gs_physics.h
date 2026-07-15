@@ -197,6 +197,10 @@ public:
                                    float radius,
                                    std::vector<CameraCollisionHit> &hits );
     float getGroundHeight( float x, float z );
+    int32_t gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
+                                       const Eigen::Vector4f &bbMax,
+                                       Eigen::Vector4f *pOutVerts,
+                                       int32_t maxVerts );
 
     void setWorldOrigin( const Eigen::Vector4f *param_1 );
 

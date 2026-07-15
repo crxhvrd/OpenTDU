@@ -30,6 +30,7 @@ public:
         float Radius; // m
         bool bGrounded;
         uint32_t ContactSurface;
+        Eigen::Vector4f ContactPoint;
     };
 
     struct SuspensionSetup {
@@ -61,6 +62,12 @@ public:
     void OnStep( const JPH::PhysicsStepListenerContext &inContext ) override;
 
     Matrix4x4f_t getChassisWorldMatrix() const;
+    float getWheelRestCenterDrop( uint32_t i ) const {
+        if ( i >= static_cast<uint32_t>( vehicle.NumWheels ) ) {
+            return 0.0f;
+        }
+        return -wheelAttach[i].y() + suspRestLength[i];
+    }
     uint32_t getNumWheels() const;
     WheelReadout getWheelReadout( uint32_t index ) const;
     float getChassisSpeed() const;
@@ -74,6 +81,10 @@ private:
                     const JPH::Body &chassis,
                     int wheelIndex,
                     float deltaTime );
+
+    float
+    filterSteering( float rawTarget, float deltaTime, float speed, float beta );
+    void applyAntiRollBars();
 
 private:
     JPH::PhysicsSystem *pPhysicsSystem;
@@ -92,7 +103,9 @@ private:
                                                            // length, m
     float suspStiffness[PhysicsVehicleState::kMaxWheels];  // N/m
     float suspDamping[PhysicsVehicleState::kMaxWheels];    // N/(m/s)
+    float arbStiffness[2]; // anti-roll bar rate per axle (front, rear), N/m
     float steerLockRad;
+    float wheelBase = 2.5f; // axle-to-axle distance, m (speed-sensitive steer)
     float prevSuspLength[PhysicsVehicleState::kMaxWheels]; // last step's length
                                                            // (damper velocity)
     uint32_t wheelSurface[PhysicsVehicleState::kMaxWheels] =
@@ -102,11 +115,18 @@ private:
     float inputThrottle;
     float inputBrake;
     float inputSteer;
-    float filteredSteer;
+    float filteredSteer; // rate-limited steering state
+    float steerCommand;  // shaped, speed-scaled steer (drives the wheel angle)
 
     float engineOmega; // rad/s, for the tacho / CarBodyState::Omega
     int32_t currentGear;
     float finalDriveRatio;
+
+    // Aerodynamics (chassis downforce/drag, applied per physics step).
+    float aeroDragCoef;      // 0.5 * rho * Cx_drag * frontalArea
+    float aeroDownforceCoef; // 0.5 * rho * Cx_lift * frontalArea
+    float aeroHalfWheelBase; // m, for the downforce pitch couple
+    float aeroFrontFraction; // fraction of downforce on the front axle
 
     // G-meter accel tracking
     float prevWorldVelocity[3];

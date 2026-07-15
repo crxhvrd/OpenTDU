@@ -18,6 +18,25 @@
 #include "debug/gs_imgui.h"
 #endif
 
+// TODO: Move those globals to the device service instance
+uint32_t gDefaultSensitivity = 8;
+
+float gFFBFactor = 0.0f;
+float gSteeringDeadZone = 0.20f;
+float gSteeringLinearity = 50.0f;
+float gSteeringTurn = 270.0f;
+float gBrakeDeadZone = 0.20f;
+float gAccelDeadZone = 0.20f; // DAT_00f8a28c
+float gFFBLoadFactor[3] = { 0.0f, 0.0f, 0.0f };
+float gFFBLoadFromAccel[3] = { 0.0f, 0.0f, 0.0f };
+float gFFBSlipAngle[3][2] = {
+    // DAT_010d6ec0
+    {0.0f, 0.0f},
+    {0.0f, 0.0f},
+    {0.0f, 0.0f}
+};
+bool gPedalsSeparated = false;
+
 GSDevice gDevice = {}; /* FUN_009ddeb0 */ // DAT_00fa3ff0
 GSDevice *gpDevice = nullptr;
 

@@ -312,6 +312,8 @@ bool GSConfig::parseIniFile( const char *pPath ) {
 
     std::string inputLine( pIniContent, iniLength );
 
+    std::string currentSection;
+
     size_t lineIt = 0ull;
     while ( lineIt != inputLine.length() ) {
         // Trim tabs and white spaces.
@@ -350,6 +352,7 @@ bool GSConfig::parseIniFile( const char *pPath ) {
                 sectionName += inputLine[lineIt];
             }
             OTDU_LOG_DEBUG( "Found Section '%s'\n", sectionName.c_str() );
+            currentSection = sectionName;
 
             // EOF marker can be a section (e.g. Weather.ini)
             if ( sectionName == "END" ) {
@@ -401,6 +404,15 @@ bool GSConfig::parseIniFile( const char *pPath ) {
             if ( variableName == "END" || lineIt > inputLine.length() ) {
                 OTDU_LOG_DEBUG( "Reached EOF\n" );
                 lineIt = inputLine.length();
+                break;
+            }
+
+            // HACK: FIXME: Skip bike section for now (until vehicle physics are
+            // correctly implemented)
+            if ( currentSection == "Bike" ) {
+                while ( inputLine[lineIt] != '\n' ) {
+                    lineIt++;
+                }
                 break;
             }
 
