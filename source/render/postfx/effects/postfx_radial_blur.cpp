@@ -58,6 +58,10 @@ bool PostFXRadialBlur::execute() {
         peStack_2c = peVar5->getOutput( uVar6 );
     }
 
+    if ( peStack_2c == nullptr || peStack_2c->getBound2DB() == nullptr ) {
+        return false;
+    }
+
     gEdRender.bindRenderTargetAndSetViewport( pRenderTargets[0], 0 );
     gPostFXRenderer.bindShaders( nullptr, pPixelShader );
 
