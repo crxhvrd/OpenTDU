@@ -3395,7 +3395,10 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
 
     VkDescriptorSet activeSet = resourceBinder.DescriptorSet;
 #ifdef OTDU_DEVBUILD
-    resourceBinder.validateSRVBindings( psoFactory.pGraphicsShaderStages[1] );
+    if ( psoFactory.pGraphicsShaderStages[1] != nullptr ) {
+        resourceBinder.validateSRVBindings(
+            psoFactory.pGraphicsShaderStages[1] );
+    }
 #endif
     // Invalidate if UBOs offsets are dirty
     bDirtyDescriptorSets |= resourceBinder.dirtyStates != 0;
@@ -3419,11 +3422,13 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
                             VK_SHADER_STAGE_FRAGMENT_BIT,
                         0, sizeof( D3D9RenderStateInfo ), &renderStates );
 
-    // Bind Samplers
-    uint32_t samplerIndexes = Max( psoFactory.pGraphicsShaderStages[0]
-                                       ->pMetadata->SamplerPushConstantsSize,
-                                   psoFactory.pGraphicsShaderStages[1]
-                                       ->pMetadata->SamplerPushConstantsSize );
+    uint32_t samplerIndexes = psoFactory.pGraphicsShaderStages[0]
+                                  ->pMetadata->SamplerPushConstantsSize;
+    if ( psoFactory.pGraphicsShaderStages[1] != nullptr ) {
+        samplerIndexes =
+            Max( samplerIndexes, psoFactory.pGraphicsShaderStages[1]
+                                     ->pMetadata->SamplerPushConstantsSize );
+    }
     if ( samplerIndexes > 0 ) {
         // Samplers start at GetPushSamplerOffset(0) = MaxSharedPushDataSize =
         // 64, NOT at sizeof(D3D9RenderStateInfo) = 52. The 12-byte gap is
