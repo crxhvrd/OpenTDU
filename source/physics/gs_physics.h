@@ -144,6 +144,11 @@ public:
     void removeSectorCollision( const void *pKey );
     void
     addSectorRoadGround( const void *pKey, void *pBlob, uint32_t blobSize );
+    void addSpotCollision( const void *pKey,
+                           void *pBlob,
+                           uint32_t blobSize,
+                           float angleY,
+                           const Eigen::Vector3f &translation );
 
     void queuePropCollisionFactory( const void *pBlob, uint32_t blobSize );
     void queueSceneryCollisionFactory( const void *pBlob, uint32_t blobSize );

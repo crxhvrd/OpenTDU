@@ -379,8 +379,8 @@ bool GSPhysics::initialize( TestDriveGameInstance *param_2 ) {
         factory.reset();
     }
 
-    numFreeSectors = 0x20;
-    maxNumSectors = 0x20;
+    numFreeSectors = 0x40;
+    maxNumSectors = 0x40;
     DAT_010e7640 = 0;
 
     pSectors = new ( TestDrive::Alloc( sizeof( PhysicsSHK ) * maxNumSectors ) )
@@ -1743,6 +1743,86 @@ void GSPhysics::removeSectorCollision( const void *pKey ) {
         it->pKey = nullptr;
         unlockMutex();
     }
+}
+
+void GSPhysics::addSpotCollision( const void *pKey,
+                                  void *pBlob,
+                                  uint32_t blobSize,
+                                  float angleY,
+                                  const Eigen::Vector3f &translation ) {
+    if ( pPhysicsSystem == nullptr || pBlob == nullptr || pKey == nullptr )
+        return;
+
+    HavokPackfile packfile;
+    bool bParsed = false;
+    HavokContainer container;
+    if ( container.parse( pBlob, blobSize ) ) {
+        bParsed = packfile.parse( container.getHavokScene(),
+                                  container.getHavokSceneSize() );
+    }
+    if ( !bParsed ) {
+        bParsed =
+            packfile.parse( static_cast<const uint8_t *>( pBlob ), blobSize );
+    }
+    if ( !bParsed ) {
+        return;
+    }
+
+    std::vector<HavokToJolt::RigidBody> bodies;
+    HavokToJolt::buildBodies( packfile, bodies );
+    if ( bodies.empty() ) {
+        return;
+    }
+
+    // Claim a free slot.
+    PhysicsSHK *pSlot = nullptr;
+    for ( PhysicsSHK *it = pSectorsBegin; it != pSectorsEnd; ++it ) {
+        if ( it->pKey == nullptr && it->NumObjects == 0 ) {
+            pSlot = it;
+            break;
+        }
+    }
+    if ( pSlot == nullptr ) {
+        OTDU_LOG_WARN( "Spot collision: no free sector slot\n" );
+        return;
+    }
+
+    const JPH::Quat spotRot =
+        JPH::Quat::sRotation( JPH::Vec3::sAxisY(), angleY );
+    const JPH::Vec3 spotTrans( translation.x(), translation.y(),
+                               translation.z() );
+
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    lockMutex();
+    for ( const HavokToJolt::RigidBody &body : bodies ) {
+        if ( pSlot->NumObjects >= pSlot->MaxNumObjects )
+            break;
+
+        const JPH::RVec3 position( spotRot * body.Position + spotTrans );
+        const JPH::Quat rotation = ( spotRot * body.Rotation ).Normalized();
+
+        JPH::BodyCreationSettings settings( body.Shape, position, rotation,
+                                            JPH::EMotionType::Static,
+                                            TDUPhysLayers::NON_MOVING );
+        settings.mUserData = TDUSurface::Object;
+        settings.mFriction = TDUSurface::friction( TDUSurface::Object );
+
+        JPH::Body *pBody = bodyInterface.CreateBody( settings );
+        if ( pBody != nullptr ) {
+            bodyInterface.AddBody( pBody->GetID(),
+                                   JPH::EActivation::DontActivate );
+            PhysicsSectorObj &obj = pSlot->pObjects[pSlot->NumObjects++];
+            obj.pRigidBody = pBody;
+            obj.pShape = body.Shape;
+        }
+    }
+    pSlot->pKey = pKey;
+    unlockMutex();
+
+    OTDU_LOG_DEBUG(
+        "Spot collision: %d bodies at (%.0f,%.0f,%.0f) angle %.2f\n",
+        pSlot->NumObjects, translation.x(), translation.y(), translation.z(),
+        angleY );
 }
 
 void GSPhysics::addSectorRoadGround( const void *pKey,

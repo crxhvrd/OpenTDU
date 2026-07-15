@@ -10,8 +10,19 @@
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/entity/entity_spot_mesh.h"
 
+#include "config/gs_config.h"
+#include "filesystem/gs_file.h"
+#include "physics/gs_physics.h"
+
 #include <algorithm>
+#include <cstring>
 #include <vector>
+
+class SpotShkBank : public Bank {
+public:
+    SpotShkBank() { bExternalMemoryAlloc = false; }
+    void loadContent() override {} // NOP (only getFirstEntry(5,4) is needed)
+};
 
 constexpr uint32_t kSpotFileMagic = 0x5450532e;  // ".SPT"
 constexpr uint32_t kSpotArrayMagic = 0x41545053; // "SPTA"
@@ -45,6 +56,41 @@ bool ParseSpotCellCoords( const std::string &filename, int32_t outCoords[4] ) {
         outCoords[i] = ( p - pField == 1 ) ? ( *pField - '0' ) : 10;
     }
     return true;
+}
+
+static void RegisterSpotCollision( const SpotSector &spot,
+                                   const SpotMap &world ) {
+    if ( gpPhysics == nullptr || world.SourceHashcode == 0 ) {
+        return; // challenges etc. carry no exterior bank
+    }
+
+    char name[9];
+    std::memcpy( name, &world.SourceHashcode, 8 );
+    name[8] = '\0';
+
+    std::string bankPath = gpConfig->getResRootPath();
+    bankPath += "Level/";
+    bankPath += gpConfig->pLevelName;
+    bankPath += "/Spots/";
+    bankPath += name;
+    bankPath += ".bnk";
+
+    SpotShkBank shkBank;
+    if ( !shkBank.loadBank( gpFile, bankPath.c_str() ) ) {
+        return;
+    }
+    shkBank.loadContentAsync();
+
+    uint32_t shkSize = 0;
+    void *pShk =
+        shkBank.getFirstEntry( static_cast<eAssetGroup>( 0 ),
+                               static_cast<eAssetType>( 0x0b ), &shkSize );
+    if ( pShk != nullptr ) {
+        gpPhysics->addSpotCollision(
+            &spot, pShk, shkSize, spot.EulerY,
+            Eigen::Vector3f( world.X, world.Y, world.Z ) );
+    }
+    shkBank.unload();
 }
 
 int32_t Spots::getSpotMapIndex( uint64_t hashcode ) const {
@@ -310,6 +356,8 @@ void Spots::spawnSectorSpotMeshes( Sector *pSector, const SpotsList &slot ) {
         MatrixRotateY( transform, spot.Angle );
         transform.row( 3 ) = Eigen::Vector4f( spot.X, spot.Y, spot.Z, 1.0f );
         pInstance->setTransform( transform, true );
+
+        RegisterSpotCollision( spot, *pWorld );
     }
 }
 
@@ -320,6 +368,13 @@ void Spots::removeSectorSpots( void *pBlob ) {
     }
     for ( int32_t i = 0; i < kNumSectorLists; i++ ) {
         if ( spotsSectors[i].pFile == pBlob ) {
+            SpotSector *pSpots = spotsSectors[i].pSpotsMapOrSector.pSector;
+            if ( gpPhysics != nullptr && pSpots != nullptr ) {
+                for ( uint32_t j = 0; j < spotsSectors[i].NumSpots; j++ ) {
+                    gpPhysics->removeSectorCollision( &pSpots[j] );
+                }
+            }
+
             spotsSectors[i].bInstalled = false;
             spotsSectors[i].bMeshesSpawned = false;
             spotsSectors[i].pFile = nullptr;
