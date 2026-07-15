@@ -149,3 +149,18 @@ void CameraGame::setTarget( const Eigen::Vector4f &param_1 ) {
     worldTargetWithUnknownOffset.w() = 1.0f;
     worldTarget.w() = 1.0f;
 }
+
+void CameraGame::setTargetOffseted( const Eigen::Vector4f &param_1 ) {
+    // FUN_008e1300
+    worldTargetWithUnknownOffset = param_1;
+
+    Eigen::Vector4f pTVar7 = Eigen::Vector4f::Zero();
+    if ( gpWorldStreaming->isEnabled() ) {
+        auto &streamPos = gpWorldStreaming->getPosition();
+        pTVar7 = streamPos;
+    }
+
+    worldTarget = param_1 + pTVar7;
+    worldTarget.w() = 1.0f;
+    worldTargetWithUnknownOffset.w() = 1.0f;
+}

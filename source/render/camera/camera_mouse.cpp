@@ -2,8 +2,11 @@
 #include "camera_mouse.h"
 
 #include "config/gs_config.h"
+#include "game/vehicle/car_state.h"
+#include "gs_camera.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 // Scroll-up sensitivity multiplier
 static float DAT_00f4174c = 1.1f; // DAT_00f4174c
@@ -152,10 +155,17 @@ bool CameraMouse::tick( float deltaTime, bool param_1, bool param_2 ) {
     // Working camera position (initialised from current position)
     Eigen::Vector4f local_70 = worldPosition;
 
-    // Use physics vehicle position as orbit pivot when available
     if ( param_2 && bFollowMainPlayerPosition ) {
-        // TODO: Physics - VehiclePhysics::GetPositionAndRotation (FUN_0082e1e0)
-        OTDU_UNIMPLEMENTED;
+        CarState *pCar =
+            ( gpCamera != nullptr ) ? gpCamera->getBoundCarState() : nullptr;
+        PhysicsVehicle *pPhys =
+            ( gpCamera != nullptr ) ? gpCamera->getTargetPhysEntity() : nullptr;
+        if ( pPhys == nullptr && pCar != nullptr ) {
+            pPhys = pCar->getPhysicsVehicle();
+        }
+        if ( pCar != nullptr && pPhys != nullptr && pPhys->isActive() ) {
+            local_70 = pCar->getBody()->WorldMatrix.row( 3 );
+        }
     }
 
     float newX = local_70.x();

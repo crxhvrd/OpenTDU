@@ -52,6 +52,7 @@ public:
     void setPositionOffseted( const Eigen::Vector4f &param_1 );
     void setPosition( const Eigen::Vector4f &param_1 );
     void setTarget( const Eigen::Vector4f &param_1 );
+    void setTargetOffseted( const Eigen::Vector4f &param_1 );
 
 private:
     friend class GSCamera;

@@ -701,6 +701,21 @@ void GSCamera::restoreDefaultVehicleCamera( CarState *pCar ) {
     }
 }
 
+void GSCamera::restoreCamera() {
+    // FUN_008e2200
+    if ( pTransitionIndices != nullptr && field83_0x92c < numTransition ) {
+        nextCameraMode = pTransitionIndices[field83_0x92c];
+    }
+    pNextCamera = nullptr;
+    pTransitionCamera = nullptr;
+    transitionTime = 1.0f;
+    bLookingBack = false;
+    if ( pActiveVehicleCamera != nullptr &&
+         ( pActiveVehicleCamera->getFlags() >> 0x11 & 1 ) == 0 ) {
+        pActiveVehicleCamera->resetTransform();
+    }
+}
+
 void GSCamera::bindCamera( CameraGame *param_1,
                            CameraGame *param_2,
                            float param_3 ) {
@@ -945,13 +960,48 @@ void GSCamera::drawDebug( float deltaTime ) {
     ImGui::DragFloat( "Indoor Far Plane", &farPlaneInterior, 5.0f, 0.05f,
                       50000.0f );
 
-    if ( ImGui::Checkbox( "Free-fly camera (debug)", &bFlyCam ) ) {
+    bool bFlyCamUI = bFlyCam;
+    if ( ImGui::Checkbox( "Free-fly camera (debug)", &bFlyCamUI ) ) {
         toggleFreeCam();
     }
 
     if ( pActiveVehicleCamera != nullptr ) {
         ImGui::SeparatorText( "Active Camera" );
         ImGui::Text( "Name: '%s'", pActiveVehicleCamera->name.c_str() );
+        const uint32_t showFlags = pActiveVehicleCamera->getFlags();
+        ImGui::Text( "type %d  ShowFlags 0x%05x  vehFlags 0x%05x  fov %.1fdeg  "
+                     "near %.2f far %.1f",
+                     pActiveVehicleCamera->getType(), showFlags,
+                     pActiveVehicleCamera->getVehicleFlags(),
+                     pActiveVehicleCamera->getFOV() * 57.29578f,
+                     pActiveVehicleCamera->getNearPlane(),
+                     pActiveVehicleCamera->getFarPlane() );
+        const bool bit18 = ( showFlags >> 0x12 ) & 1;
+        const bool bit19 = ( showFlags >> 0x13 ) & 1;
+        const bool bCockpitScene = bit18 || bit19 || ( ( showFlags & 1 ) == 0 );
+        ImGui::Text( "  env-view: %s   car-scene: %s",
+                     bit19 ? "Hood(bit19)"
+                           : ( bit18 ? "Cockpit(bit18)" : "Exterior" ),
+                     bCockpitScene ? "RP_Cockpit (near 0.05)"
+                                   : "RP_CarPlayer/Near (near 0.80)" );
+
+        if ( ( pActiveVehicleCamera->getVehicleFlags() & 1 ) != 0 ) {
+            const Eigen::Vector4f &pos =
+                pActiveVehicleCamera->getFixedPosIncar();
+            const Eigen::Vector4f &trg =
+                pActiveVehicleCamera->getFixedTrgInCar();
+            ImGui::Text( "FIXED PosIncar(%.2f %.2f %.2f w%.2f) "
+                         "TrgInCar(%.2f %.2f %.2f)",
+                         pos.x(), pos.y(), pos.z(), pos.w(), trg.x(), trg.y(),
+                         trg.z() );
+        }
+        if ( pTransitionIndices != nullptr && numTransition > 0 ) {
+            ImGui::Text( "view-cycle slot %u / %d  (mode %d)", field83_0x92c,
+                         numTransition, pTransitionIndices[field83_0x92c] );
+            if ( ImGui::Button( "Cycle camera view (next)" ) ) {
+                FUN_008e4840( nullptr, 1.0f );
+            }
+        }
 
         Eigen::Vector4f &worldPos = pActiveVehicleCamera->worldPosition;
         if ( ImGui::InputFloat3( "Position", worldPos.data() ) ) {

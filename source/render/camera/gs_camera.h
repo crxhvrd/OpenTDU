@@ -88,6 +88,7 @@ public:
     CameraGame *findCamera( CarState *pState );
     CameraGame *findCameraByCurrentTransition();
     void restoreDefaultVehicleCamera( CarState *pCar );
+    void restoreCamera();
 
     CameraMouse *getMouseCamera();
 

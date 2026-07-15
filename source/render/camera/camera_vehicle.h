@@ -2,18 +2,21 @@
 
 #include "camera_game.h"
 
+class CarState;
+class PhysicsVehicle;
+
 // Joystick + button state passed from GSCamera::editActiveCamera to
 // CameraVehicle::unknownFunc. Stack layout mirrors the original 32-bit frame
 // (local_28 … local_1).
 struct EditCamDevState {
     struct {
         float X, Y;
-    } stick0;           // 0x00: STICK_0 right-left / up-down (deadzone-filtered)
+    } stick0; // 0x00: STICK_0 right-left / up-down (deadzone-filtered)
     struct {
         float X, Y;
-    } stick1;           // 0x08: STICK_1 right-left / up-down (deadzone-filtered)
-    float trigger0;     // 0x10: STICK_0_FORWARD analog value
-    float trigger1;     // 0x14: STICK_1_FORWARD analog value
+    } stick1;       // 0x08: STICK_1 right-left / up-down (deadzone-filtered)
+    float trigger0; // 0x10: STICK_0_FORWARD analog value
+    float trigger1; // 0x14: STICK_1_FORWARD analog value
     bool bTrigger0Digital; // 0x18
     bool bTrigger1Digital; // 0x19
     bool bPovLeft;         // 0x1a
@@ -91,8 +94,20 @@ OTDU_SIZE_MUST_MATCH( Bump, 0x0c );
 class CameraVehicle : public CameraGame {
 public:
     inline uint8_t getBackivewType() { return backviewType; }
-    inline const float &getShakeMagnitudeYSlow() const { return shakeMagnitude.z(); }
-    inline const float &getShakeMagnitudeYFast() const { return shakeMagnitude.w(); }
+    inline uint8_t getVehicleFov() const { return vehicleFov; }
+    inline uint32_t getVehicleFlags() const { return vehicleFlags; }
+    inline const Eigen::Vector4f &getFixedPosIncar() const {
+        return params.PosIncar;
+    }
+    inline const Eigen::Vector4f &getFixedTrgInCar() const {
+        return params.TrgInCar;
+    }
+    inline const float &getShakeMagnitudeYSlow() const {
+        return shakeMagnitude.z();
+    }
+    inline const float &getShakeMagnitudeYFast() const {
+        return shakeMagnitude.w();
+    }
     inline const float &getShakePeriodYSlow() const { return shakePeriod.z(); }
 
 public:
@@ -106,6 +121,27 @@ public:
 
     uint8_t *load( uint8_t *param_1 );
     void resetTransform();
+
+private:
+    bool tickFollow( const Matrix4x4f_t &carMatrix,
+                     CarState *pCar,
+                     PhysicsVehicle *pPhys,
+                     float deltaTime,
+                     bool bSnap,
+                     Eigen::Vector4f &outPos,
+                     Eigen::Vector4f &outTarget,
+                     Eigen::Vector4f &outUp );
+    void tickFixed( CarState *pCar,
+                    PhysicsVehicle *pPhys,
+                    float deltaTime,
+                    Eigen::Vector4f &outPos,
+                    Eigen::Vector4f &outTarget,
+                    Eigen::Vector4f &outUp );
+    void applyFreeLookAndGroundClamp( const Matrix4x4f_t &carDisplayMatrix,
+                                      bool bFixedCam,
+                                      float deltaTime );
+    void applySpeedShake( float deltaTime );
+    void updateMotionBlur();
 
 private:
     uint32_t vehicleFlags;

@@ -2,17 +2,142 @@
 #include "camera_vehicle.h"
 
 #include "config/gs_config.h"
+#include "core/maths_helper.h"
 #include "gs_camera.h"
 #include "game/vehicle/car_state.h"
 #include "physics/gs_physics.h"
+#include "physics/vehicle/physics_vehicle.h"
 
+#include <algorithm>
 #include <cmath>
 
-// Minimum height the chase camera is kept above the terrain surface so it does
-// not clip through hills behind the car.
-static constexpr float kCamGroundClearance = 0.5f;
-
 uint32_t gEditCameraFlags = 0; // DAT_010e7498
+
+static constexpr float kOne = 1.0f;               // FLOAT_00f4165c
+static constexpr float kMinusOne = -1.0f;         // FLOAT_00f41664
+static constexpr float kDegToRad = 0.0174532924f; // DAT_00f41864 (pi/180)
+static constexpr float kPi = 3.14159265f;         // DAT_00f41940
+static constexpr float kNegPi = -3.14159265f;     // DAT_00f41944
+static constexpr float kTwoPi = 6.28318530f;      // DAT_00f416f8
+static constexpr float kBrakeGSmooth =
+    1.11111f; // DAT_00f41ddc (frame-based lerp gain)
+static constexpr float kSpeedSmoothKeep = 0.975f; // _DAT_00fab3b4
+static constexpr float kSpeedSmoothRate = 100.0f; // DAT_00f41708
+static constexpr float kUpSmoothKeep =
+    0.95f; // DAT_00fab3d0 (ground-up low-pass)
+static constexpr float kBikeInterp =
+    0.95f; // DAT_00fab3b8 (bike snap-back damping)
+static constexpr float kGroundMinHeight =
+    0.8f; // DAT_00f416d0 (raycast valid floor)
+static constexpr float kGroundContactMin = 0.75f;   // DAT_00fab3d4
+static constexpr float kNoHitSentinel = -100000.0f; // DAT_00f418fc
+static constexpr float kFixedFwdStep =
+    20.0f; // DAT_00f03ee0 (in-car target forward step)
+static constexpr float kLeanCross = 1.0f; // DAT_00fab3c8
+static constexpr float kLeanFwd = 1.3f;   // DAT_00fab3cc
+static constexpr float kSpringPos =
+    0.004f; // DAT_00f41a20  (PosMin/Max byte -> m)
+static constexpr float kSpringInt16 =
+    0.001f; // FLOAT_00f4167c (int16 fixed-point read)
+static constexpr float kSpringInt16W =
+    1000.0f; // DAT_00f41718  (fixed-point write)
+static constexpr float kSpringForce = 0.01f; // DAT_00f416d4  (Scale byte)
+static constexpr float kSpringByte =
+    0.1f; // FLOAT_00f41668 (Spring/Damper byte)
+static constexpr float kSpringTime = 0.4f;   // DAT_00f4175c  (TimeScale byte)
+static constexpr float kSpringClamp = 0.04f; // DAT_00f41980  (ForceClamp byte)
+                                             //
+float gSmoothedSpeed = 0.0f;                 // DAT_016a2ca0
+Eigen::Vector4f gSmoothUp( 0.0f, 1.0f, 0.0f, 0.0f ); // _DAT_016a8240
+bool gSmoothUpInitialized = false;                   // DAT_016a8250 & 1
+FollowParams gWorkFollow; // DAT_00fa9484 (blended follow workspace)
+bool gCameraSnap = false; // DAT_010e74a4 (snap this frame)
+
+static void FollowParamsInit( FollowParams &params,
+                              const Matrix4x4f_t &carMatrix ) {
+    // FUN_008d1ea0
+    params.LastAngleY = WrapAngle(
+        std::atan2( carMatrix.row( 2 ).x(), carMatrix.row( 2 ).z() ) );
+}
+
+static inline void YawSmooth( Matrix4x4f_t &frame,
+                              FollowParams &work,
+                              float deltaTime,
+                              uint32_t flags ) {
+    // FUN_008d53b0
+    const float heading = std::atan2( frame.row( 2 ).x(), frame.row( 2 ).z() );
+    const float delta = WrapAngle( heading - work.LastAngleY );
+    const float newAngle =
+        work.LastAngleY + work.CameraSmoothAngle * delta * deltaTime;
+    if ( flags & 2 ) {
+        const float a = newAngle - heading;
+        const float c = std::cos( a );
+        const float s = std::sin( a );
+        const Eigen::Vector4f r0 = frame.row( 0 ).transpose();
+        const Eigen::Vector4f r2 = frame.row( 2 ).transpose();
+        frame.row( 0 ) = ( c * r0 + s * r2 ).transpose();
+        frame.row( 2 ) = ( -s * r0 + c * r2 ).transpose();
+    }
+    work.LastAngleY = newAngle;
+}
+
+inline float BlendClamp( float a, float b, float t ) {
+    // FUN_008d1a40
+    const float lerped = ( b - a ) * t + a;
+    const float lo = std::min( a, b );
+    const float hi = std::max( a, b );
+    return std::min( hi, std::max( lo, lerped ) );
+}
+
+static float SpringIntegrate( SpringParam &sp, float deltaTime, float forceG ) {
+    // FUN_008d1d10
+    const float posMaxM = (float)sp.PosMax * kSpringPos;
+    const float posMinM = (float)sp.PosMin * kSpringPos;
+    float force = (float)sp.Scale * kSpringForce * forceG;
+    const float timeScale = (float)sp.TimeScale * kSpringTime;
+
+    const float clampMag = (float)sp.ForceClamp * kSpringClamp;
+    if ( clampMag < std::fabs( force ) ) {
+        force = ( force <= 0.0f ? kMinusOne : kOne ) * clampMag;
+    }
+
+    const float vel = (float)sp.Velocity * kSpringInt16;
+    const float pos = (float)sp.Position * kSpringInt16;
+    float newVel = ( ( force * timeScale -
+                       timeScale * (float)sp.Damper * kSpringByte * vel ) -
+                     timeScale * (float)sp.Spring * kSpringByte * pos ) *
+                       deltaTime +
+                   vel;
+    float newPos = newVel * deltaTime + pos;
+
+    if ( newPos < -posMinM ) {
+        newVel = 0.0f;
+        newPos = -posMinM;
+    }
+    if ( posMaxM < newPos ) {
+        newVel = 0.0f;
+        newPos = posMaxM;
+    }
+
+    sp.Position = (int16_t)(int32_t)( newPos * kSpringInt16W );
+    sp.Velocity = (int16_t)(int32_t)( newVel * kSpringInt16W );
+    return newPos;
+}
+
+static Eigen::Vector4f QueryGroundNormal( CarState *pCar ) {
+    // FUN_00848cb0
+    Eigen::Vector4f up( 0.0f, 1.0f, 0.0f, 0.0f );
+    if ( pCar == nullptr ) {
+        return up;
+    }
+    for ( uint32_t i = 0; i < pCar->getNumWheels(); i++ ) {
+        if ( pCar->getWheel( i ).bGrounded ) {
+            return up;
+        }
+    }
+    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    return up;
+}
 
 static inline int8_t floatRoundToInt8( float value ) {
     return static_cast<int8_t>( std::lroundf( value ) );
@@ -46,67 +171,184 @@ static inline void editSpringParam( SpringParam *sp,
 
 CameraVehicle::CameraVehicle( int32_t param_2 ) : CameraGame() {
     // FUN_008d29f0
-    OTDU_UNIMPLEMENTED;
+    follow.PosZ = -5.1f;             // DAT_00f417d8
+    follow.Trg = 5.0f;               // DAT_00f41750
+    follow.PosHeight = 1.7f;         // DAT_00f417d4
+    follow.TrgHeight = 2.0f;         // DAT_00f416b0
+    follow.CameraSmoothAngle = 5.0f; // DAT_00f41750
+    follow.LeanFactor = 0.4f;        // DAT_00f4175c
+    followFast = follow;
+
+    nearPlane = 0.5f;    // FLOAT_00f41674
+    farPlane = 40000.0f; // DAT_00f41c78
+    flags &= 0xfffdffff;
+    carID = 0x270e;
+    vehicleFlags = 2;
+    vehicleFov = 68;
+
+    fovLerp.MinInput = 50;
+    fovLerp.MaxInput = 150;
+    fovLerp.MinOutput = 63;
+    fovLerp.MaxOutput = 75;
+
+    lastAngleHorizontal = 0.0f;
+    lastAngleVertical = 0.0f;
+    brakeG = 0.0f;
 }
 
 CameraVehicle::~CameraVehicle() {
     // FUN_00412120
-    OTDU_UNIMPLEMENTED;
 }
 
 void CameraVehicle::initialize() {
     // FUN_008d1fb0
-    follow.LastAngleY = 0.0f;
-    followFast.LastAngleY = 0.0f;
-    lastAngleHorizontal = 0.0f;
-    lastAngleVertical = 0.0f;
-    brakeG = 0.0f;
+    Matrix4x4f_t carMatrix = Matrix4x4f_t::Identity();
+    if ( gpCamera != nullptr && gpCamera->getBoundCarState() != nullptr ) {
+        carMatrix = gpCamera->getBoundCarState()->getBody()->WorldMatrix;
+    }
+    FollowParamsInit( follow, carMatrix );
+
+    pBumps[0].Time = 0.0f;
+    pBumps[1].Time = 0.0f;
+    pBumps[2].Time = 0.0f;
+
+    OTDU_UNIMPLEMENTED;
+
     bInitialized = true;
 }
 
 bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
     // FUN_008d5fd0
-    // TODO: Incomplete
     CarState *pCar =
         ( gpCamera != nullptr ) ? gpCamera->getBoundCarState() : nullptr;
-    if ( pCar == nullptr ) {
+
+    PhysicsVehicle *pPhys =
+        ( gpCamera != nullptr ) ? gpCamera->getTargetPhysEntity() : nullptr;
+    if ( pPhys == nullptr && pCar != nullptr ) {
+        pPhys = pCar->getPhysicsVehicle();
+    }
+
+    const float nearSave = nearPlane;
+    const float farSave = farPlane;
+
+    if ( pCar == nullptr || pPhys == nullptr || !pPhys->isActive() ) {
+        setPosition( Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f ) );
+        setTarget( Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 1.0f ) );
+        upVector = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
+        updateMatrix( worldPosition.head<3>(), upVector.head<3>(),
+                      worldTarget.head<3>() );
         return false;
     }
 
-    // Car body ABSOLUTE world matrix
-    const Matrix4x4f_t &carMat = pCar->getBody()->WorldMatrix;
-    const Eigen::Vector3f carForward = carMat.row( 2 ).head<3>();
-    const Eigen::Vector3f carPos = carMat.row( 3 ).head<3>();
+    CarBodyState *pBody = pCar->getBody();
 
-    // Chase offsets from the DB follow params (PosZ = negative back-distance).
-    const float posZ = follow.PosZ;
-    const float posH = follow.PosHeight;
-    const float trgD = follow.Trg;
-    const float trgH = follow.TrgHeight;
+    const float chassisSpeed = pPhys->getChassisSpeed();
+    const Eigen::Vector3f heading =
+        pBody->OffsetedWorldMatrix.row( 2 ).head<3>();
+    velocity.head<3>() = heading * chassisSpeed;
+    velocity.w() = 0.0f;
 
-    Eigen::Vector3f up( 0.0f, 1.0f, 0.0f );
-    Eigen::Vector3f right = up.cross( carForward );
-    if ( right.squaredNorm() < 1e-6f ) {
-        right = Eigen::Vector3f( 1.0f, 0.0f, 0.0f );
+    OTDU_UNIMPLEMENTED;
+
+    float speed = pPhys->getChassisSpeed();
+    if ( !gCameraSnap ) {
+        speed = ( speed - gSmoothedSpeed ) * ( kOne - kSpeedSmoothKeep ) *
+                    deltaTime * kSpeedSmoothRate +
+                gSmoothedSpeed;
     }
-    right.normalize();
-    const Eigen::Vector3f fwd = right.cross( up ).normalized();
+    gSmoothedSpeed = speed;
 
-    Eigen::Vector3f pos = carPos + fwd * posZ + up * posH;
-    const Eigen::Vector3f target = carPos + fwd * trgD + up * trgH;
+    float fovRad;
+    if ( ( vehicleFlags & 0x10 ) == 0 ) {
+        fovRad = (float)vehicleFov * kDegToRad;
+    } else {
+        const float loIn = (float)fovLerp.MinInput;
+        const float hiIn = (float)fovLerp.MaxInput;
+        float t = ( hiIn > loIn ) ? ( speed - loIn ) / ( hiIn - loIn ) : 0.0f;
+        t = std::min( 1.0f, std::max( 0.0f, t ) );
+        const float fovDeg =
+            (float)fovLerp.MinOutput +
+            ( (float)fovLerp.MaxOutput - (float)fovLerp.MinOutput ) * t;
+        vehicleFov = (uint8_t)fovDeg;
+        fovRad = fovDeg * kDegToRad;
+    }
 
-    if ( gpPhysics != nullptr ) {
-        const float groundY = gpPhysics->getGroundHeight( pos.x(), pos.z() );
-        if ( groundY > -1.0e30f && pos.y() < groundY + kCamGroundClearance ) {
-            pos.y() = groundY + kCamGroundClearance;
+    const Matrix4x4f_t carMatrix = pBody->OffsetedWorldMatrix;
+
+    Eigen::Vector4f outPos, outTarget, outUp;
+    const bool bFixed = ( vehicleFlags & 1 ) != 0;
+    if ( bFixed ) {
+        tickFixed( pCar, pPhys, deltaTime, outPos, outTarget, outUp );
+    } else {
+        float t = 0.0f;
+        if ( ( vehicleFlags & 0x80 ) != 0 && (int32_t)gEditCameraFlags >= 0 ) {
+            const float loIn = (float)fovLerp.MinInput;
+            const float hiIn = (float)fovLerp.MaxInput;
+            t = ( hiIn > loIn ) ? ( speed - loIn ) / ( hiIn - loIn ) : 0.0f;
+            t = std::min( 1.0f, std::max( 0.0f, t ) );
         }
+        gWorkFollow.PosZ = BlendClamp( follow.PosZ, followFast.PosZ, t );
+        gWorkFollow.PosHeight =
+            BlendClamp( follow.PosHeight, followFast.PosHeight, t );
+        gWorkFollow.Trg = BlendClamp( follow.Trg, followFast.Trg, t );
+        gWorkFollow.TrgHeight =
+            BlendClamp( follow.TrgHeight, followFast.TrgHeight, t );
+        gWorkFollow.LeanFactor =
+            BlendClamp( follow.LeanFactor, followFast.LeanFactor, t );
+        gWorkFollow.CameraSmoothAngle = BlendClamp(
+            follow.CameraSmoothAngle, followFast.CameraSmoothAngle, t );
+        gWorkFollow.GroundHeight =
+            BlendClamp( follow.GroundHeight, followFast.GroundHeight, t );
+        if ( gCameraSnap ) {
+            gWorkFollow.LastAngleY = follow.LastAngleY;
+        }
+        tickFollow( carMatrix, pCar, pPhys, deltaTime, gCameraSnap, outPos,
+                    outTarget, outUp );
     }
 
-    setPosition( Eigen::Vector4f( pos.x(), pos.y(), pos.z(), 1.0f ) );
-    setTarget( Eigen::Vector4f( target.x(), target.y(), target.z(), 1.0f ) );
-    upVector = Eigen::Vector4f( up.x(), up.y(), up.z(), 0.0f );
+    OTDU_UNIMPLEMENTED;
 
-    updateMatrix( pos, up, target );
+    setPositionOffseted( outPos );
+    setTargetOffseted( outTarget );
+    upVector = Eigen::Vector4f( outUp.x(), outUp.y(), outUp.z(), 0.0f );
+
+    setFOV( fovRad );
+
+    if ( ( vehicleFlags & 0x20 ) != 0 ) {
+        applyFreeLookAndGroundClamp( carMatrix, bFixed, deltaTime );
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+
+    if ( ( vehicleFlags & 0x40 ) != 0 ) {
+        applySpeedShake( deltaTime );
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: POSTFX
+
+    updateMatrix( worldPosition.head<3>(), upVector.head<3>(),
+                  worldTarget.head<3>() );
+
+    if ( ( flags & 0xc0000 ) == 0 ) {
+        nearPlane = nearSave;
+        farPlane = farSave;
+    } else {
+        nearPlane = 0.8f; // DAT_00f416d0
+        farPlane = farSave;
+        interiorNearPlane = 0.05f; // DAT_00f7c820
+        interiorFarPlane = 3.0f;   // DAT_00f416b4
+    }
+
+    if ( gpCamera != nullptr ) {
+        gpCamera->setNearPlane( nearPlane );
+        gpCamera->setFarPlane( farSave );
+        gpCamera->setEnableDepthAware( true );
+        gpCamera->setInteriorNearPlane( interiorNearPlane );
+        gpCamera->setInteriorFarPlane( interiorFarPlane );
+        gpCamera->setEnableDepthAwareInterior( true );
+    }
+
+    gCameraSnap = false; // DAT_010e74a4 = 0
     return true;
 }
 
@@ -527,46 +769,45 @@ uint8_t *CameraVehicle::load( uint8_t *param_1 ) {
     name = pName; // TODO: Check if cam name is guaranteed to be null terminated
     puVar1 += 0x10;
 
-    flags = *(uint32_t *)( puVar1 );
-    puVar1 = ParseVector4f( puVar1, worldPosition );
-    puVar1 = ParseVector4f( puVar1, worldTarget );
-    puVar1 = ParseVector4f( puVar1, worldPositionWithUnknownOffset );
-    puVar1 = ParseVector4f( puVar1, worldTargetWithUnknownOffset );
-    puVar1 = ParseVector4f( puVar1, upVector );
-    puVar1 = ParseVector4f( puVar1, velocity );
+    uint8_t *pv = puVar1;
+    flags = *(uint32_t *)( pv + 0x00 );
+    ParseVector4f( pv + 0x04, worldPosition );
+    ParseVector4f( pv + 0x14, worldTarget );
+    ParseVector4f( pv + 0x24, worldPositionWithUnknownOffset );
+    ParseVector4f( pv + 0x34, worldTargetWithUnknownOffset );
+    ParseVector4f( pv + 0x44, upVector );
+    ParseVector4f( pv + 0x54, velocity );
 
-    vehicleFlags = *(uint32_t *)puVar1;
-    bLastShowDriver = puVar1[4];
-    angleRangeHorizontal = puVar1[5];
-    maxAngleUp = puVar1[6];
-    maxAngleDown = puVar1[7];
-    angleInertia = puVar1[8];
-    vehicleFov = puVar1[9];
-    backviewType = puVar1[10];
-    wheelOffset = puVar1[11];
-    lastAngleHorizontal = *(float *)( puVar1 + 12 );
-    lastAngleVertical = *(float *)( puVar1 + 16 );
+    vehicleFlags = *(uint32_t *)( pv + 0x64 );
+    bLastShowDriver = pv[0x68];
+    angleRangeHorizontal = pv[0x69];
+    maxAngleUp = pv[0x6a];
+    maxAngleDown = pv[0x6b];
+    angleInertia = pv[0x6c];
+    vehicleFov = pv[0x6d];
+    backviewType = pv[0x6e];
+    wheelOffset = pv[0x6f];
+    lastAngleHorizontal = *(float *)( pv + 0x70 );
+    lastAngleVertical = *(float *)( pv + 0x74 );
+    nearPlane = *(float *)( pv + 0x78 );
+    farPlane = *(float *)( pv + 0x7c );
 
-    nearPlane = *(float *)( puVar1 + 20 );
-    farPlane = *(float *)( puVar1 + 24 );
+    ParseFollowParams( pv + 0x84, follow );
+    ParseFollowParams( pv + 0xa4, followFast );
 
-    puVar1 += 28;
+    uint8_t *puVar5 = ParseCameraParams( pv + 0xc0, params );
 
-    ParseFollowParams( puVar1 + 8, follow );
-    ParseFollowParams( puVar1 + 8 + 0x20, followFast );
-    puVar1 += 0x38;
+    ParseLerpParams( puVar5, fovLerp ); // 4 bytes
 
-    puVar1 = ParseCameraParams( puVar1, params );
-    puVar1 = ParseLerpParams( puVar1, fovLerp );
+    shakeSpeedSlow = (float)puVar5[4];
+    shakeSpeedFast = (float)puVar5[5];
+    shakeRPMPercent = (float)puVar5[6];
+    shakeMaxSpeed = (float)puVar5[7];
 
-    shakeSpeedSlow = *(float *)( puVar1 + 0 );
-    shakeSpeedFast = *(float *)( puVar1 + 4 );
-    shakeRPMPercent = *(float *)( puVar1 + 8 );
-    shakeMaxSpeed = *(float *)( puVar1 + 12 );
-    puVar1 += 0x10;
+    ParseVector4f( puVar5 + 0x08, shakeMagnitude ); // XSlow,XFast,YSlow,YFast
+    ParseVector4f( puVar5 + 0x18, shakePeriod );
 
-    puVar1 = ParseVector4f( puVar1, shakeMagnitude );
-    puVar1 = ParseVector4f( puVar1, shakePeriod );
+    uint8_t *pfVar6 = puVar5 + 0x28;
     if ( cameraID < 0x186ab ) {
         pBumps[0].Frequency = 0.0f;
         pBumps[0].Magnitude = 0.0f;
@@ -578,34 +819,33 @@ uint8_t *CameraVehicle::load( uint8_t *param_1 ) {
         coefSlipAngle = 0.0f;
         freqSlipAngle = 1.0f;
     } else {
-        pBumps[0].Frequency = *(float *)puVar1;
-        pBumps[0].Magnitude = *(float *)( puVar1 + 4 );
-        pBumps[1].Frequency = *(float *)( puVar1 + 8 );
-        pBumps[1].Magnitude = *(float *)( puVar1 + 12 );
-        pBumps[2].Frequency = *(float *)( puVar1 + 16 );
-        pBumps[2].Magnitude = *(float *)( puVar1 + 20 );
-        minSlipAngle = *(float *)( puVar1 + 24 );
-        coefSlipAngle = *(float *)( puVar1 + 28 );
-        freqSlipAngle = *(float *)( puVar1 + 32 );
-        puVar1 += 36;
+        pBumps[0].Frequency = *(float *)( puVar5 + 0x28 );
+        pBumps[0].Magnitude = *(float *)( puVar5 + 0x2c );
+        pBumps[1].Frequency = *(float *)( puVar5 + 0x30 );
+        pBumps[1].Magnitude = *(float *)( puVar5 + 0x34 );
+        pBumps[2].Frequency = *(float *)( puVar5 + 0x38 );
+        pBumps[2].Magnitude = *(float *)( puVar5 + 0x3c );
+        minSlipAngle = *(float *)( puVar5 + 0x40 );
+        coefSlipAngle = *(float *)( puVar5 + 0x44 );
+        freqSlipAngle = *(float *)( puVar5 + 0x48 );
+        pfVar6 = puVar5 + 0x4c;
     }
-    bikeAngleMinInput = *puVar1;
-    bikeAngleMaxInput = puVar1[1];
-    bikeAngleOuput = puVar1[2];
-    shakeMaxSpeed2 = puVar1[3];
 
-    puVar1 += 4;
-    puVar1 = ParseLerpParams( puVar1, neutralRadius );
-    puVar1 = ParseLerpParams( puVar1, intensity );
+    bikeAngleMinInput = pfVar6[0];
+    bikeAngleMaxInput = pfVar6[1];
+    bikeAngleOuput = pfVar6[2];
+    shakeMaxSpeed2 = pfVar6[3];
+    ParseLerpParams( pfVar6 + 0x04, neutralRadius );
+    ParseLerpParams( pfVar6 + 0x08, intensity );
 
-    horizontalAngleMaxMove = *(float *)( puVar1 + 0 );
-    horizontalAngleMaxMoveValue = *(float *)( puVar1 + 4 );
-    horizontalAngleMaxFade = *(float *)( puVar1 + 8 );
-    verticalAngleMaxMove = *(float *)( puVar1 + 12 );
-    verticalAngleMaxMoveVal = *(float *)( puVar1 + 16 );
-    verticalAngleMaxFade = *(float *)( puVar1 + 20 );
+    horizontalAngleMaxMove = *(float *)( pfVar6 + 0x0c );
+    horizontalAngleMaxMoveValue = *(float *)( pfVar6 + 0x10 );
+    horizontalAngleMaxFade = *(float *)( pfVar6 + 0x14 );
+    verticalAngleMaxMove = *(float *)( pfVar6 + 0x18 );
+    verticalAngleMaxMoveVal = *(float *)( pfVar6 + 0x1c );
+    verticalAngleMaxFade = *(float *)( pfVar6 + 0x20 );
 
-    puVar1 += 24;
+    uint8_t *pfVar5 = pfVar6 + 0x24;
     if ( cameraID < 0x186ac ) {
         brakeGMax = 2.0f;
         brakeYPosOffset = 0.0f;
@@ -615,43 +855,189 @@ uint8_t *CameraVehicle::load( uint8_t *param_1 ) {
         brakeG = 0.0f;
         brakeYTrgOffset = 0.0f;
     } else {
-        fVar7 = 10.0f;
-        brakeYPosOffset = *(float *)( puVar1 + 0 );
-        brakeZPosOffset = *(float *)( puVar1 + 4 );
-        brakeYTrgOffset = *(float *)( puVar1 + 8 );
-        brakeZTrgOffset = *(float *)( puVar1 + 12 );
-        brakeGMax = *(float *)( puVar1 + 16 );
-        brakeGMin = *(float *)( puVar1 + 20 );
-        brakeG = *(float *)( puVar1 + 24 );
+        brakeYPosOffset = *(float *)( pfVar6 + 0x24 );
+        brakeZPosOffset = *(float *)( pfVar6 + 0x28 );
+        brakeYTrgOffset = *(float *)( pfVar6 + 0x2c );
+        brakeZTrgOffset = *(float *)( pfVar6 + 0x30 );
+        brakeGMax = *(float *)( pfVar6 + 0x34 );
+        brakeGMin = *(float *)( pfVar6 + 0x38 );
+        brakeG = *(float *)( pfVar6 + 0x3c );
+        pfVar5 = pfVar6 + 0x40;
         if ( brakeYTrgOffset > 10.0f ) {
-            brakeYTrgOffset = 0.0f;
+            brakeYTrgOffset = 10.0f; // FLOAT_00f4166c
         }
-
-        puVar1 += 28;
     }
 
     if ( cameraID < 0x186ad ) {
         brakeGInertia = 0.975f;
-    } else {
-        brakeGInertia = *(float *)( puVar1 + 0 );
+        cameraID = 0x186ad;
+        return pfVar5;
     }
+    brakeGInertia = *(float *)( pfVar5 + 0 );
     cameraID = 0x186ad;
-
-    OTDU_LOG_DEBUG( "Parsed camera '%s' type %u for car ID %u\n", name.c_str(),
-                    cameraType, carID );
-    return puVar1 + 4;
+    return pfVar5 + 4;
 }
 
 void CameraVehicle::resetTransform() {
     // FUN_008d1f60
-    CarState *pCar =
-        ( gpCamera != nullptr ) ? gpCamera->getBoundCarState() : nullptr;
-    if ( pCar != nullptr ) {
-        const Eigen::Vector3f fwd =
-            pCar->getBody()->OffsetedWorldMatrix.row( 2 ).head<3>();
-        lastAngleHorizontal = std::atan2( fwd.x(), fwd.z() );
-        follow.LastAngleY = lastAngleHorizontal;
+    Matrix4x4f_t carMatrix = Matrix4x4f_t::Identity();
+    if ( gpCamera != nullptr && gpCamera->getBoundCarState() != nullptr ) {
+        carMatrix = gpCamera->getBoundCarState()->getBody()->WorldMatrix;
     }
+    FollowParamsInit( follow, carMatrix );
+    lastAngleHorizontal = 0.0f;
+    gCameraSnap = true; // DAT_010e74a4 = 1
     lastAngleVertical = 0.0f;
-    brakeG = 0.0f;
+    gWorkFollow.LastAngleY = follow.LastAngleY;
+}
+
+bool CameraVehicle::tickFollow( const Matrix4x4f_t &carMatrix,
+                                CarState *pCar,
+                                PhysicsVehicle *pPhys,
+                                float deltaTime,
+                                bool bSnap,
+                                Eigen::Vector4f &outPos,
+                                Eigen::Vector4f &outTarget,
+                                Eigen::Vector4f &outUp ) {
+    // FUN_008d5510
+    FollowParams &work = gWorkFollow;
+
+    float brakeDecel = ( pPhys != nullptr ) ? -pPhys->getLongitudinalG() : 0.0f;
+    if ( brakeDecel < 0.0f ) {
+        brakeDecel = 0.0f;
+    }
+    float bg =
+        ( kOne - brakeGInertia ) * ( brakeDecel - brakeG ) * kBrakeGSmooth +
+        brakeG;
+    brakeG = bg;
+    if ( gEditCameraFlags & 0x200000 ) {
+        bg = brakeGMax;
+    }
+    const float span = brakeGMax - brakeGMin;
+    const float t = ( span != 0.0f ) ? ( bg - brakeGMin ) / span : 0.0f;
+    const float dPosH = Clamp( t * brakeYPosOffset, 0.0f, brakeYPosOffset );
+    const float dPosZ = Clamp( t * brakeZPosOffset, 0.0f, brakeZPosOffset );
+    const float dTrgH = Clamp( t * brakeYTrgOffset, 0.0f, brakeYTrgOffset );
+    const float dTrg = Clamp( t * brakeZTrgOffset, 0.0f, brakeZTrgOffset );
+
+    const Eigen::Vector4f localPos( 0.0f, work.PosHeight + dPosH,
+                                    work.PosZ + dPosZ, 1.0f );
+    const Eigen::Vector4f localTgt( 0.0f, work.TrgHeight + dTrgH,
+                                    work.Trg + dTrg, 1.0f );
+
+    const Eigen::Vector4f groundN = QueryGroundNormal( pCar );
+    if ( !gSmoothUpInitialized ) {
+        gSmoothUpInitialized = true;
+        gSmoothUp = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
+    }
+    if ( !bSnap ) {
+        gSmoothUp =
+            groundN * ( kOne - kUpSmoothKeep ) + gSmoothUp * kUpSmoothKeep;
+    } else {
+        gSmoothUp = groundN;
+    }
+    gSmoothUp.head<3>().normalize();
+
+    const Eigen::Vector3f up3 = gSmoothUp.head<3>();
+    const Eigen::Vector3f carFwd = carMatrix.row( 2 ).head<3>();
+    Eigen::Vector3f right = up3.cross( carFwd ).normalized();
+    const Eigen::Vector3f fwd = right.cross( up3 ).normalized();
+
+    Matrix4x4f_t frame;
+    frame.row( 0 ) =
+        Eigen::RowVector4f( right.x(), right.y(), right.z(), 0.0f );
+    frame.row( 1 ) = Eigen::RowVector4f( up3.x(), up3.y(), up3.z(), 0.0f );
+    frame.row( 2 ) = Eigen::RowVector4f( fwd.x(), fwd.y(), fwd.z(), 0.0f );
+    frame.row( 3 ) = carMatrix.row( 3 );
+
+    OTDU_UNIMPLEMENTED;
+
+    YawSmooth( frame, work, deltaTime, vehicleFlags );
+
+    outPos = TDUMat4x4MulVec( frame, localPos );
+    outTarget = TDUMat4x4MulVec( frame, localTgt );
+    outUp = kWorldUpVector;
+
+    return true;
+}
+
+void CameraVehicle::tickFixed( CarState *pCar,
+                               PhysicsVehicle *pPhys,
+                               float deltaTime,
+                               Eigen::Vector4f &outPos,
+                               Eigen::Vector4f &outTarget,
+                               Eigen::Vector4f &outUp ) {
+    // FUN_008d4540
+    const Matrix4x4f_t carMatrix = pCar->getBody()->OffsetedWorldMatrix;
+
+    Eigen::Vector4f localPos = params.PosIncar;
+    Eigen::Vector4f localTgt;
+    {
+        Eigen::Vector3f dir =
+            ( params.TrgInCar.head<3>() - params.PosIncar.head<3>() );
+        if ( dir.squaredNorm() > 1e-12f ) {
+            dir.normalize();
+        }
+        localTgt.head<3>() = params.PosIncar.head<3>() + dir * kFixedFwdStep;
+        localTgt.w() = 1.0f;
+    }
+
+    float rollLean = 0.0f;
+    if ( ( vehicleFlags & 4 ) != 0 ) {
+        Eigen::Vector4f accel = Eigen::Vector4f::Zero();
+        pCar->retrieveAcceleration( accel );
+        const float longG =
+            ( pPhys != nullptr ) ? pPhys->getLongitudinalG() : 0.0f;
+        if ( ( vehicleFlags & 0x100 ) != 0 ) {
+            const float d =
+                SpringIntegrate( params.MoveVertical, deltaTime, accel.y() );
+            localPos.y() += d;
+            localTgt.y() += d;
+        }
+        if ( ( vehicleFlags & 0x200 ) != 0 ) {
+            const float d =
+                SpringIntegrate( params.MoveHorizontal, deltaTime, longG );
+            localPos.z() += d;
+            localTgt.z() += d;
+        }
+        if ( ( vehicleFlags & 0x400 ) != 0 ) {
+            const float d =
+                SpringIntegrate( params.LeanUpDown, deltaTime, longG );
+            localTgt.y() += d;
+        }
+        if ( ( vehicleFlags & 0x800 ) != 0 ) {
+            rollLean =
+                SpringIntegrate( params.LeanLeftRight, deltaTime, accel.x() );
+        }
+    }
+
+    outUp = carMatrix.row( 1 ).transpose() +
+            carMatrix.row( 0 ).transpose() * rollLean;
+
+    if ( ( vehicleFlags & 8 ) != 0 ) {
+        const float lean = pCar->getBody()->BikeLeanLateral * params.LeanFactor;
+        outUp += carMatrix.row( 0 ).transpose() * lean;
+    }
+    outUp.head<3>().normalize();
+    outUp.w() = 0.0f;
+
+    outPos = TDUMat4x4MulVec( carMatrix, localPos );
+    outTarget = TDUMat4x4MulVec( carMatrix, localTgt );
+}
+
+void CameraVehicle::applyFreeLookAndGroundClamp( const Matrix4x4f_t &,
+                                                 bool,
+                                                 float ) {
+    // FUN_008d4a60
+    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+}
+
+void CameraVehicle::applySpeedShake( float ) {
+    // FUN_008d3e40
+    OTDU_UNIMPLEMENTED; // TODO: POSTFX
+}
+
+void CameraVehicle::updateMotionBlur() {
+    // FUN_008d2380
+    OTDU_UNIMPLEMENTED; // TODO: POSTFX
 }
