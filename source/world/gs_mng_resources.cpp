@@ -1558,9 +1558,7 @@ CubemapResources::~CubemapResources() {
 bool CubemapResources::loadResources() {
     // FUN_008a1b00
     eViewFormat format =
-        (eViewFormat)( ( -(uint32_t)( gpRender->isHDREnabled() != true ) &
-                         0xffffffef ) +
-                       VF_A16B16G16R16F );
+        gpRender->isHDREnabled() ? VF_A16B16G16R16F : VF_X8R8G8B8;
 
     eViewFormat eVar3;
     if ( format == VF_HDR ) {
