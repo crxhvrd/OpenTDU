@@ -637,9 +637,9 @@ bool TestDriveGameInstance::initializeBaseServices() {
 
     gpConfig->parseIniFiles();
 
-#if 1 // TODO: REMOVEME: World/Streaming bringup: enable world viewer by default
+#if 1 // TODO: REMOVEME: FreeRide bringup: enable freeride by default
     if ( gGameModeOverride == GM_Invalid ) {
-        gGameModeOverride = GM_Sandbox;
+        gGameModeOverride = GM_FreeRide;
         gbEnableWorldViewer = true;
     }
 #endif
