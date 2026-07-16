@@ -8,13 +8,17 @@
 #include "tdu_instance.h"
 #include "flash/gs_flash.h"
 #include "physics/gs_physics.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "world/weather/gs_weather.h"
 #include "world/gs_world_streaming.h"
+#include "world/gs_world.h"
+#include "world/streaming_manager.h"
 #include "render/camera/gs_camera.h"
 #include "render/camera/camera_showcase.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/gs_car_display.h"
 #include "game/vehicle/vehicle_controller.h"
+#include "game/vehicle/bank_vehicle.h"
 
 #include "render/mng_env_map.h"
 #include "config/gs_config.h"
@@ -111,7 +115,13 @@ void GMCarShowcase::reset() {
 
     clearColor = gpRender->getRenderPass<RP_Near>().pViewport->ClearColor;
 
-    OTDU_UNIMPLEMENTED; // TODO: WORLD:
+    if ( gpWorld != nullptr ) {
+        StreamingManager *pStreaming = gpWorld->getStreamingManager();
+        if ( pStreaming != nullptr ) {
+            pStreaming->sectorManager.bDrawSector = true;
+            pStreaming->setActiveRenderLayers( 0 );
+        }
+    }
 
     gpCamera->setCameraMode( 6, nullptr, 1.0f );
     CameraShowcase *pBVar5 = (CameraShowcase *)gpCamera->findCameraWithMode(
@@ -425,12 +435,6 @@ bool GMCarShowcase::loadCar() {
     state.rimID = pCarState->RimID;
     state.body.BackOnTrackState = 0;
     state.body.resetBackOnTrack();
-    if ( state.pPhysicsVehicle != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS
-        // ( gGSCarState.pCarStates[0].field17_0x39b4 )->field_0xbf1 = 0;
-        // ( gGSCarState.pCarStates[0].field17_0x39b4 )->field_0xbf2 = 0;
-        // ( gGSCarState.pCarStates[0].field17_0x39b4 )->field_0xbf0 = 0;
-    }
 
     uint32_t uVar12 = 0;
     DBEntryCarPhysicsData *pDVar13 =
@@ -467,8 +471,23 @@ bool GMCarShowcase::loadCar() {
     }
 
     PhysicsVehicle *local_c4 = nullptr;
-    if ( pCarState->bUseGamePhysics != 0 ) {
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS:
+    if ( pCarState->bUseGamePhysics != 0 && gpPhysics != nullptr ) {
+        DBEntryCarPhysicsData *pPhysDB = pDVar13;
+        if ( pCarState->CarID == 999 ) {
+            pPhysDB = gpDatabase->getCarDBEntry( 223 );
+        } else if ( pCarState->CarID == 666 ) {
+            pPhysDB = gpDatabase->getCarDBEntry( 1502 );
+        }
+
+        BankVehicle *pBank = pCarState->Exterior.pBankInstance;
+        PhysFactory *pFactory =
+            ( pBank != nullptr ) ? pBank->getPhysFactory() : nullptr;
+        const void *pTorqueBin =
+            ( pBank != nullptr ) ? pBank->getTorqueBinary() : nullptr;
+        if ( pPhysDB != nullptr ) {
+            local_c4 = gpPhysics->createVehicle( pFactory, local_50, *pPhysDB,
+                                                 pTorqueBin );
+        }
     }
 
     void *local_cc = nullptr;
@@ -519,7 +538,18 @@ bool GMCarShowcase::loadCar() {
 
 void GMCarShowcase::setShowcaseModelMatrix( Matrix4x4f_t &modelMatrix ) {
     // FUN_007b5990
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    if ( pVehicleState == nullptr || gpPhysics == nullptr ) {
+        return;
+    }
+
+    PhysicsVehicle *pPhysicsVehicle = pVehicleState->getPhysicsVehicle();
+    if ( pPhysicsVehicle == nullptr ) {
+        return;
+    }
+
+    gpPhysics->lockMutex();
+    pPhysicsVehicle->resetToTransform( modelMatrix );
+    gpPhysics->unlockMutex();
 }
 
 void GMCarShowcase::updateActiveVehicleFlashStrings() {

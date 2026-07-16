@@ -192,7 +192,8 @@ public:
                               float radius,
                               float mass,
                               float massScale,
-                              bool registerNow );
+                              bool registerNow,
+                              bool bPhantom = true );
 
     void destroyRigidBody( RigidBody_t pRigidBody );
 

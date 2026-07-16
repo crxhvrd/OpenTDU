@@ -1294,7 +1294,8 @@ RigidBody_t GSPhysics::createSphere( uint32_t collisionGroup,
                                      float radius,
                                      float mass,
                                      float massScale,
-                                     bool registerNow ) {
+                                     bool registerNow,
+                                     bool bPhantom ) {
     // FUN_0081d660
     (void)collisionGroup;
 
@@ -1308,6 +1309,7 @@ RigidBody_t GSPhysics::createSphere( uint32_t collisionGroup,
                                         position, JPH::Quat::sIdentity(),
                                         JPH::EMotionType::Kinematic,
                                         TDUPhysLayers::MOVING );
+    settings.mIsSensor = bPhantom;
     settings.mFriction = 1.0f; // FLOAT_00f4165c
     settings.mOverrideMassProperties =
         JPH::EOverrideMassProperties::CalculateInertia;

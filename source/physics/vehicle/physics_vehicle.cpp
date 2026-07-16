@@ -1058,6 +1058,26 @@ Matrix4x4f_t PhysicsVehicle::getChassisWorldMatrix() const {
     return m;
 }
 
+void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform ) {
+    // FUN_0083d880
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return;
+    }
+
+    JPH::Mat44 world = JPH::Mat44::sIdentity();
+    for ( int c = 0; c < 4; ++c ) {
+        world.SetColumn3( c, JPH::Vec3( transform( c, 0 ), transform( c, 1 ),
+                                        transform( c, 2 ) ) );
+    }
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    const JPH::BodyID id = pChassisBody->GetID();
+    bi.SetPositionAndRotation( id, world.GetTranslation(),
+                               world.GetQuaternion().Normalized(),
+                               JPH::EActivation::Activate );
+    bi.SetLinearAndAngularVelocity( id, JPH::Vec3::sZero(),
+                                    JPH::Vec3::sZero() );
+}
+
 uint32_t PhysicsVehicle::getNumWheels() const {
     return static_cast<uint32_t>( vehicle.NumWheels );
 }

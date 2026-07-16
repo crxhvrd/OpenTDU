@@ -59,6 +59,8 @@ public:
     void setInput( float throttle, float brake, float steer );
     void tick( float deltaTime );
 
+    void resetToTransform( const Matrix4x4f_t &transform );
+
     void OnStep( const JPH::PhysicsStepListenerContext &inContext ) override;
 
     Matrix4x4f_t getChassisWorldMatrix() const;
