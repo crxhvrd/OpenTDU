@@ -16,7 +16,7 @@ private:
 #if defined( OTDU_WIN32 )
     CRITICAL_SECTION criticalSection;
     DWORD lockedByThreadID;
-#elif defined( OTDU_MACOS )
+#elif defined( OTDU_UNIX )
     pthread_mutex_t mutex;
 #endif
 

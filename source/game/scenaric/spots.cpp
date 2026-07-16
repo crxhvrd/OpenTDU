@@ -356,6 +356,7 @@ void Spots::spawnSectorSpotMeshes( Sector *pSector, const SpotsList &slot ) {
         MatrixRotateY( transform, spot.Angle );
         transform.row( 3 ) = Eigen::Vector4f( spot.X, spot.Y, spot.Z, 1.0f );
         pInstance->setTransform( transform, true );
+        pInstance->onWorldStreamed();
 
         RegisterSpotCollision( spot, *pWorld );
     }
