@@ -492,10 +492,13 @@ bool GSFile::loadFileRaw( const char *pFilename,
         FileIterator it;
         it.findFirstMatch( pFilename );
 
+#ifdef OTDU_UNIX
+        filename = it.ItInfos.Filename;
+#else
         filename = it.SearchDirectory;
         filename += "/";
         filename += it.SearchPattern;
-
+#endif
         tmpFilename.clear();
         tmpFilename += pFilename;
 

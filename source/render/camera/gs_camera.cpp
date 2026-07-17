@@ -130,6 +130,7 @@ GSCamera::GSCamera()
       pCameraDBBinary( nullptr ),
       pTransitionIndices( nullptr ),
       pCameraVehicleEntries( nullptr ),
+      pVehicleMem( nullptr ),
       pCameraVehicles( nullptr ),
       pVehicleCameraPtrs( nullptr ),
       field_0x96c( 0 ),
@@ -512,7 +513,7 @@ void GSCamera::terminate() {
     }
 
     if ( pCameraVehicles != nullptr ) {
-        TestDrive::Free( (uint8_t *)pCameraVehicles - 0x10 );
+        TestDrive::FreeAligned( pVehicleMem );
     }
 
     // Native allocations replacing the former on-disk-overlaid camera arrays.
@@ -525,6 +526,7 @@ void GSCamera::terminate() {
         pVehicleCameraPtrs = nullptr;
     }
 
+    pVehicleMem = nullptr;
     pCameraVehicles = nullptr;
     numVehicleCamera = 0;
     numCameraRegistered = 0;
@@ -1190,12 +1192,13 @@ void GSCamera::loadCameraDB( uint8_t *param_1 ) {
     // call (e.g. bindCamera -> initialize()) then faults dereferencing
     // vptr+0x10.
     void *pVehicleMem =
-        TestDrive::Alloc( numVehicleCamera * sizeof( CameraVehicle ) + 0x10 );
+        TestDrive::AllocAligned( numVehicleCamera * sizeof( CameraVehicle ) + 0x10, alignof(CameraVehicle) );
     OTDU_ASSERT( pVehicleMem );
     memset( pVehicleMem, 0, numVehicleCamera * sizeof( CameraVehicle ) + 0x10 );
 
     int32_t *piVehicleHeader = (int32_t *)pVehicleMem;
     CameraVehicle *pCVar10 = (CameraVehicle *)( piVehicleHeader + 4 );
+    pCVar10 = (CameraVehicle*)(Align((uintptr_t)pCVar10, alignof(CameraVehicle)));
     int32_t iVar7 = (int32_t)numVehicleCamera;
     *piVehicleHeader = iVar7;
     int32_t pCVar4 = ( iVar7 + -1 );
@@ -1277,7 +1280,7 @@ bool GSCamera::registerCamera( const char *pName, const int32_t type ) {
         return false;
     }
 
-    T *pcVar2 = new ( TestDrive::Alloc( sizeof( T ) ) ) T();
+    T *pcVar2 = new ( TestDrive::AllocAligned( sizeof( T ), alignof( T ) ) ) T();
     cameraRegister[numCameraRegistered] = pcVar2;
 
     pcVar2->setName( pName );

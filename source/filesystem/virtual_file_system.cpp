@@ -83,6 +83,69 @@ void PathSplit( char *param_1,
     }
 }
 
+#ifdef OTDU_UNIX
+inline bool IsCharEqualInsensitive(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    return std::equal(a.begin(), a.end(), b.begin(), [](char ac, char bc) {
+        return std::tolower(static_cast<unsigned char>(ac)) == std::tolower(static_cast<unsigned char>(bc));
+    });
+}
+
+std::filesystem::path ResolvePathInsensitive(const std::filesystem::path& targetPath) {
+    std::filesystem::path currentResolved = targetPath.root_path();
+
+    for (const auto& component : targetPath.relative_path()) {
+        std::string targetComponentStr = component.string();
+        bool bMatchFound = false;
+
+        if (!std::filesystem::exists(currentResolved) || !std::filesystem::is_directory(currentResolved)) {
+            return std::filesystem::path{};
+        }
+
+        // Scan the directory for a case-insensitive match
+        for (const auto& entry : std::filesystem::directory_iterator(currentResolved)) {
+            std::string entryName = entry.path().filename().string();
+            if (IsCharEqualInsensitive(entryName, targetComponentStr)) {
+                currentResolved /= entry.path().filename();
+                bMatchFound = true;
+                break;
+            }
+        }
+
+        if (!bMatchFound) {
+            return std::filesystem::path{};
+        }
+    }
+
+    return currentResolved;
+}
+#endif
+
+inline bool FileExists( FileIterator *pIterator, const std::string& completeResourcePath ) {
+     if ( std::filesystem::exists( completeResourcePath ) ) {
+        OTDU_LOG_DEBUG( "File '%s' exists!\n", completeResourcePath.c_str() );
+
+        std::filesystem::file_status status =
+            std::filesystem::status( completeResourcePath );
+        pIterator->ItInfos.bIsFolder = std::filesystem::is_directory( status );
+        pIterator->ItInfos.Filename = completeResourcePath;
+        pIterator->ItInfos.Size =
+            pIterator->ItInfos.bIsFolder
+                ? 0
+                : static_cast<uint32_t>(
+                      std::filesystem::file_size( completeResourcePath ) );
+
+        // TODO: AFAIK those are useless so we can skip all this crap for now...
+        // pIterator->ItInfos.CreationDate =
+        // std::filesystem::last_write_time(completeResourcePath);
+        // pIterator->ItInfos.ModificationDate =
+        // std::filesystem::last_write_time(completeResourcePath);
+
+        return true;
+    }
+    return false;
+}
+
 VirtualFileSystem::VirtualFileSystem()
     : pFirstDeviceHandle( nullptr ),
       flagCaps( 0x2F ),
@@ -129,27 +192,25 @@ bool VirtualFileSystem::findFile( FileIterator *pIterator,
     std::string completeResourcePath = pIterator->SearchDirectory;
     completeResourcePath += "/";
     completeResourcePath += pIterator->SearchPattern;
-    if ( std::filesystem::exists( completeResourcePath ) ) {
-        OTDU_LOG_DEBUG( "File '%s' exists!\n", completeResourcePath.c_str() );
-
-        std::filesystem::file_status status =
-            std::filesystem::status( completeResourcePath );
-        pIterator->ItInfos.bIsFolder = std::filesystem::is_directory( status );
-        pIterator->ItInfos.Filename = completeResourcePath;
-        pIterator->ItInfos.Size =
-            pIterator->ItInfos.bIsFolder
-                ? 0
-                : static_cast<uint32_t>(
-                      std::filesystem::file_size( completeResourcePath ) );
-
-        // TODO: AFAIK those are useless so we can skip all this crap for now...
-        // pIterator->ItInfos.CreationDate =
-        // std::filesystem::last_write_time(completeResourcePath);
-        // pIterator->ItInfos.ModificationDate =
-        // std::filesystem::last_write_time(completeResourcePath);
-
+    if ( FileExists( pIterator, completeResourcePath ) ) {
         return true;
     }
+
+#ifdef OTDU_UNIX
+    // TDU1 filename casing is very inconsistent (codebase, banks and assets). 
+    // To avoid patchins assets we do another insensitive lookup on Linux.
+    auto insensitiveFilepath = ResolvePathInsensitive(completeResourcePath);
+    if (!insensitiveFilepath.empty()) {
+        OTDU_LOG_WARN( "Filepath '%s' casing is incorrect! Found closest match '%s'\n", 
+            completeResourcePath.c_str(),insensitiveFilepath.string().c_str() );
+
+        completeResourcePath = insensitiveFilepath.string();
+
+        if ( FileExists( pIterator, completeResourcePath ) ) {
+            return true;
+        }
+    }
+#endif
 
     // TODO: Re-implement old iterative search TDU1 uses (enumerate directory
     // content and walk the list until we have a match) AFAIK it's pretty much
