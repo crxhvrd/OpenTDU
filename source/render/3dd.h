@@ -52,7 +52,7 @@ struct LODEntry {
 OTDU_SCENE_DISK_SIZE_MUST_MATCH( LODEntry, 0x14 );
 
 struct InstanceEntry {
-    Matrix4x4f_t Matrix;
+    Matrix4x4fUnaligned_t Matrix;
     uint32_t Flags;
     ScenePtr<RenderFile::Section> pBankMat;
     ColorRGBA Color;

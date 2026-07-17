@@ -403,7 +403,7 @@ void TestDriveGameInstance::mainLoop() {
     while ( !bRequestedExit ) {
         switch ( activeGameMode ) {
         case GM_CarShowCase:
-            pGameModeAlloc = TestDrive::Alloc( sizeof( GMCarShowcase ) );
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMCarShowcase ), alignof(GMCarShowcase) );
             pGVar6 = new ( pGameModeAlloc ) GMCarShowcase();
             break;
         case GM_Login:
@@ -415,11 +415,11 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6 = new ( pGameModeAlloc ) GMVideoBumper();
             break;
         case GM_FreeRide:
-            pGameModeAlloc = TestDrive::Alloc( sizeof( GMFreeride ) );
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMFreeride ), alignof(GMFreeride) );
             pGVar6 = new ( pGameModeAlloc ) GMFreeride();
             break;
         case GM_Sandbox:
-            pGameModeAlloc = TestDrive::Alloc( sizeof( GMSandbox ) );
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMSandbox ), alignof(GMSandbox) );
             pGVar6 = new ( pGameModeAlloc ) GMSandbox();
             break;
         case GM_CinViewer:
@@ -439,7 +439,7 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6->mainLoop( this );
 
             pGVar6->~GameMode();
-            TestDrive::Free( pGameModeAlloc );
+            TestDrive::FreeAligned( pGameModeAlloc );
         } else {
             GMVideoBumper::SetActiveBumper( "Atari.bik" );
             GMVideoBumper::SetNextGameMode( GM_VideoBumper );

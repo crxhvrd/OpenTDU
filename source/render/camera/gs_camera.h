@@ -191,6 +191,7 @@ private:
     void *pCameraDBBinary;
     int32_t *pTransitionIndices;
     CameraDBVehicleEntry *pCameraVehicleEntries;
+    void *pVehicleMem;
     CameraVehicle *pCameraVehicles;
     // Native pool backing the per-vehicle CameraDBVehicleEntry::pCameras arrays
     // (replaces the x86Pointer arrays the original overlaid on the DB binary).

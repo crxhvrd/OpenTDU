@@ -282,6 +282,7 @@ bool DrawList::initialize( uint32_t newNumPrimitives,
     memoryPool.currentUsage += primitiveMemoryUsage;
     memoryPool.pCurrent += primitiveMemoryUsage;
 
+    memoryPool.pCurrent = (uint8_t*)Align( (uintptr_t)memoryPool.pCurrent, sizeof( Matrix4x4f_t ) );
     pMatrices = reinterpret_cast<Matrix4x4f_t *>( memoryPool.pCurrent );
 
     uint32_t matricesMemoryUsage = maxNumPrimitives * sizeof( Matrix4x4f_t );
