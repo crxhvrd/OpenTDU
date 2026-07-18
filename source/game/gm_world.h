@@ -112,6 +112,7 @@ protected:
                                 const Matrix4x4f_t *pSpawnOverride );
     void uninstallLocalPlayerCar();
     void updateLocalPlayerDrivingInput( float deltaTime );
+    void teleportLocalPlayerCar( const Eigen::Vector3f &worldPos );
 
 protected:
     MngHudChallenge mngHudChallenge;
@@ -153,3 +154,5 @@ extern float gFXPModCoeff1;
 extern GameModeWorld *gpActiveGM;
 
 extern int32_t gRequestedPlayerCarID;
+extern bool gRequestedPlayerTeleport;
+extern Eigen::Vector3f gRequestedPlayerTeleportPos;

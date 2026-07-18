@@ -176,6 +176,10 @@ void GameModeWorld::reset() {
 constexpr int32_t kDefaultPlayerCarID = 1030;
 int32_t gRequestedPlayerCarID = -1;
 
+// Debug teleport request
+bool gRequestedPlayerTeleport = false;
+Eigen::Vector3f gRequestedPlayerTeleportPos = Eigen::Vector3f::Zero();
+
 void GameModeWorld::installLocalPlayerCar() {
     installLocalPlayerCar( kDefaultPlayerCarID, nullptr );
 }
@@ -318,6 +322,52 @@ void GameModeWorld::uninstallLocalPlayerCar() {
     gpScenaric->getLocalPlayer().setCarState( nullptr );
 }
 
+void GameModeWorld::teleportLocalPlayerCar( const Eigen::Vector3f &worldPos ) {
+    if ( gpScenaric == nullptr ) {
+        return;
+    }
+    CarState *pCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pCar == nullptr ) {
+        return;
+    }
+
+    // Keep the car's current orientation; only relocate its origin.
+    Matrix4x4f_t pose = ( pPlayerPhysicsVehicle != nullptr &&
+                          pPlayerPhysicsVehicle->isActive() )
+                            ? pPlayerPhysicsVehicle->getChassisWorldMatrix()
+                            : pCar->getBody()->WorldMatrix;
+    pose( 3, 0 ) = worldPos.x();
+    pose( 3, 1 ) = worldPos.y();
+    pose( 3, 2 ) = worldPos.z();
+
+    if ( gpWorldStreaming != nullptr ) {
+        const Eigen::Vector4f center( worldPos.x(), 0.0f, worldPos.z(), 0.0f );
+        gpWorldStreaming->setPosition( center );
+    }
+
+    if ( pPlayerPhysicsVehicle != nullptr &&
+         pPlayerPhysicsVehicle->isActive() && gpPhysics != nullptr ) {
+        PhysicsLock lock;
+        pPlayerPhysicsVehicle->resetToTransform( pose );
+    }
+
+    CarBodyState *pBody = pCar->getBody();
+    pBody->WorldMatrix = pose;
+    Matrix4x4f_t offseted = pose;
+    if ( gpWorldStreaming != nullptr ) {
+        const Eigen::Vector4f &shift = gpWorldStreaming->getPosition();
+        offseted( 3, 0 ) -= shift.x();
+        offseted( 3, 1 ) -= shift.y();
+        offseted( 3, 2 ) -= shift.z();
+    }
+    pBody->OffsetedWorldMatrix = offseted;
+
+    bCarGrounded = false;
+
+    OTDU_LOG_INFO( "Debug: teleported local-player car to (%.1f, %.1f, %.1f)\n",
+                   worldPos.x(), worldPos.y(), worldPos.z() );
+}
+
 void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     // FUN_00849380
     if ( pPlayerPhysicsVehicle == nullptr ||
@@ -386,6 +436,12 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     pBody->Steering = steer;
 
     pPlayerPhysicsVehicle->setInput( throttle, brake, steer );
+
+    if ( pCfg != nullptr ) {
+        pBody->bHeadlightsOn =
+            readAxis( pCfg->pCarIgnition ) > 0.5f;           // CAR_LIGHT
+        pBody->bHonking = readAxis( pCfg->pCarHorn ) > 0.5f; // CAR_HORN
+    }
 }
 
 void GameModeWorld::tick( float deltaTime, float totalTime ) {
@@ -430,6 +486,12 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
             OTDU_LOG_INFO(
                 "Debug: car %d not switchable (missing DB or bike)\n", carID );
         }
+    }
+
+    // Process teleport request
+    if ( gRequestedPlayerTeleport ) {
+        gRequestedPlayerTeleport = false;
+        teleportLocalPlayerCar( gRequestedPlayerTeleportPos );
     }
 #endif
 

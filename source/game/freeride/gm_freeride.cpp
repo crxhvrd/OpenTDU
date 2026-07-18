@@ -5,6 +5,9 @@
 #include "tdu_instance.h"
 
 #include "database/gs_database.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/local_player.h"
+#include "game/vehicle/car_state.h"
 
 GMFreeride::GMFreeride()
     : GameModeWorld( 6 ),
@@ -113,6 +116,97 @@ void GMFreeride::drawDebug( float deltaTime ) {
             if ( ImGui::Button( "Spawn" ) ) {
                 gRequestedPlayerCarID = gdb.DBCarData[carSlot].CarID;
             }
+        }
+    }
+
+    ImGui::SeparatorText( "Teleport" );
+    CarState *pCar = ( gpScenaric != nullptr )
+                         ? gpScenaric->getLocalPlayer().getCarState()
+                         : nullptr;
+    if ( pCar == nullptr ) {
+        ImGui::TextDisabled( "No local-player car spawned." );
+    } else {
+        // Absolute world position (row 3 of the body's world matrix).
+        const Eigen::Vector4f cur = pCar->getBody()->WorldMatrix.row( 3 );
+        ImGui::Text( "Current: (%.1f, %.1f, %.1f)", cur.x(), cur.y(), cur.z() );
+
+        // Seed the input fields from the current position on first display.
+        static float target[3] = { 0.0f, 0.0f, 0.0f };
+        static bool bSeeded = false;
+        if ( !bSeeded ) {
+            target[0] = cur.x();
+            target[1] = cur.y();
+            target[2] = cur.z();
+            bSeeded = true;
+        }
+
+        ImGui::SeparatorText( "Bookmarks" );
+        if ( ImGui::Button( "Manoa Falls" ) ) {
+            target[0] = 41464.73f;
+            target[1] = 88.72f;
+            target[2] = 25543.82f;
+        }
+        ImGui::SameLine();
+        if ( ImGui::Button( "Secret Island Teleporter" ) ) {
+            target[0] = 63519.45f;
+            target[1] = 223.50f;
+            target[2] = 46305.20f;
+        }
+        ImGui::SameLine();
+        if ( ImGui::Button( "Oahu Raceway" ) ) {
+            target[0] = 34569.15f;
+            target[1] = 3.06f;
+            target[2] = 45154.43f;
+        }
+
+        if ( ImGui::Button( "Secret Island" ) ) {
+            target[0] = 64285.047f;
+            target[1] = 37.758f;
+            target[2] = 44133.129f;
+        }
+        ImGui::SameLine();
+        if ( ImGui::Button( "Japanese Temple" ) ) {
+            target[0] = 44802.07f;
+            target[1] = 88.87f;
+            target[2] = 32675.04f;
+        }
+        ImGui::SameLine();
+        if ( ImGui::Button( "Observatory" ) ) {
+            target[0] = 10643.63f;
+            target[1] = 864.36f;
+            target[2] = 23641.65f;
+        }
+
+        if ( ImGui::Button( "AI Trainer Sector" ) ) {
+            target[0] = 9122.41f;
+            target[1] = 0.65f;
+            target[2] = 9847.77f;
+        }
+        ImGui::SameLine();
+        if ( ImGui::Button( "Tunnel" ) ) {
+            target[0] = 50037.879f;
+            target[1] = 356.729f;
+            target[2] = 40454.828f;
+        }
+        ImGui::SameLine();
+        if ( ImGui::Button( "Diamond Head" ) ) {
+            target[0] = 48442.840f;
+            target[1] = 190.627f;
+            target[2] = 52137.379f;
+        }
+
+        ImGui::SetNextItemWidth( 300.0f );
+        ImGui::InputFloat3( "World XYZ", target );
+        if ( ImGui::Button( "Use current" ) ) {
+            target[0] = cur.x();
+            target[1] = cur.y();
+            target[2] = cur.z();
+        }
+        ImGui::SameLine();
+        if ( ImGui::Button( "Teleport" ) ) {
+            gRequestedPlayerTeleportPos =
+                Eigen::Vector3f( target[0], target[1], target[2] );
+            gRequestedPlayerTeleport = true;
         }
     }
 }

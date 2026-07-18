@@ -398,7 +398,7 @@ LAB_008e2c4f:
             }
         }
 
-        DeviceAction *pChangeView = pPVar7->pCarCamera;
+        DeviceAction *pChangeView = pPVar7->pCarBackview; // CAR_CAMERA
         const bool bChangeViewPressed =
             ( pChangeView != nullptr ) &&
             ( pChangeView->NumAddedChannels != 0 ) &&
@@ -409,16 +409,17 @@ LAB_008e2c4f:
             bChangeCamTrigger = true;
         }
 
+        DeviceAction *pBackView = pPVar7->pCarLight; // CAR_BACKVIEW
+        const bool bBackViewPressed = ( pBackView != nullptr ) &&
+                                      ( pBackView->NumAddedChannels != 0 ) &&
+                                      ( ( pBackView->Flags & 1 ) != 0 );
         peVar5 = pPVar7->pCarHeadLeft;
-        DeviceAction *peVar6 = nullptr;
-        if ( ( ( ( ( peVar5 == nullptr ) ||
-                   ( peVar5->NumAddedChannels == 0 ) ) ||
-                 ( ( peVar6 = pPVar7->pCarHeadRight,
-                     peVar6 == nullptr ||
-                         ( ( peVar6->NumAddedChannels == 0 ||
-                             ( ( peVar5->Flags & 1 ) == 0 ) ) ) ) ) ) ||
-               ( ( peVar6->Flags & 1 ) == 0 ) )/* &&
-             ( cStack_1b == '\0' )*/ ) {
+        DeviceAction *peVar6 = pPVar7->pCarHeadRight;
+        const bool bHeadLookBack =
+            ( peVar5 != nullptr ) && ( peVar5->NumAddedChannels != 0 ) &&
+            ( ( peVar5->Flags & 1 ) != 0 ) && ( peVar6 != nullptr ) &&
+            ( peVar6->NumAddedChannels != 0 ) && ( ( peVar6->Flags & 1 ) != 0 );
+        if ( ( bHeadLookBack == false ) && ( bBackViewPressed == false ) ) {
             if ( ( bLookingBack != false ) && ( bChangeCamTrigger == false ) ) {
                 bViewBackOffTrigger = true;
             }
@@ -1191,14 +1192,16 @@ void GSCamera::loadCameraDB( uint8_t *param_1 ) {
     // slots memset-zeroed, so their vtable pointer is NULL — a later virtual
     // call (e.g. bindCamera -> initialize()) then faults dereferencing
     // vptr+0x10.
-    void *pVehicleMem =
-        TestDrive::AllocAligned( numVehicleCamera * sizeof( CameraVehicle ) + 0x10, alignof(CameraVehicle) );
+    void *pVehicleMem = TestDrive::AllocAligned(
+        numVehicleCamera * sizeof( CameraVehicle ) + 0x10,
+        alignof( CameraVehicle ) );
     OTDU_ASSERT( pVehicleMem );
     memset( pVehicleMem, 0, numVehicleCamera * sizeof( CameraVehicle ) + 0x10 );
 
     int32_t *piVehicleHeader = (int32_t *)pVehicleMem;
     CameraVehicle *pCVar10 = (CameraVehicle *)( piVehicleHeader + 4 );
-    pCVar10 = (CameraVehicle*)(Align((uintptr_t)pCVar10, alignof(CameraVehicle)));
+    pCVar10 = (CameraVehicle *)( Align( (uintptr_t)pCVar10,
+                                        alignof( CameraVehicle ) ) );
     int32_t iVar7 = (int32_t)numVehicleCamera;
     *piVehicleHeader = iVar7;
     int32_t pCVar4 = ( iVar7 + -1 );
@@ -1280,7 +1283,8 @@ bool GSCamera::registerCamera( const char *pName, const int32_t type ) {
         return false;
     }
 
-    T *pcVar2 = new ( TestDrive::AllocAligned( sizeof( T ), alignof( T ) ) ) T();
+    T *pcVar2 =
+        new ( TestDrive::AllocAligned( sizeof( T ), alignof( T ) ) ) T();
     cameraRegister[numCameraRegistered] = pcVar2;
 
     pcVar2->setName( pName );
