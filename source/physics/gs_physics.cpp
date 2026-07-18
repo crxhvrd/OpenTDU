@@ -226,11 +226,7 @@ void BuildMechaMembers( const HavokContainer &container,
             const uint32_t entryOff = mapOff + m * 0x10;
             const uint64_t logicID =
                 *reinterpret_cast<const uint64_t *>( pBuf + entryOff + 0x00 );
-            const uint32_t indexByteOff = readU32( entryOff + 0x08 );
-            if ( ( indexByteOff & 0xFu ) != 0 ) {
-                continue; // not a 0x10-aligned reference offset
-            }
-            const uint32_t k = indexByteOff >> 4;
+            const uint32_t k = readU32( entryOff + 0x08 );
             if ( k < rbCount ) {
                 members[k].LogicIDs.push_back( logicID );
             }
