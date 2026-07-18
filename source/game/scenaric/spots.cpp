@@ -2,7 +2,10 @@
 #include "spots.h"
 
 #include "filesystem/bank.h"
+#include "world/gs_world.h"
+#include "world/mng_world.h"
 #include "world/sector_manager.h"
+#include "world/streaming_manager.h"
 
 #include "core/maths_helper.h"
 #include "game/gm_base.h"
@@ -143,9 +146,53 @@ SpotSector *Spots::getSpotSector( uint64_t hashcode ) {
     return nullptr;
 }
 
+bool Spots::isSpotValid( const SpotMap *pSpot ) const {
+    // FUN_007d6b80 (inlined)
+    if ( !bUseOnlyValid ) {
+        return true;
+    }
+    for ( const SpotMap *pValidSpot : pValidSpots ) {
+        if ( pValidSpot == pSpot ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void Spots::updateSpotMeshValidity() {
     // FUN_007d6b80
-    OTDU_UNIMPLEMENTED; // TODO: STREAMING
+    // NOTE: the original re-checks both globals on every sector iteration; they
+    // cannot change mid-loop, so the checks are hoisted here.
+    if ( gpMngWorld == nullptr || gpWorld == nullptr ) {
+        return;
+    }
+
+    StreamingManager *pStreamingManager = gpWorld->getStreamingManager();
+    if ( pStreamingManager == nullptr ) {
+        return;
+    }
+
+    // NOTE: the original walks 8 sectors (loop bound 0x87480 == 8 * 0x10e90)
+    // even though SectorManager only ever constructs 7 (FUN_0042f450 loops 7,
+    // FUN_00704a60 searches 7), so retail reads one Sector past the end of the
+    // array. Reproducing that overrun is not possible here; we stop at 7.
+    for ( Sector &sector : pStreamingManager->sectorManager.sectors ) {
+        if ( sector.state != 1 ) {
+            continue;
+        }
+
+        MngActor &mngActor = sector.geometry.mngActor;
+        for ( int32_t i = 0; i < mngActor.getActorCount(); i++ ) {
+            Entity *pActor = mngActor.getActor( i );
+            if ( pActor == nullptr ||
+                 pActor->getType() != eEntityType::ET_SPTM ) {
+                continue;
+            }
+
+            EntitySpotMesh *pSpotMesh = static_cast<EntitySpotMesh *>( pActor );
+            pSpotMesh->setSpotValid( isSpotValid( pSpotMesh->getSpotWorld() ) );
+        }
+    }
 }
 
 bool Spots::installWorldSpots( void *pResource ) {

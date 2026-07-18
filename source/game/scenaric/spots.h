@@ -98,6 +98,7 @@ public:
     void removeSectorSpots( void *pBlob );
 
 private:
+    bool isSpotValid( const SpotMap *pSpot ) const;
     void spawnSectorSpotMeshes( Sector *pSector, const SpotsList &slot );
     static Entity *selectSpotTemplate( ScenaricBank &meshBank,
                                        int32_t spotType,

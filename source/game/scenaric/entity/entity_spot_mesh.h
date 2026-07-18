@@ -21,6 +21,17 @@ public:
         pSpotSector = pSector;
     }
 
+    SpotMap *getSpotWorld() const { return pSpotWorld; }
+
+    void setSpotValid( bool bValid ) {
+        // FUN_007d6b80
+        if ( bValid ) {
+            flags |= kSpotValidFlags;
+        } else {
+            flags &= ~kSpotValidFlags;
+        }
+    }
+
 public:
     EntitySpotMesh();
     ~EntitySpotMesh();
@@ -32,6 +43,8 @@ public:
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
 
 protected:
+    static constexpr uint32_t kSpotValidFlags = 0x3;
+
     struct SerializedData {
         int32_t Type; // eSpotType
         int32_t SubType;
