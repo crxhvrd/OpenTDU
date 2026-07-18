@@ -241,6 +241,16 @@ void GSParticles::loadMaterials() {
                     continue;
                 }
                 MaterialParameter *pParam = pMaterial->getParameterByIndex( 0 );
+
+                constexpr uint64_t kParticleParamGUID = 0x73078865ca37336dull;
+                if ( pParam->Hashcode == kParticleParamGUID ) {
+                    pMaterial->StencilEnable = 0;
+                    pMaterial->AlphaTest = eComparisonFunction::CF_Never;
+                    pMaterial->AlphaRef = 4;
+                    pMaterial->DepthWrite = 2;
+                    pMaterial->DepthTest = 1;
+                }
+
                 pParam->Flags = MaterialParameterFlags{};
                 pParam->Flags.NumUVMaps = 1;
                 pParam->Flags.NumTextures = 1;
