@@ -172,14 +172,14 @@ bool VehicleController::loadBankResources() {
 
 void VehicleController::InitializeGaugeHashes() {
     // FUN_008b5ac0
-    gNeedleHashcodes[0][0] = GetIdentifier64bit( "ND_SPD_2" );
-    gNeedleHashcodes[0][1] = GetIdentifier64bit( "ND_SPD_1" );
+    gNeedleHashcodes[0][0] = GetIdentifier64bit( "ND_SPD_1" );
+    gNeedleHashcodes[0][1] = GetIdentifier64bit( "ND_SPD_2" );
 
-    gNeedleHashcodes[1][0] = GetIdentifier64bit( "ND_RPM_2" );
-    gNeedleHashcodes[1][1] = GetIdentifier64bit( "ND_RPM_1" );
+    gNeedleHashcodes[1][0] = GetIdentifier64bit( "ND_RPM_1" );
+    gNeedleHashcodes[1][1] = GetIdentifier64bit( "ND_RPM_2" );
 
-    gNeedleHashcodes[2][0] = GetIdentifier64bit( "ND_TRB_2" );
-    gNeedleHashcodes[2][1] = GetIdentifier64bit( "ND_TRB_1" );
+    gNeedleHashcodes[2][0] = GetIdentifier64bit( "ND_TRB_1" );
+    gNeedleHashcodes[2][1] = GetIdentifier64bit( "ND_TRB_2" );
 }
 
 void VehicleController::unstream() {
@@ -438,10 +438,10 @@ void VehicleController::registerEnvmapUnknown() {
 
 void VehicleController::updateGauges() {
     // FUN_008b61a0
+    float local_8c = 0.0f;
     for ( int32_t local_88 = 0; local_88 < kNumGauges; local_88++ ) {
         if ( gauges[local_88].pNeedles[0] != nullptr &&
              gauges[local_88].pNeedles[1] != nullptr ) {
-            float local_8c = 0.0f;
             if ( local_88 == 1 ) {
                 local_8c = pCarState->getBody()->Omega * 9.549296f * 0.00025f;
             } else if ( local_88 == 0 ) {
@@ -459,25 +459,25 @@ void VehicleController::updateGauges() {
                                    fVar8 * 0.010358401f;
                     }
                 }
-
-                if ( local_8c < 0.0f ) {
-                    local_8c = 0.0f;
-                }
-
-                Eigen::Quaternionf local_80 =
-                    gauges[local_88].NeedlesRotation[0].slerp(
-                        local_8c, gauges[local_88].NeedlesRotation[1] );
-
-                gauges[local_88].pNeedles[0]->TransformMatrix =
-                    BuildRotationMatrix( local_80 );
-
-                gauges[local_88].pNeedles[0]->TransformMatrix.row( 3 ).x() +=
-                    gauges[local_88].Position.x();
-                gauges[local_88].pNeedles[0]->TransformMatrix.row( 3 ).y() +=
-                    gauges[local_88].Position.y();
-                gauges[local_88].pNeedles[0]->TransformMatrix.row( 3 ).z() +=
-                    gauges[local_88].Position.z();
             }
+
+            if ( local_8c < 0.0f ) {
+                local_8c = 0.0f;
+            }
+
+            Eigen::Quaternionf local_80 =
+                gauges[local_88].NeedlesRotation[0].slerp(
+                    local_8c, gauges[local_88].NeedlesRotation[1] );
+
+            gauges[local_88].pNeedles[0]->TransformMatrix =
+                BuildRotationMatrix( local_80 );
+
+            gauges[local_88].pNeedles[0]->TransformMatrix.row( 3 ).x() +=
+                gauges[local_88].Position.x();
+            gauges[local_88].pNeedles[0]->TransformMatrix.row( 3 ).y() +=
+                gauges[local_88].Position.y();
+            gauges[local_88].pNeedles[0]->TransformMatrix.row( 3 ).z() +=
+                gauges[local_88].Position.z();
         }
     }
 }
