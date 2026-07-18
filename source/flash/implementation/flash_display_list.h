@@ -110,6 +110,7 @@ public:
     inline FlashDisplayListEntry *getFirstEntry() { return pEntries; }
     inline FlashAction &getAction() { return action; }
     inline int32_t getCurrentFrameIndex() { return frameIndex; }
+    inline eFlashPlayState getPlayState() const { return playState; }
     inline FlashVariables *getVariables() { return pVariables; }
     inline FlashTransform *getInstanceTransform() { return &transform; }
     inline uint32_t &getFlagsRW() { return flags; }

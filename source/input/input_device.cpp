@@ -8,7 +8,7 @@
 // (not a 1:1 to the original code)
 DeviceAction::DeviceAction()
     : bIndividualAction( 0 ),
-      InputInterpolationMode( 3 ),
+      InputInterpolationMode( 1 ),
       Flags( 0 ),
       TimerCounter( 0.0f ),
       NumChannels( 0 ),

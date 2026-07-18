@@ -20,6 +20,29 @@ void FlashCallbacksRegister::add( const char *param_1,
     }
 }
 
+void FlashCallbacksRegister::remove( const char *param_1 ) {
+    // FUN_0099cc40
+    if ( param_1 == nullptr ) {
+        return;
+    }
+
+    uint32_t writeIndex = 0;
+    for ( uint32_t readIndex = 0; readIndex < numCallbacks; readIndex++ ) {
+        if ( strncmp( pCallbacks[readIndex].pClipName, param_1, 0x20 ) == 0 ) {
+            continue; // drop
+        }
+        if ( writeIndex != readIndex ) {
+            pCallbacks[writeIndex] = std::move( pCallbacks[readIndex] );
+        }
+        writeIndex++;
+    }
+    // Release the shifted-out tail so stale std::functions/users don't linger.
+    for ( uint32_t i = writeIndex; i < numCallbacks; i++ ) {
+        pCallbacks[i] = CallbackEntry{};
+    }
+    numCallbacks = writeIndex;
+}
+
 void FlashCallbacksRegister::executeCallbacks( FlashRenderer::State *param_2,
                                                float param_3,
                                                DrawList *param_4,

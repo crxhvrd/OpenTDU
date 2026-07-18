@@ -111,6 +111,7 @@ protected:
     void installLocalPlayerCar( int32_t carID,
                                 const Matrix4x4f_t *pSpawnOverride );
     void uninstallLocalPlayerCar();
+    void updateLocalPlayerDrivingInput( float deltaTime );
 
 protected:
     MngHudChallenge mngHudChallenge;

@@ -214,6 +214,7 @@ public:
     static float ParseFloat( std::string &argStr, size_t &it );
     static Eigen::Vector4f ParseVector4( std::string &argStr, size_t &it );
     static std::string ParseStringNoQuotes( std::string &argStr, size_t &it );
+    static bool HasRemainingArg( const std::string &args, size_t it );
 
 private:
     using CommandCallback_t = std::function<void( const char * )>;

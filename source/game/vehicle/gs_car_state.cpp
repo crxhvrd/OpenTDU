@@ -155,6 +155,7 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         body.SpeedInKmh = pPhysicsVehicle->getChassisSpeed();
         body.Omega = pPhysicsVehicle->getEngineAngularVelocity();
         body.Gears = pPhysicsVehicle->getCurrentGear();
+        body.GearState = pPhysicsVehicle->getCurrentGear() + 1;
 
         const uint32_t physNumWheels =
             Min( pPhysicsVehicle->getNumWheels(), CarState::kMaxNumWheels );

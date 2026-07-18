@@ -157,15 +157,6 @@ void GameModeScene::reset() {
     if ( gpPlayerData != nullptr && gpPlayerData->isOnline() ) {
         OTDU_UNIMPLEMENTED; // TODO: ONLINE (P2P clock sync ->
                             // GSWeather::setTime)
-    } else {
-        // HACK: FIXME: Set arbitrary ToD to prevent funky/corrupted skydome
-        // (TODO: find where this is done in the original p-code and remove this
-        // hack)
-        TimeOfDay daytimeSeed;
-        daytimeSeed.Hours = 1.0f;
-        daytimeSeed.Minutes = 0.0f;
-        daytimeSeed.Seconds = 0.0f;
-        gpWeather->setTime( true, &daytimeSeed );
     }
 
     // HDR / radial-blur enable state for the current game mode.

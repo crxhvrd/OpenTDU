@@ -2,13 +2,32 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <vector>
 
+#include "filesystem/bank.h"
+#include "flash/bank/flash_bank_resources.h" // FlashMaterial (needle scratch)
 #include "game/mng_base.h"
 #include "game/mng_gps.h"
+#include "render/2dm.h"
 
 class CarState;
 class FlashPlayer;
 class DrawList;
+class Render2DB;
+class FlashResource;
+struct FlashRECT;
+
+struct HudGaugeFace {
+    float X = 0.0f;      // left
+    float Y = 0.0f;      // top
+    float Width = 0.0f;  // width
+    float Height = 0.0f; // height
+    // Atlas UV scale
+    float UvU = 0.0f;
+    float UvV = 0.0f;
+    Material *pMaterial = nullptr; // 2DM chunk (RPM or speed)
+};
 
 // Piecewise-linear value -> clip-rotation driver used for the gauge needles
 // and the minimap cursor.
@@ -103,15 +122,36 @@ public:
     DrawList *pDrawList = nullptr;
 };
 
-// Car-specific gauges bank loader
-class HudGaugesBank {
+class HudGaugesBank : public Bank {
+public:
+    inline bool isReady() const { return state == GBS_Ready; }
+
 public:
     HudGaugesBank();
     ~HudGaugesBank();
 
     void load( const char *pFilename, void *pFileBuffer, float screenWidth );
-    void install();
+
+    void loadContent() override;
     void release();
+    Material *getGaugeMaterial( const char *pName );
+
+private:
+    void clampGaugeMaterials();
+    void bindGaugeMaterials();
+    void teardownRenderObjects();
+
+private:
+    enum eGaugesBankState : int32_t {
+        GBS_Idle = 0,    // no bank held
+        GBS_Loading = 1, // stream requested
+        GBS_Ready = 2,   // render objects built
+    };
+
+    int32_t state = GBS_Idle;
+    bool b2DMInitialized = false;
+    Render2DM render2DM;
+    std::vector<std::unique_ptr<Render2DB>> render2DBs;
 };
 
 // Speed needle calibration set
@@ -130,6 +170,8 @@ struct HudObjectiveMarker {
 };
 
 class MngHud : public Manager {
+    friend class HudGaugesBank;
+
 public:
     using MovieFilterCallback_t = bool ( * )( const char *pMovieName );
 
@@ -141,6 +183,8 @@ public:
         // FUN_0042b760
         return "Hud";
     }
+
+    inline void setEnabled( const bool value ) { bEnabled = value; }
 
 public:
     MngHud();
@@ -159,15 +203,33 @@ public:
                              const Eigen::Vector4f &pPosition,
                              const char *pType );
 
-    inline void setEnabled( const bool value ) { bEnabled = value; }
-
     virtual void initializeFlash();
+
+    static void GaugeRpmFaceCallback( FlashRECT *pViewport,
+                                      float depth,
+                                      DrawList *pDrawList,
+                                      void *pUser,
+                                      FlashResource *pResource,
+                                      const char *pClipName );
+    static void GaugeSpeedFaceCallback( FlashRECT *pViewport,
+                                        float depth,
+                                        DrawList *pDrawList,
+                                        void *pUser,
+                                        FlashResource *pResource,
+                                        const char *pClipName );
 
 private:
     void loadCarGauges( const char *pFilename );
     void installCarGauges();
     void unloadCarGauges();
+    void dropGaugeFaceCallbacks();
+    void parseGaugeIni( const char *pFile, uint32_t fileSize );
+    void applyGaugeStyle( const char *pArgs );
+    void applyGaugeHudRange( const char *pArgs );
+
     void showCustomGauges();
+
+    void installGaugeFaceCallbacks( bool bInterior );
     void FUN_006ed810();
 
     void setCarName( const char *pName );
@@ -202,14 +264,16 @@ protected:
     float minimapHeading;
     bool bGPSRotation;
     bool bUnknown3261;
-    bool bGaugeClipCallbackB;
-    bool bGaugeClipCallbackA;
+    bool bGaugeClipCallbackB; // interior dial-face callbacks registered
+    bool bGaugeClipCallbackA; // exterior dial-face callbacks registered
+    HudGaugeFace rpmFace;
+    HudGaugeFace speedFace;
     int32_t gaugesState;
-    void *pGaugesBankMemory0;
-    bool bUnknown329C;
-    int32_t field_0x32a0;
-    int32_t field_0x32a4;
-    void *pGaugesBankMemory1;
+    bool bNeedleBackupDone;
+    FlashMaterial needleMaterialBackup;
+    FlashMaterial needleMaterialActive;
+    int32_t gaugeSyncFrameExt;
+    int32_t gaugeSyncFrameInt;
     HudGaugesBank gaugesBank;
     int32_t customGaugesMode;
     void *pGaugesFileBuffer;

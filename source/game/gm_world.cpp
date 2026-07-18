@@ -13,8 +13,10 @@
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "database/gs_database.h"
+#include "config/gs_config.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
+#include "input/gs_device.h"
 #include "game/vehicle/bank_vehicle.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/gs_car_display.h"
@@ -165,6 +167,9 @@ void GameModeWorld::reset() {
         }
     }
 
+    gpMngBackground->setDomeOverride(
+        true, GetIdentifier64bit( "dome_n1" ) ); // HACK:FIXME:
+
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC (driver avatar, HUD bind)
 }
 
@@ -313,6 +318,76 @@ void GameModeWorld::uninstallLocalPlayerCar() {
     gpScenaric->getLocalPlayer().setCarState( nullptr );
 }
 
+void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
+    // FUN_00849380
+    if ( pPlayerPhysicsVehicle == nullptr ||
+         !pPlayerPhysicsVehicle->isActive() ) {
+        return;
+    }
+    CarState *pCar = ( gpScenaric != nullptr )
+                         ? gpScenaric->getLocalPlayer().getCarState()
+                         : nullptr;
+    if ( pCar == nullptr ) {
+        return;
+    }
+
+    PlayerConfiguration *pCfg =
+        ( gpConfig != nullptr && gpConfig->pPlayerConfig != nullptr &&
+          gpConfig->NbMaxPlayers > 0 )
+            ? &gpConfig->pPlayerConfig[0]
+            : nullptr;
+
+    // Combined analog value of a bound device action (0 when unbound)
+    auto readAxis = []( DeviceAction *pAction ) -> float {
+        if ( pAction == nullptr || pAction->NumAddedChannels == 0 ) {
+            return 0.0f;
+        }
+        return pAction->FUN_00434e40( 0.0f );
+    };
+
+    // Rescale a raw axis past its dead-zone into [0,1] (FLOAT_00f4165c == 1.0).
+    auto applyDeadZone = []( float value, float deadZone ) -> float {
+        return value >= deadZone ? ( value - deadZone ) / ( 1.0f - deadZone )
+                                 : 0.0f;
+    };
+
+    const bool bBound =
+        pCfg != nullptr && ( ( pCfg->pCarBrake != nullptr &&
+                               pCfg->pCarBrake->NumAddedChannels != 0 ) ||
+                             ( pCfg->pCarLeft != nullptr &&
+                               pCfg->pCarLeft->NumAddedChannels != 0 ) ||
+                             ( pCfg->pCarRight != nullptr &&
+                               pCfg->pCarRight->NumAddedChannels != 0 ) ||
+                             ( pCfg->pCarClutch != nullptr &&
+                               pCfg->pCarClutch->NumAddedChannels != 0 ) );
+
+    float throttle = 0.0f;
+    float brake = 0.0f;
+    float steer = 0.0f;
+
+    if ( pCfg != nullptr && deltaTime > 0.0f ) {
+        const float rawAccel = readAxis( pCfg->pCarBrake );  // CAR_ACCEL
+        const float rawBrake = readAxis( pCfg->pCarLeft );   // CAR_BRAKE
+        const float rawLeft = readAxis( pCfg->pCarRight );   // CAR_LEFT
+        const float rawRight = readAxis( pCfg->pCarClutch ); // CAR_RIGHT
+
+        throttle = applyDeadZone( rawAccel, gAccelDeadZone );
+        brake = applyDeadZone( rawBrake, gBrakeDeadZone );
+
+        steer = rawRight - rawLeft;
+    }
+
+    (void)bBound;
+
+    CarBodyState *pBody = pCar->getBody();
+    pBody->Throttle = throttle;
+    pBody->Brake = brake;
+    pBody->SteeringRaw = steer;
+    pBody->Steering = steer;
+
+    pPlayerPhysicsVehicle->setInput( throttle, brake, steer );
+}
+
 void GameModeWorld::tick( float deltaTime, float totalTime ) {
     // FUN_007beb90
     GameModeScene::tick( deltaTime, totalTime );
@@ -344,6 +419,12 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
 
             uninstallLocalPlayerCar();
             installLocalPlayerCar( carID, &pose );
+
+            if ( gpMngHud != nullptr && gpScenaric != nullptr ) {
+                gpMngHud->FUN_006e6a00(
+                    gpScenaric->getLocalPlayer().getCarState() );
+            }
+
             OTDU_LOG_INFO( "Debug: switched player car to %d\n", carID );
         } else {
             OTDU_LOG_INFO(
@@ -358,18 +439,7 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
                          : nullptr;
     if ( pPlayerPhysicsVehicle != nullptr &&
          pPlayerPhysicsVehicle->isActive() && pCar != nullptr ) {
-        // HACK: REMOVE ME: TEST FOR VEHICLE PHYSICS
-        Device *pKb = gEdDev.getDevice( eDeviceType::DT_Keyboard, 0 );
-        if ( pKb != nullptr ) {
-            const float throttle =
-                pKb->getChannelValueBinary( "UP" ) ? 1.0f : 0.0f;
-            const float brake =
-                pKb->getChannelValueBinary( "DOWN" ) ? 1.0f : 0.0f;
-            const float steer =
-                ( pKb->getChannelValueBinary( "RIGHT" ) ? 1.0f : 0.0f ) -
-                ( pKb->getChannelValueBinary( "LEFT" ) ? 1.0f : 0.0f );
-            pPlayerPhysicsVehicle->setInput( throttle, brake, steer );
-        }
+        updateLocalPlayerDrivingInput( deltaTime );
     } else if ( !bCarGrounded && pCar != nullptr && gpPhysics != nullptr ) {
         // Fallback (no physics vehicle): one-shot cast-to-ground so the static
         // car settles onto the streamed terrain instead of clipping. (The

@@ -119,8 +119,8 @@ LAB_0044be27:
     pFVar3->setTagPtr0( param_1, pFVar2 );
     if ( pFVar2 != nullptr ) {
         int32_t tagIndex = *(int32_t *)( (uint8_t *)pFVar2 + 0xc );
-        pFVar3->setTagPtr1(
-            param_1, pFVar3->getDictionary().getTagAtIndex( tagIndex ) );
+        pFVar3->setTagPtr1( param_1,
+                            pFVar3->getDictionary().getTagAtIndex( tagIndex ) );
     }
 }
 
@@ -1087,7 +1087,7 @@ void FlashDisplayList::getBoundingBox( FlashRECT *param_2,
                                        bool *param_4 ) {
     // FUN_00447af0
     for ( auto pFVar1 = pEntries; pFVar1 != nullptr; pFVar1 = pFVar1->pNext ) {
-        if ( pFVar1->isSprite() ) {
+        if ( !pFVar1->isSprite() ) {
             float fVar7 = param_3->ScalarsFloat[3];
             float fVar8 = param_3->ScalarsFloat[3];
             float fVar9 = param_3->ScalarsFloat[3];

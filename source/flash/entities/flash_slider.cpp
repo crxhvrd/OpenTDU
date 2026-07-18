@@ -323,10 +323,10 @@ void FlashSlider::FUN_0071baf0() {
                 if ( unknownDword == 0 ) {
                     fVar2 =
                         ( gEdFlash.Input.MouseCoordinates[0] - FStack_50.X ) /
-                        FStack_50.Y;
+                        FStack_50.Width;
                 } else if ( unknownDword == 1 ) {
                     fVar2 = 1.0f - ( gEdFlash.Input.MouseCoordinates[1] -
-                                     FStack_50.Width ) /
+                                     FStack_50.Y ) /
                                        FStack_50.Height;
                 }
 

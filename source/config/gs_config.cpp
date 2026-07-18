@@ -669,6 +669,15 @@ std::string GSConfig::ParseStringNoQuotes( std::string &argStr, size_t &it ) {
     return argStr.substr( start, it - start );
 }
 
+bool GSConfig::HasRemainingArg( const std::string &args, size_t it ) {
+    while ( it < args.length() &&
+            ( args[it] == ' ' || args[it] == '\t' || args[it] == '=' ||
+              args[it] == '\r' || args[it] == '\n' || args[it] == ',' ) ) {
+        it++;
+    }
+    return it < args.length();
+}
+
 DeviceAction *PlayerConfiguration::findActionInList( const char *param_1 ) {
     // FUN_00985610
     for ( uint32_t i = 0; i < NumActions; i++ ) {

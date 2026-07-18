@@ -3,18 +3,26 @@
 
 #include "config/gs_config.h"
 #include "database/gs_database.h"
+#include "filesystem/gs_file.h"
+#include "flash/flash_callbacks_register.h"
+#include "flash/flash_global_materials.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/ed_flash.h"
+#include "flash/implementation/flash_dictionary.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/implementation/flash_resource.h"
 #include "flash/implementation/flash_sprite.h"
+#include "flash/implementation/flash_tags.h"
 #include "game/game_cheats.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
 #include "player_data/gs_playerdata.h"
+#include "render/2db.h"
 #include "render/draw_list.h"
 #include "render/gs_render.h"
+#include "render/material.h"
 #include "render/render_scene.h"
+#include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
 #include "system/system_shared.h"
 #include "tdu_instance.h"
@@ -32,6 +40,129 @@ static constexpr uint32_t kGaugesBufferSize = 0x7d000;
 bool gEnableMinimapDensity = true;    // DAT_00f99f04
 bool gEnableMinimapAI = true;         // DAT_00f99f05
 bool gEnableMinimapNetPlayers = true; // DAT_00f99f06
+
+static FlashTag *ExtractShapeBitmapTag( FlashTag *pShapeTag,
+                                        FlashResource *pResource ) {
+    // FUN_0044fbf0
+    uint8_t *pBase = (uint8_t *)pShapeTag;
+    const int32_t recordsOffset = *(int32_t *)( pBase + 0x1c );
+
+    // The style section's +4 word is the fill kind (8 = bitmap fill list
+    // present).
+    if ( *(int32_t *)( pBase + recordsOffset + 4 ) != 8 ) {
+        return nullptr;
+    }
+
+    const uint16_t selector = *(uint16_t *)( pBase + recordsOffset + 0x0a );
+    const int32_t fillOffset = *(int32_t *)( pBase + 0x1c + selector * 4 );
+    const int32_t *pFill = (int32_t *)( pBase + fillOffset + 4 );
+    if ( ( pFill[0] == 0x40 || pFill[0] == 0x41 ) && pFill[1] != -1 &&
+         pFill[1] < pResource->getDictionary().getSize() ) {
+        return pResource->getDictionary().getTagAtIndex( pFill[1] );
+    }
+
+    return nullptr;
+}
+
+FlashTag *FindNeedleBitmapTag( FlashSprite *pSprite,
+                               FlashResource *pResource ) {
+    // FUN_00448a80
+    uint8_t *pTagsArray = (uint8_t *)pSprite->getTagsArray();
+    if ( pTagsArray == nullptr ) {
+        return nullptr;
+    }
+    FlashTag *pTag =
+        (FlashTag *)( pTagsArray + *(int32_t *)( pTagsArray + 0x14 ) );
+    while ( pTag != nullptr ) {
+        const int32_t type = pTag->getVtable()->GetType();
+        if ( type == 0 ) { // End
+            return nullptr;
+        }
+        if ( type == 0x1a ) { // PlaceObject2
+            const uint16_t placedIndex = *(uint16_t *)( (uint8_t *)pTag + 0xc );
+            FlashTag *pPlaced =
+                ( placedIndex < pResource->getDictionary().getSize() )
+                    ? pResource->getDictionary().getTagAtIndex( placedIndex )
+                    : nullptr;
+            if ( pPlaced != nullptr && pPlaced->getVtable()->GetType() == 2 ) {
+                return ExtractShapeBitmapTag( pPlaced, pResource );
+            }
+            pTag = pTag->getNextTag();
+        } else if ( type == 0x27 ) { // DefineSprite: skip its whole body
+            pTag =
+                (FlashTag *)( (uint8_t *)pTag +
+                              ( (FlashTagDefineSpriteData *)pTag )->TagLength );
+        } else {
+            pTag = pTag->getNextTag();
+        }
+    }
+    return nullptr;
+}
+void DrawGaugeQuad( float u0,
+                    float v0,
+                    float u1,
+                    float v1,
+                    float xLeft,
+                    float yTop,
+                    float xRight,
+                    float yBottom,
+                    FlashResource *pResource ) {
+    // FUN_006e4cd0
+    const bool bEmit =
+        pResource->getDrawMode() != 2 && !gFlashGlobalMaterials.isEnabled();
+    auto *pState = pResource->getState();
+    if ( bEmit ) {
+        pState->CurrentDepth += pState->DepthRange;
+        const ePrimitiveType prim =
+            ( pResource->getDrawMode() == 0 ) ? PT_TriangleStrip : PT_LineStrip;
+        pState->pDrawList->beginPrimitive( prim, 4 );
+        DAT_010e7275 = false;
+        DAT_010e7278 = 0;
+    }
+
+    float vertex[4];
+    vertex[0] = xLeft;
+    vertex[1] = yBottom;
+    vertex[2] = u0;
+    vertex[3] = v1;
+    pResource->FUN_0099ec30( vertex );
+    vertex[0] = xRight;
+    vertex[1] = yBottom;
+    vertex[2] = u1;
+    vertex[3] = v1;
+    pResource->FUN_0099ec30( vertex );
+    vertex[0] = xLeft;
+    vertex[1] = yTop;
+    vertex[2] = u0;
+    vertex[3] = v0;
+    pResource->FUN_0099ec30( vertex );
+    vertex[0] = xRight;
+    vertex[1] = yTop;
+    vertex[2] = u1;
+    vertex[3] = v0;
+    pResource->FUN_0099ec30( vertex );
+
+    if ( bEmit ) {
+        pState->pDrawList->commitPrimitive();
+    }
+}
+
+uint32_t ComputeGaugeFaceDiffuse( FlashPlayer *pPlayer ) {
+    // FUN_00441330
+    float alpha = 255.0f;
+    FlashClip hudClip;
+    if ( pPlayer->getClipPlayer( "HUD", &hudClip ) &&
+         hudClip.pSprite != nullptr ) {
+        const float alpha0to100 =
+            (float)( (int32_t)hudClip.pSprite->getTransform()
+                         ->Transform.MulTerm[3] *
+                     100 ) *
+            ( 1.0f / 256.0f );
+        alpha = alpha0to100 * 255.0f * 0.01f;
+    }
+    const uint32_t alphaByte = (uint32_t)alpha & 0xffu;
+    return ( alphaByte << 24 ) | 0x00ffffffu;
+}
 
 void HudFlashGauge::update( float value ) {
     // FUN_006ea720
@@ -200,27 +331,159 @@ bool HudMinimap::updateLure() {
 
 HudGaugesBank::HudGaugesBank() {
     // FUN_006e4e90
-    OTDU_UNIMPLEMENTED;
 }
 
 HudGaugesBank::~HudGaugesBank() {
     // FUN_006e4e30
-    OTDU_UNIMPLEMENTED;
+    release();
 }
 
-void HudGaugesBank::load( const char *, void *, float ) {
+void HudGaugesBank::load( const char *pFilename,
+                          void *pFileBuffer,
+                          float screenWidth ) {
     // FUN_006ec270
-    OTDU_UNIMPLEMENTED;
+    if ( state != GBS_Idle || pFilename == nullptr ) {
+        return;
+    }
+
+    const char *pQuality = ( screenWidth > 640.0f ) ? "HiRes" : "LowRes";
+    std::string basePath = gpConfig->getResRootPath();
+    basePath += "FrontEnd/";
+    basePath += pQuality;
+    basePath += "/Gauges/";
+
+    std::string bankPath = basePath + pFilename + ".bnk";
+    if ( !gpFile->fileExists( bankPath.c_str() ) ) {
+        bankPath = basePath + "Hud01.bnk";
+    }
+
+    if ( !isLoaded() ) {
+        state = GBS_Loading;
+        bool bStreamStarted =
+            loadBankWithMemory( gpFile, bankPath.c_str(), pFileBuffer,
+                                kGaugesBufferSize, /* bAsync */ false );
+        if ( !bStreamStarted ) {
+            state = GBS_Idle;
+        }
+        return;
+    }
+
+    state = GBS_Loading;
 }
 
-void HudGaugesBank::install() {
+void HudGaugesBank::loadContent() {
     // FUN_006e7c20
-    OTDU_UNIMPLEMENTED;
+    teardownRenderObjects();
+
+    ParsedBankEntry entry;
+    const int32_t numEntries = getNumElements();
+    for ( int32_t entryIndex = 0; entryIndex < numEntries; entryIndex++ ) {
+        if ( getEntry( entryIndex, entry ) != 0 ) {
+            return;
+        }
+
+        if ( entry.Type == 1 && entry.SubType == 2 ) {
+            // .2DM
+            b2DMInitialized = render2DM.initialize( entry.pData );
+        } else if ( entry.Type == 1 && entry.SubType == 3 ) {
+            // .2DB
+            auto p2DB = std::make_unique<Render2DB>();
+            p2DB->initialize( entry.pData );
+            if ( gpFlash != nullptr ) {
+                gpFlash->getCollection2D().register2DB( p2DB.get() );
+            }
+            render2DBs.push_back( std::move( p2DB ) );
+        } else if ( entry.Type == 3 && entry.SubType == 4 ) {
+            // .ini
+            if ( gpMngHud != nullptr ) {
+                gpMngHud->parseGaugeIni(
+                    static_cast<const char *>( entry.pData ), entry.Size );
+            }
+        }
+    }
+
+    // Register the material set into GSFlash collection
+    if ( b2DMInitialized ) {
+        if ( gpFlash != nullptr ) {
+            gpFlash->getCollection2D().register2DM( &render2DM );
+        }
+        clampGaugeMaterials();
+        bindGaugeMaterials();
+    }
+
+    state = GBS_Ready;
+    if ( gpMngHud != nullptr ) {
+        gpMngHud->gaugesState = 5;
+    }
 }
 
 void HudGaugesBank::release() {
     // FUN_006e44f0
-    OTDU_UNIMPLEMENTED;
+    teardownRenderObjects();
+    unload();
+    state = GBS_Idle;
+}
+
+void HudGaugesBank::teardownRenderObjects() {
+    FileCollection2D *pCollection =
+        ( gpFlash != nullptr ) ? &gpFlash->getCollection2D() : nullptr;
+
+    for ( std::unique_ptr<Render2DB> &p2DB : render2DBs ) {
+        if ( p2DB != nullptr ) {
+            if ( pCollection != nullptr ) {
+                pCollection->unregister2DB( p2DB.get() );
+            }
+            p2DB->destroy();
+        }
+    }
+    render2DBs.clear();
+
+    if ( b2DMInitialized ) {
+        if ( pCollection != nullptr ) {
+            pCollection->unregister2DM( &render2DM );
+        }
+        render2DM.destroy();
+        b2DMInitialized = false;
+    }
+}
+
+void HudGaugesBank::clampGaugeMaterials() {
+    const uint32_t numMaterials = render2DM.getNumMaterials();
+    for ( uint32_t materialIndex = 0; materialIndex < numMaterials;
+          materialIndex++ ) {
+        Material *pMaterial = render2DM.getMaterialAtIndex( materialIndex );
+        if ( pMaterial == nullptr ) {
+            continue;
+        }
+
+        pMaterial->DepthTest = 1;
+        pMaterial->DepthWrite = 2;
+        pMaterial->AlphaTest = (eComparisonFunction)0;
+
+        MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+        if ( pParameter == nullptr ) {
+            continue;
+        }
+        MaterialLayer *pLayer = pParameter->getLayer( 0 );
+        if ( pLayer == nullptr ) {
+            continue;
+        }
+
+        MaterialLayerTexture &texture = pLayer->pLayerTextures[0];
+        texture.SamplerAddress[0] = TA_Clamp;
+        texture.SamplerAddress[1] = TA_Clamp;
+        texture.SamplerAddress[2] = TA_Clamp;
+    }
+}
+
+void HudGaugesBank::bindGaugeMaterials() {}
+
+Material *HudGaugesBank::getGaugeMaterial( const char *pName ) {
+    // FUN_006e51d0
+    if ( state != GBS_Ready || !b2DMInitialized ) {
+        return nullptr;
+    }
+    return render2DM.getMaterial( pName );
 }
 
 MngHud::MngHud()
@@ -241,11 +504,9 @@ MngHud::MngHud()
       bGaugeClipCallbackB( false ),
       bGaugeClipCallbackA( false ),
       gaugesState( 0 ),
-      pGaugesBankMemory0( nullptr ),
-      bUnknown329C( false ),
-      field_0x32a0( 0 ),
-      field_0x32a4( 0 ),
-      pGaugesBankMemory1( nullptr ),
+      bNeedleBackupDone( false ),
+      gaugeSyncFrameExt( 0 ),
+      gaugeSyncFrameInt( 0 ),
       customGaugesMode( 0 ),
       pGaugesFileBuffer( nullptr ),
       pMovieFilter( nullptr ) {
@@ -254,6 +515,9 @@ MngHud::MngHud()
     unknown11F0[1] = 0;
     unknown11F0[2] = 0;
     bUnknown11FC = false;
+
+    needleMaterialBackup = FlashMaterial{};
+    needleMaterialActive = FlashMaterial{};
 
     if ( gpMngHud == nullptr ) {
         bUnknown3261 = true;
@@ -276,8 +540,6 @@ bool MngHud::initialize( TestDriveGameInstance *pInstance ) {
     minimap.initialize();
 
     pGaugesFileBuffer = TestDrive::AllocAligned( kGaugesBufferSize, 0x10 );
-    pGaugesBankMemory1 = TestDrive::Alloc( 0x2c );
-    pGaugesBankMemory0 = TestDrive::Alloc( 0x2c );
 
     gps.initialize( pInstance );
     minimap.pGps = &gps;
@@ -298,15 +560,21 @@ void MngHud::tick( float deltaTime, float totalTime ) {
         if ( gpTestDriveInstance->getActiveGameMode() == GM_CinViewer ) {
             return;
         }
-        const int32_t numMovies = gpFlash->getNumMovies( 1 );
-        for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
-            MoviePlayer *pMoviePlayer =
-                gpFlash->getMoviePlayer( 1, movieIndex );
-            if ( pMoviePlayer != nullptr ) {
-                pMoviePlayer->IsMoviePaused |= 2;
+
+        initializeFlash();
+
+        if ( pHudPlayer == nullptr ) {
+            const int32_t numMovies = gpFlash->getNumMovies( 1 );
+            for ( int32_t movieIndex = 0; movieIndex < numMovies;
+                  movieIndex++ ) {
+                MoviePlayer *pMoviePlayer =
+                    gpFlash->getMoviePlayer( 1, movieIndex );
+                if ( pMoviePlayer != nullptr ) {
+                    pMoviePlayer->IsMoviePaused |= 2;
+                }
             }
+            return;
         }
-        return;
     }
 
     if ( pCarState == nullptr ) {
@@ -430,9 +698,12 @@ void MngHud::tick( float deltaTime, float totalTime ) {
 
     if ( gaugesState == 2 || ( gaugesState == 1 && !bGaugeClipCallbackB &&
                                !bGaugeClipCallbackA ) ) {
-        unloadCarGauges();
+        dropGaugeFaceCallbacks();
         gaugesState = 3;
     } else if ( gaugesState == 3 ) {
+        if ( gaugesBank.isReady() ) {
+            gaugesBank.release();
+        }
         if ( pGaugesPlayer != nullptr &&
              pGaugesPlayer->spriteExists( "/HUD/compteur_ext/" ) ) {
             DBEntryCarPhysicsData *pCarEntry =
@@ -530,16 +801,6 @@ void MngHud::terminate() {
     pHudPlayer = nullptr;
     pGaugesPlayer = nullptr;
 
-    if ( pGaugesBankMemory1 != nullptr ) {
-        TestDrive::Free( pGaugesBankMemory1 );
-    }
-    pGaugesBankMemory1 = nullptr;
-
-    if ( pGaugesBankMemory0 != nullptr ) {
-        TestDrive::Free( pGaugesBankMemory0 );
-    }
-    pGaugesBankMemory0 = nullptr;
-
     gps.terminate();
 }
 
@@ -553,8 +814,8 @@ void MngHud::draw() {
 
 void MngHud::pause() {
     // FUN_006e3e70
-    field_0x32a0 = 0;
-    field_0x32a4 = 0;
+    speedFace.pMaterial = nullptr;
+    rpmFace.pMaterial = nullptr;
     gps.pause();
 }
 
@@ -801,6 +1062,7 @@ void MngHud::initializeFlash() {
     odometerDecimal.NumDigits = 1;
 
     gaugesState = 1;
+    customGaugesMode = 2;
 
     minimapCursor.MinValue = 0.0f;
     minimapCursor.MaxValue = (float)EIGEN_TWO_PI;
@@ -819,26 +1081,546 @@ void MngHud::loadCarGauges( const char *pFilename ) {
 
 void MngHud::installCarGauges() {
     // FUN_006e5230
-    OTDU_UNIMPLEMENTED;
+    if ( pGaugesPlayer == nullptr ) {
+        return;
+    }
+
+    int32_t extFrame = -1;
+    int32_t intFrame = -1;
+
+    FlashClip extClip;
+    if ( pGaugesPlayer->getClipPlayer( "/HUD/compteur_ext/", &extClip ) &&
+         extClip.pSprite != nullptr ) {
+        ScopedMutexLock lock = gpFlash->scopedLock();
+        FlashDisplayList *pDisplayList = extClip.pSprite->getDisplayList();
+        extFrame = pDisplayList->getCurrentFrameIndex();
+        if ( pDisplayList->getPlayState() == eFlashPlayState::FPS_Play ) {
+            extFrame--;
+        }
+    }
+
+    FlashClip intClip;
+    if ( pGaugesPlayer->getClipPlayer( "/HUD/compteur_int/", &intClip ) &&
+         intClip.pSprite != nullptr ) {
+        ScopedMutexLock lock = gpFlash->scopedLock();
+        FlashDisplayList *pDisplayList = intClip.pSprite->getDisplayList();
+        intFrame = pDisplayList->getCurrentFrameIndex();
+        if ( pDisplayList->getPlayState() == eFlashPlayState::FPS_Play ) {
+            intFrame--;
+        }
+    }
+
+    if ( extFrame == -1 || intFrame == -1 ) {
+        return;
+    }
+
+    if ( extFrame != gaugeSyncFrameExt || intFrame != gaugeSyncFrameInt ) {
+        return;
+    }
+
+    FlashClip needleClip;
+    const bool bFoundNeedle =
+        pGaugesPlayer->getClipPlayer(
+            "/HUD/compteur_ext/aiguille/aiguille_speed", &needleClip ) ||
+        pGaugesPlayer->getClipPlayer(
+            "/HUD/compteur_int/aiguille_rpm/aiguille_speed", &needleClip ) ||
+        pGaugesPlayer->getClipPlayer(
+            "/HUD/compteur_int/aiguille_speed/aiguille_speed", &needleClip ) ||
+        pGaugesPlayer->getClipPlayer( "/HUD/compteur_ext/aiguille",
+                                      &needleClip ) ||
+        pGaugesPlayer->getClipPlayer( "/HUD/compteur_int/aiguille_rpm",
+                                      &needleClip ) ||
+        pGaugesPlayer->getClipPlayer( "/HUD/compteur_int/aiguille_speed",
+                                      &needleClip );
+
+    if ( !bFoundNeedle ) {
+        if ( gaugesBank.getGaugeMaterial( "NEEDLE" ) != nullptr ) {
+            return;
+        }
+        gaugesState = 6;
+        return;
+    }
+
+    FlashResource *pNeedleResource = needleClip.pParent;
+    FlashTag *pNeedleTag = nullptr;
+    FlashMaterial *pCurrentMaterial = nullptr;
+    if ( needleClip.pSprite != nullptr && pNeedleResource != nullptr ) {
+        ScopedMutexLock lock = gpFlash->scopedLock();
+        pNeedleTag = FindNeedleBitmapTag( needleClip.pSprite, pNeedleResource );
+        if ( pNeedleTag != nullptr ) {
+            pCurrentMaterial =
+                (FlashMaterial *)pNeedleResource->getTagPtr0( pNeedleTag );
+        }
+    }
+
+    if ( pCurrentMaterial != nullptr ) {
+        Material *pNeedleChunk = gaugesBank.getGaugeMaterial( "NEEDLE" );
+        FlashMaterial *pRebind = nullptr;
+        if ( pNeedleChunk == nullptr ) {
+            if ( bNeedleBackupDone ) {
+                pRebind = &needleMaterialBackup;
+            }
+        } else {
+            // First install
+            if ( !bNeedleBackupDone ) {
+                needleMaterialBackup = *pCurrentMaterial;
+                bNeedleBackupDone = true;
+            }
+
+            needleMaterialActive.ID = pCurrentMaterial->ID;
+            needleMaterialActive.pMaterial = pNeedleChunk;
+            needleMaterialActive.pTexture = nullptr;
+            pRebind = &needleMaterialActive;
+        }
+
+        if ( pRebind != nullptr ) {
+            ScopedMutexLock lock = gpFlash->scopedLock();
+            pNeedleResource->setTagPtr0( pNeedleTag, pRebind );
+        }
+    }
+
+    gaugesState = 6;
+}
+
+void MngHud::dropGaugeFaceCallbacks() {
+    if ( bGaugeClipCallbackA ) {
+        gFlashCallbacksRegister.remove( "c_ext" );
+        bGaugeClipCallbackA = false;
+    }
+    if ( bGaugeClipCallbackB ) {
+        gFlashCallbacksRegister.remove( "c_int_rpm" );
+        gFlashCallbacksRegister.remove( "c_int_sp" );
+        bGaugeClipCallbackB = false;
+    }
 }
 
 void MngHud::unloadCarGauges() {
     // FUN_006e7bc0
     gaugesBank.release();
+    dropGaugeFaceCallbacks();
+}
 
-    OTDU_UNIMPLEMENTED; // TODO: FLASH
+void MngHud::parseGaugeIni( const char *pFile, uint32_t fileSize ) {
+    // FUN_004303f0
+    if ( pFile == nullptr || fileSize == 0 ) {
+        return;
+    }
 
+    const std::string text( pFile, fileSize );
+    std::string currentSection;
+    size_t it = 0;
+
+    while ( it < text.length() ) {
+        while ( it < text.length() &&
+                ( text[it] == ' ' || text[it] == '\t' || text[it] == '\r' ||
+                  text[it] == '\n' ) ) {
+            it++;
+        }
+        if ( it >= text.length() ) {
+            break;
+        }
+
+        // Section header.
+        if ( text[it] == '[' ) {
+            it++;
+            currentSection.clear();
+            while ( it < text.length() && text[it] != ']' ) {
+                currentSection += text[it++];
+            }
+            if ( it < text.length() ) {
+                it++; // skip ']'
+            }
+            continue;
+        }
+
+        // Comment line.
+        if ( text[it] == '#' || ( text[it] == '/' && it + 1 < text.length() &&
+                                  text[it + 1] == '/' ) ) {
+            while ( it < text.length() && text[it] != '\n' ) {
+                it++;
+            }
+            continue;
+        }
+
+        std::string token;
+        while ( it < text.length() && text[it] != ' ' && text[it] != '\t' &&
+                text[it] != '\r' && text[it] != '\n' && text[it] != '=' ) {
+            const char c = text[it++];
+            token += ( c >= 'a' && c <= 'z' ) ? (char)( c - 0x20 ) : c;
+        }
+
+        // Remainder of the line is the argument string.
+        size_t lineEnd = text.find( '\n', it );
+        if ( lineEnd == std::string::npos ) {
+            lineEnd = text.length();
+        }
+        const std::string args = text.substr( it, lineEnd - it );
+        it = lineEnd;
+
+        if ( !currentSection.empty() && currentSection != "HUD" ) {
+            continue;
+        }
+        if ( token == "STYLE" ) {
+            applyGaugeStyle( args.c_str() );
+        } else if ( token == "ADDHUD" ) {
+            applyGaugeHudRange( args.c_str() );
+        } else if ( !token.empty() ) {
+            OTDU_LOG_WARN( "Unknown gauge token '%s'\n", token.c_str() );
+        }
+    }
+}
+
+void MngHud::applyGaugeStyle( const char *pArgs ) {
+    // FUN_006e4900
+    if ( pGaugesPlayer == nullptr ) {
+        return;
+    }
+
+    std::string argStr = pArgs;
+    size_t it = 0;
+
+    std::string label = GSConfig::ParseString( argStr, it );
+    if ( label.empty() ) {
+        it = 0;
+        label = GSConfig::ParseStringNoQuotes( argStr, it );
+    }
+
+    int32_t extFrame = -1;
+    int32_t intFrame = -1;
+
+    FlashClip extClip;
+    if ( pGaugesPlayer->getClipPlayer( "/HUD/compteur_ext/", &extClip ) ) {
+        extFrame = extClip.goToLabelAndPlay( label.c_str(), false );
+    }
+    FlashClip intClip;
+    if ( pGaugesPlayer->getClipPlayer( "/HUD/compteur_int/", &intClip ) ) {
+        intFrame = intClip.goToLabelAndPlay( label.c_str(), false );
+    }
+
+    gaugeSyncFrameExt = extFrame;
+    gaugeSyncFrameInt = intFrame;
+}
+
+void MngHud::applyGaugeHudRange( const char *pArgs ) {
+    // FUN_006e4620
+    // ADDHUD <interior_kmh|interior_mph> <min> <max> <minAngle> <maxAngle>
+    //        [<midValue> <midAngle>]
+    std::string argStr = pArgs;
+    size_t it = 0;
+
+    std::string element = GSConfig::ParseString( argStr, it );
+    if ( element.empty() ) {
+        it = 0;
+        element = GSConfig::ParseStringNoQuotes( argStr, it );
+    }
+
+    HudGaugeRange range;
+    range.MinValue = GSConfig::ParseFloat( argStr, it );
+    range.MaxValue = GSConfig::ParseFloat( argStr, it );
+    range.MinAngle = GSConfig::ParseFloat( argStr, it );
+    range.MaxAngle = GSConfig::ParseFloat( argStr, it );
+    if ( GSConfig::HasRemainingArg( argStr, it ) ) {
+        range.MidValue = GSConfig::ParseFloat( argStr, it );
+        range.MidAngle = GSConfig::ParseFloat( argStr, it );
+    } else {
+        range.MidValue = -1.0f;
+        range.MidAngle = -1.0f;
+    }
+
+    // Copy a value->angle range into a needle gauge.
+    auto applyToNeedle = [&range]( HudFlashGauge &needle ) {
+        needle.MinValue = range.MinValue;
+        needle.MaxValue = range.MaxValue;
+        needle.MinAngle = range.MinAngle;
+        needle.MaxAngle = range.MaxAngle;
+        needle.MidValue = range.MidValue;
+        needle.MidAngle = range.MidAngle;
+    };
+
+    const bool bImperial = gpPlayerData->isUsingImperialUnits();
+    if ( element == "interior_kmh" ) {
+        speedRangeMetric = range;
+        if ( !bImperial ) {
+            applyToNeedle( speedNeedle );
+        }
+    } else if ( element == "interior_mph" ) {
+        speedRangeImperial = range;
+        if ( bImperial ) {
+            applyToNeedle( speedNeedle );
+        }
+    } else if ( element == "interior_rpm" ) {
+        applyToNeedle( rpmNeedle );
+    } else if ( element == "exterior_rpm" ) {
+        applyToNeedle( extNeedle );
+    } else {
+        return;
+    }
+}
+
+void MngHud::GaugeRpmFaceCallback( FlashRECT * /*pViewport*/,
+                                   float /*depth*/,
+                                   DrawList *pDrawList,
+                                   void *pUser,
+                                   FlashResource *pResource,
+                                   const char * /*pClipName*/ ) {
+    // FUN_006e77e0
+    MngHud *pHud = (MngHud *)pUser;
+    if ( pHud == nullptr || pHud->pGaugesPlayer == nullptr ) {
+        return;
+    }
+    switch ( pHud->gaugesState ) {
+    case 1:
+    case 2:
+        pHud->gaugesState = 2; // still loading; latch and skip this frame
+        return;
+    case 4:
+    case 5:
+        return;
+    default:
+        break;
+    }
+    if ( pHud->rpmFace.pMaterial == nullptr ) {
+        return;
+    }
+
+    pDrawList->setActiveMaterial( pHud->rpmFace.pMaterial );
+    pDrawList->setDiffuse( 0, ComputeGaugeFaceDiffuse( pHud->pGaugesPlayer ) );
+
+    DrawGaugeQuad( 0.0f, 0.0f, pHud->rpmFace.UvU, pHud->rpmFace.UvV,
+                   pHud->rpmFace.X, pHud->rpmFace.Y,
+                   pHud->rpmFace.X + pHud->rpmFace.Width,
+                   pHud->rpmFace.Y + pHud->rpmFace.Height, pResource );
+}
+
+void MngHud::GaugeSpeedFaceCallback( FlashRECT * /*pViewport*/,
+                                     float /*depth*/,
+                                     DrawList *pDrawList,
+                                     void *pUser,
+                                     FlashResource *pResource,
+                                     const char * /*pClipName*/ ) {
+    // FUN_006e7690
+    MngHud *pHud = (MngHud *)pUser;
+    if ( pHud == nullptr || pHud->pGaugesPlayer == nullptr ) {
+        return;
+    }
+    switch ( pHud->gaugesState ) {
+    case 1:
+    case 2:
+        pHud->gaugesState = 2;
+        return;
+    case 4:
+    case 5:
+        return;
+    default:
+        break;
+    }
+    if ( pHud->speedFace.pMaterial == nullptr ) {
+        return;
+    }
+
+    pDrawList->setActiveMaterial( pHud->speedFace.pMaterial );
+    pDrawList->setDiffuse( 0, ComputeGaugeFaceDiffuse( pHud->pGaugesPlayer ) );
+
+    DrawGaugeQuad( 0.0f, 0.0f, pHud->speedFace.UvU, pHud->speedFace.UvV,
+                   pHud->speedFace.X, pHud->speedFace.Y,
+                   pHud->speedFace.X + pHud->speedFace.Width,
+                   pHud->speedFace.Y + pHud->speedFace.Height, pResource );
+}
+
+void MngHud::installGaugeFaceCallbacks( bool bInterior ) {
+    // FUN_006e8b30
+    if ( customGaugesMode != 2 || pGaugesPlayer == nullptr ) {
+        return;
+    }
+
+    const bool bLowRes = screenWidth <= 640.0f;
+
+    if ( !bInterior ) {
+        if ( bGaugeClipCallbackB ) {
+            gFlashCallbacksRegister.remove( "c_int_rpm" );
+            gFlashCallbacksRegister.remove( "c_int_sp" );
+            bGaugeClipCallbackB = false;
+        }
+
+        FlashClip cExtClip;
+        if ( !pGaugesPlayer->getClipPlayer( "HUD/compteur_ext/c_ext",
+                                            &cExtClip ) ) {
+            return;
+        }
+        FlashRECT rect;
+        cExtClip.getPropertyViewport( eFlashProperty::FP_Viewport, rect );
+        rpmFace.X = rect.X;
+        rpmFace.Width = rect.Width;
+        rpmFace.Y = rect.Y;
+        rpmFace.Height = rect.Height;
+
+        if ( !bGaugeClipCallbackA ) {
+            rpmFace.pMaterial = nullptr;
+            if ( bLowRes ) {
+                rpmFace.pMaterial = gaugesBank.getGaugeMaterial( "EXT_RPM" );
+                rpmFace.UvU = 0.8359375f; // DAT_00f41f78
+                rpmFace.UvV = 0.8359375f;
+                if ( rpmFace.pMaterial == nullptr ) {
+                    rpmFace.pMaterial =
+                        gaugesBank.getGaugeMaterial( "INT_RPM" );
+
+                    // NOTE (original quirk): the EXT_RPM-missing fallback
+                    // writes the *speed* uv slots here rather than the rpm
+                    // ones, leaving rpmFace UV at 0.8359; replicated for
+                    // fidelity (dead for the exterior dial, which only reads
+                    // rpmFace).
+                    speedFace.UvU = 0.703125f;  // DAT_00f41f80
+                    speedFace.UvV = 0.6953125f; // DAT_00f41f7c
+                }
+            }
+            if ( rpmFace.pMaterial == nullptr ) {
+                rpmFace.UvU = 1.0f; // FLOAT_00f4165c (hi-res / full atlas)
+                rpmFace.UvV = 1.0f;
+                rpmFace.pMaterial = gaugesBank.getGaugeMaterial( "EXT_RPM" );
+                if ( rpmFace.pMaterial == nullptr ) {
+                    rpmFace.pMaterial =
+                        gaugesBank.getGaugeMaterial( "INT_RPM" );
+                }
+            }
+
+            FlashCallbacksRegister::Callback_t cb =
+                &MngHud::GaugeRpmFaceCallback;
+            gFlashCallbacksRegister.add( "c_ext", cb, this );
+            bGaugeClipCallbackA = true;
+        }
+        return;
+    }
+
+    // Interior view: the c_int_sp (speed) and c_int_rpm (rpm) dials
     if ( bGaugeClipCallbackA ) {
+        gFlashCallbacksRegister.remove( "c_ext" );
         bGaugeClipCallbackA = false;
     }
-    if ( bGaugeClipCallbackB ) {
-        bGaugeClipCallbackB = false;
+
+    FlashClip cIntSpClip;
+    if ( pGaugesPlayer->getClipPlayer( "HUD/compteur_int/c_int_sp",
+                                       &cIntSpClip ) ) {
+        FlashRECT rect;
+        cIntSpClip.getPropertyViewport( eFlashProperty::FP_Viewport, rect );
+        speedFace.X = rect.X;
+        speedFace.Width = rect.Width;
+        speedFace.Y = rect.Y;
+        speedFace.Height = rect.Height;
+    }
+    FlashClip cIntRpmClip;
+    if ( pGaugesPlayer->getClipPlayer( "HUD/compteur_int/c_int_rpm",
+                                       &cIntRpmClip ) ) {
+        FlashRECT rect;
+        cIntRpmClip.getPropertyViewport( eFlashProperty::FP_Viewport, rect );
+        rpmFace.X = rect.X;
+        rpmFace.Width = rect.Width;
+        rpmFace.Y = rect.Y;
+        rpmFace.Height = rect.Height;
+    }
+
+    if ( !bGaugeClipCallbackB ) {
+        rpmFace.pMaterial = nullptr;
+        const char *pSpeedName =
+            gpPlayerData->isUsingImperialUnits() ? "INT_MPH" : "INT_KMH";
+        if ( bLowRes ) {
+            rpmFace.pMaterial = gaugesBank.getGaugeMaterial( "INT_RPM" );
+            rpmFace.UvU = 0.703125f;  // DAT_00f41f80
+            rpmFace.UvV = 0.6953125f; // DAT_00f41f7c
+            if ( rpmFace.pMaterial == nullptr ) {
+                rpmFace.pMaterial = gaugesBank.getGaugeMaterial( "EXT_RPM" );
+                rpmFace.UvU = 0.8359375f; // DAT_00f41f78
+                rpmFace.UvV = 0.8359375f;
+            }
+            speedFace.pMaterial = gaugesBank.getGaugeMaterial( pSpeedName );
+            speedFace.UvU = 0.703125f;  // DAT_00f41f80
+            speedFace.UvV = 0.6953125f; // DAT_00f41f7c
+        }
+        if ( rpmFace.pMaterial == nullptr ) {
+            speedFace.UvU = 1.0f;
+            speedFace.UvV = 1.0f;
+            rpmFace.UvU = 1.0f;
+            rpmFace.UvV = 1.0f;
+            rpmFace.pMaterial = gaugesBank.getGaugeMaterial( "INT_RPM" );
+            if ( rpmFace.pMaterial == nullptr ) {
+                rpmFace.pMaterial = gaugesBank.getGaugeMaterial( "EXT_RPM" );
+            }
+            speedFace.pMaterial = gaugesBank.getGaugeMaterial( pSpeedName );
+        }
+
+        FlashCallbacksRegister::Callback_t spCb =
+            &MngHud::GaugeSpeedFaceCallback;
+        FlashCallbacksRegister::Callback_t rpmCb =
+            &MngHud::GaugeRpmFaceCallback;
+        gFlashCallbacksRegister.add( "c_int_sp", spCb, this );
+        gFlashCallbacksRegister.add( "c_int_rpm", rpmCb, this );
+        bGaugeClipCallbackB = true;
     }
 }
 
 void MngHud::showCustomGauges() {
     // FUN_006ea810
-    OTDU_UNIMPLEMENTED;
+    if ( pGaugesPlayer == nullptr || pHudPlayer == nullptr ) {
+        return;
+    }
+
+    FlashClip hudClip;
+    if ( pGaugesPlayer->getClipPlayer( "/hud", &hudClip ) ) {
+        hudClip.setProperty( eFlashProperty::FP_Visible, true );
+    }
+
+    FlashClip speedCokpitClip;
+    FlashClip speedCokpitShClip;
+    FlashClip compteurExtClip;
+    FlashClip compteurIntClip;
+    const bool bHasSpeedCokpit =
+        pGaugesPlayer->getClipPlayer( "/HUD/speed_cokpit", &speedCokpitClip );
+    const bool bHasSpeedCokpitSh = pGaugesPlayer->getClipPlayer(
+        "/HUD/speed_cokpit_sh", &speedCokpitShClip );
+    const bool bHasCompteurExt =
+        pGaugesPlayer->getClipPlayer( "/hud/compteur_ext", &compteurExtClip );
+    const bool bHasCompteurInt =
+        pGaugesPlayer->getClipPlayer( "/hud/compteur_int", &compteurIntClip );
+
+    CameraGame *pActiveCamera = gpCamera->getActiveCamera();
+    const uint32_t showFlags =
+        ( pActiveCamera != nullptr ) ? pActiveCamera->getFlags() : 0u;
+    const bool bCockpit =
+        ( ( showFlags >> 0x12 ) & 1u ) || ( ( showFlags >> 0x13 ) & 1u );
+    const bool bAltExterior = ( ( showFlags >> 0x10 ) & 1u ) != 0u;
+
+    installGaugeFaceCallbacks( bAltExterior );
+
+    // LocalPlayerData.bDisplayGPS gated these in the original; that flag is not
+    // ported, so default the overlay on.
+    const bool bDisplayGauges = true;
+
+    bool bSpeedCokpitVis = false;
+    bool bCompteurIntVis = false;
+    bool bCompteurExtVis = false;
+    if ( bCockpit ) {
+        bSpeedCokpitVis = bDisplayGauges;
+    } else if ( bAltExterior ) {
+        bCompteurIntVis = bDisplayGauges;
+    } else {
+        bCompteurExtVis = bDisplayGauges;
+    }
+
+    if ( bHasSpeedCokpit ) {
+        speedCokpitClip.setProperty( eFlashProperty::FP_Visible,
+                                     bSpeedCokpitVis );
+    }
+    if ( bHasSpeedCokpitSh ) {
+        speedCokpitShClip.setProperty( eFlashProperty::FP_Visible,
+                                       bSpeedCokpitVis );
+    }
+    if ( bHasCompteurInt ) {
+        compteurIntClip.setProperty( eFlashProperty::FP_Visible,
+                                     bCompteurIntVis );
+    }
+    if ( bHasCompteurExt ) {
+        compteurExtClip.setProperty( eFlashProperty::FP_Visible,
+                                     bCompteurExtVis );
+    }
 }
 
 void MngHud::FUN_006ed810() {

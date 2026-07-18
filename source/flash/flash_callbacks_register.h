@@ -20,6 +20,7 @@ public:
     ~FlashCallbacksRegister();
 
     void add( const char *param_1, Callback_t &param_2, void *param_4 );
+    void remove( const char *param_1 );
     void executeCallbacks( FlashRenderer::State *param_2,
                            float param_3,
                            DrawList *param_4,
