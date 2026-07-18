@@ -21,6 +21,8 @@ public:
     inline float getSeatPositionPosition() const {
         return seatPositionPosition;
     }
+    inline float getPadSensitivity() const { return padSensitivity; }
+    inline float getBarSensitivity() const { return barSensitivity; }
 
 public:
     GSPlayerData();

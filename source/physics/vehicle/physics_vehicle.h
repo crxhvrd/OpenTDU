@@ -75,6 +75,8 @@ public:
     float getChassisSpeed() const;
     float getEngineAngularVelocity() const;
     int32_t getCurrentGear() const;
+    float getInputBrake() const { return inputBrake; }
+    float getInputThrottle() const { return inputThrottle; }
     float getLateralG() const;
     float getLongitudinalG() const;
 
@@ -127,6 +129,8 @@ private:
     // Aerodynamics (chassis downforce/drag, applied per physics step).
     float aeroDragCoef;      // 0.5 * rho * Cx_drag * frontalArea
     float aeroDownforceCoef; // 0.5 * rho * Cx_lift * frontalArea
+    float aeroDragArea;      // 0.5 * A * Cx
+    float aeroDownArea;      // 0.5 * A * Cz_total
     float aeroHalfWheelBase; // m, for the downforce pitch couple
     float aeroFrontFraction; // fraction of downforce on the front axle
 

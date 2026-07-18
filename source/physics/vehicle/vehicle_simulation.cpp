@@ -8,6 +8,7 @@
 
 static constexpr float kSlipLongScale = 100.0f; // DAT_00f41708 (inside cf50)
 static constexpr float kRadToDeg = 57.29578f;   // DAT_00f41b0c
+static constexpr float kLatSlipMinSpeed = 2.0f; // m/s
 static constexpr float kLoadToPerMille =
     0.001f; // FLOAT_00f4167c (load -> cf50/ceb0 scale)
 
@@ -267,15 +268,8 @@ void ComputeTireForces( PhysicsWheelState &w,
         w.bTireSlipping = true;
 
         const float rawLongSlip = w.ContactNormal.dot( w.ForwardDir );
-
-        // Slip angle
-        float a;
-        if ( vLong <= 0.0f ) {
-            a = ( vLong < 0.0f ) ? -std::atan( vLat / vLong ) : 0.0f;
-        } else {
-            a = std::atan( vLat / vLong );
-        }
-        a *= kRadToDeg;
+        const float vLongMag = std::max( std::fabs( vLong ), kLatSlipMinSpeed );
+        float a = std::atan( vLat / vLongMag ) * kRadToDeg;
         if ( w.SideFlag != 1 ) {
             a = -a;
         }
@@ -340,6 +334,9 @@ void IntegrateWheel( PhysicsWheelState &w, float deltaTime ) {
         if ( ( 0.0f < lockTorque && lockTorque < reactTorque ) ||
              ( lockTorque < 0.0f && reactTorque < lockTorque ) ) {
             reactTorque = lockTorque;
+            const float gripLimit = w.GripLong * w.NormalLoad;
+            w.TireForceLong =
+                Clamp( w.DriveTorque / w.Radius, -gripLimit, gripLimit );
         }
     }
 

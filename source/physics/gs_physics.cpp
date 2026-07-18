@@ -621,9 +621,6 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
     // Build any prop-collision factory queued before Jolt was ready.
     buildProcessPendingProps();
 
-    // Update world-streaming position from the active player vehicle / camera.
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC/CAMERA
-
     // Sub-stepped physics — only when no dedicated physics thread is running.
     // With PTM_Normal / PTM_Realtime the dedicated thread drives physicsStep.
     if ( gPhysicsThreadPriority == PTM_Off ) {
@@ -1157,9 +1154,7 @@ void GSPhysics::drawDebug( float ) {
 
     extern bool gVehicleDrivingAids;
     extern bool gVehicleABS;
-    extern bool gVehicleSteeringFilter;
     extern bool gVehicleAntiRoll;
-    extern bool gVehicleFaithfulClutch;
     extern bool gVehicleDiff;
     extern bool gVehicleEngineStateMachine;
 
@@ -1167,8 +1162,6 @@ void GSPhysics::drawDebug( float ) {
     ImGui::Checkbox( "ESP", &gVehicleDrivingAids );
     ImGui::SameLine();
     ImGui::Checkbox( "ABS", &gVehicleABS );
-
-    ImGui::Checkbox( "Enable steering filter", &gVehicleSteeringFilter );
 
     ImGui::Checkbox( "Enable anti-roll bars sim", &gVehicleAntiRoll );
     ImGui::Checkbox( "Enable differential sim", &gVehicleDiff );
@@ -2564,7 +2557,13 @@ void GSPhysics::initializeJolt() {
     unlockMutex();
 }
 
-void GSPhysics::setWorldOrigin( const Eigen::Vector4f *param_1 ) {
+void GSPhysics::setWorldOrigin( const Eigen::Vector4f *pPosition ) {
     // FUN_00843cc0
-    OTDU_UNIMPLEMENTED;
+    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+        return;
+    }
+
+    (void)pPosition;
+    OTDU_UNIMPLEMENTED; // Havok broadphase shift — N/A for Jolt absolute-coord
+                        // bodies
 }

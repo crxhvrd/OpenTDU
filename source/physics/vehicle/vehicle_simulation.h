@@ -46,8 +46,8 @@ struct PhysicsWheelState {
 
     float SuspTotalForce = 0.0f; // spring+damper suspension force
     float AntiRollForce = 0.0f;  // anti-roll-bar force
-    float NormalLoad = 0.0f;     // clamped contact normal force
-    float SuspMaxLoad = 1.0e6f;  // max-load clamp
+    float NormalLoad = 0.0f;     // clamped contact normal force (grip)
+    float SuspMaxLoad = 1.0e6f;  // max-load clamp (grip)
     float SuspMinLoad = 0.0f;    // min-load clamp
     Eigen::Vector4f SuspForce = Eigen::Vector4f::Zero();
     Eigen::Vector4f SuspForcePoint = Eigen::Vector4f::Zero();
