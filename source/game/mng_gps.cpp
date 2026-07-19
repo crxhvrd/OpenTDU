@@ -1,16 +1,19 @@
 #include "shared.h"
 #include "mng_gps.h"
 
-MngGPS::MngGPS() : Manager() {
+MngGPS::MngGPS() : Manager(), mutex( "MngGPS" ) {
     // FUN_006c2280
-    OTDU_UNIMPLEMENTED;
+    lastObjectivePosition.setZero();
+    lastSecondaryObjectivePosition.setZero();
+    hudTargetPosition.setZero();
 }
 
-MngGPS::~MngGPS() { OTDU_UNIMPLEMENTED; }
+MngGPS::~MngGPS() {}
 
 bool MngGPS::initialize( TestDriveGameInstance * ) {
     // FUN_006c1d50
-    OTDU_UNIMPLEMENTED;
+    mutex.initialize( "MngGPS" );
+    cachedSessionPlayerCount = 0;
     return true;
 }
 
@@ -21,20 +24,20 @@ void MngGPS::tick( float, float ) {
 
 void MngGPS::reset() {
     // FUN_006c1d40
-    OTDU_UNIMPLEMENTED;
+    // NOP
 }
 
 void MngGPS::draw() {
     // FUN_0063f2b0
-    OTDU_UNIMPLEMENTED;
+    // NOP
 }
 
 void MngGPS::pause() {
     // FUN_006c1d30
-    OTDU_UNIMPLEMENTED;
+    // NOP
 }
 
 void MngGPS::terminate() {
     // FUN_006c1d20
-    OTDU_UNIMPLEMENTED;
+    mutex.terminate();
 }
