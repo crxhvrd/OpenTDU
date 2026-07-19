@@ -11,9 +11,14 @@ IF %ERRORLEVEL% NEQ 0 (
 )
 
 echo Building Open Test Drive Unlimited...
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -A %1
+IF "%~2"=="legacy" (
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -A %1 -DOTDU_TARGET_WIN7=ON
+) ELSE (
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -A %1
+)
+
 pushd "build"
-cmake --build . --parallel=12
+cmake --build . --config Release --parallel
 popd
 
 IF %ERRORLEVEL% NEQ 0 (

@@ -19,15 +19,28 @@ jobs:
         build_type: [Release]
         c_compiler: [cl]
         platform_name: [Win32, x64]
+        flavor_name: [latest, legacy]
         include:
           - os: windows-latest
             c_compiler: cl
             cpp_compiler: cl
             platform_name: Win32
+            flavor_name: latest
           - os: windows-latest
             c_compiler: cl
             cpp_compiler: cl
             platform_name: x64
+            flavor_name: latest
+          - os: windows-latest
+            c_compiler: cl
+            cpp_compiler: cl
+            platform_name: Win32
+            flavor_name: legacy
+          - os: windows-latest
+            c_compiler: cl
+            cpp_compiler: cl
+            platform_name: x64
+            flavor_name: legacy
 
     steps:
     - uses: actions/checkout@v4
@@ -54,10 +67,10 @@ jobs:
 
     - name: Build
       run: >
-        ./build_win.bat ${{ matrix.platform_name }}
+        ./build_win.bat ${{ matrix.platform_name }} ${{ matrix.flavor_name }}
 
     - name: Compress
-      run: Compress-Archive -Destination ${{ github.workspace }}/build/opentdu_release_${{ matrix.platform_name }}_vulkan.zip -Path ${{ github.workspace }}/build/bin/
+      run: Compress-Archive -Destination ${{ github.workspace }}/build/opentdu_release_windows_${{ matrix.platform_name }}_${{ matrix.flavor_name }}_vulkan.zip -Path ${{ github.workspace }}/build/bin/
 
     - name: Tag
       run: |
@@ -69,4 +82,4 @@ jobs:
       with:
         name: "nightly_${{ env.sha_short }}"
         tag_name: "nightly_${{ env.sha_short }}"
-        files: ${{ github.workspace }}/build/opentdu_release_${{ matrix.platform_name }}_vulkan.zip
+        files: ${{ github.workspace }}/build/opentdu_release_windows_${{ matrix.platform_name }}_${{ matrix.flavor_name }}_vulkan.zip
