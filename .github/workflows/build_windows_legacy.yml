@@ -1,0 +1,83 @@
+name: Windows_Legacy_Win7
+
+# Builds a Windows 7 SP1 compatible client (Win32 + x64).
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform_name: [Win32, x64]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set reusable strings
+      shell: bash
+      run: echo "sha_short=$(git rev-parse --short "$GITHUB_SHA")" >> "$GITHUB_ENV"
+
+    - name: Install Vulkan SDK
+      uses: humbletim/install-vulkan-sdk@v1.2
+      with:
+        version: 1.4.309.0
+        cache: true
+
+    - name: Configure cityhash
+      shell: bash
+      run: ./third_party/cityhash/configure
+
+    - name: Build third-party dependencies
+      shell: cmd
+      run: |
+        cd third_party
+        call build_thirdparty.bat ${{ matrix.platform_name }}
+
+    - name: Configure (Windows 7 target)
+      shell: cmd
+      run: cmake -S . -B build -A ${{ matrix.platform_name }} -DCMAKE_BUILD_TYPE=Release -DOTDU_TARGET_WIN7=ON
+
+    - name: Build
+      shell: cmd
+      run: cmake --build build --config Release --parallel
+
+    - name: Verify no Win8+ imports remain
+      shell: pwsh
+      run: |
+        $exe = "build/bin/opentdu.exe"
+        if (-not (Test-Path $exe)) { Write-Error "Build output '$exe' not found"; exit 1 }
+
+        # Locate dumpbin.exe from the installed VS toolset.
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $vsPath  = & $vswhere -latest -property installationPath
+        $dumpbin = Get-ChildItem -Path "$vsPath\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
+                   Select-Object -First 1 -ExpandProperty FullName
+        if (-not $dumpbin) { Write-Error "dumpbin.exe not found"; exit 1 }
+
+        $imports = & $dumpbin /imports $exe
+        # Any import ending in "2" that was introduced with Windows 8. Extend this
+        # list if a future dependency reintroduces a newer API.
+        $bad = $imports | Select-String -Pattern '\bCreateFile2\b','\bCopyFile2\b','\bGetTempPath2W\b'
+        if ($bad) {
+          Write-Host "::error::Win8+ imports found in opentdu.exe:`n$($bad -join "`n")"
+          exit 1
+        }
+        Write-Host "OK: no Win8+ imports in opentdu.exe"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: opentdu_win7_${{ matrix.platform_name }}_${{ env.sha_short }}
+        path: build/bin/
+        if-no-files-found: error
