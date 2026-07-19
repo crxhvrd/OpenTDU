@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 pushd third_party
 echo "Building third-party dependencies..."
 ./build_thirdparty.sh
@@ -12,7 +13,7 @@ fi
 echo "Building Open Test Drive Unlimited..."
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 pushd build
-cmake --build . --parallel=12
+cmake --build . --parallel "$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 popd
 
 if [ $? -ne 0 ]; then

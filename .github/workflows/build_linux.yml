@@ -53,7 +53,8 @@ jobs:
         ./build_unix.sh
 
     - name: Compress
-      run: zip -r ${{ github.workspace }}/build/opentdu_release_${{ matrix.platform_name }}_vulkan.zip ${{ github.workspace }}/build/bin/
+      working-directory: ${{ github.workspace }}/build/bin
+      run: zip -r ${{ github.workspace }}/build/opentdu_release_${{ matrix.platform_name }}_vulkan.zip .
 
     - name: Tag
       run: |
