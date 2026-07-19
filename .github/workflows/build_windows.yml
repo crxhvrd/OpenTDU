@@ -19,7 +19,7 @@ jobs:
         build_type: [Release]
         c_compiler: [cl]
         platform_name: [Win32, x64]
-        flavor_name: [latest, legacy]
+        flavor_name: [latest, Win7]
         include:
           - os: windows-latest
             c_compiler: cl
@@ -35,12 +35,12 @@ jobs:
             c_compiler: cl
             cpp_compiler: cl
             platform_name: Win32
-            flavor_name: legacy
+            flavor_name: Win7
           - os: windows-latest
             c_compiler: cl
             cpp_compiler: cl
             platform_name: x64
-            flavor_name: legacy
+            flavor_name: Win7
 
     steps:
     - uses: actions/checkout@v4
