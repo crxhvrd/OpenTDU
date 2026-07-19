@@ -185,6 +185,7 @@ public:
     }
 
     inline void setEnabled( const bool value ) { bEnabled = value; }
+    inline FlashPlayer *getHudPlayer() { return pHudPlayer; }
 
 public:
     MngHud();

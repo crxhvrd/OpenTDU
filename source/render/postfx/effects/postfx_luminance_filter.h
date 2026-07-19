@@ -19,6 +19,9 @@ public:
 class PostFXNodeLuminanceFilter : public PostFXNode {
 public:
     inline float getLuminanceThreshold() const { return luminanceThreshold; }
+    inline void setLuminanceThreshold( const float threshold ) {
+        luminanceThreshold = threshold;
+    }
 
 public:
     PostFXNodeLuminanceFilter();

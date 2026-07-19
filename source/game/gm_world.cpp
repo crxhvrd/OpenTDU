@@ -25,6 +25,12 @@
 #include "game/vehicle/car_state.h"
 
 #include "render/mng_env_map.h"
+#include "render/gs_render.h"
+#include "render/postfx/gs_postfx.h"
+#include "render/postfx/effects/postfx_glow_pause.h"
+#include "render/postfx/effects/postfx_luminance_filter.h"
+#include "render/postfx/effects/postfx_blur.h"
+#include "render/postfx/effects/postfx_modulate.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
 
@@ -34,6 +40,8 @@ float gFXPLumThreshold = 0.99f; // DAT_00f9c0fc
 float gFXPBlurSize = 1.0f;      // DAT_00f9c100
 float gFXPModCoeff0 = 1.0f;     // DAT_00f9c104
 float gFXPModCoeff1 = 0.125f;   // DAT_00f9c108
+
+static constexpr int32_t kFXPFadeInBlurPassCount = 3; // DAT_00f9c10c
 
 GameModeWorld *gpActiveGM = nullptr; // DAT_010e7c6c
 
@@ -166,9 +174,6 @@ void GameModeWorld::reset() {
             gpCamera->restoreCamera();
         }
     }
-
-    gpMngBackground->setDomeOverride(
-        true, GetIdentifier64bit( "dome_n1" ) ); // HACK:FIXME:
 
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC (driver avatar, HUD bind)
 }
@@ -538,7 +543,19 @@ void GameModeWorld::draw( float /*deltaTime*/, float /*totalTime*/ ) {
 void GameModeWorld::pause() {
     // FUN_007be820
     GameModeScene::pause();
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC/PHYSICS/POSTFX
+
+    OTDU_UNIMPLEMENTED; // TODO: SCENARIC (driver unload) / PHYSICS
+                        // (postpone-pause)
+
+    if ( gpPostFX != nullptr ) {
+        PostFXStepGlowPause *pGlow =
+            (PostFXStepGlowPause *)
+                gpPostFX->getEffect<ePostFXStep::PFXS_GlowPause>();
+        if ( pGlow != nullptr && pGlow->pModulate != nullptr &&
+             pGlow->pModulate->isEnabled() && !gpPostFX->isFXLocked() ) {
+            pGlow->pModulate->setEnabled( false );
+        }
+    }
 }
 
 void GameModeWorld::destroy() {
@@ -608,7 +625,18 @@ void GameModeWorld::onPauseMenuRequested( bool bOpened ) {
             gpTimer->GameSpeed = 0.0f;
         }
 
-        OTDU_UNIMPLEMENTED; //  TODO: POSTFX
+        if ( pauseFadeTimer == 0.0f && gpPostFX != nullptr &&
+             !gpPostFX->isFXLocked() ) {
+            PostFXStepGlowPause *pGlow =
+                (PostFXStepGlowPause *)
+                    gpPostFX->getEffect<ePostFXStep::PFXS_GlowPause>();
+            if ( pGlow != nullptr && pGlow->pModulate != nullptr ) {
+                const bool bEnable =
+                    ( gpRender == nullptr ) || !gpRender->isHDREnabled();
+                pGlow->pModulate->setEnabled( bEnable );
+            }
+        }
+        pauseFadeTimer = gFXPFadeInDelay - pauseFadeTimer;
     }
 
     pauseMenuActivated();
@@ -617,7 +645,10 @@ void GameModeWorld::onPauseMenuRequested( bool bOpened ) {
 void GameModeWorld::pauseMenuActivated() {
     // FUN_007bdbc0
     if ( gpMngHud != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: FLASH
+        FlashPlayer *pHudPlayer = gpMngHud->getHudPlayer();
+        if ( pHudPlayer != nullptr ) {
+            pHudPlayer->showFrame( "gps", "/", true );
+        }
     }
 
     if ( gpFlash != nullptr && gpFlash->getMouse() != nullptr ) {
@@ -648,7 +679,7 @@ void GameModeWorld::onMenuPauseExit( bool bRestoreState ) {
             OTDU_UNIMPLEMENTED; // TODO: AUDIO
         }
 
-        OTDU_UNIMPLEMENTED; // TODO: POSTFX
+        pauseFadeTimer = gFXPFadeOutDelay - pauseFadeTimer;
     }
 
     if ( gpFlash != nullptr && gpFlash->getMouse() != nullptr ) {
@@ -683,5 +714,88 @@ void GameModeWorld::destroyGameMech() {
 
 void GameModeWorld::updatePauseFade() {
     // FUN_007bde50
-    OTDU_UNIMPLEMENTED; // TODO: POSTFX
+    if ( gpPostFX == nullptr ) {
+        return;
+    }
+    PostFXStepGlowPause *pGlow =
+        (PostFXStepGlowPause *)
+            gpPostFX->getEffect<ePostFXStep::PFXS_GlowPause>();
+
+    if ( pauseFadeTimer == 0.0f ) {
+        if ( !isPaused() ) {
+            if ( !gpPostFX->isFXLocked() && pGlow != nullptr &&
+                 pGlow->pModulate != nullptr ) {
+                pGlow->pModulate->setEnabled( false );
+            }
+            if ( pGlow != nullptr ) {
+                pGlow->field_0x3c = false;
+            }
+        }
+        return;
+    }
+
+    if ( pGlow == nullptr || pGlow->pLuminanceFilter == nullptr ||
+         pGlow->pBlur == nullptr || pGlow->pModulate == nullptr ) {
+        return;
+    }
+
+    float lumStart, lumTarget;
+    float blurTarget;
+    int32_t numPass;
+    float coeff0Start, coeff0Target;
+    float coeff1Start, coeff1Target;
+    float delay;
+
+    if ( !isPaused() ) {
+        // Fade out
+        lumStart = 0.0f;
+        lumTarget = pGlow->pLuminanceFilter->getLuminanceThreshold();
+        blurTarget = pGlow->pBlur->getSampleSize();
+        numPass = pGlow->pBlur->getNumPass();
+        coeff0Start = 1.0f; // FLOAT_00f4165c
+        coeff0Target = pGlow->pModulate->getCoefficient0();
+        coeff1Start = 0.0f;
+        coeff1Target = pGlow->pModulate->getCoefficient1();
+        delay = gFXPFadeOutDelay;
+    } else {
+        // Fade in
+        lumStart = gFXPLumThreshold;
+        lumTarget = 0.0f;
+        blurTarget = gFXPBlurSize;
+        numPass = kFXPFadeInBlurPassCount;
+        coeff0Start = gFXPModCoeff0;
+        coeff0Target = 1.0f; // FLOAT_00f4165c
+        coeff1Start = gFXPModCoeff0;
+        coeff1Target = 0.0f;
+        delay = gFXPFadeInDelay;
+    }
+
+    const float t = ( delay != 0.0f ) ? ( pauseFadeTimer / delay ) : 0.0f;
+
+    float lum = ( lumTarget - lumStart ) * t + lumStart;
+    const float blur = ( blurTarget - gFXPBlurSize ) * t + gFXPBlurSize;
+    lum = Clamp( lum, 0.0f, 1.0f );
+
+    pGlow->pLuminanceFilter->setLuminanceThreshold( lum );
+
+    if ( numPass == 0 ) {
+        numPass = 1;
+    }
+    pGlow->pBlur->setNumPass( numPass );
+    if ( blur > 0.0f ) {
+        pGlow->pBlur->setSampleSize( blur );
+    }
+
+    pGlow->pModulate->setCoefficient0( ( coeff0Target - coeff0Start ) * t +
+                                       coeff0Start );
+    pGlow->pModulate->setCoefficient1( ( coeff1Target - coeff1Start ) * t +
+                                       coeff1Start );
+
+    const float dt = ( gpTimer != nullptr ) ? gpTimer->SystemDeltaTime : 0.0f;
+    pauseFadeTimer =
+        ( pauseFadeTimer - dt > 0.0f ) ? ( pauseFadeTimer - dt ) : 0.0f;
+
+    if ( !isPaused() && pauseFadeTimer == 0.0f ) {
+        pGlow->field_0x3c = true;
+    }
 }
