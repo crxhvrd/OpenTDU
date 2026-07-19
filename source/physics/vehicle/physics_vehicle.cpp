@@ -1139,6 +1139,7 @@ PhysicsVehicle::getWheelReadout( uint32_t index ) const {
     out.LongitudinalSlip = w.NormLongClamped;
     out.LateralSlip = w.NormLatClamped;
     out.LongitudinalGroundSpeed = w.ContactVelLong;
+    out.LateralGroundSpeed = w.ContactVelLat;
     out.SuspensionLoad = w.NormalLoad;
     out.Radius = w.Radius;
     out.bGrounded = w.bGroundContact;

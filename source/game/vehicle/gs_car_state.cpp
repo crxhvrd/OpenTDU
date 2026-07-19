@@ -174,6 +174,7 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             wheel.SlipRatio = ro.LongitudinalSlip;
             wheel.SlipAngle = ro.LateralSlip;
             wheel.LongitudinalSpeed = ro.LongitudinalGroundSpeed;
+            wheel.LateralSpeed = ro.LateralGroundSpeed;
 
             wheel.SuspensionTravelLength = ro.SuspensionDeflection;
             wheel.WheelRadius = ro.Radius;
@@ -244,10 +245,11 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         }
     }
 
-    // TODO: Where do they use this?
-    for ( auto *pCVar7 : eventNotifiablesProcessed ) {
-        if ( pCVar7 != nullptr ) {
-            OTDU_UNIMPLEMENTED;
+    for ( int32_t iVar10 = 0; iVar10 < 2; iVar10++ ) {
+        CarStateEventListener *callback = eventNotifiablesProcessed[iVar10];
+        if ( callback != nullptr ) {
+            callback->onEvent( &carStates[0], deltaTime,
+                               eventListenersDataProcessed[iVar10] );
         }
     }
 
@@ -257,8 +259,12 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
     if ( gpMngShadow != nullptr ) {
         for ( uint32_t iVar3 = 0; iVar3 < kMaxNumVehicles; iVar3++ ) {
             if ( bUsedSlot & ( 1 << iVar3 ) ) {
-                OTDU_UNIMPLEMENTED; // TODO: PHYSICS (add physics instance test)
-                gpMngShadow->addShadowCaster( &carStates[iVar3] );
+                CarState &carState = carStates[iVar3];
+                PhysicsVehicle *pPhysicsVehicle = carState.pPhysicsVehicle;
+                if ( pPhysicsVehicle != nullptr &&
+                     pPhysicsVehicle->isActive() ) {
+                    gpMngShadow->addShadowCaster( &carState );
+                }
             }
         }
     }

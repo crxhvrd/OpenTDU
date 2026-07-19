@@ -26,6 +26,7 @@ public:
         float LongitudinalSlip;
         float LateralSlip;
         float LongitudinalGroundSpeed; // m/s along contact-forward (0 airborne)
+        float LateralGroundSpeed;      // m/s along contact-lateral (0 airborne)
         float SuspensionLoad;
         float Radius; // m
         bool bGrounded;
