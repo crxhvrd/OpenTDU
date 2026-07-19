@@ -158,3 +158,4 @@ extern TestDriveGameInstance *gpTestDriveInstance;
 extern bool gbLoadingInProgress; // DAT_010e72ec
 extern bool gbRequestedExit;     // DAT_010e72f7
 extern uint64_t gAvailableMemory;
+extern eGameMode gGameModeOverride;

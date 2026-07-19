@@ -157,6 +157,13 @@ void GameModeScene::reset() {
     if ( gpPlayerData != nullptr && gpPlayerData->isOnline() ) {
         OTDU_UNIMPLEMENTED; // TODO: ONLINE (P2P clock sync ->
                             // GSWeather::setTime)
+    } else if ( gGameModeOverride != GM_Invalid ) {
+        // The ToD starts at 0:0:0 in the original game when playing offline
+        // (and gets to a valid time/slice because of the time GMLogin takes to
+        // get the player into the game). If the user bypasses GMLogin (via -gm
+        // cmdline arg), fallback to safe weather config.
+        const TimeOfDay offlineClockSeed = { 1.0f, 0.0f, 0.0f };
+        gpWeather->setTime( true, &offlineClockSeed );
     }
 
     // HDR / radial-blur enable state for the current game mode.
@@ -200,6 +207,8 @@ void GameModeScene::tick( float /*deltaTime*/, float /*totalTime*/ ) {
 
         bWorldEntitiesInstanciated = true;
     }
+
+    OTDU_UNIMPLEMENTED;
 
     updatePostFX();
 
