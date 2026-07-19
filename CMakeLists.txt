@@ -72,6 +72,7 @@ if ( ${OTDU_USE_JOLT} )
 
     set(JPH_USE_DX12 OFF)
     set(JPH_USE_MTL OFF)
+    set(JPH_USE_VK OFF)
     set(JPH_BUILD_SHARED_LIBS ON)
 
     add_subdirectory( "${OTDU_THIRDPARTY_FOLDER}/JoltPhysics/Build" EXCLUDE_FROM_ALL)
