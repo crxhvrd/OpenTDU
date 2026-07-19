@@ -246,7 +246,8 @@ namespace {
 
         uint32_t emitMaterial( const disk::Material *d, uint32_t nativeOff ) {
             Material *n = (Material *)&Blob[nativeOff];
-            memcpy( n, d, bytesBetween( d, &d->pOTNode ) ); // OT..FXFlags2
+            memcpy( (void *)n, d,
+                    bytesBetween( d, &d->pOTNode ) ); // OT..FXFlags2
             addFixup( fieldOff( &n->pOTNode ), d->pOTNode );
             memcpy( &n->DepthTest, &d->DepthTest,
                     bytesBetween( &d->DepthTest, &d->pVertexShaders ) );
@@ -256,7 +257,7 @@ namespace {
                 addFixup( fieldOff( &n->pPixelShaders[i] ),
                           d->pPixelShaders[i] );
             }
-            memcpy( &n->AmbientColor, &d->AmbientColor,
+            memcpy( (void *)&n->AmbientColor, &d->AmbientColor,
                     (uint32_t)sizeof( disk::Material ) -
                         bytesBetween( d, &d->AmbientColor ) );
 

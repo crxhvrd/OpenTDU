@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 pushd third_party
 echo "Building third-party dependencies..."
 ./build_thirdparty.sh

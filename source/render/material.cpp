@@ -816,7 +816,7 @@ Material *Material::createInheritedTerrainMaterial( uint8_t *param_1 ) {
             RenderFile::Section *pMatSection = (RenderFile::Section *)this - 1;
             memcpy( pMatDst, pMatSection, hdr );
             Material *pNewMaterial = (Material *)( pMatDst + hdr );
-            memcpy( pNewMaterial, this, sizeof( Material ) );
+            memcpy( (void *)pNewMaterial, this, sizeof( Material ) );
             AssetPtr<RenderFile::Section> *pParamPointer =
                 (AssetPtr<RenderFile::Section> *)( (uint8_t *)pNewMaterial +
                                                    sizeof( Material ) );
