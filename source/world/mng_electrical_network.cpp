@@ -906,7 +906,7 @@ void MngElectricalNetwork::tick( float, float ) {
 
             memcpy( primitive.pVertexIndices16, pScratchIndices,
                     numIndices * sizeof( uint16_t ) );
-            memcpy( primitive.pVertexPosition, pScratchVertices,
+            memcpy( (void *)primitive.pVertexPosition, pScratchVertices,
                     numVertices * sizeof( Eigen::Vector3f ) );
         }
     }
