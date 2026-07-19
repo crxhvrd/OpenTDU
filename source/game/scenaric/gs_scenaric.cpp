@@ -286,6 +286,7 @@ void GSScenaric::prepareWorldEntityTemplates() {
         // The initial sectors streamed in before gpScenaric existed, so they
         // never installed their per-sector spot lists; do it now.
         gpWorld->getStreamingManager()->refreshSectorSpots();
+        gpWorld->getStreamingManager()->refreshSectorProps();
     }
 
     OTDU_UNIMPLEMENTED;

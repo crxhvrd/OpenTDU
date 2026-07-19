@@ -1800,6 +1800,14 @@ void StreamingManager::refreshSectorSpots() {
     gpScenaric->getSpotList().spawnPendingSectorSpotMeshes();
 }
 
+void StreamingManager::refreshSectorProps() {
+    for ( Sector &sector : sectorManager.sectors ) {
+        if ( sector.state == 1 ) {
+            sector.geometry.mngActor.refreshMissingModels();
+        }
+    }
+}
+
 bool StreamingManager::updateSectorStreaming(
     const Eigen::Vector4f &streamPosition, bool bForce ) {
     // FUN_007055b0

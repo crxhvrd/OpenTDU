@@ -129,7 +129,7 @@ void GameMechanism::placeCollisionBody( const Matrix4x4f_t &worldTransform ) {
 
 void GameMechanism::terminate() {
     // FUN_007d8930
-    if ( bInitialized ) {
+    if ( bInitialized || !propBodies.empty() ) {
         removeAndDestroy();
     }
 

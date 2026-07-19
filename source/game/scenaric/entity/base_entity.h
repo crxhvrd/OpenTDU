@@ -152,6 +152,7 @@ public:
         (void)members; /* NOP */
         return 0;
     }
+    virtual bool refreshModelFromTemplate() { return false; }
 
 protected:
     static constexpr const FlashMessage kEnableParticles =

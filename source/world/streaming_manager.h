@@ -57,6 +57,7 @@ public:
     void requestDebugJump( const Eigen::Vector4f &worldPos );
 
     void refreshSectorSpots();
+    void refreshSectorProps();
 
     void setActiveRenderLayers( uint8_t value ) { activeRenderLayers = value; }
     void setForceStreamUpdate( bool value ) { bForceStreamUpdate = value; }

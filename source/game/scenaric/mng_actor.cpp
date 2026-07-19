@@ -85,6 +85,16 @@ Entity *MngActor::instanciateActor( Entity *pEntity ) {
     return pInstance;
 }
 
+int32_t MngActor::refreshMissingModels() {
+    int32_t rebuilt = 0;
+    for ( int32_t i = 0; i < numActors; i++ ) {
+        if ( pActors[i] != nullptr && pActors[i]->refreshModelFromTemplate() ) {
+            rebuilt++;
+        }
+    }
+    return rebuilt;
+}
+
 void MngActor::registerActor( Entity *pActor ) {
     // FUN_007fafe0 (inlined)
     if ( numActors >= kMaxNumEntity ) {

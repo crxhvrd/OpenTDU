@@ -267,6 +267,35 @@ void EntityActor::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     pTarget->AnimStand.pRefBas = AnimStand.pRefBas;
 }
 
+bool EntityActor::refreshModelFromTemplate() {
+    // WA/Hack for late PMI prop streaming (see
+    // https://github.com/opentestdriveunlimited/OpenTestDriveUnlimited/issues/256).
+    if ( Model.pInstance != nullptr || Model.pHiearchNode != nullptr ) {
+        return false; // already has a model
+    }
+    EntityActor *pTemplate = static_cast<EntityActor *>( getParent() );
+    if ( pTemplate == nullptr ||
+         ( pTemplate->Model.pInstance == nullptr &&
+           pTemplate->Model.pHiearchNode == nullptr ) ) {
+        return false; // template still has no model to clone from
+    }
+
+    Model = pTemplate->Model;
+    Model.pInstance = nullptr;
+    Model.p3DFiles = nullptr;
+    Model.pHiearchNode = nullptr;
+    Model.bShared2DB = pTemplate->Model.bShared2DB;
+    Model.MaxLODDist = pTemplate->Model.MaxLODDist;
+    Model.instanciate( pTemplate->Model.p3DFiles, true );
+
+    if ( Model.pInstance == nullptr && Model.pHiearchNode == nullptr ) {
+        return false; // still failed (e.g. geometry genuinely absent)
+    }
+
+    unknownActorFunc();
+    return true;
+}
+
 void EntityActor::deinstanciate() {
     // FUN_007fa830
     if ( pMechanism != nullptr && pMechanism->isCreated() ) {

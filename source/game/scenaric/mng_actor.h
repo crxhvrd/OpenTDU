@@ -35,6 +35,7 @@ public:
 
     void registerActor( Entity *pActor );
     void removeActorFromList( Entity *pActor );
+    int32_t refreshMissingModels();
 
     // NOTE: the original takes the owning MngActor explicitly and tolerates a
     // null manager (entities not owned by an MngActor).

@@ -37,6 +37,7 @@ public:
                       int32_t tileKey ) override;
     int32_t refreshMechanismRender(
         const std::vector<std::pair<uint64_t, void *>> &members ) override;
+    bool refreshModelFromTemplate() override;
 
     // Vtable entries specific to actor entities
     virtual void *getAnimation();
