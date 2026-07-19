@@ -96,7 +96,8 @@ bool RenderFile::parseFile() {
 
                 // For x64: set underlying pointer ID to zero to allocate a new
                 // entry in the global pointer register
-                memset( pRelativeOffsetAsPointer, 0, sizeof( x86Pointer_t ) );
+                memset( (void *)pRelativeOffsetAsPointer, 0,
+                        sizeof( x86Pointer_t ) );
 
                 int8_t *pAbsoluteOffset = (int8_t *)pHeader + relativeOffset;
                 *pRelativeOffsetAsPointer = pAbsoluteOffset;
