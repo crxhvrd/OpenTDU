@@ -9,6 +9,7 @@
 #include "game/mng_ingame_menu.h"
 
 #include "online/mng_chat.h"
+#include "render/mng_cam_gps.h"
 
 struct FlashMessage;
 
@@ -29,7 +30,7 @@ private:
     MngBookmark mngBookmark;
     // MngFRMeetingIC mngFRMeetingIC;
     MngPhotoMode mngPhotoMode;
-    // MngCamGPS mngCamGPS;
+    MngCamGPS mngCamGPS;
     // MngFontPlayers mngFontPlayers;
     MngLogoDisplay mngLogoDisplay;
     MngMapScreenshot mngMapScreenshot;

@@ -14,7 +14,7 @@ GMFreeride::GMFreeride()
       mngBookmark(),
       // mngFRMeetingIC(),
       mngPhotoMode(),
-      // mngCamGPS(),
+      mngCamGPS(),
       // mngFontPlayers(),
       mngLogoDisplay(),
       mngMapScreenshot(),
@@ -33,7 +33,7 @@ GMFreeride::GMFreeride()
     }
 
     registerManager( &mngInGameMenu );
-    // registerManager( &mngCamGPS );
+    registerManager( &mngCamGPS );
     registerManager( &mngChat );
 
     OTDU_UNIMPLEMENTED; // TODO: SCENARICS
