@@ -49,7 +49,7 @@ jobs:
 
     - name: Compress
       working-directory: ${{ github.workspace }}/build/bin
-      run: zip -r ${{ github.workspace }}/build/opentdu_release_${{ matrix.platform_name }}_vulkan.zip .
+      run: zip -r ${{ github.workspace }}/build/opentdu_release_macos_vulkan.zip .
 
     - name: Tag
       run: |
@@ -61,4 +61,4 @@ jobs:
       with:
         name: "nightly_${{ env.sha_short }}"
         tag_name: "nightly_${{ env.sha_short }}"
-        files: ${{ github.workspace }}/build/opentdu_release_${{ matrix.platform_name }}_vulkan.zip
+        files: ${{ github.workspace }}/build/opentdu_release_macos_vulkan.zip
