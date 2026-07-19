@@ -18,7 +18,7 @@ IF "%~2"=="legacy" (
 )
 
 pushd "build"
-cmake --build . --config Release --parallel
+cmake --build . --parallel
 popd
 
 IF %ERRORLEVEL% NEQ 0 (
