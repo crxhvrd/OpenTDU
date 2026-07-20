@@ -32,6 +32,7 @@ constexpr float kSlipDenom =
     3.0f; // min |vLong| for the longitudinal-slip ratio
 
 constexpr int kWheelSubsteps = 5;
+constexpr float kSuspDampingScale = 1.0f;
 
 bool gVehicleDrivingAids = true;
 constexpr float kEspAuthority = 0.5f;
@@ -58,6 +59,9 @@ constexpr float kAeroGripRear = 1.0f;  // rear slot factor (per wheel)
 
 bool gVehicleAntiRoll = false;
 constexpr float kAntiRollFraction = 0.5f;
+
+// Suspension damper-velocity NaN guard.
+constexpr float kSuspDamperVelClamp = 100.0f;
 
 static float SteerResponseCurve( float x, float k ) {
     // FUN_00824730
@@ -285,8 +289,6 @@ PhysicsVehicle::ComputeAxleSuspension( const DBEntryCarPhysicsData &db,
     const int32_t rateRaw =
         bFront ? db.SuspensionRateFront : db.SuspensionRateRear;
     const int32_t dampRaw = bFront ? db.DamperRateFront : db.DamperRateRear;
-    const int32_t lenRaw =
-        bFront ? db.SuspensionLengthFront : db.SuspensionLengthRear;
     const float suspRate = rateRaw > 0 ? static_cast<float>( rateRaw ) : 100.0f;
     const float dampRate = dampRaw > 0 ? static_cast<float>( dampRaw ) : 100.0f;
 
@@ -296,19 +298,18 @@ PhysicsVehicle::ComputeAxleSuspension( const DBEntryCarPhysicsData &db,
         kBase *= 2.5f; // heavy-car boost (DAT_00f416c0)
     }
     const float k = Max( 1000.0f, kBase * springCoef * 1.2f );
-    const float d = kBase * 0.0625f * ( coefSuspRaw * 0.01f ) *
-                    ( dampRate * 0.01f ) * springCoef;
+    const float d = kSuspDampingScale * kBase * 0.0625f *
+                    ( coefSuspRaw * 0.01f ) * ( dampRate * 0.01f ) * springCoef;
 
     const float cornerLoad = weight * axleFrac * kGravity * 0.5f;
     const float sag = cornerLoad / k;
 
-    const float bumpTravel =
-        JPH::Clamp( lenRaw > 0 ? lenRaw * kMmToM : 0.12f, 0.08f, 0.20f );
-
+    constexpr float kSuspHardpoint =
+        0.4f; // DAT_00f4175c: strut top above wheel
     SuspensionSetup s;
     s.minLength = 0.05f;
-    s.restLength = s.minLength + bumpTravel;
-    s.maxLength = s.restLength + sag;
+    s.restLength = JPH::Clamp( kSuspHardpoint - sag, 0.18f, 0.26f );
+    s.maxLength = Max( s.restLength + 0.04f, kSuspHardpoint );
 
     const float massPerWheel = Max( 1.0f, weight * 0.25f );
     const float springOmega = std::sqrt( k / massPerWheel );
@@ -329,6 +330,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     if ( pSystem == nullptr || pChassis == nullptr ) {
         return false;
     }
+
     pPhysicsSystem = pSystem;
     pChassisBody = pChassis;
 
@@ -728,8 +730,9 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
 
     const JPH::Vec3 normal = collector.mNormal.NormalizedOr( up );
     const float spring = suspStiffness[i] * ( suspMaxLength[i] - suspLength );
-    const float suspVel = JPH::Clamp( -contactVel.Dot( normal ), -3.0f, 3.0f );
-    const float damper = suspDamping[i] * suspVel;
+    const float suspVel = JPH::Clamp(
+        -contactVel.Dot( normal ), -kSuspDamperVelClamp, kSuspDamperVelClamp );
+    const float damper = suspDamping[i] * suspVel * kSuspDampingScale;
 
     prevSuspLength[i] = suspLength;
     w.SuspTotalForce = spring + damper;
@@ -764,7 +767,7 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
         Eigen::Vector4f( contact.GetX(), contact.GetY(), contact.GetZ(), 1.0f );
     w.WheelPos =
         Eigen::Vector4f( attachW.GetX(), attachW.GetY(), attachW.GetZ(), 1.0f );
-    w.SpinAxis = ToVec4( up );
+    w.SpinAxis = ToVec4( normal );
     w.bGroundContact = true;
     return true;
 }

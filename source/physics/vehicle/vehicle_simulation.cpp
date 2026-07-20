@@ -315,8 +315,7 @@ void ComputeSuspensionForce( PhysicsWheelState &w ) {
 
     const Eigen::Vector4f &axis =
         ( !w.bGroundContact ) ? w.ContactNormal : w.SpinAxis;
-    const float appliedForce = Clamp( diff, -w.SuspMaxLoad, w.SuspMaxLoad );
-    w.SuspForce = axis * appliedForce;
+    w.SuspForce = axis * diff;
     w.SuspForcePoint = w.ContactPoint;
 }
 
