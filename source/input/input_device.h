@@ -74,6 +74,21 @@ struct DeviceAction {
     float FUN_00434e40( float param_2 );
 };
 
+inline bool IsActionPressed( DeviceAction *param_1 ) {
+    // FUN_0099a000
+    if ( ( param_1 != nullptr ) && ( ( param_1->Flags & 8 ) != 0 ) ) {
+        return true;
+    }
+    return false;
+}
+
+inline bool IsActionDown( DeviceAction *param_1 ) {
+    if ( ( param_1 != nullptr ) && ( ( param_1->Flags & 1 ) != 0 ) ) {
+        return true;
+    }
+    return false;
+}
+
 class Device {
 public:
     inline const char *getName() const { return pName; }

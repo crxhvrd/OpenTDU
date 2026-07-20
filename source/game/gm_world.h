@@ -61,6 +61,14 @@ protected:
 // Game Mode World with driving mechanics (e.g. GMFreeRide, GMTestCar)
 class GameModeWorld : public GameModeWorldBase {
 public:
+    bool isPaused() override {
+        // FUN_0042b4e0
+        return bPaused;
+    }
+
+    inline bool isPauseMenuActive() const { return bPauseMenuActive; }
+
+public:
     // gameModeFlags:
     //  0 - vehicle is externally driven (not bound to MngActor/HUD)
     //  1 - is pause menu allowed
@@ -76,12 +84,6 @@ public:
     void destroy() override;
 
     void onResourceStreamed() override;
-
-    bool isPaused() override {
-        // FUN_0042b4e0
-        return bPaused;
-    }
-
     bool onMessage( FlashMessage *pMessage ) override;
 
     virtual bool isLoaded() {

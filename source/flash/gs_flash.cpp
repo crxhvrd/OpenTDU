@@ -15,6 +15,8 @@
 #include "online/ed_net_gamespy_manager.h"
 #include "system/gs_keyboard_pc.h"
 #include "game/gs_tutorial.h"
+#include "game/gm_world.h"
+#include "gs_timer.h"
 #include "input/input_device.h"
 #include "input/gs_device.h"
 
@@ -912,21 +914,6 @@ void GSFlash::setViewport( MoviePlayer &param_1 ) {
     }
 }
 
-inline bool isActionPressed( DeviceAction *param_1 ) {
-    // FUN_0099a000
-    if ( ( param_1 != nullptr ) && ( ( param_1->Flags & 8 ) != 0 ) ) {
-        return true;
-    }
-    return false;
-}
-
-inline bool IsActionDown( DeviceAction *param_1 ) {
-    if ( ( param_1 != nullptr ) && ( ( param_1->Flags & 1 ) != 0 ) ) {
-        return true;
-    }
-    return false;
-}
-
 // SWF button-action key codes passed to FlashPlayer::tick each frame.
 // Values < 0x20 follow the SWF spec; values >= 0x20 are ASCII character codes.
 enum eFlashKey : uint32_t {
@@ -959,10 +946,10 @@ uint32_t GSFlash::getInputMask() {
         return 0;
     }
 
-    bool bVar13 = isActionPressed( pPVar12->pMenuUp );
-    bool bVar8 = isActionPressed( pPVar12->pMenuDown );
-    bool bVar9 = isActionPressed( pPVar12->pMenuLeft );
-    bool bVar10 = isActionPressed( pPVar12->pMenuRight );
+    bool bVar13 = IsActionPressed( pPVar12->pMenuUp );
+    bool bVar8 = IsActionPressed( pPVar12->pMenuDown );
+    bool bVar9 = IsActionPressed( pPVar12->pMenuLeft );
+    bool bVar10 = IsActionPressed( pPVar12->pMenuRight );
 
     bool bVar11 = IsActionDown( pPVar12->pMenuUp );
     bool bVar5 = IsActionDown( pPVar12->pMenuDown );
@@ -970,10 +957,10 @@ uint32_t GSFlash::getInputMask() {
     bool bVar7 = IsActionDown( pPVar12->pMenuRight );
 
     if ( bUnknownBoolean ) {
-        bVar13 |= isActionPressed( pPVar12->pMapCursorUp );
-        bVar8 |= isActionPressed( pPVar12->pMapCursorDown );
-        bVar9 |= isActionPressed( pPVar12->pMapCursorLeft );
-        bVar10 |= isActionPressed( pPVar12->pMapCursorRight );
+        bVar13 |= IsActionPressed( pPVar12->pMapCursorUp );
+        bVar8 |= IsActionPressed( pPVar12->pMapCursorDown );
+        bVar9 |= IsActionPressed( pPVar12->pMapCursorLeft );
+        bVar10 |= IsActionPressed( pPVar12->pMapCursorRight );
 
         bVar11 |= IsActionDown( pPVar12->pMapCursorUp );
         bVar5 |= IsActionDown( pPVar12->pMapCursorDown );
@@ -981,42 +968,68 @@ uint32_t GSFlash::getInputMask() {
         bVar7 |= IsActionDown( pPVar12->pMapCursorRight );
     }
 
-    // TODO: Requires GMWorld class gpActiveGMWorld
-    OTDU_UNIMPLEMENTED;
-    // TODO: Requires GMWorld class gpActiveGMWorld
+    bool bFrontEndDirections = true;
+    if ( gpActiveGM != nullptr ) {
+        const float gameSpeed =
+            ( gpTimer != nullptr ) ? gpTimer->GameSpeed : 0.0f;
+        const eGameMode activeGM =
+            ( gpTestDriveInstance != nullptr )
+                ? gpTestDriveInstance->getActiveGameMode()
+                : GM_Invalid;
+        const bool bPopupDisplayed = ( gpActiveGameMode != nullptr ) &&
+                                     gpActiveGameMode->isMessageBoxVisible();
+        if ( !gpActiveGM->isPauseMenuActive() && gameSpeed > 0.0f &&
+             !bPopupDisplayed && activeGM != GM_GameModeEdit ) {
+            bFrontEndDirections = false;
+            if ( IsActionPressed( pPVar12->pInGameMenuUp ) ) {
+                return FK_InGameUp;
+            }
+            if ( IsActionPressed( pPVar12->pInGameMenuDown ) ) {
+                return FK_InGameDown;
+            }
+            if ( IsActionPressed( pPVar12->pInGameMenuLeft ) ) {
+                return FK_InGameLeft;
+            }
+            if ( IsActionPressed( pPVar12->pInGameMenuRight ) ) {
+                return FK_InGameRight;
+            }
+        }
+    }
 
-    if ( ( ( bVar13 ) && ( !bVar6 ) ) && ( !bVar7 ) ) {
-        return FK_Up;
-    }
-    if ( ( ( bVar8 ) && ( !bVar6 ) ) && ( !bVar7 ) ) {
-        return FK_Down;
-    }
-    if ( ( ( bVar9 ) && ( !bVar11 ) ) && ( !bVar5 ) ) {
-        return FK_Left;
-    }
-    if ( ( ( bVar10 ) && ( !bVar11 ) ) && ( !bVar5 ) ) {
-        return FK_Right;
+    if ( bFrontEndDirections ) {
+        if ( ( ( bVar13 ) && ( !bVar6 ) ) && ( !bVar7 ) ) {
+            return FK_Up;
+        }
+        if ( ( ( bVar8 ) && ( !bVar6 ) ) && ( !bVar7 ) ) {
+            return FK_Down;
+        }
+        if ( ( ( bVar9 ) && ( !bVar11 ) ) && ( !bVar5 ) ) {
+            return FK_Left;
+        }
+        if ( ( ( bVar10 ) && ( !bVar11 ) ) && ( !bVar5 ) ) {
+            return FK_Right;
+        }
     }
 
-    if ( isActionPressed( pPVar12->pMenuValidate ) || bValidateButtonPressed ) {
+    if ( IsActionPressed( pPVar12->pMenuValidate ) || bValidateButtonPressed ) {
         bValidateButtonPressed = false;
         return FK_Validate;
     }
 
-    if ( isActionPressed( pPVar12->pMenuBack ) || bBackButtonPressed ) {
+    if ( IsActionPressed( pPVar12->pMenuBack ) || bBackButtonPressed ) {
         bBackButtonPressed = false;
         return FK_Back;
     }
 
-    bVar13 = isActionPressed( pPVar12->pMenuPause );
+    bVar13 = IsActionPressed( pPVar12->pMenuPause );
     if ( bVar13 ) {
         return FK_Pause;
     }
-    bVar13 = isActionPressed( pPVar12->pMenuSortInsert );
+    bVar13 = IsActionPressed( pPVar12->pMenuSortInsert );
     if ( bVar13 ) {
         return FK_SortInsert;
     }
-    bVar13 = isActionPressed( pPVar12->pMenuOption3 );
+    bVar13 = IsActionPressed( pPVar12->pMenuOption3 );
     if ( bVar13 ) {
         return FK_Option3;
     }
@@ -1034,27 +1047,27 @@ uint32_t GSFlash::getInputMask() {
         }
     }
 
-    bVar13 = isActionPressed( pPVar12->pMenuOption1 );
+    bVar13 = IsActionPressed( pPVar12->pMenuOption1 );
     if ( bVar13 || bOption1ButtonPressed != false ) {
         bOption1ButtonPressed = false;
         return FK_Option1;
     }
 
-    bVar13 = isActionPressed( pPVar12->pMenuOption2 );
+    bVar13 = IsActionPressed( pPVar12->pMenuOption2 );
     if ( bVar13 || bOption2ButtonPressed != false ) {
         bOption2ButtonPressed = false;
         return FK_Option2;
     }
 
-    bVar13 = isActionPressed( pPVar12->pMenuSortRight );
+    bVar13 = IsActionPressed( pPVar12->pMenuSortRight );
     if ( bVar13 ) {
         return FK_SortRight;
     }
-    bVar13 = isActionPressed( pPVar12->pMenuSortLeft );
+    bVar13 = IsActionPressed( pPVar12->pMenuSortLeft );
     if ( bVar13 ) {
         return FK_SortLeft;
     }
-    bVar13 = isActionPressed( pPVar12->pMenuOption4 );
+    bVar13 = IsActionPressed( pPVar12->pMenuOption4 );
     if ( bVar13 ) {
         return FK_Option4;
     }

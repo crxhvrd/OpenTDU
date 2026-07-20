@@ -409,6 +409,12 @@ void CarBodyState::reset() {
     SpeedInKmh = 0.0f;
     Omega = 10.0f;
     Gears = 1;
+    Handbrake = 0.0f;
+    Clutch = 0.0f;
+    GearRequest = 1;
+    bGearUpEdge = false;
+    bGearDownEdge = false;
+    WindowState = 0;
     OdometerKms = 0;
     OdometerTenMeters = 0;
     bUseWheelMatrix = false;

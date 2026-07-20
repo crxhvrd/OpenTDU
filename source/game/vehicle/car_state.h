@@ -103,6 +103,11 @@ struct CarBodyState {
     float Steering;
     float Throttle;
     float Brake;
+    float Handbrake;
+    float Clutch;
+    int32_t GearRequest; // 0=R, 1=N, 2..7=gear, 8=hbrake
+    bool bGearUpEdge;
+    bool bGearDownEdge;
 
     Eigen::Vector4f Shaking;
     Eigen::Vector4f BikeVelocity;

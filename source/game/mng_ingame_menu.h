@@ -28,6 +28,9 @@ enum eInGameMenu : int32_t {
 // MngInGameMenu — the in-game (pause / interaction) menu manager.
 class MngInGameMenu : public Manager {
 public:
+    inline int32_t getWindowsDirection() const { return WindowsDirection; }
+
+public:
     MngInGameMenu();
     ~MngInGameMenu();
 
@@ -57,6 +60,15 @@ private:
     float MaxSpeedImperial;
     float Counter;
     bool bDrivingModeEnabled;
+
+private:
+    void updateInput();
+    bool canOpenMenu();
+    bool changeMenu( eInGameMenu menu );
+    void close();
+    void toggleWindows( bool bPlayAnim );
+    void updateMenuTimeout();
+    void refreshHasWindows();
 };
 
 extern MngInGameMenu *gpMngInGameMenu;

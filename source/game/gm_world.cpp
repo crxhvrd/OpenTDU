@@ -33,6 +33,7 @@
 #include "render/postfx/effects/postfx_modulate.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
+#include "game/mng_ingame_menu.h"
 
 float gFXPFadeInDelay = 0.5f;   // DAT_00f9c0f4
 float gFXPFadeOutDelay = 0.5f;  // DAT_00f9c0f8
@@ -446,6 +447,35 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         pBody->bHeadlightsOn =
             readAxis( pCfg->pCarIgnition ) > 0.5f;           // CAR_LIGHT
         pBody->bHonking = readAxis( pCfg->pCarHorn ) > 0.5f; // CAR_HORN
+        pBody->Handbrake = readAxis( pCfg->pCarCamera );     // CAR_HBRAKE
+        pBody->Clutch = readAxis( pCfg->pBikeAccel );        // CAR_CLUTCH
+
+        int32_t gearSelect = 1;
+        if ( IsActionDown( pCfg->pCarGear1 ) )
+            gearSelect = 0; // CAR_GREV -> reverse
+        if ( IsActionDown( pCfg->pCarGear2 ) )
+            gearSelect = 2; // CAR_G1ST
+        if ( IsActionDown( pCfg->pCarGear3 ) )
+            gearSelect = 3; // CAR_G2ND
+        if ( IsActionDown( pCfg->pCarGear4 ) )
+            gearSelect = 4; // CAR_G3RD
+        if ( IsActionDown( pCfg->pCarGear5 ) )
+            gearSelect = 5; // CAR_G4TH
+        if ( IsActionDown( pCfg->pCarGear6 ) )
+            gearSelect = 6; // CAR_G5TH
+        if ( IsActionDown( pCfg->pCarGear7 ) )
+            gearSelect = 7; // CAR_G6TH
+        if ( IsActionDown( pCfg->pCarHandbrake ) )
+            gearSelect = 8; // CAR_G7TH
+        pBody->GearRequest = gearSelect;
+
+        pBody->bGearUpEdge = IsActionPressed( pCfg->pCarGearDown ); // CAR_GUP
+        pBody->bGearDownEdge =
+            IsActionPressed( pCfg->pBikeGearUp ); // CAR_GDOWN
+    }
+
+    if ( gpMngInGameMenu != nullptr ) {
+        pBody->WindowState = gpMngInGameMenu->getWindowsDirection();
     }
 }
 
