@@ -989,8 +989,8 @@ endif()
 # zlib
 include_directories( "${OTDU_THIRDPARTY_FOLDER}/zlib/" )
 if ( WIN32 )
-    target_link_libraries(opentdu debug "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Debug/zsd.lib" 
-                                  optimized "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Debug/zd.lib" )
+    target_link_libraries(opentdu debug "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Debug/zsd.lib"
+                                  optimized "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Release/zs.lib" )
 elseif ( UNIX )
     target_link_libraries(opentdu "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/libz.a")
 else()
@@ -1001,8 +1001,8 @@ endif()
 if ( ${OTDU_USE_LIBBINKDEC} )
     include_directories( "${OTDU_THIRDPARTY_FOLDER}/libbinkdec/include" )
     if ( WIN32 )
-        target_link_libraries( opentdu debug "${OTDU_THIRDPARTY_FOLDER}/libbinkdec/lib/Debug/binkdecs-d.lib" 
-                                       optimized "${OTDU_THIRDPARTY_FOLDER}/libbinkdec/lib/RelWithDebInfo/binkdecs.lib" )
+        target_link_libraries( opentdu debug "${OTDU_THIRDPARTY_FOLDER}/libbinkdec/lib/Debug/binkdecs-d.lib"
+                                       optimized "${OTDU_THIRDPARTY_FOLDER}/libbinkdec/lib/Release/binkdecs.lib" )
     elseif( UNIX )
         target_link_libraries( opentdu "${OTDU_THIRDPARTY_FOLDER}/libbinkdec/lib/libbinkdec.a" )
     endif ( WIN32 )
@@ -1070,6 +1070,15 @@ endif()
 
 if( ${OTDU_USE_JOLT} )
     target_link_libraries(opentdu Jolt::Jolt)
+endif()
+
+if( MSVC AND OTDU_TARGET_WIN7 )
+    add_library( otdu_win7thunks OBJECT "${OTDU_SRC_FOLDER}/core/win7_thunks.cpp" )
+    set_property( TARGET otdu_win7thunks PROPERTY FOLDER "Tools" )
+    target_sources( opentdu PRIVATE $<TARGET_OBJECTS:otdu_win7thunks> )
+    if( ${OTDU_USE_JOLT} )
+        target_sources( Jolt PRIVATE $<TARGET_OBJECTS:otdu_win7thunks> )
+    endif()
 endif()
 
 # Tools subprojects

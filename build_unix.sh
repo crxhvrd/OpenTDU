@@ -13,7 +13,7 @@ fi
 echo "Building Open Test Drive Unlimited..."
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 pushd build
-cmake --build . --parallel 12
+cmake --build . --parallel 12 --config Release
 popd
 
 if [ $? -ne 0 ]; then

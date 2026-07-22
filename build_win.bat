@@ -18,7 +18,7 @@ IF "%~2"=="Win7" (
 )
 
 pushd "build"
-cmake --build . --parallel
+cmake --build . --parallel --config Release
 popd
 
 IF %ERRORLEVEL% NEQ 0 (

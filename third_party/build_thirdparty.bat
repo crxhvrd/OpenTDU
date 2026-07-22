@@ -10,7 +10,8 @@ pushd "libbinkdec"
 set "working_dir=%CD%"
 cmake . -DBUILD_SHARED=0 -B build -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="%working_dir%/lib" -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="%working_dir%/lib" -DCMAKE_BUILD_TYPE=Release -A %1
 cd build
-cmake --build .
+cmake --build . --config Debug
+cmake --build . --config Release
 popd
 
 echo Building zlib...
@@ -18,7 +19,8 @@ pushd zlib
 set "working_dir=%CD%"
 cmake -S . -DZLIB_BUILD_SHARED=0 -DZLIB_BUILD_TESTING=0 -DZLIB_BUILD_MINIZIP=0 -B build -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="%working_dir%/lib" -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="%working_dir%/lib" -DCMAKE_BUILD_TYPE=Release -A %1
 cd build
-cmake --build .
+cmake --build . --config Debug
+cmake --build . --config Release
 popd
 
 IF %ERRORLEVEL% NEQ 0 (

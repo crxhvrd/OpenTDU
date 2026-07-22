@@ -10,8 +10,8 @@ set_property(TARGET opentdu_zcuncompressor PROPERTY FOLDER "Tools")
 # zlib
 include_directories( "${OTDU_THIRDPARTY_FOLDER}/zlib/" )
 if ( WIN32 )
-    target_link_libraries(opentdu_zcuncompressor debug "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Debug/zsd.lib" 
-                                  optimized "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Debug/zd.lib" )
+    target_link_libraries(opentdu_zcuncompressor debug "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Debug/zsd.lib"
+                                  optimized "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Release/zs.lib" )
 elseif ( UNIX )
     target_link_libraries(opentdu_zcuncompressor "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/libz.a")
 else()
