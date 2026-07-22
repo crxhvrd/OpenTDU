@@ -101,3 +101,40 @@ uint32_t PostFXNodeModulate::getType() const {
     // FUN_00419b50
     return 0x12;
 }
+
+PostFXNodeModulate::PostFXNodeModulate( DeferImpl ) : PostFXNode( 2, 1 ) {
+    pPostFX = nullptr;
+    coefficients.fill( 0.0f );
+}
+
+PostFXModulateHDR::PostFXModulateHDR( PostFXNodeModulate *pOwner )
+    : PostFXModulate( pOwner ) {
+    // FUN_005fc170
+}
+
+PostFXModulateHDR::~PostFXModulateHDR() {
+    // FUN_005fc710
+}
+
+uint64_t PostFXModulateHDR::getPixelShaderHashcode() const {
+    // FUN_005fc680
+    return 0x6c6cdc43c92bc9da;
+}
+
+PostFXNodeModulateHDR::PostFXNodeModulateHDR()
+    : PostFXNodeModulate( DeferImpl{} ) {
+    // FUN_0050c3c0
+    pPostFX = new ( TestDrive::Alloc( sizeof( PostFXModulateHDR ) ) )
+        PostFXModulateHDR( this );
+
+    setCoefficient1( 0.32f ); // FLOAT_009f14b8 (Coeff0 stays 0.0)
+}
+
+PostFXNodeModulateHDR::~PostFXNodeModulateHDR() {
+    // FUN_0050d660
+}
+
+uint32_t PostFXNodeModulateHDR::getType() const {
+    // FUN_00697320
+    return 0x11;
+}

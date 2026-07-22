@@ -34,9 +34,29 @@ public:
     inline float getCoefficient0() const { return coefficients[0]; }
     inline float getCoefficient1() const { return coefficients[1]; }
 
+protected:
+    struct DeferImpl {};
+    explicit PostFXNodeModulate( DeferImpl );
+
 private:
     static constexpr uint32_t kNumCoefficient = 4;
 
 private:
     std::array<float, kNumCoefficient> coefficients;
+};
+
+class PostFXModulateHDR : public PostFXModulate {
+public:
+    PostFXModulateHDR( PostFXNodeModulate *pOwner );
+    ~PostFXModulateHDR();
+
+    virtual uint64_t getPixelShaderHashcode() const override;
+};
+
+class PostFXNodeModulateHDR : public PostFXNodeModulate {
+public:
+    PostFXNodeModulateHDR();
+    ~PostFXNodeModulateHDR();
+
+    virtual uint32_t getType() const override;
 };

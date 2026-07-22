@@ -309,14 +309,14 @@ bool PostFXStepHDRI::initialize() {
         return false;
     }
 
-    pModulate = new ( TestDrive::Alloc( sizeof( PostFXNodeModulate ) ) )
-        PostFXNodeModulate();
+    pModulate = new ( TestDrive::Alloc( sizeof( PostFXNodeModulateHDR ) ) )
+        PostFXNodeModulateHDR();
     if ( pModulate == nullptr ) {
         return false;
     }
 
-    pModulate2 = new ( TestDrive::Alloc( sizeof( PostFXNodeModulate ) ) )
-        PostFXNodeModulate();
+    pModulate2 = new ( TestDrive::Alloc( sizeof( PostFXNodeModulateHDR ) ) )
+        PostFXNodeModulateHDR();
     if ( pModulate2 == nullptr ) {
         return false;
     }
