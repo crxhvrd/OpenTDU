@@ -1101,10 +1101,24 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         comResult.Get(), JPH::RVec3( world.GetTranslation() ),
         world.GetQuaternion().Normalized(), JPH::EMotionType::Dynamic,
         TDUPhysLayers::VEHICLE );
-    settings.mOverrideMassProperties =
-        JPH::EOverrideMassProperties::CalculateInertia;
-    settings.mMassPropertiesOverride.mMass =
+    const float chassisMass =
         db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f;
+    settings.mMassPropertiesOverride.mMass = chassisMass;
+
+    const JPH::Vec3 h = shapeResult.Get()->GetLocalBounds().GetExtent() +
+                        JPH::Vec3::sReplicate( 0.05f );
+    const float k = chassisMass / 3.0f;
+    JPH::MassProperties mp;
+    mp.mMass = chassisMass;
+    mp.mInertia = JPH::Mat44::sZero();
+    mp.mInertia( 0, 0 ) = k * ( h.GetY() * h.GetY() + h.GetZ() * h.GetZ() );
+    mp.mInertia( 1, 1 ) = k * ( h.GetX() * h.GetX() + h.GetZ() * h.GetZ() );
+    mp.mInertia( 2, 2 ) = k * ( h.GetX() * h.GetX() + h.GetY() * h.GetY() );
+    mp.mInertia( 3, 3 ) = 1.0f;
+    settings.mMassPropertiesOverride = mp;
+    settings.mOverrideMassProperties =
+        JPH::EOverrideMassProperties::MassAndInertiaProvided;
+
     settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     settings.mLinearDamping = 0.0f;
 
@@ -1153,6 +1167,8 @@ void GSPhysics::drawDebug( float ) {
     extern bool gVehicleAntiRoll;
     extern bool gVehicleDiff;
     extern bool gVehicleEngineStateMachine;
+    extern bool gVehicleSimuMode; // SIMU (Hardcore mode) vs ARCADE (aero lift
+                                  // coef gate)
 
     ImGui::SeparatorText( "Vehicle" );
     ImGui::Checkbox( "ESP", &gVehicleDrivingAids );
@@ -1162,6 +1178,7 @@ void GSPhysics::drawDebug( float ) {
     ImGui::Checkbox( "Enable anti-roll bars sim", &gVehicleAntiRoll );
     ImGui::Checkbox( "Enable differential sim", &gVehicleDiff );
     ImGui::Checkbox( "Enable ingition sim", &gVehicleEngineStateMachine );
+    ImGui::Checkbox( "Hardcore mode", &gVehicleSimuMode );
 
     ImGui::Separator();
 

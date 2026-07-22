@@ -128,8 +128,10 @@ struct PhysicsEngineSim {
     float Throttle = 0.0f;
     float Omega = 84.0f; // current engine speed (rad/s)
     float TorqueOut = 0.0f;
-    float PeakTorqueOmega = 0.0f; // omega at peak torque
-    float AngAccel = 0.0f;        // dOmega/dt (rad/s^2), 1-step lag
+    float PeakTorqueOmega = 0.0f;    // omega at peak torque
+    float AngAccel = 0.0f;           // dOmega/dt (rad/s^2), 1-step lag
+    float RevLimiterTimer = 1.0f;    // rev-limiter ignition-cut timer (s)
+    float RevLimiterCutTime = 0.25f; // s
 };
 
 struct PhysicsGearboxSim {
@@ -197,6 +199,7 @@ struct PhysicsVehicleState {
     bool bFrontDrive = false;
     bool bRearDrive = false;
     bool bCenterDrive = false;
+    bool AnyWheelGrounded = false; // any wheel touched ground (last step)
     int CouplingMode = 0;
     float CouplingCoefE = 1.0f;
     float CouplingCoefW = 1.0f;

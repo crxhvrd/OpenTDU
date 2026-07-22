@@ -15,10 +15,9 @@ static constexpr float kLoadToPerMille =
 static constexpr float kGearboxInertia = 0.05f;
 static constexpr float kDiffBaseInertia = 0.05f;
 static constexpr float kMaxCoupling = 4000.0f;
-static constexpr float kClutchLockBand = 8.0f;  // rad/s
-static constexpr float kLaunchSlipBand = 50.0f; // rad/s
-static constexpr float kSlipTransmitFrac = 0.8f;
-static constexpr float kLaunchRpmFrac = 0.6f;
+
+// Cut duration = per-engine e.RevLimiterCutTime (TimeRevLimiterNoPower), set in
+// PhysicsVehicle::create() from the FUN_008345e0 formula.
 static constexpr float kShiftRedlineFrac = 0.97f; // force upshift near limiter
 static constexpr float kShiftDownRpmFrac =
     0.45f; // downshift below this*redline
@@ -583,8 +582,16 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
             engThrottle = std::max( engThrottle, gov );
         }
     }
+
+    if ( e.Omega > e.OmegaMax && e.RevLimiterTimer > e.RevLimiterCutTime ) {
+        e.RevLimiterTimer = 0.0f;
+        e.Omega = e.OmegaMax; // one-shot snap (caps overshoot)
+    }
+    const bool revCut = e.RevLimiterTimer < e.RevLimiterCutTime;
+    const float limThrottle = revCut ? 0.0f : engThrottle;
     e.TorqueOut =
-        engineFiring ? EngineTorqueAt( e, e.Omega, engThrottle ) : 0.0f;
+        engineFiring ? EngineTorqueAt( e, e.Omega, limThrottle ) : 0.0f;
+    e.RevLimiterTimer += dt;
 
     StepClutch( c, e, gear, throttle, dt );
     float engage = neutral ? 0.0f : c.Engagement;
@@ -636,8 +643,8 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
         if ( !gVehicleEngineStateMachine && e.Omega < e.OmegaIdle ) {
             e.Omega = e.OmegaIdle;
         }
-        if ( e.Omega > e.OmegaMax ) {
-            e.Omega = e.OmegaMax; // rev limiter
+        if ( e.Omega > e.OmegaMax * 1.15f ) {
+            e.Omega = e.OmegaMax * 1.15f; // safety ceiling (non-original)
         }
     } else {
         e.AngAccel = 0.0f;
@@ -678,7 +685,9 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
     }
 
     if ( g.bAutomatic && g.ShiftState == 1 && g.ShiftTimer <= 0.0f ) {
-        if ( c.State == 3 && std::fabs( g.Ratios[gear] ) > 0.01f ) {
+        const bool atLimiter = e.Omega >= e.OmegaMax * kShiftRedlineFrac;
+        if ( ( c.State == 3 || atLimiter ) &&
+             std::fabs( g.Ratios[gear] ) > 0.01f ) {
             const float ratioCur = g.Ratios[gear];
             const float dThr = std::max( throttle, kShiftDecisionThrottle );
             const float Fcur =
@@ -687,7 +696,8 @@ void StepPowertrain( PhysicsVehicleState &v, float throttle, float dt ) {
             bool shifted = false;
             // Upshift: the next-taller gear pulls at least as hard (crossover),
             // or the engine is at the limiter.
-            if ( gear < g.NumGears - 1 && throttle > 0.1f ) {
+            if ( gear < g.NumGears - 1 && throttle > 0.1f &&
+                 v.AnyWheelGrounded ) {
                 const float ratioUp = g.Ratios[gear + 1];
                 const float omegaUp = e.Omega * ( ratioUp / ratioCur );
                 const float Fup =

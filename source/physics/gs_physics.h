@@ -40,6 +40,9 @@ namespace TDUSurface {
                      // drive surface (junctions, curbs, floors) -> ON-ROAD
     };
 
+    // Mask applied to a body's Jolt UserData to recover the surface class byte.
+    constexpr uint64_t kClassMask = 0xFF;
+
     inline float friction( uint32_t surfaceClass ) {
         switch ( surfaceClass ) {
         case Road:

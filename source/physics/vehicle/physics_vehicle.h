@@ -36,10 +36,14 @@ public:
 
     struct SuspensionSetup {
         float minLength;  // full-bump length, m
-        float maxLength;  // full-droop length, m
+        float maxLength;  // old full-droop length (= static + sag), m
         float restLength; // static ride-height length, m
         float frequency;  // ride frequency, Hz
         float damping;    // damping ratio
+        float cornerLoad; // static per-wheel load, N (spring force at static)
+        float
+            staticLength; // suspLength at ride height (spring == cornerLoad), m
+        float droopStop;  // full-droop travel stop = static + preload, m
     };
 
 public:
@@ -107,7 +111,14 @@ private:
     float suspRestLength[PhysicsVehicleState::kMaxWheels]; // static ride-height
                                                            // length, m
     float suspStiffness[PhysicsVehicleState::kMaxWheels];  // N/m
-    float suspDamping[PhysicsVehicleState::kMaxWheels];    // N/(m/s)
+    float suspDamping[PhysicsVehicleState::kMaxWheels];    // N/(m/s) (bump)
+    float
+        suspDamperRebound[PhysicsVehicleState::kMaxWheels]; // N/(m/s) (rebound)
+    float suspDamperLP[PhysicsVehicleState::kMaxWheels]; // damper vel LP state
+    float
+        suspStaticLength[PhysicsVehicleState::kMaxWheels]; // ride-height len, m
+    float suspCornerLoad[PhysicsVehicleState::kMaxWheels]; // static load, N
+    float suspDroopStop[PhysicsVehicleState::kMaxWheels];  // static+preload, m
     float arbStiffness[2]; // anti-roll bar rate per axle (front, rear), N/m
     float steerLockRad;
     float wheelBase = 2.5f; // axle-to-axle distance, m (speed-sensitive steer)
@@ -128,12 +139,9 @@ private:
     float finalDriveRatio;
 
     // Aerodynamics (chassis downforce/drag, applied per physics step).
-    float aeroDragCoef;      // 0.5 * rho * Cx_drag * frontalArea
-    float aeroDownforceCoef; // 0.5 * rho * Cx_lift * frontalArea
-    float aeroDragArea;      // 0.5 * A * Cx
-    float aeroDownArea;      // 0.5 * A * Cz_total
-    float aeroHalfWheelBase; // m, for the downforce pitch couple
-    float aeroFrontFraction; // fraction of downforce on the front axle
+    float aeroDragArea; // 0.5 * A * Cx_drag
+    float aeroDownArea; // 0.5 * A * Cz_lift
+    float aeroDensity;  // air density (mode-gated: 1.7 simu / 1.2 arcade)
 
     // G-meter accel tracking
     float prevWorldVelocity[3];
