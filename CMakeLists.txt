@@ -1077,7 +1077,11 @@ if( MSVC AND OTDU_TARGET_WIN7 )
     set_property( TARGET otdu_win7thunks PROPERTY FOLDER "Tools" )
     target_sources( opentdu PRIVATE $<TARGET_OBJECTS:otdu_win7thunks> )
     if( ${OTDU_USE_JOLT} )
-        target_sources( Jolt PRIVATE $<TARGET_OBJECTS:otdu_win7thunks> )
+        add_library( otdu_win7thunks_jolt OBJECT "${OTDU_SRC_FOLDER}/core/win7_thunks.cpp" )
+        set_property( TARGET otdu_win7thunks_jolt PROPERTY FOLDER "Tools" )
+        set_property( TARGET otdu_win7thunks_jolt PROPERTY
+                      MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" )
+        target_sources( Jolt PRIVATE $<TARGET_OBJECTS:otdu_win7thunks_jolt> )
     endif()
 endif()
 
