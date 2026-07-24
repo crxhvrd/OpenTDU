@@ -278,8 +278,15 @@ void ComputeTireForces( PhysicsWheelState &w,
         w.bTireSlipping = true;
 
         const float rawLongSlip = w.ContactNormal.dot( w.ForwardDir );
-        const float vLongMag = std::max( std::fabs( vLong ), kLatSlipMinSpeed );
-        float a = std::atan( vLat / vLongMag ) * kRadToDeg;
+        float a;
+        if ( vLong > 0.0f ) {
+            a = std::atan( vLat / vLong ) * kRadToDeg;
+        } else if ( vLong < 0.0f ) {
+            a = -std::atan( vLat / vLong ) * kRadToDeg;
+        } else {
+            a = 0.0f;
+        }
+
         if ( w.SideFlag != 1 ) {
             a = -a;
         }
