@@ -834,8 +834,11 @@ void StreamingManager::updateHeightmapExclusionMasks() {
             if ( pArea == nullptr || pArea->state != 1 ) {
                 continue;
             }
+            const int32_t oddRowStaggerShift =
+                ( sector.installedSector.posY & 1 );
             const int32_t baseCol =
-                sector.installedSector.posX * tilesPerSectorX;
+                sector.installedSector.posX * tilesPerSectorX +
+                oddRowStaggerShift;
             const int32_t baseRow =
                 sector.installedSector.posY * tilesPerSectorZ;
             for ( int32_t dz = 0; dz < tilesPerSectorZ; dz++ ) {
@@ -1131,10 +1134,10 @@ void StreamingManager::stitchSectorEdgeToArea( Sector &sector,
         return;
     }
 
-    // Each sector maps to a 2x2 block of area tiles (16 tiles / 8 sectors).
     const int32_t tilesPerSector =
         kHeightmapNumTile / (int32_t)sectorManager.numSectors;
-    const int32_t baseCol = nbSector.posX * tilesPerSector;
+    const int32_t oddRowStaggerShift = ( nbSector.posY & 1 );
+    const int32_t baseCol = nbSector.posX * tilesPerSector + oddRowStaggerShift;
     const int32_t baseRow = nbSector.posY * tilesPerSector;
 
     const auto &areaLOD = pArea->geometry.heightmapLODCache;
