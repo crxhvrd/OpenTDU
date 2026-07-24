@@ -1167,8 +1167,10 @@ void GSPhysics::drawDebug( float ) {
     extern bool gVehicleAntiRoll;
     extern bool gVehicleDiff;
     extern bool gVehicleEngineStateMachine;
-    extern bool gVehicleSimuMode; // SIMU (Hardcore mode) vs ARCADE (aero lift
-                                  // coef gate)
+    extern int gVehicleDiffTypeOverride; // 0=per-car, 1 open, 2 LSD, 4 spool
+    extern float gVehicleDiffLockCoef;   // LSD/spool lock coef (override)
+    extern int
+        gVehicleDrivelineInertiaMode; // -1=per-car, 0 /|k|, 1 /k^2, 2 /sqrt
 
     ImGui::SeparatorText( "Vehicle" );
     ImGui::Checkbox( "ESP", &gVehicleDrivingAids );
@@ -1178,7 +1180,28 @@ void GSPhysics::drawDebug( float ) {
     ImGui::Checkbox( "Enable anti-roll bars sim", &gVehicleAntiRoll );
     ImGui::Checkbox( "Enable differential sim", &gVehicleDiff );
     ImGui::Checkbox( "Enable ingition sim", &gVehicleEngineStateMachine );
-    ImGui::Checkbox( "Hardcore mode", &gVehicleSimuMode );
+    ImGui::TextUnformatted( "Differential override" );
+    ImGui::SameLine();
+    ImGui::RadioButton( "none##diff", &gVehicleDiffTypeOverride, 0 );
+    ImGui::SameLine();
+    ImGui::RadioButton( "open##diff", &gVehicleDiffTypeOverride, 1 );
+    ImGui::SameLine();
+    ImGui::RadioButton( "LSD##diff", &gVehicleDiffTypeOverride, 2 );
+    ImGui::SameLine();
+    ImGui::RadioButton( "spool##diff", &gVehicleDiffTypeOverride, 4 );
+    if ( gVehicleDiffTypeOverride == 2 || gVehicleDiffTypeOverride == 4 ) {
+        ImGui::SliderFloat( "Lock coef", &gVehicleDiffLockCoef, 0.0f, 200.0f );
+    }
+    ImGui::TextUnformatted( "Driveline inertia divisor" );
+    ImGui::SameLine();
+    ImGui::RadioButton( "car##dli", &gVehicleDrivelineInertiaMode, -1 );
+    ImGui::SameLine();
+    ImGui::RadioButton( "/|k|##dli", &gVehicleDrivelineInertiaMode, 0 );
+    ImGui::SameLine();
+    ImGui::RadioButton( "/k^2##dli", &gVehicleDrivelineInertiaMode, 1 );
+    ImGui::SameLine();
+    ImGui::RadioButton( "/sqrt##dli", &gVehicleDrivelineInertiaMode, 2 );
+    ImGui::Checkbox( "Hardcore mode", &gbSimuModeEnabled );
 
     ImGui::Separator();
 

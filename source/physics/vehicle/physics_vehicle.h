@@ -148,3 +148,5 @@ private:
     float localAccelLong;
     float localAccelLat;
 };
+
+extern bool gbSimuModeEnabled;

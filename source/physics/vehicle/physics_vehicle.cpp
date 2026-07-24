@@ -23,7 +23,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib> // std::getenv (OTDU_FAITHFUL_DROOP A/B knob)
 #include <cstring>
 
 constexpr float kMmToM = 0.001f;
@@ -57,7 +56,7 @@ constexpr float kYawDamping = 3000.0f; // N.m per rad/s of yaw rate
 constexpr float kAeroLiftFront = 0.4f; // DAT_00f41730(0.2) * DAT_00f416b0(2.0)
 constexpr float kAeroDensitySimu = 1.7f;   // DAT_00f417d4
 constexpr float kAeroDensityArcade = 1.2f; // DAT_00f8a248
-bool gVehicleSimuMode = true;
+bool gbSimuModeEnabled = false;            // DAT_010e777c
 
 bool gVehicleAntiRoll = false;
 constexpr float kAntiRollFraction = 0.5f;
@@ -405,7 +404,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     const float czLift = Max( 0.0f, db.CxHeight );
     aeroDragArea = 0.5f * frontalArea * cxDrag;
     aeroDownArea = 0.5f * frontalArea * czLift;
-    aeroDensity = gVehicleSimuMode ? kAeroDensitySimu : kAeroDensityArcade;
+    aeroDensity = gbSimuModeEnabled ? kAeroDensitySimu : kAeroDensityArcade;
     wheelBase = wheelBaseM;
 
     char *pFWDStr = gpDatabase != nullptr
@@ -448,6 +447,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     // Vehicle + per-wheel setup
     vehicle = PhysicsVehicleState();
     vehicle.NumWheels = 4;
+    vehicle.Mass = mass; // auto shift near-lift traction threshold
     for ( int i = 0; i < 4; ++i ) {
         PhysicsWheelState &w = vehicle.Wheels[i];
         const bool bFront = ( i < 2 );
@@ -531,18 +531,36 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     }
 
     gb.FinalDrive = db.FinalDriveRatio > 0 ? db.FinalDriveRatio : 4.0f;
-
+    gb.BaseInertia =
+        ( db.GearboxIntertia != 0 ? db.GearboxIntertia * 0.01f : 0.25f );
     gb.TransEff =
         db.TransmissionPrimacy > 0 ? db.TransmissionPrimacy * 0.01f : 0.9f;
     gb.CurrentGear = 2; // 1st forward
     gb.bAutomatic = true;
+    gb.UpshiftBand = gPhysicsConfig.RedlinePurcent > 0.0f
+                         ? gPhysicsConfig.RedlinePurcent
+                         : 0.7f;
+    gb.DownshiftBand = ( gShift2ndTo1st > 0.0f && gShift2ndTo1st < 1.0f )
+                           ? gShift2ndTo1st
+                           : 0.5f;
+
+    bool bManualBox = false;
+    if ( gpDatabase != nullptr ) {
+        char *pManualA = gpDatabase->getStringByHashcode( 1, 0x8c05bu );
+        char *pManualB = gpDatabase->getStringByHashcode( 1, 0x84b2bu );
+        bManualBox =
+            ( pManualA != nullptr && db.GearboxType.pAsString == pManualA ) ||
+            ( pManualB != nullptr && db.GearboxType.pAsString == pManualB );
+    }
+    const float *pShiftDur =
+        bManualBox ? gShiftTimeManual : gShiftTimeSequential;
+    gb.UpshiftDelay = pShiftDur[0] > 0.0f ? pShiftDur[0] : 0.30f;
+    gb.DownshiftDelay = pShiftDur[1] > 0.0f ? pShiftDur[1] : 0.30f;
 
     // Engine: redline/idle/inertia from the DB, curve normalised to BHP.
     PhysicsEngineSim &en = vehicle.Engine;
     const float rpmToRad = 0.10472f;
     en.OmegaMax = ( db.Redline > 0 ? db.Redline : 7000 ) * rpmToRad;
-    en.RevLimiterCutTime =
-        0.25f; // DAT_00f416dc (clamp max, the effective value)
     en.OmegaIdle = 850.0f * rpmToRad;
     en.Inertia = ( db.EngineInertia > 0 ? db.EngineInertia * 0.004f : 0.4f );
     en.Omega = en.OmegaIdle;
@@ -594,10 +612,19 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
             "Engine curve: synthesized (no torque blob, %.0f BHP)\n", bhp );
     }
 
-    // Open differentials (L/R split 0.5); center 0.5 for AWD.
-    vehicle.DiffFront.SplitRatio = 0.5f;
-    vehicle.DiffRear.SplitRatio = 0.5f;
-    vehicle.DiffCenter.SplitRatio = 0.5f;
+    for ( PhysicsDifferentialSim *d :
+          { &vehicle.DiffFront, &vehicle.DiffRear, &vehicle.DiffCenter } ) {
+        d->Type = 4;
+        d->Gain = 1.0f;
+        d->Deadband = 0.0f;
+        d->SplitRatio = 0.5f;
+        d->LockCoef = 0.0f;
+    }
+    vehicle.DiffFront.RatioThreshold = 5.0f;  // unused for spool
+    vehicle.DiffRear.RatioThreshold = 3.0f;   // unused for spool
+    vehicle.DiffCenter.RatioThreshold = 2.0f; // unused for spool
+    vehicle.DiffFront.LockCoef = vehicle.bFrontDrive ? 10.0f : 0.0f;
+    vehicle.DiffRear.LockCoef = vehicle.bRearDrive ? 10.0f : 0.0f;
 
     const float avgRadius = 0.5f * ( frontRadius + rearRadius );
     vehicle.BrakeTorque = massPerWheel * 9.81f * avgRadius * 1.2f;
@@ -858,7 +885,7 @@ void PhysicsVehicle::OnStep(
             break;
         }
     }
-    StepPowertrain( vehicle, inputThrottle, dt );
+    StepPowertrain( vehicle, inputThrottle, inputBrake, dt );
 
     for ( int i = 0; i < vehicle.NumWheels; ++i ) {
         castWheel( system, chassis, i, dt );

@@ -27,6 +27,7 @@
 #include "system/system_shared.h"
 #include "tdu_instance.h"
 #include "core/maths_helper.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 MngHud *gpMngHud = nullptr; // DAT_010e7fbc
 

@@ -13,6 +13,3 @@ static std::vector<int32_t> gDefaultGarageConfig = {
 static bool gbGMEDesigner = false;       // DAT_010e7ce0
 static bool gbICESolo = false;           // DAT_010e7c31
 static bool gbAllChallengesSolo = false; // DAT_010e7c32
-
-// Debug/Logging Stuff
-static bool gbSimuModeEnabled = false; // DAT_010e777c

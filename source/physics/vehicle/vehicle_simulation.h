@@ -128,10 +128,10 @@ struct PhysicsEngineSim {
     float Throttle = 0.0f;
     float Omega = 84.0f; // current engine speed (rad/s)
     float TorqueOut = 0.0f;
-    float PeakTorqueOmega = 0.0f;    // omega at peak torque
-    float AngAccel = 0.0f;           // dOmega/dt (rad/s^2), 1-step lag
-    float RevLimiterTimer = 1.0f;    // rev-limiter ignition-cut timer (s)
-    float RevLimiterCutTime = 0.25f; // s
+    float PeakTorqueOmega = 0.0f; // omega at peak torque
+    float PeakPowerOmega = 0.0f;  // omega at peak power (orig engine+0xc);
+                                  // the auto-shift up-band reference
+    float AngAccel = 0.0f;        // dOmega/dt (rad/s^2), 1-step lag
 };
 
 struct PhysicsGearboxSim {
@@ -151,29 +151,37 @@ struct PhysicsGearboxSim {
     float DownshiftFactor = 0.2f;  // DAT_00f41730
     float UpshiftDelay = 0.3f;     // Physics.ini ShiftTime
     float DownshiftDelay = 0.3f;
+    float UpshiftBand = 0.7f;
+    float DownshiftBand = 0.5f;
+    int DrivelineInertiaMode = 1; //  0=/|k| 1=/k^2 2=/sqrt(k)
+    float BaseInertia = 0.15f;    // FIXME: Not p-code accurate
+    float DiffInertia = 0.01f;
     bool bAutomatic = true;
 };
 
 struct PhysicsClutchSim {
-    float Engagement = 0.0f;         // actual engagement, driveline multiplier
-    float Target = 0.0f;             // target engagement
-    int State = 0;                   // 0=disengaged 1=armed 2=launch 3=locked
-    float Timer = 0.0f;              // state-2 timer
-    float LaunchIdleMult = 1.15f;    // DAT_00f416a8
-    float LaunchRedlineMult = 0.75f; // DAT_00f416a4
-    float LockThreshold = 0.9f;      // DAT_00f416a0
-    float EngageThrottleHi = 10.0f;  // engage-rate at 0 throttle
-    float EngageThrottleLo = 1.0f;   // engage-rate at full throttle
-    float EngageRate = 3.0f;         // actual-engagement slew up (runtime-set)
-    float DisengageRate = 3.0f;      // actual-engagement slew down
-    bool bLocked = false;            // (stand-in path) slip vs locked
+    float Engagement = 0.0f;      // actual engagement, driveline multiplier
+    float Target = 0.0f;          // target engagement
+    int State = 0;                // 0=disengaged 1=armed 2=launch 3=locked
+    float Timer = 0.0f;           // state-2 timer
+    float LaunchIdleMult = 1.15f; // DAT_00f416a8
+    float LaunchPeakPowerMult =
+        0.75f; // x peak-power omega, NOT redline (DAT_00f416a4)
+    float LockThreshold = 0.9f;     // DAT_00f416a0
+    float EngageThrottleHi = 10.0f; // engage-rate at 0 throttle
+    float EngageThrottleLo = 1.0f;  // engage-rate at full throttle
+    float EngageRate = 3.0f;        // actual-engagement slew up
+    float DisengageRate = 3.0f;     // actual-engagement slew down
+    bool bLocked = false;           // slip vs locked FIXME: Not p-code accurate
 };
 
 struct PhysicsDifferentialSim {
     int Type = 1;
-    float SplitRatio = 0.5f;
-    float LockCoef = 0.0f;
-    float Gain = 1.0f;
+    float SplitRatio = 0.5f;     // bias (front/rear=0.5, center=DB*0.01)
+    float LockCoef = 0.0f;       // lock torque per (speedA-speedB): LSD + spool
+    float Gain = 1.0f;           // node gain (open fallthrough + spool only)
+    float Deadband = 0.0f;       // LSD grip diff deadband (N.m)
+    float RatioThreshold = 4.0f; // LSD grip imbalance ceiling
 };
 
 struct PhysicsVehicleState {
@@ -209,6 +217,7 @@ struct PhysicsVehicleState {
     float ReactionTorque = 0.0f;
 
     float BrakeTorque = 0.0f;
+    float Mass = 1200.0f; // total vehicle mass (kg)
 };
 
 void BuildEngineCurves( PhysicsEngineSim &engine,
@@ -217,7 +226,10 @@ void BuildEngineCurves( PhysicsEngineSim &engine,
                         float bhp,
                         float packBoost,
                         float frictionCoef );
-void StepPowertrain( PhysicsVehicleState &vehicle, float throttle, float dt );
+void StepPowertrain( PhysicsVehicleState &vehicle,
+                     float throttle,
+                     float brake,
+                     float dt );
 void ComputeTireForces( PhysicsWheelState &wheel,
                         const Matrix4x4f_t &vehicleMatrix );
 void ComputeSuspensionForce( PhysicsWheelState &wheel );
