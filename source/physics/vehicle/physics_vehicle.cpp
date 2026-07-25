@@ -44,6 +44,9 @@ bool gVehicleABS = true;
 constexpr float kAbsMinSpeed = 3.0f; // m/s below which ABS is idle
 
 constexpr float kSimuBrakeTorquePerMass = 2.5f;
+constexpr float kBrakeBalance = 0.6f; // fallback
+constexpr float kMaxBrakeTorque = 15000.0f;
+constexpr float kWheelInertiaRadiusCoef = 2.5f; // DAT_00f416c0
 
 constexpr float kSteerScale = 900.0f; // DAT_00f41c10 (900/gSteeringTurn = gain)
 constexpr float kSteerLinearity = 5.0f; // DAT_00fab71c
@@ -58,8 +61,9 @@ constexpr float kAeroDensitySimu = 1.7f;   // DAT_00f417d4
 constexpr float kAeroDensityArcade = 1.2f; // DAT_00f8a248
 bool gbSimuModeEnabled = false;            // DAT_010e777c
 
+// Anti-roll bars from the original pcode (disabled in the original game)
 bool gVehicleAntiRoll = false;
-constexpr float kAntiRollFraction = 0.5f;
+constexpr float kAntiRollFraction = 0.0f;
 
 // Suspension damper-velocity NaN guard (legacy body-velocity path).
 constexpr float kSuspDamperVelClamp = 100.0f;
@@ -246,6 +250,7 @@ PhysicsVehicle::PhysicsVehicle()
       steerLockRad( 0.0f ),
       inputThrottle( 0.0f ),
       inputBrake( 0.0f ),
+      inputDriverBrake( 0.0f ),
       inputSteer( 0.0f ),
       filteredSteer( 0.0f ),
       steerCommand( 0.0f ),
@@ -424,6 +429,10 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     const float massPerWheel = mass * 0.25f;
     const float brakeBalance = bFWD ? 0.75f : ( bRWD ? 0.70f : 0.72f );
 
+    const float BrakeBalance =
+        db.BrakeBalance > 0 ? db.BrakeBalance * 0.01f : kBrakeBalance;
+    const float BrakeTorque = kMaxBrakeTorque;
+
     // Select the vehicle tire curve from tires.bnk
     const int numProfiles = gpPhysics ? gpPhysics->getNumTireProfiles() : 0;
     const int tireIdx = SelectTireIndex( mass, numProfiles );
@@ -465,7 +474,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         suspCornerLoad[i] = s.cornerLoad;
         suspDroopStop[i] = s.droopStop;
         w.Radius = bFront ? frontRadius : rearRadius;
-        w.Inertia = 1.2f;
+        w.Inertia = w.Radius * w.Radius * kWheelInertiaRadiusCoef;
         w.SideFlag = ( i & 1 ) ? 2 : 1; // right wheels mirror lateral/steer
         w.bSteered = bFront;
         w.bDriven = bFWD ? bFront : ( bRWD ? !bFront : true );
@@ -494,9 +503,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                                          : 1.2f );
         w.BrakeGripLat = w.GripLat;
 
-        const float axleBrakeBalance =
-            bFront ? brakeBalance : ( 1.0f - brakeBalance );
-        w.BrakeTorque = mass * kSimuBrakeTorquePerMass * axleBrakeBalance;
+        const float axleBal = bFront ? BrakeBalance : ( 1.0f - BrakeBalance );
+        w.BrakeTorque = axleBal * BrakeTorque;
 
         SeedTire( w.Tire, bFront );
         const TirePacejka *pProfile = bFront ? pFrontTire : pRearTire;
@@ -507,7 +515,6 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         prevSuspLength[i] = suspRestLength[i];
     }
 
-    // Anti-roll bar rate per axle (stand-in: fraction of the wheel rate).
     arbStiffness[0] = kAntiRollFraction * suspStiffness[0]; // front
     arbStiffness[1] = kAntiRollFraction * suspStiffness[2]; // rear
 
@@ -531,8 +538,11 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     }
 
     gb.FinalDrive = db.FinalDriveRatio > 0 ? db.FinalDriveRatio : 4.0f;
+
+    const float simInertiaScale = gbSimuModeEnabled ? 0.5f : 1.0f;
     gb.BaseInertia =
-        ( db.GearboxIntertia != 0 ? db.GearboxIntertia * 0.01f : 0.25f );
+        ( db.GearboxIntertia != 0 ? db.GearboxIntertia * 0.01f : 0.25f ) *
+        simInertiaScale;
     gb.TransEff =
         db.TransmissionPrimacy > 0 ? db.TransmissionPrimacy * 0.01f : 0.9f;
     gb.CurrentGear = 2; // 1st forward
@@ -562,7 +572,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     const float rpmToRad = 0.10472f;
     en.OmegaMax = ( db.Redline > 0 ? db.Redline : 7000 ) * rpmToRad;
     en.OmegaIdle = 850.0f * rpmToRad;
-    en.Inertia = ( db.EngineInertia > 0 ? db.EngineInertia * 0.004f : 0.4f );
+    en.Inertia = ( db.EngineInertia > 0 ? db.EngineInertia * 0.004f : 0.4f ) *
+                 simInertiaScale; // *0.5 in Simu mode
     en.Omega = en.OmegaIdle;
     en.State = eEngineState::ES_Off;
     en.IgnTimer = 0.0f;
@@ -650,10 +661,61 @@ void PhysicsVehicle::destroy() {
     pChassisBody = nullptr;
 }
 
-void PhysicsVehicle::setInput( float throttle, float brake, float steer ) {
+void PhysicsVehicle::setInput( float throttle,
+                               float brake,
+                               float steer,
+                               float driverBrake ) {
     inputThrottle = throttle;
     inputBrake = brake;
     inputSteer = steer;
+    inputDriverBrake = ( driverBrake >= 0.0f ) ? driverBrake : brake;
+}
+
+PhysicsVehicle::DrivingGearbox PhysicsVehicle::getDrivingGearbox() const {
+    const PhysicsGearboxSim &g = vehicle.GearBox;
+
+    DrivingGearbox out;
+    out.Gear = g.CurrentGear;
+    out.ForwardSpeed = vehicle.ForwardSpeed;
+    out.bAutomatic = g.bAutomatic;
+    out.bEngineFiring = ( vehicle.Engine.State == eEngineState::ES_RevUp ||
+                          vehicle.Engine.State == eEngineState::ES_Running );
+    out.bShiftIdle = ( g.ShiftState == 1 && g.ShiftTimer <= 0.0f );
+    return out;
+}
+
+void PhysicsVehicle::setCurrentGear( int32_t gear ) {
+    PhysicsGearboxSim &g = vehicle.GearBox;
+    if ( gear < 0 || gear >= g.NumGears ) {
+        return;
+    }
+    g.CurrentGear = gear;
+}
+
+void PhysicsVehicle::requestUpshift() {
+    // FUN_00439de0
+    PhysicsGearboxSim &g = vehicle.GearBox;
+    if ( g.ShiftState != 1 || g.ShiftTimer > 0.0f ) {
+        return;
+    }
+    g.ShiftState = 2;
+    g.ShiftSubstate = 1;
+    g.ShiftTimer = g.UpshiftDelay;
+}
+
+void PhysicsVehicle::requestDownshift() {
+    // FUN_00439e30
+    PhysicsGearboxSim &g = vehicle.GearBox;
+    if ( g.ShiftState != 1 || g.ShiftTimer > 0.0f ) {
+        return;
+    }
+    g.ShiftState = 2;
+    g.ShiftSubstate = -1;
+    g.ShiftTimer = g.DownshiftDelay;
+}
+
+void PhysicsVehicle::setClutchOverride( float engagement ) {
+    vehicle.Clutch.OverrideEngagement = engagement;
 }
 
 float PhysicsVehicle::filterSteering( float rawSteer,
@@ -938,6 +1000,11 @@ void PhysicsVehicle::OnStep(
                                         std::fabs( absTgt ) ) *
                     ( effInertia / dt );
                 brakeTq = JPH::Clamp( brakeTq, 0.0f, brakeCap );
+            } else {
+                const float effInertia = w.Inertia + w.ReflectedInertia;
+                const float stopTq =
+                    std::fabs( w.AngularVel ) * ( effInertia / dt );
+                brakeTq = std::min( brakeTq, stopTq );
             }
 
             if ( w.AngularVel > 0.0f ) {

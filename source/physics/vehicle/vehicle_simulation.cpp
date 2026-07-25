@@ -745,7 +745,8 @@ void StepPowertrain( PhysicsVehicleState &v,
         const float half = shiftDur * 0.5f;
         if ( prevTimer > half && g.ShiftTimer <= half ) {
             const int tgt = g.CurrentGear + g.ShiftSubstate;
-            if ( tgt >= 2 && tgt < g.NumGears ) {
+            const int minTgt = ( g.CurrentGear <= 1 ) ? 0 : 2;
+            if ( tgt >= minTgt && tgt < g.NumGears ) {
                 g.CurrentGear = tgt;
             }
         }
@@ -789,6 +790,12 @@ void StepPowertrain( PhysicsVehicleState &v,
 
     StepClutch( c, e, gear, throttle, dt );
     float engage = neutral ? 0.0f : c.Engagement;
+    if ( c.OverrideEngagement >= 0.0f ) {
+        engage = c.OverrideEngagement;
+        c.State = 0;
+        c.Target = engage;
+        c.Engagement = engage;
+    }
     engage *= shiftEngageMult;
     if ( !engineFiring ) {
         engage = 0.0f;

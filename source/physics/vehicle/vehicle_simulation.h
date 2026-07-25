@@ -173,6 +173,7 @@ struct PhysicsClutchSim {
     float EngageRate = 3.0f;        // actual-engagement slew up
     float DisengageRate = 3.0f;     // actual-engagement slew down
     bool bLocked = false;           // slip vs locked FIXME: Not p-code accurate
+    float OverrideEngagement = -1.0f;
 };
 
 struct PhysicsDifferentialSim {

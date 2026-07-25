@@ -61,8 +61,25 @@ public:
     void destroy();
     bool isActive() const { return pChassisBody != nullptr; }
 
-    void setInput( float throttle, float brake, float steer );
+    struct DrivingGearbox {
+        int32_t Gear;       // 0 = reverse, 1 = neutral, 2.. = forward gears
+        float ForwardSpeed; // m/s, signed (+ = forwards)
+        bool bAutomatic;
+        bool bEngineFiring; // engine making torque (orig engine state 2 or 3)
+        bool bShiftIdle;    // gearbox will take a shift request right now
+    };
+
+    void setInput( float throttle,
+                   float brake,
+                   float steer,
+                   float driverBrake = -1.0f );
     void tick( float deltaTime );
+
+    DrivingGearbox getDrivingGearbox() const;
+    void setCurrentGear( int32_t gear );
+    void requestUpshift();
+    void requestDownshift();
+    void setClutchOverride( float engagement );
 
     void resetToTransform( const Matrix4x4f_t &transform );
 
@@ -82,6 +99,7 @@ public:
     int32_t getCurrentGear() const;
     float getInputBrake() const { return inputBrake; }
     float getInputThrottle() const { return inputThrottle; }
+    float getDriverBrake() const { return inputDriverBrake; }
     float getLateralG() const;
     float getLongitudinalG() const;
 
@@ -130,6 +148,7 @@ private:
     // Driver input.
     float inputThrottle;
     float inputBrake;
+    float inputDriverBrake;
     float inputSteer;
     float filteredSteer; // rate-limited steering state
     float steerCommand;  // shaped, speed-scaled steer (drives the wheel angle)
