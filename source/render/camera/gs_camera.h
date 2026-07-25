@@ -57,6 +57,14 @@ public:
 
     inline bool isLocked() { return bLocked; }
     inline bool isInReplayMode() const { return bReplayMode; }
+    inline bool isPaused() const { return bPaused; }
+    inline bool isLookingBack() const { return bLookingBack; }
+    inline float getLeftView() const { return leftView; }
+    inline float getRightView() const { return rightView; }
+    inline float getUpView() const { return upView; }
+    inline float getDownView() const { return downView; }
+    inline bool isViewUpdated() const { return bUpdatedView; }
+    inline bool isHeadTrackingEnabled() const { return bHeadTracking; }
 
     inline void setActiveCameraAsDefault() {
         defaultCamera = pActiveVehicleCamera;
@@ -140,7 +148,6 @@ private:
     uint8_t bPaused : 1;
     uint8_t bLookAtPlayerPos : 1;
     uint8_t bFinishedCamTransition : 1;
-    uint8_t field107_0x956 : 1;
     uint8_t field_0x938 : 1;
     uint8_t field_0x939 : 1;
     uint8_t field_0x932 : 1;
@@ -154,6 +161,7 @@ private:
     uint8_t bNeedSwitch : 1;
     uint8_t bUpdatedView : 1;
     uint8_t field_0x954 : 1;
+    uint8_t bHeadTracking : 1;
 
     CameraGame *cameraRegister[kNumCamerasCameraRegister];
     uint32_t currentCameraIndex;
@@ -227,7 +235,10 @@ private:
     void FUN_008e4840( CameraGame *param_1, float param_2 );
     bool FUN_008e1e80( bool param_1, bool param_3 );
     void editActiveCamera();
-    void updateCameraInput( struct DeviceAction *peVar5, float &input );
+    void updateCameraInput( struct DeviceAction *peVar5,
+                            float &input,
+                            bool bNegate );
 };
 
 extern GSCamera *gpCamera;
+extern float gCamViewLockHoldTime;

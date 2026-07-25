@@ -26,8 +26,6 @@
 #include <cstring>
 
 constexpr float kMmToM = 0.001f;
-constexpr float kDegToRad = 0.01745329252f;
-constexpr float kRadToDeg = 57.29578f;
 constexpr float kSlipDenom =
     3.0f; // min |vLong| for the longitudinal-slip ratio
 

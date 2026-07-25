@@ -4,21 +4,19 @@
 #include "config/gs_config.h"
 #include "core/maths_helper.h"
 #include "gs_camera.h"
+#include "gs_timer.h"
 #include "game/vehicle/car_state.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "render/gs_render.h"
+#include "render/postfx/gs_postfx.h"
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 uint32_t gEditCameraFlags = 0; // DAT_010e7498
 
-static constexpr float kOne = 1.0f;               // FLOAT_00f4165c
-static constexpr float kMinusOne = -1.0f;         // FLOAT_00f41664
-static constexpr float kDegToRad = 0.0174532924f; // DAT_00f41864 (pi/180)
-static constexpr float kPi = 3.14159265f;         // DAT_00f41940
-static constexpr float kNegPi = -3.14159265f;     // DAT_00f41944
-static constexpr float kTwoPi = 6.28318530f;      // DAT_00f416f8
 static constexpr float kBrakeGSmooth =
     1.11111f; // DAT_00f41ddc (frame-based lerp gain)
 static constexpr float kSpeedSmoothKeep = 0.975f; // _DAT_00fab3b4
@@ -46,12 +44,65 @@ static constexpr float kSpringByte =
     0.1f; // FLOAT_00f41668 (Spring/Damper byte)
 static constexpr float kSpringTime = 0.4f;   // DAT_00f4175c  (TimeScale byte)
 static constexpr float kSpringClamp = 0.04f; // DAT_00f41980  (ForceClamp byte)
-                                             //
-float gSmoothedSpeed = 0.0f;                 // DAT_016a2ca0
+static constexpr float kLookAxisEpsilon = 0.0f; // FLOAT_00f41660
+static constexpr float kLookSnapHi = 0.1f;      // FLOAT_00f41668
+static constexpr float kLookSnapLo = -0.1f;     // FLOAT_00f4188c
+static constexpr float kHeadTrackRange =
+    0.75f; // DAT_00f416a4 (fraction of the camera's angle range reachable by
+           // head tracking)
+static constexpr float kLookSmoothGain = 0.25f; // DAT_00f416dc
+static constexpr float kLookInertiaBase =
+    0.6f; // DAT_00fab3e4 (AngleInertia==0 still keeps 60% per step)
+static constexpr float kLookLeadKeep = 0.99f;    // _DAT_00fab3e0
+static constexpr float kLookLeadClamp = 0.5f;    // DAT_00fab3dc (rad)
+static constexpr float kLookLeadScale = 0.5f;    // DAT_00fab3d8
+static constexpr float kLookLeadDeadZone = 0.0f; // DAT_016a2cbc (never written)
+                                                 //
+float gSmoothedSpeed = 0.0f;                     // DAT_016a2ca0
 Eigen::Vector4f gSmoothUp( 0.0f, 1.0f, 0.0f, 0.0f ); // _DAT_016a8240
 bool gSmoothUpInitialized = false;                   // DAT_016a8250 & 1
 FollowParams gWorkFollow; // DAT_00fa9484 (blended follow workspace)
 bool gCameraSnap = false; // DAT_010e74a4 (snap this frame)
+
+bool gbFreeLookUnlocked = true;            // BOOL_00f7c808
+bool gbFixedCamLookSnap = false;           // BOOL_010e7484
+static bool gbFreeLookUnlockedPrev = true; // DAT_00f7c809 (edge detect)
+static float gLookAngleBase = 0.0f;    // DAT_016a2cb8 (frozen yaw when locked)
+static int32_t gLookLockCounter = 0;   // DAT_016a2cb4
+static float gLookLeadSmoothed = 0.0f; // DAT_016a2cc0 (look-into-corner state)
+
+// Set by the ground-clamp / collision-avoidance pass at the end of the master
+// tick and consumed by the NEXT frame's free-look step, which then stops
+// smoothing the axis the clamp is currently fighting.
+static bool gbCamClampedLeft = false;  // DAT_010e74a0
+static bool gbCamClampedRight = false; // DAT_010e74a1
+static bool gbCamClampedUp = false;    // DAT_010e74a2
+static bool gbCamClampedDown = false;  // DAT_010e74a3
+
+// NaturalPoint inputs (unimplemented)
+static float gHeadTrackYaw = 0.0f;
+static float gHeadTrackPitch = 0.0f;
+
+static float QueryLookLeadInput( PhysicsVehicle *pPhys ) {
+    // FUN_008d4a60 (inlined)
+    if ( pPhys == nullptr || !pPhys->isActive() ) {
+        return 0.0f;
+    }
+    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    return 0.0f;
+}
+
+void ToggleFreeLookLock( CameraVehicle *pCamera ) {
+    // FUN_008d1e70
+    if ( pCamera == nullptr ) {
+        return;
+    }
+    if ( ( pCamera->getVehicleFlags() & 1 ) != 0 ) {
+        gbFixedCamLookSnap = !gbFixedCamLookSnap;
+        return;
+    }
+    gbFreeLookUnlocked = !gbFreeLookUnlocked;
+}
 
 static void FollowParamsInit( FollowParams &params,
                               const Matrix4x4f_t &carMatrix ) {
@@ -315,10 +366,15 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
     setFOV( fovRad );
 
     if ( ( vehicleFlags & 0x20 ) != 0 ) {
-        applyFreeLookAndGroundClamp( carMatrix, bFixed, deltaTime );
+        applyFreeLook( carMatrix, bFixed, deltaTime );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    gbCamClampedLeft = false;  // DAT_010e74a0
+    gbCamClampedRight = false; // DAT_010e74a1
+    gbCamClampedUp = false;    // DAT_010e74a2
+    gbCamClampedDown = false;  // DAT_010e74a3
+
+    OTDU_UNIMPLEMENTED; // TODO: PHYSICS (ground clamp + collision sweep)
 
     if ( ( vehicleFlags & 0x40 ) != 0 ) {
         applySpeedShake( deltaTime );
@@ -354,7 +410,28 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
 
 void CameraVehicle::destroy() {
     // FUN_008d54a0
-    OTDU_UNIMPLEMENTED;
+    if ( gpPostFX == nullptr || gpPostFX->shouldUpdateEffects() ) {
+        return;
+    }
+
+    PostFXStep *pRadialBlur =
+        gpPostFX->getEffect<ePostFXStep::PFXS_RadialBlur>();
+    if ( pRadialBlur == nullptr ) {
+        return;
+    }
+    pRadialBlur->getInput()->setEnabled( false );
+
+    PostFXStep *pFakeDOF = gpPostFX->getEffect<ePostFXStep::PFXS_FakeDOF>();
+    const bool bAnyBlurEnabled =
+        pRadialBlur->getInput()->isEnabled() ||
+        ( pFakeDOF != nullptr && pFakeDOF->getInput()->isEnabled() );
+
+    // The sun/flare scene is culled  while no blur is running.
+    RenderScene *pSunScene =
+        gpRender->getRenderPass<eRenderPass::RP_Sun>().pScene;
+    pSunScene->setFlags( bAnyBlurEnabled
+                             ? ( pSunScene->getFlags() & 0xffffffdf )
+                             : ( pSunScene->getFlags() | 0x20 ) );
 }
 
 void CameraVehicle::unknownFunc( float *param_1 ) {
@@ -1024,12 +1101,240 @@ void CameraVehicle::tickFixed( CarState *pCar,
     outPos = TDUMat4x4MulVec( carMatrix, localPos );
     outTarget = TDUMat4x4MulVec( carMatrix, localTgt );
 }
-
-void CameraVehicle::applyFreeLookAndGroundClamp( const Matrix4x4f_t &,
-                                                 bool,
-                                                 float ) {
+void CameraVehicle::applyFreeLook( const Matrix4x4f_t &carDisplayMatrix,
+                                   bool bFixedCam,
+                                   float deltaTime ) {
     // FUN_008d4a60
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    const Matrix4x4f_t invCarMatrix = carDisplayMatrix.inverse();
+    Eigen::Vector4f localPos =
+        TDUMat4x4MulVec( invCarMatrix, worldPositionWithUnknownOffset );
+    const Eigen::Vector4f localTgt =
+        TDUMat4x4MulVec( invCarMatrix, worldTargetWithUnknownOffset );
+
+    float angleH = 0.0f;
+    float angleV = 0.0f;
+
+    bool bSnapAngle = gbFixedCamLookSnap;
+    if ( !bFixedCam || gpCamera->isViewUpdated() ) {
+        bSnapAngle = false;
+    }
+
+    float inertia = (float)angleInertia * kSpringForce;
+    float returnRate = ( kOne - kLookInertiaBase ) * inertia + kLookInertiaBase;
+
+    if ( !gpCamera->isPaused() && gpTimer->GameSpeed > 0.0f ) {
+        // Horizontal head look
+        if ( ( vehicleFlags & 0x1000 ) != 0 ) {
+            angleH = (float)angleRangeHorizontal * kDegToRad;
+            if ( std::fabs( gpCamera->getLeftView() ) <= kLookAxisEpsilon ) {
+                angleH = ( std::fabs( gpCamera->getRightView() ) <=
+                           kLookAxisEpsilon )
+                             ? 0.0f
+                             : gpCamera->getRightView() * angleH;
+            } else {
+                angleH = gpCamera->getLeftView() * angleH;
+            }
+        }
+
+        // Vertical head look
+        if ( ( vehicleFlags & 0x2000 ) != 0 ) {
+            const float upRad = (float)maxAngleUp * kDegToRad;
+            const float downRad = (float)maxAngleDown * kDegToRad;
+            float rangeUp = upRad;
+            float rangeDown = downRad;
+            if ( !bFixedCam && gpCamera->isLookingBack() ) {
+                rangeUp = -upRad;
+                rangeDown = -downRad;
+            }
+            if ( ( vehicleFlags & 0x4000 ) != 0 ) {
+                rangeUp = -downRad;
+                rangeDown = -upRad;
+            }
+            if ( gpCamera->isViewUpdated() ) {
+                std::swap( rangeUp, rangeDown );
+            }
+            if ( std::fabs( gpCamera->getUpView() ) <= kLookAxisEpsilon ) {
+                angleV =
+                    ( std::fabs( gpCamera->getDownView() ) <= kLookAxisEpsilon )
+                        ? 0.0f
+                        : gpCamera->getDownView() * rangeDown;
+            } else {
+                angleV = gpCamera->getUpView() * rangeUp;
+            }
+        }
+
+        // Locked interior view
+        if ( bSnapAngle && ( angleH > kLookSnapHi || angleH < kLookSnapLo ) ) {
+            const float snapDeg = ( angleH > kLookSnapHi )
+                                      ? (float)neutralRadius.MaxOutput
+                                      : -(float)neutralRadius.MaxOutput;
+            angleH = snapDeg * kDegToRad;
+        }
+
+        // ShowFlags bit 5: lead the view into the corner.
+        if ( ( flags & 0x20 ) != 0 ) {
+            PhysicsVehicle *pPhys = ( gpCamera != nullptr )
+                                        ? gpCamera->getTargetPhysEntity()
+                                        : nullptr;
+            const float lead = QueryLookLeadInput( pPhys );
+            const float smoothed = ( lead - gLookLeadSmoothed ) *
+                                       ( kOne - kLookLeadKeep ) * deltaTime *
+                                       kSpeedSmoothRate +
+                                   gLookLeadSmoothed;
+            if ( smoothed <= 0.0f ) {
+                gLookLeadSmoothed = ( smoothed <= -kLookLeadDeadZone )
+                                        ? ( kLookLeadDeadZone + smoothed )
+                                        : 0.0f;
+                if ( gLookLeadSmoothed < -kLookLeadClamp ) {
+                    gLookLeadSmoothed = -kLookLeadClamp;
+                }
+            } else {
+                gLookLeadSmoothed = ( kLookLeadDeadZone <= smoothed )
+                                        ? ( smoothed - kLookLeadDeadZone )
+                                        : 0.0f;
+                if ( kLookLeadClamp < gLookLeadSmoothed ) {
+                    gLookLeadSmoothed = kLookLeadClamp;
+                }
+            }
+            angleH += kLookLeadScale * gLookLeadSmoothed;
+        }
+
+        if ( gpCamera->isViewUpdated() ) {
+            lastAngleHorizontal = angleH;
+            lastAngleVertical = angleV;
+        }
+
+        if ( gpCamera->isHeadTrackingEnabled() ) {
+            const float limitH =
+                (float)angleRangeHorizontal * kDegToRad * kHeadTrackRange;
+            angleH = std::min( gHeadTrackYaw, limitH );
+            if ( angleH < -limitH ) {
+                angleH = -limitH;
+            }
+            const float limitDown =
+                (float)maxAngleDown * kDegToRad * kHeadTrackRange;
+            const float limitUp =
+                -( (float)maxAngleUp * kDegToRad * kHeadTrackRange );
+            angleV = std::min( -gHeadTrackPitch, limitDown );
+            if ( angleV < limitUp ) {
+                angleV = limitUp;
+            }
+            inertia = 0.0f;
+            returnRate = 0.0f;
+            lastAngleHorizontal = angleH;
+            lastAngleVertical = angleV;
+        }
+    }
+
+    if ( !bFixedCam ) {
+        if ( gbFreeLookUnlocked != gbFreeLookUnlockedPrev ) {
+            gLookLockCounter = 0;
+            gLookAngleBase = gbFreeLookUnlocked ? 0.0f : lastAngleHorizontal;
+            gbFreeLookUnlockedPrev = gbFreeLookUnlocked;
+        }
+    } else {
+        gbFreeLookUnlocked = true;
+        gLookAngleBase = 0.0f;
+        gLookLockCounter = 0;
+    }
+    const bool bLookUnlocked = gbFreeLookUnlocked;
+
+    // Skip the smoothing on any axis the ground clamp moved last frame.
+    bool bSmoothAngles = true;
+    if ( gbCamClampedLeft &&
+         kLookAxisEpsilon < std::fabs( gpCamera->getLeftView() ) ) {
+        bSmoothAngles = false;
+    }
+    if ( gbCamClampedRight &&
+         kLookAxisEpsilon < std::fabs( gpCamera->getRightView() ) ) {
+        bSmoothAngles = false;
+    }
+    if ( gbCamClampedUp &&
+         kLookAxisEpsilon < std::fabs( gpCamera->getUpView() ) ) {
+        bSmoothAngles = false;
+    }
+
+    if ( gpTimer->GameSpeed > 0.0f && bSmoothAngles ) {
+        float delta = ( gLookAngleBase + angleH ) - lastAngleHorizontal;
+        if ( !bSnapAngle ) {
+            if ( std::fabs( angleH ) < std::fabs( lastAngleHorizontal ) ) {
+                returnRate = inertia;
+            }
+            delta = delta * ( kOne - returnRate ) * deltaTime *
+                    kLookSmoothGain * kSpeedSmoothRate;
+        } else {
+            delta = delta * kLookSmoothGain;
+        }
+        lastAngleHorizontal += delta;
+    }
+    if ( bLookUnlocked && gpTimer->GameSpeed > 0.0f && !bSnapAngle &&
+         bSmoothAngles ) {
+        lastAngleVertical += ( angleV - lastAngleVertical ) *
+                             ( kOne - inertia ) * deltaTime * kLookSmoothGain *
+                             kSpeedSmoothRate;
+    }
+
+    const float yaw = lastAngleHorizontal;
+    const float pitch = lastAngleVertical;
+
+    Eigen::Vector4f outTgt;
+    outTgt.w() = localTgt.w();
+
+    if ( !bFixedCam ) {
+        auto polarYaw = []( const Eigen::Vector4f &v ) {
+            return ( v.z() < 0.0f ) ? std::atan2( v.x(), -v.z() )
+                                    : std::atan2( v.x(), v.z() );
+        };
+
+        const float tgtPitch = std::atan2( localTgt.y(), localTgt.z() );
+        const float tgtYaw = polarYaw( localTgt );
+        const float tgtRadius = std::sqrt( localTgt.x() * localTgt.x() +
+                                           localTgt.z() * localTgt.z() +
+                                           localTgt.y() * localTgt.y() );
+        const float tgtCosPitch = std::cos( tgtPitch + pitch );
+        outTgt.x() = std::sin( tgtYaw + yaw ) * tgtCosPitch * tgtRadius;
+        outTgt.z() = std::cos( tgtYaw + yaw ) * tgtCosPitch * tgtRadius;
+        outTgt.y() = std::sin( tgtPitch + pitch ) * tgtRadius;
+
+        const float posPitch = std::atan2( localPos.y(), localPos.z() );
+        const float posYaw = polarYaw( localPos );
+        const float posRadius = std::sqrt( localPos.x() * localPos.x() +
+                                           localPos.z() * localPos.z() +
+                                           localPos.y() * localPos.y() );
+        const float posCosPitch = std::cos( posPitch + pitch );
+        localPos.x() = std::sin( yaw - posYaw ) * posCosPitch * posRadius;
+        localPos.z() = std::cos( yaw - posYaw ) * posCosPitch * posRadius;
+        localPos.y() = std::sin( posPitch + pitch ) * posRadius;
+    } else {
+        // FIXED (in-car): the eye stays put, the target swings around it.
+        const Eigen::Vector3f dir = localTgt.head<3>() - localPos.head<3>();
+
+        float dirPitch = std::atan2( dir.y(), dir.z() );
+        if ( dirPitch > kHalfPI ) {
+            dirPitch -= kPI;
+        }
+        if ( dirPitch < kNegHalfPi ) {
+            dirPitch += kPI;
+        }
+        float dirYaw = std::atan2( dir.x(), dir.z() );
+        if ( dirYaw > kPI ) {
+            dirYaw -= kTwoPI;
+        }
+        if ( dirYaw < kNegPI ) {
+            dirYaw += kTwoPI;
+        }
+
+        const float radius = dir.norm();
+        const float cosPitch = std::cos( dirPitch + pitch );
+        outTgt.x() =
+            std::sin( dirYaw + yaw ) * radius * cosPitch + localPos.x();
+        outTgt.z() =
+            std::cos( dirYaw + yaw ) * radius * cosPitch + localPos.z();
+        outTgt.y() = std::sin( dirPitch + pitch ) * radius + localPos.y();
+    }
+
+    setPositionOffseted( TDUMat4x4MulVec( carDisplayMatrix, localPos ) );
+    setTargetOffseted( TDUMat4x4MulVec( carDisplayMatrix, outTgt ) );
 }
 
 void CameraVehicle::applySpeedShake( float ) {

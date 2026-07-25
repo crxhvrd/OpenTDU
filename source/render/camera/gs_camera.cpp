@@ -31,6 +31,7 @@
 #include "game/scenaric/gs_scenaric.h"
 
 #include "game/mng_hud.h"
+#include "game/gm_world.h"
 
 #include "core/maths_helper.h"
 #include "render/postfx/gs_postfx.h"
@@ -46,6 +47,8 @@
 
 GSCamera gCamera = {};        // DAT_013a6750
 GSCamera *gpCamera = nullptr; // DAT_010e747c
+
+float gCamViewLockHoldTime = 0.0f; // DAT_010e761c
 
 // DAT_00f7c718
 static constexpr uint32_t DAT_00f7c718[9][2] = {
@@ -65,7 +68,6 @@ static int32_t DAT_00fab290[4] = { -1, -1, 0x270E, 0x270D };
 static constexpr float FLOAT_00fab2a0 = 0.0099999998f; // DAT_00fab2a0
 static int32_t DAT_00fab2ac = 0xffffffff;              // DAT_00fab2ac
 static float FLOAT_00f87fe4 = 1.0f;                    // DAT_00f87fe4
-static float FLOAT_010e761c = 0.0f;                    // DAT_010e761c
 static constexpr float FLOAT_00fab2a8 = 0.2f;          // DAT_00fab2a8
 static constexpr float FLOAT_00fab2a4 = 1.0f;          // DAT_00fab2a4
 
@@ -91,7 +93,6 @@ GSCamera::GSCamera()
       bPaused( false ),
       bLookAtPlayerPos( true ),
       bFinishedCamTransition( true ),
-      field107_0x956( 0 ),
       field_0x938( 1 ),
       field_0x939( 0 ),
       field_0x932( 0 ),
@@ -103,6 +104,7 @@ GSCamera::GSCamera()
       bChangeCamTrigger( false ),
       bUpdatedView( false ),
       field_0x954( false ),
+      bHeadTracking( false ),
       currentCameraIndex( 0 ),
       numCameraRegistered( 0 ),
       defaultCamera(),
@@ -197,7 +199,7 @@ bool GSCamera::initialize( TestDriveGameInstance * ) {
     field_0x96c = 0;
     field_0x939 = 1;
     bLocked = false;
-    field107_0x956 = false;
+    bUpdatedView = false;
 
     return true;
 }
@@ -294,17 +296,19 @@ void GSCamera::tick( float totalTime, float deltaTime ) {
 LAB_008e2c4f:
     PlayerConfiguration *pPVar7 = gpConfig->pPlayerConfig;
     if ( bEditing == false ) {
-        if ( FLOAT_00f87fe4 < FLOAT_010e761c ) {
-            OTDU_UNIMPLEMENTED; // TODO: MngHUD
-            FLOAT_010e761c = -1.0f;
+        if ( FLOAT_00f87fe4 < gCamViewLockHoldTime ) {
+            if ( pActiveVehicleCamera != nullptr &&
+                 ( ( pActiveVehicleCamera->getFlags() >> 0x11 ) & 1 ) == 0 ) {
+                ToggleFreeLookLock( pActiveVehicleCamera );
+                OTDU_UNIMPLEMENTED; // TODO: MngHUD (/HUD/cam_ic lock icon)
+            }
+            gCamViewLockHoldTime = -1.0f;
         }
 
-        updateCameraInput( pPVar7->pCarHeadLeft, leftView );
-        updateCameraInput( pPVar7->pCarHeadRight, rightView );
-        rightView = -rightView;
-        updateCameraInput( pPVar7->pCarHeadUp, upView );
-        upView = -upView;
-        updateCameraInput( pPVar7->pCarHeadDown, downView );
+        updateCameraInput( pPVar7->pCarHeadLeft, leftView, false );
+        updateCameraInput( pPVar7->pCarHeadRight, rightView, true );
+        updateCameraInput( pPVar7->pCarHeadUp, upView, true );
+        updateCameraInput( pPVar7->pCarHeadDown, downView, false );
 
         float fVar18 = 0.0f;
         DeviceAction *peVar5 = pPVar7->pCarHeadCenter;
@@ -341,7 +345,7 @@ LAB_008e2c4f:
                    ( FLOAT_00fab2a0 < fVar19 ) ) ||
                  ( FLOAT_00fab2a0 < fVar20 ) ) ||
                ( FLOAT_00fab2a0 < fVar22 ) ) &&
-             ( ( ( /* gpActiveGM != (GMBase *)0x0  ||*/ // TODO: GMWorld
+             ( ( ( gpActiveGM != nullptr ||
                    ( gpFlash->getMouse()->ActiveCursorType ==
                      eFlashCursorType::FCT_Camera ) ) &&
                  ( bVar8 != 0 ) ) ) ) {
@@ -734,7 +738,7 @@ void GSCamera::bindCamera( CameraGame *param_1,
         bFinishedCamTransition = true;
         param_1->initialize();
         pActiveVehicleCamera->markAsInitialized();
-        field107_0x956 = false;
+        bUpdatedView = false;
         return;
     }
 
@@ -746,7 +750,7 @@ void GSCamera::bindCamera( CameraGame *param_1,
     transition.begin( param_3, param_2 );
 
     pActiveVehicleCamera = (CameraVehicle *)&transition;
-    field107_0x956 = false;
+    bUpdatedView = false;
 }
 
 void GSCamera::tickActiveCamera( float param_2 ) {
@@ -1350,10 +1354,12 @@ void GSCamera::editActiveCamera() {
     pActiveVehicleCamera->unknownFunc( reinterpret_cast<float *>( &state ) );
 }
 
-void GSCamera::updateCameraInput( DeviceAction *peVar5, float &input ) {
-    float fVar18 = FLOAT_010e761c;
+void GSCamera::updateCameraInput( DeviceAction *peVar5,
+                                  float &input,
+                                  bool bNegate ) {
+    float fVar18 = gCamViewLockHoldTime;
     if ( ( ( peVar5 == nullptr ) || ( peVar5->NumAddedChannels == 0 ) ) ||
-         ( fVar18 = peVar5->FUN_00434e40( FLOAT_010e761c ),
+         ( fVar18 = peVar5->FUN_00434e40( gCamViewLockHoldTime ),
            fVar18 < deadZone || fVar18 == deadZone ) ) {
         if ( bUpdatedView == false ) {
             input = 0.0f;
@@ -1361,7 +1367,7 @@ void GSCamera::updateCameraInput( DeviceAction *peVar5, float &input ) {
     } else {
         fVar18 = peVar5->FUN_00434e40( fVar18 );
         fVar18 = fVar18 - deadZone;
-        input = fVar18;
+        input = bNegate ? ( 0.0f - fVar18 ) : fVar18;
         bUpdatedView = false;
     }
 }

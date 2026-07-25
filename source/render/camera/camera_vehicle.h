@@ -41,6 +41,14 @@ OTDU_SIZE_MUST_MATCH( EditCamDevState, 0x28 );
 // (no editing active).
 extern uint32_t gEditCameraFlags;
 
+// Freelook lock, toggled by holding the change-camera key for
+// more than one second
+extern bool gbFreeLookUnlocked;
+extern bool gbFixedCamLookSnap;
+
+class CameraVehicle;
+void ToggleFreeLookLock( CameraVehicle *pCamera );
+
 struct LerpParams {
     uint8_t MinInput = 0;
     uint8_t MaxInput = 0;
@@ -137,9 +145,9 @@ private:
                     Eigen::Vector4f &outPos,
                     Eigen::Vector4f &outTarget,
                     Eigen::Vector4f &outUp );
-    void applyFreeLookAndGroundClamp( const Matrix4x4f_t &carDisplayMatrix,
-                                      bool bFixedCam,
-                                      float deltaTime );
+    void applyFreeLook( const Matrix4x4f_t &carDisplayMatrix,
+                        bool bFixedCam,
+                        float deltaTime );
     void applySpeedShake( float deltaTime );
     void updateMotionBlur();
 

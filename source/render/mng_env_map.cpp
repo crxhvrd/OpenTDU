@@ -31,7 +31,6 @@
 
 MngEnvMap *gpMngEnvMap = nullptr; // DAT_010e7fb0
 
-static constexpr float kDegToRad = 0.017453293f;        // DAT_00f41864
 static constexpr float kCockpitFOV = 1.0471976f;        // DAT_00f417dc (60deg)
 static constexpr float kCockpitFarPlane = 150.0f;       // DAT_00f4182c
 static constexpr float kHoodFarPlane = 60.0f;           // FLOAT_00f41744

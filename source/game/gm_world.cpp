@@ -506,6 +506,16 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         pBody->bGearUpEdge = IsActionPressed( pCfg->pCarGearDown ); // CAR_GUP
         pBody->bGearDownEdge =
             IsActionPressed( pCfg->pBikeGearUp ); // CAR_GDOWN
+
+        const bool bChangeViewHeld =
+            IsActionDown( pCfg->pCarBackview ); // CAR_CAMERA
+        if ( gCamViewLockHoldTime < 0.0f ) {
+            gCamViewLockHoldTime = bChangeViewHeld ? -1.0f : 0.0f;
+        } else if ( bChangeViewHeld ) {
+            gCamViewLockHoldTime += deltaTime;
+        } else {
+            gCamViewLockHoldTime = 0.0f;
+        }
     }
 
     if ( gpMngInGameMenu != nullptr ) {

@@ -7,7 +7,6 @@
 #include <cmath>
 
 static constexpr float kSlipLongScale = 100.0f; // DAT_00f41708 (inside cf50)
-static constexpr float kRadToDeg = 57.29578f;   // DAT_00f41b0c
 static constexpr float kLatSlipMinSpeed = 2.0f; // m/s
 static constexpr float kLoadToPerMille =
     0.001f; // FLOAT_00f4167c (load -> cf50/ceb0 scale)

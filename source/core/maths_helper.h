@@ -356,8 +356,16 @@ static const Eigen::Vector4f kWorldUpVector(
 #define EIGEN_TWO_PI ( EIGEN_PI * 2.0 )
 #define EIGEN_HALF_PI ( EIGEN_PI / 2.0 )
 
-static constexpr float kPI = static_cast<float>( EIGEN_PI );
-static constexpr float kTwoPI = static_cast<float>( EIGEN_TWO_PI );
+static constexpr float kPI = static_cast<float>( EIGEN_PI ); // DAT_00f41940
+static constexpr float kNegPI = -kPI;                        // DAT_00f41944
+static constexpr float kTwoPI = kPI * 2.0f;                  // DAT_00f416f8
+static constexpr float kHalfPI = kPI / 2.0f;                 // DAT_00f418a4
+static constexpr float kNegHalfPi = -( kPI / 2.0f );         // DAT_00f41c8c
+static constexpr float kOne = 1.0f;                          // FLOAT_00f4165c
+static constexpr float kMinusOne = -1.0f;                    // FLOAT_00f41664
+static constexpr float kDegToRad =
+    static_cast<float>( EIGEN_PI / 180.0 );   // DAT_00f41864
+static constexpr float kRadToDeg = 57.29578f; // DAT_00f41b0c
 
 struct TDUPlane {
     Eigen::Vector4f Normal = kWorldUpVector;
