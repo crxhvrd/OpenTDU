@@ -787,6 +787,7 @@ void VehicleCar::reset() {
     pDoorsExterior.fill( nullptr );
     headlights.fill( nullptr );
     headlightT = 0.0f;
+    bPopupHeadlights = false;
     pWindowL1 = nullptr;
     pWindowR1 = nullptr;
     pDoorsExterior.fill( nullptr );
