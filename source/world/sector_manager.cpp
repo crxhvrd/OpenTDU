@@ -309,6 +309,7 @@ static void PreComputeImpostorLOD( MassInstanceImpostor &inst,
     // FUN_00423330
     inst.MaxLODDist = kImpostorDefaultMaxLODDist;
     inst.Radius = kImpostorDefaultRadius;
+    inst.SpherePos = pInstance->getModelMatrix().row( 3 ).transpose();
 
     const uint32_t numLOD = pInstance->getNumLODs();
     if ( numLOD == 0 ) {
@@ -642,6 +643,10 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
                         grid, inst, uvDedup, gridOrigin.x(), gridOrigin.z() );
                 }
                 PreComputeImpostorLOD( inst, pInst );
+                inst.SphereAbsPos = Eigen::Vector4f(
+                    inst.SpherePos.x() + buildOrigin.x(),
+                    inst.SpherePos.y() + buildOrigin.y(),
+                    inst.SpherePos.z() + buildOrigin.z(), 1.0f );
 
                 if ( kind == 4 ) {
                     inst.pText = const_cast<char *>(

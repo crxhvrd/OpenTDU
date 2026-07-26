@@ -52,8 +52,9 @@ void SectorGeometry::rebaseImpostors( const Eigen::Vector4f &streamOrigin ) {
                 m( 3, 2 ) = z;
                 mi.pInstance->setModelMatrix( m );
             }
-            mi.SpherePos.x() = x;
-            mi.SpherePos.z() = z;
+            mi.SpherePos.x() = mi.SphereAbsPos.x() - streamOrigin.x();
+            mi.SpherePos.y() = mi.SphereAbsPos.y() - streamOrigin.y();
+            mi.SpherePos.z() = mi.SphereAbsPos.z() - streamOrigin.z();
         }
 
         for ( Material *pMaterial : grid.uvOriginMaterials ) {

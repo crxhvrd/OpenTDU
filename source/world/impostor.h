@@ -24,6 +24,7 @@ struct MassInstanceImpostor : public Impostor {
     Material *pMaterial;
     uint8_t __PADDING__[4];
     Eigen::Vector4f AbsPos = Eigen::Vector4f::Zero();
+    Eigen::Vector4f SphereAbsPos = Eigen::Vector4f::Zero();
     Matrix4x4f_t BuildMatrix = Matrix4x4f_t::Identity();
 };
 

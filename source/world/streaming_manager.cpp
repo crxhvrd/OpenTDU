@@ -1507,6 +1507,60 @@ ComputeCellWorldPosition( float originX, float originZ, uint32_t cell ) {
                             0.0f );
 }
 
+static bool ImpostorGatherVisible( Frustum &frustum,
+                                   const Matrix4x4f_t &worldToCam,
+                                   const float tanHalfFov,
+                                   MassInstanceImpostor &impostor ) {
+    // FUN_007003c0
+    Instance *pInstance = impostor.pInstance;
+
+    Eigen::Vector4f viewCenter = TDUMat4x4MulVec(
+        worldToCam,
+        Eigen::Vector4f( impostor.SpherePos.x(), impostor.SpherePos.y(),
+                         impostor.SpherePos.z(), 1.0f ) );
+
+    bool bVisible = false;
+    uint32_t lodIndex = 0;
+    float lodDistance = 0.0f;
+
+    const float scale = pInstance->getBoundingScale();
+    if ( frustum.testBoundingSphere( viewCenter, impostor.Radius * scale ) !=
+         0 ) {
+        const uint32_t numLOD = pInstance->getNumLODs();
+        if ( ( numLOD != 0 ) &&
+             ( ( numLOD != 1 ) ||
+               ( pInstance->getLOD( 0 ).Distances[0] != 0.0f ) ) ) {
+            const float lodFactor = gEdRender.LODFactor;
+            lodDistance = ( ( viewCenter.x() * viewCenter.x() +
+                              viewCenter.y() * viewCenter.y() +
+                              viewCenter.z() * viewCenter.z() ) *
+                            lodFactor * lodFactor * tanHalfFov * tanHalfFov ) /
+                          ( scale * scale );
+
+            uint32_t i = 0;
+            for ( ; i < numLOD; i++ ) {
+                if ( lodDistance < pInstance->getLOD( i ).Distances[0] ) {
+                    bVisible = true;
+                    lodIndex = i;
+                    break;
+                }
+            }
+            if ( i == numLOD ) {
+                lodIndex = kMaxNumLOD; // past the last LOD
+            }
+
+            pInstance->setActiveLODIndex( lodIndex );
+            pInstance->setCurrentLODDistance( lodDistance );
+            return bVisible;
+        }
+        bVisible = true;
+    }
+
+    pInstance->setActiveLODIndex( 0 );
+    pInstance->setCurrentLODDistance( 0.0f );
+    return bVisible;
+}
+
 void StreamingManager::submitSectorImpostors( Sector &sector,
                                               RenderScene *pScene ) {
     // FUN_006fe580
@@ -1528,12 +1582,10 @@ void StreamingManager::submitSectorImpostors( Sector &sector,
     const Matrix4x4f_t &worldToCam = pCamera->getWorldToCam();
     const Eigen::Vector4f camWorldPos = pCamera->getCamToWorld().row( 3 );
     Frustum &frustum = pScene->getFrustumWrite();
-    const float hideDistanceUnit = gpMngImpostor->getHideDistanceUnit();
+    const float tanHalfFov = pCamera->getTanHalfFov();
+    const float hideDistanceUnit =
+        tanHalfFov * tanHalfFov * gEdRender.LODFactor * gEdRender.LODFactor;
 
-    // Heightmap origin expressed in the streaming floating-origin frame so the
-    // cell centres line up with the camera and the (un-rebased) impostor
-    // SpherePos. Assumes a stable stream origin (the impostor re-base on world
-    // shift is still deferred).
     const Eigen::Vector4f streamPos = gpWorldStreaming->isEnabled()
                                           ? gpWorldStreaming->getPosition()
                                           : Eigen::Vector4f::Zero();
@@ -1586,32 +1638,20 @@ void StreamingManager::submitSectorImpostors( Sector &sector,
 
         for ( ImpostorGrid &grid : sector.geometry.impostorGrids ) {
             for ( MassInstanceImpostor *pImpostor : grid.cells[entry.cell] ) {
-                if ( numSubmitted >= kImpostorSubmitCap ) {
+                if ( numSubmitted >= kImpostorSubmitCap ||
+                     pImpostor->MaxLODDist <= cellLODThreshold ) {
                     break;
                 }
-                if ( pImpostor->MaxLODDist <= cellLODThreshold ) {
-                    continue; // too far for this LOD tier
-                }
-                if ( ( pImpostor->DrawFlags & 1 ) == 0 ||
-                     pImpostor->pInstance == nullptr ) {
+                if ( pImpostor->pInstance == nullptr ) {
                     continue;
                 }
 
-                // FUN_007003c0 — frustum-test the bounding sphere (centre into
-                // view space, radius scaled by the instance's biggest scale).
-                Eigen::Vector4f viewCenter = TDUMat4x4MulVec(
-                    worldToCam,
-                    Eigen::Vector4f( pImpostor->SpherePos.x(),
-                                     pImpostor->SpherePos.y(),
-                                     pImpostor->SpherePos.z(), 1.0f ) );
-                const float radius = pImpostor->Radius *
-                                     pImpostor->pInstance->getBoundingScale();
-                if ( frustum.testBoundingSphere( viewCenter, radius ) == 0 ) {
-                    continue;
+                if ( ( pImpostor->DrawFlags & 1 ) != 0 &&
+                     ImpostorGatherVisible( frustum, worldToCam, tanHalfFov,
+                                            *pImpostor ) ) {
+                    pScene->enqueueDynamicInstance( pImpostor->pInstance );
+                    numSubmitted++;
                 }
-
-                pScene->enqueueDynamicInstance( pImpostor->pInstance );
-                numSubmitted++;
             }
         }
     }

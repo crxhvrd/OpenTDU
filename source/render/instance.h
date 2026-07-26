@@ -25,6 +25,9 @@ public:
     inline uint32_t getFlags() const { return flags; }
     inline uint32_t getNumLODs() const { return numLODs; }
     inline uint32_t getActiveLODIndex() const { return currentLODIndex; }
+    inline void setActiveLODIndex( const uint32_t param_1 ) {
+        currentLODIndex = param_1;
+    }
     inline InstanceLOD &getLOD( const uint32_t param_1 ) {
         return lods[param_1];
     }

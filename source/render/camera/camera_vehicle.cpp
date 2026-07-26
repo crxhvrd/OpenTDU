@@ -293,15 +293,11 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
 
     CarBodyState *pBody = pCar->getBody();
 
-    const float chassisSpeed = pPhys->getChassisSpeed();
-    const Eigen::Vector3f heading =
-        pBody->OffsetedWorldMatrix.row( 2 ).head<3>();
-    velocity.head<3>() = heading * chassisSpeed;
-    velocity.w() = 0.0f;
+    velocity = pPhys->getChassisVelocity();
 
     OTDU_UNIMPLEMENTED;
 
-    float speed = pPhys->getChassisSpeed();
+    float speed = pPhys->getForwardSpeed();
     if ( !gCameraSnap ) {
         speed = ( speed - gSmoothedSpeed ) * ( kOne - kSpeedSmoothKeep ) *
                     deltaTime * kSpeedSmoothRate +
