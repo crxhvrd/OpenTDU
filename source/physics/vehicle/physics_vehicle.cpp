@@ -62,6 +62,7 @@ bool gbSimuModeEnabled = false;            // DAT_010e777c
 // Anti-roll bars from the original pcode (disabled in the original game)
 bool gVehicleAntiRoll = false;
 constexpr float kAntiRollFraction = 0.0f;
+constexpr float kGravCenterHeightFracDefault = 0.40f; // DAT_00f4175c
 
 // Suspension damper-velocity NaN guard (legacy body-velocity path).
 constexpr float kSuspDamperVelClamp = 100.0f;
@@ -248,8 +249,8 @@ PhysicsVehicle::PhysicsVehicle()
       steerLockRad( 0.0f ),
       inputThrottle( 0.0f ),
       inputBrake( 0.0f ),
-      inputDriverBrake( 0.0f ),
       inputSteer( 0.0f ),
+      autoReverseState( 0 ),
       filteredSteer( 0.0f ),
       steerCommand( 0.0f ),
       engineOmega( 0.0f ),
@@ -659,14 +660,10 @@ void PhysicsVehicle::destroy() {
     pChassisBody = nullptr;
 }
 
-void PhysicsVehicle::setInput( float throttle,
-                               float brake,
-                               float steer,
-                               float driverBrake ) {
+void PhysicsVehicle::setInput( float throttle, float brake, float steer ) {
     inputThrottle = throttle;
     inputBrake = brake;
     inputSteer = steer;
-    inputDriverBrake = ( driverBrake >= 0.0f ) ? driverBrake : brake;
 }
 
 PhysicsVehicle::DrivingGearbox PhysicsVehicle::getDrivingGearbox() const {

@@ -1058,12 +1058,12 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         return nullptr;
     }
 
-    const float bodyHalfHeight =
-        ( db.Height > 0 ? db.Height : 1300 ) * 0.5f * 0.001f;
-
+    const float bodyHeightM = ( db.Height > 0 ? db.Height : 1300 ) * 0.001f;
+    const float bodyHalfHeight = bodyHeightM * 0.5f;
+    const float gravHeightFrac =
+        db.GravityCenterHeight > 0 ? db.GravityCenterHeight * 0.01f : 0.40f;
     const float gcHeight = JPH::Clamp(
-        db.GravityCenterHeight > 0 ? db.GravityCenterHeight * 0.01f : 0.40f,
-        0.15f, 0.60f );
+        ( 1.0f - gravHeightFrac ) * 0.5f * bodyHeightM, 0.15f, 0.60f );
     const PhysicsVehicle::SuspensionSetup comFrontSusp =
         PhysicsVehicle::ComputeAxleSuspension( db, true );
     const PhysicsVehicle::SuspensionSetup comRearSusp =
@@ -1116,6 +1116,7 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     mp.mInertia( 2, 2 ) = k * ( h.GetX() * h.GetX() + h.GetY() * h.GetY() );
     mp.mInertia( 3, 3 ) = 1.0f;
     settings.mMassPropertiesOverride = mp;
+
     settings.mOverrideMassProperties =
         JPH::EOverrideMassProperties::MassAndInertiaProvided;
 

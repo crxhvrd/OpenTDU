@@ -69,10 +69,7 @@ public:
         bool bShiftIdle;    // gearbox will take a shift request right now
     };
 
-    void setInput( float throttle,
-                   float brake,
-                   float steer,
-                   float driverBrake = -1.0f );
+    void setInput( float throttle, float brake, float steer );
     void tick( float deltaTime );
 
     DrivingGearbox getDrivingGearbox() const;
@@ -99,7 +96,8 @@ public:
     int32_t getCurrentGear() const;
     float getInputBrake() const { return inputBrake; }
     float getInputThrottle() const { return inputThrottle; }
-    float getDriverBrake() const { return inputDriverBrake; }
+    void setAutoReverseState( int32_t state ) { autoReverseState = state; }
+    int32_t getAutoReverseState() const { return autoReverseState; }
     float getLateralG() const;
     float getLongitudinalG() const;
 
@@ -148,8 +146,8 @@ private:
     // Driver input.
     float inputThrottle;
     float inputBrake;
-    float inputDriverBrake;
     float inputSteer;
+    int32_t autoReverseState;
     float filteredSteer; // rate-limited steering state
     float steerCommand;  // shaped, speed-scaled steer (drives the wheel angle)
 
