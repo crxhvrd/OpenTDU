@@ -58,6 +58,9 @@ public:
         return startPosition;
     }
     inline LocalPlayer &getLocalPlayer() { return localPlayer; }
+    inline ObjectiveMarker &getObjective( const int32_t index ) {
+        return objectives[index];
+    }
     inline Spots &getSpotList() { return spotList; }
     inline AvatarManager &getAvatarManager() { return avatarManager; }
     inline ScenaricBank &getPedestrianBank() { return pedestrianBank; }

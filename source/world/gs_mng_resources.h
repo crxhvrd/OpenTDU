@@ -235,6 +235,10 @@ private:
 
 class HUDMapResources : public MngResources {
 public:
+    inline Material *getMaterial() { return pMaterial; }
+    inline Render2DB &getRender2DB() { return render2DB; }
+
+public:
     HUDMapResources();
     ~HUDMapResources();
 
@@ -415,6 +419,7 @@ public:
     const char *getName() const override { return "Service : MngResources"; }
 
     inline TireSkidResources &getTireSkidResources() { return tireSkid; }
+    inline HUDMapResources &getHUDMapResources() { return hudMap; }
     inline ShadowResources &getShadowResources() { return shadow; }
     inline SkyDomeResources &getSkyDomeResources() { return skyDome; }
     inline WaterResources &getWaterResources() { return water; }

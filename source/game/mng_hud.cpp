@@ -16,6 +16,7 @@
 #include "game/game_cheats.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
+#include "game/vehicle/vehicle_base.h"
 #include "player_data/gs_playerdata.h"
 #include "render/2db.h"
 #include "render/draw_list.h"
@@ -28,6 +29,10 @@
 #include "tdu_instance.h"
 #include "core/maths_helper.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "world/gs_mng_resources.h"
+#include "world/gs_world.h"
+#include "world/sector_manager.h"
+#include "world/streaming_manager.h"
 
 MngHud *gpMngHud = nullptr; // DAT_010e7fbc
 
@@ -298,36 +303,801 @@ void HudMessageLog::scroll() {
     pLines[NumLines - 1] = pBuffer + strlen( pBuffer );
 }
 
+static constexpr float kMapModeHalfExtent[] = { 0.0f, 16384.0f, 3072.0f,
+                                                800.0f }; // DAT_00f41d74
+static constexpr float kHudMapTexelSize = 1.0f / 256.0f;  // DAT_00f41da8
+static constexpr float kTwipsToPixels = 0.05f;            // DAT_00f41778
+static constexpr float kTraceMinDistanceSq = 256.0f;      // DAT_00f419c0
+static constexpr float kTraceGapFactor = 2.0f;            // DAT_00f416b0
+static constexpr float kMapModeBlendSpeed = 2.0f;         // DAT_00f416b0
+static constexpr float kFinishMarkerRadius = 50.0f;       // DAT_00f41848
+static constexpr int32_t kMapCellSize = 0x300;
+
+static bool BindMapChunkBitmap( Material *pDest, Material *pSource ) {
+    // FUN_006e40b0
+    if ( pDest == nullptr ) {
+        return false;
+    }
+
+    MaterialParameter *pDestParam = pDest->getParameterByIndex( 0 );
+    if ( pDestParam == nullptr ) {
+        return false;
+    }
+    MaterialLayer *pDestLayer = pDestParam->getLayer( 0 );
+    if ( pDestLayer == nullptr ) {
+        return false;
+    }
+
+    pDestLayer->pLayerTextures[0].pTextureSection = nullptr;
+    pDestLayer->NumTextures = 0;
+
+    if ( pSource == nullptr || pSource->NumParams == 0 ) {
+        return false;
+    }
+
+    MaterialParameter *pSourceParam = pSource->getParameterByIndex( 0 );
+    if ( pSourceParam == nullptr || pSourceParam->NumLayers == 0 ) {
+        return false;
+    }
+
+    MaterialLayer *pSourceLayer = pSourceParam->getLayer( 0 );
+    if ( pSourceLayer == nullptr ) {
+        return false;
+    }
+
+    RenderFile::Section *pBitmap =
+        pSourceLayer->pLayerTextures[0].pTextureSection;
+    if ( pBitmap == nullptr ) {
+        return false;
+    }
+
+    pDestLayer->pLayerTextures[0].pTextureSection = pBitmap;
+    pDestLayer->NumTextures = 1;
+    return true;
+}
+
+static Material *GetWorldMapMaterial() {
+    OTDU_UNIMPLEMENTED; // TODO: STREAMING
+    return nullptr;
+}
+
+static Area *FindStreamedArea( AreaGrid &grid, const GridPos2D &cell ) {
+    // FUN_00706e30
+    for ( Area &area : grid.areas ) {
+        if ( area.coords.posX == cell.posX && area.coords.posY == cell.posY ) {
+            return &area;
+        }
+    }
+    return nullptr;
+}
+
+static Material *GetAreaMapMaterial( Area *pArea ) {
+    // FUN_0042c910
+    if ( pArea == nullptr || pArea->state != 1 ) {
+        return nullptr;
+    }
+    Render2DM &render2DM = pArea->geometry.render2DM;
+    if ( render2DM.getHeader() == nullptr ||
+         render2DM.getMaterialArray() == nullptr ) {
+        return nullptr;
+    }
+    return render2DM.getMaterialAtIndex( 0 );
+}
+
 HudMinimap::HudMinimap() {
     // FUN_006e4f90
-    OTDU_UNIMPLEMENTED;
+    TracePoints.resize( kTraceCapacity );
+    TraceMinDistanceSq = kTraceMinDistanceSq;
+    pDrawList = &drawList;
 }
 
 HudMinimap::~HudMinimap() {
     // FUN_006ea690
-    OTDU_UNIMPLEMENTED;
+    if ( bLureCallbackRegistered ) {
+        gFlashCallbacksRegister.remove( "mmap_lure" );
+        bLureCallbackRegistered = false;
+    }
+    terminate();
 }
 
 void HudMinimap::initialize() {
     // FUN_006ec030
-    OTDU_UNIMPLEMENTED;
-}
+    bInstalled = false;
 
-void HudMinimap::tick( float ) {
-    // FUN_006eb990
-    OTDU_UNIMPLEMENTED;
+    if ( gpWorld == nullptr || gpRender == nullptr ) {
+        return;
+    }
+
+    for ( int32_t chunkIndex = 0; chunkIndex < kNumMapChunks; chunkIndex++ ) {
+        const uint32_t chunkSize = Render2DM::CalcSize( 0, 0 );
+        void *pChunkMemory = TestDrive::Alloc( chunkSize );
+        if ( pChunkMemory == nullptr ) {
+            return;
+        }
+        pMapRender2DMs[chunkIndex] = pChunkMemory;
+
+        Material *pMaterial =
+            Render2DM::Create( pChunkMemory, 0x230588678a67836d, 1, 0, 0, 1 );
+        pMapMaterials[chunkIndex] = pMaterial;
+
+        pMaterial->DepthTest = 2;
+        pMaterial->DepthWrite = 2;
+
+        MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+        ( pParameter->Flags ).NumPrelight = 1;
+        ( pParameter->Flags ).NumTextures = 1;
+        ( pParameter->Flags ).bUsingNormals = 0;
+
+        MaterialLayer *pLayer = pParameter->getLayer( 0 );
+        pLayer->pLayerTextures[0].Hashcode = 1;
+        pLayer->pLayerTextures[0].SamplerAddress[0] = TA_Clamp;
+        pLayer->pLayerTextures[0].SamplerAddress[1] = TA_Clamp;
+
+        pMaterial->AlphaTest = (eComparisonFunction)0;
+        pMaterial->AlphaRef = 0xfa;
+
+        mapRender2DMs[chunkIndex].initialize( pChunkMemory );
+        pMaterial->OT = 0;
+
+        gpWorld->pushGlobal2DM( &mapRender2DMs[chunkIndex] );
+    }
+
+    DrawStreams streams;
+    streams.Diffuse = 1;
+    streams.UVMap = 1;
+    if ( !drawList.initialize( 0x28, 0x1800, 600, true, &streams, "HudMapRList",
+                               false ) ) {
+        return;
+    }
+
+    gpRender->setRenderPassEnabled<eRenderPass::RP_HUDMap>( true );
+
+    ViewportU = 1.0f;
+    ViewportV = 1.0f;
+    bInstalled = true;
+
+    OTDU_UNIMPLEMENTED; // TODO: FUN_006ebd80
 }
 
 void HudMinimap::terminate() {
     // FUN_006e7530
-    OTDU_UNIMPLEMENTED;
     bInstalled = false;
+
+    if ( bGpsTextureBound ) {
+        OTDU_UNIMPLEMENTED; // TODO: VEHICLE
+        bGpsTextureBound = false;
+    }
+
+    if ( gpRender != nullptr ) {
+        gpRender->setRenderPassEnabled<eRenderPass::RP_HUDMap>( false );
+    }
+
+    if ( drawList.isInitialized() ) {
+        drawList.destroy();
+    }
+
+    for ( int32_t chunkIndex = 0; chunkIndex < kNumMapChunks; chunkIndex++ ) {
+        if ( pMapRender2DMs[chunkIndex] == nullptr ) {
+            continue;
+        }
+        if ( gpWorld != nullptr ) {
+            gpWorld->removeGlobal2DM( &mapRender2DMs[chunkIndex] );
+        }
+        mapRender2DMs[chunkIndex].destroy();
+        TestDrive::Free( pMapRender2DMs[chunkIndex] );
+        pMapRender2DMs[chunkIndex] = nullptr;
+        pMapMaterials[chunkIndex] = nullptr;
+    }
 }
 
 bool HudMinimap::updateLure() {
     // FUN_006e7640
-    OTDU_UNIMPLEMENTED;
+    if ( pPlayer == nullptr || !bLureCallbackRegistered ) {
+        return true;
+    }
+
+    FlashClip lureClip;
+    if ( pPlayer->getClipPlayer( "HUD/minimap/mmap_lure", &lureClip ) ) {
+        refreshLureRect();
+        bindGpsTextureToPlayerCar();
+    }
     return true;
+}
+
+bool HudMinimap::GetWorldExtent( float &width, float &height ) {
+    if ( gpWorld == nullptr ) {
+        return false;
+    }
+    StreamingManager *pStreaming = gpWorld->getStreamingManager();
+    if ( pStreaming == nullptr ) {
+        return false;
+    }
+
+    const AreaGrid &grid = pStreaming->areaGrid;
+    width = static_cast<float>(
+        (int32_t)( grid.numAreas * pStreaming->sectorManager.numSectors *
+                   kMapCellSize ) );
+    height = static_cast<float>(
+        (int32_t)( grid.numSubAreas * pStreaming->sectorManager.numSubSectors *
+                   kMapCellSize ) );
+    return width > 0.0f && height > 0.0f;
+}
+
+void HudMinimap::GetMapModeHalfExtent( int32_t mapMode, float &x, float &y ) {
+    // FUN_006e6400
+    if ( mapMode == 0 ) {
+        if ( !GetWorldExtent( x, y ) ) {
+            x = 0.0f;
+            y = 0.0f;
+        }
+        return;
+    }
+
+    constexpr int32_t kNumMapModes =
+        (int32_t)( sizeof( kMapModeHalfExtent ) /
+                   sizeof( kMapModeHalfExtent[0] ) );
+    const int32_t clampedMode =
+        ( mapMode > 0 && mapMode < kNumMapModes ) ? mapMode : 0;
+    x = kMapModeHalfExtent[clampedMode];
+    y = kMapModeHalfExtent[clampedMode];
+}
+
+void HudMinimap::ComputeMapViewRect( int32_t mapMode, MapViewRect &out ) {
+    // FUN_006e5d30
+    float worldWidth = 0.0f;
+    float worldHeight = 0.0f;
+    if ( !GetWorldExtent( worldWidth, worldHeight ) || gpMngHud == nullptr ||
+         gpMngHud->pCarState == nullptr ) {
+        return;
+    }
+
+    const Eigen::Vector4f carPosition =
+        gpMngHud->pCarState->getBody()->WorldMatrix.row( 3 );
+
+    if ( mapMode == 0 ) {
+        out.CursorU = carPosition.x() / worldWidth;
+        out.CursorV = carPosition.z() / worldHeight;
+        out.XMin = 0.0f;
+        out.YMin = 0.0f;
+        out.XMax = worldWidth;
+        out.YMax = worldHeight;
+        out.UMin = 0.0f;
+        out.UMax = 1.0f;
+        out.VMin = 0.0f;
+        out.VMax = 1.0f;
+        return;
+    }
+
+    float halfExtentX = 0.0f;
+    float halfExtentY = 0.0f;
+    GetMapModeHalfExtent( mapMode, halfExtentX, halfExtentY );
+
+    out.CursorU = 0.5f;
+    out.CursorV = 0.5f;
+    out.XMin = carPosition.x() - halfExtentX * 0.5f;
+    out.XMax = carPosition.x() + halfExtentX * 0.5f;
+    out.YMin = carPosition.z() - halfExtentY * 0.5f;
+    out.YMax = carPosition.z() + halfExtentY * 0.5f;
+
+    // Slide the rect back inside the world, moving the cursor instead.
+    if ( out.XMin >= 0.0f ) {
+        if ( worldWidth < out.XMax ) {
+            out.CursorU += ( out.XMax - worldWidth ) / halfExtentX;
+            out.XMin -= ( out.XMax - worldWidth );
+            out.XMax = worldWidth;
+        }
+    } else {
+        out.CursorU -= -out.XMin / halfExtentX;
+        out.XMax += -out.XMin;
+        out.XMin = 0.0f;
+    }
+
+    if ( out.YMin >= 0.0f ) {
+        if ( worldHeight < out.YMax ) {
+            out.CursorV += ( out.YMax - worldHeight ) / halfExtentY;
+            out.YMin -= ( out.YMax - worldHeight );
+            out.YMax = worldHeight;
+        }
+    } else {
+        out.CursorV -= -out.YMin / halfExtentY;
+        out.YMax += -out.YMin;
+        out.YMin = 0.0f;
+    }
+
+    out.UMin = out.XMin / worldWidth;
+    out.UMax = out.XMax / worldWidth;
+    out.VMin = out.YMin / worldHeight;
+    out.VMax = out.YMax / worldHeight;
+}
+
+void HudMinimap::buildViewMatrix( Matrix4x4f_t &out, bool bWorldSpace ) {
+    // FUN_006e70e0
+    const bool bRotate = ( gpMngHud != nullptr ) && gpMngHud->bGPSRotation;
+    const float heading =
+        ( gpMngHud != nullptr ) ? gpMngHud->minimapHeading : 0.0f;
+
+    if ( bWorldSpace ) {
+        if ( !bRotate ) {
+            out = Matrix4x4f_t::Identity();
+            out.row( 3 ) = Eigen::Vector4f( -ViewXMin, -ViewYMin, 0.0f, 1.0f );
+        } else {
+            const float centerX = ( ViewXMax + ViewXMin ) * 0.5f;
+            const float centerY = ( ViewYMax + ViewYMin ) * 0.5f;
+
+            out = Matrix4x4f_t::Identity();
+            out.row( 3 ) = Eigen::Vector4f( -centerX, -centerY, 0.0f, 1.0f );
+            MatrixRotateZ( out, heading );
+            out.row( 3 ) += Eigen::Vector4f( centerX, centerY, 0.0f, 0.0f );
+            out.row( 3 ) += Eigen::Vector4f( -ViewXMin, -ViewYMin, 0.0f, 0.0f );
+        }
+
+        Eigen::Vector3f scale( 1.0f / ( ViewXMax - ViewXMin ),
+                               1.0f / ( ViewYMax - ViewYMin ), 1.0f );
+        out = out * MakeScaleMatrix( scale );
+        return;
+    }
+
+    if ( bRotate ) {
+        out = Matrix4x4f_t::Identity();
+        out.row( 3 ) = Eigen::Vector4f( -0.5f, -0.5f, 0.0f, 1.0f );
+        MatrixRotateZ( out, heading );
+        out.row( 3 ) += Eigen::Vector4f( 0.5f, 0.5f, 0.0f, 0.0f );
+        return;
+    }
+
+    out = Matrix4x4f_t::Identity();
+}
+
+void HudMinimap::updateViewTransform( float &cursorU, float &cursorV ) {
+    // FUN_006e8f70
+    RotationBlend = std::min( std::max( RotationBlend, 0.0f ), 1.0f );
+
+    MapViewRect from;
+    MapViewRect to;
+    ComputeMapViewRect( MapModeTarget, from );
+    ComputeMapViewRect( MapMode, to );
+
+    const float blend = RotationBlend;
+    const float invBlend = 1.0f - blend;
+    auto lerp = [blend, invBlend]( float a, float b ) {
+        return invBlend * a + blend * b;
+    };
+
+    BlendedUV.UMin = lerp( from.UMin, to.UMin );
+    BlendedUV.UMax = lerp( from.UMax, to.UMax );
+    BlendedUV.VMin = lerp( from.VMin, to.VMin );
+    BlendedUV.VMax = lerp( from.VMax, to.VMax );
+
+    ViewXMin = lerp( from.XMin, to.XMin );
+    ViewXMax = lerp( from.XMax, to.XMax );
+    ViewYMin = lerp( from.YMin, to.YMin );
+    ViewYMax = lerp( from.YMax, to.YMax );
+
+    ViewCenter = Eigen::Vector4f( ( ViewXMax + ViewXMin ) * 0.5f,
+                                  ( ViewYMax + ViewYMin ) * 0.5f, 0.0f, 1.0f );
+
+    const float halfWidth = ( ViewXMax - ViewXMin ) * 0.5f;
+    const float halfHeight = ( ViewYMax - ViewYMin ) * 0.5f;
+    ViewRadiusSq = halfWidth * halfWidth + halfHeight * halfHeight;
+    ViewRadius = std::sqrt( ViewRadiusSq );
+
+    buildViewMatrix( WorldToMap, true );
+    buildViewMatrix( MapRotation, false );
+
+    cursorU = 0.0f;
+    cursorV = 0.0f;
+    if ( gpMngHud == nullptr || gpMngHud->pCarState == nullptr ) {
+        return;
+    }
+
+    const Eigen::Vector4f carPosition =
+        gpMngHud->pCarState->getBody()->WorldMatrix.row( 3 );
+    const Eigen::Vector4f mapPosition = TDUMat4x4MulVec(
+        WorldToMap,
+        Eigen::Vector4f( carPosition.x(), carPosition.z(), 0.0f, 1.0f ) );
+    cursorU = mapPosition.x();
+    cursorV = mapPosition.y();
+}
+
+void HudMinimap::drawMapQuad( float u0,
+                              float v0,
+                              float u1,
+                              float v1,
+                              float x0,
+                              float y0,
+                              float x1,
+                              float y1 ) {
+    // FUN_006e4c00
+    if ( !drawList.beginPrimitive( PT_TriangleStrip, 4 ) ) {
+        return;
+    }
+
+    drawList.setTexCoords( 0, Eigen::Vector2f( u0, v1 ) );
+    drawList.pushVertex( x0, y1, 0.0f );
+    drawList.setTexCoords( 0, Eigen::Vector2f( u1, v1 ) );
+    drawList.pushVertex( x1, y1, 0.0f );
+    drawList.setTexCoords( 0, Eigen::Vector2f( u0, v0 ) );
+    drawList.pushVertex( x0, y0, 0.0f );
+    drawList.setTexCoords( 0, Eigen::Vector2f( u1, v0 ) );
+    drawList.pushVertex( x1, y0, 0.0f );
+
+    drawList.commitPrimitive();
+}
+
+void HudMinimap::appendTracePoint() {
+    // FUN_006e4af0
+    if ( TracePoints.empty() || gpMngHud == nullptr ||
+         gpMngHud->pCarState == nullptr ) {
+        return;
+    }
+
+    const Eigen::Vector4f carPosition =
+        gpMngHud->pCarState->getBody()->WorldMatrix.row( 3 );
+    const Eigen::Vector2f sample( carPosition.x(), carPosition.z() );
+
+    if ( TraceCount == 0 ) {
+        TracePoints[TraceWrite] = sample;
+        TraceCount++;
+        return;
+    }
+
+    const Eigen::Vector2f &last = TracePoints[TraceWrite];
+    if ( ( sample - last ).squaredNorm() < TraceMinDistanceSq ) {
+        return;
+    }
+
+    TraceWrite = ( TraceWrite + 1 ) % kTraceCapacity;
+    if ( TraceRead == TraceWrite ) {
+        // Buffer full: drop the oldest sample.
+        TraceRead = ( TraceRead + 1 ) % kTraceCapacity;
+    } else {
+        TraceCount++;
+    }
+    TracePoints[TraceWrite] = sample;
+}
+
+void HudMinimap::drawTrace() {
+    // FUN_006e49c0
+    if ( gpMngHud == nullptr || !gpMngHud->bDisplayTrace || TraceCount < 2 ||
+         TracePoints.empty() ) {
+        return;
+    }
+
+    drawList.setActiveTransformMatrix( WorldToMap );
+    drawList.setActiveMaterial( nullptr );
+
+    const int32_t numVertices = TraceCount * 2 - 2;
+    if ( !drawList.beginPrimitive( PT_Line, numVertices ) ) {
+        return;
+    }
+
+    int32_t previous = TraceRead;
+    int32_t current = ( TraceRead + 1 ) % kTraceCapacity;
+    for ( int32_t segment = 0; segment < TraceCount - 1; segment++ ) {
+        const Eigen::Vector2f &a = TracePoints[previous];
+        const Eigen::Vector2f &b = TracePoints[current];
+
+        // A jump larger than the sampling distance means the trail was cut
+        // (teleport/reset): join it with a fully transparent segment.
+        const bool bGap =
+            ( TraceMinDistanceSq * kTraceGapFactor ) < ( b - a ).squaredNorm();
+        drawList.setDiffuse( 0, ColorRGBA( bGap ? 0x00ff0000u : 0xffff0000u ) );
+
+        drawList.pushVertex( a.x(), a.y(), 0.0f );
+        drawList.pushVertex( b.x(), b.y(), 0.0f );
+
+        previous = current;
+        current = ( current + 1 ) % kTraceCapacity;
+    }
+
+    drawList.commitPrimitive();
+}
+
+void HudMinimap::buildMapDrawList() {
+    // FUN_006eb3d0
+    if ( !bInstalled ) {
+        return;
+    }
+
+    drawList.reset();
+    drawList.setActiveTransformMatrix( WorldToMap );
+
+    StreamingManager *pStreaming =
+        ( gpWorld != nullptr ) ? gpWorld->getStreamingManager() : nullptr;
+
+    float worldWidth = 0.0f;
+    float worldHeight = 0.0f;
+    const bool bHasWorld = GetWorldExtent( worldWidth, worldHeight );
+
+    // Zoom levels 0/1 (and any transition that is not settled on level 3) show
+    // the whole-island tile underneath.
+    const bool bNeedsWorldTile = ( MapMode == 0 ) || ( MapMode == 1 ) ||
+                                 ( RotationBlend < 1.0f && MapMode != 3 );
+    if ( bNeedsWorldTile && bHasWorld && pStreaming != nullptr ) {
+        Material *pWorldMaterial = GetWorldMapMaterial();
+        if ( BindMapChunkBitmap( pMapMaterials[4], pWorldMaterial ) ) {
+            drawList.setActiveMaterial( pMapMaterials[4] );
+            drawList.setDiffuse( 0, ColorRGBA( 0xffffffffu ) );
+            drawMapQuad( 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, worldWidth,
+                         worldHeight );
+        }
+    }
+
+    if ( ( MapMode == 1 || MapMode == 2 || MapMode == 3 ) &&
+         pStreaming != nullptr && bHasWorld ) {
+        drawList.setActiveTransformMatrix( MapRotation );
+
+        AreaGrid &grid = pStreaming->areaGrid;
+        Area *pActiveArea = grid.pCurrentArea;
+        if ( pActiveArea == nullptr || pActiveArea->state != 1 ) {
+            return;
+        }
+
+        const int32_t areaSpanX =
+            (int32_t)( pStreaming->sectorManager.numSectors * kMapCellSize );
+        const int32_t areaSpanY =
+            (int32_t)( pStreaming->sectorManager.numSubSectors * kMapCellSize );
+
+        const float localX =
+            ( ViewCenter.x() -
+              static_cast<float>( pActiveArea->coords.posX * areaSpanX ) ) /
+            static_cast<float>( areaSpanX );
+        const float localY =
+            ( ViewCenter.y() -
+              static_cast<float>( pActiveArea->coords.posY * areaSpanY ) ) /
+            static_cast<float>( areaSpanY );
+
+        const int32_t stepX = ( localX < 0.5f ) ? -1 : 1;
+        const int32_t stepY = ( localY < 0.5f ) ? -1 : 1;
+
+        // Row-major over the 2x2 block
+        const int32_t x0 = std::min( pActiveArea->coords.posX,
+                                     pActiveArea->coords.posX + stepX );
+        const int32_t y0 = std::min( pActiveArea->coords.posY,
+                                     pActiveArea->coords.posY + stepY );
+        const GridPos2D cells[4] = {
+            {x0,     y0    },
+            {x0 + 1, y0    },
+            {x0,     y0 + 1},
+            {x0 + 1, y0 + 1},
+        };
+
+        const float viewWidth = ViewXMax - ViewXMin;
+        const float viewHeight = ViewYMax - ViewYMin;
+        if ( viewWidth <= 0.0f || viewHeight <= 0.0f ) {
+            return;
+        }
+        const float bleedX = 1.0f / CursorScaleX;
+        const float bleedY = 1.0f / CursorScaleY;
+
+        for ( int32_t tileIndex = 0; tileIndex < 4; tileIndex++ ) {
+            const GridPos2D &cell = cells[tileIndex];
+            if ( cell.posX < 0 || cell.posY < 0 ||
+                 cell.posX >= (int32_t)grid.numAreas ||
+                 cell.posY >= (int32_t)grid.numSubAreas ) {
+                continue;
+            }
+
+            Material *pAreaMaterial =
+                GetAreaMapMaterial( FindStreamedArea( grid, cell ) );
+            if ( !BindMapChunkBitmap( pMapMaterials[tileIndex],
+                                      pAreaMaterial ) ) {
+                continue;
+            }
+
+            const float tileX = static_cast<float>( cell.posX * areaSpanX );
+            const float tileY = static_cast<float>( cell.posY * areaSpanY );
+
+            drawList.setActiveMaterial( pMapMaterials[tileIndex] );
+            drawList.setDiffuse( 0, ColorRGBA( 0xffffffffu ) );
+            drawMapQuad(
+                0.0f, 0.0f, 1.0f, 1.0f, ( tileX - ViewXMin ) / viewWidth,
+                ( tileY - ViewYMin ) / viewHeight,
+                bleedX +
+                    ( tileX + static_cast<float>( areaSpanX ) - ViewXMin ) /
+                        viewWidth,
+                bleedY +
+                    ( tileY + static_cast<float>( areaSpanY ) - ViewYMin ) /
+                        viewHeight );
+        }
+    }
+
+    if ( MapMode == 3 ) {
+        OTDU_UNIMPLEMENTED; // TODO: ROAD NETWORK
+    }
+
+    drawTrace();
+
+    if ( pGps != nullptr ) {
+        OTDU_UNIMPLEMENTED; // TODO: GPS
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: AI/ONLINE
+
+    if ( gpTestDriveInstance != nullptr &&
+         gpTestDriveInstance->getActiveGameMode() == GM_FreeRide ) {
+        OTDU_UNIMPLEMENTED;
+    }
+}
+
+void HudMinimap::refreshLureRect() {
+    // FUN_006e7330
+    FlashClip lureClip;
+    if ( pPlayer == nullptr ||
+         !pPlayer->getClipPlayer( "HUD/minimap/mmap_lure", &lureClip ) ) {
+        return;
+    }
+
+    FlashRECT viewportRect;
+    lureClip.getPropertyViewport( eFlashProperty::FP_Viewport, viewportRect );
+
+    FlashRECT boundingBox;
+    lureClip.getBoundingBox( false, boundingBox );
+
+    CursorScaleX = ( boundingBox.Width - boundingBox.X ) * kTwipsToPixels;
+    CursorScaleY = ( boundingBox.Height - boundingBox.Y ) * kTwipsToPixels;
+
+    LureWidth = viewportRect.Width;
+    LureHeight = viewportRect.Height;
+
+    const float screenWidth = static_cast<float>( gpRender->getWidth() );
+    const float screenHeight = static_cast<float>( gpRender->getHeight() );
+
+    ViewportU =
+        std::min( screenWidth * viewportRect.Width * kHudMapTexelSize, 1.0f );
+    ViewportV =
+        std::min( screenHeight * viewportRect.Height * kHudMapTexelSize, 1.0f );
+
+    Viewport *pViewport =
+        gpRender->getRenderPass<eRenderPass::RP_HUDMap>().pViewport;
+    if ( pViewport != nullptr ) {
+        pViewport->Width = std::min( ViewportU + kHudMapTexelSize, 1.0f );
+        pViewport->Height = std::min( ViewportV + kHudMapTexelSize, 1.0f );
+    }
+}
+
+void HudMinimap::bindGpsTextureToPlayerCar() {
+    // FUN_006e74c0
+    CarState *pLocalCar = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pLocalCar == nullptr ) {
+        return;
+    }
+
+    VehicleBase *pVehicle = pLocalCar->getVehicleInstance();
+    if ( pVehicle == nullptr ) {
+        return;
+    }
+
+    const VehicleBase::eType type = pVehicle->getType();
+    if ( type != VehicleBase::eType::VBT_Car &&
+         type != VehicleBase::eType::VBT_Bike ) {
+        return;
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: VEHICLE
+    bGpsTextureBound = true;
+}
+
+void HudMinimap::LureDrawCallback( FlashRECT * /*pViewport*/,
+                                   float /*depth*/,
+                                   DrawList *pDrawList,
+                                   void *pUser,
+                                   FlashResource *pResource,
+                                   const char * /*pClipName*/ ) {
+    // FUN_006e7000
+    HudMinimap *pMinimap = (HudMinimap *)pUser;
+    if ( pMinimap == nullptr || pMinimap->pPlayer == nullptr ) {
+        return;
+    }
+
+    const uint32_t diffuse = ComputeGaugeFaceDiffuse( pMinimap->pPlayer );
+    if ( ( diffuse >> 24 ) == 0 ) {
+        return;
+    }
+
+    HUDMapResources &resources = gpMngResources->getHUDMapResources();
+    if ( !resources.isLoaded() ) {
+        return;
+    }
+
+    pDrawList->setActiveMaterial( resources.getMaterial() );
+    pDrawList->setDiffuse( 0, ColorRGBA( diffuse ) );
+
+    DrawGaugeQuad( 0.0f, 0.0f, pMinimap->ViewportU, pMinimap->ViewportV,
+                   pMinimap->LureX, pMinimap->LureY,
+                   pMinimap->LureX + pMinimap->LureWidth,
+                   pMinimap->LureY + pMinimap->LureHeight, pResource );
+
+    OTDU_UNIMPLEMENTED;
+}
+
+void HudMinimap::tick( float deltaTime ) {
+    // FUN_006eb990
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    RotationBlend += deltaTime * kMapModeBlendSpeed;
+
+    FlashClip lureClip;
+    if ( pPlayer->getClipPlayer( "HUD/minimap/mmap_lure", &lureClip ) ) {
+        bLureVisible = true;
+    } else {
+        if ( bLureCallbackRegistered ) {
+            gFlashCallbacksRegister.remove( "mmap_lure" );
+        }
+        bLureVisible = false;
+        bLureCallbackRegistered = false;
+    }
+
+    float cursorU = 0.0f;
+    float cursorV = 0.0f;
+    updateViewTransform( cursorU, cursorV );
+    cursorU = std::min( std::max( cursorU, 0.0f ), 1.0f );
+    cursorV = std::min( std::max( cursorV, 0.0f ), 1.0f );
+
+    if ( gpMngHud != nullptr && gpMngHud->pCarState != nullptr ) {
+        const Eigen::Vector4f carPosition =
+            gpMngHud->pCarState->getBody()->WorldMatrix.row( 3 );
+        for ( int32_t markerIndex = 0;
+              markerIndex < MngHud::kMaxObjectiveMarkers; markerIndex++ ) {
+            HudObjectiveMarker &marker =
+                gpMngHud->objectiveMarkers[markerIndex];
+            if ( marker.Type == nullptr ||
+                 strncmp( marker.Type, "finish", 7 ) != 0 ) {
+                continue;
+            }
+            if ( ( marker.Position - carPosition ).norm() >=
+                     kFinishMarkerRadius ||
+                 gpTestDriveInstance == nullptr ||
+                 gpTestDriveInstance->getActiveGameMode() != GM_FreeRide ) {
+                continue;
+            }
+
+            marker.Type = "";
+
+            OTDU_UNIMPLEMENTED; // TODO: SCENARIC
+        }
+    }
+
+    if ( bLureVisible ) {
+        FlashRECT lureRect;
+        lureClip.getPropertyViewport( eFlashProperty::FP_Viewport, lureRect );
+        LureX = lureRect.X;
+        LureY = lureRect.Y;
+
+        if ( !bLureCallbackRegistered ) {
+            refreshLureRect();
+            FlashCallbacksRegister::Callback_t lureCb =
+                &HudMinimap::LureDrawCallback;
+            gFlashCallbacksRegister.add( "mmap_lure", lureCb, this );
+            bLureCallbackRegistered = true;
+            bindGpsTextureToPlayerCar();
+        }
+
+        char pCursorPath[140];
+        snprintf( pCursorPath, sizeof( pCursorPath ), "%s/cursor", pClipPath );
+
+        FlashClip cursorClip;
+        if ( pPlayer->getClipPlayer( pCursorPath, &cursorClip ) ) {
+            cursorClip.setProperty( eFlashProperty::FP_X,
+                                    CursorScaleX * cursorU );
+            cursorClip.setProperty( eFlashProperty::FP_Y,
+                                    CursorScaleY * cursorV );
+        }
+
+        LogoTimer += deltaTime;
+        OTDU_UNIMPLEMENTED;
+    }
+
+    if ( !bGpsTextureBound ) {
+        bindGpsTextureToPlayerCar();
+    }
+
+    appendTracePoint();
+    buildMapDrawList();
 }
 
 HudGaugesBank::HudGaugesBank() {
@@ -403,7 +1173,6 @@ void HudGaugesBank::loadContent() {
         }
     }
 
-    // Register the material set into GSFlash collection
     if ( b2DMInitialized ) {
         if ( gpFlash != nullptr ) {
             gpFlash->getCollection2D().register2DM( &render2DM );
@@ -501,7 +1270,7 @@ MngHud::MngHud()
       compassAngle( 0.0f ),
       minimapHeading( 0.0f ),
       bGPSRotation( false ),
-      bUnknown3261( false ),
+      bDisplayTrace( false ),
       bGaugeClipCallbackB( false ),
       bGaugeClipCallbackA( false ),
       gaugesState( 0 ),
@@ -521,7 +1290,7 @@ MngHud::MngHud()
     needleMaterialActive = FlashMaterial{};
 
     if ( gpMngHud == nullptr ) {
-        bUnknown3261 = true;
+        bDisplayTrace = true;
         OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
         bGPSRotation = true;
         gpMngHud = this;
@@ -1582,11 +2351,20 @@ void MngHud::showCustomGauges() {
     const bool bHasCompteurInt =
         pGaugesPlayer->getClipPlayer( "/hud/compteur_int", &compteurIntClip );
 
+    bool bIsBike = false;
+    if ( pCarState != nullptr ) {
+        VehicleBase *pVehicleInstance = pCarState->getVehicleInstance();
+        if ( pVehicleInstance != nullptr ) {
+            bIsBike =
+                pVehicleInstance->getType() == VehicleBase::eType::VBT_Bike;
+        }
+    }
+
     CameraGame *pActiveCamera = gpCamera->getActiveCamera();
     const uint32_t showFlags =
         ( pActiveCamera != nullptr ) ? pActiveCamera->getFlags() : 0u;
-    const bool bCockpit =
-        ( ( showFlags >> 0x12 ) & 1u ) || ( ( showFlags >> 0x13 ) & 1u );
+    const bool bCockpit = ( ( showFlags >> 0x12 ) & 1u ) ||
+                          ( bIsBike && ( ( showFlags >> 0x13 ) & 1u ) );
     const bool bAltExterior = ( ( showFlags >> 0x10 ) & 1u ) != 0u;
 
     installGaugeFaceCallbacks( bAltExterior );
@@ -1621,6 +2399,11 @@ void MngHud::showCustomGauges() {
     if ( bHasCompteurExt ) {
         compteurExtClip.setProperty( eFlashProperty::FP_Visible,
                                      bCompteurExtVis );
+    }
+
+    FlashClip minimapClip;
+    if ( pHudPlayer->getClipPlayer( "HUD/minimap", &minimapClip ) ) {
+        minimapClip.setProperty( eFlashProperty::FP_Visible, bDisplayGauges );
     }
 }
 

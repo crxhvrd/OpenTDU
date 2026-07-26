@@ -156,7 +156,12 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         body.Omega = pPhysicsVehicle->getEngineAngularVelocity();
         body.Gears = pPhysicsVehicle->getCurrentGear();
         body.GearState = pPhysicsVehicle->getCurrentGear() + 1;
-        body.bIsBraking = pPhysicsVehicle->getDriverBrake() > 0.1f;
+        const PhysicsVehicle::DrivingGearbox gearbox =
+            pPhysicsVehicle->getDrivingGearbox();
+        const bool bStopLampsArmed =
+            !gearbox.bAutomatic || pPhysicsVehicle->getAutoReverseState() != 0;
+        body.bIsBraking =
+            bStopLampsArmed && pPhysicsVehicle->getInputBrake() > 0.1f;
         body.bIsReversing = pPhysicsVehicle->getCurrentGear() < 0;
 
         const uint32_t physNumWheels =

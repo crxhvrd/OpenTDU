@@ -1,5 +1,7 @@
 #pragma once
 
+#include "shared.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -10,10 +12,10 @@
 #include "game/mng_base.h"
 #include "game/mng_gps.h"
 #include "render/2dm.h"
+#include "render/draw_list.h"
 
 class CarState;
 class FlashPlayer;
-class DrawList;
 class Render2DB;
 class FlashResource;
 struct FlashRECT;
@@ -101,6 +103,72 @@ struct HudMessageLog {
 
 class HudMinimap {
 public:
+    static constexpr int32_t kNumMapChunks = 5;
+    static constexpr int32_t kTraceCapacity = 300;
+
+public:
+    // View rect for one zoom level, in absolute world units + map UV.
+    struct MapViewRect {
+        float UMin = 0.0f;
+        float VMin = 0.0f;
+        float UMax = 1.0f;
+        float VMax = 1.0f;
+        float CursorU = 0.0f;
+        float CursorV = 0.0f;
+        float XMin = 0.0f;
+        float XMax = 0.0f;
+        float YMin = 0.0f;
+        float YMax = 0.0f;
+    };
+
+public:
+    FlashPlayer *pPlayer = nullptr;
+    char pClipPath[64] = { '\0' };
+    MngGPS *pGps = nullptr;
+    int32_t MapMode = 3;
+    int32_t MapModeTarget = 3;
+    float RotationBlend = 1.0f;
+    float LureX = 0.0f;
+    float LureY = 0.0f;
+    float LureWidth = 1.0f;
+    float LureHeight = 1.0f;
+    float CursorScaleX = 256.0f;
+    float CursorScaleY = 256.0f;
+    float ViewportU = 1.0f;
+    float ViewportV = 1.0f;
+    float ViewXMin = 0.0f;
+    float ViewXMax = 0.0f;
+    float ViewYMin = 0.0f;
+    float ViewYMax = 0.0f;
+    float ViewRadius = 0.0f;
+    float ViewRadiusSq = 0.0f;
+    Eigen::Vector4f ViewCenter = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
+    MapViewRect BlendedUV;
+    float LogoTimer = 0.0f;
+    bool bLogoTick = false;
+
+    float TraceMinDistanceSq = 256.0f; // DAT_00f419c0
+    std::vector<Eigen::Vector2f> TracePoints;
+    int32_t TraceCount = 0;
+    int32_t TraceRead = 0;
+    int32_t TraceWrite = 0;
+
+    bool bLureCallbackRegistered = false;
+    bool bLureVisible = false;
+    bool bGpsTextureBound = false;
+
+    Matrix4x4f_t WorldToMap = Matrix4x4f_t::Identity();
+    Matrix4x4f_t MapRotation = Matrix4x4f_t::Identity();
+
+    Render2DM mapRender2DMs[kNumMapChunks];
+    void *pMapRender2DMs[kNumMapChunks] = {};
+    Material *pMapMaterials[kNumMapChunks] = {};
+
+    bool bInstalled = false;
+    DrawList *pDrawList = nullptr;
+    DrawList drawList;
+
+public:
     HudMinimap();
     virtual ~HudMinimap();
 
@@ -111,15 +179,34 @@ public:
     virtual bool updateLure();
 
 public:
-    FlashPlayer *pPlayer = nullptr;
-    char pClipPath[64] = { '\0' };
-    MngGPS *pGps = nullptr;
-    int32_t MapMode = 3;
-    int32_t MapModeTarget = 3;
-    float RotationBlend = 1.0f;
-    bool bLureVisible = false;
-    bool bInstalled = false;
-    DrawList *pDrawList = nullptr;
+    static void LureDrawCallback( FlashRECT *pViewport,
+                                  float depth,
+                                  DrawList *pDrawList,
+                                  void *pUser,
+                                  FlashResource *pResource,
+                                  const char *pClipName );
+
+private:
+    void refreshLureRect();
+    void bindGpsTextureToPlayerCar();
+    void appendTracePoint();
+    void drawTrace();
+    void buildMapDrawList();
+    void updateViewTransform( float &cursorU, float &cursorV );
+    void buildViewMatrix( Matrix4x4f_t &out, bool bWorldSpace );
+    void drawMapQuad( float u0,
+                      float v0,
+                      float u1,
+                      float v1,
+                      float x0,
+                      float y0,
+                      float x1,
+                      float y1 );
+
+private:
+    static void ComputeMapViewRect( int32_t mapMode, MapViewRect &out );
+    static void GetMapModeHalfExtent( int32_t mapMode, float &x, float &y );
+    static bool GetWorldExtent( float &width, float &height );
 };
 
 class HudGaugesBank : public Bank {
@@ -171,6 +258,7 @@ struct HudObjectiveMarker {
 
 class MngHud : public Manager {
     friend class HudGaugesBank;
+    friend class HudMinimap;
 
 public:
     using MovieFilterCallback_t = bool ( * )( const char *pMovieName );
@@ -264,7 +352,7 @@ protected:
     float compassAngle;
     float minimapHeading;
     bool bGPSRotation;
-    bool bUnknown3261;
+    bool bDisplayTrace;       // gates the minimap breadcrumb trail
     bool bGaugeClipCallbackB; // interior dial-face callbacks registered
     bool bGaugeClipCallbackA; // exterior dial-face callbacks registered
     HudGaugeFace rpmFace;
