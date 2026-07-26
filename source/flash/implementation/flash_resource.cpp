@@ -1407,7 +1407,8 @@ void FlashResource::DrawThinLine( int32_t morphFactor,
                     pFlash = gpActiveFlashResource;
                 }
                 if ( flashConfig.bWireframe != 2 ) {
-                    pUnknown->pDrawList->setDiffuse( 0, color );
+                    pUnknown->pDrawList->setDiffuse(
+                        0, PackFlashDiffuse( color ) );
                 }
             }
 
@@ -1503,7 +1504,7 @@ void FlashResource::DrawThinLine( int32_t morphFactor,
     } else {
         FUN_0099efa0( param_8 + 3, vertexCount );
         if ( flashConfig.bWireframe != 2 ) {
-            pUnknown->pDrawList->setDiffuse( 0, color );
+            pUnknown->pDrawList->setDiffuse( 0, PackFlashDiffuse( color ) );
         }
         pFlash = gpActiveFlashResource;
         if ( ( pTransform->Flags >> 1 & 1 ) == 0 ) {
@@ -1610,7 +1611,7 @@ void FlashResource::FUN_0044e4e0( int16_t *param_2,
             ColorRGBA color( 0xffffffffu );
             color = FUN_00442940( &param_6->Transform, color );
             if ( flashConfig.bWireframe != 2 ) {
-                pUnknown->pDrawList->setDiffuse( 0, color );
+                pUnknown->pDrawList->setDiffuse( 0, PackFlashDiffuse( color ) );
             }
         }
 

@@ -475,7 +475,8 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         arbitrateAutomaticGearbox( deltaTime, throttle, brake, simThrottle,
                                    simBrake );
     }
-    pPlayerPhysicsVehicle->setInput( simThrottle, simBrake, steer, brake );
+    pPlayerPhysicsVehicle->setInput( simThrottle, simBrake, steer );
+    pPlayerPhysicsVehicle->setAutoReverseState( autoGearboxState );
 
     if ( pCfg != nullptr ) {
         pBody->bHeadlightsOn =

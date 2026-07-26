@@ -122,6 +122,8 @@ struct FlashClip {
     void getPropertyViewport( const eFlashProperty param_3,
                               FlashRECT &param_2 );
 
+    void getBoundingBox( bool param_1, FlashRECT &param_2 );
+
     int32_t goToLabelAndPlay( const char *param_1, bool param_2 );
 
     void setVariable( const char *pName, const int32_t value );

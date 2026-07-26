@@ -954,14 +954,14 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
 
     // Load font and font bitmap from dictionary (or Unicode font override)
     if ( bUseUnicodeFont ) {
-        // TODO: Revisit the unicode-font fallback. It located the DefineFont tag
-        // via getActionList()->pCurrentAction, which overlaid a FlashAction on the
-        // raw .vff buffer — offset 0 there now collides with the tag header (the
-        // FlashTag/FlashAction fields are native, no longer x86Pointer), so that
-        // read yields a stale/garbage pointer. Until the DefineFont tag is located
-        // natively from the .vff, leave pFont null so the block below falls back
-        // to the default dictionary font instead of dereferencing garbage. This
-        // unicode path is currently untested.
+        // TODO: Revisit the unicode-font fallback. It located the DefineFont
+        // tag via getActionList()->pCurrentAction, which overlaid a FlashAction
+        // on the raw .vff buffer — offset 0 there now collides with the tag
+        // header (the FlashTag/FlashAction fields are native, no longer
+        // x86Pointer), so that read yields a stale/garbage pointer. Until the
+        // DefineFont tag is located natively from the .vff, leave pFont null so
+        // the block below falls back to the default dictionary font instead of
+        // dereferencing garbage. This unicode path is currently untested.
         pFont = nullptr;
         pFontBitmap =
             (FlashTagDefineBitsLosslessData *)pFlash->getUnicodeFont();
@@ -1056,7 +1056,8 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
     }
 
     if ( pFlash->getDrawMode() != 2 )
-        pFlash->getState()->pDrawList->setDiffuse( 0, textColor );
+        pFlash->getState()->pDrawList->setDiffuse(
+            0, PackFlashDiffuse( textColor ) );
 
     fontAscentF = (float)fontAscent;
     fontBaseLineSpacing = spacingBuf;
@@ -1199,7 +1200,8 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
                                    charSpacingAdj ) +
                           xCursor;
                 if ( pFlash->getDrawMode() != 2 )
-                    pFlash->getState()->pDrawList->setDiffuse( 0, textColor );
+                    pFlash->getState()->pDrawList->setDiffuse(
+                        0, PackFlashDiffuse( textColor ) );
             } else {
                 uint32_t glyphHeader = *pGlyphData;
                 while ( glyphHeader == 8 ) {
@@ -1485,9 +1487,9 @@ void FlashSprite::retrieveRectForID( int32_t param_1, FlashRECT *param_2 ) {
         FlashRECT local_44;
         getBoundingBox( false, &local_44 );
         param_2->X = local_44.X * 0.05f;
-        param_2->Y = local_44.Width * 0.05f;
-        param_2->Width = ( local_44.Y - local_44.X ) * 0.05f;
-        param_2->Height = ( local_44.Height - local_44.Width ) * 0.05f;
+        param_2->Y = local_44.Y * 0.05f;
+        param_2->Width = ( local_44.Width - local_44.X ) * 0.05f;
+        param_2->Height = ( local_44.Height - local_44.Y ) * 0.05f;
     } else {
         OTDU_UNIMPLEMENTED;
     }
@@ -1756,8 +1758,8 @@ bool FlashSprite::pushToStack( char *param_2, FlashStack *param_3 ) {
     }
 
     if ( local_4 != nullptr ) {
-        bVar3 = displayList.pVariables->registerVariable( param_3, local_4,
-                                                          pFVar2->getInstanceID() );
+        bVar3 = displayList.pVariables->registerVariable(
+            param_3, local_4, pFVar2->getInstanceID() );
         return bVar3;
     }
 
@@ -2011,8 +2013,8 @@ void FlashSprite::getBoundingBox( bool param_1_00, FlashRECT *param_3 ) {
 
     if ( !param_4 ) {
         param_3->X = instanceTransform.ScalarsFloat[4];
-        param_3->Y = instanceTransform.ScalarsFloat[4];
-        param_3->Width = instanceTransform.ScalarsFloat[5];
+        param_3->Width = instanceTransform.ScalarsFloat[4];
+        param_3->Y = instanceTransform.ScalarsFloat[5];
         param_3->Height = instanceTransform.ScalarsFloat[5];
     }
 }
@@ -2121,8 +2123,7 @@ void FlashSprite::FUN_004473b0( bool param_1, float param_3 ) {
                     goto LAB_004474b8;
                 iVar1 = pFVar2->pRenderResource->getType();
                 if ( iVar1 != 0 ) {
-                    if ( ( pFVar2->pSprite != nullptr ) &&
-                         ( iVar1 == 1 ) ) {
+                    if ( ( pFVar2->pSprite != nullptr ) && ( iVar1 == 1 ) ) {
                         if ( param_1 ) {
                             pFVar2->pSprite->FUN_00450090();
                         } else {
@@ -2413,8 +2414,10 @@ void FlashSprite::draw() {
                         FlashResourceHeader *pHeaderFlash =
                             (FlashResourceHeader *)
                                 gpActiveFlashResource->pResourceFilestream;
-                        const int32_t iXMax = (int32_t)pHeaderFlash->FrameSize.XMax / 0x14;
-                        const int32_t iYMax = (int32_t)pHeaderFlash->FrameSize.YMax / 0x14;
+                        const int32_t iXMax =
+                            (int32_t)pHeaderFlash->FrameSize.XMax / 0x14;
+                        const int32_t iYMax =
+                            (int32_t)pHeaderFlash->FrameSize.YMax / 0x14;
                         if ( ( ( pFVar2->boundingBox ).X <=
                                ( pFVar2->boundingBox ).Width ) &&
                              ( ( ( ( ( pfVar9 = &( pFVar2->boundingBox ).Width,
@@ -2551,7 +2554,7 @@ void FlashSprite::FUN_00450090() {
     } else {
         ColorRGBA color;
         color.Color = ( pState == (FlashDisplayListEntry *)0x1 ) ? 0x40ff0000u
-                                                                  : 0x4000ff00u;
+                                                                 : 0x4000ff00u;
         pFVar4->setColor( color );
     }
 
@@ -2650,6 +2653,16 @@ void FlashClip::getPropertyViewport( const eFlashProperty param_3,
     gpActiveFlashResource = pParent;
     gpPreviousActiveFlashResource = gpActiveFlashResource;
     pSprite->retrieveRectForID( (int32_t)param_3, &param_2 );
+    gpPreviousActiveFlashResource = pFVar1;
+    gpActiveFlashResource = pFVar1;
+}
+
+void FlashClip::getBoundingBox( bool param_1, FlashRECT &param_2 ) {
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    FlashResource *pFVar1 = gpActiveFlashResource;
+    gpActiveFlashResource = pParent;
+    gpPreviousActiveFlashResource = gpActiveFlashResource;
+    pSprite->getBoundingBox( param_1, &param_2 );
     gpPreviousActiveFlashResource = pFVar1;
     gpActiveFlashResource = pFVar1;
 }

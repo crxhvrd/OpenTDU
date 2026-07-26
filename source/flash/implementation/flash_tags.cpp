@@ -637,7 +637,8 @@ void FlashTagDefineTextFuncTable::Draw( FlashTag *pThis,
                 }
 
                 if ( pFVar17->getDrawMode() != 2 ) {
-                    pFVar17->getState()->pDrawList->setDiffuse( 0, textColor );
+                    pFVar17->getState()->pDrawList->setDiffuse(
+                        0, PackFlashDiffuse( textColor ) );
                 }
             }
             break;

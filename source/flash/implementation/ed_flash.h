@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/color.h"
 #include "core/ed_base.h"
 
 class FlashPlayer;
@@ -15,6 +16,12 @@ struct FlashRECT {
     float Width = 0.0f;
     float Height = 0.0f;
 };
+
+inline uint32_t PackFlashDiffuse( const ColorRGBA &color ) {
+    // Repack flash color for B8G8R8A8_UNORM streams.
+    return ( (uint32_t)color.A << 24 ) | ( (uint32_t)color.R << 16 ) |
+           ( (uint32_t)color.G << 8 ) | (uint32_t)color.B;
+}
 
 template <typename T> struct FlashResourcePool {
     void initialize( uint32_t param_3 ) {
