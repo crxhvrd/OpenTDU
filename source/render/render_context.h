@@ -256,7 +256,7 @@ private:
     ShaderHashTable shaderHashTable;
 
 private:
-    void FUN_005146b0();
+    void FUN_005146b0( Instance *param_2 );
     void FUN_00602bb0( uint32_t param_2, uint32_t param_3 );
     void FUN_005f5590();
     void FUN_00516b00();

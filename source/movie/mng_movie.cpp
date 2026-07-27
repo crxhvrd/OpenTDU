@@ -281,27 +281,27 @@ bool MngMovie::allocate2DMs( BinkFrameBuffersInfos &param_2 ) {
         peVar7->pLayerTextures[0].Hashcode = 0x0000000100000000;
         peVar7->pLayerTextures[0].pTextureSection =
             render2DBs[local_8 * kNumPlanes + 0].getBitmapSection();
-        peVar7->pLayerTextures[0].SamplerAddress[0] = eTextureAddress::TA_Clamp;
-        peVar7->pLayerTextures[0].SamplerAddress[1] = eTextureAddress::TA_Clamp;
-        peVar7->pLayerTextures[0].SamplerAddress[2] = eTextureAddress::TA_Clamp;
+        peVar7->pLayerTextures[0].SamplerAddress[0] = MTM_Clamp;
+        peVar7->pLayerTextures[0].SamplerAddress[1] = MTM_Clamp;
+        peVar7->pLayerTextures[0].SamplerAddress[2] = MTM_Clamp;
         peVar7->pLayerTextures[0].MipFilter = eTextureFiltering::TF_Point;
 
         // cR Tex
         peVar7->pLayerTextures[1].Hashcode = 0x0000000100000000;
         peVar7->pLayerTextures[1].pTextureSection =
             render2DBs[local_8 * kNumPlanes + 2].getBitmapSection();
-        peVar7->pLayerTextures[1].SamplerAddress[0] = eTextureAddress::TA_Clamp;
-        peVar7->pLayerTextures[1].SamplerAddress[1] = eTextureAddress::TA_Clamp;
-        peVar7->pLayerTextures[1].SamplerAddress[2] = eTextureAddress::TA_Clamp;
+        peVar7->pLayerTextures[1].SamplerAddress[0] = MTM_Clamp;
+        peVar7->pLayerTextures[1].SamplerAddress[1] = MTM_Clamp;
+        peVar7->pLayerTextures[1].SamplerAddress[2] = MTM_Clamp;
         peVar7->pLayerTextures[1].MipFilter = eTextureFiltering::TF_Point;
 
         // cB Tex
         peVar7->pLayerTextures[2].Hashcode = 0x0000000100000000;
         peVar7->pLayerTextures[2].pTextureSection =
             render2DBs[local_8 * kNumPlanes + 3].getBitmapSection();
-        peVar7->pLayerTextures[2].SamplerAddress[0] = eTextureAddress::TA_Clamp;
-        peVar7->pLayerTextures[2].SamplerAddress[1] = eTextureAddress::TA_Clamp;
-        peVar7->pLayerTextures[2].SamplerAddress[2] = eTextureAddress::TA_Clamp;
+        peVar7->pLayerTextures[2].SamplerAddress[0] = MTM_Clamp;
+        peVar7->pLayerTextures[2].SamplerAddress[1] = MTM_Clamp;
+        peVar7->pLayerTextures[2].SamplerAddress[2] = MTM_Clamp;
         peVar7->pLayerTextures[2].MipFilter = eTextureFiltering::TF_Point;
 
         // Alpha Tex
@@ -309,12 +309,9 @@ bool MngMovie::allocate2DMs( BinkFrameBuffersInfos &param_2 ) {
             peVar7->pLayerTextures[3].Hashcode = 0x0000000100000000;
             peVar7->pLayerTextures[3].pTextureSection =
                 render2DBs[local_8 * kNumPlanes + 1].getBitmapSection();
-            peVar7->pLayerTextures[3].SamplerAddress[0] =
-                eTextureAddress::TA_Clamp;
-            peVar7->pLayerTextures[3].SamplerAddress[1] =
-                eTextureAddress::TA_Clamp;
-            peVar7->pLayerTextures[3].SamplerAddress[2] =
-                eTextureAddress::TA_Clamp;
+            peVar7->pLayerTextures[3].SamplerAddress[0] = MTM_Clamp;
+            peVar7->pLayerTextures[3].SamplerAddress[1] = MTM_Clamp;
+            peVar7->pLayerTextures[3].SamplerAddress[2] = MTM_Clamp;
             peVar7->pLayerTextures[3].MipFilter = eTextureFiltering::TF_Point;
         }
 

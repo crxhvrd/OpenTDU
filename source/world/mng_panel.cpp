@@ -168,8 +168,8 @@ bool MngPanel::initResources() {
     MaterialLayer *pLayer = pParam->getLayer( 0 );
     pLayer->NumTextures = 1;
     pLayer->pLayerTextures[0].pTextureSection = symbol2DB.getBitmapSection();
-    pLayer->pLayerTextures[0].SamplerAddress[0] = (eTextureAddress)2;
-    pLayer->pLayerTextures[0].SamplerAddress[1] = (eTextureAddress)2;
+    pLayer->pLayerTextures[0].SamplerAddress[0] = (eMaterialTileMode)2;
+    pLayer->pLayerTextures[0].SamplerAddress[1] = (eMaterialTileMode)2;
     pLayer->pLayerTextures[0].MinMagFilter = (eTextureFiltering)2;
     pLayer->pLayerTextures[0].MipFilter = (eTextureFiltering)2;
 

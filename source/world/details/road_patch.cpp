@@ -221,9 +221,10 @@ void RoadPatch::installSectorPatch( Sector *pSector, void *pPatchResource ) {
         MaterialLayer *pLayer = pParam->getLayer( 0 );
         if ( pLayer != nullptr && pLayer->NumTextures > 2 ) {
             MaterialLayerTexture &tex = pLayer->pLayerTextures[2];
+            // NOTE: unlike the sector objects group (FUN_006fe120), the
+            // original only rebinds the bitmap here and keeps whatever tile
+            // mode the .2DM authored.
             tex.pTextureSection = pShadowSection;
-            tex.SamplerAddress[0] = TA_Mirror;
-            tex.SamplerAddress[1] = TA_Mirror;
         }
     }
 }

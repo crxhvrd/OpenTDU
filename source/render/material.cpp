@@ -961,7 +961,8 @@ void Material::bindParameter( MaterialShaderParameterArray *param_1 ) {
             }
 
             gStateCache.bindSamplerState(
-                i, layerTex.SamplerAddress[0], layerTex.SamplerAddress[1],
+                i, ToTextureAddress( layerTex.SamplerAddress[0] ),
+                ToTextureAddress( layerTex.SamplerAddress[1] ),
                 layerTex.MinMagFilter, layerTex.MipFilter );
         }
     }
@@ -982,8 +983,8 @@ inline static bool BindTerrainLayer( MaterialTerrainParameter *param_1,
                 eTextureAddress addressV = param_3;
 
                 if ( param_3 == TA_Layer ) {
-                    addressU = puVar2->SamplerAddress[0];
-                    addressV = puVar2->SamplerAddress[1];
+                    addressU = ToTextureAddress( puVar2->SamplerAddress[0] );
+                    addressV = ToTextureAddress( puVar2->SamplerAddress[1] );
                 }
 
                 gStateCache.bindSamplerState( index, addressU, addressV,
@@ -1017,19 +1018,21 @@ void Material::bindTerrainParameter( MaterialTerrainParameter *param_1 ) {
         UploadConstant( &pActiveConstantsMap->FloatVS, 0x34c, local_20, 1 );
     }
 
+    // NOTE: the original passes raw tile bytes here (2 and 1); byte 1 resolves
+    // to Wrap through ToTextureAddress, NOT to Mirror.
     uint32_t uVar1 = param_1->NumLayers;
     if ( uVar1 == 2 ) {
         BindTerrainLayer( param_1, 0, TA_Clamp );
-        BindTerrainLayer( param_1, 1, TA_Mirror );
+        BindTerrainLayer( param_1, 1, TA_Wrap );
         return;
     }
 
     BindTerrainLayer( param_1, 0, TA_Clamp );
     BindTerrainLayer( param_1, 1, TA_Clamp );
-    BindTerrainLayer( param_1, 2, TA_Mirror );
+    BindTerrainLayer( param_1, 2, TA_Wrap );
     BindTerrainLayer( param_1, 3, TA_Clamp );
-    BindTerrainLayer( param_1, 4, TA_Mirror );
-    BindTerrainLayer( param_1, 5, TA_Mirror );
+    BindTerrainLayer( param_1, 4, TA_Wrap );
+    BindTerrainLayer( param_1, 5, TA_Wrap );
 }
 
 uint16_t Material::getOTNumber() {

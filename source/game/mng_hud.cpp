@@ -430,8 +430,8 @@ void HudMinimap::initialize() {
 
         MaterialLayer *pLayer = pParameter->getLayer( 0 );
         pLayer->pLayerTextures[0].Hashcode = 1;
-        pLayer->pLayerTextures[0].SamplerAddress[0] = TA_Clamp;
-        pLayer->pLayerTextures[0].SamplerAddress[1] = TA_Clamp;
+        pLayer->pLayerTextures[0].SamplerAddress[0] = MTM_Clamp;
+        pLayer->pLayerTextures[0].SamplerAddress[1] = MTM_Clamp;
 
         pMaterial->AlphaTest = (eComparisonFunction)0;
         pMaterial->AlphaRef = 0xfa;
@@ -1240,9 +1240,9 @@ void HudGaugesBank::clampGaugeMaterials() {
         }
 
         MaterialLayerTexture &texture = pLayer->pLayerTextures[0];
-        texture.SamplerAddress[0] = TA_Clamp;
-        texture.SamplerAddress[1] = TA_Clamp;
-        texture.SamplerAddress[2] = TA_Clamp;
+        texture.SamplerAddress[0] = MTM_Clamp;
+        texture.SamplerAddress[1] = MTM_Clamp;
+        texture.SamplerAddress[2] = MTM_Clamp;
     }
 }
 

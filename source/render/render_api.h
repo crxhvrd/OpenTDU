@@ -319,6 +319,24 @@ enum eTextureAddress : uint8_t {
     TA_InheritFromCache = 255 // Use previously set state from StateCache
 };
 
+// Raw tile_u/tile_v byte as stored in a .2DM layer texture. This is NOT an
+// eTextureAddress! Always use ToTextureAddress() to get the right mapping.
+enum eMaterialTileMode : uint8_t {
+    MTM_Wrap = 0,
+    MTM_WrapAlt,
+    MTM_Clamp,
+    MTM_Mirror,
+    MTM_Border,
+    MTM_Count
+};
+
+inline eTextureAddress ToTextureAddress( const eMaterialTileMode param_1 ) {
+    // FUN_00601c20
+    static constexpr eTextureAddress kTAddress[MTM_Count] = {
+        TA_Wrap, TA_Wrap, TA_Clamp, TA_Mirror, TA_Border };
+    return ( param_1 < MTM_Count ) ? kTAddress[param_1] : TA_Wrap;
+}
+
 enum eTextureFiltering : uint8_t {
     TF_None = 0,
     TF_Point,

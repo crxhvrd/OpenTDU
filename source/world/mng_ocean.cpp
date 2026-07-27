@@ -372,8 +372,8 @@ bool MngOcean::loadResources() {
                                ->getBound2DB();
     pNMapLayer->pLayerTextures[0].pTextureSection =
         pNoise2DB->getBitmapSection();
-    pNMapLayer->pLayerTextures[0].SamplerAddress[0] = TA_Wrap;
-    pNMapLayer->pLayerTextures[0].SamplerAddress[1] = TA_Wrap;
+    pNMapLayer->pLayerTextures[0].SamplerAddress[0] = MTM_Wrap;
+    pNMapLayer->pLayerTextures[0].SamplerAddress[1] = MTM_Wrap;
     pNMapLayer->pLayerTextures[0].MinMagFilter = (eTextureFiltering)1;
     pNMapLayer->pLayerTextures[0].MipFilter = (eTextureFiltering)1;
 
@@ -416,8 +416,8 @@ bool MngOcean::loadResources() {
     pMainLayer->pLayerTextures[0].Hashcode = 1;
     pMainLayer->pLayerTextures[0].pTextureSection =
         waterResources.getReflection2DB().getBitmapSection();
-    pMainLayer->pLayerTextures[0].SamplerAddress[0] = (eTextureAddress)2;
-    pMainLayer->pLayerTextures[0].SamplerAddress[1] = (eTextureAddress)2;
+    pMainLayer->pLayerTextures[0].SamplerAddress[0] = (eMaterialTileMode)2;
+    pMainLayer->pLayerTextures[0].SamplerAddress[1] = (eMaterialTileMode)2;
     pMainLayer->pLayerTextures[0].MinMagFilter = (eTextureFiltering)2;
 
     pMainLayer->pLayerTextures[1].Hashcode = 2;
@@ -426,16 +426,16 @@ bool MngOcean::loadResources() {
                               ->getBound2DB();
     pMainLayer->pLayerTextures[1].pTextureSection =
         pNMap2DB->getBitmapSection();
-    pMainLayer->pLayerTextures[1].SamplerAddress[0] = TA_Wrap;
-    pMainLayer->pLayerTextures[1].SamplerAddress[1] = TA_Wrap;
+    pMainLayer->pLayerTextures[1].SamplerAddress[0] = MTM_Wrap;
+    pMainLayer->pLayerTextures[1].SamplerAddress[1] = MTM_Wrap;
     pMainLayer->pLayerTextures[1].MinMagFilter = (eTextureFiltering)2;
     pMainLayer->pLayerTextures[1].MipFilter = (eTextureFiltering)2;
 
     pMainLayer->pLayerTextures[2].Hashcode = 3;
     pMainLayer->pLayerTextures[2].pTextureSection =
         waterResources.getDetailMap2DB()->getBitmapSection();
-    pMainLayer->pLayerTextures[2].SamplerAddress[0] = (eTextureAddress)2;
-    pMainLayer->pLayerTextures[2].SamplerAddress[1] = (eTextureAddress)2;
+    pMainLayer->pLayerTextures[2].SamplerAddress[0] = (eMaterialTileMode)2;
+    pMainLayer->pLayerTextures[2].SamplerAddress[1] = (eMaterialTileMode)2;
     pMainLayer->pLayerTextures[2].MinMagFilter = (eTextureFiltering)2;
 
     // { Type, Format, Size, bBindToVS }
@@ -656,8 +656,8 @@ bool MngOcean::setupRiverMaterial() {
         waterResources.getReflection2DB().getBitmapSection();
     pLayer->pLayerTextures[3].MinMagFilter = (eTextureFiltering)2;
     pLayer->pLayerTextures[3].MipFilter = (eTextureFiltering)2;
-    pLayer->pLayerTextures[3].SamplerAddress[0] = (eTextureAddress)2;
-    pLayer->pLayerTextures[3].SamplerAddress[1] = (eTextureAddress)2;
+    pLayer->pLayerTextures[3].SamplerAddress[0] = (eMaterialTileMode)2;
+    pLayer->pLayerTextures[3].SamplerAddress[1] = (eMaterialTileMode)2;
 
     pMaterial->OT = pMaterial->getOTNumber();
     return true;
@@ -701,8 +701,8 @@ bool MngOcean::setupLakeMaterial() {
         waterResources.getEnvMapLake2DB()->getBitmapSection();
     pLayer->pLayerTextures[3].MinMagFilter = (eTextureFiltering)2;
     pLayer->pLayerTextures[3].MipFilter = (eTextureFiltering)2;
-    pLayer->pLayerTextures[3].SamplerAddress[0] = (eTextureAddress)2;
-    pLayer->pLayerTextures[3].SamplerAddress[1] = (eTextureAddress)2;
+    pLayer->pLayerTextures[3].SamplerAddress[0] = (eMaterialTileMode)2;
+    pLayer->pLayerTextures[3].SamplerAddress[1] = (eMaterialTileMode)2;
     return true;
 }
 

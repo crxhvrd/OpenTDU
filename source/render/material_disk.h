@@ -38,7 +38,7 @@ namespace disk {
         uint8_t UnknownFlags[2];
         eTextureFiltering MinMagFilter;
         eTextureFiltering MipFilter;
-        eTextureAddress SamplerAddress[3];
+        eMaterialTileMode SamplerAddress[3];
         uint8_t __PADDING__;
         uint32_t pAttributes;
     };

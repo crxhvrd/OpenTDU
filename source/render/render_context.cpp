@@ -147,10 +147,11 @@ inline void BindSkinningConstants( uint32_t *pIndices, uint32_t numVectors ) {
 
         // NOTE: Skinning matrices are float4x3 (last row being omitted is not a
         // mistake!). The original (FUN_00600e00) copies the first 12 floats of
-        // the transposed matrix sequentially (*dst++ = *src++); its loop counter
-        // runs 0xc..1 but the source is an incrementing pointer, i.e. it reads
-        // data()[0..0xb] — NOT data()[counter]. Matrix4x4f_t is row-major, so
-        // these 12 floats are the top three rows = the float4x3 skinning matrix.
+        // the transposed matrix sequentially (*dst++ = *src++); its loop
+        // counter runs 0xc..1 but the source is an incrementing pointer, i.e.
+        // it reads data()[0..0xb] — NOT data()[counter]. Matrix4x4f_t is
+        // row-major, so these 12 floats are the top three rows = the float4x3
+        // skinning matrix.
         for ( int32_t iVar5 = 0; iVar5 < 0xc; iVar5++ ) {
             *pfVar6 = local_1050.data()[iVar5];
             pfVar6++;
@@ -897,7 +898,7 @@ void RenderContext::bindInstance( TransformMatrixCommand *param_2,
                              0
                          ? 1
                          : 0 );
-        FUN_005146b0();
+        FUN_005146b0( param_3 );
     }
 
     gSceneRenderer.bindConstantsToGPU();
@@ -1515,7 +1516,7 @@ FUN_00515e00( const uint16_t *puVar8, float *pfVar3, float param_3 ) {
     return uVar1 & 0x1f;
 }
 
-void RenderContext::FUN_005146b0() {
+void RenderContext::FUN_005146b0( Instance *param_2 ) {
     // FUN_005146b0
     for ( const BoundTextureProperty &prop :
           gSceneRenderer.BoundTextureProperties ) {
@@ -1526,10 +1527,31 @@ void RenderContext::FUN_005146b0() {
             prop.pTextureProperty );
         const RenderUVA *pUVA = pAttrUVA->pUVAInstance;
         if ( pUVA != nullptr ) {
+            // Flags 1 and 4 run on the shared clock, anything else runs on the
+            // instance's own UV time. Flag 4 additionally uses the instance
+            // value as a phase offset on top of the shared clock.
+            const uint16_t uvaFlags = param_2->getUVAFlags();
+
+            float uvaTime;
+            if ( uvaFlags == 1 || uvaFlags == 4 ) {
+                if ( pActiveBucket != nullptr &&
+                     ( ( pActiveBucket->Flags >> 3 ) & 1 ) != 0 ) {
+                    uvaTime = pActiveBucket->Time;
+                } else {
+                    uvaTime = gEdRender.Time;
+                }
+            } else {
+                uvaTime = param_2->getUVTime();
+            }
+
+            if ( uvaFlags == 4 ) {
+                uvaTime += param_2->getUVTime();
+            }
+
             const RenderUVA::Data *pData = pUVA->getDataSection();
             float frameTime = 0.0f;
             if ( pData->totalDuration != 0.0f )
-                frameTime = std::fmod( gEdRender.Time, pData->totalDuration );
+                frameTime = std::fmod( uvaTime, pData->totalDuration );
             const auto *pTrackData = reinterpret_cast<const uint16_t *>(
                 reinterpret_cast<const uint8_t *>( pData ) +
                 sizeof( RenderUVA::Data ) );

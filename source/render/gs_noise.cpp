@@ -154,8 +154,8 @@ bool GSNoise::setupChannelMaterials( NoiseChannel &ch ) {
         GetIdentifier64bit( "NOISE_SLICE" );
     pComposeLayer->pLayerTextures[0].pTextureSection =
         volumeNoise.getBitmapSection();
-    pComposeLayer->pLayerTextures[0].SamplerAddress[0] = (eTextureAddress)2;
-    pComposeLayer->pLayerTextures[0].SamplerAddress[1] = (eTextureAddress)2;
+    pComposeLayer->pLayerTextures[0].SamplerAddress[0] = MTM_Clamp;
+    pComposeLayer->pLayerTextures[0].SamplerAddress[1] = MTM_Clamp;
     pComposeLayer->pLayerTextures[0].MinMagFilter = (eTextureFiltering)1;
     pComposeLayer->pLayerTextures[0].MipFilter = (eTextureFiltering)1;
 
@@ -193,8 +193,8 @@ bool GSNoise::setupChannelMaterials( NoiseChannel &ch ) {
         GetIdentifier64bit( "NOISE_COMPOSE" );
     pAssemblyLayer->pLayerTextures[0].pTextureSection =
         pComposeRT->getBitmapSection();
-    pAssemblyLayer->pLayerTextures[0].SamplerAddress[0] = TA_Wrap;
-    pAssemblyLayer->pLayerTextures[0].SamplerAddress[1] = TA_Wrap;
+    pAssemblyLayer->pLayerTextures[0].SamplerAddress[0] = MTM_Wrap;
+    pAssemblyLayer->pLayerTextures[0].SamplerAddress[1] = MTM_Wrap;
     pAssemblyLayer->pLayerTextures[0].MinMagFilter = (eTextureFiltering)2;
     pAssemblyLayer->pLayerTextures[0].MipFilter = (eTextureFiltering)1;
 

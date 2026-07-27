@@ -52,7 +52,9 @@ public:
     inline uint64_t getHashcode() const { return hashcode; }
 
     inline void setUVAFlags( uint16_t flags ) { uvaFlags = flags; }
+    inline uint16_t getUVAFlags() const { return uvaFlags; }
     inline void setUVTime( float t ) { uvTime = t; }
+    inline float getUVTime() const { return uvTime; }
 
     // TODO: REMOVE LATER
     inline const uint8_t *getHeightmapTileMask() const {

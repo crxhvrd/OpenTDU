@@ -754,8 +754,8 @@ void MngShadow::create2DMReceiver( void *param_2,
     }
 
     MaterialLayer *peVar5 = peVar2->getLayer( 0 );
-    peVar5->pLayerTextures[0].SamplerAddress[0] = TA_Clamp;
-    peVar5->pLayerTextures[0].SamplerAddress[1] = TA_Clamp;
+    peVar5->pLayerTextures[0].SamplerAddress[0] = MTM_Clamp;
+    peVar5->pLayerTextures[0].SamplerAddress[1] = MTM_Clamp;
     peVar5->pLayerTextures[0].MinMagFilter = TF_Point;
     peVar5->pLayerTextures[0].MipFilter = TF_Point;
 
@@ -822,8 +822,8 @@ void MngShadow::create2DMCaster(
         pPVar3->DepthTest = '\x02';
         pPVar3->DepthWrite = '\x02';
         peVar5->pLayerTextures[0].Hashcode = 0x0000000100000000;
-        peVar5->pLayerTextures[0].SamplerAddress[0] = TA_Clamp;
-        peVar5->pLayerTextures[0].SamplerAddress[1] = TA_Clamp;
+        peVar5->pLayerTextures[0].SamplerAddress[0] = MTM_Clamp;
+        peVar5->pLayerTextures[0].SamplerAddress[1] = MTM_Clamp;
         ( peVar4->Flags ).NumTextures = '\x01';
         ( peVar4->Flags ).NumUVMaps = '\x01';
     }

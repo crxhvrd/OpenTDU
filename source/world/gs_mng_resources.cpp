@@ -990,8 +990,8 @@ bool HUDMapResources::loadResources() {
     uint64_t uVar7 = GetIdentifier64bit( "HUDMAP" );
     peVar6->pLayerTextures[0].Hashcode = uVar7;
     peVar6->pLayerTextures[0].MinMagFilter = TF_Linear;
-    peVar6->pLayerTextures[0].SamplerAddress[0] = TA_Clamp;
-    peVar6->pLayerTextures[0].SamplerAddress[1] = TA_Clamp;
+    peVar6->pLayerTextures[0].SamplerAddress[0] = MTM_Clamp;
+    peVar6->pLayerTextures[0].SamplerAddress[1] = MTM_Clamp;
 
     render2DM.initialize( pRender2DM );
 

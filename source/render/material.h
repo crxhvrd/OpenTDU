@@ -57,7 +57,8 @@ struct MaterialLayerTexture {
     uint8_t UnknownFlags[2];
     eTextureFiltering MinMagFilter;
     eTextureFiltering MipFilter;
-    eTextureAddress SamplerAddress[3]; // UVW
+    eMaterialTileMode SamplerAddress[3]; // UVW (raw tile bytes, see
+                                         // ToTextureAddress)
     uint8_t __PADDING__;
     AssetPtr<MaterialLayerTextureAttributeList> pAttributes;
 };

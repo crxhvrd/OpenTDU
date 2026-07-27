@@ -94,8 +94,8 @@ bool GSFlash::initialize( TestDriveGameInstance * ) {
     ( peVar8->Flags ).NumTextures = '\0';
 
     MaterialLayer *iVar9 = peVar8->getLayer( 0 );
-    iVar9->pLayerTextures[0].SamplerAddress[0] = eTextureAddress::TA_Clamp;
-    iVar9->pLayerTextures[0].SamplerAddress[1] = eTextureAddress::TA_Clamp;
+    iVar9->pLayerTextures[0].SamplerAddress[0] = MTM_Clamp;
+    iVar9->pLayerTextures[0].SamplerAddress[1] = MTM_Clamp;
 
     render2DM[0].initialize( p2DMMemory[0] );
     pNullMaterial->OT = 0x2a; // TODO: I assume 0x2a maps to Flash RenderLayer
@@ -121,8 +121,8 @@ bool GSFlash::initialize( TestDriveGameInstance * ) {
     ( peVar8->Flags ).NumTextures = '\0';
 
     iVar9 = peVar8->getLayer( 0 );
-    iVar9->pLayerTextures[0].SamplerAddress[0] = eTextureAddress::TA_Clamp;
-    iVar9->pLayerTextures[0].SamplerAddress[1] = eTextureAddress::TA_Clamp;
+    iVar9->pLayerTextures[0].SamplerAddress[0] = MTM_Clamp;
+    iVar9->pLayerTextures[0].SamplerAddress[1] = MTM_Clamp;
 
     render2DM[1].initialize( p2DMMemory[1] );
     pMaskMaterial->OT = 0x2a;

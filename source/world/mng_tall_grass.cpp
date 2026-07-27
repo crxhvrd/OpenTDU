@@ -799,8 +799,8 @@ static void SetupTallGrassMaterial( Material *pMaterial,
     for ( int32_t i = 0; i < 3; i++ ) {
         pLayer->pLayerTextures[i].Hashcode =
             GetIdentifier64bit( pTextureSetName );
-        pLayer->pLayerTextures[i].SamplerAddress[0] = (eTextureAddress)2;
-        pLayer->pLayerTextures[i].SamplerAddress[1] = (eTextureAddress)2;
+        pLayer->pLayerTextures[i].SamplerAddress[0] = (eMaterialTileMode)2;
+        pLayer->pLayerTextures[i].SamplerAddress[1] = (eMaterialTileMode)2;
         pLayer->pLayerTextures[i].MinMagFilter = (eTextureFiltering)2;
         pLayer->pLayerTextures[i].MipFilter =
             (eTextureFiltering)( i == 0 ? 2 : 1 );

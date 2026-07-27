@@ -562,8 +562,8 @@ void MngBackground::updateMaterialTextures( uint64_t currentDomeHashcode,
         MaterialLayerTexture &texture = pLayer->pLayerTextures[textureIdx];
         texture.MinMagFilter = (eTextureFiltering)2;
         texture.MipFilter = (eTextureFiltering)2;
-        texture.SamplerAddress[0] = (eTextureAddress)2;
-        texture.SamplerAddress[1] = (eTextureAddress)2;
+        texture.SamplerAddress[0] = (eMaterialTileMode)2;
+        texture.SamplerAddress[1] = (eMaterialTileMode)2;
     }
 
     SkyDomeResources &skyDomeResources = gpMngResources->getSkyDomeResources();

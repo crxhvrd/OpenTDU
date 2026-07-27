@@ -187,8 +187,8 @@ bool MngSunFlare::createExtractMarkerMaterial() {
                                 .pFramebufferAttachments->pAttachments[0]
                                 ->getBound2DB();
     pLayer->pLayerTextures[0].pTextureSection = pMarker2DB->getBitmapSection();
-    pLayer->pLayerTextures[0].SamplerAddress[0] = (eTextureAddress)2;
-    pLayer->pLayerTextures[0].SamplerAddress[1] = (eTextureAddress)2;
+    pLayer->pLayerTextures[0].SamplerAddress[0] = (eMaterialTileMode)2;
+    pLayer->pLayerTextures[0].SamplerAddress[1] = (eMaterialTileMode)2;
     pLayer->pLayerTextures[0].MinMagFilter = (eTextureFiltering)1;
     pLayer->pLayerTextures[0].MipFilter = (eTextureFiltering)1;
     pParameter->Flags.NumTextures = 1;
@@ -266,15 +266,15 @@ bool MngSunFlare::createSunCoreAndHaloMaterials() {
         // updateSunTextures; texture 2 is the eye luminosity render target.
         MaterialLayer *pLayer = pParameters->getLayer( 0 );
         pLayer->pLayerTextures[0].Hashcode = GetIdentifier64bit( "NOHASH" );
-        pLayer->pLayerTextures[0].SamplerAddress[0] = (eTextureAddress)2;
-        pLayer->pLayerTextures[0].SamplerAddress[1] = (eTextureAddress)2;
+        pLayer->pLayerTextures[0].SamplerAddress[0] = (eMaterialTileMode)2;
+        pLayer->pLayerTextures[0].SamplerAddress[1] = (eMaterialTileMode)2;
         pLayer->pLayerTextures[1].Hashcode = GetIdentifier64bit( "NOHASH" );
-        pLayer->pLayerTextures[1].SamplerAddress[0] = (eTextureAddress)2;
-        pLayer->pLayerTextures[1].SamplerAddress[1] = (eTextureAddress)2;
+        pLayer->pLayerTextures[1].SamplerAddress[0] = (eMaterialTileMode)2;
+        pLayer->pLayerTextures[1].SamplerAddress[1] = (eMaterialTileMode)2;
         pLayer->pLayerTextures[2].Hashcode =
             GetIdentifier64bit( "SUN_EYE_LUM" );
-        pLayer->pLayerTextures[2].SamplerAddress[0] = (eTextureAddress)2;
-        pLayer->pLayerTextures[2].SamplerAddress[1] = (eTextureAddress)2;
+        pLayer->pLayerTextures[2].SamplerAddress[0] = (eMaterialTileMode)2;
+        pLayer->pLayerTextures[2].SamplerAddress[1] = (eMaterialTileMode)2;
 
         MaterialShaderParameter *pParameterDesc =
             pParameters->getParameterByIndex( 0 );
@@ -321,11 +321,11 @@ bool MngSunFlare::createComputeEyeLumMaterial() {
             pComputeEyeLumMaterial->getParameterByIndex( 0 );
     MaterialLayer *pLayer = pParameters->getLayer( 0 );
     pLayer->pLayerTextures[0].Hashcode = GetIdentifier64bit( "SUN_REAL_LUM" );
-    pLayer->pLayerTextures[0].SamplerAddress[0] = (eTextureAddress)2;
-    pLayer->pLayerTextures[0].SamplerAddress[1] = (eTextureAddress)2;
+    pLayer->pLayerTextures[0].SamplerAddress[0] = (eMaterialTileMode)2;
+    pLayer->pLayerTextures[0].SamplerAddress[1] = (eMaterialTileMode)2;
     pLayer->pLayerTextures[1].Hashcode = GetIdentifier64bit( "SUN_EYE_LUM_BK" );
-    pLayer->pLayerTextures[1].SamplerAddress[0] = (eTextureAddress)2;
-    pLayer->pLayerTextures[1].SamplerAddress[1] = (eTextureAddress)2;
+    pLayer->pLayerTextures[1].SamplerAddress[0] = (eMaterialTileMode)2;
+    pLayer->pLayerTextures[1].SamplerAddress[1] = (eMaterialTileMode)2;
     pParameters->Flags.NumTextures = 2;
     pParameters->Flags.NumUVMaps = 0;
 
@@ -366,15 +366,15 @@ bool MngSunFlare::createComputeDazzleMaterial() {
             pComputeDazzleMaterial->getParameterByIndex( 0 );
     MaterialLayer *pLayer = pParameters->getLayer( 0 );
     pLayer->pLayerTextures[0].Hashcode = GetIdentifier64bit( "SUN_EYE_LUM" );
-    pLayer->pLayerTextures[0].SamplerAddress[0] = (eTextureAddress)2;
-    pLayer->pLayerTextures[0].SamplerAddress[1] = (eTextureAddress)2;
+    pLayer->pLayerTextures[0].SamplerAddress[0] = (eMaterialTileMode)2;
+    pLayer->pLayerTextures[0].SamplerAddress[1] = (eMaterialTileMode)2;
     pLayer->pLayerTextures[1].Hashcode = GetIdentifier64bit( "SUN_EYE_LUM_BK" );
-    pLayer->pLayerTextures[1].SamplerAddress[0] = (eTextureAddress)2;
-    pLayer->pLayerTextures[1].SamplerAddress[1] = (eTextureAddress)2;
+    pLayer->pLayerTextures[1].SamplerAddress[0] = (eMaterialTileMode)2;
+    pLayer->pLayerTextures[1].SamplerAddress[1] = (eMaterialTileMode)2;
     pLayer->pLayerTextures[2].Hashcode =
         GetIdentifier64bit( "SUN_DAZZLE_COEFF_BK" );
-    pLayer->pLayerTextures[2].SamplerAddress[0] = (eTextureAddress)2;
-    pLayer->pLayerTextures[2].SamplerAddress[1] = (eTextureAddress)2;
+    pLayer->pLayerTextures[2].SamplerAddress[0] = (eMaterialTileMode)2;
+    pLayer->pLayerTextures[2].SamplerAddress[1] = (eMaterialTileMode)2;
     pParameters->Flags.NumTextures = 3;
     pParameters->Flags.NumUVMaps = 0;
 
@@ -418,8 +418,8 @@ bool MngSunFlare::createApplyDazzleMaterial() {
     MaterialLayer *pLayer = pParameter->getLayer( 0 );
     pLayer->pLayerTextures[0].Hashcode =
         GetIdentifier64bit( "SUN_DAZZLE_COEFF" );
-    pLayer->pLayerTextures[0].SamplerAddress[0] = (eTextureAddress)2;
-    pLayer->pLayerTextures[0].SamplerAddress[1] = (eTextureAddress)2;
+    pLayer->pLayerTextures[0].SamplerAddress[0] = (eMaterialTileMode)2;
+    pLayer->pLayerTextures[0].SamplerAddress[1] = (eMaterialTileMode)2;
     pParameter->Flags.NumTextures = 1;
     pParameter->Flags.NumUVMaps = 0;
 

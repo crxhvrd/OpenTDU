@@ -236,8 +236,8 @@ Material *Render2DM::Create( void *param_1,
         MaterialLayerTexture &tex = pLayer->pLayerTextures[i];
         tex.MinMagFilter = (eTextureFiltering)0;
         tex.MipFilter = (eTextureFiltering)0;
-        tex.SamplerAddress[0] = (eTextureAddress)0;
-        tex.SamplerAddress[1] = (eTextureAddress)0;
+        tex.SamplerAddress[0] = (eMaterialTileMode)0;
+        tex.SamplerAddress[1] = (eMaterialTileMode)0;
         if ( i < param_3 ) {
             tex.Hashcode = 1;
         }
@@ -491,8 +491,8 @@ Material *Render2DM::CreateTerrainMaterial( void *pContent,
             MaterialLayerTexture &tex = pLayer->pLayerTextures[t];
             tex.MinMagFilter = TF_None;
             tex.MipFilter = TF_None;
-            tex.SamplerAddress[0] = TA_Wrap;
-            tex.SamplerAddress[1] = TA_Wrap;
+            tex.SamplerAddress[0] = MTM_Wrap;
+            tex.SamplerAddress[1] = MTM_Wrap;
             if ( t == 0 ) {
                 tex.Hashcode = 0x0000000100000000;
             }
@@ -613,8 +613,8 @@ Material *Render2DM::CreateTerrainMaterial( void *pContent,
             MaterialLayerTexture &puVar7 = peVar2->pLayerTextures[iVar1];
             puVar7.MinMagFilter = TF_None;
             puVar7.MipFilter = TF_None;
-            puVar7.SamplerAddress[0] = TA_Wrap;
-            puVar7.SamplerAddress[1] = TA_Wrap;
+            puVar7.SamplerAddress[0] = MTM_Wrap;
+            puVar7.SamplerAddress[1] = MTM_Wrap;
 
             if ( iVar1 == 0 ) {
                 puVar7.Hashcode = 0x0000000100000000;

@@ -121,8 +121,8 @@ bool MngCloudsPlane::loadResources() {
 
     MaterialLayer *pLayer = pParams->getLayer( 0 );
     pLayer->pLayerTextures[0].Hashcode = GetIdentifier64bit( "FAKE_PCLOUDS" );
-    pLayer->pLayerTextures[0].SamplerAddress[0] = (eTextureAddress)1;
-    pLayer->pLayerTextures[0].SamplerAddress[1] = (eTextureAddress)1;
+    pLayer->pLayerTextures[0].SamplerAddress[0] = (eMaterialTileMode)1;
+    pLayer->pLayerTextures[0].SamplerAddress[1] = (eMaterialTileMode)1;
     pLayer->pLayerTextures[0].MinMagFilter = (eTextureFiltering)2;
     pLayer->pLayerTextures[0].MipFilter = (eTextureFiltering)1;
 

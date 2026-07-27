@@ -261,8 +261,8 @@ bool MngCarAlpha::initializeElement( uint32_t param_1 ) {
     iVar7->NumTextures = 1;
     iVar7->pLayerTextures[0].Hashcode = 0x0000000100000000;
     iVar7->pLayerTextures[0].pTextureSection = peVar8->getBitmapSection();
-    iVar7->pLayerTextures[0].SamplerAddress[0] = eTextureAddress::TA_Clamp;
-    iVar7->pLayerTextures[0].SamplerAddress[1] = eTextureAddress::TA_Clamp;
+    iVar7->pLayerTextures[0].SamplerAddress[0] = MTM_Clamp;
+    iVar7->pLayerTextures[0].SamplerAddress[1] = MTM_Clamp;
     iVar7->pLayerTextures[0].MinMagFilter = eTextureFiltering::TF_Point;
     iVar7->pLayerTextures[0].MipFilter = eTextureFiltering::TF_Point;
 

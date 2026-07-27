@@ -236,8 +236,8 @@ void SectorGeometry::patchObjectsGroupMaterials(
                     MaterialLayerTexture &tex = pLayer->pLayerTextures[t];
                     if ( tex.TextureTypeHashcode == kShadowStageId ) {
                         tex.pTextureSection = pTerrainShadow;
-                        tex.SamplerAddress[0] = TA_Mirror;
-                        tex.SamplerAddress[1] = TA_Mirror;
+                        tex.SamplerAddress[0] = MTM_Mirror;
+                        tex.SamplerAddress[1] = MTM_Mirror;
                         break;
                     }
                 }
@@ -250,8 +250,8 @@ void SectorGeometry::patchObjectsGroupMaterials(
             if ( pLayer != nullptr && pLayer->NumTextures > 2 ) {
                 MaterialLayerTexture &tex = pLayer->pLayerTextures[2];
                 tex.pTextureSection = pTerrainShadow;
-                tex.SamplerAddress[0] = TA_Mirror;
-                tex.SamplerAddress[1] = TA_Mirror;
+                tex.SamplerAddress[0] = MTM_Mirror;
+                tex.SamplerAddress[1] = MTM_Mirror;
             }
             WriteDetail2ProjectionOrigin( pParam, gridOriginX, gridOriginZ );
             detail2Materials.push_back( pMaterial );

@@ -389,8 +389,8 @@ void GSImgui::setupImguiMaterial( TextureEntry *entry, bool bOpaqueBlend ) {
     iVar9->pLayerTextures[0].Hashcode = 0xdeadbeefull;
     iVar9->pLayerTextures[0].TextureTypeHashcode = 0ull;
     iVar9->pLayerTextures[0].pTextureSection = nullptr;
-    iVar9->pLayerTextures[0].SamplerAddress[0] = eTextureAddress::TA_Clamp;
-    iVar9->pLayerTextures[0].SamplerAddress[1] = eTextureAddress::TA_Clamp;
+    iVar9->pLayerTextures[0].SamplerAddress[0] = MTM_Clamp;
+    iVar9->pLayerTextures[0].SamplerAddress[1] = MTM_Clamp;
     iVar9->pLayerTextures[0].MinMagFilter = eTextureFiltering::TF_Linear;
     iVar9->pLayerTextures[0].MipFilter = eTextureFiltering::TF_Linear;
 

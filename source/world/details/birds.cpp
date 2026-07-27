@@ -151,8 +151,8 @@ bool Birds::initialize() {
 
         MaterialLayer *pLayer = pParam->getLayer( 0 );
         if ( pLayer != nullptr ) {
-            pLayer->pLayerTextures[0].SamplerAddress[0] = TA_Wrap;
-            pLayer->pLayerTextures[0].SamplerAddress[1] = TA_Wrap;
+            pLayer->pLayerTextures[0].SamplerAddress[0] = MTM_Wrap;
+            pLayer->pLayerTextures[0].SamplerAddress[1] = MTM_Wrap;
         }
     }
 
