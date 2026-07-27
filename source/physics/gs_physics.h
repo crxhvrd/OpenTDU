@@ -160,7 +160,8 @@ public:
         const void *pSectorKey,
         uint64_t hashcode,
         const Matrix4x4f_t &worldTransform,
-        const Eigen::Vector3f &objectOrigin = Eigen::Vector3f::Zero() );
+        const Eigen::Vector3f &objectOrigin = Eigen::Vector3f::Zero(),
+        const Eigen::Vector3f &instanceScale = Eigen::Vector3f::Ones() );
     void removeSceneryInstances( const void *pSectorKey );
 
     void installSceneryCollision();
@@ -175,7 +176,9 @@ public:
                std::vector<std::pair<uint64_t, RigidBody_t>> &outBodies,
                Matrix4x4f_t *outPrimaryLocalInv = nullptr,
                bool bSceneryInstance = false,
-               const Eigen::Vector3f &objectOrigin = Eigen::Vector3f::Zero() );
+               const Eigen::Vector3f &objectOrigin = Eigen::Vector3f::Zero(),
+               const Eigen::Vector3f &offsetScale = Eigen::Vector3f::Ones(),
+               const Eigen::Vector3f &shapeScale = Eigen::Vector3f::Ones() );
 
     void removePropConstraintsFor( RigidBody_t pBody );
 
@@ -228,6 +231,7 @@ private:
         uint64_t hashcode;
         Matrix4x4f_t transform;
         Eigen::Vector3f objectOrigin;
+        Eigen::Vector3f instanceScale;
     };
 
 private:

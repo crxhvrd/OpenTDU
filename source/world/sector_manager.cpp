@@ -305,6 +305,33 @@ static void DecodeImpostorInstance( const uint16_t *pInst,
     outAngle = rotY;
 }
 
+static Matrix4x4f_t OrthonormalizeInstanceMatrix( const Matrix4x4f_t &param_1,
+                                                  const float param_2,
+                                                  Eigen::Vector3f &param_3 ) {
+    // FUN_00849df0:139
+    const Eigen::Vector3f row0 = param_1.row( 0 ).head<3>();
+    const Eigen::Vector3f row1 = param_1.row( 1 ).head<3>();
+    const Eigen::Vector3f row2 = param_1.row( 2 ).head<3>();
+
+    const Eigen::Vector3f axisY = row1.normalized();
+    const Eigen::Vector3f axisX = axisY.cross( row2 ).normalized();
+    const Eigen::Vector3f axisZ = axisX.cross( axisY ).normalized();
+
+    if ( !axisX.allFinite() || !axisY.allFinite() || !axisZ.allFinite() ) {
+        param_3 = Eigen::Vector3f::Ones();
+        return MakeRotationMatY( param_2 );
+    }
+
+    Matrix4x4f_t param_1_00 = Matrix4x4f_t::Identity();
+    param_1_00.row( 0 ).head<3>() = axisX;
+    param_1_00.row( 1 ).head<3>() = axisY;
+    param_1_00.row( 2 ).head<3>() = axisZ;
+
+    param_3 = Eigen::Vector3f( axisX.dot( row0 ), axisY.dot( row1 ),
+                               axisZ.dot( row2 ) );
+    return param_1_00;
+}
+
 static RenderObject *GetLODRenderObject( Instance *pInstance,
                                          const uint32_t lodIndex ) {
     Render3DDHashEntry *pHashcode = pInstance->getLOD( lodIndex ).pHashcode;
@@ -633,12 +660,14 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
                     const Eigen::Vector3f objectOrigin =
                         pIE->Matrix.row( 3 ).head<3>();
 
-                    Matrix4x4f_t worldM = MakeRotationMatY( angleY );
+                    Eigen::Vector3f instScale = Eigen::Vector3f::Ones();
+                    Matrix4x4f_t worldM =
+                        OrthonormalizeInstanceMatrix( m, angleY, instScale );
                     worldM( 3, 0 ) = m( 3, 0 ) + buildOrigin.x();
                     worldM( 3, 1 ) = m( 3, 1 ) + buildOrigin.y();
                     worldM( 3, 2 ) = m( 3, 2 ) + buildOrigin.z();
-                    gpPhysics->placeSceneryInstance( &geometry, hashcode,
-                                                     worldM, objectOrigin );
+                    gpPhysics->placeSceneryInstance(
+                        &geometry, hashcode, worldM, objectOrigin, instScale );
                 }
 
                 MassInstanceImpostor inst{};

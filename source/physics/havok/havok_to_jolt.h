@@ -13,11 +13,32 @@ class HavokPackfile;
 // havok_packfile and were recovered from real vehicle scenes.
 namespace HavokToJolt {
 
+    // The instancing path (FUN_00453690) rebuilds a SCALED copy of a member's
+    // shape when placing a scaled instance, but only for the three primitive
+    // Havok types it knows how to scale: hkSphereShape (type 4, radius *
+    // scale.x), hkBoxShape (type 7, half-extents * scale) and hkCapsuleShape
+    // (type 8, both endpoints * scale, radius * scale.x). Every other type
+    // (hkTransformShape, hkListShape, meshes...) falls through to
+    // LAB_00453990 and is instanced with the template shape UNSCALED. These
+    // are the raw Havok parameters buildScaledShape needs to rebuild them.
+    struct ScalablePrimitive {
+        enum EKind : uint8_t { None = 0, Sphere, Box, Capsule };
+
+        EKind Kind = None;
+        float Radius = 0.0f;   // sphere/capsule radius, box convex radius
+        JPH::Vec3 HalfExtents; // box
+        JPH::Vec3 VertexA;     // capsule endpoints
+        JPH::Vec3 VertexB;
+    };
+
     struct RigidBody {
         JPH::ShapeRefC
             Shape;          // collision shape (compound/box), local to the body
         JPH::Vec3 Position; // body position, vehicle-local
         JPH::Quat Rotation; // body orientation, vehicle-local
+        // Raw parameters of the top-level Havok shape, when it is one of the
+        // primitives the instancer can rescale (see ScalablePrimitive).
+        ScalablePrimitive Scalable;
         uint64_t Hashcode =
             0; // registry key (scenaric prop-type lookup); 0 if none
         // Registry index recovered from the hkRigidBody's 0x0FFFFFFF property
@@ -77,6 +98,16 @@ namespace HavokToJolt {
     JPH::ShapeRefC buildShape( const HavokPackfile &packfile,
                                int32_t shapeOffset,
                                int32_t depth = 0 );
+
+    // Read the raw parameters of the top-level Havok shape at `shapeOffset`
+    // when it is one of the three primitives the instancer can rescale.
+    ScalablePrimitive readScalablePrimitive( const HavokPackfile &packfile,
+                                             int32_t shapeOffset );
+
+    // Rebuild `body`'s shape scaled by `scale`, the way FUN_00453690 does.
+    // Returns body.Shape untouched for any shape the original leaves unscaled.
+    JPH::ShapeRefC buildScaledShape( const RigidBody &body,
+                                     const JPH::Vec3 &scale );
 
     // Walk hkPhysicsSystem -> rigid bodies, building each body's Jolt shape +
     // vehicle-local transform.

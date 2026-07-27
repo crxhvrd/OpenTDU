@@ -358,26 +358,15 @@ namespace {
         return result.IsValid() ? result.Get() : JPH::ShapeRefC();
     }
 
-    // Build a Jolt capsule from a Havok hkCapsuleShape (size 0x30, extends
-    // hkConvexShape): radius@+0x0C, m_vertexA(Vector4)@+0x10, m_vertexB@+0x20.
-    // Havok capsules run between two arbitrary local endpoints; Jolt capsules
-    // are Y-axis-aligned + origin-centred, so wrap in a rotated/translated
-    // shape to place the segment A..B.
-    JPH::ShapeRefC buildCapsule( const HavokPackfile &pf,
-                                 int32_t shapeOffset ) {
-        const uint8_t *pData = pf.getDataBytes();
-        if ( pData == nullptr || shapeOffset < 0 ) {
-            return JPH::ShapeRefC();
-        }
-        const uint8_t *p = pData + shapeOffset;
-        const float radius = *reinterpret_cast<const float *>( p + 0x0C );
-        const float *pA = reinterpret_cast<const float *>( p + 0x10 );
-        const float *pB = reinterpret_cast<const float *>( p + 0x20 );
+    // Build a Jolt capsule from a Havok hkCapsuleShape's parameters. Havok
+    // capsules run between two arbitrary local endpoints; Jolt capsules are
+    // Y-axis-aligned + origin-centred, so wrap in a rotated/translated shape
+    // to place the segment A..B.
+    JPH::ShapeRefC
+    makeCapsule( const JPH::Vec3 &a, const JPH::Vec3 &b, float radius ) {
         if ( !std::isfinite( radius ) || radius <= 0.0f ) {
             return JPH::ShapeRefC();
         }
-        const JPH::Vec3 a( pA[0], pA[1], pA[2] );
-        const JPH::Vec3 b( pB[0], pB[1], pB[2] );
         const JPH::Vec3 axis = b - a;
         const float len = axis.Length();
         const JPH::Vec3 center = ( a + b ) * 0.5f;
@@ -398,7 +387,110 @@ namespace {
         JPH::ShapeSettings::ShapeResult result = placed.Create();
         return result.IsValid() ? result.Get() : JPH::ShapeRefC();
     }
+
+    // Build a Jolt box from a Havok hkBoxShape's half-extents + convex radius.
+    JPH::ShapeRefC makeBox( const JPH::Vec3 &halfExtents, float radius ) {
+        // Reject non-finite / non-positive extents (Jolt asserts/crashes on
+        // them). TDU's real boxes are all small positive half-extents.
+        for ( int32_t i = 0; i < 3; i++ ) {
+            const float he = halfExtents[i];
+            if ( !std::isfinite( he ) || he <= 0.0f || he > 1.0e5f ) {
+                return JPH::ShapeRefC();
+            }
+        }
+
+        // Jolt requires the convex radius to be <= the smallest half extent;
+        // TDU's thin panel boxes go down to 0.001, so clamp accordingly.
+        const float minHalfExtent = std::min(
+            { halfExtents.GetX(), halfExtents.GetY(), halfExtents.GetZ() } );
+        float convexRadius = Min( radius, minHalfExtent * 0.8f );
+        if ( convexRadius < 0.0f ) {
+            convexRadius = 0.0f;
+        }
+
+        JPH::BoxShapeSettings settings( halfExtents, convexRadius );
+        JPH::ShapeSettings::ShapeResult result = settings.Create();
+        return result.IsValid() ? result.Get() : JPH::ShapeRefC();
+    }
+
+    JPH::ShapeRefC makeSphere( float radius ) {
+        if ( !std::isfinite( radius ) || radius <= 0.0f ) {
+            return JPH::ShapeRefC();
+        }
+        JPH::ShapeSettings::ShapeResult r =
+            JPH::SphereShapeSettings( radius ).Create();
+        return r.IsValid() ? r.Get() : JPH::ShapeRefC();
+    }
 } // namespace
+
+HavokToJolt::ScalablePrimitive
+HavokToJolt::readScalablePrimitive( const HavokPackfile &pf,
+                                    int32_t shapeOffset ) {
+    // FUN_00453690:124 — the shape-type switch the instancer scales through.
+    ScalablePrimitive out;
+    const uint8_t *pData = pf.getDataBytes();
+    if ( pData == nullptr || shapeOffset < 0 ) {
+        return out;
+    }
+    const char *pClass =
+        pf.getClassName( static_cast<uint32_t>( shapeOffset ) );
+    if ( pClass == nullptr ) {
+        return out;
+    }
+    const uint8_t *p = pData + shapeOffset;
+
+    // hkSphereShape (type 4): radius @ +0x0C.
+    if ( std::strcmp( pClass, "hkSphereShape" ) == 0 ) {
+        out.Kind = ScalablePrimitive::Sphere;
+        out.Radius = *reinterpret_cast<const float *>( p + 0x0c );
+        return out;
+    }
+    // hkBoxShape (type 7): convex radius @ +0x0C, half-extents @ +0x10.
+    if ( std::strcmp( pClass, "hkBoxShape" ) == 0 ) {
+        const float *pHE = reinterpret_cast<const float *>( p + 0x10 );
+        out.Kind = ScalablePrimitive::Box;
+        out.Radius = *reinterpret_cast<const float *>( p + 0x0c );
+        out.HalfExtents = JPH::Vec3( pHE[0], pHE[1], pHE[2] );
+        return out;
+    }
+    // hkCapsuleShape (type 8): radius @ +0x0C, m_vertexA @ +0x10, B @ +0x20.
+    if ( std::strcmp( pClass, "hkCapsuleShape" ) == 0 ) {
+        const float *pA = reinterpret_cast<const float *>( p + 0x10 );
+        const float *pB = reinterpret_cast<const float *>( p + 0x20 );
+        out.Kind = ScalablePrimitive::Capsule;
+        out.Radius = *reinterpret_cast<const float *>( p + 0x0c );
+        out.VertexA = JPH::Vec3( pA[0], pA[1], pA[2] );
+        out.VertexB = JPH::Vec3( pB[0], pB[1], pB[2] );
+        return out;
+    }
+    return out;
+}
+
+JPH::ShapeRefC HavokToJolt::buildScaledShape( const RigidBody &body,
+                                              const JPH::Vec3 &scale ) {
+    // FUN_00453690:124-163 — only the three primitives are rescaled; anything
+    // else (hkTransformShape, hkListShape, meshes) is instanced as-is.
+    JPH::ShapeRefC scaled;
+    switch ( body.Scalable.Kind ) {
+    case ScalablePrimitive::Sphere:
+        // A sphere only ever takes the X component of the scale.
+        scaled = makeSphere( body.Scalable.Radius * scale.GetX() );
+        break;
+    case ScalablePrimitive::Box:
+        scaled = makeBox( body.Scalable.HalfExtents * scale,
+                          body.Scalable.Radius );
+        break;
+    case ScalablePrimitive::Capsule:
+        scaled = makeCapsule( body.Scalable.VertexA * scale,
+                              body.Scalable.VertexB * scale,
+                              body.Scalable.Radius * scale.GetX() );
+        break;
+    case ScalablePrimitive::None:
+    default:
+        break;
+    }
+    return scaled.GetPtr() != nullptr ? scaled : body.Shape;
+}
 
 JPH::ShapeRefC HavokToJolt::buildShape( const HavokPackfile &pf,
                                         int32_t shapeOffset,
@@ -416,29 +508,8 @@ JPH::ShapeRefC HavokToJolt::buildShape( const HavokPackfile &pf,
     const uint8_t *p = pData + shapeOffset;
 
     if ( std::strcmp( pClass, "hkBoxShape" ) == 0 ) {
-        const float *pHE = reinterpret_cast<const float *>( p + 0x10 );
-        const float radius = *reinterpret_cast<const float *>( p + 0x0c );
-        // Reject non-finite / non-positive extents (Jolt asserts/crashes on
-        // them). TDU's real boxes are all small positive half-extents.
-        if ( !std::isfinite( pHE[0] ) || !std::isfinite( pHE[1] ) ||
-             !std::isfinite( pHE[2] ) || pHE[0] <= 0.0f || pHE[1] <= 0.0f ||
-             pHE[2] <= 0.0f || pHE[0] > 1.0e5f || pHE[1] > 1.0e5f ||
-             pHE[2] > 1.0e5f ) {
-            return JPH::ShapeRefC();
-        }
-        const JPH::Vec3 halfExtents( pHE[0], pHE[1], pHE[2] );
-
-        // Jolt requires the convex radius to be <= the smallest half extent;
-        // TDU's thin panel boxes go down to 0.001, so clamp accordingly.
-        const float minHalfExtent = std::min( { pHE[0], pHE[1], pHE[2] } );
-        float convexRadius = Min( radius, minHalfExtent * 0.8f );
-        if ( convexRadius < 0.0f ) {
-            convexRadius = 0.0f;
-        }
-
-        JPH::BoxShapeSettings settings( halfExtents, convexRadius );
-        JPH::ShapeSettings::ShapeResult result = settings.Create();
-        return result.IsValid() ? result.Get() : JPH::ShapeRefC();
+        const ScalablePrimitive prim = readScalablePrimitive( pf, shapeOffset );
+        return makeBox( prim.HalfExtents, prim.Radius );
     }
 
     if ( std::strcmp( pClass, "hkTransformShape" ) == 0 ) {
@@ -529,18 +600,14 @@ JPH::ShapeRefC HavokToJolt::buildShape( const HavokPackfile &pf,
     }
 
     if ( std::strcmp( pClass, "hkCapsuleShape" ) == 0 ) {
-        return buildCapsule( pf, shapeOffset );
+        const ScalablePrimitive prim = readScalablePrimitive( pf, shapeOffset );
+        return makeCapsule( prim.VertexA, prim.VertexB, prim.Radius );
     }
 
     // hkSphereShape (extends hkConvexShape): radius @ +0x0C, centred at origin.
     if ( std::strcmp( pClass, "hkSphereShape" ) == 0 ) {
-        const float radius = *reinterpret_cast<const float *>( p + 0x0c );
-        if ( !std::isfinite( radius ) || radius <= 0.0f ) {
-            return JPH::ShapeRefC();
-        }
-        JPH::ShapeSettings::ShapeResult r =
-            JPH::SphereShapeSettings( radius ).Create();
-        return r.IsValid() ? r.Get() : JPH::ShapeRefC();
+        const ScalablePrimitive prim = readScalablePrimitive( pf, shapeOffset );
+        return makeSphere( prim.Radius );
     }
 
     // Unhandled shape class — logged (temporary bring-up diagnostic) so any
@@ -615,6 +682,7 @@ void HavokToJolt::buildBodies( const HavokPackfile &pf,
 
         RigidBody body;
         body.Shape = shape;
+        body.Scalable = readScalablePrimitive( pf, shapeOffset );
         body.Position = JPH::Vec3::sZero();
         body.Rotation = JPH::Quat::sIdentity();
 

@@ -1166,7 +1166,6 @@ void GSPhysics::drawDebug( float ) {
     extern bool gVehicleDrivingAids;
     extern bool gVehicleABS;
     extern bool gVehicleAntiRoll;
-    extern bool gVehicleDiff;
     extern bool gVehicleEngineStateMachine;
     extern int gVehicleDiffTypeOverride; // 0=per-car, 1 open, 2 LSD, 4 spool
     extern float gVehicleDiffLockCoef;   // LSD/spool lock coef (override)
@@ -1179,7 +1178,6 @@ void GSPhysics::drawDebug( float ) {
     ImGui::Checkbox( "ABS", &gVehicleABS );
 
     ImGui::Checkbox( "Enable anti-roll bars sim", &gVehicleAntiRoll );
-    ImGui::Checkbox( "Enable differential sim", &gVehicleDiff );
     ImGui::Checkbox( "Enable ingition sim", &gVehicleEngineStateMachine );
     ImGui::TextUnformatted( "Differential override" );
     ImGui::SameLine();
@@ -2021,10 +2019,19 @@ void GSPhysics::queuePropCollisionFactory( const void *pBlob,
                             static_cast<const uint8_t *>( pBlob ) + blobSize );
 }
 
+// The two hedge assets ("V_HAIE_M" / "V_HAIE_O") are authored with their
+// collision box transposed relative to their render instance: the original
+// compensates by swapping the X and Z scale components before instancing them
+// (see FUN_00847d20).
+static constexpr uint64_t kHedgeMediumHashcode = 0x4d5f454941485f56ull;
+static constexpr uint64_t kHedgeOtherHashcode = 0x4f5f454941485f56ull;
+
 void GSPhysics::placeSceneryInstance( const void *pSectorKey,
                                       uint64_t hashcode,
                                       const Matrix4x4f_t &worldTransform,
-                                      const Eigen::Vector3f &objectOrigin ) {
+                                      const Eigen::Vector3f &objectOrigin,
+                                      const Eigen::Vector3f &instanceScale ) {
+    // FUN_00847d20
     static constexpr size_t kMaxSceneryBodies = 20000;
     if ( hashcode == 0 || sceneryInstanceBodies.size() >= kMaxSceneryBodies ) {
         return;
@@ -2032,18 +2039,26 @@ void GSPhysics::placeSceneryInstance( const void *pSectorKey,
 
     if ( pSceneryFactory == nullptr && pPropFactory == nullptr ) {
         if ( pendingSceneryInstances.size() < kMaxSceneryBodies ) {
-            pendingSceneryInstances.push_back(
-                { pSectorKey, hashcode, worldTransform, objectOrigin } );
+            pendingSceneryInstances.push_back( { pSectorKey, hashcode,
+                                                 worldTransform, objectOrigin,
+                                                 instanceScale } );
         }
         return;
     }
     if ( !isPropCollisionType( hashcode ) ) {
         return;
     }
+
+    Eigen::Vector3f shapeScale = instanceScale;
+    if ( hashcode == kHedgeMediumHashcode || hashcode == kHedgeOtherHashcode ) {
+        std::swap( shapeScale.x(), shapeScale.z() );
+    }
+
     std::vector<std::pair<uint64_t, RigidBody_t>> outBodies;
     placeProp( hashcode, worldTransform, /*bDynamic=*/false, 0.0f, 0.0f,
                outBodies, /*outPrimaryLocalInv=*/nullptr,
-               /*bSceneryInstance=*/true, objectOrigin );
+               /*bSceneryInstance=*/true, objectOrigin, instanceScale,
+               shapeScale );
     for ( const auto &ob : outBodies ) {
         sceneryInstanceBodies.emplace_back( pSectorKey, ob.second );
     }
@@ -2216,7 +2231,7 @@ void GSPhysics::buildProcessPendingProps() {
         pending.swap( pendingSceneryInstances );
         for ( const PendingSceneryInstance &p : pending ) {
             placeSceneryInstance( p.pSectorKey, p.hashcode, p.transform,
-                                  p.objectOrigin );
+                                  p.objectOrigin, p.instanceScale );
         }
         OTDU_LOG_DEBUG(
             "Scenery collision: placed %zu deferred instances (%zu bodies)\n",
@@ -2233,7 +2248,9 @@ void GSPhysics::placeProp(
     std::vector<std::pair<uint64_t, RigidBody_t>> &outBodies,
     Matrix4x4f_t *outPrimaryLocalInv,
     bool bSceneryInstance,
-    const Eigen::Vector3f &objectOrigin ) {
+    const Eigen::Vector3f &objectOrigin,
+    const Eigen::Vector3f &offsetScale,
+    const Eigen::Vector3f &shapeScale ) {
     // FUN_00453690
     if ( pPhysicsSystem == nullptr || hashcode == 0 ) {
         return;
@@ -2428,15 +2445,31 @@ void GSPhysics::placeProp(
             bSceneryInstance ? JPH::Vec3( objectOrigin.x(), objectOrigin.y(),
                                           objectOrigin.z() )
                              : JPH::Vec3::sZero();
+        const JPH::Vec3 posScale( offsetScale.x(), offsetScale.y(),
+                                  offsetScale.z() );
+        const JPH::Vec3 shpScale( shapeScale.x(), shapeScale.y(),
+                                  shapeScale.z() );
+        const JPH::Vec3 kUnitScale = JPH::Vec3::sReplicate( 1.0f );
+        const bool bScalePos =
+            bSceneryInstance && !posScale.IsClose( kUnitScale );
+        const bool bScaleShape =
+            bSceneryInstance && !shpScale.IsClose( kUnitScale );
         for ( const GatheredMember &gm : members ) {
             const HavokToJolt::RigidBody *m = gm.pBody;
-            const JPH::Vec3 memberPos =
+            JPH::Vec3 memberPos =
                 bSceneryInstance ? ( m->Position - base ) : m->Position;
+            JPH::RefConst<JPH::Shape> shape = m->Shape;
+            if ( bScalePos ) {
+                memberPos = memberPos * posScale;
+            }
+            if ( bScaleShape ) {
+                shape = HavokToJolt::buildScaledShape( *m, shpScale );
+            }
             const JPH::Mat44 local =
                 JPH::Mat44::sRotationTranslation( m->Rotation, memberPos );
             const JPH::Mat44 placedM = world * local;
             JPH::BodyCreationSettings settings(
-                m->Shape, placedM.GetTranslation(),
+                shape, placedM.GetTranslation(),
                 placedM.GetQuaternion().Normalized(), JPH::EMotionType::Static,
                 TDUPhysLayers::NON_MOVING );
             settings.mUserData = TDUSurface::Object;
