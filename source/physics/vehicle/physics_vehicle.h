@@ -92,6 +92,8 @@ public:
     uint32_t getNumWheels() const;
     WheelReadout getWheelReadout( uint32_t index ) const;
     float getChassisSpeed() const;
+    float getForwardSpeed() const { return vehicle.ForwardSpeed; }
+    Eigen::Vector4f getChassisVelocity() const;
     float getEngineAngularVelocity() const;
     int32_t getCurrentGear() const;
     float getInputBrake() const { return inputBrake; }
@@ -107,8 +109,7 @@ private:
                     int wheelIndex,
                     float deltaTime );
 
-    float
-    filterSteering( float rawTarget, float deltaTime, float speed, float beta );
+    float filterSteering( float rawTarget );
     void applyAntiRollBars();
 
 private:

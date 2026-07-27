@@ -9,7 +9,6 @@
 #include "physics/physics_layers.h"
 #include "physics/gs_physics.h"
 #include "database/gs_database.h"
-#include "player_data/gs_playerdata.h"
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -26,20 +25,12 @@
 #include <cstring>
 
 constexpr float kMmToM = 0.001f;
-constexpr float kSlipDenom =
-    3.0f; // min |vLong| for the longitudinal-slip ratio
-
+constexpr float kSlipDenom = 3.0f;
 constexpr int kWheelSubsteps = 5;
 constexpr float kSuspDampingScale = 1.0f;
 
-bool gVehicleDrivingAids = true;
-constexpr float kEspAuthority = 0.5f;
-constexpr float kEspMinSpeed =
-    8.0f; // ESP only engages above this speed (m/s) (default: ~29 km/h)
-constexpr float kSteerRatePerSec = 4.0f; // full lock in ~0.25 s
-
+bool gVehicleDrivingAids = false;
 bool gVehicleABS = true;
-constexpr float kAbsMinSpeed = 3.0f; // m/s below which ABS is idle
 
 constexpr float kSimuBrakeTorquePerMass = 2.5f;
 constexpr float kBrakeBalance = 0.6f; // fallback
@@ -47,13 +38,12 @@ constexpr float kMaxBrakeTorque = 15000.0f;
 constexpr float kWheelInertiaRadiusCoef = 2.5f; // DAT_00f416c0
 
 constexpr float kSteerScale = 900.0f; // DAT_00f41c10 (900/gSteeringTurn = gain)
-constexpr float kSteerLinearity = 5.0f; // DAT_00fab71c
-
+constexpr float kSteerLinearity = 5.0f;    // DAT_00fab71c
+constexpr float kSteerLinearityMin = 0.1f; // FLOAT_00f41668 (expo gate)
 constexpr float kSteerTurnScale = 1.0f;
-constexpr float kSteerSensNeutral = 1.0f; // gSensitivity[4] (slider 0.5 -> 1.0)
+constexpr float kSteerNormSpeed = 1.0f;
+constexpr float kSteerSensRetailHigh = 2.0f;
 
-bool gVehicleYawDamper = false;
-constexpr float kYawDamping = 3000.0f; // N.m per rad/s of yaw rate
 constexpr float kAeroLiftFront = 0.4f; // DAT_00f41730(0.2) * DAT_00f416b0(2.0)
 constexpr float kAeroDensitySimu = 1.7f;   // DAT_00f417d4
 constexpr float kAeroDensityArcade = 1.2f; // DAT_00f8a248
@@ -240,6 +230,91 @@ EspCombinedSlipFactor( const PhysicsTire &tire, float load, float slipDeg ) {
         x = -x;
     }
     return std::sqrt( x ) * peakGrip;
+}
+
+static void ApplyBrakeAndABS( PhysicsWheelState &w, float brake, float h ) {
+    // FUN_0043e440 L160-207
+    // NOTE: h is the SUBSTEP (not the frame dt)
+    if ( brake <= 0.0f ) {
+        return;
+    }
+    float brakeTq = brake * w.BrakeTorque;
+    const float effInertia = w.Inertia + w.ReflectedInertia;
+
+    if ( gVehicleABS && w.bGroundContact ) {
+        const float vLong = w.ContactVelLong;
+        const float vLat = w.ContactVelLat;
+        const float radius = std::max( w.Radius, 0.05f );
+        float slipArg;
+        if ( vLong <= 0.0f ) {
+            slipArg = ( vLong < 0.0f ) ? -std::atan( vLat / vLong ) : 0.0f;
+        } else {
+            slipArg = std::atan( vLat / vLong );
+        }
+        const float curve =
+            EspCombinedSlipFactor( w.Tire, w.NormalLoad, slipArg );
+        const float sOmega = ( w.AngularVel > 0.0f ) ? 1.0f : -1.0f;
+        const float speed = std::sqrt( vLat * vLat + vLong * vLong );
+        const float vClamp = JPH::Clamp( std::fabs( vLong ), 0.0f, 1.0f );
+        const float absTgt =
+            vClamp * ( vLong - speed * curve * sOmega ) / radius;
+        const float brakeCap =
+            std::max( 0.0f, std::fabs( w.AngularVel ) - std::fabs( absTgt ) ) *
+            ( effInertia / h );
+        brakeTq = JPH::Clamp( brakeTq, 0.0f, brakeCap );
+    } else {
+        const float stopTq = std::fabs( w.AngularVel ) * ( effInertia / h );
+        brakeTq = std::min( brakeTq, stopTq );
+    }
+
+    if ( w.AngularVel > 0.0f ) {
+        w.DriveTorque -= brakeTq;
+    } else if ( w.AngularVel < 0.0f ) {
+        w.DriveTorque += brakeTq;
+    }
+}
+
+static void ApplyESP( PhysicsWheelState &w,
+                      float reactTorque,
+                      float h,
+                      bool &outFired,
+                      float *pOutDiag ) {
+    // FUN_0043e440 L227-279
+    // NOTE: h is the SUBSTEP (not the frame dt)
+    if ( !gVehicleDrivingAids || !w.bGroundContact || !w.bDriven ) {
+        return;
+    }
+    const float vLong = w.ContactVelLong;
+    const float vLat = w.ContactVelLat;
+    if ( std::fabs( w.AngularVel ) <= 0.1f || std::fabs( vLong ) <= 0.1f ) {
+        return;
+    }
+    const float radius = std::max( w.Radius, 0.05f );
+
+    float slipArg;
+    if ( vLong <= 0.0f ) {
+        slipArg = ( vLong < 0.0f ) ? -std::atan( vLat / vLong ) : 0.0f;
+    } else {
+        slipArg = std::atan( vLat / vLong );
+    }
+
+    const float curve = EspCombinedSlipFactor( w.Tire, w.NormalLoad, slipArg );
+    const float sOmega = ( w.AngularVel > 0.0f ) ? 1.0f : -1.0f;
+    const float speed = std::sqrt( vLat * vLat + vLong * vLong );
+    const float newVal = ( speed * curve * sOmega + vLong ) / radius;
+
+    const float effInertia = w.Inertia + w.ReflectedInertia;
+    const float driveOrig = w.DriveTorque;
+    const float espTorque = ( newVal - w.AngularVel ) * ( effInertia / h ) -
+                            ( reactTorque + driveOrig );
+
+    if ( driveOrig > 0.0f && w.AngularVel > 0.0f && espTorque <= 0.0f ) {
+        outFired = true;
+        pOutDiag[0] = newVal;
+        pOutDiag[1] = curve;
+        pOutDiag[2] = espTorque;
+        w.DriveTorque = espTorque;
+    }
 }
 
 PhysicsVehicle::PhysicsVehicle()
@@ -439,9 +514,14 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         gpPhysics ? gpPhysics->getTireProfile( tireIdx ) : nullptr;
     const TirePacejka *pRearTire = pFrontTire;
 
-    OTDU_LOG_DEBUG( "Vehicle tire: %d profiles, idx=%d curve=%s\n", numProfiles,
-                    tireIdx,
-                    pFrontTire != nullptr ? "tires.bnk" : "placeholder" );
+    if ( pFrontTire != nullptr ) {
+        OTDU_LOG_DEBUG( "Vehicle tire: %d profiles, idx=%d curve=tires.bnk\n",
+                        numProfiles, tireIdx );
+    } else {
+        OTDU_LOG_WARN( "Vehicle tire: no tires.bnk profile (%d available, "
+                       "idx=%d) -- falling back to PLACEHOLDER tire curves\n",
+                       numProfiles, tireIdx );
+    }
 
     const PhysicsVehicle::SuspensionSetup suspFront =
         PhysicsVehicle::ComputeAxleSuspension( db, true );
@@ -501,6 +581,12 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                                          ? c.RearLngBrakeFrictionCoef
                                          : 1.2f );
         w.BrakeGripLat = w.GripLat;
+
+        w.ReactionScale =
+            bFront ? ( c.ResistiveCoefFront > 0 ? c.ResistiveCoefFront : 1.0f )
+                   : ( c.ResistiveCoefRear > 0 ? c.ResistiveCoefRear : 1.0f );
+        w.ReactionSlipCoef =
+            bFront ? c.ResistiveLateralCoefFront : c.ResistiveLateralCoefRear;
 
         const float axleBal = bFront ? BrakeBalance : ( 1.0f - BrakeBalance );
         w.BrakeTorque = axleBal * BrakeTorque;
@@ -713,37 +799,26 @@ void PhysicsVehicle::setClutchOverride( float engagement ) {
     vehicle.Clutch.OverrideEngagement = engagement;
 }
 
-float PhysicsVehicle::filterSteering( float rawSteer,
-                                      float deltaTime,
-                                      float speed,
-                                      float beta ) {
+float PhysicsVehicle::filterSteering( float rawSteer ) {
     // FUN_0041ad60
-    (void)beta;
+    const float normSpeed = kSteerNormSpeed;
 
-    float slider =
-        ( gpPlayerData != nullptr ) ? gpPlayerData->getPadSensitivity() : 0.0f;
-    if ( slider <= 0.0f ) {
-        slider =
-            ( static_cast<float>( gDefaultSensitivity ) - 1.0f ) * 0.06666667f;
-    }
-    slider = JPH::Clamp( slider, 0.0f, 1.0f );
-
-    float sens = kSteerSensNeutral;
+    float sens = kSteerSensRetailHigh;
     if ( gSensitivity[1] > gSensitivity[0] &&
          gSensitivity[2] > gSensitivity[1] ) {
         float base, slope, lo, hi;
-        if ( slider >= gSensitivity[1] ) { // upper segment [0.5,1]
+        if ( normSpeed >= gSensitivity[1] ) { // upper segment [0.5,1]
             slope = ( gSensitivity[5] - gSensitivity[4] ) /
                     ( gSensitivity[2] - gSensitivity[1] );
             base = gSensitivity[4];
-            sens = slope * ( slider - gSensitivity[1] ) + base;
+            sens = slope * ( normSpeed - gSensitivity[1] ) + base;
             lo = gSensitivity[4];
             hi = gSensitivity[5];
         } else { // lower segment [0,0.5]
             slope = ( gSensitivity[4] - gSensitivity[3] ) /
                     ( gSensitivity[1] - gSensitivity[0] );
             base = gSensitivity[3];
-            sens = slope * ( slider - gSensitivity[0] ) + base;
+            sens = slope * ( normSpeed - gSensitivity[0] ) + base;
             lo = gSensitivity[3];
             hi = gSensitivity[4];
         }
@@ -752,8 +827,10 @@ float PhysicsVehicle::filterSteering( float rawSteer,
 
     const float turn = ( gSteeringTurn > 0.0f ) ? gSteeringTurn : 270.0f;
     float cmd = ( rawSteer / turn ) * kSteerScale * sens * kSteerTurnScale;
-    const float s = ( cmd >= 0.0f ) ? 1.0f : -1.0f;
-    cmd = s * SteerResponseCurve( std::fabs( cmd ), kSteerLinearity );
+    if ( kSteerLinearity >= kSteerLinearityMin ) {
+        const float s = ( cmd >= 0.0f ) ? 1.0f : -1.0f;
+        cmd = s * SteerResponseCurve( std::fabs( cmd ), kSteerLinearity );
+    }
     filteredSteer = JPH::Clamp( cmd, -1.0f, 1.0f );
     return filteredSteer;
 }
@@ -926,13 +1003,11 @@ void PhysicsVehicle::OnStep(
 
     JPH::BodyInterface &bi = system.GetBodyInterfaceNoLock();
     const JPH::BodyID id = chassis.GetID();
+    float diagAppliedFwd = 0.0f;
 
     const JPH::Vec3 chassisVel = chassis.GetLinearVelocity();
-    const float chassisSpeed = chassisVel.Length();
     const float vForward = chassisVel.Dot( world.GetColumn3( 2 ) );
-    const float vRight = chassisVel.Dot( world.GetColumn3( 0 ) );
-    const float slipBeta = std::atan2( vRight, std::fabs( vForward ) + 0.1f );
-    steerCommand = filterSteering( inputSteer, dt, chassisSpeed, slipBeta );
+    steerCommand = filterSteering( inputSteer );
 
     vehicle.ForwardSpeed = vForward;
     vehicle.AnyWheelGrounded = false;
@@ -964,104 +1039,35 @@ void PhysicsVehicle::OnStep(
             w.SuspForce.setZero();
         }
 
-        if ( inputBrake > 0.0f ) {
-            float brakeTq = inputBrake * w.BrakeTorque;
+        const float hSub = dt / static_cast<float>( kWheelSubsteps );
+        const float radius = std::max( w.Radius, 0.05f );
+        const float driveBase = w.DriveTorque; // diff output for this step
+        bool espFired = false;
+        float espDiag[3] = { 0.0f, 0.0f, 0.0f }; // newVal, curve, espTorque
+        float reactTorque = 0.0f;
 
-            if ( gVehicleABS && w.bGroundContact &&
-                 chassisSpeed > kAbsMinSpeed ) {
-                const float vLong = w.ContactVelLong;
-                const float vLat = w.ContactVelLat;
-                const float radius = std::max( w.Radius, 0.05f );
-                float slipDeg;
-                if ( vLong <= 0.0f ) {
-                    slipDeg = ( vLong < 0.0f )
-                                  ? -std::atan( vLat / vLong ) * kRadToDeg
-                                  : 0.0f;
-                } else {
-                    slipDeg = std::atan( vLat / vLong ) * kRadToDeg;
-                }
-                const float curve =
-                    EspCombinedSlipFactor( w.Tire, w.NormalLoad, slipDeg );
-                const float sOmega = ( w.AngularVel > 0.0f ) ? 1.0f : -1.0f;
-                const float speed = std::sqrt( vLat * vLat + vLong * vLong );
-                const float vClamp =
-                    JPH::Clamp( std::fabs( vLong ), 0.0f, 1.0f );
-                const float absTgt =
-                    vClamp * ( speed * curve * sOmega - vLong ) / radius;
-                const float effInertia = w.Inertia + w.ReflectedInertia;
-                // Max brake torque that keeps |omega| >= |absTgt| this step.
-                const float brakeCap =
-                    std::max( 0.0f, std::fabs( w.AngularVel ) -
-                                        std::fabs( absTgt ) ) *
-                    ( effInertia / dt );
-                brakeTq = JPH::Clamp( brakeTq, 0.0f, brakeCap );
-            } else {
-                const float effInertia = w.Inertia + w.ReflectedInertia;
-                const float stopTq =
-                    std::fabs( w.AngularVel ) * ( effInertia / dt );
-                brakeTq = std::min( brakeTq, stopTq );
-            }
-
-            if ( w.AngularVel > 0.0f ) {
-                w.DriveTorque -= brakeTq;
-            } else if ( w.AngularVel < 0.0f ) {
-                w.DriveTorque += brakeTq;
-            }
-        }
-
-        if ( gVehicleDrivingAids && hit && w.bDriven ) {
-            const float vLong = w.ContactVelLong;
-            const float vLat = w.ContactVelLat;
-            if ( std::fabs( w.AngularVel ) > 0.1f &&
-                 std::fabs( vLong ) > 0.1f && chassisSpeed > kEspMinSpeed ) {
-                const float radius = std::max( w.Radius, 0.05f );
-
-                float slipDeg;
-                if ( vLong <= 0.0f ) {
-                    slipDeg = ( vLong < 0.0f )
-                                  ? -std::atan( vLat / vLong ) * kRadToDeg
-                                  : 0.0f;
-                } else {
-                    slipDeg = std::atan( vLat / vLong ) * kRadToDeg;
-                }
-
-                const float curve =
-                    EspCombinedSlipFactor( w.Tire, w.NormalLoad, slipDeg );
-                const float sOmega = ( w.AngularVel > 0.0f ) ? 1.0f : -1.0f;
-                const float speed = std::sqrt( vLat * vLat + vLong * vLong );
-                const float newVal =
-                    ( speed * curve * sOmega + vLong ) / radius;
-
-                const float effInertia = w.Inertia + w.ReflectedInertia;
-                const float driveOrig = w.DriveTorque;
-                const float espTorque =
-                    ( newVal - w.AngularVel ) * ( effInertia / dt ) - driveOrig;
-
-                if ( driveOrig > 0.0f && w.AngularVel > 0.0f &&
-                     espTorque <= 0.0f ) {
-                    const float authority =
-                        kEspAuthority * w.GripLong * w.NormalLoad * radius;
-                    w.DriveTorque =
-                        JPH::Clamp( espTorque, -authority, authority );
-                }
-            }
-        }
-
-        if ( hit ) {
-            const float hSub = dt / static_cast<float>( kWheelSubsteps );
-            const float vLong = w.ContactVelLong;
-            const float radius = std::max( w.Radius, 0.05f );
-            for ( int s = 0; s < kWheelSubsteps; ++s ) {
-                const float longSlip =
-                    ( w.AngularVel * radius - vLong ) /
-                    std::max( std::fabs( vLong ), kSlipDenom );
-                w.ForwardDir = w.ContactNormal * longSlip;
-                ComputeTireForces( w, vehicleMatrix );
-                IntegrateWheel( w, hSub );
-            }
-        } else {
+        if ( !hit ) {
             IntegrateWheel( w, dt ); // airborne: spin freely on drive torque
             continue;
+        }
+
+        const float vLongStep = w.ContactVelLong;
+        for ( int s = 0; s < kWheelSubsteps; ++s ) {
+            const float longSlip =
+                ( w.AngularVel * radius - vLongStep ) /
+                std::max( std::fabs( vLongStep ), kSlipDenom );
+            w.ForwardDir = w.ContactNormal * longSlip;
+            ComputeTireForces( w, vehicleMatrix );
+
+            reactTorque = ComputeWheelReactionTorque( w, hSub );
+            w.DriveTorque = driveBase;
+
+            ApplyBrakeAndABS( w, inputBrake, hSub );
+            ApplyESP( w, reactTorque, hSub, espFired, espDiag );
+
+            IntegrateWheel( w, hSub );
+
+            w.NetTorque += ( w.DriveTorque - driveBase );
         }
 
         const JPH::RVec3 point( w.ContactPoint.x(), w.ContactPoint.y(),
@@ -1107,11 +1113,10 @@ void PhysicsVehicle::OnStep(
                 const float diffOmega =
                     sumOmega / static_cast<float>( nDriven );
                 const float diffReaction =
-                    2.0f * ( ( inputThrottle > 0.0f ) ? maxReact : minReact );
-                vehicle.ReflectedWheelSpeed = kfb * diffOmega; // responsive
-                const float kTwSmooth = 0.2f;
-                vehicle.ReactionTorque +=
-                    ( diffReaction / kfb - vehicle.ReactionTorque ) * kTwSmooth;
+                    2.0f * ( ( vehicle.DiffInputTorque > 0.0f ) ? maxReact
+                                                                : minReact );
+                vehicle.ReflectedWheelSpeed = kfb * diffOmega;
+                vehicle.ReactionTorque = diffReaction / kfb;
             }
         }
     }
@@ -1125,17 +1130,6 @@ void PhysicsVehicle::OnStep(
             upAxis * ( -aeroDownArea * kAeroLiftFront * dyn ) +
             fwd * ( -aeroDragArea * dyn );
         bi.AddForce( id, aeroForce );
-    }
-
-    const JPH::Vec3 fwdAxis = world.GetColumn3( 2 );
-    const float rollRate = chassis.GetAngularVelocity().Dot( fwdAxis );
-    const float kRollDamping = 1500.0f;
-    bi.AddTorque( id, fwdAxis * ( -kRollDamping * rollRate ) );
-
-    if ( gVehicleYawDamper ) {
-        const JPH::Vec3 upAxis = world.GetColumn3( 1 );
-        const float yawRate = chassis.GetAngularVelocity().Dot( upAxis );
-        bi.AddTorque( id, upAxis * ( -kYawDamping * yawRate ) );
     }
 
     bi.ActivateBody( id );
@@ -1242,6 +1236,15 @@ float PhysicsVehicle::getChassisSpeed() const {
     const JPH::Vec3 v = pPhysicsSystem->GetBodyInterface().GetLinearVelocity(
         pChassisBody->GetID() );
     return JPH::Vec3( v.GetX(), 0.0f, v.GetZ() ).Length();
+}
+
+Eigen::Vector4f PhysicsVehicle::getChassisVelocity() const {
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return Eigen::Vector4f::Zero();
+    }
+    const JPH::Vec3 v = pPhysicsSystem->GetBodyInterface().GetLinearVelocity(
+        pChassisBody->GetID() );
+    return Eigen::Vector4f( v.GetX(), v.GetY(), v.GetZ(), 0.0f );
 }
 
 float PhysicsVehicle::getEngineAngularVelocity() const {

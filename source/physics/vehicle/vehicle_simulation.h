@@ -74,7 +74,9 @@ struct PhysicsWheelState {
     float DriveTorque = 0.0f; // applied drive/brake torque from the diff
     float BrakeTorque = 0.0f; // brake torque command
     float AngAccel = 0.0f;    // wheel angular acceleration
-    float NetTorque = 0.0f;   // net wheel torque
+    float ReactionScale = 1.0f;
+    float ReactionSlipCoef = 0.0f;
+    float NetTorque = 0.0f; // net wheel torque
 
     float TireForceLong = 0.0f;  // longitudinal tire force scalar
     float TireForceLat = 0.0f;   // lateral tire force scalar
@@ -154,7 +156,7 @@ struct PhysicsGearboxSim {
     float UpshiftBand = 0.7f;
     float DownshiftBand = 0.5f;
     int DrivelineInertiaMode = 1; //  0=/|k| 1=/k^2 2=/sqrt(k)
-    float BaseInertia = 0.15f;    // FIXME: Not p-code accurate
+    float BaseInertia = 0.15f;
     float DiffInertia = 0.01f;
     bool bAutomatic = true;
 };
@@ -172,7 +174,6 @@ struct PhysicsClutchSim {
     float EngageThrottleLo = 1.0f;  // engage-rate at full throttle
     float EngageRate = 3.0f;        // actual-engagement slew up
     float DisengageRate = 3.0f;     // actual-engagement slew down
-    bool bLocked = false;           // slip vs locked FIXME: Not p-code accurate
     float OverrideEngagement = -1.0f;
 };
 
@@ -213,9 +214,12 @@ struct PhysicsVehicleState {
     float CouplingCoefE = 1.0f;
     float CouplingCoefW = 1.0f;
     float DrivelineInertia = 1.0f;
-    float ReflectedWheelSpeed = 0.0f;
+    float ReflectedWheelSpeed = 0.0f; // Ww
     float ForwardSpeed = 0.0f;
-    float ReactionTorque = 0.0f;
+    float ReactionTorque = 0.0f;  // Tw
+    float CouplingTorque = 0.0f;  // clutch impulse solve
+    float ClutchEngage = 0.0f;    // clutchEngage
+    float DiffInputTorque = 0.0f; // T_in fed to the driven diff node
 
     float BrakeTorque = 0.0f;
     float Mass = 1200.0f; // total vehicle mass (kg)
@@ -234,4 +238,7 @@ void StepPowertrain( PhysicsVehicleState &vehicle,
 void ComputeTireForces( PhysicsWheelState &wheel,
                         const Matrix4x4f_t &vehicleMatrix );
 void ComputeSuspensionForce( PhysicsWheelState &wheel );
+float ComputeWheelReactionTorque( const PhysicsWheelState &wheel,
+                                  float deltaTime,
+                                  float *pOutLongForce = nullptr );
 void IntegrateWheel( PhysicsWheelState &wheel, float deltaTime );

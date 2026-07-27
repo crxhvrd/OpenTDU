@@ -11,7 +11,7 @@ static constexpr float kLatSlipMinSpeed = 2.0f; // m/s
 static constexpr float kLoadToPerMille =
     0.001f; // FLOAT_00f4167c (load -> cf50/ceb0 scale)
 
-static constexpr float kMaxCoupling = 4000.0f;
+static constexpr float kMaxCoupling = 4000.0f; // FIXME
 
 // Debug override for the driveline inertia divisor mode (see FUN_0043aba0)
 int gVehicleDrivelineInertiaMode = -1;
@@ -31,9 +31,6 @@ static constexpr float kShiftLoadFrac =
 static constexpr float kShiftBrakeTrigger =
     0.2f; // DAT_00f41730: brake > 0.2 forces a downshift evaluation
 static constexpr float kShiftHandbrakeMax = 0.25f; // DAT_00f416dc
-bool gVehicleDiff =
-    false; // REMOVE ME: legacy grip-split gate (SplitDiffOpen path)
-static constexpr float kDiffTractionGate = 0.5f;
 int gVehicleDiffTypeOverride =
     0; // debug: 0=per-diff (defaults open); 1 open / 2 LSD / 4 spool
 float gVehicleDiffLockCoef =
@@ -335,12 +332,16 @@ void ComputeSuspensionForce( PhysicsWheelState &w ) {
     w.SuspForcePoint = w.ContactPoint;
 }
 
-void IntegrateWheel( PhysicsWheelState &w, float deltaTime ) {
+float ComputeWheelReactionTorque( const PhysicsWheelState &w,
+                                  float deltaTime,
+                                  float *pOutLongForce ) {
     // FUN_0043e440
     const float totalInertia = w.Inertia + w.ReflectedInertia;
     const float inertia = ( totalInertia > 1e-6f ) ? totalInertia : 1e-6f;
     const float omega = w.AngularVel;
+
     float reactTorque = -w.TireForceLong * w.Radius;
+    float longForce = w.TireForceLong;
 
     if ( w.Radius > 1e-4f && deltaTime > 0.0f ) {
         const float omegaFree = w.ContactVelLong / w.Radius;
@@ -349,16 +350,30 @@ void IntegrateWheel( PhysicsWheelState &w, float deltaTime ) {
         if ( ( 0.0f < lockTorque && lockTorque < reactTorque ) ||
              ( lockTorque < 0.0f && reactTorque < lockTorque ) ) {
             reactTorque = lockTorque;
-            const float gripLimit = w.GripLong * w.NormalLoad;
-            w.TireForceLong =
-                Clamp( w.DriveTorque / w.Radius, -gripLimit, gripLimit );
+            longForce = -lockTorque / w.Radius;
         }
     }
 
+    if ( pOutLongForce != nullptr ) {
+        *pOutLongForce = longForce;
+    }
+
     reactTorque += w.DragLong * ( ( omega > 0.0f ) ? 1.0f : -1.0f ) * w.Radius;
+    return reactTorque;
+}
+
+void IntegrateWheel( PhysicsWheelState &w, float deltaTime ) {
+    // FUN_0043e440
+    const float totalInertia = w.Inertia + w.ReflectedInertia;
+    const float inertia = ( totalInertia > 1e-6f ) ? totalInertia : 1e-6f;
+    const float omega = w.AngularVel;
+    float longForce = w.TireForceLong;
+    const float reactTorque =
+        ComputeWheelReactionTorque( w, deltaTime, &longForce );
+    w.TireForceLong = longForce;
 
     const float helpTorque = w.LatHelpA + w.LatHelpB;
-    w.NetTorque = helpTorque + reactTorque;
+    w.NetTorque = ( helpTorque + reactTorque ) * w.ReactionScale;
     w.AngAccel = ( w.NetTorque + w.DriveTorque ) / inertia;
     w.AngularVel = w.AngAccel * deltaTime + omega;
 
@@ -464,35 +479,6 @@ void BuildEngineCurves( PhysicsEngineSim &e,
             e.CurveMin[i].Torque = brakeFloor;
         }
     }
-}
-
-static void SplitDiffOpen( float tIn,
-                           float bias,
-                           float reactA,
-                           float reactB,
-                           float &outA,
-                           float &outB ) {
-    // FUN_004402a0
-    const float half = bias * tIn;
-    if ( gVehicleDiff && tIn > 0.0f &&
-         ( std::fabs( reactA ) >= kDiffTractionGate ||
-           std::fabs( reactB ) >= kDiffTractionGate ) ) {
-        const float gripA = std::max( 0.0f, -reactA );
-        const float gripB = std::max( 0.0f, -reactB );
-        const float total = gripA + gripB;
-        if ( gripA <= gripB ) { // wheel A lighter -> surplus goes to A
-            const float bOut = std::min( half, total );
-            outB = bOut;
-            outA = half + std::max( 0.0f, half - bOut );
-        } else { // wheel B lighter -> surplus goes to B
-            const float aOut = std::min( half, total );
-            outA = aOut;
-            outB = half + std::max( 0.0f, half - aOut );
-        }
-        return;
-    }
-    outA = half;
-    outB = ( 1.0f - bias ) * tIn;
 }
 
 static void SplitDiff( const PhysicsDifferentialSim &d,
@@ -868,6 +854,9 @@ void StepPowertrain( PhysicsVehicleState &v,
 
     // Drive torque = ratio*transEff*finalDrive*engage*coupling -> diff split.
     const float gearboxOut = k * g.TransEff * engage * coupling;
+    v.CouplingTorque = coupling;
+    v.ClutchEngage = engage;
+    v.DiffInputTorque = gearboxOut;
 
     // Effective wheel inertia = k^2*Idl + diffBaseI + wheelBaseI (driven).
     const float reflectedInertia =
