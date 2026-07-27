@@ -85,6 +85,31 @@ void FrameGraph::removeObject( RenderObjectBase *pObject ) {
     renderNodes.remove( pObject );
 }
 
+static void RegenerateAutoMipmapAttachments( RenderScene *pScene ) {
+    // Helper to honor D3DUSAGE_AUTOGENMIPMAP during a frame in flight
+    // (for non-D3D9 backends)
+    FramebufferAttachments *pFramebuffer = pScene->getFramebuffer();
+    if ( pFramebuffer == nullptr ) {
+        return;
+    }
+
+    for ( RenderTarget *pAttachment : pFramebuffer->pAttachments ) {
+        if ( pAttachment == nullptr ) {
+            continue;
+        }
+
+        Render2DB *p2DB = pAttachment->getBound2DB();
+        Texture *pTexture =
+            ( p2DB != nullptr ) ? p2DB->getFirstBitmap() : nullptr;
+        if ( pTexture == nullptr || pTexture->NumMipmap <= 1 ||
+             ( ( pTexture->Flags >> 0xe ) & 1 ) == 0 ) {
+            continue;
+        }
+
+        gEdRender.pRenderDevice->generateMipchainInline( pTexture );
+    }
+}
+
 void FrameGraph::submitDrawCommands( bool param_2 ) {
     // FUN_0050ea50
     if ( param_2 ) {
@@ -112,6 +137,7 @@ void FrameGraph::submitDrawCommands( bool param_2 ) {
                     gEdRender.pRenderDevice->pushDebugLabel( pNode->getName() );
                     peVar1->submitDrawCommands( uVar5 );
                     gpRenderContext->flushSubmittedScene();
+                    RegenerateAutoMipmapAttachments( peVar1 );
                     gEdRender.pRenderDevice->popDebugLabel();
                     SetupGraph::Unbind( 0 );
                 } else if ( puVar2 == 1 ) {

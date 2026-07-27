@@ -159,8 +159,15 @@ public:
     void unlockBuffer( GPUBuffer *pBuffer );
 
     void generateMipchain( Texture *pTexture );
+    void generateMipchainInline( Texture *pTexture );
 
     void destroyTexture( GPUTexture *pTexture );
+
+private:
+    void recordMipchainGeneration( Texture *pTexture,
+                                   VkCommandBuffer cmdBuffer );
+
+public:
     void destroyBuffer( GPUBuffer *pBuffer );
     void destroyShader( GPUShader *pShader );
     void destroyVertexLayout( GPUVertexLayout *pVertexLayout );

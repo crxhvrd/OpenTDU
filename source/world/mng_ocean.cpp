@@ -242,6 +242,8 @@ void MngOcean::draw() {
 
     // Heightmap -> normal map conversion quad, then the projected-grid
     // surface in the near pass.
+    pDrawListNMapHM->forceUploadToGPU();
+
     gpRender->getRenderPass<eRenderPass::RP_OceanNMap>()
         .pScene->enqueueDynamicDrawList( pDrawListNMapHM );
     gpRender->getRenderPass<eRenderPass::RP_Near>()
@@ -505,6 +507,8 @@ bool MngOcean::loadResources() {
 
     // Fullscreen quad converting the heightmap into the ocean normal map.
     DrawStreams nmapStreams;
+    nmapStreams.Normals = 0;
+    nmapStreams.Diffuse = 0;
     nmapStreams.UVMap = 1;
     nmapStreams.bIndex16 = 1;
     if ( !pDrawListNMapHM->initialize( 1, 4, 0, true, &nmapStreams,
@@ -531,6 +535,9 @@ bool MngOcean::loadResources() {
     // Projected-grid mesh: a single persistent triangle-strip primitive
     // covering the whole vertex/index buffers
     DrawStreams oceanStreams;
+    oceanStreams.Normals = 0;
+    oceanStreams.Diffuse = 0;
+    oceanStreams.UVMap = 0;
     oceanStreams.bIndex16 = 1;
     if ( !pDrawListOcean->initialize( 1, kNumOceanVertices, kNumOceanIndices,
                                       true, &oceanStreams, "MngOcean",

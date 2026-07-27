@@ -21,9 +21,11 @@ GSNoise::GSNoise() : GameSystem(), bReady( false ), volumeNoise() {
     channels[1].ComposePass = eRenderPass::RP_NoiseCompS;
     channels[1].AssemblyPass = eRenderPass::RP_NoiseAssS;
 
-    // Two channels scroll at different rates (the "fast"/"slow" split)
-    channels[0].scrollSpeed = 0.05f;
-    channels[1].scrollSpeed = 0.013f;
+    // Two channels scroll at different rates (the "fast"/"slow" split).
+    // tick() consumes seconds, so 1.0 = one full 3-tap cross-fade cycle per
+    // second.
+    channels[0].scrollSpeed = 1.0f;
+    channels[1].scrollSpeed = 0.3f;
 
     for ( NoiseChannel &ch : channels ) {
         ch.pComposeList = new DrawList();
@@ -89,7 +91,7 @@ bool GSNoise::allocateVolumeNoise() {
             (uint16_t)( ( (float)rand() / (float)RAND_MAX ) * 65535.0f );
     }
 
-    // 3D smoothing convolution
+    // 3x3 smoothing convolution, applied INSIDE each Z slice
     auto sampleRandom = [&randomNoise]( int32_t x, int32_t y, int32_t z ) {
         const int32_t cx = x & ( kVolumeSize - 1 );
         const int32_t cy = y & ( kVolumeSize - 1 );
@@ -111,8 +113,10 @@ bool GSNoise::allocateVolumeNoise() {
                     sampleRandom( x - 1, y, z ) + sampleRandom( x + 1, y, z );
                 sum +=
                     sampleRandom( x, y - 1, z ) + sampleRandom( x, y + 1, z );
-                sum +=
-                    sampleRandom( x, y, z - 1 ) + sampleRandom( x, y, z + 1 );
+                sum += sampleRandom( x - 1, y - 1, z ) +
+                       sampleRandom( x + 1, y - 1, z );
+                sum += sampleRandom( x - 1, y + 1, z ) +
+                       sampleRandom( x + 1, y + 1, z );
                 const int32_t index = ( z * kVolumeSize + y ) * kVolumeSize + x;
                 pTexels[index] = (uint16_t)( sum >> 4 );
             }
@@ -152,7 +156,6 @@ bool GSNoise::setupChannelMaterials( NoiseChannel &ch ) {
         volumeNoise.getBitmapSection();
     pComposeLayer->pLayerTextures[0].SamplerAddress[0] = (eTextureAddress)2;
     pComposeLayer->pLayerTextures[0].SamplerAddress[1] = (eTextureAddress)2;
-    pComposeLayer->pLayerTextures[0].SamplerAddress[2] = (eTextureAddress)2;
     pComposeLayer->pLayerTextures[0].MinMagFilter = (eTextureFiltering)1;
     pComposeLayer->pLayerTextures[0].MipFilter = (eTextureFiltering)1;
 
@@ -178,6 +181,7 @@ bool GSNoise::setupChannelMaterials( NoiseChannel &ch ) {
         (MaterialShaderParameterArray *)
             ch.pAssemblyMaterial->getParameterByIndex( 0 );
     pAssemblyParams->Flags.NumUVMaps = 1;
+    *pAssemblyParams->getParameterByIndex( 0 ) = { 0x3e, 2, 0x10, 0 };
 
     Render2DB *pComposeRT = gpRender->getRenderPassAtIndex( ch.ComposePass )
                                 .pFramebufferAttachments->pAttachments[0]
@@ -206,9 +210,11 @@ bool GSNoise::buildChannelLists( NoiseChannel &ch ) {
     auto buildQuad = []( DrawList *pList, Material *pMaterial, float inset,
                          const char *pName ) -> bool {
         DrawStreams streams;
+        streams.Normals = 0;
+        streams.Diffuse = 0;
         streams.UVMap = 1;
         streams.bIndex16 = 1;
-        if ( !pList->initialize( 1, 4, 0, true, &streams, pName, false ) ) {
+        if ( !pList->initialize( 1, 4, 0, false, &streams, pName, false ) ) {
             return false;
         }
 
@@ -261,11 +267,11 @@ void GSNoise::tick( float, float deltaTime ) {
 
         const float phase = ch.scrollPhase;
 
-        // Three consecutive slice indices cycling 0->1->2->0 (mod 3.0).
-        const float s0 = std::fmod( std::floor( phase ), 3.0f ); // DAT_00f41ae0
-        const float s1 = std::fmod( s0 + 1.0f, 3.0f );
-        const float s2 = std::fmod( s1 + 1.0f, 3.0f );
-        const float frac = std::fmod( phase, 1.0f ); // DAT_00f41618
+        const float s0 =
+            std::fmod( std::floor( phase ), 32.0f ); // DAT_00f41ae0 = 32.0
+        const float s1 = std::fmod( s0 + 1.0f, 32.0f );
+        const float s2 = std::fmod( s1 + 1.0f, 32.0f );
+        const float frac = std::fmod( phase, 1.0f ); // DAT_00f41618 = 1.0
 
         // weight(a) = sin(a * pi)^2 * (2/3); angles are (2+frac)/3, (1+frac)/3,
         // frac/3 -- one-third apart so the three sin^2 lobes tile the cycle.
@@ -297,9 +303,6 @@ void GSNoise::draw( float ) {
     }
 
     for ( NoiseChannel &ch : channels ) {
-        ch.pComposeList->forceUploadToGPU();
-        ch.pAssemblyList->forceUploadToGPU();
-
         gpRender->getRenderPassAtIndex( ch.ComposePass )
             .pScene->enqueueDynamicDrawList( ch.pComposeList );
         gpRender->getRenderPassAtIndex( ch.AssemblyPass )

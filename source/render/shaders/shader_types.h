@@ -14,6 +14,7 @@ public:
         return pMetadata;
     }
     inline const uint32_t *getShaderInfos() const { return ShaderInfos; }
+    inline uint64_t getHashcode() const { return Hashcode; }
 
 public:
     Shader();

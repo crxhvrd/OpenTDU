@@ -853,7 +853,30 @@ void RenderDevice::generateMipchain( Texture *pTexture ) {
         bPendingMipGen = true;
     }
 
+    recordMipchainGeneration( pTexture, mipMapGenCmdBuffer );
+}
+
+void RenderDevice::generateMipchainInline( Texture *pTexture ) {
+    if ( pTexture == nullptr || pTexture->pTexture == nullptr ||
+         pTexture->NumMipmap <= 1 || !bRecordingCommands ) {
+        return;
+    }
+
+    if ( activeRenderPass != VK_NULL_HANDLE ) {
+        vkCmdEndRenderPass( commandBuffer );
+        activeRenderPass = VK_NULL_HANDLE;
+    }
+
+    recordMipchainGeneration( pTexture, commandBuffer );
+}
+
+void RenderDevice::recordMipchainGeneration( Texture *pTexture,
+                                             VkCommandBuffer cmdBuffer ) {
     GPUTexture *pVulkanTex = pTexture->pTexture;
+
+    const uint32_t mipResourceIndex = ( pVulkanTex->NumResources <= frameIndex )
+                                          ? ( pVulkanTex->NumResources - 1 )
+                                          : frameIndex;
 
     uint32_t numTextures = Max( 1, pTexture->Depth );
 
@@ -867,13 +890,13 @@ void RenderDevice::generateMipchain( Texture *pTexture ) {
 
     VkImageMemoryBarrier barrier = {};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = pVulkanTex->CurrentLayout[frameIndex];
+    barrier.oldLayout = pVulkanTex->CurrentLayout[mipResourceIndex];
     barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barrier.image = pVulkanTex->Image[frameIndex];
+    barrier.image = pVulkanTex->Image[mipResourceIndex];
     barrier.subresourceRange = range;
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    vkCmdPipelineBarrier( mipMapGenCmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
                           nullptr, 1, &barrier );
 
@@ -912,28 +935,26 @@ void RenderDevice::generateMipchain( Texture *pTexture ) {
 
             VkImageMemoryBarrier barrier = {};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barrier.oldLayout = pVulkanTex->CurrentLayout[frameIndex];
+            barrier.oldLayout = pVulkanTex->CurrentLayout[mipResourceIndex];
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.image = pVulkanTex->Image[frameIndex];
+            barrier.image = pVulkanTex->Image[mipResourceIndex];
             barrier.subresourceRange = range;
             barrier.srcAccessMask = 0;
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            vkCmdPipelineBarrier( mipMapGenCmdBuffer,
-                                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr,
                                   0, nullptr, 1, &barrier );
 
-            vkCmdBlitImage( mipMapGenCmdBuffer, pVulkanTex->Image[frameIndex],
+            vkCmdBlitImage( cmdBuffer, pVulkanTex->Image[mipResourceIndex],
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                            pVulkanTex->Image[frameIndex],
+                            pVulkanTex->Image[mipResourceIndex],
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blitInfo,
                             VK_FILTER_LINEAR );
 
             barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            vkCmdPipelineBarrier( mipMapGenCmdBuffer,
-                                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr,
                                   0, nullptr, 1, &barrier );
         }
@@ -951,15 +972,15 @@ void RenderDevice::generateMipchain( Texture *pTexture ) {
     srvBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     srvBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     srvBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    srvBarrier.image = pVulkanTex->Image[frameIndex];
+    srvBarrier.image = pVulkanTex->Image[mipResourceIndex];
     srvBarrier.subresourceRange = srvRange;
     srvBarrier.srcAccessMask = 0;
     srvBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    vkCmdPipelineBarrier( mipMapGenCmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
                           0, nullptr, 1, &srvBarrier );
 
-    pVulkanTex->CurrentLayout[frameIndex] =
+    pVulkanTex->CurrentLayout[mipResourceIndex] =
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
