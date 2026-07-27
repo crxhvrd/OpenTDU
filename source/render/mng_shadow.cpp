@@ -1797,9 +1797,11 @@ void MngShadow::addShadowCaster( CarState *param_2 ) {
                 Instance *peVar3 = peVar8->pInstance;
                 if ( ( ( peVar3 != nullptr ) &&
                        ( peVar3->getNumLODs() != 0 ) ) ) {
+                    RenderFile::Section *pObjectSection =
+                        peVar3->getLOD( 0 ).pHashcode->pEntry;
                     RenderObject *pvVar4 =
-                        (RenderObject *)peVar3->getLOD( 0 ).pHashcode->pEntry;
-                    if ( pvVar4 != nullptr ) {
+                        (RenderObject *)( pObjectSection + 1 );
+                    if ( pObjectSection != nullptr ) {
                         local_a0 = pvVar4->BoundingSphere;
                         local_a0.w() = 0.0f;
 
