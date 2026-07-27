@@ -43,6 +43,7 @@ constexpr float kGridCellSize = 64.0f;
 constexpr uint32_t kImpostorPoolCap = 4000;
 constexpr float kImpostorDefaultMaxLODDist = 1.0e8f; // DAT_00f41a50
 constexpr float kImpostorDefaultRadius = 40.0f;      // DAT_00f41b70
+constexpr float kSkinnedImpostorRadius = 25.0f;      // DAT_00f41834
 
 // Per-sector / per-area streaming pool sizes (AlignedMalloc(size, 0x10)).
 static constexpr size_t kSectorPoolSize = 0x480000; // 4.5 MiB
@@ -304,6 +305,30 @@ static void DecodeImpostorInstance( const uint16_t *pInst,
     outAngle = rotY;
 }
 
+static RenderObject *GetLODRenderObject( Instance *pInstance,
+                                         const uint32_t lodIndex ) {
+    Render3DDHashEntry *pHashcode = pInstance->getLOD( lodIndex ).pHashcode;
+    if ( pHashcode == nullptr ) {
+        return nullptr;
+    }
+    uint8_t *pEntry = (uint8_t *)pHashcode->pEntry;
+    if ( pEntry == nullptr ) {
+        return nullptr;
+    }
+    return (RenderObject *)( pEntry + 0x10 );
+}
+
+static void OverrideSkinnedImpostorRadius( Instance *pInstance ) {
+    // FUN_00700c80:115
+    const uint32_t numLOD = pInstance->getNumLODs();
+    for ( uint32_t i = 0; i < numLOD; i++ ) {
+        RenderObject *pObject = GetLODRenderObject( pInstance, i );
+        if ( pObject != nullptr ) {
+            pObject->BoundingSphere.w() = kSkinnedImpostorRadius;
+        }
+    }
+}
+
 static void PreComputeImpostorLOD( MassInstanceImpostor &inst,
                                    Instance *pInstance ) {
     // FUN_00423330
@@ -322,16 +347,11 @@ static void PreComputeImpostorLOD( MassInstanceImpostor &inst,
         inst.MaxLODDist = lastDist * scale * scale;
     }
 
-    Render3DDHashEntry *pHashcode = pInstance->getLOD( 0 ).pHashcode;
-    if ( pHashcode == nullptr ) {
-        return;
-    }
-    uint8_t *pEntry = (uint8_t *)pHashcode->pEntry;
-    if ( pEntry == nullptr ) {
+    RenderObject *pObject = GetLODRenderObject( pInstance, 0 );
+    if ( pObject == nullptr ) {
         return;
     }
 
-    RenderObject *pObject = (RenderObject *)( pEntry + 0x10 );
     inst.Radius = pObject->BoundingSphere.w();
     inst.SpherePos = Mat4x4fTransform( pInstance->getModelMatrix(),
                                        pObject->BoundingSphere );
@@ -592,12 +612,14 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
             Instance *pInst = set.collection.instantiate(
                 reinterpret_cast<InstanceEntry *>( pDef + 1 ), hashcode );
             if ( pInst != nullptr ) {
-                // Bind bones for skinned near-props (eg. railguards)
+                // Bind bones for skinned near-props (eg. railguards), then
+                // widen their bounding sphere to cover the deformed pose.
                 if ( kind == 3 ) {
                     pInst->setBones(
                         reinterpret_cast<Matrix4x4f_t *>( const_cast<uint8_t *>(
                             reinterpret_cast<const uint8_t *>( pInstance ) +
                             0x20 ) ) );
+                    OverrideSkinnedImpostorRadius( pInst );
                 }
 
                 pInst->setColor( color );
