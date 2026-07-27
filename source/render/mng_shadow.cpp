@@ -1669,8 +1669,9 @@ void MngShadow::collectVisibleReceivers() {
             }
         }
 
-        // Sector instances
-        for ( Instance *pInstance : geometry.renderInstances ) {
+        for ( MassInstanceImpostor &massInstance :
+              geometry.impostorGrids[1].instances ) {
+            Instance *pInstance = massInstance.pInstance;
             if ( pInstance != nullptr ) {
                 if ( numReceiver >= kNumMaxReceiver ) {
                     return;

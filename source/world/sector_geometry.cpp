@@ -163,6 +163,35 @@ static void WriteDetail2ProjectionOrigin( MaterialParameter *pParam,
     }
 }
 
+static void PatchImpostorGridShadowMaterials(
+    ImpostorGrid &grid,
+    const AssetPtr<RenderFile::Section> &pShadowSection,
+    float originX,
+    float originZ ) {
+    // FUN_006ffe10
+    if ( !grid.bBuilt ) {
+        return;
+    }
+
+    for ( Material *pMaterial : grid.uvOriginMaterials ) {
+        if ( pMaterial == nullptr ) {
+            continue;
+        }
+        MaterialParameter *pParam = pMaterial->getParameterByIndex( 0 );
+        if ( pParam == nullptr ) {
+            continue;
+        }
+        MaterialLayer *pLayer = pParam->getLayer( 0 );
+        if ( pLayer != nullptr && pLayer->NumTextures > 2 ) {
+            MaterialLayerTexture &tex = pLayer->pLayerTextures[2];
+            tex.pTextureSection = pShadowSection;
+            tex.SamplerAddress[0] = MTM_Mirror;
+            tex.SamplerAddress[1] = MTM_Mirror;
+        }
+        WriteDetail2ProjectionOrigin( pParam, originX, originZ );
+    }
+}
+
 void SectorGeometry::rebaseDetail2Materials(
     const Eigen::Vector4f &streamOrigin ) {
     // FUN_007000c0
@@ -260,6 +289,11 @@ void SectorGeometry::patchObjectsGroupMaterials(
             pMaterial->OT = RB_Water;
         }
     }
+
+    // Mass instance grid (the .PMI dynamic group) keeps private material
+    // copies, patch those too.
+    PatchImpostorGridShadowMaterials( impostorGrids[1], pTerrainShadow,
+                                      gridOriginX, gridOriginZ );
 }
 
 static void EnqueueRoadResource( SectorGeometry::RoadResourceList list[2],
