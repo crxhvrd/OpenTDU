@@ -22,6 +22,7 @@
 
 #include "world/mng_ocean.h"
 #include "world/mng_sun_flare.h"
+#include "world/mng_background.h"
 #include "world/mng_tall_grass.h"
 
 // GamePC.ini
@@ -659,6 +660,11 @@ void GSConfig::registerGameCommands() {
     registerCommand( "GRASSENABLED", [&]( const char *pArg ) {
         // FUN_00987250
         gbGrassEnabled = atoi( pArg ) != 0;
+    } );
+
+    registerCommand( "DOMESKYFIXES", [&]( const char *pArg ) {
+        // OTDU_ADDITION - Sky dome fixes (default: ON)
+        gbBackgroundDomeSkyFixes = atoi( pArg ) != 0;
     } );
 
     registerCommand( "DEFAULTCINEMATIC", [&]( const char *pArg ) {

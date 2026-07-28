@@ -3,7 +3,11 @@
 
 #include "core/maths_helper.h"
 
+#include "render/2db.h"
 #include "render/2dm.h"
+#include "render/3dd.h"
+#include "render/3dg.h"
+#include "render/geometry_buffer.h"
 #include "render/gs_render.h"
 #include "render/hiearchy_node.h"
 #include "render/instance.h"
@@ -20,6 +24,309 @@
 #include "world/weather/weather_desc.h"
 
 MngBackground *gpMngBackground = nullptr; // DAT_010e8010
+
+bool gbBackgroundCloudsEnabled = true;
+bool gbBackgroundDomeEnabled = true;
+bool gbBackgroundDomeWireframe = false;
+static eFillMode gDomeOriginalFillMode = FM_Default;
+
+// Fix for the dome mesh uv seams issue from the original game.
+bool gbBackgroundDomeSkyFixes = true;
+
+static constexpr float kUpperDomeElevation = 13.0f;
+
+static inline bool IsUsablePointer( const void *pPointer ) {
+    const uintptr_t address = (uintptr_t)pPointer;
+    if ( address < 0x10000u ) {
+        return false;
+    }
+    const uint32_t low = (uint32_t)address;
+    return low != 0xcdcdcdcdu && low != 0xddddddddu && low != 0xfeeefeeeu &&
+           low != 0xbaadf00du && low != 0xffffffffu;
+}
+
+static void PatchDomeUVSeams( Instance *pInstance ) {
+    if ( pInstance == nullptr || pInstance->getNumLODs() == 0 ) {
+        return;
+    }
+
+    InstanceLOD &lod = pInstance->getLOD( 0 );
+    if ( !IsUsablePointer( lod.pHashcode ) ||
+         !IsUsablePointer( lod.pHashcode->pEntry ) ) {
+        return;
+    }
+
+    RenderObject *pObject =
+        (RenderObject *)( (uint8_t *)lod.pHashcode->pEntry + 0x10 );
+    RenderFile::Section *pPrimitiveSection = pObject->PrimitiveSection;
+    if ( !IsUsablePointer( pPrimitiveSection ) ||
+         pObject->NumPrimitives > 64u ) {
+        return;
+    }
+
+    for ( uint32_t primIdx = 0; primIdx < pObject->NumPrimitives; primIdx++ ) {
+        Primitive *pPrimitive =
+            (Primitive *)( (uint8_t *)pPrimitiveSection + 0x10 );
+        const PrimtiveVertexAttributes &streams = pPrimitive->VertexStreams;
+
+        const bool bFormatOK =
+            streams.Position.Format == VAF_POSITION_R32G32B32_SFLOAT &&
+            streams.UV.Format == VAF_TEXCOORD_R32G32_SFLOAT &&
+            streams.Position.Number != 0 && streams.UV.Number != 0;
+
+        GeomtryBufferWithHeader *pVB = pPrimitive->pVertexBuffer;
+        uint8_t *pData = IsUsablePointer( pVB )
+                             ? (uint8_t *)pVB + kGeometryBufferDataOffset
+                             : nullptr;
+        const uint32_t dataSize =
+            ( pVB != nullptr ) ? pVB->Buffer.ByteSize : 0u;
+        const uint32_t numVertex = pPrimitive->NumVertex;
+
+        const uint32_t uvAttrIdx =
+            streams.Position.Number + streams.Normal.Number +
+            streams.Diffuse.Number + streams.Specular.Number;
+        const uint32_t posOffset = pPrimitive->VertexAttributeOffsets[0];
+        const uint32_t uvOffset =
+            ( uvAttrIdx < PrimtiveVertexAttributes::kMaxNumAttributes )
+                ? pPrimitive->VertexAttributeOffsets[uvAttrIdx]
+                : 0xffffffffu;
+
+        const bool bInRange =
+            pData != nullptr && uvOffset != 0xffffffffu && numVertex != 0 &&
+            (uint64_t)posOffset + (uint64_t)numVertex * 12u <= dataSize &&
+            (uint64_t)uvOffset + (uint64_t)numVertex * 8u <= dataSize;
+
+        if ( !bFormatOK || !bInRange ) {
+            OTDU_LOG_WARN( "Dome UV weld skipped for primitive %u (posFmt=%u "
+                           "uvFmt=%u inRange=%d)\n",
+                           primIdx, (uint32_t)streams.Position.Format,
+                           (uint32_t)streams.UV.Format, bInRange ? 1 : 0 );
+        } else {
+            const float *pPos = (const float *)( pData + posOffset );
+            float *pUV = (float *)( pData + uvOffset );
+
+            // Cluster by DIRECTION, not world position
+            std::vector<float> dir( (size_t)numVertex * 3 );
+            for ( uint32_t v = 0; v < numVertex; v++ ) {
+                const float px = pPos[v * 3 + 0];
+                const float py = pPos[v * 3 + 1];
+                const float pz = pPos[v * 3 + 2];
+                const float len = std::sqrt( px * px + py * py + pz * pz );
+                const float inv = ( len > 0.0001f ) ? ( 1.0f / len ) : 0.0f;
+                dir[v * 3 + 0] = px * inv;
+                dir[v * 3 + 1] = py * inv;
+                dir[v * 3 + 2] = pz * inv;
+            }
+
+            // ~0.05 deg: tight enough not to merge neighbouring vertices (the
+            // dense band steps ~1.9 deg in azimuth).
+            const float minDot = 0.99999962f;
+
+            std::vector<int32_t> clusterOf( numVertex, -1 );
+            int32_t numWelded = 0, numWrapSkipped = 0;
+            float maxDelta = 0.0f;
+
+            for ( uint32_t i = 0; i < numVertex; i++ ) {
+                if ( clusterOf[i] != -1 ) {
+                    continue;
+                }
+                clusterOf[i] = (int32_t)i;
+
+                std::vector<uint32_t> members;
+                members.push_back( i );
+                for ( uint32_t j = i + 1; j < numVertex; j++ ) {
+                    if ( clusterOf[j] != -1 ) {
+                        continue;
+                    }
+                    const float dot = dir[i * 3 + 0] * dir[j * 3 + 0] +
+                                      dir[i * 3 + 1] * dir[j * 3 + 1] +
+                                      dir[i * 3 + 2] * dir[j * 3 + 2];
+                    if ( dot >= minDot ) {
+                        clusterOf[j] = (int32_t)i;
+                        members.push_back( j );
+                    }
+                }
+                if ( members.size() < 2 ) {
+                    continue;
+                }
+
+                float spread = 0.0f;
+                bool bWrap = false;
+                for ( size_t a = 0; a < members.size(); a++ ) {
+                    for ( size_t b = a + 1; b < members.size(); b++ ) {
+                        const float du = std::fabs( pUV[members[a] * 2 + 0] -
+                                                    pUV[members[b] * 2 + 0] );
+                        const float dv = std::fabs( pUV[members[a] * 2 + 1] -
+                                                    pUV[members[b] * 2 + 1] );
+                        if ( ( du > 0.999f && dv < 0.001f ) ||
+                             ( dv > 0.999f && du < 0.001f ) ) {
+                            bWrap = true;
+                        }
+                        spread = Max( spread, std::sqrt( du * du + dv * dv ) );
+                    }
+                }
+                if ( bWrap ) {
+                    numWrapSkipped++;
+                    continue;
+                }
+                if ( spread <= 0.0001f ) {
+                    continue;
+                }
+
+                // Prefer members that are not pinned to a texture border.
+                auto onBorder = []( const float coord ) {
+                    return coord <= 0.000001f || coord >= 0.999999f;
+                };
+                double sumU = 0.0, sumV = 0.0;
+                int32_t numInterior = 0;
+                for ( uint32_t member : members ) {
+                    if ( !onBorder( pUV[member * 2 + 0] ) &&
+                         !onBorder( pUV[member * 2 + 1] ) ) {
+                        sumU += pUV[member * 2 + 0];
+                        sumV += pUV[member * 2 + 1];
+                        numInterior++;
+                    }
+                }
+                if ( numInterior == 0 ) {
+                    for ( uint32_t member : members ) {
+                        sumU += pUV[member * 2 + 0];
+                        sumV += pUV[member * 2 + 1];
+                    }
+                    numInterior = (int32_t)members.size();
+                }
+
+                const float weldedU = (float)( sumU / numInterior );
+                const float weldedV = (float)( sumV / numInterior );
+                for ( uint32_t member : members ) {
+                    pUV[member * 2 + 0] = weldedU;
+                    pUV[member * 2 + 1] = weldedV;
+                }
+                numWelded++;
+                maxDelta = Max( maxDelta, spread );
+            }
+
+            OTDU_LOG_DEBUG(
+                "Dome UV weld: primitive %u, %u verts -> %d seam "
+                "cluster(s) welded (%d wrap cluster(s) left alone), "
+                "largest UV step removed %.5f\n",
+                primIdx, numVertex, numWelded, numWrapSkipped, maxDelta );
+
+            {
+                static constexpr int32_t kNumBins = 48;
+                double binU[kNumBins] = {}, binV[kNumBins] = {};
+                int32_t binN[kNumBins] = {};
+                float lowElev = 90.0f, highElev = kUpperDomeElevation;
+
+                for ( uint32_t v = 0; v < numVertex; v++ ) {
+                    const float px = pPos[v * 3 + 0];
+                    const float py = pPos[v * 3 + 1];
+                    const float pz = pPos[v * 3 + 2];
+                    const float horiz = std::sqrt( px * px + pz * pz );
+                    const float elev =
+                        ( horiz > 0.0001f )
+                            ? ( std::atan2( py, horiz ) * 57.29578f )
+                            : 90.0f;
+                    if ( elev < kUpperDomeElevation ) {
+                        continue;
+                    }
+                    lowElev = Min( lowElev, elev );
+                    highElev = Max( highElev, elev );
+                }
+
+                const float span = Max( 0.001f, highElev - lowElev );
+                for ( uint32_t v = 0; v < numVertex; v++ ) {
+                    const float px = pPos[v * 3 + 0];
+                    const float py = pPos[v * 3 + 1];
+                    const float pz = pPos[v * 3 + 2];
+                    const float horiz = std::sqrt( px * px + pz * pz );
+                    const float elev =
+                        ( horiz > 0.0001f )
+                            ? ( std::atan2( py, horiz ) * 57.29578f )
+                            : 90.0f;
+                    if ( elev < kUpperDomeElevation ) {
+                        continue;
+                    }
+                    int32_t b = (int32_t)( ( elev - lowElev ) / span *
+                                           ( kNumBins - 1 ) );
+                    b = Max( 0, Min( kNumBins - 1, b ) );
+                    binU[b] += pUV[v * 2 + 0];
+                    binV[b] += pUV[v * 2 + 1];
+                    binN[b]++;
+                }
+
+                // Fill empty bins from the nearest populated one so the
+                // interpolation below never reads a hole.
+                for ( int32_t b = 0; b < kNumBins; b++ ) {
+                    if ( binN[b] != 0 ) {
+                        continue;
+                    }
+                    for ( int32_t d = 1; d < kNumBins; d++ ) {
+                        const int32_t lo = b - d, hi = b + d;
+                        if ( lo >= 0 && binN[lo] != 0 ) {
+                            binU[b] = binU[lo] / binN[lo];
+                            binV[b] = binV[lo] / binN[lo];
+                            binN[b] = 1;
+                            break;
+                        }
+                        if ( hi < kNumBins && binN[hi] != 0 ) {
+                            binU[b] = binU[hi] / binN[hi];
+                            binV[b] = binV[hi] / binN[hi];
+                            binN[b] = 1;
+                            break;
+                        }
+                    }
+                }
+                for ( int32_t b = 0; b < kNumBins; b++ ) {
+                    if ( binN[b] > 1 ) {
+                        binU[b] /= binN[b];
+                        binV[b] /= binN[b];
+                        binN[b] = 1;
+                    }
+                }
+
+                int32_t numFlattened = 0;
+                for ( uint32_t v = 0; v < numVertex; v++ ) {
+                    const float px = pPos[v * 3 + 0];
+                    const float py = pPos[v * 3 + 1];
+                    const float pz = pPos[v * 3 + 2];
+                    const float horiz = std::sqrt( px * px + pz * pz );
+                    const float elev =
+                        ( horiz > 0.0001f )
+                            ? ( std::atan2( py, horiz ) * 57.29578f )
+                            : 90.0f;
+                    if ( elev < kUpperDomeElevation ) {
+                        continue;
+                    }
+                    const float t =
+                        ( elev - lowElev ) / span * ( kNumBins - 1 );
+                    const int32_t b0 =
+                        Max( 0, Min( kNumBins - 1, (int32_t)t ) );
+                    const int32_t b1 = Min( kNumBins - 1, b0 + 1 );
+                    const float f = Max( 0.0f, Min( 1.0f, t - (float)b0 ) );
+                    pUV[v * 2 + 0] =
+                        (float)( binU[b0] * ( 1.0 - f ) + binU[b1] * f );
+                    pUV[v * 2 + 1] =
+                        (float)( binV[b0] * ( 1.0 - f ) + binV[b1] * f );
+                    numFlattened++;
+                }
+                OTDU_LOG_DEBUG( "Dome upper-UV flattened: %d vertices above "
+                                "%.1f deg (elev %.2f..%.2f)\n",
+                                numFlattened, kUpperDomeElevation, lowElev,
+                                highElev );
+            }
+        }
+
+        if ( pPrimitiveSection->Size == 0 ) {
+            break;
+        }
+        pPrimitiveSection =
+            (RenderFile::Section *)( (uint8_t *)pPrimitiveSection +
+                                     pPrimitiveSection->Size );
+        if ( !IsUsablePointer( pPrimitiveSection ) ) {
+            break;
+        }
+    }
+}
 
 static float ParseNameNumericSuffix( const uint64_t hashcode ) {
     // FUN_006bef10
@@ -450,6 +757,11 @@ bool MngBackground::initialize( TestDriveGameInstance * ) {
             pDomeMaterial = pDomeInstance->getMaterial( 0 );
             if ( pDomeMaterial != nullptr ) {
                 pDomeMaterial->DepthWrite = 2;
+                gDomeOriginalFillMode = pDomeMaterial->FillMode;
+            }
+
+            if ( gbBackgroundDomeSkyFixes ) {
+                PatchDomeUVSeams( pDomeInstance );
             }
         }
     }
@@ -723,12 +1035,19 @@ void MngBackground::draw() {
     RenderScene *pNearScene =
         gpRender->getRenderPass<eRenderPass::RP_NearNoFog>().pScene;
 
-    for ( CloudGroup &group : CloudGroups ) {
-        drawCloudLayer( pBackScene, pNearScene, group );
+    if ( gbBackgroundCloudsEnabled ) {
+        for ( CloudGroup &group : CloudGroups ) {
+            drawCloudLayer( pBackScene, pNearScene, group );
+        }
+        drawCloudLayer( pBackScene, pNearScene, CloudGroupRandom );
     }
-    drawCloudLayer( pBackScene, pNearScene, CloudGroupRandom );
 
-    if ( pHiearchyNodeDome != nullptr ) {
+    if ( pDomeMaterial != nullptr ) {
+        pDomeMaterial->FillMode =
+            gbBackgroundDomeWireframe ? FM_Wireframe : gDomeOriginalFillMode;
+    }
+
+    if ( pHiearchyNodeDome != nullptr && gbBackgroundDomeEnabled ) {
         pBackScene->enqueueDynamicHiearchy( pHiearchyNodeDome );
     }
 }

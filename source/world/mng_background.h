@@ -143,3 +143,8 @@ private:
 };
 
 extern MngBackground *gpMngBackground;
+
+extern bool gbBackgroundCloudsEnabled;
+extern bool gbBackgroundDomeEnabled;
+extern bool gbBackgroundDomeWireframe;
+extern bool gbBackgroundDomeSkyFixes;

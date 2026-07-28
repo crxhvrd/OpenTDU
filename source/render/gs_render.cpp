@@ -35,6 +35,9 @@
 #include "state_cache.h"
 #include "text_renderer.h"
 
+#include "world/mng_background.h"
+#include "world/mng_clouds_plane.h"
+
 #include "tdu_instance.h"
 
 GSRender gRender = {};
@@ -602,6 +605,11 @@ void GSRender::drawDebug( float deltaTime ) {
     ImGui::Checkbox( "Disable stitch mask", &gbDebugHmapDisableStitchMask );
     ImGui::Checkbox( "Force finest LOD", &gbDebugHmapForceFinestLOD );
     ImGui::Checkbox( "Disable seams", &gbDebugHmapDisableSeams );
+
+    ImGui::SeparatorText( "Background" );
+    ImGui::Checkbox( "Draw background clouds", &gbBackgroundCloudsEnabled );
+    ImGui::Checkbox( "Draw sky dome", &gbBackgroundDomeEnabled );
+    ImGui::Checkbox( "Sky dome wireframe", &gbBackgroundDomeWireframe );
 
     if ( gpMngResources != nullptr && gpImgui != nullptr ) {
         CubemapResources &cm = gpMngResources->getCubemapResources();
