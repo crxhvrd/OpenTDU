@@ -125,6 +125,205 @@ namespace {
     };
     SpriteSortEntry gSpriteSort[0x800];
 
+    enum eSpriteUVFlags : uint16_t {
+        SUV_Enabled = 0x0001, // Without this the raw quad UVs are used
+        SUV_FlipU = 0x0002,   // Mirror horizontally (particle seed bit 6)
+        SUV_FlipV = 0x0004,   // Mirror vertically (particle seed bit 7)
+        SUV_RandomSpinSign = 0x0008, // Spin direction from particle seed bit 5
+        SUV_RandomFrame = 0x0010,    // Random sub-texture start frame
+        SUV_Rotate = 0x0020,         // Rotate the UVs around their center
+        SUV_SubTexture = 0x0040,     // Pick one cell out of the atlas
+        SUV_FrameRate = 0x0080, // Animate at +0x90 fps instead of over life
+        SUV_Scale = 0x0300,     // Scale the UVs around their center
+        SUV_RandomRotation = 0x0400, // Randomize the base rotation per particle
+        SUV_VelocityAligned = 0x0800, // Align the UVs with the screen velocity
+    };
+
+    constexpr float kSeedToUnit = 1.0f / 65536.0f; //  DAT_00f41678
+
+    // A 2x3 UV affine {a, b, c, d, tx, ty}; corners are transformed as
+    //   u' = a * u + c * v + tx
+    //   v' = b * u + d * v + ty
+    struct UVTransform {
+        float m[6];
+    };
+
+    // Mirror matrices
+    constexpr float kFlipUMatrix[6] = { -1.0f, 0.0f, 0.0f,
+                                        1.0f,  1.0f, 0.0f }; // DAT_00fac008
+    constexpr float kFlipVMatrix[6] = { 1.0f,  0.0f, 0.0f,
+                                        -1.0f, 0.0f, 1.0f }; // DAT_00fabff0
+
+    void ComposeUVTransform( UVTransform &accumulated,
+                             const float ( &applied )[6] ) {
+        // FUN_0045ac60
+        const float *pA = applied;
+        const float *pB = accumulated.m;
+        const float composed[6] = {
+            pA[0] * pB[0] + pA[2] * pB[1],
+            pA[1] * pB[0] + pA[3] * pB[1],
+            pA[0] * pB[2] + pA[2] * pB[3],
+            pA[1] * pB[2] + pA[3] * pB[3],
+            pA[0] * pB[4] + pA[2] * pB[5] + pA[4],
+            pA[1] * pB[4] + pA[3] * pB[5] + pA[5],
+        };
+        std::memcpy( accumulated.m, composed, sizeof( composed ) );
+    }
+
+    UVTransform MakeUVRotation( float angle ) {
+        const float cosAngle = std::cos( angle );
+        const float sinAngle = std::sin( angle );
+        return UVTransform{
+            { cosAngle, sinAngle, -sinAngle, cosAngle,
+             ( sinAngle * 0.5f - cosAngle * 0.5f ) + 0.5f,
+             ( -sinAngle * 0.5f - cosAngle * 0.5f ) + 0.5f }
+        };
+    }
+
+    UVTransform BuildSpriteUVTransform( const uint8_t *pRecord,
+                                        const uint8_t *pAttr,
+                                        const float *pVelocity,
+                                        const Eigen::Vector3f &cameraRight,
+                                        const Eigen::Vector3f &cameraUp ) {
+        // FUN_0045adc0 (UV block)
+        const uint16_t uvFlags = Read<uint16_t>( pRecord, 0x78 );
+        const uint32_t seed = Read<uint32_t>( pAttr, 0x3c );
+        const float age = Read<float>( pAttr, 0x1c );
+        const float lifetime = Read<float>( pAttr, 0x20 );
+        // The original divides unconditionally (particles always have a
+        // lifetime); guard anyway to keep a stray zero out of the UVs.
+        const float ageFraction = ( lifetime != 0.0f ) ? age / lifetime : 0.0f;
+
+        UVTransform transform = {
+            { 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f }
+        };
+
+        if ( ( uvFlags & SUV_Rotate ) != 0 ) {
+            float baseRotation = Read<float>( pRecord, 0x88 );
+            if ( ( uvFlags & SUV_RandomRotation ) != 0 ) {
+                baseRotation = static_cast<float>( seed & 0xffff ) *
+                               baseRotation * kSeedToUnit;
+            }
+            const float rotationSpeed = Read<float>( pRecord, 0x8c );
+
+            if ( ( uvFlags & SUV_VelocityAligned ) != 0 ) {
+                // Rotate the UVs to follow the velocity in screen space.
+                const Eigen::Vector3f velocity( pVelocity[0], pVelocity[1],
+                                                pVelocity[2] );
+                const float positionScale = Read<float>( pAttr, 0x30 );
+                const float screenX =
+                    cameraRight.dot( velocity ) * positionScale;
+                const float screenY = cameraUp.dot( velocity ) * positionScale;
+
+                float length =
+                    std::sqrt( screenX * screenX + screenY * screenY );
+                if ( length == 0.0f ) {
+                    length = kEmitThreshold;
+                }
+                const float dirX = screenX / length;
+                const float dirY = screenY / length;
+                const float alignMatrix[6] = { dirY,
+                                               -dirX,
+                                               dirX,
+                                               dirY,
+                                               0.5f - ( dirY + dirX ) * 0.5f,
+                                               0.5f - ( dirY - dirX ) * 0.5f };
+
+                if ( baseRotation == 0.0f && rotationSpeed == 0.0f ) {
+                    std::memcpy( transform.m, alignMatrix,
+                                 sizeof( alignMatrix ) );
+                } else {
+                    float angle = rotationSpeed * ageFraction;
+                    if ( dirX > 0.0f ) {
+                        angle = -angle;
+                    }
+                    transform = MakeUVRotation( angle + baseRotation );
+                    ComposeUVTransform( transform, alignMatrix );
+                }
+            } else {
+                float angle = rotationSpeed * ageFraction;
+                if ( ( uvFlags & SUV_RandomSpinSign ) != 0 &&
+                     ( seed & 0x20 ) != 0 ) {
+                    angle = -angle;
+                }
+                transform = MakeUVRotation( angle + baseRotation );
+            }
+        }
+
+        if ( ( uvFlags & SUV_Scale ) != 0 ) {
+            const float scaleU = Read<float>( pRecord, 0x80 );
+            const float scaleV = Read<float>( pRecord, 0x84 );
+            const float scaleMatrix[6] = { scaleU,
+                                           0.0f,
+                                           0.0f,
+                                           scaleV,
+                                           0.5f - scaleU * 0.5f,
+                                           0.5f - scaleV * 0.5f };
+            ComposeUVTransform( transform, scaleMatrix );
+        }
+
+        if ( ( uvFlags & SUV_FlipU ) != 0 && ( seed & 0x40 ) != 0 ) {
+            ComposeUVTransform( transform, kFlipUMatrix );
+        }
+        if ( ( uvFlags & SUV_FlipV ) != 0 && ( seed & 0x80 ) != 0 ) {
+            ComposeUVTransform( transform, kFlipVMatrix );
+        }
+
+        if ( ( uvFlags & SUV_SubTexture ) != 0 ) {
+            const int32_t frameCount = Read<int16_t>( pRecord, 0x7a );
+            const int32_t columnCount = Read<int16_t>( pRecord, 0x7c );
+            const int32_t rowCount = Read<int16_t>( pRecord, 0x7e );
+
+            // Not in the original: a malformed sheet would divide by zero.
+            if ( frameCount > 0 && columnCount > 0 && rowCount > 0 ) {
+                int32_t frame = 0;
+                if ( ( uvFlags & SUV_RandomFrame ) != 0 ) {
+                    frame = static_cast<int32_t>( ( ( seed >> 8 ) & 0xffff ) *
+                                                  frameCount ) >>
+                            16;
+                }
+
+                if ( ( uvFlags & SUV_FrameRate ) == 0 ) {
+                    // Play the sheet once over the particle lifetime.
+                    frame += static_cast<int32_t>(
+                        static_cast<float>( frameCount ) * ageFraction );
+                    if ( frame < 0 ) {
+                        frame = -frame;
+                    }
+                    if ( frameCount <= frame ) {
+                        frame = frameCount - 1;
+                    }
+                } else {
+                    // Loop the sheet at a fixed frame rate.
+                    const int32_t frameRate = Read<int32_t>( pRecord, 0x90 );
+                    frame = ( static_cast<int32_t>(
+                                  static_cast<float>( frameRate ) * age ) +
+                              frame ) %
+                            frameCount;
+                    if ( frame < 0 ) {
+                        frame = -frame;
+                    }
+                }
+
+                const int32_t cellX = frame % columnCount;
+                const int32_t cellY = frame / columnCount;
+                const float cellWidth =
+                    1.0f / static_cast<float>( columnCount );
+                const float cellHeight = 1.0f / static_cast<float>( rowCount );
+                const float subTextureMatrix[6] = {
+                    cellWidth,
+                    0.0f,
+                    0.0f,
+                    cellHeight,
+                    static_cast<float>( cellX ) * cellWidth,
+                    static_cast<float>( cellY ) * cellHeight };
+                ComposeUVTransform( transform, subTextureMatrix );
+            }
+        }
+
+        return transform;
+    }
+
     void emitParticle( float *pPos, const float *pVel, float dist ) {
         // FUN_0045c0e0
         if ( pPos[3] == -1.0f ) { // FLOAT_00f41664: first emission
@@ -1360,7 +1559,8 @@ void ParticleFile::emitDef( uint8_t *pRecord,
 
     uint8_t *pAttrPool = poolBase( prto::kAttrBase );
     uint8_t *pPosPool = poolBase( prto::kPosBase );
-    if ( pAttrPool == nullptr || pPosPool == nullptr ) {
+    uint8_t *pVelPool = poolBase( prto::kVelBase );
+    if ( pAttrPool == nullptr || pPosPool == nullptr || pVelPool == nullptr ) {
         return;
     }
 
@@ -1387,6 +1587,8 @@ void ParticleFile::emitDef( uint8_t *pRecord,
 
     const float aspect = Read<float>( pRecord, 0x74 );
     const uint32_t masterAlpha = ( colorId >> 24 ) & 0xff;
+    const bool bTransformUVs =
+        ( Read<uint16_t>( pRecord, 0x78 ) & SUV_Enabled ) != 0;
 
     out.setIdentityTransform();
     out.setActiveMaterial( pMaterial );
@@ -1410,19 +1612,39 @@ void ParticleFile::emitDef( uint8_t *pRecord,
         const ColorRGBA color( pAttr[0x10], pAttr[0x11], pAttr[0x12],
                                static_cast<uint8_t>( a ) );
 
+        float texCoords[8] = { 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f };
+        if ( bTransformUVs ) {
+            const float *pVelocity = reinterpret_cast<const float *>(
+                pVelPool + i * prto::kVelStride + 0x10 );
+            const UVTransform transform =
+                BuildSpriteUVTransform( pRecord, pAttr, pVelocity, right, up );
+            for ( uint32_t corner = 0; corner < 4; corner++ ) {
+                const float u = texCoords[corner * 2 + 0];
+                const float v = texCoords[corner * 2 + 1];
+                texCoords[corner * 2 + 0] =
+                    transform.m[0] * u + transform.m[2] * v + transform.m[4];
+                texCoords[corner * 2 + 1] =
+                    transform.m[1] * u + transform.m[3] * v + transform.m[5];
+            }
+        }
+
         if ( out.beginPrimitive( PT_TriangleStrip, 4 ) ) {
             out.setDiffuse( 0, color );
             const Eigen::Vector3f topLeft = center - halfWidth + halfHeight;
             const Eigen::Vector3f bottomLeft = center - halfWidth - halfHeight;
             const Eigen::Vector3f topRight = center + halfWidth + halfHeight;
             const Eigen::Vector3f bottomRight = center + halfWidth - halfHeight;
-            out.setTexCoords( 0, Eigen::Vector2f( 0.0f, 0.0f ) );
+            out.setTexCoords( 0,
+                              Eigen::Vector2f( texCoords[0], texCoords[1] ) );
             out.pushVertex( topLeft.x(), topLeft.y(), topLeft.z() );
-            out.setTexCoords( 0, Eigen::Vector2f( 0.0f, 1.0f ) );
+            out.setTexCoords( 0,
+                              Eigen::Vector2f( texCoords[2], texCoords[3] ) );
             out.pushVertex( bottomLeft.x(), bottomLeft.y(), bottomLeft.z() );
-            out.setTexCoords( 0, Eigen::Vector2f( 1.0f, 0.0f ) );
+            out.setTexCoords( 0,
+                              Eigen::Vector2f( texCoords[4], texCoords[5] ) );
             out.pushVertex( topRight.x(), topRight.y(), topRight.z() );
-            out.setTexCoords( 0, Eigen::Vector2f( 1.0f, 1.0f ) );
+            out.setTexCoords( 0,
+                              Eigen::Vector2f( texCoords[6], texCoords[7] ) );
             out.pushVertex( bottomRight.x(), bottomRight.y(), bottomRight.z() );
             out.commitPrimitive();
         }
