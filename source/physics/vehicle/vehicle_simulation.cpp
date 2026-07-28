@@ -270,6 +270,8 @@ void ComputeTireForces( PhysicsWheelState &w,
         w.DragLong = 0.0f;
         w.DragLat = 0.0f;
         w.bTireSlipping = false;
+        w.NormLongClamped = 0.0f;
+        w.NormLatClamped = 0.0f;
     } else {
         w.bTireSlipping = true;
 
@@ -296,7 +298,7 @@ void ComputeTireForces( PhysicsWheelState &w,
         const float Fx = g * w.TireForceLong * w.GripLong * w.LoadScaleLong;
         w.TireForceLat = Fy;
         w.TireForceLong = Fx;
-        if ( 1.0f < std::fabs( w.LatHelpA ) ) { // low-speed / locked scale
+        if ( 1.0f < std::fabs( w.BrakeCmdTorque ) ) {
             w.TireForceLong = w.BrakeGripLong * Fx;
             w.TireForceLat = w.BrakeGripLat * Fy;
         }
@@ -372,8 +374,13 @@ void IntegrateWheel( PhysicsWheelState &w, float deltaTime ) {
         ComputeWheelReactionTorque( w, deltaTime, &longForce );
     w.TireForceLong = longForce;
 
-    const float helpTorque = w.LatHelpA + w.LatHelpB;
-    w.NetTorque = ( helpTorque + reactTorque ) * w.ReactionScale;
+    const float slipCoef = 1.0f - w.ReactionSlipCoef;
+    const float loadScale =
+        Clamp( 1.0f - w.ReactionSlipCoef * std::fabs( w.NormLatClamped ) * 0.5f,
+               std::min( slipCoef, 1.0f ), std::max( slipCoef, 1.0f ) );
+
+    const float helpTorque = w.EspTorqueOut + w.BrakeTorqueOut;
+    w.NetTorque = ( helpTorque + reactTorque ) * w.ReactionScale * loadScale;
     w.AngAccel = ( w.NetTorque + w.DriveTorque ) / inertia;
     w.AngularVel = w.AngAccel * deltaTime + omega;
 

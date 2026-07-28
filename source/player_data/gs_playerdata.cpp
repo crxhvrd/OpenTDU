@@ -30,6 +30,7 @@ GSPlayerData::GSPlayerData()
       field526850_0x967d4( false ),
       field526864_0x967e5( false ),
       field526854_0x967d8( 0 ),
+      drivingHelpLevel( 0 ),
       padSensitivity( -7.0f * 0.06666667f ),
       barSensitivity( 0.5f ),
       mouseSensitivity( 0.5f ),

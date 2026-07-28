@@ -1163,7 +1163,7 @@ void GSPhysics::drawDebug( float ) {
         ImGui::Checkbox( "+terrain", &gDrawCollisionVisTerrain );
     }
 
-    extern bool gVehicleDrivingAids;
+    extern int32_t gVehicleDrivingHelpOverride;
     extern bool gVehicleABS;
     extern bool gVehicleAntiRoll;
     extern bool gVehicleEngineStateMachine;
@@ -1173,8 +1173,13 @@ void GSPhysics::drawDebug( float ) {
         gVehicleDrivelineInertiaMode; // -1=per-car, 0 /|k|, 1 /k^2, 2 /sqrt
 
     ImGui::SeparatorText( "Vehicle" );
-    ImGui::Checkbox( "ESP", &gVehicleDrivingAids );
-    ImGui::SameLine();
+    static const char *kDrivingHelpLevels[] = {
+        "player setting", "0 SECURE", "1 SPORT", "2 HYPERSPORT", "3 off" };
+    int32_t helpCombo = gVehicleDrivingHelpOverride + 1;
+    if ( ImGui::Combo( "Driving help", &helpCombo, kDrivingHelpLevels,
+                       IM_ARRAYSIZE( kDrivingHelpLevels ) ) ) {
+        gVehicleDrivingHelpOverride = helpCombo - 1;
+    }
     ImGui::Checkbox( "ABS", &gVehicleABS );
 
     ImGui::Checkbox( "Enable anti-roll bars sim", &gVehicleAntiRoll );
@@ -1229,9 +1234,16 @@ void GSPhysics::drawDebug( float ) {
                          pitchDeg );
             ImGui::Text( "Pos  %.1f, %.1f, %.1f", chassis( 3, 0 ),
                          chassis( 3, 1 ), chassis( 3, 2 ) );
+            ImGui::Text(
+                "ESP %-4s  gripDiff %+6.2f / thr %5.2f   mag F %4.2f R %4.2f",
+                it->areElectronicsEnabled()
+                    ? ( it->isEspIntervening() ? "ON" : "idle" )
+                    : "off",
+                it->getEspGripDiff(), it->getEspThreshold(),
+                it->getEspMagFront(), it->getEspMagRear() );
 
             const char *pWheelNames[4] = { "FL", "FR", "RL", "RR" };
-            if ( ImGui::BeginTable( "wheels", 6,
+            if ( ImGui::BeginTable( "wheels", 9,
                                     ImGuiTableFlags_Borders |
                                         ImGuiTableFlags_RowBg ) ) {
                 ImGui::TableSetupColumn( "Wheel" );
@@ -1240,6 +1252,9 @@ void GSPhysics::drawDebug( float ) {
                 ImGui::TableSetupColumn( "Susp" );
                 ImGui::TableSetupColumn( "SlipLong" );
                 ImGui::TableSetupColumn( "SlipLat" );
+                ImGui::TableSetupColumn( "ESP" );
+                ImGui::TableSetupColumn( "Tesp" );
+                ImGui::TableSetupColumn( "Tbrk" );
                 ImGui::TableHeadersRow();
 
                 static float smoothedLoad[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -1265,6 +1280,12 @@ void GSPhysics::drawDebug( float ) {
                     ImGui::Text( "%+.2f", wheel.LongitudinalSlip );
                     ImGui::TableNextColumn();
                     ImGui::Text( "%+.1f", wheel.LateralSlip * 57.29578f );
+                    ImGui::TableNextColumn();
+                    ImGui::Text( "%d", wheel.EspState );
+                    ImGui::TableNextColumn();
+                    ImGui::Text( "%+.0f", wheel.EspTorqueOut );
+                    ImGui::TableNextColumn();
+                    ImGui::Text( "%+.0f", wheel.BrakeTorqueOut );
                 }
                 ImGui::EndTable();
             }

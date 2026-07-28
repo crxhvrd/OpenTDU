@@ -30,6 +30,9 @@ public:
         float SuspensionLoad;
         float Radius; // m
         bool bGrounded;
+        int32_t EspState;
+        float BrakeTorqueOut;
+        float EspTorqueOut;
         uint32_t ContactSurface;
         Eigen::Vector4f ContactPoint;
     };
@@ -71,6 +74,14 @@ public:
 
     void setInput( float throttle, float brake, float steer );
     void tick( float deltaTime );
+    void setDrivingHelpLevel( int32_t level );
+    int32_t getElectronicIndex() const { return vehicle.ElectronicIndex; }
+    bool areElectronicsEnabled() const { return vehicle.bElectronicsEnabled; }
+    bool isEspIntervening() const { return vehicle.bEspEnabled; }
+    float getEspGripDiff() const { return vehicle.EspGripDiff; }
+    float getEspThreshold() const { return vehicle.EspThreshold; }
+    float getEspMagFront() const { return vehicle.EspMagFront; }
+    float getEspMagRear() const { return vehicle.EspMagRear; }
 
     DrivingGearbox getDrivingGearbox() const;
     void setCurrentGear( int32_t gear );
@@ -143,6 +154,8 @@ private:
                                                            // (damper velocity)
     uint32_t wheelSurface[PhysicsVehicleState::kMaxWheels] =
         {}; // raycast contact surface class
+
+    int32_t appliedDrivingHelpLevel = -2;
 
     // Driver input.
     float inputThrottle;

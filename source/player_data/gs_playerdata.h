@@ -23,6 +23,10 @@ public:
     }
     inline float getPadSensitivity() const { return padSensitivity; }
     inline float getBarSensitivity() const { return barSensitivity; }
+    inline int32_t getDrivingHelpLevel() const { return drivingHelpLevel; }
+    inline void setDrivingHelpLevel( const int32_t level ) {
+        drivingHelpLevel = level;
+    }
 
 public:
     GSPlayerData();
@@ -64,6 +68,8 @@ private:
     uint8_t field526850_0x967d4 : 1;
     uint8_t field526864_0x967e5 : 1;
     int32_t field526854_0x967d8;
+
+    int32_t drivingHelpLevel;
 
     float padSensitivity;
     float barSensitivity;

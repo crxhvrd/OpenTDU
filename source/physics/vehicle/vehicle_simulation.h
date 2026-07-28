@@ -66,8 +66,13 @@ struct PhysicsWheelState {
     float DeadbandLat = 0.1f;
     float DeadbandOmega = 0.1f;
 
-    float LatHelpA = 0.0f;
-    float LatHelpB = 0.0f;
+    float BrakeCmdTorque = 0.0f;
+    float HandbrakeCmdTorque = 0.0f;
+    float BrakeTorqueOut = 0.0f; //  post-ABS brake torque
+    float EspTorqueOut = 0.0f;   //  ESP correction torque
+
+    float EspTargetOmega = 0.0f;
+    int32_t EspState = 0;
 
     float AngularVel = 0.0f; // wheel angular velocity omega
     float SpinAngle = 0.0f;
@@ -223,6 +228,21 @@ struct PhysicsVehicleState {
 
     float BrakeTorque = 0.0f;
     float Mass = 1200.0f; // total vehicle mass (kg)
+    int32_t ElectronicIndex = -1;
+    bool bElectronicsEnabled = false;
+
+    bool bEdcEnabled = true;
+
+    float AbsMagFront = 1.0f;
+    float AbsMagRear = 1.0f;
+
+    float EspMagFront = 1.0f;
+    float EspMagRear = 1.0f;
+    float EspMagFiltered = 1.0f;  // the committed value, smoothed 20/s
+    bool bEspIntervening = false; // latches "already intervening"
+    bool bEspEnabled = false;     // rebuilt every frame
+    float EspGripDiff = 0.0f;     // DAT_010d6f0c, the signed axle imbalance
+    float EspThreshold = 0.0f;    // the curve value it is tested against
 };
 
 void BuildEngineCurves( PhysicsEngineSim &engine,
