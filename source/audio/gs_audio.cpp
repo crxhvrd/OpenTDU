@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "gs_audio.h"
 
+#include "ed_audio.h"
+
 GSAudio *gpAudio = nullptr;
 
 GSAudio::GSAudio()
@@ -16,13 +18,24 @@ GSAudio::GSAudio()
 GSAudio::~GSAudio() { OTDU_UNIMPLEMENTED; }
 
 bool GSAudio::initialize( TestDriveGameInstance * ) {
-    OTDU_UNIMPLEMENTED;
+    // FUN_009b1df0
+    OTDU_UNIMPLEMENTED; // TODO: Memory heap
+
+    if ( gEdAudio.initialize() != 0 ) {
+        gEdAudio.destroy();
+        return false;
+    }
+
     return true;
 }
 
 void GSAudio::tick( float totalTime, float deltaTime ) { OTDU_UNIMPLEMENTED; }
 
-void GSAudio::terminate() { OTDU_UNIMPLEMENTED; }
+void GSAudio::terminate() {
+    OTDU_UNIMPLEMENTED;
+
+    gEdAudio.destroy();
+}
 
 void GSAudio::addMixer( ParsedAudioMixer &mixer ) {
     // FUN_009b2360

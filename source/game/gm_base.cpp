@@ -8,7 +8,7 @@
 #include "system/ed_sys.h"
 #include "tdu_instance.h"
 
-#include "audio/audio_device.h"
+#include "audio/ed_audio.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/ed_flash.h"
 #include "flash/implementation/flash_action.h"
@@ -347,7 +347,7 @@ void GameMode::drawLoadingScreen() {
             fVar17 = 1.0f;
         }
 
-        gAudioDevice.setGlobalVolume( fVar17 );
+        gEdAudio.setVolume( fVar17 );
         float local_4 = ( local_20 / transitionTime ) * 255.0f;
         pTransitionDrawList->reset();
         pTransitionDrawList->beginPrimitive( ePrimitiveType::PT_TriangleStrip,
@@ -393,7 +393,7 @@ void GameMode::drawLoadingScreen() {
         }
     }
 
-    gAudioDevice.setGlobalVolume( 1.0f );
+    gEdAudio.setVolume( 1.0f );
 }
 
 bool GameMode::FUN_0097ed60() {
@@ -410,7 +410,7 @@ bool GameMode::FUN_0097ed60() {
 
         uint32_t uVar3 = transitionFlags;
         if ( ( ( uVar3 >> 4 & 1 ) == 0 ) && ( ( uVar3 >> 2 & 1 ) == 0 ) ) {
-            gAudioDevice.setGlobalVolume( 0.0f );
+            gEdAudio.setVolume( 0.0f );
             return bVar11;
         }
 
@@ -451,7 +451,7 @@ bool GameMode::FUN_0097ed60() {
             fVar17 = 0.0;
         }
 
-        gAudioDevice.setGlobalVolume( fVar17 );
+        gEdAudio.setVolume( fVar17 );
 
         FlashPlayer *pMVar14 = gpFlash->getFlashPlayer( "GENERAL" );
 

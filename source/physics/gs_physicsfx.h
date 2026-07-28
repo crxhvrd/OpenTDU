@@ -12,4 +12,6 @@ public:
 
     bool initialize( TestDriveGameInstance * ) override;
     void terminate() override;
+    void tick( float totalTime, float deltaTime ) override;
+    void draw( float deltaTime ) override;
 };
