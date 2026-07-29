@@ -92,6 +92,12 @@ static constexpr float kPhysicsDtClampThreshold =
 static constexpr float kPhysicsMaxDt =
     1.0f / 90.0f; // DAT_00f41c04 (0x3c360b61)
 
+// Fixed-step cap in GSPhysics::Tick's no-physics-thread path.
+static constexpr int32_t kMaxPhysicsSubSteps = 5;
+
+// Carry-over for the fixed physics step (see GSPhysics::tick).
+static float physicsStepAccumulator = 0.0f;
+
 constexpr uint32_t kSR20Magic = 0x30325253; // "SR20"
 constexpr uint32_t kER20Magic = 0x30325245; // "ER20"
 constexpr int32_t kLongSteps = 10; // Bezier longitudinal divisions/record
@@ -619,22 +625,25 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
 
     // Sub-stepped physics — only when no dedicated physics thread is running.
     // With PTM_Normal / PTM_Realtime the dedicated thread drives physicsStep.
-    if ( gPhysicsThreadPriority == PTM_Off ) {
+    if ( gPhysicsThreadPriority == PTM_Off && gPhysicsThreadFrequency > 0 ) {
         const float stepDt =
             1.0f / static_cast<float>( gPhysicsThreadFrequency );
-        int32_t numSteps = static_cast<int32_t>( deltaTime / stepDt );
 
-        if ( numSteps == 0 ) {
-            // Delta is smaller than one fixed step: use the full deltaTime.
-            physicsStep( deltaTime, totalTime );
+        physicsStepAccumulator += deltaTime;
+
+        int32_t numSteps =
+            static_cast<int32_t>( physicsStepAccumulator / stepDt );
+        if ( numSteps > kMaxPhysicsSubSteps ) {
+            numSteps = kMaxPhysicsSubSteps;
+            physicsStepAccumulator = 0.0f;
         } else {
-            // Clamp to 5 sub-steps (original cap) to prevent spiral-of-death.
-            numSteps = Min( numSteps, 5 );
-            float accTime = totalTime;
-            for ( int32_t i = 0; i < numSteps; i++ ) {
-                physicsStep( stepDt, accTime );
-                accTime += stepDt;
-            }
+            physicsStepAccumulator -= static_cast<float>( numSteps ) * stepDt;
+        }
+
+        float accTime = totalTime;
+        for ( int32_t i = 0; i < numSteps; i++ ) {
+            physicsStep( stepDt, accTime );
+            accTime += stepDt;
         }
     }
 
@@ -1153,6 +1162,15 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
                    bHasFactoryShape ? "havok" : "db-box",
                    settings.mMassPropertiesOverride.mMass );
     return pCar;
+}
+
+void GSPhysics::destroyVehicle( PhysicsVehicle *pVehicle ) {
+    if ( pVehicle == nullptr || !pVehicle->isActive() ) {
+        return;
+    }
+    lockMutex();
+    pVehicle->destroy();
+    unlockMutex();
 }
 
 void GSPhysics::drawDebug( float ) {

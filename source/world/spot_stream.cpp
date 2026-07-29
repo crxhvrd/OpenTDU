@@ -8,18 +8,23 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/spots.h"
+#include "render/2dm.h"
 #include "render/material.h"
 #include "render/render_scene.h"
 #include "sector_manager.h"
 #include "tdu_instance.h"
 
 #include <cstring>
+#include <cstdio>
 
 // Each spot streams into its own 0x380000 (3.5 MiB) slice of the shared intro
 // pool, handed out round-robin as the three Spots are constructed (matches the
 // original CHAR_00h_010e7f9d counter in FUN_006fcc00).
 static constexpr size_t kSpotPoolSize = 0x380000;
 static int32_t gSpotPoolSlice = 0;
+
+// Material parameter GUID of the spot ground shader
+static constexpr uint64_t kSpotGroundMaterialGUID = 0xb0f1234b0f123473ull;
 
 Spot::Spot() : Bank(), StreamedResource(), StreamingCallback() {
     // FUN_006fcc00
@@ -56,10 +61,9 @@ void Spot::loadContent() {
 
 void Spot::instanciate() {
     // FUN_006fd220
-    if ( gpScenaric != nullptr && pSpotSector != nullptr &&
-         pSector != nullptr && pSector->state == 1 ) {
+    if ( gpScenaric != nullptr ) {
         pSCBank = gpScenaric->getNewSpotBank();
-        if ( pSCBank != nullptr ) {
+        if ( pSCBank != nullptr && pSpotSector != nullptr ) {
             Spots &spots = gpScenaric->getSpotList();
             SpotMap *pWorld = spots.getSpotMap( pSpotSector->Hashcode );
             if ( pWorld != nullptr ) {
@@ -72,18 +76,98 @@ void Spot::instanciate() {
                 pSCBank->setBankTransform( transform );
             }
 
-            pSCBank->setSpotBank( true );
-            pSCBank->load( pBankFile, 0, 0, &pSector->geometry.mngActor,
-                           /*bNoCopy=*/false );
-            pSCBank->forceLoad();
-            gpScenaric->registerBank( pSCBank );
+            if ( pSector != nullptr && pSector->state == 1 ) {
+                pSCBank->setSpotBank( true );
+                pSCBank->bindSpot( pSpotSector, pSector );
 
-            numGroundMaterial = 0;
+                MngActor &mngActor = pSector->geometry.mngActor;
+                const int32_t numActorsBefore = mngActor.getActorCount();
+
+                pSCBank->load( pBankFile, 0, 0, &mngActor, /*bNoCopy=*/true );
+                pSCBank->forceLoad();
+                gpScenaric->registerBank( pSCBank );
+
+                for ( int32_t i = numActorsBefore; i < mngActor.getActorCount();
+                      i++ ) {
+                    Entity *pActor = mngActor.getActor( i );
+                    if ( pActor != nullptr ) {
+                        pActor->setSpot( this );
+                    }
+                }
+
+                OTDU_UNIMPLEMENTED; // TODO: CINEMATIC
+                setupGroundMaterials();
+            }
         }
     }
 
     status = SS_Loaded;
     markAsInstanciated();
+}
+
+void Spot::setupGroundMaterials() {
+    // FUN_006fcd20
+    numGroundMaterial = 0;
+
+    if ( pSCBank == nullptr || pSector == nullptr ) {
+        return;
+    }
+
+    RenderFile::Section *pShadowSection =
+        ( pSector->state == 1 ) ? pSector->heightmap.pShadowTextureSection
+                                : nullptr;
+
+    const Eigen::Vector4f shiftPos = gpWorldStreaming->isEnabled()
+                                         ? gpWorldStreaming->getPosition()
+                                         : Eigen::Vector4f::Zero();
+
+    const float projectionOrigin[4] = {
+        static_cast<float>( pSector->offsetX ) - shiftPos.x(),
+        0.0f - shiftPos.y(),
+        static_cast<float>( pSector->offsetY ) - shiftPos.z(),
+        1.0f - shiftPos.w() // FLOAT_00f4165c
+    };
+
+    for ( Render2DM *pMaterialBank : pSCBank->getCollection2D()->Render2DMs ) {
+        if ( pMaterialBank == nullptr ) {
+            continue;
+        }
+
+        const uint32_t numMaterials = pMaterialBank->getNumMaterials();
+        for ( uint32_t i = 0; i < numMaterials; i++ ) {
+            Material *pMaterial = pMaterialBank->getMaterialAtIndex( i );
+            if ( pMaterial == nullptr ) {
+                continue;
+            }
+
+            MaterialParameter *pParam = pMaterial->getParameterByIndex( 0 );
+            if ( pParam == nullptr ||
+                 pParam->Hashcode != kSpotGroundMaterialGUID ||
+                 numGroundMaterial >= kMaxNumGroundMaterial ) {
+                continue;
+            }
+
+            MaterialLayer *pLayer = pParam->getLayer( 0 );
+            if ( pLayer != nullptr ) {
+                pLayer->pLayerTextures[2].pTextureSection = pShadowSection;
+                pLayer->pLayerTextures[2].SamplerAddress[0] = MTM_Mirror;
+                pLayer->pLayerTextures[2].SamplerAddress[1] = MTM_Mirror;
+            }
+
+            MaterialShaderParameterArray *pArray =
+                static_cast<MaterialShaderParameterArray *>( pParam );
+            float *pSlot = (float *)pArray->getParameterDataByIndex( 0 );
+            if ( pSlot != nullptr ) {
+                pSlot[0] = projectionOrigin[0];
+                pSlot[1] = projectionOrigin[1];
+                pSlot[2] = projectionOrigin[2];
+                pSlot[3] = projectionOrigin[3];
+            }
+
+            pMaterials[numGroundMaterial] = pMaterial;
+            numGroundMaterial++;
+        }
+    }
 }
 
 bool Spot::onWorldStreamed( Eigen::Vector4f *param_1,

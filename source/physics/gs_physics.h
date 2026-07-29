@@ -192,6 +192,7 @@ public:
                                    const Matrix4x4f_t &worldTransform,
                                    const DBEntryCarPhysicsData &db,
                                    const void *pTorqueBinary = nullptr );
+    void destroyVehicle( PhysicsVehicle *pVehicle );
 
     RigidBody_t createSphere( uint32_t collisionGroup,
                               const Eigen::Vector4f &worldPosition,

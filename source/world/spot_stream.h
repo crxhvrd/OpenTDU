@@ -20,6 +20,10 @@ enum eSpotStatus : int32_t {
 
 class Spot : public Bank, public StreamedResource, public StreamingCallback {
 public:
+    // Ground materials the spot exterior can shade with the sector shadow map.
+    static constexpr int32_t kMaxNumGroundMaterial = 12;
+
+public:
     Spot();
     ~Spot();
 
@@ -33,13 +37,15 @@ public:
     bool loadFromSource( const char *pSourceName );
     void destroy();
 
+    void setupGroundMaterials();
+
     eSpotStatus status = SS_None;
     void *pSpotPool = nullptr; // slice of the shared intro pool
     ScenaricBank *pSCBank = nullptr;
     SpotSector *pSpotSector = nullptr;
     Sector *pSector = nullptr;
     int32_t numGroundMaterial = 0;
-    Material *pMaterials[12] = {};
+    Material *pMaterials[kMaxNumGroundMaterial] = {};
     SectorGeometry geometry;
 };
 

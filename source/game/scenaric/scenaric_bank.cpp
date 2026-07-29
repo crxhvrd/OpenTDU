@@ -4,6 +4,9 @@
 #include "system/system_shared.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_actor.h"
+#include "game/scenaric/entity/entity_car_player.h"
+#include "render/serialized_skinned_model.h"
+#include "render/instance.h"
 #include "render/animation/skeleton.h"
 #include "render/animation/clip.h"
 #include "render/animation/animation.h"
@@ -161,6 +164,8 @@ void ScenaricBank::unload() {
 
     releaseResourceLists();
     bActivated = false;
+    pSpotSector = nullptr;
+    pSector = nullptr;
     OTDU_UNIMPLEMENTED;
 
     if ( !bExternalBuffer && pBuffer != nullptr ) {
@@ -589,24 +594,54 @@ void ScenaricBank::forceLoad() {
 void ScenaricBank::destroy() {
     // FUN_007db1a0
     state = BBS_Flushing;
+    bTransform = false;
 
-    if ( pMngActor != nullptr && !bNoCopy ) {
-        // Uninstanciate every actor that was instanced from one of this bank's
-        // templates: such an actor's parent is one of our zone/volume/entity
-        // descriptors. Uninstanciate() compacts the manager's actor list in
-        // place, so the current index is re-tested after each removal.
-        for ( int32_t i = 0; i < pMngActor->getActorCount(); ) {
-            Entity *pActor = pMngActor->getActor( i );
-            Entity *pTemplate =
-                pActor != nullptr ? pActor->getParent() : nullptr;
-            if ( pTemplate != nullptr &&
-                 ( ContainerOwns( zones, pTemplate ) ||
-                   ContainerOwns( zoneVolumes, pTemplate ) ||
-                   ContainerOwns( entities, pTemplate ) ) ) {
-                MngActor::Uninstanciate( pMngActor, pActor );
-                continue;
+    if ( pMngActor != nullptr ) {
+        if ( !bNoCopy ) {
+            // Uninstanciate every actor that was instanced from one of this
+            // bank's templates
+            for ( int32_t i = 0; i < pMngActor->getActorCount(); ) {
+                Entity *pActor = pMngActor->getActor( i );
+                Entity *pTemplate =
+                    pActor != nullptr ? pActor->getParent() : nullptr;
+                if ( pTemplate != nullptr &&
+                     ( ContainerOwns( zones, pTemplate ) ||
+                       ContainerOwns( zoneVolumes, pTemplate ) ||
+                       ContainerOwns( entities, pTemplate ) ) ) {
+                    MngActor::Uninstanciate( pMngActor, pActor );
+                    continue;
+                }
+                i++;
             }
-            i++;
+        } else {
+            // In-place instanciation (spot exterior banks)
+            for ( int32_t i = 0; i < zones.getCount(); i++ ) {
+                Entity *pTemplate =
+                    static_cast<Entity *>( zones.getElement( i ) );
+                if ( pTemplate != nullptr ) {
+                    pTemplate->destroyInstance();
+                }
+            }
+            for ( int32_t i = 0; i < zoneVolumes.getCount(); i++ ) {
+                Entity *pTemplate =
+                    static_cast<Entity *>( zoneVolumes.getElement( i ) );
+                if ( pTemplate != nullptr ) {
+                    pTemplate->destroyInstance();
+                }
+            }
+
+            for ( int32_t i = 0; i < pMngActor->getActorCount(); ) {
+                Entity *pActor = pMngActor->getActor( i );
+                if ( pActor != nullptr && ContainerOwns( entities, pActor ) ) {
+                    if ( pActor->getType() == eEntityType::ET_CARP ) {
+                        static_cast<EntityCarPlayer *>( pActor )
+                            ->unloadResources();
+                    }
+                    pMngActor->removeActorFromList( pActor );
+                    continue;
+                }
+                i++;
+            }
         }
     }
 

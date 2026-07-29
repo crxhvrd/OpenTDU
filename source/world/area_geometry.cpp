@@ -339,6 +339,12 @@ void SetupTerrainMaterial(
     } else {
         // Sector terrain (>= 5 layers): the shadow / AO map rides layer 1.
         heightmap.pShadowBitmap = resolveLayerBitmap( 1 );
+
+        MaterialLayer *pShadowLayer = pParam->getLayer( 1 );
+        if ( pShadowLayer != nullptr ) {
+            heightmap.pShadowTextureSection =
+                pShadowLayer->pLayerTextures[0].pTextureSection;
+        }
     }
 
     if ( pParam->Type == MPT_Terrain ) {

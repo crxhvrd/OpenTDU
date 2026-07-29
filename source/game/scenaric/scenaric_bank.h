@@ -16,6 +16,8 @@ class MngActor;
 class PhysFactory;
 class SkeletonInstance;
 class ClipInstance;
+class Sector;
+struct SpotSector;
 
 template <typename T> struct BankRenderResource {
     uint64_t hashcode = 0;
@@ -47,6 +49,13 @@ public:
     inline BankInstance &getBank() { return bank; }
     inline void setMngActor( MngActor *pTarget ) { pMngActor = pTarget; }
     inline void setSpotBank( bool param_1 ) { bIsSpotBank = param_1; }
+    inline void bindSpot( SpotSector *pNewSpotSector, Sector *pNewSector ) {
+        pSpotSector = pNewSpotSector;
+        pSector = pNewSector;
+    }
+    inline SpotSector *getSpotSector() const { return pSpotSector; }
+    inline Sector *getSector() const { return pSector; }
+    inline FileCollection2D *getCollection2D() { return &collection2D; }
     inline FileCollection3D *getCollection3D() { return &collection3D; }
     inline const std::vector<HiearchyNode *> &getSceneryNodes() const {
         return sceneryNodes;
@@ -141,6 +150,9 @@ protected:
     BankInstance bank;
 
     MngActor *pMngActor;
+
+    SpotSector *pSpotSector = nullptr;
+    Sector *pSector = nullptr;
 
     SerializedEntity entities;
     SceneryBinArray sceneries;

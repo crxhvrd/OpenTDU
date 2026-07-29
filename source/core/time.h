@@ -93,12 +93,22 @@ static float GetTimeSeconds() {
 }
 #endif
 
-static float GetTimePrecise() {
-    static double gPerformanceCounterFrequencyInv = 1.0 / 1000000000.0;
+inline double GetTimePreciseBaseSeconds() {
+    static const double baseSeconds = []() {
+        struct timespec t;
+        clock_gettime( CLOCK_MONOTONIC, &t );
+        return double( t.tv_sec ) + double( t.tv_nsec ) * 1e-9;
+    }();
 
+    return baseSeconds;
+}
+
+static float GetTimePrecise() {
     struct timespec t;
-    clock_gettime( CLOCK_THREAD_CPUTIME_ID, &t );
-    return static_cast<float>( t.tv_nsec * gPerformanceCounterFrequencyInv );
+    clock_gettime( CLOCK_MONOTONIC, &t );
+
+    const double seconds = double( t.tv_sec ) + double( t.tv_nsec ) * 1e-9;
+    return static_cast<float>( seconds - GetTimePreciseBaseSeconds() );
 }
 #endif
 

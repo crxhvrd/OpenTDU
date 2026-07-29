@@ -633,6 +633,14 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
         }
     }
 
+    MngActor &sectorActors = sector.geometry.mngActor;
+    for ( int32_t i = 0; i < sectorActors.getActorCount(); i++ ) {
+        Entity *pActor = sectorActors.getActor( i );
+        if ( pActor != nullptr && !pActor->isStreamManaged() ) {
+            pActor->tick();
+        }
+    }
+
     DynamicPropStream &dp = sector.geometry.dynamicProps;
     if ( dp.bValid ) {
         const SectorHeightmap &hm = sector.heightmap;

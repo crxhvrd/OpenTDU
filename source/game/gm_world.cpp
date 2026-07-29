@@ -316,6 +316,7 @@ void GameModeWorld::installLocalPlayerCar(
                 : nullptr;
         DBEntryCarPhysicsData *pDB = gpDatabase->getCarDBEntry( state.carID );
         if ( pDB != nullptr ) {
+            gpPhysics->destroyVehicle( state.pPhysicsVehicle );
             pPlayerPhysicsVehicle =
                 gpPhysics->createVehicle( pFactory, spawn, *pDB, pTorqueBin );
             state.pPhysicsVehicle = pPlayerPhysicsVehicle;

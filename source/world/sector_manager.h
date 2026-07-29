@@ -48,6 +48,7 @@ public:
     Render2DB *pColorBitmap = nullptr;  // ground colour (DXT1)
     Render2DB *pShadowBitmap = nullptr; // ground shade / AO (DXT1)
     Render2DB *pTypeBitmap = nullptr;   // ground type / passability (DXT1)
+    RenderFile::Section *pShadowTextureSection = nullptr;
     float worldOriginX = 0.0f;
     float worldOriginZ = 0.0f;
     float worldExtent = 0.0f;

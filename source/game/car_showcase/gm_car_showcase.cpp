@@ -377,6 +377,11 @@ void GMCarShowcase::unloadCar() {
         }
     }
 
+    if ( gpPhysics != nullptr && pVehicleState != nullptr ) {
+        gpPhysics->destroyVehicle( pVehicleState->pPhysicsVehicle );
+        pVehicleState->pPhysicsVehicle = nullptr;
+    }
+
     VehicleBaseResources *pVVar2 = pVehicleState->pResource;
     gpCarState->releaseCarState( pVehicleState, false );
     if ( pVVar2 != nullptr ) {

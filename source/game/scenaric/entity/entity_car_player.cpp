@@ -1,10 +1,28 @@
 #include "shared.h"
 #include "entity_car_player.h"
 
+#include "database/gs_database.h"
 #include "filesystem/binary.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/game_mechanism.h"
+#include "game/vehicle/car_state.h"
+#include "game/vehicle/gs_brand_car.h"
+
+// Squared distances the original spawns / despawns a parked vehicle at
+static constexpr float kSpawnDistanceSq = 40000.0f;   // DAT_00f41c78
+static constexpr float kDespawnDistanceSq = 62500.0f; // DAT_00f41cb4
+
+// A car-position descriptor only marks a spawn point when its second
+// serialized dword carries this tag.
+static constexpr uint32_t kSpawnPointTag = 5;
 
 EntityCarPlayer::EntityCarPlayer()
-    : Entity(), Index( 0 ), pData( nullptr ), Value( 0 ) {
+    : Entity(),
+      Index( 0 ),
+      pData( nullptr ),
+      Value( 0 ),
+      SpawnKind( SK_None ),
+      bBrandCarSpawned( false ) {
     // FUN_00423f50
 }
 
@@ -25,4 +43,86 @@ void EntityCarPlayer::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     // FUN_009c7bd0
     Entity::instanciate( pMngActor, param_1 );
     static_cast<EntityCarPlayer *>( param_1 )->pData = pData;
+}
+
+void EntityCarPlayer::initialize() {
+    // FUN_009c7cc0
+    if ( pData != nullptr &&
+         *reinterpret_cast<uint32_t *>( pData + 4 ) == kSpawnPointTag &&
+         gpDatabase != nullptr ) {
+        DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry( Value );
+        if ( pCarEntry == nullptr || pCarEntry->Brand == nullptr ) {
+            SpawnKind = SK_ParkedTraffic;
+        } else {
+            const char *pTrafficBrand =
+                gpDatabase->getStringByHashcode( 6, 0x3540681 );
+            SpawnKind = ( pTrafficBrand != pCarEntry->Brand->BrandID.pAsString )
+                            ? SK_BrandCar
+                            : SK_ParkedTraffic;
+        }
+    }
+
+    OTDU_LOG_DEBUG(
+        "CarPos '%s': pData=%p tag=%u value=%u db=%p kind=%d\n", name.c_str(),
+        (void *)pData,
+        pData != nullptr ? *reinterpret_cast<uint32_t *>( pData + 4 ) : 0u,
+        Value, (void *)gpDatabase, (int32_t)SpawnKind );
+
+    setTransformFromDesc();
+
+    if ( pMechanism != nullptr ) {
+        pMechanism->setEntity( this );
+    }
+}
+
+void EntityCarPlayer::unloadResources() {
+    // FUN_009c7d40
+    if ( bBrandCarSpawned ) {
+        if ( gpBrandCar != nullptr ) {
+            gpBrandCar->removeCar( this );
+        }
+        bBrandCarSpawned = false;
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: AI
+}
+
+void EntityCarPlayer::tick() {
+    // FUN_009c7dc0
+    Entity::tick();
+
+    if ( SpawnKind == SK_None || gpScenaric == nullptr ) {
+        return;
+    }
+
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar == nullptr ) {
+        return;
+    }
+
+    if ( SpawnKind == SK_ParkedTraffic ) {
+        OTDU_UNIMPLEMENTED; // TODO: AI
+        return;
+    }
+
+    if ( gpBrandCar == nullptr ) {
+        return;
+    }
+
+    const Matrix4x4f_t spawn = getWorldMatrix();
+    const Eigen::Vector4f playerPos = pPlayerCar->getWorldPosition();
+    const float dx = playerPos.x() - spawn( 3, 0 );
+    const float dy = playerPos.y() - spawn( 3, 1 );
+    const float dz = playerPos.z() - spawn( 3, 2 );
+    const float distanceSq = dx * dx + dy * dy + dz * dz;
+
+    if ( !bBrandCarSpawned ) {
+        if ( distanceSq < kSpawnDistanceSq ) {
+            gpBrandCar->addCar( this, static_cast<int32_t>( Value ), spawn );
+            bBrandCarSpawned = true;
+        }
+    } else if ( distanceSq > kDespawnDistanceSq ) {
+        gpBrandCar->removeCar( this );
+        bBrandCarSpawned = false;
+    }
 }
