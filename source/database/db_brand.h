@@ -5,7 +5,7 @@ struct DBEntryBrand {
     DBReference BrandID;
     DBReference BrandNameID;
     DBReference LogoHUDFile;
-    int32_t LogoID;
-    int32_t Flags;
-    uint32_t Flags2;
+    int32_t LogoGlobalID;
+    int32_t BrandSpecialParam; // Used by BrandCar/GSBrandCar
+    uint32_t Flags;
 };

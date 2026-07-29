@@ -229,6 +229,7 @@ private:
 
     friend class GMCarShowcase;
     friend class GameModeWorld; // installs the local-player car on reset
+    friend class BrandCar;      // installs the spot showcase ("brand") cars
     friend class GSCarState; // TODO: Remove once visibility for bInstanceAlive
                              // is fixed
     friend class VehicleCar;
