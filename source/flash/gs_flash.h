@@ -88,6 +88,11 @@ public:
 
 #ifdef OTDU_USE_IMGUI
     void drawDebug( float deltaTime ) override;
+
+private:
+    void drawFrontEndSoundDebug();
+
+public:
 #endif
 
     bool onConfigurationChanged() override;

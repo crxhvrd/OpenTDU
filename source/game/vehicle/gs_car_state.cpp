@@ -14,6 +14,9 @@
 #include "physics/gs_physics.h" // TDUSurface
 #include "physics/physics_config.h"
 #include "car_state.h"
+#include "audio/gs_audio.h"
+#include "audio/vehicle/gs_vehicle_sound.h"
+#include "render/camera/camera_game.h"
 
 GSCarState *gpCarState = nullptr; // DAT_010e7518
 
@@ -80,6 +83,75 @@ void GSCarState::terminate() {
         carToDeinstanciate.pop();
     }
 }
+
+namespace {
+    constexpr float kOmegaToRPM = 9.5493f;      // DAT_00f41698, 60/2pi
+    constexpr float kMetersToKmh = 3.6f;        // DAT_00f41768
+    constexpr float kWattsToPS = 1.0f / 735.5f; // DAT_00f41694, metric hp
+    constexpr float kSlipGateSpeed = 1.0f;      // FLOAT_00f4165c
+    constexpr float kSmoothEngine =
+        ( 1.0f - 0.5f ) * ( 10.0f / 9.0f );                            // 0.5556
+    constexpr float kSmoothSpeed = ( 1.0f - 0.8f ) * ( 10.0f / 9.0f ); // 0.2222
+    constexpr float kSmoothWheel = 1.0f / 9.0f; // DAT_00f420fc
+
+    bool gCarStateSmoothTelemetry = false;
+
+    inline void approach( float &current, float target, float rate ) {
+        current += ( target - current ) * rate;
+    }
+
+    void publishBodyAudioTelemetry( CarBodyState &body,
+                                    const PhysicsVehicle &vehicle ) {
+        const float omega = vehicle.getEngineAngularVelocity();
+        const float torque = vehicle.getEngineSmoothedTorque();
+
+        const float rpm = omega * kOmegaToRPM;
+        const float powerPS = torque * omega * kWattsToPS;
+        const float speedKmh = vehicle.getChassisSpeed() * kMetersToKmh;
+
+        if ( gCarStateSmoothTelemetry ) {
+            approach( body.EngineRPM, rpm, kSmoothEngine );
+            approach( body.EnginePowerPS, powerPS, kSmoothEngine );
+            approach( body.EngineTorqueNm, torque, kSmoothEngine );
+            approach( body.AudioSpeedKmh, speedKmh, kSmoothSpeed );
+        } else {
+            body.EngineRPM = rpm;
+            body.EnginePowerPS = powerPS;
+            body.EngineTorqueNm = torque;
+            body.AudioSpeedKmh = speedKmh;
+        }
+    }
+
+    void
+    publishWheelAudioTelemetry( WheelState &wheel,
+                                const PhysicsVehicle::WheelReadout &readout ) {
+        // FUN_0083bbd0
+        const float rollSpeed =
+            std::fabs( readout.AngularVelocity * readout.Radius );
+        const float longSpeed = std::fabs( readout.LongitudinalGroundSpeed );
+        const float groundSpeedKmh = Max( rollSpeed, longSpeed ) * kMetersToKmh;
+        const float latSpeedKmh =
+            std::fabs( readout.LateralGroundSpeed ) * kMetersToKmh;
+
+        const bool bMoving =
+            longSpeed >= kSlipGateSpeed ||
+            std::fabs( readout.AngularVelocity ) >= kSlipGateSpeed;
+        const float slipLong = bMoving ? readout.LongitudinalSlip : 0.0f;
+        const float slipLat = bMoving ? readout.LateralSlip : 0.0f;
+
+        if ( gCarStateSmoothTelemetry ) {
+            approach( wheel.AudioGroundSpeedKmh, groundSpeedKmh, kSmoothWheel );
+            approach( wheel.AudioLatSpeedKmh, latSpeedKmh, kSmoothWheel );
+            approach( wheel.AudioSlipLong, slipLong, kSmoothWheel );
+            approach( wheel.AudioSlipLat, slipLat, kSmoothWheel );
+        } else {
+            wheel.AudioGroundSpeedKmh = groundSpeedKmh;
+            wheel.AudioLatSpeedKmh = latSpeedKmh;
+            wheel.AudioSlipLong = slipLong;
+            wheel.AudioSlipLat = slipLat;
+        }
+    }
+} // namespace
 
 void GSCarState::tick( float totalTime, float deltaTime ) {
     // FUN_008adcd0
@@ -156,6 +228,17 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         body.Omega = pPhysicsVehicle->getEngineAngularVelocity();
         body.Gears = pPhysicsVehicle->getCurrentGear();
         body.GearState = pPhysicsVehicle->getCurrentGear() + 1;
+        body.Torque = pPhysicsVehicle->getEngineTorqueOut();
+        body.MaxOmega = pPhysicsVehicle->getEngineOmegaMax();
+
+        publishBodyAudioTelemetry( body, *pPhysicsVehicle );
+
+        if ( gpVehicleSound != nullptr &&
+             carState.getVehicleSound() == nullptr ) {
+            carState.setVehicleSound(
+                gpVehicleSound->createInstance( &carState ) );
+        }
+
         const PhysicsVehicle::DrivingGearbox gearbox =
             pPhysicsVehicle->getDrivingGearbox();
         const bool bStopLampsArmed =
@@ -173,6 +256,7 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 pPhysicsVehicle->getWheelReadout( w );
             WheelState &wheel = carState.wheels[w];
             wheel.bInitialized = true;
+            publishWheelAudioTelemetry( wheel, ro );
             wheel.bGrounded = ro.bGrounded;
             wheel.Omega = ro.AngularVelocity;
             wheel.SteerAngle = ro.SteerAngle;
@@ -180,6 +264,7 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             wheel.SlipAngle = ro.LateralSlip;
             wheel.LongitudinalSpeed = ro.LongitudinalGroundSpeed;
             wheel.LateralSpeed = ro.LateralGroundSpeed;
+            wheel.Load = ro.SuspensionLoad;
 
             wheel.SuspensionTravelLength = ro.SuspensionDeflection;
             wheel.WheelRadius = ro.Radius;
@@ -229,7 +314,17 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         gpCamera->bindToRender();
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: Audio
+    if ( gpAudio != nullptr ) {
+        gpAudio->syncListenerToActiveCamera();
+    }
+
+    if ( gpVehicleSound != nullptr ) {
+        Eigen::Vector3f listenerPosition = Eigen::Vector3f::Zero();
+        if ( gpCamera != nullptr && gpCamera->getActiveCamera() != nullptr ) {
+            listenerPosition = gpCamera->getActiveCamera()->getWorldPosition();
+        }
+        gpVehicleSound->tickInstances( listenerPosition );
+    }
 
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
         if ( carStates[i].getResource() != nullptr ) {
@@ -433,8 +528,8 @@ void GSCarState::releaseCarState( CarState *param_2, bool param_3 ) {
         gpCarDisplay->releaseVehicle( param_2 );
     }
 
-    if ( param_2->field_0x39bc != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO
+    if ( param_2->pVehicleSound != nullptr && gpVehicleSound != nullptr ) {
+        gpVehicleSound->destroyInstance( param_2 );
     }
 
     if ( param_2->field_0x39d4 != nullptr ) {
@@ -445,7 +540,7 @@ void GSCarState::releaseCarState( CarState *param_2, bool param_3 ) {
     param_2->rimID = -1;
     param_2->pPhysicsVehicle = nullptr;
     param_2->pVehicleBase = nullptr;
-    param_2->field_0x39bc = nullptr;
+    param_2->pVehicleSound = nullptr;
     param_2->field_0x39cc = nullptr;
 
     if ( pVVar2 != nullptr ) {

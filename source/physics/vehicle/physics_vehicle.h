@@ -63,6 +63,7 @@ public:
                  const void *pTorqueBinary = nullptr );
     void destroy();
     bool isActive() const { return pChassisBody != nullptr; }
+    bool isSimulated() const { return bRegistered; }
 
     struct DrivingGearbox {
         int32_t Gear;       // 0 = reverse, 1 = neutral, 2.. = forward gears
@@ -70,6 +71,7 @@ public:
         bool bAutomatic;
         bool bEngineFiring; // engine making torque (orig engine state 2 or 3)
         bool bShiftIdle;    // gearbox will take a shift request right now
+        int32_t ShiftDirection;
     };
 
     void setInput( float throttle, float brake, float steer );
@@ -107,6 +109,14 @@ public:
     Eigen::Vector4f getChassisVelocity() const;
     float getEngineAngularVelocity() const;
     int32_t getCurrentGear() const;
+
+    float getEngineTorqueOut() const { return vehicle.Engine.TorqueOut; }
+    float getEngineOmegaMax() const { return vehicle.Engine.OmegaMax; }
+    float getEngineSmoothedTorque() const {
+        return vehicle.Engine.SmoothedTorque;
+    }
+    eEngineState getEngineState() const { return vehicle.Engine.State; }
+    float getVehicleMass() const { return vehicle.Mass; }
     float getInputBrake() const { return inputBrake; }
     float getInputThrottle() const { return inputThrottle; }
     void setAutoReverseState( int32_t state ) { autoReverseState = state; }

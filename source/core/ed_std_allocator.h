@@ -78,6 +78,13 @@ public:
         OTDU_ASSERT( Usage < Capacity );
 
         Node *peVar1 = pFirstFreeNode;
+        if ( peVar1 == nullptr ) {
+            OTDU_FATAL_ERROR( "Pool is exhausted (%llu/%llu in use)!",
+                              (unsigned long long)Usage,
+                              (unsigned long long)Capacity );
+            return nullptr;
+        }
+
         Usage++;
         pFirstFreeNode = peVar1->pNextNode;
         peVar1->pPreviousNode = nullptr;
@@ -87,17 +94,31 @@ public:
     }
 
     void deallocate( T *p, std::size_t n ) {
-        Node *pIt = pHead;
-        while ( pIt != nullptr ) {
-            if ( pIt->pContent == p ) {
-                Usage--;
-                pIt->pNextNode = pFirstFreeNode;
-                pFirstFreeNode = pIt;
-                return;
+        for ( uint64_t i = 0; i < Capacity; i++ ) {
+            Node *pIt = pHead + i;
+            if ( pIt->pContent != p ) {
+                continue;
             }
 
-            pIt++;
+            for ( Node *pFree = pFirstFreeNode; pFree != nullptr;
+                  pFree = pFree->pNextNode ) {
+                if ( pFree == pIt ) {
+                    OTDU_LOG_ERROR( "Double free of pooled block %p!\n",
+                                    (void *)p );
+                    OTDU_TRIGGER_BREAKPOINT;
+                    return;
+                }
+            }
+
+            Usage--;
+            pIt->pNextNode = pFirstFreeNode;
+            pFirstFreeNode = pIt;
+            return;
         }
+
+        OTDU_LOG_ERROR( "Tried to free %p, which does not belong to this "
+                        "pool!\n",
+                        (void *)p );
         OTDU_TRIGGER_BREAKPOINT;
     }
 

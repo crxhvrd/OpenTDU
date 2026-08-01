@@ -8,7 +8,7 @@
 #include "system/ed_sys.h"
 #include "tdu_instance.h"
 
-#include "audio/ed_audio.h"
+#include "audio/implementation/ed_audio.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/ed_flash.h"
 #include "flash/implementation/flash_action.h"

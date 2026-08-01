@@ -55,6 +55,21 @@ static constexpr const char *kGameModeNames[eGameMode::GM_Count] = {
     "OUTRO DEMO",   "BOATTOUR",     "JAIL",
     "INTRO DEMO" };
 
+// Used by .ini parser to do game mode lookup (e.g. game mode mix register).
+static constexpr const char *kGameModeIniNames[eGameMode::GM_Count] =
+    { // DAT_00f7a060
+        "BOOTMENU",    "FREERIDE",     "MAP",
+        "HOME",        "SHOP",         "MISSION",
+        "EDITOR",      "CARSHOWCASE",  "INSTANTCHALLENGE",
+        "TESTCAR",     "GARAGE",       "LIVING",
+        "SANDBOX",     "GOODIES",      "AVATARSHOWCASE",
+        "DRIVEIN",     "DRESSING",     "AFTMARKT",
+        "VIDEOBUMPER", "AITRAINER",    "CINVIEWER",
+        "ESTATES",     "CLUB",         "LOBBY",
+        "LOGIN",       "ONLINEREPLAY", "INTRO",
+        "OUTRO_DEMO",  "BOAT_TOUR",    "JAIL",
+        "INTRO_DEMO" };
+
 class GameMode {
 public:
     inline eGameMode getCurrentGameMode() const { return currentGameMode; }

@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "gm_car_showcase.h"
 
+#include "audio/vehicle/gs_vehicle_sound.h"
 #include "database/gs_database.h"
 #include "render/draw_list.h"
 #include "render/gs_render.h"
@@ -495,17 +496,14 @@ bool GMCarShowcase::loadCar() {
         }
     }
 
-    void *local_cc = nullptr;
-    if ( pCarState->bSoundResource ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO:
-    }
+    VehicleSoundInstance *local_cc = nullptr;
 
     state.pVehicleBase = local_d0;
     state.field_0x39d8 = nullptr;
     state.field_0x39cc = nullptr;
     state.bIsIndoor = false;
     state.pPhysicsVehicle = local_c4;
-    state.field_0x39bc = local_cc;
+    state.pVehicleSound = local_cc;
     state.pResource = pCarState;
     pCarState->RefCount++;
 

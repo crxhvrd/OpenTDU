@@ -366,6 +366,7 @@ static constexpr float kMinusOne = -1.0f;                    // FLOAT_00f41664
 static constexpr float kDegToRad =
     static_cast<float>( EIGEN_PI / 180.0 );   // DAT_00f41864
 static constexpr float kRadToDeg = 57.29578f; // DAT_00f41b0c
+static constexpr float kHalf = 0.5f;          // FLOAT_00f41674
 
 struct TDUPlane {
     Eigen::Vector4f Normal = kWorldUpVector;

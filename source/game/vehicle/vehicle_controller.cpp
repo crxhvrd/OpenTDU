@@ -218,6 +218,11 @@ void VehicleController::unstream() {
             pCarState = nullptr;
         }
 
+        for ( HiearchyNodeInstance &displayInstance : displayInstances ) {
+            displayInstance.pNode = nullptr;
+            displayInstance.pInstance = nullptr;
+        }
+
         if ( !bShared ) {
             bodyResource.pResourceBank = nullptr;
             interiorResource.pResourceBank = nullptr;

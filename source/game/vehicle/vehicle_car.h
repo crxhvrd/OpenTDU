@@ -8,6 +8,13 @@ class PhysicsVehicle;
 
 class VehicleCar : public VehicleController {
 public:
+    inline float getDoorApertureLeft() const { return doorOpenL; }
+    inline float getDoorApertureRight() const { return doorOpenR; }
+    inline float getWindowAperture() const {
+        return Max( windowRoll[0], windowRoll[1] );
+    }
+
+public:
     VehicleCar();
     ~VehicleCar();
 

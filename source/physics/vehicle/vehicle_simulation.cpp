@@ -2,6 +2,7 @@
 
 #include "vehicle_simulation.h"
 #include "core/maths_helper.h"
+#include "physics/physics_config.h"
 
 #include <algorithm>
 #include <cmath>
@@ -38,10 +39,12 @@ float gVehicleDiffLockCoef =
 static constexpr float kDiffTractionGateF = 0.001f; // FLOAT_00f4167c
 static constexpr float kDiffGripEps = 0.0001f;   // DAT_00f41760 (ratio guard)
 static constexpr float kDiffRatioInf = 1.08e19f; // FLOAT_00f41898 (ratio ~inf)
-static constexpr float kClutchThrottleArm = 0.05f; // DAT_00f41778
-static constexpr float kClutchThrottleDrop = 0.1f; // FLOAT_00f41668
-static constexpr float kThousandRpmRad = 104.72f;  // FLOAT_00f41894 (1000rpm)
-static constexpr float kClutchDecel = -26.19f;     // clutch decel threshold
+static constexpr float kClutchThrottleArm = 0.05f;  // DAT_00f41778
+static constexpr float kClutchThrottleDrop = 0.1f;  // FLOAT_00f41668
+static constexpr float kThousandRpmRad = 104.72f;   // FLOAT_00f41894 (1000rpm)
+static constexpr float kClutchDecel = -26.19f;      // clutch decel threshold
+static constexpr float kFreeRollBrakeTorque = 0.1f; // FLOAT_00f41668
+static constexpr float kFreeRollDriveTorque = 1.0f; // FLOAT_00f4165c
 
 bool gVehicleEngineStateMachine = true;
 static constexpr float kIgnitionBlipThrottle = 0.35f; // start-blip throttle
@@ -49,6 +52,7 @@ static constexpr float kIdleGovGain =
     3.0f; // idle-governor throttle / omega deficit
 static constexpr float kEngineStallFrac =
     0.2f; // stall below this*idle (DAT_00f416dc)
+static constexpr float kTorqueSmoothRate = 100.0f;
 
 static void StepClutch( PhysicsClutchSim &c,
                         const PhysicsEngineSim &e,
@@ -327,9 +331,8 @@ void ComputeSuspensionForce( PhysicsWheelState &w ) {
         w.NormalLoad = w.SuspMaxLoad;
     if ( w.NormalLoad < w.SuspMinLoad )
         w.NormalLoad = w.SuspMinLoad;
-
     const Eigen::Vector4f &axis =
-        ( !w.bGroundContact ) ? w.ContactNormal : w.SpinAxis;
+        ( !w.bGroundContact ) ? w.ContactNormal : w.SuspAxis;
     w.SuspForce = axis * diff;
     w.SuspForcePoint = w.ContactPoint;
 }
@@ -368,11 +371,18 @@ void IntegrateWheel( PhysicsWheelState &w, float deltaTime ) {
     // FUN_0043e440
     const float totalInertia = w.Inertia + w.ReflectedInertia;
     const float inertia = ( totalInertia > 1e-6f ) ? totalInertia : 1e-6f;
-    const float omega = w.AngularVel;
-    float longForce = w.TireForceLong;
+    float omega = w.AngularVel;
+    float lockForce = w.TireForceLong;
     const float reactTorque =
-        ComputeWheelReactionTorque( w, deltaTime, &longForce );
-    w.TireForceLong = longForce;
+        ComputeWheelReactionTorque( w, deltaTime, &lockForce );
+    const float brakeAuthority = w.HandbrakeCmdTorque + w.BrakeCmdTorque;
+    if ( w.bGroundContact && w.Radius > 1e-4f &&
+         std::fabs( brakeAuthority ) < kFreeRollBrakeTorque &&
+         std::fabs( w.DriveTorque ) <= kFreeRollDriveTorque ) {
+        w.TireForceLong = lockForce;
+        omega = w.ContactVelLong / w.Radius; // free omega
+        w.AngularVel = omega;
+    }
 
     const float slipCoef = 1.0f - w.ReactionSlipCoef;
     const float loadScale =
@@ -779,6 +789,13 @@ void StepPowertrain( PhysicsVehicleState &v,
 
     e.TorqueOut =
         engineFiring ? EngineTorqueAt( e, e.Omega, engThrottle ) : 0.0f;
+
+    const float inertia = ( e.TorqueOut <= e.SmoothedTorque )
+                              ? gPhysicsConfig.TorqueInertiaDown
+                              : gPhysicsConfig.TorqueInertiaUp;
+    const float netTorque = e.TorqueOut - e.FrictionLoss * e.Omega;
+    e.SmoothedTorque += ( netTorque - e.SmoothedTorque ) * ( 1.0f - inertia ) *
+                        dt * kTorqueSmoothRate;
 
     StepClutch( c, e, gear, throttle, dt );
     float engage = neutral ? 0.0f : c.Engagement;

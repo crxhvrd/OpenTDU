@@ -32,6 +32,7 @@ struct WindowState {
 class MngShowCaseCarControl : public Manager {
 public:
     const char *getName() const override { return "ShowCaseCarControl"; }
+    inline VehicleBase *getFocusedVehicle() const { return pVehicle; }
 
 public:
     MngShowCaseCarControl();

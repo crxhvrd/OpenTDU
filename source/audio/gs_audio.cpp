@@ -1,16 +1,320 @@
 #include "shared.h"
 #include "gs_audio.h"
 
-#include "ed_audio.h"
+#include "implementation/audio_dispatcher_playback.h"
+#include "implementation/ed_audio.h"
+#include "implementation/ed_audio_memory.h"
+#include "implementation/ed_audio_object.h"
+
+#include "game/gm_base.h"
+
+#include "render/camera/camera_game.h"
+#include "render/camera/gs_camera.h"
 
 GSAudio *gpAudio = nullptr;
 
+static constexpr float kMinAudibleClientVolume = 0.01f; // DAT_00f416d4
+static constexpr float kClientVolumeSmoothing = 0.5f;   // DAT_00f41674
+
+static void UnlinkFromParent( edAudioObject *pModule ) {
+    if ( pModule != nullptr && pModule->getParent() != nullptr ) {
+        pModule->getParent()->unlinkEntry( pModule );
+    }
+}
+
+static void CopyAudioName( char *pDestination,
+                           size_t destinationSize,
+                           const std::string &source ) {
+    snprintf( pDestination, destinationSize, "%s", source.c_str() );
+}
+
+class ClientRootModule final : public edAudioObject {
+public:
+    ClientRootModule( int32_t inputChannels,
+                      int32_t outputChannels,
+                      AudioClient *pInClient )
+        : edAudioObject( inputChannels, outputChannels ),
+          pClient( pInClient ) {}
+
+    bool prepare( edAudioDSPNode &node ) override {
+        // FUN_0040df80
+        if ( pClient != nullptr ) {
+            const float volume = pClient->resolveVolume();
+            const ClientConfig *pConfig = pClient->getConfig();
+
+            Volume = volume;
+            if ( pConfig != nullptr ) {
+                Pitch = pConfig->Pitch;
+            }
+
+            const bool bPaused = ( pConfig != nullptr ) && pConfig->bPaused;
+            if ( !bPaused ) {
+                bMuted = false;
+            } else if ( volume < kMinAudibleClientVolume ) {
+                bMuted = true;
+            }
+
+            pClient->rebuildSpatialGraph();
+        }
+
+        return edAudioObject::prepare( node );
+    }
+
+private:
+    AudioClient *pClient;
+};
+
+AudioClient::AudioClient( const ClientConfig *pInConfig,
+                          Mixer *pInMixer,
+                          edAudioObject *pParent,
+                          bool bInPositional )
+    // FUN_0040cba0
+    : pConfig( pInConfig ),
+      pMixer( pInMixer ),
+      DuckGain( 1.0f ),
+      bPositional( bInPositional ),
+      pParentBuffer( pParent ),
+      pRoot( nullptr ),
+      Clustering(),
+      pClusters{} {
+    pRoot = new ClientRootModule( kSpatialChannelCount, kSpatialChannelCount,
+                                  this );
+    pRoot->debugSetDescription( ( pConfig != nullptr ) ? pConfig->pName
+                                                       : "Pipeline Spatial" );
+
+    for ( int32_t i = 0; i < SpatialClustering::kMaxClusters; i++ ) {
+        pClusters[i] = std::make_unique<edAudioCluster>();
+    }
+
+    if ( pParentBuffer != nullptr ) {
+        pParentBuffer->addNewEntry( pRoot );
+    }
+}
+
+float AudioClient::resolveVolume() {
+    // FUN_009cfaa0
+    float mixerGain = 1.0f;
+    for ( const Mixer *pWalk = pMixer; pWalk != nullptr;
+          pWalk = pWalk->pOutputMixer ) {
+        if ( pWalk->bEnabled ) {
+            mixerGain *= pWalk->Volume;
+        }
+    }
+
+    float target = mixerGain;
+    if ( pConfig != nullptr ) {
+        target *= pConfig->Volume * DuckGain;
+    }
+
+    bool bAttenuated =
+        ( pConfig != nullptr ) && ( pConfig->bPaused || pConfig->bMuted );
+    if ( !bAttenuated ) {
+        for ( const Mixer *pWalk = pMixer; pWalk != nullptr;
+              pWalk = pWalk->pOutputMixer ) {
+            if ( pWalk->bEnabled && pWalk->bMuted ) {
+                bAttenuated = true;
+                break;
+            }
+        }
+    }
+
+    if ( bAttenuated ) {
+        target *= kMinAudibleClientVolume;
+    }
+
+    SmoothedVolume = ( SmoothedVolume + target ) * kClientVolumeSmoothing;
+    return SmoothedVolume;
+}
+
+AudioClient::~AudioClient() {
+    // FUN_0040df20
+    UnlinkFromParent( pRoot );
+
+    if ( pRoot != nullptr ) {
+        pRoot->unlinkAllEntries();
+    }
+
+    while ( pInstances != nullptr ) {
+        AudioDispatcherPlaybackSoundInstance *pNext = pInstances->pNextInstance;
+        DestroySoundInstance( pInstances );
+        pInstances = pNext;
+    }
+
+    for ( std::unique_ptr<edAudioCluster> &cluster : pClusters ) {
+        cluster.reset();
+    }
+
+    delete pRoot;
+    pRoot = nullptr;
+}
+
+edAudioCluster *
+AudioClient::findNearestFreeCluster( const Eigen::Vector3f &probe,
+                                     int32_t clusterCount ) {
+    // FUN_0040c970
+    edAudioCluster *pBest = nullptr;
+    float bestDistance = FLT_MAX;
+
+    const int32_t count = Min( clusterCount, SpatialClustering::kMaxClusters );
+    for ( int32_t i = 0; i < count; i++ ) {
+        std::unique_ptr<edAudioCluster> &cluster = pClusters[i];
+
+        // A cluster already linked this round is taken.
+        if ( cluster == nullptr || cluster->getParent() != nullptr ) {
+            continue;
+        }
+
+        const float distance = ( probe - cluster->getPosition() ).squaredNorm();
+        if ( distance < bestDistance ) {
+            pBest = cluster.get();
+            bestDistance = distance;
+        }
+    }
+
+    return pBest;
+}
+
+AudioDispatcherPlaybackSoundInstance *AudioClient::acquireSoundInstance() {
+    // FUN_004029d0
+    void *pMemory = edAudioHeap::Allocate(
+        int32_t( sizeof( AudioDispatcherPlaybackSoundInstance ) ) );
+    if ( pMemory == nullptr ) {
+        return nullptr;
+    }
+
+    AudioDispatcherPlaybackSoundInstance *pInstance =
+        new ( pMemory ) AudioDispatcherPlaybackSoundInstance();
+
+    pInstance->pNextInstance = pInstances;
+    pInstances = pInstance;
+
+    return pInstance;
+}
+
+void AudioClient::DestroySoundInstance(
+    AudioDispatcherPlaybackSoundInstance *pInstance ) {
+    pInstance->~AudioDispatcherPlaybackSoundInstance();
+    edAudioHeap::Free( pInstance );
+}
+
+bool AudioClient::sweepInstances() {
+    // FUN_0040cf10
+    AudibleSourceCount = 0;
+    MutedSourceCount = 0;
+
+    AudioDispatcherPlaybackSoundInstance *pInstance = pInstances;
+    AudioDispatcherPlaybackSoundInstance *pPrevious = nullptr;
+
+    while ( pInstance != nullptr ) {
+        AudioDispatcherPlaybackSoundInstance *pNext = pInstance->pNextInstance;
+
+        if ( pInstance->isReleaseRequested() ) {
+            if ( pPrevious != nullptr ) {
+                pPrevious->pNextInstance = pNext;
+            } else {
+                pInstances = pNext;
+            }
+
+            DestroySoundInstance( pInstance );
+        } else {
+            pInstance->setListener( CachedListener );
+            pInstance->update();
+
+            const bool bAccepted =
+                Clustering.addSource( pInstance->getRelativePosition(),
+                                      kDefaultSourceWeight, pInstance );
+
+            if ( bAccepted && pInstance->getPlayingState() ==
+                                  edAudioStreamEntry::APES_Play ) {
+                if ( pInstance->bMuted ) {
+                    MutedSourceCount++;
+                } else {
+                    AudibleSourceCount++;
+                }
+            }
+
+            pPrevious = pInstance;
+        }
+
+        pInstance = pNext;
+    }
+
+    return true;
+}
+
+void AudioClient::rebuildSpatialGraph() {
+    // FUN_0040cda0
+    if ( pRoot == nullptr ) {
+        return;
+    }
+
+    CachedListener.copyFrom( gEdAudio.getListener() );
+    for ( int32_t c = 0; c < Clustering.ClusterCount; c++ ) {
+        if ( pClusters[c] != nullptr ) {
+            pClusters[c]->getBuffer()->unlinkAllEntries();
+        }
+    }
+
+    pRoot->unlinkAllEntries();
+    Clustering.reset();
+
+    if ( !sweepInstances() ) {
+        return;
+    }
+
+    if ( Clustering.SourceCount == 0 ) {
+        return;
+    }
+
+    Clustering.build( kDefaultMinSeparation );
+    Clustering.flattenMembers();
+
+    for ( int32_t c = 0; c < Clustering.ClusterCount; c++ ) {
+        ClusterInfo &info = Clustering.Clusters[c];
+
+        const Eigen::Vector3f centre = info.Placement.Position.head<3>();
+
+        edAudioCluster *pCluster =
+            findNearestFreeCluster( centre, Clustering.ClusterCount );
+        if ( pCluster == nullptr ) {
+            break;
+        }
+
+        pCluster->fillMatrix( 0.0f );
+        pCluster->setPosition( centre );
+
+        const SpatialSource *pMember = info.pFirstMember;
+        for ( int32_t n = 0; n < info.MemberCount && pMember != nullptr; n++ ) {
+            const int32_t index = pMember->SourceIndex;
+            edAudioObject *pSourceModule =
+                ( index >= 0 && index < SpatialClustering::kMaxSources )
+                    ? Clustering.pSourceObjects[index]
+                    : nullptr;
+
+            if ( pSourceModule != nullptr ) {
+                pCluster->pan( pMember->Placement.Direction.head<3>(), 1.0f,
+                               0 );
+                pCluster->getBuffer()->addNewEntry( pSourceModule );
+            }
+
+            pMember = pMember->pNextMember;
+        }
+
+        pRoot->addNewEntry( pCluster );
+    }
+}
+
 GSAudio::GSAudio()
-    : NbSpeakers( 5 ),
+    : pMemory( nullptr ),
+      MemorySize( 0 ),
+      NbSpeakers( 5 ),
       OutputSpatialFactor( 0.0f ),
       OutputSpatialFactor2( 0.0f ),
       OutputDopplerFactor( 0.0f ),
-      OutputDopplerFactor2( 0.0f ) {
+      OutputDopplerFactor2( 0.0f ),
+      pSpatialBuffer( nullptr ),
+      pSpatialMixer( nullptr ),
+      pSpatialOutput( nullptr ) {
     OTDU_UNIMPLEMENTED;
     gpAudio = this;
 }
@@ -19,27 +323,454 @@ GSAudio::~GSAudio() { OTDU_UNIMPLEMENTED; }
 
 bool GSAudio::initialize( TestDriveGameInstance * ) {
     // FUN_009b1df0
-    OTDU_UNIMPLEMENTED; // TODO: Memory heap
+    OTDU_UNIMPLEMENTED; // TODO: REVERB
+
+    MemorySize = 0x300000;
+    pMemory = new uint8_t[MemorySize];
+    edAudioHeap::InitMemory( pMemory, MemorySize );
 
     if ( gEdAudio.initialize() != 0 ) {
         gEdAudio.destroy();
         return false;
     }
 
+    MixerPool.reserve( kMaxMixers );
+    ClientConfigPool.reserve( kMaxClientConfigs );
+    ClientHandlerPool.reserve( kMaxClientHandlers );
+
+    const int32_t channelCount = gEdAudio.getChannelCount();
+
+    pSpatialOutput = new edAudioBuffer( kSpatialChannelCount );
+    pSpatialOutput->debugSetDescription( "Spatial Pipeline Output" );
+
+    pSpatialMixer = new edAudioMixer( kSpatialChannelCount );
+    pSpatialMixer->debugSetDescription( "Spatial Pipelines Mixer" );
+
+    pSpatialBuffer = new edAudioBuffer( kSpatialChannelCount );
+    pSpatialBuffer->debugSetDescription( "Spatial Pipelines Buffer" );
+
+    pSpatialAdapter =
+        new edAudioChannelAdapter( kSpatialChannelCount, channelCount );
+    pSpatialAdapter->debugSetDescription( "Spatial Pipelines Adapter" );
+
+    pSpatialMixer->addNewEntry( pSpatialBuffer );
+    pSpatialOutput->addNewEntry( pSpatialMixer );
+    pSpatialAdapter->addNewEntry( pSpatialOutput );
+    gEdAudio.getOutputModule()->addNewEntry( pSpatialAdapter );
+
     return true;
 }
 
-void GSAudio::tick( float totalTime, float deltaTime ) { OTDU_UNIMPLEMENTED; }
+ClientHandler *GSAudio::findClientHandler( const char *pName ) {
+    // FUN_00401da0
+    for ( ClientHandler &handler : ClientHandlerPool ) {
+        if ( handler.pClient == nullptr ) {
+            continue;
+        }
+
+        const ClientConfig *pConfig = handler.pClient->getConfig();
+        if ( pConfig != nullptr && strcmp( pConfig->pName, pName ) == 0 ) {
+            return &handler;
+        }
+    }
+
+    return nullptr;
+}
+
+ClientHandler *GSAudio::findClientHandler( const AudioClient *pClient ) {
+    // FUN_00401d40
+    for ( ClientHandler &handler : ClientHandlerPool ) {
+        if ( handler.pClient == pClient ) {
+            return &handler;
+        }
+    }
+
+    return nullptr;
+}
+
+void GSAudio::registerClient( AudioClient *pClient ) {
+    // FUN_009b23e0
+    if ( pClient == nullptr ) {
+        return;
+    }
+
+    ClientHandler *pHandler = findClientHandler( pClient );
+    if ( pHandler != nullptr ) {
+        pHandler->RefCount++;
+        return;
+    }
+
+    if ( int32_t( ClientHandlerPool.size() ) >= kMaxClientHandlers ) {
+        OTDU_LOG_ERROR( "Out of audio client handlers (%d)!\n",
+                        kMaxClientHandlers );
+        return;
+    }
+
+    ClientHandler handler = {};
+    handler.pClient = pClient;
+    handler.RefCount = 1;
+
+    ClientHandlerPool.push_back( handler );
+}
+
+AudioClient *GSAudio::createClient( const char *pName ) {
+    // FUN_0040cab0
+    if ( pName == nullptr ) {
+        return nullptr;
+    }
+
+    // Already built: take a reference on it rather than
+    // making a second one.
+    if ( ClientHandler *pHandler = findClientHandler( pName ) ) {
+        registerClient( pHandler->pClient );
+        return pHandler->pClient;
+    }
+
+    ClientConfig *pConfig = getClientConfig( pName );
+    if ( pConfig == nullptr ) {
+        OTDU_LOG_ERROR( "No audio client config named '%s'!\n", pName );
+        return nullptr;
+    }
+
+    Mixer *pMixer = findMixer( pConfig->pMixerName );
+
+    const bool bPositional =
+        strcmp( pConfig->pOutputName, kOutputMixerName ) != 0;
+
+    edAudioObject *pParent =
+        bPositional ? static_cast<edAudioObject *>( pSpatialBuffer )
+                    : gEdAudio.getOutputModule();
+
+    if ( pParent == nullptr ) {
+        OTDU_LOG_ERROR( "Audio graph is not built, can't create '%s'\n",
+                        pName );
+        return nullptr;
+    }
+
+    auto client =
+        std::make_unique<AudioClient>( pConfig, pMixer, pParent, bPositional );
+
+    AudioClient *pClient = client.get();
+    Clients.push_back( std::move( client ) );
+
+    registerClient( pClient );
+
+    return pClient;
+}
+
+PipelineMono::PipelineMono()
+    : pRoot( nullptr ), pAdapter( nullptr ), pBuffer( nullptr ) {}
+
+PipelineMono::~PipelineMono() { destroy(); }
+
+bool PipelineMono::create( edAudioObject *pParent ) {
+    // FUN_00403cb0
+    if ( pParent == nullptr || pRoot != nullptr ) {
+        return false;
+    }
+
+    const int32_t channelCount = pParent->getInputChannelCount();
+
+    pRoot = new edAudioObject( channelCount, channelCount );
+    pRoot->debugSetDescription( "PipelineMono" );
+
+    pAdapter = new edAudioChannelAdapter( 1, channelCount );
+    pAdapter->debugSetDescription( "PipelineMono Adapter" );
+
+    pBuffer = new edAudioBuffer( 1 );
+    pBuffer->debugSetDescription( "PipelineMono Buffer" );
+
+    pAdapter->addNewEntry( pBuffer );
+    pRoot->addNewEntry( pAdapter );
+    pParent->addNewEntry( pRoot );
+
+    return true;
+}
+
+void PipelineMono::destroy() {
+    UnlinkFromParent( pRoot );
+
+    if ( pRoot != nullptr ) {
+        pRoot->unlinkAllEntries();
+    }
+    if ( pAdapter != nullptr ) {
+        pAdapter->unlinkAllEntries();
+    }
+
+    delete pBuffer;
+    delete pAdapter;
+    delete pRoot;
+
+    pBuffer = nullptr;
+    pAdapter = nullptr;
+    pRoot = nullptr;
+}
+
+Mixer *GSAudio::findMixer( const char *pName ) {
+    // FUN_009b1860
+    if ( strcmp( pName, kOutputMixerName ) == 0 ) {
+        return nullptr;
+    }
+
+    for ( Mixer &mixer : MixerPool ) {
+        if ( strcmp( mixer.pName, pName ) == 0 ) {
+            return &mixer;
+        }
+    }
+
+    return nullptr;
+}
+
+ClientConfig *GSAudio::getClientConfig( const char *pName ) {
+    // FUN_009b2440
+    for ( ClientConfig &config : ClientConfigPool ) {
+        if ( strcmp( config.pName, pName ) == 0 ) {
+            return &config;
+        }
+    }
+
+    return nullptr;
+}
+
+void GSAudio::syncListenerToActiveCamera() {
+    if ( !bListenerSyncToCamera || gpCamera == nullptr ) {
+        return;
+    }
+
+    CameraGame *pCamera = gpCamera->getActiveCamera();
+    if ( pCamera == nullptr ) {
+        return;
+    }
+
+    const Matrix4x4f_t &camToWorld = pCamera->getCamToWorld();
+
+    edAudioListener &listener = gEdAudio.getListener();
+    ScopedMutexLock lock( &GetAudioGraphMutex() );
+
+    listener.Position = pCamera->getWorldPosition();
+    listener.LeftToRight = camToWorld.row( 0 ).head<3>();
+    listener.Top = camToWorld.row( 1 ).head<3>();
+    listener.Front = camToWorld.row( 2 ).head<3>();
+    listener.Speed = pCamera->getVelocity();
+}
+
+void GSAudio::tick( float totalTime, float deltaTime ) {
+    // FUN_009b25a0
+    if ( gpActiveGameMode != nullptr &&
+         GameMode !=
+             static_cast<int32_t>( gpActiveGameMode->getCurrentGameMode() ) ) {
+        for ( ClientConfig &config : ClientConfigPool ) {
+            config.bPaused = true;
+        }
+        GameMode =
+            static_cast<int32_t>( gpActiveGameMode->getCurrentGameMode() );
+        bMixStateTransitionSync = true;
+    }
+
+    const uint32_t transitionFlags =
+        ( gpActiveGameMode != nullptr ) ? gpActiveGameMode->getTransitionFlags()
+                                        : 0u;
+    const bool bTransitioning = ( transitionFlags & ( 1u << 1 ) ) != 0 ||
+                                ( transitionFlags & ( 1u << 3 ) ) != 0;
+
+    if ( bMixStateTransitionSync && !bTransitioning && GameMode >= 0 &&
+         GameMode < kMaxGameModes ) {
+        bMixStateTransitionSync = false;
+        changeMixState( GameModeMixState[GameMode] );
+
+        OTDU_LOG_INFO( "Audio mix state for game mode %d is 0x%08x\n", GameMode,
+                       GameModeMixState[GameMode] );
+    }
+
+    updateClientPriorities();
+
+    if ( bMusicMuted != bMusicMuteApplied ) {
+        bMusicMuteApplied = bMusicMuted;
+        for ( ClientConfig &config : ClientConfigPool ) {
+            if ( config.bAffectedByMusic ) {
+                config.bMuted = bMusicMuted;
+            }
+        }
+    }
+}
+
+void GSAudio::updateClientPriorities() {
+    // FUN_009b2070
+    const ClientConfig *pDucker = nullptr;
+
+    for ( const ClientHandler &handler : ClientHandlerPool ) {
+        if ( handler.pClient == nullptr ) {
+            continue;
+        }
+        const ClientConfig *pConfig = handler.pClient->getConfig();
+        if ( pConfig == nullptr || pConfig->bPaused || pConfig->bMuted ) {
+            continue;
+        }
+        if ( pConfig->PriorityFactor >= 1.0f ) {
+            continue;
+        }
+
+        if ( handler.pClient->getAudibleSourceCount() <= 0 ) {
+            continue;
+        }
+
+        if ( pDucker == nullptr ||
+             pConfig->PriorityRank < pDucker->PriorityRank ) {
+            pDucker = pConfig;
+        }
+    }
+
+    const int32_t duckRank =
+        ( pDucker != nullptr ) ? pDucker->PriorityRank : kNoDuckPriorityRank;
+    const float duckGain =
+        ( pDucker != nullptr ) ? pDucker->PriorityFactor : 1.0f;
+
+    for ( const ClientHandler &handler : ClientHandlerPool ) {
+        if ( handler.pClient == nullptr ) {
+            continue;
+        }
+        const ClientConfig *pConfig = handler.pClient->getConfig();
+
+        const bool bUnducked = pConfig == nullptr || pConfig == pDucker ||
+                               pConfig->PriorityRank <= duckRank;
+        handler.pClient->setDuckGain( bUnducked ? 1.0f : duckGain );
+    }
+}
+
+#ifdef OTDU_USE_IMGUI
+void GSAudio::drawDebug( float ) {
+    ImGui::SeparatorText( "Mix state" );
+    ImGui::Text( "Game mode %d   mix state 0x%08x", GameMode, MixState );
+    if ( bMixStateTransitionSync ) {
+        ImGui::SameLine();
+        ImGui::TextUnformatted( "(transition pending)" );
+    }
+
+    bool bMusic = bMusicMuted;
+    if ( ImGui::Checkbox( "Music muted (the global the tick mirrors)",
+                          &bMusic ) ) {
+        setMusicMuted( bMusic );
+    }
+
+    ImGui::SeparatorText( "Mixers" );
+    for ( Mixer &mixer : MixerPool ) {
+        ImGui::PushID( &mixer );
+
+        ImGui::SetNextItemWidth( 140.0f );
+        ImGui::SliderFloat( mixer.pName, &mixer.Volume, 0.0f, 1.0f, "%.2f" );
+
+        ImGui::SameLine();
+        ImGui::Checkbox( "on", &mixer.bEnabled );
+        ImGui::SameLine();
+        ImGui::Checkbox( "mute", &mixer.bMuted );
+
+        ImGui::SameLine();
+        ImGui::TextDisabled( "-> %s", ( mixer.pOutputMixer != nullptr )
+                                          ? mixer.pOutputMixer->pName
+                                          : kOutputMixerName );
+
+        ImGui::PopID();
+    }
+
+    if ( ImGui::BeginTable( "clients", 6,
+                            ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders |
+                                ImGuiTableFlags_SizingStretchProp ) ) {
+        ImGui::TableSetupColumn( "client" );
+        ImGui::TableSetupColumn( "bit" );
+        ImGui::TableSetupColumn( "state" );
+        ImGui::TableSetupColumn( "cfg vol" );
+        ImGui::TableSetupColumn( "mixer" );
+        ImGui::TableSetupColumn( "resolved" );
+        ImGui::TableHeadersRow();
+
+        for ( size_t i = 0; i < ClientConfigPool.size(); i++ ) {
+            const ClientConfig &config = ClientConfigPool[i];
+
+            const AudioClient *pClient = nullptr;
+            for ( const auto &pCandidate : Clients ) {
+                if ( pCandidate != nullptr &&
+                     pCandidate->getConfig() == &config ) {
+                    pClient = pCandidate.get();
+                    break;
+                }
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted( config.pName );
+            ImGui::TableNextColumn();
+            ImGui::Text( "%zu", i );
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted( config.bPaused  ? "paused"
+                                    : config.bMuted ? "muted"
+                                                    : "live" );
+            ImGui::TableNextColumn();
+            ImGui::Text( "%.2f", config.Volume );
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted( config.pMixerName );
+            ImGui::TableNextColumn();
+            if ( pClient != nullptr ) {
+                ImGui::Text( "%.3f", pClient->getSmoothedVolume() );
+            } else {
+                ImGui::TextUnformatted( "-" );
+            }
+        }
+        ImGui::EndTable();
+    }
+}
+#endif
 
 void GSAudio::terminate() {
+    // FUN_009b2750
     OTDU_UNIMPLEMENTED;
 
+    Clients.clear();
+    ClientHandlerPool.clear();
+
+    UnlinkFromParent( pSpatialBuffer );
+    delete pSpatialBuffer;
+    pSpatialBuffer = nullptr;
+
+    UnlinkFromParent( pSpatialMixer );
+    delete pSpatialMixer;
+    pSpatialMixer = nullptr;
+
+    UnlinkFromParent( pSpatialOutput );
+    delete pSpatialOutput;
+    pSpatialOutput = nullptr;
+
+    UnlinkFromParent( pSpatialAdapter );
+    delete pSpatialAdapter;
+    pSpatialAdapter = nullptr;
+
+    MixerPool.clear();
+    ClientConfigPool.clear();
+
     gEdAudio.destroy();
+
+    delete[] static_cast<uint8_t *>( pMemory );
+    pMemory = nullptr;
+    MemorySize = 0;
 }
 
 void GSAudio::addMixer( ParsedAudioMixer &mixer ) {
     // FUN_009b2360
-    OTDU_UNIMPLEMENTED;
+    if ( static_cast<int32_t>( MixerPool.size() ) >= kMaxMixers ) {
+        OTDU_LOG_WARN( "Mixer pool is full; '%s' dropped\n",
+                       mixer.Name.c_str() );
+        return;
+    }
+
+    // Resolved before the new entry is added, so a mixer cannot route to
+    // itself.
+    Mixer *pOutputMixer = findMixer( mixer.Output.c_str() );
+
+    Mixer &newMixer = MixerPool.emplace_back();
+    CopyAudioName( newMixer.pName, sizeof( newMixer.pName ), mixer.Name );
+    newMixer.pOutputMixer = pOutputMixer;
+    newMixer.Volume = mixer.Volume;
+    newMixer.bEnabled = mixer.bEnabled;
+    newMixer.bMuted = mixer.bMuted;
 }
 
 void GSAudio::addReverb( ParsedAudioReverb &reverb ) {
@@ -49,16 +780,104 @@ void GSAudio::addReverb( ParsedAudioReverb &reverb ) {
 
 void GSAudio::addClient( ParsedAudioClient &client ) {
     // FUN_004023c0
-    OTDU_UNIMPLEMENTED;
+    if ( static_cast<int32_t>( ClientConfigPool.size() ) >=
+         kMaxClientConfigs ) {
+        OTDU_LOG_WARN( "Client config pool is full; '%s' dropped\n",
+                       client.Name.c_str() );
+        return;
+    }
+
+    ClientConfig &config = ClientConfigPool.emplace_back();
+    CopyAudioName( config.pName, sizeof( config.pName ), client.Name );
+    CopyAudioName( config.pMixerName, sizeof( config.pMixerName ),
+                   client.Mixer );
+    CopyAudioName( config.pOutputName, sizeof( config.pOutputName ),
+                   client.Output );
+    config.Volume = client.Volume;
+    config.Pitch = client.Pitch;
+    config.PriorityRank = client.Priority;
+    config.PriorityFactor = client.PriorityFactor;
+    config.bAffectedByMusic = client.bAffectedByMusic;
 }
 
-void GSAudio::setGameModeMix( const char *param_1, const char *param_2 ) {
+uint32_t GSAudio::getMixFlags( const char *pName ) const {
+    // FUN_009b2ab0
+    if ( pName == nullptr ) {
+        return 0;
+    }
+
+    for ( const MixPreset &preset : MixPresets ) {
+        if ( strcmp( preset.pName, pName ) == 0 ) {
+            return preset.MixState;
+        }
+    }
+
+    for ( size_t i = 0; i < ClientConfigPool.size(); i++ ) {
+        if ( strcmp( ClientConfigPool[i].pName, pName ) == 0 ) {
+            return 1u << i;
+        }
+    }
+
+    return 0;
+}
+
+void GSAudio::changeMixState( uint32_t mixState ) {
+    // FUN_009b2500
+    for ( size_t i = 0; i < ClientConfigPool.size(); i++ ) {
+        ClientConfigPool[i].bPaused = ( mixState & ( 1u << i ) ) == 0;
+    }
+    MixState = mixState;
+}
+
+void GSAudio::setGameModeMix( const char *pGameModeName,
+                              const char *pPresetName ) {
     // FUN_009b1b10
-    OTDU_UNIMPLEMENTED;
+    static_assert( eGameMode::GM_Count == kMaxGameModes,
+                   "pGameModeMixState is a fixed 31 entry array" );
+
+    if ( pGameModeName == nullptr || pPresetName == nullptr ) {
+        return;
+    }
+
+    int32_t gameModeIndex = -1;
+    for ( int32_t i = 0; i < eGameMode::GM_Count; i++ ) {
+        if ( strcmp( kGameModeIniNames[i], pGameModeName ) == 0 ) {
+            gameModeIndex = i;
+            break;
+        }
+    }
+
+    if ( gameModeIndex < 0 ) {
+        OTDU_LOG_WARN( "Unknown game mode '%s' in SetGameModeMix\n",
+                       pGameModeName );
+        return;
+    }
+
+    for ( const MixPreset &preset : MixPresets ) {
+        if ( strcmp( preset.pName, pPresetName ) == 0 ) {
+            GameModeMixState[gameModeIndex] = preset.MixState;
+            return;
+        }
+    }
 }
 
-void GSAudio::addMixPreset( const char *param_1,
-                            const std::vector<std::string> &param_2 ) {
+void GSAudio::addMixPreset( const char *pName,
+                            const std::vector<std::string> &mixList ) {
     // FUN_009b2bc0
-    OTDU_UNIMPLEMENTED;
+    if ( pName == nullptr ) {
+        return;
+    }
+    if ( static_cast<int32_t>( MixPresets.size() ) >= kMaxMixPresets ) {
+        OTDU_LOG_WARN( "Mix preset pool is full; '%s' dropped\n", pName );
+        return;
+    }
+
+    uint32_t mixState = 0;
+    for ( const std::string &entry : mixList ) {
+        mixState |= getMixFlags( entry.c_str() );
+    }
+
+    MixPreset &preset = MixPresets.emplace_back();
+    CopyAudioName( preset.pName, sizeof( preset.pName ), pName );
+    preset.MixState = mixState;
 }

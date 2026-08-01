@@ -2,6 +2,8 @@
 
 #include "filesystem/bank.h"
 
+class edAudioStreamEntry;
+
 class GPSVoice : public Bank {
 public:
     GPSVoice();
@@ -27,5 +29,7 @@ private:
     void *pMemoryPool;
     eAudioState audioState;
     std::array<Sample, 0x11> audioSamples;
+    edAudioStreamEntry *pSoundInstance = nullptr;
+
     uint8_t bEnabled : 1;
 };

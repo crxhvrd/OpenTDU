@@ -34,6 +34,9 @@ class GameModeScene : public WorldListener,
 public:
     bool isVerifyingGameFreeze() const { return bVerifyGameFreeze; }
     inline MngActor &getActorManager() { return mngActor; }
+    inline VehicleBase *getShowcaseFocusedVehicle() {
+        return showcaseCarControl.getFocusedVehicle();
+    }
 
 public:
     GameModeScene();

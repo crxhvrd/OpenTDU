@@ -12,7 +12,7 @@
 #include "ai/gs_ai.h"
 #include "audio/gs_ambiance.h"
 #include "audio/gs_audio.h"
-#include "audio/gs_vehicle_sound.h"
+#include "audio/vehicle/gs_vehicle_sound.h"
 #include "config/gs_config.h"
 #include "database/gs_database.h"
 #include "debug/gs_console.h"
@@ -403,7 +403,8 @@ void TestDriveGameInstance::mainLoop() {
     while ( !bRequestedExit ) {
         switch ( activeGameMode ) {
         case GM_CarShowCase:
-            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMCarShowcase ), alignof(GMCarShowcase) );
+            pGameModeAlloc = TestDrive::AllocAligned(
+                sizeof( GMCarShowcase ), alignof( GMCarShowcase ) );
             pGVar6 = new ( pGameModeAlloc ) GMCarShowcase();
             break;
         case GM_Login:
@@ -415,11 +416,13 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6 = new ( pGameModeAlloc ) GMVideoBumper();
             break;
         case GM_FreeRide:
-            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMFreeride ), alignof(GMFreeride) );
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMFreeride ),
+                                                      alignof( GMFreeride ) );
             pGVar6 = new ( pGameModeAlloc ) GMFreeride();
             break;
         case GM_Sandbox:
-            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMSandbox ), alignof(GMSandbox) );
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMSandbox ),
+                                                      alignof( GMSandbox ) );
             pGVar6 = new ( pGameModeAlloc ) GMSandbox();
             break;
         case GM_CinViewer:

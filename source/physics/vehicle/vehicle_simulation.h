@@ -32,8 +32,8 @@ struct PhysicsWheelState {
     Eigen::Vector4f WheelLinVel =
         Eigen::Vector4f::Zero(); // hub world linear velocity
     Eigen::Vector4f WheelPos = Eigen::Vector4f::Zero(); // hub world position
-    Eigen::Vector4f SpinAxis =
-        Eigen::Vector4f::Zero(); // spin-axis / body-up fallback row
+    Eigen::Vector4f SuspAxis =
+        Eigen::Vector4f::Zero(); // strut axis (chassis up)
     Eigen::Vector4f ContactPoint =
         Eigen::Vector4f::Zero(); // contact application point (world)
     Eigen::Vector4f ContactNormal =
@@ -119,8 +119,8 @@ struct PhysicsEngineSim {
     };
 
     eEngineState State = eEngineState::ES_Off;
-    float IgnTimer = 0.0f;      // crank/rev-up timer, s (engine[0xb0])
-    bool IgnitionOn = true;     // key on (engine[0xcc]); drives auto-start
+    float IgnTimer = 0.0f;      // crank/rev-up timer
+    bool IgnitionOn = true;     // drives auto-start
     float CrankDuration = 0.5f; // starter crank time, s (IgnitionTimeIgnite)
     float RevUpDuration = 0.4f; // start-blip time, s (IgnitionTimeRevUp)
 
@@ -135,9 +135,9 @@ struct PhysicsEngineSim {
     float Throttle = 0.0f;
     float Omega = 84.0f; // current engine speed (rad/s)
     float TorqueOut = 0.0f;
+    float SmoothedTorque = 0.0f;
     float PeakTorqueOmega = 0.0f; // omega at peak torque
-    float PeakPowerOmega = 0.0f;  // omega at peak power (orig engine+0xc);
-                                  // the auto-shift up-band reference
+    float PeakPowerOmega = 0.0f;  // omega at peak power
     float AngAccel = 0.0f;        // dOmega/dt (rad/s^2), 1-step lag
 };
 
@@ -235,6 +235,7 @@ struct PhysicsVehicleState {
 
     float AbsMagFront = 1.0f;
     float AbsMagRear = 1.0f;
+    bool bAbsEnabled = true; // rebuilt every frame
 
     float EspMagFront = 1.0f;
     float EspMagRear = 1.0f;

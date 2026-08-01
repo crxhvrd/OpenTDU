@@ -28,6 +28,10 @@ struct WheelState {
     float Position;
     int32_t WheelIndex;
     eMaterialType ContactMaterial;
+    float AudioGroundSpeedKmh;
+    float AudioLatSpeedKmh;
+    float AudioSlipLong;
+    float AudioSlipLat;
     Eigen::Vector4f ShadowColor;
     Eigen::Vector4f GroundColor;
     Eigen::Vector4f RelativeWorldPosition;
@@ -65,6 +69,10 @@ struct CarBodyState {
     float Omega;
     float Torque;
     float SpeedInKmh;
+    float EngineRPM;      // omega * 60/2pi
+    float EnginePowerPS;  // torque * Omega / 735.5
+    float EngineTorqueNm; // the SMOOTHED net torque / FakeCoef(1)
+    float AudioSpeedKmh;  // chassis speed * 3.6
 
     uint8_t bInitialized : 1;
     uint8_t bIsBraking : 1;
@@ -188,6 +196,12 @@ public:
     inline eSimulationType getSimulationType() const { return simulationType; }
 
     inline VehicleBase *getVehicleInstance() { return pVehicleBase; }
+    inline struct VehicleSoundInstance *getVehicleSound() const {
+        return pVehicleSound;
+    }
+    inline void setVehicleSound( struct VehicleSoundInstance *pInstance ) {
+        pVehicleSound = pInstance;
+    }
 
     inline bool isInShowcaseMode() const { return bUseShowcaseControl; }
 
@@ -256,7 +270,7 @@ private:
     int32_t colorID;
 
     VehicleBase *pVehicleBase;
-    void *field_0x39bc;
+    struct VehicleSoundInstance *pVehicleSound;
     void *field_0x39c0; // TODO: AVATAR
     void *field_0x39cc;
     void *field_0x39d4;

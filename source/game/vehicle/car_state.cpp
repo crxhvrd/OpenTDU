@@ -25,7 +25,7 @@ CarState::CarState()
       rimID( 0xffffffff ),
       colorID( 0xffffffff ),
       pVehicleBase( nullptr ),
-      field_0x39bc( nullptr ),
+      pVehicleSound( nullptr ),
       field_0x39c0( nullptr ),
       field_0x39cc( nullptr ),
       field_0x39d4( nullptr ),
@@ -80,7 +80,7 @@ void CarState::reset() {
 
     pPhysicsVehicle = nullptr;
     pVehicleBase = nullptr;
-    field_0x39bc = nullptr;
+    pVehicleSound = nullptr;
     field_0x39cc = nullptr;
     field_0x39fc = nullptr;
     field_0x39d4 = nullptr;
@@ -368,6 +368,10 @@ void WheelState::reset() {
     WheelAngle = 0.0f;
     bInitialized = false;
     WheelIndex = 0;
+    AudioGroundSpeedKmh = 0.0f;
+    AudioLatSpeedKmh = 0.0f;
+    AudioSlipLong = 0.0f;
+    AudioSlipLat = 0.0f;
     WorldPosition = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
     RelativeWorldPosition = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
     ProjectedPositionOnGround = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
@@ -408,6 +412,10 @@ void CarBodyState::reset() {
     PhysicsWorldMatrix = Matrix4x4f_t::Identity();
     SpeedInKmh = 0.0f;
     Omega = 10.0f;
+    EngineRPM = 0.0f;
+    EnginePowerPS = 0.0f;
+    EngineTorqueNm = 0.0f;
+    AudioSpeedKmh = 0.0f;
     Gears = 1;
     Handbrake = 0.0f;
     Clutch = 0.0f;

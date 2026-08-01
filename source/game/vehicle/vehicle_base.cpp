@@ -703,7 +703,7 @@ void VehicleBase::unstream() {
             pVehicleBodyLowResInstance = nullptr;
         }
 
-        for ( Instance *pWheelLowRes : vehicleWheelLowResInstances ) {
+        for ( Instance *&pWheelLowRes : vehicleWheelLowResInstances ) {
             if ( pWheelLowRes != nullptr ) {
                 pWheelLowRes->removeSetupFromGraph( &lightCfg );
                 bodyResource.Collection3D.uninstantiate( pWheelLowRes );
@@ -1453,8 +1453,6 @@ void VehicleBase::setShadowPlaneMatrix( Matrix4x4f_t &modelMatrix ) {
         }
 
         // Select characteristic wheel pair.
-        // For 4 wheels: bVar10=1, iVar5=2 → vA=wheel[0](FL), vB=wheel[2](RL).
-        // For 2 wheels: bVar10=0, iVar5=1 → vA=wheel[0], vB=wheel[1].
         int32_t bVar10 = (int32_t)numWheels / 2 - 1;
         int32_t iVar5 = 1 << bVar10;
         const Eigen::Vector4f &vA = wheelPos[0];

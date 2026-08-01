@@ -265,7 +265,7 @@ void GSFlash::terminate() {
     moviePlayers.clear();
     flashMovies.clear();
 
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO - FUN_0099dfe0 + GPS voice buffer free
+    audio.terminate();
 
     bInitialized = false;
 }
@@ -510,14 +510,27 @@ void GSFlash::flashCallback( const char *param_1 ) {
         OTDU_LOG_INFO( "FlashMessage '%s'\n", param_1 );
 
         std::vector<FlashMessage> messages;
-        const char *pIt = param_1;
-        while ( *pIt != '\0' ) {
-            messages.emplace_back( pIt );
-            pIt += 4;
-            if ( *pIt != '\0' )
-                pIt++; // skip 1-byte separator (original format: cmd + sep +
-                       // payload)
+
+        const char *pToken = param_1;
+        while ( *pToken != '\0' ) {
+            const char *pSeparator = strchr( pToken, ':' );
+            const size_t tokenLength = ( pSeparator != nullptr )
+                                           ? size_t( pSeparator - pToken )
+                                           : strlen( pToken );
+
+            const size_t entryCount = ( tokenLength + 3 ) / 4;
+            const size_t firstEntry = messages.size();
+
+            messages.resize( firstEntry + Max( entryCount, size_t( 1 ) ) );
+            memcpy( &messages[firstEntry], pToken, tokenLength );
+
+            pToken += tokenLength;
+            if ( *pToken == ':' ) {
+                pToken++;
+            }
         }
+
+        messages.emplace_back();
 
         FlashPlayer *pPlayer = pActiveMoviePlayer->MovieBank.getFlashPlayer();
         bool cVar4 = unknown.onMessage( messages.data(), pPlayer );
@@ -690,6 +703,50 @@ void GSFlash::drawDebug( float deltaTime ) {
                  mouse.MousePositionNormalized[0],
                  mouse.MousePositionNormalized[1], mouse.MousePosition[0],
                  mouse.MousePosition[1] );
+
+    drawFrontEndSoundDebug();
+}
+
+void GSFlash::drawFrontEndSoundDebug() {
+    ImGui::SeparatorText( "Front end sounds" );
+
+    const auto &soundList = audio.getSoundList();
+    ImGui::Text( "%zu messages from sounds.ini", soundList.size() );
+
+    static char message[64] = "ig_move";
+    static char group[FlashSounds::kMaxGroupNameLength] = "grpShift";
+    static bool bLoop = true;
+
+    ImGui::InputText( "Message", message, IM_ARRAYSIZE( message ) );
+    ImGui::InputText( "Group", group, IM_ARRAYSIZE( group ) );
+    ImGui::Checkbox( "Loop", &bLoop );
+
+    if ( ImGui::Button( "Play" ) ) {
+        std::string request = message;
+        if ( group[0] != '\0' ) {
+            request += ':';
+            request += group;
+        }
+        audio.playFrontEndSound( request.data(), bLoop ? 1 : 0, false );
+    }
+
+    ImGui::SameLine();
+    if ( ImGui::Button( "Stop group (cut)" ) ) {
+        audio.stopGroup( group, 0.0f );
+    }
+    ImGui::SameLine();
+    if ( ImGui::Button( "Stop group (play out)" ) ) {
+        audio.stopGroup( group, -1.0f );
+    }
+
+    for ( int32_t i = 0; i < FlashSounds::kNumVoices; i++ ) {
+        if ( !audio.isVoicePlaying( i ) ) {
+            continue;
+        }
+        const char *pGroup = audio.getVoiceGroup( i );
+        ImGui::Text( "voice %d playing, group '%s'", i,
+                     ( pGroup[0] != '\0' ) ? pGroup : "<none>" );
+    }
 }
 #endif
 

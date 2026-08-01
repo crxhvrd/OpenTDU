@@ -124,7 +124,8 @@ void MngFlash::terminate() {
 void MngFlash::addWidget( const char pName[4], FlashEntity *pWidget ) {
     // FUN_00718320
     FlashWidget widget;
-    // Store as little-endian to match FlashMessage::AsInteger used in kWidget routing.
+    // Store as little-endian to match FlashMessage::AsInteger used in kWidget
+    // routing.
     widget.WidgetID = static_cast<uint32_t>( FlashMessage( pName ) );
     widget.pWidgetInstance = pWidget;
 
@@ -340,8 +341,8 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
 
     case kSounds: {
         FlashMessage *pNextMessage = pMessage + 1;
-        return gpFlash->getFlashSound()->FUN_0099d200( pNextMessage->pAsChar,
-                                                       0.0f );
+        return gpFlash->getFlashSound()->stopGroup( pNextMessage->pAsChar,
+                                                    0.0f );
     }
 
     case kWidget: {
@@ -353,7 +354,7 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
             if ( widget.pWidgetInstance != nullptr &&
                  widget.WidgetID == widgetID ) {
                 return widget.pWidgetInstance->onMessage( pWidgetMsg + 1,
-                                                         pPlayer );
+                                                          pPlayer );
             }
         }
         OTDU_LOG_ERROR( "TestDrive Flash : Unknown widget command -=%s=-.\n",

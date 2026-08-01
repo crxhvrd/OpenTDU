@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "gps_voice.h"
 
+#include "audio/implementation/ed_audio_stream_entry.h"
 #include "config/gs_config.h"
 #include "filesystem/gs_file.h"
 #include "player_data/gs_playerdata.h"
@@ -51,5 +52,16 @@ void GPSVoice::initializeFromDatabase() {
 
 void GPSVoice::terminate() {
     // FUN_0099d3d0
-    OTDU_UNIMPLEMENTED;
+    for ( Sample &sample : audioSamples ) {
+        sample.pContent = nullptr;
+    }
+
+    if ( pSoundInstance != nullptr ) {
+        pSoundInstance->stop();
+        pSoundInstance = nullptr;
+    }
+
+    unload();
+
+    audioState = eAudioState::GVAS_Unknown;
 }

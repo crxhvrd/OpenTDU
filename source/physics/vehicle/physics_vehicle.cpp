@@ -261,31 +261,42 @@ static float EvalHelpCurve( const float *pThresholds,
     return JPH::Clamp( r, std::min( a, b ), std::max( a, b ) );
 }
 
-static void ComputeAbsMagnitudes( bool bElectronicsEnabled,
-                                  float speed,
-                                  float &outFront,
-                                  float &outRear ) {
-    // FUN_0041b920
-    outRear = EvalHelpCurve( gPhysicsConfig.ActiveABSSpeed,
-                             gPhysicsConfig.ActiveABSValue, speed, 2.0f );
+static constexpr float kAidMagnitudeParked = 10.0f; // FLOAT_00f4166c
 
-    if ( !bElectronicsEnabled ) {
-        // Aids off: front is a flat 1.5 (DAT_00f416b8), rear keeps the curve.
-        OTDU_UNIMPLEMENTED; // TODO: Handbrake
-        outFront = 1.5f;
+static void ComputeAbsMagnitudes( PhysicsVehicleState &vehicle,
+                                  float speed,
+                                  bool bReverse ) {
+    // FUN_0041b920
+    vehicle.bAbsEnabled = true;
+
+    if ( bReverse ) {
+        vehicle.AbsMagFront = 1.0f;
+        vehicle.AbsMagRear = kAidMagnitudeParked;
+        vehicle.bAbsEnabled = false;
         return;
     }
 
-    // Front: a hardcoded curve built on the stack - FUN_0041b920 call #5 at
-    // 0x41c2ca, thresholds {20, 150, 200} km/h and values {2.0, 1.0, 0.75}.
+    vehicle.AbsMagRear =
+        EvalHelpCurve( gPhysicsConfig.ActiveABSSpeed,
+                       gPhysicsConfig.ActiveABSValue, speed, 2.0f );
+
+    if ( !vehicle.bElectronicsEnabled ) {
+        OTDU_UNIMPLEMENTED; // TODO: Handbrake
+        vehicle.AbsMagFront = 1.5f;
+        return;
+    }
+
+    // DAT_41c2ca
     static const float kFrontAbsSpeeds[3] = { 5.5557f, 41.6667f, 55.5556f };
     static const float kFrontAbsValues[3] = { 2.0f, 1.0f, 0.75f };
-    outFront = EvalHelpCurve( kFrontAbsSpeeds, kFrontAbsValues, speed, 1.0f );
+    vehicle.AbsMagFront =
+        EvalHelpCurve( kFrontAbsSpeeds, kFrontAbsValues, speed, 1.0f );
 }
 
 static void ComputeEspMagnitudes( PhysicsVehicleState &vehicle,
                                   float speed,
-                                  float deltaTime ) {
+                                  float deltaTime,
+                                  bool bReverse ) {
     // FUN_0041b920
     constexpr float kEspNoTarget = 99.0f;      // DAT_00f417e8 sentinel
     constexpr float kEspMinSpeed = 8.3333f;    // DAT_00fab700, 30 km/h
@@ -305,6 +316,13 @@ static void ComputeEspMagnitudes( PhysicsVehicleState &vehicle,
         vehicle.EspMagRear = 1.0f;
         vehicle.EspGripDiff = 0.0f;
         vehicle.EspThreshold = 0.0f;
+        return;
+    }
+
+    if ( bReverse ) {
+        vehicle.bEspEnabled = false;
+        vehicle.bEspIntervening = false;
+        vehicle.EspMagRear = kAidMagnitudeParked;
         return;
     }
 
@@ -596,6 +614,10 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         return false;
     }
 
+    if ( bRegistered ) {
+        destroy();
+    }
+
     pPhysicsSystem = pSystem;
     pChassisBody = pChassis;
 
@@ -704,6 +726,23 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     const PhysicsVehicle::SuspensionSetup suspRear =
         PhysicsVehicle::ComputeAxleSuspension( db, false );
     const float kTwoPiSusp = 6.28318530718f;
+
+    const float groundY = Min( attachY - suspFront.staticLength - frontRadius,
+                               attachY - suspRear.staticLength - rearRadius );
+    const float hullBottomY =
+        pChassis->GetShape()->GetLocalBounds().mMin.GetY();
+    const float clearance = hullBottomY - groundY;
+    if ( clearance < 0.0f ) {
+        OTDU_LOG_DEBUG( "Vehicle chassis hull penetrates the ground plane by "
+                        "%.3f m at static ride height (hull bottom y=%.3f, "
+                        "contact plane y=%.3f) -- expect the contact solver "
+                        "to fight the suspension\n",
+                        -clearance, hullBottomY, groundY );
+    } else {
+        OTDU_LOG_DEBUG( "Vehicle ground clearance: %.3f m (hull bottom "
+                        "y=%.3f, contact plane y=%.3f)\n",
+                        clearance, hullBottomY, groundY );
+    }
 
     steerLockRad = ( db.SteerLock > 0 ? db.SteerLock : 30.0f ) * kDegToRad;
     finalDriveRatio = db.FinalDriveRatio > 0 ? db.FinalDriveRatio : 4.0f;
@@ -938,6 +977,14 @@ PhysicsVehicle::DrivingGearbox PhysicsVehicle::getDrivingGearbox() const {
     out.bEngineFiring = ( vehicle.Engine.State == eEngineState::ES_RevUp ||
                           vehicle.Engine.State == eEngineState::ES_Running );
     out.bShiftIdle = ( g.ShiftState == 1 && g.ShiftTimer <= 0.0f );
+    out.ShiftDirection = 0;
+    if ( g.ShiftState == 2 ) {
+        if ( g.ShiftSubstate > 0 ) {
+            out.ShiftDirection = 1;
+        } else if ( g.ShiftSubstate < 0 ) {
+            out.ShiftDirection = -1;
+        }
+    }
     return out;
 }
 
@@ -1124,7 +1171,7 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
         Eigen::Vector4f( contact.GetX(), contact.GetY(), contact.GetZ(), 1.0f );
     w.WheelPos =
         Eigen::Vector4f( attachW.GetX(), attachW.GetY(), attachW.GetZ(), 1.0f );
-    w.SpinAxis = ToVec4( normal );
+    w.SuspAxis = ToVec4( up );
     w.bGroundContact = true;
     return true;
 }
@@ -1248,8 +1295,8 @@ void PhysicsVehicle::OnStep(
 
             const float reactTorque = ComputeWheelReactionTorque( w, hSub );
 
-            ApplyBrakeAndABS( w, gVehicleABS, absMag, reactTorque, driveBase,
-                              hSub );
+            ApplyBrakeAndABS( w, gVehicleABS && vehicle.bAbsEnabled, absMag,
+                              reactTorque, driveBase, hSub );
 
             w.DriveTorque = ApplyEngineDragControl(
                 w, vehicle.bEdcEnabled, reactTorque, driveBase, hSub );
@@ -1359,9 +1406,9 @@ void PhysicsVehicle::tick( float deltaTime ) {
                 pChassisBody->GetID() );
         vehicle.bEdcEnabled = true;
 
-        ComputeAbsMagnitudes( vehicle.bElectronicsEnabled, v.Length(),
-                              vehicle.AbsMagFront, vehicle.AbsMagRear );
-        ComputeEspMagnitudes( vehicle, v.Length(), deltaTime );
+        const bool bReverse = ( vehicle.GearBox.CurrentGear == 0 );
+        ComputeAbsMagnitudes( vehicle, v.Length(), bReverse );
+        ComputeEspMagnitudes( vehicle, v.Length(), deltaTime, bReverse );
     }
 
     if ( pPhysicsSystem != nullptr && deltaTime > 1.0e-5f ) {

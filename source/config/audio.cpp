@@ -75,7 +75,7 @@ void GSConfig::registerAudioCommands() {
         std::vector<std::string> mixList;
         std::string mixName;
         do {
-            std::string mixName = ParseString( argStr, it );
+            mixName = ParseString( argStr, it );
             if ( !mixName.empty() ) {
                 mixList.push_back( mixName );
             }
