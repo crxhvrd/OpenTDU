@@ -12,15 +12,13 @@ public:
                                   Eigen::Vector4f *param_3 ) = 0;
 };
 
-// TODO: This is only implemented by GSPhysics and looks identical to
-// StreamingCallback. Is it a separate interface or StreamingCallback?
 class PhysicsStreamingCallback {
 public:
-    bool onWorldStreamed( Eigen::Vector4f *param_1,
-                          Eigen::Vector4f *param_2,
-                          Eigen::Vector4f *param_3 ) {
-        return true;
-    }
+    virtual ~PhysicsStreamingCallback() = default;
+
+    virtual bool onWorldStreamed( Eigen::Vector4f *param_1,
+                                  Eigen::Vector4f *param_2,
+                                  Eigen::Vector4f *param_3 ) = 0;
 };
 
 class GSWorldStreaming : public GameSystem {
@@ -29,6 +27,7 @@ public:
     inline const Eigen::Vector4f &getLastPosition() const {
         return prevPosition;
     }
+    inline const Eigen::Vector4f &getOffset() const { return nextSectorOffset; }
     inline bool isEnabled() const { return bEnabled; }
     inline bool isStreamingActive() const { return bStreamingActive; }
 
@@ -42,6 +41,10 @@ public:
 
     inline void setPosition( const Eigen::Vector4f &param_1 ) {
         position = param_1;
+    }
+
+    inline void setPhysicsCallback( PhysicsStreamingCallback *param_1 ) {
+        pPhysicsCallback = param_1;
     }
 
     const char *getName() const override { return "World Streaming"; }
@@ -73,7 +76,7 @@ private:
 
     std::array<StreamingCallback *, kMaxNumCallbacks> callbacks;
     PhysicsStreamingCallback *pPhysicsCallback;
-    float unknown;
+    float size;
     uint8_t bEnabled : 1;
     uint8_t bStreamingActive : 1;
     uint8_t bHasJustFinishedStreaming : 1;

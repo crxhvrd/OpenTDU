@@ -76,7 +76,23 @@ public:
         int32_t ShiftDirection;
     };
 
+    enum eDrivingMode : uint8_t {
+        // no override, the driver input passes through
+        DM_Player = 0,
+        // idle brake hold: throttle 0, brake 0.5, steer 0
+        DM_HoldBrake = 1,
+        // full brake, clutch out; also inhibits auto-reverse engage
+        DM_Parked = 2,
+        // throttle 0, brake 0.65, clutch out; same auto-reverse inhibit
+        DM_SlowDown = 3,
+        // replay the previous update's input record
+        DM_RepeatLast = 4,
+    };
+
     void setInput( float throttle, float brake, float steer );
+    void setDrivingMode( uint8_t mode ) { drivingMode = mode; }
+    uint8_t getDrivingMode() const { return drivingMode; }
+    void applyDrivingMode();
     void tick( float deltaTime );
     void setDrivingHelpLevel( int32_t level );
     int32_t getElectronicIndex() const { return vehicle.ElectronicIndex; }
@@ -98,10 +114,13 @@ public:
     void OnStep( const JPH::PhysicsStepListenerContext &inContext ) override;
 
     Matrix4x4f_t getChassisWorldMatrix() const;
+    Matrix4x4f_t getChassisShiftedMatrix() const;
     Matrix4x4f_t computeDisplayMatrix( const Matrix4x4f_t &sourceMatrix ) const;
     Matrix4x4f_t computeDisplayMatrix() const {
-        return computeDisplayMatrix( getChassisWorldMatrix() );
+        return computeDisplayMatrix( getChassisShiftedMatrix() );
     }
+
+    void onWorldShifted( const Eigen::Vector3f &worldShift );
 
     float getBodyHeight() const { return bodyHeight; }
     float getDisplayYOffset() const { return y3DOffset; }
@@ -180,13 +199,14 @@ private:
 
     int32_t appliedDrivingHelpLevel = -2;
 
-    // Driver input.
     float inputThrottle;
     float inputBrake;
     float inputSteer;
+    uint8_t drivingMode;
+    float prevInputThrottle;
+    float prevInputBrake;
+    float prevInputSteer;
     int32_t autoReverseState;
-    // Output of filterSteering. NOT rate-limited: the port's filter is a
-    // stateless curve, the original's per-frame interpolation is unported.
     float filteredSteer;
     float steerCommand; // shaped, speed-scaled steer (drives the wheel angle)
 

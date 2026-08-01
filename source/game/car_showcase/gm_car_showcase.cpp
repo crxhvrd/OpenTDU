@@ -553,6 +553,10 @@ void GMCarShowcase::setShowcaseModelMatrix( Matrix4x4f_t &modelMatrix ) {
     gpPhysics->lockMutex();
     pPhysicsVehicle->resetToTransform( modelMatrix );
     gpPhysics->unlockMutex();
+
+    pPhysicsVehicle->setDrivingMode( bUsePhysicsInput
+                                         ? PhysicsVehicle::DM_Player
+                                         : PhysicsVehicle::DM_HoldBrake );
 }
 
 void GMCarShowcase::updateActiveVehicleFlashStrings() {

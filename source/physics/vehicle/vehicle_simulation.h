@@ -32,8 +32,8 @@ struct PhysicsWheelState {
     Eigen::Vector4f WheelLinVel =
         Eigen::Vector4f::Zero(); // hub world linear velocity
     Eigen::Vector4f WheelPos = Eigen::Vector4f::Zero(); // hub world position
-    Eigen::Vector4f SuspAxis =
-        Eigen::Vector4f::Zero(); // strut axis (chassis up)
+    Eigen::Vector4f SuspAxis = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
+    Eigen::Vector4f WheelUpAxis = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
     Eigen::Vector4f ContactPoint =
         Eigen::Vector4f::Zero(); // contact application point (world)
     Eigen::Vector4f ContactNormal =

@@ -287,11 +287,9 @@ void GameModeWorld::installLocalPlayerCar(
         spawn( 3, 0 ) -= 15.0f;
         spawn( 3, 2 ) -= 15.0f;
 
-        // Centre streaming on the spawn so terrain loads around the car.
-        if ( gpWorldStreaming != nullptr ) {
-            const Eigen::Vector4f center( spawn( 3, 0 ), 0.0f, spawn( 3, 2 ),
-                                          0.0f );
-            gpWorldStreaming->setPosition( center );
+        if ( gpWorld != nullptr ) {
+            Eigen::Vector4f center( spawn( 3, 0 ), 0.0f, spawn( 3, 2 ), 0.0f );
+            gpWorld->setStreamingPosition( &center );
         }
     }
     state.body.WorldMatrix = spawn;
@@ -373,9 +371,9 @@ void GameModeWorld::teleportLocalPlayerCar( const Eigen::Vector3f &worldPos ) {
     pose( 3, 1 ) = worldPos.y();
     pose( 3, 2 ) = worldPos.z();
 
-    if ( gpWorldStreaming != nullptr ) {
-        const Eigen::Vector4f center( worldPos.x(), 0.0f, worldPos.z(), 0.0f );
-        gpWorldStreaming->setPosition( center );
+    if ( gpWorld != nullptr ) {
+        Eigen::Vector4f center( worldPos.x(), 0.0f, worldPos.z(), 0.0f );
+        gpWorld->setStreamingPosition( &center );
     }
 
     if ( pPlayerPhysicsVehicle != nullptr &&
@@ -748,8 +746,8 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
         updateLocalPlayerDrivingInput( deltaTime );
     } else if ( !bCarGrounded && pCar != nullptr && gpPhysics != nullptr ) {
         // Fallback (no physics vehicle): one-shot cast-to-ground so the static
-        // car settles onto the streamed terrain instead of clipping. (The
-        // heightfield lives in absolute space, so query the absolute XZ.)
+        // car settles onto the streamed terrain instead of clipping.
+        // getGroundHeight takes absolute coordinates and rebases internally.
         CarBodyState *pBody = pCar->getBody();
         const float groundY = gpPhysics->getGroundHeight(
             pBody->WorldMatrix( 3, 0 ), pBody->WorldMatrix( 3, 2 ) );

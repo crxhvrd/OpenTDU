@@ -9,6 +9,8 @@
 #include "physics_factory.h"
 #include "road_phantom_manager.h"
 
+#include "world/gs_world_streaming.h"
+
 #include <utility>
 #include <vector>
 
@@ -85,7 +87,9 @@ enum ePhysicsThreadMode : int32_t {
 extern ePhysicsThreadMode gPhysicsThreadPriority;
 extern int32_t gPhysicsThreadFrequency;
 
-class GSPhysics : public GameSystem, public Bank {
+class GSPhysics : public GameSystem,
+                  public Bank,
+                  public PhysicsStreamingCallback {
 public:
     const char *getName() const override { return "Service : Physics"; }
 
@@ -212,6 +216,12 @@ public:
                                        int32_t maxVerts );
 
     void setWorldOrigin( const Eigen::Vector4f *param_1 );
+
+    bool onWorldStreamed( Eigen::Vector4f *pOffset,
+                          Eigen::Vector4f *pLastPosition,
+                          Eigen::Vector4f *pPosition ) override;
+
+    static Eigen::Vector4f GetShiftOrigin();
 
 private:
     static constexpr int32_t kMaxNumTireProfiles = 16;

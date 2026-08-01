@@ -222,14 +222,15 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                                                           modelNumWheels );
             }
 
-            const Matrix4x4f_t worldMatrix =
+            const Matrix4x4f_t shiftedMatrix =
                 pPhysicsVehicle->computeDisplayMatrix();
+            body.OffsetedWorldMatrix = shiftedMatrix;
+
+            Matrix4x4f_t worldMatrix = shiftedMatrix;
+            worldMatrix( 3, 0 ) += streamShift.x();
+            worldMatrix( 3, 1 ) += streamShift.y();
+            worldMatrix( 3, 2 ) += streamShift.z();
             body.WorldMatrix = worldMatrix;
-            Matrix4x4f_t offseted = worldMatrix;
-            offseted( 3, 0 ) -= streamShift.x();
-            offseted( 3, 1 ) -= streamShift.y();
-            offseted( 3, 2 ) -= streamShift.z();
-            body.OffsetedWorldMatrix = offseted;
 
             body.SpeedInKmh = pPhysicsVehicle->getChassisSpeed();
             body.Omega = pPhysicsVehicle->getEngineAngularVelocity();
@@ -271,10 +272,9 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 wheel.RelativeWorldPosition =
                     Eigen::Vector4f( ro.LocalPosition.x(), ro.LocalPosition.y(),
                                      ro.LocalPosition.z(), 1.0f );
-                wheel.ProjectedPositionOnGround = Eigen::Vector4f(
-                    ro.ContactPoint.x() - streamShift.x(),
-                    ro.ContactPoint.y() - streamShift.y(),
-                    ro.ContactPoint.z() - streamShift.z(), 1.0f );
+                wheel.ProjectedPositionOnGround =
+                    Eigen::Vector4f( ro.ContactPoint.x(), ro.ContactPoint.y(),
+                                     ro.ContactPoint.z(), 1.0f );
 
                 wheel.bOnRoad = ro.bGrounded &&
                                 ( TDUSurface::isOnRoad( ro.ContactSurface ) ||

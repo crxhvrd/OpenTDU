@@ -358,6 +358,9 @@ GSPhysics::GSPhysics()
 
 GSPhysics::~GSPhysics() {
     // FUN_00419310
+    if ( gpWorldStreaming != nullptr ) {
+        gpWorldStreaming->setPhysicsCallback( nullptr );
+    }
     gpPhysics = nullptr;
 }
 
@@ -369,6 +372,10 @@ bool GSPhysics::initialize( TestDriveGameInstance *param_2 ) {
     bFreezeSimulation = true;
     field27335_0x8670 = nullptr;
     bPaused = false;
+
+    if ( gpWorldStreaming != nullptr ) {
+        gpWorldStreaming->setPhysicsCallback( this );
+    }
 
     OTDU_LOG_INFO( "Intall BEGIN\n" ); // DAT_00f2794c
 
@@ -521,6 +528,10 @@ void GSPhysics::terminate() {
     // FUN_00846cf0
     bFreezeSimulation = true;
     bPauseJoltTick = true;
+
+    if ( gpWorldStreaming != nullptr ) {
+        gpWorldStreaming->setPhysicsCallback( nullptr );
+    }
 
     if ( gPhysicsThreadPriority != PTM_Off && simulationThread.isValid() ) {
         field27335_0x8670 = (void *)1;
@@ -728,12 +739,6 @@ void GSPhysics::drawCollisionShapes() {
         return;
     }
 
-    Eigen::Vector4f shift = Eigen::Vector4f::Zero();
-    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
-        shift = gpWorldStreaming->getPosition();
-    }
-    const float sx = shift.x(), sy = shift.y(), sz = shift.z();
-
     struct BodySnapshot {
         JPH::RefConst<JPH::Shape> shape;
         JPH::Mat44 com;
@@ -793,10 +798,8 @@ void GSPhysics::drawCollisionShapes() {
         if ( verts.size() + 2 > kMaxDebugLineVerts ) {
             return;
         }
-        verts.push_back(
-            { a.GetX() - sx, a.GetY() - sy, a.GetZ() - sz, color } );
-        verts.push_back(
-            { b.GetX() - sx, b.GetY() - sy, b.GetZ() - sz, color } );
+        verts.push_back( { a.GetX(), a.GetY(), a.GetZ(), color } );
+        verts.push_back( { b.GetX(), b.GetY(), b.GetZ(), color } );
     };
 
     for ( const BodySnapshot &s : snapshots ) {
@@ -1075,12 +1078,19 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         return nullptr;
     }
 
-    // World placement (row-major Matrix4x4f_t -> column-major Jolt).
+    // World placement (row-major Matrix4x4f_t -> column-major Jolt), rebased
+    // into shifted space.
     JPH::Mat44 world = JPH::Mat44::sIdentity();
     for ( int32_t c = 0; c < 4; c++ ) {
         world.SetColumn3( c, JPH::Vec3( worldTransform( c, 0 ),
                                         worldTransform( c, 1 ),
                                         worldTransform( c, 2 ) ) );
+    }
+    {
+        const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+        world.SetTranslation(
+            world.GetTranslation() -
+            JPH::Vec3( shiftOrigin.x(), shiftOrigin.y(), shiftOrigin.z() ) );
     }
 
     JPH::BodyCreationSettings settings(
@@ -1303,10 +1313,12 @@ void GSPhysics::addInfinitePlane( float planeHeight ) {
     if ( pPhysicsSystem == nullptr )
         return;
 
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
     JPH::BodyCreationSettings settings(
         new JPH::BoxShapeSettings( JPH::Vec3( 10000.0f, 1.0f, 10000.0f ) ),
-        JPH::RVec3( 0.0f, planeHeight - 1.0f, 0.0f ), JPH::Quat::sIdentity(),
-        JPH::EMotionType::Static, TDUPhysLayers::NON_MOVING );
+        JPH::RVec3( 0.0f, planeHeight - 1.0f - shiftOrigin.y(), 0.0f ),
+        JPH::Quat::sIdentity(), JPH::EMotionType::Static,
+        TDUPhysLayers::NON_MOVING );
     settings.mFriction = 1.0f; // FLOAT_00f4165c
 
     lockMutex();
@@ -1348,8 +1360,10 @@ RigidBody_t GSPhysics::createSphere( uint32_t collisionGroup,
     if ( pPhysicsSystem == nullptr )
         return nullptr;
 
-    JPH::RVec3 position( worldPosition.x(), worldPosition.y(),
-                         worldPosition.z() );
+    const Eigen::Vector4f origin = GetShiftOrigin();
+    JPH::RVec3 position( worldPosition.x() - origin.x(),
+                         worldPosition.y() - origin.y(),
+                         worldPosition.z() - origin.z() );
 
     JPH::BodyCreationSettings settings( new JPH::SphereShapeSettings( radius ),
                                         position, JPH::Quat::sIdentity(),
@@ -1400,7 +1414,9 @@ void GSPhysics::moveSphereBody( RigidBody_t body,
     if ( body == nullptr || pPhysicsSystem == nullptr )
         return;
 
-    JPH::RVec3 joltPos( position.x(), position.y(), position.z() );
+    const Eigen::Vector4f origin = GetShiftOrigin();
+    JPH::RVec3 joltPos( position.x() - origin.x(), position.y() - origin.y(),
+                        position.z() - origin.z() );
 
     lockMutex();
     pPhysicsSystem->GetBodyInterface().SetPosition(
@@ -1419,7 +1435,9 @@ GSPhysics::queryCameraCollisions( const Eigen::Vector4f &center,
     JPH::CollideShapeSettings settings;
     JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
 
-    JPH::RVec3 joltCenter( center.x(), center.y(), center.z() );
+    const Eigen::Vector4f origin = GetShiftOrigin();
+    JPH::RVec3 joltCenter( center.x() - origin.x(), center.y() - origin.y(),
+                           center.z() - origin.z() );
 
     lockMutex();
     pPhysicsSystem->GetNarrowPhaseQuery().CollideShape(
@@ -1434,9 +1452,10 @@ GSPhysics::queryCameraCollisions( const Eigen::Vector4f &center,
         JPH::Vec3 axis = ( -h.mPenetrationAxis ).Normalized();
         result.exitNormal =
             Eigen::Vector4f( axis.GetX(), axis.GetY(), axis.GetZ(), 0.0f );
-        result.contactPoint = Eigen::Vector4f(
-            h.mContactPointOn2.GetX(), h.mContactPointOn2.GetY(),
-            h.mContactPointOn2.GetZ(), 1.0f );
+        result.contactPoint =
+            Eigen::Vector4f( h.mContactPointOn2.GetX() + origin.x(),
+                             h.mContactPointOn2.GetY() + origin.y(),
+                             h.mContactPointOn2.GetZ() + origin.z(), 1.0f );
         result.penetrationDepth = h.mPenetrationDepth;
         hits.push_back( result );
     }
@@ -1451,8 +1470,10 @@ float GSPhysics::getGroundHeight( float x, float z ) {
 
     const float kTop = 10000.0f;
     const float kLength = 20000.0f;
-    JPH::RRayCast ray( JPH::RVec3( x, kTop, z ),
-                       JPH::Vec3( 0.0f, -kLength, 0.0f ) );
+    const Eigen::Vector4f origin = GetShiftOrigin();
+    JPH::RRayCast ray(
+        JPH::RVec3( x - origin.x(), kTop - origin.y(), z - origin.z() ),
+        JPH::Vec3( 0.0f, -kLength, 0.0f ) );
     JPH::RayCastResult hit;
 
     lockMutex();
@@ -1474,8 +1495,13 @@ int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
         return 0;
     }
 
-    const JPH::Vec3 p0( bbMin.x(), bbMin.y(), bbMin.z() );
-    const JPH::Vec3 p1( bbMax.x(), bbMax.y(), bbMax.z() );
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+    const JPH::Vec3 joltOrigin( shiftOrigin.x(), shiftOrigin.y(),
+                                shiftOrigin.z() );
+    const JPH::Vec3 p0 =
+        JPH::Vec3( bbMin.x(), bbMin.y(), bbMin.z() ) - joltOrigin;
+    const JPH::Vec3 p1 =
+        JPH::Vec3( bbMax.x(), bbMax.y(), bbMax.z() ) - joltOrigin;
     const JPH::AABox queryBox( JPH::Vec3::sMin( p0, p1 ),
                                JPH::Vec3::sMax( p0, p1 ) );
 
@@ -1523,8 +1549,9 @@ int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
                         return numVerts;
                     }
                     const JPH::Float3 &f = tri[3 * t + v];
-                    pOutVerts[numVerts++] =
-                        Eigen::Vector4f( f.x, f.y, f.z, 1.0f );
+                    pOutVerts[numVerts++] = Eigen::Vector4f(
+                        f.x + shiftOrigin.x(), f.y + shiftOrigin.y(),
+                        f.z + shiftOrigin.z(), 1.0f );
                 }
             }
         }
@@ -1579,7 +1606,7 @@ RigidBody_t GSPhysics::addHeightfield( const void *pKey,
     }
 
     JPH::HeightFieldShapeSettings shapeSettings(
-        samples.data(), JPH::Vec3( originX, 0.0f, originZ ),
+        samples.data(), JPH::Vec3::sZero(),
         JPH::Vec3( cellSize, 1.0f, cellSize ), sampleCount );
     shapeSettings.mBlockSize = kBlockSize;
 
@@ -1603,8 +1630,11 @@ RigidBody_t GSPhysics::addHeightfield( const void *pKey,
 
     // Static ground body: friction 1.0 (FLOAT_00f4165c), non-moving layer, as
     // in the original heightfield/infinite-plane material.
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
     JPH::BodyCreationSettings bodySettings(
-        shapeResult.Get(), JPH::RVec3( 0.0f, 0.0f, 0.0f ),
+        shapeResult.Get(),
+        JPH::RVec3( originX - shiftOrigin.x(), -shiftOrigin.y(),
+                    originZ - shiftOrigin.z() ),
         JPH::Quat::sIdentity(), JPH::EMotionType::Static,
         TDUPhysLayers::NON_MOVING );
     bodySettings.mUserData = TDUSurface::Terrain;
@@ -1704,15 +1734,18 @@ void GSPhysics::addSectorCollision( const void *pKey,
         return;
     }
 
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
     lockMutex();
     for ( const HavokToJolt::RigidBody &body : bodies ) {
         if ( pSlot->NumObjects >= pSlot->MaxNumObjects )
             break;
 
-        const JPH::RVec3 position( baseX + body.Position.GetX(),
-                                   body.Position.GetY(),
-                                   baseZ + body.Position.GetZ() );
+        const JPH::RVec3 position(
+            baseX + body.Position.GetX() - shiftOrigin.x(),
+            body.Position.GetY() - shiftOrigin.y(),
+            baseZ + body.Position.GetZ() - shiftOrigin.z() );
 
         const JPH::ObjectLayer objLayer =
             bRoadBlob ? TDUPhysLayers::ROAD : TDUPhysLayers::NON_MOVING;
@@ -1845,10 +1878,12 @@ void GSPhysics::addSpotCollision( const void *pKey,
         return;
     }
 
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
     const JPH::Quat spotRot =
         JPH::Quat::sRotation( JPH::Vec3::sAxisY(), angleY );
-    const JPH::Vec3 spotTrans( translation.x(), translation.y(),
-                               translation.z() );
+    const JPH::Vec3 spotTrans( translation.x() - shiftOrigin.x(),
+                               translation.y() - shiftOrigin.y(),
+                               translation.z() - shiftOrigin.z() );
 
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
     lockMutex();
@@ -2013,11 +2048,14 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
         return;
     }
 
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
     lockMutex();
     JPH::BodyCreationSettings settings(
-        meshResult.Get(), JPH::RVec3( originRef ), JPH::Quat::sIdentity(),
-        JPH::EMotionType::Static, TDUPhysLayers::ROAD );
+        meshResult.Get(),
+        JPH::RVec3( originRef - JPH::Vec3( shiftOrigin.x(), shiftOrigin.y(),
+                                           shiftOrigin.z() ) ),
+        JPH::Quat::sIdentity(), JPH::EMotionType::Static, TDUPhysLayers::ROAD );
     settings.mUserData = TDUSurface::RoadMesh;
     settings.mFriction = TDUSurface::friction( TDUSurface::RoadMesh );
     JPH::Body *pBody = bodyInterface.CreateBody( settings );
@@ -2298,12 +2336,18 @@ void GSPhysics::placeProp(
         return;
     }
 
-    // Matrix4x4f_t row-major -> Jolt column-major
+    // Matrix4x4f_t row-major -> Jolt column-major, rebased into shifted space.
     JPH::Mat44 world = JPH::Mat44::sIdentity();
     for ( int32_t c = 0; c < 4; c++ ) {
         world.SetColumn3( c, JPH::Vec3( worldTransform( c, 0 ),
                                         worldTransform( c, 1 ),
                                         worldTransform( c, 2 ) ) );
+    }
+    {
+        const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+        world.SetTranslation(
+            world.GetTranslation() -
+            JPH::Vec3( shiftOrigin.x(), shiftOrigin.y(), shiftOrigin.z() ) );
     }
 
     const float linDamp = std::min( std::max( linearDamping, 0.0f ), 1.0f );
@@ -2487,8 +2531,7 @@ bool GSPhysics::getBodyPose( RigidBody_t body,
     const JPH::Mat44 t = bodyInterface.GetWorldTransform( id );
     unlockMutex();
 
-    // Jolt column-major -> Matrix4x4f_t row-major (inverse of the placement
-    // conversion: Jolt column c == our row c; column 3 == translation).
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
     for ( int32_t c = 0; c < 4; c++ ) {
         const JPH::Vec3 v = t.GetColumn3( c );
         outMatrix( c, 0 ) = v.GetX();
@@ -2496,6 +2539,9 @@ bool GSPhysics::getBodyPose( RigidBody_t body,
         outMatrix( c, 2 ) = v.GetZ();
         outMatrix( c, 3 ) = ( c == 3 ) ? 1.0f : 0.0f;
     }
+    outMatrix( 3, 0 ) += shiftOrigin.x();
+    outMatrix( 3, 1 ) += shiftOrigin.y();
+    outMatrix( 3, 2 ) += shiftOrigin.z();
     return true;
 }
 
@@ -2602,6 +2648,59 @@ void GSPhysics::setWorldOrigin( const Eigen::Vector4f *pPosition ) {
     }
 
     (void)pPosition;
-    OTDU_UNIMPLEMENTED; // Havok broadphase shift — N/A for Jolt absolute-coord
-                        // bodies
+    OTDU_UNIMPLEMENTED; // Havok broadphase shift
+}
+
+Eigen::Vector4f GSPhysics::GetShiftOrigin() {
+    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+        Eigen::Vector4f origin = gpWorldStreaming->getPosition();
+        origin.w() = 0.0f;
+        return origin;
+    }
+    return Eigen::Vector4f::Zero();
+}
+
+bool GSPhysics::onWorldStreamed( Eigen::Vector4f *pOffset,
+                                 Eigen::Vector4f *pLastPosition,
+                                 Eigen::Vector4f *pPosition ) {
+    // FUN_00847730
+    (void)pLastPosition;
+    (void)pPosition;
+
+    if ( pOffset == nullptr || pPhysicsSystem == nullptr ) {
+        return true;
+    }
+
+    // Content moves the opposite way to the origin.
+    const JPH::Vec3 shift( -pOffset->x(), -pOffset->y(), -pOffset->z() );
+    if ( shift.IsNearZero() ) {
+        return true;
+    }
+
+    JPH::BodyIDVector bodyIDs;
+    pPhysicsSystem->GetBodies( bodyIDs );
+
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    for ( const JPH::BodyID id : bodyIDs ) {
+        bodyInterface.SetPosition( id, bodyInterface.GetPosition( id ) + shift,
+                                   JPH::EActivation::DontActivate );
+    }
+
+    if ( pPhysicsVehiclesBegin != nullptr ) {
+        const Eigen::Vector3f vehicleShift( shift.GetX(), shift.GetY(),
+                                            shift.GetZ() );
+        for ( PhysicsVehicle *it = pPhysicsVehiclesBegin;
+              it != pPhysicsVehiclesEnd; ++it ) {
+            if ( it->isActive() ) {
+                it->onWorldShifted( vehicleShift );
+            }
+        }
+    }
+
+    OTDU_LOG_DEBUG( "World origin stepped by (%.1f, %.1f, %.1f) -> "
+                    "(%.1f, %.1f, %.1f); moved %zu physics bodies\n",
+                    pOffset->x(), pOffset->y(), pOffset->z(), pPosition->x(),
+                    pPosition->y(), pPosition->z(), bodyIDs.size() );
+
+    return true;
 }

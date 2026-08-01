@@ -20,7 +20,7 @@ GSWorldStreaming::GSWorldStreaming()
       streamCenter( Eigen::Vector4f::Zero() ),
       pStreamCenter( nullptr ),
       pPhysicsCallback( nullptr ),
-      unknown( 0.0f ),
+      size( 0.0f ),
       bEnabled( false ),
       bStreamingActive( true ),
       bHasJustFinishedStreaming( false ) {
@@ -35,7 +35,7 @@ GSWorldStreaming::~GSWorldStreaming() {
     pStreamCenter = nullptr;
     position = DAT_00fac350;
     prevPosition = DAT_00fac350;
-    unknown = 1e+09f;
+    size = 1e+09f; // DAT_00f419ac
 }
 
 bool GSWorldStreaming::initialize( TestDriveGameInstance *param_2 ) {
@@ -43,7 +43,6 @@ bool GSWorldStreaming::initialize( TestDriveGameInstance *param_2 ) {
     pGameInstance = param_2;
     bPaused = false;
 
-    pPhysicsCallback = nullptr;
     callbacks.fill( nullptr );
 
 #if 0
@@ -51,13 +50,13 @@ bool GSWorldStreaming::initialize( TestDriveGameInstance *param_2 ) {
     pStreamCenter = nullptr;
     position = DAT_00fac350;
     prevPosition = DAT_00fac350;
-    unknown = 1e+09f;
+    size = 1e+09f; // DAT_00f419ac
 #endif
 
     pStreamCenter = nullptr;
     position = DAT_00fac350;
     prevPosition = DAT_00fac350;
-    unknown = 2000.0f;
+    size = 2000.0f; // DAT_00f419a8
 
     bEnabled = true;
     return true;
@@ -112,7 +111,7 @@ void GSWorldStreaming::updateStreaming() {
     local_20.w() = fVar6.w() + fVar6.y();
 
     local_20 = local_20.array().sqrt();
-    if ( unknown <= local_20.x() && local_20.x() != unknown ) {
+    if ( size <= local_20.x() && local_20.x() != size ) {
         gpTestDriveInstance->flushPendingFileInstanciation( false );
 
         PhysicsLock physLock;

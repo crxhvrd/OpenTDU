@@ -518,6 +518,10 @@ PhysicsVehicle::PhysicsVehicle()
       inputThrottle( 0.0f ),
       inputBrake( 0.0f ),
       inputSteer( 0.0f ),
+      drivingMode( DM_Player ),
+      prevInputThrottle( 0.0f ),
+      prevInputBrake( 0.0f ),
+      prevInputSteer( 0.0f ),
       autoReverseState( 0 ),
       filteredSteer( 0.0f ),
       steerCommand( 0.0f ),
@@ -631,6 +635,10 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     pPhysicsSystem = pSystem;
     pChassisBody = pChassis;
+    drivingMode = DM_Player;
+    prevInputThrottle = 0.0f;
+    prevInputBrake = 0.0f;
+    prevInputSteer = 0.0f;
 
     setDrivingHelpLevel( gVehicleDrivingHelpOverride >= 0
                              ? gVehicleDrivingHelpOverride
@@ -984,6 +992,43 @@ void PhysicsVehicle::setInput( float throttle, float brake, float steer ) {
     inputSteer = steer;
 }
 
+void PhysicsVehicle::applyDrivingMode() {
+    // FUN_0083db70
+    switch ( drivingMode ) {
+    case DM_HoldBrake:
+        inputThrottle = 0.0f;
+        inputBrake = 0.5f; // DAT_00f41674
+        inputSteer = 0.0f;
+        break;
+
+    case DM_Parked:
+        inputBrake = 1.0f; // FLOAT_00f4165c
+        inputSteer = 0.0f;
+        setClutchOverride( 0.0f );
+        break;
+
+    case DM_SlowDown:
+        inputThrottle = 0.0f;
+        inputBrake = 0.65f; // DAT_00f41b6c
+        inputSteer = 0.0f;
+        setClutchOverride( 0.0f );
+        break;
+
+    case DM_RepeatLast:
+        inputThrottle = prevInputThrottle;
+        inputBrake = prevInputBrake;
+        inputSteer = prevInputSteer;
+        break;
+
+    default:
+        break;
+    }
+
+    prevInputThrottle = inputThrottle;
+    prevInputBrake = inputBrake;
+    prevInputSteer = inputSteer;
+}
+
 PhysicsVehicle::DrivingGearbox PhysicsVehicle::getDrivingGearbox() const {
     const PhysicsGearboxSim &g = vehicle.GearBox;
 
@@ -1085,6 +1130,8 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
     const JPH::Vec3 right = world.GetColumn3( 0 );
     const JPH::Vec3 up = world.GetColumn3( 1 );
     const JPH::Vec3 forward = world.GetColumn3( 2 );
+
+    w.WheelUpAxis = ToVec4( up );
 
     const Eigen::Vector3f &a = wheelAttach[i];
     const JPH::RVec3 attachW = world * JPH::Vec3( a.x(), a.y(), a.z() );
@@ -1190,7 +1237,6 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
         Eigen::Vector4f( contact.GetX(), contact.GetY(), contact.GetZ(), 1.0f );
     w.WheelPos =
         Eigen::Vector4f( attachW.GetX(), attachW.GetY(), attachW.GetZ(), 1.0f );
-    w.SuspAxis = ToVec4( up );
     w.bGroundContact = true;
     return true;
 }
@@ -1231,6 +1277,8 @@ void PhysicsVehicle::OnStep(
     if ( dt <= 0.0f ) {
         return;
     }
+
+    applyDrivingMode();
 
     const JPH::Body &chassis = *pChassisBody;
     const JPH::RMat44 world = chassis.GetWorldTransform();
@@ -1447,7 +1495,7 @@ void PhysicsVehicle::tick( float deltaTime ) {
     }
 }
 
-Matrix4x4f_t PhysicsVehicle::getChassisWorldMatrix() const {
+Matrix4x4f_t PhysicsVehicle::getChassisShiftedMatrix() const {
     Matrix4x4f_t m = Matrix4x4f_t::Identity();
     if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
         return m;
@@ -1462,6 +1510,25 @@ Matrix4x4f_t PhysicsVehicle::getChassisWorldMatrix() const {
         m( c, 2 ) = col.GetZ();
     }
     return m;
+}
+
+Matrix4x4f_t PhysicsVehicle::getChassisWorldMatrix() const {
+    Matrix4x4f_t m = getChassisShiftedMatrix();
+    const Eigen::Vector4f origin = GSPhysics::GetShiftOrigin();
+    m( 3, 0 ) += origin.x();
+    m( 3, 1 ) += origin.y();
+    m( 3, 2 ) += origin.z();
+    return m;
+}
+
+void PhysicsVehicle::onWorldShifted( const Eigen::Vector3f &worldShift ) {
+    const Eigen::Vector4f shift( worldShift.x(), worldShift.y(), worldShift.z(),
+                                 0.0f );
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        PhysicsWheelState &w = vehicle.Wheels[i];
+        w.WheelPos += shift;
+        w.ContactPoint += shift;
+    }
 }
 
 static inline void RotateAboutOffset( Matrix4x4f_t &accum,
@@ -1546,6 +1613,10 @@ void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform ) {
         world.SetColumn3( c, JPH::Vec3( transform( c, 0 ), transform( c, 1 ),
                                         transform( c, 2 ) ) );
     }
+    const Eigen::Vector4f origin = GSPhysics::GetShiftOrigin();
+    world.SetTranslation( world.GetTranslation() -
+                          JPH::Vec3( origin.x(), origin.y(), origin.z() ) );
+
     JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
     const JPH::BodyID id = pChassisBody->GetID();
     bi.SetPositionAndRotation( id, world.GetTranslation(),
