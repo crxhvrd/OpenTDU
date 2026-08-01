@@ -1093,11 +1093,22 @@ if( ${OTDU_USE_JOLT} )
 endif()
 
 if( MSVC AND OTDU_TARGET_WIN7 )
-    add_library( otdu_win7thunks OBJECT "${OTDU_SRC_FOLDER}/core/win7_thunks.cpp" )
+    enable_language( ASM_MASM )
+    if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
+        set( OTDU_WIN7_THUNK_SRC "${OTDU_SRC_FOLDER}/core/win7_thunks.cpp"
+                                 "${OTDU_SRC_FOLDER}/core/win7_thunks_x64.asm" )
+    else()
+        set( OTDU_WIN7_THUNK_SRC "${OTDU_SRC_FOLDER}/core/win7_thunks.cpp"
+                                 "${OTDU_SRC_FOLDER}/core/win7_thunks_x86.asm" )
+        set_source_files_properties( "${OTDU_SRC_FOLDER}/core/win7_thunks_x86.asm"
+                                     PROPERTIES COMPILE_OPTIONS "/safeseh" )
+    endif()
+
+    add_library( otdu_win7thunks OBJECT ${OTDU_WIN7_THUNK_SRC} )
     set_property( TARGET otdu_win7thunks PROPERTY FOLDER "Tools" )
     target_sources( opentdu PRIVATE $<TARGET_OBJECTS:otdu_win7thunks> )
     if( ${OTDU_USE_JOLT} )
-        add_library( otdu_win7thunks_jolt OBJECT "${OTDU_SRC_FOLDER}/core/win7_thunks.cpp" )
+        add_library( otdu_win7thunks_jolt OBJECT ${OTDU_WIN7_THUNK_SRC} )
         set_property( TARGET otdu_win7thunks_jolt PROPERTY FOLDER "Tools" )
         set_property( TARGET otdu_win7thunks_jolt PROPERTY
                       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" )
@@ -1109,6 +1120,12 @@ endif()
 add_subdirectory( tools/asset_extractor )
 add_subdirectory( tools/save_decryptor )
 add_subdirectory( tools/zc_uncompressor )
+
+if( MSVC AND OTDU_TARGET_WIN7 )
+    foreach( OTDU_WIN7_TOOL opentdu_assetExtractor opentdu_savedecryptor opentdu_zcuncompressor )
+        target_sources( ${OTDU_WIN7_TOOL} PRIVATE $<TARGET_OBJECTS:otdu_win7thunks> )
+    endforeach()
+endif()
 
 # Link to exactor library (for shader/ini extraction on first run)
 target_link_libraries( opentdu otdu_extractor )

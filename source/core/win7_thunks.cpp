@@ -3,21 +3,27 @@
 // Three Windows 8+ entry points are pulled into our binaries by code Microsoft compiled
 // ahead of time, so *no* _WIN32_WINNT level on our own targets can remove them:
 //
-//   * CopyFile2 / CreateFile2         -- MSVC STL <filesystem>. CreateFile2 comes from
-//                                        std::filesystem::exists/status/file_size (via
-//                                        __std_fs_open_handle); CopyFile2 is dragged in
-//                                        from the same precompiled translation unit even
-//                                        though nothing here calls copy_file.
-//   * GetSystemTimePreciseAsFileTime  -- MSVC <chrono> std::chrono::system_clock::now()
-//                                        (header-inline in a dependency, e.g. Jolt).
+//   * CreateFile2                     -- MSVC STL <filesystem>, from exists/status/file_size
+//                                        (via __std_fs_open_handle).
+//   * CopyFile2                       -- same precompiled translation unit, even though
+//                                        nothing here calls copy_file. Only actually reaches
+//                                        the image in Debug: a Release link discards the
+//                                        unreferenced __std_fs_copy_file COMDAT, and the
+//                                        import with it. Thunked anyway, since a Debug or
+//                                        /OPT:NOREF build would otherwise regress.
+//   * GetSystemTimePreciseAsFileTime  -- MSVC <chrono> std::chrono::system_clock::now(),
+//                                        header-inline in Jolt (x86 Jolt.dll only).
 //
 // A static import of any of them makes the whole module fail to load on Windows 7 SP1. We
-// redirect each import to a Win7-available equivalent by overriding its __imp_ IAT pointer
-// at link time (/alternatename), so the real (missing) entry point is never bound.
+// redirect each one to a Win7-available equivalent by defining its __imp_ IAT symbol
+// ourselves, in win7_thunks_x86.asm / win7_thunks_x64.asm: because the symbol is then
+// already defined, the linker never pulls the matching kernel32.lib member and no import
+// descriptor is emitted for the Win8 entry point. The implementations below are what those
+// IAT slots point at, so they must keep C linkage (the assembly names them directly).
 //
 // This TU is only added to the link when OTDU_TARGET_WIN7 is ON (see the top-level
-// CMakeLists.txt), and is injected into BOTH the opentdu executable and the Jolt shared
-// library, since each imports a different subset of the three.
+// CMakeLists.txt), and is injected into every Windows binary we ship -- the executable, the
+// three tools and the Jolt shared library -- since each imports a different subset.
 
 #if defined( _WIN32 )
 
@@ -42,9 +48,11 @@ struct Win7CreateFile2Params {
     HANDLE                hTemplateFile;
 };
 
+extern "C" {
+
 // CopyFile2 (Win8) -> CopyFileExW (Win2000+).
-static HRESULT WINAPI CopyFile2Downlevel( PCWSTR pwszExistingFileName, PCWSTR pwszNewFileName,
-                                          Win7CopyFile2Params *pExtendedParameters ) {
+HRESULT WINAPI CopyFile2Downlevel( PCWSTR pwszExistingFileName, PCWSTR pwszNewFileName,
+                                   Win7CopyFile2Params *pExtendedParameters ) {
     DWORD dwFlags  = 0;
     BOOL *pfCancel = nullptr;
     if ( pExtendedParameters != nullptr ) {
@@ -58,8 +66,8 @@ static HRESULT WINAPI CopyFile2Downlevel( PCWSTR pwszExistingFileName, PCWSTR pw
 }
 
 // CreateFile2 (Win8) -> CreateFileW (Win2000+).
-static HANDLE WINAPI CreateFile2Downlevel( PCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
-                                           DWORD dwCreationDisposition, Win7CreateFile2Params *pCreateExParams ) {
+HANDLE WINAPI CreateFile2Downlevel( PCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
+                                    DWORD dwCreationDisposition, Win7CreateFile2Params *pCreateExParams ) {
     DWORD                 dwFlagsAndAttributes = FILE_ATTRIBUTE_NORMAL;
     LPSECURITY_ATTRIBUTES lpSecurityAttributes = nullptr;
     HANDLE                hTemplateFile        = nullptr;
@@ -75,30 +83,10 @@ static HANDLE WINAPI CreateFile2Downlevel( PCWSTR lpFileName, DWORD dwDesiredAcc
 }
 
 // GetSystemTimePreciseAsFileTime (Win8) -> GetSystemTimeAsFileTime (Win2000+, ~10-15ms resolution).
-static void WINAPI GetSystemTimePreciseAsFileTimeDownlevel( LPFILETIME lpSystemTimeAsFileTime ) {
+void WINAPI GetSystemTimePreciseAsFileTimeDownlevel( LPFILETIME lpSystemTimeAsFileTime ) {
     GetSystemTimeAsFileTime( lpSystemTimeAsFileTime );
 }
 
-// Replacement IAT slots. A dllimport call site reads __imp_<api> and calls through it; aliasing
-// each __imp_ symbol (below) to one of these pointers routes the call to our down-level version
-// and stops the real import from ever being resolved against kernel32. The initializers are
-// link-time constants, so these are populated at load time -- no CRT-init ordering hazard.
-extern "C" {
-HRESULT( WINAPI *Win7_CopyFile2_imp )( PCWSTR, PCWSTR, Win7CopyFile2Params * ) = &CopyFile2Downlevel;
-HANDLE( WINAPI *Win7_CreateFile2_imp )( PCWSTR, DWORD, DWORD, DWORD, Win7CreateFile2Params * ) =
-    &CreateFile2Downlevel;
-void( WINAPI *Win7_GetSystemTimePreciseAsFileTime_imp )( LPFILETIME ) =
-    &GetSystemTimePreciseAsFileTimeDownlevel;
-}
-
-#if defined( _WIN64 )
-#pragma comment( linker, "/alternatename:__imp_CopyFile2=Win7_CopyFile2_imp" )
-#pragma comment( linker, "/alternatename:__imp_CreateFile2=Win7_CreateFile2_imp" )
-#pragma comment( linker, "/alternatename:__imp_GetSystemTimePreciseAsFileTime=Win7_GetSystemTimePreciseAsFileTime_imp" )
-#else
-#pragma comment( linker, "/alternatename:__imp__CopyFile2@12=_Win7_CopyFile2_imp" )
-#pragma comment( linker, "/alternatename:__imp__CreateFile2@20=_Win7_CreateFile2_imp" )
-#pragma comment( linker, "/alternatename:__imp__GetSystemTimePreciseAsFileTime@4=_Win7_GetSystemTimePreciseAsFileTime_imp" )
-#endif
+} // extern "C"
 
 #endif // _WIN32
