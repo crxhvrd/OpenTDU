@@ -33,26 +33,25 @@ using RigidBody_t = JPH::Body *;
 
 namespace TDUSurface {
     enum Class : uint32_t {
-        Unknown = 0,
-        Road = 1,    // -R.shk road mesh (orig phys-type 3) -> asphalt, on-road
-        Terrain = 2, // heightfield (orig phys-type 4) -> off-road (dirt/grass)
-        Object = 3,  // .shk world mesh/post (orig phys-type 2/7): paved/solid
-                     // drive surface (junctions, curbs, floors) -> ON-ROAD
+        None = 0,     // nothing under the wheel
+        Paved = 2,    // .shk world MESH (FUN_00844f00) + AddInfinitePlane
+        RoadMesh = 3, // -R.shk road MESH (FUN_00845380)
+        Terrain = 4,  // heightfield — never tagged; the only off-road surface
+        Generic = 7,  // .shk/-R.shk NON-mesh (posts, boxes) + placed props
+        Vehicle = 9,  // car chassis (FUN_0082fc80)
     };
 
-    // Mask applied to a body's Jolt UserData to recover the surface class byte.
+    // Mask applied to a body's Jolt UserData to recover the phys-type byte.
     constexpr uint64_t kClassMask = 0xFF;
 
-    inline float friction( uint32_t surfaceClass ) {
-        switch ( surfaceClass ) {
-        case Road:
-            return 1.0f; // asphalt: full grip (FLOAT_00f4165c)
-        case Terrain:
-            return 0.75f; // off-road: reduced grip
-        case Object:      // paved/solid on-road surface: full grip
-        default:
-            return 1.0f;
-        }
+    inline bool isOnRoad( uint32_t physType ) {
+        // FUN_0083bbd0
+        return physType == 1 || physType == Paved || physType == RoadMesh ||
+               physType == Generic;
+    }
+
+    inline float friction( uint32_t physType ) {
+        return ( physType == Terrain ) ? 0.75f : 1.0f;
     }
 } // namespace TDUSurface
 
@@ -144,7 +143,7 @@ public:
                              uint32_t blobSize,
                              float baseX,
                              float baseZ,
-                             uint32_t surfaceClass );
+                             bool bRoadBlob );
     void removeSectorCollision( const void *pKey );
     void
     addSectorRoadGround( const void *pKey, void *pBlob, uint32_t blobSize );

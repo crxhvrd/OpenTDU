@@ -711,9 +711,10 @@ static uint32_t CollisionBodyColor( JPH::EShapeSubType subType,
         return PackDebugColor( 255, 140, 0 ).Color; // props / car: orange
     }
     switch ( userData ) {
-    case TDUSurface::Road:
+    case TDUSurface::RoadMesh:
         return PackDebugColor( 60, 120, 255 ).Color; // road mesh: blue
-    case TDUSurface::Object:
+    case TDUSurface::Paved:
+    case TDUSurface::Generic:
         return PackDebugColor( 40, 230, 40 ).Color; // world .shk: green
     default:
         return PackDebugColor( 200, 200, 40 ).Color; // other static: yellow
@@ -1043,7 +1044,6 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     if ( !shapeResult.IsValid() ) {
         return nullptr;
     }
-
     const float bodyHeightM = ( db.Height > 0 ? db.Height : 1300 ) * 0.001f;
     const float bodyHalfHeight = bodyHeightM * 0.5f;
     const float gravHeightFrac =
@@ -1108,6 +1108,7 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
 
     settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     settings.mLinearDamping = 0.0f;
+    settings.mUserData = TDUSurface::Vehicle;
 
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
     lockMutex();
@@ -1123,7 +1124,8 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
             }
         }
         if ( pCar == nullptr ||
-             !pCar->create( pPhysicsSystem, pChassis, db, pTorqueBinary ) ) {
+             !pCar->create( pPhysicsSystem, pChassis, db, pTorqueBinary,
+                            bHasFactoryShape ) ) {
             bodyInterface.RemoveBody( pChassis->GetID() );
             bodyInterface.DestroyBody( pChassis->GetID() );
             pCar = nullptr;
@@ -1490,7 +1492,7 @@ int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
     roadBodies.reserve( bodyIDs.size() );
     for ( const JPH::BodyID id : bodyIDs ) {
         const uint64_t surf = bi.GetUserData( id );
-        if ( surf != TDUSurface::Road && surf != TDUSurface::Object ) {
+        if ( !TDUSurface::isOnRoad( static_cast<uint32_t>( surf ) ) ) {
             continue;
         }
         JPH::RefConst<JPH::Shape> shape = bi.GetShape( id );
@@ -1642,12 +1644,20 @@ void GSPhysics::removeHeightfield( const void *pKey ) {
     }
 }
 
+static uint32_t PhysTypeForShape( const JPH::Shape *pShape, bool bRoad ) {
+    if ( pShape == nullptr ||
+         pShape->GetSubType() != JPH::EShapeSubType::Mesh ) {
+        return TDUSurface::Generic;
+    }
+    return bRoad ? TDUSurface::RoadMesh : TDUSurface::Paved;
+}
+
 void GSPhysics::addSectorCollision( const void *pKey,
                                     void *pBlob,
                                     uint32_t blobSize,
                                     float baseX,
                                     float baseZ,
-                                    uint32_t surfaceClass ) {
+                                    bool bRoadBlob ) {
     // Sector static world collision
     if ( pPhysicsSystem == nullptr || pBlob == nullptr || pKey == nullptr )
         return;
@@ -1704,17 +1714,15 @@ void GSPhysics::addSectorCollision( const void *pKey,
                                    body.Position.GetY(),
                                    baseZ + body.Position.GetZ() );
 
-        const JPH::ObjectLayer objLayer = ( surfaceClass == TDUSurface::Road )
-                                              ? TDUPhysLayers::ROAD
-                                              : TDUPhysLayers::NON_MOVING;
+        const JPH::ObjectLayer objLayer =
+            bRoadBlob ? TDUPhysLayers::ROAD : TDUPhysLayers::NON_MOVING;
 
         JPH::BodyCreationSettings settings( body.Shape, position, body.Rotation,
                                             JPH::EMotionType::Static,
                                             objLayer );
-        // Surface material tag (read back by the vehicle to pick tire grip /
-        // FX)
-        settings.mUserData = surfaceClass;
-        settings.mFriction = TDUSurface::friction( surfaceClass );
+        const uint32_t physType = PhysTypeForShape( body.Shape, bRoadBlob );
+        settings.mUserData = physType;
+        settings.mFriction = TDUSurface::friction( physType );
 
         JPH::Body *pBody = bodyInterface.CreateBody( settings );
         if ( pBody != nullptr ) {
@@ -1854,8 +1862,8 @@ void GSPhysics::addSpotCollision( const void *pKey,
         JPH::BodyCreationSettings settings( body.Shape, position, rotation,
                                             JPH::EMotionType::Static,
                                             TDUPhysLayers::NON_MOVING );
-        settings.mUserData = TDUSurface::Object;
-        settings.mFriction = TDUSurface::friction( TDUSurface::Object );
+        settings.mUserData = TDUSurface::Generic;
+        settings.mFriction = TDUSurface::friction( TDUSurface::Generic );
 
         JPH::Body *pBody = bodyInterface.CreateBody( settings );
         if ( pBody != nullptr ) {
@@ -2010,8 +2018,8 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
     JPH::BodyCreationSettings settings(
         meshResult.Get(), JPH::RVec3( originRef ), JPH::Quat::sIdentity(),
         JPH::EMotionType::Static, TDUPhysLayers::ROAD );
-    settings.mUserData = TDUSurface::Road;
-    settings.mFriction = TDUSurface::friction( TDUSurface::Road );
+    settings.mUserData = TDUSurface::RoadMesh;
+    settings.mFriction = TDUSurface::friction( TDUSurface::RoadMesh );
     JPH::Body *pBody = bodyInterface.CreateBody( settings );
     if ( pBody != nullptr ) {
         bodyInterface.AddBody( pBody->GetID(), JPH::EActivation::DontActivate );
@@ -2335,8 +2343,8 @@ void GSPhysics::placeProp(
             settings.mCollisionGroup = JPH::CollisionGroup(
                 pFilter, groupID,
                 static_cast<uint32_t>( i % kMaxPropMembers ) );
-            settings.mUserData = TDUSurface::Object;
-            settings.mFriction = TDUSurface::friction( TDUSurface::Object );
+            settings.mUserData = TDUSurface::Generic;
+            settings.mFriction = TDUSurface::friction( TDUSurface::Generic );
 
             JPH::Body *pBody = bodyInterface.CreateBody( settings );
             if ( pBody != nullptr ) {
@@ -2431,8 +2439,8 @@ void GSPhysics::placeProp(
                 shape, placedM.GetTranslation(),
                 placedM.GetQuaternion().Normalized(), JPH::EMotionType::Static,
                 TDUPhysLayers::NON_MOVING );
-            settings.mUserData = TDUSurface::Object;
-            settings.mFriction = TDUSurface::friction( TDUSurface::Object );
+            settings.mUserData = TDUSurface::Generic;
+            settings.mFriction = TDUSurface::friction( TDUSurface::Generic );
 
             JPH::Body *pBody = bodyInterface.CreateBody( settings );
             if ( pBody != nullptr ) {

@@ -8,6 +8,7 @@
 #include "physics/physics_config.h"
 #include "physics/physics_layers.h"
 #include "physics/gs_physics.h"
+#include "physics/physics_material.h"
 #include "database/gs_database.h"
 #include "player_data/gs_playerdata.h"
 
@@ -17,6 +18,7 @@
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
+#include <Jolt/Physics/Collision/Shape/Shape.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
@@ -176,7 +178,9 @@ public:
             mHit = true;
             mPosition = pos;
             mNormal = normal;
-            mSurface = userData & TDUSurface::kClassMask; // surface class byte
+            mSurface = userData & TDUSurface::kClassMask; // phys-type byte
+            mMaterial = TDUPhysicsMaterials::codeOf(
+                pBody->GetShape()->GetMaterial( inResult.mSubShapeID2 ) );
         }
     }
 
@@ -188,6 +192,7 @@ public:
     JPH::RVec3 mPosition;
     JPH::Vec3 mNormal;
     uint64_t mSurface = 0;
+    uint32_t mMaterial = TDUMaterialValue::kDefault;
 };
 
 // TODO: Move to GSPhysics?
@@ -519,6 +524,11 @@ PhysicsVehicle::PhysicsVehicle()
       engineOmega( 0.0f ),
       currentGear( 1 ),
       finalDriveRatio( 4.0f ),
+      displayRoll( 0.0f ),
+      displayPitch( 0.0f ),
+      displayYaw( 0.0f ),
+      y3DOffset( 0.0f ),
+      bodyHeight( 1.3f ),
       aeroDragArea( 0.0f ),
       aeroDownArea( 0.0f ),
       aeroDensity( kAeroDensitySimu ),
@@ -609,7 +619,8 @@ void PhysicsVehicle::initialize() {
 bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                              JPH::Body *pChassis,
                              const DBEntryCarPhysicsData &db,
-                             const void *pTorqueBinary ) {
+                             const void *pTorqueBinary,
+                             bool bFactoryShape ) {
     if ( pSystem == nullptr || pChassis == nullptr ) {
         return false;
     }
@@ -626,6 +637,12 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                              : ( gpPlayerData != nullptr
                                      ? gpPlayerData->getDrivingHelpLevel()
                                      : 0 ) );
+
+    bodyHeight = ( db.Height > 0 ? db.Height : 1300 ) * kMmToM;
+    if ( bFactoryShape && pChassisBody->GetShape() != nullptr ) {
+        bodyHeight =
+            pChassisBody->GetShape()->GetLocalBounds().GetSize().GetY();
+    }
 
     const float halfTrackF =
         ( db.TrackFront > 0 ? db.TrackFront : 1500 ) * 0.5f * kMmToM;
@@ -1096,6 +1113,7 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
         prevSuspLength[i] = droopStop;
         suspDamperLP[i] *= 0.75f;
         wheelSurface[i] = 0;
+        wheelMaterial[i] = TDUMaterialValue::kDefault;
         return false;
     }
 
@@ -1142,6 +1160,7 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
     w.SuspTotalForce = spring + damper;
     w.AntiRollForce = 0.0f;
     wheelSurface[i] = static_cast<uint32_t>( collector.mSurface );
+    wheelMaterial[i] = collector.mMaterial;
 
     // Contact frame.
     float steerAngle = ( w.bSteered ? -steerCommand * steerLockRad : 0.0f );
@@ -1445,6 +1464,77 @@ Matrix4x4f_t PhysicsVehicle::getChassisWorldMatrix() const {
     return m;
 }
 
+static inline void RotateAboutOffset( Matrix4x4f_t &accum,
+                                      const Matrix4x4f_t &rotation,
+                                      const Eigen::Vector3f &preTranslate ) {
+    accum( 3, 0 ) += preTranslate.x();
+    accum( 3, 1 ) += preTranslate.y();
+    accum( 3, 2 ) += preTranslate.z();
+    accum = accum * rotation;
+    accum( 3, 0 ) -= preTranslate.x();
+    accum( 3, 1 ) -= preTranslate.y();
+    accum( 3, 2 ) -= preTranslate.z();
+}
+
+Matrix4x4f_t
+PhysicsVehicle::computeDisplayMatrix( const Matrix4x4f_t &sourceMatrix ) const {
+    // FUN_0082f8e0
+    constexpr float kRollPivotBias = -0.05f;   // DAT_00fab5bc
+    constexpr float kPitchPivotBias = 0.13f;   // DAT_00fab5b4
+    constexpr float kPitchRadiusScale = -2.0f; // DAT_00fab5b8
+    constexpr float kDisplayOriginY = 0.0f;    // DAT_016a6994
+    constexpr float kDisplayOriginZ = 0.0f;    // DAT_016a6990
+
+    const Eigen::Vector3f displayOrigin(
+        0.0f, kDisplayOriginY - bodyHeight * 0.5f, kDisplayOriginZ );
+
+    const int32_t numWheels = vehicle.NumWheels;
+    uint32_t pivotWheel = 0;
+    if ( numWheels >= 2 && displayPitch < 0.0f ) {
+        pivotWheel = 1u << ( ( numWheels / 2 ) - 1 );
+    }
+
+    const float wheelCenterY = -getWheelRestCenterDrop( pivotWheel );
+    const float wheelCenterZ = wheelAttach[pivotWheel].z();
+    const float wheelRadius = vehicle.Wheels[pivotWheel].Radius;
+
+    const float rollOffsetY = -wheelCenterY - wheelRadius - kRollPivotBias;
+    const float pitchOffsetY =
+        kPitchRadiusScale * wheelRadius - wheelCenterY + kPitchPivotBias;
+
+    Matrix4x4f_t displayTransform = Matrix4x4f_t::Identity();
+    RotateAboutOffset( displayTransform, MakeRotationMatZ( -displayRoll ),
+                       Eigen::Vector3f( 0.0f, rollOffsetY, 0.0f ) );
+    RotateAboutOffset( displayTransform, MakeRotationMatX( displayPitch ),
+                       Eigen::Vector3f( 0.0f, pitchOffsetY, -wheelCenterZ ) );
+
+    // Yaw pivots on the body origin, so it takes the display origin with it.
+    displayTransform( 3, 0 ) += displayOrigin.x();
+    displayTransform( 3, 1 ) += displayOrigin.y();
+    displayTransform( 3, 2 ) += displayOrigin.z();
+    displayTransform = displayTransform * MakeRotationMatY( displayYaw );
+
+    Matrix4x4f_t displayMatrix = displayTransform * sourceMatrix;
+    displayMatrix( 3, 0 ) += displayMatrix( 1, 0 ) * y3DOffset;
+    displayMatrix( 3, 1 ) += displayMatrix( 1, 1 ) * y3DOffset;
+    displayMatrix( 3, 2 ) += displayMatrix( 1, 2 ) * y3DOffset;
+    displayMatrix( 3, 3 ) = 1.0f;
+    return displayMatrix;
+}
+
+void PhysicsVehicle::calibrateDisplayYOffset( float modelWheelRestY ) {
+    const int32_t numWheels = vehicle.NumWheels;
+    if ( numWheels <= 0 ) {
+        return;
+    }
+    float sum = 0.0f;
+    for ( int32_t i = 0; i < numWheels; i++ ) {
+        sum += -getWheelRestCenterDrop( static_cast<uint32_t>( i ) );
+    }
+    const float physicsWheelRestY = sum / numWheels;
+    y3DOffset = ( physicsWheelRestY - modelWheelRestY ) + bodyHeight * 0.5f;
+}
+
 void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform ) {
     // FUN_0083d880
     if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
@@ -1495,6 +1585,7 @@ PhysicsVehicle::getWheelReadout( uint32_t index ) const {
     out.BrakeTorqueOut = w.BrakeTorqueOut;
     out.EspTorqueOut = w.EspTorqueOut;
     out.ContactSurface = wheelSurface[index];
+    out.ContactMaterial = wheelMaterial[index];
     out.ContactPoint =
         w.bGroundContact
             ? w.ContactPoint

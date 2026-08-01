@@ -33,7 +33,8 @@ public:
         int32_t EspState;
         float BrakeTorqueOut;
         float EspTorqueOut;
-        uint32_t ContactSurface;
+        uint32_t ContactSurface;  // phys-type code (TDUSurface)
+        uint32_t ContactMaterial; // eMaterialType, MT_Default when unknown
         Eigen::Vector4f ContactPoint;
     };
 
@@ -60,7 +61,8 @@ public:
     bool create( JPH::PhysicsSystem *pSystem,
                  JPH::Body *pChassis,
                  const DBEntryCarPhysicsData &db,
-                 const void *pTorqueBinary = nullptr );
+                 const void *pTorqueBinary = nullptr,
+                 bool bFactoryShape = false );
     void destroy();
     bool isActive() const { return pChassisBody != nullptr; }
     bool isSimulated() const { return bRegistered; }
@@ -96,6 +98,15 @@ public:
     void OnStep( const JPH::PhysicsStepListenerContext &inContext ) override;
 
     Matrix4x4f_t getChassisWorldMatrix() const;
+    Matrix4x4f_t computeDisplayMatrix( const Matrix4x4f_t &sourceMatrix ) const;
+    Matrix4x4f_t computeDisplayMatrix() const {
+        return computeDisplayMatrix( getChassisWorldMatrix() );
+    }
+
+    float getBodyHeight() const { return bodyHeight; }
+    float getDisplayYOffset() const { return y3DOffset; }
+    void calibrateDisplayYOffset( float modelWheelRestY );
+
     float getWheelRestCenterDrop( uint32_t i ) const {
         if ( i >= static_cast<uint32_t>( vehicle.NumWheels ) ) {
             return 0.0f;
@@ -163,7 +174,9 @@ private:
     float prevSuspLength[PhysicsVehicleState::kMaxWheels]; // last step's length
                                                            // (damper velocity)
     uint32_t wheelSurface[PhysicsVehicleState::kMaxWheels] =
-        {}; // raycast contact surface class
+        {}; // raycast contact phys-type code
+    uint32_t wheelMaterial[PhysicsVehicleState::kMaxWheels] =
+        {}; // raycast contact eMaterialType (MT_Default = none)
 
     int32_t appliedDrivingHelpLevel = -2;
 
@@ -172,12 +185,20 @@ private:
     float inputBrake;
     float inputSteer;
     int32_t autoReverseState;
-    float filteredSteer; // rate-limited steering state
-    float steerCommand;  // shaped, speed-scaled steer (drives the wheel angle)
+    // Output of filterSteering. NOT rate-limited: the port's filter is a
+    // stateless curve, the original's per-frame interpolation is unported.
+    float filteredSteer;
+    float steerCommand; // shaped, speed-scaled steer (drives the wheel angle)
 
     float engineOmega; // rad/s, for the tacho / CarBodyState::Omega
     int32_t currentGear;
     float finalDriveRatio;
+
+    float displayRoll;
+    float displayPitch;
+    float displayYaw;
+    float y3DOffset;
+    float bodyHeight;
 
     // Aerodynamics (chassis downforce/drag, applied per physics step).
     float aeroDragArea; // 0.5 * A * Cx_drag

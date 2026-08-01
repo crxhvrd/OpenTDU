@@ -12,6 +12,7 @@
 #include "game/scenaric/local_player.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "physics/gs_physics.h" // TDUSurface
+#include "physics/physics_material.h"
 #include "physics/physics_config.h"
 #include "car_state.h"
 #include "audio/gs_audio.h"
@@ -100,14 +101,12 @@ namespace {
         current += ( target - current ) * rate;
     }
 
-    void publishBodyAudioTelemetry( CarBodyState &body,
-                                    const PhysicsVehicle &vehicle ) {
-        const float omega = vehicle.getEngineAngularVelocity();
-        const float torque = vehicle.getEngineSmoothedTorque();
+    void publishBodyAudioTelemetry( CarBodyState &body, float torque ) {
+        const float omega = body.Omega;
 
         const float rpm = omega * kOmegaToRPM;
         const float powerPS = torque * omega * kWattsToPS;
-        const float speedKmh = vehicle.getChassisSpeed() * kMetersToKmh;
+        const float speedKmh = body.SpeedInKmh * kMetersToKmh;
 
         if ( gCarStateSmoothTelemetry ) {
             approach( body.EngineRPM, rpm, kSmoothEngine );
@@ -122,22 +121,18 @@ namespace {
         }
     }
 
-    void
-    publishWheelAudioTelemetry( WheelState &wheel,
-                                const PhysicsVehicle::WheelReadout &readout ) {
+    void publishWheelAudioTelemetry( WheelState &wheel ) {
         // FUN_0083bbd0
-        const float rollSpeed =
-            std::fabs( readout.AngularVelocity * readout.Radius );
-        const float longSpeed = std::fabs( readout.LongitudinalGroundSpeed );
+        const float rollSpeed = std::fabs( wheel.Omega * wheel.WheelRadius );
+        const float longSpeed = std::fabs( wheel.LongitudinalSpeed );
         const float groundSpeedKmh = Max( rollSpeed, longSpeed ) * kMetersToKmh;
         const float latSpeedKmh =
-            std::fabs( readout.LateralGroundSpeed ) * kMetersToKmh;
+            std::fabs( wheel.LateralSpeed ) * kMetersToKmh;
 
-        const bool bMoving =
-            longSpeed >= kSlipGateSpeed ||
-            std::fabs( readout.AngularVelocity ) >= kSlipGateSpeed;
-        const float slipLong = bMoving ? readout.LongitudinalSlip : 0.0f;
-        const float slipLat = bMoving ? readout.LateralSlip : 0.0f;
+        const bool bMoving = longSpeed >= kSlipGateSpeed ||
+                             std::fabs( wheel.Omega ) >= kSlipGateSpeed;
+        const float slipLong = bMoving ? wheel.SlipRatio : 0.0f;
+        const float slipLat = bMoving ? wheel.SlipAngle : 0.0f;
 
         if ( gCarStateSmoothTelemetry ) {
             approach( wheel.AudioGroundSpeedKmh, groundSpeedKmh, kSmoothWheel );
@@ -191,114 +186,154 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
     if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
         streamShift = gpWorldStreaming->getPosition();
     }
+
+    struct AudioSampleScratch {
+        float SmoothedTorque = 0.0f;
+        uint32_t NumWheels = 0;
+        bool bSampled = false;
+    };
+    std::array<AudioSampleScratch, kMaxNumVehicles> audioScratch = {};
+
+    {
+        PhysicsLock physLock;
+
+        for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+            if ( ( ( bUsedSlot >> i ) & 1u ) == 0 ) {
+                continue;
+            }
+            CarState &carState = carStates[i];
+            PhysicsVehicle *pPhysicsVehicle = carState.pPhysicsVehicle;
+            if ( pPhysicsVehicle == nullptr || !pPhysicsVehicle->isActive() ) {
+                continue;
+            }
+
+            CarBodyState &body = carState.body;
+            const uint32_t modelNumWheels =
+                Min( pPhysicsVehicle->getNumWheels(), CarState::kMaxNumWheels );
+            if ( modelNumWheels > 0 ) {
+                const float bodyHalfHeight =
+                    carState.body.BodyDimensions.y() * 0.5f;
+                float wheelRestSum = 0.0f;
+                for ( uint32_t w = 0; w < modelNumWheels; w++ ) {
+                    wheelRestSum +=
+                        carState.wheels[w].Position + bodyHalfHeight;
+                }
+                pPhysicsVehicle->calibrateDisplayYOffset( wheelRestSum /
+                                                          modelNumWheels );
+            }
+
+            const Matrix4x4f_t worldMatrix =
+                pPhysicsVehicle->computeDisplayMatrix();
+            body.WorldMatrix = worldMatrix;
+            Matrix4x4f_t offseted = worldMatrix;
+            offseted( 3, 0 ) -= streamShift.x();
+            offseted( 3, 1 ) -= streamShift.y();
+            offseted( 3, 2 ) -= streamShift.z();
+            body.OffsetedWorldMatrix = offseted;
+
+            body.SpeedInKmh = pPhysicsVehicle->getChassisSpeed();
+            body.Omega = pPhysicsVehicle->getEngineAngularVelocity();
+            body.Gears = pPhysicsVehicle->getCurrentGear();
+            body.GearState = pPhysicsVehicle->getCurrentGear() + 1;
+            body.Torque = pPhysicsVehicle->getEngineTorqueOut();
+            body.MaxOmega = pPhysicsVehicle->getEngineOmegaMax();
+
+            const PhysicsVehicle::DrivingGearbox gearbox =
+                pPhysicsVehicle->getDrivingGearbox();
+            const bool bStopLampsArmed =
+                !gearbox.bAutomatic ||
+                pPhysicsVehicle->getAutoReverseState() != 0;
+            body.bIsBraking =
+                bStopLampsArmed && pPhysicsVehicle->getInputBrake() > 0.1f;
+            body.bIsReversing = pPhysicsVehicle->getCurrentGear() < 0;
+
+            const uint32_t physNumWheels =
+                Min( pPhysicsVehicle->getNumWheels(), CarState::kMaxNumWheels );
+
+            int32_t numGrounded = 0;
+            int32_t numOnRoad = 0;
+            for ( uint32_t w = 0; w < physNumWheels; w++ ) {
+                const PhysicsVehicle::WheelReadout ro =
+                    pPhysicsVehicle->getWheelReadout( w );
+                WheelState &wheel = carState.wheels[w];
+                wheel.bInitialized = true;
+                wheel.bGrounded = ro.bGrounded;
+                wheel.Omega = ro.AngularVelocity;
+                wheel.SteerAngle = ro.SteerAngle;
+                wheel.SlipRatio = ro.LongitudinalSlip;
+                wheel.SlipAngle = ro.LateralSlip;
+                wheel.LongitudinalSpeed = ro.LongitudinalGroundSpeed;
+                wheel.LateralSpeed = ro.LateralGroundSpeed;
+                wheel.Load = ro.SuspensionLoad;
+
+                wheel.SuspensionTravelLength = ro.SuspensionDeflection;
+                wheel.WheelRadius = ro.Radius;
+                wheel.RelativeWorldPosition =
+                    Eigen::Vector4f( ro.LocalPosition.x(), ro.LocalPosition.y(),
+                                     ro.LocalPosition.z(), 1.0f );
+                wheel.ProjectedPositionOnGround = Eigen::Vector4f(
+                    ro.ContactPoint.x() - streamShift.x(),
+                    ro.ContactPoint.y() - streamShift.y(),
+                    ro.ContactPoint.z() - streamShift.z(), 1.0f );
+
+                wheel.bOnRoad = ro.bGrounded &&
+                                ( TDUSurface::isOnRoad( ro.ContactSurface ) ||
+                                  gbGrassAsTarmac );
+                if ( ro.bGrounded ) {
+                    numGrounded++;
+                    if ( wheel.bOnRoad ) {
+                        numOnRoad++;
+                    }
+                }
+
+                if ( ro.ContactMaterial != TDUMaterialValue::kDefault ) {
+                    wheel.ContactMaterial =
+                        static_cast<eMaterialType>( ro.ContactMaterial );
+                    continue;
+                }
+                switch ( ro.ContactSurface ) {
+                case TDUSurface::RoadMesh:
+                    wheel.ContactMaterial = eMaterialType::MT_Asphalt;
+                    break;
+                case TDUSurface::Paved:
+                case TDUSurface::Generic:
+                    wheel.ContactMaterial = eMaterialType::MT_Concrete;
+                    break;
+                case TDUSurface::Terrain:
+                default:
+                    wheel.ContactMaterial = ( gbGrassAsTarmac )
+                                                ? eMaterialType::MT_Asphalt
+                                                : eMaterialType::MT_Grass;
+                    break;
+                }
+            }
+            body.NumWheelsGrounded = numGrounded;
+            body.NumWheelsOnRoad = numOnRoad;
+
+            audioScratch[i].SmoothedTorque =
+                pPhysicsVehicle->getEngineSmoothedTorque();
+            audioScratch[i].NumWheels = physNumWheels;
+            audioScratch[i].bSampled = true;
+        }
+    }
+
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
-        if ( ( ( bUsedSlot >> i ) & 1u ) == 0 ) {
+        if ( !audioScratch[i].bSampled ) {
             continue;
         }
         CarState &carState = carStates[i];
-        PhysicsVehicle *pPhysicsVehicle = carState.pPhysicsVehicle;
-        if ( pPhysicsVehicle == nullptr || !pPhysicsVehicle->isActive() ) {
-            continue;
+
+        publishBodyAudioTelemetry( carState.body,
+                                   audioScratch[i].SmoothedTorque );
+        for ( uint32_t w = 0; w < audioScratch[i].NumWheels; w++ ) {
+            publishWheelAudioTelemetry( carState.wheels[w] );
         }
-
-        CarBodyState &body = carState.body;
-        Matrix4x4f_t worldMatrix = pPhysicsVehicle->getChassisWorldMatrix();
-        float liftSum = 0.0f;
-        const uint32_t liftNumWheels =
-            Min( pPhysicsVehicle->getNumWheels(), CarState::kMaxNumWheels );
-        const float liftBodyHalfH = carState.body.BodyDimensions.y() * 0.5f;
-        for ( uint32_t w = 0; w < liftNumWheels; w++ ) {
-            const float pWheelOffset =
-                carState.wheels[w].Position + liftBodyHalfH;
-            liftSum +=
-                -pPhysicsVehicle->getWheelRestCenterDrop( w ) - pWheelOffset;
-        }
-        const float lift = liftNumWheels > 0 ? liftSum / liftNumWheels : 0.0f;
-        worldMatrix( 3, 0 ) += lift * worldMatrix( 1, 0 );
-        worldMatrix( 3, 1 ) += lift * worldMatrix( 1, 1 );
-        worldMatrix( 3, 2 ) += lift * worldMatrix( 1, 2 );
-        body.WorldMatrix = worldMatrix;
-        Matrix4x4f_t offseted = worldMatrix;
-        offseted( 3, 0 ) -= streamShift.x();
-        offseted( 3, 1 ) -= streamShift.y();
-        offseted( 3, 2 ) -= streamShift.z();
-        body.OffsetedWorldMatrix = offseted;
-
-        body.SpeedInKmh = pPhysicsVehicle->getChassisSpeed();
-        body.Omega = pPhysicsVehicle->getEngineAngularVelocity();
-        body.Gears = pPhysicsVehicle->getCurrentGear();
-        body.GearState = pPhysicsVehicle->getCurrentGear() + 1;
-        body.Torque = pPhysicsVehicle->getEngineTorqueOut();
-        body.MaxOmega = pPhysicsVehicle->getEngineOmegaMax();
-
-        publishBodyAudioTelemetry( body, *pPhysicsVehicle );
 
         if ( gpVehicleSound != nullptr &&
              carState.getVehicleSound() == nullptr ) {
             carState.setVehicleSound(
                 gpVehicleSound->createInstance( &carState ) );
         }
-
-        const PhysicsVehicle::DrivingGearbox gearbox =
-            pPhysicsVehicle->getDrivingGearbox();
-        const bool bStopLampsArmed =
-            !gearbox.bAutomatic || pPhysicsVehicle->getAutoReverseState() != 0;
-        body.bIsBraking =
-            bStopLampsArmed && pPhysicsVehicle->getInputBrake() > 0.1f;
-        body.bIsReversing = pPhysicsVehicle->getCurrentGear() < 0;
-
-        const uint32_t physNumWheels =
-            Min( pPhysicsVehicle->getNumWheels(), CarState::kMaxNumWheels );
-
-        int32_t numGrounded = 0;
-        for ( uint32_t w = 0; w < physNumWheels; w++ ) {
-            const PhysicsVehicle::WheelReadout ro =
-                pPhysicsVehicle->getWheelReadout( w );
-            WheelState &wheel = carState.wheels[w];
-            wheel.bInitialized = true;
-            publishWheelAudioTelemetry( wheel, ro );
-            wheel.bGrounded = ro.bGrounded;
-            wheel.Omega = ro.AngularVelocity;
-            wheel.SteerAngle = ro.SteerAngle;
-            wheel.SlipRatio = ro.LongitudinalSlip;
-            wheel.SlipAngle = ro.LateralSlip;
-            wheel.LongitudinalSpeed = ro.LongitudinalGroundSpeed;
-            wheel.LateralSpeed = ro.LateralGroundSpeed;
-            wheel.Load = ro.SuspensionLoad;
-
-            wheel.SuspensionTravelLength = ro.SuspensionDeflection;
-            wheel.WheelRadius = ro.Radius;
-            wheel.RelativeWorldPosition =
-                Eigen::Vector4f( ro.LocalPosition.x(), ro.LocalPosition.y(),
-                                 ro.LocalPosition.z(), 1.0f );
-            wheel.ProjectedPositionOnGround =
-                Eigen::Vector4f( ro.ContactPoint.x() - streamShift.x(),
-                                 ro.ContactPoint.y() - streamShift.y(),
-                                 ro.ContactPoint.z() - streamShift.z(), 1.0f );
-
-            // FUN_0083bbd0
-            switch ( ro.ContactSurface ) {
-            case TDUSurface::Road:
-                wheel.ContactMaterial = eMaterialType::MT_Asphalt;
-                wheel.bOnRoad = true;
-                break;
-            case TDUSurface::Object:
-                wheel.ContactMaterial = eMaterialType::MT_Concrete;
-                wheel.bOnRoad = true;
-                break;
-            case TDUSurface::Terrain:
-            default:
-                wheel.ContactMaterial = ( gbGrassAsTarmac )
-                                            ? eMaterialType::MT_Asphalt
-                                            : eMaterialType::MT_Grass;
-                wheel.bOnRoad = false;
-                break;
-            }
-            if ( ro.bGrounded ) {
-                numGrounded++;
-            }
-        }
-        body.NumWheelsGrounded = numGrounded;
     }
 
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {

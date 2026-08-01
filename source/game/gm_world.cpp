@@ -363,10 +363,12 @@ void GameModeWorld::teleportLocalPlayerCar( const Eigen::Vector3f &worldPos ) {
     }
 
     // Keep the car's current orientation; only relocate its origin.
-    Matrix4x4f_t pose = ( pPlayerPhysicsVehicle != nullptr &&
-                          pPlayerPhysicsVehicle->isActive() )
-                            ? pPlayerPhysicsVehicle->getChassisWorldMatrix()
-                            : pCar->getBody()->WorldMatrix;
+    Matrix4x4f_t pose = pCar->getBody()->WorldMatrix;
+    if ( pPlayerPhysicsVehicle != nullptr &&
+         pPlayerPhysicsVehicle->isActive() ) {
+        PhysicsLock physLock;
+        pose = pPlayerPhysicsVehicle->getChassisWorldMatrix();
+    }
     pose( 3, 0 ) = worldPos.x();
     pose( 3, 1 ) = worldPos.y();
     pose( 3, 2 ) = worldPos.z();
@@ -476,8 +478,12 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         arbitrateAutomaticGearbox( deltaTime, throttle, brake, simThrottle,
                                    simBrake );
     }
-    pPlayerPhysicsVehicle->setInput( simThrottle, simBrake, steer );
-    pPlayerPhysicsVehicle->setAutoReverseState( autoGearboxState );
+
+    {
+        PhysicsLock physLock;
+        pPlayerPhysicsVehicle->setInput( simThrottle, simBrake, steer );
+        pPlayerPhysicsVehicle->setAutoReverseState( autoGearboxState );
+    }
 
     if ( pCfg != nullptr ) {
         pBody->bHeadlightsOn =
@@ -702,6 +708,7 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
             Matrix4x4f_t cur = Matrix4x4f_t::Identity();
             if ( pPlayerPhysicsVehicle != nullptr &&
                  pPlayerPhysicsVehicle->isActive() ) {
+                PhysicsLock physLock;
                 cur = pPlayerPhysicsVehicle->getChassisWorldMatrix();
             } else if ( pCar != nullptr ) {
                 cur = pCar->getBody()->WorldMatrix;

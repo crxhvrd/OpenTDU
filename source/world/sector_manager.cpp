@@ -1036,12 +1036,12 @@ void SectorBank::instanciate() {
             if ( pSHK != nullptr ) {
                 // .shk = world objects (buildings/walls/posts).
                 gpPhysics->addSectorCollision( pOwner, pSHK, shkSize, areaX,
-                                               areaZ, TDUSurface::Object );
+                                               areaZ, /*bRoadBlob*/ false );
             }
             // -R.shk = road collision
             if ( pRoadSHK != nullptr ) {
                 gpPhysics->addSectorCollision( pOwner, pRoadSHK, roadSize,
-                                               areaX, areaZ, TDUSurface::Road );
+                                               areaX, areaZ, /*bRoadBlob*/ true );
             }
 
             // .rd (5,5) = SR20 road-corridor physics ground.

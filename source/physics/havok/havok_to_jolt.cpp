@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "havok_to_jolt.h"
 #include "havok_packfile.h"
+#include "physics/physics_material.h"
 
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
@@ -187,6 +188,8 @@ namespace {
 
         JPH::VertexList vertices;
         JPH::IndexedTriangleList triangles;
+        JPH::PhysicsMaterialList materials;
+        std::vector<uint32_t> materialCodes;
 
         for ( int32_t s = 0; s < numStorage; s++ ) {
             const int32_t storObj =
@@ -195,6 +198,50 @@ namespace {
                 continue;
             }
             const uint8_t *pStor = pData + storObj;
+            const int32_t matIdxPtr = pf.resolvePointer( storObj + 0x24 );
+            const int32_t numMatIdx =
+                *reinterpret_cast<const int32_t *>( pStor + 0x28 );
+            const int32_t matPtr = pf.resolvePointer( storObj + 0x30 );
+            const int32_t numMat =
+                *reinterpret_cast<const int32_t *>( pStor + 0x34 );
+            std::vector<uint32_t> localSlots;
+            if ( matPtr >= 0 && numMat > 0 && numMat < 256 &&
+                 static_cast<uint64_t>( matPtr ) + numMat * 4u <= dataSize ) {
+                const uint32_t *pMatVals =
+                    reinterpret_cast<const uint32_t *>( pData + matPtr );
+                for ( int32_t m = 0; m < numMat; m++ ) {
+                    const uint32_t code =
+                        TDUMaterialValue::decode( pMatVals[m] );
+                    uint32_t slot = 0;
+                    bool bFound = false;
+                    for ( ; slot < materialCodes.size(); slot++ ) {
+                        if ( materialCodes[slot] == code ) {
+                            bFound = true;
+                            break;
+                        }
+                    }
+                    if ( !bFound ) {
+                        materialCodes.push_back( code );
+                        materials.push_back( TDUPhysicsMaterials::get( code ) );
+                    }
+                    localSlots.push_back( slot );
+                }
+            }
+            const uint8_t *pMatIdx =
+                ( matIdxPtr >= 0 && numMatIdx > 0 &&
+                  static_cast<uint64_t>( matIdxPtr ) + numMatIdx <= dataSize )
+                    ? pData + matIdxPtr
+                    : nullptr;
+            const int32_t numMatIdxSafe =
+                ( pMatIdx != nullptr ) ? numMatIdx : 0;
+            int32_t triInStorage = 0;
+            auto materialSlot = [&]() -> uint32_t {
+                if ( pMatIdx == nullptr || triInStorage >= numMatIdxSafe ) {
+                    return 0;
+                }
+                const uint32_t local = pMatIdx[triInStorage];
+                return ( local < localSlots.size() ) ? localSlots[local] : 0;
+            };
             const int32_t vertsPtr = pf.resolvePointer( storObj + 0x00 );
             const int32_t numFloats =
                 *reinterpret_cast<const int32_t *>( pStor + 0x04 );
@@ -230,8 +277,9 @@ namespace {
                          i2 < static_cast<uint32_t>( numVerts ) ) {
                         triangles.push_back( JPH::IndexedTriangle(
                             baseVertex + i0, baseVertex + i1, baseVertex + i2,
-                            0 ) );
+                            materialSlot() ) );
                     }
+                    triInStorage++;
                 }
             };
             if ( idx16Ptr >= 0 && numIdx16 >= 3 &&
@@ -253,7 +301,8 @@ namespace {
             return JPH::ShapeRefC();
         }
         JPH::MeshShapeSettings settings( std::move( vertices ),
-                                         std::move( triangles ) );
+                                         std::move( triangles ),
+                                         std::move( materials ) );
         JPH::ShapeSettings::ShapeResult result = settings.Create();
         return result.IsValid() ? result.Get() : JPH::ShapeRefC();
     }
@@ -477,8 +526,8 @@ JPH::ShapeRefC HavokToJolt::buildScaledShape( const RigidBody &body,
         scaled = makeSphere( body.Scalable.Radius * scale.GetX() );
         break;
     case ScalablePrimitive::Box:
-        scaled = makeBox( body.Scalable.HalfExtents * scale,
-                          body.Scalable.Radius );
+        scaled =
+            makeBox( body.Scalable.HalfExtents * scale, body.Scalable.Radius );
         break;
     case ScalablePrimitive::Capsule:
         scaled = makeCapsule( body.Scalable.VertexA * scale,
@@ -713,8 +762,8 @@ void HavokToJolt::buildBodies( const HavokPackfile &pf,
                 const float invMass = *reinterpret_cast<const float *>(
                     pData + motionOffset + 0xc0 );
                 if ( invMass > 1.0e-6f ) {
-                    body.Mass = std::min(
-                        std::max( 1.0f / invMass, 0.1f ), 1.0e5f );
+                    body.Mass =
+                        std::min( std::max( 1.0f / invMass, 0.1f ), 1.0e5f );
                 }
             }
         }
@@ -755,10 +804,10 @@ void HavokToJolt::buildConstraints( const HavokPackfile &pf,
         }
 
         // hkConstraintInstance: constraintData@+0x0c, bodyA@+0x10, bodyB@+0x14.
-        const int32_t bodyAOffset = pf.resolvePointer(
-            static_cast<uint32_t>( instOffset ) + 0x10 );
-        const int32_t bodyBOffset = pf.resolvePointer(
-            static_cast<uint32_t>( instOffset ) + 0x14 );
+        const int32_t bodyAOffset =
+            pf.resolvePointer( static_cast<uint32_t>( instOffset ) + 0x10 );
+        const int32_t bodyBOffset =
+            pf.resolvePointer( static_cast<uint32_t>( instOffset ) + 0x14 );
         if ( bodyAOffset < 0 || bodyBOffset < 0 ) {
             continue;
         }
@@ -775,8 +824,8 @@ void HavokToJolt::buildConstraints( const HavokPackfile &pf,
         // breaks when the solver impulse exceeds m_threshold (constraintData+
         // 0x14). Non-breakable data (hkGenericConstraintData/hkRagdoll...) is a
         // permanent fixed joint here.
-        const int32_t dataOffset = pf.resolvePointer(
-            static_cast<uint32_t>( instOffset ) + 0x0c );
+        const int32_t dataOffset =
+            pf.resolvePointer( static_cast<uint32_t>( instOffset ) + 0x0c );
         if ( dataOffset >= 0 ) {
             const char *pClass =
                 pf.getClassName( static_cast<uint32_t>( dataOffset ) );
