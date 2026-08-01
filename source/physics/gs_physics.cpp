@@ -3,7 +3,6 @@
 
 #include "config/gs_config.h"
 #include "vehicle/physics_vehicle.h"
-#include "physics_config.h"
 #include "world_collisions.h"
 #include "physics_layers.h"
 #include "havok/havok_container.h"
@@ -13,13 +12,8 @@
 
 #include "render/draw_list.h"
 #include "render/gs_render.h"
-#include "render/file_collection_3d.h"
-#include "render/instance.h"
-#include "render/3dd.h"
-#include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/streaming_manager.h"
-#include "world/world_level.h"
 
 #include "imgui.h"
 
@@ -69,7 +63,10 @@ int32_t INT_00f87ff4 = 0x500000; // DAT_00f87ff4
 int32_t INT_00f87ff8 = 0x1;      // INT_00f87ff8
 bool BOOL_010e7644 = false;      // DAT_010e7644
 
-static float gPhysicsRefreshRate = 0.0f; // DAT_0168d6b4
+static float gPhysicsRefreshRate = 0.0f;                   // DAT_0168d6b4
+static float gPhysicsStepPeriod = 0.0f;                    // DAT_0168d6b8
+static bool gbPhysicsUseMeasuredDelta = true;              // DAT_00f8a2e8
+static std::atomic<bool> gbPhysicsTickInProgress{ false }; // DAT_010e7a58+0x1b0
 
 static int32_t DAT_010e7668 = 0; // DAT_010e7668
 
@@ -95,9 +92,6 @@ static constexpr float kPhysicsMaxDt =
 // Fixed-step cap in GSPhysics::Tick's no-physics-thread path.
 static constexpr int32_t kMaxPhysicsSubSteps = 5;
 
-// Carry-over for the fixed physics step (see GSPhysics::tick).
-static float physicsStepAccumulator = 0.0f;
-
 constexpr uint32_t kSR20Magic = 0x30325253; // "SR20"
 constexpr uint32_t kER20Magic = 0x30325245; // "ER20"
 constexpr int32_t kLongSteps = 10; // Bezier longitudinal divisions/record
@@ -116,27 +110,74 @@ static void FUN_006072c0() {
     OTDU_UNIMPLEMENTED;
 }
 
+using PhysicsClock_t = std::chrono::steady_clock;
+
+// Replaces raw QueryPerformanceCounter calls from the original pcode
+static PhysicsClock_t::time_point gPhysicsLastStepTime = {};
+static bool gbPhysicsLastStepTimeValid = false;
+
+void FUN_0081ee50( GSPhysics *pPhysics ) {
+    // FUN_0081ee50
+    if ( gbPhysicsTickInProgress.exchange( true ) ) {
+        return;
+    }
+
+    const PhysicsClock_t::time_point now = PhysicsClock_t::now();
+    if ( !gbPhysicsLastStepTimeValid ) {
+        gPhysicsLastStepTime = now;
+        gbPhysicsLastStepTimeValid = true;
+    }
+
+    const float elapsed =
+        std::chrono::duration<float>( now - gPhysicsLastStepTime ).count();
+
+    if ( gPhysicsStepPeriod * 0.5f <= elapsed ) {
+        gPhysicsLastStepTime = now;
+
+        if ( !pPhysics->bFreezeSimulation ) {
+            float stepDelta = 0.0f;
+            if ( !pPhysics->bPausePhysicsThread && !pPhysics->bPauseJoltTick ) {
+                stepDelta =
+                    gbPhysicsUseMeasuredDelta ? elapsed : gPhysicsStepPeriod;
+            }
+
+            pPhysics->physicsStep( stepDelta, 0.0f );
+        }
+    }
+
+    gbPhysicsTickInProgress = false;
+}
+
 void *FUN_0081f0b0( void *pArg ) {
     // FUN_0081f0b0
-    // Original: sets up a Windows multimedia timer at gPhysicsThreadFrequency
-    // Hz calling FUN_0081ee50 (the physics tick), then loops sleeping/checking
-    // for the shutdown signal in field27335_0x8670. Cross-platform replacement:
-    // handle the shutdown lifecycle only.
-    // TODO: implement the actual physics step tick (FUN_0081ee50 equivalent).
     GSPhysics *pPhysics = reinterpret_cast<GSPhysics *>( pArg );
 
-    gPhysicsRefreshRate = static_cast<float>( gPhysicsThreadFrequency );
+    gPhysicsRefreshRate = 1.0f / static_cast<float>( gPhysicsThreadFrequency );
+    gPhysicsStepPeriod = 1.0f / static_cast<float>( gPhysicsThreadFrequency );
 
-    OTDU_UNIMPLEMENTED;
+    gbPhysicsTickInProgress = false;
+    gbPhysicsLastStepTimeValid = false;
 
+    const auto period = std::chrono::duration_cast<PhysicsClock_t::duration>(
+        std::chrono::duration<float>( gPhysicsStepPeriod ) );
+
+    PhysicsClock_t::time_point nextWake = PhysicsClock_t::now() + period;
     while ( true ) {
-        std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
-        if ( pPhysics->field27335_0x8670 == (void *)1 ) {
-            // Acknowledge the shutdown handshake and leave the loop so the
-            // thread actually returns; terminate() then joins it cleanly.
+        std::this_thread::sleep_until( nextWake );
+        nextWake += period;
+
+        const PhysicsClock_t::time_point now = PhysicsClock_t::now();
+        if ( nextWake < now ) {
+            nextWake = now + period;
+        }
+
+        if ( pPhysics->field27335_0x8670 == (void *)1 ||
+             pPhysics->simulationThread.isStopRequested() ) {
             pPhysics->field27335_0x8670 = (void *)2;
             break;
         }
+
+        FUN_0081ee50( pPhysics );
     }
 
     return nullptr;
@@ -437,13 +478,7 @@ bool GSPhysics::initialize( TestDriveGameInstance *param_2 ) {
         simulationThread.initialize(
             (TestDriveThread::StartRoutine_t)&FUN_0081f0b0, this, 0x40000, 0 );
 
-        eThreadPriority threadPriority = TP_Low;
-        if ( gPhysicsThreadPriority == PTM_Realtime ) {
-            threadPriority = TP_Critical;
-        } else {
-            threadPriority = TP_Low;
-        }
-        simulationThread.setPriority( threadPriority );
+        simulationThread.setPriority( TP_Critical );
         FUN_006072c0();
     }
 
@@ -486,6 +521,14 @@ void GSPhysics::terminate() {
     // FUN_00846cf0
     bFreezeSimulation = true;
     bPauseJoltTick = true;
+
+    if ( gPhysicsThreadPriority != PTM_Off && simulationThread.isValid() ) {
+        field27335_0x8670 = (void *)1;
+        while ( field27335_0x8670 != (void *)2 ) {
+            std::this_thread::yield();
+        }
+        simulationThread.terminate();
+    }
 
     if ( pCollisionDebugList != nullptr ) {
         pCollisionDebugList->destroy();
@@ -547,14 +590,6 @@ void GSPhysics::terminate() {
         pPhysicsVehiclesEnd = nullptr;
     }
     numPhysicsVehicle = 0;
-
-    // Signal physics thread to stop, then wait for acknowledgement and join
-    if ( gPhysicsThreadPriority != PTM_Off && simulationThread.isValid() ) {
-        field27335_0x8670 = (void *)1;
-        while ( field27335_0x8670 != (void *)2 ) {
-        }
-        simulationThread.terminate();
-    }
 
     // Remove and destroy Jolt bodies before tearing down the physics system
     if ( pPhysicsSystem != nullptr ) {
@@ -620,30 +655,25 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
     // the delta argument, not the accumulated total.
     bPauseJoltTick = ( deltaTime == 0.0f );
 
-    // Build any prop-collision factory queued before Jolt was ready.
-    buildProcessPendingProps();
-
     // Sub-stepped physics — only when no dedicated physics thread is running.
     // With PTM_Normal / PTM_Realtime the dedicated thread drives physicsStep.
     if ( gPhysicsThreadPriority == PTM_Off && gPhysicsThreadFrequency > 0 ) {
         const float stepDt =
             1.0f / static_cast<float>( gPhysicsThreadFrequency );
 
-        physicsStepAccumulator += deltaTime;
-
-        int32_t numSteps =
-            static_cast<int32_t>( physicsStepAccumulator / stepDt );
-        if ( numSteps > kMaxPhysicsSubSteps ) {
+        int32_t numSteps = static_cast<int32_t>( deltaTime / stepDt );
+        if ( numSteps >= kMaxPhysicsSubSteps + 1 ) {
             numSteps = kMaxPhysicsSubSteps;
-            physicsStepAccumulator = 0.0f;
-        } else {
-            physicsStepAccumulator -= static_cast<float>( numSteps ) * stepDt;
         }
 
-        float accTime = totalTime;
-        for ( int32_t i = 0; i < numSteps; i++ ) {
-            physicsStep( stepDt, accTime );
-            accTime += stepDt;
+        if ( numSteps == 0 ) {
+            physicsStep( deltaTime, totalTime );
+        } else if ( numSteps > 0 ) {
+            float accTime = totalTime;
+            for ( int32_t i = 0; i < numSteps; i++ ) {
+                physicsStep( stepDt, accTime );
+                accTime += stepDt;
+            }
         }
     }
 
@@ -889,6 +919,8 @@ void GSPhysics::FUN_00843b40() {
 
 PhysFactory *GSPhysics::createFromBinary( void *param_3, int32_t param_2 ) {
     // FUN_008450b0 / FUN_00845240
+    PhysicsLock lock;
+
     HavokContainer container;
     if ( !container.parse( param_3, static_cast<uint32_t>( param_2 ) ) ) {
         OTDU_LOG_WARN( "Failed to parse physics container blob\n" );
@@ -967,61 +999,6 @@ PhysFactory *GSPhysics::createFromBinary( void *param_3, int32_t param_2 ) {
     OTDU_LOG_INFO( "Registered physics factory: %d collision bodies\n",
                    static_cast<int>( pData->Bodies.size() ) );
     return pFactory;
-}
-
-void GSPhysics::instantiateFactory( PhysFactory *pFactory,
-                                    const Matrix4x4f_t &worldTransform ) {
-    if ( pFactory == nullptr || pPhysicsSystem == nullptr ) {
-        return;
-    }
-    HavokFactoryData *pData = pFactory->getHavokData();
-    if ( pData == nullptr ) {
-        return;
-    }
-
-    // Matrix4x4f_t is row-major with the translation in row 3; Jolt's Mat44 is
-    // column-major, so each Jolt column is the matching source row.
-    JPH::Mat44 world = JPH::Mat44::sIdentity();
-    for ( int32_t c = 0; c < 4; c++ ) {
-        world.SetColumn3( c, JPH::Vec3( worldTransform( c, 0 ),
-                                        worldTransform( c, 1 ),
-                                        worldTransform( c, 2 ) ) );
-    }
-
-    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
-    const size_t firstNewBody = pData->LiveBodyIDs.size();
-    lockMutex();
-    for ( const HavokToJolt::RigidBody &body : pData->Bodies ) {
-        const JPH::Mat44 local =
-            JPH::Mat44::sRotationTranslation( body.Rotation, body.Position );
-        const JPH::Mat44 placed = world * local;
-        const JPH::Vec3 position = placed.GetTranslation();
-        const JPH::Quat rotation = placed.GetQuaternion().Normalized();
-
-        // TODO: PHYSICS — the vehicle's rigid bodies are ultimately dynamic and
-        // driven by a (not-yet-ported) vehicle controller + suspension
-        // constraints. Until that exists, instantiate them as static collision
-        // hulls so the car has stable, collidable geometry instead of loose
-        // boxes falling under gravity.
-        JPH::BodyCreationSettings settings( body.Shape, JPH::RVec3( position ),
-                                            rotation, JPH::EMotionType::Static,
-                                            TDUPhysLayers::NON_MOVING );
-
-        JPH::Body *pBody = bodyInterface.CreateBody( settings );
-        if ( pBody != nullptr ) {
-            bodyInterface.AddBody( pBody->GetID(),
-                                   JPH::EActivation::DontActivate );
-            pData->LiveBodyIDs.push_back(
-                pBody->GetID().GetIndexAndSequenceNumber() );
-        }
-    }
-    unlockMutex();
-
-    const JPH::Vec3 origin = world.GetTranslation();
-    OTDU_LOG_DEBUG(
-        "Instantiated %d collision bodies at (%.2f, %.2f, %.2f)\n",
-        static_cast<int>( pData->LiveBodyIDs.size() - firstNewBody ),
-        origin.GetX(), origin.GetY(), origin.GetZ() );
 }
 
 PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
@@ -1385,12 +1362,14 @@ RigidBody_t GSPhysics::createSphere( uint32_t collisionGroup,
     JPH::EActivation activation = registerNow ? JPH::EActivation::Activate
                                               : JPH::EActivation::DontActivate;
 
+    lockMutex();
     JPH::Body *pBody =
         pPhysicsSystem->GetBodyInterface().CreateBody( settings );
     if ( pBody != nullptr ) {
         pPhysicsSystem->GetBodyInterface().AddBody( pBody->GetID(),
                                                     activation );
     }
+    unlockMutex();
 
     return pBody;
 }
@@ -1401,6 +1380,8 @@ void GSPhysics::destroyRigidBody( RigidBody_t pRigidBody ) {
     // to adopt any physics engine in the future.
     if ( pRigidBody == nullptr || pPhysicsSystem == nullptr )
         return;
+
+    PhysicsLock lock;
 
     // A prop member may be jointed to its siblings; drop those joints first so
     // Jolt never references a destroyed body.
@@ -2050,6 +2031,8 @@ void GSPhysics::queuePropCollisionFactory( const void *pBlob,
     // Copy the blob — the scenaric bank buffer that owns it may not stay valid,
     // and the build is deferred until Jolt is ready (see
     // buildProcessPendingProps).
+    PhysicsLock lock;
+
     if ( pBlob == nullptr || blobSize == 0 || !pendingPropBlob.empty() ||
          pPropFactory != nullptr ) {
         return;
@@ -2071,6 +2054,8 @@ void GSPhysics::placeSceneryInstance( const void *pSectorKey,
                                       const Eigen::Vector3f &objectOrigin,
                                       const Eigen::Vector3f &instanceScale ) {
     // FUN_00847d20
+    PhysicsLock lock;
+
     static constexpr size_t kMaxSceneryBodies = 20000;
     if ( hashcode == 0 || sceneryInstanceBodies.size() >= kMaxSceneryBodies ) {
         return;
@@ -2107,6 +2092,9 @@ void GSPhysics::removeSceneryInstances( const void *pSectorKey ) {
     if ( pSectorKey == nullptr || pPhysicsSystem == nullptr ) {
         return;
     }
+
+    PhysicsLock lock;
+
     for ( auto it = sceneryInstanceBodies.begin();
           it != sceneryInstanceBodies.end(); ) {
         if ( it->first == pSectorKey ) {
@@ -2129,6 +2117,8 @@ void GSPhysics::removeSceneryInstances( const void *pSectorKey ) {
 
 void GSPhysics::queueSceneryCollisionFactory( const void *pBlob,
                                               uint32_t blobSize ) {
+    PhysicsLock lock;
+
     if ( pBlob == nullptr || blobSize == 0 || !pendingSceneryBlob.empty() ||
          pSceneryFactory != nullptr ) {
         return;
@@ -2160,74 +2150,6 @@ bool GSPhysics::isPropCollisionType( uint64_t hashcode ) const {
     return false;
 }
 
-void GSPhysics::installSceneryCollision() {
-    // FUN_008480d0
-    if ( pPropFactory == nullptr || pPhysicsSystem == nullptr ||
-         gpWorld == nullptr || gpWorld->getStreamingManager() == nullptr ) {
-        return;
-    }
-    HavokFactoryData *pData = pPropFactory->getHavokData();
-    if ( pData == nullptr ) {
-        return;
-    }
-    FileCollection3D &collection =
-        gpWorld->getStreamingManager()->getLevel().getGlobalCollection();
-
-    Eigen::Vector4f shift = Eigen::Vector4f::Zero();
-    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
-        shift = gpWorldStreaming->getPosition();
-    }
-
-    int scanned = 0, matched = 0, placed = 0;
-    for ( const auto &mecha : pData->MechaMembers ) {
-        const uint64_t mechaHash = mecha.first;
-        if ( mechaHash == 0 ) {
-            continue;
-        }
-        scanned++;
-        bool bAlready = false;
-        for ( const uint64_t h : sceneryPlacedHashes ) {
-            if ( h == mechaHash ) {
-                bAlready = true;
-                break;
-            }
-        }
-        if ( bAlready ) {
-            continue;
-        }
-
-        Render3DD *p3DD = nullptr;
-        RenderFile::Section *pSection =
-            collection.findInstance( mechaHash, &p3DD );
-        if ( pSection == nullptr ) {
-            continue;
-        }
-        matched++;
-        sceneryPlacedHashes.push_back( mechaHash );
-
-        const InstanceEntry *pEntry =
-            reinterpret_cast<const InstanceEntry *>( pSection + 1 );
-        Matrix4x4f_t world = pEntry->Matrix;
-        world( 3, 0 ) += shift.x();
-        world( 3, 1 ) += shift.y();
-        world( 3, 2 ) += shift.z();
-
-        std::vector<std::pair<uint64_t, RigidBody_t>> outBodies;
-        placeProp( mechaHash, world, /*bDynamic=*/false, 0.0f, 0.0f,
-                   outBodies );
-        for ( const auto &ob : outBodies ) {
-            sceneryCollisionBodies.push_back( ob.second );
-            placed++;
-        }
-    }
-
-    OTDU_UNIMPLEMENTED;
-
-    (void)scanned;
-    (void)matched;
-    (void)placed;
-}
-
 void GSPhysics::buildProcessPendingProps() {
     if ( pendingPropBlob.empty() || !bJoltInit || pPropFactory != nullptr ) {
         return;
@@ -2241,8 +2163,6 @@ void GSPhysics::buildProcessPendingProps() {
         OTDU_LOG_WARN( "Prop collision: factory parse failed\n" );
         return;
     }
-
-    installSceneryCollision();
 
     // Build the full CommonWorld scenery library.
     if ( pSceneryFactory == nullptr && !pendingSceneryBlob.empty() ) {
@@ -2583,7 +2503,8 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
     // Apply global time-scale for slow-motion / replay speed control.
     dt *= gPhysicsTimeScale;
 
-    // Pre-step world preparation (FUN_0084b3d0 — UNIMPLEMENTED).
+    buildProcessPendingProps();
+
     if ( pPhysicsSystem != nullptr && !bPauseJoltTick && !bFreezeSimulation &&
          dt > 0.0f ) {
         // Original: hkpWorld::stepDelta (Havok) — Jolt equivalent.

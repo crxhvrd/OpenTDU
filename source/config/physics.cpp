@@ -46,7 +46,7 @@ void GSConfig::registerPhysicsCommands() {
         std::string argStr( pArg );
         size_t it = 0ull;
 
-        std::string priority = ParseString( argStr, it );
+        std::string priority = ParseStringNoQuotes( argStr, it );
         int32_t frequency = ParseInteger( argStr, it );
 
         int32_t iVar1 = StringCmpI( priority.c_str(), "OFF" );

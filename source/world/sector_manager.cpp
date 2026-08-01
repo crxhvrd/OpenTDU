@@ -1052,7 +1052,6 @@ void SectorBank::instanciate() {
                 gpPhysics->addSectorRoadGround( pOwner, pRD, rdSize );
             }
 
-            gpPhysics->installSceneryCollision();
         }
     }
 

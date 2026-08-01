@@ -124,7 +124,7 @@ namespace HavokToJolt {
 
 // The payload a PhysFactory owns: the reconstructed collision bodies (a
 // per-vehicle-type template) plus the live Jolt body IDs created when an
-// instance is placed in the world (GSPhysics::instantiateFactory).
+// instance is placed in the world (GSPhysics::createVehicle / placeProp).
 struct HavokFactoryData {
     std::vector<HavokToJolt::RigidBody> Bodies;
     std::vector<uint32_t> LiveBodyIDs;

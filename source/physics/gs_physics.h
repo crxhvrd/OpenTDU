@@ -101,6 +101,7 @@ public:
     }
 
     friend void *FUN_0081f0b0( void *pArg );
+    friend void FUN_0081ee50( GSPhysics *pPhysics );
     inline void setDebugModeEnabled( bool bState ) {
         bHavokDebugEnabled = bState;
     }
@@ -164,7 +165,6 @@ public:
         const Eigen::Vector3f &instanceScale = Eigen::Vector3f::Ones() );
     void removeSceneryInstances( const void *pSectorKey );
 
-    void installSceneryCollision();
     bool isPropCollisionType( uint64_t hashcode ) const;
 
     void
@@ -184,9 +184,6 @@ public:
 
     bool
     getBodyPose( RigidBody_t body, Matrix4x4f_t &outMatrix, bool &outActive );
-
-    void instantiateFactory( PhysFactory *pFactory,
-                             const Matrix4x4f_t &worldTransform );
 
     PhysicsVehicle *createVehicle( PhysFactory *pFactory,
                                    const Matrix4x4f_t &worldTransform,
@@ -279,6 +276,7 @@ private:
     uint8_t bJoltInit : 1;
     uint8_t bFreezeSimulation : 1;
     uint8_t bPauseJoltTick : 1;
+    uint8_t bPausePhysicsThread : 1;
     uint8_t bHeightfieldInit : 1;
     uint8_t bSectorsInit : 1;
     uint8_t bHavokDebugEnabled : 1;
@@ -312,9 +310,6 @@ private:
 #if OTDU_DEVBUILD
     DrawList *pCollisionDebugList = nullptr;
 #endif
-
-    std::vector<RigidBody_t> sceneryCollisionBodies;
-    std::vector<uint64_t> sceneryPlacedHashes;
 
     std::vector<std::pair<const void *, RigidBody_t>> sceneryInstanceBodies;
     std::vector<PendingSceneryInstance> pendingSceneryInstances;
