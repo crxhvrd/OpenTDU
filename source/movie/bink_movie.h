@@ -4,6 +4,8 @@
 #include "BinkDecoder.h"
 #endif
 
+#include "bink_audio_stream.h"
+
 enum eMoviePlaybackState : uint32_t {
     MPS_Unknown = 0,
     MPS_Paused = 1,
@@ -58,6 +60,7 @@ private:
     float currentTime;
 
     float framerate;
+    BinkMovieAudio audio;
 
 private:
     eMoviePlaybackState getNextFrame( eMoviePlaybackState param_2 );

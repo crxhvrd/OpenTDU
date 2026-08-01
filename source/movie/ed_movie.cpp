@@ -1,6 +1,9 @@
 #include "shared.h"
 #include "ed_movie.h"
 
+#include "audio/gs_audio.h"
+#include "audio/implementation/ed_audio.h"
+#include "audio/implementation/ed_audio_object.h"
 #include "bink_movie.h"
 
 edMovie gEdMovie = {}; // DAT_00f5b4b0
@@ -21,11 +24,6 @@ edMovie::~edMovie() {}
 
 int32_t edMovie::initialize() {
     // FUN_006755a0
-#if 0 // TODO: BINK Support
-    int32_t iVar1 = _BinkSetSoundSystem@8(_BinkOpenWaveOut@4_exref,0);
-    _BinkGetError@0();
-#endif
-
     int32_t iVar1 = 1;
     if ( iVar1 != 0 && bEnabled == false ) {
         bEnabled = true;
@@ -39,6 +37,36 @@ void edMovie::destroy() {
     if ( bEnabled ) {
         bEnabled = false;
     }
+
+    audioPipeline.destroy();
+}
+
+bool edMovie::attachAudioVoice( edAudioStreamEntry *pVoice ) {
+    if ( pVoice == nullptr ) {
+        return false;
+    }
+
+    if ( gpAudio == nullptr || gEdAudio.getOutputModule() == nullptr ) {
+        OTDU_LOG_WARN( "No audio output, movies stay silent\n" );
+        return false;
+    }
+
+    if ( audioPipeline.getBuffer() == nullptr &&
+         !audioPipeline.create( gEdAudio.getOutputModule() ) ) {
+        return false;
+    }
+
+    audioPipeline.getBuffer()->addNewEntry( pVoice );
+
+    return true;
+}
+
+void edMovie::detachAudioVoice( edAudioStreamEntry *pVoice ) {
+    if ( pVoice == nullptr || audioPipeline.getBuffer() == nullptr ) {
+        return;
+    }
+
+    audioPipeline.getBuffer()->unlinkEntry( pVoice );
 }
 
 BinkFramePointer *edMovie::openBik( const char *param_2 ) {
@@ -48,7 +76,8 @@ BinkFramePointer *edMovie::openBik( const char *param_2 ) {
 
     if ( pBVar2->getState() == MPS_Unknown ) {
         pBVar2->destroy();
-        delete pBVar2;
+        pBVar2->~BinkMovie();
+        TestDrive::Free( pBVar2 );
     } else {
         BinkMovieNode *pBVar3 =
             new ( TestDrive::Alloc( sizeof( BinkMovieNode ) ) ) BinkMovieNode();
@@ -69,24 +98,26 @@ BinkFramePointer *edMovie::openBik( const char *param_2 ) {
 
 void edMovie::stepBikPlayback() {
     // FUN_006755f0
-    BinkMovieNode *pBVar1 = pActiveMovie;
-    BinkMovieNode *pBVar2 = pBVar1;
-    BinkMovieNode *pBVar3 = pActiveMovieIt;
-    while ( pBVar2 != nullptr ) {
-        pBVar1 = pBVar2;
-        pBVar1->pContent->update();
-        if ( pBVar1->pContent->getState() == eMoviePlaybackState::MPS_Done ) {
-            pBVar3->pNextFrame = pBVar2->pNextFrame;
-            pBVar1->pContent->destroy();
+    BinkMovieNode **ppPreviousLink = &pActiveMovie;
+    BinkMovieNode *pNode = pActiveMovie;
 
-            TestDrive::Free( pBVar1 );
-            pBVar1 = pBVar2->pNextFrame;
-            TestDrive::Free( pBVar2 );
+    while ( pNode != nullptr ) {
+        BinkMovie *pContent = pNode->pContent;
+        pContent->update();
+
+        if ( pContent->getState() == eMoviePlaybackState::MPS_Done ) {
+            *ppPreviousLink = pNode->pNextFrame;
+
+            pContent->destroy();
+            pContent->~BinkMovie();
+            TestDrive::Free( pContent );
+
+            BinkMovieNode *pNextNode = pNode->pNextFrame;
+            TestDrive::Free( pNode );
+            pNode = pNextNode;
         } else {
-            pBVar1 = pBVar2->pNextFrame;
-            pBVar3 = pBVar2;
+            ppPreviousLink = &pNode->pNextFrame;
+            pNode = pNode->pNextFrame;
         }
-
-        pBVar2 = pBVar1;
     }
 }

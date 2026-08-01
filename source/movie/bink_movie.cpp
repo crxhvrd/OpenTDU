@@ -54,6 +54,8 @@ bool BinkMovie::initialize( const char *param_2 ) {
 
         appFrameInfos = frameInfos;
 
+        audio.initialize( binkHandle, filename.c_str() );
+
         // NOTE: TDU1 checks if it needs to allocate buffers. Assume that we
         // always do to avoid unecessary changes (since the game always
         // allocates buffers/RTs at runtime...)
@@ -71,6 +73,8 @@ bool BinkMovie::initialize( const char *param_2 ) {
 
 void BinkMovie::destroy() {
     // FUN_00675b20
+    audio.destroy();
+
     if ( binkHandle.isValid ) {
         Bink_Close( binkHandle );
         binkHandle = { false, -1 };
@@ -93,6 +97,8 @@ void BinkMovie::play() {
     // FUN_006756b0
     nextState = MPS_Playing;
     // numFrames = 0;
+
+    audio.requestPlayback();
 }
 
 bool BinkMovie::isPlaying() const {
@@ -145,11 +151,14 @@ void BinkMovie::update() {
     }
 
     nextState = getNextFrame( currentState );
+
+    // Starts the voice once enough audio has been decoded to open on.
+    audio.tick();
 }
 
 void BinkMovie::markMovieAsDone() {
     // FUN_00675680
-    currentState = eMoviePlaybackState::MPS_Done;
+    nextState = eMoviePlaybackState::MPS_Done;
 }
 
 uint32_t BinkMovie::getLumaFrameWidth() const {
@@ -174,15 +183,20 @@ eMoviePlaybackState BinkMovie::getNextFrame( eMoviePlaybackState param_2 ) {
         int32_t nextFrameIndex = static_cast<int32_t>(
             ( gpTimer->SystemTotalTime - startTime ) * framerate );
         if ( nextFrameIndex >= numFrames ) {
+            audio.markFinished();
             return eMoviePlaybackState::MPS_Paused;
         }
 
         internalBufferIndex = ( ++internalBufferIndex % 2 );
         while ( frameIndex < nextFrameIndex ) {
             frameIndex = Bink_GetNextFrame( binkHandle, planes );
+            // Bink_GetNextFrame already decoded this frame's audio packet into
+            // the track buffer; copy it out before the next one overwrites it.
+            audio.pumpDecodedFrame( binkHandle );
         }
 
         if ( frameIndex == ( numFrames - 1 ) ) {
+            audio.markFinished();
             return eMoviePlaybackState::MPS_Paused;
         }
     }
