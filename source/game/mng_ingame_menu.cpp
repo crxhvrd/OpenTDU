@@ -9,14 +9,18 @@
 #include "config/gs_config.h"
 #include "input/input_device.h"
 #include "flash/gs_flash.h"
+#include "flash/mng_flash_localize.h"
 #include "flash/movie_player.h"
+#include "flash/entities/flash_entity.h"
 #include "flash/implementation/flash_player.h"
+#include "player_data/gs_playerdata.h"
 #include "game/cinematic/mng_cinematics.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
 #include "game/vehicle/car_state.h"
 #include "database/gs_database.h"
 #include "database/db_car_physics_data.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 MngInGameMenu *gpMngInGameMenu = nullptr; // DAT_010e803c
 
@@ -36,6 +40,25 @@ static constexpr InGameMenuEntry kInGameMenuNames[] = {
 };
 
 constexpr uint64_t kNoWindowsTypeHashcode = 0x4a1475b;
+
+// Localized name of each driving help level
+static constexpr uint64_t kDrivingHelpLevelHashcodes[] = {
+    0x03326ae2, 0x0341ad22, 0x0350ef62, 0x03b7ee92 }; // DAT_00f9c440
+constexpr int32_t kNumDrivingHelpLevels =
+    int32_t( sizeof( kDrivingHelpLevelHashcodes ) /
+             sizeof( kDrivingHelpLevelHashcodes[0] ) );
+
+constexpr float kMenuNavigationTimeout = 5.0f; // DAT_00f41750
+
+static eInGameMenu FindMenuByName( const char *pMenuName ) {
+    // FUN_006b66f0
+    for ( int32_t i = IGM_None; i <= IGM_Chrono; ++i ) {
+        if ( strcmp( pMenuName, kInGameMenuNames[i].pMenuName ) == 0 ) {
+            return eInGameMenu( i );
+        }
+    }
+    return IGM_None;
+}
 
 MngInGameMenu::MngInGameMenu() : Manager() {
     // FUN_006b6860
@@ -83,7 +106,111 @@ void MngInGameMenu::tick( float, float ) {
     }
 
     if ( OpenedMenu == IGM_Players || OpenedMenu == IGM_Chrono ) {
-        OTDU_UNIMPLEMENTED; // TODO: ONLINE/P2P + Players/Chrono page population
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P + Players/Chrono population
+    }
+}
+
+static PhysicsVehicle *GetLocalPlayerPhysVehicle() {
+    CarState *pCarState = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    return ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+}
+
+bool MngInGameMenu::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
+    // FUN_006b8750
+    if ( pPlayer == nullptr ) {
+        pPlayer = pFlashVariable;
+    }
+
+    switch ( *pMessage ) {
+    case FlashMessage( "igop" ): { // the open animation started
+        updateMenuTimeout();
+        StateMenu = IGMS_Opening;
+        OTDU_UNIMPLEMENTED; // TODO: FLASH
+        refreshDrivingHelpLabel();
+        return true;
+    }
+
+    case FlashMessage( "igme" ): { // the open animation is over
+        StateMenu = IGMS_Open;
+
+        char pMenuName[32] = {};
+        if ( pPlayer != nullptr ) {
+            pPlayer->getVariableAsString( "/:WhatMenu", pMenuName );
+        }
+        OpenedMenu = FindMenuByName( pMenuName );
+
+        updateMenuTimeout();
+        CurrentPlayer = -1;
+
+        if ( GetLocalPlayerPhysVehicle() != nullptr ) {
+            resetSpeedChrono( false );
+        }
+        return true;
+    }
+
+    case FlashMessage( "igcl" ): { // the close animation is over
+        OTDU_UNIMPLEMENTED;        // TODO: FLASH
+        OpenedMenu = IGM_None;
+        StateMenu = IGMS_Closed;
+
+        if ( GetLocalPlayerPhysVehicle() != nullptr ) {
+            resetSpeedChrono( false );
+        }
+
+        if ( bMustSaveOnClose ) {
+            bMustSaveOnClose = false;
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA (save on menu close)
+        }
+        return true;
+    }
+
+    case FlashMessage( "chro" ): { // the chrono page restarts the speed run
+        if ( GetLocalPlayerPhysVehicle() != nullptr ) {
+            resetSpeedChrono( true );
+            MaxSpeedImperial = -1.0f; // FLOAT_00f41664
+        }
+        return true;
+    }
+
+    case FlashMessage( "move" ): // navigating inside the already open page
+    case FlashMessage( "nepl" ):
+    case FlashMessage( "prpl" ): {
+        const float now =
+            ( gpTimer != nullptr ) ? gpTimer->SystemTotalTime : 0.0f;
+        MenuCloseTimeLeft = now + kMenuNavigationTimeout;
+        return true;
+    }
+
+    case FlashMessage( "nedm" ): // next driving-help level
+        changeDrivingMode( true, false );
+        return true;
+
+    case FlashMessage( "prdm" ): // previous driving-help level
+        changeDrivingMode( false, false );
+        return true;
+
+    case FlashMessage( "wind" ): // windows up/down from the radial menu
+        toggleWindows( false );
+        return true;
+
+    case FlashMessage( "mupl" ): // consumed without any action in the original
+    case FlashMessage( "vgcd" ):
+        return true;
+
+    case FlashMessage( "frre" ): // freeride player page / lock / isolate
+    case FlashMessage( "lopl" ):
+    case FlashMessage( "igpl" ):
+    case FlashMessage( "isse" ):
+    case FlashMessage( "nean" ):
+    case FlashMessage( "poan" ):
+    case FlashMessage( "quse" ):
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P
+        return true;
+
+    default:
+        return false;
     }
 }
 
@@ -160,7 +287,7 @@ void MngInGameMenu::updateInput() {
         changeMenu( IGM_Chrono );
     }
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: MAP (bMap / bMapZoom hotkeys)
 
     (void)bMapZoom;
     (void)bMap;
@@ -191,7 +318,7 @@ bool MngInGameMenu::canOpenMenu() {
         return false;
     }
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE;
 
     return bEnabled;
 }
@@ -240,6 +367,66 @@ void MngInGameMenu::toggleWindows( bool bPlayAnim ) {
             pPlayer->showFrame( "open", "HUD/menu_ig", true );
         }
     }
+}
+
+void MngInGameMenu::changeDrivingMode( bool bNext, bool bPlayAnim ) {
+    // FUN_006b7250
+    OTDU_UNIMPLEMENTED; // TODO: FLASH
+
+    if ( pFlashVariable != nullptr &&
+         pFlashVariable->spriteExists( "HUD/menu_ig" ) ) {
+        OpenedMenu = IGM_Driving;
+        pFlashVariable->setVariableValue(
+            "/:WhatMenu", kInGameMenuNames[IGM_Driving].pMenuName );
+        if ( bPlayAnim ) {
+            pFlashVariable->showFrame( "open", "HUD/menu_ig", true );
+            StateMenu = IGMS_Opening;
+        }
+    }
+
+    updateMenuTimeout();
+
+    if ( bPlayAnim ) {
+        return;
+    }
+
+    if ( gpPlayerData != nullptr ) {
+        int32_t level =
+            gpPlayerData->getDrivingHelpLevel() + ( bNext ? 1 : -1 );
+        if ( level >= kNumDrivingHelpLevels ) {
+            level = 0;
+        } else if ( level < 0 ) {
+            level = kNumDrivingHelpLevels - 1;
+        }
+        gpPlayerData->setDrivingHelpLevel( level );
+    }
+
+    refreshDrivingHelpLabel();
+
+    PhysicsVehicle *pVehicle = GetLocalPlayerPhysVehicle();
+    if ( pVehicle != nullptr && gpPlayerData != nullptr ) {
+        pVehicle->setDrivingHelpLevel( gpPlayerData->getDrivingHelpLevel() );
+    }
+
+    bMustSaveOnClose = true;
+}
+
+void MngInGameMenu::refreshDrivingHelpLabel() {
+    if ( gpMngFlashLocalize == nullptr || pFlashVariable == nullptr ||
+         gpPlayerData == nullptr ) {
+        return;
+    }
+
+    const int32_t level = Clamp( gpPlayerData->getDrivingHelpLevel(), 0,
+                                 kNumDrivingHelpLevels - 1 );
+    gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:DVLevel",
+                                         kDrivingHelpLevelHashcodes[level] );
+}
+
+void MngInGameMenu::resetSpeedChrono( bool bEnabled ) {
+    // FUN_00827ea0
+    (void)bEnabled;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (chronopack statistics block)
 }
 
 void MngInGameMenu::updateMenuTimeout() {

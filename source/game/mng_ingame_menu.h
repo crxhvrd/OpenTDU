@@ -6,6 +6,7 @@
 
 class FlashPlayer;
 class TestDriveGameInstance;
+struct FlashMessage;
 
 // State of the in-game menu open/close animation
 enum eInGameMenuState : int32_t {
@@ -37,6 +38,7 @@ public:
     void tick( float, float ) override;
     void reset() override;
     void pause() override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer = nullptr );
 
 private:
     FlashPlayer *pFlashVariable;
@@ -67,8 +69,11 @@ private:
     bool changeMenu( eInGameMenu menu );
     void close();
     void toggleWindows( bool bPlayAnim );
+    void changeDrivingMode( bool bNext, bool bPlayAnim );
     void updateMenuTimeout();
     void refreshHasWindows();
+    void refreshDrivingHelpLabel();
+    void resetSpeedChrono( bool bArm );
 };
 
 extern MngInGameMenu *gpMngInGameMenu;

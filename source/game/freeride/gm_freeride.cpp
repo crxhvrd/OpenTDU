@@ -71,6 +71,11 @@ bool GMFreeride::onMessage( FlashMessage *pMessage ) {
         return true;
     }
 
+    if ( gpMngInGameMenu != nullptr &&
+         gpMngInGameMenu->onMessage( pMessage ) ) {
+        return true;
+    }
+
     OTDU_UNIMPLEMENTED;
 
     return false;
