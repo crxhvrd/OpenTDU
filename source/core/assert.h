@@ -3,6 +3,8 @@
 #include "shared.h"
 #include "logger.h"
 
+#include <atomic>
+
 extern bool gDisableAssert;
 extern bool gBreakOnAssertFailure; // DAT_00f47931
 
@@ -32,8 +34,25 @@ extern bool gBreakOnAssertFailure; // DAT_00f47931
             OTDU_TRIGGER_BREAKPOINT;                                           \
         }                                                                      \
     }
+// Same as OTDU_ASSERT but only triggers once
+#define OTDU_ASSERT_ONCE( condition )                                          \
+    do {                                                                       \
+        static std::atomic_flag sAssertOnceReported = ATOMIC_FLAG_INIT;        \
+        if ( !gDisableAssert && !( condition ) &&                              \
+             !sAssertOnceReported.test_and_set(                                \
+                 std::memory_order_relaxed ) ) {                               \
+            OTDU_LOG_ERROR( "Assertion failure (only reported once): '%s'\n",  \
+                            #condition );                                      \
+            if ( gBreakOnAssertFailure ) {                                     \
+                OTDU_TRIGGER_BREAKPOINT;                                       \
+            }                                                                  \
+        }                                                                      \
+    } while ( false )
 #else
 #define OTDU_ASSERT( condition )
+#define OTDU_ASSERT_ONCE( condition )                                          \
+    do {                                                                       \
+    } while ( false )
 #endif
 
 #define OTDU_ASSERT_FATAL( condition )                                         \
