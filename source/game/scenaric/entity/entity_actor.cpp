@@ -2,12 +2,15 @@
 #include "entity_actor.h"
 
 #include "gs_timer.h"
+#include "core/maths_helper.h"
 #include "game/game_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
+#include "game/scenaric/entity/entity_avatar.h"
 #include "filesystem/binary.h"
 #include "render/instance.h"
 #include "render/hiearchy_node.h"
+#include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "physics/gs_physics.h"
 
@@ -46,6 +49,30 @@ static void SetIdentityBones( SerializedSkinnedModel &model ) {
     BindBones( model, GetIdentityBonePalette() );
 }
 
+static void MassInstanceBaseSetMatrix( MassInstanceImpostor &impostor,
+                                       Matrix4x4f_t &transformMatrix ) {
+    // FUN_00424400
+    Instance *pInstance = impostor.pInstance;
+    if ( pInstance == nullptr || pInstance->getNumLODs() == 0 ) {
+        return;
+    }
+
+    pInstance->setModelMatrix( transformMatrix );
+
+    Render3DDHashEntry *pHashcode = pInstance->getLOD( 0 ).pHashcode;
+    if ( pHashcode == nullptr ) {
+        return;
+    }
+    uint8_t *pEntry = (uint8_t *)pHashcode->pEntry;
+    if ( pEntry == nullptr ) {
+        return;
+    }
+
+    const RenderObject *pObject = (const RenderObject *)( pEntry + 0x10 );
+    impostor.SpherePos = Mat4x4fTransform( pInstance->getModelMatrix(),
+                                           pObject->BoundingSphere );
+}
+
 EntityActor::EntityActor()
     : Entity(),
       bRefreshAnimationThisFrame( true ),
@@ -56,6 +83,7 @@ EntityActor::EntityActor()
       Skeleton(),
       animation(),
       NumMaxLayers( 1 ),
+      LightingMode( 0 ),
       bLightingValid( false ),
       bMustProjectOnHMap( false ),
       bMustProjectOnRoad( true ) {
@@ -169,7 +197,7 @@ void EntityActor::unloadResources() {
     // FUN_007fa7f0
     Entity::unloadResources();
     Model.uninstanciate();
-    OTDU_UNIMPLEMENTED; // TODO: SKINNING
+    animation.terminate();
 }
 
 void EntityActor::tick() {
@@ -371,15 +399,59 @@ void *EntityActor::getAnimation() {
 
 void EntityActor::relight() {
     // FUN_007fa370
-    OTDU_UNIMPLEMENTED; // TODO: LIGHTING/AVATAR
+    EntityAvatar *pDriverAvatar =
+        ( gpScenaric != nullptr )
+            ? gpScenaric->getAvatarManager().getDriverAvatar()
+            : nullptr;
+    if ( pDriverAvatar != nullptr ) {
+        pDriverAvatar->relight();
+        LightingMode = pDriverAvatar->LightingMode;
+    }
 }
 
 void EntityActor::updateSkinningMatrices() {
     // FUN_007fa680
+    if ( gpWorld == nullptr ) {
+        return;
+    }
+
+    const Eigen::Vector4f entityPosition = modelMatrix.row( 3 ).transpose();
+
+    ColorRGBA groundColor;
+    if ( !gpWorld->computeGroundColorPacked( &groundColor, &entityPosition ) ) {
+        return;
+    }
+
+    setColor( groundColor );
+
     if ( Model.pHiearchNode == nullptr ) {
         return;
     }
-    OTDU_UNIMPLEMENTED; // TODO: HEIGHTMAP
+
+    if ( Model.pSimplifiedMeshChunk != nullptr && pMechanism != nullptr &&
+         pMechanism->hasPhysicsController() ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+        return;
+    }
+
+    for ( HiearchyNode *pNode = Model.pHiearchNode; pNode != nullptr;
+          pNode = pNode->pNext ) {
+        if ( pNode->pInstance == nullptr ) {
+            continue;
+        }
+
+        const Eigen::Vector4f shift = gpWorldStreaming->isEnabled()
+                                          ? gpWorldStreaming->getPosition()
+                                          : Eigen::Vector4f::Zero();
+        const Eigen::Vector4f nodePosition =
+            pNode->pInstance->getModelMatrix().row( 3 ).transpose() + shift;
+
+        ColorRGBA nodeColor;
+        if ( gpWorld->computeGroundColorPacked( &nodeColor, &nodePosition ) ) {
+            pNode->pInstance->getFlagsWrite() |= 0x30;
+            pNode->pInstance->setColor( nodeColor );
+        }
+    }
 }
 
 void EntityActor::unknownActorFunc() {
@@ -404,9 +476,7 @@ void EntityActor::unknownActorFunc() {
         Model.pInstance->setModelMatrix( worldMatrix );
     }
 
-    if ( Model.MIInpostor.pInstance != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: IMPOSTOR
-    }
+    MassInstanceBaseSetMatrix( Model.MIInpostor, worldMatrix );
 }
 
 int32_t EntityActor::refreshMechanismRender(

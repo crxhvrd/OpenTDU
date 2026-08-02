@@ -152,6 +152,20 @@ void Animation::initialize( SkeletonInstance *pSkel, ClipInstance *pClipIn ) {
     buildBoneMatrices();
 }
 
+void Animation::terminate() {
+    // FUN_007fa7f0 (inlined)
+    pSkeleton = nullptr;
+    pClip = nullptr;
+    clipTime = 0.0f;
+    clipDuration = 0.0f;
+    numNodes = 0;
+
+    pose.clear();
+    pose.shrink_to_fit();
+    palette.clear();
+    palette.shrink_to_fit();
+}
+
 void Animation::update( float deltaTime ) {
     // FUN_004012a0
     if ( pSkeleton == nullptr ) {

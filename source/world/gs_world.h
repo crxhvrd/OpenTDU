@@ -2,6 +2,7 @@
 
 #include "game/gs_base.h"
 
+#include "core/color.h"
 #include "render/file_collection_2d.h"
 #include "render/file_collection_3d.h"
 
@@ -61,6 +62,8 @@ public:
 
     bool computeGroundColor( Eigen::Vector4f *pOutColor,
                              const Eigen::Vector4f *pWorldPos );
+    bool computeGroundColorPacked( ColorRGBA *pOutColor,
+                                   const Eigen::Vector4f *pWorldPos );
 
 private:
     StreamingManager *pStreamingManager;

@@ -151,7 +151,7 @@ void VehicleCar::onEvent( CarState *param_1, float param_2, void *param_3 ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
 
     updateBodyAndWheelsTransform( param_1, param_2 );
 

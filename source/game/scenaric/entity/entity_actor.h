@@ -58,6 +58,7 @@ protected:
     RenderBas Skeleton;
     Animation animation;
     int32_t NumMaxLayers;
+    int32_t LightingMode;
     bool bLightingValid;
     bool bMustProjectOnHMap;
     bool bMustProjectOnRoad;

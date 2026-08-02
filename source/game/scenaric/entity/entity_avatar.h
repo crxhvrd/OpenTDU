@@ -57,7 +57,6 @@ protected:
 protected:
     int32_t avatarType; // 1 = driver
     int32_t PlayerType;
-    int32_t LightingMode;
     void *pLightingAttenuation;
     void *pSerializedData;
     PooledAvatarEntry *pPooledAvatarEntry;

@@ -130,6 +130,26 @@ bool GSWorld::computeGroundColor( Eigen::Vector4f *pOutColor,
     return pStreamingManager->computeGroundColor( pOutColor, pWorldPos );
 }
 
+bool GSWorld::computeGroundColorPacked( ColorRGBA *pOutColor,
+                                        const Eigen::Vector4f *pWorldPos ) {
+    // FUN_007cbd10
+    Eigen::Vector4f color;
+    if ( !computeGroundColor( &color, pWorldPos ) ) {
+        return false;
+    }
+
+    auto toByte = []( float channel ) -> uint8_t {
+        return static_cast<uint8_t>(
+            static_cast<uint32_t>( channel * 255.0f ) );
+    };
+
+    pOutColor->R = toByte( color.x() );
+    pOutColor->G = toByte( color.y() );
+    pOutColor->B = toByte( color.z() );
+    pOutColor->A = 0xff;
+    return true;
+}
+
 void GSWorld::setPlayerPosition( const Eigen::Vector4f *pPosition ) {
     // FUN_007cba90
     previousTransformMatrix.row( 0 ) << -1.0f, 0.0f, 0.0f, 0.0f;

@@ -222,9 +222,15 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                                                           modelNumWheels );
             }
 
+            const Matrix4x4f_t &physicsMatrix =
+                pPhysicsVehicle->getPhysicsMatrix();
+            body.PhysicsWorldMatrix = physicsMatrix;
+
             const Matrix4x4f_t shiftedMatrix =
-                pPhysicsVehicle->computeDisplayMatrix();
+                pPhysicsVehicle->computeDisplayMatrix( physicsMatrix );
             body.OffsetedWorldMatrix = shiftedMatrix;
+
+            body.PreviousWorldMatrix = body.WorldMatrix;
 
             Matrix4x4f_t worldMatrix = shiftedMatrix;
             worldMatrix( 3, 0 ) += streamShift.x();
@@ -336,17 +342,21 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         }
     }
 
-    for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
-        if ( ( bUsedSlot >> i ) & 1u ) {
-            carStates[i].updateBackOnTrack( deltaTime );
-        }
-    }
+    {
+        PhysicsLock physLock;
 
-    notifyListeners( deltaTime );
-    if ( !gpCamera->isLocked() ) {
-        gpCamera->tickActiveCamera( deltaTime );
-        gpCamera->setActiveCameraAsDefault();
-        gpCamera->bindToRender();
+        for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+            if ( ( bUsedSlot >> i ) & 1u ) {
+                carStates[i].updateBackOnTrack( deltaTime );
+            }
+        }
+
+        notifyListeners( deltaTime );
+        if ( !gpCamera->isLocked() ) {
+            gpCamera->tickActiveCamera( deltaTime );
+            gpCamera->setActiveCameraAsDefault();
+            gpCamera->bindToRender();
+        }
     }
 
     if ( gpAudio != nullptr ) {
@@ -361,13 +371,23 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         gpVehicleSound->tickInstances( listenerPosition );
     }
 
-    for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
-        if ( carStates[i].getResource() != nullptr ) {
-            carStates[i].resolveCollisionEvents();
-        }
-    }
+    {
+        PhysicsLock physLock;
 
-    OTDU_UNIMPLEMENTED; // TODO: Physics
+        for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+            if ( carStates[i].getResource() != nullptr ) {
+                carStates[i].resolveCollisionEvents();
+            }
+        }
+
+        if ( gpPhysics != nullptr ) {
+            RoadPhantomManager &phantoms = gpPhysics->getRoadPhantomManager();
+            phantoms.dispatchEvents();
+            phantoms.clearEvents();
+        }
+
+        OTDU_UNIMPLEMENTED;
+    }
 
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
         CarState *local_6c = &carStates[i];

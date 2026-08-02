@@ -12,7 +12,6 @@ EntityAvatar::EntityAvatar()
     : EntityActor(),
       avatarType( 0 ),
       PlayerType( 0 ),
-      LightingMode( 0 ),
       pLightingAttenuation( nullptr ),
       pSerializedData( nullptr ),
       pPooledAvatarEntry( nullptr ),

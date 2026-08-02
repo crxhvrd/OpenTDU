@@ -18,6 +18,8 @@ public:
     EntityAvatar *allocateAvatar( const uint64_t hashcode, const int32_t type );
     void releaseAvatar( EntityAvatar *pAvatar );
 
+    EntityAvatar *getDriverAvatar();
+
 private:
     static constexpr int32_t kMaxAvatars = 9;
 

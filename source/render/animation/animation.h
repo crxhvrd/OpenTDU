@@ -26,6 +26,7 @@ public:
     Animation();
 
     void initialize( SkeletonInstance *pSkel, ClipInstance *pClip );
+    void terminate();
     void update( float deltaTime );
 
 private:

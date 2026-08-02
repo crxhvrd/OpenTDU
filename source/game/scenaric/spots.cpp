@@ -16,6 +16,8 @@
 #include "config/gs_config.h"
 #include "filesystem/gs_file.h"
 #include "physics/gs_physics.h"
+#include "physics/vehicle/physics_vehicle.h"
+#include "player_data/gs_playerdata.h"
 
 #include <algorithm>
 #include <cstring>
@@ -144,6 +146,31 @@ SpotSector *Spots::getSpotSector( uint64_t hashcode ) {
         }
     }
     return nullptr;
+}
+
+bool IsSpotAvailableInCurrentMode( const SpotMap *pSpot ) {
+    // FUN_007d6a40
+    const uint8_t type = pSpot->Type;
+
+    if ( type == ST_Challenge && ( pSpot->SubType & 0xf ) == 1 &&
+         ( gpPlayerData == nullptr || !gpPlayerData->isOnline() ) ) {
+        return false;
+    }
+
+    if ( gbSimuModeEnabled ) {
+        if ( type == ST_Challenge && ( pSpot->SubType & 0xf ) == 0 ) {
+            return false;
+        }
+        if ( type == ST_Unknown8 ) {
+            const uint8_t subType = pSpot->SubType;
+            if ( subType == 5 || subType == 6 || subType == 7 ||
+                 subType == 8 ) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 bool Spots::isSpotValid( const SpotMap *pSpot ) const {
@@ -395,7 +422,9 @@ void Spots::spawnSectorSpotMeshes( Sector *pSector, const SpotsList &slot ) {
         if ( pInstance == nullptr ) {
             continue;
         }
-        static_cast<EntitySpotMesh *>( pInstance )->bindSpot( pWorld, &spot );
+        EntitySpotMesh *pSpotMesh = static_cast<EntitySpotMesh *>( pInstance );
+        pSpotMesh->bindSpot( pWorld, &spot );
+        pSpotMesh->setupZoneVolumes();
 
         // World transform: RotateY(angle) at (X,Y,Z) from +0x20 (verified
         // against HawaiSpt.bnk). Mirrors the PMI prop placement pattern.

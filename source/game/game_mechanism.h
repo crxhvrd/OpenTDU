@@ -40,6 +40,7 @@ public:
     inline bool hasDynamicController() const {
         return pPureDynamicController != nullptr;
     }
+    inline bool hasPhysicsController() const { return pController != nullptr; }
     inline uint64_t getPropCollisionHashcode() const {
         return propCollisionHashcode;
     }

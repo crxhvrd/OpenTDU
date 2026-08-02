@@ -447,7 +447,7 @@ bool Birds::isAmbianceRegionActive( int32_t regionId ) {
     return regionId == 4; // bring-up: coast ambiance -> seagull/pigeon flock
 #else
     (void)regionId;
-    OTDU_UNIMPLEMENTED; // TODO: WORLD
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: WORLD
     return false;
 #endif
 }

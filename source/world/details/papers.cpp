@@ -222,7 +222,7 @@ bool Papers::isAmbianceRegionActive( int32_t regionId ) {
         return true;
     }
     (void)regionId;
-    OTDU_UNIMPLEMENTED; // TODO: WORLD
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: WORLD
     return false;
 }
 

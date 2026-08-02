@@ -184,6 +184,7 @@ public:
 
     inline CarBodyState *getBody() { return &body; }
     inline const CarBodyState *getBody() const { return &body; }
+    inline const PoliceState &getPoliceState() const { return policeState; }
     inline VehicleBaseResources *getResource() const { return pResource; };
 
     inline bool isInstanceAlive() const { return bInstanceAlive; }

@@ -1,12 +1,19 @@
 #include "shared.h"
 #include "entity_spot_mesh.h"
 
-#include "game/scenaric/gs_scenaric.h"
+#include "core/maths_helper.h"
 #include "filesystem/binary.h"
+#include "game/gm_world.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/spots.h"
+#include "game/vehicle/car_state.h"
+#include "tdu_instance.h"
 
 EntitySpotMesh::EntitySpotMesh()
     : EntityActor(),
       pData( nullptr ),
+      volumeRoad(),
+      volumeSpot(),
       pSpotWorld( nullptr ),
       pSpotSector( nullptr ),
       bInZone( false ) {
@@ -17,6 +24,51 @@ EntitySpotMesh::~EntitySpotMesh() {
     // FUN_00424220
 }
 
+void EntitySpotMesh::setupZoneVolumes() {
+    // FUN_007d7b00 (inlined)
+    if ( pSpotSector == nullptr ) {
+        return;
+    }
+
+    Eigen::Vector3f roadZoneExtent( kRoadZoneExtentX, kRoadZoneExtentY,
+                                    kRoadZoneExtentZ );
+    Matrix4x4f_t roadZone = MakeScaleMatrix( roadZoneExtent );
+    roadZone.row( 3 ) =
+        Eigen::Vector4f( pSpotSector->X, pSpotSector->Y, pSpotSector->Z, 1.0f );
+
+    volumeRoad.propagateTransform( roadZone, true );
+    volumeRoad.setVolumeType( VT_Sphere );
+
+    if ( pSpotWorld != nullptr && pSpotWorld->Type == ST_Challenge ) {
+        volumeSpot.propagateTransform( roadZone, true );
+        volumeSpot.setVolumeType( VT_Sphere );
+    } else {
+        volumeSpot.setVolumeType( VT_Box );
+
+        Matrix4x4f_t spotZone = pSpotSector->Zone;
+        volumeSpot.propagateTransform( spotZone, true );
+    }
+}
+
+static bool IsFreeRideActive() {
+    return gpTestDriveInstance != nullptr &&
+           gpTestDriveInstance->getActiveGameMode() == GM_FreeRide;
+}
+
+void EntitySpotMesh::notifySpotZoneEvent( eSpotZoneEvent eventCode ) {
+    // FUN_009d9c10 / FUN_009d9b30 (inlined)
+    (void)eventCode;
+
+    if ( !IsFreeRideActive() ) {
+        return;
+    }
+    if ( gpActiveGM == nullptr || gpActiveGM->getGameMech() == nullptr ) {
+        return;
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GAMELOGIC
+}
+
 void EntitySpotMesh::unloadResources() {
     // FUN_009d9b30
     Entity::unloadResources();
@@ -25,7 +77,7 @@ void EntitySpotMesh::unloadResources() {
     OTDU_UNIMPLEMENTED; // TODO: ANIMATION
 
     if ( bInZone ) {
-        OTDU_UNIMPLEMENTED; // TODO: GAME
+        notifySpotZoneEvent( SZE_Unloaded );
         bInZone = false;
     }
 }
@@ -34,16 +86,56 @@ void EntitySpotMesh::tick() {
     // FUN_009d9c10
     EntityActor::tick();
 
-    if ( gpScenaric->getLocalPlayer().getCarState() == nullptr ) {
+    const CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr ) {
         return;
     }
 
-    if ( ( flags & 2 ) == 0 ) {
+    const uint32_t entryFlags = flags;
+    if ( ( entryFlags & kSpotCandidateFlag ) == 0 ) {
         return;
     }
 
-    // Spot-mesh zone enter/exit detection against the local car
-    OTDU_UNIMPLEMENTED; // TODO: GAME
+    const CarBodyState *pBody = pLocalCar->getBody();
+    const Eigen::Vector4f worldPosition = pBody->WorldMatrix.row( 3 );
+    const Eigen::Vector4f previousWorldPosition =
+        pBody->PreviousWorldMatrix.row( 3 );
+    const bool bArrested = pLocalCar->getPoliceState().isArrested();
+
+    if ( pSpotWorld != nullptr ) {
+        const bool bAvailable = IsSpotAvailableInCurrentMode( pSpotWorld );
+        const bool bWasAvailable = ( entryFlags & kSpotAvailableFlag ) != 0;
+
+        if ( bAvailable && !bWasAvailable ) {
+            flags = entryFlags | kSpotAvailableFlag;
+        } else if ( !bAvailable && bWasAvailable ) {
+            flags = entryFlags & ~kSpotAvailableFlag;
+
+            if ( bInZone ) {
+                notifySpotZoneEvent( SZE_Left );
+                bInZone = false;
+            }
+        }
+    }
+
+    if ( ( flags & kSpotAvailableFlag ) == 0 ) {
+        return;
+    }
+
+    const bool bInsideZone =
+        volumeRoad.isPointInside( worldPosition, &previousWorldPosition ) ||
+        volumeSpot.isPointInside( worldPosition, &previousWorldPosition );
+
+    if ( !bInsideZone || bArrested || !IsFreeRideActive() ) {
+        if ( bInZone ) {
+            notifySpotZoneEvent( SZE_Left );
+            bInZone = false;
+        }
+        return;
+    }
+
+    notifySpotZoneEvent( SZE_Entered );
+    bInZone = true;
 }
 
 void EntitySpotMesh::deserialize( BinaryReader *param_2 ) {

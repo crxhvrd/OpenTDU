@@ -9,6 +9,7 @@ class Entity;
 enum eSpotType : uint8_t {
     ST_House = 0,
     ST_Challenge = 7,
+    ST_Unknown8 = 8, // gated in simu mode
 
     ST_Count
 };
@@ -37,6 +38,8 @@ struct SpotMap {
 };
 OTDU_SIZE_MUST_MATCH( SpotMap, 64 );
 
+bool IsSpotAvailableInCurrentMode( const SpotMap *pSpot );
+
 struct SpotSector {
     uint64_t Hashcode; //  ASCII spot id (e.g. "RSFE0022")
     uint64_t SourceHashcode;
@@ -50,8 +53,8 @@ struct SpotSector {
     float Z;
     float Angle; // radians, around Y
     uint16_t Unknown[32];
-    Matrix4x4fUnaligned_t TransformMatrix;
-    Matrix4x4fUnaligned_t TransformMatrix2;
+    Matrix4x4fUnaligned_t Zone;
+    Matrix4x4fUnaligned_t ZoneSmall;
 };
 OTDU_SIZE_MUST_MATCH( SpotSector, 240 );
 

@@ -1,5 +1,28 @@
 #pragma once
 
+static const Eigen::Vector4f kWorldUpVector(
+    0.0f, 1.0f, 0.0f, 0.0f ); // DAT_00fac290 (static init at FUN_009e5060)
+
+#define EIGEN_TWO_PI ( EIGEN_PI * 2.0 )
+#define EIGEN_HALF_PI ( EIGEN_PI / 2.0 )
+
+static constexpr float kPI = static_cast<float>( EIGEN_PI ); // DAT_00f41940
+static constexpr float kNegPI = -kPI;                        // DAT_00f41944
+static constexpr float kTwoPI = kPI * 2.0f;                  // DAT_00f416f8
+static constexpr float kHalfPI = kPI / 2.0f;                 // DAT_00f418a4
+static constexpr float kNegHalfPi = -( kPI / 2.0f );         // DAT_00f41c8c
+static constexpr float kOne = 1.0f;                          // FLOAT_00f4165c
+static constexpr float kMinusOne = -1.0f;                    // FLOAT_00f41664
+static constexpr float kDegToRad =
+    static_cast<float>( EIGEN_PI / 180.0 );   // DAT_00f41864
+static constexpr float kRadToDeg = 57.29578f; // DAT_00f41b0c
+static constexpr float kHalf = 0.5f;          // FLOAT_00f41674
+
+struct TDUPlane {
+    Eigen::Vector4f Normal = kWorldUpVector;
+    float DistanceFromOrigin = 0.0f;
+};
+
 struct EigenTransform {
     Eigen::Vector3f Translation;
     Eigen::Vector3f Scale;
@@ -137,8 +160,7 @@ inline Matrix4x4f_t MakeRotationMatZ( float param_2 ) {
 
 inline Matrix4x4f_t &MatrixRotateX( Matrix4x4f_t &param_1,
                                     const float param_2 ) {
-    // FUN_00405180 — TDUMat4x4::RotateX right-multiplies: param_1 = param_1 *
-    // MatX
+    // FUN_00405180
     Matrix4x4f_t local_50 = MakeRotationMatX( param_2 );
     param_1 = param_1 * local_50;
     return param_1;
@@ -146,8 +168,7 @@ inline Matrix4x4f_t &MatrixRotateX( Matrix4x4f_t &param_1,
 
 inline Matrix4x4f_t &MatrixRotateY( Matrix4x4f_t &param_1,
                                     const float param_2 ) {
-    // FUN_00405130 — TDUMat4x4::RotateY right-multiplies: param_1 = param_1 *
-    // MatY
+    // FUN_00405130
     Matrix4x4f_t local_50 = MakeRotationMatY( param_2 );
     param_1 = param_1 * local_50;
     return param_1;
@@ -163,17 +184,38 @@ inline Matrix4x4f_t &MatrixPreRotateY( Matrix4x4f_t &param_1,
 
 inline Matrix4x4f_t &MatrixRotateZ( Matrix4x4f_t &param_1,
                                     const float param_2 ) {
-    // FUN_004050e0 — TDUMat4x4::RotateZ right-multiplies: param_1 = param_1 *
-    // MatZ
+    // FUN_004050e0
     Matrix4x4f_t local_50 = MakeRotationMatZ( param_2 );
     param_1 = param_1 * local_50;
     return param_1;
 }
 
-// TDUMat4x4::operator* (FUN_00404a80) — row-vector convention: result = v * M.
-// Equivalent in Eigen column-vector notation: M^T * v.
+inline Matrix4x4f_t OrthoInvert( const Matrix4x4f_t &param_1 ) {
+    // FUN_005026f0
+    Matrix4x4f_t param_2 = param_1;
+
+    float fVar1 = param_2( 1, 0 );
+    param_2( 1, 0 ) = param_2( 0, 1 );
+    param_2( 0, 1 ) = fVar1;
+    fVar1 = param_2( 2, 0 );
+    param_2( 2, 0 ) = param_2( 0, 2 );
+    param_2( 0, 2 ) = fVar1;
+    fVar1 = param_2( 2, 1 );
+    param_2( 2, 1 ) = param_2( 1, 2 );
+    param_2( 1, 2 ) = fVar1;
+
+    for ( int32_t i = 0; i < 3; i++ ) {
+        param_2( 3, i ) = -( param_1( i, 0 ) * param_1( 3, 0 ) +
+                             param_1( i, 1 ) * param_1( 3, 1 ) +
+                             param_1( i, 2 ) * param_1( 3, 2 ) +
+                             param_1( i, 3 ) * param_1( 3, 3 ) );
+    }
+    return param_2;
+}
+
 static inline Eigen::Vector4f TDUMat4x4MulVec( const Matrix4x4f_t &M,
                                                const Eigen::Vector4f &v ) {
+    // FUN_00404a80
     return M.transpose() * v;
 }
 
@@ -350,29 +392,6 @@ BuildRotationMatrix( const Eigen::Quaternionf &param_1 ) {
     return param_2;
 }
 
-static const Eigen::Vector4f kWorldUpVector(
-    0.0f, 1.0f, 0.0f, 0.0f ); // DAT_00fac290 (static init at FUN_009e5060)
-
-#define EIGEN_TWO_PI ( EIGEN_PI * 2.0 )
-#define EIGEN_HALF_PI ( EIGEN_PI / 2.0 )
-
-static constexpr float kPI = static_cast<float>( EIGEN_PI ); // DAT_00f41940
-static constexpr float kNegPI = -kPI;                        // DAT_00f41944
-static constexpr float kTwoPI = kPI * 2.0f;                  // DAT_00f416f8
-static constexpr float kHalfPI = kPI / 2.0f;                 // DAT_00f418a4
-static constexpr float kNegHalfPi = -( kPI / 2.0f );         // DAT_00f41c8c
-static constexpr float kOne = 1.0f;                          // FLOAT_00f4165c
-static constexpr float kMinusOne = -1.0f;                    // FLOAT_00f41664
-static constexpr float kDegToRad =
-    static_cast<float>( EIGEN_PI / 180.0 );   // DAT_00f41864
-static constexpr float kRadToDeg = 57.29578f; // DAT_00f41b0c
-static constexpr float kHalf = 0.5f;          // FLOAT_00f41674
-
-struct TDUPlane {
-    Eigen::Vector4f Normal = kWorldUpVector;
-    float DistanceFromOrigin = 0.0f;
-};
-
 static bool IntersectSegmentWithPlane( const Eigen::Vector4f &pointA,
                                        const TDUPlane &plane,
                                        Eigen::Vector4f &outPoint,
@@ -428,4 +447,18 @@ inline float WrapAngle( float angle ) {
     while ( kPI < angle )
         angle -= kTwoPI;
     return angle;
+}
+
+static bool AreVectorsNearlyEqual( const Eigen::Vector4f &left,
+                                   const Eigen::Vector4f &right,
+                                   const float epsilon ) {
+    // FUN_00407080
+    const float epsilonSquared = epsilon * epsilon;
+    for ( int32_t i = 0; i < 4; i++ ) {
+        const float delta = left[i] - right[i];
+        if ( delta * delta > epsilonSquared ) {
+            return false;
+        }
+    }
+    return true;
 }

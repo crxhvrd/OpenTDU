@@ -94,6 +94,17 @@ void AvatarManager::releaseAvatar( EntityAvatar *pAvatar ) {
     }
 }
 
+EntityAvatar *AvatarManager::getDriverAvatar() {
+    // FUN_007f5940
+    for ( PlayerAvatar &slot : playerAvatars ) {
+        if ( slot.ReferenceCount != 0 && slot.pAvatar != nullptr &&
+             slot.pAvatar->getAvatarType() == 1 ) {
+            return slot.pAvatar;
+        }
+    }
+    return nullptr;
+}
+
 void AvatarManager::releaseAllAvatars() {
     // FUN_007f63b0
     releaseDriverAvatar();

@@ -67,6 +67,7 @@ public:
     }
 
     inline bool isPauseMenuActive() const { return bPauseMenuActive; }
+    inline void *getGameMech() const { return pGameMech; }
 
 public:
     // gameModeFlags:

@@ -107,7 +107,7 @@ void EntityTrafficLight::tick() {
     if ( ( flags & 8 ) != 0 ) {
         lightState = CineFlags;
     } else {
-        OTDU_UNIMPLEMENTED; // TODO: GSAI
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
         return;
     }
 
