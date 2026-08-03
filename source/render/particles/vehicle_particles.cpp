@@ -67,7 +67,7 @@ static void StopParticleInstance( ParticleInstance *&pInstance,
 
 static float GetWheelBurnFraction( const CarState *, uint32_t ) {
     // FUN_008b7eb0
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE;
     return 0.0f;
 }
 

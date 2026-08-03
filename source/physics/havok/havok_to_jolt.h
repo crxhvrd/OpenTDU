@@ -29,6 +29,9 @@ namespace HavokToJolt {
         JPH::Vec3 HalfExtents; // box
         JPH::Vec3 VertexA;     // capsule endpoints
         JPH::Vec3 VertexB;
+        // Surface material read from hkpShape::m_userData (+0x08); carried here
+        // so a rescaled instance keeps it. Null when the shape names none.
+        const JPH::PhysicsMaterial *pMaterial = nullptr;
     };
 
     struct RigidBody {

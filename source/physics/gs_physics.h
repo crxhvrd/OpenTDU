@@ -19,6 +19,7 @@ namespace JPH {
     class TempAllocatorImpl;
     class JobSystemThreadPool;
     class Body;
+    class ContactListener;
 } // namespace JPH
 
 class TDUBPLayerInterface;
@@ -223,6 +224,8 @@ public:
 
     static Eigen::Vector4f GetShiftOrigin();
 
+    RoadPhantomManager &getRoadPhantomManager() { return roadPhantomManager; }
+
 private:
     static constexpr int32_t kMaxNumTireProfiles = 16;
     static constexpr int32_t kMaxNumPhysicsVehicles = 32;
@@ -298,6 +301,8 @@ private:
     TDUBPLayerInterface *pBpLayerInterface = nullptr;
     TDUObjectVsBroadPhaseLayerFilter *pObjectVsBPLayerFilter = nullptr;
     TDUObjectLayerPairFilter *pObjectLayerPairFilter = nullptr;
+
+    JPH::ContactListener *pContactListener = nullptr;
 
     // Body IDs (stored as raw uint32 to avoid Jolt includes; value ==
     // JPH::BodyID::cInvalidBodyID when invalid)

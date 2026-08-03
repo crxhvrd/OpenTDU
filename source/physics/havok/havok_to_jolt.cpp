@@ -29,6 +29,27 @@ namespace {
         return m.GetQuaternion().Normalized();
     }
 
+    // Every hkpShape carries `m_userData` at +0x08, and TDU stores the surface
+    // EMaterial there. Mesh shapes get their material per triangle from the
+    // subpart storage table instead; convex primitives (the guardrail posts,
+    // barriers and panels) only have this. Verified in-engine: the shipped
+    // world's hkBoxShape / hkCapsuleShape report 6 (Metal) and 7 (Plastic).
+    const JPH::PhysicsMaterial *readShapeMaterial( const HavokPackfile &pf,
+                                                   int32_t shapeOffset ) {
+        const uint8_t *pData = pf.getDataBytes();
+        if ( pData == nullptr || shapeOffset < 0 ||
+             static_cast<uint32_t>( shapeOffset ) + 0x0c > pf.getDataSize() ) {
+            return nullptr;
+        }
+        const uint32_t code = TDUMaterialValue::decode(
+            *reinterpret_cast<const uint32_t *>( pData + shapeOffset + 0x08 ) );
+        if ( code >= TDUMaterialValue::kNumCodes ) {
+            return nullptr;
+        }
+        return TDUPhysicsMaterials::get( code );
+    }
+
+
     // Build a Jolt triangle MeshShape from a Havok hkMeshShape /
     // hkFastMeshShape (size 0x40). Layout recovered from Havok's class
     // reflection:
@@ -402,7 +423,9 @@ namespace {
             const float *fz = reinterpret_cast<const float *>( b + 0x20 );
             points.push_back( JPH::Vec3( fx[lane], fy[lane], fz[lane] ) );
         }
-        JPH::ConvexHullShapeSettings settings( points );
+        JPH::ConvexHullShapeSettings settings(
+            points, JPH::cDefaultConvexRadius,
+            readShapeMaterial( pf, shapeOffset ) );
         JPH::ShapeSettings::ShapeResult result = settings.Create();
         return result.IsValid() ? result.Get() : JPH::ShapeRefC();
     }
@@ -411,8 +434,10 @@ namespace {
     // capsules run between two arbitrary local endpoints; Jolt capsules are
     // Y-axis-aligned + origin-centred, so wrap in a rotated/translated shape
     // to place the segment A..B.
-    JPH::ShapeRefC
-    makeCapsule( const JPH::Vec3 &a, const JPH::Vec3 &b, float radius ) {
+    JPH::ShapeRefC makeCapsule( const JPH::Vec3 &a,
+                                const JPH::Vec3 &b,
+                                float radius,
+                                const JPH::PhysicsMaterial *pMaterial ) {
         if ( !std::isfinite( radius ) || radius <= 0.0f ) {
             return JPH::ShapeRefC();
         }
@@ -423,9 +448,11 @@ namespace {
         JPH::ShapeSettings::ShapeResult inner;
         JPH::Quat rotation = JPH::Quat::sIdentity();
         if ( len < 1.0e-4f ) {
-            inner = JPH::SphereShapeSettings( radius ).Create(); // degenerate
+            inner = JPH::SphereShapeSettings( radius, pMaterial )
+                        .Create(); // degenerate
         } else {
-            inner = JPH::CapsuleShapeSettings( len * 0.5f, radius ).Create();
+            inner = JPH::CapsuleShapeSettings( len * 0.5f, radius, pMaterial )
+                        .Create();
             rotation = JPH::Quat::sFromTo( JPH::Vec3( 0, 1, 0 ), axis / len );
         }
         if ( !inner.IsValid() ) {
@@ -438,7 +465,9 @@ namespace {
     }
 
     // Build a Jolt box from a Havok hkBoxShape's half-extents + convex radius.
-    JPH::ShapeRefC makeBox( const JPH::Vec3 &halfExtents, float radius ) {
+    JPH::ShapeRefC makeBox( const JPH::Vec3 &halfExtents,
+                            float radius,
+                            const JPH::PhysicsMaterial *pMaterial ) {
         // Reject non-finite / non-positive extents (Jolt asserts/crashes on
         // them). TDU's real boxes are all small positive half-extents.
         for ( int32_t i = 0; i < 3; i++ ) {
@@ -457,17 +486,18 @@ namespace {
             convexRadius = 0.0f;
         }
 
-        JPH::BoxShapeSettings settings( halfExtents, convexRadius );
+        JPH::BoxShapeSettings settings( halfExtents, convexRadius, pMaterial );
         JPH::ShapeSettings::ShapeResult result = settings.Create();
         return result.IsValid() ? result.Get() : JPH::ShapeRefC();
     }
 
-    JPH::ShapeRefC makeSphere( float radius ) {
+    JPH::ShapeRefC makeSphere( float radius,
+                               const JPH::PhysicsMaterial *pMaterial ) {
         if ( !std::isfinite( radius ) || radius <= 0.0f ) {
             return JPH::ShapeRefC();
         }
         JPH::ShapeSettings::ShapeResult r =
-            JPH::SphereShapeSettings( radius ).Create();
+            JPH::SphereShapeSettings( radius, pMaterial ).Create();
         return r.IsValid() ? r.Get() : JPH::ShapeRefC();
     }
 } // namespace
@@ -492,6 +522,7 @@ HavokToJolt::readScalablePrimitive( const HavokPackfile &pf,
     if ( std::strcmp( pClass, "hkSphereShape" ) == 0 ) {
         out.Kind = ScalablePrimitive::Sphere;
         out.Radius = *reinterpret_cast<const float *>( p + 0x0c );
+        out.pMaterial = readShapeMaterial( pf, shapeOffset );
         return out;
     }
     // hkBoxShape (type 7): convex radius @ +0x0C, half-extents @ +0x10.
@@ -500,6 +531,7 @@ HavokToJolt::readScalablePrimitive( const HavokPackfile &pf,
         out.Kind = ScalablePrimitive::Box;
         out.Radius = *reinterpret_cast<const float *>( p + 0x0c );
         out.HalfExtents = JPH::Vec3( pHE[0], pHE[1], pHE[2] );
+        out.pMaterial = readShapeMaterial( pf, shapeOffset );
         return out;
     }
     // hkCapsuleShape (type 8): radius @ +0x0C, m_vertexA @ +0x10, B @ +0x20.
@@ -510,6 +542,7 @@ HavokToJolt::readScalablePrimitive( const HavokPackfile &pf,
         out.Radius = *reinterpret_cast<const float *>( p + 0x0c );
         out.VertexA = JPH::Vec3( pA[0], pA[1], pA[2] );
         out.VertexB = JPH::Vec3( pB[0], pB[1], pB[2] );
+        out.pMaterial = readShapeMaterial( pf, shapeOffset );
         return out;
     }
     return out;
@@ -523,16 +556,18 @@ JPH::ShapeRefC HavokToJolt::buildScaledShape( const RigidBody &body,
     switch ( body.Scalable.Kind ) {
     case ScalablePrimitive::Sphere:
         // A sphere only ever takes the X component of the scale.
-        scaled = makeSphere( body.Scalable.Radius * scale.GetX() );
+        scaled = makeSphere( body.Scalable.Radius * scale.GetX(),
+                             body.Scalable.pMaterial );
         break;
     case ScalablePrimitive::Box:
-        scaled =
-            makeBox( body.Scalable.HalfExtents * scale, body.Scalable.Radius );
+        scaled = makeBox( body.Scalable.HalfExtents * scale,
+                          body.Scalable.Radius, body.Scalable.pMaterial );
         break;
     case ScalablePrimitive::Capsule:
         scaled = makeCapsule( body.Scalable.VertexA * scale,
                               body.Scalable.VertexB * scale,
-                              body.Scalable.Radius * scale.GetX() );
+                              body.Scalable.Radius * scale.GetX(),
+                              body.Scalable.pMaterial );
         break;
     case ScalablePrimitive::None:
     default:
@@ -558,7 +593,7 @@ JPH::ShapeRefC HavokToJolt::buildShape( const HavokPackfile &pf,
 
     if ( std::strcmp( pClass, "hkBoxShape" ) == 0 ) {
         const ScalablePrimitive prim = readScalablePrimitive( pf, shapeOffset );
-        return makeBox( prim.HalfExtents, prim.Radius );
+        return makeBox( prim.HalfExtents, prim.Radius, prim.pMaterial );
     }
 
     if ( std::strcmp( pClass, "hkTransformShape" ) == 0 ) {
@@ -650,13 +685,14 @@ JPH::ShapeRefC HavokToJolt::buildShape( const HavokPackfile &pf,
 
     if ( std::strcmp( pClass, "hkCapsuleShape" ) == 0 ) {
         const ScalablePrimitive prim = readScalablePrimitive( pf, shapeOffset );
-        return makeCapsule( prim.VertexA, prim.VertexB, prim.Radius );
+        return makeCapsule( prim.VertexA, prim.VertexB, prim.Radius,
+                            prim.pMaterial );
     }
 
     // hkSphereShape (extends hkConvexShape): radius @ +0x0C, centred at origin.
     if ( std::strcmp( pClass, "hkSphereShape" ) == 0 ) {
         const ScalablePrimitive prim = readScalablePrimitive( pf, shapeOffset );
-        return makeSphere( prim.Radius );
+        return makeSphere( prim.Radius, prim.pMaterial );
     }
 
     // Unhandled shape class — logged (temporary bring-up diagnostic) so any

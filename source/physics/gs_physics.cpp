@@ -2,9 +2,12 @@
 #include "gs_physics.h"
 
 #include "config/gs_config.h"
+#include "gs_physicsfx.h"
 #include "vehicle/physics_vehicle.h"
 #include "world_collisions.h"
 #include "physics_layers.h"
+#include "physics_material.h"
+#include "game/material_types.h"
 #include "havok/havok_container.h"
 #include "havok/havok_packfile.h"
 #include "havok/havok_to_jolt.h"
@@ -46,7 +49,138 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/GroupFilterTable.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/EActivation.h>
+
+namespace {
+    // Equivalent of hkCollisionListener used by the original game.
+    class PhysicsFXContactListener : public JPH::ContactListener {
+    public:
+        void OnContactAdded( const JPH::Body &inBody1,
+                             const JPH::Body &inBody2,
+                             const JPH::ContactManifold &inManifold,
+                             JPH::ContactSettings & ) override {
+            emit( inBody1, inBody2, inManifold, PFXEK_Impact );
+        }
+
+        void OnContactPersisted( const JPH::Body &inBody1,
+                                 const JPH::Body &inBody2,
+                                 const JPH::ContactManifold &inManifold,
+                                 JPH::ContactSettings & ) override {
+            // A contact that survives across steps is a scrape/slide, which is
+            // what the original's looping kind describes.
+            emit( inBody1, inBody2, inManifold, PFXEK_Slide );
+        }
+
+    private:
+        static int32_t ResolveMaterial( const JPH::Body &body,
+                                        const JPH::SubShapeID &subShapeID ) {
+            uint32_t code = TDUMaterialValue::kDefault;
+
+            const JPH::Shape *pShape = body.GetShape();
+            if ( pShape != nullptr ) {
+                code = TDUPhysicsMaterials::codeOf(
+                    pShape->GetMaterial( subShapeID ) );
+            }
+
+            if ( code == TDUMaterialValue::kDefault &&
+                 ( body.GetUserData() & TDUSurface::kClassMask ) ==
+                     TDUSurface::Vehicle ) {
+                code = static_cast<uint32_t>( eMaterialType::MT_Body );
+            }
+
+            return static_cast<int32_t>( code );
+        }
+
+        static float GetMass( const JPH::Body &body ) {
+            // NOTE: Static and kinematic bodies should report 0
+            if ( !body.IsDynamic() ) {
+                return 0.0f;
+            }
+            const JPH::MotionProperties *pMotion = body.GetMotionProperties();
+            if ( pMotion == nullptr ) {
+                return 0.0f;
+            }
+            const float inverseMass = pMotion->GetInverseMass();
+            return ( inverseMass > 0.0f ) ? ( 1.0f / inverseMass ) : 0.0f;
+        }
+
+        static Eigen::Vector4f ToVector4( const JPH::Vec3 &v, float w = 0.0f ) {
+            return Eigen::Vector4f( v.GetX(), v.GetY(), v.GetZ(), w );
+        }
+
+        static void emit( const JPH::Body &inBody1,
+                          const JPH::Body &inBody2,
+                          const JPH::ContactManifold &inManifold,
+                          ePhysicsFXEventKind kind ) {
+            if ( gpPhysicsFX == nullptr || !gpPhysicsFX->isReady() ) {
+                return;
+            }
+            if ( inManifold.mRelativeContactPointsOn1.empty() ) {
+                return;
+            }
+
+            const int32_t materialA =
+                ResolveMaterial( inBody1, inManifold.mSubShapeID1 );
+            const int32_t materialB =
+                ResolveMaterial( inBody2, inManifold.mSubShapeID2 );
+            const int32_t fxMaterialA = GSPhysicsFX::RemapMaterial( materialA );
+            const int32_t fxMaterialB = GSPhysicsFX::RemapMaterial( materialB );
+
+            if ( !gpPhysicsFX->hasEffectFor( fxMaterialA, fxMaterialB,
+                                             kind ) ) {
+                OTDU_LOG_ERROR( "No entry: mat %d/%d -> fx %d/%d kind %d "
+                                "(userData %llu/%llu)!!\n",
+                                materialA, materialB, fxMaterialA, fxMaterialB,
+                                int32_t( kind ),
+                                (unsigned long long)inBody1.GetUserData(),
+                                (unsigned long long)inBody2.GetUserData() );
+                return;
+            }
+
+            const JPH::RVec3 contactPoint =
+                inManifold.GetWorldSpaceContactPointOn1( 0 );
+
+            const JPH::Vec3 velocity1 =
+                inBody1.GetPointVelocity( contactPoint );
+            const JPH::Vec3 velocity2 =
+                inBody2.GetPointVelocity( contactPoint );
+
+            const float energy = std::fabs(
+                ( velocity1 - velocity2 ).Dot( inManifold.mWorldSpaceNormal ) );
+
+            PhysicsFXEvent event;
+            event.FXMaterialA = fxMaterialA;
+            event.FXMaterialB = fxMaterialB;
+            event.pBodyA = &inBody1;
+            event.pBodyB = &inBody2;
+            event.Kind = kind;
+            event.Energy = energy;
+
+            event.MassA = GetMass( inBody1 );
+            event.MassB = GetMass( inBody2 );
+            const float heaviest =
+                ( event.MassA > event.MassB ) ? event.MassA : event.MassB;
+            if ( event.MassA == 0.0f ) {
+                event.MassA = heaviest;
+            }
+            if ( event.MassB == 0.0f ) {
+                event.MassB = heaviest;
+            }
+
+            event.VelocityA = ToVector4( velocity1 );
+            event.VelocityB = ToVector4( velocity2 );
+
+            const Eigen::Vector4f shiftOrigin = GSPhysics::GetShiftOrigin();
+            event.ContactPosition =
+                ToVector4( JPH::Vec3( contactPoint ), 1.0f ) + shiftOrigin;
+            event.ContactPosition.w() = 1.0f;
+            event.Normal = ToVector4( inManifold.mWorldSpaceNormal );
+
+            gpPhysicsFX->getEventQueue().push( event );
+        }
+    };
+} // namespace
 
 GSPhysics gPhysics = {}; // DAT_0129c0ac
 GSPhysics *gpPhysics = nullptr;
@@ -630,9 +764,14 @@ void GSPhysics::terminate() {
             }
         }
 
+        pPhysicsSystem->SetContactListener( nullptr );
+
         delete pPhysicsSystem;
         pPhysicsSystem = nullptr;
     }
+
+    delete pContactListener;
+    pContactListener = nullptr;
 
     delete pJobSystem;
     pJobSystem = nullptr;
@@ -1315,11 +1454,15 @@ void GSPhysics::addInfinitePlane( float planeHeight ) {
 
     const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
     JPH::BodyCreationSettings settings(
-        new JPH::BoxShapeSettings( JPH::Vec3( 10000.0f, 1.0f, 10000.0f ) ),
+        new JPH::BoxShapeSettings(
+            JPH::Vec3( 10000.0f, 1.0f, 10000.0f ), JPH::cDefaultConvexRadius,
+            TDUPhysicsMaterials::get(
+                static_cast<uint32_t>( eMaterialType::MT_Asphalt ) ) ),
         JPH::RVec3( 0.0f, planeHeight - 1.0f - shiftOrigin.y(), 0.0f ),
         JPH::Quat::sIdentity(), JPH::EMotionType::Static,
         TDUPhysLayers::NON_MOVING );
     settings.mFriction = 1.0f; // FLOAT_00f4165c
+    settings.mUserData = TDUSurface::Paved;
 
     lockMutex();
     JPH::BodyID id = pPhysicsSystem->GetBodyInterface().CreateAndAddBody(
@@ -1609,6 +1752,9 @@ RigidBody_t GSPhysics::addHeightfield( const void *pKey,
         samples.data(), JPH::Vec3::sZero(),
         JPH::Vec3( cellSize, 1.0f, cellSize ), sampleCount );
     shapeSettings.mBlockSize = kBlockSize;
+
+    shapeSettings.mMaterials.push_back( TDUPhysicsMaterials::get(
+        static_cast<uint32_t>( eMaterialType::MT_Asphalt ) ) );
 
     JPH::ShapeSettings::ShapeResult shapeResult = shapeSettings.Create();
     if ( !shapeResult.IsValid() ) {
@@ -2588,19 +2734,15 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
     }
 
     // Tick PhysicsVehicle vehicle dynamics (pushes driver input; the Jolt
-    // VehicleConstraint itself steps as a registered step listener). No-op for
-    // inactive slots.
     for ( PhysicsVehicle *it = pPhysicsVehiclesBegin; it != pPhysicsVehiclesEnd;
           ++it ) {
         it->tick( dt );
+        if ( it->isActive() ) {
+            it->publishStepPose();
+        }
     }
 
-    // Tick road-phantom sensor queries (position/velocity updates).
-    OTDU_UNIMPLEMENTED; // roadPhantomManager.tick( dt );
-
-    // Compute display (interpolated) matrices for all active vehicles so the
-    // render thread can read them lock-free.
-    OTDU_UNIMPLEMENTED; // VehiclePhysics::computeRenderMatrix
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_0081cd10 (FFB)
 
     unlockMutex();
 }
@@ -2631,6 +2773,9 @@ void GSPhysics::initializeJolt() {
     pPhysicsSystem->SetPhysicsSettings( physicsSettings );
 
     pPhysicsSystem->SetGravity( JPH::Vec3( 0.0f, -9.81f, 0.0f ) );
+
+    pContactListener = new PhysicsFXContactListener();
+    pPhysicsSystem->SetContactListener( pContactListener );
 
     // Create world-reference body (equivalent of the Havok sphere at origin
     // stored in DAT_010e749c; used as a stable anchor in the physics world).

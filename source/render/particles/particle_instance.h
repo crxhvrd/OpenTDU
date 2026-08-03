@@ -64,6 +64,7 @@ struct ParticleInstance {
     float Speed;
     float StopTimer;
     float Alpha;
+    Eigen::Vector4f SparkleVelocity;
 
     std::vector<uint8_t> blob;
     ParticleFile file;
