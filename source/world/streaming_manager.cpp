@@ -43,6 +43,41 @@ int32_t gAreaFreezeCounter = 0;   // DAT_00fabe38
 // gates the freeze-frame wait in updateAreaStreaming.
 bool gAreaConfigDebounceArmed = false; // DAT_00fabe3c
 
+static constexpr float kImpostorEnvMinDistance = 1.0e-4f; // DAT_00f41760
+
+static bool ImpostorGatherVisibleEnv( Frustum &frustum,
+                                      const Matrix4x4f_t &worldToCam,
+                                      const float farPlane,
+                                      const float farPlaneCoeff,
+                                      MassInstanceImpostor &impostor ) {
+    // FUN_00700590
+    Instance *pInstance = impostor.pInstance;
+    if ( pInstance == nullptr ) {
+        return false;
+    }
+
+    Eigen::Vector4f viewCenter = TDUMat4x4MulVec(
+        worldToCam,
+        Eigen::Vector4f( impostor.SpherePos.x(), impostor.SpherePos.y(),
+                         impostor.SpherePos.z(), 1.0f ) );
+    viewCenter.w() = 0.0f;
+
+    const float radius = impostor.Radius * pInstance->getBoundingScale();
+    if ( frustum.testBoundingSphere( viewCenter, radius ) == 0 ) {
+        return false;
+    }
+
+    const float magnitude = viewCenter.head<3>().norm();
+    if ( magnitude < kImpostorEnvMinDistance ) {
+        return true;
+    }
+
+    const float cosAngle = -viewCenter.z() / magnitude;
+    const float reach = cosAngle * ( 1.0f - farPlaneCoeff ) * farPlane +
+                        farPlane * farPlaneCoeff;
+    return ( reach + impostor.Radius ) > magnitude;
+}
+
 static int32_t ComputeAreaConfig( const GridPos2D &sectorCell ) {
     // FUN_00706d30
     if ( sectorCell.posX < 4 ) {
@@ -1567,6 +1602,104 @@ static bool ImpostorGatherVisible( Frustum &frustum,
     pInstance->setActiveLODIndex( 0 );
     pInstance->setCurrentLODDistance( 0.0f );
     return bVisible;
+}
+
+void StreamingManager::gatherSectorEnvImpostors( Sector &sector,
+                                                 RenderScene *pScene,
+                                                 const float farPlaneCoeff ) {
+    // FUN_006fe9c0
+    SectorGeometry &geometry = sector.geometry;
+    geometry.envImpostorInstances.clear();
+
+    if ( pScene == nullptr || geometry.pHeightmapInstance == nullptr ) {
+        return;
+    }
+    Camera *pCamera = pScene->getCamera();
+    if ( pCamera == nullptr ) {
+        return;
+    }
+
+    if ( !gHmapCoordsLUTInitialized ) {
+        InitHeightmapCoordsLUT();
+    }
+
+    const uint8_t *pLODCache = geometry.heightmapLODCache.data();
+    auto isCellGated = [pLODCache]( uint32_t cell ) -> bool {
+        if ( cell > 0xf ) {
+            return true;
+        }
+        return pLODCache[kHeightmapNumRealTile * 2 + 1 + cell] != 0xff;
+    };
+
+    if ( gpMngImpostorSimple != nullptr ) {
+        gpMngImpostorSimple->setScene( pScene );
+        gpMngImpostorSimple->setCamera( pCamera );
+
+        for ( uint32_t cell = 0; cell < ImpostorGrid::kNumCells; cell++ ) {
+            if ( !isCellGated( cell ) ) {
+                continue;
+            }
+            for ( MassInstanceImpostor *pImpostor :
+                  geometry.impostorGrids[0].cells[cell] ) {
+                gpMngImpostorSimple->addInstance(
+                    pImpostor->pInstance, pImpostor->pMaterial,
+                    pImpostor->Scale, pImpostor->SpriteSizeDelta,
+                    pImpostor->StretchUV );
+            }
+        }
+    }
+
+    const Matrix4x4f_t &worldToCam = pCamera->getWorldToCam();
+    const Eigen::Vector4f camWorldPos = pCamera->getCamToWorld().row( 3 );
+    Frustum &frustum = pScene->getFrustumWrite();
+    const float farPlane = frustum.getZLimits().y();
+    const float tanHalfFov = pCamera->getTanHalfFov();
+    const float hideDistanceUnit =
+        tanHalfFov * tanHalfFov * gEdRender.LODFactor * gEdRender.LODFactor;
+
+    const Eigen::Vector4f streamPos = gpWorldStreaming->isEnabled()
+                                          ? gpWorldStreaming->getPosition()
+                                          : Eigen::Vector4f::Zero();
+
+    const Eigen::Vector4f absCamPos = camWorldPos + streamPos;
+    const float originX = sector.heightmap.worldOriginX;
+    const float originZ = sector.heightmap.worldOriginZ;
+
+    for ( uint32_t cell = 0; cell < ImpostorGrid::kNumCells; cell++ ) {
+        std::vector<MassInstanceImpostor *> &bucket =
+            geometry.impostorGrids[1].cells[cell];
+        if ( bucket.empty() || !isCellGated( cell ) ) {
+            continue;
+        }
+
+        const int32_t tier = ImpostorCellTier( cell );
+        const float tierBias = kImpostorCellLODBias * (float)( 1 << tier );
+        const Eigen::Vector4f cellPos =
+            ComputeCellWorldPosition( originX, originZ, cell );
+        const float dx = cellPos.x() - absCamPos.x();
+        const float dz = cellPos.z() - absCamPos.z();
+        const float cellLODThreshold =
+            ( dx * dx + dz * dz - tierBias ) * hideDistanceUnit;
+
+        for ( MassInstanceImpostor *pImpostor : bucket ) {
+            if ( geometry.envImpostorInstances.size() >= kImpostorSubmitCap ) {
+                break;
+            }
+            if ( pImpostor->pInstance == nullptr ) {
+                continue;
+            }
+            if ( !ImpostorGatherVisibleEnv( frustum, worldToCam, farPlane,
+                                            farPlaneCoeff, *pImpostor ) ) {
+                continue;
+            }
+
+            if ( pImpostor->MaxLODDist * hideDistanceUnit <=
+                 cellLODThreshold ) {
+                break;
+            }
+            geometry.envImpostorInstances.push_back( pImpostor->pInstance );
+        }
+    }
 }
 
 void StreamingManager::submitSectorImpostors( Sector &sector,

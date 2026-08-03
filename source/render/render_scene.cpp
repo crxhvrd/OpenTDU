@@ -85,26 +85,28 @@ void RenderScene::create( Camera *param_2,
 }
 
 void RenderScene::enqueueDynamicDrawList( DrawList *pDrawList ) {
+    // FUN_00403080
     ScopedMutexLock lock( &gDynamicDrawListMutex );
-    pDrawCommands->DynamicDrawLists.push_back( pDrawList );
+    pDrawCommands->DynamicDrawLists.push_front( pDrawList );
 }
 
 void RenderScene::enqueueDynamicInstance( Instance *pInstance ) {
+    // FUN_00413b30
     ScopedMutexLock lock( &gDynamicInstancesMutex );
-    pDrawCommands->DynamicInstances.push_back( pInstance );
+    pDrawCommands->DynamicInstances.push_front( pInstance );
 }
 
 void RenderScene::enqueueDynamicHiearchy( HiearchyNode *pNode ) {
     // FUN_00411200
     ScopedMutexLock lock( &gDynamicHiearchyMutex );
-    pDrawCommands->DynamicHiearchies.push_back( pNode );
+    pDrawCommands->DynamicHiearchies.push_front( pNode );
 }
 
 void RenderScene::enqueueDynamicInstanceWithCustomMaterial(
     Instance *pInstance, Material *pMaterial ) {
     ScopedMutexLock lock( &gDynamicInstancesOverloadMutex );
-    pDrawCommands->DynamicInstancesWithCustomMat.emplace_back( pInstance,
-                                                               pMaterial );
+    pDrawCommands->DynamicInstancesWithCustomMat.emplace_front( pInstance,
+                                                                pMaterial );
 }
 
 void RenderScene::initialize( Camera *param_2,
@@ -235,10 +237,6 @@ void RenderScene::submitDrawCommands( uint32_t param_2 ) {
 
                 uint32_t pMagic = *(uint32_t *)piVar8;
                 if ( pMagic == kObjectMagic ) {
-                    // pEntry points at the .OBJ section header (magic at +0); the
-                    // RenderObject follows it at +0x10. The original reads it via
-                    // int*-arithmetic (piVar10 + 4 == +0x10 bytes, FUN_00508c10);
-                    // NOT +4 bytes.
                     RenderObject *pObj =
                         (RenderObject *)( (uint8_t *)piVar8 + 0x10 );
                     gpRenderContext->submitInstanceWithCustomMaterial(

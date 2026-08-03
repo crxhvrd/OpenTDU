@@ -1577,11 +1577,12 @@ bool CubemapResources::loadResources() {
         return false;
     }
     if ( eVar3 == format ) {
-        cubemap2DB.pRenderTarget =
-            CreateRenderTargetFrom2DB( &cubemap2DB.Render2DB, eVar3 );
+        cubemap2DB.pRenderTarget = CreateRenderTargetFrom2DB(
+            &cubemap2DB.Render2DB, eVar3 & ~RTF_From2DBUseMainDepthStencil );
     } else {
         cubemap2DB.pRenderTarget = CreateRenderTarget(
-            0x200, 0x200, format, eAntiAliasingMethod::AAM_Disabled, 0x20 );
+            0x200, 0x200, format, eAntiAliasingMethod::AAM_Disabled,
+            0x20 & ~RTF_UseMainDepthStencil );
         if ( cubemap2DB.pRenderTarget != nullptr ) {
             cubemap2DB.pRenderTarget->bind2DB( &cubemap2DB.Render2DB );
         }

@@ -29,7 +29,12 @@
 
 #include "core/maths_helper.h"
 
-MngEnvMap *gpMngEnvMap = nullptr; // DAT_010e7fb0
+MngEnvMap *gpMngEnvMap = nullptr;
+
+bool gbDebugEnvMapDenseReflection = false;
+float gDebugEnvMapFarPlaneScale = 4.0f;
+float gDebugEnvMapFarPlaneCoeff = 1.0f;
+float gDebugEnvMapObjectCullScale = 8.0f;
 
 static constexpr float kCockpitFOV = 1.0471976f;        // DAT_00f417dc (60deg)
 static constexpr float kCockpitFarPlane = 150.0f;       // DAT_00f4182c
@@ -38,6 +43,7 @@ static constexpr float kExteriorFarPlane = 45.0f;       // FLOAT_00f41808
 static constexpr float kFarPlaneCoeff = 0.3f;           // FLOAT_00f416bc
 static constexpr float kHoodFarPlaneCoeff = 0.6f;       // DAT_00f416c8
 static constexpr float kMaxVehicleDistanceSq = 2500.0f; // DAT_00f41c5c
+static constexpr float kMinEnvLookVelocitySq = 0.25f;
 
 MngEnvMap::MngEnvMap()
     : Manager(),
@@ -186,6 +192,15 @@ void MngEnvMap::tick( float, float ) {
                     break;
                 }
             }
+
+            for ( Sector *pSector : pSectors ) {
+                if ( pSector != nullptr ) {
+                    pStreamingManager->gatherSectorEnvImpostors(
+                        *pSector, pScene,
+                        gbDebugEnvMapDenseReflection ? gDebugEnvMapFarPlaneCoeff
+                                                     : farPlaneCoeff );
+                }
+            }
         }
     }
 
@@ -285,16 +300,22 @@ void MngEnvMap::draw() {
         pCarState->getBody()->OffsetedWorldMatrix.row( 3 ).transpose();
 
     if ( gpMngWorld != nullptr ) {
+        uint32_t heightmapInstanceIndex = 1;
         for ( Sector *pSector : pSectors ) {
-            if ( pSector == nullptr || pSector->state != 1 ) {
+            if ( pSector == nullptr ) {
+                continue;
+            }
+
+            const uint32_t instanceIndex = heightmapInstanceIndex;
+            heightmapInstanceIndex = 2;
+
+            if ( pSector->state != 1 ) {
                 continue;
             }
 
             SectorGeometry &geometry = pSector->geometry;
-            if ( geometry.pHeightmapInstance != nullptr ) {
-                pScene->enqueueDynamicInstance( geometry.pHeightmapInstance );
-            }
-            geometry.submitObjectNodes( pScene );
+            geometry.submitObjectNodeInstances( pScene );
+            geometry.submitHeightmapInstance( pScene, instanceIndex );
         }
     }
 
@@ -373,8 +394,9 @@ void MngEnvMap::draw() {
                 }
             }
 
-            if ( pVehicle->getType() == VehicleBase::eType::VBT_Bike ) {
-                OTDU_UNIMPLEMENTED; // TODO: AVATAR
+            if ( pVehicle->getType() == VehicleBase::eType::VBT_Bike &&
+                 entry.second->hasAvatar() ) {
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
             }
         }
     }
@@ -621,18 +643,24 @@ void MngEnvMap::updateCameras( bool bUseActiveCamera, bool bUpdateBackScene ) {
         pSourceCamera->getCamToWorld().row( 3 ).head<3>().transpose();
     const Eigen::Vector3f velocity = pSourceCamera->getVelocity();
 
+    const Eigen::Vector3f cameraForward =
+        pSourceCamera->getCamToWorld().row( 2 ).head<3>().transpose();
+    const bool bVelocityUsable = velocity.squaredNorm() > kMinEnvLookVelocitySq;
+
     float fov;
     Eigen::Vector3f position;
     Eigen::Vector3f lookTarget;
     if ( view == EMV_Hood ) {
         fov = camFOV * kDegToRad;
         position = eyePosition;
-        lookTarget = eyePosition + velocity * 2.0f;
+        lookTarget = bVelocityUsable ? ( eyePosition + velocity * 2.0f )
+                                     : ( eyePosition + cameraForward * 2.0f );
         lookTarget.y() += hoodHeightBias;
     } else if ( view == EMV_Cockpit ) {
         fov = kCockpitFOV;
         position = eyePosition;
-        lookTarget = eyePosition - velocity * 2.0f;
+        lookTarget = bVelocityUsable ? ( eyePosition - velocity * 2.0f )
+                                     : ( eyePosition - cameraForward * 2.0f );
     } else {
         fov = camFOV * kDegToRad;
         position = pSourceCamera->getTargetOffset();
@@ -654,6 +682,26 @@ void MngEnvMap::updateCameras( bool bUseActiveCamera, bool bUpdateBackScene ) {
         pBackCamera->updateMatrix( position, kWorldUpVector.head<3>(),
                                    lookTarget );
     }
+
+    Frustum &envFrustum = gpRender->getRenderPass<eRenderPass::RP_EnvMap>()
+                              .pScene->getFrustumWrite();
+    const float nearPlane = envFrustum.getZLimits().x();
+
+    float viewFarPlane;
+    if ( view == EMV_Cockpit ) {
+        viewFarPlane = kCockpitFarPlane;
+    } else if ( view == EMV_Hood ) {
+        viewFarPlane = kHoodFarPlane;
+        farPlaneCoeff = kHoodFarPlaneCoeff;
+    } else {
+        viewFarPlane = kExteriorFarPlane;
+    }
+
+    if ( gbDebugEnvMapDenseReflection ) {
+        viewFarPlane *= gDebugEnvMapFarPlaneScale;
+    }
+
+    envFrustum.setPlanes( nearPlane, viewFarPlane );
 }
 
 void MngEnvMap::drawMiniQuad() {

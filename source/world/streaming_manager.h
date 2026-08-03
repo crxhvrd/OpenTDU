@@ -75,6 +75,9 @@ public:
     void *getSectorNameStream() const { return pSectorNameStream; }
 
     bool isFirstInitDone() const { return bFirstInitDone; }
+    void gatherSectorEnvImpostors( Sector &sector,
+                                   RenderScene *pScene,
+                                   float farPlaneCoeff );
 
 public:
     SectorManager sectorManager;

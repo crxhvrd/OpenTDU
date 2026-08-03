@@ -854,6 +854,8 @@ void SectorBank::instanciate() {
                             geometry.heightmapTileMask.data() );
                         pInstance->setHeightmapLODCache(
                             geometry.heightmapLODCache.data() );
+                        geometry.instanciateHeightmapEnvInstances(
+                            (InstanceEntry *)( pInstSection + 1 ), hashcode );
                     } else {
                         geometry.renderInstances.push_back( pInstance );
                         geometry.renderInstanceAbsPos.push_back( absPos );
@@ -1041,7 +1043,8 @@ void SectorBank::instanciate() {
             // -R.shk = road collision
             if ( pRoadSHK != nullptr ) {
                 gpPhysics->addSectorCollision( pOwner, pRoadSHK, roadSize,
-                                               areaX, areaZ, /*bRoadBlob*/ true );
+                                               areaX, areaZ,
+                                               /*bRoadBlob*/ true );
             }
 
             // .rd (5,5) = SR20 road-corridor physics ground.
@@ -1051,7 +1054,6 @@ void SectorBank::instanciate() {
             if ( pRD != nullptr ) {
                 gpPhysics->addSectorRoadGround( pOwner, pRD, rdSize );
             }
-
         }
     }
 
@@ -1469,6 +1471,11 @@ void Sector::reset() {
         gpPhysics->removeSectorCollision( this );
         gpPhysics->removeSceneryInstances( &geometry );
     }
+
+    geometry.releaseHeightmapEnvInstances();
+    // Holds raw Instance pointers into the impostor grids, which are
+    // uninstantiated below.
+    geometry.envImpostorInstances.clear();
 
     if ( geometry.pHeightmapInstance != nullptr ) {
         if ( gpPhysics != nullptr ) {

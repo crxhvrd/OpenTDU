@@ -542,6 +542,56 @@ void MngImpostorSimple::tick( float, float ) {
     MaterialBatches.Last = 0;
 }
 
+bool MngImpostorSimple::addInstance( Instance *pInstance,
+                                     Material *pMaterial,
+                                     const float scale,
+                                     const float deltaXZ,
+                                     const float stretchRatio ) {
+    // FUN_0070d430
+    if ( pInstance == nullptr || pInstance->getNumLODs() <= 1 ||
+         pMaterial == nullptr ) {
+        return false;
+    }
+    if ( pScene == nullptr || pCamera == nullptr ) {
+        return false;
+    }
+
+    const float farPlane = pScene->getFrustumWrite().getZLimits().y();
+    const Eigen::Vector4f cameraPosition =
+        pCamera->getCamToWorld().row( 3 ).transpose();
+    const Eigen::Vector4f delta =
+        pInstance->getModelMatrix().row( 3 ).transpose() - cameraPosition;
+    if ( delta.squaredNorm() >= farPlane * farPlane ) {
+        return false;
+    }
+
+    for ( int32_t i = 0; i < MaterialBatches.Last; i++ ) {
+        MaterialBatch &batch = MaterialBatches.pMaterialBatch[i];
+        if ( batch.Used != 0 && batch.pMaterial == pMaterial ) {
+            if ( batch.Used >= kMaxInstancesPerMaterial ) {
+                return false;
+            }
+            batch.pInstances[batch.Used] = { pInstance, scale, deltaXZ,
+                                             stretchRatio };
+            batch.Used++;
+            return true;
+        }
+    }
+
+    if ( MaterialBatches.Last >= kMaxMaterials ) {
+        return false;
+    }
+    MaterialBatch &batch = MaterialBatches.pMaterialBatch[MaterialBatches.Last];
+    if ( batch.Used < kMaxInstancesPerMaterial ) {
+        batch.pInstances[batch.Used] = { pInstance, scale, deltaXZ,
+                                         stretchRatio };
+        batch.Used++;
+    }
+    batch.pMaterial = pMaterial;
+    MaterialBatches.Last++;
+    return true;
+}
+
 void MngImpostorSimple::pushInstance( const ImpostorInstance &instance ) {
     // FUN_0070d5d0
     Instance *pInstance = instance.pInstance;

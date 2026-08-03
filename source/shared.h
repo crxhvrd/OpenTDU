@@ -10,8 +10,10 @@ extern int32_t gCmdLineArgCount;
 #ifdef OTDU_DEVBUILD
 // Function needs to be implemented
 #define OTDU_UNIMPLEMENTED OTDU_ASSERT( false && "UNIMPLEMENTED" );
+#define OTDU_UNIMPLEMENTED_ONCE OTDU_ASSERT_ONCE( false && "UNIMPLEMENTED" )
 #else
 #define OTDU_UNIMPLEMENTED
+#define OTDU_UNIMPLEMENTED_ONCE
 #endif
 
 static constexpr bool bUseCRC64 = false; // Matches original executable behavior

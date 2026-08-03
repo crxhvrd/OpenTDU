@@ -1,12 +1,17 @@
 #include "shared.h"
 #include "sector_geometry.h"
 
+#include "core/maths_helper.h"
 #include "game/scenaric/entity/base_entity.h"
 #include "render/2dm.h"
+#include "render/camera/camera_base.h"
 #include "render/instance.h"
 #include "render/material.h"
+#include "render/mng_env_map.h"
 #include "render/render_buckets.h"
 #include "render/render_scene.h"
+
+static constexpr float kObjectNodeInstanceCullRatio = 3.0f; // DAT_00f416b4
 
 SectorGeometry::SectorGeometry()
     : num2DB( 0 ),
@@ -36,6 +41,75 @@ void SectorGeometry::rebaseHeightmapInstance(
     m( 3, 0 ) = heightmapAbsPos.x() - streamOrigin.x();
     m( 3, 2 ) = heightmapAbsPos.z() - streamOrigin.z();
     pHeightmapInstance->setModelMatrix( m );
+
+    for ( Instance *pEnvInstance : heightmapEnvInstances ) {
+        if ( pEnvInstance != nullptr ) {
+            pEnvInstance->setModelMatrix( m );
+        }
+    }
+}
+
+void SectorGeometry::instanciateHeightmapEnvInstances(
+    InstanceEntry *pInstanceEntry, uint64_t hashcode ) {
+    // FUN_00703410
+    if ( pHeightmapInstance == nullptr || pInstanceEntry == nullptr ) {
+        return;
+    }
+
+    releaseHeightmapEnvInstances();
+
+    const Matrix4x4f_t matrix = pHeightmapInstance->getModelMatrix();
+    for ( uint32_t i = 0; i < kNumHeightmapEnvInstances; i++ ) {
+        Instance *pInstance =
+            collection.instantiate( pInstanceEntry, hashcode );
+        if ( pInstance == nullptr ) {
+            continue;
+        }
+
+        Matrix4x4f_t instanceMatrix = matrix;
+        pInstance->setModelMatrix( instanceMatrix );
+        pInstance->calculateBiggestScale();
+        pInstance->setHeightmapTileMask( heightmapTileMask.data() );
+        pInstance->setHeightmapLODCache( heightmapEnvLODCaches[i].data() );
+        pInstance->getFlagsWrite() &= ~3u;
+
+        heightmapEnvInstances[i] = pInstance;
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00703240
+}
+
+void SectorGeometry::releaseHeightmapEnvInstances() {
+    for ( Instance *&pEnvInstance : heightmapEnvInstances ) {
+        if ( pEnvInstance != nullptr ) {
+            collection.uninstantiate( pEnvInstance );
+            pEnvInstance = nullptr;
+        }
+    }
+}
+
+Instance *SectorGeometry::getHeightmapInstance( uint32_t index ) const {
+    // Heightmap::pInstanceHeightmap[index] (Heightmap+0x240 + index * 4).
+    if ( index == 0 ) {
+        return pHeightmapInstance;
+    }
+    if ( index > kNumHeightmapEnvInstances ) {
+        return nullptr;
+    }
+    return heightmapEnvInstances[index - 1];
+}
+
+void SectorGeometry::submitHeightmapInstance( RenderScene *pScene,
+                                              uint32_t index ) {
+    // FUN_0042f170
+    if ( pScene == nullptr ) {
+        return;
+    }
+
+    Instance *pInstance = getHeightmapInstance( index );
+    if ( pInstance != nullptr ) {
+        pScene->enqueueDynamicInstance( pInstance );
+    }
 }
 
 void SectorGeometry::rebaseImpostors( const Eigen::Vector4f &streamOrigin ) {
@@ -135,6 +209,61 @@ void SectorGeometry::submitObjectNodes( RenderScene *pScene ) {
         if ( pObjectNodes[i] != nullptr && bObjectNodeVisible[i] ) {
             pScene->enqueueDynamicHiearchy( pObjectNodes[i] );
         }
+    }
+}
+
+void SectorGeometry::submitObjectNodeInstances( RenderScene *pScene ) {
+    // FUN_006fde80
+    if ( pScene == nullptr ) {
+        return;
+    }
+
+    Camera *pCamera = pScene->getCamera();
+    if ( pCamera == nullptr ) {
+        return;
+    }
+
+    const Eigen::Vector4f cameraPosition =
+        pCamera->getCamToWorld().row( 3 ).transpose();
+
+    for ( HiearchyNode *pObjectNode : pObjectNodes ) {
+        for ( HiearchyNode *pNode = pObjectNode; pNode != nullptr;
+              pNode = pNode->pNext ) {
+            Instance *pInstance = pNode->pInstance;
+            if ( pInstance == nullptr || pInstance->getNumLODs() == 0 ) {
+                continue;
+            }
+
+            Render3DDHashEntry *pHashEntry = pInstance->getLOD( 0 ).pHashcode;
+            if ( pHashEntry == nullptr || pHashEntry->pEntry == nullptr ) {
+                continue;
+            }
+
+            // Skip the section header to reach the object payload.
+            const RenderObject *pObject =
+                (const RenderObject *)( (const uint8_t *)pHashEntry->pEntry +
+                                        sizeof( RenderFile::Section ) );
+
+            Eigen::Vector4f sphereCenter = Eigen::Vector4f::Zero();
+            sphereCenter.head<3>() = pObject->BoundingSphere.head<3>();
+            const Eigen::Vector4f worldCenter =
+                Mat4x4fTransform( pInstance->getModelMatrix(), sphereCenter );
+
+            const Eigen::Vector3f delta =
+                worldCenter.head<3>() - cameraPosition.head<3>();
+            const float radius = pObject->BoundingSphere.w();
+            const float cullRatio =
+                gbDebugEnvMapDenseReflection
+                    ? kObjectNodeInstanceCullRatio * gDebugEnvMapObjectCullScale
+                    : kObjectNodeInstanceCullRatio;
+            if ( delta.squaredNorm() < cullRatio * radius * radius ) {
+                pScene->enqueueDynamicInstance( pInstance );
+            }
+        }
+    }
+
+    for ( Instance *pImpostorInstance : envImpostorInstances ) {
+        pScene->enqueueDynamicInstance( pImpostorInstance );
     }
 }
 

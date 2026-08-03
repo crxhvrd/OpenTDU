@@ -295,7 +295,7 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
 
     velocity = pPhys->getChassisVelocity();
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE;
 
     float speed = pPhys->getForwardSpeed();
     if ( !gCameraSnap ) {
@@ -353,7 +353,7 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
                     outTarget, outUp );
     }
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE;
 
     setPositionOffseted( outPos );
     setTargetOffseted( outTarget );
@@ -370,13 +370,13 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
     gbCamClampedUp = false;    // DAT_010e74a2
     gbCamClampedDown = false;  // DAT_010e74a3
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS (ground clamp + collision sweep)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (ground clamp + collision sweep)
 
     if ( ( vehicleFlags & 0x40 ) != 0 ) {
         applySpeedShake( deltaTime );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: POSTFX
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: POSTFX
 
     updateMatrix( worldPosition.head<3>(), upVector.head<3>(),
                   worldTarget.head<3>() );
@@ -1023,7 +1023,7 @@ bool CameraVehicle::tickFollow( const Matrix4x4f_t &carMatrix,
     frame.row( 2 ) = Eigen::RowVector4f( fwd.x(), fwd.y(), fwd.z(), 0.0f );
     frame.row( 3 ) = carMatrix.row( 3 );
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE;
 
     YawSmooth( frame, work, deltaTime, vehicleFlags );
 
@@ -1335,7 +1335,7 @@ void CameraVehicle::applyFreeLook( const Matrix4x4f_t &carDisplayMatrix,
 
 void CameraVehicle::applySpeedShake( float ) {
     // FUN_008d3e40
-    OTDU_UNIMPLEMENTED; // TODO: POSTFX
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: POSTFX
 }
 
 void CameraVehicle::updateMotionBlur() {

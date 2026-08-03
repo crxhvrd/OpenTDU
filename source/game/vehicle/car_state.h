@@ -197,6 +197,7 @@ public:
     inline eSimulationType getSimulationType() const { return simulationType; }
 
     inline VehicleBase *getVehicleInstance() { return pVehicleBase; }
+    inline bool hasAvatar() const { return field_0x39c0 != nullptr; }
     inline struct VehicleSoundInstance *getVehicleSound() const {
         return pVehicleSound;
     }

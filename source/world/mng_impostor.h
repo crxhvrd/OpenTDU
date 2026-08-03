@@ -150,6 +150,11 @@ public:
     void tick( float, float ) override;
     void terminate() override;
     void draw() override;
+    bool addInstance( Instance *pInstance,
+                      Material *pMaterial,
+                      float scale,
+                      float deltaXZ,
+                      float stretchRatio );
 
 private:
     bool beginSpriteBatch( int32_t numSprites );

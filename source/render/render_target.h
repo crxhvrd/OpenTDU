@@ -6,6 +6,16 @@
 struct GPUTexture;
 class RenderDevice;
 
+enum eRenderTargetFlags : uint32_t {
+    RTF_NoOwnDepthStencil = 1u << 0,
+    RTF_From2DBUseMainDepthStencil =
+        1u << 1, // use gpMainDepthBuffer with a preallocated 2db blob
+    RTF_From2DBNoDepthStencil = 1u << 2, // no depth-stencil at all.
+    RTF_SizeRelativeToBackbuffer =
+        1u << 4, // width/height are a fraction of the backbuffer size
+    RTF_UseMainDepthStencil = 1u << 5, // use gpMainDepthBuffer
+};
+
 // TODO: Should be renamed "PooledRenderTarget"
 class RenderTarget {
 public:

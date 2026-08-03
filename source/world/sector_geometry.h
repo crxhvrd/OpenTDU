@@ -117,7 +117,14 @@ public:
                                  const Eigen::Vector4f &streamOrigin );
     void rebaseObjectNodes( const Eigen::Vector4f &streamOrigin );
     void submitObjectNodes( RenderScene *pScene );
+    void submitObjectNodeInstances( RenderScene *pScene );
     void uninstanciateObjectNodes();
+
+    void instanciateHeightmapEnvInstances( InstanceEntry *pInstanceEntry,
+                                           uint64_t hashcode );
+    void releaseHeightmapEnvInstances();
+    Instance *getHeightmapInstance( uint32_t index ) const;
+    void submitHeightmapInstance( RenderScene *pScene, uint32_t index );
     void patchObjectsGroupMaterials( const Eigen::Vector4f &worldCorner,
                                      const Eigen::Vector4f &streamOrigin );
     void rebaseDetail2Materials( const Eigen::Vector4f &streamOrigin );
@@ -154,6 +161,16 @@ public:
     // the differ-check seam stitch can compare edges (see Instance LOD cache).
     std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>
         heightmapLODCache = {};
+
+    static constexpr uint32_t kNumHeightmapEnvInstances = 2;
+    std::array<Instance *, kNumHeightmapEnvInstances> heightmapEnvInstances = {
+        nullptr, nullptr };
+    std::array<
+        std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>,
+        kNumHeightmapEnvInstances>
+        heightmapEnvLODCaches = {};
+
+    std::vector<Instance *> envImpostorInstances;
 
     const char *pNetworkString;
     const char *pBlockString;

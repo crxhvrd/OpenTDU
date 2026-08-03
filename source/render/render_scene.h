@@ -42,8 +42,7 @@ struct RenderSceneCommands {
     std::list<DrawList *> DynamicDrawLists;
     std::list<Instance *> DynamicInstances;
     std::list<HiearchyNode *> DynamicHiearchies;
-
-    std::vector<InstanceWithCustomMaterial> DynamicInstancesWithCustomMat;
+    std::list<InstanceWithCustomMaterial> DynamicInstancesWithCustomMat;
     std::vector<std::vector<Instance *> *> DynamicInstancesArrays;
 
     uint32_t RefCount = 0u;

@@ -10,6 +10,7 @@
 
 #ifdef OTDU_USE_IMGUI
 #include "debug/gs_imgui.h"
+#include "render/mng_env_map.h"
 #include "world/gs_mng_resources.h"
 #endif
 
@@ -610,6 +611,17 @@ void GSRender::drawDebug( float deltaTime ) {
     ImGui::Checkbox( "Draw background clouds", &gbBackgroundCloudsEnabled );
     ImGui::Checkbox( "Draw sky dome", &gbBackgroundDomeEnabled );
     ImGui::Checkbox( "Sky dome wireframe", &gbBackgroundDomeWireframe );
+
+    ImGui::SeparatorText( "Env Map" );
+    ImGui::Checkbox( "Dense reflection", &gbDebugEnvMapDenseReflection );
+    if ( gbDebugEnvMapDenseReflection ) {
+        ImGui::SliderFloat( "Far plane scale", &gDebugEnvMapFarPlaneScale, 1.0f,
+                            32.0f, "%.1fx" );
+        ImGui::SliderFloat( "Off-axis reach", &gDebugEnvMapFarPlaneCoeff, 0.3f,
+                            1.0f, "%.2f" );
+        ImGui::SliderFloat( "Object cull scale", &gDebugEnvMapObjectCullScale,
+                            1.0f, 64.0f, "%.1fx" );
+    }
 
     if ( gpMngResources != nullptr && gpImgui != nullptr ) {
         CubemapResources &cm = gpMngResources->getCubemapResources();

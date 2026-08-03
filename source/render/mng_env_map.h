@@ -101,3 +101,8 @@ private:
 };
 
 extern MngEnvMap *gpMngEnvMap;
+
+extern bool gbDebugEnvMapDenseReflection;
+extern float gDebugEnvMapFarPlaneScale;
+extern float gDebugEnvMapFarPlaneCoeff;
+extern float gDebugEnvMapObjectCullScale;
