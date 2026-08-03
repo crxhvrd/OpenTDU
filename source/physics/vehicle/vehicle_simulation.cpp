@@ -14,8 +14,25 @@ static constexpr float kLoadToPerMille =
 
 static constexpr float kMaxCoupling = 4000.0f; // FIXME
 
+static constexpr float kZeroSpeedSlipRatio = 20.0f; // DAT_00f03ee0
+
+static float WheelLongitudinalSlipRatio( float radius,
+                                         float vLong,
+                                         float vLat,
+                                         float omega ) {
+    // FUN_0043cff0
+    const float speed = std::sqrt( vLong * vLong + vLat * vLat );
+    if ( speed == 0.0f ) { // FLOAT_00f41660
+        return kZeroSpeedSlipRatio;
+    }
+    return ( omega * radius - vLong ) / speed;
+}
+
 // Debug override for the driveline inertia divisor mode (see FUN_0043aba0)
 int gVehicleDrivelineInertiaMode = -1;
+
+float gVehicleEngineFrictionLoss = -1.0f;
+float gVehicleEngineTorqueScale = -1.0f;
 
 static constexpr float kShiftDecisionThrottle = 0.25f; // min throttle for eval
 static constexpr float kShiftLockout = 0.15f; // post-shift re-shift block, secs
@@ -279,7 +296,8 @@ void ComputeTireForces( PhysicsWheelState &w,
     } else {
         w.bTireSlipping = true;
 
-        const float rawLongSlip = w.ContactNormal.dot( w.ForwardDir );
+        const float rawLongSlip =
+            WheelLongitudinalSlipRatio( w.Radius, vLong, vLat, w.AngularVel );
         float a;
         if ( vLong > 0.0f ) {
             a = std::atan( vLat / vLong ) * kRadToDeg;
@@ -726,6 +744,15 @@ void StepPowertrain( PhysicsVehicleState &v,
     PhysicsEngineSim &e = v.Engine;
     PhysicsGearboxSim &g = v.GearBox;
     PhysicsClutchSim &c = v.Clutch;
+
+    // TODO: REMOVEME
+    if ( gVehicleEngineFrictionLoss >= 0.0f ) {
+        e.FrictionLoss = gVehicleEngineFrictionLoss;
+    }
+    if ( gVehicleEngineTorqueScale >= 0.0f ) {
+        e.TorqueScale = gVehicleEngineTorqueScale;
+    }
+
     e.Throttle = throttle;
     if ( dt <= 0.0f ) {
         return;

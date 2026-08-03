@@ -120,6 +120,12 @@ public:
         return computeDisplayMatrix( getChassisShiftedMatrix() );
     }
 
+    void publishStepPose();
+
+    const Matrix4x4f_t &getPhysicsMatrix() const { return physicsMatrix; }
+    const Matrix4x4f_t &getDisplayMatrix() const { return displayMatrix; }
+    const Matrix4x4f_t &getInvChassisMatrix() const { return invChassisMatrix; }
+
     void onWorldShifted( const Eigen::Vector3f &worldShift );
 
     float getBodyHeight() const { return bodyHeight; }
@@ -219,6 +225,11 @@ private:
     float displayYaw;
     float y3DOffset;
     float bodyHeight;
+
+    // Pose published at the end of each physics step (see publishStepPose).
+    Matrix4x4f_t physicsMatrix = Matrix4x4f_t::Identity();
+    Matrix4x4f_t displayMatrix = Matrix4x4f_t::Identity();
+    Matrix4x4f_t invChassisMatrix = Matrix4x4f_t::Identity();
 
     // Aerodynamics (chassis downforce/drag, applied per physics step).
     float aeroDragArea; // 0.5 * A * Cx_drag

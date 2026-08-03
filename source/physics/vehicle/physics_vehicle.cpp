@@ -900,6 +900,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     en.Inertia = ( db.EngineInertia > 0 ? db.EngineInertia * 0.004f : 0.4f ) *
                  simInertiaScale; // *0.5 in Simu mode
     en.Omega = en.OmegaIdle;
+    en.FrictionLoss = 0.0f;
+    en.TorqueScale = 1.0f;
+
     en.State = eEngineState::ES_Off;
     en.IgnTimer = 0.0f;
     en.IgnitionOn = true; // key on: auto-start + auto-restart on stall
@@ -967,6 +970,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     pPhysicsSystem->AddStepListener( this );
     bRegistered = true;
+
+    publishStepPose();
     return true;
 }
 
@@ -1223,7 +1228,6 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
 
     const float vLong = contactVel.Dot( longAxis );
 
-    // TODO: FIXME: RE actual Longitudinal slip calc (from pcode)
     const float longSlip = ( w.AngularVel * w.Radius - vLong ) /
                            std::max( std::fabs( vLong ), kSlipDenom );
 
@@ -1581,12 +1585,21 @@ PhysicsVehicle::computeDisplayMatrix( const Matrix4x4f_t &sourceMatrix ) const {
     displayTransform( 3, 2 ) += displayOrigin.z();
     displayTransform = displayTransform * MakeRotationMatY( displayYaw );
 
-    Matrix4x4f_t displayMatrix = displayTransform * sourceMatrix;
-    displayMatrix( 3, 0 ) += displayMatrix( 1, 0 ) * y3DOffset;
-    displayMatrix( 3, 1 ) += displayMatrix( 1, 1 ) * y3DOffset;
-    displayMatrix( 3, 2 ) += displayMatrix( 1, 2 ) * y3DOffset;
-    displayMatrix( 3, 3 ) = 1.0f;
-    return displayMatrix;
+    Matrix4x4f_t outMatrix = displayTransform * sourceMatrix;
+    outMatrix( 3, 0 ) += outMatrix( 1, 0 ) * y3DOffset;
+    outMatrix( 3, 1 ) += outMatrix( 1, 1 ) * y3DOffset;
+    outMatrix( 3, 2 ) += outMatrix( 1, 2 ) * y3DOffset;
+    outMatrix( 3, 3 ) = 1.0f;
+    return outMatrix;
+}
+
+void PhysicsVehicle::publishStepPose() {
+    // FUN_0081dfd0
+    physicsMatrix = getChassisShiftedMatrix();
+
+    // TODO: REPLAY
+    displayMatrix = computeDisplayMatrix( physicsMatrix );
+    invChassisMatrix = OrthoInvert( physicsMatrix );
 }
 
 void PhysicsVehicle::calibrateDisplayYOffset( float modelWheelRestY ) {
@@ -1624,6 +1637,8 @@ void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform ) {
                                JPH::EActivation::Activate );
     bi.SetLinearAndAngularVelocity( id, JPH::Vec3::sZero(),
                                     JPH::Vec3::sZero() );
+
+    publishStepPose();
 }
 
 uint32_t PhysicsVehicle::getNumWheels() const {
