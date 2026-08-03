@@ -95,7 +95,7 @@ inline float LerpOverBand( float minValue,
 }
 
 void PhysicsFXEventQueue::push( const PhysicsFXEvent &event ) {
-    std::lock_guard<std::mutex> lock( mutex );
+    ScopedMutexLock lock( &mutex );
 
     int32_t &count = counts[writeIndex];
     if ( count >= kMaxEventsPerFrame ) {
@@ -121,13 +121,13 @@ void PhysicsFXEventQueue::push( const PhysicsFXEvent &event ) {
 
 void PhysicsFXEventQueue::swapBuffers() {
     // FUN_0097f260 (inlined)
-    std::lock_guard<std::mutex> lock( mutex );
+    ScopedMutexLock lock( &mutex );
     std::swap( writeIndex, readIndex );
     counts[writeIndex] = 0;
 }
 
 void PhysicsFXEventQueue::reset() {
-    std::lock_guard<std::mutex> lock( mutex );
+    ScopedMutexLock lock( &mutex );
     counts[0] = 0;
     counts[1] = 0;
     writeIndex = 0;

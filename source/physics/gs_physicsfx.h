@@ -2,6 +2,7 @@
 
 #include "game/gs_base.h"
 #include "filesystem/bank.h"
+#include "core/mutex.h"
 
 class AudioClient;
 class AudioDispatcherPlaybackSoundInstance;
@@ -53,7 +54,7 @@ private:
     std::array<int32_t, 2> counts = { 0, 0 };
     int32_t writeIndex = 0;
     int32_t readIndex = 1;
-    std::mutex mutex;
+    TestDriveMutex mutex;
 };
 
 // Chunk header shared by every node of Sound/Physics/SFXConfig.bin
