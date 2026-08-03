@@ -222,7 +222,7 @@ int32_t FlashSounds::getFreeVoice() {
     return -1;
 }
 
-bool FlashSounds::playFrontEndSound( char *param_2,
+bool FlashSounds::playFrontEndSound( const char *param_2,
                                      int32_t param_3,
                                      bool param_4 ) {
     // FUN_0099d780

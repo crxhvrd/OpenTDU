@@ -55,6 +55,7 @@ GMLogin::~GMLogin() {
     // FUN_0074e080
     OTDU_UNIMPLEMENTED;
     gpGMLogin = nullptr;
+    gpMngFade = nullptr;
 }
 
 void GMLogin::reset() {

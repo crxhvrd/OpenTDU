@@ -29,7 +29,7 @@ public:
 
     void loadFrontEndSounds();
 
-    bool playFrontEndSound( char *param_2, int32_t param_3, bool param_4 );
+    bool playFrontEndSound( const char *param_2, int32_t param_3, bool param_4 );
     bool stopGroup( const char *pGroupName, float fadeTime );
 
 public:

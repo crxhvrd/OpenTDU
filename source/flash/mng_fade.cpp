@@ -9,6 +9,8 @@
 
 #include "tdu_instance.h"
 
+MngFade *gpMngFade = nullptr; // DAT_010e7fe4
+
 MngFade::MngFade()
     : Manager(),
       pDrawListTransition( new DrawList() ),
@@ -27,7 +29,12 @@ MngFade::MngFade()
       p2DMBuffer( nullptr ),
       pMaterial( nullptr ),
       bRenderLogo( false ),
-      bWaitForPopup( false ) {}
+      bWaitForPopup( false ) {
+    // FUN_006cf960
+    if ( gpMngFade == nullptr ) {
+        gpMngFade = this;
+    }
+}
 
 MngFade::~MngFade() {}
 

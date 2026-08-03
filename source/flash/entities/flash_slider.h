@@ -17,6 +17,10 @@ public:
     void setRange( float min, float max );
     void setAutoVelocity( bool param_1 );
     void setValue( float param_1 );
+    void bind( FlashPlayer *pFlashPlayer,
+               const char *pVarName,
+               int32_t orientation,
+               float initialValue );
 
     void tick( float param_1 );
     void disable();

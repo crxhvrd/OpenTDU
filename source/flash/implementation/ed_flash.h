@@ -24,12 +24,23 @@ inline uint32_t PackFlashDiffuse( const ColorRGBA &color ) {
 }
 
 template <typename T> struct FlashResourcePool {
-    void initialize( uint32_t param_3 ) {
+    void initialize( uint32_t param_3, size_t extraBytesPerElement = 0 ) {
         // FUN_004431f0
         // TODO: Pooled Allocations for Flash
         NumElements = param_3;
-        pElements = new ( TestDrive::Alloc( kElementSize * ( param_3 + 4 ) ) )
-            T[param_3]; // TODO: FIXME: Update pool size for x64
+        ElementSize = sizeof( T ) + extraBytesPerElement;
+
+        const size_t allocationSize = ElementSize * (size_t)param_3;
+        pElements = ( allocationSize != 0 ) ? TestDrive::Alloc( allocationSize )
+                                            : nullptr;
+        if ( pElements != nullptr ) {
+            memset( pElements, 0, allocationSize );
+
+            for ( int32_t i = 0; i < NumElements; i++ ) {
+                new ( getElement( i ) ) T();
+            }
+        }
+
         pUsedAllocs = new (
             TestDrive::Alloc( NumElements * sizeof( bool ) ) ) bool[param_3];
         LatestAllocationIndex = 0;
@@ -41,6 +52,10 @@ template <typename T> struct FlashResourcePool {
         bInitialized = true;
     }
 
+    inline T *getElement( int32_t index ) {
+        return (T *)( (uint8_t *)pElements + (size_t)index * ElementSize );
+    }
+
     T *allocate() {
         // FUN_004432b
         if ( bInitialized ) {
@@ -48,7 +63,7 @@ template <typename T> struct FlashResourcePool {
                 return nullptr;
             }
 
-            T *pvVar1 = &pElements[LatestAllocationIndex];
+            T *pvVar1 = getElement( LatestAllocationIndex );
             pUsedAllocs[LatestAllocationIndex] = true;
 
             int32_t iVar2 = 0;
@@ -68,12 +83,11 @@ template <typename T> struct FlashResourcePool {
         return nullptr;
     }
 
-    static const size_t kElementSize = sizeof( T );
-
     bool bInitialized;
     int32_t NumElements;
+    size_t ElementSize;
     bool *pUsedAllocs;
-    T *pElements;
+    void *pElements;
     int32_t LatestAllocationIndex;
 };
 

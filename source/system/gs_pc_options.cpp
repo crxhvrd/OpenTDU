@@ -1,19 +1,66 @@
 #include "shared.h"
 #include "gs_pc_options.h"
 
+#include "audio/gs_audio.h"
+#include "config/gs_config.h"
 #include "flash/gs_flash.h"
+#include "flash/flash_mouse.h"
+#include "flash/mng_fade.h"
+#include "flash/mng_flash_counter.h"
+#include "flash/modal_message_box.h"
+#include "flash/implementation/flash_player.h"
+#include "flash/implementation/flash_resource.h"
+#include "flash/implementation/flash_sprite.h"
+#include "game/gm_base.h"
+#include "gs_timer.h"
+#include "input/input_device.h"
+#include "player_data/save_game_manager.h"
+#include "tdu_instance.h"
+#include "world/weather/gs_weather.h"
 
 GSPCOptions *gpPCOptions = nullptr; // DAT_01416130
 
-GSPCOptions::GSPCOptions() : GameSystem(), pFlashPlayer( nullptr ) {
+static constexpr const char *kNotificationClips[] = {
+    "/achievement", "/reward",   "/levelup",    "/pop_news",
+    "/subtitle",    "/tutorial", "/jail_popup",
+};
+
+enum eMenuAction : int32_t {
+    MA_None = 0,
+    MA_Resume = 1,
+    MA_NewGame = 2,       // wipe the current game and restart it
+    MA_QuitToDesktop = 3, // leave the process
+    MA_ChangeProfile = 4, // drop back to GM_Login
+};
+
+GSPCOptions::GSPCOptions()
+    : GameSystem(),
+      FlashEntity(),
+      PopupCallback(),
+      mngOptions(),
+      pFlashPlayer( nullptr ),
+      pInputActions( nullptr ),
+      bCanOpenMainMenu( true ),
+      bMainMenuOpened( false ),
+      bOptionsRootHidden( false ),
+      bMoviesNeedReenable( false ),
+      bSavedMouseEnabled( false ),
+      bWasGameAlreadyPaused( false ),
+      bCloseRequested( false ),
+      field23_0x35( false ),
+      bPendingPopupAnswer( false ),
+      savedAudioMixState( 0u ),
+      pendingMenuAction( MA_None ),
+      exitCountdown( -1 ),
+      pendingPopupAnswer( ePopupAnswer::PA_Unknown ),
+      pendingPopupUserData( 0 ) {
     // FUN_007c4f10
-    OTDU_UNIMPLEMENTED;
     gpPCOptions = this;
 }
 
 GSPCOptions::~GSPCOptions() {
     // FUN_0042b380
-    OTDU_UNIMPLEMENTED;
+    gpPCOptions = nullptr;
 }
 
 bool GSPCOptions::initialize( TestDriveGameInstance * ) {
@@ -25,16 +72,110 @@ bool GSPCOptions::initialize( TestDriveGameInstance * ) {
 void GSPCOptions::tick( float totalTime, float deltaTime ) {
     // FUN_007c5b60
     mngOptions.tick( totalTime, deltaTime );
+
     if ( pFlashPlayer == nullptr ) {
         pFlashPlayer = gpFlash->getFlashPlayer( "CONFIGPC" );
         if ( pFlashPlayer == nullptr ) {
             return;
         }
         gpFlash->bindPlayerEntity( this, "CONFIGPC" );
-        OTDU_UNIMPLEMENTED;
+
+        pInputActions =
+            ( gpConfig != nullptr ) ? gpConfig->pPlayerConfig : nullptr;
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH (FUN_007c6260 — key-mapping
+                                 // widget binding, not ported)
+
+        mngOptions.bindFlashPlayer( pFlashPlayer, 0 );
+        mngOptions.refreshOptionsScreen();
     }
 
-    OTDU_UNIMPLEMENTED;
+    if ( bPendingPopupAnswer ) {
+        handlePendingPopupAnswer();
+        return;
+    }
+
+    if ( bMoviesNeedReenable ) {
+        const int32_t numMovies = gpFlash->getNumMovies( 1 );
+        for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+            MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, movieIndex );
+            if ( pMovie != nullptr ) {
+                pMovie->Flags &= ~1u;
+            }
+        }
+        bMoviesNeedReenable = false;
+    }
+
+    const bool bMenuQuitPressed = ( pInputActions != nullptr ) &&
+                                  IsActionPressed( pInputActions->pMenuQuit );
+
+    if ( bMenuQuitPressed ) {
+        bool bHandled = false;
+
+        if ( gpFlash->FUN_0099b240( "CONFIGPC", 0 ) ) {
+            if ( !bMainMenuOpened || bCloseRequested || field23_0x35 ) {
+                const bool bPopupDisplayed =
+                    ( gpActiveGameMode != nullptr &&
+                      gpActiveGameMode->isMessageBoxVisible() ) ||
+                    ( gpFlashMessageBox != nullptr &&
+                      gpFlashMessageBox->getDisplayState() !=
+                          ModalMessageBox::MMBDS_Closed );
+
+                const bool bLeavingGameMode =
+                    ( gpActiveGameMode != nullptr &&
+                      gpActiveGameMode->hasRequestedExit() ) ||
+                    pendingMenuAction == MA_QuitToDesktop;
+
+                const bool bFading =
+                    ( gpMngFade != nullptr ) &&
+                    ( gpMngFade->getTransitionFlags() & 1 ) != 0;
+
+                if ( bCanOpenMainMenu && !bPopupDisplayed &&
+                     !bLeavingGameMode && !bFading ) {
+                    openMainMenu( true );
+                    bHandled = true;
+                }
+            } else if ( !bOptionsRootHidden ) {
+                pendingMenuAction = MA_QuitToDesktop;
+                onMainMenuSelection( MMO_Quit );
+                bHandled = true;
+            }
+        }
+
+        if ( !bHandled ) {
+            gpFlash->getFlashSound()->playFrontEndSound( "wrong", 0, false );
+        }
+    }
+
+    if ( bMainMenuOpened ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH
+    }
+
+    if ( gSavegameManager.isDwordDiffFromPendingSaveCount() ) {
+        return;
+    }
+
+    if ( bCloseRequested ) {
+        bCloseRequested = false;
+        closeOptionsMenu();
+    }
+
+    if ( exitCountdown > 0 ) {
+        exitCountdown--;
+    }
+
+    if ( exitCountdown == 0 &&
+         !gSavegameManager.isDwordDiffFromPendingSaveCount() &&
+         ( gpFlashMessageBox == nullptr ||
+           !gpFlashMessageBox->FUN_00403100() ) ) {
+        exitCountdown = -1;
+        if ( pendingMenuAction == MA_QuitToDesktop ) {
+            gpTestDriveInstance->requestExit();
+            return;
+        }
+
+        OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
+    }
 }
 
 void GSPCOptions::terminate() {
@@ -42,12 +183,486 @@ void GSPCOptions::terminate() {
 }
 
 void GSPCOptions::pause() {
-    // FUN_007c5b60
-    OTDU_UNIMPLEMENTED;
+    // FUN_007c4830
+    mngOptions.terminate();
+    exitCountdown = -1;
+    pFlashPlayer = nullptr;
 }
 
 void GSPCOptions::reset() {
     // FUN_007c4860
     field23_0x35 = false;
     mngOptions.initialize( nullptr );
+}
+
+bool GSPCOptions::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
+    // FUN_007c5de0
+    if ( mngOptions.onMessage( pMessage, pPlayer ) ) {
+        return true;
+    }
+
+    const char *pTag = pMessage->pAsChar;
+    const uint32_t tag = ( (uint32_t)(uint8_t)pTag[0] << 24 ) |
+                         ( (uint32_t)(uint8_t)pTag[1] << 16 ) |
+                         ( (uint32_t)(uint8_t)pTag[2] << 8 ) |
+                         (uint32_t)(uint8_t)pTag[3];
+
+    switch ( tag ) {
+    case 0x6d636c73: // "mcls" — the main menu finished closing
+        closeMainMenu();
+        return true;
+
+    case 0x6d656e75: { // "menu" — a main menu entry was validated
+        const eMainMenuOption choice = eMainMenuOption(
+            pFlashPlayer->getVariableAsInt( "/options_root/cursor:choice" ) );
+        onMainMenuChoice( choice );
+        return true;
+    }
+
+    case 0x6f707469: // "opti" — enter the options page
+        hideOptionsRoot();
+        mngOptions.refreshOptionsScreen();
+        return true;
+
+    case 0x7265636f: // "reco"
+        pendingMenuAction = MA_Resume;
+        bCloseRequested = true;
+        field23_0x35 = true;
+        return true;
+
+    case 0x71756974: // "quit"
+        bMainMenuOpened = true;
+        pendingMenuAction = MA_QuitToDesktop;
+        onMainMenuSelection( MMO_Quit );
+        return false;
+
+    case 0x6e67616d: // "ngam" — new game
+        onMainMenuSelection( MMO_Continue );
+        return true;
+
+    case 0x73696d75: // "simu" — hardcore mode
+        pendingMenuAction = MA_Resume;
+        onMainMenuSelection( MMO_HardcoreMode );
+        return true;
+
+    case 0x736c6964: // "slid"
+        return FlashSlider::OnMessage( pMessage + 1 );
+
+    case 0x736e6470: // "sndp"
+        return gpFlash->getFlashSound()->playFrontEndSound( pMessage[1].pAsChar,
+                                                            0, false );
+
+    case 0x67617567: // "gaug"
+        if ( gpMngFlashCounter == nullptr ) {
+            return false;
+        }
+        gpMngFlashCounter->onMessage( pMessage + 1, pPlayer );
+        return true;
+
+    case 0x6e706f6d:             // "npom" — refresh main menu entry visibility
+    case 0x6c656470:             // "ledp"
+    case 0x70726f66:             // "prof" — profile screen
+    case 0x706e6577:             // "pnew"
+    case 0x706f706e:             // "popn"
+    case 0x7073656c:             // "psel"
+    case 0x7063616e:             // "pcan"
+    case 0x70636c73:             // "pcls"
+    case 0x6f706f75:             // "opou"
+    case 0x6869696e:             // "hiin"
+    case 0x68696f75:             // "hiou"
+    case 0x636b6b79:             // "ckky" - cd key
+    case 0x736e6473:             // "snds"
+    case 0x77696467:             // "widg"
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND
+        return false;
+
+    default:
+        return false;
+    }
+}
+
+void GSPCOptions::openMainMenu( bool bInGameOverlay ) {
+    // FUN_007c52f0
+    pFlashPlayer->setVariableValue( "/:IsWrongProfile", uint32_t( 0u ) );
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+
+    bMoviesNeedReenable = false;
+
+    const int32_t numMovies = gpFlash->getNumMovies( 1 );
+    for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+        MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, movieIndex );
+        if ( pMovie != nullptr ) {
+            pMovie->Flags |= 1u;
+        }
+    }
+
+    if ( bInGameOverlay ) {
+        for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+            MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, movieIndex );
+            if ( pMovie != nullptr ) {
+                pMovie->field3_0xac8 |= 1;
+            }
+        }
+
+        for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+            MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, movieIndex );
+            if ( pMovie == nullptr ) {
+                continue;
+            }
+            pMovie->field5_0xad0 |= 1;
+
+            FlashPlayer *pMoviePlayer = pMovie->MovieBank.getFlashPlayer();
+            if ( pMoviePlayer != nullptr &&
+                 pMoviePlayer->getBoundFlashResource() != nullptr ) {
+                pMoviePlayer->getBoundFlashResource()->setDrawMode(
+                    ( pMovie->field5_0xad0 != 0 ) ? 2 : 0 );
+            }
+        }
+    }
+
+    if ( gpFlash->getMouse() != nullptr ) {
+        bSavedMouseEnabled = gpFlash->getMouse()->field12_0x30;
+        gpFlash->getMouse()->field12_0x30 = false;
+    }
+
+    if ( gpActiveGameMode != nullptr ) {
+        gpActiveGameMode->setsMessageBoxVisible( true );
+    }
+
+    bWasGameAlreadyPaused =
+        ( gpTimer != nullptr ) && ( gpTimer->GameSpeed == 0.0f );
+
+    bool bFreezeGame = true;
+    if ( gpActiveGameMode != nullptr &&
+         gpActiveGameMode->getCurrentGameMode() == GM_Mission ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
+    } else if ( gpActiveGameMode != nullptr &&
+                gpActiveGameMode->getCurrentGameMode() == GM_FreeRide ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+    }
+
+    if ( !bWasGameAlreadyPaused ) {
+        if ( bFreezeGame ) {
+            if ( gpTimer != nullptr ) {
+                if ( gpTimer->PreviousGameSpeed != gpTimer->GameSpeed &&
+                     gpTimer->GameSpeed != 0.0f ) {
+                    gpTimer->PreviousGameSpeed = gpTimer->GameSpeed;
+                }
+                gpTimer->GameSpeed = 0.0f;
+            }
+            if ( gpWeather != nullptr ) {
+                gpWeather->setUpdateTimerEnabled( false );
+            }
+        }
+
+        if ( gpAudio != nullptr ) {
+            savedAudioMixState = gpAudio->getMixState();
+            gpAudio->changeMixState( gpAudio->getMixFlags( "ClientMenuSFX" ) );
+        }
+    }
+
+    bMainMenuOpened = true;
+    bCloseRequested = false;
+
+    showOptionsRoot();
+    pFlashPlayer->showFrame( "open", "/options_root", true );
+    bOptionsRootHidden = false;
+
+    setNotificationClipsVisible( false );
+    pendingMenuAction = MA_None;
+}
+
+void GSPCOptions::closeMainMenu() {
+    // FUN_007c50b0
+    bMainMenuOpened = false;
+    field23_0x35 = false;
+
+    const int32_t numMovies = gpFlash->getNumMovies( 1 );
+    for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+        MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, movieIndex );
+        if ( pMovie == nullptr ) {
+            continue;
+        }
+        pMovie->field5_0xad0 &= ~1;
+
+        FlashPlayer *pMoviePlayer = pMovie->MovieBank.getFlashPlayer();
+        if ( pMoviePlayer != nullptr &&
+             pMoviePlayer->getBoundFlashResource() != nullptr ) {
+            pMoviePlayer->getBoundFlashResource()->setDrawMode(
+                ( pMovie->field5_0xad0 != 0 ) ? 2 : 0 );
+        }
+    }
+
+    for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+        MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, movieIndex );
+        if ( pMovie != nullptr ) {
+            pMovie->field3_0xac8 &= ~1;
+        }
+    }
+
+    hideOptionsRoot();
+    setNotificationClipsVisible( true );
+
+    if ( gpActiveGameMode != nullptr ) {
+        gpActiveGameMode->setsMessageBoxVisible( false );
+    }
+
+    if ( gpTestDriveInstance != nullptr &&
+         gpTestDriveInstance->getActiveGameMode() != GM_Login ) {
+        if ( pendingMenuAction == MA_QuitToDesktop ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+            exitCountdown = 10;
+            pendingMenuAction = MA_QuitToDesktop;
+            return;
+        }
+        if ( pendingMenuAction == MA_NewGame ) {
+            OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
+            return;
+        }
+        if ( pendingMenuAction == MA_ChangeProfile ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+            exitCountdown = 10;
+            pendingMenuAction = MA_ChangeProfile;
+            return;
+        }
+    }
+
+    if ( !bWasGameAlreadyPaused ) {
+        bool bRestoreGameSpeed = true;
+        if ( gpActiveGameMode != nullptr &&
+             gpActiveGameMode->getCurrentGameMode() == GM_Mission ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
+        } else if ( gpActiveGameMode != nullptr &&
+                    gpActiveGameMode->getCurrentGameMode() == GM_FreeRide ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        }
+
+        if ( bRestoreGameSpeed ) {
+            if ( gpTimer != nullptr ) {
+                gpTimer->GameSpeed = gpTimer->PreviousGameSpeed;
+            }
+            if ( gpWeather != nullptr ) {
+                gpWeather->setUpdateTimerEnabled( true );
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: WEATHER
+            }
+        }
+
+        if ( gpAudio != nullptr ) {
+            gpAudio->changeMixState( savedAudioMixState );
+        }
+    }
+
+    if ( gpFlash->getMouse() != nullptr && bSavedMouseEnabled ) {
+        gpFlash->getMouse()->field12_0x30 = true;
+    }
+
+    bMoviesNeedReenable = true;
+}
+
+void GSPCOptions::onMainMenuChoice( eMainMenuOption choice ) {
+    // FUN_007c59d0
+    switch ( choice ) {
+    case MMO_Continue:
+        pendingMenuAction = MA_Resume;
+        field23_0x35 = true;
+        bCloseRequested = true;
+        break;
+
+    case MMO_QuitToDesktop:
+        onMainMenuSelection( MMO_Continue );
+        break;
+
+    case MMO_ChangeProfile:
+        hideOptionsRoot();
+        OTDU_UNIMPLEMENTED; // TODO: FRONTEND (profile list screen)
+        break;
+
+    case MMO_Options:
+        hideOptionsRoot();
+        mngOptions.refreshOptionsScreen();
+        break;
+
+    case MMO_Quit:
+        bMainMenuOpened = true;
+        pendingMenuAction = MA_QuitToDesktop;
+        onMainMenuSelection( MMO_Quit );
+        break;
+
+    case MMO_HardcoreMode:
+        pendingMenuAction = MA_Resume;
+        onMainMenuSelection( MMO_HardcoreMode );
+        break;
+
+    default:
+        break;
+    }
+}
+
+void GSPCOptions::onMainMenuSelection( eMainMenuOption selection ) {
+    // FUN_007c5650
+    switch ( selection ) {
+    case MMO_Continue:
+        // "_Clear current game ? Sure ?"
+        OTDU_UNIMPLEMENTED; // TODO: FRONTEND
+        return;
+
+    case MMO_QuitToDesktop:
+        // "_Return to Windows ?"
+        OTDU_UNIMPLEMENTED; // TODO: FRONTEND
+        return;
+
+    case MMO_ChangeProfile:
+        // "_Change profile ?"
+        OTDU_UNIMPLEMENTED; // TODO: FRONTEND
+        return;
+
+    case MMO_HardcoreMode:
+        gpFlash->enablePlayer( "CONFIGPC", ModalMessageBox::MMBDS_Closed, false,
+                               0 );
+        if ( FlashPlayer *pGeneral = gpFlash->getFlashPlayer( "GENERAL" ) ) {
+            pGeneral->showFrame( "open", "/simu_avert", true );
+        }
+        return;
+
+    case MMO_Quit:
+        settlePoliceFine();
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND ("_Confirm Police Fine ?"
+                                 // prompt + fine debit)
+
+        onMainMenuSelection( ( pendingMenuAction == MA_QuitToDesktop )
+                                 ? MMO_QuitToDesktop
+                                 : MMO_ChangeProfile );
+        return;
+
+    default:
+        return;
+    }
+}
+
+void GSPCOptions::onClose( ePopupAnswer answer, void *, int32_t param_3 ) {
+    // FUN_007c47b0
+    bPendingPopupAnswer = true;
+    pendingPopupAnswer = answer;
+    pendingPopupUserData = param_3;
+}
+
+void GSPCOptions::handlePendingPopupAnswer() {
+    // FUN_007c5a90
+    const int32_t userData = pendingPopupUserData;
+    const bool bAccepted = ( pendingPopupAnswer == ePopupAnswer::PA_Accept );
+    bPendingPopupAnswer = false;
+
+    switch ( userData ) {
+    case 0: // "_Clear current game ? Sure ?"
+        if ( bAccepted ) {
+            field23_0x35 = true;
+            bCloseRequested = true;
+            pendingMenuAction = MA_NewGame;
+        }
+        break;
+
+    case 1: // return to Windows
+        if ( bAccepted ) {
+            settlePoliceFine();
+            field23_0x35 = true;
+            bCloseRequested = true;
+            pendingMenuAction = MA_QuitToDesktop;
+        }
+        break;
+
+    case 2: // change profile
+        if ( bAccepted ) {
+            settlePoliceFine();
+            OTDU_UNIMPLEMENTED; // TODO: FRONTEND (FUN_007c4a70 — profile
+                                // screen)
+        }
+        break;
+
+    case 4: // police fine confirmation
+        if ( !bAccepted ) {
+            pendingMenuAction = MA_None;
+            return;
+        }
+        onMainMenuSelection( ( pendingMenuAction == MA_QuitToDesktop )
+                                 ? MMO_QuitToDesktop
+                                 : MMO_ChangeProfile );
+        break;
+
+    case 5:
+        gpFlash->enablePlayer( "CONFIGPC", ModalMessageBox::MMBDS_Closed, true,
+                               0 );
+        pendingMenuAction = MA_Resume;
+        field23_0x35 = true;
+        bCloseRequested = true;
+        break;
+
+    default:
+        break;
+    }
+}
+
+void GSPCOptions::showOptionsRoot() {
+    // FUN_007c48d0
+    FlashClip clip;
+    if ( pFlashPlayer->getClipPlayer( "/options_root", &clip ) &&
+         clip.pSprite != nullptr ) {
+        clip.setProperty( eFlashProperty::FP_Visible, true );
+    }
+    bOptionsRootHidden = false;
+}
+
+void GSPCOptions::hideOptionsRoot() {
+    // FUN_007c4930
+    FlashClip clip;
+    if ( pFlashPlayer->getClipPlayer( "/options_root", &clip ) &&
+         clip.pSprite != nullptr ) {
+        clip.setProperty( eFlashProperty::FP_Visible, false );
+    }
+    bOptionsRootHidden = true;
+}
+
+void GSPCOptions::closeOptionsMenu() {
+    // FUN_007c4a10
+    field23_0x35 = true;
+    pFlashPlayer->showFrame( "close", "/options_root", true );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND (also closes /profile when the
+                             // profile screen is up)
+
+    if ( bSavedMouseEnabled && gpFlash->getMouse() != nullptr ) {
+        gpFlash->getMouse()->field12_0x30 = true;
+    }
+}
+
+void GSPCOptions::setNotificationClipsVisible( bool bVisible ) {
+    // FUN_007c4c80
+    uint32_t validGM = 0u;
+    uint32_t movieIndex = 0u;
+    if ( !gpFlash->getFlashMovieIndex( &validGM, &movieIndex, "GENERAL" ) ) {
+        return;
+    }
+
+    MoviePlayer *pMovie =
+        gpFlash->getMoviePlayer( int32_t( validGM ), int32_t( movieIndex ) );
+    if ( pMovie == nullptr || !pMovie->MovieBank.isLoaded() ) {
+        return;
+    }
+
+    FlashPlayer *pGeneral = pMovie->MovieBank.getFlashPlayer();
+    if ( pGeneral == nullptr ) {
+        return;
+    }
+
+    for ( const char *pClipName : kNotificationClips ) {
+        FlashClip clip;
+        if ( pGeneral->getClipPlayer( pClipName, &clip ) &&
+             clip.pSprite != nullptr ) {
+            clip.setProperty( eFlashProperty::FP_Visible, bVisible );
+        }
+    }
+}
+
+void GSPCOptions::settlePoliceFine() {
+    // FUN_007c5570
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI/POLICE (infringement settlement)
 }

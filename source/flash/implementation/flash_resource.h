@@ -118,6 +118,7 @@ public:
     inline bool isUsingUnicode() const { return flashConfig.bUnicodeResource; }
     inline bool isInitialized() const { return flashConfig.bLoaded; }
     inline void setDrawMode( int32_t mode ) { flashConfig.bWireframe = mode; }
+    inline const edFlashConfig &getFlashConfig() const { return flashConfig; }
 
 public:
     FlashRenderer( edFlashConfig *param_1 );

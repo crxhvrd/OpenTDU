@@ -620,6 +620,7 @@ FlashDisplayList::FlashDisplayList( FlashStack *param_1,
     : pEntries( nullptr ),
       pPool( nullptr ),
       numEnqueuedObjs( 0 ),
+      pfield_0xc( nullptr ),
       action(),
       pVariables( param_2 ),
       pTags( nullptr ),
@@ -628,6 +629,7 @@ FlashDisplayList::FlashDisplayList( FlashStack *param_1,
       flags( 0 ),
       maxFrameIndex( 0 ),
       transform(),
+      field41_0x50( 0 ),
       bPendingFrameChange( false ) {
     action.pStack = param_1;
 }

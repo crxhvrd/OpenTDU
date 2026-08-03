@@ -98,10 +98,21 @@ void FlashSlider::setRange( float min, float max ) {
 
 void FlashSlider::setAutoVelocity( bool param_1 ) { bAutoVelocity = param_1; }
 
+void FlashSlider::bind( FlashPlayer *pPlayer,
+                        const char *pVarName,
+                        int32_t orientation,
+                        float initialValue ) {
+    // FUN_006c6ac0 (inlined)
+    pFlashPlayer = pPlayer;
+    varName = pVarName;
+    isVertical = orientation;
+    setValue( initialValue );
+}
+
 void FlashSlider::setValue( float param_1 ) {
     // FUN_0071b9a0
     float fVar2 = value;
-    value = Clamp( value, minMaxValues[0], minMaxValues[1] );
+    value = Clamp( param_1, minMaxValues[0], minMaxValues[1] );
 
     if ( pFlashPlayer != nullptr ) {
         uint32_t dVar7 = FUN_0071b940();

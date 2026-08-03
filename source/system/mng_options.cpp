@@ -175,7 +175,13 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         return false;
     }
 
-    switch ( *pMessage ) {
+    const char *pTag = pMessage->pAsChar;
+    const uint32_t tag = ( (uint32_t)(uint8_t)pTag[0] << 24 ) |
+                         ( (uint32_t)(uint8_t)pTag[1] << 16 ) |
+                         ( (uint32_t)(uint8_t)pTag[2] << 8 ) |
+                         (uint32_t)(uint8_t)pTag[3];
+
+    switch ( tag ) {
     case 0x70726672: // "prfr" — audio parameters
         FUN_006c6610();
         return false;
@@ -219,9 +225,9 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         return true;
 
     case 0x626b6f70: // "bkop" — back to the options screen
-        pInvokingPlayer->setVariableValue( "/:NoRedirection", nullptr );
+        pInvokingPlayer->setVariableValue( "/:NoRedirection", int32_t( 0 ) );
         pAudioOptions->deactivate();
-        FUN_006c7c60();
+        refreshOptionsScreen();
         gpCamera->setSeatPosition( gpPlayerData->getSeatPositionHeight(),
                                    gpPlayerData->getSeatPositionPosition() );
         OTDU_UNIMPLEMENTED; // TODO: re-apply the saved gamma ramp (no GSRender
@@ -558,9 +564,20 @@ void MngOptions::FUN_006c59d0() {
 
 void MngOptions::FUN_006c60c0( int32_t param_1 ) {
     // FUN_006c60c0
-    FlashPlayer *peVar3 = gpFlash->getFlashPlayer( "GENERAL" );
+    uint32_t local_8 = 0u;
+    uint32_t local_4 = 0u;
+    FlashPlayer *peVar3 = nullptr;
+    if ( gpFlash->getFlashMovieIndex( &local_8, &local_4, "GENERAL" ) ) {
+        MoviePlayer *pMVar2 = gpFlash->getMoviePlayer( local_8, local_4 );
+        if ( pMVar2 != nullptr && pMVar2->MovieBank.isLoaded() ) {
+            peVar3 = pMVar2->MovieBank.getFlashPlayer();
+        }
+    }
 
-    peVar3->setVariableValue( "/:IsAvertTimeOut", nullptr );
+    // NOTE: the original passes the integer 0 here, not a null string.
+    if ( peVar3 != nullptr ) {
+        peVar3->setVariableValue( "/:IsAvertTimeOut", int32_t( 0 ) );
+    }
     FUN_006c59d0();
 
     if ( param_1 == 0 ) {
@@ -660,9 +677,9 @@ void MngOptions::FUN_006c6650() {
     // FUN_006c6650
     static constexpr int32_t kNumOnlineOps = 9;
     static constexpr const char *kOnlineOps[kNumOnlineOps] = {
-        "/:OnlineOp_f_1", "/:OnlineOp_f_2", "/:OnlineOp_f_3", "/:OnlineOp_f_4",
-        "/:OnlineOp_f_5", "/:OnlineOp_f_6", "/:OnlineOp_f_7", "/:OnlineOp_f_8",
-    };
+        "/:OnlineOp_f_1", "/:OnlineOp_f_2", "/:OnlineOp_f_3",
+        "/:OnlineOp_f_4", "/:OnlineOp_f_5", "/:OnlineOp_f_6",
+        "/:OnlineOp_f_7", "/:OnlineOp_f_8", "/:OnlineOp_f_9" };
 
     for ( int32_t i = 0; i < kNumOnlineOps; i++ ) {
         pPlayer->setVariableValue( kOnlineOps[i],
@@ -744,9 +761,84 @@ void MngOptions::FUN_006c7fb0() {
     OTDU_UNIMPLEMENTED;
 }
 
-void MngOptions::FUN_006c7c60() {
+void MngOptions::bindFlashPlayer( FlashPlayer *pFlashPlayer,
+                                  int32_t orientation ) {
+    // FUN_006c6ac0
+    pPlayer = pFlashPlayer;
+
+    padSensitivitySlider.bind( pPlayer, "/:PadSensitivity", orientation,
+                               gpPlayerData->getPadSensitivity() );
+    padLinearitySlider.bind( pPlayer, "/:Linearity", orientation,
+                             gpPlayerData->getPadLinearity() );
+    barSensitivitySlider.bind( pPlayer, "/:BarSensitivity", orientation,
+                               gpPlayerData->getBarSensitivity() );
+    mouseSensitivitySlider.bind( pPlayer, "/:MouseSensitivity", orientation,
+                                 gpPlayerData->getMouseSensitivity() );
+    quiverSensitivitySlider.bind( pPlayer, "/:QuiverSensitivity", orientation,
+                                  gpPlayerData->getQuiverSensitivity() );
+    seatPositionSlider.bind( pPlayer, "/:seat_Position", orientation,
+                             gpPlayerData->getSeatPositionPosition() );
+    seatHeightSlider.bind( pPlayer, "/:seat_Height", orientation,
+                           gpPlayerData->getSeatPositionHeight() );
+    gammaSlider.bind( pPlayer, "/:gamma", orientation,
+                      gpPlayerData->getGamma() );
+    cameraShakeSlider.bind( pPlayer, "/:shake_camera", orientation,
+                            gpPlayerData->getCameraShake() );
+    radialBlurSlider.bind( pPlayer, "/:radial_blur", orientation,
+                           gpPlayerData->getRadialBlurIntensity() );
+
+    OTDU_UNIMPLEMENTED; // TODO: AUDIO
+
+    voicesThresholdSlider.bind( pPlayer, "/:voices_treshold", orientation,
+                                gpPlayerData->getVoicesThreshold() );
+    voicesInputSlider.bind( pPlayer, "/:voices_input", orientation,
+                            gpPlayerData->getVoicesInput() );
+    voicesVolumeSlider.bind( pPlayer, "/:voices_volume", orientation,
+                             gpPlayerData->getVoicesVolume() );
+}
+
+void MngOptions::refreshOptionsScreen() {
     // FUN_006c7c60
-    OTDU_UNIMPLEMENTED;
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    // TODO: TDU_LANGUAGE_ARRAY (DAT_00f6b260)
+    audioLanguage = 0;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: LOCALE
+
+    FUN_006c67b0();
+
+    // Gearbox label ("Automatic"/"Manual").
+    gearboxMode = gpPlayerData->isAutomaticGearbox() ? 0 : 1;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH ("/:WhatGear")
+
+    driveAssists = gpPlayerData->getDrivingHelpLevel();
+    FUN_006c7950( false );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+
+    FUN_006c7b80();
+
+    pPlayer->setVariableValue( "/:IsTrackIRAvailable", uint32_t( 0u ) );
+
+    padLinearitySlider.setValue( gpPlayerData->getPadLinearity() );
+    padSensitivitySlider.setValue( gpPlayerData->getPadSensitivity() );
+    quiverSensitivitySlider.setValue( gpPlayerData->getQuiverSensitivity() );
+    barSensitivitySlider.setValue( gpPlayerData->getBarSensitivity() );
+    mouseSensitivitySlider.setValue( gpPlayerData->getMouseSensitivity() );
+    seatHeightSlider.setValue( gpPlayerData->getSeatPositionHeight() );
+    seatPositionSlider.setValue( gpPlayerData->getSeatPositionPosition() );
+    gammaSlider.setValue( gpPlayerData->getGamma() );
+    cameraShakeSlider.setValue( gpPlayerData->getCameraShake() );
+    radialBlurSlider.setValue( gpPlayerData->getRadialBlurIntensity() );
+    voicesVolumeSlider.setValue( gpPlayerData->getVoicesVolume() );
+    voicesThresholdSlider.setValue( gpPlayerData->getVoicesThreshold() );
+    voicesInputSlider.setValue( gpPlayerData->getVoicesInput() );
+
+    FUN_006c6650();
+
+    pPlayer->setVariableValue( "/:IsSubtitlesOption", uint32_t( 0u ) );
 }
 
 void MngOptions::FUN_006c61b0() {

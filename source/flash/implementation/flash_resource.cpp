@@ -510,7 +510,9 @@ bool FlashResource::initialize( void *pFilestream, const char *pFilename ) {
 
             bool bVar7 = isHeaderValid();
             if ( bVar7 ) {
-                flashSpritePool.initialize( pHeader->NumSprites );
+                flashSpritePool.initialize( pHeader->NumSprites,
+                                            flashConfig.MaxNumOps *
+                                                sizeof( uint16_t * ) );
 
                 uint32_t uVar13 = (uint32_t)pHeader->NumSprites;
                 for ( ; uVar13 != 0; uVar13 = uVar13 - 1 ) {

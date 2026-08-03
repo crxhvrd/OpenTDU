@@ -105,6 +105,7 @@ GameModeScene::~GameModeScene() {
     OTDU_UNIMPLEMENTED;
     gpFlash->unregisterFlashListener( this );
     gpActiveGMScene = nullptr;
+    gpMngFade = nullptr;
 }
 
 bool GameModeScene::isStaticFrontEndScene() const {

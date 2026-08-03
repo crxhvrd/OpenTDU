@@ -1877,6 +1877,8 @@ void FlashSprite::advanceToNextTag() {
 void FlashSprite::enqueueAction( void *pAction ) {
     if ( !displayList.bPendingFrameChange ) {
         uint16_t **pActionsList = displayList.action.pActionsList;
+        OTDU_ASSERT( displayList.action.NumActions <
+                     gpActiveFlashResource->getFlashConfig().MaxNumOps );
         pActionsList[displayList.action.NumActions] = (uint16_t *)pAction;
         displayList.action.NumActions++;
     }
@@ -2643,6 +2645,34 @@ void FlashClip::setProperty( eFlashProperty param_3, float param_2 ) {
     pSprite->setProperty( param_3, param_2 );
     gpPreviousActiveFlashResource = pFVar1;
     gpActiveFlashResource = pFVar1;
+}
+
+bool FlashClip::getProperty( eFlashProperty param_2 ) {
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    FlashResource *pFVar1 = gpActiveFlashResource;
+    gpPreviousActiveFlashResource = gpActiveFlashResource;
+
+    uint32_t mask = 0u;
+    switch ( param_2 ) {
+    case eFlashProperty::FP_Visible:
+        mask = 1u;
+        break;
+    case eFlashProperty::FP_HighQuality:
+        mask = 2u;
+        break;
+    case eFlashProperty::FP_FocusRect:
+        mask = 4u;
+        break;
+    default:
+        break;
+    }
+
+    const bool bResult =
+        ( mask != 0u ) &&
+        ( ( pSprite->getDisplayList()->getFlagsRW() & mask ) != 0u );
+
+    gpPreviousActiveFlashResource = pFVar1;
+    return bResult;
 }
 
 void FlashClip::getPropertyViewport( const eFlashProperty param_3,

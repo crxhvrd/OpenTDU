@@ -14,6 +14,7 @@ public:
 
 public:
     const char *getName() const override { return "MngFade"; }
+    inline uint32_t getTransitionFlags() const { return flags; }
 
 public:
     MngFade();
@@ -56,3 +57,5 @@ private:
     void encodeTransitionDrawList( const uint8_t alpha, const float fVar7 );
     void encodeLogoDrawList();
 };
+
+extern MngFade *gpMngFade;

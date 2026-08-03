@@ -501,14 +501,13 @@ namespace flash {
 
         void jumpTo( FlashAction *param_1, uint16_t *param_2 ) {
             // FUN_00445560
-            // Signed 16-bit branch offset: (int)(short)*param_2.
-            int32_t dst = param_1->CurrentPC + (int16_t)*param_2;
             if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
-                OTDU_LOG_DEBUG( "Jump to %d\n", dst );
+                OTDU_LOG_DEBUG( "Jump to %d\n",
+                                param_1->CurrentPC + (int16_t)*param_2 );
             }
 
             param_1->updatePC();
-            param_1->goToPC( dst );
+            param_1->goToPC( (int16_t)*param_2 + param_1->CurrentPC );
         }
 
         void tellTarget( FlashAction *param_1 ) {

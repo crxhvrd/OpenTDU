@@ -23,6 +23,16 @@ public:
     }
     inline float getPadSensitivity() const { return padSensitivity; }
     inline float getBarSensitivity() const { return barSensitivity; }
+    inline float getMouseSensitivity() const { return mouseSensitivity; }
+    inline float getPadLinearity() const { return padLinearity; }
+    inline float getQuiverSensitivity() const { return quiverSensitivity; }
+    inline float getGamma() const { return gamma; }
+    inline float getCameraShake() const { return cameraShake; }
+    inline float getRadialBlurIntensity() const { return radialBlurIntensity; }
+    inline float getVoicesVolume() const { return voicesVolume; }
+    inline float getVoicesThreshold() const { return voicesThreshold; }
+    inline float getVoicesInput() const { return voicesInput; }
+    inline bool isAutomaticGearbox() const { return bAutomaticGearbox; }
     inline int32_t getDrivingHelpLevel() const { return drivingHelpLevel; }
     inline void setDrivingHelpLevel( const int32_t level ) {
         drivingHelpLevel = level;
@@ -78,6 +88,15 @@ private:
 
     float seatPositionHeight;
     float seatPositionPosition;
+    float padLinearity;
+    float quiverSensitivity;
+    float gamma;
+    float cameraShake;
+    float radialBlurIntensity;
+    float voicesVolume;
+    float voicesThreshold;
+    float voicesInput;
+    uint8_t bAutomaticGearbox : 1;
 
     uint32_t resolutionWidth;
     uint32_t resolutionHeight;

@@ -110,6 +110,7 @@ public:
 protected:
     bool createGameMech( uint32_t mechID, int32_t mechType );
     void destroyGameMech();
+    void updatePauseMenuTrigger();
     void updatePauseFade();
     void installLocalPlayerCar();
     void installLocalPlayerCar( int32_t carID,

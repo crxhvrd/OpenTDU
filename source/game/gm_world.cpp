@@ -7,6 +7,7 @@
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "flash/gs_flash.h"
 #include "flash/flash_mouse.h"
+#include "flash/implementation/flash_sprite.h"
 #include "world/weather/gs_weather.h"
 #include "render/camera/gs_camera.h"
 #include "player_data/gs_playerdata.h"
@@ -763,7 +764,7 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
         OTDU_UNIMPLEMENTED; // TODO: GameLogic
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: FLASH
+    updatePauseMenuTrigger();
 
     updatePauseFade();
 
@@ -947,6 +948,55 @@ void GameModeWorld::destroyGameMech() {
         OTDU_UNIMPLEMENTED; // TODO: GameLogic
         pGameMech = nullptr;
     }
+}
+
+void GameModeWorld::updatePauseMenuTrigger() {
+    // FUN_007beb90
+    PlayerConfiguration *pPlayerCfg =
+        ( gpConfig != nullptr ) ? gpConfig->pPlayerConfig : nullptr;
+
+    // Is any of the in-game (level 1) movies still fully active?
+    const bool bMovieActive =
+        ( gpFlash != nullptr ) && gpFlash->FUN_0099b1e0( 0, 1 );
+
+    FlashPlayer *pHudPlayer =
+        ( gpMngHud != nullptr ) ? gpMngHud->getHudPlayer() : nullptr;
+
+    const bool bPauseMenuAllowed = ( ( flags >> 1 ) & 1 ) != 0;
+    const bool bTriggered = ( pPlayerCfg != nullptr ) &&
+                            ( IsActionPressed( pPlayerCfg->pMenuPause ) ||
+                              !gEdSys.isWindowActivated() );
+
+    if ( !bPauseMenuAllowed || gpConfig == nullptr ||
+         gpConfig->NbMaxPlayers <= 0 || bPauseMenuActive || !bTriggered ||
+         bPauseMenuLocked || gpActiveGameMode == nullptr ||
+         gpActiveGameMode->isMessageBoxVisible() || pHudPlayer == nullptr ||
+         gpActiveGameMode->hasRequestedExit() || !bMovieActive ||
+         gpMngFade == nullptr ||
+         ( gpMngFade->getTransitionFlags() & 1 ) != 0 ) {
+        return;
+    }
+
+    FlashClip hudClip;
+    if ( !pHudPlayer->getClipPlayer( "/HUD", &hudClip ) ||
+         hudClip.pSprite == nullptr ) {
+        return;
+    }
+
+    if ( !hudClip.getProperty( eFlashProperty::FP_Visible ) ) {
+        return;
+    }
+
+    bPauseMenuActive = true;
+
+    DeviceAction *pMenuPause = pPlayerCfg->pMenuPause;
+    if ( pMenuPause != nullptr ) {
+        const uint8_t actionFlags = pMenuPause->Flags;
+        pMenuPause->Flags =
+            uint8_t( ( ( actionFlags & 1 ) << 1 ) | ( actionFlags & 0xe1 ) );
+    }
+
+    onPauseMenuRequested( true );
 }
 
 void GameModeWorld::updatePauseFade() {

@@ -119,6 +119,8 @@ struct FlashClip {
     void setProperty( eFlashProperty param_3, bool param_2 );
     void setProperty( eFlashProperty param_3, float param_2 );
 
+    bool getProperty( eFlashProperty param_2 );
+
     void getPropertyViewport( const eFlashProperty param_3,
                               FlashRECT &param_2 );
 

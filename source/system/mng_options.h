@@ -42,6 +42,8 @@ public:
                     class FlashPlayer *pPlayer ) override;
     void
     onClose( ePopupAnswer answer, void *param_2, int32_t param_3 ) override;
+    void bindFlashPlayer( FlashPlayer *pFlashPlayer, int32_t orientation );
+    void refreshOptionsScreen();
 
     void FUN_006c5c10();
     void FUN_006c59d0();
@@ -109,7 +111,6 @@ private:
     void FUN_006c7950( bool param_1 );
     void FUN_006c6730( int32_t param_1 );
     void FUN_006c7fb0();
-    void FUN_006c7c60();
     void FUN_006c61b0();
     void FUN_006c6a00();
     void FUN_006c6a70();
