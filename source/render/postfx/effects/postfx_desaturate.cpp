@@ -44,11 +44,12 @@ void PostFXNodeDesaturate::setSaturation( float param_2 ) {
 
 void PostFXNodeDesaturate::setContrast( float param_2 ) { contrast = param_2; }
 
-void PostFXNodeDesaturate::setRGBFactor( float param_2, float param_3,
+void PostFXNodeDesaturate::setRGBFactor( float param_2,
+                                         float param_3,
                                          float param_4 ) {
     // FUN_0042b9a0
-    rgbFactor[0] = Clamp( param_2, -1.0f /* FLOAT_00f41664 */,
-                          1.0f /* FLOAT_00f4165c */ );
+    rgbFactor[0] =
+        Clamp( param_2, -1.0f /* FLOAT_00f41664 */, 1.0f /* FLOAT_00f4165c */ );
     rgbFactor[1] = Clamp( param_3, -1.0f, 1.0f );
     rgbFactor[2] = Clamp( param_4, -1.0f, 1.0f );
 }
@@ -75,6 +76,14 @@ bool PostFXDesaturate::execute() {
         uint32_t uVar7 = pOwner->getInputLinkIndex( 0 );
         peVar10 = peVar6->getOutput( uVar7 );
     }
+
+    Render2DB *pInput2DB =
+        ( peVar10 != nullptr ) ? peVar10->getBound2DB() : nullptr;
+    OTDU_ASSERT_ONCE( pInput2DB != nullptr );
+    if ( pInput2DB == nullptr ) {
+        return false;
+    }
+
     gEdRender.bindRenderTargetAndSetViewport( pRenderTargets[0], 0 );
     gPostFXRenderer.bindShaders( nullptr, pPixelShader );
 
@@ -116,7 +125,7 @@ bool PostFXDesaturate::execute() {
     UploadConstant( &pPixelShader->getConstantMap()->FloatPS, 0x250,
                     &fStack_30[0].x(), 2 );
 
-    gpRenderContext->bindTexture( peVar10->getBound2DB()->getFirstBitmap(), 0 );
+    gpRenderContext->bindTexture( pInput2DB->getFirstBitmap(), 0 );
 
     uint32_t pIVar5 = pNode->getUnknownMask();
     if ( pIVar5 != 0xffffffff ) {
