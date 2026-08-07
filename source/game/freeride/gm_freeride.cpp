@@ -200,8 +200,20 @@ void GMFreeride::drawDebug( float deltaTime ) {
             target[2] = 52137.379f;
         }
 
+        if ( ImGui::Button( "Over lighthouse car park" ) ) {
+            target[0] = 548.4f;
+            target[1] = 38.7f;
+            target[2] = 17767.62f;
+        }
+        ImGui::SameLine();
+        if ( ImGui::Button( "Pearl City" ) ) {
+            target[0] = 31846.57f;
+            target[1] = 20.22f;
+            target[2] = 37179.66f;
+        }
+
         ImGui::SetNextItemWidth( 300.0f );
-        ImGui::InputFloat3( "World XYZ", target );
+        ImGui::DragFloat3( "World XYZ", target, 1000.0f );
         if ( ImGui::Button( "Use current" ) ) {
             target[0] = cur.x();
             target[1] = cur.y();

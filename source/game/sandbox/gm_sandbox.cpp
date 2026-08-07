@@ -190,6 +190,15 @@ void GMSandbox::drawDebug( float deltaTime ) {
         gpCamera->getMouseCamera()->setPosition(
             { 48442.840f, 190.627f, 52137.379f, 1.0f } );
     }
+    if ( ImGui::Button( "Lighthouse car park" ) ) {
+        gpCamera->getMouseCamera()->setPosition(
+            { 548.4f, 38.7f, 17767.62f, 1.0f } );
+    }
+    ImGui::SameLine();
+    if ( ImGui::Button( "Pearl City" ) ) {
+        gpCamera->getMouseCamera()->setPosition(
+            { 31846.57f, 20.22f, 37179.66f, 1.0f } );
+    }
 }
 #endif
 

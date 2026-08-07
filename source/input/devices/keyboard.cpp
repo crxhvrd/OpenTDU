@@ -234,6 +234,10 @@ inline const char* SDLScancodeToTestDrive(const SDL_Scancode code)
         return "PAGE_UP";
     case SDL_SCANCODE_PAGEDOWN:
         return "PAGE_DOWN";
+    case SDL_SCANCODE_LCTRL:
+        return "LCTRL";
+    case SDL_SCANCODE_RCTRL:
+        return "RCTRL";
     default:                    return SDL_GetScancodeName(code);
     }
 }

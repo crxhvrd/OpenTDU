@@ -28,6 +28,7 @@
 #include "system/system_shared.h"
 #include "tdu_instance.h"
 #include "core/maths_helper.h"
+#include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "world/gs_mng_resources.h"
 #include "world/gs_world.h"
@@ -43,9 +44,50 @@ static constexpr float kCarNameDuration = 2.0f;  // DAT_00f416b0
 
 static constexpr uint32_t kGaugesBufferSize = 0x7d000;
 
+static constexpr uint32_t kNumSimuWheelNames = 4;
+static const char *const kSimuWheelNames[kNumSimuWheelNames] = {
+    "f_left", "f_right", "r_left", "r_right" };
+
+static constexpr float kGMeterCentreFrame = 100.0f; // DAT_00f41708
+static constexpr int32_t kGMeterFrameCount = 200;
+static constexpr float kSlipFrameScale = 100.0f; // DAT_00f41708
+static constexpr int32_t kSlipFrameCount = 200;
+static constexpr float kPedalFrameSpan = 99.0f;       // DAT_00f417e8
+static constexpr float kWheelLoadFrameSpan = 200.0f;  // DAT_00f4170c
+static constexpr float kWheelLoadRefG = 5.0f;         // DAT_00f41750
+static constexpr float kSuspensionFrameSpan = 100.0f; // DAT_00f41708
+static constexpr int32_t kSuspensionFrameCount = 100;
+static constexpr float kGMeterSmoothing = 0.1f; // 1 - FLOAT_00fabe54
+
+// Written every frame by the overlay and never read back anywhere in the
+// binary.
+static float gSmoothedLongitudinalG = 0.0f; // DAT_016a6a80
+static float gSmoothedLateralG = 0.0f;      // DAT_016a6a7c
+
 bool gEnableMinimapDensity = true;    // DAT_00f99f04
 bool gEnableMinimapAI = true;         // DAT_00f99f05
 bool gEnableMinimapNetPlayers = true; // DAT_00f99f06
+
+static int32_t ClampAnimFrame( float frame, int32_t frameCount ) {
+    int32_t result = static_cast<int32_t>( frame );
+    if ( result < 1 ) {
+        return 1;
+    }
+    if ( result > frameCount ) {
+        return frameCount;
+    }
+    return result;
+}
+
+static int32_t GMeterFrame( float value ) {
+    return ClampAnimFrame( value * kGMeterCentreFrame + kGMeterCentreFrame,
+                           kGMeterFrameCount );
+}
+
+static int32_t SlipFrame( float normalizedSlip ) {
+    return ClampAnimFrame( std::fabs( normalizedSlip ) * kSlipFrameScale,
+                           kSlipFrameCount );
+}
 
 static FlashTag *ExtractShapeBitmapTag( FlashTag *pShapeTag,
                                         FlashResource *pResource ) {
@@ -1556,7 +1598,134 @@ void MngHud::tick( float deltaTime, float totalTime ) {
     }
 
     if ( gbSimuModeEnabled ) {
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+        drawSimulationOverlay();
+    }
+}
+
+void MngHud::drawSimulationOverlay() {
+    // FUN_006ec8c0
+    //
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMISSION (DAT_00fa97dc)
+    constexpr int32_t kMissionStateRemote = 5;
+    const int32_t missionState = 0;
+    const char *pBasePath =
+        ( missionState == kMissionStateRemote ) ? "remote/simu" : "/hud/simu";
+
+    FlashClip clip;
+    if ( pHudPlayer != nullptr &&
+         pHudPlayer->getClipPlayer( pBasePath, &clip ) ) {
+        if ( !gbShowGMeter ) {
+            clip.setProperty( eFlashProperty::FP_Visible, false );
+        }
+
+        PhysicsVehicle *pPhysics =
+            ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+
+        if ( pPhysics != nullptr && gbShowGMeter ) {
+            clip.setProperty( eFlashProperty::FP_Visible, true );
+
+            const float lateralG = pPhysics->getLateralG();
+            const float longitudinalG = pPhysics->getLongitudinalG();
+
+            gSmoothedLongitudinalG +=
+                ( longitudinalG - gSmoothedLongitudinalG ) * kGMeterSmoothing;
+            gSmoothedLateralG +=
+                ( lateralG - gSmoothedLateralG ) * kGMeterSmoothing;
+
+            char clipPath[128];
+            auto buildPath = [&]( const char *pSuffix ) -> const char * {
+                snprintf( clipPath, sizeof( clipPath ), "%s%s", pBasePath,
+                          pSuffix );
+                return clipPath;
+            };
+
+            pHudPlayer->goToFrameAndPlay( GMeterFrame( longitudinalG ),
+                                          buildPath( "/gmeter/long" ), false );
+            pHudPlayer->goToFrameAndPlay( GMeterFrame( lateralG ),
+                                          buildPath( "/gmeter/side" ), false );
+
+            pHudPlayer->goToFrameAndPlay(
+                static_cast<int32_t>(
+                    pPhysics->getEngineThrottle() * kPedalFrameSpan + 1.0f ),
+                buildPath( "/accel/pedal" ), false );
+            pHudPlayer->goToFrameAndPlay(
+                static_cast<int32_t>(
+                    pPhysics->getInputBrake() * kPedalFrameSpan + 1.0f ),
+                buildPath( "/brake/pedal" ), false );
+
+            char wheelBasePath[128];
+            char suspBasePath[128];
+            snprintf( wheelBasePath, sizeof( wheelBasePath ), "%s/w_",
+                      pBasePath );
+            snprintf( suspBasePath, sizeof( suspBasePath ), "%s/s_",
+                      pBasePath );
+
+            const float vehicleMass = pPhysics->getVehicleMass();
+            const uint32_t numWheels = pPhysics->getNumWheels();
+            for ( uint32_t wheelIndex = 0;
+                  wheelIndex < numWheels && wheelIndex < kNumSimuWheelNames;
+                  wheelIndex++ ) {
+                const char *pWheelName = kSimuWheelNames[wheelIndex];
+                const PhysicsVehicle::WheelReadout wheel =
+                    pPhysics->getWheelReadout( wheelIndex );
+
+                snprintf( clipPath, sizeof( clipPath ), "%s%s", wheelBasePath,
+                          pWheelName );
+                FlashClip wheelClip;
+                if ( pHudPlayer->getClipPlayer( clipPath, &wheelClip ) ) {
+                    float loadPercent =
+                        ( vehicleMass > 0.0f )
+                            ? ( wheel.SuspensionLoad * kWheelLoadFrameSpan ) /
+                                  ( vehicleMass * kWheelLoadRefG )
+                            : 0.0f;
+                    if ( loadPercent >= kWheelLoadFrameSpan ) {
+                        loadPercent = kWheelLoadFrameSpan;
+                    } else if ( loadPercent <= 0.0f ) {
+                        loadPercent = 0.0f;
+                    }
+                    wheelClip.setProperty( eFlashProperty::FP_ScaleX,
+                                           loadPercent );
+                    wheelClip.setProperty( eFlashProperty::FP_ScaleY,
+                                           loadPercent * 0.5f + 50.0f );
+                    wheelClip.setProperty( eFlashProperty::FP_Rotation,
+                                           -wheel.SteerAngle * kRadToDeg );
+                }
+
+                snprintf( clipPath, sizeof( clipPath ), "%s%s/up",
+                          wheelBasePath, pWheelName );
+                pHudPlayer->goToFrameAndPlay( SlipFrame( wheel.LateralSlip ),
+                                              clipPath, false );
+
+                snprintf( clipPath, sizeof( clipPath ), "%s%s/down",
+                          wheelBasePath, pWheelName );
+                pHudPlayer->goToFrameAndPlay(
+                    SlipFrame( wheel.LongitudinalSlip ), clipPath, false );
+
+                // Suspension travel
+                snprintf( clipPath, sizeof( clipPath ), "%s%s", suspBasePath,
+                          pWheelName );
+                const float travel =
+                    wheel.SuspensionStaticLength - wheel.SuspensionDroopStop;
+                const float compression = ( travel != 0.0f )
+                                              ? ( wheel.SuspensionStaticLength -
+                                                  wheel.SuspensionLength ) /
+                                                    travel
+                                              : 0.0f;
+                int32_t suspFrame = static_cast<int32_t>(
+                    ( 1.0f - compression ) * kSuspensionFrameSpan );
+                if ( suspFrame < 1 ) {
+                    suspFrame = 1;
+                } else if ( suspFrame > kSuspensionFrameCount ) {
+                    suspFrame = kSuspensionFrameCount;
+                }
+                pHudPlayer->goToFrameAndPlay( suspFrame, clipPath, false );
+            }
+        }
+    }
+
+    if ( pHudPlayer != nullptr &&
+         pHudPlayer->getClipPlayer( "/simu_icon", &clip ) ) {
+        clip.setProperty( eFlashProperty::FP_Visible, true );
     }
 }
 

@@ -132,6 +132,8 @@ struct PhysicsEngineSim {
     float Inertia = 0.4f;
     float TorqueScale = 1.0f;
     float FrictionLoss = 0.0f;
+    float ThrottleIdle = 0.0f;
+    bool bApplyIdleThrottleFloor = false;
     float Throttle = 0.0f;
     float Omega = 84.0f; // current engine speed (rad/s)
     float TorqueOut = 0.0f;
@@ -139,6 +141,8 @@ struct PhysicsEngineSim {
     float PeakTorqueOmega = 0.0f; // omega at peak torque
     float PeakPowerOmega = 0.0f;  // omega at peak power
     float AngAccel = 0.0f;        // dOmega/dt (rad/s^2), 1-step lag
+    float RevLimiterTimer = 1.0f;
+    float RevLimiterCutTime = 0.25f;
 };
 
 struct PhysicsGearboxSim {
@@ -245,6 +249,10 @@ struct PhysicsVehicleState {
     float EspGripDiff = 0.0f;     // DAT_010d6f0c, the signed axle imbalance
     float EspThreshold = 0.0f;    // the curve value it is tested against
 };
+
+float ThrottlePosForTorque( const PhysicsEngineSim &engine,
+                            float targetTorque,
+                            float omega );
 
 void BuildEngineCurves( PhysicsEngineSim &engine,
                         const float *pTorquePairs,

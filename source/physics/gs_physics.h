@@ -334,11 +334,13 @@ private:
     void buildProcessPendingProps();
     void physicsStep( float dt, float accTime );
     void drawCollisionShapes();
+    void updateGMeterToggle();
 };
 
 extern GSPhysics *gpPhysics;
 extern bool gDrawCollisionVis;
 extern bool gDrawCollisionVisTerrain;
+extern bool gbShowGMeter;
 
 // Mirrors ScopedMutexLock. This is required; as GSPhysics uses a
 // separate integer to track the mutex lock state.

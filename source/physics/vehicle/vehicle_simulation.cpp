@@ -14,7 +14,9 @@ static constexpr float kLoadToPerMille =
 
 static constexpr float kMaxCoupling = 4000.0f; // FIXME
 
-static constexpr float kZeroSpeedSlipRatio = 20.0f; // DAT_00f03ee0
+static constexpr float kZeroSpeedSlipRatio = 20.0f;    // DAT_00f03ee0
+static constexpr float kWattToPS = 0.0013597f;         // DAT_00f41694 = 1/735.5
+static constexpr float kEngineBrakeRampStart = -0.25f; // DAT_00f41b10
 
 static float WheelLongitudinalSlipRatio( float radius,
                                          float vLong,
@@ -33,6 +35,10 @@ int gVehicleDrivelineInertiaMode = -1;
 
 float gVehicleEngineFrictionLoss = -1.0f;
 float gVehicleEngineTorqueScale = -1.0f;
+
+float gVehicleCouplingCoefE = -1.0f;
+float gVehicleCouplingCoefW = -1.0f;
+float gVehicleMaxCoupling = kMaxCoupling;
 
 static constexpr float kShiftDecisionThrottle = 0.25f; // min throttle for eval
 static constexpr float kShiftLockout = 0.15f; // post-shift re-shift block, secs
@@ -65,10 +71,8 @@ static constexpr float kFreeRollDriveTorque = 1.0f; // FLOAT_00f4165c
 
 bool gVehicleEngineStateMachine = true;
 static constexpr float kIgnitionBlipThrottle = 0.35f; // start-blip throttle
-static constexpr float kIdleGovGain =
-    3.0f; // idle-governor throttle / omega deficit
 static constexpr float kEngineStallFrac =
-    0.2f; // stall below this*idle (DAT_00f416dc)
+    0.25f; // stall below this*idle; DAT_00f416dc
 static constexpr float kTorqueSmoothRate = 100.0f;
 
 static void StepClutch( PhysicsClutchSim &c,
@@ -251,7 +255,8 @@ static void NormalizeSlipsAndCurves( PhysicsWheelState &w,
     w.NormLatClamped = nLat;
 
     const float loadPM = load * kLoadToPerMille;
-    w.TireForceLong = PacejkaLongitudinal( tire, loadPM, nLong );
+    const float longSlipCurveInput = rawLongSlip;
+    w.TireForceLong = PacejkaLongitudinal( tire, loadPM, longSlipCurveInput );
     const float Fy = PacejkaLateral( tire, slipAngleDeg, 0.0f, loadPM );
     w.TireForceLat = Fy;
 
@@ -441,11 +446,33 @@ InterpTorque( const PhysicsEngineSim::CurvePoint *pts, int n, float omega ) {
     return pts[n - 1].Torque;
 }
 
+float ThrottlePosForTorque( const PhysicsEngineSim &e,
+                            float targetTorque,
+                            float omega ) {
+    // FUN_0043f460
+    if ( e.CurveCount < 2 ) {
+        return 0.0f;
+    }
+    if ( omega < 0.0f ) {
+        omega = e.Omega;
+    }
+    const float tMax = InterpTorque( e.CurveMax, e.CurveCount, omega );
+    const float tMin = InterpTorque( e.CurveMin, e.CurveCount, omega );
+    const float span = tMax - tMin;
+    if ( std::fabs( span ) < 1e-8f ) {
+        return 0.0f;
+    }
+    return Clamp( ( targetTorque - tMin ) / span, 0.0f, 1.0f );
+}
+
 static float
 EngineTorqueAt( const PhysicsEngineSim &e, float omega, float throttle ) {
     // FUN_0043f230
     if ( e.CurveCount < 2 ) {
         return 0.0f;
+    }
+    if ( e.ThrottleIdle > throttle && e.bApplyIdleThrottleFloor ) {
+        throttle = e.ThrottleIdle;
     }
     if ( omega < 0.0f )
         omega = e.Omega;
@@ -481,8 +508,7 @@ void BuildEngineCurves( PhysicsEngineSim &e,
             omegaPeakTorque = om;
             iPeakTorque = i;
         }
-        const float powerPS =
-            tq * om * 0.0013597f; // DAT_00f41694 = 1/735.5 (W->PS)
+        const float powerPS = tq * om * kWattToPS;
         if ( powerPS > peakPowerPS ) {
             peakPowerPS = powerPS;
             torqueAtPeakPower = tq;
@@ -492,8 +518,7 @@ void BuildEngineCurves( PhysicsEngineSim &e,
     const float normScale =
         ( peakPowerPS > 1e-6f ) ? ( bhp * packBoost ) / peakPowerPS : 1.0f;
     e.PeakTorqueOmega = omegaPeakTorque;
-    e.PeakPowerOmega =
-        ( omegaPeakPower > 1.0f ) ? omegaPeakPower : ( 0.9f * e.OmegaMax );
+    e.PeakPowerOmega = omegaPeakPower;
     e.CurveCount = n;
     for ( int i = 0; i < n; ++i ) {
         e.CurveMax[i].Omega = pairs[2 * i];
@@ -504,11 +529,14 @@ void BuildEngineCurves( PhysicsEngineSim &e,
         ( peakTorque > 1e-6f ) ? torqueAtPeakPower / peakTorque : 1.0f;
     const float kf = frictionCoef;
     const float brakeFloor = -( kf * torqueAtPeakPower );
+    const float rStart = kf * kEngineBrakeRampStart; // -0.25 * kf
+    const float rEnd = -kf;
     for ( int i = 0; i < n; ++i ) {
         e.CurveMin[i].Omega = e.CurveMax[i].Omega;
         if ( i < iPeakTorque && iPeakTorque > 0 ) {
-            float r = -kf * ( 0.25f + 0.75f * (float)i / (float)iPeakTorque );
-            r = Clamp( r, -kf, -0.25f * kf );
+            float r =
+                ( (float)i * ( rEnd - rStart ) ) / (float)iPeakTorque + rStart;
+            r = Clamp( r, std::min( rStart, rEnd ), std::max( rStart, rEnd ) );
             e.CurveMin[i].Torque = e.CurveMax[i].Torque * rho * r;
         } else {
             e.CurveMin[i].Torque = brakeFloor;
@@ -794,28 +822,27 @@ void StepPowertrain( PhysicsVehicleState &v,
     const float k = g.Ratios[gear] * g.FinalDrive; // ratio * finalDrive
     const float h = dt; // one substep per OnStep call
 
-    // Engine ignition/idle/stall state machine (sets e.State; zeroes Omega
-    // while off/cranking). engineFiring = producing torque (RevUp/Running).
     const bool engineFiring = StepEngineState( e, dt );
 
-    // Throttle to the engine: eased during a shift; a start blip during RevUp;
-    // an idle governor at zero throttle in Running (holds idle without a hard
-    // clamp, so a severe lug can stall).
     float engThrottle = throttle * shiftThrottleMult;
-    if ( gVehicleEngineStateMachine ) {
-        if ( e.State == eEngineState::ES_RevUp ) {
-            engThrottle = std::max( engThrottle, kIgnitionBlipThrottle );
-        } else if ( e.State == eEngineState::ES_Running &&
-                    e.Omega < e.OmegaIdle ) {
-            const float gov =
-                Clamp( ( e.OmegaIdle - e.Omega ) / e.OmegaIdle * kIdleGovGain,
-                       0.0f, 1.0f );
-            engThrottle = std::max( engThrottle, gov );
-        }
+    e.bApplyIdleThrottleFloor =
+        ( e.State == eEngineState::ES_Running ) && gVehicleEngineStateMachine;
+    if ( gVehicleEngineStateMachine && e.State == eEngineState::ES_RevUp ) {
+        engThrottle = std::max( engThrottle, kIgnitionBlipThrottle );
     }
 
+    float limThrottle = engThrottle;
+    if ( e.Omega > e.OmegaMax && e.RevLimiterTimer > e.RevLimiterCutTime ) {
+        e.RevLimiterTimer = 0.0f;
+        e.Omega = e.OmegaMax; // one-shot snap, caps the overshoot
+    }
+    if ( e.RevLimiterTimer < e.RevLimiterCutTime ) {
+        limThrottle = 0.0f;
+    }
+    e.RevLimiterTimer += dt;
+
     e.TorqueOut =
-        engineFiring ? EngineTorqueAt( e, e.Omega, engThrottle ) : 0.0f;
+        engineFiring ? EngineTorqueAt( e, e.Omega, limThrottle ) : 0.0f;
 
     const float inertia = ( e.TorqueOut <= e.SmoothedTorque )
                               ? gPhysicsConfig.TorqueInertiaDown
@@ -864,9 +891,14 @@ void StepPowertrain( PhysicsVehicleState &v,
 
     float coupling = 0.0f;
     if ( !neutral ) {
-        const float invIe =
-            1.0f / std::max( e.Inertia * v.CouplingCoefE, 1e-4f );
-        const float invIw = 1.0f / std::max( Idl * v.CouplingCoefW, 1e-4f );
+        const float coefE = ( gVehicleCouplingCoefE > 0.0f )
+                                ? gVehicleCouplingCoefE
+                                : v.CouplingCoefE;
+        const float coefW = ( gVehicleCouplingCoefW > 0.0f )
+                                ? gVehicleCouplingCoefW
+                                : v.CouplingCoefW;
+        const float invIe = 1.0f / std::max( e.Inertia * coefE, 1e-4f );
+        const float invIw = 1.0f / std::max( Idl * coefW, 1e-4f );
         const float We = e.Omega;
         const float Te = e.FrictionLoss * We + e.TorqueOut;
         const float Ww = v.ReflectedWheelSpeed;
@@ -883,7 +915,10 @@ void StepPowertrain( PhysicsVehicleState &v,
         }
 
         coupling = impulseCoupling;
-        coupling = Clamp( coupling, -kMaxCoupling, kMaxCoupling );
+        if ( gVehicleMaxCoupling > 0.0f ) {
+            coupling =
+                Clamp( coupling, -gVehicleMaxCoupling, gVehicleMaxCoupling );
+        }
     }
 
     if ( engineFiring ) {
@@ -896,8 +931,10 @@ void StepPowertrain( PhysicsVehicleState &v,
         if ( !gVehicleEngineStateMachine && e.Omega < e.OmegaIdle ) {
             e.Omega = e.OmegaIdle;
         }
-        if ( e.Omega > e.OmegaMax ) {
-            e.Omega = e.OmegaMax;
+
+        constexpr float kSafetyCeiling = 1.15f;
+        if ( e.Omega > e.OmegaMax * kSafetyCeiling ) {
+            e.Omega = e.OmegaMax * kSafetyCeiling;
         }
     } else {
         e.AngAccel = 0.0f;

@@ -23,6 +23,8 @@ public:
         float RotationAngle;           // rad
         float SuspensionLength;        // m (current, from the hard point)
         float SuspensionDeflection;    // m, rest - current (+ = compressed/up)
+        float SuspensionStaticLength;  // m, ride height
+        float SuspensionDroopStop;     // m, full droop
         float LongitudinalSlip;
         float LateralSlip;
         float LongitudinalGroundSpeed; // m/s along contact-forward (0 airborne)
@@ -50,23 +52,6 @@ public:
         float droopStop;  // full-droop travel stop = static + preload, m
     };
 
-public:
-    PhysicsVehicle();
-    ~PhysicsVehicle() override;
-
-    static SuspensionSetup
-    ComputeAxleSuspension( const DBEntryCarPhysicsData &db, bool bFront );
-
-    void initialize();
-    bool create( JPH::PhysicsSystem *pSystem,
-                 JPH::Body *pChassis,
-                 const DBEntryCarPhysicsData &db,
-                 const void *pTorqueBinary = nullptr,
-                 bool bFactoryShape = false );
-    void destroy();
-    bool isActive() const { return pChassisBody != nullptr; }
-    bool isSimulated() const { return bRegistered; }
-
     struct DrivingGearbox {
         int32_t Gear;       // 0 = reverse, 1 = neutral, 2.. = forward gears
         float ForwardSpeed; // m/s, signed (+ = forwards)
@@ -89,12 +74,41 @@ public:
         DM_RepeatLast = 4,
     };
 
-    void setInput( float throttle, float brake, float steer );
+    // Chronopack State
+    struct Chrono {
+        int32_t State = 0; // 0 off, 1 ready, 2 stop-first, 3 running
+        float Timer = 0.0f;
+        float StartDistance = 0.0f;
+        float Odometer = 0.0f; // in metres
+        float T60mph = 0.0f;
+        float T100kmh = 0.0f;
+        float T200kmh = 0.0f;
+        float T400m = 0.0f;
+        float T1000m = 0.0f;
+        float TQuarterMile = 0.0f;
+        float MaxDrivenSlip = 0.0f; // m/s
+        float MaxOmega = 0.0f;      // rad/s
+        float SlipIntegral = 0.0f;  // integral of mean driven slip (m/s) dt
+        float LimiterTime = 0.0f;   // seconds at >= 0.99 * OmegaMax
+    };
+
+public:
+    float getEngineThrottle() const { return vehicle.Engine.Throttle; }
+    float getEngineTorqueOut() const { return vehicle.Engine.TorqueOut; }
+    float getEngineOmegaMax() const { return vehicle.Engine.OmegaMax; }
+    float getEngineSmoothedTorque() const {
+        return vehicle.Engine.SmoothedTorque;
+    }
+    eEngineState getEngineState() const { return vehicle.Engine.State; }
+    float getVehicleMass() const { return vehicle.Mass; }
+    float getInputBrake() const { return inputBrake; }
+    float getInputThrottle() const { return inputThrottle; }
+    void setAutoReverseState( int32_t state ) { autoReverseState = state; }
+    int32_t getAutoReverseState() const { return autoReverseState; }
+    bool isActive() const { return pChassisBody != nullptr; }
+    bool isSimulated() const { return bRegistered; }
     void setDrivingMode( uint8_t mode ) { drivingMode = mode; }
     uint8_t getDrivingMode() const { return drivingMode; }
-    void applyDrivingMode();
-    void tick( float deltaTime );
-    void setDrivingHelpLevel( int32_t level );
     int32_t getElectronicIndex() const { return vehicle.ElectronicIndex; }
     bool areElectronicsEnabled() const { return vehicle.bElectronicsEnabled; }
     bool isEspIntervening() const { return vehicle.bEspEnabled; }
@@ -102,6 +116,42 @@ public:
     float getEspThreshold() const { return vehicle.EspThreshold; }
     float getEspMagFront() const { return vehicle.EspMagFront; }
     float getEspMagRear() const { return vehicle.EspMagRear; }
+    Matrix4x4f_t computeDisplayMatrix() const {
+        return computeDisplayMatrix( getChassisShiftedMatrix() );
+    }
+    const Matrix4x4f_t &getPhysicsMatrix() const { return physicsMatrix; }
+    const Matrix4x4f_t &getDisplayMatrix() const { return displayMatrix; }
+    const Matrix4x4f_t &getInvChassisMatrix() const { return invChassisMatrix; }
+    float getBodyHeight() const { return bodyHeight; }
+    float getDisplayYOffset() const { return y3DOffset; }
+    float getWheelRestCenterDrop( uint32_t i ) const {
+        if ( i >= static_cast<uint32_t>( vehicle.NumWheels ) ) {
+            return 0.0f;
+        }
+        return -wheelAttach[i].y() + suspRestLength[i];
+    }
+    const Chrono &getChrono() const { return chrono; }
+    float getForwardSpeed() const { return vehicle.ForwardSpeed; }
+
+public:
+    PhysicsVehicle();
+    ~PhysicsVehicle() override;
+
+    static SuspensionSetup
+    ComputeAxleSuspension( const DBEntryCarPhysicsData &db, bool bFront );
+
+    void initialize();
+    bool create( JPH::PhysicsSystem *pSystem,
+                 JPH::Body *pChassis,
+                 const DBEntryCarPhysicsData &db,
+                 const void *pTorqueBinary = nullptr,
+                 bool bFactoryShape = false );
+    void destroy();
+
+    void setInput( float throttle, float brake, float steer );
+    void applyDrivingMode();
+    void tick( float deltaTime );
+    void setDrivingHelpLevel( int32_t level );
 
     DrivingGearbox getDrivingGearbox() const;
     void setCurrentGear( int32_t gear );
@@ -116,49 +166,34 @@ public:
     Matrix4x4f_t getChassisWorldMatrix() const;
     Matrix4x4f_t getChassisShiftedMatrix() const;
     Matrix4x4f_t computeDisplayMatrix( const Matrix4x4f_t &sourceMatrix ) const;
-    Matrix4x4f_t computeDisplayMatrix() const {
-        return computeDisplayMatrix( getChassisShiftedMatrix() );
-    }
 
     void publishStepPose();
-
-    const Matrix4x4f_t &getPhysicsMatrix() const { return physicsMatrix; }
-    const Matrix4x4f_t &getDisplayMatrix() const { return displayMatrix; }
-    const Matrix4x4f_t &getInvChassisMatrix() const { return invChassisMatrix; }
-
     void onWorldShifted( const Eigen::Vector3f &worldShift );
-
-    float getBodyHeight() const { return bodyHeight; }
-    float getDisplayYOffset() const { return y3DOffset; }
     void calibrateDisplayYOffset( float modelWheelRestY );
 
-    float getWheelRestCenterDrop( uint32_t i ) const {
-        if ( i >= static_cast<uint32_t>( vehicle.NumWheels ) ) {
-            return 0.0f;
-        }
-        return -wheelAttach[i].y() + suspRestLength[i];
-    }
     uint32_t getNumWheels() const;
     WheelReadout getWheelReadout( uint32_t index ) const;
-    float getChassisSpeed() const;
-    float getForwardSpeed() const { return vehicle.ForwardSpeed; }
+
+    void armChrono();
+    void updateChrono( float dt );
+
+    float getChassisSpeed() const; // Main Thread call only
     Eigen::Vector4f getChassisVelocity() const;
+
     float getEngineAngularVelocity() const;
     int32_t getCurrentGear() const;
 
-    float getEngineTorqueOut() const { return vehicle.Engine.TorqueOut; }
-    float getEngineOmegaMax() const { return vehicle.Engine.OmegaMax; }
-    float getEngineSmoothedTorque() const {
-        return vehicle.Engine.SmoothedTorque;
-    }
-    eEngineState getEngineState() const { return vehicle.Engine.State; }
-    float getVehicleMass() const { return vehicle.Mass; }
-    float getInputBrake() const { return inputBrake; }
-    float getInputThrottle() const { return inputThrottle; }
-    void setAutoReverseState( int32_t state ) { autoReverseState = state; }
-    int32_t getAutoReverseState() const { return autoReverseState; }
     float getLateralG() const;
     float getLongitudinalG() const;
+
+    enum eSteerCurve {
+        SC_Limit = 0,     // Physics.ini SteeringLimit
+        SC_Speed,         // Physics.ini SteeringSpeed
+        SC_CenterSpeed,   // Physics.ini SteeringCenterSpeed
+        SC_StraightSpeed, // Physics.ini SteeringStraightSpeed
+        SC_CounterSpeed,  // Physics.ini SteeringCounterSpeed
+        SC_Count
+    };
 
 private:
     bool castWheel( JPH::PhysicsSystem &system,
@@ -166,7 +201,9 @@ private:
                     int wheelIndex,
                     float deltaTime );
 
-    float filterSteering( float rawTarget );
+    float filterSteering( float rawTarget,
+                          const JPH::Body &chassis,
+                          float deltaTime );
     void applyAntiRollBars();
 
 private:
@@ -198,6 +235,7 @@ private:
     float wheelBase = 2.5f; // axle-to-axle distance, m (speed-sensitive steer)
     float prevSuspLength[PhysicsVehicleState::kMaxWheels]; // last step's length
                                                            // (damper velocity)
+    float wheelGroundGap[PhysicsVehicleState::kMaxWheels] = {};
     uint32_t wheelSurface[PhysicsVehicleState::kMaxWheels] =
         {}; // raycast contact phys-type code
     uint32_t wheelMaterial[PhysicsVehicleState::kMaxWheels] =
@@ -216,6 +254,24 @@ private:
     float filteredSteer;
     float steerCommand; // shaped, speed-scaled steer (drives the wheel angle)
 
+    float steerCurveX[SC_Count][3];
+    float steerCurveY[SC_Count][3];
+    float steerCurveScale;
+    float steerNormal[2];       // Physics.ini SteeringNormal
+    float steerHelpStraight[2]; // Physics.ini SteeringHelpStraight
+    float steerHelpTurn[2];     // Physics.ini SteeringHelpTurn
+    float steerHelpGain;        // multiplies the assist error term
+    float steerHelpGain2;       // unknown
+    float steerAuxTerm;         // -limit * command
+    float steerAuxTermPrev;     //
+    float steerYawTerm;         // negated body local yaw rate
+    float steerSideslipTerm;    // yaw/sideslip blend by speed
+    float steerDeadZone;        // set by the filter
+    int32_t steerHelpState;     // 0 = none, 1 = straight, 3 = counter
+    // Retail reads it from the player profile: 0 = pad/analog (the
+    // whole assist + rate-limit tail is bypassed), != 0 = wheel/bar.
+    bool bUseSteerControl;
+    float steerAssistBlend;
     float engineOmega; // rad/s, for the tacho / CarBodyState::Omega
     int32_t currentGear;
     float finalDriveRatio;
@@ -225,6 +281,8 @@ private:
     float displayYaw;
     float y3DOffset;
     float bodyHeight;
+
+    Chrono chrono;
 
     // Pose published at the end of each physics step (see publishStepPose).
     Matrix4x4f_t physicsMatrix = Matrix4x4f_t::Identity();

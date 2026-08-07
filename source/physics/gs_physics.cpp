@@ -12,6 +12,8 @@
 #include "havok/havok_packfile.h"
 #include "havok/havok_to_jolt.h"
 #include "database/gs_database.h"
+#include "input/ed_dev.h"
+#include "input/input_device.h"
 
 #include "render/draw_list.h"
 #include "render/gs_render.h"
@@ -205,7 +207,12 @@ static std::atomic<bool> gbPhysicsTickInProgress{ false }; // DAT_010e7a58+0x1b0
 static int32_t DAT_010e7668 = 0; // DAT_010e7668
 
 static int32_t gGMeterAvailableBits = 0; // DAT_016a9878
-static bool gbShowGMeter = false;        // DAT — G-meter overlay visibility
+
+bool gbShowGMeter = false;                            // DAT_010e7620
+static Device *gpGMeterKeyboard = nullptr;            // DAT_016a97d0
+static InputChannel *gpChannelRightControl = nullptr; // DAT_016a97cc
+static InputChannel *gpChannelLeftControl = nullptr;  // DAT_016a97c8
+static InputChannel *gpChannelG = nullptr;            // DAT_016a97c4
 
 // Global time multiplier (1.0 = real-time; < 1.0 = slow-mo).
 static float gPhysicsTimeScale = 1.0f; // DAT_00f8a2ec
@@ -835,13 +842,50 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
     // G-meter overlay init (see FUN_009078f0)
     if ( ( gGMeterAvailableBits & 1 ) == 0 ) {
         gGMeterAvailableBits |= 1;
-        OTDU_UNIMPLEMENTED;
     }
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED; // TODO: AI trainer + back-on-track
+
+    updateGMeterToggle();
 
     if ( bHavokDebugEnabled ) {
         OTDU_UNIMPLEMENTED;
+    }
+}
+
+void GSPhysics::updateGMeterToggle() {
+    // FUN_0084de60
+    if ( ( gGMeterAvailableBits & 2 ) == 0 ) {
+        gGMeterAvailableBits |= 2;
+        gpGMeterKeyboard = gEdDev.getDevice( eDeviceType::DT_Keyboard, 0 );
+    }
+
+    if ( gpGMeterKeyboard == nullptr ) {
+        return;
+    }
+
+    if ( ( gGMeterAvailableBits & 4 ) == 0 ) {
+        gGMeterAvailableBits |= 4;
+        gpChannelRightControl = gpGMeterKeyboard->getChannel( "RCTRL" );
+    }
+    if ( ( gGMeterAvailableBits & 8 ) == 0 ) {
+        gGMeterAvailableBits |= 8;
+        gpChannelLeftControl = gpGMeterKeyboard->getChannel( "LCTRL" );
+    }
+    if ( ( gGMeterAvailableBits & 0x10 ) == 0 ) {
+        gGMeterAvailableBits |= 0x10;
+        gpChannelG = gpGMeterKeyboard->getChannel( "G" );
+    }
+
+    if ( gpChannelRightControl == nullptr || gpChannelLeftControl == nullptr ||
+         gpChannelG == nullptr ) {
+        return;
+    }
+
+    const bool bControlDown = ( gpChannelLeftControl->Flags & 0x10 ) != 0 ||
+                              ( gpChannelRightControl->Flags & 0x10 ) != 0;
+    if ( bControlDown && static_cast<int8_t>( gpChannelG->Flags ) < 0 ) {
+        gbShowGMeter = !gbShowGMeter;
     }
 }
 
@@ -1315,6 +1359,12 @@ void GSPhysics::drawDebug( float ) {
     extern bool gVehicleEngineStateMachine;
     extern int gVehicleDiffTypeOverride; // 0=per-car, 1 open, 2 LSD, 4 spool
     extern float gVehicleDiffLockCoef;   // LSD/spool lock coef (override)
+    extern float gVehicleAeroDragScale;  // debug: aero drag multiplier
+    extern float gVehicleCouplingCoefE;  //
+    extern float gVehicleCouplingCoefW;  //
+    extern float gVehicleMaxCoupling;    // FIXME
+    extern bool gVehicleStartChronopack; //
+    extern bool gVehicleESPEnabled;      //
     extern int
         gVehicleDrivelineInertiaMode; // -1=per-car, 0 /|k|, 1 /k^2, 2 /sqrt
 
@@ -1327,6 +1377,28 @@ void GSPhysics::drawDebug( float ) {
         gVehicleDrivingHelpOverride = helpCombo - 1;
     }
     ImGui::Checkbox( "ABS", &gVehicleABS );
+    extern int32_t gVehicleSteerControlOverride;
+    static const char *kSteerControlModes[] = {
+        "default (Physics.ini UseSteerControl)", "pad/analog",
+        "wheel/bar (speed curves + rate limit)" };
+    int32_t steerCombo = gVehicleSteerControlOverride + 1;
+    if ( ImGui::Combo( "Steer control mode", &steerCombo, kSteerControlModes,
+                       IM_ARRAYSIZE( kSteerControlModes ) ) ) {
+        gVehicleSteerControlOverride = steerCombo - 1;
+    }
+    ImGui::SliderFloat( "Aero drag scale", &gVehicleAeroDragScale, 0.0f, 4.0f,
+                        "%.2f" );
+    ImGui::Checkbox( "Enable ESP", &gVehicleESPEnabled );
+    if ( ImGui::Button( "Start accel chrono" ) ) {
+        gVehicleStartChronopack =
+            true; // stop, then move off: splits go to the log
+    }
+    ImGui::SliderFloat( "Coupling coef E", &gVehicleCouplingCoefE, -1.0f, 20.0f,
+                        "%.2f" );
+    ImGui::SliderFloat( "Coupling coef W", &gVehicleCouplingCoefW, -1.0f, 20.0f,
+                        "%.2f" );
+    ImGui::SliderFloat( "Max coupling (0 = unclamped)", &gVehicleMaxCoupling,
+                        0.0f, 20000.0f, "%.0f" );
 
     ImGui::Checkbox( "Enable anti-roll bars sim", &gVehicleAntiRoll );
     ImGui::Checkbox( "Enable ingition sim", &gVehicleEngineStateMachine );

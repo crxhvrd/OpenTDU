@@ -317,6 +317,7 @@ private:
     void applyGaugeHudRange( const char *pArgs );
 
     void showCustomGauges();
+    void drawSimulationOverlay();
 
     void installGaugeFaceCallbacks( bool bInterior );
     void FUN_006ed810();
