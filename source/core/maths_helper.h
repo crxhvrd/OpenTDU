@@ -462,3 +462,10 @@ static bool AreVectorsNearlyEqual( const Eigen::Vector4f &left,
     }
     return true;
 }
+
+inline Eigen::Vector4f Vector4DCross( const Eigen::Vector4f &left,
+                                      const Eigen::Vector4f &right ) {
+    return Eigen::Vector4f( left.y() * right.z() - left.z() * right.y(),
+                            left.z() * right.x() - left.x() * right.z(),
+                            left.x() * right.y() - left.y() * right.x(), 0.0f );
+}

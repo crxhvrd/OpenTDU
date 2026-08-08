@@ -62,6 +62,9 @@ public:
 private:
     // Per-frame skid-point generation from the physics wheel state.
     void updateSkids( float deltaTime );
+    void updateCarSkids( CarTireSkid &carSkid, CarState *pCarState );
+    void
+    updateWheelSkid( CarState *pCarState, int32_t wheelIndex, TireSkid &skid );
 
     // Rebuilds the triangle-strip geometry from the accumulated skid trails.
     void buildGeometry();
@@ -74,10 +77,6 @@ private:
     static constexpr int32_t kMaxPointsPerSkid = 255;
 
 private:
-    // NOTE: the original also embeds a ShiftCallBack (registered into
-    // gGSShiftWorld) used to translate the cached skid points when the world
-    // origin shifts. That streaming-shift callback mechanism is not
-    // reconstructed yet, so it is omitted here.
     bool bEnabled;
     CarTireSkid *pCarSkids;
     Material *pMaterial;

@@ -54,8 +54,17 @@ template <typename T> inline T Clamp( T value, T minValue, T maxValue ) {
     return Max( Min( value, maxValue ), minValue );
 }
 
+template <typename T> inline T Saturate( T value ) {
+    return Max( Min( value, T( 1 ) ), T( 0 ) );
+}
+
 template <typename T, typename R> constexpr T Align( T value, R to ) {
     return ( value + ( to - 1 ) ) & ~( ( to - 1 ) );
+}
+
+inline int32_t FloatToInt( float value ) {
+    // FUN_00674eb4
+    return (int32_t)value;
 }
 
 static std::string IntegerToHexString( const size_t w,

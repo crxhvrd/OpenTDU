@@ -195,6 +195,7 @@ public:
 
     inline eOwner getOwner() const { return owner; }
     inline eSimulationType getSimulationType() const { return simulationType; }
+    inline eActiveMode getActiveMode() const { return activeMode; }
 
     inline VehicleBase *getVehicleInstance() { return pVehicleBase; }
     inline bool hasAvatar() const { return field_0x39c0 != nullptr; }
