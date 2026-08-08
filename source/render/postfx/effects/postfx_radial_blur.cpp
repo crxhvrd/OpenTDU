@@ -121,7 +121,7 @@ bool PostFXRadialBlur::execute() {
 
 uint64_t PostFXRadialBlur::getPixelShaderHashcode() const {
     // FUN_005fc570
-    return 0x6c6cdc43532bc9da;
+    return 0x6c6cdc43d02bc9da;
 }
 
 PostFXStepRadialBlur::PostFXStepRadialBlur() : PostFXStep(), pNode( nullptr ) {
