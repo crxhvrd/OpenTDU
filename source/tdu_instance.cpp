@@ -51,6 +51,7 @@
 #include "render/camera/gs_camera.h"
 #include "render/gs_noise.h"
 #include "render/gs_render.h"
+#include "render/mng_env_map.h"
 #include "render/particles/gs_particles.h"
 #include "render/postfx/gs_postfx.h"
 #include "system/gs_keyboard_pc.h"
@@ -710,6 +711,13 @@ bool TestDriveGameInstance::initializeGameServices() {
 }
 
 void TestDriveGameInstance::drawDebugMenu( float deltaTime ) {
+    // Add available overlays draw calls prior to the main debug menu one.
+    MngEnvMap::DrawEnvMapDebugOverlay();
+
+    if ( gpImgui != nullptr && !gpImgui->hasFocus() ) {
+        return;
+    }
+
     if ( ImGui::Begin( "Debug Menu" ) ) {
         ImGui::Text( "%s", TestDrive::GetVersion() );
         ImGui::Spacing();

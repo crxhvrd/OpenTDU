@@ -623,26 +623,9 @@ void GSRender::drawDebug( float deltaTime ) {
                             1.0f, 64.0f, "%.1fx" );
     }
 
-    if ( gpMngResources != nullptr && gpImgui != nullptr ) {
-        CubemapResources &cm = gpMngResources->getCubemapResources();
-        const ImVec2 viewSize( 192.0f, 192.0f );
+    ImGui::Checkbox( "Enable debug overlay", &gbDebugEnvMapOverlay );
 
-        ImGui::BeginGroup();
-        ImGui::TextUnformatted( "Cubemap (env capture)" );
-        ImGui::Image( (ImTextureID)gpImgui->getDebugViewMaterial(
-                          &cm.getCubemap().Render2DB ),
-                      viewSize );
-        ImGui::EndGroup();
-
-        ImGui::SameLine();
-
-        ImGui::BeginGroup();
-        ImGui::TextUnformatted( "Envmap (sphere)" );
-        ImGui::Image( (ImTextureID)gpImgui->getDebugViewMaterial(
-                          &cm.getEnvmap().Render2DB ),
-                      viewSize );
-        ImGui::EndGroup();
-    }
+    MngEnvMap::DrawEnvMapDebugPanel( 192.0f );
 }
 #endif
 

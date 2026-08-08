@@ -17,6 +17,7 @@ class GSImgui : public GameSystem {
 public:
     const char *getName() const override { return "Service : imgui"; }
     inline bool hasFocus() const { return bVisible; }
+    inline void requestOverlayFrame() { bOverlayRequested = true; }
 
 public:
     GSImgui();
@@ -32,7 +33,7 @@ public:
 private:
     static constexpr int32_t kMaxNumTextures = 0x20; // Arbitrary
     static constexpr int32_t kMaxNumDrawCmds = 128;  // Arbitrary
-    static constexpr int32_t kMaxNumDebugViews = 8;
+    static constexpr int32_t kMaxNumDebugViews = 16;
 
     // We must allocate one material per texture created by imgui (due to the
     // way TDU1 render pipeline works...).
@@ -62,6 +63,7 @@ private:
 
     bool bVisible;
     bool bFocusHasChanged;
+    bool bOverlayRequested;
 
 private:
     void processDrawData( ImDrawData *pDrawData );

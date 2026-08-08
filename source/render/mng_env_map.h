@@ -20,6 +20,26 @@ public:
         EMV_Exterior = 2,
     };
 
+    // Debug-only snapshot of what updateView/updateCameras fed to the env
+    // capture camera. Nothing in the render path reads it back.
+    struct DebugCaptureState {
+        eView View = EMV_Exterior;
+        Eigen::Vector3f Position = Eigen::Vector3f::Zero();
+        Eigen::Vector3f LookTarget = Eigen::Vector3f::Zero();
+        Eigen::Vector3f SourceEye = Eigen::Vector3f::Zero();
+        Eigen::Vector3f SourceViewDir = Eigen::Vector3f::Zero();
+        Eigen::Vector3f SourceVelocity = Eigen::Vector3f::Zero();
+        float FOV = 0.0f;
+        float FarPlane = 0.0f;
+        bool bLookDirectionHeld = false;
+    };
+
+public:
+    inline const DebugCaptureState &getDebugCaptureState() const {
+        return debugCaptureState;
+    }
+    inline bool isCapturing() const { return bCompute && bInitialized; }
+
 public:
     const char *getName() const override {
         // FUN_00430220
@@ -38,6 +58,11 @@ public:
     void pause() override;
 
     bool onCubemapResourcesChanged();
+
+#ifdef OTDU_USE_IMGUI
+    static void DrawEnvMapDebugPanel( float viewSize );
+    static void DrawEnvMapDebugOverlay();
+#endif
 
 private:
     static constexpr uint32_t kNumGatheredSectors = 3;
@@ -87,6 +112,11 @@ private:
     float cockpitCoefSpecular;
 
     Eigen::Vector4f userVector;
+    Eigen::Vector3f lastLookDirection;
+    eView lastLookView;
+    float lastDeltaTime;
+
+    DebugCaptureState debugCaptureState;
 
 private:
     bool createMaterials();
@@ -97,6 +127,9 @@ private:
     void popLights();
     void updateView();
     void updateCameras( bool bUseActiveCamera, bool bUpdateBackScene );
+    Eigen::Vector3f
+    resolveInteriorLookDirection( const Eigen::Vector3f &rawDirection,
+                                  class CameraGame *pSourceCamera );
     void drawMiniQuad();
 };
 
@@ -106,3 +139,8 @@ extern bool gbDebugEnvMapDenseReflection;
 extern float gDebugEnvMapFarPlaneScale;
 extern float gDebugEnvMapFarPlaneCoeff;
 extern float gDebugEnvMapObjectCullScale;
+extern bool gbDebugEnvMapOverlay;
+
+// TODO: HACKS FOR HOOD VIEW VECTOR BUG
+extern float gDebugEnvMapMinLookSpeed;
+extern float gDebugEnvMapLookSmoothTime;

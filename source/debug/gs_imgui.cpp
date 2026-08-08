@@ -40,7 +40,8 @@ GSImgui::GSImgui()
       pDrawList( new DrawList() ),
       setupUsageIndex( 0 ),
       bVisible( false ),
-      bFocusHasChanged( false ) {
+      bFocusHasChanged( false ),
+      bOverlayRequested( false ) {
     OTDU_ASSERT( gpImgui == nullptr );
     gpImgui = this;
 }
@@ -99,7 +100,11 @@ void GSImgui::tick( float totalTime, float deltaTime ) {
 }
 
 void GSImgui::draw( float deltaTime ) {
-    if ( !bVisible ) {
+    // Render only if the menu or at least one overlay is visible
+    const bool bRenderFrame = bVisible || bOverlayRequested;
+    bOverlayRequested = false;
+
+    if ( !bRenderFrame ) {
         return;
     }
     ImGui::Render();
