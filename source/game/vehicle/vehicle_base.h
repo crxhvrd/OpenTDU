@@ -52,7 +52,6 @@ struct VehicleBaseResources {
 
     Bank PhysicsBank;
 
-    PhysicsEngineSim *pEngineSim;
     std::vector<PhysicsEngineSim::CurvePoint> Torque;
 
     StreamedInBankVehicle Exterior;
@@ -380,7 +379,7 @@ protected:
 
     eHeadlightState headlightState;
 
-    std::array<Instance *, 4> exhaustsDummies;
+    std::array<Instance *, 4> exhaustsDummies = {};
 
     std::array<HiearchyNode *, 15> flaresRL;
     std::array<HiearchyNode *, 15> flaresRR;

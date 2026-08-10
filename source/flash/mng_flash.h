@@ -44,3 +44,5 @@ protected:
 private:
     void FUN_007bbd20();
 };
+
+bool RequestMapGameMode( FlashPlayer *pPlayer );

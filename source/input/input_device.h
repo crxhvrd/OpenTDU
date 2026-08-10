@@ -89,6 +89,18 @@ inline bool IsActionDown( DeviceAction *param_1 ) {
     return false;
 }
 
+static float ReadActionAxis( DeviceAction *pAction ) {
+    if ( pAction == nullptr || pAction->NumAddedChannels == 0 ) {
+        return 0.0f;
+    }
+    return pAction->FUN_00434e40( 0.0f );
+}
+
+static float ApplyInputDeadZone( float value, float deadZone ) {
+    return value >= deadZone ? ( value - deadZone ) / ( 1.0f - deadZone )
+                             : 0.0f;
+}
+
 class Device {
 public:
     inline const char *getName() const { return pName; }

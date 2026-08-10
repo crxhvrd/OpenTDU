@@ -151,6 +151,7 @@ protected:
     int32_t autoGearboxState;
     float autoGearboxThrottle;
     float autoGearboxBrake;
+    bool bGearSelectBlocked = false;
 
     // HACK: REMOVE ME:
     bool bCarGrounded = false;

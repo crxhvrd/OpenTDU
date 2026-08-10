@@ -115,7 +115,8 @@ Eigen::Vector4f &CarState::getDimensions() {
 
 void CarState::retrieveAcceleration( Eigen::Vector4f &param_1 ) {
     // FUN_008afa00
-    Eigen::Vector4f local_20 = TDUMat4x4MulVec( body.WorldMatrix, body.Speed );
+    Eigen::Vector4f local_20 =
+        TDUMat4x4MulVec( body.WorldMatrix, body.AccelDiff );
     param_1 = local_20 * 9.81f;
 }
 
@@ -410,6 +411,10 @@ void CarBodyState::reset() {
     PreviousWorldMatrix = Matrix4x4f_t::Identity();
     OffsetedWorldMatrix = Matrix4x4f_t::Identity();
     PhysicsWorldMatrix = Matrix4x4f_t::Identity();
+    AngularVelocity = Eigen::Vector4f::Zero();
+    LinearVelocity = Eigen::Vector4f::Zero();
+    Accel = Eigen::Vector4f::Zero();
+    AccelDiff = Eigen::Vector4f::Zero();
     SpeedInKmh = 0.0f;
     Omega = 10.0f;
     EngineRPM = 0.0f;
@@ -419,9 +424,13 @@ void CarBodyState::reset() {
     Gears = 1;
     Handbrake = 0.0f;
     Clutch = 0.0f;
+    Lean = 0.0f;
     GearRequest = 1;
     bGearUpEdge = false;
     bGearDownEdge = false;
+    bIgnition = false;
+    bIgnitionOnce = false;
+    bBackOnTrackRequest = false;
     WindowState = 0;
     OdometerKms = 0;
     OdometerTenMeters = 0;

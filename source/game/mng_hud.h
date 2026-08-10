@@ -287,6 +287,7 @@ public:
 
     void updateUnitSystem();
     void FUN_006e6a00( CarState *param_2 );
+    void cycleMinimapZoom();
 
     void setObjectiveMarker( const int32_t slot,
                              const Eigen::Vector4f &pPosition,

@@ -8,7 +8,9 @@
 
 #include "config/gs_config.h"
 #include "input/input_device.h"
+#include "render/camera/gs_camera.h"
 #include "flash/gs_flash.h"
+#include "flash/mng_flash.h"
 #include "flash/mng_flash_localize.h"
 #include "flash/movie_player.h"
 #include "flash/entities/flash_entity.h"
@@ -287,10 +289,27 @@ void MngInGameMenu::updateInput() {
         changeMenu( IGM_Chrono );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: MAP (bMap / bMapZoom hotkeys)
+    if ( bMapZoom && gpMngHud != nullptr ) {
+        gpMngHud->cycleMinimapZoom();
+    }
 
-    (void)bMapZoom;
-    (void)bMap;
+    if ( bMap && gm == GM_FreeRide && gpCamera != nullptr &&
+         !gpCamera->isInteriorView() ) {
+        if ( !canOpenMap() ) {
+            if ( gpFlash != nullptr && gpFlash->getFlashSound() != nullptr ) {
+                gpFlash->getFlashSound()->playFrontEndSound( "wrong", 0,
+                                                             false );
+            }
+        } else if ( pFlashVariable != nullptr ) {
+            RequestMapGameMode( pFlashVariable );
+        }
+    }
+}
+
+bool MngInGameMenu::canOpenMap() {
+    // FUN_006b6820
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (Scenario Tutorial)
+    return true;
 }
 
 bool MngInGameMenu::canOpenMenu() {

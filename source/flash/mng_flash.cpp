@@ -3,6 +3,7 @@
 #include "gs_flash.h"
 
 #include "game/gm_base.h"
+#include "game/gm_scene.h"
 #include "render/camera/gs_camera.h"
 #include "tdu_instance.h"
 #include "online/mng_chat.h"
@@ -53,20 +54,33 @@ static bool FUN_00914df0() {
 }
 
 // TODO: Move to right cpp
-static void FUN_007183f0( int32_t param_1 ) {
+static void TransitionFromFreerideToMap( int32_t param_1 ) {
     // FUN_007183f0
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (GPS fly-in) / HUD / PHYSICS
+
+    if ( gpActiveGMScene == nullptr ) {
+        return;
+    }
+    MngFlashGM &flashGM = gpActiveGMScene->getFlashManager();
+    if ( flashGM.isTransitioningToGPS() ) {
+        return;
+    }
+    flashGM.requestGPSTransition();
+
+    if ( gpFlash != nullptr && gpFlash->getFlashSound() != nullptr ) {
+        gpFlash->getFlashSound()->playFrontEndSound( "ent_map", 0, false );
+    }
 }
 
 // TODO: Move to GMMap
-static bool FUN_00718820( FlashPlayer *param_1 ) {
+bool RequestMapGameMode( FlashPlayer *param_1 ) {
     // FUN_00718820
     param_1->getVariableAsString( "/:ContactType",
                                   gpFlash->getContactTypeRW() );
 
     if ( gpTestDriveInstance->getActiveGameMode() == GM_FreeRide ) {
         gpTutorial->FUN_00981140();
-        FUN_007183f0( 2 );
+        TransitionFromFreerideToMap( 2 );
         return true;
     }
 
@@ -167,7 +181,7 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
                 return true;
             }
         }
-        return FUN_00718820( pPlayer );
+        return RequestMapGameMode( pPlayer );
     }
 
     case kGoFreeride: {

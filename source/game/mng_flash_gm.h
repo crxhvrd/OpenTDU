@@ -6,6 +6,10 @@ class GameModeScene;
 
 class MngFlashGM : public MngFlash {
 public:
+    inline bool isTransitioningToGPS() const { return bTransitionToGPS; }
+    inline void requestGPSTransition() { bTransitionToGPS = true; }
+
+public:
     MngFlashGM( GameModeScene *pGameMode );
     ~MngFlashGM();
 

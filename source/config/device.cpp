@@ -11,6 +11,9 @@
 void GSConfig::registerDeviceCommands() {
     registerCommand( "USEAUTOMATIC", [&]( const char *pArg ) {
         // FUN_009878b0
+        if ( pPlayerConfig == nullptr || NbMaxPlayers < 1 ) {
+            return;
+        }
         pPlayerConfig[0].bUseAutomatic = atoi( pArg ) != 0;
     } );
 

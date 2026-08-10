@@ -59,8 +59,8 @@ struct CarBodyState {
 
     Eigen::Vector4f AngularVelocity;
     Eigen::Vector4f LinearVelocity;
-    Eigen::Vector4f Speed;
-    Eigen::Vector4f SpeedDelta;
+    Eigen::Vector4f Accel;
+    Eigen::Vector4f AccelDiff;
 
     float MaxOmega;
     float MaxTorque;
@@ -113,9 +113,13 @@ struct CarBodyState {
     float Brake;
     float Handbrake;
     float Clutch;
-    int32_t GearRequest; // 0=R, 1=N, 2..7=gear, 8=hbrake
+    float Lean;          // bike fore/aft lean
+    int32_t GearRequest; // 0 = R, 1 = N, 2..8 = 1st..7th
     bool bGearUpEdge;
     bool bGearDownEdge;
+    bool bIgnition;     // starter held (engine not run)
+    bool bIgnitionOnce; // press while running = cut off
+    bool bBackOnTrackRequest;
 
     Eigen::Vector4f Shaking;
     Eigen::Vector4f BikeVelocity;

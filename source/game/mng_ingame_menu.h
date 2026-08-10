@@ -66,6 +66,7 @@ private:
 private:
     void updateInput();
     bool canOpenMenu();
+    bool canOpenMap();
     bool changeMenu( eInGameMenu menu );
     void close();
     void toggleWindows( bool bPlayAnim );

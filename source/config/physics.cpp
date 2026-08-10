@@ -304,8 +304,6 @@ void GSConfig::registerPhysicsCommands() {
     registerCommand( "STEERINGHELPSTRAIGHT", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.SteeringNormal[0] = 1.25f;
-        gPhysicsConfig.SteeringNormal[1] = -0.5f;
         gPhysicsConfig.SteeringHelpStraight[0] = ParseFloat( argStr, it );
         gPhysicsConfig.SteeringHelpStraight[1] = ParseFloat( argStr, it );
     } );

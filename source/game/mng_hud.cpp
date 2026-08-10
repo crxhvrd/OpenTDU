@@ -1785,6 +1785,18 @@ void MngHud::updateUnitSystem() {
     }
 }
 
+void MngHud::cycleMinimapZoom() {
+    // FUN_006e4f00
+    if ( gpFlash != nullptr && gpFlash->getFlashSound() != nullptr ) {
+        gpFlash->getFlashSound()->playFrontEndSound( "gps_zoom", 0, false );
+    }
+
+    static constexpr int32_t kNumMapModes = 4;
+    minimap.MapModeTarget = minimap.MapMode; // blend away from the old level
+    minimap.MapMode = ( minimap.MapMode + 1 ) % kNumMapModes;
+    minimap.RotationBlend = 0.0f;
+}
+
 void MngHud::setObjectiveMarker( const int32_t slot,
                                  const Eigen::Vector4f &pPosition,
                                  const char *pType ) {
