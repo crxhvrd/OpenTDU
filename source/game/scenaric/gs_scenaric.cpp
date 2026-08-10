@@ -306,6 +306,22 @@ Entity *GSScenaric::findEntityByHashcode( uint64_t hashcode ) const {
     return nullptr;
 }
 
+void *GSScenaric::findWavData( uint64_t hashcode, int32_t *pOutSize ) const {
+    if ( hashcode == 0 ) {
+        return nullptr;
+    }
+    for ( ScenaricBank *pBank : registeredBanks ) {
+        if ( pBank == nullptr ) {
+            continue;
+        }
+        void *pData = pBank->getWavData( hashcode, pOutSize );
+        if ( pData != nullptr ) {
+            return pData;
+        }
+    }
+    return nullptr;
+}
+
 Entity *GSScenaric::getSCVolume( uint64_t hashcode ) const {
     // FUN_00424510
     if ( hashcode == 0 ) {

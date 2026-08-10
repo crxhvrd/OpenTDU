@@ -3,10 +3,24 @@
 #include "entity_actor.h"
 #include "render/render_file.h"
 
+#include <memory>
+
 class Instance;
+class edAudioSample;
 struct InstanceEntry;
 
 class EntityBoat : public EntityActor {
+public:
+    inline int32_t getBoatType() const { return Type; }
+    inline Instance *getRenderInstance() const {
+        return pObjectInCommonRenderInstance;
+    }
+    inline bool hasRenderInstance() const {
+        return pObjectInCommonRenderInstance != nullptr;
+    }
+    inline void setRenderEcume( bool bEnabled ) { bMustRenderEcume = bEnabled; }
+    inline const edAudioSample *getHornSample() const { return pHornSample; }
+
 public:
     EntityBoat();
     ~EntityBoat();
@@ -26,6 +40,8 @@ protected:
     uint64_t ObjectInCommonHashcode;
     SerializedSkinnedModel Ecume3DModel;
     void *pHornSound;
+    std::unique_ptr<edAudioSample> hornSampleStorage;
+    const edAudioSample *pHornSample;
     RenderFile::Section *pObjectInCommonInstanceDefChunk;
     Instance *pObjectInCommonRenderInstance;
     float OceanHeight;

@@ -1,8 +1,10 @@
 #include "shared.h"
 #include "entity_boat.h"
 
+#include "audio/implementation/ed_audio_sample.h"
 #include "core/maths_helper.h"
 #include "game/game_mechanism.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "filesystem/binary.h"
 #include "render/3dd.h"
@@ -13,6 +15,8 @@
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/mng_ocean.h"
+#include "world/streaming_manager.h"
+#include "world/world_level.h"
 
 EntityBoat::EntityBoat()
     : EntityActor(),
@@ -20,6 +24,8 @@ EntityBoat::EntityBoat()
       ObjectInCommonHashcode( 0 ),
       Ecume3DModel(),
       pHornSound( nullptr ),
+      hornSampleStorage( nullptr ),
+      pHornSample( nullptr ),
       pObjectInCommonInstanceDefChunk( nullptr ),
       pObjectInCommonRenderInstance( nullptr ),
       OceanHeight( 0.0f ),
@@ -45,15 +51,42 @@ void EntityBoat::loadResources( ScenaricBank *param_2 ) {
     // FUN_007eafe0
     EntityActor::loadResources( param_2 );
 
-    FileCollection3D &manager = gpWorld->getCollection3D();
-    if ( manager.Render3DDs.size() == 1 ) {
-        Render3DD *pRender3DD = *manager.Render3DDs.begin();
-        pObjectInCommonInstanceDefChunk =
-            pRender3DD->findInstance( ObjectInCommonHashcode );
+    StreamingManager *pStreaming =
+        gpWorld != nullptr ? gpWorld->getStreamingManager() : nullptr;
+    if ( pStreaming != nullptr ) {
+        FileCollection3D &manager =
+            pStreaming->getLevel().getGlobalCollection();
+        if ( manager.Render3DDs.size() == 1 ) {
+            Render3DD *pRender3DD = *manager.Render3DDs.begin();
+            pObjectInCommonInstanceDefChunk =
+                pRender3DD->findInstance( ObjectInCommonHashcode );
+        }
+
+        OTDU_ASSERT( pObjectInCommonInstanceDefChunk != nullptr );
     }
 
-    if ( pHornSound != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO
+    if ( pHornSound != nullptr && param_2 != nullptr ) {
+        const uint64_t hornHashcode =
+            *reinterpret_cast<const uint64_t *>( pHornSound );
+
+        int32_t wavSize = 0;
+        void *pWavData = param_2->getWavData( hornHashcode, &wavSize );
+        if ( pWavData == nullptr && gpScenaric != nullptr ) {
+            pWavData = gpScenaric->findWavData( hornHashcode, &wavSize );
+        }
+        if ( pWavData != nullptr && wavSize > 0 ) {
+            auto pSample = std::make_unique<edAudioSample>();
+            if ( pSample->loadFromMemory( pWavData, wavSize ) ) {
+                hornSampleStorage = std::move( pSample );
+                pHornSample = hornSampleStorage.get();
+            }
+        }
+
+        if ( pHornSample == nullptr ) {
+            OTDU_LOG_WARN( "Boat '%s': horn sound %016llx could not be "
+                           "resolved from the bank\n",
+                           name.c_str(), (unsigned long long)hornHashcode );
+        }
     }
 
     Ecume3DModel.loadResources( param_2 );
@@ -161,6 +194,7 @@ void EntityBoat::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     }
 
     pTarget->pHornSound = pHornSound;
+    pTarget->pHornSample = pHornSample;
 
     if ( Ecume3DModel.pInstance != nullptr ||
          Ecume3DModel.pHiearchNode != nullptr ) {

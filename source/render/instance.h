@@ -19,6 +19,9 @@ struct InstanceLOD {
     std::array<float, kMaxNumLOD> Distances = { 0, 0, 0, 0 };
 };
 
+// TODO: Typed enum for clarity (+ remove hardcoded masks)
+static constexpr uint32_t kInstanceAutoLODFlag = 2u;
+
 class Instance {
 public:
     inline uint32_t &getFlagsWrite() { return flags; }

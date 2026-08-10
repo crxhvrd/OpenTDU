@@ -96,6 +96,8 @@ public:
     loadFromFile( const char *pBankPath, MngActor *pMngActor, bool param_6 );
 
     void setBankTransform( const Matrix4x4f_t &transform );
+    void *getWavData( uint64_t hashcode, int32_t *pOutSize = nullptr );
+
     Render3DD *getRender3DD( uint64_t hashcode );
     Render3DG *getRender3DG( uint64_t hashcode );
     Render2DM *getRender2DM( uint64_t hashcode );

@@ -331,6 +331,34 @@ void ScenaricBank::releaseResourceLists() {
     listsClip.clear();
 }
 
+void *ScenaricBank::getWavData( uint64_t hashcode, int32_t *pOutSize ) {
+    const uint32_t *pStructs = fileRefs[FR_Wav].pStructs;
+    const uint64_t *pHashcodes = fileRefs[FR_Wav].pHashcodes;
+    if ( pStructs == nullptr || pHashcodes == nullptr || hashcode == 0 ) {
+        return nullptr;
+    }
+
+    const uint32_t count = pStructs[0];
+    for ( uint32_t i = 0; i < count; i++ ) {
+        if ( pHashcodes[i] != hashcode ) {
+            continue;
+        }
+
+        ParsedBankEntry entry;
+        entry.bResolveFilename = false;
+        if ( bank.getEntry( static_cast<int32_t>( pStructs[1 + i] ), entry ) !=
+             0 ) {
+            return nullptr;
+        }
+        if ( pOutSize != nullptr ) {
+            *pOutSize = entry.Size;
+        }
+        return entry.pData;
+    }
+
+    return nullptr;
+}
+
 Render3DD *ScenaricBank::getRender3DD( uint64_t hashcode ) {
     return findResource( lists3DD, hashcode );
 }
