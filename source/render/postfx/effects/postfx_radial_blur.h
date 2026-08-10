@@ -9,6 +9,11 @@ class PostFXNodeRadialBlur;
 class PostFXNodeRadialBlur : public PostFXNode {
 public:
     inline void setMask( Texture *pTexture ) { pActiveMask = pTexture; }
+    inline void setIntensity( float value ) { intensity = value; }
+    inline void setCenter( float x, float y ) {
+        center[0] = x;
+        center[1] = y;
+    }
     inline float getIntensity() const { return intensity; }
     inline float getCenterX() const { return center[0]; }
     inline float getCenterY() const { return center[1]; }

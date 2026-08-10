@@ -149,7 +149,7 @@ private:
                         bool bFixedCam,
                         float deltaTime );
     void applySpeedShake( float deltaTime );
-    void updateMotionBlur();
+    void updateMotionBlur( PhysicsVehicle *pPhys );
 
 private:
     uint32_t vehicleFlags;

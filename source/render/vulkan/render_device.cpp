@@ -2816,6 +2816,7 @@ bool RenderDevice::createDevice() {
         VK_TRUE; // TODO: QUERY FEATURE AVAILABILITY!!!
     deviceFeatures.features.depthClamp =
         VK_TRUE; // TODO: QUERY FEATURE AVAILABILITY!!!
+    deviceFeatures.features.samplerAnisotropy = VK_TRUE;
 
     // Create the logical device
     VkDeviceCreateInfo deviceCreateInfo = {};

@@ -59,11 +59,14 @@ public:
     inline bool isInReplayMode() const { return bReplayMode; }
     inline bool isPaused() const { return bPaused; }
     inline bool isLookingBack() const { return bLookingBack; }
+    inline bool isInteriorView() const { return bInterior; }
     inline float getLeftView() const { return leftView; }
     inline float getRightView() const { return rightView; }
     inline float getUpView() const { return upView; }
     inline float getDownView() const { return downView; }
     inline bool isViewUpdated() const { return bUpdatedView; }
+    // x = fore/aft, y = height (metres, in-car space).
+    inline const Eigen::Vector2f &getSeatPosition() const { return seatPos; }
     inline bool isHeadTrackingEnabled() const { return bHeadTracking; }
 
     inline void setActiveCameraAsDefault() {
@@ -121,6 +124,7 @@ public:
 #endif
 #ifdef OTDU_DEVBUILD
     void toggleFreeCam();
+    inline bool isFreeCamEnabled() const { return bFlyCam; }
 #endif
 
 private:

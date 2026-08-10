@@ -6,10 +6,13 @@
 #include "gs_camera.h"
 #include "gs_timer.h"
 #include "game/vehicle/car_state.h"
+#include "game/vehicle/vehicle_base.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "player_data/gs_playerdata.h"
 #include "render/gs_render.h"
 #include "render/postfx/gs_postfx.h"
+#include "render/postfx/effects/postfx_radial_blur.h"
 
 #include <algorithm>
 #include <cmath>
@@ -31,8 +34,12 @@ static constexpr float kGroundContactMin = 0.75f;   // DAT_00fab3d4
 static constexpr float kNoHitSentinel = -100000.0f; // DAT_00f418fc
 static constexpr float kFixedFwdStep =
     20.0f; // DAT_00f03ee0 (in-car target forward step)
-static constexpr float kLeanCross = 1.0f; // DAT_00fab3c8
-static constexpr float kLeanFwd = 1.3f;   // DAT_00fab3cc
+static constexpr float kLeanCross = 1.0f;         // DAT_00fab3c8
+static constexpr float kLeanFwd = 1.3f;           // DAT_00fab3cc
+static constexpr float kMetersPerSecToKmh = 3.6f; // DAT_00f41768
+static constexpr float kBlurSpeedScale = 0.2f;    // DAT_00f41730 (km/h -> byte)
+static constexpr float kBlurOutputScale = 0.04f;  // DAT_00f41980
+static constexpr float kBlurIntensityScale = 30.0f; // DAT_00fab38c
 static constexpr float kSpringPos =
     0.004f; // DAT_00f41a20  (PosMin/Max byte -> m)
 static constexpr float kSpringInt16 =
@@ -138,6 +145,27 @@ inline float BlendClamp( float a, float b, float t ) {
     const float lo = std::min( a, b );
     const float hi = std::max( a, b );
     return std::min( hi, std::max( lo, lerped ) );
+}
+
+inline float ProjectedAngle( const Eigen::Vector4f &axis,
+                             const Eigen::Vector4f &vector,
+                             const Eigen::Vector4f &readout ) {
+    // FUN_008d2380 (inlined)
+    const Eigen::Vector4f normalizedAxis = axis / std::sqrt( axis.dot( axis ) );
+    const float cosine = vector.dot( normalizedAxis );
+    const Eigen::Vector4f projected = vector - normalizedAxis * cosine;
+
+    const float angle = std::asin( projected.dot( readout ) );
+    if ( cosine < 0.0f ) {
+        // DAT_00f41940 / DAT_00f41944
+        return ( ( angle > 0.0f ) ? kPI : -kPI ) - angle;
+    }
+    return angle;
+}
+
+inline float ClampTowards( float value, float bound ) {
+    // FUN_008d2380 (inlined)
+    return Max( Min( value, Max( 0.0f, bound ) ), Min( 0.0f, bound ) );
 }
 
 static float SpringIntegrate( SpringParam &sp, float deltaTime, float forceG ) {
@@ -376,7 +404,7 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
         applySpeedShake( deltaTime );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: POSTFX
+    updateMotionBlur( pPhys );
 
     updateMatrix( worldPosition.head<3>(), upVector.head<3>(),
                   worldTarget.head<3>() );
@@ -1057,13 +1085,15 @@ void CameraVehicle::tickFixed( CarState *pCar,
 
     float rollLean = 0.0f;
     if ( ( vehicleFlags & 4 ) != 0 ) {
-        Eigen::Vector4f accel = Eigen::Vector4f::Zero();
-        pCar->retrieveAcceleration( accel );
+        const float lateralG =
+            ( pPhys != nullptr ) ? pPhys->getLateralG() : 0.0f;
+        const float verticalG =
+            ( pPhys != nullptr ) ? pPhys->getVerticalG() : 0.0f;
         const float longG =
             ( pPhys != nullptr ) ? pPhys->getLongitudinalG() : 0.0f;
         if ( ( vehicleFlags & 0x100 ) != 0 ) {
             const float d =
-                SpringIntegrate( params.MoveVertical, deltaTime, accel.y() );
+                SpringIntegrate( params.MoveVertical, deltaTime, verticalG );
             localPos.y() += d;
             localTgt.y() += d;
         }
@@ -1080,7 +1110,7 @@ void CameraVehicle::tickFixed( CarState *pCar,
         }
         if ( ( vehicleFlags & 0x800 ) != 0 ) {
             rollLean =
-                SpringIntegrate( params.LeanLeftRight, deltaTime, accel.x() );
+                SpringIntegrate( params.LeanLeftRight, deltaTime, lateralG );
         }
     }
 
@@ -1093,6 +1123,20 @@ void CameraVehicle::tickFixed( CarState *pCar,
     }
     outUp.head<3>().normalize();
     outUp.w() = 0.0f;
+
+    if ( ( flags & 0x40000 ) != 0 && gpCamera != nullptr &&
+         !gpCamera->isLookingBack() ) {
+        VehicleBase *pVehicle = pCar->getVehicleInstance();
+        const bool bIsBike =
+            ( pVehicle != nullptr ) &&
+            ( pVehicle->getType() == VehicleBase::eType::VBT_Bike ||
+              pVehicle->getType() == VehicleBase::eType::VBT_TrafficBike );
+        if ( !bIsBike ) {
+            const Eigen::Vector2f &seatPos = gpCamera->getSeatPosition();
+            localPos.z() += seatPos.x();
+            localPos.y() += seatPos.y();
+        }
+    }
 
     outPos = TDUMat4x4MulVec( carMatrix, localPos );
     outTarget = TDUMat4x4MulVec( carMatrix, localTgt );
@@ -1338,7 +1382,78 @@ void CameraVehicle::applySpeedShake( float ) {
     OTDU_UNIMPLEMENTED_ONCE; // TODO: POSTFX
 }
 
-void CameraVehicle::updateMotionBlur() {
+void CameraVehicle::updateMotionBlur( PhysicsVehicle *pPhys ) {
     // FUN_008d2380
-    OTDU_UNIMPLEMENTED; // TODO: POSTFX
+    PostFXStep *pStep =
+        ( gpPostFX != nullptr )
+            ? gpPostFX->getEffect<ePostFXStep::PFXS_RadialBlur>()
+            : nullptr;
+    if ( pStep == nullptr ) {
+        return;
+    }
+
+    PostFXNodeRadialBlur *pNode =
+        static_cast<PostFXStepRadialBlur *>( pStep )->pNode;
+    if ( pNode == nullptr ) {
+        return;
+    }
+
+    const float forwardSpeed = pPhys->getForwardSpeed();
+    const Matrix4x4f_t carMatrix = pPhys->getPhysicsMatrix();
+
+    Matrix4x4f_t camToWorld;
+    MakeWorldToCamMatrix( camToWorld, worldPosition.head<3>(),
+                          upVector.head<3>(), worldTarget.head<3>() );
+
+    const Eigen::Vector4f camRight = camToWorld.row( 0 ).transpose();
+    const Eigen::Vector4f camUp = camToWorld.row( 1 ).transpose();
+    const Eigen::Vector4f camBack = camToWorld.row( 2 ).transpose();
+
+    const Eigen::Vector4f carUp = carMatrix.row( 1 ).transpose();
+    const Eigen::Vector4f carForward = carMatrix.row( 2 ).transpose();
+
+    const float angleHorizontal = -ProjectedAngle(
+        camBack * -1.0f /* FLOAT_00f41664 */, carForward, camRight );
+    const float absHorizontal = std::abs( angleHorizontal );
+
+    const float angleVertical = ProjectedAngle( camUp, carUp, camBack );
+
+    const float signHorizontal = ( angleHorizontal <= 0.0f ) ? -1.0f : 1.0f;
+    const float centerX =
+        0.5f /* FLOAT_00f41674 */ -
+        signHorizontal *
+            ClampTowards( ( horizontalAngleMaxMoveValue * absHorizontal ) /
+                              horizontalAngleMaxMove,
+                          horizontalAngleMaxMoveValue );
+
+    const float signVertical = ( angleVertical <= 0.0f ) ? -1.0f : 1.0f;
+    const float centerY =
+        0.5f - signVertical * ClampTowards( ( std::abs( angleVertical ) *
+                                              verticalAngleMaxMoveVal ) /
+                                                verticalAngleMaxMove,
+                                            verticalAngleMaxMoveVal );
+
+    const float blurMin = (float)intensity.MinOutput * kBlurOutputScale;
+    const float blurMax = (float)intensity.MaxOutput * kBlurOutputScale;
+    const float speedInput =
+        forwardSpeed * kMetersPerSecToKmh * kBlurSpeedScale;
+
+    float blur =
+        ( ( speedInput - (float)intensity.MinInput ) * ( blurMax - blurMin ) ) /
+            ( (float)intensity.MaxInput - (float)intensity.MinInput ) +
+        blurMin;
+    blur = Max( Min( blur, Max( blurMin, blurMax ) ), Min( blurMin, blurMax ) );
+
+    blur *= gpPlayerData->getRadialBlurIntensity();
+
+    if ( absHorizontal > horizontalAngleMaxMove ) {
+        const float fade =
+            ( ( absHorizontal - horizontalAngleMaxMove ) * -1.0f ) /
+                ( horizontalAngleMaxFade - horizontalAngleMaxMove ) +
+            1.0f;
+        blur *= Clamp( fade, 0.0f, 1.0f );
+    }
+
+    pNode->setIntensity( blur * kBlurIntensityScale );
+    pNode->setCenter( centerX, centerY );
 }
