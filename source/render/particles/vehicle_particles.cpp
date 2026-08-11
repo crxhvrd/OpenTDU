@@ -303,12 +303,9 @@ void VehicleParticles::update( VehicleBase *pVehicle ) {
         return;
     }
 
-    const VehicleBaseResources *pResource = pCarState->getResource();
-    const bool bEngineIgniting =
-        ( pResource != nullptr && pResource->pEngineSim != nullptr &&
-          ( pResource->pEngineSim->State == eEngineState::ES_Crank ||
-            pResource->pEngineSim->State == eEngineState::ES_RevUp ) );
-    if ( !bEngineIgniting ) {
+    const bool bEngineCranking =
+        ( pPhysics->getEngineState() == eEngineState::ES_Crank );
+    if ( !bEngineCranking ) {
         for ( uint32_t i = 0; i < kNumInstancePerType; i++ ) {
             StopParticleInstance( startExhaustParticles[i], false );
         }

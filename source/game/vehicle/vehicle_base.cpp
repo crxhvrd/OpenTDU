@@ -1235,6 +1235,7 @@ void VehicleBase::updateLights() {
 
             Eigen::Vector3f local_30 =
                 gpWeather->getActiveWeatherConfig().getSunDirection();
+            local_30.y() = 0.0f;
             local_30.normalize();
 
             Eigen::Vector4f local_20 = pCarState->getWorldPosition();
