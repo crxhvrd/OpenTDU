@@ -140,7 +140,10 @@ public:
                                 int32_t stride,
                                 float cellSize,
                                 float originX,
-                                float originZ );
+                                float originZ,
+                                const float *pTileErrors = nullptr,
+                                int32_t numTileX = 0,
+                                int32_t numTileZ = 0 );
     void removeHeightfield( const void *pKey );
 
     void addSectorCollision( const void *pKey,
@@ -335,6 +338,16 @@ private:
     void physicsStep( float dt, float accTime );
     void drawCollisionShapes();
     void updateGMeterToggle();
+    bool hasCollisionBelow( float worldX,
+                            float worldZ,
+                            float startY,
+                            float depth );
+    bool isRegionCovered( float minX,
+                          float minZ,
+                          float maxX,
+                          float maxZ,
+                          float centreY,
+                          float halfY );
 };
 
 extern GSPhysics *gpPhysics;

@@ -23,7 +23,10 @@ float SampleGroundHeight( Instance *pHeightmapInstance,
 bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
                              const float **ppHeights,
                              int32_t *pStride,
-                             float *pQuadSize );
+                             float *pQuadSize,
+                             const float **ppTileErrors = nullptr,
+                             int32_t *pNumTileX = nullptr,
+                             int32_t *pNumTileZ = nullptr );
 // TODO: Move to helper header
 
 class StreamingManager {

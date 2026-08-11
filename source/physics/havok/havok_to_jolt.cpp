@@ -650,6 +650,7 @@ JPH::ShapeRefC HavokToJolt::buildShape( const HavokPackfile &pf,
         return result.IsValid() ? result.Get() : JPH::ShapeRefC();
     }
 
+    // NOTE: keep in sync with isBvTreeShapeClass below.
     // --- World/road static collision shapes (Havok MOPP mesh family) ---
 
     // hkBvTreeShape family (incl. hkMoppBvTreeShape): the wrapped collection is
@@ -736,6 +737,20 @@ namespace {
     }
 } // namespace
 
+// hkpShapeType 0x18 (the hkBvTreeShape family) as tested by FUN_00845380.
+static bool isBvTreeShapeClass( const HavokPackfile &pf, int32_t shapeOffset ) {
+    if ( shapeOffset < 0 ) {
+        return false;
+    }
+    const char *pClass = pf.getClassName( static_cast<uint32_t>( shapeOffset ) );
+    if ( pClass == nullptr ) {
+        return false;
+    }
+    return std::strcmp( pClass, "hkMoppBvTreeShape" ) == 0 ||
+           std::strcmp( pClass, "hkTriSampledHeightFieldBvTreeShape" ) == 0 ||
+           std::strcmp( pClass, "hkBvTreeShape" ) == 0;
+}
+
 void HavokToJolt::buildBodies( const HavokPackfile &pf,
                                std::vector<RigidBody> &outBodies ) {
     const uint8_t *pData = pf.getDataBytes();
@@ -767,6 +782,7 @@ void HavokToJolt::buildBodies( const HavokPackfile &pf,
 
         RigidBody body;
         body.Shape = shape;
+        body.bBvTreeShape = isBvTreeShapeClass( pf, shapeOffset );
         body.Scalable = readScalablePrimitive( pf, shapeOffset );
         body.Position = JPH::Vec3::sZero();
         body.Rotation = JPH::Quat::sIdentity();

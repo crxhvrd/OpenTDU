@@ -1010,18 +1010,6 @@ void SectorBank::instanciate() {
         // Mark the sector as loaded (the original sets this from the async
         // geometry callback); computeGroundColor gates on state == 1.
         pOwner->state = 1;
-        if ( gpPhysics != nullptr && geometry.pHeightmapInstance != nullptr ) {
-            const float *pHeights = nullptr;
-            int32_t stride = 0;
-            float quadSize = 0.0f;
-            if ( GetHeightmapSampleGrid( geometry.pHeightmapInstance, &pHeights,
-                                         &stride, &quadSize ) ) {
-                gpPhysics->addHeightfield( geometry.pHeightmapInstance,
-                                           pHeights, stride, quadSize,
-                                           pOwner->heightmap.worldOriginX,
-                                           pOwner->heightmap.worldOriginZ );
-            }
-        }
 
         if ( gpPhysics != nullptr ) {
             uint32_t shkSize = 0;
@@ -1053,6 +1041,24 @@ void SectorBank::instanciate() {
                                        static_cast<eAssetType>( 5 ), &rdSize );
             if ( pRD != nullptr ) {
                 gpPhysics->addSectorRoadGround( pOwner, pRD, rdSize );
+            }
+
+            if ( geometry.pHeightmapInstance != nullptr ) {
+                const float *pHeights = nullptr;
+                int32_t stride = 0;
+                float quadSize = 0.0f;
+                const float *pTileErrors = nullptr;
+                int32_t numTileX = 0;
+                int32_t numTileZ = 0;
+                if ( GetHeightmapSampleGrid(
+                         geometry.pHeightmapInstance, &pHeights, &stride,
+                         &quadSize, &pTileErrors, &numTileX, &numTileZ ) ) {
+                    gpPhysics->addHeightfield(
+                        geometry.pHeightmapInstance, pHeights, stride, quadSize,
+                        pOwner->heightmap.worldOriginX,
+                        pOwner->heightmap.worldOriginZ, pTileErrors, numTileX,
+                        numTileZ );
+                }
             }
         }
     }

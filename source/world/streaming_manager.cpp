@@ -278,7 +278,10 @@ float SampleGroundHeight( Instance *pHeightmapInstance,
 bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
                              const float **ppHeights,
                              int32_t *pStride,
-                             float *pQuadSize ) {
+                             float *pQuadSize,
+                             const float **ppTileErrors,
+                             int32_t *pNumTileX,
+                             int32_t *pNumTileZ ) {
     if ( pHeightmapInstance == nullptr ||
          pHeightmapInstance->getNumLODs() == 0 ) {
         return false;
@@ -318,6 +321,17 @@ bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
         (const float *)( (uint8_t *)pContent + kHeightmapHeightsOffset );
     *pStride = stride;
     *pQuadSize = quadSize;
+
+    if ( ppTileErrors != nullptr ) {
+        *ppTileErrors =
+            (const float *)( (const uint8_t *)pHmap + sizeof( Heightmap ) );
+    }
+    if ( pNumTileX != nullptr ) {
+        *pNumTileX = (int32_t)pHmap->NumTileX;
+    }
+    if ( pNumTileZ != nullptr ) {
+        *pNumTileZ = (int32_t)pHmap->NumTileZ;
+    }
     return true;
 }
 

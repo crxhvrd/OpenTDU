@@ -55,6 +55,12 @@ namespace HavokToJolt {
         // "base" member; the shatter pieces are dynamic. Recovered from the
         // motion's class name in buildBodies.
         bool bFixedMotion = false;
+        // True when the body's TOP-LEVEL Havok shape is a BV-tree/MOPP shape
+        // (hkpShapeType 0x18). FUN_00845380 tags only these bodies of the
+        // -R.shk blob as phys type 3 (road); every other body in the same blob
+        // stays type 7 (generic), so this is what separates the drivable road
+        // surface from the solid geometry shipped alongside it.
+        bool bBvTreeShape = false;
         // Asset-authored mass in kg, recovered from the motion's inverse mass
         // (hkMotion+0xc0 == 1/mass; verified: round 60..1000 kg values). 0 if
         // unknown -> caller falls back to a default.

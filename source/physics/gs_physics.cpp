@@ -44,6 +44,8 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
@@ -55,6 +57,27 @@
 #include <Jolt/Physics/EActivation.h>
 
 namespace {
+    // Terrain replaces terrain, so another sector's heightfield never counts.
+    class NonTerrainBodyFilter : public JPH::BodyFilter {
+    public:
+        bool ShouldCollideLocked( const JPH::Body &inBody ) const override {
+            const JPH::Shape *pShape = inBody.GetShape();
+            return pShape != nullptr &&
+                   pShape->GetSubType() != JPH::EShapeSubType::HeightField;
+        }
+    };
+
+    // Static world geometry plus the wheel-only road: the drivable surface
+    // inside a tunnel is a ROAD body, and keeping terrain over it would wall
+    // the tunnel off exactly like the bug this replaces.
+    class StaticOrRoadLayerFilter : public JPH::ObjectLayerFilter {
+    public:
+        bool ShouldCollide( JPH::ObjectLayer inLayer ) const override {
+            return inLayer == TDUPhysLayers::NON_MOVING ||
+                   inLayer == TDUPhysLayers::ROAD;
+        }
+    };
+
     // Equivalent of hkCollisionListener used by the original game.
     class PhysicsFXContactListener : public JPH::ContactListener {
     public:
@@ -236,6 +259,12 @@ static constexpr int32_t kMaxPhysicsSubSteps = 5;
 constexpr uint32_t kSR20Magic = 0x30325253; // "SR20"
 constexpr uint32_t kER20Magic = 0x30325245; // "ER20"
 constexpr int32_t kLongSteps = 10; // Bezier longitudinal divisions/record
+
+static constexpr float kHeightmapSeaLevel = -1.0f;     // FLOAT_00f41664
+static constexpr float kHeightmapFlatThreshold = 0.1f; // FLOAT_00f41668
+static constexpr float kTileProbeHalfHeight = 25.0f;
+static constexpr float kSupportProbeRise = 3.0f;
+static constexpr float kSupportProbeDepth = 40.0f;
 
 static void FUN_00607370() {
     // FUN_00607370
@@ -1301,6 +1330,7 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
 
     settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     settings.mLinearDamping = 0.0f;
+    settings.mAngularDamping = 0.05f;
     settings.mUserData = TDUSurface::Vehicle;
 
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
@@ -1782,12 +1812,67 @@ void GSPhysics::createHeightfields() {
     }
 }
 
+bool GSPhysics::isRegionCovered( float minX,
+                                 float minZ,
+                                 float maxX,
+                                 float maxZ,
+                                 float centreY,
+                                 float halfY ) {
+    if ( pPhysicsSystem == nullptr ) {
+        return false;
+    }
+
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+    const JPH::Vec3 halfExtent( 0.5f * ( maxX - minX ), halfY,
+                                0.5f * ( maxZ - minZ ) );
+    const JPH::Vec3 centre( 0.5f * ( minX + maxX ) - shiftOrigin.x(),
+                            centreY - shiftOrigin.y(),
+                            0.5f * ( minZ + maxZ ) - shiftOrigin.z() );
+
+    JPH::BoxShape probe( halfExtent, 0.0f );
+    probe.SetEmbedded();
+
+    JPH::AnyHitCollisionCollector<JPH::CollideShapeCollector> hit;
+    pPhysicsSystem->GetNarrowPhaseQuery().CollideShape(
+        &probe, JPH::Vec3::sReplicate( 1.0f ),
+        JPH::Mat44::sTranslation( centre ), JPH::CollideShapeSettings(),
+        JPH::RVec3::sZero(), hit, JPH::BroadPhaseLayerFilter(),
+        StaticOrRoadLayerFilter(), NonTerrainBodyFilter() );
+    return hit.HadHit();
+}
+
+bool GSPhysics::hasCollisionBelow( float worldX,
+                                   float worldZ,
+                                   float startY,
+                                   float depth ) {
+    if ( pPhysicsSystem == nullptr ) {
+        return false;
+    }
+
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+    const JPH::RRayCast ray{ JPH::RVec3( worldX - shiftOrigin.x(),
+                                         startY - shiftOrigin.y(),
+                                         worldZ - shiftOrigin.z() ),
+                             JPH::Vec3( 0.0f, -depth, 0.0f ) };
+
+    JPH::RayCastResult result;
+    if ( !pPhysicsSystem->GetNarrowPhaseQuery().CastRay(
+             ray, result, JPH::BroadPhaseLayerFilter(),
+             StaticOrRoadLayerFilter(), NonTerrainBodyFilter() ) ) {
+        return false;
+    }
+    return true;
+}
+
 RigidBody_t GSPhysics::addHeightfield( const void *pKey,
                                        const float *pHeights,
                                        int32_t stride,
                                        float cellSize,
                                        float originX,
-                                       float originZ ) {
+                                       float originZ,
+                                       const float *pTileErrors,
+                                       int32_t numTileX,
+                                       int32_t numTileZ ) {
     // FUN_0084a390 -> FUN_00848b50
     if ( pPhysicsSystem == nullptr || pHeights == nullptr || stride <= 1 ||
          cellSize <= 0.0f )
@@ -1817,6 +1902,114 @@ RigidBody_t GSPhysics::addHeightfield( const void *pKey,
             if ( !std::isfinite( h ) || h < -50000.0f || h > 50000.0f )
                 h = JPH::HeightFieldShapeConstants::cNoCollisionValue;
             samples[static_cast<size_t>( row ) * sampleCount + col] = h;
+        }
+    }
+
+    const int32_t quadsPerTile =
+        ( numTileX > 0 ) ? ( stride - 1 ) / numTileX : 0;
+    if ( pTileErrors != nullptr && numTileX > 0 && numTileZ > 0 &&
+         quadsPerTile > 0 ) {
+        int32_t numBakedHoles = 0;
+        int32_t numSubmergedHoles = 0;
+        int32_t numKeptTiles = 0;
+        const int32_t numCells = stride - 1;
+        std::vector<uint8_t> covered(
+            static_cast<size_t>( numCells ) * numCells, 0u );
+        for ( int32_t tileZ = 0; tileZ < numTileZ; tileZ++ ) {
+            for ( int32_t tileX = 0; tileX < numTileX; tileX++ ) {
+                const float *pErrors =
+                    pTileErrors + ( tileZ * numTileX + tileX ) * 5;
+                float error0 = pErrors[0];
+                const bool bBaked = error0 < 0.0f;
+                if ( pErrors[4] < kHeightmapSeaLevel &&
+                     error0 < kHeightmapFlatThreshold ) {
+                    error0 = kHeightmapSeaLevel;
+                }
+                if ( error0 >= 0.0f ) {
+                    continue;
+                }
+                if ( bBaked ) {
+                    numBakedHoles++;
+                } else {
+                    numSubmergedHoles++;
+                }
+
+                const int32_t firstCell = tileX * quadsPerTile;
+                const int32_t firstCellZ = tileZ * quadsPerTile;
+                const float tileX0 = originX + firstCell * cellSize;
+                const float tileZ0 = originZ + firstCellZ * cellSize;
+                const float tileSize = quadsPerTile * cellSize;
+
+                // Cheap whole-tile reject first
+                if ( !isRegionCovered( tileX0, tileZ0, tileX0 + tileSize,
+                                       tileZ0 + tileSize, pErrors[4],
+                                       kTileProbeHalfHeight ) ) {
+                    numKeptTiles++;
+                    continue;
+                }
+
+                for ( int32_t r = 0; r < quadsPerTile; r++ ) {
+                    for ( int32_t c = 0; c < quadsPerTile; c++ ) {
+                        const int32_t cellX = firstCell + c;
+                        const int32_t cellZ = firstCellZ + r;
+                        // Start just above this cell's own terrain surface
+                        float surfaceY = -1.0e30f;
+                        for ( int32_t dz = 0; dz <= 1; dz++ ) {
+                            for ( int32_t dx = 0; dx <= 1; dx++ ) {
+                                const float h =
+                                    pHeights[( cellZ + dz ) * stride + cellX +
+                                             dx];
+                                if ( std::isfinite( h ) && h > surfaceY ) {
+                                    surfaceY = h;
+                                }
+                            }
+                        }
+                        if ( surfaceY <= -1.0e29f ) {
+                            continue;
+                        }
+                        const float cx = originX + ( cellX + 0.5f ) * cellSize;
+                        const float cz = originZ + ( cellZ + 0.5f ) * cellSize;
+                        if ( hasCollisionBelow( cx, cz,
+                                                surfaceY + kSupportProbeRise,
+                                                kSupportProbeDepth ) ) {
+                            covered[static_cast<size_t>( cellZ ) * numCells +
+                                    cellX] = 1u;
+                        }
+                    }
+                }
+            }
+        }
+
+        for ( int32_t row = 0; row < stride; row++ ) {
+            for ( int32_t col = 0; col < stride; col++ ) {
+                bool bDrop = true;
+                for ( int32_t dr = -1; dr <= 0 && bDrop; dr++ ) {
+                    for ( int32_t dc = -1; dc <= 0; dc++ ) {
+                        const int32_t cr = row + dr;
+                        const int32_t cc = col + dc;
+                        const bool bInside = cr >= 0 && cr < numCells &&
+                                             cc >= 0 && cc < numCells;
+                        if ( !bInside ||
+                             !covered[static_cast<size_t>( cr ) * numCells +
+                                      cc] ) {
+                            bDrop = false;
+                            break;
+                        }
+                    }
+                }
+                if ( bDrop ) {
+                    samples[static_cast<size_t>( row ) * sampleCount + col] =
+                        JPH::HeightFieldShapeConstants::cNoCollisionValue;
+                }
+            }
+        }
+
+        if ( numBakedHoles != 0 || numSubmergedHoles != 0 ) {
+            OTDU_LOG_DEBUG(
+                "Terrain heightfield: %d/%d tile(s) marked (%d authored, %d "
+                "submerged); %d kept whole for lack of authored cover\n",
+                numBakedHoles + numSubmergedHoles, numTileX * numTileZ,
+                numBakedHoles, numSubmergedHoles, numKeptTiles );
         }
     }
 
@@ -1965,13 +2158,12 @@ void GSPhysics::addSectorCollision( const void *pKey,
             body.Position.GetY() - shiftOrigin.y(),
             baseZ + body.Position.GetZ() - shiftOrigin.z() );
 
-        const JPH::ObjectLayer objLayer =
-            bRoadBlob ? TDUPhysLayers::ROAD : TDUPhysLayers::NON_MOVING;
+        const bool bRoadSurface = bRoadBlob && body.bBvTreeShape;
+        const uint32_t physType = PhysTypeForShape( body.Shape, bRoadSurface );
 
         JPH::BodyCreationSettings settings( body.Shape, position, body.Rotation,
                                             JPH::EMotionType::Static,
-                                            objLayer );
-        const uint32_t physType = PhysTypeForShape( body.Shape, bRoadBlob );
+                                            TDUPhysLayers::NON_MOVING );
         settings.mUserData = physType;
         settings.mFriction = TDUSurface::friction( physType );
 
@@ -2842,6 +3034,7 @@ void GSPhysics::initializeJolt() {
     JPH::PhysicsSettings physicsSettings = pPhysicsSystem->GetPhysicsSettings();
     physicsSettings.mNumVelocitySteps = 24;
     physicsSettings.mNumPositionSteps = 4;
+    physicsSettings.mPointVelocitySleepThreshold = 0.1f;
     pPhysicsSystem->SetPhysicsSettings( physicsSettings );
 
     pPhysicsSystem->SetGravity( JPH::Vec3( 0.0f, -9.81f, 0.0f ) );
