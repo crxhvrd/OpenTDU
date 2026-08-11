@@ -24,7 +24,8 @@ struct PhysicsWheelState {
     float Inertia = 1.0f;          // wheel rotational inertia
     float ReflectedInertia = 0.0f; // drivetrain inertia reflected through the
                                    // gear (driven wheel, clutch engaged)
-    int SideFlag = 1;              // side; != 1 mirrors lateral/steer sign
+    int SideFlag = 0;              // != 1 mirrors lateral/steer sign,
+                                   // so the LEFT wheels are the mirrored ones.
     bool bDriven = false;          // driven wheel
     bool bSteered = false;         // steered / handbrake wheel
 
@@ -104,10 +105,10 @@ struct PhysicsWheelState {
 };
 
 enum class eEngineState {
-    ES_Off = 0,     // stalled / key off (omega 0, no torque)
-    ES_Crank = 1,   // starter cranking (no torque, timer)
-    ES_RevUp = 2,   // fired, revving up from idle (the start blip)
-    ES_Running = 3, // normal running
+    ES_Off = 0,      // stalled / key off (omega 0, no torque)
+    ES_Crank = 1,    // starter cranking (no torque, gearbox forced to neutral)
+    ES_Running = 2,  // fired and running: rev limiter + clutch live here
+    ES_Stalling = 3, // ignition cut / lugged: still fires, dies at 0.25*idle
 };
 
 struct PhysicsEngineSim {
@@ -119,10 +120,10 @@ struct PhysicsEngineSim {
     };
 
     eEngineState State = eEngineState::ES_Off;
-    float IgnTimer = 0.0f;      // crank/rev-up timer
-    bool IgnitionOn = true;     // drives auto-start
-    float CrankDuration = 0.5f; // starter crank time, s (IgnitionTimeIgnite)
-    float RevUpDuration = 0.4f; // start-blip time, s (IgnitionTimeRevUp)
+    float IgnTimer = 0.0f;  // starter timer
+    bool IgnitionOn = true; // starter held?
+    bool bIgnitionOnce = false;
+    float CrankDuration = 0.5f; // s
 
     CurvePoint CurveMin[kMaxCurve]; // closed-throttle (engine brake)
     CurvePoint CurveMax[kMaxCurve]; // full-throttle (WOT)
@@ -141,7 +142,6 @@ struct PhysicsEngineSim {
     float PeakTorqueOmega = 0.0f; // omega at peak torque
     float PeakPowerOmega = 0.0f;  // omega at peak power
     float AngAccel = 0.0f;        // dOmega/dt (rad/s^2), 1-step lag
-    float RevLimiterTimer = 1.0f;
     float RevLimiterCutTime = 0.25f;
 };
 
@@ -253,6 +253,10 @@ struct PhysicsVehicleState {
 float ThrottlePosForTorque( const PhysicsEngineSim &engine,
                             float targetTorque,
                             float omega );
+
+float EngineTorqueAt( const PhysicsEngineSim &engine,
+                      float omega,
+                      float throttle );
 
 void BuildEngineCurves( PhysicsEngineSim &engine,
                         const float *pTorquePairs,

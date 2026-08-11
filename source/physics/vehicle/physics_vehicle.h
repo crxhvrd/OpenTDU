@@ -31,6 +31,7 @@ public:
         float LateralGroundSpeed;      // m/s along contact-lateral (0 airborne)
         float SuspensionLoad;
         float Radius; // m
+        float Width;
         bool bGrounded;
         int32_t EspState;
         float BrakeTorqueOut;
@@ -38,6 +39,9 @@ public:
         uint32_t ContactSurface;  // phys-type code (TDUSurface)
         uint32_t ContactMaterial; // eMaterialType, MT_Default when unknown
         Eigen::Vector4f ContactPoint;
+        Eigen::Vector4f ContactVelocity;
+        Eigen::Vector4f UpAxis;
+        Eigen::Vector4f ForwardAxis;
     };
 
     struct SuspensionSetup {
@@ -54,10 +58,12 @@ public:
 
     struct DrivingGearbox {
         int32_t Gear;       // 0 = reverse, 1 = neutral, 2.. = forward gears
+        int32_t NumGears;   // reverse + neutral + forward gears
         float ForwardSpeed; // m/s, signed (+ = forwards)
         bool bAutomatic;
-        bool bEngineFiring; // engine making torque (orig engine state 2 or 3)
-        bool bShiftIdle;    // gearbox will take a shift request right now
+        bool bEngineFiring;  // engine making torque (orig engine state 2 or 3)
+        bool bShiftIdle;     // gearbox will take a shift request right now
+        bool bEngineRunning; // engine in the running state (orig state 2)
         int32_t ShiftDirection;
     };
 
@@ -103,6 +109,7 @@ public:
     float getVehicleMass() const { return vehicle.Mass; }
     float getInputBrake() const { return inputBrake; }
     float getInputThrottle() const { return inputThrottle; }
+    float getInputHandbrake() const { return inputHandbrake; }
     void setAutoReverseState( int32_t state ) { autoReverseState = state; }
     int32_t getAutoReverseState() const { return autoReverseState; }
     bool isActive() const { return pChassisBody != nullptr; }
@@ -149,12 +156,15 @@ public:
     void destroy();
 
     void setInput( float throttle, float brake, float steer );
+    void setHandbrake( float handbrake );
+    void setIgnition( bool bKeyOn, bool bCutEdge );
     void applyDrivingMode();
     void tick( float deltaTime );
     void setDrivingHelpLevel( int32_t level );
 
     DrivingGearbox getDrivingGearbox() const;
     void setCurrentGear( int32_t gear );
+    void setAutomaticGearbox( bool bAutomatic );
     void requestUpshift();
     void requestDownshift();
     void setClutchOverride( float engagement );
@@ -185,6 +195,7 @@ public:
 
     float getLateralG() const;
     float getLongitudinalG() const;
+    float getVerticalG() const;
 
     enum eSteerCurve {
         SC_Limit = 0,     // Physics.ini SteeringLimit
@@ -235,6 +246,7 @@ private:
     float wheelBase = 2.5f; // axle-to-axle distance, m (speed-sensitive steer)
     float prevSuspLength[PhysicsVehicleState::kMaxWheels]; // last step's length
                                                            // (damper velocity)
+    float wheelWidth[PhysicsVehicleState::kMaxWheels] = {};
     float wheelGroundGap[PhysicsVehicleState::kMaxWheels] = {};
     uint32_t wheelSurface[PhysicsVehicleState::kMaxWheels] =
         {}; // raycast contact phys-type code
@@ -246,6 +258,7 @@ private:
     float inputThrottle;
     float inputBrake;
     float inputSteer;
+    float inputHandbrake;
     uint8_t drivingMode;
     float prevInputThrottle;
     float prevInputBrake;
@@ -296,8 +309,11 @@ private:
 
     // G-meter accel tracking
     float prevWorldVelocity[3];
+
+    // Body space acceleration
     float localAccelLong;
     float localAccelLat;
+    float localAccelVert;
 };
 
 extern bool gbSimuModeEnabled;

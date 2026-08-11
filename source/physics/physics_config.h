@@ -51,7 +51,7 @@ struct PhysicsConfig {
     float SteeringCenterSpeed[3];
     float SteeringStraightSpeed[3];
     float SteeringCounterSpeed[3];
-    float SteeringNormal[2];
+    float SteeringNormal[2] = { 1.25f, -0.5f };
     float SteeringHelpStraight[2];
     float SteeringHelpTurn[2];
 

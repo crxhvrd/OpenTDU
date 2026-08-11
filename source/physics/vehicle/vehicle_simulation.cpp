@@ -70,9 +70,11 @@ static constexpr float kFreeRollBrakeTorque = 0.1f; // FLOAT_00f41668
 static constexpr float kFreeRollDriveTorque = 1.0f; // FLOAT_00f4165c
 
 bool gVehicleEngineStateMachine = true;
-static constexpr float kIgnitionBlipThrottle = 0.35f; // start-blip throttle
+static constexpr float kEngineOmegaFloor = 0.1f; // FLOAT_00f41668
 static constexpr float kEngineStallFrac =
     0.25f; // stall below this*idle; DAT_00f416dc
+static constexpr float kEngineLugFrac =
+    0.5f; // lugging below this*idle; FLOAT_00f41674
 static constexpr float kTorqueSmoothRate = 100.0f;
 
 static void StepClutch( PhysicsClutchSim &c,
@@ -465,8 +467,7 @@ float ThrottlePosForTorque( const PhysicsEngineSim &e,
     return Clamp( ( targetTorque - tMin ) / span, 0.0f, 1.0f );
 }
 
-static float
-EngineTorqueAt( const PhysicsEngineSim &e, float omega, float throttle ) {
+float EngineTorqueAt( const PhysicsEngineSim &e, float omega, float throttle ) {
     // FUN_0043f230
     if ( e.CurveCount < 2 ) {
         return 0.0f;
@@ -628,40 +629,55 @@ static bool StepEngineState( PhysicsEngineSim &e, float dt ) {
     // FUN_0043f660
     if ( !gVehicleEngineStateMachine ) {
         e.State = eEngineState::ES_Running; // always-on (pre-SM behaviour)
+        e.IgnTimer += dt;                   // the rev limiter shares this timer
         return true;
     }
     switch ( e.State ) {
     case eEngineState::ES_Off:
         e.Omega = 0.0f;
+        e.TorqueOut = 0.0f;
         e.IgnTimer = 0.0f;
+        e.bIgnitionOnce = false;
         if ( e.IgnitionOn ) {
             e.State = eEngineState::ES_Crank;
         }
         return false; // no torque
     case eEngineState::ES_Crank:
         if ( !e.IgnitionOn ) {
-            e.State = eEngineState::ES_Off;
+            e.State = eEngineState::ES_Off; // starter released -> give up
             return false;
         }
-        e.IgnTimer += dt;
-        if ( e.IgnTimer >= e.CrankDuration ) { // crank done -> fire
-            e.State = eEngineState::ES_RevUp;
-            e.Omega = e.OmegaIdle; // snap to idle
-            e.IgnTimer = 0.0f;
-        }
-        return false; // cranking: starter only, no engine torque
-    case eEngineState::ES_RevUp:
-        e.IgnTimer += dt;
-        if ( e.Omega < 0.1f ) {
-            e.Omega = 0.1f; // floor (FLOAT_00f41668)
-        }
-        if ( e.IgnTimer >= e.RevUpDuration ) {
+        if ( e.IgnTimer > e.CrankDuration ) { // crank done -> fires
             e.State = eEngineState::ES_Running;
+            e.Omega = e.OmegaIdle; // snap to idle
+            // Hand the shared timer over to the rev limiter, already at the end
+            // of a cut window so the limiter is armed but does not fire now.
+            e.IgnTimer = e.RevLimiterCutTime;
+            // The press that started the crank must not immediately cut the
+            // engine again; only a press taken while running does that.
+            e.bIgnitionOnce = false;
         }
-        return true; // firing (start blip)
+        e.IgnTimer += dt;
+        return false; // cranking: starter only, no engine torque
     case eEngineState::ES_Running:
-        if ( e.Omega < e.OmegaIdle * kEngineStallFrac ) {
-            e.State = eEngineState::ES_Off; // lugged -> stall (auto re-cranks)
+        e.IgnTimer += dt; // rev limiter window
+        if ( e.Omega < kEngineOmegaFloor ) {
+            e.Omega = kEngineOmegaFloor; // FLOAT_00f41668
+        }
+        // There is NO stall check here: a running engine is held up by its own
+        // torque curve, so braking to a standstill never kills it. The only way
+        // out is Driving.IgnitionOnce -- a fresh press of the ignition control
+        // while the engine runs, which commits it to dying.
+        if ( e.bIgnitionOnce ) {
+            e.bIgnitionOnce = false;
+            e.State = eEngineState::ES_Stalling;
+        }
+        return true;
+    case eEngineState::ES_Stalling:
+        // Still firing, but nothing sustains it any more (no idle floor, no
+        // clutch update); it dies as soon as the revs drop far enough.
+        if ( e.Omega <= e.OmegaIdle * kEngineStallFrac ) {
+            e.State = eEngineState::ES_Off;
             return false;
         }
         return true;
@@ -815,6 +831,23 @@ void StepPowertrain( PhysicsVehicleState &v,
         g.ShiftTimer -= dt; // post-shift lockout countdown
     }
 
+    const bool engineFiring = StepEngineState( e, dt );
+
+    if ( gVehicleEngineStateMachine && e.State == eEngineState::ES_Crank ) {
+        g.CurrentGear = 1;
+    }
+
+    if ( gVehicleEngineStateMachine && e.State == eEngineState::ES_Running ) {
+        const float lugOmega = e.OmegaIdle * kEngineLugFrac;
+        if ( e.Omega < lugOmega ) {
+            if ( g.bAutomatic ) {
+                e.Omega = lugOmega;
+            } else {
+                e.State = eEngineState::ES_Stalling;
+            }
+        }
+    }
+
     const int gear = ( g.CurrentGear >= 0 && g.CurrentGear < g.NumGears )
                          ? g.CurrentGear
                          : 1;
@@ -822,24 +855,21 @@ void StepPowertrain( PhysicsVehicleState &v,
     const float k = g.Ratios[gear] * g.FinalDrive; // ratio * finalDrive
     const float h = dt; // one substep per OnStep call
 
-    const bool engineFiring = StepEngineState( e, dt );
-
     float engThrottle = throttle * shiftThrottleMult;
     e.bApplyIdleThrottleFloor =
         ( e.State == eEngineState::ES_Running ) && gVehicleEngineStateMachine;
-    if ( gVehicleEngineStateMachine && e.State == eEngineState::ES_RevUp ) {
-        engThrottle = std::max( engThrottle, kIgnitionBlipThrottle );
-    }
 
     float limThrottle = engThrottle;
-    if ( e.Omega > e.OmegaMax && e.RevLimiterTimer > e.RevLimiterCutTime ) {
-        e.RevLimiterTimer = 0.0f;
+    if ( e.Omega > e.OmegaMax && e.IgnTimer > e.RevLimiterCutTime ) {
+        e.IgnTimer = 0.0f;
         e.Omega = e.OmegaMax; // one-shot snap, caps the overshoot
     }
-    if ( e.RevLimiterTimer < e.RevLimiterCutTime ) {
+    if ( e.IgnTimer < e.RevLimiterCutTime ) {
         limThrottle = 0.0f;
     }
-    e.RevLimiterTimer += dt;
+    if ( gVehicleEngineStateMachine && e.State == eEngineState::ES_Stalling ) {
+        limThrottle = 0.0f;
+    }
 
     e.TorqueOut =
         engineFiring ? EngineTorqueAt( e, e.Omega, limThrottle ) : 0.0f;
@@ -851,7 +881,11 @@ void StepPowertrain( PhysicsVehicleState &v,
     e.SmoothedTorque += ( netTorque - e.SmoothedTorque ) * ( 1.0f - inertia ) *
                         dt * kTorqueSmoothRate;
 
-    StepClutch( c, e, gear, throttle, dt );
+    if ( !gVehicleEngineStateMachine || e.State == eEngineState::ES_Running ) {
+        StepClutch( c, e, gear, throttle, dt );
+    } else {
+        c.Target = 0.0f;
+    }
     float engage = neutral ? 0.0f : c.Engagement;
     if ( c.OverrideEngagement >= 0.0f ) {
         engage = c.OverrideEngagement;

@@ -23,10 +23,6 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 
-#include <algorithm>
-#include <cmath>
-#include <cstring>
-
 constexpr float kMmToM = 0.001f;
 constexpr float kSlipDenom = 3.0f;
 constexpr int kWheelSubsteps = 5;
@@ -41,10 +37,20 @@ bool gVehicleABS = true;
 constexpr float kSimuBrakeTorquePerMass = 2.5f;
 constexpr float kBrakeBalance = 0.6f; // fallback
 constexpr float kMaxBrakeTorque = 15000.0f;
+constexpr float kHandbrakeInputThreshold = 0.1f;
+constexpr float kHandbrakeTorqueScale = 1.0f;
 constexpr float kWheelInertiaRadiusCoef = 2.5f; // DAT_00f416c0
 
 constexpr float kEngineFrictionLoss = 0.01f; // DAT_00f416d4
 constexpr float kEngineFakeCoef = 1.0f;      // FLOAT_00f4165c
+constexpr float kThousandRpmOmega = 104.72f;
+
+constexpr float kWattToMetricHp = 0.0013597f;          // DAT_00f41694 (1/735.5)
+constexpr float kRevLimiterPowerRef = 250.0f;          // DAT_00f41824
+constexpr float kRevLimiterPowerSlope = -0.15f;        // DAT_00f41ed8
+constexpr float kRevLimiterPowerScale = 1.0f / 350.0f; // DAT_00f41fd8
+constexpr float kRevLimiterCutMin = 0.1f;              // FLOAT_00f41668
+constexpr float kRevLimiterCutMax = 0.25f;             // DAT_00f416dc
 
 constexpr float kSteerScale = 900.0f; // DAT_00f41c10 (900/gSteeringTurn = gain)
 constexpr float kSteerLinearity = 5.0f;    // DAT_00fab71c
@@ -64,6 +70,8 @@ constexpr float kSteerYawBlendScale = 0.1f;       // FLOAT_00f41668
 constexpr float kSteerAuxEps = 0.01f;             // DAT_00f416d4
 constexpr float kSteerAuxSliderScale = 0.25f;     // DAT_00f416dc
 constexpr float kSteerAuxSliderBase = 0.75f;      // DAT_00f416a4
+constexpr float kSteerFrontSlipAvg = -0.5f;       // DAT_00f4186c
+constexpr float kSteerFrontSlipPeak = 1.0f; // FLOAT_00f4165c / FLOAT_00f41664
 
 // Retail Physics.ini [Car] values, used when the ini did not populate a curve
 // (the original p-code divides by (X1-X0) unguarded, so an all-zero X array is
@@ -87,10 +95,7 @@ bool gVehicleStartChronopack =
     false; // FIXME: programatically trigger chronopack capture
            // (until input/flash logic is implemented)
 
-// FIXME: ESP prevents car from taking off (when driving aids are enabled). Once
-// fixed, this should always be on for assisted/sport/hypersport (like the
-// original).
-bool gVehicleESPEnabled = false;
+bool gVehicleESPEnabled = true;
 
 constexpr float kChronoMoveSpeed = 0.5f;         // FLOAT_00f41674
 constexpr float kChrono60mph = 26.8225f;         // DAT_00f4211c
@@ -108,9 +113,8 @@ constexpr float kAntiFlyMinForce = 100.0f;   // DAT_00f41708 (apply gate, N)
 // TODO: Should read those from Physics.ini
 constexpr float kAntiFlyGravityCoef = 1.0f;
 constexpr float kAntiFlyMaxGap = 1.0f;
-constexpr float kAntiFlyLeverScale =
-    0.75f; // TODO: Arbitrary (most likely incorrect; need to trace the value at
-           // runtime)
+constexpr float kAntiFlyLeverScale = 0.75f; // DAT_00f416a4
+constexpr float kGroundProbeDepth = 10.0f;  // FLOAT_00f4166c
 
 // Anti-roll bars from the original pcode (disabled in the original game)
 bool gVehicleAntiRoll = false;
@@ -466,8 +470,7 @@ static void ComputeEspMagnitudes( PhysicsVehicleState &vehicle,
             ( target - vehicle.EspMagFiltered ) * deltaTime * kEspSmoothingRate;
     }
 
-    vehicle.bEspEnabled =
-        gVehicleESPEnabled ? true : ( target != kEspNoTarget );
+    vehicle.bEspEnabled = ( target != kEspNoTarget );
 
     if ( espSlot == 0 ) {
         vehicle.EspMagFront = vehicle.EspMagFiltered;
@@ -600,6 +603,33 @@ static void ApplyESP( PhysicsWheelState &w,
     }
 }
 
+static float TireCorneringStiffness( const PhysicsWheelState &w ) {
+    const float loadPM = w.NormalLoad * 0.001f; // kLoadToPerMille
+    const float c4 = w.Tire.Lat[4];
+    if ( std::fabs( c4 ) < 1e-8f ) {
+        return 0.0f;
+    }
+    return w.Tire.Lat[3] * std::sin( 2.0f * std::atan( loadPM / c4 ) );
+}
+
+static float TireLateralGripFactor( const PhysicsWheelState &w ) {
+    const PhysicsTire &tire = w.Tire;
+    const float nLong = w.NormLongClamped;
+    if ( std::fabs( tire.FrictionEllipseThreshold ) >= std::fabs( nLong ) ) {
+        return 1.0f;
+    }
+    const float denom = tire.MaxSlipRatio - tire.FrictionEllipseThreshold;
+    if ( std::fabs( denom ) <= 1e-8f ) {
+        return 1.0f;
+    }
+    const float minF = tire.FrictionEllipseMinFactor;
+    const float f = ( ( std::fabs( nLong ) - tire.FrictionEllipseThreshold ) *
+                      ( minF - 1.0f ) ) /
+                        denom +
+                    1.0f;
+    return JPH::Clamp( f, std::min( 1.0f, minF ), std::max( 1.0f, minF ) );
+}
+
 PhysicsVehicle::PhysicsVehicle()
     : pPhysicsSystem( nullptr ),
       pChassisBody( nullptr ),
@@ -608,6 +638,7 @@ PhysicsVehicle::PhysicsVehicle()
       inputThrottle( 0.0f ),
       inputBrake( 0.0f ),
       inputSteer( 0.0f ),
+      inputHandbrake( 0.0f ),
       drivingMode( DM_Player ),
       prevInputThrottle( 0.0f ),
       prevInputBrake( 0.0f ),
@@ -638,7 +669,8 @@ PhysicsVehicle::PhysicsVehicle()
       aeroDownArea( 0.0f ),
       aeroDensity( kAeroDensitySimu ),
       localAccelLong( 0.0f ),
-      localAccelLat( 0.0f ) {
+      localAccelLat( 0.0f ),
+      localAccelVert( 0.0f ) {
     for ( int i = 0; i < PhysicsVehicleState::kMaxWheels; ++i ) {
         wheelAttach[i] = Eigen::Vector3f::Zero();
         suspMaxLength[i] = 0.30f;
@@ -770,8 +802,11 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         ( db.WheelBase > 0 ? db.WheelBase : 2600 ) * kMmToM;
 
     constexpr float kDefaultWheelRadius = 0.32f;
+    constexpr float kDefaultWheelWidth = 0.22f;
     float frontRadius = kDefaultWheelRadius;
     float rearRadius = kDefaultWheelRadius;
+    float frontWidth = kDefaultWheelWidth;
+    float rearWidth = kDefaultWheelWidth;
     if ( gpDatabase != nullptr ) {
         const GameDatabase &gameDB = gpDatabase->getGameDB();
         const DBEntryRim *pRim =
@@ -792,11 +827,21 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                 return JPH::Clamp( ( rimMM * 0.5f + sidewallMM ) / 1000.0f,
                                    0.20f, 0.45f );
             };
+            auto axleWidth = []( int32_t sectionWidthMM,
+                                 float fallback ) -> float {
+                if ( sectionWidthMM <= 0 ) {
+                    return fallback;
+                }
+                return JPH::Clamp( sectionWidthMM / 1000.0f, 0.10f, 0.40f );
+            };
+
             frontRadius =
                 axleRadius( pRim->FrontWidth, pRim->FrontHeight,
                             pRim->FrontDiameter, kDefaultWheelRadius );
             rearRadius = axleRadius( pRim->RearWidth, pRim->RearHeight,
                                      pRim->RearDiameter, kDefaultWheelRadius );
+            frontWidth = axleWidth( pRim->FrontWidth, kDefaultWheelWidth );
+            rearWidth = axleWidth( pRim->RearWidth, kDefaultWheelWidth );
         }
     }
 
@@ -929,8 +974,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         suspCornerLoad[i] = s.cornerLoad;
         suspDroopStop[i] = s.droopStop;
         w.Radius = bFront ? frontRadius : rearRadius;
+        wheelWidth[i] = bFront ? frontWidth : rearWidth;
         w.Inertia = w.Radius * w.Radius * kWheelInertiaRadiusCoef;
-        w.SideFlag = ( i & 1 ) ? 2 : 1; // right wheels mirror lateral/steer
+        w.SideFlag = ( i & 1 ) ? 1 : 0; // left wheels mirror lateral/steer
         w.bSteered = bFront;
         w.bDriven = bFWD ? bFront : ( bRWD ? !bFront : true );
         w.SuspMaxLoad = 2.0f * massPerWheel * 9.81f;
@@ -1028,11 +1074,11 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     gb.UpshiftDelay = pShiftDur[0] > 0.0f ? pShiftDur[0] : 0.30f;
     gb.DownshiftDelay = pShiftDur[1] > 0.0f ? pShiftDur[1] : 0.30f;
 
-    // Engine: redline/idle/inertia from the DB, curve normalised to BHP.
+    // Engine: fixed rev references, per-car character from the curve + ratios.
     PhysicsEngineSim &en = vehicle.Engine;
     const float rpmToRad = 0.10472f;
     en.OmegaMax = ( db.Redline > 0 ? db.Redline : 7000 ) * rpmToRad;
-    en.OmegaIdle = 850.0f * rpmToRad;
+    en.OmegaIdle = kThousandRpmOmega;
     en.Inertia = ( db.EngineInertia > 0 ? db.EngineInertia * 0.004f : 0.4f ) *
                  simInertiaScale; // *0.5 in Simu mode
     en.Omega = en.OmegaIdle;
@@ -1041,15 +1087,14 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     en.State = eEngineState::ES_Off;
     en.IgnTimer = 0.0f;
+    en.bIgnitionOnce = false;
     en.IgnitionOn = true; // key on: auto-start + auto-restart on stall
+    en.Throttle = 0.0f;
+    en.bApplyIdleThrottleFloor = false;
     en.CrankDuration =
         ( db.IgnitionTimeIgnite > 0.05f && db.IgnitionTimeIgnite < 3.0f )
             ? db.IgnitionTimeIgnite
             : 0.5f;
-    en.RevUpDuration =
-        ( db.IgnitionTimeRevUp > 0.05f && db.IgnitionTimeRevUp < 3.0f )
-            ? db.IgnitionTimeRevUp
-            : 0.4f;
 
     const float bhp = ( db.BHP > 0 ? (float)db.BHP : 200.0f );
 
@@ -1097,12 +1142,46 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
             "Engine curve: synthesized (no torque blob, %.0f BHP)\n", bhp );
     }
 
+    const float curvePeakPowerOmega = en.PeakPowerOmega;
+    if ( en.PeakPowerOmega >= en.OmegaMax ) {
+        en.PeakPowerOmega = en.OmegaMax - rpmToRad; // one rpm under
+        OTDU_LOG_WARN( "Engine peak power sits at/above the %.0f rpm redline; "
+                       "clamped to keep 1st gear shiftable\n",
+                       en.OmegaMax / rpmToRad );
+    }
+    OTDU_LOG_DEBUG( "Engine revs: redline %.0f rpm, peak power %.0f rpm "
+                    "(DB RPM=%d, curve said %.0f, DB Redline=%d, "
+                    "DB TorqueRPM=%d, peak torque from curve %.0f)\n",
+                    en.OmegaMax / rpmToRad, en.PeakPowerOmega / rpmToRad,
+                    db.RPM, curvePeakPowerOmega / rpmToRad, db.Redline,
+                    db.TorqueRPM, en.PeakTorqueOmega / rpmToRad );
+
     en.ThrottleIdle = ThrottlePosForTorque( en, en.FrictionLoss * en.OmegaIdle,
                                             en.OmegaIdle );
-    OTDU_LOG_DEBUG( "Engine idle: ThrottleIdle=%.4f (target %.2f N.m @ %.1f "
-                    "rad/s, frictionLoss=%.4f)\n",
-                    en.ThrottleIdle, en.FrictionLoss * en.OmegaIdle,
-                    en.OmegaIdle, en.FrictionLoss );
+    OTDU_LOG_DEBUG( "Engine idle: %.0f rpm, throttle %.4f (target %.2f N.m @ "
+                    "%.1f rad/s, frictionLoss=%.4f)\n",
+                    en.OmegaIdle / rpmToRad, en.ThrottleIdle,
+                    en.FrictionLoss * en.OmegaIdle, en.OmegaIdle,
+                    en.FrictionLoss );
+
+    const float peakPowerW =
+        EngineTorqueAt( en, en.PeakPowerOmega, 1.0f ) * en.PeakPowerOmega;
+    const float peakPowerHp = peakPowerW * kWattToMetricHp;
+    en.RevLimiterCutTime =
+        JPH::Clamp( ( peakPowerHp - kRevLimiterPowerRef ) *
+                            kRevLimiterPowerSlope * kRevLimiterPowerScale +
+                        kRevLimiterCutMax,
+                    kRevLimiterCutMin, kRevLimiterCutMax );
+    if ( db.Category.pAsString != nullptr &&
+         StringCmpI( db.Category.pAsString, "G" ) == 0 ) {
+        en.RevLimiterCutTime = 0.0f; // no power cut, redline snap only
+    }
+    OTDU_LOG_DEBUG( "Engine rev limiter: cut window %.3f s (%.0f hp from the "
+                    "curve, category '%s')\n",
+                    en.RevLimiterCutTime, peakPowerHp,
+                    db.Category.pAsString != nullptr ? db.Category.pAsString
+                                                     : "?" );
+    en.IgnTimer = en.RevLimiterCutTime;
 
     for ( PhysicsDifferentialSim *d :
           { &vehicle.DiffFront, &vehicle.DiffRear, &vehicle.DiffCenter } ) {
@@ -1150,6 +1229,19 @@ void PhysicsVehicle::setInput( float throttle, float brake, float steer ) {
     inputSteer = steer;
 }
 
+void PhysicsVehicle::setHandbrake( float handbrake ) {
+    inputHandbrake = JPH::Clamp( handbrake, 0.0f, 1.0f );
+}
+
+void PhysicsVehicle::setIgnition( bool bKeyOn, bool bCutEdge ) {
+    // FUN_0041a210 (inlined)
+    PhysicsEngineSim &e = vehicle.Engine;
+    e.IgnitionOn = bKeyOn;
+    if ( bCutEdge ) {
+        e.bIgnitionOnce = true;
+    }
+}
+
 void PhysicsVehicle::applyDrivingMode() {
     // FUN_0083db70
     switch ( drivingMode ) {
@@ -1192,11 +1284,13 @@ PhysicsVehicle::DrivingGearbox PhysicsVehicle::getDrivingGearbox() const {
 
     DrivingGearbox out;
     out.Gear = g.CurrentGear;
+    out.NumGears = g.NumGears;
     out.ForwardSpeed = vehicle.ForwardSpeed;
     out.bAutomatic = g.bAutomatic;
-    out.bEngineFiring = ( vehicle.Engine.State == eEngineState::ES_RevUp ||
-                          vehicle.Engine.State == eEngineState::ES_Running );
+    out.bEngineFiring = ( vehicle.Engine.State == eEngineState::ES_Running ||
+                          vehicle.Engine.State == eEngineState::ES_Stalling );
     out.bShiftIdle = ( g.ShiftState == 1 && g.ShiftTimer <= 0.0f );
+    out.bEngineRunning = ( vehicle.Engine.State == eEngineState::ES_Running );
     out.ShiftDirection = 0;
     if ( g.ShiftState == 2 ) {
         if ( g.ShiftSubstate > 0 ) {
@@ -1214,6 +1308,10 @@ void PhysicsVehicle::setCurrentGear( int32_t gear ) {
         return;
     }
     g.CurrentGear = gear;
+}
+
+void PhysicsVehicle::setAutomaticGearbox( bool bAutomatic ) {
+    vehicle.GearBox.bAutomatic = bAutomatic;
 }
 
 void PhysicsVehicle::requestUpshift() {
@@ -1272,22 +1370,36 @@ float PhysicsVehicle::filterSteering( float rawSteer,
     }
 
     const float sensTurn = sens * kSteerTurnScale;
-    float linearity = kSteerLinearity * ( 1.0f - steerAssistBlend );
-    linearity = JPH::Clamp( linearity, std::min( 0.0f, kSteerLinearity ),
-                            std::max( 0.0f, kSteerLinearity ) );
 
     const bool bSteerControl = ( gVehicleSteerControlOverride >= 0 )
                                    ? ( gVehicleSteerControlOverride != 0 )
                                    : bUseSteerControl;
 
-    const float turn = ( gSteeringTurn > 0.0f ) ? gSteeringTurn : 270.0f;
-    float cmd = ( rawSteer / turn ) * kSteerScale * sensTurn;
-    if ( bSteerControl && linearity >= kSteerLinearityMin ) {
-        OTDU_UNIMPLEMENTED_ONCE;
+    float linearity;
+    if ( bSteerControl ) {
+        linearity = gSteeringLinearity;
+    } else {
+        linearity = kSteerLinearity * ( 1.0f - steerAssistBlend );
+        linearity = JPH::Clamp( linearity, std::min( 0.0f, kSteerLinearity ),
+                                std::max( 0.0f, kSteerLinearity ) );
     }
-    if ( linearity >= kSteerLinearityMin ) {
-        const float s = ( cmd >= 0.0f ) ? 1.0f : -1.0f;
-        cmd = s * SteerResponseCurve( std::fabs( cmd ), linearity );
+
+    const float turn = ( gSteeringTurn > 0.0f ) ? gSteeringTurn : 270.0f;
+    float cmd;
+    if ( bSteerControl && linearity >= kSteerLinearityMin ) {
+        const float lockFrac = turn * ( 1.0f / kSteerScale ); // fVar11
+        const float k = SteerResponseCurve( lockFrac, linearity );
+        const float sign = ( rawSteer <= 0.0f ) ? -1.0f : 1.0f;
+        if ( std::fabs( rawSteer ) > lockFrac ) {
+            OTDU_UNIMPLEMENTED_ONCE;
+        }
+        cmd = sign * SteerResponseCurve( std::fabs( rawSteer ), k );
+    } else {
+        cmd = ( rawSteer / turn ) * kSteerScale * sensTurn;
+        if ( linearity >= kSteerLinearityMin ) {
+            const float sign = ( cmd >= 0.0f ) ? 1.0f : -1.0f;
+            cmd = sign * SteerResponseCurve( std::fabs( cmd ), linearity );
+        }
     }
     cmd = JPH::Clamp( cmd, -1.0f, 1.0f ); // fStack_54
 
@@ -1315,6 +1427,7 @@ float PhysicsVehicle::filterSteering( float rawSteer,
                             std::min( blend, slip ), std::max( blend, slip ) );
     }
     steerSideslipTerm = blend;
+    steerHelpState = 0;
 
     const float limit = EvalHelpCurveSqrt(
         steerCurveX[SC_Limit], steerCurveY[SC_Limit], speed, steerCurveScale );
@@ -1391,12 +1504,34 @@ float PhysicsVehicle::filterSteering( float rawSteer,
         target = cmd;
     }
 
-    const float step = rate * deltaTime;
-    if ( target - filteredSteer > step ) {
-        target = filteredSteer + step;
+    const float targetPreSlew = target;
+
+    bool bFrontSlipFrozen = false;
+    if ( gbSimuModeEnabled && steerHelpState == 0 ) {
+        const PhysicsWheelState *pWheels = vehicle.Wheels;
+        const float frontSlip =
+            ( pWheels[vehicle.NumWheels / 4].NormLatClamped +
+              pWheels[0].NormLatClamped ) *
+            kSteerFrontSlipAvg;
+        if ( frontSlip > 0.0f ) {
+            bFrontSlipFrozen =
+                frontSlip > kSteerFrontSlipPeak && target > filteredSteer;
+        } else {
+            bFrontSlipFrozen =
+                frontSlip < -kSteerFrontSlipPeak && target < filteredSteer;
+        }
     }
-    if ( target - filteredSteer < -step ) {
-        target = filteredSteer - step;
+
+    if ( bFrontSlipFrozen ) {
+        target = filteredSteer;
+    } else {
+        const float step = rate * deltaTime;
+        if ( target - filteredSteer > step ) {
+            target = filteredSteer + step;
+        }
+        if ( target - filteredSteer < -step ) {
+            target = filteredSteer - step;
+        }
     }
 
     filteredSteer = target;
@@ -1421,7 +1556,7 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
     const JPH::Vec3 down = -up;
     const float droopStop = suspDroopStop[i];
     const float suspRayLen = droopStop + w.Radius;
-    const float rayLen = suspRayLen + kAntiFlyMaxGap;
+    const float rayLen = suspRayLen + kGroundProbeDepth;
     JPH::RRayCast ray{ attachW, rayLen * down };
 
     const JPH::DefaultBroadPhaseLayerFilter bpFilter =
@@ -1451,9 +1586,24 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
 
     const JPH::Vec3 contact( collector.mPosition - JPH::RVec3::sZero() );
     const float hitDist = rayLen * collector.GetEarlyOutFraction();
+
+    const JPH::RVec3 tyreBottomW = attachW + suspRayLen * down;
+    wheelGroundGap[i] =
+        static_cast<float>( tyreBottomW.GetY() - collector.mPosition.GetY() );
+
+    if ( hitDist > suspRayLen ) {
+        w.bGroundContact = false;
+        w.SuspTotalForce = 0.0f;
+        w.NormalLoad = 0.0f;
+        prevSuspLength[i] = droopStop;
+        suspDamperLP[i] *= 0.75f;
+        wheelSurface[i] = 0;
+        wheelMaterial[i] = TDUMaterialValue::kDefault;
+        return false;
+    }
+
     const float suspLength =
         JPH::Clamp( hitDist - w.Radius, suspMinLength[i], droopStop );
-    wheelGroundGap[i] = Max( 0.0f, hitDist - suspRayLen );
 
     // Chassis velocity at the contact point (reused for the tire below).
     const JPH::RVec3 comPos = chassis.GetCenterOfMassPosition();
@@ -1581,6 +1731,13 @@ void PhysicsVehicle::OnStep(
     float diagAppliedFwd = 0.0f;
 
     const JPH::Vec3 chassisVel = chassis.GetLinearVelocity();
+    const bool bBodyActiveAtStepStart = chassis.IsActive();
+    const auto wakeChassis = [&bi, &chassis, id]() {
+        if ( !chassis.IsActive() ) {
+            bi.ActivateBody( id );
+        }
+    };
+
     const float vForward = chassisVel.Dot( world.GetColumn3( 2 ) );
     steerCommand = filterSteering( inputSteer, chassis, dt );
 
@@ -1625,8 +1782,10 @@ void PhysicsVehicle::OnStep(
             const Eigen::Vector3f &at = wheelAttach[i];
             const JPH::Vec3 arm = world.Multiply3x3(
                 JPH::Vec3( at.x(), at.y(), at.z() ) * kAntiFlyLeverScale );
+            wakeChassis();
             bi.AddForce( id, JPH::Vec3( 0.0f, force, 0.0f ),
-                         chassis.GetCenterOfMassPosition() + arm );
+                         chassis.GetCenterOfMassPosition() + arm,
+                         JPH::EActivation::DontActivate );
         }
 
         const float hSub = dt / static_cast<float>( kWheelSubsteps );
@@ -1635,6 +1794,7 @@ void PhysicsVehicle::OnStep(
 
         if ( !hit ) {
             w.BrakeCmdTorque = 0.0f;
+            w.HandbrakeCmdTorque = 0.0f;
             w.BrakeTorqueOut = 0.0f;
             w.EspTorqueOut = 0.0f;
             w.EspState = 0;
@@ -1649,10 +1809,17 @@ void PhysicsVehicle::OnStep(
         const float espMag =
             ( i < 2 ) ? vehicle.EspMagFront : vehicle.EspMagRear;
 
+        const bool bHandbraked =
+            !w.bSteered && ( inputHandbrake > kHandbrakeInputThreshold );
+
         const float vLongStep = w.ContactVelLong;
         for ( int s = 0; s < kWheelSubsteps; ++s ) {
-            w.BrakeCmdTorque = -( ( w.AngularVel > 0.0f ) ? 1.0f : -1.0f ) *
-                               inputBrake * w.BrakeTorque;
+            const float brakeSign = ( w.AngularVel > 0.0f ) ? 1.0f : -1.0f;
+            w.BrakeCmdTorque = -brakeSign * inputBrake * w.BrakeTorque;
+            w.HandbrakeCmdTorque = bHandbraked ? -brakeSign * inputHandbrake *
+                                                     w.BrakeTorque *
+                                                     kHandbrakeTorqueScale
+                                               : 0.0f;
 
             const float longSlip =
                 ( w.AngularVel * radius - vLongStep ) /
@@ -1662,14 +1829,15 @@ void PhysicsVehicle::OnStep(
 
             const float reactTorque = ComputeWheelReactionTorque( w, hSub );
 
-            ApplyBrakeAndABS( w, gVehicleABS && vehicle.bAbsEnabled, absMag,
-                              reactTorque, driveBase, hSub );
+            ApplyBrakeAndABS(
+                w, gVehicleABS && vehicle.bAbsEnabled && !bHandbraked, absMag,
+                reactTorque, driveBase, hSub );
 
             w.DriveTorque = ApplyEngineDragControl(
                 w, vehicle.bEdcEnabled, reactTorque, driveBase, hSub );
 
-            ApplyESP( w, vehicle.bEspEnabled, espMag, reactTorque,
-                      w.DriveTorque, hSub );
+            ApplyESP( w, gVehicleESPEnabled && vehicle.bEspEnabled, espMag,
+                      reactTorque, w.DriveTorque, hSub );
 
             IntegrateWheel( w, hSub );
         }
@@ -1686,8 +1854,16 @@ void PhysicsVehicle::OnStep(
             longAxis * ( w.TireForceLong + w.DragLong ) +
             latAxis * ( w.TireForceLat + w.DragLat );
 
-        bi.AddForce( id, suspForce, point );
-        bi.AddForce( id, tireForce, point );
+        // Jolt equivalent of "if (islandActiveSnapshot && bVar3)"
+        if ( bBodyActiveAtStepStart ) {
+            wakeChassis();
+            bi.AddForce( id, suspForce, point, JPH::EActivation::DontActivate );
+        }
+
+        if ( w.bTireSlipping ) {
+            wakeChassis();
+            bi.AddForce( id, tireForce, point, JPH::EActivation::DontActivate );
+        }
     }
 
     {
@@ -1733,12 +1909,11 @@ void PhysicsVehicle::OnStep(
         const JPH::Vec3 aeroForce =
             upAxis * ( -aeroDownArea * kAeroLiftFront * dyn ) +
             fwd * ( -aeroDragArea * gVehicleAeroDragScale * dyn );
-        bi.AddForce( id, aeroForce );
+        wakeChassis();
+        bi.AddForce( id, aeroForce, JPH::EActivation::DontActivate );
     }
 
     updateChrono( dt );
-
-    bi.ActivateBody( id );
 }
 
 void PhysicsVehicle::armChrono() {
@@ -1875,6 +2050,7 @@ void PhysicsVehicle::tick( float deltaTime ) {
         const JPH::Vec3 localAccel = rot.Conjugated() * worldAccel;
         localAccelLong = localAccel.GetZ();
         localAccelLat = localAccel.GetX();
+        localAccelVert = localAccel.GetY();
         prevWorldVelocity[0] = vel.GetX();
         prevWorldVelocity[1] = vel.GetY();
         prevWorldVelocity[2] = vel.GetZ();
@@ -2050,7 +2226,11 @@ PhysicsVehicle::getWheelReadout( uint32_t index ) const {
     out.LateralGroundSpeed = w.ContactVelLat;
     out.SuspensionLoad = w.NormalLoad;
     out.Radius = w.Radius;
+    out.Width = wheelWidth[index];
     out.bGrounded = w.bGroundContact;
+    out.ContactVelocity = w.WheelLinVel;
+    out.UpAxis = w.WheelUpAxis;
+    out.ForwardAxis = w.ContactLongAxis;
     out.EspState = w.EspState;
     out.BrakeTorqueOut = w.BrakeTorqueOut;
     out.EspTorqueOut = w.EspTorqueOut;
@@ -2096,4 +2276,8 @@ float PhysicsVehicle::getLateralG() const {
 
 float PhysicsVehicle::getLongitudinalG() const {
     return localAccelLong / kGravityAccel;
+}
+
+float PhysicsVehicle::getVerticalG() const {
+    return localAccelVert / kGravityAccel;
 }
