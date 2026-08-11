@@ -125,16 +125,18 @@ void GSWorld::bindWorldBitmapReferences( Render2DM *pRender2DM ) {
 void GSWorld::setEnabled( bool param_1 ) { bEnabled = param_1; }
 
 bool GSWorld::computeGroundColor( Eigen::Vector4f *pOutColor,
-                                  const Eigen::Vector4f *pWorldPos ) {
+                                  const Eigen::Vector4f *pWorldPos,
+                                  const uint32_t flags ) {
     // FUN_007cb9d0
-    return pStreamingManager->computeGroundColor( pOutColor, pWorldPos );
+    return pStreamingManager->computeGroundColor( pOutColor, pWorldPos, flags );
 }
 
 bool GSWorld::computeGroundColorPacked( ColorRGBA *pOutColor,
-                                        const Eigen::Vector4f *pWorldPos ) {
+                                        const Eigen::Vector4f *pWorldPos,
+                                        const uint32_t flags ) {
     // FUN_007cbd10
     Eigen::Vector4f color;
-    if ( !computeGroundColor( &color, pWorldPos ) ) {
+    if ( !computeGroundColor( &color, pWorldPos, flags ) ) {
         return false;
     }
 

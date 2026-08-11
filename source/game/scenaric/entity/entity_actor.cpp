@@ -418,7 +418,8 @@ void EntityActor::updateSkinningMatrices() {
     const Eigen::Vector4f entityPosition = modelMatrix.row( 3 ).transpose();
 
     ColorRGBA groundColor;
-    if ( !gpWorld->computeGroundColorPacked( &groundColor, &entityPosition ) ) {
+    if ( !gpWorld->computeGroundColorPacked( &groundColor, &entityPosition,
+                                             GCF_Shade ) ) {
         return;
     }
 
@@ -447,7 +448,8 @@ void EntityActor::updateSkinningMatrices() {
             pNode->pInstance->getModelMatrix().row( 3 ).transpose() + shift;
 
         ColorRGBA nodeColor;
-        if ( gpWorld->computeGroundColorPacked( &nodeColor, &nodePosition ) ) {
+        if ( gpWorld->computeGroundColorPacked( &nodeColor, &nodePosition,
+                                                GCF_Shade ) ) {
             pNode->pInstance->getFlagsWrite() |= 0x30;
             pNode->pInstance->setColor( nodeColor );
         }

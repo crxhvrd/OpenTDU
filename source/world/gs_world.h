@@ -10,6 +10,19 @@ class StreamingManager;
 class Render2DM;
 class Render2DB;
 
+enum eGroundColorFlags : uint32_t {
+    // Sample the ground colour map (heightmap layer 0).
+    GCF_Color = 1 << 0,
+    // Sample the ground shade / AO map (heightmap layer 1).
+    GCF_Shade = 1 << 1,
+    // Sample the ground type map instead, and return its red channel as a
+    // greyscale (gated on green > 0.5). No port caller uses this yet.
+    GCF_Type = 1 << 6,
+    // Read GCF_Shade as full RGB. When clear, the shade map's RED channel is
+    // replicated across RGB.
+    GCF_ShadeRGB = 1 << 7,
+};
+
 class GSWorld : public GameSystem {
 public:
     const char *getName() const override { return "Service : World"; }
@@ -61,9 +74,11 @@ public:
     void setStreamingPositionPtr( Eigen::Vector4f *pPosition );
 
     bool computeGroundColor( Eigen::Vector4f *pOutColor,
-                             const Eigen::Vector4f *pWorldPos );
+                             const Eigen::Vector4f *pWorldPos,
+                             const uint32_t flags );
     bool computeGroundColorPacked( ColorRGBA *pOutColor,
-                                   const Eigen::Vector4f *pWorldPos );
+                                   const Eigen::Vector4f *pWorldPos,
+                                   const uint32_t flags );
 
 private:
     StreamingManager *pStreamingManager;

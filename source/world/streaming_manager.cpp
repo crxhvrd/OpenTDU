@@ -17,6 +17,7 @@
 #include "render/gs_render.h"
 #include "render/instance.h"
 #include "render/render_scene.h"
+#include "gs_world.h"
 #include "gs_world_streaming.h"
 
 // PMI start fade factor
@@ -2578,7 +2579,8 @@ void StreamingManager::loadSectorGeometry( Sector &sector,
 }
 
 bool StreamingManager::computeGroundColor( Eigen::Vector4f *pOutColor,
-                                           const Eigen::Vector4f *pWorldPos ) {
+                                           const Eigen::Vector4f *pWorldPos,
+                                           const uint32_t flags ) {
     // FUN_007cb9d0
     *pOutColor = Eigen::Vector4f( 1.0f, 1.0f, 1.0f, 1.0f ); // FLOAT_00f4165c
 
@@ -2588,7 +2590,7 @@ bool StreamingManager::computeGroundColor( Eigen::Vector4f *pOutColor,
     }
 
     const SectorHeightmap &desc = pSector->heightmap;
-    if ( desc.pColorBitmap == nullptr || desc.worldExtent <= 0.0f ) {
+    if ( desc.worldExtent <= 0.0f ) {
         return false;
     }
 
@@ -2599,13 +2601,28 @@ bool StreamingManager::computeGroundColor( Eigen::Vector4f *pOutColor,
         return false;
     }
 
-    Eigen::Vector4f color = SampleGroundBitmap( desc.pColorBitmap, u, v );
-    if ( desc.pShadowBitmap != nullptr ) {
-        color = color.cwiseProduct(
-            SampleGroundBitmap( desc.pShadowBitmap, u, v ) );
+    if ( ( flags & GCF_Type ) != 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ground type greyscale branch
+        return true;
     }
-    color.w() = 1.0f;
-    *pOutColor = color;
+
+    Eigen::Vector4f color( 1.0f, 1.0f, 1.0f, 1.0f );
+    Eigen::Vector4f shade( 1.0f, 1.0f, 1.0f, 1.0f );
+
+    if ( ( flags & GCF_Color ) != 0 && desc.pColorBitmap != nullptr ) {
+        color = SampleGroundBitmap( desc.pColorBitmap, u, v );
+    }
+
+    if ( ( flags & GCF_Shade ) != 0 && desc.pShadowBitmap != nullptr ) {
+        shade = SampleGroundBitmap( desc.pShadowBitmap, u, v );
+        if ( ( flags & GCF_ShadeRGB ) == 0 ) {
+            shade.y() = shade.x();
+            shade.z() = shade.x();
+        }
+    }
+
+    *pOutColor = color.cwiseProduct( shade );
+    pOutColor->w() = 1.0f;
     return true;
 }
 

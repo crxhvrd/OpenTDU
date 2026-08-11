@@ -181,8 +181,9 @@ void CarState::updateGroundColor() {
                     shiftOffset;
 
                 if ( !bIsIndoor ) {
-                    if ( !gpWorld->computeGroundColor( &wheel.ShadowColor,
-                                                       &wheelWorldPos ) ) {
+                    if ( !gpWorld->computeGroundColor(
+                             &wheel.ShadowColor, &wheelWorldPos,
+                             GCF_Shade | GCF_ShadeRGB ) ) {
                         wheel.ShadowColor =
                             Eigen::Vector4f( 1.f, 1.f, 1.f, 1.f );
                     }
@@ -190,8 +191,8 @@ void CarState::updateGroundColor() {
                     wheel.ShadowColor = Eigen::Vector4f( 1.f, 1.f, 1.f, 1.f );
                 }
 
-                if ( !gpWorld->computeGroundColor( &wheel.GroundColor,
-                                                   &wheelWorldPos ) ) {
+                if ( !gpWorld->computeGroundColor(
+                         &wheel.GroundColor, &wheelWorldPos, GCF_Color ) ) {
                     wheel.GroundColor = Eigen::Vector4f( 1.f, 1.f, 1.f, 1.f );
                 }
 
@@ -222,9 +223,10 @@ void CarState::updateGroundColor() {
         Eigen::Vector4f groundColor( 1.f, 1.f, 1.f, 1.f );
 
         if ( !bIsIndoor ) {
-            gpWorld->computeGroundColor( &shadowColor, &bodyWorldPos );
+            gpWorld->computeGroundColor( &shadowColor, &bodyWorldPos,
+                                         GCF_Shade | GCF_ShadeRGB );
         }
-        gpWorld->computeGroundColor( &groundColor, &bodyWorldPos );
+        gpWorld->computeGroundColor( &groundColor, &bodyWorldPos, GCF_Color );
 
         for ( uint32_t i = 0; i < numWheels; i++ ) {
             WheelState &wheel = wheels[i];

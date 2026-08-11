@@ -50,7 +50,8 @@ public:
     void reinit();
 
     bool computeGroundColor( Eigen::Vector4f *pOutColor,
-                             const Eigen::Vector4f *pWorldPos );
+                             const Eigen::Vector4f *pWorldPos,
+                             const uint32_t flags );
 
     void computeCellWorldPosition( Eigen::Vector4f &outPosition,
                                    const GridPos2D &sectorCell,
