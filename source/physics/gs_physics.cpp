@@ -1231,6 +1231,12 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     const bool bHasFactoryShape =
         ( pData != nullptr && !pData->Bodies.empty() );
 
+    const float kMmToM = 0.001f;
+    const float kConvexRadius = 0.05f; // FLOAT_00f41778
+    const float halfW = ( db.Width > 0 ? db.Width : 1800 ) * 0.5f * kMmToM;
+    const float halfH = ( db.Height > 0 ? db.Height : 1300 ) * 0.5f * kMmToM;
+    const float halfL = ( db.Length > 0 ? db.Length : 4000 ) * 0.5f * kMmToM;
+
     JPH::ShapeSettings::ShapeResult shapeResult;
     if ( bHasFactoryShape ) {
         // Combine the reconstructed collision bodies into a single chassis
@@ -1241,15 +1247,6 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         }
         shapeResult = compound.Create();
     } else {
-        // DB body dimensions are in millimetres (X=Width, Y=Height, Z=Length).
-        const float kMmToM = 0.001f;
-        const float halfW = ( db.Width > 0 ? db.Width : 1800 ) * 0.5f * kMmToM;
-        const float halfH =
-            ( db.Height > 0 ? db.Height : 1300 ) * 0.5f * kMmToM;
-        const float halfL =
-            ( db.Length > 0 ? db.Length : 4000 ) * 0.5f * kMmToM;
-
-        const float kConvexRadius = 0.05f; // FLOAT_00f41778
         const JPH::Vec3 halfExtents( Max( 0.10f, halfW - 0.05f ),
                                      Max( 0.10f, halfH - 0.15f ),
                                      Max( 0.10f, halfL - 0.55f ) );
@@ -1313,8 +1310,9 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f;
     settings.mMassPropertiesOverride.mMass = chassisMass;
 
-    const JPH::Vec3 h = shapeResult.Get()->GetLocalBounds().GetExtent() +
-                        JPH::Vec3::sReplicate( 0.05f );
+    const JPH::Vec3 h( halfW + kConvexRadius,
+                       Max( 0.10f, halfH - 0.15f ) + kConvexRadius,
+                       halfL + kConvexRadius );
     const float k = chassisMass / 3.0f;
     JPH::MassProperties mp;
     mp.mMass = chassisMass;
