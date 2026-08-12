@@ -5,6 +5,10 @@
 
 static constexpr const char *kThreadDefaultName = "UNAMED THREAD";
 
+#if defined( OTDU_UNIX )
+static constexpr size_t kPosixStackReserve = 1024u * 1024u;
+#endif
+
 TestDriveThread::TestDriveThread( const char *pThreadName /*= nullptr */ )
     : stackSize( 0x3000 )
 #if defined( OTDU_WIN32 )
@@ -76,7 +80,9 @@ bool TestDriveThread::initialize( StartRoutine_t pThreadStartRoutine,
     int attrResult = pthread_attr_init( &attributes );
     OTDU_ASSERT( attrResult == 0 );
 
-    pthread_attr_setstacksize( &attributes, stackSize );
+    const size_t posixStackSize =
+        ( stackSize < kPosixStackReserve ) ? kPosixStackReserve : stackSize;
+    pthread_attr_setstacksize( &attributes, posixStackSize );
 
     int result = pthread_create( &threadHandle, &attributes,
                                  pThreadStartRoutine, lpParameter );
