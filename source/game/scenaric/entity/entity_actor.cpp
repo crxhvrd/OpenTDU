@@ -158,9 +158,7 @@ void EntityActor::loadResources( ScenaricBank *param_2 ) {
         pMechanism->loadResources( param_2 );
     }
 
-    if ( pSound != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO
-    }
+    resolveSoundReference();
 
     meshSet( param_2 );
 

@@ -23,7 +23,7 @@ void EntityZone::loadResources( ScenaricBank *param_2 ) {
         pMechanism->loadResources( param_2 );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO
+    resolveSoundReference();
 
     resolveVolumeList( pInclusive );
     resolveVolumeList( pExclusive );

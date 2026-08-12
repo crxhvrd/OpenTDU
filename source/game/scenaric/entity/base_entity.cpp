@@ -84,13 +84,21 @@ void Entity::initialize() {
     }
 }
 
+void Entity::resolveSoundReference() {
+    // Inlined by the P-Code (see FUN_007fb860 and friends).
+    if ( pSound == nullptr ) {
+        return;
+    }
+    pSound->pSound = gpScenaric->getSCTDSound( pSound->Hashcode );
+}
+
 void Entity::loadResources( ScenaricBank *param_2 ) {
     // FUN_007fb860
     if ( pMechanism != nullptr ) {
         pMechanism->loadResources( param_2 );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO
+    resolveSoundReference();
 }
 
 void Entity::initializeInstance( void *param_2, void *param_3 ) {
@@ -136,7 +144,10 @@ void Entity::unloadResources() {
         pMechanism = nullptr;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO
+    if ( pSound != nullptr && pSound->pSound != nullptr &&
+         pSound->pSound->pSoundInstance != nullptr ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO
+    }
 }
 
 void Entity::tick() {

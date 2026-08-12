@@ -81,6 +81,7 @@ public:
     Entity *getFirst( eEntityType type );
     Entity *getEntityByHashcode( uint64_t hashcode ) const;
     Entity *getVolumeByHashcode( uint64_t hashcode ) const;
+    SoundBinary *getSoundByHashcode( uint64_t hashcode ) const;
 
     void forceLoad();
     void destroy();

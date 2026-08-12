@@ -124,6 +124,21 @@ Entity *ScenaricBank::getVolumeByHashcode( uint64_t hashcode ) const {
     return nullptr;
 }
 
+SoundBinary *ScenaricBank::getSoundByHashcode( uint64_t hashcode ) const {
+    // FUN_00428e80 (inlined)
+    if ( hashcode == 0 ) {
+        return nullptr;
+    }
+
+    const int32_t count = sounds.getCount();
+    for ( int32_t i = 0; i < count; i++ ) {
+        if ( sounds.getHashcode( i ) == hashcode ) {
+            return static_cast<SoundBinary *>( sounds.getElement( i ) );
+        }
+    }
+    return nullptr;
+}
+
 void ScenaricBank::setBankTransform( const Matrix4x4f_t &transform ) {
     bankTransform = transform;
     bTransform = true;

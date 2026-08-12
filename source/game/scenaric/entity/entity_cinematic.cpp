@@ -158,7 +158,7 @@ void EntityCinematic::loadResources( ScenaricBank *param_2 ) {
     if ( pMechanism != nullptr ) {
         pMechanism->loadResources( param_2 );
     }
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO
+    resolveSoundReference();
     pSCBank = param_2;
 }
 

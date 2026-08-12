@@ -40,7 +40,7 @@ void EntityExtraChallenge::loadResources( ScenaricBank *param_2 ) {
         pMechanism->loadResources( param_2 );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO
+    resolveSoundReference();
 
     pTrigger = gpScenaric->getSCVolume( TriggerHashcode );
 }

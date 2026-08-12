@@ -29,9 +29,7 @@ void EntityAircraftMaterials::loadResources( ScenaricBank *param_2 ) {
         pMechanism->loadResources( param_2 );
     }
 
-    if ( pSound != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO
-    }
+    resolveSoundReference();
 
     if ( pRef2DM != nullptr ) {
         pRef2DM = ResolveRender2DM( param_2,

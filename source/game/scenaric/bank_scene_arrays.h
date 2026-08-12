@@ -38,18 +38,17 @@ protected:
 
 class SoundBinary {
 public:
-    void *field_0x8 =
-        nullptr;             // +0x08 set when the leading tag block is present
-    uint32_t field_0xc = 0;  // +0x0c
-    uint32_t field_0x10 = 0; // +0x10
-    uint32_t field_0x14 = 0; // +0x14
-    uint32_t field_0x18 = 0; // +0x18
-    bool field_0x1c = false; // +0x1c
-    uint32_t field_0x20 = 0; // +0x20
-    uint32_t field_0x24 = 0; // +0x24
-    uint32_t field_0x28 = 0; // +0x28
+    void *pSoundInstance = nullptr;
+    void *pWav = nullptr;
+    float Volume = 0.0f;
+    float ClipDistanceMin = 0.0f;
+    float ClipDistanceMax = 0.0f;
+    float Doppler = 0.0f;
+    bool bLoop = false;
+    float RandomPitch = 0.0f;
+    float Pitch = 0.0f;
+    float RandomVol = 0.0f;
 
-    // FUN_007df580 (sound vtable slot 0) — reads the sound descriptor.
     void deserialize( BinaryReader &reader );
 };
 

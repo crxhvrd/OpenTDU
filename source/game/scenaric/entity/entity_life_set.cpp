@@ -118,7 +118,7 @@ void EntityLifeSet::loadResources( ScenaricBank *pBank ) {
     if ( pMechanism != nullptr ) {
         pMechanism->loadResources( pBank );
     }
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO
+    resolveSoundReference();
     bank.prepare( pBank );
 }
 

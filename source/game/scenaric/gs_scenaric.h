@@ -92,6 +92,7 @@ public:
     void unloadPacks();
 
     Entity *findEntityByHashcode( uint64_t hashcode ) const;
+    SoundBinary *getSCTDSound( uint64_t hashcode ) const;
     void *findWavData( uint64_t hashcode, int32_t *pOutSize = nullptr ) const;
     Entity *getSCVolume( uint64_t hashcode ) const;
     void registerBank( ScenaricBank *pBank );

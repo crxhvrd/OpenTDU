@@ -11,7 +11,7 @@
 #include <vector>
 
 class Spot;
-struct SoundScene;
+class SoundBinary;
 class GameMechanism;
 class ScenaricBank;
 class SerializedEntity;
@@ -19,6 +19,13 @@ struct BinaryReader;
 class RenderScene;
 class MngActor;
 class SectorHeightmap;
+
+struct SoundScene {
+    union {
+        uint64_t Hashcode;
+        SoundBinary *pSound;
+    };
+};
 
 struct SerializedTransform {
     float RotationX = 0.0f;
@@ -185,6 +192,7 @@ protected:
 
 protected:
     void setTransformFromDesc();
+    void resolveSoundReference();
 };
 
 void ResolveVolumeList( uint32_t *pList );

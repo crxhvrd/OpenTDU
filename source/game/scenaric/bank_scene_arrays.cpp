@@ -84,18 +84,18 @@ void SoundBinary::deserialize( BinaryReader &reader ) {
     if ( pBlock[0] != 0 ) {
         // A two-dword block is present; keep a pointer to it and skip it.
         reader.pCursor = reinterpret_cast<uint8_t *>( pBlock + 3 );
-        field_0x8 = pBlock + 1;
+        pWav = pBlock + 1;
     }
 
-    uint32_t *p = reinterpret_cast<uint32_t *>( reader.pCursor );
-    field_0xc = p[0];
-    field_0x28 = p[1];
-    field_0x10 = p[2];
-    field_0x14 = p[3];
-    field_0x18 = p[4];
-    field_0x24 = p[5];
-    field_0x20 = p[6];
-    field_0x1c = ( p[7] != 0 );
+    float *p = reinterpret_cast<float *>( reader.pCursor );
+    Volume = p[0];
+    RandomVol = p[1];
+    ClipDistanceMin = p[2];
+    ClipDistanceMax = p[3];
+    Doppler = p[4];
+    Pitch = p[5];
+    RandomPitch = p[6];
+    bLoop = ( reinterpret_cast<uint32_t *>( p )[7] != 0 );
     reader.pCursor = reinterpret_cast<uint8_t *>( p + 8 );
 }
 

@@ -9,7 +9,14 @@
 #include "render/animation/clip.h"
 #include "game/gm_base.h"
 #include "world/gs_world.h"
+#include "world/gs_world_streaming.h"
+#include "world/sector_manager.h"
 #include "world/streaming_manager.h"
+#include "render/gs_render.h"
+#include "render/heightmap_renderer.h"
+#include "render/hiearchy_node.h"
+#include "render/instance.h"
+#include "render/render_scene.h"
 #include "tdu_instance.h"
 
 GSScenaric *gpScenaric = nullptr;
@@ -301,6 +308,24 @@ Entity *GSScenaric::findEntityByHashcode( uint64_t hashcode ) const {
         Entity *pEntity = pBank->getEntityByHashcode( hashcode );
         if ( pEntity != nullptr ) {
             return pEntity;
+        }
+    }
+    return nullptr;
+}
+
+SoundBinary *GSScenaric::getSCTDSound( uint64_t hashcode ) const {
+    // FUN_00428e80
+    if ( hashcode == 0 ) {
+        return nullptr;
+    }
+
+    for ( ScenaricBank *pBank : registeredBanks ) {
+        if ( pBank == nullptr ) {
+            continue;
+        }
+        SoundBinary *pSound = pBank->getSoundByHashcode( hashcode );
+        if ( pSound != nullptr ) {
+            return pSound;
         }
     }
     return nullptr;
