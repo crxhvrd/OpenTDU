@@ -20,9 +20,11 @@
 #include "render/render_context.h"
 
 #include "gs_car_common.h"
+#include "game/mng_hud.h"
 #include "world/gs_mng_resources.h"
 
-#include <unordered_map>
+static constexpr uint64_t kHashcodeGPSScreenShader = 0x7dad16b47eb57b95ull;
+static constexpr float kGPSScreenParamZ = 3.0f; // DAT_00f416b4
 
 static const uint64_t kHashcodeForkFL =
     GetIdentifier64bit( "FORK_FL" ); // DAT_010e74c0
@@ -630,6 +632,85 @@ void VehicleBase::setRealTimeEnvMap( Render2DB *param_1,
                 }
             }
         }
+    }
+}
+
+void VehicleBase::setGPSTexture( Render2DB *param_2 ) {
+    // FUN_008b6740
+    const uint64_t satelliteMapHashcode = GetIdentifier64bit( "satellitemap" );
+    const uint64_t gpsMaterialHashcode = GetIdentifier64bit( "GPS" );
+
+    float uScale = 1.0f;
+    float vScale = 1.0f;
+
+    if ( param_2 == nullptr ) {
+        for ( Render2DB *pRender2DB :
+              interiorResource.Collection2D.Render2DBs ) {
+            if ( pRender2DB == nullptr ||
+                 pRender2DB->getBitmapSection() == nullptr ) {
+                continue;
+            }
+            if ( pRender2DB->getBitmapHashcode() == satelliteMapHashcode ) {
+                param_2 = pRender2DB;
+                break;
+            }
+        }
+
+        if ( param_2 == nullptr ) {
+            return;
+        }
+    } else if ( gpMngHud != nullptr ) {
+        uScale = gpMngHud->getMinimapViewportU();
+        vScale = gpMngHud->getMinimapViewportV();
+    }
+
+    for ( Render2DM *pRender2DM : interiorResource.Collection2D.Render2DMs ) {
+        if ( pRender2DM == nullptr || pRender2DM->getHeader() == nullptr ||
+             pRender2DM->getMaterialArray() == nullptr ) {
+            continue;
+        }
+
+        RenderFile::Section *pMaterialSection =
+            pRender2DM->getMaterial( gpsMaterialHashcode );
+        if ( pMaterialSection == nullptr ) {
+            continue;
+        }
+
+        Material *pMaterial = (Material *)( pMaterialSection + 1 );
+        if ( pMaterial->NumParams == 0 ) {
+            return;
+        }
+
+        MaterialParameter *pParam = pMaterial->getParameterByIndex( 0 );
+        if ( pParam == nullptr ||
+             pParam->Hashcode != kHashcodeGPSScreenShader ) {
+            return;
+        }
+        if ( pParam->NumLayers == 0 ) {
+            return;
+        }
+
+        MaterialLayer *pLayer = pParam->getLayer( 0 );
+        if ( pLayer != nullptr ) {
+            for ( uint8_t texIndex = 0; texIndex < pLayer->NumTextures;
+                  texIndex++ ) {
+                MaterialLayerTexture &texture =
+                    pLayer->pLayerTextures[texIndex];
+                if ( texture.Hashcode == satelliteMapHashcode ) {
+                    texture.pTextureSection = param_2->getBitmapSection();
+                }
+            }
+        }
+
+        float *pStaticParams =
+            (float *)( (MaterialShaderParameterArray *)pParam )
+                ->getParameterDataByIndex( 0 );
+        if ( pStaticParams != nullptr ) {
+            pStaticParams[0] = uScale;
+            pStaticParams[1] = vScale;
+            pStaticParams[2] = kGPSScreenParamZ;
+        }
+        return;
     }
 }
 

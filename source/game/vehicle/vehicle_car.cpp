@@ -13,6 +13,7 @@
 #include "render/material.h"
 #include "render/render_context.h"
 
+#include "world/gs_mng_resources.h"
 #include "world/weather/gs_weather.h"
 
 // DAT_00f7c9d0
@@ -320,7 +321,10 @@ void VehicleCar::setupInterior() {
     pDoorsHR[1] = pDoorsExterior[1];
 
     if ( gpMngHud != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: MngHUD/MngResources
+        HUDMapResources &resources = gpMngResources->getHUDMapResources();
+        if ( resources.isLoaded() ) {
+            setGPSTexture( &resources.getRender2DB() );
+        }
     }
 
     bAlphaCacheInUse = false;

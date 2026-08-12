@@ -399,8 +399,20 @@ static bool BindMapChunkBitmap( Material *pDest, Material *pSource ) {
 }
 
 static Material *GetWorldMapMaterial() {
-    OTDU_UNIMPLEMENTED; // TODO: STREAMING
-    return nullptr;
+    // FUN_006eb3d0 (inlined)
+    StreamingManager *pStreaming =
+        ( gpWorld != nullptr ) ? gpWorld->getStreamingManager() : nullptr;
+    if ( pStreaming == nullptr ) {
+        return nullptr;
+    }
+
+    Render2DM &render2DM =
+        pStreaming->getLevel().getHeightmapGeometry().render2DM;
+    if ( render2DM.getHeader() == nullptr ||
+         render2DM.getMaterialArray() == nullptr ) {
+        return nullptr;
+    }
+    return render2DM.getMaterialAtIndex( 0 );
 }
 
 static Area *FindStreamedArea( AreaGrid &grid, const GridPos2D &cell ) {
@@ -506,7 +518,19 @@ void HudMinimap::terminate() {
     bInstalled = false;
 
     if ( bGpsTextureBound ) {
-        OTDU_UNIMPLEMENTED; // TODO: VEHICLE
+        CarState *pLocalCar = ( gpScenaric != nullptr )
+                                  ? gpScenaric->getLocalPlayer().getCarState()
+                                  : nullptr;
+        VehicleBase *pVehicle = ( pLocalCar != nullptr )
+                                    ? pLocalCar->getVehicleInstance()
+                                    : nullptr;
+        if ( pVehicle != nullptr ) {
+            const VehicleBase::eType type = pVehicle->getType();
+            if ( type == VehicleBase::eType::VBT_Car ||
+                 type == VehicleBase::eType::VBT_Bike ) {
+                pVehicle->setGPSTexture( nullptr );
+            }
+        }
         bGpsTextureBound = false;
     }
 
@@ -1018,7 +1042,9 @@ void HudMinimap::bindGpsTextureToPlayerCar() {
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: VEHICLE
+    HUDMapResources &resources = gpMngResources->getHUDMapResources();
+    pVehicle->setGPSTexture( resources.isLoaded() ? &resources.getRender2DB()
+                                                  : nullptr );
     bGpsTextureBound = true;
 }
 

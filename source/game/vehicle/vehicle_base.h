@@ -187,6 +187,7 @@ public:
 
     void
     setRealTimeEnvMap( Render2DB *param_1, bool param_2, Render2DB *param_3 );
+    void setGPSTexture( Render2DB *param_2 );
 
     void setFlareValue( eFlareType param_2, const float param_3 );
     static float getTurnSignalBlinkIntensity();

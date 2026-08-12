@@ -275,6 +275,9 @@ public:
     inline void setEnabled( const bool value ) { bEnabled = value; }
     inline FlashPlayer *getHudPlayer() { return pHudPlayer; }
 
+    inline float getMinimapViewportU() const { return minimap.ViewportU; }
+    inline float getMinimapViewportV() const { return minimap.ViewportV; }
+
 public:
     MngHud();
     ~MngHud();

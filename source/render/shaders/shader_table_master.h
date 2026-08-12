@@ -54,9 +54,14 @@ static constexpr ShaderTableEntry kMasterShaderTable[] = {
 #include "shader_table_ocean.inl"
 /* Shadow */
 #include "shader_table_shadow.inl"
-    /* debug font */
+/* debug font */
 #include "shader_table_debug_font.inl"
     /* imgui */
-    {0, 0xf123445d9d1d1fe4, eShaderType::ST_Vertex, 1, 0, 0, 0, "imgui"},
-    {0, 0x71bb13aeb23095f9, eShaderType::ST_Pixel,  0, 0, 0, 0, "imgui"}
+    {0,          0xf123445d9d1d1fe4, eShaderType::ST_Vertex, 1,          0, 0,          0, "imgui"},
+    {0,          0x71bb13aeb23095f9, eShaderType::ST_Pixel,  0,          0, 0,          0, "imgui"},
+    /* GPS */
+    {0x00ee4fc0, 0xc148acd8b23cc0d2, eShaderType::ST_Pixel,  0,          0, 0x80000000,
+     0,                                                                                    "GPS"  },
+    {0x00ee5130, 0x41d0fb2b9d114acf, eShaderType::ST_Vertex, 0x80002011, 0, 0,
+     0,                                                                                    "GPS"  }
 };
