@@ -161,6 +161,8 @@ public:
     // the differ-check seam stitch can compare edges (see Instance LOD cache).
     std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>
         heightmapLODCache = {};
+    std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>
+        heightmapWorkGrid = {};
 
     static constexpr uint32_t kNumHeightmapEnvInstances = 2;
     std::array<Instance *, kNumHeightmapEnvInstances> heightmapEnvInstances = {

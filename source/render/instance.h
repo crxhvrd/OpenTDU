@@ -66,9 +66,25 @@ public:
     inline void setHeightmapTileMask( const uint8_t *pMask ) {
         pHeightmapTileMask = pMask;
     }
+    inline float getHeightmapLODCoef() const { return heightmapLODCoef; }
+    inline void setHeightmapLODCoef( float coef ) { heightmapLODCoef = coef; }
+
+    inline const uint8_t *getHeightmapWorkGrid() const {
+        return pHeightmapWorkGrid;
+    }
+    inline void setHeightmapWorkGrid( const uint8_t *pGrid ) {
+        pHeightmapWorkGrid = pGrid;
+    }
     inline uint8_t *getHeightmapLODCache() const { return pHeightmapLODCache; }
     inline void setHeightmapLODCache( uint8_t *pCache ) {
         pHeightmapLODCache = pCache;
+        bHeightmapLODCacheDriven = false;
+    }
+    inline bool isHeightmapLODCacheDriven() const {
+        return bHeightmapLODCacheDriven;
+    }
+    inline void setHeightmapLODCacheDriven() {
+        bHeightmapLODCacheDriven = true;
     }
 
 public:
@@ -107,6 +123,9 @@ private:
     uint16_t uvaFlags;
     const uint8_t *pHeightmapTileMask = nullptr;
     uint8_t *pHeightmapLODCache = nullptr;
+    const uint8_t *pHeightmapWorkGrid = nullptr;
+    float heightmapLODCoef = 5.0e-5f; // DAT_009f1830, the ctor default
+    bool bHeightmapLODCacheDriven = false;
     std::array<InstanceLOD, kMaxNumLOD> lods;
     SetupGraph setupGraph;
     InstanceEntry *pInstanceDef;

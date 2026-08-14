@@ -12,6 +12,7 @@
 #include "gs_render_helper.h"
 #include "instance.h"
 #include "material.h"
+#include "render/camera/gs_camera.h"
 #include "render/postfx/postfx_renderer.h"
 #include "render/shaders/shader_table_entry.h"
 #include "render/shaders/shader_table_master.h"
@@ -85,6 +86,13 @@ static Matrix4x4f_t gInvActiveTransformMatrix =
 static constexpr uint32_t kSceneUniformsOffsets[kMaxNumCustomUniforms] =
     { // DAT_00f47224
         0xCE, 0xCF, 0xD0, 0xD1, 0xE1, 0xE2, 0xE3, 0xE4 };
+
+static constexpr float kHeightmapLODCoef = 5.0e-5f;    // DAT_009f1830
+static constexpr float kHeightmapFlatThreshold = 0.1f; // FLOAT_00f41668
+static constexpr float kHeightmapSeaLevel = -1.0f;     // FLOAT_00f41664
+static constexpr int32_t kNumTile = 16;        // NumTileX (256 grid cells / 16)
+constexpr int32_t kNumRealTile = kNumTile + 2; // NumRealTileX (1-tile border)
+constexpr int32_t kCellsPerTile = 16;
 
 bool gbDebugWireframeHmap = false;
 bool gbDebugHmapDisableFootprintCull = false; // skip FUN_007022f0 iVar5==2 cull
@@ -1014,14 +1022,8 @@ static void DrawHmapPatch( const uint8_t *pLODValue,
     }
 }
 
-static constexpr float kHeightmapLODCoef = 5.0006e-5f; // DAT_009f1830
-static constexpr float kHeightmapFlatThreshold = 0.1f; // FLOAT_00f41668
-static constexpr float kHeightmapSeaLevel = -1.0f;     // FLOAT_00f41664
-static constexpr int32_t kNumTile = 16;        // NumTileX (256 grid cells / 16)
-constexpr int32_t kNumRealTile = kNumTile + 2; // NumRealTileX (1-tile border)
-constexpr int32_t kCellsPerTile = 16;
-
-static uint8_t HeightmapTileLOD( const float *pErrorsTile, float distSq ) {
+static uint8_t
+HeightmapTileLOD( const float *pErrorsTile, float distSq, float coefLODTile ) {
     // FUN_0050efb0
     float error0 = pErrorsTile[0];
     if ( pErrorsTile[4] < kHeightmapSeaLevel &&
@@ -1035,7 +1037,7 @@ static uint8_t HeightmapTileLOD( const float *pErrorsTile, float distSq ) {
     const float errors[4] = { error0, pErrorsTile[1], pErrorsTile[2],
                               pErrorsTile[3] };
     uint8_t level = 0;
-    while ( level < 4 && errors[level] * invDistSq < kHeightmapLODCoef ) {
+    while ( level < 4 && errors[level] * invDistSq < coefLODTile ) {
         level++;
     }
     return level;
@@ -1052,6 +1054,46 @@ static const Heightmap *HeightmapFromLOD( InstanceLOD *param_2 ) {
     }
     return (const Heightmap *)( (const uint8_t *)pSection +
                                 sizeof( RenderFile::Section ) );
+}
+
+static const float *HeightmapErrors( const Heightmap *pHeightmap,
+                                     uint32_t *pOutPayloadBytes = nullptr,
+                                     uint32_t *pOutRequiredBytes = nullptr ) {
+    const RenderFile::Section *pSection =
+        (const RenderFile::Section *)( (const uint8_t *)pHeightmap -
+                                       sizeof( RenderFile::Section ) );
+    const uint32_t payloadBytes =
+        ( pSection->DataSize > sizeof( RenderFile::Section ) )
+            ? pSection->DataSize - (uint32_t)sizeof( RenderFile::Section )
+            : 0u;
+    const uint32_t requiredBytes =
+        (uint32_t)sizeof( Heightmap ) +
+        (uint32_t)( kNumTile * kNumTile * 5 * sizeof( float ) );
+
+    if ( pOutPayloadBytes != nullptr ) {
+        *pOutPayloadBytes = payloadBytes;
+    }
+    if ( pOutRequiredBytes != nullptr ) {
+        *pOutRequiredBytes = requiredBytes;
+    }
+
+    if ( payloadBytes < requiredBytes ) {
+        return nullptr;
+    }
+    return (const float *)( (const uint8_t *)pHeightmap + sizeof( Heightmap ) );
+}
+
+int32_t HeightmapPatchFrustumClass( const Heightmap *pHeightmap,
+                                    const Matrix4x4f_t &m,
+                                    Camera *pCamera,
+                                    Frustum *pFrustum ) {
+    const Eigen::Vector4f &sphere = pHeightmap->BoundingSphere;
+    const Eigen::Vector4f sphereWorld = { sphere.x() + m( 3, 0 ),
+                                          sphere.y() + m( 3, 1 ),
+                                          sphere.z() + m( 3, 2 ), m( 3, 3 ) };
+    Eigen::Vector4f sphereCam =
+        Mat4x4fTransform( pCamera->getWorldToCam(), sphereWorld );
+    return pFrustum->testBoundingSphere( sphereCam, sphere.w() );
 }
 
 struct HeightmapCullTriangle {
@@ -1116,6 +1158,182 @@ struct HeightmapCullTriangle {
     }
 };
 
+void ComputeHeightmapLODGrid( const Heightmap *pHeightmap,
+                              const Matrix4x4f_t &m,
+                              Camera *pCamera,
+                              Frustum *pFrustum,
+                              bool bAllowFootprintCull,
+                              float coefLODTile,
+                              uint8_t *pOutGrid ) {
+    // FUN_007022f0
+    memset( pOutGrid, 0, kNumRealTile * kNumRealTile );
+
+    if ( pHeightmap == nullptr || pCamera == nullptr || pFrustum == nullptr ) {
+        return;
+    }
+
+    const int32_t sphereClass =
+        HeightmapPatchFrustumClass( pHeightmap, m, pCamera, pFrustum );
+
+    if ( sphereClass == 0 ) {
+        memset( pOutGrid, 0xff, kNumRealTile * kNumRealTile );
+        return;
+    }
+
+    const Eigen::Vector4f camPos =
+        pCamera->getCamToWorld().row( 3 ).transpose();
+    const float tileWorld = kCellsPerTile * std::sqrt( m( 0, 0 ) * m( 0, 0 ) +
+                                                       m( 0, 2 ) * m( 0, 2 ) );
+
+    uint32_t payloadBytes = 0;
+    uint32_t requiredBytes = 0;
+    const float *pHeightmapErrors =
+        HeightmapErrors( pHeightmap, &payloadBytes, &requiredBytes );
+
+    static bool bMissingErrorsReported = false;
+    if ( !bMissingErrorsReported && pHeightmapErrors == nullptr ) {
+        bMissingErrorsReported = true;
+        OTDU_LOG_WARN( "Heightmap error pyramid missing/short: have %u bytes, "
+                       "need %u. Terrain will draw at LOD 0.\n",
+                       payloadBytes, requiredBytes );
+    }
+
+    const float tileStep = (float)pHeightmap->NumTiles * pHeightmap->TileSize;
+    const float halfStep = tileStep * 0.5f;
+
+    static bool bTileStepMismatchReported = false;
+    if ( !bTileStepMismatchReported &&
+         std::fabs( tileStep - tileWorld ) > 0.001f ) {
+        bTileStepMismatchReported = true;
+        OTDU_LOG_WARN( "Heightmap tile step mismatch: data %.4f (NumTiles %u * "
+                       "TileSize %.4f) vs matrix-derived %.4f\n",
+                       tileStep, pHeightmap->NumTiles, pHeightmap->TileSize,
+                       tileWorld );
+    }
+
+    for ( int32_t r = 0; r < kNumRealTile; r++ ) {
+        for ( int32_t c = 0; c < kNumRealTile; c++ ) {
+            if ( pHeightmapErrors == nullptr ) {
+                continue;
+            }
+
+            int32_t tileCol = c - 1 < 0           ? 0
+                              : c - 1 >= kNumTile ? kNumTile - 1
+                                                  : c - 1;
+            int32_t tileRow = r - 1 < 0           ? 0
+                              : r - 1 >= kNumTile ? kNumTile - 1
+                                                  : r - 1;
+            const float *e =
+                pHeightmapErrors + ( tileRow * kNumTile + tileCol ) * 5;
+            float worldX = tileCol * tileStep + halfStep + m( 3, 0 );
+            float worldZ = tileRow * tileStep + halfStep + m( 3, 2 );
+            float dx = worldX - camPos.x();
+            float dy = e[4] - camPos.y();
+            float dz = worldZ - camPos.z();
+            float dw = 1.0f - camPos.w();
+            pOutGrid[c + kNumRealTile * r] = HeightmapTileLOD(
+                e, dx * dx + dy * dy + dz * dz + dw * dw, coefLODTile );
+        }
+    }
+
+    if ( sphereClass != 2 || !bAllowFootprintCull ||
+         gbDebugHmapDisableFootprintCull ) {
+        return;
+    }
+
+    const Matrix4x4f_t &camToWorld = pCamera->getCamToWorld();
+    const float farPlane = pFrustum->getZLimits().y();
+    const float tanHalf = pCamera->getTanHalfFov();
+    const float aspect = pCamera->getAspectRatio();
+
+    const Eigen::Vector4f right = camToWorld.row( 0 ).transpose();
+    const Eigen::Vector4f up = camToWorld.row( 1 ).transpose();
+    const Eigen::Vector4f forward = camToWorld.row( 2 ).transpose();
+    const Eigen::Vector4f apex = camToWorld.row( 3 ).transpose();
+
+    const Eigen::Vector4f rightHalf = right * ( farPlane * tanHalf * aspect );
+    const Eigen::Vector4f upHalf = up * ( farPlane * tanHalf );
+    const Eigen::Vector4f farCenter = apex - forward * farPlane;
+
+    const Eigen::Vector4f cornerTL = farCenter - rightHalf + upHalf;
+    const Eigen::Vector4f cornerTR = farCenter + rightHalf + upHalf;
+    const Eigen::Vector4f cornerBL = farCenter - rightHalf - upHalf;
+    const Eigen::Vector4f cornerBR = farCenter + rightHalf - upHalf;
+
+    const float invTile = 1.0f / tileWorld;
+    auto gridX = [&]( const Eigen::Vector4f &p ) {
+        return (int32_t)( ( p.x() - m( 3, 0 ) ) * invTile );
+    };
+    auto gridZ = [&]( const Eigen::Vector4f &p ) {
+        return (int32_t)( ( p.z() - m( 3, 2 ) ) * invTile );
+    };
+
+    const int32_t apexX = gridX( apex );
+    const int32_t apexZ = gridZ( apex );
+    const int32_t tlX = gridX( cornerTL ), tlZ = gridZ( cornerTL );
+    const int32_t trX = gridX( cornerTR ), trZ = gridZ( cornerTR );
+    const int32_t blX = gridX( cornerBL ), blZ = gridZ( cornerBL );
+    const int32_t brX = gridX( cornerBR ), brZ = gridZ( cornerBR );
+
+    HeightmapCullTriangle tris[4];
+    tris[0].build( apexX, tlX, trX, apexZ, tlZ, trZ ); // top
+    tris[1].build( apexX, blX, brX, apexZ, blZ, brZ ); // bottom
+    tris[2].build( apexX, trX, brX, apexZ, trZ, brZ ); // right
+    tris[3].build( apexX, blX, tlX, apexZ, blZ, tlZ ); // left
+
+    uint8_t outsideGrid[kNumRealTile * kNumRealTile];
+    for ( int32_t row = -1; row <= kNumTile; row++ ) {
+        for ( int32_t col = -1; col <= kNumTile; col++ ) {
+            const bool outside = !tris[0].contains( col, row ) &&
+                                 !tris[1].contains( col, row ) &&
+                                 !tris[2].contains( col, row ) &&
+                                 !tris[3].contains( col, row );
+            outsideGrid[( col + 1 ) + kNumRealTile * ( row + 1 )] =
+                outside ? 1 : 0;
+        }
+    }
+
+    for ( int32_t row = 0; row < kNumTile; row++ ) {
+        for ( int32_t col = 0; col < kNumTile; col++ ) {
+            bool allOutside = true;
+            for ( int32_t dr = 0; dr <= 2 && allOutside; dr++ ) {
+                for ( int32_t dc = 0; dc <= 2; dc++ ) {
+                    if ( !outsideGrid[( col + dc ) +
+                                      kNumRealTile * ( row + dr )] ) {
+                        allOutside = false;
+                        break;
+                    }
+                }
+            }
+            if ( allOutside ) {
+                pOutGrid[( col + 1 ) + kNumRealTile * ( row + 1 )] = 0xff;
+            }
+        }
+    }
+}
+
+void UpdateHeightmapLODCache( Instance *pInstance, RenderScene *pScene ) {
+    if ( pInstance == nullptr || pScene == nullptr || gpCamera == nullptr ) {
+        return;
+    }
+
+    uint8_t *pLODCache = pInstance->getHeightmapLODCache();
+    if ( pLODCache == nullptr ) {
+        return;
+    }
+
+    const Heightmap *pHeightmap = HeightmapFromLOD( &pInstance->getLOD( 0 ) );
+    if ( pHeightmap == nullptr ) {
+        return;
+    }
+
+    ComputeHeightmapLODGrid( pHeightmap, pInstance->getModelMatrix(),
+                             gpCamera->getRenderCamera(),
+                             &pScene->getFrustumWrite(), true,
+                             pInstance->getHeightmapLODCoef(), pLODCache );
+    pInstance->setHeightmapLODCacheDriven();
+}
+
 void RenderContext::drawHeightmap( Primitive *param_1, InstanceLOD *param_2 ) {
     // FUN_00515810
     // FUN_005ff060 (inlined)
@@ -1133,17 +1351,11 @@ void RenderContext::drawHeightmap( Primitive *param_1, InstanceLOD *param_2 ) {
                                  ? eFillMode::FM_Solid
                                  : eFillMode::FM_Wireframe );
 
-    // Stream 0 = shared XZ grid (8B/vertex), stream 1 = this patch's heights
     gStateCache.bindVertexBuffer( pGridBuffer, 0, 0, 8 );
     gStateCache.bindVertexBuffer( pHeightBuffer, 1, 0, 4 );
     gStateCache.bindVertexLayout( gHeightmapRenderer.getVertexLayout() );
 
     const Matrix4x4f_t &m = gActiveTransformMatrix;
-    const Eigen::Vector4f camPos =
-        pActiveCamera->getCamToWorld().row( 3 ).transpose();
-    const float tileWorld = kCellsPerTile * std::sqrt( m( 0, 0 ) * m( 0, 0 ) +
-                                                       m( 0, 2 ) * m( 0, 2 ) );
-
     const Heightmap *pHeightmap = HeightmapFromLOD( param_2 );
 
     if ( pHeightmap == nullptr ) {
@@ -1155,138 +1367,28 @@ void RenderContext::drawHeightmap( Primitive *param_1, InstanceLOD *param_2 ) {
         return;
     }
 
-    const float *pHeightmapErrors =
-        (const float *)( (const uint8_t *)pHeightmap + sizeof( Heightmap ) );
-
     uint8_t lodGrid[kNumRealTile * kNumRealTile];
-    for ( int32_t r = 0; r < kNumRealTile; r++ ) {
-        for ( int32_t c = 0; c < kNumRealTile; c++ ) {
-            if ( pHeightmapErrors != nullptr ) {
-                // Project each tile's geometric error against camera distance
-                // (the distance uses the tile's stored height pErrors[4]).
-                int32_t tileCol = c - 1 < 0           ? 0
-                                  : c - 1 >= kNumTile ? kNumTile - 1
-                                                      : c - 1;
-                int32_t tileRow = r - 1 < 0           ? 0
-                                  : r - 1 >= kNumTile ? kNumTile - 1
-                                                      : r - 1;
-                const float *e =
-                    pHeightmapErrors + ( tileRow * kNumTile + tileCol ) * 5;
-                float gx = ( tileCol + 0.5f ) * kCellsPerTile;
-                float gz = ( tileRow + 0.5f ) * kCellsPerTile;
-                float worldX = gx * m( 0, 0 ) + gz * m( 2, 0 ) + m( 3, 0 );
-                float worldZ = gx * m( 0, 2 ) + gz * m( 2, 2 ) + m( 3, 2 );
-                float dx = worldX - camPos.x();
-                float dy = e[4] - camPos.y();
-                float dz = worldZ - camPos.z();
-                float dw = 1.0f - camPos.w();
-                lodGrid[c + kNumRealTile * r] = HeightmapTileLOD(
-                    e, dx * dx + dy * dy + dz * dz + dw * dw );
+
+    Instance *pInstance = gSceneRenderer.pActiveInstance;
+    const uint8_t *pCachedLOD =
+        ( pInstance != nullptr && pInstance->isHeightmapLODCacheDriven() )
+            ? pInstance->getHeightmapLODCache()
+            : nullptr;
+
+    if ( pCachedLOD != nullptr ) {
+        memcpy( lodGrid, pCachedLOD, kNumRealTile * kNumRealTile );
+    } else {
+        ComputeHeightmapLODGrid(
+            pHeightmap, m, pActiveCamera, pActiveFrustum, pInstance != nullptr,
+            ( pInstance != nullptr ) ? pInstance->getHeightmapLODCoef()
+                                     : kHeightmapLODCoef,
+            lodGrid );
+
+        if ( pInstance != nullptr ) {
+            uint8_t *pLODCache = pInstance->getHeightmapLODCache();
+            if ( pLODCache != nullptr ) {
+                memcpy( pLODCache, lodGrid, kNumRealTile * kNumRealTile );
             }
-        }
-    }
-
-    if ( gSceneRenderer.pActiveInstance != nullptr &&
-         !gbDebugHmapDisableFootprintCull ) {
-        const Eigen::Vector4f &sphere = pHeightmap->BoundingSphere;
-        Eigen::Vector4f sphereModel = { sphere.x(), sphere.y(), sphere.z(),
-                                        0.0f };
-        Eigen::Vector4f sphereWorld = Mat4x4fTransform( m, sphereModel );
-        Eigen::Vector4f sphereCam =
-            Mat4x4fTransform( pActiveCamera->getWorldToCam(), sphereWorld );
-        const float patchRadius =
-            sphere.w() * gSceneRenderer.pActiveInstance->getBoundingScale();
-
-        if ( pActiveFrustum->testBoundingSphere( sphereCam, patchRadius ) ==
-             2 ) {
-            // FUN_00994c40: far-plane quad corners + apex (camera position).
-            const Matrix4x4f_t &camToWorld = pActiveCamera->getCamToWorld();
-            const float farPlane = pActiveFrustum->getZLimits().y();
-            const float tanHalf = pActiveCamera->getTanHalfFov();
-            const float aspect = pActiveCamera->getAspectRatio();
-
-            const Eigen::Vector4f right = camToWorld.row( 0 ).transpose();
-            const Eigen::Vector4f up = camToWorld.row( 1 ).transpose();
-            const Eigen::Vector4f forward = camToWorld.row( 2 ).transpose();
-            const Eigen::Vector4f apex = camToWorld.row( 3 ).transpose();
-
-            const Eigen::Vector4f rightHalf =
-                right * ( farPlane * tanHalf * aspect );
-            const Eigen::Vector4f upHalf = up * ( farPlane * tanHalf );
-            const Eigen::Vector4f farCenter = apex - forward * farPlane;
-
-            const Eigen::Vector4f cornerTL = farCenter - rightHalf + upHalf;
-            const Eigen::Vector4f cornerTR = farCenter + rightHalf + upHalf;
-            const Eigen::Vector4f cornerBL = farCenter - rightHalf - upHalf;
-            const Eigen::Vector4f cornerBR = farCenter + rightHalf - upHalf;
-
-            // World (X,Z) -> integer tile-grid coords, truncated toward zero:
-            // (world - patchOrigin) / tileSize, with tileSize == tileWorld and
-            // patchOrigin == the patch model translation.
-            const float invTile = 1.0f / tileWorld;
-            auto gridX = [&]( const Eigen::Vector4f &p ) {
-                return (int32_t)( ( p.x() - m( 3, 0 ) ) * invTile );
-            };
-            auto gridZ = [&]( const Eigen::Vector4f &p ) {
-                return (int32_t)( ( p.z() - m( 3, 2 ) ) * invTile );
-            };
-
-            const int32_t apexX = gridX( apex );
-            const int32_t apexZ = gridZ( apex );
-            const int32_t tlX = gridX( cornerTL ), tlZ = gridZ( cornerTL );
-            const int32_t trX = gridX( cornerTR ), trZ = gridZ( cornerTR );
-            const int32_t blX = gridX( cornerBL ), blZ = gridZ( cornerBL );
-            const int32_t brX = gridX( cornerBR ), brZ = gridZ( cornerBR );
-
-            // Four footprint triangles: apex fanned to each far-quad edge.
-            HeightmapCullTriangle tris[4];
-            tris[0].build( apexX, tlX, trX, apexZ, tlZ, trZ ); // top
-            tris[1].build( apexX, blX, brX, apexZ, blZ, brZ ); // bottom
-            tris[2].build( apexX, trX, brX, apexZ, trZ, brZ ); // right
-            tris[3].build( apexX, blX, tlX, apexZ, blZ, tlZ ); // left
-
-            // Flag every bordered grid vertex (col/row in -1..kNumTile) that is
-            // outside all four triangles.
-            uint8_t outsideGrid[kNumRealTile * kNumRealTile];
-            for ( int32_t row = -1; row <= kNumTile; row++ ) {
-                for ( int32_t col = -1; col <= kNumTile; col++ ) {
-                    const bool outside = !tris[0].contains( col, row ) &&
-                                         !tris[1].contains( col, row ) &&
-                                         !tris[2].contains( col, row ) &&
-                                         !tris[3].contains( col, row );
-                    outsideGrid[( col + 1 ) + kNumRealTile * ( row + 1 )] =
-                        outside ? 1 : 0;
-                }
-            }
-
-            // Cull a tile only when all nine of its bordering grid verts lie
-            // outside the footprint.
-            for ( int32_t row = 0; row < kNumTile; row++ ) {
-                for ( int32_t col = 0; col < kNumTile; col++ ) {
-                    bool allOutside = true;
-                    for ( int32_t dr = 0; dr <= 2 && allOutside; dr++ ) {
-                        for ( int32_t dc = 0; dc <= 2; dc++ ) {
-                            if ( !outsideGrid[( col + dc ) +
-                                              kNumRealTile * ( row + dr )] ) {
-                                allOutside = false;
-                                break;
-                            }
-                        }
-                    }
-                    if ( allOutside ) {
-                        lodGrid[( col + 1 ) + kNumRealTile * ( row + 1 )] =
-                            0xff;
-                    }
-                }
-            }
-        }
-    }
-
-    if ( gSceneRenderer.pActiveInstance != nullptr ) {
-        uint8_t *pLODCache =
-            gSceneRenderer.pActiveInstance->getHeightmapLODCache();
-        if ( pLODCache != nullptr ) {
-            memcpy( pLODCache, lodGrid, kNumRealTile * kNumRealTile );
         }
     }
 
@@ -1301,7 +1403,9 @@ void RenderContext::drawHeightmap( Primitive *param_1, InstanceLOD *param_2 ) {
                     lodGrid[i] = 0xff;
                 } else if ( mv != kHeightmapMaskNone && lodGrid[i] != 0xff &&
                             lodGrid[i] != 0xfe ) {
-                    lodGrid[i] = (uint8_t)( mv - 1 );
+                    lodGrid[i] = ( mv == kHeightmapMaskFlat )
+                                     ? kHeightmapLODFlat
+                                     : (uint8_t)( mv - 1 );
                 }
             }
         }

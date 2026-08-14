@@ -164,6 +164,7 @@ void AreaGeometry::reset() {
         pHeightmapInstance = nullptr;
     }
     heightmapTileMask.fill( 0 );
+    heightmapWorkGrid.fill( 0 );
 
     objectsRenderSet.reset();
 }
@@ -485,6 +486,11 @@ void InstanciateTerrainGeometry( Bank &bank,
                         geometry.heightmapTileMask.data() );
                     pInstance->setHeightmapLODCache(
                         geometry.heightmapLODCache.data() );
+                    pInstance->setHeightmapWorkGrid(
+                        geometry.heightmapWorkGrid.data() );
+                    pInstance->setHeightmapLODCoef(
+                        ( heightmap.getQuadScale() > 100.0f ) ? 1.0e-6f
+                                                              : 6.0e-6f );
                 } else {
                     geometry.renderInstances.push_back( pInstance );
                     geometry.renderInstanceAbsPos.push_back( absPos );

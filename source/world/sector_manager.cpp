@@ -854,6 +854,9 @@ void SectorBank::instanciate() {
                             geometry.heightmapTileMask.data() );
                         pInstance->setHeightmapLODCache(
                             geometry.heightmapLODCache.data() );
+                        pInstance->setHeightmapWorkGrid(
+                            geometry.heightmapWorkGrid.data() );
+                        pInstance->setHeightmapLODCoef( 6.0e-6f );
                         geometry.instanciateHeightmapEnvInstances(
                             (InstanceEntry *)( pInstSection + 1 ), hashcode );
                     } else {

@@ -79,6 +79,8 @@ struct AreaGeometry {
         heightmapTileMask = {};
     std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>
         heightmapLODCache = {};
+    std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>
+        heightmapWorkGrid = {};
 
     FileCollection3D *pInstanceDefManager = nullptr;
     FileCollection2D *pGroundBitmapCollection = nullptr;

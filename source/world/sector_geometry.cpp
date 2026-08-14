@@ -69,7 +69,7 @@ void SectorGeometry::instanciateHeightmapEnvInstances(
         Matrix4x4f_t instanceMatrix = matrix;
         pInstance->setModelMatrix( instanceMatrix );
         pInstance->calculateBiggestScale();
-        pInstance->setHeightmapTileMask( heightmapTileMask.data() );
+        pInstance->setHeightmapTileMask( nullptr );
         pInstance->setHeightmapLODCache( heightmapEnvLODCaches[i].data() );
         pInstance->getFlagsWrite() &= ~3u;
 

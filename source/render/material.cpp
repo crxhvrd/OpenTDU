@@ -908,8 +908,8 @@ void Material::bindParameter( MaterialShaderParameterArray *param_1 ) {
         float *pData = (float *)( (uint8_t *)param_1 + iVar1 + iVar2 +
                                   sizeof( MaterialShaderParameterArray ) );
 
-        const uint32_t reg_idx = peVar5.pConstants[puVar4->Type * 4];
         UploadConstant( &peVar5, puVar4->Type * 4, pData, numVectors );
+
 
         iVar2 += puVar4->Size;
         puVar4++;

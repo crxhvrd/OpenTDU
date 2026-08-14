@@ -131,8 +131,6 @@ void ShadowCaster::bind( CarState *param_1, bool param_3, float param_4 ) {
         }
         local_30 = pDVar1->getNodeByIndex( 0x1d );
     } else {
-        // TODO: Double check if the uniform (y scalar) uses the reference or
-        // the return value
         float local_28 = 0.0f;
         float fVar1 = FUN_009d91c0( local_28, param_4 );
         uStack_20.y() = 1.0f - pDVar1->getAlpha() * fVar1;
@@ -858,10 +856,9 @@ void MngShadow::create2DMCaster(
         }
     }
 
-    uint32_t uVar4 = peVar4->NumParameters;
-    float *puVar6 = nullptr;
-    if ( uVar4 - 1 < uVar4 ) {
-        puVar6 = (float *)( (uint8_t *)peVar4 + ( uVar4 + 4 ) * 0x10 + 0x10 );
+    float *puVar6 = (float *)peVar4->getParameterDataByIndex( 0 );
+    if ( puVar6 == nullptr ) {
+        return;
     }
 
     float local_1c = 1.0f;
@@ -1528,6 +1525,7 @@ void MngShadow::buildRoadReceiverTriangles(
 
     constexpr float kBackFaceThreshold = 0.34f; // DAT_00f41eb4
     const Eigen::Vector3f sunDir3 = sunDirection.head<3>();
+    lastNumRoadCulled = 0;
 
     for ( int32_t t = 0; t < numTris; t++ ) {
         const int32_t base = t * 3;
@@ -1540,6 +1538,7 @@ void MngShadow::buildRoadReceiverTriangles(
         const Eigen::Vector3f normal = e01.cross( e02 ).normalized();
 
         if ( sunDir3.dot( normal ) > kBackFaceThreshold ) {
+            lastNumRoadCulled++;
             pPos[base + 0].setZero();
             pPos[base + 1].setZero();
             pPos[base + 2].setZero();
@@ -1573,7 +1572,6 @@ void MngShadow::collectVisibleHeightmapVertices() {
 
     // Gather terrain quads from every visible sector heightmap (capped overall
     // at the original's 600-vertex / 100-cell budget).
-    static constexpr int32_t kMaxGroundCells = 100; // 600 gathered verts / 6
     GroundQuad quads[kMaxGroundCells];
     int32_t numCells = 0;
     for ( uint32_t s = 0; s < numSector && numCells < kMaxGroundCells; s++ ) {
@@ -1586,6 +1584,7 @@ void MngShadow::collectVisibleHeightmapVertices() {
                                        kMaxGroundCells - numCells );
     }
 
+    lastNumGroundCells = numCells;
     buildGroundStrip( quads, numCells );
 
     if ( gpPhysics != nullptr ) {
@@ -1598,6 +1597,7 @@ void MngShadow::collectVisibleHeightmapVertices() {
         const int32_t numRoadVerts = gpPhysics->gatherRoadShadowTriangles(
             casterBBMin + streamOrigin, casterBBMax + streamOrigin, roadVerts,
             kMaxRoadVerts );
+        lastNumRoadVerts = numRoadVerts;
         if ( numRoadVerts > 2 ) {
             buildRoadReceiverTriangles( roadVerts, numRoadVerts,
                                         streamOrigin.head<3>() );

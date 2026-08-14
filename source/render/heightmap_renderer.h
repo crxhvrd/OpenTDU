@@ -7,15 +7,11 @@ struct GPUBuffer;
 
 static constexpr int32_t kHeightmapNumTile = 16;
 static constexpr int32_t kHeightmapNumRealTile = kHeightmapNumTile + 2; // 18
-
-// heightmapTileMask per-tile encoding. Offset by one so a zero-initialised /
-// reset mask means "no override" (use the draw-time computed LOD) and forced
-// LOD 0 stays distinct:
-//   0          -> no override
-//   1..5       -> force LOD 0..4 (HeightmapMaskForceLOD)
-//   0xff       -> cull (a finer loaded tier covers this tile)
 static constexpr uint8_t kHeightmapMaskNone = 0;
+static constexpr uint8_t kHeightmapMaskFlat = 0xfe;
 static constexpr uint8_t kHeightmapMaskCull = 0xff;
+static constexpr uint8_t kHeightmapLODFlat = 0xfe;
+static constexpr uint8_t kHeightmapLODCulled = 0xff;
 
 inline static constexpr uint8_t HeightmapMaskForceLOD( uint8_t lod ) {
     return (uint8_t)( lod + 1 );
@@ -76,6 +72,7 @@ private:
     // edgeType 1-4 = N/E/W/S seam strips
     DrawCommand drawCommands[kNumTile][kNumTile][kNumTile];
     uint32_t primitiveCount;
+    uint32_t tileIndexCount = 0;
 
 private:
     void createAreaIndexBuffer();

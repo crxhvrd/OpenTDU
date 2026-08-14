@@ -16,6 +16,7 @@
 #include "render/geometry_buffer.h"
 #include "render/gs_render.h"
 #include "render/instance.h"
+#include "render/render_context.h"
 #include "render/render_scene.h"
 #include "gs_world.h"
 #include "gs_world_streaming.h"
@@ -531,7 +532,8 @@ void StreamingManager::tick( Eigen::Vector4f *pStreamPosition,
 
     submitAreaHeightmaps();
     submitLevelHeightmap();
-
+    resetHeightmapTileMasks();
+    stitchActiveAreaCardinalSeams();
     updateHeightmapExclusionMasks();
     stitchSectorToSectorSeams();
     stitchSectorsToArea();
@@ -777,6 +779,7 @@ void StreamingManager::submitSectorHeightmap( Sector &sector ) {
                                              ? gpWorldStreaming->getPosition()
                                              : Eigen::Vector4f::Zero();
     sector.geometry.rebaseHeightmapInstance( streamOrigin );
+    UpdateHeightmapLODCache( sector.geometry.pHeightmapInstance, pScene );
     pScene->enqueueDynamicInstance( sector.geometry.pHeightmapInstance );
 }
 
@@ -824,6 +827,7 @@ void StreamingManager::submitAreaHeightmap( Area &area ) {
                                              ? gpWorldStreaming->getPosition()
                                              : Eigen::Vector4f::Zero();
     area.geometry.rebaseHeightmapInstance( streamOrigin );
+    UpdateHeightmapLODCache( area.geometry.pHeightmapInstance, pScene );
     pScene->enqueueDynamicInstance( area.geometry.pHeightmapInstance );
 }
 
@@ -853,39 +857,75 @@ void StreamingManager::submitLevelHeightmap() {
                                              ? gpWorldStreaming->getPosition()
                                              : Eigen::Vector4f::Zero();
     geometry.rebaseHeightmapInstance( streamOrigin );
+    UpdateHeightmapLODCache( geometry.pHeightmapInstance, pScene );
     pScene->enqueueDynamicInstance( geometry.pHeightmapInstance );
 }
 
-// Mark a single tile (col,row) of a bordered exclusion mask as hidden.
-static inline void HideMaskTile(
-    std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile> &mask,
-    int32_t tileCol,
-    int32_t tileRow ) {
+template <typename GeometryT>
+static inline const uint8_t *HmapPassSrc( const GeometryT &geometry ) {
+    return geometry.heightmapLODCache.data();
+}
+
+template <typename GeometryT>
+static inline uint8_t *HmapPassDst( GeometryT &geometry ) {
+    return geometry.heightmapTileMask.data();
+}
+
+static inline bool HmapDestWritable( uint8_t v ) {
+    return v != kHeightmapMaskCull && v != kHeightmapMaskFlat;
+}
+
+static inline uint8_t HmapEncodeLOD( uint8_t lod ) {
+    return HeightmapMaskForceLOD( lod );
+}
+
+static inline void
+HideMaskTile( uint8_t *pGrid, int32_t tileCol, int32_t tileRow ) {
     if ( tileCol < 0 || tileCol >= kHeightmapNumTile || tileRow < 0 ||
          tileRow >= kHeightmapNumTile ) {
         return;
     }
-    // Bordered index: tile (col,row) -> (col + 1) + NumRealTile * (row + 1).
-    mask[( tileCol + 1 ) + kHeightmapNumRealTile * ( tileRow + 1 )] = 0xff;
+    pGrid[( tileCol + 1 ) + kHeightmapNumRealTile * ( tileRow + 1 )] = 0xff;
+}
+
+void StreamingManager::resetHeightmapTileMasks() {
+    auto resetPatch = []( auto &geometry ) {
+        geometry.heightmapTileMask.fill( 0 );
+        geometry.heightmapWorkGrid = geometry.heightmapLODCache;
+    };
+    for ( Sector &sector : sectorManager.sectors ) {
+        resetPatch( sector.geometry );
+    }
+    for ( Area &area : areaGrid.areas ) {
+        resetPatch( area.geometry );
+    }
+    resetPatch( level.getHeightmapGeometry() );
 }
 
 void StreamingManager::updateHeightmapExclusionMasks() {
     // FUN_009b9140
-    for ( Sector &sector : sectorManager.sectors ) {
-        sector.geometry.heightmapTileMask.fill( 0 );
-    }
-
-    for ( Area &area : areaGrid.areas ) {
-        area.geometry.heightmapTileMask.fill( 0 );
-    }
     if ( areaGrid.pCurrentArea != nullptr && areaGrid.bActiveAreasSet ) {
         const int32_t tilesPerSectorX =
             kHeightmapNumTile / (int32_t)sectorManager.numSectors;
         const int32_t tilesPerSectorZ =
             kHeightmapNumTile / (int32_t)sectorManager.numSubSectors;
         for ( Sector &sector : sectorManager.sectors ) {
-            if ( sector.state != 1 || sector.installedArea.posX < 0 ||
-                 sector.installedSector.posX < 0 ) {
+            if ( sector.state != 1 ) {
+                continue;
+            }
+            if ( sector.installedSector.posX < 0 ||
+                 sector.installedSector.posX >=
+                     (int32_t)sectorManager.numSectors ||
+                 sector.installedSector.posY < 0 ||
+                 sector.installedSector.posY >=
+                     (int32_t)sectorManager.numSubSectors ) {
+                continue;
+            }
+            if ( sector.installedArea.posX == -1 ||
+                 sector.installedArea.posY == -1 ) {
+                continue;
+            }
+            if ( sector.geometry.pHeightmapInstance == nullptr ) {
                 continue;
             }
             Area *pArea = findAreaEntry( sector.installedArea );
@@ -899,31 +939,61 @@ void StreamingManager::updateHeightmapExclusionMasks() {
                 oddRowStaggerShift;
             const int32_t baseRow =
                 sector.installedSector.posY * tilesPerSectorZ;
+            Area *pEastArea = nullptr;
+            if ( baseCol + tilesPerSectorX > kHeightmapNumTile ) {
+                GridPos2D eastCoords = sector.installedArea;
+                eastCoords.posX += 1;
+                pEastArea = findAreaEntry( eastCoords );
+                if ( pEastArea != nullptr &&
+                     ( pEastArea->state != 1 ||
+                       pEastArea->geometry.pHeightmapInstance == nullptr ) ) {
+                    pEastArea = nullptr;
+                }
+            }
+
             for ( int32_t dz = 0; dz < tilesPerSectorZ; dz++ ) {
                 for ( int32_t dx = 0; dx < tilesPerSectorX; dx++ ) {
-                    HideMaskTile( pArea->geometry.heightmapTileMask,
-                                  baseCol + dx, baseRow + dz );
+                    const int32_t col = baseCol + dx;
+                    if ( col < kHeightmapNumTile ) {
+                        HideMaskTile( HmapPassDst( pArea->geometry ), col,
+                                      baseRow + dz );
+                    } else if ( pEastArea != nullptr ) {
+                        HideMaskTile( HmapPassDst( pEastArea->geometry ),
+                                      col - kHeightmapNumTile, baseRow + dz );
+                    }
                 }
             }
         }
     }
 
     AreaGeometry &levelGeometry = level.getHeightmapGeometry();
-    levelGeometry.heightmapTileMask.fill( 0 );
     if ( levelGeometry.pHeightmapInstance != nullptr ) {
         for ( int32_t row = 0; row < kHeightmapNumTile; row++ ) {
             for ( int32_t col = 0; col < kHeightmapNumTile; col++ ) {
                 if ( col >= (int32_t)areaGrid.numAreas ||
                      row >= (int32_t)areaGrid.numSubAreas ) {
-                    HideMaskTile( levelGeometry.heightmapTileMask, col, row );
+                    HideMaskTile( HmapPassDst( levelGeometry ), col, row );
                 }
             }
         }
         for ( Area &area : areaGrid.areas ) {
-            if ( area.state == 1 ) {
-                HideMaskTile( levelGeometry.heightmapTileMask, area.coords.posX,
-                              area.coords.posY );
+            if ( area.state != 1 ) {
+                continue;
             }
+            if ( area.coords.posX < 0 ||
+                 area.coords.posX >= (int32_t)areaGrid.numAreas ||
+                 area.coords.posY < 0 ||
+                 area.coords.posY >= (int32_t)areaGrid.numSubAreas ) {
+                continue;
+            }
+            if ( area.geometry.pHeightmapInstance == nullptr ) {
+                continue;
+            }
+            if ( area.geometry.pHeightmapInstance == nullptr ) {
+                continue;
+            }
+            HideMaskTile( HmapPassDst( levelGeometry ), area.coords.posX,
+                          area.coords.posY );
         }
     }
 }
@@ -992,44 +1062,39 @@ void StreamingManager::stitchAreaEdgeToLevel( Area &area,
     }
 
     // (a) Force the level backdrop tile covering the neighbour area cell.
-    std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>
-        &levelMask = level.getHeightmapGeometry().heightmapTileMask;
-    uint8_t &lvl = levelMask[stride * ( nbY + 1 ) + 1 + nbX];
-    if ( lvl != kHeightmapMaskCull ) {
-        lvl = HeightmapMaskForceLOD( kBackdropSeamLOD );
+    uint8_t *pLevelGrid = HmapPassDst( level.getHeightmapGeometry() );
+    uint8_t &lvl = pLevelGrid[stride * ( nbY + 1 ) + 1 + nbX];
+    if ( HmapDestWritable( lvl ) ) {
+        lvl = HmapEncodeLOD( kBackdropSeamLOD );
     }
 
     // (b) Force the area's boundary edge to the coarsest LOD. East/North walk
     // the border ring (bordered index N+1), West/South the first real tile
     // (bordered index 1) — the asymmetry is faithful to FUN_009b8ec0.
-    std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile> &mask =
-        area.geometry.heightmapTileMask;
+    uint8_t *mask = HmapPassDst( area.geometry );
     if ( vertical ) {
         for ( int32_t r = 1; r <= N; r++ ) {
             uint8_t &t = mask[stride * r + 1 + col0];
-            if ( t != kHeightmapMaskCull ) {
-                t = HeightmapMaskForceLOD( 4 );
+            if ( HmapDestWritable( t ) ) {
+                t = HmapEncodeLOD( 4 );
             }
         }
     } else {
         for ( int32_t c = 0; c < N; c++ ) {
             uint8_t &t = mask[stride * ( row0 + 1 ) + 1 + c];
-            if ( t != kHeightmapMaskCull ) {
-                t = HeightmapMaskForceLOD( 4 );
+            if ( HmapDestWritable( t ) ) {
+                t = HmapEncodeLOD( 4 );
             }
         }
     }
 }
 
-void StreamingManager::stitchActiveAreaSeams() {
-    // FUN_009b9740
+void StreamingManager::stitchActiveAreaCardinalSeams() {
     Area *pCurrent = areaGrid.pCurrentArea;
     if ( pCurrent == nullptr ) {
         return;
     }
 
-    // Cardinal block (FUN_009b9740 tail): for each cardinal neighbour of the
-    // active area that is not loaded, stitch the active area's edge toward it.
     const eCardinalDirection kCardinals[4] = { CD_West, CD_East, CD_South,
                                                CD_North };
     for ( eCardinalDirection dir : kCardinals ) {
@@ -1041,6 +1106,14 @@ void StreamingManager::stitchActiveAreaSeams() {
         if ( pNb == nullptr || pNb->state != 1 ) {
             stitchAreaEdgeToLevel( *pCurrent, dir );
         }
+    }
+}
+
+void StreamingManager::stitchActiveAreaSeams() {
+    // FUN_009b9250
+    Area *pCurrent = areaGrid.pCurrentArea;
+    if ( pCurrent == nullptr ) {
+        return;
     }
 
     // Ring (FUN_009b9250): gated on the level backdrop heightmap being present.
@@ -1131,16 +1204,15 @@ void StreamingManager::stitchSectorEdgeToArea( Sector &sector,
 
     const int32_t N = kHeightmapNumTile;          // NumTileX == NumTileZ == 16
     const int32_t stride = kHeightmapNumRealTile; // NumRealTileX == 18
-    std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile> &mask =
-        sector.geometry.heightmapTileMask;
+    uint8_t *mask = HmapPassDst( sector.geometry );
 
     auto force = [&]( int32_t bcol, int32_t brow ) {
         if ( bcol < 0 || bcol >= stride || brow < 0 || brow >= stride ) {
             return;
         }
         uint8_t &t = mask[brow * stride + bcol];
-        if ( t != kHeightmapMaskCull ) {
-            t = HeightmapMaskForceLOD( 4 );
+        if ( HmapDestWritable( t ) ) {
+            t = HmapEncodeLOD( 4 );
         }
     };
 
@@ -1198,8 +1270,8 @@ void StreamingManager::stitchSectorEdgeToArea( Sector &sector,
     const int32_t baseCol = nbSector.posX * tilesPerSector + oddRowStaggerShift;
     const int32_t baseRow = nbSector.posY * tilesPerSector;
 
-    const auto &areaLOD = pArea->geometry.heightmapLODCache;
-    auto &areaMask = pArea->geometry.heightmapTileMask;
+    const uint8_t *areaLOD = HmapPassSrc( pArea->geometry );
+    uint8_t *areaMask = HmapPassDst( pArea->geometry );
 
     auto markAreaTile = [&]( int32_t col, int32_t row ) {
         if ( col < 0 || col >= N || row < 0 || row >= N ) {
@@ -1211,10 +1283,10 @@ void StreamingManager::stitchSectorEdgeToArea( Sector &sector,
             return;
         }
         uint8_t &m = areaMask[idx];
-        if ( m == kHeightmapMaskCull ) {
+        if ( !HmapDestWritable( m ) ) {
             return;
         }
-        m = HeightmapMaskForceLOD( 1 );
+        m = HmapEncodeLOD( 1 );
     };
 
     switch ( direction ) {
@@ -1286,17 +1358,19 @@ void StreamingManager::stitchSectorToSector( Sector &a,
     const int32_t N = kHeightmapNumTile;          // 16
     const int32_t stride = kHeightmapNumRealTile; // 18
 
-    const auto &lodA = a.geometry.heightmapLODCache;
-    const auto &lodB = b.geometry.heightmapLODCache;
-    auto &maskA = a.geometry.heightmapTileMask;
-    auto &maskB = b.geometry.heightmapTileMask;
+    const uint8_t *lodA = HmapPassSrc( a.geometry );
+    const uint8_t *lodB = HmapPassSrc( b.geometry );
+    uint8_t *maskA = HmapPassDst( a.geometry );
+    uint8_t *maskB = HmapPassDst( b.geometry );
 
     // Compare A's bordered tile (bcolA,browA) against B's (bcolB,browB); if
     // their clamped LODs differ, force both to LOD 4.
     auto differ = [&]( int32_t bcolA, int32_t browA, int32_t bcolB,
                        int32_t browB ) {
-        uint8_t la = lodA[browA * stride + bcolA];
-        uint8_t lb = lodB[browB * stride + bcolB];
+        const uint8_t rawA = lodA[browA * stride + bcolA];
+        const uint8_t rawB = lodB[browB * stride + bcolB];
+        uint8_t la = rawA;
+        uint8_t lb = rawB;
         if ( la > 4 ) {
             la = 4;
         }
@@ -1306,13 +1380,14 @@ void StreamingManager::stitchSectorToSector( Sector &a,
         if ( la == lb ) {
             return;
         }
+        const uint8_t forced = 4;
         uint8_t &ta = maskA[browA * stride + bcolA];
         if ( ta != kHeightmapMaskCull ) {
-            ta = HeightmapMaskForceLOD( 4 );
+            ta = HmapEncodeLOD( forced );
         }
         uint8_t &tb = maskB[browB * stride + bcolB];
         if ( tb != kHeightmapMaskCull ) {
-            tb = HeightmapMaskForceLOD( 4 );
+            tb = HmapEncodeLOD( forced );
         }
     };
 
@@ -1398,21 +1473,21 @@ void StreamingManager::stitchAreaToArea( Area &a,
     const int32_t N = kHeightmapNumTile;          // 16
     const int32_t stride = kHeightmapNumRealTile; // 18
 
-    const auto &lodA = a.geometry.heightmapLODCache;
-    const auto &lodB = b.geometry.heightmapLODCache;
-    auto &maskA = a.geometry.heightmapTileMask;
-    auto &maskB = b.geometry.heightmapTileMask;
+    const uint8_t *lodA = HmapPassSrc( a.geometry );
+    const uint8_t *lodB = HmapPassSrc( b.geometry );
+    uint8_t *maskA = HmapPassDst( a.geometry );
+    uint8_t *maskB = HmapPassDst( b.geometry );
 
     auto writeForcedLOD = []( uint8_t &mask, uint8_t lodValue ) {
-        if ( mask == kHeightmapMaskCull ) {
+        if ( !HmapDestWritable( mask ) ) {
             return;
         }
         if ( lodValue == kHeightmapMaskCull ) {
             mask = kHeightmapMaskCull;
-        } else if ( lodValue == 0xfe ) {
-            mask = HeightmapMaskForceLOD( 4 );
+        } else if ( lodValue == kHeightmapLODFlat ) {
+            mask = kHeightmapMaskFlat;
         } else {
-            mask = HeightmapMaskForceLOD( lodValue > 4 ? 4 : lodValue );
+            mask = HmapEncodeLOD( lodValue > 4 ? 4 : lodValue );
         }
     };
 
@@ -2288,34 +2363,6 @@ void StreamingManager::applySectorShift( eCardinalDirection direction,
 void StreamingManager::render() {
     // FUN_009b94b0
     spotStream.updateRendering();
-
-    if ( RenderScene *pSpotScene =
-             gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene ) {
-        const Eigen::Vector4f spotOrigin = gpWorldStreaming->isEnabled()
-                                               ? gpWorldStreaming->getPosition()
-                                               : Eigen::Vector4f::Zero();
-
-        for ( SpotCell &cell : spotStream.cells ) {
-            if ( cell.spot.pSCBank == nullptr ) {
-                continue;
-            }
-            for ( HiearchyNode *pNode : cell.spot.pSCBank->getSceneryNodes() ) {
-                if ( pNode == nullptr || pNode->pInstance == nullptr ) {
-                    continue;
-                }
-                Matrix4x4f_t m = pNode->TransformMatrix;
-                m( 3, 0 ) -= spotOrigin.x();
-                m( 3, 1 ) -= spotOrigin.y();
-                m( 3, 2 ) -= spotOrigin.z();
-                pNode->pInstance->setModelMatrix( m );
-                pNode->pInstance->calculateBiggestScale();
-                pNode->pInstance->calculateDeterminant();
-                pNode->propagateTransformMatrices();
-
-                pSpotScene->enqueueDynamicHiearchy( pNode );
-            }
-        }
-    }
 
     if ( sectorManager.bNeedStreamUpdate &&
          sectorManager.pCurrentSector != nullptr ) {

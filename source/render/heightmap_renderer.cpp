@@ -303,6 +303,7 @@ bool HeightmapTileRenderer::initialize() {
             outerLOD = outerLODCopy + 1;
         } while ( outerLOD < 5 );
 
+        tileIndexCount = writeOffset;
         gEdRender.pRenderDevice->unlockBuffer( pIndexBuffer2 );
         return true;
     }

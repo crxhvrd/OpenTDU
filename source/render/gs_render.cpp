@@ -10,6 +10,8 @@
 
 #ifdef OTDU_USE_IMGUI
 #include "debug/gs_imgui.h"
+#include "render/mng_shadow.h"
+#include "render/camera/gs_camera.h"
 #include "render/mng_env_map.h"
 #include "world/gs_mng_resources.h"
 #endif
@@ -626,6 +628,51 @@ void GSRender::drawDebug( float deltaTime ) {
     ImGui::Checkbox( "Enable debug overlay", &gbDebugEnvMapOverlay );
 
     MngEnvMap::DrawEnvMapDebugPanel( 192.0f );
+
+    ImGui::SeparatorText( "Shadow map" );
+    if ( gpMngResources != nullptr && gpImgui != nullptr ) {
+        ShadowResources &shadowResources = gpMngResources->getShadowResources();
+
+        ImGui::BeginGroup();
+        ImGui::Text( "Exterior (casters)" );
+        Material *pShadowMaterial = gpImgui->getDebugViewMaterial(
+            &shadowResources.getShadowMap2DB().Render2DB );
+        if ( pShadowMaterial != nullptr ) {
+            ImGui::Image( (ImTextureID)pShadowMaterial,
+                          ImVec2( 256.0f, 256.0f ) );
+        }
+        ImGui::EndGroup();
+
+        ImGui::SameLine();
+
+        ImGui::BeginGroup();
+        ImGui::Text( "Cockpit" );
+        Material *pCockpitMaterial = gpImgui->getDebugViewMaterial(
+            &shadowResources.getShadowMapCockpit2DB().Render2DB );
+        if ( pCockpitMaterial != nullptr ) {
+            ImGui::Image( (ImTextureID)pCockpitMaterial,
+                          ImVec2( 256.0f, 256.0f ) );
+        }
+        ImGui::EndGroup();
+
+        if ( gpMngShadow != nullptr ) {
+            ImGui::Text( "Exterior: %u casters, %u receivers",
+                         gpMngShadow->getLastNumCaster(),
+                         gpMngShadow->getLastNumReceiver() );
+            ImGui::Text( "Cockpit : %u casters, %u receivers",
+                         gpMngShadow->getLastNumCasterCockpit(),
+                         gpMngShadow->getLastNumReceiverCockpit() );
+        }
+
+        if ( gpCamera != nullptr && gpCamera->getActiveCamera() != nullptr ) {
+            const uint32_t camFlags = gpCamera->getActiveCamera()->getFlags();
+            ImGui::Text( "Camera flags=0x%x bit0(draw car)=%u "
+                         "bit18(cockpit)=%u",
+                         camFlags, camFlags & 1u, ( camFlags >> 0x12 ) & 1u );
+        }
+    } else {
+        ImGui::Text( "Shadow resources are not available yet." );
+    }
 }
 #endif
 

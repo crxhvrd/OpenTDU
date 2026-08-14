@@ -211,6 +211,12 @@ void GMFreeride::drawDebug( float deltaTime ) {
             target[1] = 20.22f;
             target[2] = 37179.66f;
         }
+        ImGui::SameLine();
+        if ( ImGui::Button( "HMap LOD Bug Repro" ) ) {
+            target[0] = 48413.344f;
+            target[1] = 309.431f;
+            target[2] = 41670.789f;
+        }
 
         ImGui::SetNextItemWidth( 300.0f );
         ImGui::DragFloat3( "World XYZ", target, 1000.0f );

@@ -52,7 +52,7 @@ struct SpotSector {
     float Y;
     float Z;
     float Angle; // radians, around Y
-    uint16_t Unknown[32];
+    uint16_t Tiles[32];
     Matrix4x4fUnaligned_t Zone;
     Matrix4x4fUnaligned_t ZoneSmall;
 };

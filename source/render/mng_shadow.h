@@ -50,6 +50,21 @@ public:
     inline void setCastersEnabled( bool param_1 ) { bRenderCasters = param_1; }
     inline bool getReceiversEnabled() const { return bRenderReceivers; }
 
+    // Debug counters (last completed frame; the live ones are reset in draw()).
+    inline int32_t getLastNumGroundCells() const { return lastNumGroundCells; }
+    inline int32_t getMaxGroundCells() const { return kMaxGroundCells; }
+    inline int32_t getLastNumRoadVerts() const { return lastNumRoadVerts; }
+    inline int32_t getMaxRoadVerts() const { return kMaxRoadVerts; }
+    inline int32_t getLastNumRoadCulled() const { return lastNumRoadCulled; }
+    inline uint32_t getLastNumCaster() const { return lastNumCaster; }
+    inline uint32_t getLastNumReceiver() const { return lastNumReceiver; }
+    inline uint32_t getLastNumCasterCockpit() const {
+        return lastNumCasterCockpit;
+    }
+    inline uint32_t getLastNumReceiverCockpit() const {
+        return lastNumReceiverCockpit;
+    }
+
     inline float getFalloff() const { return falloff; }
     inline float getHotspot() const { return field_0x4494; }
     inline float getShadowMultiplier() const { return shadowMultiplier; }
@@ -90,6 +105,7 @@ private:
     static constexpr int32_t kNumMaxCockpitReceiver = 0x14;
     static constexpr int32_t kNumMaxVisibleSector = 7;
     static constexpr int32_t kMaxRoadVerts = 0x2ee; // 750
+    static constexpr int32_t kMaxGroundCells = 100; // 600 gathered verts / 6
 
 private:
     DrawList *pDrawList;
@@ -160,6 +176,9 @@ private:
     uint32_t lastNumReceiver;
     uint32_t lastNumCaster;
     uint32_t lastNumReceiverCockpit;
+    int32_t lastNumGroundCells = 0;
+    int32_t lastNumRoadVerts = 0;
+    int32_t lastNumRoadCulled = 0;
     uint32_t lastNumCasterCockpit;
 
     float field5_0x5c;

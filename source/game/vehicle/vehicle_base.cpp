@@ -1508,6 +1508,19 @@ void VehicleBase::setRVModelMatrix( Matrix4x4f_t &modelMatrix ) {
     }
 }
 
+static inline float ComputeShadowPlaneCenterY( const Eigen::Vector4f *pWheelPos,
+                                               const uint32_t numWheels,
+                                               const int32_t pairIdx ) {
+    // FUN_008c05f0 (inlined)
+    if ( (int32_t)numWheels < 3 ) {
+        return ( pWheelPos[0].y() + pWheelPos[pairIdx].y() ) * 0.5f;
+    }
+
+    const int32_t diagIdx =
+        (int32_t)( numWheels + ( numWheels >> 31 & 3u ) ) >> 2;
+    return ( pWheelPos[0].y() + pWheelPos[diagIdx + pairIdx].y() ) * 0.5f;
+}
+
 void VehicleBase::setShadowPlaneMatrix( Matrix4x4f_t &modelMatrix ) {
     // FUN_008c05f0
     if ( bNeedToUnstream || displayInstances[2].pNode == nullptr ||
@@ -1540,7 +1553,8 @@ void VehicleBase::setShadowPlaneMatrix( Matrix4x4f_t &modelMatrix ) {
         const Eigen::Vector4f &vA = wheelPos[0];
         const Eigen::Vector4f &vB = wheelPos[iVar5];
 
-        float shadowCenterY = 0.0f;
+        float shadowCenterY =
+            ComputeShadowPlaneCenterY( wheelPos.data(), numWheels, iVar5 );
 
         if ( !bDisableShadow ) {
             // Full physics shadow: build an orientation frame from wheel
@@ -1560,8 +1574,6 @@ void VehicleBase::setShadowPlaneMatrix( Matrix4x4f_t &modelMatrix ) {
 
                 up4.head<3>() = forward4.head<3>().cross( right3 ).normalized();
                 up4.w() = 0.0f;
-
-                shadowCenterY = ( vA.y() + vB.y() ) * 0.5f;
             } else {
                 // 4-wheel (car): frame from longitudinal + lateral wheel
                 // directions.
@@ -1578,8 +1590,6 @@ void VehicleBase::setShadowPlaneMatrix( Matrix4x4f_t &modelMatrix ) {
 
                 up4.head<3>() = forward4.head<3>().cross( lat3 ).normalized();
                 up4.w() = 0.0f;
-
-                shadowCenterY = ( vA.y() + vDiag.y() ) * 0.5f;
             }
 
             // Apply shadow Y offset (slightly above ground to avoid
@@ -1618,10 +1628,6 @@ void VehicleBase::setShadowPlaneMatrix( Matrix4x4f_t &modelMatrix ) {
             local_f0( 3, 1 ) += yOffset;
 
             shadowNode->TransformMatrix = local_f0 * modelMatrix;
-
-            // Rotation.super * 0.5 from original (yOffset stored in Y, halved
-            // for comparison).
-            shadowCenterY = yOffset * 0.5f;
         }
 
         propagateNodeTransform( shadowNode, modelMatrix, 0 );

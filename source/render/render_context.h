@@ -286,6 +286,21 @@ Eigen::Vector4f *FUN_005fc940();
 Eigen::Vector4f *FUN_00515be0();
 Eigen::Vector4f *FUN_00515cf0();
 
+void UpdateHeightmapLODCache( Instance *pInstance, RenderScene *pScene );
+
+void ComputeHeightmapLODGrid( const Heightmap *pHeightmap,
+                              const Matrix4x4f_t &m,
+                              Camera *pCamera,
+                              Frustum *pFrustum,
+                              bool bAllowFootprintCull,
+                              float coefLODTile,
+                              uint8_t *pOutGrid );
+
+int32_t HeightmapPatchFrustumClass( const Heightmap *pHeightmap,
+                                    const Matrix4x4f_t &m,
+                                    Camera *pCamera,
+                                    Frustum *pFrustum );
+
 extern bool gbDebugWireframeHmap;
 extern bool gbDebugHmapDisableFootprintCull;
 extern bool gbDebugHmapDisableStitchMask;

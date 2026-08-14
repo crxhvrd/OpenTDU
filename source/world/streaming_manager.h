@@ -153,6 +153,8 @@ private:
     void updateHeightmapExclusionMasks();
     void stitchAreaEdgeToLevel( Area &area, eCardinalDirection direction );
     void stitchActiveAreaSeams();
+    void resetHeightmapTileMasks();
+    void stitchActiveAreaCardinalSeams();
     void stitchSectorEdgeToArea( Sector &sector, eCardinalDirection direction );
     void stitchSectorsToArea();
     void

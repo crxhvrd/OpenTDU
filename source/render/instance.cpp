@@ -46,6 +46,7 @@ void Instance::initialize( InstanceEntry *param_2, uint64_t param_3 ) {
     uvaFlags = 1;
     pHeightmapTileMask = nullptr;
     pHeightmapLODCache = nullptr;
+    pHeightmapWorkGrid = nullptr;
     pInstanceDef = param_2;
 
     for ( uint32_t i = 0; i < numLODs; i++ ) {

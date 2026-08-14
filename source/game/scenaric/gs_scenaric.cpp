@@ -186,9 +186,76 @@ ScenaricBank *GSScenaric::getNewSpotBank() {
     return nullptr;
 }
 
+static bool IsSpotSectorVisible( const SpotSector *pSpotSector,
+                                 const Sector *pSector ) {
+    static constexpr int32_t kMaxNumSpotTile = 32;
+    static constexpr uint16_t kSpotTileListEnd = 0xffff;
+    static constexpr uint16_t kNumSectorTile =
+        kHeightmapNumRealTile * kHeightmapNumRealTile;
+
+    for ( int32_t i = 0; i < kMaxNumSpotTile; i++ ) {
+        const uint16_t tile = pSpotSector->Tiles[i];
+        if ( tile == kSpotTileListEnd ) {
+            break;
+        }
+
+        if ( tile >= kNumSectorTile ) {
+            continue;
+        }
+
+        if ( pSector->geometry.heightmapLODCache[tile] !=
+             kHeightmapLODCulled ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void GSScenaric::draw( float deltaTime ) {
     // FUN_008050b0
-    OTDU_UNIMPLEMENTED;
+    RenderScene *pScene =
+        gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
+
+    if ( pScene != nullptr ) {
+        const Eigen::Vector4f spotOrigin = gpWorldStreaming->isEnabled()
+                                               ? gpWorldStreaming->getPosition()
+                                               : Eigen::Vector4f::Zero();
+
+        for ( ScenaricBank &bank : spotBanks ) {
+            const SpotSector *pSpotSector = bank.getSpotSector();
+            const Sector *pSector = bank.getSector();
+
+            if ( pSpotSector == nullptr || pSector == nullptr ||
+                 pSector->state != 1 ) {
+                continue;
+            }
+
+            if ( !IsSpotSectorVisible( pSpotSector, pSector ) ) {
+                continue;
+            }
+
+            for ( HiearchyNode *pNode : bank.getSceneryNodes() ) {
+                if ( pNode == nullptr || pNode->pInstance == nullptr ) {
+                    continue;
+                }
+
+                Matrix4x4f_t modelMatrix = pNode->TransformMatrix;
+                modelMatrix( 3, 0 ) -= spotOrigin.x();
+                modelMatrix( 3, 1 ) -= spotOrigin.y();
+                modelMatrix( 3, 2 ) -= spotOrigin.z();
+
+                pNode->pInstance->setModelMatrix( modelMatrix );
+                pNode->pInstance->calculateBiggestScale();
+                pNode->pInstance->calculateDeterminant();
+                pNode->propagateTransformMatrices();
+
+                pScene->enqueueDynamicHiearchy( pNode );
+            }
+        }
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
 }
 
 void GSScenaric::pause() {

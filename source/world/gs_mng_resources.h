@@ -349,6 +349,10 @@ public:
         return pSection != nullptr ? reinterpret_cast<Texture *>( pSection + 1 )
                                    : nullptr;
     }
+    inline RuntimeRender2DBWithRT &getShadowMap2DB() { return shadow2DB; }
+    inline RuntimeRender2DBWithRT &getShadowMapCockpit2DB() {
+        return shadowCockpit2DB;
+    }
 
 public:
     ShadowResources();
