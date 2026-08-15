@@ -294,6 +294,8 @@ private:
     float displayYaw;
     float y3DOffset;
     float bodyHeight;
+    float rideHeightFront;
+    float rideHeightRear;
 
     Chrono chrono;
 

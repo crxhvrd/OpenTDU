@@ -2373,19 +2373,7 @@ void VehicleBase::propagateNodeTransform( HiearchyNode *peVar4,
 }
 
 void VehicleBase::propagateShadowDummyTransform( Matrix4x4f_t &bodyMatrix ) {
-    Matrix4x4f_t m = bodyMatrix;
-    if ( pCarState != nullptr ) {
-        const uint32_t numWheels = pCarState->getNumWheels();
-        if ( numWheels > 0 ) {
-            float groundY = 0.0f;
-            for ( uint32_t i = 0; i < numWheels; i++ ) {
-                groundY +=
-                    pCarState->getWheel( i ).ProjectedPositionOnGround.y();
-            }
-            m( 3, 1 ) = groundY / (float)numWheels;
-        }
-    }
-    propagateNodeTransform( 1, m, 1 );
+    propagateNodeTransform( 1, bodyMatrix, 1 );
 }
 
 void VehicleBase::removeShaderSetup( HiearchyNode *param_2 ) {

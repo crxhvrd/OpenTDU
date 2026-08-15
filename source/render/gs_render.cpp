@@ -655,6 +655,28 @@ void GSRender::drawDebug( float deltaTime ) {
         }
         ImGui::EndGroup();
 
+#if OTDU_DEVBUILD
+        if ( ImGui::Button( "Dump exterior map" ) ) {
+            RenderTarget *pRenderTarget =
+                shadowResources.getShadowMap2DB().pRenderTarget;
+            if ( pRenderTarget != nullptr ) {
+                gEdRender.pRenderDevice->requestRenderTargetDump(
+                    pRenderTarget->getTextureColor(), "shadowmap_exterior" );
+            }
+        }
+
+        ImGui::SameLine();
+
+        if ( ImGui::Button( "Dump cockpit map" ) ) {
+            RenderTarget *pRenderTarget =
+                shadowResources.getShadowMapCockpit2DB().pRenderTarget;
+            if ( pRenderTarget != nullptr ) {
+                gEdRender.pRenderDevice->requestRenderTargetDump(
+                    pRenderTarget->getTextureColor(), "shadowmap_cockpit" );
+            }
+        }
+#endif
+
         if ( gpMngShadow != nullptr ) {
             ImGui::Text( "Exterior: %u casters, %u receivers",
                          gpMngShadow->getLastNumCaster(),
@@ -662,6 +684,53 @@ void GSRender::drawDebug( float deltaTime ) {
             ImGui::Text( "Cockpit : %u casters, %u receivers",
                          gpMngShadow->getLastNumCasterCockpit(),
                          gpMngShadow->getLastNumReceiverCockpit() );
+
+            const Eigen::Vector4f &sunDir = gpMngShadow->getSunDirection();
+            const float sunElevation =
+                -asinf( std::min( 1.0f, std::max( -1.0f, sunDir.y() ) ) ) *
+                57.29578f;
+            ImGui::Text( "Sun dir  = %.5f %.5f %.5f (elevation %.2f deg)",
+                         sunDir.x(), sunDir.y(), sunDir.z(), sunElevation );
+
+            const Eigen::Vector4f &bbMin = gpMngShadow->getCasterBBMin();
+            const Eigen::Vector4f &bbMax = gpMngShadow->getCasterBBMax();
+            ImGui::Text( "CasterBB min = %.3f %.3f %.3f", bbMin.x(), bbMin.y(),
+                         bbMin.z() );
+            ImGui::Text( "CasterBB max = %.3f %.3f %.3f", bbMax.x(), bbMax.y(),
+                         bbMax.z() );
+            ImGui::Text( "CasterBB size= %.3f %.3f %.3f", bbMax.x() - bbMin.x(),
+                         bbMax.y() - bbMin.y(), bbMax.z() - bbMin.z() );
+            ImGui::Text( "Ortho    = %.3f x %.3f m (%.2f mm/texel)",
+                         gpMngShadow->getLastOrthoWidth(),
+                         gpMngShadow->getLastOrthoHeight(),
+                         gpMngShadow->getLastOrthoWidth() * 1000.0f / 900.0f );
+            ImGui::Text( "Caster   = dist %.3f m -> G %.6f",
+                         gpMngShadow->getLastCasterDistance(),
+                         gpMngShadow->getLastCasterIntensity() );
+
+            ImGui::Text( "Ground   = %d/%d cells (%d gathered vtx)%s",
+                         gpMngShadow->getLastNumGroundCells(),
+                         gpMngShadow->getMaxGroundCells(),
+                         gpMngShadow->getLastNumGroundCells() * 6,
+                         gpMngShadow->getLastNumGroundCells() >=
+                                 gpMngShadow->getMaxGroundCells()
+                             ? "  <-- CAPPED"
+                             : "" );
+            ImGui::Text(
+                "Road     = %d/%d vtx from %d bodies (%d sun-culled)%s",
+                gpMngShadow->getLastNumRoadVerts(),
+                gpMngShadow->getMaxRoadVerts(),
+                gpMngShadow->getLastNumRoadBodies(),
+                gpMngShadow->getLastNumRoadCulled(),
+                gpMngShadow->getLastNumRoadVerts() >=
+                        gpMngShadow->getMaxRoadVerts()
+                    ? "  <-- CAPPED"
+                    : "" );
+
+            ImGui::Checkbox( "Disable ground strip receiver",
+                             &gbDebugShadowDisableGroundStrip );
+            ImGui::Checkbox( "Disable road receiver",
+                             &gbDebugShadowDisableRoadReceiver );
         }
 
         if ( gpCamera != nullptr && gpCamera->getActiveCamera() != nullptr ) {

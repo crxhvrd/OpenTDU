@@ -56,6 +56,7 @@ public:
     inline int32_t getLastNumRoadVerts() const { return lastNumRoadVerts; }
     inline int32_t getMaxRoadVerts() const { return kMaxRoadVerts; }
     inline int32_t getLastNumRoadCulled() const { return lastNumRoadCulled; }
+    inline int32_t getLastNumRoadBodies() const { return lastNumRoadBodies; }
     inline uint32_t getLastNumCaster() const { return lastNumCaster; }
     inline uint32_t getLastNumReceiver() const { return lastNumReceiver; }
     inline uint32_t getLastNumCasterCockpit() const {
@@ -63,6 +64,23 @@ public:
     }
     inline uint32_t getLastNumReceiverCockpit() const {
         return lastNumReceiverCockpit;
+    }
+    inline const Eigen::Vector4f &getSunDirection() const {
+        return sunDirection;
+    }
+    inline const Eigen::Vector4f &getCasterBBMin() const {
+        return lastCasterBBMin;
+    }
+    inline const Eigen::Vector4f &getCasterBBMax() const {
+        return lastCasterBBMax;
+    }
+    inline float getLastOrthoWidth() const { return lastOrthoWidth; }
+    inline float getLastOrthoHeight() const { return lastOrthoHeight; }
+    inline float getLastCasterDistance() const { return lastCasterDistance; }
+    inline float getLastCasterIntensity() const { return lastCasterIntensity; }
+    inline void setLastCasterDebug( const float param_1, const float param_2 ) {
+        lastCasterDistance = param_1;
+        lastCasterIntensity = param_2;
     }
 
     inline float getFalloff() const { return falloff; }
@@ -179,6 +197,13 @@ private:
     int32_t lastNumGroundCells = 0;
     int32_t lastNumRoadVerts = 0;
     int32_t lastNumRoadCulled = 0;
+    int32_t lastNumRoadBodies = 0;
+    Eigen::Vector4f lastCasterBBMin = Eigen::Vector4f::Zero();
+    Eigen::Vector4f lastCasterBBMax = Eigen::Vector4f::Zero();
+    float lastOrthoWidth = 0.0f;
+    float lastOrthoHeight = 0.0f;
+    float lastCasterDistance = 0.0f;
+    float lastCasterIntensity = 0.0f;
     uint32_t lastNumCasterCockpit;
 
     float field5_0x5c;
@@ -252,3 +277,6 @@ private:
 };
 
 extern MngShadow *gpMngShadow;
+
+extern bool gbDebugShadowDisableGroundStrip;
+extern bool gbDebugShadowDisableRoadReceiver;

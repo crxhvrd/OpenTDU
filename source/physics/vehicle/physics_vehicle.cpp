@@ -788,7 +788,16 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                                      ? gpPlayerData->getDrivingHelpLevel()
                                      : 0 ) );
 
-    bodyHeight = ( db.Height > 0 ? db.Height : 1300 ) * kMmToM;
+    constexpr float kBodyHeightBias = 100.0f; // mm
+    const float rideHeightFrontMM =
+        (float)( db.RideHeightFront > 0 ? db.RideHeightFront : 130 );
+    const float rideHeightRearMM =
+        (float)( db.RideHeightBack > 0 ? db.RideHeightBack : 130 );
+    rideHeightFront = rideHeightFrontMM * kMmToM;
+    rideHeightRear = rideHeightRearMM * kMmToM;
+    bodyHeight = ( ( db.Height > 0 ? db.Height : 1300 ) - rideHeightFrontMM -
+                   kBodyHeightBias ) *
+                 kMmToM;
     if ( bFactoryShape && pChassisBody->GetShape() != nullptr ) {
         bodyHeight =
             pChassisBody->GetShape()->GetLocalBounds().GetSize().GetY();
@@ -845,14 +854,24 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         }
     }
 
-    const float attachY = -0.10f;
+    const SuspensionSetup attachSuspFront = ComputeAxleSuspension( db, true );
+    const SuspensionSetup attachSuspRear = ComputeAxleSuspension( db, false );
+    const float attachYFront =
+        ( frontRadius - rideHeightFront - bodyHeight * 0.5f ) +
+        attachSuspFront.staticLength;
+    const float attachYRear =
+        ( rearRadius - rideHeightRear - bodyHeight * 0.5f ) +
+        attachSuspRear.staticLength;
 
     // FL, FR, RL, RR (TDU: right = +x, forward = +z).
-    wheelAttach[0] = Eigen::Vector3f( -halfTrackF, attachY, wheelBaseM * 0.5f );
-    wheelAttach[1] = Eigen::Vector3f( halfTrackF, attachY, wheelBaseM * 0.5f );
+    wheelAttach[0] =
+        Eigen::Vector3f( -halfTrackF, attachYFront, wheelBaseM * 0.5f );
+    wheelAttach[1] =
+        Eigen::Vector3f( halfTrackF, attachYFront, wheelBaseM * 0.5f );
     wheelAttach[2] =
-        Eigen::Vector3f( -halfTrackR, attachY, -wheelBaseM * 0.5f );
-    wheelAttach[3] = Eigen::Vector3f( halfTrackR, attachY, -wheelBaseM * 0.5f );
+        Eigen::Vector3f( -halfTrackR, attachYRear, -wheelBaseM * 0.5f );
+    wheelAttach[3] =
+        Eigen::Vector3f( halfTrackR, attachYRear, -wheelBaseM * 0.5f );
 
     // Aerodynamics: F = 0.5 * rho * A * C * v^2 (FUN_008345e0 / Simulate).
     const float frontalArea = ( db.Width > 0 ? db.Width : 1800 ) *
@@ -907,8 +926,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         PhysicsVehicle::ComputeAxleSuspension( db, false );
     const float kTwoPiSusp = 6.28318530718f;
 
-    const float groundY = Min( attachY - suspFront.staticLength - frontRadius,
-                               attachY - suspRear.staticLength - rearRadius );
+    const float groundY =
+        Min( attachYFront - suspFront.staticLength - frontRadius,
+             attachYRear - suspRear.staticLength - rearRadius );
     const float hullBottomY =
         pChassis->GetShape()->GetLocalBounds().mMin.GetY();
     const float clearance = hullBottomY - groundY;
@@ -2161,16 +2181,8 @@ void PhysicsVehicle::publishStepPose() {
 }
 
 void PhysicsVehicle::calibrateDisplayYOffset( float modelWheelRestY ) {
-    const int32_t numWheels = vehicle.NumWheels;
-    if ( numWheels <= 0 ) {
-        return;
-    }
-    float sum = 0.0f;
-    for ( int32_t i = 0; i < numWheels; i++ ) {
-        sum += -getWheelRestCenterDrop( static_cast<uint32_t>( i ) );
-    }
-    const float physicsWheelRestY = sum / numWheels;
-    y3DOffset = ( physicsWheelRestY - modelWheelRestY ) + bodyHeight * 0.5f;
+    (void)modelWheelRestY;
+    y3DOffset = 0.0f;
 }
 
 void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform ) {

@@ -1732,8 +1732,12 @@ float GSPhysics::getGroundHeight( float x, float z ) {
 int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
                                               const Eigen::Vector4f &bbMax,
                                               Eigen::Vector4f *pOutVerts,
-                                              int32_t maxVerts ) {
+                                              int32_t maxVerts,
+                                              int32_t *pOutNumBodies ) {
     // FUN_00845c20
+    if ( pOutNumBodies != nullptr ) {
+        *pOutNumBodies = 0;
+    }
     if ( pPhysicsSystem == nullptr || pOutVerts == nullptr || maxVerts <= 0 ) {
         return 0;
     }
@@ -1760,8 +1764,9 @@ int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
     const JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterfaceNoLock();
     roadBodies.reserve( bodyIDs.size() );
     for ( const JPH::BodyID id : bodyIDs ) {
-        const uint64_t surf = bi.GetUserData( id );
-        if ( !TDUSurface::isOnRoad( static_cast<uint32_t>( surf ) ) ) {
+        const uint32_t surf = static_cast<uint32_t>( bi.GetUserData( id ) &
+                                                     TDUSurface::kClassMask );
+        if ( surf != TDUSurface::Paved && surf != TDUSurface::RoadMesh ) {
             continue;
         }
         JPH::RefConst<JPH::Shape> shape = bi.GetShape( id );
@@ -1777,6 +1782,7 @@ int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
     constexpr int32_t kTriBatch = 64;
     JPH::Float3 tri[3 * kTriBatch];
     for ( const RoadBody &rb : roadBodies ) {
+        const int32_t numVertsBefore = numVerts;
         JPH::Shape::GetTrianglesContext ctx;
         rb.shape->GetTrianglesStart( ctx, queryBox, rb.com.GetTranslation(),
                                      rb.com.GetQuaternion(),
@@ -1797,6 +1803,10 @@ int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
                         f.z + shiftOrigin.z(), 1.0f );
                 }
             }
+        }
+
+        if ( pOutNumBodies != nullptr && numVerts > numVertsBefore ) {
+            ( *pOutNumBodies )++;
         }
     }
     return numVerts;

@@ -217,7 +217,8 @@ public:
     int32_t gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
                                        const Eigen::Vector4f &bbMax,
                                        Eigen::Vector4f *pOutVerts,
-                                       int32_t maxVerts );
+                                       int32_t maxVerts,
+                                       int32_t *pOutNumBodies = nullptr );
 
     void setWorldOrigin( const Eigen::Vector4f *param_1 );
 
@@ -338,10 +339,8 @@ private:
     void physicsStep( float dt, float accTime );
     void drawCollisionShapes();
     void updateGMeterToggle();
-    bool hasCollisionBelow( float worldX,
-                            float worldZ,
-                            float startY,
-                            float depth );
+    bool
+    hasCollisionBelow( float worldX, float worldZ, float startY, float depth );
     bool isRegionCovered( float minX,
                           float minZ,
                           float maxX,

@@ -37,6 +37,9 @@
 
 MngShadow *gpMngShadow = nullptr; // DAT_010e7fa8
 
+bool gbDebugShadowDisableGroundStrip = false;
+bool gbDebugShadowDisableRoadReceiver = false;
+
 inline void BindShadowMaterialUniforms( Material *param_1,
                                         const Eigen::Vector4f &param_2 ) {
     // FUN_0042fdb0
@@ -70,7 +73,18 @@ inline float FUN_009d91c0( float &param_1, const float param_2 ) {
         gpWeather->updateActiveConfig();
     }
 
-    return local_4;
+    float local_8 =
+        ( 1.0f -
+          gpWeather->getActiveRandomizedWeatherConfig().getTerrainContrast() ) *
+        gpMngShadow->getShadowMultiplier() * local_4;
+    if ( local_8 < 0.0f ) {
+        return 0.0f;
+    }
+    if ( 1.0f < local_8 ) {
+        return 1.0f;
+    }
+
+    return local_8;
 }
 
 void ShadowCaster::bind( Instance *param_1,
@@ -134,6 +148,7 @@ void ShadowCaster::bind( CarState *param_1, bool param_3, float param_4 ) {
         float local_28 = 0.0f;
         float fVar1 = FUN_009d91c0( local_28, param_4 );
         uStack_20.y() = 1.0f - pDVar1->getAlpha() * fVar1;
+        gpMngShadow->setLastCasterDebug( param_4, uStack_20.y() );
 
         if ( pDVar1->shouldUnstream() != false ) {
             return;
@@ -1034,6 +1049,9 @@ void MngShadow::updateShadowCameraFrustum( bool bCockpit ) {
         casterBBRadius = hx > hy ? hx : hy;
         if ( casterBBRadius < hz )
             casterBBRadius = hz;
+
+        lastCasterBBMin = casterBBMin;
+        lastCasterBBMax = casterBBMax;
     }
 
     // Get render pass camera and scene
@@ -1134,6 +1152,11 @@ void MngShadow::updateShadowCameraFrustum( bool bCockpit ) {
     float orthoHeight = ( bbMax.y() - bbMin.y() ) * projScale;
     float orthoWidth = ( bbMax.x() - bbMin.x() ) * projScale;
     pScene->getFrustumWrite().setOrthoDimensions( orthoWidth, orthoHeight );
+
+    if ( !bCockpit ) {
+        lastOrthoWidth = orthoWidth;
+        lastOrthoHeight = orthoHeight;
+    }
 
     // Get shader parameter arrays for the receiver materials
     auto *pParamsA =
@@ -1585,9 +1608,11 @@ void MngShadow::collectVisibleHeightmapVertices() {
     }
 
     lastNumGroundCells = numCells;
-    buildGroundStrip( quads, numCells );
+    if ( !gbDebugShadowDisableGroundStrip ) {
+        buildGroundStrip( quads, numCells );
+    }
 
-    if ( gpPhysics != nullptr ) {
+    if ( gpPhysics != nullptr && !gbDebugShadowDisableRoadReceiver ) {
         const Eigen::Vector4f streamOrigin =
             ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() )
                 ? gpWorldStreaming->getPosition()
@@ -1596,7 +1621,7 @@ void MngShadow::collectVisibleHeightmapVertices() {
         Eigen::Vector4f roadVerts[kMaxRoadVerts];
         const int32_t numRoadVerts = gpPhysics->gatherRoadShadowTriangles(
             casterBBMin + streamOrigin, casterBBMax + streamOrigin, roadVerts,
-            kMaxRoadVerts );
+            kMaxRoadVerts, &lastNumRoadBodies );
         lastNumRoadVerts = numRoadVerts;
         if ( numRoadVerts > 2 ) {
             buildRoadReceiverTriangles( roadVerts, numRoadVerts,
