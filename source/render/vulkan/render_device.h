@@ -320,6 +320,18 @@ public:
     clampSampleCount( VkSampleCountFlagBits requested ) const;
     bool isMultisampled( const GPUTexture *pTexture ) const;
 
+#if OTDU_DEVBUILD
+    void requestRenderTargetDump( GPUTexture *pTexture, const char *pFilePath );
+#endif
+
+#if OTDU_DEVBUILD
+private:
+    struct PendingRenderTargetDump {
+        GPUTexture *pTexture;
+        std::string FilePath;
+    };
+#endif
+
 private:
     VkInstance instance;
     std::vector<const char *> instanceExtensions;
@@ -443,6 +455,10 @@ private:
     // consumed and reset to 1 by the next drawIndexedPrimitive call.
     uint32_t activeInstanceCount = 1;
 
+#if OTDU_DEVBUILD
+    std::vector<PendingRenderTargetDump> pendingRenderTargetDumps;
+#endif
+
 private:
     QueueInfo getQueue( VkQueueFlagBits flags ) const;
     std::vector<VkExtensionProperties> getAvailableDeviceExtensions();
@@ -476,6 +492,13 @@ private:
     void releaseFramebufferCache();
     void flushPendingTextureUploads();
     void flushPendingMipchainGens();
+
+#ifdef OTDU_DEVBUILD
+    void processPendingRenderTargetDumps();
+    bool copyRenderTargetToHost( GPUTexture *pTexture,
+                                 const uint32_t imageIndex,
+                                 std::vector<uint8_t> &texels );
+#endif
 };
 
 bool HasStencilBits( VkFormat fmt );

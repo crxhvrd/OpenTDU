@@ -122,6 +122,38 @@ static constexpr const VkFormat kViewFormatLUT[eViewFormat::VF_Count] = {
     VK_FORMAT_R8G8B8A8_UNORM,  // VF_R8G8B8A8_UINT
 };
 
+#if OTDU_DEVBUILD
+static uint32_t GetVulkanFormatTexelSize( const VkFormat format ) {
+    switch ( format ) {
+    case VK_FORMAT_R8_UNORM:
+        return 1;
+    case VK_FORMAT_R5G6B5_UNORM_PACK16:
+    case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+    case VK_FORMAT_R16_UNORM:
+    case VK_FORMAT_R16_SFLOAT:
+        return 2;
+    case VK_FORMAT_B8G8R8A8_UNORM:
+    case VK_FORMAT_R8G8B8A8_UNORM:
+    case VK_FORMAT_R8G8B8A8_SNORM:
+    case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+    case VK_FORMAT_R16G16_UNORM:
+    case VK_FORMAT_R16G16_SNORM:
+    case VK_FORMAT_R16G16_SFLOAT:
+    case VK_FORMAT_R32_SFLOAT:
+        return 4;
+    case VK_FORMAT_R16G16B16A16_UNORM:
+    case VK_FORMAT_R16G16B16A16_SNORM:
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+    case VK_FORMAT_R32G32_SFLOAT:
+        return 8;
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+        return 16;
+    default:
+        return 0;
+    }
+}
+#endif
+
 static constexpr const VkFormat
     kVertexAttributeFormats[eVertexAttributeFormat::VAF_Count] = {
         VK_FORMAT_R32G32B32_SFLOAT,
@@ -1493,6 +1525,10 @@ void RenderDevice::present() {
 
         bRecordingCommands = false;
     }
+
+#if OTDU_DEVBUILD
+    processPendingRenderTargetDumps();
+#endif
 
     VkPresentInfoKHR presentInfo = {};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -3671,4 +3707,212 @@ void RenderDevice::flushPendingMipchainGens() {
         bPendingMipGen = false;
     }
 }
+
+#if OTDU_DEVBUILD
+void RenderDevice::requestRenderTargetDump( GPUTexture *pTexture,
+                                            const char *pFilePath ) {
+    if ( pTexture == nullptr || pFilePath == nullptr ) {
+        return;
+    }
+
+    pendingRenderTargetDumps.push_back(
+        { pTexture, std::string( pFilePath ) } );
+}
+
+bool RenderDevice::copyRenderTargetToHost( GPUTexture *pTexture,
+                                           const uint32_t imageIndex,
+                                           std::vector<uint8_t> &texels ) {
+    const uint32_t bytesPerTexel =
+        GetVulkanFormatTexelSize( pTexture->ViewFormat );
+    if ( bytesPerTexel == 0 ) {
+        OTDU_LOG_ERROR( "Unsupported render target format 0x%x\n",
+                        (uint32_t)pTexture->ViewFormat );
+        return false;
+    }
+
+    const VkDeviceSize bufferSize =
+        VkDeviceSize( pTexture->Width ) * pTexture->Height * bytesPerTexel;
+
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = bufferSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VmaAllocation stagingAllocation = nullptr;
+    if ( vmaCreateBuffer( allocator, &bufferInfo, &allocInfo, &stagingBuffer,
+                          &stagingAllocation, nullptr ) != VK_SUCCESS ) {
+        OTDU_LOG_ERROR( "Failed to allocate a %llu bytes readback buffer\n",
+                        (unsigned long long)bufferSize );
+        return false;
+    }
+
+    // The dump is a one-shot debug operation, so it gets its own pool/fence
+    // rather than sharing the frame or upload command buffers.
+    VkCommandPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfo.queueFamilyIndex = queues[0].familyIndex;
+
+    VkCommandPool pool = VK_NULL_HANDLE;
+    vkCreateCommandPool( device, &poolInfo, nullptr, &pool );
+
+    VkCommandBufferAllocateInfo cmdAllocInfo = {};
+    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.commandPool = pool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmdBuffer = VK_NULL_HANDLE;
+    vkAllocateCommandBuffers( device, &cmdAllocInfo, &cmdBuffer );
+
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer( cmdBuffer, &beginInfo );
+
+    const VkImageLayout previousLayout = pTexture->CurrentLayout[imageIndex];
+
+    VkImageSubresourceRange range;
+    range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    range.baseMipLevel = 0;
+    range.levelCount = 1;
+    range.baseArrayLayer = 0;
+    range.layerCount = 1;
+
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = previousLayout;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.image = pTexture->Image[imageIndex];
+    barrier.subresourceRange = range;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                          nullptr, 1, &barrier );
+
+    VkBufferImageCopy copyRegion = {};
+    copyRegion.bufferOffset = 0;
+    copyRegion.bufferRowLength = 0;   // tightly packed
+    copyRegion.bufferImageHeight = 0; // tightly packed
+    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.imageSubresource.mipLevel = 0;
+    copyRegion.imageSubresource.baseArrayLayer = 0;
+    copyRegion.imageSubresource.layerCount = 1;
+    copyRegion.imageOffset = { 0, 0, 0 };
+    copyRegion.imageExtent = { pTexture->Width, pTexture->Height, 1 };
+    vkCmdCopyImageToBuffer( cmdBuffer, pTexture->Image[imageIndex],
+                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer,
+                            1, &copyRegion );
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = previousLayout;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = 0;
+    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                          VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr,
+                          0, nullptr, 1, &barrier );
+
+    vkEndCommandBuffer( cmdBuffer );
+
+    VkFenceCreateInfo fenceInfo = {};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+    VkFence fence = VK_NULL_HANDLE;
+    vkCreateFence( device, &fenceInfo, nullptr, &fence );
+
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmdBuffer;
+    vkQueueSubmit( queues[0].queue, 1, &submitInfo, fence );
+    vkWaitForFences( device, 1, &fence, VK_TRUE, 9999999999 );
+
+    bool bSuccess = false;
+    void *pMappedMemory = nullptr;
+    if ( vmaMapMemory( allocator, stagingAllocation, &pMappedMemory ) ==
+             VK_SUCCESS &&
+         pMappedMemory != nullptr ) {
+        vmaInvalidateAllocation( allocator, stagingAllocation, 0, bufferSize );
+
+        texels.resize( size_t( bufferSize ) );
+        memcpy( texels.data(), pMappedMemory, size_t( bufferSize ) );
+        vmaUnmapMemory( allocator, stagingAllocation );
+
+        bSuccess = true;
+    }
+
+    vkDestroyFence( device, fence, nullptr );
+    vkDestroyCommandPool( device, pool, nullptr );
+    vmaDestroyBuffer( allocator, stagingBuffer, stagingAllocation );
+
+    return bSuccess;
+}
+
+void RenderDevice::processPendingRenderTargetDumps() {
+    if ( pendingRenderTargetDumps.empty() ) {
+        return;
+    }
+
+    vkDeviceWaitIdle( device );
+
+    for ( const PendingRenderTargetDump &dump : pendingRenderTargetDumps ) {
+        GPUTexture *pTexture = dump.pTexture;
+
+        uint32_t imageIndex = getInternalFrameIndex();
+        if ( imageIndex >= pTexture->NumResources ) {
+            imageIndex = ( pTexture->NumResources - 1 );
+        }
+
+        std::vector<uint8_t> texels;
+        if ( !copyRenderTargetToHost( pTexture, imageIndex, texels ) ) {
+            continue;
+        }
+
+        const uint32_t bytesPerTexel =
+            GetVulkanFormatTexelSize( pTexture->ViewFormat );
+        const bool bIsTGACompatible =
+            ( pTexture->ViewFormat == VK_FORMAT_B8G8R8A8_UNORM );
+
+        std::string filePath =
+            dump.FilePath + ( bIsTGACompatible ? ".tga" : ".raw" );
+        std::ofstream stream( filePath.c_str(),
+                              std::ofstream::out | std::ofstream::binary );
+        if ( !stream.is_open() ) {
+            OTDU_LOG_ERROR( "Failed to open '%s' for writing\n",
+                            filePath.c_str() );
+            continue;
+        }
+
+        if ( bIsTGACompatible ) {
+            // Uncompressed 32bpp TGA. B8G8R8A8_UNORM texels are already in the
+            // channel order TGA expects
+            uint8_t header[18] = {};
+            header[2] = 2; // uncompressed true-color
+            header[12] = uint8_t( pTexture->Width & 0xff );
+            header[13] = uint8_t( ( pTexture->Width >> 8 ) & 0xff );
+            header[14] = uint8_t( pTexture->Height & 0xff );
+            header[15] = uint8_t( ( pTexture->Height >> 8 ) & 0xff );
+            header[16] = 32;   // bits per pixel
+            header[17] = 0x28; // 8 alpha bits + top-left origin
+            stream.write( (const char *)header, sizeof( header ) );
+        }
+
+        stream.write( (const char *)texels.data(),
+                      std::streamsize( texels.size() ) );
+        stream.close();
+
+        OTDU_LOG_INFO( "Dumped render target (%ux%u, %u bytes/texel) to '%s'\n",
+                       pTexture->Width, pTexture->Height, bytesPerTexel,
+                       filePath.c_str() );
+    }
+
+    pendingRenderTargetDumps.clear();
+}
+#endif
 #endif
