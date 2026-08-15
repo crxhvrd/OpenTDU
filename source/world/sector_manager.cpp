@@ -1494,6 +1494,8 @@ void Sector::reset() {
         geometry.pHeightmapInstance = nullptr;
     }
 
+    StreamingManager::RemoveAllWooshForSector( geometry );
+
     for ( ImpostorGrid &grid : geometry.impostorGrids ) {
         for ( MassInstanceImpostor &mi : grid.instances ) {
             if ( mi.pInstance != nullptr ) {

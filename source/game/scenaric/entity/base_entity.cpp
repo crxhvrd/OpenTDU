@@ -340,16 +340,12 @@ void Entity::unknownFunc4() {
 
 bool Entity::isPMIInTile( const SectorHeightmap *pHeightmap, int32_t tileKey ) {
     // FUN_007faf00
-    if ( children.empty() ) {
-        return false;
-    }
     const float inv = 1.0f / pHeightmap->tileSize;
     const int32_t col =
         (int32_t)( ( modelMatrix( 3, 0 ) - pHeightmap->worldOriginX ) * inv );
     const int32_t row =
         (int32_t)( ( modelMatrix( 3, 2 ) - pHeightmap->worldOriginZ ) * inv );
-    const int32_t tileIndex = ( 1 - row ) * kHeightmapNumRealTile - col + 1;
-    return tileIndex == tileKey;
+    return PMITileIndex( col, row ) == tileKey;
 }
 
 void ResolveVolumeList( uint32_t *pList ) {

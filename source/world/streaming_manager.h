@@ -27,9 +27,26 @@ bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
                              const float **ppTileErrors = nullptr,
                              int32_t *pNumTileX = nullptr,
                              int32_t *pNumTileZ = nullptr );
-// TODO: Move to helper header
 
 class StreamingManager {
+public:
+    void setActiveRenderLayers( uint8_t value ) { activeRenderLayers = value; }
+    void setForceStreamUpdate( bool value ) { bForceStreamUpdate = value; }
+
+    Level &getLevel() { return level; }
+
+    void *getPanelSymbolStream() const { return level.getPanelSymbolStream(); }
+    void *getPanelLayoutStream() const { return level.getPanelLayoutStream(); }
+    void *getElectricalLayoutStream() const {
+        return level.getElectricalLayoutStream();
+    }
+    void *getElectrical2DBStream() const {
+        return level.getElectrical2DBStream();
+    }
+    void *getSectorNameStream() const { return pSectorNameStream; }
+
+    bool isFirstInitDone() const { return bFirstInitDone; }
+
 public:
     StreamingManager( uint32_t numSubSectors,
                       uint32_t numSectors,
@@ -63,25 +80,16 @@ public:
     void refreshSectorSpots();
     void refreshSectorProps();
 
-    void setActiveRenderLayers( uint8_t value ) { activeRenderLayers = value; }
-    void setForceStreamUpdate( bool value ) { bForceStreamUpdate = value; }
-
-    Level &getLevel() { return level; }
-
-    void *getPanelSymbolStream() const { return level.getPanelSymbolStream(); }
-    void *getPanelLayoutStream() const { return level.getPanelLayoutStream(); }
-    void *getElectricalLayoutStream() const {
-        return level.getElectricalLayoutStream();
-    }
-    void *getElectrical2DBStream() const {
-        return level.getElectrical2DBStream();
-    }
-    void *getSectorNameStream() const { return pSectorNameStream; }
-
-    bool isFirstInitDone() const { return bFirstInitDone; }
     void gatherSectorEnvImpostors( Sector &sector,
                                    RenderScene *pScene,
                                    float farPlaneCoeff );
+
+    void tickWoosh( const float *pListenerXZ, float listenerSpeed );
+    void updateSectorWoosh( Sector &sector, float listenerX, float listenerZ );
+
+    static void RemoveWooshForCell( SectorGeometry &geometry,
+                                    int32_t cellIndex );
+    static void RemoveAllWooshForSector( SectorGeometry &geometry );
 
 public:
     SectorManager sectorManager;

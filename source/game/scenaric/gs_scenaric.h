@@ -13,6 +13,9 @@
 #include "core/random/bcpl.h"
 
 class MngHud;
+class AudioClient;
+class AudioDispatcherPlaybackSoundInstance;
+class edAudioSample;
 
 // This is used as a safe fallback to initialize player start pos (points to
 // south lighthouse)
@@ -34,6 +37,12 @@ struct ObjectiveMarker {
 class CinematicPlayer {
 public:
     virtual bool executeAction( int32_t param_2, void *param_3 );
+};
+
+static constexpr float kWooshNoListener = -1.0f; // FLOAT_00f41664
+struct WooshVoice {
+    AudioDispatcherPlaybackSoundInstance *pSound = nullptr;
+    const void *pOwner = nullptr;
 };
 
 class GSScenaric : public GameSystem {
@@ -121,12 +130,21 @@ public:
                                        void *pRefSkeleton );
     ClipInstance *resolveClip( ScenaricBank *pBank, void *pRefAnm );
 
+    void initWoosh();
+    void terminateWoosh();
+    bool addWoosh( const Eigen::Vector3f &position, const void *pOwner );
+    bool removeWoosh( const void *pOwner );
+    void updateWooshVoices( float listenerSpeed );
+
     void setCinematicViewerDefault( const std::string &param_1,
                                     const std::string &param_2 );
     void setDemoTimer( float param_1 );
     void delockChallengeRoads();
     void setTraceSize( uint32_t param_1 );
     void setDefaultIGE( const char *param_1 );
+
+private:
+    static constexpr int32_t kMaxNumWoosh = 64;
 
 private:
     void pushObjectivesToCompass( MngHud *pHud );
@@ -172,9 +190,23 @@ private:
     std::vector<ScenaricBank *> registeredBanks;
 
     RandomGen randomGenerator;
+    float wooshMinSpeed = 0.0f;
+    float wooshMaxSpeed = 0.0f;
+    float wooshClipNear = 0.0f;
+    float wooshClipFar = 0.0f;
+    float wooshRefraction = 0.0f;
+    float wooshDoppler = 0.0f;
+    void *pWooshWavData = nullptr;
+    bool bOwnsWooshWavData = false;
+    AudioClient *pWooshAudioClient = nullptr;
+    std::array<WooshVoice, kMaxNumWoosh> wooshVoices;
+    std::unique_ptr<edAudioSample> wooshSample;
 };
 
 extern GSScenaric *gpScenaric;
 
+bool IsWooshImpostor( uint64_t instanceHashcode, int32_t gridIndex );
+
 extern std::vector<uint64_t> gRemovedSpots;
 extern bool gbWooshEnabled;
+extern bool gbDisplayWooshDebug;

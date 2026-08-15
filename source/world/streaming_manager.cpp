@@ -8,6 +8,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "mng_impostor.h"
 #include "mng_panel.h"
+#include "mng_world.h"
 #include "render/camera/gs_camera.h"
 #include "render/ed_render.h"
 #include "render/2db.h"
@@ -720,6 +721,11 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
             pProp->tick();
             const int32_t key = pProp->getTileKey();
             if ( pProp->isPMIInTile( &hm, key ) ) {
+                if ( gpScenaric != nullptr && key >= 0 &&
+                     key < (int32_t)ImpostorGrid::kNumCells &&
+                     ( sector.geometry.wooshCellFlags[key] & 1 ) == 0 ) {
+                    gpScenaric->removeWoosh( pProp );
+                }
                 pProp->setStreamActive( false );
                 if ( key >= 0 && key < (int32_t)DynamicPropStream::kNumCells ) {
                     dp.buckets[key].push_back( pProp );
@@ -1638,6 +1644,159 @@ ComputeCellWorldPosition( float originX, float originZ, uint32_t cell ) {
     const SectorHmapCoord &c = gSectorHmapCoords[cell];
     return Eigen::Vector4f( originX + c.z + c.x, 0.0f, originZ + c.y + c.z,
                             0.0f );
+}
+
+void StreamingManager::RemoveWooshForCell( SectorGeometry &geometry,
+                                           int32_t cellIndex ) {
+    // FUN_006fd660
+    if ( gpScenaric == nullptr ) {
+        return;
+    }
+
+    for ( ImpostorGrid &grid : geometry.impostorGrids ) {
+        for ( MassInstanceImpostor *pImpostor : grid.cells[cellIndex] ) {
+            gpScenaric->removeWoosh( pImpostor );
+        }
+    }
+
+    for ( Entity *pProp : geometry.dynamicProps.buckets[cellIndex] ) {
+        if ( pProp != nullptr ) {
+            gpScenaric->removeWoosh( pProp );
+        }
+    }
+}
+
+void StreamingManager::RemoveAllWooshForSector( SectorGeometry &geometry ) {
+    // FUN_006fd700
+    for ( int32_t cell = 0; cell < (int32_t)ImpostorGrid::kNumCells; cell++ ) {
+        if ( ( geometry.wooshCellFlags[cell] & 1 ) != 0 ) {
+            RemoveWooshForCell( geometry, cell );
+        }
+        geometry.wooshCellFlags[cell] = 0;
+    }
+
+    // The original also walks the sector's promoted (active) prop list, whose
+    // members have been pulled out of their cell bucket by the impostor tick.
+    if ( gpScenaric != nullptr ) {
+        for ( Entity *pProp : geometry.dynamicProps.active ) {
+            if ( pProp != nullptr ) {
+                gpScenaric->removeWoosh( pProp );
+            }
+        }
+    }
+}
+
+void StreamingManager::updateSectorWoosh( Sector &sector,
+                                          float listenerX,
+                                          float listenerZ ) {
+    // FUN_006fdb50
+    if ( gpScenaric == nullptr ) {
+        return;
+    }
+    if ( !gHmapCoordsLUTInitialized ) {
+        InitHeightmapCoordsLUT();
+    }
+
+    SectorGeometry &geometry = sector.geometry;
+
+    for ( uint8_t &flags : geometry.wooshCellFlags ) {
+        flags = static_cast<uint8_t>( ( flags & 1 ) << 1 );
+    }
+
+    const SectorHeightmap &heightmap = sector.heightmap;
+    if ( heightmap.tileSize != 0.0f ) {
+        const float invTileSize = 1.0f / heightmap.tileSize;
+        const int32_t col = static_cast<int32_t>(
+            ( listenerX - heightmap.worldOriginX ) * invTileSize );
+        const int32_t row = static_cast<int32_t>(
+            ( listenerZ - heightmap.worldOriginZ ) * invTileSize );
+
+        if ( col > -2 && row > -2 && col < kHeightmapNumRealTile &&
+             row < kHeightmapNumRealTile ) {
+            const Eigen::Vector4f cellPos = ComputeCellWorldPosition(
+                heightmap.worldOriginX, heightmap.worldOriginZ,
+                PMITileIndex( col, row ) );
+
+            int32_t firstCol = col;
+            int32_t lastCol = col;
+            if ( cellPos.x() <= listenerX ) {
+                lastCol = col + 1;
+            } else {
+                firstCol = col - 1;
+            }
+
+            int32_t firstRow = row;
+            int32_t lastRow = row + 1;
+            if ( cellPos.y() > 0.0f ) {
+                firstRow = row - 1;
+                lastRow = row;
+            }
+
+            for ( int32_t x = firstCol; x <= lastCol; x++ ) {
+                for ( int32_t z = firstRow; z <= lastRow; z++ ) {
+                    if ( x < 0 || x >= kHeightmapNumTile || z < 0 ||
+                         z >= kHeightmapNumTile ) {
+                        continue;
+                    }
+                    geometry.wooshCellFlags[PMITileIndex( x, z )] |= 1;
+                }
+            }
+        }
+    }
+
+    for ( int32_t cell = 0; cell < (int32_t)ImpostorGrid::kNumCells; cell++ ) {
+        const uint8_t flags = geometry.wooshCellFlags[cell];
+        if ( flags == 2 ) {
+            RemoveWooshForCell( geometry, cell );
+            continue;
+        }
+        if ( flags != 1 ) {
+            // 0 = out of range, 3 = still in range and already spawned
+            continue;
+        }
+
+        for ( int32_t gridIndex = 0; gridIndex < 2; gridIndex++ ) {
+            for ( MassInstanceImpostor *pImpostor :
+                  geometry.impostorGrids[gridIndex].cells[cell] ) {
+                if ( pImpostor == nullptr || pImpostor->pInstance == nullptr ||
+                     !IsWooshImpostor( pImpostor->pInstance->getHashcode(),
+                                       gridIndex ) ) {
+                    continue;
+                }
+                gpScenaric->addWoosh( pImpostor->SphereAbsPos.head<3>(),
+                                      pImpostor );
+            }
+        }
+
+        for ( Entity *pProp : geometry.dynamicProps.buckets[cell] ) {
+            if ( pProp == nullptr ) {
+                continue;
+            }
+            const eEntityType type = pProp->getType();
+            if ( type != eEntityType::ET__ACT && type != eEntityType::ET_TRLI &&
+                 type != eEntityType::ET_ACTS ) {
+                continue;
+            }
+            gpScenaric->addWoosh( pProp->getModelMatrix().row( 3 ).head<3>(),
+                                  pProp );
+        }
+    }
+}
+
+void StreamingManager::tickWoosh( const float *pListenerXZ,
+                                  float listenerSpeed ) {
+    // FUN_007cbc80
+    if ( gpMngWorld != nullptr && listenerSpeed != kWooshNoListener ) {
+        for ( Sector &sector : sectorManager.sectors ) {
+            if ( sector.state == 1 ) {
+                updateSectorWoosh( sector, pListenerXZ[0], pListenerXZ[1] );
+            }
+        }
+    }
+
+    if ( gpScenaric != nullptr ) {
+        gpScenaric->updateWooshVoices( listenerSpeed );
+    }
 }
 
 static bool ImpostorGatherVisible( Frustum &frustum,

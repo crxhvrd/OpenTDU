@@ -17,6 +17,10 @@ inline static constexpr uint8_t HeightmapMaskForceLOD( uint8_t lod ) {
     return (uint8_t)( lod + 1 );
 }
 
+inline static constexpr int32_t PMITileIndex( int32_t col, int32_t row ) {
+    return ( row + 1 ) * kHeightmapNumRealTile + col + 1;
+}
+
 class HeightmapRenderer {
 public:
     HeightmapRenderer();

@@ -1,7 +1,12 @@
 #include "shared.h"
 #include "gs_scenaric.h"
 
+#include "audio/gs_audio.h"
+#include "audio/implementation/audio_dispatcher_playback.h"
+#include "audio/implementation/ed_audio_sample.h"
 #include "config/gs_config.h"
+#include "filesystem/gs_file.h"
+#include "render/camera/gs_camera.h"
 #include "filesystem/gs_boot_datas.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "game/mng_hud.h"
@@ -26,9 +31,47 @@ GSScenaric gScenaric = {}; // DAT_011f30c0
 // static to save time)
 std::vector<uint64_t> gRemovedSpots; // DAT_010dfe08 / DAT_010e7d24
 bool gbWooshEnabled = false;         // DAT_010e7c30
+bool gbDisplayWooshDebug = true;     // gDisplayWooshDebug
 
 static bool BOOL_010e7c40 = false; // DAT_010e7c40
 static int32_t DAT_010e7c3c = 0;   // DAT_010e7c3c
+
+static constexpr float kWooshSpeedToKmh = 3.6f; // DAT_00f41768
+
+bool IsWooshImpostor( uint64_t instanceHashcode, int32_t gridIndex ) {
+    // FUN_00803340
+    static const char *kVegetationPrefixes[] = {
+        "EL_",   "V_ARBU", "RS_",    "V_CAS",  "V_EUCAL", "V_FIC",  "V_FIR",
+        "V_PAL", "V_PAP",  "V_PLUM", "V_SAMA", "V_SCH",   "V_THES", "V_YOUK" };
+    static const char *kStreetFurniturePrefixes[] = {
+        "EL_",    "RS_",     "SS_PWOR", "SF_TRAV",
+        "ST_STI", "SF_LBOX", "SF_FIR",  "SF_DBIN" };
+
+    const char *pName = reinterpret_cast<const char *>( &instanceHashcode );
+
+    const char *const *ppPrefixes = nullptr;
+    size_t numPrefixes = 0;
+    if ( gridIndex == 0 ) {
+        ppPrefixes = kVegetationPrefixes;
+        numPrefixes =
+            sizeof( kVegetationPrefixes ) / sizeof( kVegetationPrefixes[0] );
+    } else if ( gridIndex == 1 ) {
+        ppPrefixes = kStreetFurniturePrefixes;
+        numPrefixes = sizeof( kStreetFurniturePrefixes ) /
+                      sizeof( kStreetFurniturePrefixes[0] );
+    } else {
+        return false;
+    }
+
+    for ( size_t i = 0; i < numPrefixes; i++ ) {
+        const size_t length = strlen( ppPrefixes[i] );
+        if ( memcmp( pName, ppPrefixes[i], length ) == 0 ) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 bool CinematicPlayer::executeAction( int32_t param_2, void *param_3 ) {
     // FUN_007bd850
@@ -100,8 +143,9 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: IK-offset DB (FUN_008007f0) + Woosh (needs
-                        // GSAudio)
+    OTDU_UNIMPLEMENTED; // TODO: IK-offset DB (FUN_008007f0)
+
+    initWoosh();
 
     introTutorial.initialize( spotList );
 
@@ -123,6 +167,23 @@ void GSScenaric::tick( float totalTime, float deltaTime ) {
     }
 
     OTDU_UNIMPLEMENTED;
+
+    float listenerXZ[2] = { 0.0f, 0.0f };
+    float listenerSpeed = kWooshNoListener;
+    CameraGame *pVehicleCamera =
+        gpCamera != nullptr ? gpCamera->getActiveCamera() : nullptr;
+    if ( localPlayer.getCarState() != nullptr && gpAudio != nullptr &&
+         gpAudio->isListenerSyncedToCamera() && pVehicleCamera != nullptr ) {
+        const Eigen::Vector3f cameraPosition =
+            pVehicleCamera->getWorldPosition();
+        listenerXZ[0] = cameraPosition.x();
+        listenerXZ[1] = cameraPosition.z();
+        listenerSpeed = pVehicleCamera->getVelocity().norm();
+    }
+
+    if ( gpWorld != nullptr && gpWorld->getStreamingManager() != nullptr ) {
+        gpWorld->getStreamingManager()->tickWoosh( listenerXZ, listenerSpeed );
+    }
 
     if ( objectives[1].Type != nullptr && objectives[1].Type[0] != '\0' &&
          objectiveSpotHashcode != 0 ) {
@@ -151,9 +212,198 @@ void GSScenaric::pushObjectivesToCompass( MngHud *pHud ) {
     }
 }
 
+void GSScenaric::initWoosh() {
+    // FUN_00805eb0
+    bOwnsWooshWavData = false;
+    if ( !gbWooshEnabled ) {
+        return;
+    }
+
+    wooshMinSpeed = 80.0f;   // DAT_00f419f0
+    wooshMaxSpeed = 184.0f;  // DAT_00f421e8
+    wooshClipNear = 1.76f;   // DAT_00f421e4
+    wooshClipFar = 12.0f;    // DAT_00f41850
+    wooshRefraction = 0.75f; // DAT_00f416a4
+    wooshDoppler = 1.6f;     // DAT_00f41e84
+
+    std::string wavPath = gpConfig->getResRootPath();
+    wavPath += "scenarics/woosh.wav";
+
+    uint32_t wavSize = 0;
+    if ( gpConfig->bSearchInBootFirst ) {
+        pWooshWavData = gpBootDatas->findInCache( wavPath.c_str(), &wavSize );
+        if ( pWooshWavData == nullptr &&
+             gpFile->loadFile( wavPath.c_str(), &pWooshWavData, &wavSize ) ) {
+            bOwnsWooshWavData = true;
+        }
+    } else {
+        if ( gpFile->loadFile( wavPath.c_str(), &pWooshWavData, &wavSize ) ) {
+            bOwnsWooshWavData = true;
+        } else {
+            pWooshWavData =
+                gpBootDatas->findInCache( wavPath.c_str(), &wavSize );
+        }
+    }
+
+    if ( pWooshWavData != nullptr && wavSize > 0 ) {
+        auto pSample = std::make_unique<edAudioSample>();
+        if ( pSample->loadFromMemory( pWooshWavData, int32_t( wavSize ) ) ) {
+            wooshSample = std::move( pSample );
+        }
+    }
+
+    if ( gpAudio != nullptr ) {
+        pWooshAudioClient = gpAudio->createClient( "ClientWoosh" );
+    }
+
+    if ( wooshSample == nullptr || pWooshAudioClient == nullptr ) {
+        OTDU_LOG_WARN( "Woosh disabled: sample %s, client %s ('%s')\n",
+                       wooshSample != nullptr ? "OK" : "MISSING",
+                       pWooshAudioClient != nullptr ? "OK" : "MISSING",
+                       wavPath.c_str() );
+    }
+}
+
+void GSScenaric::terminateWoosh() {
+    // FUN_00805570
+    if ( !gbWooshEnabled ) {
+        return;
+    }
+
+    for ( WooshVoice &voice : wooshVoices ) {
+        if ( voice.pOwner != nullptr ) {
+            removeWoosh( voice.pOwner );
+        }
+    }
+
+    pWooshAudioClient = nullptr;
+    wooshSample.reset();
+
+    if ( pWooshWavData != nullptr && bOwnsWooshWavData ) {
+        TestDrive::Free( pWooshWavData );
+        pWooshWavData = nullptr;
+    }
+}
+
+bool GSScenaric::addWoosh( const Eigen::Vector3f &position,
+                           const void *pOwner ) {
+    // FUN_00803b70
+    if ( !gbWooshEnabled ) {
+        return false;
+    }
+
+    WooshVoice *pFreeVoice = nullptr;
+    for ( WooshVoice &voice : wooshVoices ) {
+        if ( pFreeVoice == nullptr && voice.pOwner == nullptr ) {
+            pFreeVoice = &voice;
+        }
+        if ( voice.pOwner == pOwner ) {
+            return false; // already wooshing for this object
+        }
+    }
+
+    if ( pFreeVoice == nullptr ) {
+        return false;
+    }
+
+    pFreeVoice->pOwner = pOwner;
+
+    if ( pWooshAudioClient == nullptr || wooshSample == nullptr ) {
+        return true;
+    }
+
+    pFreeVoice->pSound = pWooshAudioClient->acquireSoundInstance();
+    if ( pFreeVoice->pSound == nullptr ) {
+        return true;
+    }
+
+    AudioDispatcherPlaybackSoundInstance *pSound = pFreeVoice->pSound;
+    pSound->setSample( wooshSample.get() );
+    pSound->setLoopCount( -1 );
+    pSound->setClipDistances( wooshClipNear, wooshClipFar );
+    pSound->setPosition( position,
+                         AudioDispatcherPlaybackInstanceValues::ADPCS_World );
+    pSound->setRefractionFactor( wooshRefraction );
+    pSound->setDopplerFactor( wooshDoppler );
+    pSound->setVolume( 0.0f );
+    pSound->play( 0.0f );
+
+    return true;
+}
+
+bool GSScenaric::removeWoosh( const void *pOwner ) {
+    // FUN_00802e10
+    if ( !gbWooshEnabled ) {
+        return false;
+    }
+
+    for ( WooshVoice &voice : wooshVoices ) {
+        if ( voice.pOwner != pOwner ) {
+            continue;
+        }
+
+        voice.pOwner = nullptr;
+        if ( voice.pSound != nullptr ) {
+            voice.pSound->stop( 0.0f );
+            voice.pSound->release();
+            voice.pSound = nullptr;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+void GSScenaric::updateWooshVoices( float listenerSpeed ) {
+    // FUN_00803560
+    if ( !gbWooshEnabled ) {
+        return;
+    }
+
+    // No vehicle camera / no car state
+    if ( listenerSpeed == kWooshNoListener ) {
+        for ( WooshVoice &voice : wooshVoices ) {
+            if ( voice.pOwner != nullptr ) {
+                removeWoosh( voice.pOwner );
+            }
+        }
+        return;
+    }
+
+    const float speedKmh = listenerSpeed * kWooshSpeedToKmh;
+    const float volume = Saturate( ( speedKmh - wooshMinSpeed ) /
+                                   ( wooshMaxSpeed - wooshMinSpeed ) );
+
+    int32_t numActiveVoices = 0;
+    for ( WooshVoice &voice : wooshVoices ) {
+        if ( voice.pOwner == nullptr ) {
+            continue;
+        }
+
+        if ( voice.pSound != nullptr ) {
+            voice.pSound->setVolume( volume );
+
+            if ( gbDisplayWooshDebug ) {
+                voice.pSound->setClipDistances( wooshClipNear, wooshClipFar );
+                voice.pSound->setRefractionFactor( wooshRefraction );
+                voice.pSound->setDopplerFactor( wooshDoppler );
+            }
+        }
+        numActiveVoices++;
+    }
+
+    if ( gbDisplayWooshDebug ) {
+        OTDU_LOG_DEBUG( "Speed:%f\nVolume:%f\nRefractionFactor:%f\n"
+                        "DopplerFactor:%f\n%02d woosh\n",
+                        speedKmh, volume, wooshRefraction, wooshDoppler,
+                        numActiveVoices );
+    }
+}
+
 void GSScenaric::terminate() {
     // FUN_00805c80
     OTDU_UNIMPLEMENTED;
+    terminateWoosh();
     unloadBank( &avatarManager.getBank() );
     unloadBank( &cinematicPackBank );
     unloadBank( &worldScenaricBank );

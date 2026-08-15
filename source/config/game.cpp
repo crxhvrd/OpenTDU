@@ -639,7 +639,7 @@ void GSConfig::registerGameCommands() {
 
     registerCommand( "WOOSHENABLED", [&]( const char *pArg ) {
         // FUN_00984180
-        gbWooshEnabled = ( strncmp( pArg, "ON", strlen( "ON" ) ) == 0 );
+        gbWooshEnabled = atoi( pArg ) != 0;
     } );
 
     registerCommand( "POSTFXENABLED", [&]( const char *pArg ) {

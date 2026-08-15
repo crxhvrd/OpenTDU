@@ -202,11 +202,8 @@ public:
 
     SectorEntityGrid entityGrid;
     DynamicPropStream dynamicProps;
-    // Per-sector impostor (tree/prop billboard) instances. The original code
-    // builds two grids from the .PMI impostor sections (subtypes 10 and 0xd);
-    // the streaming driver walks them each frame and MngImpostor draws the
-    // visible ones.
     ImpostorGrid impostorGrids[2];
+    std::array<uint8_t, ImpostorGrid::kNumCells> wooshCellFlags = {};
     ImpostorRenderSet impostorRenderSet;
     FileCollection3D *pInstanceDefManager = nullptr;
     FileCollection2D *pGroundBitmapCollection = nullptr;
