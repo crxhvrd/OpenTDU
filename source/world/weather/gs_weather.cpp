@@ -83,7 +83,7 @@ void GSWeather::tick( float totalTime, float deltaTime ) {
     if ( !bFreezeTime && bEnabled ) {
         advancedSecs = currentTOD.Minutes * 60.0f + currentTOD.Hours * 3600.0f +
                        currentTOD.Seconds + timeScale * deltaTime;
-        TimeOfDay::toStdUnit( advancedSecs, currentTOD );
+        TimeOfDay::ToStdUnit( advancedSecs, currentTOD );
     }
 
     const int32_t newPeriod = getDayPeriodFromTOD( &currentTOD );
@@ -93,11 +93,8 @@ void GSWeather::tick( float totalTime, float deltaTime ) {
         nextPeriod = 0;
     }
 
-    // FUN_007d10b0(this, nextPeriod, newPeriod, &currentTOD) is a no-op (it
-    // compares the TOD against the period boundaries but every branch
-    // returns without side effects). The original Tick then assigns
-    // DayPeriodInterpolationCoeff = advancedSecs.
-    todInterpolationCoeff = advancedSecs;
+    todInterpolationCoeff = computeDayPeriodInterpolationCoeff(
+        nextPeriod, newPeriod, &currentTOD );
 
     const bool periodChanged = ( newPeriod != currentTimeOfDay );
     if ( periodChanged ) {
@@ -174,24 +171,11 @@ void GSWeather::updateActiveConfig() {
     const int32_t iVar5 = currentTimeOfDay;
     const int32_t iVar7 = ( iVar5 == numPeriods - 1 ) ? 0 : iVar5 + 1;
 
-    const bool bHDR = gpRender->isHDREnabled();
-
-    auto getConfig = [&]( int32_t period ) -> WeatherConfig * {
-        if ( period < 0 || period >= numPeriods )
-            return nullptr;
-        const int32_t idx =
-            bHDR ? pCurrentWeatherDesc->getHDRConfigIndex( period )
-                 : pCurrentWeatherDesc->getSDRConfigIndex( period );
-        if ( idx < 0 || idx >= (int32_t)registeredWeatherConfigs.size() )
-            return nullptr;
-        return registeredWeatherConfigs[idx];
-    };
-
-    WeatherConfig *local_40c = getConfig( iVar5 );
+    WeatherConfig *local_40c = getConfigForDayPeriod( iVar5 );
     if ( local_40c == nullptr )
-        local_40c = getConfig( 0 );
+        local_40c = getConfigForDayPeriod( 0 );
 
-    WeatherConfig *local_408 = getConfig( iVar7 );
+    WeatherConfig *local_408 = getConfigForDayPeriod( iVar7 );
 
     const float local_410 =
         Max( 0.0f, Min( 1.0f, 1.0f - todInterpolationCoeff ) );
@@ -350,6 +334,53 @@ int32_t GSWeather::getDayPeriodFromTOD( const TimeOfDay *pTOD ) const {
     return 0;
 }
 
+WeatherConfig *GSWeather::getConfigForDayPeriod( int32_t period ) const {
+    if ( pCurrentWeatherDesc == nullptr || period < 0 ||
+         period >= pCurrentWeatherDesc->getNumDayPeriods() ) {
+        return nullptr;
+    }
+
+    const int32_t idx = gpRender->isHDREnabled()
+                            ? pCurrentWeatherDesc->getHDRConfigIndex( period )
+                            : pCurrentWeatherDesc->getSDRConfigIndex( period );
+    if ( idx < 0 || idx >= (int32_t)registeredWeatherConfigs.size() ) {
+        return nullptr;
+    }
+
+    return registeredWeatherConfigs[idx];
+}
+
+float GSWeather::computeDayPeriodInterpolationCoeff(
+    int32_t nextPeriod, int32_t currentPeriod, const TimeOfDay *pTOD ) const {
+    // FUN_007d10b0
+    const TimeOfDay *pCurrentStart = &periodsStart[currentPeriod];
+    const TimeOfDay *pNextStart =
+        ( nextPeriod == 0 ) ? &kTimeOfDayMax : &periodsStart[nextPeriod];
+
+    const float todSecs = pTOD->toSeconds();
+
+    const float currentStartSecs = pCurrentStart->toSeconds();
+    if ( currentStartSecs == todSecs ) {
+        return 0.0f;
+    }
+
+    const float nextStartSecs = pNextStart->toSeconds();
+    if ( nextStartSecs == todSecs ) {
+        return 1.0f;
+    }
+
+    const float coeff =
+        ( todSecs - currentStartSecs ) / ( nextStartSecs - currentStartSecs );
+    if ( coeff < 0.0f ) {
+        return 0.0f;
+    }
+    if ( 1.0f < coeff ) {
+        return 1.0f;
+    }
+
+    return coeff;
+}
+
 void GSWeather::computePeriodsStart() {
     const int32_t numPeriods = pCurrentWeatherDesc->getNumDayPeriods();
     if ( numPeriods <= 0 ) {
@@ -359,7 +390,7 @@ void GSWeather::computePeriodsStart() {
 
     // FUN_007d08e0 (inlined)
     TimeOfDay periodDuration;
-    TimeOfDay::toStdUnit( ( kTimeOfDayMax.Hours * 3600.0f +
+    TimeOfDay::ToStdUnit( ( kTimeOfDayMax.Hours * 3600.0f +
                             kTimeOfDayMax.Minutes * 60.0f +
                             kTimeOfDayMax.Seconds ) /
                               numPeriods,
@@ -369,7 +400,7 @@ void GSWeather::computePeriodsStart() {
                                      periodDuration.Minutes * 60.0f +
                                      periodDuration.Seconds;
     for ( int32_t i = 0; i < numPeriods; i++ ) {
-        TimeOfDay::toStdUnit( periodDurationSecs * i, periodsStart[i] );
+        TimeOfDay::ToStdUnit( periodDurationSecs * i, periodsStart[i] );
     }
 }
 
@@ -451,6 +482,22 @@ void GSWeather::drawDebug( float deltaTime ) {
     }
     ImGui::DragFloat( "Time scale", &timeScale, 1.0f, 0.0f, 10000.0f );
 
+    auto applyTimeOfDay = [this]( const TimeOfDay &tod ) {
+        setTime( true, &tod );
+
+        const int32_t periods = ( pCurrentWeatherDesc != nullptr )
+                                    ? pCurrentWeatherDesc->getNumDayPeriods()
+                                    : 0;
+        const int32_t next = ( periods > 0 && currentTimeOfDay == periods - 1 )
+                                 ? 0
+                                 : currentTimeOfDay + 1;
+        todInterpolationCoeff = computeDayPeriodInterpolationCoeff(
+            next, currentTimeOfDay, &currentTOD );
+
+        bDirtyConfig = true;
+        updateActiveConfig();
+    };
+
     int32_t hms[3] = { (int32_t)currentTOD.Hours, (int32_t)currentTOD.Minutes,
                        (int32_t)currentTOD.Seconds };
     bool bTimeChanged = false;
@@ -459,9 +506,76 @@ void GSWeather::drawDebug( float deltaTime ) {
     bTimeChanged |= ImGui::SliderInt( "Seconds", &hms[2], 0, 59 );
     if ( bTimeChanged ) {
         const TimeOfDay tod = { (float)hms[0], (float)hms[1], (float)hms[2] };
-        setTime( true, &tod );
+        applyTimeOfDay( tod );
     }
     ImGui::Text( "Active day period: %d", currentTimeOfDay );
+
+    ImGui::SeparatorText( "Day period blend" );
+    const int32_t numPeriods = ( pCurrentWeatherDesc != nullptr )
+                                   ? pCurrentWeatherDesc->getNumDayPeriods()
+                                   : 0;
+    if ( numPeriods <= 0 ) {
+        ImGui::TextDisabled( "No weather desc is active." );
+    } else {
+        const int32_t nextPeriod =
+            ( currentTimeOfDay == numPeriods - 1 ) ? 0 : currentTimeOfDay + 1;
+
+        WeatherConfig *pCurrentConfig =
+            getConfigForDayPeriod( currentTimeOfDay );
+        if ( pCurrentConfig == nullptr ) {
+            pCurrentConfig = getConfigForDayPeriod( 0 );
+        }
+        WeatherConfig *pNextConfig = getConfigForDayPeriod( nextPeriod );
+
+        const float currentWeight =
+            Max( 0.0f, Min( 1.0f, 1.0f - todInterpolationCoeff ) );
+
+        ImGui::Text( "Coeff (t) : %.5f", todInterpolationCoeff );
+        ImGui::Text( "%-32s x %.5f",
+                     pCurrentConfig != nullptr
+                         ? pCurrentConfig->getName().c_str()
+                         : "<none>",
+                     currentWeight );
+        ImGui::Text( "%-32s x %.5f",
+                     pNextConfig != nullptr ? pNextConfig->getName().c_str()
+                                            : "<none>",
+                     1.0f - currentWeight );
+
+        const TimeOfDay &periodStart = periodsStart[currentTimeOfDay];
+        const TimeOfDay &periodEnd =
+            ( nextPeriod == 0 ) ? kTimeOfDayMax : periodsStart[nextPeriod];
+        ImGui::Text( "Period %d spans %02d:%02d:%02d -> %02d:%02d:%02d",
+                     currentTimeOfDay, (int32_t)periodStart.Hours,
+                     (int32_t)periodStart.Minutes, (int32_t)periodStart.Seconds,
+                     (int32_t)periodEnd.Hours, (int32_t)periodEnd.Minutes,
+                     (int32_t)periodEnd.Seconds );
+
+        static float targetCoeff = 0.0f;
+        ImGui::DragFloat( "Target t", &targetCoeff, 0.001f, 0.0f, 1.0f,
+                          "%.5f" );
+        ImGui::SameLine();
+        if ( ImGui::Button( "Go to t" ) ) {
+            const float startSecs = periodStart.toSeconds();
+            const float endSecs = periodEnd.toSeconds();
+            TimeOfDay tod;
+            TimeOfDay::ToStdUnit(
+                startSecs + targetCoeff * ( endSecs - startSecs ), tod );
+            applyTimeOfDay( tod );
+        }
+
+        const Eigen::Vector3f sunDir = activeWeatherConfig.getSunDirection();
+        const Eigen::Vector3f sunDirRandomized =
+            activeRandomizedWeatherConfig.getSunDirection();
+        ImGui::Text( "SUNDIR working   : %.6f %.6f %.6f (%.2f deg)", sunDir.x(),
+                     sunDir.y(), sunDir.z(),
+                     -asinf( Max( -1.0f, Min( 1.0f, sunDir.y() ) ) ) *
+                         57.29578f );
+        ImGui::Text( "SUNDIR random : %.6f %.6f %.6f", sunDirRandomized.x(),
+                     sunDirRandomized.y(), sunDirRandomized.z() );
+        ImGui::Text( "HEIGHTMAPCONTRAST: %.6f working / %.6f random",
+                     activeWeatherConfig.getTerrainContrast(),
+                     activeRandomizedWeatherConfig.getTerrainContrast() );
+    }
 
     ImGui::SeparatorText( "Sky dome 2DB override" );
     if ( gpMngBackground == nullptr ) {

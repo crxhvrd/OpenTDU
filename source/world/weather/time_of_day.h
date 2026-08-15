@@ -5,8 +5,12 @@ struct TimeOfDay {
     float Minutes = 0.0f;
     float Seconds = 0.0f;
 
-    // FUN_007d0610 — converts total game-seconds to H:M:S, wrapping at 24 h
-    static void toStdUnit( float totalSeconds, TimeOfDay &out ) {
+    inline float toSeconds() const {
+        return Minutes * 60.0f + Hours * 3600.0f + Seconds;
+    }
+
+    static void ToStdUnit( float totalSeconds, TimeOfDay &out ) {
+        // FUN_007d0610
         totalSeconds = fmodf( totalSeconds, 86400.0f );
         if ( totalSeconds < 0.0f )
             totalSeconds += 86400.0f;

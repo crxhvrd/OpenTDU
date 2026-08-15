@@ -118,6 +118,10 @@ private:
     UpdateHDRConfigCallback pUpdateHDRConfigCallback;
 
     int32_t getDayPeriodFromTOD( const TimeOfDay *pTOD ) const;
+    float computeDayPeriodInterpolationCoeff( int32_t nextPeriod,
+                                              int32_t currentPeriod,
+                                              const TimeOfDay *pTOD ) const;
+    WeatherConfig *getConfigForDayPeriod( int32_t period ) const;
     void computePeriodsStart();
 };
 
