@@ -35,8 +35,8 @@ static constexpr int32_t kMaterialRemap[48] = {
     22,                           // 47 Default  -> rejected
 };
 
-// How long a slot may live once its layers report done.
-static constexpr float kSlotLingerTime = 3.0f; // DAT_00f4175c
+// How long a looping slot may live once no contact refreshes it anymore.
+static constexpr float kSlotLingerTime = 0.4f; // DAT_00f4175c
 
 inline const SFXChunkHeader *ChunkAt( const void *pBase, int32_t offset ) {
     return reinterpret_cast<const SFXChunkHeader *>(
@@ -335,7 +335,7 @@ void GSPhysicsFX::stopAllEffects() {
             layer.bActive = false;
             layer.pRecord = nullptr;
         }
-        slot.bInUse = false;
+        slot.State = FXSS_Free;
         slot.bRefreshedThisFrame = false;
         slot.Timer = 0.0f;
     }
@@ -403,7 +403,7 @@ GSPhysicsFX::FXSlot *
 GSPhysicsFX::findActiveSlot( const PhysicsFXEvent &event ) {
     // FUN_007ca660
     for ( FXSlot &slot : slots ) {
-        if ( !slot.bInUse || slot.Event.Kind != event.Kind ) {
+        if ( slot.State == FXSS_Free || slot.Event.Kind != event.Kind ) {
             continue;
         }
         const PhysicsFXEvent &queued = slot.Event;
@@ -422,7 +422,7 @@ GSPhysicsFX::findActiveSlot( const PhysicsFXEvent &event ) {
 GSPhysicsFX::FXSlot *GSPhysicsFX::acquireSlot() {
     // FUN_007ca720
     for ( FXSlot &slot : slots ) {
-        if ( !slot.bInUse ) {
+        if ( slot.State == FXSS_Free ) {
             return &slot;
         }
     }
@@ -567,7 +567,7 @@ void GSPhysicsFX::startEffect( const PhysicsFXEvent &event ) {
         pSample = NextSibling( pSample );
     }
 
-    pSlot->bInUse = true;
+    pSlot->State = FXSS_Playing;
     pSlot->Event = event;
     pSlot->bRefreshedThisFrame = true;
     pSlot->Timer = 0.0f;
@@ -598,9 +598,34 @@ void GSPhysicsFX::reapLayer( FXLayer &layer ) {
     layer.pRecord = nullptr;
 }
 
+void GSPhysicsFX::ReleaseLayer( FXLayer &layer ) {
+    // FUN_007ca790
+    for ( ParticleInstance *&pInstance : layer.pParticles ) {
+        if ( pInstance != nullptr ) {
+            pInstance->State = eParticleState::PS_Killed;
+            pInstance->stop();
+            pInstance = nullptr;
+        }
+    }
+
+    if ( layer.pSound != nullptr ) {
+        layer.pSound->setLoopCount( 0 );
+        layer.pSound->stop();
+    }
+}
+
+void GSPhysicsFX::ReleaseSlot( FXSlot &slot ) {
+    // FUN_0042a830
+    for ( FXLayer &layer : slot.Layers ) {
+        ReleaseLayer( layer );
+    }
+    slot.State = FXSS_Releasing;
+    slot.bRefreshedThisFrame = false;
+}
+
 void GSPhysicsFX::updateSlot( FXSlot &slot, float deltaTime ) {
     // FUN_007caf20
-    if ( !slot.bInUse ) {
+    if ( slot.State == FXSS_Free ) {
         return;
     }
 
@@ -648,36 +673,22 @@ void GSPhysicsFX::updateSlot( FXSlot &slot, float deltaTime ) {
     }
 
     if ( !slot.Layers[0].bActive && !slot.Layers[1].bActive ) {
-        slot.bInUse = false;
+        slot.State = FXSS_Free;
         slot.bRefreshedThisFrame = false;
-        slot.Timer = 0.0f;
         return;
     }
 
-    slot.Timer += deltaTime;
-    if ( slot.Timer >= kSlotLingerTime ) {
-        const bool bAllDone = ( slot.Layers[0].pSound == nullptr ||
-                                slot.Layers[0].pSound->isStopped() ) &&
-                              ( slot.Layers[1].pSound == nullptr ||
-                                slot.Layers[1].pSound->isStopped() );
-        if ( bAllDone ) {
-            for ( FXLayer &layer : slot.Layers ) {
-                if ( layer.pSound != nullptr ) {
-                    layer.pSound->stop();
-                    layer.pSound->release();
-                    layer.pSound = nullptr;
-                }
-                for ( ParticleInstance *&pInstance : layer.pParticles ) {
-                    if ( pInstance != nullptr ) {
-                        pInstance->State = eParticleState::PS_Killed;
-                        pInstance->stop();
-                        pInstance = nullptr;
-                    }
-                }
-                layer.bActive = false;
-                layer.pRecord = nullptr;
+    if ( slot.State == FXSS_Playing ) {
+        slot.Timer += deltaTime;
+        if ( slot.Timer >= kSlotLingerTime ) {
+            const bool bAllLooping = ( slot.Layers[0].pSound == nullptr ||
+                                       slot.Layers[0].pSound->isLooping() ) &&
+                                     ( slot.Layers[1].pSound == nullptr ||
+                                       slot.Layers[1].pSound->isLooping() );
+            if ( bAllLooping ) {
+                ReleaseSlot( slot );
+                return;
             }
-            slot.bInUse = false;
         }
     }
 
@@ -693,7 +704,7 @@ void GSPhysicsFX::drawDebug( float ) {
 
     int32_t activeSlots = 0;
     for ( const FXSlot &slot : slots ) {
-        activeSlots += slot.bInUse ? 1 : 0;
+        activeSlots += ( slot.State != FXSS_Free ) ? 1 : 0;
     }
     ImGui::Text( "Active slots   : %d / %d", activeSlots, kNumSlots );
 
@@ -703,12 +714,14 @@ void GSPhysicsFX::drawDebug( float ) {
     if ( ImGui::TreeNode( "Slots" ) ) {
         for ( int32_t i = 0; i < kNumSlots; i++ ) {
             const FXSlot &slot = slots[i];
-            if ( !slot.bInUse ) {
+            if ( slot.State == FXSS_Free ) {
                 continue;
             }
-            ImGui::Text( "%2d  mat %2d/%-2d kind %d  E=%6.2f  t=%.2f", i,
+            ImGui::Text( "%2d  mat %2d/%-2d kind %d  E=%6.2f  t=%.2f  %s", i,
                          slot.Event.FXMaterialA, slot.Event.FXMaterialB,
-                         slot.Event.Kind, slot.Event.Energy, slot.Timer );
+                         slot.Event.Kind, slot.Event.Energy, slot.Timer,
+                         ( slot.State == FXSS_Releasing ) ? "releasing"
+                                                          : "playing" );
         }
         ImGui::TreePop();
     }
@@ -735,6 +748,11 @@ void GSPhysicsFX::tick( float, float deltaTime ) {
         FXSlot *pSlot = findActiveSlot( event );
         if ( pSlot == nullptr ) {
             startEffect( event );
+            continue;
+        }
+
+        // A slot that is being torn down is left alone.
+        if ( pSlot->State != FXSS_Playing ) {
             continue;
         }
 

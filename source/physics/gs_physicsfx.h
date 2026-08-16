@@ -130,12 +130,18 @@ private:
         const SFXSampleRecord *pRecord = nullptr;
     };
 
+    enum eFXSlotState : int32_t {
+        FXSS_Free = 0,
+        FXSS_Playing = 1,
+        FXSS_Releasing = 2,
+    };
+
     struct FXSlot {
         PhysicsFXEvent Event;
         std::array<FXLayer, kNumLayersPerSlot> Layers;
         float Timer = 0.0f;
         bool bRefreshedThisFrame = false;
-        bool bInUse = false;
+        int32_t State = FXSS_Free;
     };
 
 private:
@@ -158,6 +164,9 @@ private:
     void startEffect( const PhysicsFXEvent &event );
     void updateSlot( FXSlot &slot, float deltaTime );
     void reapLayer( FXLayer &layer );
+
+    static void ReleaseLayer( FXLayer &layer );
+    static void ReleaseSlot( FXSlot &slot );
 
     const edAudioSample *resolveSample( const void *pWaveData );
 
