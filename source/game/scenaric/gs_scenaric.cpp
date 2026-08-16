@@ -185,6 +185,8 @@ void GSScenaric::tick( float totalTime, float deltaTime ) {
         gpWorld->getStreamingManager()->tickWoosh( listenerXZ, listenerSpeed );
     }
 
+    avatarManager.tick( deltaTime );
+
     if ( objectives[1].Type != nullptr && objectives[1].Type[0] != '\0' &&
          objectiveSpotHashcode != 0 ) {
         SpotSector *pSector = spotList.getSpotSector( objectiveSpotHashcode );
@@ -505,7 +507,7 @@ void GSScenaric::draw( float deltaTime ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    avatarManager.draw();
 }
 
 void GSScenaric::pause() {

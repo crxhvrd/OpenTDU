@@ -93,6 +93,7 @@ public:
     inline eEntityType getType() const {
         return pDesc != nullptr ? pDesc->Type : eEntityType::ET_None;
     }
+    inline bool isShifted() const { return bShifted != 0; }
     inline const std::string &getInstanceName() const { return name; }
     inline Entity *getParent() const { return pParent; }
     inline GameMechanism *getMechanism() const { return pMechanism; }

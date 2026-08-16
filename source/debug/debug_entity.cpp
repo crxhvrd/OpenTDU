@@ -12,6 +12,8 @@
 #include "game/cinematic/cin_res_collection.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/entity/entity_pedestrian.h"
+#include "game/scenaric/entity/entity_avatar.h"
+#include "game/scenaric/avatar_manager.h"
 #include "game/scenaric/entity/entity_life_set.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/base_entity.h"
@@ -716,6 +718,48 @@ namespace {
                          (void *)pInst, best );
     }
 
+    // The avatar the manager holds for the debug button below.
+    EntityAvatar *gpDebugAvatar = nullptr;
+
+    // Claim a manager slot the way GSScenaric::reset does for the driver, and
+    // drop it at the camera target. AvatarManager::tick/draw own it from there,
+    // so this is the manual stand-in for the service reset the port has yet to
+    // dispatch — without it no avatar is ever allocated outside a cinematic.
+    void spawnManagedAvatar( const int32_t avatarType ) {
+        if ( gpScenaric == nullptr ) {
+            return;
+        }
+
+        EntityAvatar *pAvatar =
+            gpScenaric->getAvatarManager().allocateAvatar( ~0ull, avatarType );
+        if ( pAvatar == nullptr ) {
+            OTDU_LOG_ALWAYS( "[AVT-DBG] allocateAvatar(type=%d) failed "
+                             "(avatarsdriver template missing?)\n",
+                             avatarType );
+            return;
+        }
+
+        if ( gpCamera != nullptr ) {
+            const Eigen::Vector3f at = gpCamera->getRenderCamera()->getTarget();
+            Matrix4x4f_t m = Matrix4x4f_t::Identity();
+            m.row( 3 ) = Eigen::Vector4f( at.x(), at.y(), at.z(), 1.0f );
+            pAvatar->setTransform( m, true ); // absolute / unshifted
+        }
+
+        gpDebugAvatar = pAvatar;
+        OTDU_LOG_ALWAYS( "[AVT-DBG] avatar=%p type=%d lod=%d\n",
+                         (void *)pAvatar, avatarType,
+                         pAvatar->chooseLODLevel() );
+    }
+
+    void releaseManagedAvatar() {
+        if ( gpScenaric == nullptr || gpDebugAvatar == nullptr ) {
+            return;
+        }
+        gpScenaric->getAvatarManager().releaseAvatar( gpDebugAvatar );
+        gpDebugAvatar = nullptr;
+    }
+
     // Tracks the live ET_LSET instance so it can be stopped and replaced.
     struct LiveLifeSet {
         EntityLifeSet *pInstance = nullptr;
@@ -1214,6 +1258,29 @@ namespace TestDrive {
         ImGui::SameLine();
         if ( ImGui::Button( "Animate existing pedestrians" ) ) {
             animateExistingPedestrians();
+        }
+
+        // --- Managed avatars (AvatarManager tick/draw) ---------------------
+        ImGui::SeparatorText( "Avatar (AvatarManager)" );
+        ImGui::TextWrapped(
+            "Allocate an avatar into an AvatarManager slot and drop it at the "
+            "camera target. GSScenaric::tick/draw then run the manager's "
+            "staggered animation schedule and submit it. The body is still the "
+            "avatarsdriver template mesh: the baked GSAvatar resource "
+            "(clothes/skin/body) is not ported yet." );
+        if ( ImGui::Button( "Spawn driver avatar" ) ) {
+            spawnManagedAvatar( 1 );
+        }
+        ImGui::SameLine();
+        if ( ImGui::Button( "Spawn hostess avatar" ) ) {
+            spawnManagedAvatar( 7 );
+        }
+        if ( gpDebugAvatar != nullptr ) {
+            ImGui::SameLine();
+            if ( ImGui::Button( "Release##avatar" ) ) {
+                releaseManagedAvatar();
+            }
+            ImGui::Text( "Live avatar=%p", (void *)gpDebugAvatar );
         }
 
         // --- Life set instantiation + auto-play ----------------------------

@@ -4,6 +4,9 @@
 #include "game/game_mechanism.h"
 #include "game/vehicle/mng_car_alpha.h"
 #include "world/gs_world_streaming.h"
+#include "render/gs_render.h"
+#include "render/camera/gs_camera.h"
+#include "render/camera/camera_game.h"
 
 // Binds the playing cinematic interface onto the avatar.
 static constexpr FlashMessage kAvatarOverlap = FlashMessage( 0x706c766f );
@@ -171,8 +174,16 @@ void EntityAvatar::unknownActorFunc() {
 
 int32_t EntityAvatar::getRenderSceneID() {
     // FUN_007f7570
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
-    return eRenderPass::RP_Near;
+    eRenderPass renderPass = eRenderPass::RP_Near;
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+
+    if ( AlphaSceneSlot != -1 && gpMngCarAlpha != nullptr ) {
+        renderPass = gpMngCarAlpha->bindAndGetRenderPassForAlpha(
+            renderPass, static_cast<uint32_t>( AlphaSceneSlot ) );
+    }
+
+    return renderPass;
 }
 
 void EntityAvatar::setHeadVisible( bool bVisible ) {
@@ -205,8 +216,26 @@ void EntityAvatar::getLightingFactor( Eigen::Vector4f &outFactor ) {
 
 int32_t EntityAvatar::chooseLODLevel() {
     // FUN_007f7d10
-    OTDU_UNIMPLEMENTED;
-    return 2;
+    CameraGame *pCamera =
+        gpCamera != nullptr ? gpCamera->getActiveCamera() : nullptr;
+    if ( pCamera == nullptr ) {
+        return 0;
+    }
+
+    const Eigen::Vector3f cameraPosition =
+        bShifted ? pCamera->getWorldPositionOffset()
+                 : pCamera->getWorldPosition();
+    const Eigen::Vector3f delta =
+        modelMatrix.row( 3 ).head<3>().transpose() - cameraPosition;
+
+    const float distance = delta.norm() * pCamera->getTanHalfFov();
+    for ( int32_t lodLevel = 0; lodLevel < 3; lodLevel++ ) {
+        if ( LODDistances[lodLevel] < distance ) {
+            return lodLevel;
+        }
+    }
+
+    return 0;
 }
 
 void EntityAvatar::onSkeletonChange( void *pSkeleton ) {

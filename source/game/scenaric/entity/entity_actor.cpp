@@ -207,9 +207,22 @@ void EntityActor::tick() {
     }
 
     if ( animation.isValid() ) {
-        const float dt =
-            ( gpTimer != nullptr ) ? gpTimer->GameDeltaTime : ( 1.0f / 60.0f );
-        animation.update( dt );
+        if ( ( flags & 8 ) == 0 ) {
+            DeltaTime += ( gpTimer != nullptr ) ? gpTimer->GameDeltaTime
+                                                : ( 1.0f / 60.0f );
+
+            if ( bRefreshAnimationThisFrame ) {
+                animation.update( DeltaTime );
+                DeltaTime = 0.0f;
+            }
+        } else {
+            animation.update( 0.0f );
+        }
+
+        Matrix4x4f_t *pPalette = animation.getPalette();
+        if ( pPalette != nullptr ) {
+            BindBones( Model, pPalette );
+        }
     }
 }
 

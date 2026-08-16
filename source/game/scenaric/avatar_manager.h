@@ -13,6 +13,8 @@ public:
     ~AvatarManager();
 
     void initialize();
+    void tick( const float deltaTime );
+    void draw();
     void releaseAllAvatars();
 
     EntityAvatar *allocateAvatar( const uint64_t hashcode, const int32_t type );
@@ -37,7 +39,7 @@ private:
     std::array<uint32_t, kMaxAvatars> animFrameStart;
 
     uint32_t currentFrameIndex;
-    bool bForceAvatarReskin;
+    bool bIsFullUpdate;
     bool bUnknownBoolean;
 
 private:

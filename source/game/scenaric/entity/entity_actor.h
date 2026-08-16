@@ -9,6 +9,11 @@ public:
     const char *GetName() override { return "Actor"; /* FUN_00423f40 */ }
 
 public:
+    inline void setRefreshAnimation( const bool bState ) {
+        bRefreshAnimationThisFrame = bState;
+    }
+
+public:
     EntityActor();
     ~EntityActor();
 

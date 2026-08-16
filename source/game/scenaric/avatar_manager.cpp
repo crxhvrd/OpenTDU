@@ -4,11 +4,22 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/entity/entity_factory.h"
+#include "render/gs_render.h"
+#include "render/camera/gs_camera.h"
+#include "render/camera/camera_game.h"
+
+static constexpr float kFreeSlotSortKey = 3.0e38f;        // DAT_00f41bd4
+static constexpr float kNonPlayerAvatarSortKey = FLT_MAX; // DAT_00f4171c
+
+struct AvatarRank {
+    int32_t SlotIndex;
+    float SortKey;
+};
 
 AvatarManager::AvatarManager()
     : avatarBank(),
       currentFrameIndex( 0 ),
-      bForceAvatarReskin( false ),
+      bIsFullUpdate( false ),
       bUnknownBoolean( false ) {
     // FUN_007f5e10
     animFrameIndex[1] = 2;
@@ -37,6 +48,86 @@ void AvatarManager::initialize() {
     // FUN_007f6440
     GSScenaric::LoadScenaricBank( "scenarics/Avatars", "avatarsdriver",
                                   &avatarBank );
+}
+
+void AvatarManager::tick( const float deltaTime ) {
+    // FUN_007f5a30
+    currentFrameIndex++;
+
+    if ( !bIsFullUpdate ) {
+        CameraGame *pCamera =
+            gpCamera != nullptr ? gpCamera->getDefaultCamera() : nullptr;
+
+        std::array<AvatarRank, kMaxAvatars> ranks;
+        for ( int32_t i = 0; i < kMaxAvatars; i++ ) {
+            const PlayerAvatar &slot = playerAvatars[i];
+            ranks[i].SlotIndex = i;
+
+            if ( slot.ReferenceCount < 1 || slot.pAvatar == nullptr ) {
+                ranks[i].SortKey = kFreeSlotSortKey;
+                continue;
+            }
+
+            if ( slot.pAvatar->getType() != eEntityType::ET_AVPL ||
+                 pCamera == nullptr ) {
+                ranks[i].SortKey = kNonPlayerAvatarSortKey;
+                continue;
+            }
+
+            const Eigen::Vector3f cameraPosition =
+                slot.pAvatar->isShifted() ? pCamera->getWorldPositionOffset()
+                                          : pCamera->getWorldPosition();
+            const Eigen::Vector3f delta =
+                cameraPosition -
+                slot.pAvatar->getModelMatrix().row( 3 ).head<3>().transpose();
+            ranks[i].SortKey = delta.squaredNorm();
+        }
+
+        std::sort( ranks.begin(), ranks.end(),
+                   []( const AvatarRank &lhs, const AvatarRank &rhs ) {
+                       return lhs.SortKey < rhs.SortKey;
+                   } );
+
+        for ( int32_t rank = 0; rank < kMaxAvatars; rank++ ) {
+            EntityAvatar *pAvatar =
+                playerAvatars[ranks[rank].SlotIndex].pAvatar;
+            if ( pAvatar == nullptr ) {
+                continue;
+            }
+
+            pAvatar->setRefreshAnimation(
+                ( ( animFrameStart[rank] + currentFrameIndex ) %
+                  animFrameIndex[rank] ) == 0 );
+        }
+    } else {
+        for ( PlayerAvatar &slot : playerAvatars ) {
+            if ( slot.ReferenceCount > 0 && slot.pAvatar != nullptr ) {
+                slot.pAvatar->setRefreshAnimation( true );
+            }
+        }
+    }
+
+    (void)deltaTime;
+
+    for ( PlayerAvatar &slot : playerAvatars ) {
+        if ( slot.ReferenceCount > 0 && slot.pAvatar != nullptr ) {
+            slot.pAvatar->tick();
+        }
+    }
+}
+
+void AvatarManager::draw() {
+    // FUN_007f59c0
+    for ( PlayerAvatar &slot : playerAvatars ) {
+        if ( slot.ReferenceCount < 1 || slot.pAvatar == nullptr ) {
+            continue;
+        }
+
+        const eRenderPass renderPass =
+            static_cast<eRenderPass>( slot.pAvatar->getRenderSceneID() );
+        slot.pAvatar->draw(
+            gpRender->getRenderPassAtIndex( renderPass ).pScene );
+    }
 }
 
 EntityAvatar *AvatarManager::allocateAvatar( const uint64_t hashcode,
@@ -147,11 +238,21 @@ EntityAvatar *AvatarManager::createAvatarInstance( int32_t type ) {
     // FUN_007f60d0
     eEntityType classID;
     switch ( type ) {
-    case 5: classID = eEntityType::ET_AVSG; break;
-    case 7: classID = eEntityType::ET_AVHI; break;
-    case 8: classID = eEntityType::ET_AVCO; break;
-    case 9: classID = eEntityType::ET_AVTR; break;
-    default: classID = eEntityType::ET_AVPL; break;
+    case 5:
+        classID = eEntityType::ET_AVSG;
+        break;
+    case 7:
+        classID = eEntityType::ET_AVHI;
+        break;
+    case 8:
+        classID = eEntityType::ET_AVCO;
+        break;
+    case 9:
+        classID = eEntityType::ET_AVTR;
+        break;
+    default:
+        classID = eEntityType::ET_AVPL;
+        break;
     }
 
     Entity *pTemplate = avatarBank.getFirst( classID );
