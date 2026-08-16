@@ -3,8 +3,12 @@
 
 #include "havok/havok_to_jolt.h"
 
-void PhysFactory::initialize( HavokFactoryData *pData ) {
+void PhysFactory::initialize( HavokFactoryData *pData,
+                              uint64_t factoryHashcode,
+                              const void *pBlob ) {
     pHavokData = pData;
+    hashcode = factoryHashcode;
+    pFileHK = pBlob;
     bInitialized = true;
 }
 
@@ -14,5 +18,7 @@ void PhysFactory::reset() {
     // only free the reconstructed template and mark the slot free.
     delete pHavokData;
     pHavokData = nullptr;
+    pFileHK = nullptr;
+    hashcode = 0;
     bInitialized = false;
 }

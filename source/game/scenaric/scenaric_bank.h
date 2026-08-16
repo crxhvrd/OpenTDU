@@ -193,6 +193,7 @@ protected:
 
 private:
     void loadContent();
+    void installStaticPhysics( void *pBlob, uint32_t blobSize );
     bool streamFromFile();
     void instanciateContainer( BinaryArray &container );
     void prepareTemplates( BinaryArray &container );

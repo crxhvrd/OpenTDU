@@ -691,8 +691,30 @@ void ScenaricBank::destroy() {
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC
 }
 
+void ScenaricBank::installStaticPhysics( void *pBlob, uint32_t blobSize ) {
+    // FUN_007daf50
+    if ( gpPhysics == nullptr ) {
+        return;
+    }
+
+    const uint64_t factoryHashcode =
+        ( pSpotSector != nullptr ) ? pSpotSector->Hashcode : hashcode;
+
+    if ( bTransform ) {
+        const Matrix4x4f_t transform = bankTransform;
+        pPhysicsFactoryStatic = gpPhysics->installStaticCollision(
+            pBlob, blobSize, factoryHashcode, &transform );
+    } else {
+        pPhysicsFactoryStatic = gpPhysics->installStaticCollision(
+            pBlob, blobSize, factoryHashcode, nullptr );
+    }
+}
+
 void ScenaricBank::terminate() {
     // FUN_007d9fd0
+    if ( gpPhysics != nullptr ) {
+        gpPhysics->cancelPendingPropFactory( &pPhysicsFactoryDynamic );
+    }
     if ( pPhysicsFactoryDynamic != nullptr ) {
         gpPhysics->removeAndDestroyFactory( pPhysicsFactoryDynamic );
         pPhysicsFactoryDynamic = nullptr;
@@ -784,9 +806,12 @@ void ScenaricBank::loadContent() {
         bank.getEntry( i, entry );
 
         if ( entry.Type == 0 ) {
-            if ( !bIsSpotBank && entry.SubType == 0xc &&
-                 gpPhysics != nullptr ) {
-                gpPhysics->queuePropCollisionFactory( entry.pData, entry.Size );
+            if ( entry.SubType == 0xb ) {
+                installStaticPhysics( entry.pData, entry.Size );
+            } else if ( !bIsSpotBank && entry.SubType == 0xc &&
+                        gpPhysics != nullptr ) {
+                gpPhysics->queuePropCollisionFactory( entry.pData, entry.Size,
+                                                      &pPhysicsFactoryDynamic );
             }
             continue;
         }

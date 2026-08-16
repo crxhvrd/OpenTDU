@@ -110,7 +110,7 @@ public:
         bHavokDebugEnabled = bState;
     }
     inline void setDebugDrawEnabled( bool bState ) { bDrawDebugInfos = bState; }
-    inline bool isPropFactoryReady() const { return pPropFactory != nullptr; }
+    inline bool isPropFactoryReady() const { return !propFactories.empty(); }
 
     inline int32_t getNumTireProfiles() const { return numTires; }
     inline const TirePacejka *getTireProfile( int32_t index ) const {
@@ -155,13 +155,16 @@ public:
     void removeSectorCollision( const void *pKey );
     void
     addSectorRoadGround( const void *pKey, void *pBlob, uint32_t blobSize );
-    void addSpotCollision( const void *pKey,
-                           void *pBlob,
-                           uint32_t blobSize,
-                           float angleY,
-                           const Eigen::Vector3f &translation );
 
-    void queuePropCollisionFactory( const void *pBlob, uint32_t blobSize );
+    PhysFactory *installStaticCollision( void *pBlob,
+                                         uint32_t blobSize,
+                                         uint64_t factoryHashcode,
+                                         const Matrix4x4f_t *pTransform );
+
+    void queuePropCollisionFactory( const void *pBlob,
+                                    uint32_t blobSize,
+                                    PhysFactory **ppOwnerSlot = nullptr );
+    void cancelPendingPropFactory( PhysFactory **ppOwnerSlot );
     void queueSceneryCollisionFactory( const void *pBlob, uint32_t blobSize );
 
     void placeSceneryInstance(
@@ -319,8 +322,12 @@ private:
     };
     std::array<PhysicsHeightfield, kNumHeightfields> pHeightfields;
 
-    std::vector<uint8_t> pendingPropBlob;
-    PhysFactory *pPropFactory = nullptr;
+    struct PendingPropFactory {
+        std::vector<uint8_t> Blob;
+        PhysFactory **ppOwnerSlot = nullptr;
+    };
+    std::vector<PendingPropFactory> pendingPropFactories;
+    std::vector<PhysFactory *> propFactories;
 
     std::vector<uint8_t> pendingSceneryBlob;
     PhysFactory *pSceneryFactory = nullptr;

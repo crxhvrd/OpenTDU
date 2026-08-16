@@ -1233,8 +1233,14 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
 
     const float kMmToM = 0.001f;
     const float kConvexRadius = 0.05f; // FLOAT_00f41778
+    const float rideHeightFrontMM =
+        (float)( db.RideHeightFront > 0 ? db.RideHeightFront : 130 );
+    const float rideHeightFrontM = rideHeightFrontMM * kMmToM;
+    const float bodyHeightM =
+        ( ( db.Height > 0 ? db.Height : 1300 ) - rideHeightFrontMM - 100.0f ) *
+        kMmToM;
     const float halfW = ( db.Width > 0 ? db.Width : 1800 ) * 0.5f * kMmToM;
-    const float halfH = ( db.Height > 0 ? db.Height : 1300 ) * 0.5f * kMmToM;
+    const float halfH = bodyHeightM * 0.5f;
     const float halfL = ( db.Length > 0 ? db.Length : 4000 ) * 0.5f * kMmToM;
 
     JPH::ShapeSettings::ShapeResult shapeResult;
@@ -1247,38 +1253,19 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         }
         shapeResult = compound.Create();
     } else {
-        const JPH::Vec3 halfExtents( Max( 0.10f, halfW - 0.05f ),
-                                     Max( 0.10f, halfH - 0.15f ),
-                                     Max( 0.10f, halfL - 0.55f ) );
+        const JPH::Vec3 halfExtents( Max( 0.10f, halfW ), Max( 0.10f, halfH ),
+                                     Max( 0.10f, halfL ) );
         JPH::BoxShapeSettings box( halfExtents, kConvexRadius );
         shapeResult = box.Create();
     }
     if ( !shapeResult.IsValid() ) {
         return nullptr;
     }
-    const float bodyHeightM = ( db.Height > 0 ? db.Height : 1300 ) * 0.001f;
-    const float bodyHalfHeight = bodyHeightM * 0.5f;
-    const float gravHeightFrac =
-        db.GravityCenterHeight > 0 ? db.GravityCenterHeight * 0.01f : 0.40f;
-    const float gcHeight = JPH::Clamp(
-        ( 1.0f - gravHeightFrac ) * 0.5f * bodyHeightM, 0.15f, 0.60f );
-    const PhysicsVehicle::SuspensionSetup comFrontSusp =
-        PhysicsVehicle::ComputeAxleSuspension( db, true );
-    const PhysicsVehicle::SuspensionSetup comRearSusp =
-        PhysicsVehicle::ComputeAxleSuspension( db, false );
-    const float restLen =
-        0.5f * ( comFrontSusp.restLength + comRearSusp.restLength );
-    const float contactPlaneY = -( bodyHalfHeight + restLen );
-    const float comOffsetY =
-        JPH::Clamp( contactPlaneY + gcHeight, contactPlaneY + 0.10f, -0.02f );
-
-    const float wheelBaseM =
-        ( db.WheelBase > 0 ? db.WheelBase : 2600 ) * 0.001f;
     const float gcLengthFrac =
         db.GravityCenterLength > 0 ? db.GravityCenterLength * 0.01f : 0.5f;
-    const float comOffsetZ =
-        JPH::Clamp( ( gcLengthFrac - 0.5f ) * wheelBaseM, -0.175f * wheelBaseM,
-                    0.175f * wheelBaseM );
+    const float bodyLengthM = ( db.Length > 0 ? db.Length : 4000 ) * 0.001f;
+    const float comOffsetY = -bodyHeightM * 0.5f;
+    const float comOffsetZ = ( gcLengthFrac - 0.5f ) * bodyLengthM;
 
     JPH::OffsetCenterOfMassShapeSettings comShapeSettings(
         JPH::Vec3( 0.0f, comOffsetY, comOffsetZ ), shapeResult.Get() );
@@ -1525,7 +1512,7 @@ void GSPhysics::drawDebug( float ) {
                     ImGui::TableNextColumn();
                     ImGui::Text( "%+.2f", wheel.LongitudinalSlip );
                     ImGui::TableNextColumn();
-                    ImGui::Text( "%+.1f", wheel.LateralSlip * 57.29578f );
+                    ImGui::Text( "%+.2f", wheel.LateralSlip );
                     ImGui::TableNextColumn();
                     ImGui::Text( "%d", wheel.EspState );
                     ImGui::TableNextColumn();
@@ -1577,6 +1564,12 @@ void GSPhysics::removeAndDestroyFactory( PhysFactory *param_2 ) {
         return;
     }
     lockMutex();
+    propFactories.erase(
+        std::remove( propFactories.begin(), propFactories.end(), param_2 ),
+        propFactories.end() );
+    if ( pSceneryFactory == param_2 ) {
+        pSceneryFactory = nullptr;
+    }
     HavokFactoryData *pData = param_2->getHavokData();
     if ( pData != nullptr && pPhysicsSystem != nullptr ) {
         JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
@@ -2254,13 +2247,39 @@ void GSPhysics::removeSectorCollision( const void *pKey ) {
     }
 }
 
-void GSPhysics::addSpotCollision( const void *pKey,
-                                  void *pBlob,
-                                  uint32_t blobSize,
-                                  float angleY,
-                                  const Eigen::Vector3f &translation ) {
-    if ( pPhysicsSystem == nullptr || pBlob == nullptr || pKey == nullptr )
-        return;
+PhysFactory *
+GSPhysics::installStaticCollision( void *pBlob,
+                                   uint32_t blobSize,
+                                   uint64_t factoryHashcode,
+                                   const Matrix4x4f_t *pTransform ) {
+    // FUN_00848a20 + FUN_008487e0
+    if ( pBlob == nullptr || blobSize == 0 ) {
+        return nullptr;
+    }
+    if ( pPhysicsSystem == nullptr ) {
+        OTDU_LOG_WARN( "Static collision: physics is not up yet (blob %u "
+                       "bytes dropped)\n",
+                       blobSize );
+        return nullptr;
+    }
+
+    PhysicsLock lock;
+
+    // Never install the same blob twice, and claim a free slot.
+    PhysFactory *pFactory = nullptr;
+    for ( PhysFactory &factory : pFactories ) {
+        if ( factory.isInitialized() ) {
+            if ( factory.getSourceBlob() == pBlob ) {
+                return nullptr;
+            }
+        } else if ( pFactory == nullptr ) {
+            pFactory = &factory;
+        }
+    }
+    if ( pFactory == nullptr ) {
+        OTDU_LOG_WARN( "Static collision: no free physics factory slot\n" );
+        return nullptr;
+    }
 
     HavokPackfile packfile;
     bool bParsed = false;
@@ -2274,66 +2293,72 @@ void GSPhysics::addSpotCollision( const void *pKey,
             packfile.parse( static_cast<const uint8_t *>( pBlob ), blobSize );
     }
     if ( !bParsed ) {
-        return;
+        OTDU_LOG_WARN( "Static collision: blob is neither a physics container "
+                       "nor a Havok packfile (size=%u)\n",
+                       blobSize );
+        return nullptr;
     }
 
-    std::vector<HavokToJolt::RigidBody> bodies;
-    HavokToJolt::buildBodies( packfile, bodies );
-    if ( bodies.empty() ) {
-        return;
-    }
-
-    // Claim a free slot.
-    PhysicsSHK *pSlot = nullptr;
-    for ( PhysicsSHK *it = pSectorsBegin; it != pSectorsEnd; ++it ) {
-        if ( it->pKey == nullptr && it->NumObjects == 0 ) {
-            pSlot = it;
-            break;
-        }
-    }
-    if ( pSlot == nullptr ) {
-        OTDU_LOG_WARN( "Spot collision: no free sector slot\n" );
-        return;
+    HavokFactoryData *pData = new HavokFactoryData();
+    HavokToJolt::buildBodies( packfile, pData->Bodies );
+    if ( pData->Bodies.empty() ) {
+        OTDU_LOG_WARN(
+            "Static collision: Havok scene produced no collidable bodies\n" );
+        delete pData;
+        return nullptr;
     }
 
     const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
-    const JPH::Quat spotRot =
-        JPH::Quat::sRotation( JPH::Vec3::sAxisY(), angleY );
-    const JPH::Vec3 spotTrans( translation.x() - shiftOrigin.x(),
-                               translation.y() - shiftOrigin.y(),
-                               translation.z() - shiftOrigin.z() );
+    JPH::Quat worldRot = JPH::Quat::sIdentity();
+    JPH::Vec3 worldTrans( -shiftOrigin.x(), -shiftOrigin.y(),
+                          -shiftOrigin.z() );
+    if ( pTransform != nullptr ) {
+        const Eigen::Quaternionf q(
+            Eigen::Matrix3f( pTransform->block<3, 3>( 0, 0 ).transpose() ) );
+        worldRot = JPH::Quat( q.x(), q.y(), q.z(), q.w() ).Normalized();
+        worldTrans +=
+            JPH::Vec3( pTransform->row( 3 ).x(), pTransform->row( 3 ).y(),
+                       pTransform->row( 3 ).z() );
+    }
 
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
-    lockMutex();
-    for ( const HavokToJolt::RigidBody &body : bodies ) {
-        if ( pSlot->NumObjects >= pSlot->MaxNumObjects )
-            break;
+    int32_t numPlaced = 0;
+    for ( const HavokToJolt::RigidBody &body : pData->Bodies ) {
+        if ( body.Shape.GetPtr() == nullptr ) {
+            continue;
+        }
 
-        const JPH::RVec3 position( spotRot * body.Position + spotTrans );
-        const JPH::Quat rotation = ( spotRot * body.Rotation ).Normalized();
+        const uint32_t physType = PhysTypeForShape( body.Shape, false );
+
+        const JPH::RVec3 position( worldRot * body.Position + worldTrans );
+        const JPH::Quat rotation = ( worldRot * body.Rotation ).Normalized();
 
         JPH::BodyCreationSettings settings( body.Shape, position, rotation,
                                             JPH::EMotionType::Static,
                                             TDUPhysLayers::NON_MOVING );
-        settings.mUserData = TDUSurface::Generic;
-        settings.mFriction = TDUSurface::friction( TDUSurface::Generic );
+        settings.mUserData = physType;
+        settings.mFriction = TDUSurface::friction( physType );
 
         JPH::Body *pBody = bodyInterface.CreateBody( settings );
         if ( pBody != nullptr ) {
             bodyInterface.AddBody( pBody->GetID(),
                                    JPH::EActivation::DontActivate );
-            PhysicsSectorObj &obj = pSlot->pObjects[pSlot->NumObjects++];
-            obj.pRigidBody = pBody;
-            obj.pShape = body.Shape;
+            pData->LiveBodyIDs.push_back(
+                pBody->GetID().GetIndexAndSequenceNumber() );
+            numPlaced++;
         }
     }
-    pSlot->pKey = pKey;
-    unlockMutex();
 
-    OTDU_LOG_DEBUG(
-        "Spot collision: %d bodies at (%.0f,%.0f,%.0f) angle %.2f\n",
-        pSlot->NumObjects, translation.x(), translation.y(), translation.z(),
-        angleY );
+    pFactory->initialize( pData, factoryHashcode, pBlob );
+    const JPH::Vec3 origin =
+        worldTrans +
+        JPH::Vec3( shiftOrigin.x(), shiftOrigin.y(), shiftOrigin.z() );
+    OTDU_LOG_DEBUG( "Static collision: %d bodies at (%.0f,%.0f,%.0f) "
+                    "(hashcode 0x%016llx)\n",
+                    numPlaced, (double)origin.GetX(), (double)origin.GetY(),
+                    (double)origin.GetZ(),
+                    (unsigned long long)factoryHashcode );
+    return pFactory;
 }
 
 void GSPhysics::addSectorRoadGround( const void *pKey,
@@ -2491,18 +2516,42 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
 }
 
 void GSPhysics::queuePropCollisionFactory( const void *pBlob,
-                                           uint32_t blobSize ) {
-    // Copy the blob — the scenaric bank buffer that owns it may not stay valid,
-    // and the build is deferred until Jolt is ready (see
-    // buildProcessPendingProps).
+                                           uint32_t blobSize,
+                                           PhysFactory **ppOwnerSlot ) {
+    // FUN_00845240
     PhysicsLock lock;
 
-    if ( pBlob == nullptr || blobSize == 0 || !pendingPropBlob.empty() ||
-         pPropFactory != nullptr ) {
+    if ( pBlob == nullptr || blobSize == 0 ) {
         return;
     }
-    pendingPropBlob.assign( static_cast<const uint8_t *>( pBlob ),
-                            static_cast<const uint8_t *>( pBlob ) + blobSize );
+    if ( ppOwnerSlot != nullptr ) {
+        for ( const PendingPropFactory &pending : pendingPropFactories ) {
+            if ( pending.ppOwnerSlot == ppOwnerSlot ) {
+                return;
+            }
+        }
+    }
+
+    PendingPropFactory &pending = pendingPropFactories.emplace_back();
+    pending.Blob.assign( static_cast<const uint8_t *>( pBlob ),
+                         static_cast<const uint8_t *>( pBlob ) + blobSize );
+    pending.ppOwnerSlot = ppOwnerSlot;
+}
+
+void GSPhysics::cancelPendingPropFactory( PhysFactory **ppOwnerSlot ) {
+    if ( ppOwnerSlot == nullptr ) {
+        return;
+    }
+    PhysicsLock lock;
+
+    for ( auto it = pendingPropFactories.begin();
+          it != pendingPropFactories.end(); ) {
+        if ( it->ppOwnerSlot == ppOwnerSlot ) {
+            it = pendingPropFactories.erase( it );
+        } else {
+            ++it;
+        }
+    }
 }
 
 // The two hedge assets ("V_HAIE_M" / "V_HAIE_O") are authored with their
@@ -2525,7 +2574,7 @@ void GSPhysics::placeSceneryInstance( const void *pSectorKey,
         return;
     }
 
-    if ( pSceneryFactory == nullptr && pPropFactory == nullptr ) {
+    if ( pSceneryFactory == nullptr && propFactories.empty() ) {
         if ( pendingSceneryInstances.size() < kMaxSceneryBodies ) {
             pendingSceneryInstances.push_back( { pSectorKey, hashcode,
                                                  worldTransform, objectOrigin,
@@ -2596,7 +2645,9 @@ bool GSPhysics::isPropCollisionType( uint64_t hashcode ) const {
     if ( hashcode == 0 ) {
         return false;
     }
-    const PhysFactory *factories[2] = { pPropFactory, pSceneryFactory };
+    std::vector<const PhysFactory *> factories( propFactories.begin(),
+                                                propFactories.end() );
+    factories.push_back( pSceneryFactory );
     for ( const PhysFactory *pF : factories ) {
         if ( pF == nullptr ) {
             continue;
@@ -2615,16 +2666,29 @@ bool GSPhysics::isPropCollisionType( uint64_t hashcode ) const {
 }
 
 void GSPhysics::buildProcessPendingProps() {
-    if ( pendingPropBlob.empty() || !bJoltInit || pPropFactory != nullptr ) {
+    if ( !bJoltInit ) {
         return;
     }
-    pPropFactory =
-        createFromBinary( pendingPropBlob.data(),
-                          static_cast<int32_t>( pendingPropBlob.size() ) );
-    pendingPropBlob.clear();
-    pendingPropBlob.shrink_to_fit();
-    if ( pPropFactory == nullptr ) {
-        OTDU_LOG_WARN( "Prop collision: factory parse failed\n" );
+
+    if ( !pendingPropFactories.empty() ) {
+        std::vector<PendingPropFactory> pending;
+        pending.swap( pendingPropFactories );
+        for ( PendingPropFactory &request : pending ) {
+            PhysFactory *pFactory =
+                createFromBinary( request.Blob.data(),
+                                  static_cast<int32_t>( request.Blob.size() ) );
+            if ( pFactory == nullptr ) {
+                OTDU_LOG_WARN( "Prop collision: factory parse failed\n" );
+                continue;
+            }
+            propFactories.push_back( pFactory );
+            if ( request.ppOwnerSlot != nullptr ) {
+                *request.ppOwnerSlot = pFactory;
+            }
+        }
+    }
+
+    if ( propFactories.empty() ) {
         return;
     }
 
@@ -2649,7 +2713,7 @@ void GSPhysics::buildProcessPendingProps() {
 
     // Drain scenery instances parked while the factory was still building.
     if ( !pendingSceneryInstances.empty() &&
-         ( pSceneryFactory != nullptr || pPropFactory != nullptr ) ) {
+         ( pSceneryFactory != nullptr || !propFactories.empty() ) ) {
         std::vector<PendingSceneryInstance> pending;
         pending.swap( pendingSceneryInstances );
         for ( const PendingSceneryInstance &p : pending ) {
@@ -2681,7 +2745,9 @@ void GSPhysics::placeProp(
 
     HavokFactoryData *pData = nullptr;
     {
-        PhysFactory *factories[2] = { pPropFactory, pSceneryFactory };
+        std::vector<PhysFactory *> factories( propFactories.begin(),
+                                              propFactories.end() );
+        factories.push_back( pSceneryFactory );
         for ( PhysFactory *pF : factories ) {
             if ( pF == nullptr ) {
                 continue;

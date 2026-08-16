@@ -26,14 +26,19 @@ public:
 public:
     inline bool isInitialized() const { return bInitialized; }
     inline HavokFactoryData *getHavokData() const { return pHavokData; }
+    inline uint64_t getHashcode() const { return hashcode; }
+    inline const void *getSourceBlob() const { return pFileHK; }
 
     // Take ownership of the reconstructed collision bodies and mark the slot in
     // use. Defined in physics_factory.cpp (needs the full HavokFactoryData).
-    void initialize( HavokFactoryData *pData );
+    void initialize( HavokFactoryData *pData,
+                     uint64_t factoryHashcode = 0,
+                     const void *pBlob = nullptr );
 
     // Release the reconstructed bodies and free the slot. Any live Jolt bodies
-    // must be removed from the world first (GSPhysics::removeAndDestroyFactory),
-    // since the factory has no world access.
+    // must be removed from the world first
+    // (GSPhysics::removeAndDestroyFactory), since the factory has no world
+    // access.
     void reset();
 
 private:
@@ -55,9 +60,7 @@ private:
     uint8_t coords[4];
 
     SerializedPhysics *pSerializedData;
-
-    // Port-only: reconstructed Jolt collision bodies (built from the Havok
-    // scene) + the live body IDs once an instance is placed.
+    const void *pFileHK = nullptr;
     HavokFactoryData *pHavokData = nullptr;
 };
 
