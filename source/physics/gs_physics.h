@@ -192,6 +192,13 @@ public:
 
     void removePropConstraintsFor( RigidBody_t pBody );
 
+    struct PropMemberAttachment {
+        int32_t NumUnbreakable = 0;
+        int32_t NumBreakable = 0;
+        int32_t NumBroken = 0;
+    };
+    PropMemberAttachment getPropMemberAttachment( RigidBody_t pBody );
+
     bool
     getBodyPose( RigidBody_t body, Matrix4x4f_t &outMatrix, bool &outActive );
 

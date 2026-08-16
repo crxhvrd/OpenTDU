@@ -506,11 +506,30 @@ int32_t EntityActor::refreshMechanismRender(
     shift.w() = 0.0f;
 
     int32_t driven = 0;
-    for ( const auto &member : members ) {
+    for ( size_t i = 0; i < members.size(); i++ ) {
+        const std::pair<uint64_t, void *> &member = members[i];
         HiearchyNode *pNode = Model.pHiearchNode->findChild( member.first );
         if ( pNode == nullptr || pNode->pInstance == nullptr ) {
+            if ( i == 0 ) {
+                return 0; // no node for the reference body
+            }
             continue;
         }
+
+        if ( i != 0 ) {
+            const GSPhysics::PropMemberAttachment attachment =
+                gpPhysics->getPropMemberAttachment(
+                    static_cast<RigidBody_t>( member.second ) );
+            const bool bCameLoose = ( attachment.NumUnbreakable == 0 &&
+                                      attachment.NumBroken != 0 ) ||
+                                    attachment.NumBreakable == 0;
+            const bool bPartlyBroken =
+                attachment.NumBroken != 0 && attachment.NumUnbreakable != 0;
+            if ( !bCameLoose && !bPartlyBroken ) {
+                continue;
+            }
+        }
+
         Matrix4x4f_t pose;
         bool bActive = false;
         if ( !gpPhysics->getBodyPose( static_cast<RigidBody_t>( member.second ),

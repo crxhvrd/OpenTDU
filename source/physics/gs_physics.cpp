@@ -364,6 +364,7 @@ struct PropConstraintRecord {
     JPH::BodyID BodyB;
     float Threshold = 0.0f;
     bool bBreakable = false;
+    bool bBroken = false;
 };
 std::vector<PropConstraintRecord> gPropConstraints;
 
@@ -2998,6 +2999,35 @@ void GSPhysics::removePropConstraintsFor( RigidBody_t pBody ) {
     unlockMutex();
 }
 
+GSPhysics::PropMemberAttachment
+GSPhysics::getPropMemberAttachment( RigidBody_t pBody ) {
+    // FUN_00454660 + FUN_004546d0
+    PropMemberAttachment attachment;
+    if ( pBody == nullptr ) {
+        return attachment;
+    }
+
+    const JPH::BodyID id = static_cast<JPH::Body *>( pBody )->GetID();
+
+    lockMutex();
+    for ( const PropConstraintRecord &record : gPropConstraints ) {
+        if ( record.BodyA != id && record.BodyB != id ) {
+            continue;
+        }
+        if ( !record.bBreakable ) {
+            attachment.NumUnbreakable++;
+            continue;
+        }
+        attachment.NumBreakable++;
+        if ( record.bBroken ) {
+            attachment.NumBroken++;
+        }
+    }
+    unlockMutex();
+
+    return attachment;
+}
+
 bool GSPhysics::getBodyPose( RigidBody_t body,
                              Matrix4x4f_t &outMatrix,
                              bool &outActive ) {
@@ -3057,11 +3087,11 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
                         it->pConstraint->GetTotalLambdaPosition().Length();
                     if ( impulse > it->Threshold * kBreakThresholdScale ) {
                         pPhysicsSystem->RemoveConstraint( it->pConstraint );
+                        it->pConstraint = nullptr;
+                        it->bBroken = true;
                         // Wake the freed pieces so they respond to gravity.
                         bi.ActivateBody( it->BodyA );
                         bi.ActivateBody( it->BodyB );
-                        it = gPropConstraints.erase( it );
-                        continue;
                     }
                 }
                 ++it;
