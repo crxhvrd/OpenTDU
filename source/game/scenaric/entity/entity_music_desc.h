@@ -11,6 +11,8 @@ public:
     EntityMusicDesc();
     ~EntityMusicDesc();
 
+    void deserialize( BinaryReader *param_2 ) override;
+
 protected:
-    int32_t Field0;
+    const char *pMusicName;
 };
