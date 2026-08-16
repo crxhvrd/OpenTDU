@@ -64,6 +64,8 @@ private:
     bool bVisible;
     bool bFocusHasChanged;
     bool bOverlayRequested;
+    bool bGamePaused = false;
+    bool bPauseTriggered = false;
 
 private:
     void processDrawData( ImDrawData *pDrawData );

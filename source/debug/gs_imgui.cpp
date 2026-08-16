@@ -10,6 +10,8 @@
 #include "render/gs_render.h"
 #include "render/draw_list.h"
 
+#include "gs_timer.h"
+
 #include "render/shaders/shader_types.h"
 
 #ifndef OTDU_USE_SDL
@@ -91,6 +93,15 @@ bool GSImgui::initialize( TestDriveGameInstance * ) {
 
 void GSImgui::tick( float totalTime, float deltaTime ) {
     const bool *pKeyStates = SDL_GetKeyboardState( nullptr );
+
+    const bool bF2Down =
+        ( pKeyStates != nullptr ) && pKeyStates[SDL_SCANCODE_F2];
+    if ( bF2Down && !bPauseTriggered ) {
+        bGamePaused = !bGamePaused;
+        gpTimer->GameSpeed = bGamePaused ? 0.0f : 1.0f;
+    }
+    bPauseTriggered = bF2Down;
+
     const bool bF1Down =
         ( pKeyStates != nullptr ) && pKeyStates[SDL_SCANCODE_F1];
     if ( bF1Down && !bFocusHasChanged ) {
