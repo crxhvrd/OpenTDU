@@ -54,21 +54,6 @@ GameModeWorld *gpActiveGM = nullptr; // DAT_010e7c6c
 // the car body origin (approximates the body-centre to wheel-contact offset).
 static constexpr float kSpawnGroundClearance = 0.5f;
 
-enum eAutoGearboxState : int32_t {
-    AGS_Stopped = 0,     // standing still, engine idling
-    AGS_EngagingReverse, // brake held at a standstill -> select reverse
-    AGS_Reverse,         // reverse engaged (pedals swapped)
-    AGS_MovingOff,       // pulling away forwards (waiting for 1st)
-    AGS_Forward,         // driving forwards, shift logic in charge
-    AGS_LineLock,        // both pedals at a standstill (declutched, revving)
-};
-static constexpr float kAutoGbxPedal = 0.1f; // DAT_00fab720 (pedal pressed)
-static constexpr float kAutoGbxInput = 0.1f; // FLOAT_00f41668
-static constexpr float kAutoGbxPedalIdle = 0.01f;        // DAT_00f416d4
-static constexpr float kAutoGbxHoldBrake = 0.5f;         // FLOAT_00f41674
-static constexpr float kAutoGbxMovingSpeed = 0.2777778f; // DAT_00f41868, 1km/h
-static constexpr float kAutoGbxMoveOffThrottle = 0.2f;   // DAT_00f41730
-static constexpr float kAutoGbxReverseExitSpeed = 2.0f;  // DAT_00f416b0
 static constexpr float kIgnitionAccelThreshold = 0.1f;
 static constexpr float kManualClutchExponent = 500.0f; // DAT_00fab728
 static constexpr float kManualClutchEngaged = 0.5f;    // DAT_00fab724
@@ -141,10 +126,7 @@ GameModeWorld::GameModeWorld( uint32_t gameModeFlags )
       carRimIndex( 0 ),
       carTireIndex( 0 ),
       initializeTime( 0.0f ),
-      pauseFadeTimer( 0.0f ),
-      autoGearboxState( 0 ),
-      autoGearboxThrottle( 0.0f ),
-      autoGearboxBrake( 0.0f ) {
+      pauseFadeTimer( 0.0f ) {
     // FUN_007be500
     registerManager( &mngHudChallenge );
 
@@ -551,20 +533,11 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     const bool bAutomatic = pCfg->bUseAutomatic;
     pPlayerPhysicsVehicle->setAutomaticGearbox( bAutomatic );
 
-    float simThrottle = throttle;
-    float simBrake = brake;
-    if ( isDrivingInputScripted() ) {
-        pPlayerPhysicsVehicle->setClutchOverride( -1.0f );
-        resetAutomaticGearbox();
-    } else {
-        arbitrateAutomaticGearbox( deltaTime, throttle, brake, simThrottle,
-                                   simBrake );
-    }
-
     {
         PhysicsLock physLock;
-        pPlayerPhysicsVehicle->setInput( simThrottle, simBrake, steer );
-        pPlayerPhysicsVehicle->setAutoReverseState( autoGearboxState );
+        pPlayerPhysicsVehicle->setDrivingInputScripted(
+            isDrivingInputScripted() );
+        pPlayerPhysicsVehicle->setInput( throttle, brake, steer );
         pPlayerPhysicsVehicle->setHandbrake( pBody->Handbrake );
         pPlayerPhysicsVehicle->setIgnition( pBody->bIgnition,
                                             pBody->bIgnitionOnce );
@@ -607,159 +580,9 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
 }
 
 void GameModeWorld::resetAutomaticGearbox() {
-    autoGearboxState = AGS_Stopped;
-    autoGearboxThrottle = 0.0f;
-    autoGearboxBrake = 0.0f;
-}
-
-void GameModeWorld::arbitrateAutomaticGearbox( float deltaTime,
-                                               float accel,
-                                               float brake,
-                                               float &outThrottle,
-                                               float &outBrake ) {
-    // FUN_0041a210
-    PhysicsVehicle *pVehicle = pPlayerPhysicsVehicle;
-    outThrottle = autoGearboxThrottle;
-    outBrake = autoGearboxBrake;
-
-    const PhysicsVehicle::DrivingGearbox gearbox =
-        pVehicle->getDrivingGearbox();
-    if ( !gearbox.bAutomatic || deltaTime <= 0.0f || !gearbox.bEngineFiring ) {
-        // Manual gearbox or a dead engine: the pedals pass straight through.
-        pVehicle->setClutchOverride( -1.0f );
-        autoGearboxThrottle = accel;
-        autoGearboxBrake = brake;
-        outThrottle = accel;
-        outBrake = brake;
-        return;
+    if ( pPlayerPhysicsVehicle != nullptr ) {
+        pPlayerPhysicsVehicle->resetAutomaticGearbox();
     }
-
-    const float speed = pVehicle->getChassisSpeed();
-    bool bDeclutch = false;
-    switch ( autoGearboxState ) {
-    case AGS_Stopped:
-        if ( accel > kAutoGbxPedal ) {
-            if ( brake > kAutoGbxPedal ) {
-                autoGearboxState = AGS_LineLock;
-                break; // leaves the outputs untouched for this frame
-            }
-            if ( brake < kAutoGbxPedal ) {
-                autoGearboxState = AGS_MovingOff;
-            }
-        }
-        if ( brake > kAutoGbxPedal && accel < kAutoGbxPedal ) {
-            autoGearboxState = AGS_EngagingReverse;
-        }
-        outBrake = kAutoGbxHoldBrake; // auto-hold, keeps the car put
-        outThrottle = accel;
-        pVehicle->setCurrentGear( 2 ); // sits in 1st, declutched
-        bDeclutch = true;
-        break;
-
-    case AGS_EngagingReverse:
-        if ( accel > kAutoGbxPedal ) {
-            autoGearboxState = AGS_LineLock;
-        }
-        if ( gearbox.bShiftIdle && gearbox.Gear > 0 ) {
-            if ( gearbox.Gear > 1 ) {
-                pVehicle->setCurrentGear( 1 ); // snap to neutral first
-            }
-            pVehicle->requestDownshift(); // neutral -> reverse
-        }
-        if ( gearbox.Gear == 0 ) {
-            // Reverse selected: the pedals swap roles.
-            outBrake = accel;
-            outThrottle = brake;
-        } else {
-            outBrake = kAutoGbxHoldBrake;
-            outThrottle = 0.0f;
-        }
-        if ( speed > kAutoGbxMovingSpeed && gearbox.Gear == 0 ) {
-            autoGearboxState = AGS_Reverse;
-        } else if ( brake < kAutoGbxPedal ) {
-            autoGearboxState = AGS_Stopped;
-        }
-        break;
-
-    case AGS_Reverse:
-        pVehicle->setCurrentGear( 0 );
-        outBrake = accel;
-        outThrottle = brake;
-        if ( std::fabs( gearbox.ForwardSpeed ) < kAutoGbxReverseExitSpeed ) {
-            if ( accel >= kAutoGbxInput || speed >= kAutoGbxInput ) {
-                if ( brake < kAutoGbxInput && accel > kAutoGbxInput ) {
-                    autoGearboxState = AGS_MovingOff;
-                }
-            } else {
-                autoGearboxState = AGS_Stopped;
-            }
-        }
-        break;
-
-    case AGS_MovingOff:
-        if ( brake > kAutoGbxPedal ) {
-            autoGearboxState = AGS_LineLock;
-        }
-        if ( gearbox.bShiftIdle ) {
-            if ( gearbox.Gear < 2 ) {
-                if ( gearbox.Gear == 0 ) {
-                    pVehicle->setCurrentGear( 1 ); // out of reverse first
-                }
-                pVehicle->requestUpshift();
-            } else if ( gearbox.Gear > 2 ) {
-                pVehicle->requestDownshift();
-            }
-        }
-        if ( gearbox.Gear == 2 ) {
-            outBrake = ( brake < kAutoGbxPedal ) ? 0.0f : brake;
-            outThrottle = accel;
-        } else {
-            outBrake = kAutoGbxHoldBrake;
-            outThrottle = kAutoGbxMoveOffThrottle; // keep the revs up
-        }
-        if ( speed > kAutoGbxMovingSpeed && gearbox.Gear == 2 ) {
-            autoGearboxState = AGS_Forward;
-        } else if ( accel < kAutoGbxPedal ) {
-            autoGearboxState = AGS_Stopped;
-        }
-        break;
-
-    case AGS_Forward: {
-        outBrake = brake;
-        outThrottle = accel;
-        bool bCheckStop = true;
-        if ( speed < kAutoGbxMovingSpeed && accel > kAutoGbxPedal &&
-             brake > kAutoGbxPedal ) {
-            autoGearboxState = AGS_LineLock;
-            bCheckStop = false;
-        }
-        if ( bCheckStop &&
-             ( ( brake < kAutoGbxPedalIdle && speed < kAutoGbxMovingSpeed ) ||
-               ( gearbox.Gear == 1 && accel > kAutoGbxInput ) ) ) {
-            autoGearboxState = AGS_Stopped;
-        }
-        break;
-    }
-
-    case AGS_LineLock:
-        if ( brake < kAutoGbxPedal ) {
-            autoGearboxState = AGS_MovingOff;
-        }
-        outBrake = kAutoGbxHoldBrake;
-        outThrottle = accel;
-        pVehicle->setCurrentGear( 2 );
-        bDeclutch = true;
-        break;
-
-    default:
-        autoGearboxState = AGS_Stopped;
-        break;
-    }
-
-    pVehicle->setClutchOverride( bDeclutch ? 0.0f : -1.0f );
-
-    autoGearboxThrottle = outThrottle;
-    autoGearboxBrake = outBrake;
 }
 
 void GameModeWorld::tick( float deltaTime, float totalTime ) {

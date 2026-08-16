@@ -1369,7 +1369,6 @@ void GSPhysics::drawDebug( float ) {
     }
 
     extern int32_t gVehicleDrivingHelpOverride;
-    extern bool gVehicleABS;
     extern bool gVehicleAntiRoll;
     extern bool gVehicleEngineStateMachine;
     extern int gVehicleDiffTypeOverride; // 0=per-car, 1 open, 2 LSD, 4 spool
@@ -1391,7 +1390,6 @@ void GSPhysics::drawDebug( float ) {
                        IM_ARRAYSIZE( kDrivingHelpLevels ) ) ) {
         gVehicleDrivingHelpOverride = helpCombo - 1;
     }
-    ImGui::Checkbox( "ABS", &gVehicleABS );
     extern int32_t gVehicleSteerControlOverride;
     static const char *kSteerControlModes[] = {
         "default (Physics.ini UseSteerControl)", "pad/analog",

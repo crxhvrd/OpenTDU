@@ -117,11 +117,6 @@ protected:
                                 const Matrix4x4f_t *pSpawnOverride );
     void uninstallLocalPlayerCar();
     void updateLocalPlayerDrivingInput( float deltaTime );
-    void arbitrateAutomaticGearbox( float deltaTime,
-                                    float accel,
-                                    float brake,
-                                    float &outThrottle,
-                                    float &outBrake );
     void resetAutomaticGearbox();
     void teleportLocalPlayerCar( const Eigen::Vector3f &worldPos );
 
@@ -148,9 +143,6 @@ protected:
 
     float initializeTime; // GSTimer total time at initialize()
     float pauseFadeTimer; // Pause radial-blur fade countdown
-    int32_t autoGearboxState;
-    float autoGearboxThrottle;
-    float autoGearboxBrake;
     bool bGearSelectBlocked = false;
 
     // HACK: REMOVE ME:

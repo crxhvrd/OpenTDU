@@ -27,12 +27,26 @@ constexpr float kMmToM = 0.001f;
 constexpr float kSlipDenom = 3.0f;
 constexpr int kWheelSubsteps = 5;
 constexpr float kSuspDampingScale = 1.0f;
+static constexpr float kPedalCurveC2 = 0.5f;        // FLOAT_00f41674
+static constexpr float kPedalCurveC3 = 1.0f / 3.0f; // DAT_00f41764
+static constexpr float kThrottleCurveK = 0.0f;      // DAT_00f8a22c
+static constexpr float kBrakeCurveK = 50.0f;
+static constexpr float kPedalGain = 0.7f;                // DAT_00fab730
+static constexpr float kAutoGbxPedal = 0.1f;             // DAT_00fab720
+static constexpr float kAutoGbxInput = 0.1f;             // FLOAT_00f41668
+static constexpr float kAutoGbxPedalIdle = 0.01f;        // DAT_00f416d4
+static constexpr float kAutoGbxHoldBrake = 0.5f;         // FLOAT_00f41674
+static constexpr float kAutoGbxMovingSpeed = 0.2777778f; // DAT_00f41868, 1km/h
+static constexpr float kAutoGbxMoveOffThrottle = 0.2f;   // DAT_00f41730
+static constexpr float kAutoGbxReverseExitSpeed = 2.0f;  // DAT_00f416b0
 
 int32_t gVehicleDrivingHelpOverride = -1;
-// Debug: force the FUN_0041ad60 steer-control path on/off (-1 = as configured).
 int32_t gVehicleSteerControlOverride = -1;
 
-bool gVehicleABS = true;
+float gVehicleGripCalibration = 1.0f;
+float gVehicleGripAxleBalance = 1.0f;
+float gVehicleGripPerMille = 1.0f;
+float gVehicleLowSpeedLatGain = 0.0f; // DAT_016a6998
 
 constexpr float kSimuBrakeTorquePerMass = 2.5f;
 constexpr float kBrakeBalance = 0.6f; // fallback
@@ -635,6 +649,8 @@ PhysicsVehicle::PhysicsVehicle()
       pChassisBody( nullptr ),
       bRegistered( false ),
       steerLockRad( 0.0f ),
+      rawInputThrottle( 0.0f ),
+      rawInputBrake( 0.0f ),
       inputThrottle( 0.0f ),
       inputBrake( 0.0f ),
       inputSteer( 0.0f ),
@@ -643,7 +659,10 @@ PhysicsVehicle::PhysicsVehicle()
       prevInputThrottle( 0.0f ),
       prevInputBrake( 0.0f ),
       prevInputSteer( 0.0f ),
-      autoReverseState( 0 ),
+      autoGearboxState( AGS_Stopped ),
+      autoGearboxThrottle( 0.0f ),
+      autoGearboxBrake( 0.0f ),
+      bDrivingInputScripted( false ),
       filteredSteer( 0.0f ),
       steerCommand( 0.0f ),
       steerCurveScale( 1.0f ),
@@ -730,25 +749,24 @@ PhysicsVehicle::ComputeAxleSuspension( const DBEntryCarPhysicsData &db,
     const float cornerLoad = weight * axleFrac * kGravity * 0.5f;
     const float sag = cornerLoad / k;
 
-    constexpr float kSuspHardpoint =
-        0.4f; // DAT_00f4175c: strut top above wheel
-    SuspensionSetup s;
-    s.minLength = 0.05f;
-    s.restLength = JPH::Clamp( kSuspHardpoint - sag, 0.18f, 0.26f );
-    s.maxLength = Max( s.restLength + 0.04f, kSuspHardpoint );
-
     const int32_t rideHtRaw = bFront ? db.RideHeightFront : db.RideHeightBack;
-    const int32_t rideHtMaxRaw =
-        bFront ? db.RideHeightMaxFront : db.RideHeightMaxRear;
     const float rideHt_m = ( rideHtRaw > 0 ? rideHtRaw : 130 ) * 0.001f;
-    const float rideHtMax_m =
-        ( rideHtMaxRaw > 0 ? rideHtMaxRaw : 200 ) * 0.001f;
-    const float droopTravel =
-        JPH::Clamp( rideHtMax_m - rideHt_m, Max( sag, 0.04f ), 0.15f );
 
+    constexpr float kSuspLengthRideHeightScale = 2.0f;
+    const int32_t travelRaw =
+        bFront ? db.SuspensionLengthFront : db.SuspensionLengthRear;
+    const float travel = ( travelRaw > 0 ? travelRaw : 100 ) * 0.01f *
+                         rideHt_m * kSuspLengthRideHeightScale;
+
+    constexpr float kStrutClearance = 0.05f;
+    const float travelUsable = Max( travel, sag );
+
+    SuspensionSetup s;
     s.cornerLoad = cornerLoad;
-    s.staticLength = s.maxLength - sag; // == old spring settle -> ride height
-    s.droopStop = s.staticLength + droopTravel;
+    s.minLength = kStrutClearance;
+    s.staticLength = kStrutClearance + ( travelUsable - sag );
+    s.maxLength = s.staticLength + sag;
+    s.droopStop = s.maxLength;
 
     const float massPerWheel = Max( 1.0f, weight * 0.25f );
     const float springOmega = std::sqrt( k / massPerWheel );
@@ -781,6 +799,21 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     prevInputThrottle = 0.0f;
     prevInputBrake = 0.0f;
     prevInputSteer = 0.0f;
+
+    for ( int i = 0; i < PhysicsVehicleState::kMaxWheels; ++i ) {
+        authoredWheelY[i] = 0.0f;
+    }
+    bAuthoredWheelYKnown = false;
+
+    bLowSpeedGripState = false;
+    bLowSpeedLongAssist = false;
+    bLowSpeedLatAssist = false;
+    bIsBike = false;
+
+    resetAutomaticGearbox();
+    bDrivingInputScripted = false;
+    rawInputThrottle = 0.0f;
+    rawInputBrake = 0.0f;
 
     setDrivingHelpLevel( gVehicleDrivingHelpOverride >= 0
                              ? gVehicleDrivingHelpOverride
@@ -823,34 +856,16 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         const bool bInRange = gameDB.DBRim != nullptr && pRim >= gameDB.DBRim &&
                               pRim < gameDB.DBRim + gameDB.pNumItems[2];
         if ( bInRange ) {
-            auto axleRadius = []( int32_t sectionWidthMM, int32_t aspectPct,
-                                  int32_t rimInch, float fallback ) -> float {
-                if ( sectionWidthMM <= 0 || rimInch <= 0 || rimInch > 40 ) {
-                    return fallback;
-                }
-                const float rimMM = rimInch * 25.4f;
-                const float sidewallMM =
-                    ( aspectPct > 0 && aspectPct < 100 )
-                        ? sectionWidthMM * ( aspectPct * 0.01f )
-                        : 0.0f;
-                return JPH::Clamp( ( rimMM * 0.5f + sidewallMM ) / 1000.0f,
-                                   0.20f, 0.45f );
-            };
-            auto axleWidth = []( int32_t sectionWidthMM,
-                                 float fallback ) -> float {
-                if ( sectionWidthMM <= 0 ) {
-                    return fallback;
-                }
-                return JPH::Clamp( sectionWidthMM / 1000.0f, 0.10f, 0.40f );
-            };
+            constexpr float kAspectPctToRatio = 0.01f;
+            constexpr float kRimInchToHalfM = 0.0127f;
 
-            frontRadius =
-                axleRadius( pRim->FrontWidth, pRim->FrontHeight,
-                            pRim->FrontDiameter, kDefaultWheelRadius );
-            rearRadius = axleRadius( pRim->RearWidth, pRim->RearHeight,
-                                     pRim->RearDiameter, kDefaultWheelRadius );
-            frontWidth = axleWidth( pRim->FrontWidth, kDefaultWheelWidth );
-            rearWidth = axleWidth( pRim->RearWidth, kDefaultWheelWidth );
+            frontRadius = pRim->FrontHeight * pRim->FrontWidth *
+                              kAspectPctToRatio * kMmToM +
+                          pRim->FrontDiameter * kRimInchToHalfM;
+            rearRadius = frontRadius;
+
+            frontWidth = pRim->FrontWidth * kMmToM;
+            rearWidth = pRim->RearWidth * kMmToM;
         }
     }
 
@@ -985,7 +1000,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         const float springOmega = kTwoPiSusp * s.frequency;
         suspMaxLength[i] = s.maxLength;
         suspMinLength[i] = s.minLength;
-        suspRestLength[i] = s.restLength;
+        suspRestLength[i] = s.staticLength;
         suspStiffness[i] = massPerWheel * springOmega * springOmega;
         suspDamping[i] = 2.0f * s.damping * massPerWheel * springOmega;
         suspDamperRebound[i] = suspDamping[i] * kSuspReboundStiffen;
@@ -1007,15 +1022,29 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         w.GripMult = 1.0f;
 
         const PhysicsConfig &c = gPhysicsConfig;
-        w.GripLong =
+        w.AxleIndex = bFront ? 0 : 1;
+        const float gripCal = gVehicleGripCalibration;
+        const float axleBalance = gVehicleGripAxleBalance;
+        const float gripPerMille = gVehicleGripPerMille;
+        const float local70 =
+            bFront ? axleBalance
+                   : ( axleBalance != 0.0f ? 1.0f / axleBalance : 1.0f );
+
+        const float frictionCoef =
             bFront ? ( c.FrontFrictionCoef > 0 ? c.FrontFrictionCoef : 1.7f )
                    : ( c.RearFrictionCoef > 0 ? c.RearFrictionCoef : 1.7f );
-        w.GripLat =
+        const float lateralCoef =
             bFront
                 ? ( c.FrontLateralFrictionCoef > 0 ? c.FrontLateralFrictionCoef
                                                    : 1.4f )
                 : ( c.RearLateralFrictionCoef > 0 ? c.RearLateralFrictionCoef
                                                   : 1.4f );
+
+        w.GripLong = frictionCoef * local70 * gripCal * gripPerMille;
+        w.GripLat =
+            ( gripCal != 0.0f ) ? ( lateralCoef / gripCal ) : lateralCoef;
+        w.BaseGripLong = w.GripLong;
+        w.BaseGripLat = w.GripLat;
         w.BrakeGripLong = bFront ? ( c.FrontLngBrakeFrictionCoef > 0
                                          ? c.FrontLngBrakeFrictionCoef
                                          : 1.2f )
@@ -1051,6 +1080,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     if ( !bFWD && !bRWD ) {
         vehicle.bFrontDrive = vehicle.bRearDrive = vehicle.bCenterDrive = true;
     }
+
+    bLowSpeedLatAssist = bRWD;
+    bLowSpeedLongAssist = ( !bFWD && !bRWD );
 
     // Gearbox: reverse(0) + neutral(1) + DB gears; start in 1st (auto).
     PhysicsGearboxSim &gb = vehicle.GearBox;
@@ -1244,9 +1276,197 @@ void PhysicsVehicle::destroy() {
 }
 
 void PhysicsVehicle::setInput( float throttle, float brake, float steer ) {
-    inputThrottle = throttle;
-    inputBrake = brake;
+    rawInputThrottle = throttle;
+    rawInputBrake = brake;
     inputSteer = steer;
+}
+
+void PhysicsVehicle::resetAutomaticGearbox() {
+    autoGearboxState = AGS_Stopped;
+    autoGearboxThrottle = 0.0f;
+    autoGearboxBrake = 0.0f;
+}
+
+static float PedalResponseCurve( float x, float k ) {
+    // FUN_00824730
+    if ( k < 0.0f ) {
+        const float den = std::log( 1.0f - k );
+        return ( std::fabs( den ) > 1e-8f ) ? ( std::log( 1.0f - k * x ) / den )
+                                            : x;
+    }
+    const auto taylor = []( float u ) {
+        return 1.0f + u + u * u * kPedalCurveC2 + u * u * u * kPedalCurveC3;
+    };
+    const float den = taylor( k ) - 1.0f;
+    if ( std::fabs( den ) < 1e-8f ) {
+        return x; // k == 0: retail takes the unshaped branch outright
+    }
+    return ( taylor( x * k ) - 1.0f ) / den;
+}
+
+void PhysicsVehicle::arbitrateAutomaticGearbox( float deltaTime,
+                                                float chassisSpeed ) {
+    // FUN_0041a210
+    if ( bDrivingInputScripted ) {
+        setClutchOverride( -1.0f );
+        resetAutomaticGearbox();
+        inputThrottle = rawInputThrottle;
+        inputBrake = rawInputBrake;
+        return;
+    }
+
+    float accel = rawInputThrottle;
+    float brake = rawInputBrake;
+    if ( kThrottleCurveK != 0.0f ) {
+        accel = PedalResponseCurve( accel, kThrottleCurveK );
+    }
+    brake = PedalResponseCurve( brake, kBrakeCurveK );
+    accel = Clamp( accel / kPedalGain, 0.0f, 1.0f );
+    brake = Clamp( brake / kPedalGain, 0.0f, 1.0f );
+
+    float outThrottle = autoGearboxThrottle;
+    float outBrake = autoGearboxBrake;
+
+    const DrivingGearbox gearbox = getDrivingGearbox();
+    if ( !gearbox.bAutomatic || deltaTime <= 0.0f || !gearbox.bEngineFiring ) {
+        if ( gearbox.bAutomatic ) {
+            setClutchOverride( -1.0f );
+        }
+        autoGearboxThrottle = accel;
+        autoGearboxBrake = brake;
+        inputThrottle = accel;
+        inputBrake = brake;
+        return;
+    }
+
+    const float speed = chassisSpeed;
+    bool bDeclutch = false;
+    switch ( autoGearboxState ) {
+    case AGS_Stopped:
+        if ( accel > kAutoGbxPedal ) {
+            if ( brake > kAutoGbxPedal ) {
+                autoGearboxState = AGS_LineLock;
+                break; // leaves the outputs untouched for this frame
+            }
+            if ( brake < kAutoGbxPedal ) {
+                autoGearboxState = AGS_MovingOff;
+            }
+        }
+        if ( brake > kAutoGbxPedal && accel < kAutoGbxPedal &&
+             drivingMode != DM_Parked && drivingMode != DM_SlowDown ) {
+            autoGearboxState = AGS_EngagingReverse;
+        }
+        outBrake = kAutoGbxHoldBrake; // autohold, keeps the car put
+        outThrottle = accel;
+        setCurrentGear( 2 ); // sits in 1st, declutched
+        bDeclutch = true;
+        break;
+
+    case AGS_EngagingReverse:
+        if ( accel > kAutoGbxPedal ) {
+            autoGearboxState = AGS_LineLock;
+        }
+        if ( gearbox.bShiftIdle && gearbox.Gear > 0 ) {
+            if ( gearbox.Gear > 1 ) {
+                setCurrentGear( 1 ); // snap to neutral first
+            }
+            requestDownshift(); // neutral -> reverse
+        }
+        if ( gearbox.Gear == 0 ) {
+            outBrake = accel;
+            outThrottle = brake;
+        } else {
+            outBrake = kAutoGbxHoldBrake;
+            outThrottle = 0.0f;
+        }
+        if ( speed > kAutoGbxMovingSpeed && gearbox.Gear == 0 ) {
+            autoGearboxState = AGS_Reverse;
+        } else if ( brake < kAutoGbxPedal ) {
+            autoGearboxState = AGS_Stopped;
+        }
+        break;
+
+    case AGS_Reverse:
+        setCurrentGear( 0 );
+        outBrake = accel;
+        outThrottle = brake;
+        if ( std::fabs( gearbox.ForwardSpeed ) < kAutoGbxReverseExitSpeed ) {
+            if ( accel >= kAutoGbxInput || speed >= kAutoGbxInput ) {
+                if ( brake < kAutoGbxInput && accel > kAutoGbxInput ) {
+                    autoGearboxState = AGS_MovingOff;
+                }
+            } else {
+                autoGearboxState = AGS_Stopped;
+            }
+        }
+        break;
+
+    case AGS_MovingOff:
+        if ( brake > kAutoGbxPedal ) {
+            autoGearboxState = AGS_LineLock;
+        }
+        if ( gearbox.bShiftIdle ) {
+            if ( gearbox.Gear < 2 ) {
+                if ( gearbox.Gear == 0 ) {
+                    setCurrentGear( 1 ); // out of reverse first
+                }
+                requestUpshift();
+            } else if ( gearbox.Gear > 2 ) {
+                requestDownshift();
+            }
+        }
+        if ( gearbox.Gear == 2 ) {
+            outBrake = ( brake < kAutoGbxPedal ) ? 0.0f : brake;
+            outThrottle = accel;
+        } else {
+            outBrake = kAutoGbxHoldBrake;
+            outThrottle = kAutoGbxMoveOffThrottle; // keep the revs up
+        }
+        if ( speed > kAutoGbxMovingSpeed && gearbox.Gear == 2 ) {
+            autoGearboxState = AGS_Forward;
+        } else if ( accel < kAutoGbxPedal ) {
+            autoGearboxState = AGS_Stopped;
+        }
+        break;
+
+    case AGS_Forward: {
+        outBrake = brake;
+        outThrottle = accel;
+        bool bCheckStop = true;
+        if ( speed < kAutoGbxMovingSpeed && accel > kAutoGbxPedal &&
+             brake > kAutoGbxPedal ) {
+            autoGearboxState = AGS_LineLock;
+            bCheckStop = false;
+        }
+        if ( bCheckStop &&
+             ( ( brake < kAutoGbxPedalIdle && speed < kAutoGbxMovingSpeed ) ||
+               ( gearbox.Gear == 1 && accel > kAutoGbxInput ) ) ) {
+            autoGearboxState = AGS_Stopped;
+        }
+        break;
+    }
+
+    case AGS_LineLock:
+        if ( brake < kAutoGbxPedal ) {
+            autoGearboxState = AGS_MovingOff;
+        }
+        outBrake = kAutoGbxHoldBrake;
+        outThrottle = accel;
+        setCurrentGear( 2 );
+        bDeclutch = true;
+        break;
+
+    default:
+        autoGearboxState = AGS_Stopped;
+        break;
+    }
+
+    setClutchOverride( bDeclutch ? 0.0f : -1.0f );
+
+    autoGearboxThrottle = outThrottle;
+    autoGearboxBrake = outBrake;
+    inputThrottle = outThrottle;
+    inputBrake = outBrake;
 }
 
 void PhysicsVehicle::setHandbrake( float handbrake ) {
@@ -1601,11 +1821,17 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
         wheelSurface[i] = 0;
         wheelMaterial[i] = TDUMaterialValue::kDefault;
         wheelGroundGap[i] = kAntiFlyMaxGap;
+        const JPH::RVec3 droopedW = attachW + suspRayLen * down;
+        w.GroundProbePoint = Eigen::Vector4f( droopedW.GetX(), droopedW.GetY(),
+                                              droopedW.GetZ(), 1.0f );
         return false;
     }
 
     const JPH::Vec3 contact( collector.mPosition - JPH::RVec3::sZero() );
     const float hitDist = rayLen * collector.GetEarlyOutFraction();
+
+    w.GroundProbePoint =
+        Eigen::Vector4f( contact.GetX(), contact.GetY(), contact.GetZ(), 1.0f );
 
     const JPH::RVec3 tyreBottomW = attachW + suspRayLen * down;
     wheelGroundGap[i] =
@@ -1690,7 +1916,7 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
     w.ContactVelLong = vLong;
     w.ContactPoint =
         Eigen::Vector4f( contact.GetX(), contact.GetY(), contact.GetZ(), 1.0f );
-    w.WheelPos =
+    w.AttachPoint =
         Eigen::Vector4f( attachW.GetX(), attachW.GetY(), attachW.GetZ(), 1.0f );
     w.bGroundContact = true;
     return true;
@@ -1722,6 +1948,134 @@ void PhysicsVehicle::applyAntiRollBars() {
     }
 }
 
+void PhysicsVehicle::updateGripModulation( float chassisSpeed ) {
+    // FUN_0041e6d0
+    constexpr float kOne = 1.0f;                    // FLOAT_00f4165c
+    constexpr float kBrakeGate = 0.1f;              // FLOAT_00f41668
+    constexpr float kHalf = 0.5f;                   // FLOAT_00f41674
+    constexpr float kAssistBias = 0.2f;             // DAT_00f41730
+    constexpr float kPercent = 100.0f;              // DAT_00f41708
+    constexpr float kAssistCeil = 1.25f;            // DAT_00f41870
+    constexpr float kMsToKmh = 3.6f;                // DAT_00f41768
+    constexpr float kStandstillSpeedHi = 1.0f;      // DAT_00fab5c0
+    constexpr float kStandstillSpeedLo = 0.25f;     // DAT_00fab5c4
+    constexpr float kStandstillGripFloor = 0.1f;    // DAT_00fab5c8
+    constexpr float kLowSpeedLatMax = 6.94444465f;  // DAT_00fab5cc (25 km/h)
+    constexpr float kLowSpeedExit = 13.8888893f;    // DAT_00fab5d0 (50 km/h)
+    constexpr float kLowSpeedEnter = 1.38888896f;   // DAT_00fab5d4 (5 km/h)
+    constexpr float kLowSpeedLatFloor = 0.3f;       // DAT_00fab5d8
+    constexpr float kLowSpeedLongFloor = 0.65f;     // DAT_00fab5dc
+    constexpr float kSlipRefLo = 50.0f;             // FLOAT_00f8a2d0
+    constexpr float kSlipRefHi = 100.0f;            // DAT_00f8a2d4
+    constexpr float kPwrBoostLo = 1.175f;           // DAT_00f8a2d8
+    constexpr float kPwrBoostHi = 1.225f;           // DAT_00f8a2dc
+    constexpr float kPwrRefLo = 130.0f;             // DAT_00f41bd8
+    constexpr float kPwrRefScale = 1.0f / 120.0f;   // DAT_00f418b0
+    constexpr float kLowSpeedLatRate = 3.33333325f; // DAT_00f41bdc
+
+    const auto clampSpan = []( float v, float a, float b ) {
+        return Clamp( v, std::min( a, b ), std::max( a, b ) );
+    };
+
+    float longMul = kOne;    // local_30, whole vehicle
+    float rearLatMul = kOne; // local_2c, whole vehicle (rear axle only)
+    float latMul = kOne;     // local_34, accumulates across wheels
+
+    {
+        if ( !bLowSpeedGripState ) {
+            if ( chassisSpeed < kLowSpeedEnter ) {
+                bLowSpeedGripState = true;
+            }
+        } else {
+            if ( bLowSpeedLongAssist ) {
+                longMul =
+                    clampSpan( ( ( chassisSpeed - kLowSpeedEnter ) *
+                                 ( kOne - kLowSpeedLongFloor ) ) /
+                                       ( kLowSpeedExit - kLowSpeedEnter ) +
+                                   kLowSpeedLongFloor,
+                               kOne, kLowSpeedLongFloor );
+            }
+            if ( bLowSpeedLatAssist && chassisSpeed < kLowSpeedLatMax ) {
+                const float latTarget = clampSpan(
+                    ( gVehicleLowSpeedLatGain - kLowSpeedLatFloor ) *
+                            ( std::fabs( steerCommand ) - kAssistBias ) *
+                            kLowSpeedLatRate +
+                        kLowSpeedLatFloor,
+                    gVehicleLowSpeedLatGain, kLowSpeedLatFloor );
+
+                float slipSum = 0.0f;
+                for ( int i = 0; i < vehicle.NumWheels; ++i ) {
+                    if ( vehicle.Wheels[i].AxleIndex == 1 ) {
+                        slipSum +=
+                            std::fabs( vehicle.Wheels[i].NormLongClamped );
+                    }
+                }
+                rearLatMul = clampSpan( ( latTarget - kAssistCeil ) * slipSum *
+                                                kHalf * kAssistBias +
+                                            kAssistCeil,
+                                        latTarget, kAssistCeil );
+            }
+            if ( chassisSpeed > kLowSpeedExit ) {
+                bLowSpeedGripState = false;
+            }
+        }
+    }
+
+    const PhysicsEngineSim &eng = vehicle.Engine;
+    const float mass = vehicle.Mass > 0.0f ? vehicle.Mass : 1.0f;
+    const float powerMax =
+        EngineTorqueAt( eng, eng.PeakPowerOmega, 1.0f ) * eng.PeakPowerOmega;
+    const float powerToWeight = powerMax / mass;
+    const float boostCeil =
+        clampSpan( ( kPwrBoostHi - kPwrBoostLo ) *
+                           ( powerToWeight - kPwrRefLo ) * kPwrRefScale +
+                       kPwrBoostLo,
+                   kPwrBoostLo, kPwrBoostHi );
+
+    const int32_t helpLevel = appliedDrivingHelpLevel;
+    const float brakeCmd = inputBrake;
+
+    for ( int i = 0; i < vehicle.NumWheels; ++i ) {
+        PhysicsWheelState &w = vehicle.Wheels[i];
+
+        float standstill = kOne;
+        if ( brakeCmd > kBrakeGate ) {
+            standstill = clampSpan(
+                ( ( kOne - kStandstillGripFloor ) *
+                  ( std::fabs( w.ContactVelLong ) - kStandstillSpeedLo ) ) /
+                        ( kStandstillSpeedHi - kStandstillSpeedLo ) +
+                    kStandstillGripFloor,
+                kStandstillGripFloor, kOne );
+        }
+        w.GripLong = standstill * longMul * w.BaseGripLong;
+
+        if ( !bLowSpeedGripState && helpLevel >= 0 && helpLevel < 3 ) {
+            const float ceil2 =
+                ( helpLevel == 2 ) ? ( boostCeil + kOne ) * kHalf : boostCeil;
+            float ratio = 0.0f;
+            const float vLongKmh = std::fabs( w.ContactVelLong * kMsToKmh );
+            if ( vLongKmh > kOne ) {
+                ratio = std::fabs( w.ContactVelLat * kMsToKmh ) / vLongKmh;
+            }
+            latMul *= clampSpan(
+                ( ( ratio * kPercent - kSlipRefLo ) * ( ceil2 - kOne ) ) /
+                        ( kSlipRefHi - kSlipRefLo ) +
+                    kOne,
+                kOne, ceil2 );
+        }
+
+        if ( w.AxleIndex == 1 ) {
+            w.GripLat = w.BaseGripLat * latMul * rearLatMul;
+            if ( bIsBike ) {
+                w.GripLong = ( rearLatMul + kAssistBias ) * standstill *
+                             longMul * w.BaseGripLong;
+            }
+        } else {
+            w.GripLat = w.BaseGripLat * latMul;
+        }
+    }
+}
+
 void PhysicsVehicle::OnStep(
     const JPH::PhysicsStepListenerContext &inContext ) {
     if ( pChassisBody == nullptr || pPhysicsSystem == nullptr ) {
@@ -1733,9 +2087,14 @@ void PhysicsVehicle::OnStep(
         return;
     }
 
+    const JPH::Body &chassis = *pChassisBody;
+    {
+        const JPH::Vec3 v = chassis.GetLinearVelocity();
+        arbitrateAutomaticGearbox(
+            dt, JPH::Vec3( v.GetX(), 0.0f, v.GetZ() ).Length() );
+    }
     applyDrivingMode();
 
-    const JPH::Body &chassis = *pChassisBody;
     const JPH::RMat44 world = chassis.GetWorldTransform();
 
     Matrix4x4f_t vehicleMatrix = Matrix4x4f_t::Identity();
@@ -1760,6 +2119,8 @@ void PhysicsVehicle::OnStep(
 
     const float vForward = chassisVel.Dot( world.GetColumn3( 2 ) );
     steerCommand = filterSteering( inputSteer, chassis, dt );
+
+    updateGripModulation( chassisVel.Length() );
 
     vehicle.ForwardSpeed = vForward;
     vehicle.AnyWheelGrounded = false;
@@ -1849,9 +2210,8 @@ void PhysicsVehicle::OnStep(
 
             const float reactTorque = ComputeWheelReactionTorque( w, hSub );
 
-            ApplyBrakeAndABS(
-                w, gVehicleABS && vehicle.bAbsEnabled && !bHandbraked, absMag,
-                reactTorque, driveBase, hSub );
+            ApplyBrakeAndABS( w, vehicle.bAbsEnabled && !bHandbraked, absMag,
+                              reactTorque, driveBase, hSub );
 
             w.DriveTorque = ApplyEngineDragControl(
                 w, vehicle.bEdcEnabled, reactTorque, driveBase, hSub );
@@ -2108,8 +2468,9 @@ void PhysicsVehicle::onWorldShifted( const Eigen::Vector3f &worldShift ) {
                                  0.0f );
     for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
         PhysicsWheelState &w = vehicle.Wheels[i];
-        w.WheelPos += shift;
+        w.AttachPoint += shift;
         w.ContactPoint += shift;
+        w.GroundProbePoint += shift;
     }
 }
 
@@ -2185,6 +2546,28 @@ void PhysicsVehicle::calibrateDisplayYOffset( float modelWheelRestY ) {
     y3DOffset = 0.0f;
 }
 
+void PhysicsVehicle::setAuthoredWheelHeights( const float *pAuthoredWheelY,
+                                              uint32_t numAuthored ) {
+    if ( bAuthoredWheelYKnown || pAuthoredWheelY == nullptr ) {
+        return;
+    }
+    const uint32_t numWheels =
+        Min( (uint32_t)vehicle.NumWheels, Min( numAuthored, 4u ) );
+    if ( numWheels == 0 ) {
+        return;
+    }
+    for ( uint32_t i = 0; i < numWheels; i++ ) {
+        if ( pAuthoredWheelY[i] == 0.0f ) {
+            return;
+        }
+    }
+
+    for ( uint32_t i = 0; i < numWheels; i++ ) {
+        authoredWheelY[i] = pAuthoredWheelY[i];
+    }
+    bAuthoredWheelYKnown = true;
+}
+
 void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform ) {
     // FUN_0083d880
     if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
@@ -2228,8 +2611,12 @@ PhysicsVehicle::getWheelReadout( uint32_t index ) const {
     out.SteerAngle = w.bSteered ? -steerCommand * steerLockRad : 0.0f;
     out.RotationAngle = w.SpinAngle;
     out.SuspensionLength = prevSuspLength[index];
-    out.SuspensionDeflection = JPH::Clamp(
-        suspRestLength[index] - prevSuspLength[index], -0.25f, 0.25f );
+    const float deflection =
+        bAuthoredWheelYKnown
+            ? ( wheelAttach[index].y() + bodyHeight * 0.5f -
+                authoredWheelY[index] - prevSuspLength[index] )
+            : ( suspStaticLength[index] - prevSuspLength[index] );
+    out.SuspensionDeflection = JPH::Clamp( deflection, -0.25f, 0.25f );
     out.SuspensionStaticLength = suspStaticLength[index];
     out.SuspensionDroopStop = suspDroopStop[index];
     out.LongitudinalSlip = w.NormLongClamped;
@@ -2248,11 +2635,7 @@ PhysicsVehicle::getWheelReadout( uint32_t index ) const {
     out.EspTorqueOut = w.EspTorqueOut;
     out.ContactSurface = wheelSurface[index];
     out.ContactMaterial = wheelMaterial[index];
-    out.ContactPoint =
-        w.bGroundContact
-            ? w.ContactPoint
-            : Eigen::Vector4f( w.WheelPos.x(), w.WheelPos.y() - w.Radius,
-                               w.WheelPos.z(), 1.0f );
+    out.ContactPoint = w.bGroundContact ? w.ContactPoint : w.GroundProbePoint;
     return out;
 }
 

@@ -26,17 +26,20 @@ struct PhysicsWheelState {
                                    // gear (driven wheel, clutch engaged)
     int SideFlag = 0;              // != 1 mirrors lateral/steer sign,
                                    // so the LEFT wheels are the mirrored ones.
+    int32_t AxleIndex = 0;         // 0 = front, 1 = rear
     bool bDriven = false;          // driven wheel
     bool bSteered = false;         // steered / handbrake wheel
 
     bool bGroundContact = false; // has a valid ground contact this step
     Eigen::Vector4f WheelLinVel =
-        Eigen::Vector4f::Zero(); // hub world linear velocity
-    Eigen::Vector4f WheelPos = Eigen::Vector4f::Zero(); // hub world position
+        Eigen::Vector4f::Zero(); // chassis velocity at the contact point
+    Eigen::Vector4f AttachPoint =
+        Eigen::Vector4f::Zero(); // suspension attachment (strut top), world
     Eigen::Vector4f SuspAxis = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
     Eigen::Vector4f WheelUpAxis = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
     Eigen::Vector4f ContactPoint =
         Eigen::Vector4f::Zero(); // contact application point (world)
+    Eigen::Vector4f GroundProbePoint = Eigen::Vector4f::Zero();
     Eigen::Vector4f ContactNormal =
         Eigen::Vector4f::Zero(); // contact normal (world)
     Eigen::Vector4f ContactLatAxis =
@@ -53,8 +56,10 @@ struct PhysicsWheelState {
     Eigen::Vector4f SuspForce = Eigen::Vector4f::Zero();
     Eigen::Vector4f SuspForcePoint = Eigen::Vector4f::Zero();
 
-    float GripLong = 1.0f;      // longitudinal grip mu_x
-    float GripLat = 1.0f;       // lateral grip mu_y
+    float GripLong = 1.0f; // longitudinal grip mu_x
+    float GripLat = 1.0f;  // lateral grip mu_y
+    float BaseGripLong = 1.0f;
+    float BaseGripLat = 1.0f;
     float BrakeGripLong = 1.0f; // longitudinal brake-grip fallback
     float BrakeGripLat = 1.0f;  // lateral brake-grip fallback
     float LoadScaleLong = 1.0f; // longitudinal tire-force load scale

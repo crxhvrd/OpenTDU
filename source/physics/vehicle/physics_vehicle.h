@@ -46,14 +46,13 @@ public:
 
     struct SuspensionSetup {
         float minLength;  // full-bump length, m
-        float maxLength;  // old full-droop length (= static + sag), m
-        float restLength; // static ride-height length, m
+        float maxLength;  // full-droop length = static + sag, m
         float frequency;  // ride frequency, Hz
         float damping;    // damping ratio
         float cornerLoad; // static per-wheel load, N (spring force at static)
         float
             staticLength; // suspLength at ride height (spring == cornerLoad), m
-        float droopStop;  // full-droop travel stop = static + preload, m
+        float droopStop;  // == maxLength; full droop is the zero-force point
     };
 
     struct DrivingGearbox {
@@ -78,6 +77,15 @@ public:
         DM_SlowDown = 3,
         // replay the previous update's input record
         DM_RepeatLast = 4,
+    };
+
+    enum eAutoGearboxState : int32_t {
+        AGS_Stopped = 0,     // standing still, engine idling
+        AGS_EngagingReverse, // brake held at a standstill -> select reverse
+        AGS_Reverse,         // reverse engaged (pedals swapped)
+        AGS_MovingOff,       // pulling away forwards (waiting for 1st)
+        AGS_Forward,         // driving forwards, shift logic in charge
+        AGS_LineLock,        // both pedals at a standstill (declutched)
     };
 
     // Chronopack State
@@ -110,8 +118,11 @@ public:
     float getInputBrake() const { return inputBrake; }
     float getInputThrottle() const { return inputThrottle; }
     float getInputHandbrake() const { return inputHandbrake; }
-    void setAutoReverseState( int32_t state ) { autoReverseState = state; }
-    int32_t getAutoReverseState() const { return autoReverseState; }
+    int32_t getAutoReverseState() const { return autoGearboxState; }
+    void setDrivingInputScripted( bool bScripted ) {
+        bDrivingInputScripted = bScripted;
+    }
+    void resetAutomaticGearbox();
     bool isActive() const { return pChassisBody != nullptr; }
     bool isSimulated() const { return bRegistered; }
     void setDrivingMode( uint8_t mode ) { drivingMode = mode; }
@@ -181,6 +192,9 @@ public:
     void onWorldShifted( const Eigen::Vector3f &worldShift );
     void calibrateDisplayYOffset( float modelWheelRestY );
 
+    void setAuthoredWheelHeights( const float *pAuthoredWheelY,
+                                  uint32_t numAuthored );
+
     uint32_t getNumWheels() const;
     WheelReadout getWheelReadout( uint32_t index ) const;
 
@@ -216,6 +230,9 @@ private:
                           const JPH::Body &chassis,
                           float deltaTime );
     void applyAntiRollBars();
+
+    void updateGripModulation( float chassisSpeed );
+    void arbitrateAutomaticGearbox( float deltaTime, float chassisSpeed );
 
 private:
     JPH::PhysicsSystem *pPhysicsSystem;
@@ -255,6 +272,12 @@ private:
 
     int32_t appliedDrivingHelpLevel = -2;
 
+    bool bLowSpeedGripState = false;
+    bool bLowSpeedLongAssist = false; // FIXME
+    bool bLowSpeedLatAssist = false;  // FIXME
+    bool bIsBike = false;
+    float rawInputThrottle;
+    float rawInputBrake;
     float inputThrottle;
     float inputBrake;
     float inputSteer;
@@ -263,7 +286,10 @@ private:
     float prevInputThrottle;
     float prevInputBrake;
     float prevInputSteer;
-    int32_t autoReverseState;
+    int32_t autoGearboxState;
+    float autoGearboxThrottle;
+    float autoGearboxBrake;
+    bool bDrivingInputScripted;
     float filteredSteer;
     float steerCommand; // shaped, speed-scaled steer (drives the wheel angle)
 
@@ -293,6 +319,8 @@ private:
     float displayPitch;
     float displayYaw;
     float y3DOffset;
+    float authoredWheelY[PhysicsVehicleState::kMaxWheels] = {};
+    bool bAuthoredWheelYKnown = false;
     float bodyHeight;
     float rideHeightFront;
     float rideHeightRear;

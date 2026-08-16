@@ -218,7 +218,14 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                     wheelRestSum +=
                         carState.wheels[w].Position + bodyHalfHeight;
                 }
-                pPhysicsVehicle->calibrateDisplayYOffset( wheelRestSum /
+                const float modelWheelRestY = wheelRestSum / modelNumWheels;
+                pPhysicsVehicle->calibrateDisplayYOffset( modelWheelRestY );
+                float authoredWheelY[CarState::kMaxNumWheels] = {};
+                for ( uint32_t w = 0; w < modelNumWheels; w++ ) {
+                    authoredWheelY[w] =
+                        carState.wheels[w].Position + bodyHalfHeight;
+                }
+                pPhysicsVehicle->setAuthoredWheelHeights( authoredWheelY,
                                                           modelNumWheels );
             }
 
