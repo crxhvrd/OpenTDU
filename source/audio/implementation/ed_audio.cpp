@@ -31,8 +31,6 @@ edAudio::edAudio()
       ProcessorUsage( 0.0f ),
       ThreadSleepTime( 0.0f ) {
     // FUN_00610ab0
-    static constexpr float kDiagonal = 0.70710677f; // DAT_00f41af4
-
     SpeakerDirections[0] = { -kDiagonal, 0.0f, kDiagonal };  // front left
     SpeakerDirections[1] = { kDiagonal, 0.0f, kDiagonal };   // front right
     SpeakerDirections[2] = { -kDiagonal, 0.0f, -kDiagonal }; // rear left

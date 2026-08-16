@@ -8,6 +8,8 @@ class edAudioBuffer;
 class edAudioMixer;
 class edAudioObject;
 
+static constexpr float kDiagonal = 0.70710677f; // DAT_00f41af4
+
 struct edAudioListener {
     Eigen::Vector3f Position;
     Eigen::Vector3f Front;
