@@ -113,6 +113,14 @@ public:
         return PlayingState == APES_Pause;
     }
     inline const char *getName() const { return Name; }
+    inline int32_t getLoopCount() const {
+        // FUN_006138a0
+        return LoopCount;
+    }
+    inline bool isLooping() const {
+        // FUN_00613680
+        return LoopCount == -1;
+    }
     inline float getDuration() const {
         // FUN_00613940
         return ( SourceSampleRate > 0 )
