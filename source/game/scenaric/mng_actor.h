@@ -16,6 +16,9 @@ public:
     inline int32_t getActorCount() const { return numActors; }
     inline Entity *getActor( int32_t index ) const { return pActors[index]; }
     inline void setIsManager( bool bEnabled ) { bIsManager = bEnabled; }
+    inline bool isRenderingInCockpitPass() const {
+        return bRenderInCockpitRenderPass;
+    }
 
 public:
     MngActor();
