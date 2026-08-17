@@ -11,6 +11,7 @@ EntityTransporter::EntityTransporter()
       Coupon( 0 ),
       GoodiesHashcode( 0 ),
       pGoodies( nullptr ),
+      EndAvatarConfig(),
       ConditionType( 0 ),
       Condition{ 0 } {
     // FUN_007dd530
@@ -30,50 +31,18 @@ void EntityTransporter::deserialize( BinaryReader *param_2 ) {
     // FUN_007dd380
     EntityExtraChallenge::deserialize( param_2 );
 
-    pMapName = reinterpret_cast<const char *>( param_2->pCursor );
-    while ( *param_2->pCursor != '\0' ) {
-        param_2->pCursor++;
-    }
-    param_2->pCursor++;
-    param_2->pCursor = reinterpret_cast<uint8_t *>(
-        ( reinterpret_cast<uintptr_t>( param_2->pCursor ) + 3 ) &
-        ~static_cast<uintptr_t>( 3 ) );
+    pMapName = ReadStreamString( param_2 );
 
-    Reward = *reinterpret_cast<uint32_t *>( param_2->pCursor );
-    param_2->pCursor += sizeof( uint32_t );
+    Reward = ReadStreamU32( param_2 );
+    Coupon = ReadStreamU32( param_2 );
 
-    Coupon = *reinterpret_cast<uint32_t *>( param_2->pCursor );
-    param_2->pCursor += sizeof( uint32_t );
+    readAvatarConfigFromPNJ( param_2, EndAvatarConfig );
 
-    const char *pEndAvatarName =
-        reinterpret_cast<const char *>( param_2->pCursor );
-    while ( *param_2->pCursor != '\0' ) {
-        param_2->pCursor++;
-    }
-    param_2->pCursor++;
-    param_2->pCursor = reinterpret_cast<uint8_t *>(
-        ( reinterpret_cast<uintptr_t>( param_2->pCursor ) + 3 ) &
-        ~static_cast<uintptr_t>( 3 ) );
-    (void)pEndAvatarName;
-
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
-
-    ConditionType = *reinterpret_cast<uint32_t *>( param_2->pCursor );
-    param_2->pCursor += sizeof( uint32_t );
-
+    ConditionType = ReadStreamU32( param_2 );
     if ( ConditionType == 2 ) {
-        // Condition holds an in-buffer string.
-        Condition.pValue = reinterpret_cast<const char *>( param_2->pCursor );
-        while ( *param_2->pCursor != '\0' ) {
-            param_2->pCursor++;
-        }
-        param_2->pCursor++;
-        param_2->pCursor = reinterpret_cast<uint8_t *>(
-            ( reinterpret_cast<uintptr_t>( param_2->pCursor ) + 3 ) &
-            ~static_cast<uintptr_t>( 3 ) );
+        Condition.pValue = ReadStreamString( param_2 );
     } else {
-        Condition.Value = *reinterpret_cast<uint32_t *>( param_2->pCursor );
-        param_2->pCursor += sizeof( uint32_t );
+        Condition.Value = ReadStreamU32( param_2 );
     }
 
     GoodiesHashcode = *reinterpret_cast<uint64_t *>( param_2->pCursor );

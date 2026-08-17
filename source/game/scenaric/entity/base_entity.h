@@ -204,3 +204,4 @@ void ResolveVolumeBlock( uint8_t *pBlock, ScenaricBank *pBank );
 void ResolveEntityRef( uint8_t *pBlock, ScenaricBank *pBank );
 uint32_t ReadStreamU32( BinaryReader *pReader );
 uint8_t *ReadStreamRef( BinaryReader *pReader );
+const char *ReadStreamString( BinaryReader *pReader );

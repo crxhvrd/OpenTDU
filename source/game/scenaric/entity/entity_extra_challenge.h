@@ -25,6 +25,10 @@ public:
     virtual const char *getChallengeName() const { return nullptr; }
 
 protected:
+    void readAvatarConfigFromPNJ( BinaryReader *pReader,
+                                  AvatarConfiguration &outConfig );
+
+protected:
     union ChallengeCondition {
         uint32_t Value;
         const char *pValue;

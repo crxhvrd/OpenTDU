@@ -3,7 +3,12 @@
 
 #include "game/game_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/avatar/gs_avatar.h"
+#include "database/gs_database.h"
 #include "filesystem/binary.h"
+
+// Index of TDU_PNJ in GameDatabase::pNumItems
+static constexpr int32_t kPNJDatabaseIndex = 0x10;
 
 EntityExtraChallenge::EntityExtraChallenge()
     : Entity(),
@@ -94,17 +99,30 @@ void EntityExtraChallenge::deserialize( BinaryReader *param_2 ) {
     AvatarVoiceType = *reinterpret_cast<uint32_t *>( param_2->pCursor );
     param_2->pCursor += sizeof( uint32_t );
 
-    // Avatar/PNJ name
-    const char *pAvatarName =
-        reinterpret_cast<const char *>( param_2->pCursor );
-    while ( *param_2->pCursor != '\0' ) {
-        param_2->pCursor++;
-    }
-    param_2->pCursor++;
-    param_2->pCursor = reinterpret_cast<uint8_t *>(
-        ( reinterpret_cast<uintptr_t>( param_2->pCursor ) + 3 ) &
-        ~static_cast<uintptr_t>( 3 ) );
-    (void)pAvatarName;
+    readAvatarConfigFromPNJ( param_2, AvatarConfig );
+}
 
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR (PNJ-name AvatarConfig resolution)
+void EntityExtraChallenge::readAvatarConfigFromPNJ(
+    BinaryReader *pReader, AvatarConfiguration &outConfig ) {
+    // FUN_007dd1c0 (inlined)
+    const char *pPNJName = ReadStreamString( pReader );
+
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const int32_t numPNJ =
+        static_cast<int32_t>( gameDB.pNumItems[kPNJDatabaseIndex] );
+
+    for ( int32_t i = 0; i < numPNJ; i++ ) {
+        const DBEntryPNJ &pnjEntry = gameDB.DBPNJ[i];
+        if ( strcmp( pnjEntry.ConfigID.pAsString, pPNJName ) != 0 ) {
+            continue;
+        }
+
+        if ( gpAvatar->applyPNJConfiguration( outConfig, pnjEntry ) ) {
+            return;
+        }
+
+        break;
+    }
+
+    outConfig = gpAvatar->getDefaultConfiguration( 0 );
 }

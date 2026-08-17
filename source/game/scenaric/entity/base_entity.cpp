@@ -437,3 +437,18 @@ uint8_t *ReadStreamRef( BinaryReader *pReader ) {
     pReader->pCursor += sizeof( uint64_t );
     return pBlock;
 }
+
+const char *ReadStreamString( BinaryReader *pReader ) {
+    const char *pString = reinterpret_cast<const char *>( pReader->pCursor );
+
+    while ( *pReader->pCursor != '\0' ) {
+        pReader->pCursor++;
+    }
+    pReader->pCursor++;
+
+    pReader->pCursor = reinterpret_cast<uint8_t *>(
+        ( reinterpret_cast<uintptr_t>( pReader->pCursor ) + 3 ) &
+        ~static_cast<uintptr_t>( 3 ) );
+
+    return pString;
+}

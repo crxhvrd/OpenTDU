@@ -19,7 +19,7 @@ private:
     uint32_t Coupon;
     uint64_t GoodiesHashcode;
     Entity *pGoodies;
-    AvatarConfiguration DstAvatarConfig;
+    AvatarConfiguration EndAvatarConfig;
     uint32_t ConditionType;
     ChallengeCondition Condition;
 };
