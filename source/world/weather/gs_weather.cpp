@@ -11,6 +11,36 @@ GSWeather *gpWeather = nullptr;
 
 static constexpr const char *kDefaultWeatherCfgName = "DEFAULT";
 
+static constexpr float kSunTintAmbientWeight = 1.0f; // FLOAT_00f4165c
+static constexpr float kSunTintDiffuseWeight = 0.9f; // DAT_00f416a0
+static constexpr float kSunTintMax = 1.0f;           // FLOAT_00f4165c
+static constexpr float kSunTintScale = 255.0f;       // DAT_00f41688
+
+ColorRGBA ComputeWeatherSunTintColor() {
+    // FUN_00414380
+    if ( gpWeather == nullptr ) {
+        return gColorWhite;
+    }
+
+    const WeatherConfig &config = gpWeather->getActiveWeatherConfig();
+    const Eigen::Vector4f sunAmbient = config.getSunAmbientColor();
+    const Eigen::Vector4f sunDiffuse = config.getSunDiffuseColor();
+
+    ColorRGBA color;
+    for ( int32_t i = 0; i < 3; i++ ) {
+        float channel = sunDiffuse[i] * kSunTintDiffuseWeight +
+                        sunAmbient[i] * kSunTintAmbientWeight;
+        if ( channel < 0.0f ) {
+            channel = 0.0f;
+        } else if ( channel > kSunTintMax ) {
+            channel = kSunTintMax;
+        }
+        color[i] = static_cast<uint8_t>( channel * kSunTintScale );
+    }
+    color.A = 0xff;
+    return color;
+}
+
 GSWeather::GSWeather()
     : GameSystem(),
       bEnabled( true ),

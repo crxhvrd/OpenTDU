@@ -430,6 +430,11 @@ Primitive *DrawList::pushPrimitive( Material *pMaterial, SetupGraph *pGraph ) {
     return activePrimitive.pPrimitive;
 }
 
+void DrawList::setNormal( const uint32_t index,
+                          const Eigen::Vector3f &normal ) {
+    activeCommand.Normals[index] = normal;
+}
+
 void DrawList::setDiffuse( const uint32_t index, const ColorRGBA &color ) {
     activeCommand.VertexColorDiffuse[index] = color.Color;
 }

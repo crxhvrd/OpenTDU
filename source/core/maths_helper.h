@@ -271,46 +271,22 @@ inline Matrix4x4f_t MakeScaleMatrix( Eigen::Vector3f &scale ) {
     return matrix;
 }
 
-static Eigen::Vector4f FUN_004134a0( Matrix4x4f_t &param_1_00,
-                                     Eigen::Vector3f &param_3 )
+static Eigen::Vector4f RotateByMatrix( const Matrix4x4f_t &param_1_00,
+                                       const Eigen::Vector3f &param_3 )
 
 {
     // FUN_004134a0
-    float fVar1;
-    float fVar2;
-    float fVar3;
-    float fVar4;
-    float fVar5;
-    float fVar6;
-    float fVar7;
-    float fVar8;
-    float fVar9;
-    float fVar10;
-    float fVar11;
-    float fVar12;
+    return ( matrix.row( 0 ) * vector.x() + matrix.row( 1 ) * vector.y() +
+             matrix.row( 2 ) * vector.z() )
+        .transpose();
+}
 
-    fVar1 = param_3.x();
-    fVar2 = param_3.y();
-    fVar3 = param_3.z();
-    fVar4 = param_1_00.row( 2 )[1];
-    fVar5 = param_1_00.row( 2 )[2];
-    fVar6 = param_1_00.row( 2 )[3];
-    fVar7 = param_1_00.row( 1 )[1];
-    fVar8 = param_1_00.row( 1 )[2];
-    fVar9 = param_1_00.row( 1 )[3];
-    fVar10 = param_1_00.row( 0 )[1];
-    fVar11 = param_1_00.row( 0 )[2];
-    fVar12 = param_1_00.row( 0 )[3];
+static Eigen::Vector4f FUN_004134a0( Matrix4x4f_t &param_1_00,
+                                     Eigen::Vector4f &param_3 )
 
-    Eigen::Vector4f param_1;
-    param_1.x() = fVar1 * param_1_00.row( 0 )[0] +
-                  fVar2 * param_1_00.row( 1 )[0] +
-                  fVar3 * param_1_00.row( 2 )[0];
-    param_1.y() = fVar1 * fVar10 + fVar2 * fVar7 + fVar3 * fVar4;
-    param_1.z() = fVar1 * fVar11 + fVar2 * fVar8 + fVar3 * fVar5;
-    param_1.w() = fVar1 * fVar12 + fVar2 * fVar9 + fVar3 * fVar6;
-
-    return param_1;
+{
+    // FUN_004134a0
+    return RotateByMatrix( param_1_00, param_3.head<3>() );
 }
 
 static inline Eigen::Vector4f

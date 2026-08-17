@@ -6,11 +6,21 @@
 
 #include "core/maths_helper.h"
 
+struct Material;
 struct ParticleInstance;
+
+struct PaperDesc {
+    const char *pName;
+    int32_t GridWidth;
+    int32_t GridHeight;
+    float PhysicalWidth;
+    float PhysicalHeight;
+    Material *pMaterial;
+};
 
 struct Paper {
     float lifetime;
-    const char *pName;
+    PaperDesc *pDesc;
     void *pCloth;
 };
 
@@ -33,11 +43,8 @@ private:
     void updatePapers( float deltaTime );
     void updateLeaf();
     void releasePapers();
+    void applyWind( Paper &paper, const Eigen::Vector4f &wind );
     bool isAmbianceRegionActive( int32_t regionId );
-    void computeSpawnPosition( float minDistance,
-                               float maxDistance,
-                               float mediumDistance,
-                               Eigen::Vector4f &outPos );
 
 private:
     Render2DB render2DBs[kNumPapers];

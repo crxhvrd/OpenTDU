@@ -20,6 +20,11 @@ float SampleGroundHeight( Instance *pHeightmapInstance,
                           const SectorHeightmap &heightmap,
                           float worldX,
                           float worldZ );
+bool SampleGroundNormal( Instance *pHeightmapInstance,
+                         const SectorHeightmap &heightmap,
+                         float worldX,
+                         float worldZ,
+                         Eigen::Vector3f &outNormal );
 bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
                              const float **ppHeights,
                              int32_t *pStride,

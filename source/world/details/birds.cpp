@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "birds.h"
 
+#include "audio/gs_ambiance.h"
 #include "core/color.h"
 
 #include "render/camera/camera_game.h"
@@ -11,19 +12,12 @@
 #include "render/render_context.h"
 #include "render/render_scene.h"
 
-#include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
-#include "world/sector_manager.h"
-#include "world/streaming_manager.h"
 #include "world/weather/gs_weather.h"
 
 #include <cmath>
 #include <cstdlib>
 
-// Override GSAmbiance and force birds spawn.
-#define OTDU_BIRDS_OVERRIDE_AMBIANCE 0
-
-static constexpr float kRandNorm = 1.0f / 32768.0f;    // DAT_00f41714
 static constexpr float kFacingThreshold = 0.04f;       // DAT_00f41980
 static constexpr float kVisibilityReset = 0.3f;        // FLOAT_00f416bc
 static constexpr float kWingRotTimeScale = 2.0f;       // DAT_00f416b0
@@ -40,7 +34,6 @@ static constexpr float kSpeedBase = 6.16f;             // DAT_00f42030
 static constexpr float kGroupSpread = 12.0f;           // DAT_00f41850
 static constexpr float kGroupSpreadHalf = 6.0f;        // DAT_00f41840
 static constexpr float kHeightLookAhead = 50.0f;       // DAT_00f41848
-static constexpr float kGroundMissSentinel = 100000.0f;
 static constexpr uint32_t kBirdVertexCount = 22;
 static constexpr uint32_t kBirdPrimitiveCount = 5;
 static constexpr float kBirdWingTipU = 0.984375f;   // FLOAT_00f41c64
@@ -68,13 +61,6 @@ static constexpr int32_t kRegionCoast[] = { 2, 1, 2 };         // DAT_00f7f360
 static constexpr int32_t kRegionUrbanCount = 3;
 static constexpr int32_t kRegionCountryCount = 5;
 static constexpr int32_t kRegionCoastCount = 3;
-
-inline float BirdRandom() {
-    // The original normalises Windows rand() (RAND_MAX 0x7fff) by 1/32768
-    // (DAT_00f41714). On platforms with a larger RAND_MAX, mask to 15 bits so
-    // the result stays in [0,1) and matches the original's distribution.
-    return static_cast<float>( rand() & 0x7fff ) * kRandNorm;
-}
 
 Birds::Birds()
     : TDUDetail(),
@@ -205,7 +191,7 @@ void Birds::tick( float deltaTime ) {
         gpWeather->updateActiveConfig();
     }
 
-    const uint32_t diffuseColor = computeBirdDiffuseColor();
+    const ColorRGBA diffuseColor = ComputeWeatherSunTintColor();
 
     // Emit one batch per distinct species material.
     for ( int32_t i = 0; i < kNumMaterials; i++ ) {
@@ -235,7 +221,7 @@ void Birds::updateBirds( float deltaTime ) {
     if ( nextSpawnTime <= 0.0f || numBirds < minVisibleBirds ) {
         spawnCount = numBirdsToSpawn;
         nextSpawnTime =
-            BirdRandom() * ( maxSpawnTime - minSpawnTime ) + minSpawnTime;
+            DetailRandom() * ( maxSpawnTime - minSpawnTime ) + minSpawnTime;
     } else {
         spawnCount = 0;
     }
@@ -312,12 +298,13 @@ void Birds::updateBirds( float deltaTime ) {
                 Eigen::Vector4f testPos = bird.Position;
                 testPos.w() = 1.0f;
                 float groundHeight;
-                if ( !queryGroundHeight( testPos, groundHeight ) ) {
+                if ( !SampleDetailGroundHeight( testPos, groundHeight ) ) {
                     groundHeight = camPos.y();
                     bird.pType = &gBirdTypes[2]; // MOUETTE fallback
                 } else {
                     const int32_t idx = static_cast<int32_t>(
-                        BirdRandom() * static_cast<float>( regionCount - 1 ) );
+                        DetailRandom() *
+                        static_cast<float>( regionCount - 1 ) );
                     bird.pType = &gBirdTypes[pRegionTypes[idx]];
                 }
 
@@ -326,9 +313,9 @@ void Birds::updateBirds( float deltaTime ) {
                 const float minHeight =
                     bird.pType->MinHeightOffset + groundHeight;
                 bird.Position.y() =
-                    BirdRandom() * ( maxHeight - minHeight ) + minHeight;
+                    DetailRandom() * ( maxHeight - minHeight ) + minHeight;
 
-                const float speed = BirdRandom() * kSpeedRange + kSpeedBase;
+                const float speed = DetailRandom() * kSpeedRange + kSpeedBase;
                 bird.Speed = speed;
                 bird.WingRotationSpeed = ( speed - kSpeedBase ) *
                                              kWingSpeedScaleA *
@@ -340,7 +327,7 @@ void Birds::updateBirds( float deltaTime ) {
                     groupRemaining = 0;
                 } else {
                     groupRemaining = static_cast<int32_t>(
-                        BirdRandom() * static_cast<float>( maxInGroup - 1 ) );
+                        DetailRandom() * static_cast<float>( maxInGroup - 1 ) );
                     pGroupLeader = &bird;
                 }
                 spawnCount--;
@@ -350,14 +337,15 @@ void Birds::updateBirds( float deltaTime ) {
             if ( bSpawned ) {
                 BirdType *pType = bird.pType;
                 bird.VisibilityTime = kVisibilityReset;
-                bird.WingRotationTime =
-                    BirdRandom() * pType->WingRotationTime * kWingRotTimeScale;
+                bird.WingRotationTime = DetailRandom() *
+                                        pType->WingRotationTime *
+                                        kWingRotTimeScale;
                 bird.NumWingRotation = 0;
                 bird.NextHeightTest = 0.0f;
                 float wingRotation = kWingFlapThreshold;
                 if ( pType->NumWingRotation == 0 ) {
                     wingRotation =
-                        BirdRandom() * kWingRotInitRange - kWingRotInitBias;
+                        DetailRandom() * kWingRotInitRange - kWingRotInitBias;
                 }
                 bird.WingRotation = wingRotation;
                 materialOT.registerUser( &bird, pType->pMaterial );
@@ -377,7 +365,7 @@ void Birds::updateBirds( float deltaTime ) {
                                   bird.Direction.head<3>() * kHeightLookAhead;
                 ahead.w() = 1.0f;
                 float groundHeight;
-                if ( queryGroundHeight( ahead, groundHeight ) ) {
+                if ( SampleDetailGroundHeight( ahead, groundHeight ) ) {
                     groundHeight += bird.pType->MinHeightOffset;
                     if ( ahead.y() < groundHeight ) {
                         ahead.y() = groundHeight;
@@ -432,9 +420,9 @@ void Birds::spawnGroupMember( Bird &bird, const Bird &leader ) {
     bird.Direction = leader.Direction;
     bird.Speed = leader.Speed;
     bird.WingRotationSpeed = leader.WingRotationSpeed;
-    const float offsetY = BirdRandom() - 0.5f; // FLOAT_00f41674
-    const float offsetX = BirdRandom() * kGroupSpread - kGroupSpreadHalf;
-    const float offsetZ = BirdRandom() * kGroupSpread - kGroupSpreadHalf;
+    const float offsetY = DetailRandom() - 0.5f; // FLOAT_00f41674
+    const float offsetX = DetailRandom() * kGroupSpread - kGroupSpreadHalf;
+    const float offsetZ = DetailRandom() * kGroupSpread - kGroupSpreadHalf;
     bird.Position.x() = offsetX + leader.Position.x();
     bird.Position.y() = offsetY + leader.Position.y();
     bird.Position.z() = offsetZ + leader.Position.z();
@@ -443,80 +431,21 @@ void Birds::spawnGroupMember( Bird &bird, const Bird &leader ) {
 
 bool Birds::isAmbianceRegionActive( int32_t regionId ) {
     // FUN_00901c10
-#if OTDU_BIRDS_OVERRIDE_AMBIANCE
-    return regionId == 4; // bring-up: coast ambiance -> seagull/pigeon flock
-#else
-    (void)regionId;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: WORLD
-    return false;
-#endif
-}
-
-bool Birds::queryGroundHeight( const Eigen::Vector4f &worldPos,
-                               float &outHeight ) {
-    // FUN_007cb910
-    outHeight = 0.0f;
-    if ( gpWorld == nullptr ) {
-        return false;
-    }
-    StreamingManager *pStreaming = gpWorld->getStreamingManager();
-    if ( pStreaming == nullptr ) {
-        return false;
-    }
-    Sector *pSector = pStreaming->sectorManager.getSectorAtPosition( worldPos );
-    if ( pSector == nullptr || pSector->state != 1 ||
-         pSector->geometry.pHeightmapInstance == nullptr ) {
-        return false;
-    }
-    const float height =
-        SampleGroundHeight( pSector->geometry.pHeightmapInstance,
-                            pSector->heightmap, worldPos.x(), worldPos.z() );
-    if ( height >= kGroundMissSentinel ) {
-        return false;
-    }
-    outHeight = height;
-    return true;
+    return gpAmbiance != nullptr &&
+           gpAmbiance->isAmbianceRegionActive( regionId );
 }
 
 void Birds::computeSpawnPosition( float minDistance,
                                   float maxDistance,
                                   float mediumDistance,
                                   Bird &bird ) {
-#if OTDU_BIRDS_OVERRIDE_AMBIANCE
-    // TODO: REMOVE ME: Test for Birds details (overrides GSAmbiance)
-    (void)maxDistance;
-    if ( gpCamera == nullptr ) {
-        bird.Position = Eigen::Vector4f::Zero();
-        bird.Direction = Eigen::Vector4f( 1.0f, 0.0f, 0.0f, 0.0f );
-        return;
-    }
-    const Matrix4x4f_t &camMat = gpCamera->getDefaultCamera()->getCamToWorld();
-    const Eigen::Vector3f camPos( camMat( 3, 0 ), camMat( 3, 1 ),
-                                  camMat( 3, 2 ) );
-    Eigen::Vector3f forward( -camMat( 2, 0 ), 0.0f, -camMat( 2, 2 ) );
-    Eigen::Vector3f right( camMat( 0, 0 ), 0.0f, camMat( 0, 2 ) );
-    forward.normalize();
-    right.normalize();
-
-    const float distance =
-        BirdRandom() * ( mediumDistance - minDistance ) + minDistance;
-    const float lateral = ( BirdRandom() - 0.5f ) * mediumDistance;
-    const Eigen::Vector3f spawn = camPos + forward * distance + right * lateral;
-    bird.Position = Eigen::Vector4f( spawn.x(), spawn.y(), spawn.z(), 0.0f );
-
-    const float heading = BirdRandom() * ( 2.0f * 3.14159265f );
-    bird.Direction =
-        Eigen::Vector4f( std::cos( heading ), 0.0f, std::sin( heading ), 0.0f );
-#else
-    OTDU_UNIMPLEMENTED; // TODO: WORLD
-    (void)minDistance;
-    (void)maxDistance;
-    (void)mediumDistance;
-    bird.Position = Eigen::Vector4f::Zero();
-#endif
+    // FUN_008a7700
+    ComputeDetailSpawnPosition( minDistance, maxDistance, mediumDistance,
+                                bird.Position, bird.Direction );
 }
 
-void Birds::appendBirdGeometry( const Bird &bird, uint32_t diffuseColor ) {
+void Birds::appendBirdGeometry( const Bird &bird,
+                                const ColorRGBA &diffuseColor ) {
     // FUN_009d4c30
     const BirdType *pType = bird.pType;
     const float cosFlap = std::cos( bird.WingRotation );
@@ -525,8 +454,6 @@ void Birds::appendBirdGeometry( const Bird &bird, uint32_t diffuseColor ) {
     const Eigen::Vector3f position = bird.Position.head<3>();
     const Eigen::Vector3f direction = bird.Direction.head<3>();
 
-    // Along-track extent (heading * Length) and wingspan (the horizontal
-    // perpendicular * cos(flap) * Width); wingtips also rise by sin(flap).
     const Eigen::Vector3f along( direction.x() * pType->Length, 0.0f,
                                  direction.z() * pType->Length );
     const float wingScale = cosFlap * pType->Width;
@@ -535,7 +462,6 @@ void Birds::appendBirdGeometry( const Bird &bird, uint32_t diffuseColor ) {
     const Eigen::Vector3f lift( 0.0f, sinFlap, 0.0f );
     const float height = pType->Height;
 
-    const ColorRGBA color( diffuseColor );
     auto pushVertex = [&]( const Eigen::Vector3f &p, float u, float v ) {
         drawList.setTexCoords( 0, Eigen::Vector2f( u, v ) );
         drawList.pushVertex( p.x(), p.y(), p.z() );
@@ -543,7 +469,7 @@ void Birds::appendBirdGeometry( const Bird &bird, uint32_t diffuseColor ) {
 
     // Body: both wings as one flat strip, dihedral given by the flap lift.
     if ( drawList.beginPrimitive( PT_TriangleStrip, 6 ) ) {
-        drawList.setDiffuse( 0, color );
+        drawList.setDiffuse( 0, diffuseColor );
         pushVertex( position - along - span + lift, kBirdWingTipU, 1.0f );
         pushVertex( position + along - span + lift, kBirdWingTipU, 0.0f );
         pushVertex( position - along, 0.0f, 1.0f );
@@ -565,7 +491,7 @@ void Birds::appendBirdGeometry( const Bird &bird, uint32_t diffuseColor ) {
                                     position.y() + height * kPanelHeight[p],
                                     position.z() );
         if ( drawList.beginPrimitive( PT_TriangleStrip, 4 ) ) {
-            drawList.setDiffuse( 0, color );
+            drawList.setDiffuse( 0, diffuseColor );
             pushVertex( position - along, 0.0f, 1.0f );
             pushVertex( tip, kBirdWingPanelU, 0.5f );
             pushVertex( apex, 0.0f, 0.5f );
@@ -573,12 +499,4 @@ void Birds::appendBirdGeometry( const Bird &bird, uint32_t diffuseColor ) {
             drawList.commitPrimitive();
         }
     }
-}
-
-uint32_t Birds::computeBirdDiffuseColor() {
-    // FUN_00414380
-#if !OTDU_BIRDS_OVERRIDE_AMBIANCE
-    OTDU_UNIMPLEMENTED; // TODO: WEATHER
-#endif
-    return 0xffffffffu;
 }

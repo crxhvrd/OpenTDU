@@ -7,6 +7,7 @@
 #include "render/draw_list.h"
 
 struct Material;
+class Sector;
 
 static constexpr uint32_t kNumClothInstances = 0x14;
 static constexpr uint32_t kClothSimBufferSize = 0x2800;
@@ -51,7 +52,7 @@ struct ClothInstance {
     float TimeAccumulator = 0.0f;
     int32_t SolverIterations = 1;
     Eigen::Vector4f Acceleration = Eigen::Vector4f::Zero();
-    int32_t field_0x80 = 0;
+    Sector *pBoundSector = nullptr;
 
     void setup( int32_t gridWidth,
                 int32_t gridHeight,
@@ -69,6 +70,7 @@ private:
         return pParticles[row * GridWidth + col];
     }
 
+    void updateSectorBinding();
     void integrate( float dt );
     void solveConstraints();
     void finalize();

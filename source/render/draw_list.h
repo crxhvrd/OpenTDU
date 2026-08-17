@@ -79,6 +79,7 @@ public:
     Primitive *pushPrimitive( Material *pMaterial,
                               SetupGraph *pGraph = nullptr );
 
+    void setNormal( const uint32_t index, const Eigen::Vector3f &normal );
     void setDiffuse( const uint32_t index, const ColorRGBA &color );
     void setTexCoords( const uint32_t index, const Eigen::Vector2f &coords );
     void setActiveMaterial( Material *pMaterial );

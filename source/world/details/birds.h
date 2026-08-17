@@ -51,13 +51,11 @@ private:
     void updateBirds( float deltaTime );
     void spawnGroupMember( Bird &bird, const Bird &leader );
     bool isAmbianceRegionActive( int32_t regionId );
-    bool queryGroundHeight( const Eigen::Vector4f &worldPos, float &outHeight );
     void computeSpawnPosition( float minDistance,
                                float maxDistance,
                                float mediumDistance,
                                Bird &bird );
-    void appendBirdGeometry( const Bird &bird, uint32_t diffuseColor );
-    uint32_t computeBirdDiffuseColor();
+    void appendBirdGeometry( const Bird &bird, const ColorRGBA &diffuseColor );
 
 private:
     static constexpr int32_t kMaxBirds = 12;

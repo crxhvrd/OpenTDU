@@ -6,65 +6,136 @@
 #include "render/render_scene.h"
 #include "system/system_shared.h"
 
-#include <cstdlib>
+#include "world/gs_world.h"
+#include "world/gs_world_streaming.h"
+#include "world/sector_manager.h"
+#include "world/streaming_manager.h"
+#include "world/weather/gs_weather.h"
 
 GSClothSystem *gpClothSystem = nullptr; // DAT_010e751c
 
-namespace {
-    constexpr float kClothFixedTimestep = 0.013333793f; // DAT_00f41c30
-    constexpr float kClothConstraintBias = 0.5f;        // FLOAT_00f41674
-    constexpr float kClothMinFaceLength = 0.001f;       // FLOAT_00f4167c
-    constexpr float kClothGravity = -9.8f;              // DAT_00f41f1c
-    constexpr float kClothAABBInit = 1000000.0f;        // FLOAT_00f41814
+constexpr float kClothFixedTimestep = 0.013333793f; // DAT_00f41c30
+constexpr float kClothConstraintBias = 0.5f;        // FLOAT_00f41674
+constexpr float kClothMinFaceLength = 0.001f;       // FLOAT_00f4167c
+constexpr float kClothGravity = -9.8f;              // DAT_00f41f1c
+constexpr float kClothAABBInit = 1000000.0f;        // FLOAT_00f41814
 
-    // DAT_00f7f200
-    constexpr int32_t kClothNeighborStencil[8][2] = {
-        {0,  -1},
-        {-1, 0 },
-        {0,  1 },
-        {1,  0 },
-        {1,  -1},
-        {-1, -1},
-        {-1, 1 },
-        {1,  1 },
-    };
+// DAT_00f7f200
+constexpr int32_t kClothNeighborStencil[8][2] = {
+    {0,  -1},
+    {-1, 0 },
+    {0,  1 },
+    {1,  0 },
+    {1,  -1},
+    {-1, -1},
+    {-1, 1 },
+    {1,  1 },
+};
 
-    // DAT_00f41714
-    constexpr float kClothRandNormalizer = 1.0f / 32768.0f;
-    constexpr float kClothDampingBase = 0.97099f;    // DAT_00f41e20
-    constexpr float kClothDampingRange = 0.02f;      // DAT_00f41e24
-    constexpr float kClothDefaultRestLength = -1.0f; // FLOAT_00f41664
+constexpr float kClothRandNormalizer = 1.0f / 32768.0f; // DAT_00f41714
+constexpr float kClothDampingBase = 0.97099f;           // DAT_00f41e20
+constexpr float kClothDampingRange = 0.02f;             // DAT_00f41e24
+constexpr float kClothDefaultRestLength = -1.0f;        // FLOAT_00f41664
 
-    constexpr uint64_t kClothSpecialMaterialGUID = 0x643cdcb28a4efd79ULL;
+constexpr uint64_t kClothSpecialMaterialGUID = 0x643cdcb28a4efd79ULL;
+constexpr float kClothMaxTimestep = 0.5f;     // FLOAT_00f41674
+constexpr float kClothLODExtentMax = 0.1f;    // FLOAT_00f41668
+constexpr float kClothLODExtentScale = 10.0f; // FLOAT_00f4166c
+constexpr float kClothLODLevelScale = 8.0f;   // DAT_00f41ac4
 
-    void ComputeWindForce( const Eigen::Vector4f &center,
-                           const Eigen::Vector4f &n1,
-                           const Eigen::Vector4f &n2,
-                           const Eigen::Vector4f &windAccel,
-                           Eigen::Vector4f &outNormal,
-                           Eigen::Vector4f &outForce ) {
-        // FUN_008aaaa0
-        outForce.setZero();
+void ComputeWindForce( const Eigen::Vector4f &center,
+                       const Eigen::Vector4f &n1,
+                       const Eigen::Vector4f &n2,
+                       const Eigen::Vector4f &windAccel,
+                       Eigen::Vector4f &outNormal,
+                       Eigen::Vector4f &outForce ) {
+    // FUN_008aaaa0
+    outForce.setZero();
 
-        const Eigen::Vector3f edge1 = ( n1 - center ).head<3>();
-        const Eigen::Vector3f edge2 = ( n2 - center ).head<3>();
-        Eigen::Vector3f normal = edge2.cross( edge1 );
+    const Eigen::Vector3f edge1 = ( n1 - center ).head<3>();
+    const Eigen::Vector3f edge2 = ( n2 - center ).head<3>();
+    Eigen::Vector3f normal = edge2.cross( edge1 );
 
+    outNormal.head<3>() = normal;
+    outNormal.w() = 0.0f;
+
+    const float length = normal.norm();
+    if ( length >= kClothMinFaceLength ) {
+        normal /= length;
         outNormal.head<3>() = normal;
         outNormal.w() = 0.0f;
 
-        const float length = normal.norm();
-        if ( length >= kClothMinFaceLength ) {
-            normal /= length;
-            outNormal.head<3>() = normal;
-            outNormal.w() = 0.0f;
-
-            const float flux = windAccel.head<3>().dot( normal );
-            outForce.head<3>() = normal * flux;
-            outForce.w() = 0.0f;
-        }
+        const float flux = windAccel.head<3>().dot( normal );
+        outForce.head<3>() = normal * flux;
+        outForce.w() = 0.0f;
     }
-} // namespace
+}
+
+static bool ComputeClothGroundPlane( const ClothInstance &cloth,
+                                     Eigen::Vector4f &outPlane ) {
+    // FUN_008aa620
+    static constexpr float kGroundPlaneLift = 0.15f; // DAT_00f41af8
+    static constexpr float kGroundMissSentinel = 100000.0f;
+
+    if ( gpWorld == nullptr ) {
+        return false;
+    }
+    StreamingManager *pStreaming = gpWorld->getStreamingManager();
+    if ( pStreaming == nullptr ) {
+        return false;
+    }
+
+    const Eigen::Vector4f center = cloth.BoundsCenter + cloth.Origin;
+    Sector *pSector = pStreaming->sectorManager.getSectorAtPosition( center );
+    if ( pSector == nullptr || pSector->state != 1 ||
+         pSector->geometry.pHeightmapInstance == nullptr ) {
+        return false;
+    }
+
+    const float height =
+        SampleGroundHeight( pSector->geometry.pHeightmapInstance,
+                            pSector->heightmap, center.x(), center.z() );
+    if ( height >= kGroundMissSentinel ) {
+        return false;
+    }
+
+    Eigen::Vector3f normal;
+    SampleGroundNormal( pSector->geometry.pHeightmapInstance,
+                        pSector->heightmap, center.x(), center.z(), normal );
+
+    const float distance =
+        normal.x() * cloth.BoundsCenter.x() +
+        normal.y() * ( ( height + kGroundPlaneLift ) - cloth.Origin.y() ) +
+        normal.z() * cloth.BoundsCenter.z();
+
+    outPlane = Eigen::Vector4f( normal.x(), normal.y(), normal.z(), -distance );
+    return true;
+}
+
+static int32_t ComputeClothLODLevel( RenderScene *pScene,
+                                     float viewSpaceZ,
+                                     float cullRadius ) {
+    // FUN_008a83e0
+    const Eigen::Vector4f extents( cullRadius, cullRadius, viewSpaceZ, 1.0f );
+    const Eigen::Vector4f projected = TDUMat4x4MulVec(
+        pScene->getFrustumWrite().getProjectionMatrix(), extents );
+    if ( projected.w() == 0.0f ) {
+        return 0;
+    }
+
+    const float invW = 1.0f / projected.w();
+    float extent = std::fabs( projected.y() * invW );
+    const float extentX = std::fabs( projected.x() * invW );
+    if ( extent <= extentX ) {
+        extent = extentX;
+    }
+
+    if ( extent > kClothLODExtentMax ) {
+        return 0;
+    }
+    const float t = ( kClothLODExtentMax - extent ) * kClothLODExtentScale;
+    return static_cast<int32_t>( t * t * kClothLODLevelScale );
+}
 
 GSClothSystem::GSClothSystem() : GameSystem(), pSimulationPool( nullptr ) {
     // FUN_008a82d0
@@ -91,9 +162,10 @@ bool GSClothSystem::initialize( TestDriveGameInstance *pInstance ) {
     }
 
     DrawStreams streams;
-    streams.Normals = 0;
+    streams.Normals = 1;
     streams.Diffuse = 1;
     streams.UVMap = 1;
+    streams.bIndex16 = 1;
     clothDrawList.initialize( kNumClothInstances * ( kClothMaxGridSize - 1 ),
                               0x8c0, 0x8c, true, &streams, "ServiceClothSystem",
                               false );
@@ -116,9 +188,16 @@ void GSClothSystem::tick( float totalTime, float deltaTime ) {
     clothDrawList.reset();
     clothDrawList.setIdentityTransform();
 
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY
+
+    float scaledDt = deltaTime;
+    if ( scaledDt > kClothMaxTimestep ) {
+        scaledDt = kClothMaxTimestep;
+    }
+
     for ( ClothInstance &cloth : clothes ) {
         if ( cloth.State == 2 ) {
-            cloth.simulate( deltaTime );
+            cloth.simulate( scaledDt );
         }
     }
 }
@@ -236,7 +315,7 @@ void ClothInstance::setup( int32_t gridWidth,
     bVisible = 1;
     pMaterial = pMat;
     bGroundCollision = 0;
-    field_0x80 = 0;
+    pBoundSector = nullptr;
     Acceleration.setZero();
 }
 
@@ -382,34 +461,182 @@ void ClothInstance::finalize() {
 
 void ClothInstance::groundClamp() {
     // FUN_008aa8a0
-    OTDU_UNIMPLEMENTED;
+    static constexpr float kGroundClampBias = 0.02f; // DAT_00f417f0
+
+    Eigen::Vector4f plane;
+    if ( !ComputeClothGroundPlane( *this, plane ) || plane.y() == 0.0f ) {
+        return;
+    }
+
+    const float invNormalY = -1.0f / plane.y();
+    const int32_t numParticles = GridWidth * GridHeight;
+    for ( int32_t i = 0; i < numParticles; ++i ) {
+        ClothParticle &p = pParticles[i];
+        const float planeY = ( p.CurrentPos.z() * plane.z() +
+                               p.CurrentPos.x() * plane.x() + plane.w() ) *
+                             invNormalY;
+        if ( p.CurrentPos.y() < planeY ) {
+            p.CurrentPos.y() = planeY + kGroundClampBias;
+            p.PreviousPos.y() = planeY;
+        }
+    }
+}
+
+void ClothInstance::updateSectorBinding() {
+    // FUN_008aa710
+    Sector *pSector = nullptr;
+    if ( gpWorld != nullptr ) {
+        StreamingManager *pStreaming = gpWorld->getStreamingManager();
+        if ( pStreaming != nullptr ) {
+            Eigen::Vector4f worldPosition = BoundsCenter + Origin;
+            worldPosition.w() = 1.0f;
+            pSector =
+                pStreaming->sectorManager.getSectorAtPosition( worldPosition );
+        }
+    }
+
+    if ( pBoundSector != nullptr && pBoundSector->state != 1 ) {
+        pBoundSector = nullptr;
+    }
+
+    if ( pSector != pBoundSector ) {
+        pBoundSector = nullptr;
+
+        RenderFile::Section *pShadowSection =
+            ( pSector != nullptr && pSector->state == 1 &&
+              pSector->heightmap.isConfigured() )
+                ? pSector->heightmap.pShadowTextureSection
+                : nullptr;
+
+        if ( pShadowSection != nullptr && pMaterial != nullptr ) {
+            MaterialParameter *pParam = pMaterial->getParameterByIndex( 0 );
+            MaterialLayer *pLayer =
+                ( pParam != nullptr ) ? pParam->getLayer( 0 ) : nullptr;
+            if ( pLayer != nullptr ) {
+                pLayer->pLayerTextures[1].pTextureSection = pShadowSection;
+                pBoundSector = pSector;
+            }
+        }
+    }
+
+    if ( pBoundSector != nullptr ) {
+        Eigen::Vector4f shift = Eigen::Vector4f::Zero();
+        if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+            shift = gpWorldStreaming->getPosition();
+        }
+
+        MaterialParameter *pParam = pMaterial->getParameterByIndex( 0 );
+        MaterialShaderParameterArray *pArray =
+            static_cast<MaterialShaderParameterArray *>( pParam );
+        if ( pArray != nullptr && pArray->NumParameters > 0 ) {
+            float *pSlot = (float *)pArray->getParameterDataByIndex(
+                pArray->NumParameters - 1 );
+            if ( pSlot != nullptr ) {
+                pSlot[0] =
+                    static_cast<float>( pBoundSector->offsetX ) - shift.x();
+                pSlot[1] = 0.0f;
+                pSlot[2] =
+                    static_cast<float>( pBoundSector->offsetY ) - shift.z();
+                pSlot[3] = 0.0f;
+            }
+        }
+        return;
+    }
+
+    State = 0;
+    pMaterial = nullptr;
+    bVisible = 0;
 }
 
 void ClothInstance::buildGeometry( DrawList &drawList ) {
     // FUN_008abee0
+    ColorRGBA diffuse = gColorWhite;
+    if ( bSpecialMaterial ) {
+        updateSectorBinding();
+        if ( pBoundSector == nullptr ) {
+            return;
+        }
+        if ( gpWeather != nullptr && gpWeather->isConfigDirty() ) {
+            gpWeather->updateActiveConfig();
+        }
+        diffuse = ComputeWeatherSunTintColor();
+    }
 
-    // TODO: frustum cull / LOD / weather tint
-    bVisible = 1;
+    RenderScene *pScene =
+        gpRender->getRenderPass<eRenderPass::RP_Near>().pScene;
+    if ( pScene == nullptr || pScene->getCamera() == nullptr ) {
+        return;
+    }
+
+    // Origin is absolute
+    Eigen::Vector4f renderOrigin = Origin;
+    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+        const Eigen::Vector4f shift = gpWorldStreaming->getPosition();
+        renderOrigin.x() -= shift.x();
+        renderOrigin.y() -= shift.y();
+        renderOrigin.z() -= shift.z();
+    }
 
     Matrix4x4f_t transform = Matrix4x4f_t::Identity();
-    transform.row( 3 ) = Origin;
+    transform.row( 3 ) = renderOrigin;
+
+    const Eigen::Vector4f boundsCenter( BoundsCenter.x(), BoundsCenter.y(),
+                                        BoundsCenter.z(), 1.0f );
+    Eigen::Vector4f viewCenter = TDUMat4x4MulVec( transform, boundsCenter );
+    viewCenter.w() = 1.0f;
+    viewCenter =
+        TDUMat4x4MulVec( pScene->getCamera()->getWorldToCam(), viewCenter );
+    if ( pScene->getFrustumWrite().testBoundingSphere( viewCenter,
+                                                       CullRadius ) == 0 ) {
+        bVisible = 0;
+        return;
+    }
+    bVisible = 1;
+
+    const int32_t lodStep =
+        ComputeClothLODLevel( pScene, viewCenter.z(), CullRadius ) + 1;
+    int32_t stepX = lodStep;
+    int32_t stepY = lodStep;
+    if ( GridWidth < lodStep * 2 ) {
+        stepX = GridWidth / 2;
+    }
+    if ( GridHeight < lodStep * 2 ) {
+        stepY = GridHeight / 2;
+    }
+    if ( stepX < 1 ) {
+        stepX = 1;
+    }
+    if ( stepY < 1 ) {
+        stepY = 1;
+    }
+    const int32_t numCols = GridWidth / stepX;
+    const int32_t numRows = GridHeight / stepY;
 
     drawList.setActiveTransformMatrix( transform );
     drawList.setActiveMaterial( pMaterial );
 
-    const ColorRGBA white( (uint32_t)0xffffffff );
-    for ( int32_t row = 0; row < GridHeight - 1; ++row ) {
-        drawList.setDiffuse( 0, white );
-        if ( !drawList.beginPrimitive( PT_TriangleStrip, GridWidth * 2 ) ) {
+    for ( int32_t row = 0; row < numRows - 1; ++row ) {
+        drawList.setDiffuse( 0, diffuse );
+        if ( !drawList.beginPrimitive( PT_TriangleStrip, numCols * 2 ) ) {
             break;
         }
-        for ( int32_t col = 0; col < GridWidth; ++col ) {
-            const ClothParticle &top = particleAt( row, col );
-            const ClothParticle &bottom = particleAt( row + 1, col );
 
+        const int32_t topRow = row * stepY;
+        const int32_t bottomRow =
+            ( row == numRows - 2 ) ? GridHeight - 1 : topRow + stepY;
+
+        for ( int32_t col = 0; col < numCols; ++col ) {
+            const int32_t column =
+                ( col == numCols - 1 ) ? GridWidth - 1 : col * stepX;
+            const ClothParticle &top = particleAt( topRow, column );
+            const ClothParticle &bottom = particleAt( bottomRow, column );
+
+            drawList.setNormal( 0, top.Normal.head<3>() );
             drawList.setTexCoords( 0, Eigen::Vector2f( top.U, top.V ) );
             drawList.pushVertex( top.CurrentPos.x(), top.CurrentPos.y(),
                                  top.CurrentPos.z() );
+
+            drawList.setNormal( 0, bottom.Normal.head<3>() );
             drawList.setTexCoords( 0, Eigen::Vector2f( bottom.U, bottom.V ) );
             drawList.pushVertex( bottom.CurrentPos.x(), bottom.CurrentPos.y(),
                                  bottom.CurrentPos.z() );

@@ -40,6 +40,7 @@ public:
                     int32_t flags );
 
     void buildRenderDescriptor();
+    bool isConfigured() const { return name[0] != '\0'; }
     float getQuadScale() const { return quadSize; }
     float getAreaOriginX() const { return static_cast<float>( areaOffsetX ); }
     float getAreaOriginZ() const { return static_cast<float>( areaOffsetY ); }

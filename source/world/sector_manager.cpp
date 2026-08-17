@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "sector_manager.h"
 
+#include "audio/gs_ambiance.h"
 #include "core/maths_helper.h"
 #include "game/scenaric/entity/base_entity.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -52,6 +53,8 @@ static constexpr size_t kAreaPoolSize = 0x180000;   // 1.5 MiB
 // Sector bank entry groups (ParsedBankEntry::Type): the terrain render set is
 // group 4; group 5 is props/actors (handled via .PMI / scenaric).
 static constexpr int32_t kSectorTerrainGroup = 4;
+// Bank entry type of the "ZONE" chunk GSAmbiance reads its emitters from.
+static constexpr int32_t kSectorAmbianceZones = 10;
 
 static inline void InstanciatePMI( SectorGeometry &geometry,
                                    const void *pResource,
@@ -741,6 +744,13 @@ void SectorBank::instanciate() {
             ParsedBankEntry entry;
             if ( bank.getEntry( i, entry ) != 0 ) {
                 break;
+            }
+
+            if ( entry.Type == kSectorAmbianceZones ) {
+                if ( gpAmbiance != nullptr ) {
+                    gpAmbiance->registerSectorEmitters( entry.pData, pOwner );
+                }
+                continue;
             }
 
             if ( entry.Type != kSectorTerrainGroup ) {
@@ -1458,6 +1468,10 @@ Sector::~Sector() {
 
 void Sector::reset() {
     // FUN_00705cb0
+    if ( gpAmbiance != nullptr ) {
+        gpAmbiance->unregisterSectorEmitters( this );
+    }
+
     if ( geometry.electricalNetworkSlot != -1 ) {
         if ( gpMngElectricalNetwork != nullptr ) {
             gpMngElectricalNetwork->releaseNetwork(

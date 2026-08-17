@@ -27,7 +27,7 @@
 #include "filesystem/gs_file.h"
 #include "flash/gs_flash.h"
 #include "game/avatar/gs_avatar.h"
-#include "game/avatar/gs_cloth_system.h"
+#include "physics/gs_cloth_system.h"
 #include "game/cinematic/gs_cinematics.h"
 #include "game/gs_intro_pool.h"
 #include "game/gs_subtitles.h"

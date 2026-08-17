@@ -2,6 +2,7 @@
 
 #include "shared.h"
 
+#include "core/maths_helper.h"
 #include "filesystem/bank.h"
 #include "render/2db.h"
 #include "render/2dm.h"
@@ -44,3 +45,17 @@ protected:
     const char *pName;
     uint32_t hash;
 };
+
+static constexpr float kDetailRandNorm = 1.0f / 32767.0f; // DAT_00f41714
+
+inline float DetailRandom() {
+    return static_cast<float>( rand() & 0x7fff ) * kDetailRandNorm;
+}
+
+void ComputeDetailSpawnPosition( float minDistance,
+                                 float maxDistance,
+                                 float mediumDistance,
+                                 Eigen::Vector4f &outPosition,
+                                 Eigen::Vector4f &outDirection );
+bool SampleDetailGroundHeight( const Eigen::Vector4f &worldPosition,
+                               float &outHeight );

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/color.h"
 #include "game/gs_base.h"
 #include "hdri_config.h"
 #include "time_of_day.h"
@@ -126,3 +127,5 @@ private:
 };
 
 extern GSWeather *gpWeather;
+
+ColorRGBA ComputeWeatherSunTintColor();

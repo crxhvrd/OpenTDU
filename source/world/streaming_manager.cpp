@@ -278,6 +278,47 @@ float SampleGroundHeight( Instance *pHeightmapInstance,
     return ( bot < top ) ? top - ( top - bot ) * fz : ( bot - top ) * fz + top;
 }
 
+bool SampleGroundNormal( Instance *pHeightmapInstance,
+                         const SectorHeightmap &heightmap,
+                         float worldX,
+                         float worldZ,
+                         Eigen::Vector3f &outNormal ) {
+    // FUN_00843dd0
+    outNormal = Eigen::Vector3f( 0.0f, 1.0f, 0.0f );
+
+    const float *pHeights = nullptr;
+    int32_t stride = 0;
+    float quadSize = 0.0f;
+    if ( !GetHeightmapSampleGrid( pHeightmapInstance, &pHeights, &stride,
+                                  &quadSize ) ) {
+        return false;
+    }
+
+    const float scale = 1.0f / quadSize;
+    const int32_t ix =
+        (int32_t)std::floor( scale * ( worldX - heightmap.worldOriginX ) );
+    const int32_t iz =
+        (int32_t)std::floor( scale * ( worldZ - heightmap.worldOriginZ ) );
+    if ( ix < 0 || ix + 1 >= stride || iz < 0 || iz + 1 >= stride ) {
+        return false;
+    }
+
+    const float h00 = pHeights[iz * stride + ix];
+    const float h01 = pHeights[( iz + 1 ) * stride + ix];
+    const float h10 = pHeights[iz * stride + ix + 1];
+
+    const Eigen::Vector3f edgeZ( 0.0f, h01 - h00, quadSize );
+    const Eigen::Vector3f edgeX( quadSize, h10 - h00, 0.0f );
+    const Eigen::Vector3f normal = edgeZ.cross( edgeX );
+
+    const float length = normal.norm();
+    if ( length <= 0.0f ) {
+        return false;
+    }
+    outNormal = normal / length;
+    return true;
+}
+
 bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
                              const float **ppHeights,
                              int32_t *pStride,
