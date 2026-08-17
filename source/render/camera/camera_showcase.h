@@ -20,6 +20,7 @@ public:
 
 private:
     friend class GSCamera;
+    friend class MngScreenshots;
 
 private:
     TestDriveMutex mutex;

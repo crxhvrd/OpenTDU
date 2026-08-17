@@ -319,6 +319,10 @@ public:
     VkSampleCountFlagBits
     clampSampleCount( VkSampleCountFlagBits requested ) const;
     bool isMultisampled( const GPUTexture *pTexture ) const;
+    bool copyBackbufferToHost( std::vector<uint8_t> &texels,
+                               uint32_t &outWidth,
+                               uint32_t &outHeight,
+                               eViewFormat &outFormat );
 
 #if OTDU_DEVBUILD
     void requestRenderTargetDump( GPUTexture *pTexture, const char *pFilePath );
@@ -493,11 +497,12 @@ private:
     void flushPendingTextureUploads();
     void flushPendingMipchainGens();
 
-#ifdef OTDU_DEVBUILD
-    void processPendingRenderTargetDumps();
     bool copyRenderTargetToHost( GPUTexture *pTexture,
                                  const uint32_t imageIndex,
                                  std::vector<uint8_t> &texels );
+
+#ifdef OTDU_DEVBUILD
+    void processPendingRenderTargetDumps();
 #endif
 };
 

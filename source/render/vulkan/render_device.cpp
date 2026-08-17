@@ -3718,6 +3718,32 @@ void RenderDevice::requestRenderTargetDump( GPUTexture *pTexture,
     pendingRenderTargetDumps.push_back(
         { pTexture, std::string( pFilePath ) } );
 }
+#endif
+
+bool RenderDevice::copyBackbufferToHost( std::vector<uint8_t> &texels,
+                                         uint32_t &outWidth,
+                                         uint32_t &outHeight,
+                                         eViewFormat &outFormat ) {
+    if ( backbuffer.pTexture == nullptr ) {
+        return false;
+    }
+
+    waitForIdle();
+
+    uint32_t imageIndex = getInternalFrameIndex();
+    if ( imageIndex >= backbuffer.pTexture->NumResources ) {
+        imageIndex = ( backbuffer.pTexture->NumResources - 1 );
+    }
+
+    if ( !copyRenderTargetToHost( backbuffer.pTexture, imageIndex, texels ) ) {
+        return false;
+    }
+
+    outWidth = backbuffer.Width;
+    outHeight = backbuffer.Height;
+    outFormat = backbuffer.Format;
+    return true;
+}
 
 bool RenderDevice::copyRenderTargetToHost( GPUTexture *pTexture,
                                            const uint32_t imageIndex,
@@ -3854,6 +3880,7 @@ bool RenderDevice::copyRenderTargetToHost( GPUTexture *pTexture,
     return bSuccess;
 }
 
+#if OTDU_DEVBUILD
 void RenderDevice::processPendingRenderTargetDumps() {
     if ( pendingRenderTargetDumps.empty() ) {
         return;

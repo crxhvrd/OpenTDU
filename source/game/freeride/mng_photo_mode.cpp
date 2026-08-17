@@ -29,8 +29,8 @@ MngPhotoMode::~MngPhotoMode() {
 
 bool MngPhotoMode::initialize( TestDriveGameInstance * ) {
     // FUN_006cdad0
-    MngScrenshots.saveScreenshot( gpRender->getWidth(), gpRender->getHeight(),
-                                  VF_X8R8G8B8 );
+    MngScrenshots.create( gpRender->getWidth(), gpRender->getHeight(),
+                          VF_X8R8G8B8 );
     return true;
 }
 

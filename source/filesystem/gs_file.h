@@ -124,6 +124,16 @@ public:
 
     bool fileExists( const char *pFilename );
 
+    static bool SaveFile( const char *pFilename,
+                          const void *pContent,
+                          uint32_t contentSize );
+
+    bool saveFileInContext( const char *pContextName,
+                            const char *pFilename,
+                            const wchar_t *pDisplayName,
+                            const void *pContent,
+                            uint32_t contentSize );
+
 private:
     std::set<AsyncFileOpen *> asyncData;
     std::vector<FileMap> filemaps;

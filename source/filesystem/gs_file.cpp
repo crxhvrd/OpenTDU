@@ -682,6 +682,69 @@ bool GSFile::fileExists( const char *pFilename ) {
     return bVar2;
 }
 
+bool GSFile::SaveFile( const char *pFilename,
+                       const void *pContent,
+                       uint32_t contentSize ) {
+    // FUN_009a2af0
+    if ( pFilename == nullptr || pContent == nullptr ) {
+        return false;
+    }
+
+    std::error_code errorCode;
+    const std::filesystem::path filePath( pFilename );
+    if ( filePath.has_parent_path() ) {
+        std::filesystem::create_directories( filePath.parent_path(),
+                                             errorCode );
+    }
+
+    std::ofstream stream( filePath, std::ofstream::out | std::ofstream::binary |
+                                        std::ofstream::trunc );
+    if ( !stream.is_open() ) {
+        OTDU_LOG_ERROR( "Failed to open '%s' for writing\n", pFilename );
+        return false;
+    }
+
+    stream.write( (const char *)pContent, (std::streamsize)contentSize );
+    const bool bSuccess = stream.good();
+    stream.close();
+
+    if ( !bSuccess ) {
+        OTDU_LOG_ERROR( "Failed to write %u bytes to '%s'\n", contentSize,
+                        pFilename );
+    }
+
+    return bSuccess;
+}
+
+bool GSFile::saveFileInContext( const char *pContextName,
+                                const char *pFilename,
+                                const wchar_t *pDisplayName,
+                                const void *pContent,
+                                uint32_t contentSize ) {
+    // FUN_009a26d0
+    if ( pFilename == nullptr || pContent == nullptr ) {
+        return false;
+    }
+
+    {
+        ScopedMutexLock lock( saveQueue.pMutex );
+        if ( pContextName != nullptr ) {
+            saveQueue.ContextName = pContextName;
+        }
+        if ( pDisplayName != nullptr ) {
+            saveQueue.DisplayName = pDisplayName;
+        }
+    }
+
+    std::filesystem::path filePath( getSaveFolder() );
+    if ( pContextName != nullptr && pContextName[0] != '\0' ) {
+        filePath /= pContextName;
+    }
+    filePath /= pFilename;
+
+    return SaveFile( filePath.string().c_str(), pContent, contentSize );
+}
+
 void GSFile::syncAsyncWorkerThread() {
     if ( !workerThreadContext.bRunning ) {
         // Pick the next queued request and signal the worker to load it.
