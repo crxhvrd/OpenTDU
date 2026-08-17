@@ -17,7 +17,10 @@ enum eAvatarCustomizable : int32_t {
 };
 
 static constexpr int32_t kNumClotheTypes = 2;
+static constexpr int32_t kNoClotheSet = 3;
 static constexpr int32_t kNumFaceParams = 31;
+static constexpr int32_t kNumGenders = 2;
+static constexpr uint8_t kDefaultFaceParam = 8;
 
 struct AvatarConfiguration {
     uint16_t StyleID;

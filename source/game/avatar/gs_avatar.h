@@ -10,6 +10,7 @@
 #include "avatar_pool.h"
 
 class EntityAvatar;
+struct DBEntryPNJ;
 
 // TODO
 struct AvatarBnkManager {};
@@ -21,6 +22,11 @@ public:
         return "Service : Avatar";
     }
 
+    inline const AvatarConfiguration &
+    getDefaultConfiguration( int32_t gender ) const {
+        return pDefaultConfig[gender];
+    }
+
 public:
     GSAvatar();
     ~GSAvatar();
@@ -29,6 +35,9 @@ public:
     void tick( float totalTime, float deltaTime ) override;
     void draw( float deltaTime ) override;
     void terminate() override;
+
+    bool applyPNJConfiguration( AvatarConfiguration &outConfig,
+                                const DBEntryPNJ &pnjEntry );
 
     void bakeAvatar( EntityAvatar *pAvatar,
                      const AvatarConfiguration *pConfig,
@@ -53,9 +62,11 @@ private:
                           const AvatarConfiguration *pConfig );
     void readAvatarConfig( const EntityAvatar *pAvatar,
                            AvatarConfiguration &outConfig );
+    bool loadFaceModifSet( AvatarConfiguration &outConfig,
+                           const char *pFileConfigName );
 
     void buildClothesDB();
-    void buildHairDB();
+    void buildDefaultPartsDB();
     void buildBodyDB();
     void buildBodyMorphDB();
     void buildBodyLODDB();
@@ -63,12 +74,13 @@ private:
     void buildBeltDB();
     void buildEyeDB();
     void loadConfigBanks();
+    void buildDefaultConfig();
 
 private:
     Matrix4x4f_t pBones[2][256];
 
     AvatarPartDB *pClothesDB;
-    AvatarPartDB *pHairDB;
+    AvatarPartDB *pDefaultPartsDB;
     AvatarPartDB *pBodyDB;
     AvatarPartDB *pBodyLODDB;
     AvatarPartDB *pStyleDB;
@@ -80,7 +92,8 @@ private:
     Bank pnjBank;
     Bank styleBank;
 
-    AvatarConfiguration pDefaultConfig[2];
+    AvatarConfiguration pDefaultConfig[kNumGenders];
+    int32_t maxClotheID;
 
     uint32_t faceParameterCount;
     ScenaricBank faceParametersBank;

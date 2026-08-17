@@ -11,6 +11,7 @@ class RenderTarget;
 struct HiearchyNode;
 struct FileCollection3D;
 class LightSetupNode;
+class ShaderParameterSetupNode;
 struct AvatarImpostor;
 class SkeletonInstance;
 
@@ -21,6 +22,8 @@ enum eAvatarLoadingState : int32_t {
     AVT_LoadCompleted = 3,
     AVT_Ready = 4
 };
+static constexpr int32_t kAvatarPartPoolSize = 0x2c00;
+static constexpr int32_t kAvatarPart2DMPoolSize = 0x2800;
 
 struct RenderAvatarBase {
     AvatarDBEntry *pAvatarPart = nullptr;
@@ -39,7 +42,19 @@ struct RenderAvatarBase {
     FileCollection3D *p3DManager = nullptr;
     int32_t Index = 0;
     LightSetupNode *pLightConfig = nullptr;
+    ShaderParameterSetupNode *pShaderConfig = nullptr;
     bool bVisible = false;
+
+    virtual ~RenderAvatarBase() {}
+
+    virtual void initialize( int32_t index,
+                             FileCollection3D *pCollection,
+                             LightSetupNode *pLightSetup,
+                             ShaderParameterSetupNode *pShaderSetup );
+    virtual void terminate();
+    virtual void releaseCurrentPart();
+
+    void instanciateHierarchy();
 
     void tickEyeMaterial();
     void tickBodyMaterial();
@@ -49,6 +64,8 @@ struct AvatarLOD : RenderAvatarBase {
     Render3DG *p3DG = nullptr;
     eAvatarLoadingState LoadingState = AVT_Unknown;
     AvatarDBEntry *pAvatarPartInLoading = nullptr;
+
+    void stepLoading();
 };
 
 struct RenderAvatar : AvatarLOD {
@@ -68,4 +85,10 @@ struct AvatarImpostor : AvatarLOD {
     RenderTarget *pRenderTargetFront = nullptr;
     RenderTarget *pRenderTargetBack = nullptr;
     int32_t bDirty = 0;
+
+    void initialize( int32_t index,
+                     FileCollection3D *pCollection,
+                     LightSetupNode *pLightSetup,
+                     ShaderParameterSetupNode *pShaderSetup ) override;
+    void terminate() override;
 };

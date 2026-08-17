@@ -63,7 +63,7 @@ static constexpr BucketConfiguration kTDUBucketConfig = { // DAT_00f721c8
 
 static void FUN_00994850() {
     // FUN_00994850
-    OTDU_UNIMPLEMENTED;
+    gpRender->notifyDeviceResetListeners();
 }
 
 GSRender::GSRender()
@@ -244,7 +244,9 @@ GSRender::GSRender()
       sunDirection( 0.0f, -0.4f, -1.0f ),
       pActiveScene( nullptr ),
       pActiveCamera( nullptr ),
-      pListeners( nullptr ) {
+      pListeners( nullptr ),
+      deviceResetReason( 0 ),
+      pDeviceResetListeners( nullptr ) {
     // FUN_00996f80
     sunDirection.normalize();
 
@@ -497,21 +499,65 @@ void GSRender::registerConfigListener(
 
 void GSRender::unregisterConfigListener(
     RenderConfigurationChangeListener *callback ) {
-    RenderConfigurationChangeListener *pIt = pListeners;
     RenderConfigurationChangeListener *pPrev = nullptr;
 
-    while ( pIt != nullptr && pIt != callback ) {
+    for ( RenderConfigurationChangeListener *pIt = pListeners; pIt != nullptr;
+          pIt = pIt->pNextListener ) {
         if ( pIt == callback ) {
-            if ( pPrev != nullptr ) {
-                pPrev = pIt->pNextListener;
+            if ( pPrev == nullptr ) {
+                pListeners = pIt->pNextListener;
             } else {
-                OTDU_ASSERT( pIt == pListeners );
-                pListeners = nullptr;
+                pPrev->pNextListener = pIt->pNextListener;
             }
             return;
         }
         pPrev = pIt;
-        pIt = pIt->pNextListener;
+    }
+}
+
+void GSRender::registerDeviceResetListener(
+    RenderDeviceResetListener *callback ) {
+    if ( pDeviceResetListeners == nullptr ) {
+        pDeviceResetListeners = callback;
+        return;
+    }
+
+    RenderDeviceResetListener *pIt = pDeviceResetListeners;
+    while ( pIt->pNextResetListener != nullptr ) {
+        pIt = pIt->pNextResetListener;
+    }
+
+    pIt->pNextResetListener = callback;
+}
+
+void GSRender::unregisterDeviceResetListener(
+    RenderDeviceResetListener *callback ) {
+    if ( callback == nullptr ) {
+        return;
+    }
+
+    RenderDeviceResetListener *pPrev = nullptr;
+    for ( RenderDeviceResetListener *pIt = pDeviceResetListeners;
+          pIt != nullptr; pIt = pIt->pNextResetListener ) {
+        if ( pIt == callback ) {
+            if ( pPrev == nullptr ) {
+                pDeviceResetListeners = pIt->pNextResetListener;
+            } else {
+                pPrev->pNextResetListener = pIt->pNextResetListener;
+            }
+            return;
+        }
+        pPrev = pIt;
+    }
+}
+
+void GSRender::notifyDeviceResetListeners() {
+    // FUN_00994850
+    for ( RenderDeviceResetListener *pIt = pDeviceResetListeners;
+          pIt != nullptr; pIt = pIt->pNextResetListener ) {
+        if ( !pIt->onRenderDeviceReset( deviceResetReason ) ) {
+            return;
+        }
     }
 }
 

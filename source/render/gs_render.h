@@ -193,6 +193,10 @@ public:
     void
     unregisterConfigListener( RenderConfigurationChangeListener *callback );
 
+    void registerDeviceResetListener( RenderDeviceResetListener *callback );
+    void unregisterDeviceResetListener( RenderDeviceResetListener *callback );
+    void notifyDeviceResetListeners();
+
     bool resize( uint32_t width,
                  uint32_t height,
                  uint32_t refreshRate,
@@ -458,6 +462,9 @@ private:
     Camera *pActiveCamera;
 
     RenderConfigurationChangeListener *pListeners;
+
+    int32_t deviceResetReason;
+    RenderDeviceResetListener *pDeviceResetListeners;
 
 private:
     bool allocateDeviceResources();

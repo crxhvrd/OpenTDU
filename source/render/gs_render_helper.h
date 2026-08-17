@@ -124,6 +124,17 @@ private:
     friend class GSRender;
 };
 
+class RenderDeviceResetListener {
+public:
+    virtual bool onRenderDeviceReset( int32_t reason ) = 0;
+
+protected:
+    RenderDeviceResetListener *pNextResetListener = nullptr;
+
+private:
+    friend class GSRender;
+};
+
 // TODO: Not sure who's supposed to own this...
 extern eViewFormat gDepthStencilFormat; // DAT_00fac8e4
 extern GPUTexture *gpMainDepthBuffer;   // DAT_00f47920

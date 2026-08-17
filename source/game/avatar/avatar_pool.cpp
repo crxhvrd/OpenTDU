@@ -12,23 +12,59 @@ AvatarPool::AvatarPool() {
 
 void AvatarPool::initialize() {
     // FUN_008ee830
-    OTDU_UNIMPLEMENTED;
+    for ( int32_t i = 0; i < kNumInstances; ++i ) {
+        pInstances[i].initialize( i );
+    }
+
     gpRender->registerConfigListener( this );
 }
 
 void AvatarPool::tick() {
     // FUN_008ee970
-    OTDU_UNIMPLEMENTED;
+    static constexpr eAvatarLoadingPass kPasses[] = {
+        ALP_NotUnloaded, ALP_Synchronous, ALP_AsyncCritical, ALP_Async };
+
+    for ( const eAvatarLoadingPass pass : kPasses ) {
+        for ( PooledAvatarEntry &instance : pInstances ) {
+            instance.stepLoading( pass );
+        }
+    }
+
+    for ( PooledAvatarEntry &instance : pInstances ) {
+        if ( instance.stepLoadingCompletion() ) {
+            instance.bUpdatable = !instance.bUpdatable;
+            instance.updateBodyPartVisibility();
+        }
+
+        if ( instance.CarBelt.LoadingState == AVT_LoadCompleted ) {
+            if ( instance.CarBelt.StreamingRequest.State ==
+                 AVT_LoadCompleted ) {
+                instance.CarBelt.releaseCurrentPart();
+                instance.CarBelt.LoadingState = AVT_Unloaded;
+            } else {
+                instance.CarBelt.instanciateHierarchy();
+                instance.CarBelt.LoadingState = AVT_Ready;
+            }
+        }
+    }
 }
 
 void AvatarPool::terminate() {
     // FUN_008ee8d0
     gpRender->unregisterConfigListener( this );
-    OTDU_UNIMPLEMENTED;
+
+    for ( int32_t i = 0; i < kNumInstances; ++i ) {
+        pInstances[i].terminate();
+    }
 }
 
 bool AvatarPool::onConfigurationChanged() {
     // FUN_008ee7e0
     OTDU_UNIMPLEMENTED;
+
+    for ( PooledAvatarEntry &instance : pInstances ) {
+        instance.Impostor.bDirty = 2;
+    }
+
     return true;
 }
