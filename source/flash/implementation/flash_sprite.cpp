@@ -834,7 +834,7 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
 
     FlashTagDefineFontData *pFont = nullptr;
     FlashTagDefineBitsLosslessData *pFontBitmap = nullptr;
-    float yOffset = 0.0f; // Y translate for glyph transform (simple path = 0)
+    float yOffset = 0.0f;
     float invScale = 0.0009765625f; // 1/1024
     float cursorTopPos[4] = { 0, 0, 0, 0 };
     float glyphScale[4] = { 0, 0, 0, 0 };
@@ -853,7 +853,7 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
     float fontAscentF = 0.0f;
     int32_t fontBaseLineSpacing = 0;
     float lineAdvance = 0.0f;
-    float lineStartX = 0.0f;
+    float lineStartY = 0.0f;
     float xCursor = 0.0f;
     float yCursor = 0.0f;
     uint32_t charSpacingAdj = 0;
@@ -1068,13 +1068,13 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
     invScale =
         (float)( fontBaseLineSpacing * (uint32_t)pEditText->UnknownShort ) *
         invScale;
-    float initY = (float)pEditText->field16_0x28 + pEditText->field5_0x14;
-    lineStartX = initY;
+    yCursor = (float)pEditText->field16_0x28 + pEditText->field5_0x14;
+    lineStartY = yCursor;
     xCursor = yOffset;
     size_t charCount = totalCharCount;
     if ( ch == '\n' ) {
-        initY = initY + lineAdvance;
-        lineStartX = initY;
+        yCursor = yCursor + lineAdvance;
+        lineStartY = yCursor;
     }
 
     while ( totalCharCount = charCount, ch != 0 ) {
@@ -1090,12 +1090,12 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
                                 10 ) +
                        yCursor + invScale +
                        (float)(uint32_t)pEditText->field_0x2a,
-                   lineStartX = yCursor, (float)textBoxHeight <= yCursor ) )
+                   lineStartY = yCursor, (float)textBoxHeight <= yCursor ) )
                 break;
             xCursor = FlashTagDefineEditText_ComputeHorizontalTextOffset(
                 pEditText, pFont, &charSpacingAdj, &spacingBuf, bKeepUnicode,
                 pTextCursor );
-            lineStartX = yCursor;
+            lineStartY = yCursor;
         }
 
         uint16_t wChar = 0;
@@ -1191,7 +1191,7 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
                         pFlash = gpActiveFlashResource;
                     } while ( *(int *)pNext == 8 );
                     skew = 0.0f;
-                    yCursor = lineStartX;
+                    yCursor = lineStartY;
                     xScale = glyphScale[0];
                 }
                 xCursor = (float)( ( (int)( pEditText->field25_0x2c *
@@ -1219,7 +1219,7 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
                     }
                     skew = 0.0f;
                     pGlyphData = pGlyphVerts + 8;
-                    yCursor = lineStartX;
+                    yCursor = lineStartY;
                     xScale = glyphScale[0];
                     glyphHeader = pGlyphVerts[8];
                 }
@@ -1258,7 +1258,7 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
         pFlash->getState()->pDrawList->commitPrimitive();
         skew = 0.0f;
         pFlash = gpActiveFlashResource;
-        yCursor = lineStartX;
+        yCursor = lineStartY;
         xScale = glyphScale[0];
     }
 
