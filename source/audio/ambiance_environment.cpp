@@ -5,20 +5,9 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
 #include "game/vehicle/car_state.h"
+#include "core/binary_helpers.h"
 
 static constexpr float kNegate = -1.0f; // FLOAT_00f41664
-
-static inline float ReadFloat( const uint8_t *pData ) {
-    float value;
-    memcpy( &value, pData, sizeof( value ) );
-    return value;
-}
-
-static inline int32_t ReadInt( const uint8_t *pData ) {
-    int32_t value;
-    memcpy( &value, pData, sizeof( value ) );
-    return value;
-}
 
 void AmbianceReverbPreset::load( const edXMBNode &node ) {
     // FUN_0040e470 + FUN_0040e2c0
@@ -50,7 +39,7 @@ void AmbianceEmitter::deserialize(
     ChannelAttenuation[0] = 0.0f;
     ChannelAttenuation[1] = 0.0f;
 
-    const int32_t environmentIndex = ReadInt( pCursor );
+    const int32_t environmentIndex = ReadInt32( pCursor );
     pCursor += 4;
     pEnvironment = environments.get( environmentIndex );
 
@@ -60,7 +49,7 @@ void AmbianceEmitter::deserialize(
     Position = Eigen::Vector4f( x, 0.0f, -y, w );
     pCursor += 0x10;
 
-    PointCount = ReadInt( pCursor );
+    PointCount = ReadInt32( pCursor );
     pCursor += 0xc;
 
     pPoints = reinterpret_cast<const float *>( pCursor );

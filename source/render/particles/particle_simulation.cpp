@@ -8,22 +8,9 @@
 #include "render/draw_list.h"
 #include "render/gs_render.h"
 #include "render/render_scene.h"
-
-#include <algorithm>
-#include <cmath>
-#include <cstdlib>
-#include <cstring>
+#include "core/binary_helpers.h"
 
 namespace {
-    template <typename T> T Read( const uint8_t *p, uint32_t offset ) {
-        T value;
-        std::memcpy( &value, p + offset, sizeof( T ) );
-        return value;
-    }
-
-    template <typename T> void Write( uint8_t *p, uint32_t offset, T value ) {
-        std::memcpy( p + offset, &value, sizeof( T ) );
-    }
 
     uint32_t ColorByte( float channel ) {
         float scaled = channel * 255.0f;

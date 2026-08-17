@@ -21,13 +21,6 @@
 #include "world/gs_world_streaming.h"
 
 namespace {
-    inline uint32_t ReadStreamU32( BinaryReader *pReader ) {
-        const uint32_t value =
-            *reinterpret_cast<const uint32_t *>( pReader->pCursor );
-        pReader->pCursor += sizeof( uint32_t );
-        return value;
-    }
-
     void ResolveCinematicEntry( BankInstance &bank,
                                 const std::string &name,
                                 ParsedBankEntry &outEntry ) {

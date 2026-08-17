@@ -200,3 +200,7 @@ void ResolveVolumeList( uint32_t *pList );
 void ResolveEntityRefList( uint32_t *pList );
 void ResolveVolumeBlock( uint8_t *pBlock );
 void ResolveEntityRef( uint8_t *pBlock );
+void ResolveVolumeBlock( uint8_t *pBlock, ScenaricBank *pBank );
+void ResolveEntityRef( uint8_t *pBlock, ScenaricBank *pBank );
+uint32_t ReadStreamU32( BinaryReader *pReader );
+uint8_t *ReadStreamRef( BinaryReader *pReader );

@@ -60,7 +60,7 @@ void MngReflection::draw() {
     peVar5->setFOV( fVar3 );
 
     Matrix4x4f_t pafVar18 = peVar4->getWorldToCam();
-    Eigen::Vector4f local_f0 = FUN_004134a0( pafVar18, local_100 );
+    Eigen::Vector4f local_f0 = RotateByMatrix( pafVar18, local_100 );
 
     Matrix4x4f_t TStack_50 = MakeScaleMatrix( local_e0.Scale );
     pafVar18 = TStack_50 * pafVar18;

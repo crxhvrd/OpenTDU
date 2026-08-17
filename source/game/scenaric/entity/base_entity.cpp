@@ -384,3 +384,56 @@ void ResolveEntityRef( uint8_t *pBlock ) {
         hashcode != 0 ? gpScenaric->findEntityByHashcode( hashcode ) : nullptr;
     *reinterpret_cast<Entity **>( pBlock ) = pEntity;
 }
+
+void ResolveVolumeBlock( uint8_t *pBlock, ScenaricBank *pBank ) {
+    // FUN_007da770
+    if ( pBank == nullptr ) {
+        ResolveVolumeBlock( pBlock );
+        return;
+    }
+
+    const uint64_t hashcode = *reinterpret_cast<uint64_t *>( pBlock );
+    if ( hashcode == 0 ) {
+        *reinterpret_cast<Entity **>( pBlock ) = nullptr;
+        return;
+    }
+
+    Entity *pVolume = pBank->getVolumeByHashcode( hashcode );
+    if ( pVolume == nullptr ) {
+        pVolume = gpScenaric->getSCVolume( hashcode );
+    }
+    *reinterpret_cast<Entity **>( pBlock ) = pVolume;
+}
+
+void ResolveEntityRef( uint8_t *pBlock, ScenaricBank *pBank ) {
+    // FUN_007daec0
+    if ( pBank == nullptr ) {
+        ResolveEntityRef( pBlock );
+        return;
+    }
+
+    const uint64_t hashcode = *reinterpret_cast<uint64_t *>( pBlock );
+    if ( hashcode == 0 ) {
+        *reinterpret_cast<Entity **>( pBlock ) = nullptr;
+        return;
+    }
+
+    Entity *pEntity = pBank->getEntityByHashcode( hashcode );
+    if ( pEntity == nullptr ) {
+        pEntity = gpScenaric->findEntityByHashcode( hashcode );
+    }
+    *reinterpret_cast<Entity **>( pBlock ) = pEntity;
+}
+
+uint32_t ReadStreamU32( BinaryReader *pReader ) {
+    const uint32_t value =
+        *reinterpret_cast<const uint32_t *>( pReader->pCursor );
+    pReader->pCursor += sizeof( uint32_t );
+    return value;
+}
+
+uint8_t *ReadStreamRef( BinaryReader *pReader ) {
+    uint8_t *pBlock = pReader->pCursor;
+    pReader->pCursor += sizeof( uint64_t );
+    return pBlock;
+}

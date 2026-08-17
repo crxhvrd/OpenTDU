@@ -13,6 +13,7 @@
 #include "gs_audio.h"
 #include "implementation/audio_sound_resource.h"
 #include "render/camera/gs_camera.h"
+#include "core/binary_helpers.h"
 
 GSAmbiance *gpAmbiance = nullptr;
 
@@ -26,18 +27,6 @@ static constexpr int32_t kNoEnvironmentPriority = 100;
 static constexpr int32_t kNoReverbPriority = 101;
 static constexpr uint32_t kInteriorViewFlag = 1u << 18;
 static constexpr float kDoorApertureScale = 0.5f; // FLOAT_00f41674
-
-static inline uint32_t ReadUint32( const uint8_t *pData ) {
-    uint32_t value;
-    memcpy( &value, pData, sizeof( value ) );
-    return value;
-}
-
-static inline int32_t ReadInt( const uint8_t *pData ) {
-    int32_t value;
-    memcpy( &value, pData, sizeof( value ) );
-    return value;
-}
 
 GSAmbiance::GSAmbiance() : GameSystem(), Mutex() {
     // FUN_009de4b0
@@ -426,7 +415,7 @@ void GSAmbiance::registerSectorEmitters( const void *pBlob,
     }
     pCursor += 4;
 
-    const int32_t zoneCount = ReadInt( pCursor + 0xc );
+    const int32_t zoneCount = ReadInt32( pCursor + 0xc );
     pCursor += 0x1c;
 
     for ( int32_t i = 0; i < zoneCount; i++ ) {

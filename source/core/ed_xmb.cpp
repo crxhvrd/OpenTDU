@@ -1,55 +1,13 @@
 #include "shared.h"
 #include "ed_xmb.h"
 
+#include "binary_helpers.h"
+
 static constexpr uint32_t kMagic = 0x46424d58;  // 'XMBF'
 static constexpr float kXMBFloatDefault = 0.0f; // FLOAT_00f41660
 
 // Added back when an unsigned dword reads negative
 static constexpr float kXMBUInt32Bias = 4294967296.0f; // FLOAT_00f41670
-
-namespace {
-    static inline int32_t ReadI32( const uint8_t *pData ) {
-        int32_t value;
-        memcpy( &value, pData, sizeof( value ) );
-        return value;
-    }
-
-    static inline uint32_t ReadU32( const uint8_t *pData ) {
-        uint32_t value;
-        memcpy( &value, pData, sizeof( value ) );
-        return value;
-    }
-
-    static inline int16_t ReadI16( const uint8_t *pData ) {
-        int16_t value;
-        memcpy( &value, pData, sizeof( value ) );
-        return value;
-    }
-
-    static inline uint16_t ReadU16( const uint8_t *pData ) {
-        uint16_t value;
-        memcpy( &value, pData, sizeof( value ) );
-        return value;
-    }
-
-    static inline float ReadF32( const uint8_t *pData ) {
-        float value;
-        memcpy( &value, pData, sizeof( value ) );
-        return value;
-    }
-
-    static inline int64_t ReadI64( const uint8_t *pData ) {
-        int64_t value;
-        memcpy( &value, pData, sizeof( value ) );
-        return value;
-    }
-
-    static inline double ReadF64( const uint8_t *pData ) {
-        double value;
-        memcpy( &value, pData, sizeof( value ) );
-        return value;
-    }
-} // namespace
 
 edXMBNode::edXMBNode()
     : pStringPool( nullptr ),
@@ -72,7 +30,7 @@ edXMBNode::edXMBNode( const void *pBuffer ) : edXMBNode() {
         return;
     }
 
-    const uint32_t stringPoolOffset = ReadU32( pBytes + 0x08 );
+    const uint32_t stringPoolOffset = ReadUint32( pBytes + 0x08 );
     if ( ( stringPoolOffset & 0xff000000u ) != 0 ) {
         // Swap endianess if needed (using FUN_0045ed80). Not implemented since
         // this is presumably Xbox only
@@ -81,11 +39,11 @@ edXMBNode::edXMBNode( const void *pBuffer ) : edXMBNode() {
     }
 
     pStringPool = reinterpret_cast<const char *>( pBytes + stringPoolOffset );
-    pNodeTable =
-        reinterpret_cast<const uint32_t *>( pBytes + ReadU32( pBytes + 0x0c ) );
-    pDataBase = pBytes + ReadU32( pBytes + 0x10 );
-    pName = pStringPool + ReadU32( pBytes + 0x14 );
-    NodeIndex = static_cast<int32_t>( ReadU32( pBytes + 0x18 ) );
+    pNodeTable = reinterpret_cast<const uint32_t *>(
+        pBytes + ReadUint32( pBytes + 0x0c ) );
+    pDataBase = pBytes + ReadUint32( pBytes + 0x10 );
+    pName = pStringPool + ReadUint32( pBytes + 0x14 );
+    NodeIndex = static_cast<int32_t>( ReadUint32( pBytes + 0x18 ) );
     Type = XMBT_Node;
     pValue = pDataBase;
 }
@@ -172,8 +130,8 @@ void edXMBNode::setFromEntry( const edXMBNode &parent,
     bIsArray = EntryIsArray( entryHigh );
 
     if ( bIsArray ) {
-        ArrayCount = ReadI32( pData );
-        pValue = pDataBase + ReadI32( pData + 4 );
+        ArrayCount = ReadInt32( pData );
+        pValue = pDataBase + ReadInt32( pData + 4 );
         return;
     }
 
@@ -181,14 +139,14 @@ void edXMBNode::setFromEntry( const edXMBNode &parent,
     pValue = pData;
 
     if ( Type == XMBT_String ) {
-        const int32_t stringOffset = ReadI32( pData );
+        const int32_t stringOffset = ReadInt32( pData );
         pValue = stringOffset != -1 ? pDataBase + stringOffset : nullptr;
         return;
     }
 
     if ( Type == XMBT_Reference ) {
-        NodeIndex = ReadI32( pData );
-        pValue = pDataBase + ReadI32( pData + 4 );
+        NodeIndex = ReadInt32( pData );
+        pValue = pDataBase + ReadInt32( pData + 4 );
         Type = HeaderType( getHeader( NodeIndex ) );
         return;
     }
@@ -272,7 +230,7 @@ edXMBNode edXMBNode::getElement( int32_t index ) const {
     result.ArrayCount = 0;
 
     if ( Type == XMBT_String ) {
-        result.pValue = pDataBase + ReadI32( pValue + index * 4 );
+        result.pValue = pDataBase + ReadInt32( pValue + index * 4 );
     } else {
         result.pValue =
             pValue + HeaderDataSize( getHeader( NodeIndex ) ) * index;
@@ -300,13 +258,13 @@ int32_t edXMBNode::asInt( int32_t defaultValue ) const {
     case XMBT_Int32:
     case XMBT_Int64: // truncating, as the original does
     case XMBT_UInt32:
-        return ReadI32( pValue );
+        return ReadInt32( pValue );
     case XMBT_UInt64:
-        return static_cast<int32_t>( ReadI64( pValue ) );
+        return static_cast<int32_t>( ReadInt64( pValue ) );
     case XMBT_Single:
-        return static_cast<int32_t>( ReadF32( pValue ) );
+        return static_cast<int32_t>( ReadFloat( pValue ) );
     case XMBT_Double:
-        return static_cast<int32_t>( ReadF64( pValue ) );
+        return static_cast<int32_t>( ReadDouble( pValue ) );
     default:
         return defaultValue;
     }
@@ -329,13 +287,13 @@ float edXMBNode::asFloat( float defaultValue ) const {
     case XMBT_UInt16:
         return static_cast<float>( ReadU16( pValue ) );
     case XMBT_Int32:
-        return static_cast<float>( ReadI32( pValue ) );
+        return static_cast<float>( ReadInt32( pValue ) );
     case XMBT_Int64:
-        return static_cast<float>( ReadI64( pValue ) );
+        return static_cast<float>( ReadInt64( pValue ) );
     case XMBT_UInt32: {
         // Converted as signed then biased back, which is what the x87 path does
         // for want of an unsigned load.
-        const int32_t value = ReadI32( pValue );
+        const int32_t value = ReadInt32( pValue );
         float asFloat = static_cast<float>( value );
         if ( value < 0 ) {
             asFloat += kXMBUInt32Bias;
@@ -343,13 +301,13 @@ float edXMBNode::asFloat( float defaultValue ) const {
         return asFloat;
     }
     case XMBT_UInt64: {
-        const int64_t value = ReadI64( pValue );
+        const int64_t value = ReadInt64( pValue );
         return static_cast<float>( static_cast<uint64_t>( value ) );
     }
     case XMBT_Single:
-        return ReadF32( pValue );
+        return ReadFloat( pValue );
     case XMBT_Double:
-        return static_cast<float>( ReadF64( pValue ) );
+        return static_cast<float>( ReadDouble( pValue ) );
     default:
         return kXMBFloatDefault;
     }

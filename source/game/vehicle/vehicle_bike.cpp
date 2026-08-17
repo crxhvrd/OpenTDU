@@ -658,7 +658,7 @@ void VehicleBike::updateHelmetPosition() {
     Eigen::Vector3f offset( gHelmetCamOffsetX - gHelmetHeadPosX,
                             gHelmetCamOffsetY - gHelmetHeadPosY,
                             gHelmetCamOffsetZ - gHelmetHeadPosZ );
-    Eigen::Vector4f transformedOffset = FUN_004134a0( localMat, offset );
+    Eigen::Vector4f transformedOffset = RotateByMatrix( localMat, offset );
     localMat( 3, 0 ) += transformedOffset.x();
     localMat( 3, 1 ) += transformedOffset.y();
     localMat( 3, 2 ) += transformedOffset.z();

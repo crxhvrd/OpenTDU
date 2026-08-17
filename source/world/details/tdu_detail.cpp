@@ -148,7 +148,8 @@ void ComputeDetailSpawnPosition( float minDistance,
         headingSeed.z() = DetailRandom() * kFarHeadingRangeZ + kFarHeadingBiasZ;
     }
 
-    Eigen::Vector4f heading = RotateByMatrix( camToWorld, headingSeed );
+    Eigen::Vector4f heading =
+        RotateByMatrix( camToWorld, headingSeed.head<3>() );
     heading.y() = 0.0f;
     outDirection = heading / heading.norm();
 
@@ -164,7 +165,8 @@ void ComputeDetailSpawnPosition( float minDistance,
     const Eigen::Vector4f placement( std::cos( placementAngle ), 0.0f,
                                      std::sin( placementAngle ), 0.0f );
     outPosition =
-        cameraPosition - RotateByMatrix( camToWorld, placement ) * distance;
+        cameraPosition -
+        RotateByMatrix( camToWorld, placement.head<3>() ) * distance;
 }
 
 bool SampleDetailGroundHeight( const Eigen::Vector4f &worldPosition,

@@ -276,8 +276,9 @@ static Eigen::Vector4f RotateByMatrix( const Matrix4x4f_t &param_1_00,
 
 {
     // FUN_004134a0
-    return ( matrix.row( 0 ) * vector.x() + matrix.row( 1 ) * vector.y() +
-             matrix.row( 2 ) * vector.z() )
+    return ( param_1_00.row( 0 ) * param_3.x() +
+             param_1_00.row( 1 ) * param_3.y() +
+             param_1_00.row( 2 ) * param_3.z() )
         .transpose();
 }
 

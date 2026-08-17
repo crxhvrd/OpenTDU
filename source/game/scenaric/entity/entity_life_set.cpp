@@ -11,13 +11,6 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "world/gs_world_streaming.h"
 
-inline uint32_t ReadStreamU32( BinaryReader *pReader ) {
-    const uint32_t value =
-        *reinterpret_cast<const uint32_t *>( pReader->pCursor );
-    pReader->pCursor += sizeof( uint32_t );
-    return value;
-}
-
 void EntityLifeSet::LifeCinematic::deserialize( BinaryReader *pReader ) {
     // FUN_007dddd0
     bFocusOn = ReadStreamU32( pReader ) != 0;
