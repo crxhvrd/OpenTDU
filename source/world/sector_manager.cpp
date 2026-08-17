@@ -1566,7 +1566,6 @@ bool Sector::onWorldStreamed( Eigen::Vector4f *param_1,
     geometry.rebaseDetail2Materials( *param_3 );
     bool bImpostorShifted = true;
     geometry.rebaseImpostors( *param_3 );
-    geometry.mngActor.onWorldStreamed( param_1, param_2, param_3 );
 
     return bGeometryShifted && bImpostorShifted;
 }

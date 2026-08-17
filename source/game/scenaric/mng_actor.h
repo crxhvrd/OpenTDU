@@ -6,6 +6,7 @@
 class RenderScene;
 class Entity;
 class GameMechanism;
+class SceneryBinary;
 
 class MngActor : public Manager, public StreamingCallback {
 public:
@@ -16,6 +17,9 @@ public:
     inline int32_t getActorCount() const { return numActors; }
     inline Entity *getActor( int32_t index ) const { return pActors[index]; }
     inline void setIsManager( bool bEnabled ) { bIsManager = bEnabled; }
+    inline void setParentScenery( SceneryBinary *pScenery ) {
+        pParent = pScenery;
+    }
     inline bool isRenderingInCockpitPass() const {
         return bRenderInCockpitRenderPass;
     }
@@ -50,7 +54,7 @@ protected:
 protected:
     int32_t numActors;
     std::array<Entity *, kMaxNumEntity> pActors;
-    Entity *pParent;
+    SceneryBinary *pParent;
 
     GameMechanism *pGameMech;
 

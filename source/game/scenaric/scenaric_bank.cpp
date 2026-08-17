@@ -12,6 +12,8 @@
 #include "render/animation/animation.h"
 #include "filesystem/gs_file.h"
 #include "physics/gs_physics.h"
+#include "game/gm_world.h"
+#include "world/gs_world_streaming.h"
 
 static inline bool ContainerOwns( BinaryArray &container, Entity *pEntity ) {
     // FUN_007db1a0 (inlined)
@@ -599,9 +601,24 @@ void ScenaricBank::instanciateSceneries() {
         return;
     }
 
-    if ( bTransform ) {
-        pNode->TransformMatrix = bankTransform;
+    pActiveScenery->pHierarchyNode = pNode;
+    pActiveScenery->pBank = this;
+    pActiveScenery->InitialMatrix = pNode->TransformMatrix;
+
+    if ( !bIsSpotBank && gpActiveGM != nullptr ) {
+        gpActiveGM->getActorManager().setParentScenery( pActiveScenery );
     }
+
+    const Eigen::Vector4f streamOrigin =
+        ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() )
+            ? gpWorldStreaming->getPosition()
+            : Eigen::Vector4f::Zero();
+
+    if ( bTransform ) {
+        pActiveScenery->InitialMatrix = bankTransform;
+        pActiveScenery->shiftObjects( streamOrigin );
+    }
+    pActiveScenery->shiftObjects( streamOrigin );
 
     sceneryNodes.push_back( pNode );
 }

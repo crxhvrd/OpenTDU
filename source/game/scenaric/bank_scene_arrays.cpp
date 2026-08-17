@@ -2,13 +2,24 @@
 #include "bank_scene_arrays.h"
 
 #include "game/scenaric/gs_scenaric.h"
+#include "render/hiearchy_node.h"
+#include "render/instance.h"
 
 SceneryBinary::SceneryBinary() {
     // FUN_007e97f0
-    for ( int32_t i = 0; i < 16; i++ ) {
-        matrix[i] = 0.0f;
+    InitialMatrix = Matrix4x4f_t::Identity();
+}
+
+void SceneryBinary::shiftObjects( const Eigen::Vector4f &streamOrigin ) {
+    // FUN_007e9930
+    if ( pHierarchyNode == nullptr || pHierarchyNode->pInstance == nullptr ) {
+        return;
     }
-    matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1.0f;
+
+    pHierarchyNode->TransformMatrix = InitialMatrix;
+    pHierarchyNode->TransformMatrix.row( 3 ) -= streamOrigin.transpose();
+
+    pHierarchyNode->updateAndPropagateTransformMatrices( false );
 }
 
 void *SceneryBinArray::deserializeElement( BinaryReader &reader,

@@ -60,6 +60,7 @@ public:
     inline const std::vector<HiearchyNode *> &getSceneryNodes() const {
         return sceneryNodes;
     }
+    inline SceneryBinary *getActiveScenery() const { return pActiveScenery; }
     inline const std::string &getFilename() const { return filename; }
 
 public:

@@ -174,6 +174,10 @@ bool Spot::onWorldStreamed( Eigen::Vector4f *param_1,
                             Eigen::Vector4f *param_2,
                             Eigen::Vector4f *param_3 ) {
     // FUN_006fd020
+    if ( pSCBank != nullptr && pSCBank->getActiveScenery() != nullptr ) {
+        pSCBank->getActiveScenery()->shiftObjects( *param_3 );
+    }
+
     for ( int32_t i = 0; i < numGroundMaterial; i++ ) {
         Material *pMaterial = pMaterials[i];
         if ( pMaterial == nullptr ) {

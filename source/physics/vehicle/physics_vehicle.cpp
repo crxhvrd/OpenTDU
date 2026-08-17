@@ -2472,6 +2472,16 @@ void PhysicsVehicle::onWorldShifted( const Eigen::Vector3f &worldShift ) {
         w.ContactPoint += shift;
         w.GroundProbePoint += shift;
     }
+
+    auto translate = []( Matrix4x4f_t &m, const Eigen::Vector3f &t ) {
+        m( 3, 0 ) += t.x();
+        m( 3, 1 ) += t.y();
+        m( 3, 2 ) += t.z();
+    };
+
+    translate( physicsMatrix, worldShift );
+    translate( displayMatrix, worldShift );
+    invChassisMatrix = OrthoInvert( physicsMatrix );
 }
 
 static inline void RotateAboutOffset( Matrix4x4f_t &accum,

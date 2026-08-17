@@ -470,10 +470,6 @@ void GSScenaric::draw( float deltaTime ) {
         gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
 
     if ( pScene != nullptr ) {
-        const Eigen::Vector4f spotOrigin = gpWorldStreaming->isEnabled()
-                                               ? gpWorldStreaming->getPosition()
-                                               : Eigen::Vector4f::Zero();
-
         for ( ScenaricBank &bank : spotBanks ) {
             const SpotSector *pSpotSector = bank.getSpotSector();
             const Sector *pSector = bank.getSector();
@@ -491,16 +487,6 @@ void GSScenaric::draw( float deltaTime ) {
                 if ( pNode == nullptr || pNode->pInstance == nullptr ) {
                     continue;
                 }
-
-                Matrix4x4f_t modelMatrix = pNode->TransformMatrix;
-                modelMatrix( 3, 0 ) -= spotOrigin.x();
-                modelMatrix( 3, 1 ) -= spotOrigin.y();
-                modelMatrix( 3, 2 ) -= spotOrigin.z();
-
-                pNode->pInstance->setModelMatrix( modelMatrix );
-                pNode->pInstance->calculateBiggestScale();
-                pNode->pInstance->calculateDeterminant();
-                pNode->propagateTransformMatrices();
 
                 pScene->enqueueDynamicHiearchy( pNode );
             }

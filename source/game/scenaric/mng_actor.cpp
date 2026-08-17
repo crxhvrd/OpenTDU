@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "mng_actor.h"
 
+#include "bank_scene_arrays.h"
 #include "entity/base_entity.h"
 #include "entity/entity_factory.h"
 #include "render/gs_render.h"
@@ -63,6 +64,10 @@ bool MngActor::onWorldStreamed( Eigen::Vector4f *param_1,
                                 Eigen::Vector4f *param_2,
                                 Eigen::Vector4f *param_3 ) {
     // FUN_006ded70
+    if ( pParent != nullptr ) {
+        pParent->shiftObjects( *param_3 );
+    }
+
     for ( int32_t i = 0; i < numActors; i++ ) {
         pActors[i]->onWorldStreamed();
     }

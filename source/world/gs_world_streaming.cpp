@@ -43,8 +43,6 @@ bool GSWorldStreaming::initialize( TestDriveGameInstance *param_2 ) {
     pGameInstance = param_2;
     bPaused = false;
 
-    callbacks.fill( nullptr );
-
 #if 0
     // TODO: This is done twice (and somehow not optimized by the compiler?!)
     pStreamCenter = nullptr;

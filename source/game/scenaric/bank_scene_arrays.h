@@ -2,17 +2,22 @@
 
 #include "filesystem/binary.h"
 
+struct HiearchyNode;
+class ScenaricBank;
+
 class SceneryBinary {
 public:
     SceneryBinary();
 
-    char *pName = nullptr; // +0x00 name string (points into the bank buffer)
-    void *field_0x4 = nullptr; // +0x04
-    void *field_0x8 = nullptr; // +0x08
-    uint32_t field_0xc = 0;    // +0x0c
-    float matrix[16];          // +0x10 transform, initialised to identity
-    uint32_t field_0x50 = 0;   // +0x50 } optional pair captured from the table
-    uint32_t field_0x54 = 0;   // +0x54 } that follows from LED version 0x11
+    void shiftObjects( const Eigen::Vector4f &streamOrigin );
+
+    char *pName = nullptr;
+    HiearchyNode *pHierarchyNode = nullptr;
+    ScenaricBank *pBank = nullptr;
+    uint32_t field_0xc = 0;
+    Matrix4x4f_t InitialMatrix = Matrix4x4f_t::Identity();
+    uint32_t field_0x50 = 0;
+    uint32_t field_0x54 = 0;
 };
 
 class SceneryBinArray : public BinaryArray {
