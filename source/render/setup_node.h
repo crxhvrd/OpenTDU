@@ -106,9 +106,10 @@ public:
     SetupGraph();
     ~SetupGraph();
 
-    void removeLightNodes();
-    void removeFrustumNodes();
-    void removeShaderParameterNodes();
+    SetupNode *findNodeByType( uint32_t type ) const;
+    SetupNode *findLightNode() const;
+    SetupNode *findShaderParameterNode() const;
+    SetupNode *findClipPlaneNode() const;
 
     bool addNode( SetupNode *node );
     void removeNode( SetupNode *node );

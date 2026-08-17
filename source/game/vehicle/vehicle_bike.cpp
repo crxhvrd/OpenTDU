@@ -426,7 +426,7 @@ void VehicleBike::uninstantiateInterior() {
 
     if ( pCockpitInteriorNode != nullptr ) {
         removeLightSetup( pCockpitInteriorNode );
-        removeShaderSetup( pCockpitInteriorNode );
+        removeShaderSetup( pCockpitInteriorNode, &shaderSetup );
         interiorResource.Collection3D.uninstantiate( pCockpitInteriorNode );
         pCockpitInteriorNode = nullptr;
     }

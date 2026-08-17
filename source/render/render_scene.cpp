@@ -43,8 +43,13 @@ RenderScene::~RenderScene() {}
 
 void RenderScene::destroy() {
     // FUN_0050b1e0
-    sceneSetup.removeLightNodes();
-    sceneSetup.removeFrustumNodes();
+    while ( SetupNode *pLightNode = sceneSetup.findLightNode() ) {
+        sceneSetup.removeNode( pLightNode );
+    }
+
+    while ( SetupNode *pClipPlaneNode = sceneSetup.findClipPlaneNode() ) {
+        sceneSetup.removeNode( pClipPlaneNode );
+    }
 
     freeDrawCommands();
     gEdRender.pFrameGraph->removeObject( this );

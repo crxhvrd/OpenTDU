@@ -429,7 +429,7 @@ protected:
                                  const int32_t mode = 0 );
     void propagateShadowDummyTransform( Matrix4x4f_t &bodyMatrix );
 
-    void removeShaderSetup( HiearchyNode *param_2 );
+    void removeShaderSetup( HiearchyNode *param_2, SetupNode *pShaderSetup );
     void retrieveBoundingRadius( float *pOutSphereRadius,
                                  HiearchyNode *pNode,
                                  Eigen::Vector4f *pOutSphereOriginModelSpace );

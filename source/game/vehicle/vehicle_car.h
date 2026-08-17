@@ -13,6 +13,8 @@ public:
     inline float getWindowAperture() const {
         return Max( windowRoll[0], windowRoll[1] );
     }
+    inline float getWindowOpenLeft() const { return windowRoll[0]; }
+    inline float getWindowOpenRight() const { return windowRoll[1]; }
 
 public:
     VehicleCar();

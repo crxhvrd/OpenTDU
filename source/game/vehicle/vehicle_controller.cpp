@@ -189,7 +189,7 @@ void VehicleController::unstream() {
          bodyResource.pResourceBank->isLoaded() ) {
         uninstantiateWheels();
 
-        removeShaderSetup( pParentNode );
+        removeShaderSetup( pParentNode, &shaderSetup );
         if ( pParentNode != nullptr ) {
             removeLightSetup( pParentNode );
             bodyResource.Collection3D.uninstantiate( pParentNode );

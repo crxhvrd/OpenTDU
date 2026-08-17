@@ -76,40 +76,46 @@ SetupGraph::SetupGraph() : flags( 0 ) {}
 
 SetupGraph::~SetupGraph() {}
 
-void SetupGraph::removeLightNodes() {
+SetupNode *SetupGraph::findNodeByType( uint32_t type ) const {
+    // FUN_0050dda0
+    for ( SetupNode *pNode : nodes ) {
+        if ( pNode == nullptr ) {
+            return nullptr;
+        }
+
+        if ( pNode->getType() == type ) {
+            return pNode;
+        }
+    }
+
+    return nullptr;
+}
+
+SetupNode *SetupGraph::findLightNode() const {
     // FUN_0050de60
-    if ( ~( flags & 1 ) != 0 ) {
-        return;
+    if ( ( flags & 1 ) == 0 ) {
+        return nullptr;
     }
 
-    nodes.erase(
-        std::remove_if( nodes.begin(), nodes.end(),
-                        []( SetupNode *x ) { return x->getType() == 0x0; } ),
-        nodes.end() );
+    return findNodeByType( 0x0 );
 }
 
-void SetupGraph::removeFrustumNodes() {
-    // FUN_0050dea0
-    if ( ( ~( flags >> 2 ) & 1 ) != 0 ) {
-        return;
-    }
-
-    nodes.erase(
-        std::remove_if( nodes.begin(), nodes.end(),
-                        []( SetupNode *x ) { return x->getType() == 0x02; } ),
-        nodes.end() );
-}
-
-void SetupGraph::removeShaderParameterNodes() {
+SetupNode *SetupGraph::findShaderParameterNode() const {
     // FUN_0050de80
-    if ( ( ~( flags >> 1 ) & 1 ) != 0 ) {
-        return;
+    if ( ( ( flags >> 1 ) & 1 ) == 0 ) {
+        return nullptr;
     }
 
-    nodes.erase(
-        std::remove_if( nodes.begin(), nodes.end(),
-                        []( SetupNode *x ) { return x->getType() == 0x01; } ),
-        nodes.end() );
+    return findNodeByType( 0x1 );
+}
+
+SetupNode *SetupGraph::findClipPlaneNode() const {
+    // FUN_0050dea0
+    if ( ( ( flags >> 2 ) & 1 ) == 0 ) {
+        return nullptr;
+    }
+
+    return findNodeByType( 0x2 );
 }
 
 bool SetupGraph::addNode( SetupNode *node ) {

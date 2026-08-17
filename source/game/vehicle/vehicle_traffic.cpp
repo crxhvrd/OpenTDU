@@ -364,7 +364,7 @@ void VehicleTraffic::unstream() {
 
     if ( bodyResource.pResourceBank != nullptr &&
          bodyResource.pResourceBank->isLoaded() ) {
-        removeShaderSetup( displayInstances[0].pNode );
+        removeShaderSetup( displayInstances[0].pNode, &shaderSetup );
         if ( pParentNode != nullptr ) {
             removeLightSetup( pParentNode );
             bodyResource.Collection3D.uninstantiate( pParentNode );

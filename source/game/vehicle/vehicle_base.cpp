@@ -2376,18 +2376,19 @@ void VehicleBase::propagateShadowDummyTransform( Matrix4x4f_t &bodyMatrix ) {
     propagateNodeTransform( 1, bodyMatrix, 1 );
 }
 
-void VehicleBase::removeShaderSetup( HiearchyNode *param_2 ) {
+void VehicleBase::removeShaderSetup( HiearchyNode *param_2,
+                                     SetupNode *pShaderSetup ) {
     // FUN_008b5c60, FUN_008c1520
-    if ( param_2 == nullptr ) {
-        return;
-    }
-
-    do {
-        if ( param_2->pInstance != nullptr ) {
-            param_2->pInstance->getSetupRW().removeShaderParameterNodes();
+    for ( ; param_2 != nullptr; param_2 = param_2->pNext ) {
+        Instance *pInstance = param_2->pInstance;
+        if ( pInstance == nullptr ) {
+            continue;
         }
-        param_2 = param_2->pNext;
-    } while ( param_2 != nullptr );
+
+        if ( pInstance->getSetupRW().findShaderParameterNode() != nullptr ) {
+            pInstance->removeSetupFromGraph( pShaderSetup );
+        }
+    }
 }
 
 void VehicleBase::retrieveBoundingRadius( float *param_1,
