@@ -6,9 +6,6 @@
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
 
-// Index of TDU_Clothes in GameDatabase::pNumItems (kDatabasesToLoad).
-static constexpr int32_t kClotheDatabaseIndex = 9;
-
 uint64_t gHashcodeNoMesh = 0;
 uint64_t gHashcodeArms = 0;
 uint64_t gHashcodeEyes = 0;
@@ -175,6 +172,8 @@ bool GSAvatar::initialize( TestDriveGameInstance * ) {
 
     OTDU_UNIMPLEMENTED;
 
+    bankManager.initialize();
+
     pool.initialize();
 
     return true;
@@ -193,6 +192,7 @@ void GSAvatar::draw( float deltaTime ) {
 void GSAvatar::terminate() {
     // FUN_008f7950
     pool.terminate();
+    bankManager.terminate();
 
     OTDU_UNIMPLEMENTED;
 }
@@ -396,7 +396,7 @@ void GSAvatar::buildClothesDB() {
     const DBEntryClothe *pRows = ( numRows != 0 ) ? gameDB.DBClothe : nullptr;
 
     pClothesDB = new AvatarPartDB();
-    pClothesDB->reserve( numRows + 1, sizeof( AvatarClothePart ) );
+    pClothesDB->reserveAs<AvatarClothePart>( numRows + 1 );
 
     if ( pRows == nullptr ) {
         return;
@@ -474,7 +474,7 @@ void GSAvatar::buildDefaultPartsDB() {
     // clang-format on
 
     pDefaultPartsDB = new AvatarPartDB();
-    pDefaultPartsDB->reserve( 0x1a, sizeof( AvatarDefaultPart ) );
+    pDefaultPartsDB->reserveAs<AvatarDefaultPart>( 0x1a );
 
     for ( const auto &desc : kDefaultParts ) {
         AvatarDefaultPart *pPart =
@@ -516,7 +516,7 @@ void GSAvatar::buildBodyDB() {
     };
 
     pBodyDB = new AvatarPartDB();
-    pBodyDB->reserve( 2, sizeof( AvatarNamedPartPart ) );
+    pBodyDB->reserveAs<AvatarNamedPartPart>( 2 );
     for ( const auto &body : kBodies ) {
         AvatarNamedPartPart *pPart =
             static_cast<AvatarNamedPartPart *>( pBodyDB->addSlot() );
@@ -547,7 +547,7 @@ void GSAvatar::buildBodyLODDB() {
     };
 
     pBodyLODDB = new AvatarPartDB();
-    pBodyLODDB->reserve( 2, sizeof( AvatarNamedPartPart ) );
+    pBodyLODDB->reserveAs<AvatarNamedPartPart>( 2 );
     for ( const auto &body : kBodies ) {
         AvatarNamedPartPart *pPart =
             static_cast<AvatarNamedPartPart *>( pBodyLODDB->addSlot() );
@@ -583,7 +583,7 @@ void GSAvatar::buildStyleDB() {
     };
 
     pStyleDB = new AvatarPartDB();
-    pStyleDB->reserve( 0xc, sizeof( AvatarStylePart ) );
+    pStyleDB->reserveAs<AvatarStylePart>( 0xc );
     for ( const auto &style : kStyles ) {
         AvatarStylePart *pPart =
             static_cast<AvatarStylePart *>( pStyleDB->addSlot() );
@@ -608,7 +608,7 @@ void GSAvatar::buildEyeDB() {
     };
 
     pEyeDB = new AvatarPartDB();
-    pEyeDB->reserve( 0x10, sizeof( AvatarEyePart ) );
+    pEyeDB->reserveAs<AvatarEyePart>( 0x10 );
 
     for ( int32_t pass = 0; pass < 4; ++pass ) {
         const uint64_t nameA = kEyeNameHC[pass * 2];

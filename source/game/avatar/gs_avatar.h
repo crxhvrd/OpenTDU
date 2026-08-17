@@ -5,15 +5,13 @@
 #include "game/gs_base.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "filesystem/bank.h"
+#include "avatar_bnk.h"
 #include "avatar_configuration.h"
 #include "avatar_part.h"
 #include "avatar_pool.h"
 
 class EntityAvatar;
 struct DBEntryPNJ;
-
-// TODO
-struct AvatarBnkManager {};
 
 class GSAvatar : public GameSystem {
 public:
@@ -26,6 +24,8 @@ public:
     getDefaultConfiguration( int32_t gender ) const {
         return pDefaultConfig[gender];
     }
+
+    inline AvatarBnkManager &getBnkManager() { return bankManager; }
 
 public:
     GSAvatar();

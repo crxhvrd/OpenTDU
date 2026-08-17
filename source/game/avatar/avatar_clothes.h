@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "avatar_bnk.h"
 #include "avatar_configuration.h"
 #include "render_avatar.h"
 
@@ -25,9 +26,10 @@ enum eAvatarLoadingPass : int32_t {
     ALP_Async = 3,         // FUN_008f0330( false )
 };
 
-struct AvatarBnk {
-    bool bLoaded = false;
-    int32_t NumReferences = 0;
+enum eAvatarBankRequest : int32_t {
+    ABR_Ready = 0,   // the bank is loaded and handed back in pLoadingBnk
+    ABR_Failed = 1,  // the part has no bank, or the load failed
+    ABR_Pending = 2, // no free slot yet, retry next tick
 };
 
 struct AvatarStreamingRequest {
@@ -38,7 +40,12 @@ struct AvatarStreamingRequest {
     eAvatarLoadingState State = AVT_Unknown;
     bool bCritical = false;
 
+    bool step();
     void decreaseReferenceCount();
+
+private:
+    bool stepPendingRequest();
+    eAvatarBankRequest requestBank();
 };
 
 // Bump allocator for avatar clothes
@@ -51,7 +58,7 @@ struct AvatarScratchPool {
     void release();
 };
 
-struct AvatarClothe : AvatarLOD {
+struct AvatarClothe : RenderAvatarBase {
     AvatarStreamingRequest StreamingRequest;
     eAvatarLoadingState LoadingState = AVT_Unknown;
     AvatarScratchPool ScratchPoolA;
@@ -65,10 +72,14 @@ struct AvatarClothe : AvatarLOD {
                      LightSetupNode *pLightSetup,
                      ShaderParameterSetupNode *pShaderSetup );
     void terminate() override;
+    bool installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk ) override;
     void releaseCurrentPart() override;
 
     void stepLoading();
     void decreaseReferenceCount();
+
+private:
+    void installLoadedPart();
 };
 
 struct PooledAvatarEntry : public RenderDeviceResetListener {

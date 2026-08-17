@@ -4,6 +4,9 @@
 
 #include "avatar_configuration.h"
 
+// Index of TDU_Clothes in GameDatabase::pNumItems (kDatabasesToLoad).
+static constexpr int32_t kClotheDatabaseIndex = 9;
+
 enum eAvatarClotheLength : int32_t {
     ACL_Long = 0,    // LONG_CLOTHE
     ACL_Short = 1,   // SHORT_CLOTHE
@@ -25,51 +28,82 @@ enum eAvatarDrivingType : int32_t {
 };
 
 struct AvatarDBEntry {
-    uint32_t Unknown;
-    uint16_t IDHashcode;
-    uint16_t Unknown2;
-    int32_t Gender;
+    uint16_t IDHashcode = 0;
+    uint16_t Unknown2 = 0;
+    int32_t Gender = 0;
+
+    virtual ~AvatarDBEntry() {}
+
+    virtual const char *getMeshName() const { return nullptr; }
+    virtual const char *getBankName() const { return nullptr; }
+    virtual const char *getCategoryFolder() const { return nullptr; }
+    virtual const char *getBrandFolder() const { return nullptr; }
+    virtual bool isCommonPart() const { return false; }
 };
 
-// A wearable part
 struct AvatarClothePart : public AvatarDBEntry {
-    eAvatarCustomizable Category;
-    eAvatarClotheLength Length;
-    eAvatarClotheSize Size;
-    eAvatarDrivingType DrivingType;
-    int32_t Price;
-    uint8_t bIsBodyPart;
-    uint8_t bIsPartBoth;
-    int32_t Index; // index of the source row in TDU_Clothes; -1 when hardcoded
+    eAvatarCustomizable Category = AC_Count;
+    eAvatarClotheLength Length = ACL_Invalid;
+    eAvatarClotheSize Size = ACS_Any;
+    eAvatarDrivingType DrivingType = ADT_Invalid;
+    int32_t Price = 0;
+    uint8_t bIsBodyPart = 0;
+    uint8_t bIsPartBoth = 0;
+    // index of the source row in TDU_Clothes; -1 when hardcoded
+    int32_t Index = -1;
+
+    const char *getMeshName() const override;
+    const char *getBankName() const override;
+    const char *getCategoryFolder() const override { /* FUN_008edef0 */
+        return "CLOTHES";
+    }
+    const char *getBrandFolder() const override;
+    bool isCommonPart() const override { /* FUN_008edd80 */
+        return bIsBodyPart != 0;
+    }
 };
 
 // The hardcoded default-parts entries carry their asset names inline
 struct AvatarDefaultPart : public AvatarClothePart {
-    const char *pMeshName;
-    const char *pDisplayName;
-    const char *pBrandName;
-    int32_t BrandID;
+    const char *pMeshName = nullptr;
+    const char *pDisplayName = nullptr;
+    const char *pBrandName = nullptr;
+    int32_t BrandID = 0;
+
+    const char *getMeshName() const override { /* FUN_008edd40 */
+        return pMeshName;
+    }
+    const char *getBankName() const override { /* FUN_008edd20 */
+        return pMeshName;
+    }
+    const char *getBrandFolder() const override { /* FUN_008edd00 */
+        return pBrandName;
+    }
 };
 
 struct AvatarStylePart : public AvatarDBEntry {
-    uint32_t UnknownChild;
-    uint64_t NameHashcode;
+    uint32_t UnknownChild = 0;
+    uint64_t NameHashcode = 0;
 };
 
 struct AvatarSkinPart : public AvatarDBEntry {
-    uint32_t UnknownChild;
-    float Tint[4];
+    uint32_t UnknownChild = 0;
+    float Tint[4] = {};
 };
 
 struct AvatarEyePart : public AvatarDBEntry {
-    uint32_t UnknownChild;
-    uint64_t NameHC;
-    uint64_t UnknownChild2;
-    float UVOffset[4];
+    uint32_t UnknownChild = 0;
+    uint64_t NameHC = 0;
+    uint64_t UnknownChild2 = 0;
+    float UVOffset[4] = {};
 };
 
 struct AvatarNamedPartPart : public AvatarDBEntry {
-    const char *pName;
+    const char *pName = nullptr;
+
+    const char *getMeshName() const override { /* FUN_008ee1d0 */
+        return pName;
+    }
 };
 
 class AvatarPartDB {
@@ -81,11 +115,18 @@ public:
         return static_cast<uint8_t *>( pElements ) + index * ElementSize;
     }
 
+    template <typename T> inline void reserveAs( int32_t capacity ) {
+        reserve( capacity, sizeof( T ),
+                 []( void *pSlot ) { new ( pSlot ) T(); } );
+    }
+
 public:
     AvatarPartDB();
     ~AvatarPartDB();
 
-    void reserve( int32_t capacity, int32_t elementSize );
+    void reserve( int32_t capacity,
+                  int32_t elementSize,
+                  void ( *pConstructor )( void * ) );
     void clear();
     void *addSlot();
 
@@ -94,6 +135,7 @@ private:
     int32_t NumElements = 0;
     int32_t Capacity = 0;
     int32_t ElementSize = 0;
+    void ( *pElementConstructor )( void * ) = nullptr;
 };
 
 class AvatarPartCursor {

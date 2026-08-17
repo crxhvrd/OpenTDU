@@ -2,8 +2,9 @@
 
 #include "shared.h"
 
+#include "render/2dm.h"
+
 struct AvatarDBEntry;
-class Render2DM;
 class Render2DB;
 class RuntimeRender2DB;
 class Render3DG;
@@ -14,6 +15,7 @@ class LightSetupNode;
 class ShaderParameterSetupNode;
 struct AvatarImpostor;
 class SkeletonInstance;
+class AvatarBnk;
 
 enum eAvatarLoadingState : int32_t {
     AVT_Unknown = 0,
@@ -24,11 +26,13 @@ enum eAvatarLoadingState : int32_t {
 };
 static constexpr int32_t kAvatarPartPoolSize = 0x2c00;
 static constexpr int32_t kAvatarPart2DMPoolSize = 0x2800;
+static constexpr int32_t kAvatarPart3DDPoolSize =
+    kAvatarPartPoolSize - kAvatarPart2DMPoolSize;
 
 struct RenderAvatarBase {
     AvatarDBEntry *pAvatarPart = nullptr;
     void *p2DMData = nullptr;
-    Render2DM *p2DM = nullptr;
+    Render2DM Material;
     void *p3DDData = nullptr;
     void *p3DD = nullptr;
     HiearchyNode *pHierarchyNode = nullptr;
@@ -52,18 +56,28 @@ struct RenderAvatarBase {
                              LightSetupNode *pLightSetup,
                              ShaderParameterSetupNode *pShaderSetup );
     virtual void terminate();
+
+    virtual bool installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk );
     virtual void releaseCurrentPart();
 
     void instanciateHierarchy();
+    void releaseHierarchy();
 
     void tickEyeMaterial();
     void tickBodyMaterial();
+
+protected:
+    bool installRenderData( AvatarDBEntry *pPart, AvatarBnk *pBnk );
+    void releaseRenderData();
 };
 
 struct AvatarLOD : RenderAvatarBase {
     Render3DG *p3DG = nullptr;
     eAvatarLoadingState LoadingState = AVT_Unknown;
     AvatarDBEntry *pAvatarPartInLoading = nullptr;
+
+    bool installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk ) override;
+    void releaseCurrentPart() override;
 
     void stepLoading();
 };
@@ -76,7 +90,11 @@ struct RenderAvatar : AvatarLOD {
     Render2DB *p2DBEye = nullptr;
     Render2DB *p2DBOcclusion = nullptr;
     Render2DB *p2DBSpecular = nullptr;
+    void *pSkeletonData = nullptr;
     SkeletonInstance *pSkeleton = nullptr;
+
+    bool installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk ) override;
+    void releaseCurrentPart() override;
 };
 
 struct AvatarImpostor : AvatarLOD {

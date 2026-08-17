@@ -2,7 +2,7 @@
 
 struct DBEntryClothe {
     uint64_t Hashcode;
-    uint64_t BankReference;
+    DBReference File;
     int32_t NumID;
     int32_t Price;
     DBReference Brand;
