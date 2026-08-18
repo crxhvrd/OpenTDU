@@ -3,6 +3,7 @@
 #include "game/mng_base.h"
 #include "world/gs_world_streaming.h"
 
+class Entity;
 class EntityCinematic;
 class TestDriveGameInstance;
 
@@ -42,3 +43,7 @@ private:
 };
 
 extern MngCinematics *gpMngCinematics;
+
+void ProjectActorOnGround( Entity *pActor,
+                           bool bRebaseOnWorldShift,
+                           bool bQueryPhysics );

@@ -69,14 +69,6 @@ static CubicBezier MakeCurve( const BoatPathEntry &element ) {
     return curve;
 }
 
-static Eigen::Vector4f Normalize( const Eigen::Vector4f &param_1 ) {
-    const float length = param_1.norm();
-    if ( length <= 0.0f ) {
-        return Eigen::Vector4f::Zero();
-    }
-    return param_1 / length;
-}
-
 static float ComputeHornInterval() {
     return static_cast<float>( rand() & 0x7fff ) * kRandNorm *
                kHornIntervalRange +

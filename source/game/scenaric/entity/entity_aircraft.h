@@ -16,6 +16,10 @@ public:
 
 class EntityAircraft : public EntityActor {
 public:
+    inline eAircraftEntityType getAircraftType() const { return Type; }
+    inline int32_t getNumMaterials() const { return NumMaterials; }
+
+public:
     EntityAircraft();
     ~EntityAircraft();
 

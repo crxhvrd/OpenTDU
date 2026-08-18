@@ -4,6 +4,7 @@
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "world/gs_world.h"
+#include "world/gs_aircraft.h"
 #include "world/gs_boat.h"
 
 #include "gs_timer.h"
@@ -197,6 +198,10 @@ void GameModeScene::tick( float /*deltaTime*/, float /*totalTime*/ ) {
 
         if ( gpBoat != nullptr ) {
             gpBoat->spawnBoats();
+        }
+
+        if ( gpAircraft != nullptr ) {
+            gpAircraft->spawnAircrafts();
         }
 
         bWorldEntitiesInstanciated = true;

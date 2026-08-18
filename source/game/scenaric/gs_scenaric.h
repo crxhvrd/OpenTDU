@@ -109,9 +109,11 @@ public:
     void unloadBank( ScenaricBank *pBank );
     ScenaricBank *getNewSpotBank();
 
-    // Boat banks (consumed by GSBoat for the minimal boat-visual spawn).
     inline ScenaricBank *getBoatBank() { return &boatBank; }
     inline ScenaricBank *getBoatsPathsBank() { return &boatsPathsBank; }
+
+    inline ScenaricBank *getAircraftBank() { return &aircraftsBank; }
+    inline ScenaricBank *getAircraftsPathsBank() { return &aircraftsPathsBank; }
 
     // All registered scenaric banks (used by the debug entity-zoo to enumerate
     // every loaded entity template).
