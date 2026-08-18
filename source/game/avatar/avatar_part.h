@@ -39,6 +39,7 @@ struct AvatarDBEntry {
     virtual const char *getCategoryFolder() const { return nullptr; }
     virtual const char *getBrandFolder() const { return nullptr; }
     virtual bool isCommonPart() const { return false; }
+    virtual uint64_t getMeshHashcode() const;
 };
 
 struct AvatarClothePart : public AvatarDBEntry {

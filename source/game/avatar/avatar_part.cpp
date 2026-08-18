@@ -1,7 +1,14 @@
 #include "shared.h"
 #include "avatar_part.h"
 
+#include "avatar_bnk.h"
 #include "database/gs_database.h"
+
+uint64_t AvatarDBEntry::getMeshHashcode() const {
+    // FUN_008edf20 / FUN_008edf80
+    const char *pMeshName = getMeshName();
+    return ( pMeshName != nullptr ) ? AvatarCalcHashcode( pMeshName ) : 0ull;
+}
 
 const char *AvatarClothePart::getMeshName() const {
     // FUN_008edfd0

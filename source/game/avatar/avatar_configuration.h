@@ -24,8 +24,8 @@ static constexpr uint8_t kDefaultFaceParam = 8;
 
 struct AvatarConfiguration {
     uint16_t StyleID;
-    uint16_t SkinID;
-    uint16_t BodyID;
+    uint16_t BodyID; // body mesh (MAN_BODY / WOMAN_BODY), not the skin tone
+    uint16_t SkinID; // skin tone, resolved against the (procedural) skin DB
     uint16_t EyeID;
     uint16_t ClotheID[kNumClotheTypes][AC_Count]; // 0 - Regular 1 - Bike Only
     uint8_t ColorID[kNumClotheTypes][AC_Count];   // 0 - Regular 1 - Bike Only

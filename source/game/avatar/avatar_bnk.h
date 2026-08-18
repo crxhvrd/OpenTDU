@@ -3,17 +3,23 @@
 #include "shared.h"
 
 #include "filesystem/bank.h"
+#include "render/2db.h"
 #include "render/2dm.h"
 #include "render/3dg.h"
 
 uint64_t AvatarCalcHashcode( const char *pName );
 
+static constexpr uintptr_t kAvatarSkeletonDataOffset =
+    2 * sizeof( RenderFile::Section );
+
 class AvatarBnk : public Bank {
 public:
     static constexpr int32_t kMaxGeometries = 0x40;
     static constexpr int32_t kMaxMaterials = 0x40;
+    static constexpr int32_t kMaxBitmaps = 0x40;
 
     inline bool isInstallOK() const { return bInstallOK; }
+    inline bool hasInstalledResources() const { return bInstallOK; }
     inline int32_t getNumReferences() const { return NumReferences; }
     inline void addReference() { NumReferences++; }
     inline void removeReference() {
@@ -31,7 +37,11 @@ public:
     void loadContent() override;
 
     Render3DG *find3DG( uint64_t hashcode );
+    Render2DB *find2DB( uint64_t hashcode );
     Render2DM *getMaterial( uint64_t hashcode );
+
+    void *findGeometryStream( uint64_t hashcode );
+    void *findBitmapStream( uint64_t hashcode );
     void *get2DM( const char *pPartName );
     void *get3DD( const char *pPartName );
     void *getSkeleton( const char *pPartName );
@@ -46,6 +56,9 @@ private:
     Render3DG Geometries[kMaxGeometries];
     int32_t NumGeometries = 0;
 
+    Render2DB Bitmaps[kMaxBitmaps];
+    int32_t NumBitmaps = 0;
+
     MaterialEntry Materials[kMaxMaterials];
     int32_t NumMaterials = 0;
 
@@ -55,6 +68,7 @@ private:
 
 private:
     void parseEntries();
+    void *findStreamByHashcode( int32_t subType, uint64_t hashcode );
     void *getEntryData( const char *pPartName,
                         const char *pExtension,
                         int32_t subType );

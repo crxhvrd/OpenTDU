@@ -8,8 +8,8 @@ bool IsHelmetClotheID( uint16_t id ) {
 
 AvatarConfiguration::AvatarConfiguration()
     : StyleID( 0 ),
-      SkinID( 0 ),
       BodyID( 0 ),
+      SkinID( 0 ),
       EyeID( 0 ),
       bHashMotoGearsOnBike( 0 ) {
     // FUN_008ff0e0
@@ -24,8 +24,8 @@ AvatarConfiguration::AvatarConfiguration()
 
 bool AvatarConfiguration::isSameAs( const AvatarConfiguration &other ) const {
     // FUN_008ff620
-    if ( StyleID != other.StyleID || SkinID != other.SkinID ||
-         BodyID != other.BodyID || EyeID != other.EyeID ) {
+    if ( StyleID != other.StyleID || BodyID != other.BodyID ||
+         SkinID != other.SkinID || EyeID != other.EyeID ) {
         return false;
     }
 

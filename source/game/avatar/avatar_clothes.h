@@ -56,30 +56,162 @@ struct AvatarScratchPool {
 
     void allocate( int32_t size );
     void release();
+    void reset();
+
+    void *allocateCopy( uint32_t size, const void *pSource );
+};
+
+enum eAvatarInstanceKind : int32_t {
+    AIK_Referenced = 0, // the bank parsed it; the slot only points at it
+    AIK_Owned = 1,      // the slot parsed its own copy out of pStream
+    AIK_Free = 2,
+};
+
+struct AvatarRenderInstance {
+    eAvatarInstanceKind Kind = AIK_Free;
+    int32_t RefCount = 0;
+    uint64_t Hashcode = 0;
+    void *pStream = nullptr;
+};
+
+struct AvatarGeometryInstance : AvatarRenderInstance {
+    Render3DG *pReferenced = nullptr;
+    Render3DG Owned;
+
+    inline Render3DG *getGeometry() {
+        return ( Kind == AIK_Owned ) ? &Owned : pReferenced;
+    }
+
+    void parseOwnedStream();
+    void release();
+    bool reference( AvatarBnk *pBnk, uint64_t hashcode );
+    bool copyFromBank( AvatarBnk *pBnk,
+                       uint64_t hashcode,
+                       AvatarScratchPool &allocator );
+};
+
+struct AvatarBitmapInstance : AvatarRenderInstance {
+    Render2DB *pReferenced = nullptr;
+    Render2DB Owned;
+
+    inline Render2DB *getBitmap() {
+        return ( Kind == AIK_Owned ) ? &Owned : pReferenced;
+    }
+
+    void parseOwnedStream();
+    void release();
+    bool reference( AvatarBnk *pBnk, uint64_t hashcode );
+    bool copyFromBank( AvatarBnk *pBnk,
+                       uint64_t hashcode,
+                       AvatarScratchPool &allocator );
+};
+
+template <typename T> struct AvatarRenderInstancePool {
+    static constexpr int32_t kNumSlots = 7;
+
+    T Slots[kNumSlots];
+    AvatarScratchPool Allocator;
+
+    // FUN_00410ab0
+    T *claim( AvatarBnk *pBnk, const uint64_t hashcode ) {
+        if ( pBnk == nullptr ) {
+            return nullptr;
+        }
+
+        for ( T &slot : Slots ) {
+            if ( slot.RefCount > 0 && slot.Hashcode == hashcode ) {
+                slot.parseOwnedStream();
+                slot.RefCount++;
+                return &slot;
+            }
+        }
+
+        for ( T &slot : Slots ) {
+            if ( slot.RefCount > 0 ) {
+                continue;
+            }
+
+            if ( pBnk->hasInstalledResources() ) {
+                if ( !slot.reference( pBnk, hashcode ) ) {
+                    return nullptr;
+                }
+                slot.Kind = AIK_Referenced;
+            } else {
+                if ( !slot.copyFromBank( pBnk, hashcode, Allocator ) ) {
+                    return nullptr;
+                }
+                slot.Kind = AIK_Owned;
+            }
+
+            slot.Hashcode = hashcode;
+            slot.parseOwnedStream();
+            slot.RefCount++;
+            return &slot;
+        }
+
+        return nullptr;
+    }
+
+    static void Release( T *pSlot ) {
+        if ( pSlot == nullptr ) {
+            return;
+        }
+
+        pSlot->RefCount--;
+        if ( pSlot->RefCount != 0 ) {
+            return;
+        }
+
+        pSlot->release();
+        pSlot->Kind = AIK_Free;
+        pSlot->Hashcode = 0;
+    }
 };
 
 struct AvatarClothe : RenderAvatarBase {
+    static constexpr int32_t kMaxRenderInstances = 16;
+
     AvatarStreamingRequest StreamingRequest;
     eAvatarLoadingState LoadingState = AVT_Unknown;
-    AvatarScratchPool ScratchPoolA;
-    AvatarScratchPool ScratchPoolB;
+
+    AvatarBitmapInstance *pTextures[kMaxRenderInstances] = {};
+    int32_t NumTextures = 0;
+    AvatarRenderInstancePool<AvatarBitmapInstance> TexturePool;
+
+    AvatarGeometryInstance *pInstances[kMaxRenderInstances] = {};
+    int32_t NumInstances = 0;
+    AvatarRenderInstancePool<AvatarGeometryInstance> GeometryPool;
+    uint8_t ColorIndex = 0;
+    uint8_t NumColors = 0;
 
     using RenderAvatarBase::initialize;
     void initialize( int32_t index,
                      FileCollection3D *pCollection,
-                     int32_t poolASize,
-                     int32_t poolBSize,
+                     int32_t geometryPoolSize,
+                     int32_t texturePoolSize,
                      LightSetupNode *pLightSetup,
                      ShaderParameterSetupNode *pShaderSetup );
     void terminate() override;
+
+    AvatarDBEntry *getAvatarPart() override;
+
     bool installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk ) override;
     void releaseCurrentPart() override;
+
+    void registerRenderData() override;
+    void bindPartTextures() override;
+    void requestPart( AvatarDBEntry *pPart,
+                      uint8_t colorIndex,
+                      bool bAsync,
+                      bool bCritical );
 
     void stepLoading();
     void decreaseReferenceCount();
 
 private:
     void installLoadedPart();
+    void applyColorSet( AvatarDBEntry *pPart, AvatarBnk *pBnk );
+    void claimLayerTextures( AvatarBnk *pBnk, AvatarBnk *pCommonBnk );
 };
 
 struct PooledAvatarEntry : public RenderDeviceResetListener {
@@ -90,6 +222,7 @@ struct PooledAvatarEntry : public RenderDeviceResetListener {
 
     AvatarClothe Slots[AC_Count];
     AvatarClothe CarBelt;
+    const float *pSkinTint = nullptr;
     AvatarSkinPart *pSkinResource = nullptr;
     RenderAvatar *pBodyHighRes = nullptr;
     AvatarEyePart *pEyeResource = nullptr;
@@ -131,8 +264,19 @@ struct PooledAvatarEntry : public RenderDeviceResetListener {
     eAvatarLoadingState getLoadingState() const;
     void updateBodyPartVisibility();
     void releaseParts();
+    void setClothe( int32_t category,
+                    uint16_t clotheID,
+                    uint8_t colorIndex,
+                    int32_t clotheSet );
+    void setClothesFromConfig( const AvatarConfiguration &config );
 
-    void decreaseRenderRef();
+    bool installClothePart( AvatarDBEntry *pPart,
+                            uint8_t colorIndex,
+                            int32_t clotheSet,
+                            bool bAsync,
+                            bool bCritical );
+    bool installBodyPart( AvatarDBEntry *pPart );
+
     void tickEyeMaterials();
     void tickBodyMaterials();
 

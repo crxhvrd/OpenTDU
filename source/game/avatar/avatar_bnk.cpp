@@ -8,8 +8,6 @@
 static constexpr char kMaterialEntrySuffix[] = "_MAT";
 static constexpr size_t kMaterialEntrySuffixLength = 4;
 static constexpr int32_t kAvatarBankSubTypeSkeleton = 7;
-static constexpr uintptr_t kAvatarSkeletonDataOffset =
-    2 * sizeof( RenderFile::Section );
 
 static std::string GetEntryBaseName( const std::string &filename ) {
     // FUN_00411990
@@ -76,6 +74,10 @@ void AvatarBnk::parseEntries() {
             Geometries[NumGeometries++].initialize( entry.pData );
         }
 
+        if ( entry.SubType == AT_2DB && NumBitmaps < kMaxBitmaps ) {
+            Bitmaps[NumBitmaps++].initialize( entry.pData );
+        }
+
         if ( entry.SubType == AT_2DM && NumMaterials < kMaxMaterials ) {
             const std::string entryName = GetEntryBaseName( entry.Filename );
             if ( IsMaterialEntryName( entryName ) ) {
@@ -102,6 +104,61 @@ Render3DG *AvatarBnk::find3DG( const uint64_t hashcode ) {
     }
 
     return nullptr;
+}
+
+Render2DB *AvatarBnk::find2DB( const uint64_t hashcode ) {
+    // FUN_008ec560
+    for ( int32_t i = 0; i < kMaxBitmaps; i++ ) {
+        Render2DB &bitmap = Bitmaps[i];
+        if ( bitmap.getHeader() == nullptr ||
+             bitmap.getBitmapSection() == nullptr ) {
+            continue;
+        }
+
+        if ( bitmap.getBitmapHashcode() == hashcode ) {
+            return &bitmap;
+        }
+    }
+
+    OTDU_LOG_ERROR( "The 2db ( %llu ) is not found in bank: %s\n", hashcode,
+                    Name.c_str() );
+
+    return nullptr;
+}
+
+void *AvatarBnk::findStreamByHashcode( const int32_t subType,
+                                       const uint64_t hashcode ) {
+    // FUN_008ed110 (AT_3DG) / FUN_008ed230 (AT_2DB)
+    if ( !isLoaded() ) {
+        return nullptr;
+    }
+
+    ParsedBankEntry entry;
+
+    const int32_t numElements = getNumElements();
+    for ( int32_t i = 0; i < numElements; i++ ) {
+        getEntry( i, entry );
+        if ( entry.SubType != subType ) {
+            continue;
+        }
+
+        const std::string entryName = GetEntryBaseName( entry.Filename );
+        if ( AvatarCalcHashcode( entryName.c_str() ) == hashcode ) {
+            return entry.pData;
+        }
+    }
+
+    return nullptr;
+}
+
+void *AvatarBnk::findGeometryStream( const uint64_t hashcode ) {
+    // FUN_008ed110
+    return findStreamByHashcode( AT_3DG, hashcode );
+}
+
+void *AvatarBnk::findBitmapStream( const uint64_t hashcode ) {
+    // FUN_008ed230
+    return findStreamByHashcode( AT_2DB, hashcode );
 }
 
 Render2DM *AvatarBnk::getMaterial( const uint64_t hashcode ) {

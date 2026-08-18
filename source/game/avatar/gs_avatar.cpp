@@ -139,7 +139,7 @@ GSAvatar::GSAvatar()
       pBodyDB( nullptr ),
       pBodyLODDB( nullptr ),
       pStyleDB( nullptr ),
-      pBodyMorphDB( nullptr ),
+      pSkinDB( nullptr ),
       pBeltDB( nullptr ),
       pEyeDB( nullptr ),
       maxClotheID( 0 ),
@@ -160,7 +160,7 @@ bool GSAvatar::initialize( TestDriveGameInstance * ) {
     buildClothesDB();
     buildDefaultPartsDB();
     buildBodyDB();
-    buildBodyMorphDB();
+    buildSkinDB();
     buildBodyLODDB();
     buildStyleDB();
     buildBeltDB();
@@ -200,7 +200,7 @@ void GSAvatar::terminate() {
 void GSAvatar::readAvatarConfig( const EntityAvatar *pAvatar,
                                  AvatarConfiguration &outConfig ) {
     // FUN_007f76d0
-    const PooledAvatarEntry *pRsc = pAvatar->pPooledAvatarEntry;
+    PooledAvatarEntry *pRsc = pAvatar->pPooledAvatarEntry;
     if ( pRsc == nullptr ) {
         return;
     }
@@ -211,6 +211,12 @@ void GSAvatar::readAvatarConfig( const EntityAvatar *pAvatar,
     if ( pRsc->pSkinResource != nullptr ) {
         outConfig.SkinID = pRsc->pSkinResource->IDHashcode;
     }
+
+    const AvatarDBEntry *pBodyPart = pRsc->Body.getAvatarPart();
+    if ( pBodyPart != nullptr ) {
+        outConfig.BodyID = pBodyPart->IDHashcode;
+    }
+
     if ( pRsc->pEyeResource != nullptr ) {
         outConfig.EyeID = pRsc->pEyeResource->IDHashcode;
     }
@@ -287,16 +293,83 @@ void GSAvatar::installStyleResource( EntityAvatar *pAvatar,
     }
 }
 
-void GSAvatar::installSkinResource( EntityAvatar *pAvatar,
-                                    const AvatarConfiguration *pConfig ) {
-    // FUN_008f67c0
-    OTDU_UNIMPLEMENTED;
+static AvatarClothePart *FindPartByID( AvatarPartDB *pDB, const uint16_t id ) {
+    if ( pDB == nullptr ) {
+        return nullptr;
+    }
+
+    AvatarGenericCursor cursor( pDB );
+    cursor.findRange();
+    if ( !cursor.hasRange() || !cursor.findById( id ) ) {
+        return nullptr;
+    }
+
+    return static_cast<AvatarClothePart *>( cursor.getResult() );
+}
+
+AvatarClothePart *GSAvatar::findClotheByID( const uint16_t id ) {
+    // FUN_008f6390
+    return FindPartByID( pClothesDB, id );
+}
+
+AvatarClothePart *GSAvatar::findDefaultPartByID( const uint16_t id ) {
+    // FUN_008f5e50
+    return FindPartByID( pDefaultPartsDB, id );
 }
 
 void GSAvatar::installBodyResource( EntityAvatar *pAvatar,
                                     const AvatarConfiguration *pConfig ) {
+    // FUN_008f67c0
+    if ( pBodyDB == nullptr ) {
+        return;
+    }
+
+    AvatarGenericCursor cursor( pBodyDB );
+    cursor.findRange();
+    if ( !cursor.hasRange() || !cursor.findById( pConfig->BodyID ) ) {
+        return;
+    }
+
+    AvatarDBEntry *pPart = cursor.getResult();
+    if ( pPart == nullptr ) {
+        return;
+    }
+
+    PooledAvatarEntry *pRsc = pAvatar->pPooledAvatarEntry;
+    pRsc->installBodyPart( pPart );
+
+    if ( pAvatar->HeadBoneIndex == 0 && pRsc->pSkeleton != nullptr ) {
+        pAvatar->onSkeletonChange( pRsc->pSkeleton );
+    }
+}
+
+void GSAvatar::installSkinResource( EntityAvatar *pAvatar,
+                                    const AvatarConfiguration *pConfig ) {
     // FUN_008f6ba0
-    OTDU_UNIMPLEMENTED;
+    if ( pSkinDB == nullptr ) {
+        return;
+    }
+
+    AvatarGenericCursor cursor( pSkinDB );
+    cursor.findRange();
+    if ( !cursor.hasRange() || !cursor.findById( pConfig->SkinID ) ) {
+        return;
+    }
+
+    AvatarSkinPart *pSkin = static_cast<AvatarSkinPart *>( cursor.getResult() );
+    if ( pSkin == nullptr ) {
+        return;
+    }
+
+    PooledAvatarEntry *pRsc = pAvatar->pPooledAvatarEntry;
+    pRsc->pSkinTint = nullptr;
+    pRsc->pSkinResource = pSkin;
+
+    if ( gpAvatar->getBnkManager().getCommonBodies().isInstallOK() ) {
+        pRsc->pSkinTint = pSkin->Tint;
+    }
+
+    pRsc->tickBodyMaterials();
 }
 
 void GSAvatar::installEyeResource( EntityAvatar *pAvatar,
@@ -308,42 +381,95 @@ void GSAvatar::installEyeResource( EntityAvatar *pAvatar,
     AvatarGenericCursor cursor( pEyeDB );
     cursor.findRange();
     if ( cursor.hasRange() && cursor.findById( pConfig->EyeID ) ) {
-        pAvatar->pPooledAvatarEntry->pEyeResource =
-            (AvatarEyePart *)cursor.getResult();
-        OTDU_UNIMPLEMENTED;
+        PooledAvatarEntry *pRsc = pAvatar->pPooledAvatarEntry;
+        pRsc->pEyeResource = (AvatarEyePart *)cursor.getResult();
+        pRsc->tickEyeMaterials();
     }
 }
 
 void GSAvatar::installBodySkin( EntityAvatar *pAvatar,
                                 const AvatarConfiguration *pConfig ) {
     // FUN_008f66a0
-    OTDU_UNIMPLEMENTED;
+    const AvatarDBEntry *pBodyPart = nullptr;
+    if ( pBodyDB != nullptr ) {
+        AvatarGenericCursor bodyCursor( pBodyDB );
+        bodyCursor.findRange();
+        if ( bodyCursor.hasRange() && bodyCursor.findById( pConfig->BodyID ) ) {
+            pBodyPart = bodyCursor.getResult();
+        }
+    }
+
+    if ( pBodyPart == nullptr || pBodyLODDB == nullptr ) {
+        return;
+    }
+
+    AvatarGenericCursor cursor( pBodyLODDB );
+    cursor.findRange();
+    if ( !cursor.hasRange() ) {
+        return;
+    }
+
+    for ( ; !cursor.isAtEnd(); cursor.advance() ) {
+        AvatarDBEntry *pLODPart = cursor.getResult();
+        if ( pLODPart == nullptr || pLODPart->Gender != pBodyPart->Gender ) {
+            continue;
+        }
+
+        pAvatar->pPooledAvatarEntry->Impostor.requestPart( pLODPart );
+        return;
+    }
 }
 
 void GSAvatar::installClothes( EntityAvatar *pAvatar,
-                               int32_t bodyType,
-                               bool bForceReskin,
-                               bool bForceFullBake ) {
+                               const AvatarConfiguration *pConfig,
+                               const int32_t clotheSet,
+                               const bool bAsync,
+                               const bool bCritical ) {
     // FUN_008f6870
     if ( pAvatar == nullptr || pAvatar->pPooledAvatarEntry == nullptr ) {
         return;
     }
 
     PooledAvatarEntry *pRsc = pAvatar->pPooledAvatarEntry;
-    pRsc->ActiveClotheSet = bodyType;
+    pRsc->setClothesFromConfig( *pConfig );
+    pRsc->ActiveClotheSet = clotheSet;
 
-    for ( int i = 0; i < AC_Count; ++i ) {
-        OTDU_UNIMPLEMENTED; // TODO: AVATAR — clothe DB lookup
-        (void)bForceReskin;
-        (void)bForceFullBake;
+    const AvatarDBEntry *pBodyPart = pRsc->Body.getAvatarPart();
+    const int32_t gender = ( pBodyPart != nullptr ) ? pBodyPart->Gender : 0;
+
+    const auto isPartUsable = [&]( const AvatarClothePart *pPart,
+                                   const int32_t category ) {
+        return pPart != nullptr && pPart->Category == category &&
+               pBodyPart != nullptr && pPart->Gender == pBodyPart->Gender;
+    };
+
+    for ( int32_t category = 0; category < AC_Count; category++ ) {
+        uint8_t colorIndex = pRsc->pColors[clotheSet][category];
+        AvatarClothePart *pPart =
+            findClotheByID( pRsc->pClothesHC[clotheSet][category] );
+
+        if ( !isPartUsable( pPart, category ) ) {
+            const AvatarConfiguration &defaultConfig = pDefaultConfig[gender];
+            colorIndex = defaultConfig.ColorID[clotheSet][category];
+            pPart = findDefaultPartByID(
+                defaultConfig.ClotheID[clotheSet][category] );
+
+            if ( !isPartUsable( pPart, category ) ) {
+                pRsc->Slots[category].decreaseReferenceCount();
+                continue;
+            }
+        }
+
+        pRsc->installClothePart( pPart, colorIndex, clotheSet, bAsync,
+                                 bCritical );
     }
 }
 
 void GSAvatar::bakeAvatar( EntityAvatar *pAvatar,
                            const AvatarConfiguration *pConfig,
-                           int32_t bodyType,
-                           bool bForceReskin,
-                           bool bForceFullBake ) {
+                           const int32_t clotheSet,
+                           const bool bAsync,
+                           const bool bCritical ) {
     // FUN_008f6c20
     if ( pAvatar == nullptr || pConfig == nullptr ) {
         return;
@@ -358,7 +484,7 @@ void GSAvatar::bakeAvatar( EntityAvatar *pAvatar,
     readAvatarConfig( pAvatar, currentConfig );
 
     if ( currentConfig.isSameAs( *pConfig ) &&
-         pRsc->ActiveClotheSet == bodyType ) {
+         pRsc->ActiveClotheSet == clotheSet ) {
         return;
     }
 
@@ -366,16 +492,16 @@ void GSAvatar::bakeAvatar( EntityAvatar *pAvatar,
         pRsc->Slots[i].decreaseReferenceCount();
     }
 
-    pRsc->decreaseRenderRef();
-    pRsc->pUnknown = nullptr;
-    pRsc->decreaseRenderRef();
+    pRsc->Impostor.decreaseReferenceCount();
+    pRsc->pSkeleton = nullptr;
+    pRsc->Body.decreaseReferenceCount();
 
     installStyleResource( pAvatar, pConfig );
-    installSkinResource( pAvatar, pConfig );
     installBodyResource( pAvatar, pConfig );
+    installSkinResource( pAvatar, pConfig );
     installEyeResource( pAvatar, pConfig );
     installBodySkin( pAvatar, pConfig );
-    installClothes( pAvatar, bodyType, bForceReskin, bForceFullBake );
+    installClothes( pAvatar, pConfig, clotheSet, bAsync, bCritical );
 
     OTDU_UNIMPLEMENTED;
     pAvatar->bIsToUpdate = true;
@@ -529,7 +655,7 @@ void GSAvatar::buildBodyDB() {
     }
 }
 
-void GSAvatar::buildBodyMorphDB() {
+void GSAvatar::buildSkinDB() {
     // FUN_008f4e60
     OTDU_UNIMPLEMENTED;
 }

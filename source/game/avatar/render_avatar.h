@@ -3,6 +3,7 @@
 #include "shared.h"
 
 #include "render/2dm.h"
+#include "render/3dd.h"
 
 struct AvatarDBEntry;
 class Render2DB;
@@ -34,7 +35,7 @@ struct RenderAvatarBase {
     void *p2DMData = nullptr;
     Render2DM Material;
     void *p3DDData = nullptr;
-    void *p3DD = nullptr;
+    Render3DD Scene;
     HiearchyNode *pHierarchyNode = nullptr;
     HiearchyNode *pHierarchyNodeLowRes = nullptr;
     Matrix4x4f_t Matrix;
@@ -57,8 +58,17 @@ struct RenderAvatarBase {
                              ShaderParameterSetupNode *pShaderSetup );
     virtual void terminate();
 
+    virtual AvatarDBEntry *getAvatarPart() { /* FUN_008f06d0 */
+        return pAvatarPart;
+    }
+
     virtual bool installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk );
     virtual void releaseCurrentPart();
+
+    virtual void registerRenderData();
+    virtual void unregisterRenderData();
+
+    virtual void bindPartTextures() = 0;
 
     void instanciateHierarchy();
     void releaseHierarchy();
@@ -69,6 +79,12 @@ struct RenderAvatarBase {
 protected:
     bool installRenderData( AvatarDBEntry *pPart, AvatarBnk *pBnk );
     void releaseRenderData();
+    void parseRenderData();
+    void destroyRenderData();
+
+private:
+    HiearchyNode *instanciatePartHierarchy();
+    void releaseHierarchyNodes();
 };
 
 struct AvatarLOD : RenderAvatarBase {
@@ -76,10 +92,17 @@ struct AvatarLOD : RenderAvatarBase {
     eAvatarLoadingState LoadingState = AVT_Unknown;
     AvatarDBEntry *pAvatarPartInLoading = nullptr;
 
+    AvatarDBEntry *getAvatarPart() override;
+
     bool installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk ) override;
     void releaseCurrentPart() override;
 
+    void registerRenderData() override;
+    void unregisterRenderData() override;
+
     void stepLoading();
+    void requestPart( AvatarDBEntry *pPart );
+    void decreaseReferenceCount();
 };
 
 struct RenderAvatar : AvatarLOD {
@@ -95,6 +118,8 @@ struct RenderAvatar : AvatarLOD {
 
     bool installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk ) override;
     void releaseCurrentPart() override;
+
+    void bindPartTextures() override;
 };
 
 struct AvatarImpostor : AvatarLOD {
@@ -109,4 +134,6 @@ struct AvatarImpostor : AvatarLOD {
                      LightSetupNode *pLightSetup,
                      ShaderParameterSetupNode *pShaderSetup ) override;
     void terminate() override;
+
+    void bindPartTextures() override;
 };

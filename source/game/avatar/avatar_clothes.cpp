@@ -4,11 +4,15 @@
 #include "config/gs_config.h"
 #include "gs_avatar.h"
 #include "render/gs_render.h"
+#include "render/material.h"
 
-static constexpr int32_t kClotheScratchPoolASize[AC_Count] = { // DAT_010c4508
+static constexpr int32_t kClotheGeometryPoolSize[AC_Count] = { // DAT_010c4508
     0, 0, 0, 0x15800, 0x15800, 0, 0x15800, 0, 0 };
-static constexpr int32_t kClotheScratchPoolBSize[AC_Count] = { // DAT_010c452c
+static constexpr int32_t kClotheTexturePoolSize[AC_Count] = { // DAT_010c452c
     0, 0, 0, 0x1ec00, 0x1ec00, 0, 0x12400, 0, 0 };
+static constexpr float kAvatarPartLODRadius = 3.0f;
+static constexpr char kColorSetSuffix[] = "_MAT"; // DAT_00f12cb0
+static constexpr uint64_t kOpaqueClotheShaderHashcode = 0xd5013ed0db79baba;
 
 static bool IsEmptyPartName( const char *pName ) {
     // FUN_008f3320
@@ -46,6 +50,159 @@ CopyStreamToPool( uint8_t *pPool, const int32_t poolSize, void *pStream ) {
     return pPool;
 }
 
+static void SetRootInstanceLODRadius( Render3DD *p3DD, const float radius ) {
+    // FUN_008f0b90
+    InstanceEntry *pInstanceEntry = nullptr;
+
+    if ( p3DD->getNumHiearchy() != 0 ) {
+        HiearchyNodeEntry *pNodeEntry =
+            (HiearchyNodeEntry *)( p3DD->getHiearchyEntry( 0 ) + 1 );
+        RenderFile::Section *pInstanceSection = pNodeEntry->pInstance;
+        pInstanceEntry = (InstanceEntry *)( pInstanceSection + 1 );
+    } else if ( p3DD->getNumInstances() != 0 ) {
+        pInstanceEntry = (InstanceEntry *)( p3DD->getInstanceEntry( 0 ) + 1 );
+    }
+
+    if ( pInstanceEntry == nullptr ) {
+        return;
+    }
+
+    for ( uint16_t i = 0; i < pInstanceEntry->NumLODs; i++ ) {
+        Scene3DDHashEntry *pHashEntry = pInstanceEntry->LODs[i].pHashcode;
+        RenderFile::Section *pObjectSection = pHashEntry->pEntry;
+        RenderObject *pObject = (RenderObject *)( pObjectSection + 1 );
+
+        pObject->BoundingSphere.w() = radius;
+    }
+}
+
+static void AddSetupToHierarchy( HiearchyNode *pNode, SetupNode *pSetup ) {
+    // FUN_008f08c0
+    for ( ; pNode != nullptr; pNode = pNode->pNext ) {
+        if ( pNode->pInstance != nullptr ) {
+            pNode->pInstance->addSetupToGraph( pSetup );
+        }
+    }
+}
+
+static void RemoveSetupFromHierarchy( HiearchyNode *pNode, SetupNode *pSetup ) {
+    // FUN_008f08a0
+    for ( ; pNode != nullptr; pNode = pNode->pNext ) {
+        if ( pNode->pInstance != nullptr ) {
+            pNode->pInstance->removeSetupFromGraph( pSetup );
+        }
+    }
+}
+
+static uint64_t GetUnchangeableMaterialHashcode() {
+    // DAT_01478a78
+    static const uint64_t hashcode =
+        AvatarCalcHashcode( "UNCHANGEABLE" ); // FUN_009def00
+    return hashcode;
+}
+
+static uint64_t GetCubemapTextureHashcode() {
+    // DAT_01478a80
+    static const uint64_t hashcode =
+        AvatarCalcHashcode( "CUBEMAP" ); // FUN_009def20
+    return hashcode;
+}
+
+// TODO: Move to material.cpp?
+static void ApplyColorMaterial( Material *pDestination, Material *pSource ) {
+    // FUN_008f48a0
+    MaterialParameter *pSourceParam = pSource->getParameterByIndex( 0 );
+    MaterialParameter *pDestinationParam =
+        pDestination->getParameterByIndex( 0 );
+    if ( pSourceParam == nullptr || pDestinationParam == nullptr ||
+         pSourceParam->Hashcode != pDestinationParam->Hashcode ) {
+        return;
+    }
+
+    pDestination->AmbientColor = pSource->AmbientColor;
+    pDestination->DiffuseColor = pSource->DiffuseColor;
+    pDestination->SpecularColor = pSource->SpecularColor;
+
+    if ( pSourceParam->NumLayers != 0 &&
+         pSourceParam->NumLayers == pDestinationParam->NumLayers ) {
+        MaterialLayer *pSourceLayer = pSourceParam->getLayer( 0 );
+        MaterialLayer *pDestinationLayer = pDestinationParam->getLayer( 0 );
+        if ( pSourceLayer != nullptr && pDestinationLayer != nullptr &&
+             pSourceLayer->NumTextures == pDestinationLayer->NumTextures ) {
+            for ( uint32_t i = 0; i < pDestinationLayer->NumTextures; i++ ) {
+                MaterialLayerTexture &destination =
+                    pDestinationLayer->pLayerTextures[i];
+                const MaterialLayerTexture &source =
+                    pSourceLayer->pLayerTextures[i];
+
+                destination.Hashcode = source.Hashcode;
+                destination.pTextureSection = source.pTextureSection;
+            }
+        }
+    }
+
+    if ( pSourceParam->Type != MPT_Generic ||
+         pDestinationParam->Type != MPT_Generic ) {
+        return;
+    }
+
+    MaterialShaderParameterArray *pSourceParams =
+        static_cast<MaterialShaderParameterArray *>( pSourceParam );
+    MaterialShaderParameterArray *pDestinationParams =
+        static_cast<MaterialShaderParameterArray *>( pDestinationParam );
+    if ( pSourceParams->NumParameters != pDestinationParams->NumParameters ) {
+        return;
+    }
+
+    for ( uint32_t i = 0; i < pDestinationParams->NumParameters; i++ ) {
+        MaterialShaderParameter *pSourceDesc =
+            pSourceParams->getParameterByIndex( i );
+        MaterialShaderParameter *pDestinationDesc =
+            pDestinationParams->getParameterByIndex( i );
+        if ( pSourceDesc == nullptr || pDestinationDesc == nullptr ||
+             pSourceDesc->Type != pDestinationDesc->Type ) {
+            continue;
+        }
+
+        void *pDestinationData =
+            pDestinationParams->getParameterDataByIndex( i );
+        const void *pSourceData = pSourceParams->getParameterDataByIndex( i );
+        if ( pDestinationData == nullptr || pSourceData == nullptr ) {
+            continue;
+        }
+
+        memcpy( pDestinationData, pSourceData, pSourceDesc->Size );
+    }
+}
+
+// TODO: Move to material.cpp?
+static void BindBitmapToMaterial( Material *pMaterial, Render2DB *pBitmap ) {
+    // FUN_00410e50
+    if ( pMaterial == nullptr || pBitmap == nullptr ||
+         pBitmap->getHeader() == nullptr ||
+         pBitmap->getBitmapSection() == nullptr ) {
+        return;
+    }
+
+    MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+    if ( pParameter == nullptr || pParameter->NumLayers == 0 ) {
+        return;
+    }
+
+    MaterialLayer *pLayer = pParameter->getLayer( 0 );
+    if ( pLayer == nullptr ) {
+        return;
+    }
+
+    const uint64_t bitmapHashcode = pBitmap->getBitmapHashcode();
+    for ( uint32_t i = 0; i < pLayer->NumTextures; i++ ) {
+        if ( pLayer->pLayerTextures[i].Hashcode == bitmapHashcode ) {
+            pLayer->pLayerTextures[i].pTextureSection =
+                pBitmap->getBitmapSection();
+        }
+    }
+}
+
 static bool ShouldStepClothe( const AvatarClothe &clothe,
                               const eAvatarLoadingPass pass ) {
     switch ( pass ) {
@@ -75,6 +232,31 @@ void AvatarScratchPool::allocate( int32_t size ) {
     Size = size;
 }
 
+void AvatarScratchPool::reset() {
+    // FUN_008f2320 (inlined)
+    pCursor = pMemory;
+}
+
+void *AvatarScratchPool::allocateCopy( const uint32_t size,
+                                       const void *pSource ) {
+    // FUN_008f13d0
+    if ( pMemory == nullptr || pCursor == nullptr || pSource == nullptr ) {
+        return nullptr;
+    }
+
+    const int32_t available = Size - static_cast<int32_t>( pCursor - pMemory );
+    if ( static_cast<int32_t>( size ) >= available ) {
+        return nullptr;
+    }
+
+    uint8_t *pAllocation = pCursor;
+
+    pCursor += size + ( 0x10 - ( size % 0x10 ) );
+
+    memcpy( pAllocation, pSource, size );
+    return pAllocation;
+}
+
 void AvatarScratchPool::release() {
     // FUN_00410c10
     if ( pMemory != nullptr ) {
@@ -84,6 +266,82 @@ void AvatarScratchPool::release() {
     pMemory = nullptr;
     pCursor = nullptr;
     Size = 0;
+}
+
+void AvatarGeometryInstance::parseOwnedStream() {
+    // FUN_008f11a0
+    if ( RefCount == 0 && pStream != nullptr && Kind == AIK_Owned ) {
+        Owned.initialize( pStream );
+    }
+}
+
+void AvatarGeometryInstance::release() {
+    // FUN_008f1250
+    if ( Kind == AIK_Owned && Owned.getHeader() != nullptr ) {
+        Owned.destroy();
+        pStream = nullptr;
+    }
+
+    pReferenced = nullptr;
+}
+
+bool AvatarGeometryInstance::reference( AvatarBnk *pBnk,
+                                        const uint64_t hashcode ) {
+    // FUN_008f1280
+    pReferenced = pBnk->find3DG( hashcode );
+    return pReferenced != nullptr;
+}
+
+bool AvatarGeometryInstance::copyFromBank( AvatarBnk *pBnk,
+                                           const uint64_t hashcode,
+                                           AvatarScratchPool &allocator ) {
+    // FUN_008f12b0
+    void *pBankStream = pBnk->findGeometryStream( hashcode );
+    if ( pBankStream != nullptr ) {
+        const uint32_t streamSize =
+            static_cast<RenderFile::Header *>( pBankStream )->Size;
+        pStream = allocator.allocateCopy( streamSize, pBankStream );
+    }
+
+    return pStream != nullptr;
+}
+
+void AvatarBitmapInstance::parseOwnedStream() {
+    // FUN_008f1440
+    if ( RefCount == 0 && pStream != nullptr && Kind == AIK_Owned ) {
+        Owned.initialize( pStream );
+    }
+}
+
+void AvatarBitmapInstance::release() {
+    // FUN_008f14d0
+    if ( Kind == AIK_Owned && Owned.getHeader() != nullptr ) {
+        Owned.destroy();
+        pStream = nullptr;
+    }
+
+    pReferenced = nullptr;
+}
+
+bool AvatarBitmapInstance::reference( AvatarBnk *pBnk,
+                                      const uint64_t hashcode ) {
+    // FUN_008f14a0
+    pReferenced = pBnk->find2DB( hashcode );
+    return pReferenced != nullptr;
+}
+
+bool AvatarBitmapInstance::copyFromBank( AvatarBnk *pBnk,
+                                         const uint64_t hashcode,
+                                         AvatarScratchPool &allocator ) {
+    // FUN_008f1560
+    void *pBankStream = pBnk->findBitmapStream( hashcode );
+    if ( pBankStream != nullptr ) {
+        const uint32_t streamSize =
+            static_cast<RenderFile::Header *>( pBankStream )->Size;
+        pStream = allocator.allocateCopy( streamSize, pBankStream );
+    }
+
+    return pStream != nullptr;
 }
 
 void RenderAvatarBase::initialize( int32_t index,
@@ -171,16 +429,114 @@ bool RenderAvatarBase::installPart( AvatarDBEntry *, AvatarBnk * ) {
 
 void RenderAvatarBase::releaseCurrentPart() { releaseRenderData(); }
 
+void RenderAvatarBase::parseRenderData() {
+    // FUN_008f0cd0
+    if ( p3DDData != nullptr ) {
+        Scene.initialize( p3DDData );
+    }
+
+    if ( Scene.getHeader() != nullptr ) {
+        SetRootInstanceLODRadius( &Scene, kAvatarPartLODRadius );
+    }
+}
+
+void RenderAvatarBase::destroyRenderData() {
+    // FUN_008f0990
+    if ( Scene.getHeader() != nullptr ) {
+        Scene.destroy();
+    }
+}
+
+void RenderAvatarBase::registerRenderData() {
+    // FUN_008f0960
+    if ( Scene.getHeader() != nullptr ) {
+        p3DManager->register3DD( &Scene );
+        Scene.bindMaterialsBank( &Material );
+    }
+}
+
+void RenderAvatarBase::unregisterRenderData() {
+    // FUN_008f0940
+    if ( Scene.getHeader() != nullptr ) {
+        p3DManager->unregister3DD( &Scene );
+    }
+}
+
+HiearchyNode *RenderAvatarBase::instanciatePartHierarchy() {
+    // FUN_008f0f80 (inlined)
+    if ( Scene.getHeader() == nullptr || pAvatarPart == nullptr ) {
+        return nullptr;
+    }
+
+    return p3DManager->instantiate(
+        GetIdentifier64bit( pAvatarPart->getMeshName() ) );
+}
+
 void RenderAvatarBase::instanciateHierarchy() {
     // FUN_008f0f80
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    parseRenderData();
+
+    if ( Material.getHeader() != nullptr ) {
+        bindPartTextures();
+    }
+
+    registerRenderData();
+
+    pHierarchyNode = instanciatePartHierarchy();
+    if ( pHierarchyNode != nullptr ) {
+        if ( pLightConfig != nullptr ) {
+            AddSetupToHierarchy( pHierarchyNode, pLightConfig );
+        }
+        if ( pShaderConfig != nullptr ) {
+            AddSetupToHierarchy( pHierarchyNode, pShaderConfig );
+        }
+    }
+
+    if ( pLowRes != nullptr ) {
+        pHierarchyNodeLowRes = instanciatePartHierarchy();
+        if ( pHierarchyNodeLowRes != nullptr && bVisible ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+        }
+    }
+}
+
+void RenderAvatarBase::releaseHierarchyNodes() {
+    // FUN_008f0c50
+    if ( pHierarchyNode != nullptr ) {
+        if ( pLightConfig != nullptr ) {
+            RemoveSetupFromHierarchy( pHierarchyNode, pLightConfig );
+        }
+        if ( pShaderConfig != nullptr ) {
+            RemoveSetupFromHierarchy( pHierarchyNode, pShaderConfig );
+        }
+
+        p3DManager->uninstantiate( pHierarchyNode );
+        pHierarchyNode = nullptr;
+    }
+
+    if ( pLowRes != nullptr && pHierarchyNodeLowRes != nullptr ) {
+        if ( bVisible ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - FUN_008f1610
+        }
+
+        p3DManager->uninstantiate( pHierarchyNodeLowRes );
+        pHierarchyNodeLowRes = nullptr;
+    }
 }
 
 void RenderAvatarBase::releaseHierarchy() {
     // FUN_008f0d00
-    OTDU_UNIMPLEMENTED_ONCE;
+    releaseHierarchyNodes();
+    unregisterRenderData();
+    destroyRenderData();
 
     pAvatarPart = nullptr;
+}
+
+AvatarDBEntry *AvatarLOD::getAvatarPart() {
+    // FUN_008f2ed0
+    return ( pAvatarPartInLoading != nullptr ) ? pAvatarPartInLoading
+                                               : pAvatarPart;
 }
 
 bool AvatarLOD::installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk ) {
@@ -205,6 +561,24 @@ void AvatarLOD::releaseCurrentPart() {
     releaseRenderData();
 }
 
+void AvatarLOD::registerRenderData() {
+    // FUN_008f2fc0
+    if ( p3DG != nullptr ) {
+        p3DManager->register3DG( p3DG );
+    }
+
+    RenderAvatarBase::registerRenderData();
+}
+
+void AvatarLOD::unregisterRenderData() {
+    // FUN_008f2f80
+    RenderAvatarBase::unregisterRenderData();
+
+    if ( p3DG != nullptr ) {
+        p3DManager->unregister3DG( p3DG );
+    }
+}
+
 void AvatarLOD::stepLoading() {
     // FUN_008f3030
     releaseCurrentPart();
@@ -223,6 +597,36 @@ void AvatarLOD::stepLoading() {
     LoadingState = AVT_Unknown;
 }
 
+void AvatarLOD::requestPart( AvatarDBEntry *pPart ) {
+    // FUN_008f3180
+    decreaseReferenceCount();
+
+    pAvatarPartInLoading = pPart;
+    LoadingState = AVT_LoadPending;
+
+    stepLoading();
+}
+
+void AvatarLOD::decreaseReferenceCount() {
+    // FUN_008f2ef0
+    if ( LoadingState == AVT_Ready ) {
+        releaseHierarchy();
+        pAvatarPart = nullptr;
+        LoadingState = AVT_LoadCompleted;
+    }
+    if ( LoadingState == AVT_LoadCompleted ) {
+        releaseCurrentPart();
+        LoadingState = AVT_LoadPending;
+    }
+    if ( LoadingState == AVT_LoadPending ) {
+        pAvatarPartInLoading = nullptr;
+        LoadingState = AVT_Unloaded;
+    }
+    if ( LoadingState == AVT_Unloaded ) {
+        LoadingState = AVT_Unknown;
+    }
+}
+
 bool RenderAvatar::installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk ) {
     // FUN_008f1ec0
     if ( pPart == nullptr || !AvatarLOD::installPart( pPart, pBnk ) ) {
@@ -238,9 +642,47 @@ bool RenderAvatar::installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk ) {
                 : nullptr;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE;
+    if ( Material.getHeader() == nullptr ) {
+        return true;
+    }
+
+    const uint32_t numMaterials = Material.getNumMaterials();
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        ::Material *pMaterial = Material.getMaterialAtIndex( i );
+        if ( pMaterial == nullptr ) {
+            continue;
+        }
+
+        MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+        if ( pParameter == nullptr || pParameter->NumLayers == 0 ) {
+            continue;
+        }
+
+        MaterialLayer *pLayer = pParameter->getLayer( 0 );
+        if ( pLayer == nullptr ) {
+            continue;
+        }
+
+        for ( uint32_t j = 0; j < pLayer->NumTextures; j++ ) {
+            const uint64_t textureHashcode = pLayer->pLayerTextures[j].Hashcode;
+            if ( textureHashcode == 0 ) {
+                continue;
+            }
+
+            Render2DB *pBitmap = pBnk->find2DB( textureHashcode );
+            if ( pBitmap != nullptr ) {
+                pLayer->pLayerTextures[j].pTextureSection =
+                    pBitmap->getBitmapSection();
+            }
+        }
+    }
 
     return true;
+}
+
+void RenderAvatar::bindPartTextures() {
+    // FUN_008f1d20
+    // NOP
 }
 
 void RenderAvatar::releaseCurrentPart() {
@@ -269,18 +711,23 @@ void AvatarImpostor::terminate() {
     RenderAvatarBase::terminate();
 }
 
+void AvatarImpostor::bindPartTextures() {
+    // FUN_008f1b30
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+}
+
 void AvatarClothe::initialize( int32_t index,
                                FileCollection3D *pCollection,
-                               int32_t poolASize,
-                               int32_t poolBSize,
+                               int32_t geometryPoolSize,
+                               int32_t texturePoolSize,
                                LightSetupNode *pLightSetup,
                                ShaderParameterSetupNode *pShaderSetup ) {
     // FUN_008f2200
     RenderAvatarBase::initialize( index, pCollection, pLightSetup,
                                   pShaderSetup );
 
-    ScratchPoolA.allocate( poolASize );
-    ScratchPoolB.allocate( poolBSize );
+    GeometryPool.Allocator.allocate( geometryPoolSize );
+    TexturePool.Allocator.allocate( texturePoolSize );
 }
 
 void AvatarClothe::terminate() {
@@ -288,21 +735,256 @@ void AvatarClothe::terminate() {
     decreaseReferenceCount();
     StreamingRequest.decreaseReferenceCount();
 
-    ScratchPoolA.release();
-    ScratchPoolB.release();
+    GeometryPool.Allocator.release();
+    TexturePool.Allocator.release();
 
     RenderAvatarBase::terminate();
 }
 
 bool AvatarClothe::installPart( AvatarDBEntry *pPart, AvatarBnk *pBnk ) {
     // FUN_008f25c0
-    OTDU_UNIMPLEMENTED_ONCE;
-    return false;
+    if ( pPart == nullptr ) {
+        return false;
+    }
+
+    const bool bInstalled = installRenderData( pPart, pBnk );
+    if ( bInstalled ) {
+        applyColorSet( pPart, pBnk );
+    }
+
+    AvatarBnk &commonClothes = gpAvatar->getBnkManager().getCommonClothes();
+    AvatarBnk *pCommonBnk =
+        commonClothes.isInstallOK() ? &commonClothes : nullptr;
+
+    if ( !bInstalled ) {
+        return false;
+    }
+
+    const char *pMeshName = pPart->getMeshName();
+
+    if ( pMeshName != nullptr && strcmp( pMeshName, "NO_MESH" ) != 0 ) {
+        const uint64_t meshHashcode = pPart->getMeshHashcode();
+        if ( meshHashcode != 0 ) {
+            AvatarGeometryInstance *pInstance =
+                GeometryPool.claim( pBnk, meshHashcode );
+            if ( pInstance == nullptr ) {
+                pInstance = GeometryPool.claim( pCommonBnk, meshHashcode );
+            }
+
+            pInstances[NumInstances] = pInstance;
+            if ( pInstance == nullptr ) {
+                releaseRenderData();
+                return false;
+            }
+
+            NumInstances++;
+        }
+    }
+
+    if ( Material.getHeader() != nullptr ) {
+        claimLayerTextures( pBnk, pCommonBnk );
+    }
+
+    return true;
+}
+
+void AvatarClothe::applyColorSet( AvatarDBEntry *pPart, AvatarBnk *pBnk ) {
+    // FUN_008f25c0 (first half)
+    NumColors = 0;
+
+    const char *pMeshName = pPart->getMeshName();
+    if ( pMeshName == nullptr || pBnk == nullptr ) {
+        return;
+    }
+
+    std::string colorSetName = pMeshName;
+    colorSetName += kColorSetSuffix;
+
+    Render2DM *pColorSet =
+        pBnk->getMaterial( AvatarCalcHashcode( colorSetName.c_str() ) );
+    if ( pColorSet == nullptr || pColorSet->getHeader() == nullptr ) {
+        return;
+    }
+
+    NumColors = static_cast<uint8_t>( pColorSet->getNumMaterials() );
+    if ( ColorIndex >= NumColors ) {
+        return;
+    }
+
+    ::Material *pColorMaterial = pColorSet->getMaterialAtIndex( ColorIndex );
+    if ( pColorMaterial == nullptr ) {
+        return;
+    }
+
+    const uint64_t unchangeableHashcode = GetUnchangeableMaterialHashcode();
+    const uint32_t numMaterials = Material.getNumMaterials();
+    Render2DMHashEntry *pHashcodes = Material.getHashTableHead();
+
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        ::Material *pMaterial = Material.getMaterialAtIndex( i );
+        if ( pMaterial == nullptr ) {
+            continue;
+        }
+
+        MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+        if ( pParameter == nullptr ||
+             pParameter->Hashcode == kOpaqueClotheShaderHashcode ) {
+            continue;
+        }
+
+        if ( pHashcodes != nullptr &&
+             pHashcodes[i].Hashcode == unchangeableHashcode ) {
+            continue;
+        }
+
+        ApplyColorMaterial( pMaterial, pColorMaterial );
+    }
+}
+
+void AvatarClothe::claimLayerTextures( AvatarBnk *pBnk,
+                                       AvatarBnk *pCommonBnk ) {
+    // FUN_008f25c0 (second half)
+    const uint64_t cubemapHashcode = GetCubemapTextureHashcode();
+    const uint32_t numMaterials = Material.getNumMaterials();
+    Render2DMHashEntry *pHashcodes = Material.getHashTableHead();
+    if ( pHashcodes == nullptr ) {
+        return;
+    }
+
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        RenderFile::Section *pMaterialSection = pHashcodes[i].pEntry;
+        if ( pMaterialSection == nullptr ) {
+            continue;
+        }
+
+        ::Material *pMaterial = (::Material *)( pMaterialSection + 1 );
+        MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+        if ( pParameter == nullptr || pParameter->NumLayers == 0 ||
+             pParameter->Hashcode == kOpaqueClotheShaderHashcode ) {
+            continue;
+        }
+
+        MaterialLayer *pLayer = pParameter->getLayer( 0 );
+        if ( pLayer == nullptr || pLayer->NumTextures == 0 ) {
+            continue;
+        }
+
+        for ( uint32_t j = 0; j < pLayer->NumTextures; j++ ) {
+            const uint64_t textureHashcode = pLayer->pLayerTextures[j].Hashcode;
+            if ( textureHashcode == 0 || textureHashcode == cubemapHashcode ) {
+                continue;
+            }
+
+            if ( NumTextures >= kMaxRenderInstances ) {
+                OTDU_LOG_WARN( "Too many texture references for a clothe\n" );
+                return;
+            }
+
+            AvatarBitmapInstance *pTexture =
+                TexturePool.claim( pBnk, textureHashcode );
+            if ( pTexture == nullptr ) {
+                pTexture = TexturePool.claim( pCommonBnk, textureHashcode );
+            }
+
+            pTextures[NumTextures] = pTexture;
+            if ( pTexture != nullptr ) {
+                NumTextures++;
+            }
+        }
+    }
+}
+
+void AvatarClothe::registerRenderData() {
+    // FUN_008f2290
+    RenderAvatarBase::registerRenderData();
+
+    if ( Scene.getHeader() == nullptr ) {
+        return;
+    }
+
+    for ( int32_t i = 0; i < NumInstances; i++ ) {
+        if ( pInstances[i] == nullptr ) {
+            continue;
+        }
+
+        Render3DG *pGeometry = pInstances[i]->getGeometry();
+        if ( pGeometry != nullptr && pGeometry->getHeader() != nullptr ) {
+            Scene.bindGeometryReferences( pGeometry );
+        }
+    }
+}
+
+void AvatarClothe::bindPartTextures() {
+    // FUN_008f2ab0
+    const uint32_t numMaterials = Material.getNumMaterials();
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        ::Material *pMaterial = Material.getMaterialAtIndex( i );
+
+        for ( int32_t j = 0; j < NumTextures; j++ ) {
+            if ( pTextures[j] == nullptr ) {
+                continue;
+            }
+
+            Render2DB *pBitmap = pTextures[j]->getBitmap();
+            if ( pBitmap != nullptr && pBitmap->getHeader() != nullptr ) {
+                BindBitmapToMaterial( pMaterial, pBitmap );
+            }
+        }
+    }
+}
+
+AvatarDBEntry *AvatarClothe::getAvatarPart() {
+    // FUN_008f2180
+    if ( StreamingRequest.pPartRequesting != nullptr ) {
+        return StreamingRequest.pPartRequesting;
+    }
+    if ( StreamingRequest.pPartInLoading != nullptr ) {
+        return StreamingRequest.pPartInLoading;
+    }
+    return pAvatarPart;
+}
+
+void AvatarClothe::requestPart( AvatarDBEntry *pPart,
+                                const uint8_t colorIndex,
+                                const bool bAsync,
+                                const bool bCritical ) {
+    // FUN_008f2e10
+    if ( pPart != getAvatarPart() || ColorIndex != colorIndex ) {
+        StreamingRequest.pPartRequesting = pPart;
+        StreamingRequest.bCritical = bCritical;
+        StreamingRequest.bAsync = bAsync;
+        StreamingRequest.State = AVT_Unloaded;
+
+        ColorIndex = colorIndex;
+
+        if ( LoadingState == AVT_LoadPending || LoadingState == AVT_Unknown ) {
+            LoadingState = AVT_Unloaded;
+        }
+    }
+
+    if ( !bAsync ) {
+        stepLoading();
+    }
 }
 
 void AvatarClothe::releaseCurrentPart() {
     // FUN_008f2320
-    OTDU_UNIMPLEMENTED_ONCE;
+    for ( int32_t i = NumInstances - 1; i >= 0; i-- ) {
+        AvatarRenderInstancePool<AvatarGeometryInstance>::Release(
+            pInstances[i] );
+        pInstances[i] = nullptr;
+        NumInstances--;
+    }
+    GeometryPool.Allocator.reset();
+
+    for ( int32_t i = NumTextures - 1; i >= 0; i-- ) {
+        AvatarRenderInstancePool<AvatarBitmapInstance>::Release( pTextures[i] );
+        pTextures[i] = nullptr;
+        NumTextures--;
+    }
+    TexturePool.Allocator.reset();
+
+    NumColors = 0;
 
     releaseRenderData();
 }
@@ -486,11 +1168,12 @@ void AvatarStreamingRequest::decreaseReferenceCount() {
 void AvatarClothe::decreaseReferenceCount() {
     // FUN_008f24b0
     if ( LoadingState == AVT_Ready ) {
-        OTDU_UNIMPLEMENTED;
+        releaseHierarchy();
         LoadingState = AVT_LoadCompleted;
     }
     if ( LoadingState == AVT_LoadCompleted ) {
-        OTDU_UNIMPLEMENTED;
+        releaseCurrentPart();
+        pAvatarPart = nullptr;
         LoadingState = AVT_LoadPending;
     }
     if ( LoadingState == AVT_LoadPending ) {
@@ -537,8 +1220,8 @@ void PooledAvatarEntry::initialize( int32_t index ) {
     CarBelt.pLowRes = &Impostor;
 
     for ( int32_t i = 0; i < AC_Count; i++ ) {
-        Slots[i].initialize( index, &Collection3D, kClotheScratchPoolASize[i],
-                             kClotheScratchPoolBSize[i], &LightConfig,
+        Slots[i].initialize( index, &Collection3D, kClotheGeometryPoolSize[i],
+                             kClotheTexturePoolSize[i], &LightConfig,
                              &ShaderConfig );
 
         // Hair and helmet are the two slots the impostor never bakes
@@ -721,17 +1404,102 @@ void PooledAvatarEntry::releaseParts() {
     CarBelt.decreaseReferenceCount();
     pSkeleton = nullptr;
 
-    decreaseRenderRef();
-    decreaseRenderRef();
+    Body.decreaseReferenceCount();
+    Impostor.decreaseReferenceCount();
 
     for ( AvatarClothe &slot : Slots ) {
         slot.decreaseReferenceCount();
     }
 }
 
-void PooledAvatarEntry::decreaseRenderRef() {
-    // FUN_008f2ef0
-    OTDU_UNIMPLEMENTED;
+void PooledAvatarEntry::setClothe( const int32_t category,
+                                   const uint16_t clotheID,
+                                   const uint8_t colorIndex,
+                                   const int32_t clotheSet ) {
+    // FUN_008eebc0
+    if ( category < 0 || category >= AC_Count || clotheSet < 0 ||
+         clotheSet >= kNumClotheTypes ) {
+        return;
+    }
+
+    const bool bSharedBySets = category == AC_Hair ||
+                               category == AC_FacePilosity ||
+                               category == AC_Eyebrows ||
+                               category == AC_Glasses || category == AC_Helmet;
+
+    if ( bSharedBySets ) {
+        for ( int32_t set = 0; set < kNumClotheTypes; set++ ) {
+            pClothesHC[set][category] = clotheID;
+            pColors[set][category] = colorIndex;
+        }
+    }
+
+    pClothesHC[clotheSet][category] = clotheID;
+    pColors[clotheSet][category] = colorIndex;
+}
+
+void PooledAvatarEntry::setClothesFromConfig(
+    const AvatarConfiguration &config ) {
+    // FUN_008eee40
+    for ( int32_t set = 0; set < kNumClotheTypes; set++ ) {
+        for ( int32_t category = 0; category < AC_Count; category++ ) {
+            setClothe( category, config.ClotheID[set][category],
+                       config.ColorID[set][category], set );
+        }
+    }
+}
+
+bool PooledAvatarEntry::installClothePart( AvatarDBEntry *pPart,
+                                           const uint8_t colorIndex,
+                                           const int32_t clotheSet,
+                                           const bool bAsync,
+                                           const bool bCritical ) {
+    // FUN_008eec20
+    if ( pPart == nullptr ) {
+        return false;
+    }
+
+    const AvatarClothePart *pClothePart =
+        static_cast<const AvatarClothePart *>( pPart );
+
+    setClothe( pClothePart->Category, pPart->IDHashcode, colorIndex,
+               clotheSet );
+
+    if ( clotheSet != ActiveClotheSet ) {
+        return false;
+    }
+
+    const AvatarDBEntry *pBodyPart = Body.getAvatarPart();
+    if ( pBodyPart == nullptr || pPart->Gender != pBodyPart->Gender ) {
+        return false;
+    }
+
+    if ( pClothePart->Category < 0 || pClothePart->Category >= AC_Count ) {
+        return false;
+    }
+
+    Slots[pClothePart->Category].requestPart( pPart, colorIndex, bAsync,
+                                              bCritical );
+    return true;
+}
+
+bool PooledAvatarEntry::installBodyPart( AvatarDBEntry *pPart ) {
+    // FUN_008eedf0
+    if ( pSkeleton == nullptr && pPart != nullptr ) {
+        const char *pMeshName = pPart->getMeshName();
+        AvatarBnk &commonBodies = gpAvatar->getBnkManager().getCommonBodies();
+
+        if ( pMeshName != nullptr && commonBodies.isInstallOK() ) {
+            void *pEntry = commonBodies.getSkeleton( pMeshName );
+            if ( pEntry != nullptr ) {
+                pSkeleton = static_cast<uint8_t *>( pEntry ) +
+                            kAvatarSkeletonDataOffset;
+            }
+        }
+    }
+
+    Body.requestPart( pPart );
+    return true;
 }
 
 void RenderAvatarBase::tickEyeMaterial() {

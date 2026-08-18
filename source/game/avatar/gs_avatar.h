@@ -38,28 +38,31 @@ public:
 
     bool applyPNJConfiguration( AvatarConfiguration &outConfig,
                                 const DBEntryPNJ &pnjEntry );
-
     void bakeAvatar( EntityAvatar *pAvatar,
                      const AvatarConfiguration *pConfig,
-                     int32_t bodyType,
-                     bool bForceReskin,
-                     bool bForceFullBake );
+                     int32_t clotheSet,
+                     bool bAsync,
+                     bool bCritical );
     void installClothes( EntityAvatar *pAvatar,
-                         int32_t bodyType,
-                         bool bForceReskin,
-                         bool bForceFullBake );
+                         const AvatarConfiguration *pConfig,
+                         int32_t clotheSet,
+                         bool bAsync,
+                         bool bCritical );
 
 private:
     void installStyleResource( EntityAvatar *pAvatar,
                                const AvatarConfiguration *pConfig );
-    void installSkinResource( EntityAvatar *pAvatar,
-                              const AvatarConfiguration *pConfig );
     void installBodyResource( EntityAvatar *pAvatar,
+                              const AvatarConfiguration *pConfig );
+    void installSkinResource( EntityAvatar *pAvatar,
                               const AvatarConfiguration *pConfig );
     void installEyeResource( EntityAvatar *pAvatar,
                              const AvatarConfiguration *pConfig );
     void installBodySkin( EntityAvatar *pAvatar,
                           const AvatarConfiguration *pConfig );
+
+    AvatarClothePart *findClotheByID( uint16_t id );
+    AvatarClothePart *findDefaultPartByID( uint16_t id );
     void readAvatarConfig( const EntityAvatar *pAvatar,
                            AvatarConfiguration &outConfig );
     bool loadFaceModifSet( AvatarConfiguration &outConfig,
@@ -68,7 +71,7 @@ private:
     void buildClothesDB();
     void buildDefaultPartsDB();
     void buildBodyDB();
-    void buildBodyMorphDB();
+    void buildSkinDB();
     void buildBodyLODDB();
     void buildStyleDB();
     void buildBeltDB();
@@ -84,7 +87,7 @@ private:
     AvatarPartDB *pBodyDB;
     AvatarPartDB *pBodyLODDB;
     AvatarPartDB *pStyleDB;
-    AvatarPartDB *pBodyMorphDB;
+    AvatarPartDB *pSkinDB;
     AvatarPartDB *pBeltDB;
     AvatarPartDB *pEyeDB;
 
