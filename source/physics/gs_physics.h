@@ -88,6 +88,8 @@ enum ePhysicsThreadMode : int32_t {
 extern ePhysicsThreadMode gPhysicsThreadPriority;
 extern int32_t gPhysicsThreadFrequency;
 
+static constexpr float kNoSurfaceSentinel = -100000.0f; // DAT_00f418fc
+
 class GSPhysics : public GameSystem,
                   public Bank,
                   public PhysicsStreamingCallback {
@@ -224,6 +226,10 @@ public:
                                    float radius,
                                    std::vector<CameraCollisionHit> &hits );
     float getGroundHeight( float x, float z );
+    bool probeSurface( const Eigen::Vector4f &position,
+                       bool bSearchAbove,
+                       float &outHeight,
+                       Eigen::Vector4f &outNormal );
     int32_t gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
                                        const Eigen::Vector4f &bbMax,
                                        Eigen::Vector4f *pOutVerts,

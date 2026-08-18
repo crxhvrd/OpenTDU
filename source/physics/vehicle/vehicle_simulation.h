@@ -230,6 +230,7 @@ struct PhysicsVehicleState {
     float DrivelineInertia = 1.0f;
     float ReflectedWheelSpeed = 0.0f; // Ww
     float ForwardSpeed = 0.0f;
+    float LateralSpeed = 0.0f;    // body-space sideways m/s
     float ReactionTorque = 0.0f;  // Tw
     float CouplingTorque = 0.0f;  // clutch impulse solve
     float ClutchEngage = 0.0f;    // clutchEngage

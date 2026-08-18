@@ -46,6 +46,7 @@
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
+#include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
@@ -1696,6 +1697,72 @@ GSPhysics::queryCameraCollisions( const Eigen::Vector4f &center,
     }
 
     return static_cast<int32_t>( hits.size() );
+}
+
+bool GSPhysics::probeSurface( const Eigen::Vector4f &position,
+                              bool bSearchAbove,
+                              float &outHeight,
+                              Eigen::Vector4f &outNormal ) {
+    // FUN_00848cb0
+    outHeight = kNoSurfaceSentinel;
+    outNormal = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
+    if ( pPhysicsSystem == nullptr ) {
+        return false;
+    }
+
+    constexpr float kProbeMargin = 1.0f;  // the AABB's short axis
+    constexpr float kProbeSpan = 1000.0f; // the AABB's tall axis
+
+    const Eigen::Vector4f origin = GetShiftOrigin();
+    const float startY = bSearchAbove ? ( position.y() - kProbeMargin )
+                                      : ( position.y() + kProbeMargin );
+    const float span = kProbeSpan + kProbeMargin;
+
+    const JPH::RRayCast ray(
+        JPH::RVec3( position.x() - origin.x(), startY - origin.y(),
+                    position.z() - origin.z() ),
+        JPH::Vec3( 0.0f, bSearchAbove ? span : -span, 0.0f ) );
+
+    JPH::RayCastSettings settings;
+    settings.mTreatConvexAsSolid = false;
+    settings.mBackFaceModeTriangles = JPH::EBackFaceMode::CollideWithBackFaces;
+
+    JPH::AllHitCollisionCollector<JPH::CastRayCollector> collector;
+
+    lockMutex();
+    pPhysicsSystem->GetNarrowPhaseQuery().CastRay( ray, settings, collector );
+
+    bool bFound = false;
+    float bestY = kNoSurfaceSentinel;
+    JPH::BodyID bestBody;
+    JPH::SubShapeID bestSubShape;
+    JPH::RVec3 bestPoint = JPH::RVec3::sZero();
+    for ( const JPH::RayCastResult &hit : collector.mHits ) {
+        const JPH::RVec3 point = ray.GetPointOnRay( hit.mFraction );
+        const float worldY = static_cast<float>( point.GetY() ) + origin.y();
+        if ( !bFound || bestY < worldY ) {
+            bFound = true;
+            bestY = worldY;
+            bestBody = hit.mBodyID;
+            bestSubShape = hit.mSubShapeID2;
+            bestPoint = point;
+        }
+    }
+
+    if ( bFound ) {
+        JPH::BodyLockRead lock( pPhysicsSystem->GetBodyLockInterfaceNoLock(),
+                                bestBody );
+        if ( lock.Succeeded() ) {
+            const JPH::Vec3 normal = lock.GetBody().GetWorldSpaceSurfaceNormal(
+                bestSubShape, bestPoint );
+            outNormal = Eigen::Vector4f( normal.GetX(), normal.GetY(),
+                                         normal.GetZ(), 0.0f );
+        }
+        outHeight = bestY;
+    }
+    unlockMutex();
+
+    return bFound;
 }
 
 float GSPhysics::getGroundHeight( float x, float z ) {

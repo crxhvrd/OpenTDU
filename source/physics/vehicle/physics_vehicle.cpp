@@ -2123,6 +2123,7 @@ void PhysicsVehicle::OnStep(
     updateGripModulation( chassisVel.Length() );
 
     vehicle.ForwardSpeed = vForward;
+    vehicle.LateralSpeed = chassisVel.Dot( world.GetColumn3( 0 ) );
     vehicle.AnyWheelGrounded = false;
     for ( int i = 0; i < vehicle.NumWheels; ++i ) {
         if ( vehicle.Wheels[i].bGroundContact ) {
@@ -2646,6 +2647,7 @@ PhysicsVehicle::getWheelReadout( uint32_t index ) const {
     out.ContactSurface = wheelSurface[index];
     out.ContactMaterial = wheelMaterial[index];
     out.ContactPoint = w.bGroundContact ? w.ContactPoint : w.GroundProbePoint;
+    out.ContactNormal = w.ContactNormal;
     return out;
 }
 

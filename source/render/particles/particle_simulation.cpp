@@ -9,40 +9,9 @@
 #include "render/gs_render.h"
 #include "render/render_scene.h"
 #include "core/binary_helpers.h"
+#include "core/random/lcg.h"
 
 namespace {
-
-    uint32_t ColorByte( float channel ) {
-        float scaled = channel * 255.0f;
-        if ( scaled <= 0.0f ) {
-            return 0;
-        }
-        if ( scaled >= 255.0f ) {
-            return 255;
-        }
-        return static_cast<uint32_t>( scaled + 0.5f );
-    }
-
-    // Reinterpret a bit pattern as a float (the particle RNG builds a mantissa
-    // in [1, 2) then subtracts 1 to get a uniform [0, 1) fraction).
-    inline float BitsToFloat( uint32_t bits ) {
-        float value;
-        std::memcpy( &value, &bits, sizeof( value ) );
-        return value;
-    }
-
-    // One step of the particle LCG (Numerical Recipes constants).
-    inline uint32_t LCGNext( uint32_t state ) {
-        return state * 0x19660d + 0x3c6ef35f;
-    }
-
-    inline float RandFloat01( uint8_t *pRng ) {
-        // FUN_00458870
-        const uint32_t state = LCGNext( Read<uint32_t>( pRng, 0 ) );
-        Write<uint32_t>( pRng, 0, state );
-        return BitsToFloat( ( state & 0x7fffff ) | 0x3f800000 ) - 1.0f;
-    }
-
     // DAT_016a8120
     static constexpr const float kCubeCorners[8][3] = {
         {0.5f,  -0.5f, -0.5f},

@@ -29,6 +29,9 @@ static constexpr const char *kCarPrimitiveNames[kCarNumPrimitives] = {
 static constexpr float kVehicleCarLODDistances[VehicleBase::eLOD::VBL_Count] = {
     250.0f, 21.0f, 20.0f, 12.0f, 0.0f };
 
+// Scale deltaTime to prevent speed up window roll animation
+static constexpr float kWindowRollSpeed = 0.5f;
+
 static bool DAT_016a2d2d = false; // DAT_016a2d2d
 
 VehicleCar::VehicleCar()
@@ -142,7 +145,7 @@ void VehicleCar::instantiate( CarState *pCarState,
     }
 }
 
-void VehicleCar::onEvent( CarState *param_1, float param_2, void *param_3 ) {
+void VehicleCar::onEvent( CarState *param_1, float deltaTime, void *param_3 ) {
     // FUN_008c83b0
     if ( displayInstances[0].pNode == nullptr ) {
         return;
@@ -154,12 +157,13 @@ void VehicleCar::onEvent( CarState *param_1, float param_2, void *param_3 ) {
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
 
-    updateBodyAndWheelsTransform( param_1, param_2 );
+    updateBodyAndWheelsTransform( param_1, deltaTime );
 
     // TODO: Convert to enum
     int32_t iVar1 = pCarState->body.WindowState;
     if ( iVar1 != 0 ) {
-        float fVar2 = ( iVar1 < 1 ) ? 0.01f : -0.01f;
+        const float step = kWindowRollSpeed * deltaTime;
+        float fVar2 = ( iVar1 < 1 ) ? step : -step;
         updateWindowLeft( fVar2 );
         updateWindowRight( fVar2 );
     }

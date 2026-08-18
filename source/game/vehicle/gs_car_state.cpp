@@ -8,6 +8,8 @@
 #include "world/mng_world.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
+#include "world/sector_manager.h"
+#include "world/streaming_manager.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
 #include "physics/vehicle/physics_vehicle.h"
@@ -119,6 +121,34 @@ namespace {
             body.EngineTorqueNm = torque;
             body.AudioSpeedKmh = speedKmh;
         }
+    }
+
+    constexpr float kNoHeightmapSentinel = -100000.0f; // DAT_00f42100
+    constexpr float kHeightmapOutOfBounds = 100000.0f; // DAT_00f418e0
+    constexpr float kBridgeTunnelBand = 1.0f;          // DAT_00fab544
+
+    float sampleHeightmapAt( const Eigen::Vector4f &position ) {
+        // FUN_00843dd0 (height only)
+        if ( gpWorld == nullptr ) {
+            return kNoHeightmapSentinel;
+        }
+        StreamingManager *pStreaming = gpWorld->getStreamingManager();
+        if ( pStreaming == nullptr ) {
+            return kNoHeightmapSentinel;
+        }
+
+        Sector *pSector =
+            pStreaming->sectorManager.getSectorAtPosition( position );
+        if ( pSector == nullptr || pSector->state != 1 ||
+             pSector->geometry.pHeightmapInstance == nullptr ) {
+            return kNoHeightmapSentinel;
+        }
+
+        const float height = SampleGroundHeight(
+            pSector->geometry.pHeightmapInstance, pSector->heightmap,
+            position.x(), position.z() );
+        return ( kHeightmapOutOfBounds <= height ) ? kNoHeightmapSentinel
+                                                   : height;
     }
 
     void publishWheelAudioTelemetry( WheelState &wheel ) {
@@ -288,6 +318,23 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 wheel.ProjectedPositionOnGround =
                     Eigen::Vector4f( ro.ContactPoint.x(), ro.ContactPoint.y(),
                                      ro.ContactPoint.z(), 1.0f );
+
+                const Eigen::Vector4f contactWorld =
+                    ro.ContactPoint + GSPhysics::GetShiftOrigin();
+                const float heightmapY = sampleHeightmapAt( contactWorld );
+                wheel.bOnBridge = false;
+                wheel.bInsideTunnel = false;
+                if ( heightmapY <= kNoHeightmapSentinel ) {
+                    wheel.bInsideTunnel = true;
+                } else {
+                    if ( heightmapY + kBridgeTunnelBand < contactWorld.y() ) {
+                        wheel.bOnBridge = true;
+                    }
+                    if ( contactWorld.y() < heightmapY - kBridgeTunnelBand ) {
+                        wheel.bInsideTunnel = true;
+                    }
+                }
+                wheel.DistanceFromGround = contactWorld.y() - heightmapY;
 
                 wheel.bOnRoad = ro.bGrounded &&
                                 ( TDUSurface::isOnRoad( ro.ContactSurface ) ||

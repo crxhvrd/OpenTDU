@@ -39,6 +39,7 @@ public:
         uint32_t ContactSurface;  // phys-type code (TDUSurface)
         uint32_t ContactMaterial; // eMaterialType, MT_Default when unknown
         Eigen::Vector4f ContactPoint;
+        Eigen::Vector4f ContactNormal; // ground normal at the contact (world)
         Eigen::Vector4f ContactVelocity;
         Eigen::Vector4f UpAxis;
         Eigen::Vector4f ForwardAxis;
@@ -150,6 +151,7 @@ public:
     }
     const Chrono &getChrono() const { return chrono; }
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
+    float getLateralSpeed() const { return vehicle.LateralSpeed; }
 
 public:
     PhysicsVehicle();

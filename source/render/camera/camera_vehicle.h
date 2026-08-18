@@ -148,7 +148,7 @@ private:
     void applyFreeLook( const Matrix4x4f_t &carDisplayMatrix,
                         bool bFixedCam,
                         float deltaTime );
-    void applySpeedShake( float deltaTime );
+    void applySpeedShake( PhysicsVehicle *pPhys, float deltaTime );
     void updateMotionBlur( PhysicsVehicle *pPhys );
 
 private:
@@ -173,6 +173,7 @@ private:
     float shakeMaxSpeed;
     Eigen::Vector4f shakeMagnitude;
     Eigen::Vector4f shakePeriod;
+    Eigen::Vector4f carSpeed = Eigen::Vector4f::Zero();
     std::array<Bump, 3> pBumps;
     float minSlipAngle;
     float coefSlipAngle;

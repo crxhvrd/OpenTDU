@@ -37,3 +37,21 @@ static inline uint32_t ReadUint32( const uint8_t *pData ) {
 static inline int64_t ReadInt64( const uint8_t *pData ) {
     return Read<int64_t>( pData );
 }
+
+// Reinterpret a bit pattern as a float
+static inline float BitsToFloat( uint32_t bits ) {
+    float value;
+    std::memcpy( &value, &bits, sizeof( value ) );
+    return value;
+}
+
+static inline constexpr uint32_t ColorByte( float channel ) {
+    float scaled = channel * 255.0f;
+    if ( scaled <= 0.0f ) {
+        return 0;
+    }
+    if ( scaled >= 255.0f ) {
+        return 255;
+    }
+    return static_cast<uint32_t>( scaled + 0.5f );
+}

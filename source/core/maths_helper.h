@@ -91,14 +91,14 @@ static void DecomposeMatrix( const Matrix4x4f_t &transform,
     // FUN_006d0cd0
     translation = transform.row( 3 ).head<3>();
 
-    scale( 0 ) = transform.block<3, 1>( 0, 0 ).norm();
-    scale( 1 ) = transform.block<3, 1>( 0, 1 ).norm();
-    scale( 2 ) = transform.block<3, 1>( 0, 2 ).norm();
+    scale( 0 ) = transform.row( 0 ).head<3>().norm();
+    scale( 1 ) = transform.row( 1 ).head<3>().norm();
+    scale( 2 ) = transform.row( 2 ).head<3>().norm();
 
     Eigen::Matrix3f rotationMat;
-    rotationMat.col( 0 ) = transform.block<3, 1>( 0, 0 ) / scale( 0 );
-    rotationMat.col( 1 ) = transform.block<3, 1>( 0, 1 ) / scale( 1 );
-    rotationMat.col( 2 ) = transform.block<3, 1>( 0, 2 ) / scale( 2 );
+    rotationMat.row( 0 ) = transform.row( 0 ).head<3>() / scale( 0 );
+    rotationMat.row( 1 ) = transform.row( 1 ).head<3>() / scale( 1 );
+    rotationMat.row( 2 ) = transform.row( 2 ).head<3>() / scale( 2 );
 
     rotation = Eigen::Quaternionf( rotationMat );
 }
