@@ -247,3 +247,6 @@ private:
 };
 
 extern MaterialRegister gMaterialRegister;
+
+static constexpr uint32_t kMaterialFXHidden =
+    0x8; // the render context skips the material entirely.

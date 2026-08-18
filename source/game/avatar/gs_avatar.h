@@ -107,6 +107,18 @@ private:
 
 extern GSAvatar *gpAvatar;
 
+extern uint64_t gHashcodeNoMesh;
+extern uint64_t gHashcodeArms;
+extern uint64_t gHashcodeEyes;
+extern uint64_t gHashcodeFeet;
+extern uint64_t gHashcodeHands;
+extern uint64_t gHashcodeHead;
+extern uint64_t gHashcodeLegs;
+extern uint64_t gHashcodeSexe;
+extern uint64_t gHashcodeTeeth;
+extern uint64_t gHashcodeTorso;
+extern uint64_t gHashcodeHideable;
+
 extern float gAvatarInCarLightFactor[6];
 extern float gAvatarConvertibleLightFactor[6];
 extern float gAvatarOutCarLightFactor[6];

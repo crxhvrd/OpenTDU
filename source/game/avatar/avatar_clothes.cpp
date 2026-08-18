@@ -495,7 +495,7 @@ void RenderAvatarBase::instanciateHierarchy() {
     if ( pLowRes != nullptr ) {
         pHierarchyNodeLowRes = instanciatePartHierarchy();
         if ( pHierarchyNodeLowRes != nullptr && bVisible ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+            showLowResHierarchy();
         }
     }
 }
@@ -516,7 +516,7 @@ void RenderAvatarBase::releaseHierarchyNodes() {
 
     if ( pLowRes != nullptr && pHierarchyNodeLowRes != nullptr ) {
         if ( bVisible ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - FUN_008f1610
+            hideLowResHierarchy();
         }
 
         p3DManager->uninstantiate( pHierarchyNodeLowRes );
@@ -531,6 +531,39 @@ void RenderAvatarBase::releaseHierarchy() {
     destroyRenderData();
 
     pAvatarPart = nullptr;
+}
+
+void RenderAvatarBase::showLowResHierarchy() {
+    // FUN_008f1720
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - impostor render scenes
+}
+
+void RenderAvatarBase::hideLowResHierarchy() {
+    // FUN_008f1610
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - impostor render scenes
+}
+
+void RenderAvatarBase::setMeshVisibility( const uint64_t meshHashcode,
+                                          const bool bMeshVisible ) {
+    // FUN_00411590
+    Render2DMHashEntry *pHashcodes = Material.getHashTableHead();
+    if ( pHashcodes == nullptr ) {
+        return;
+    }
+
+    const uint32_t numMaterials = Material.getNumMaterials();
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        ::Material *pMaterial = Material.getMaterialAtIndex( i );
+        if ( pMaterial == nullptr || pHashcodes[i].Hashcode != meshHashcode ) {
+            continue;
+        }
+
+        if ( bMeshVisible ) {
+            pMaterial->FXFlags &= ~kMaterialFXHidden;
+        } else {
+            pMaterial->FXFlags |= kMaterialFXHidden;
+        }
+    }
 }
 
 AvatarDBEntry *AvatarLOD::getAvatarPart() {
@@ -1396,7 +1429,63 @@ bool PooledAvatarEntry::stepLoadingCompletion() {
 
 void PooledAvatarEntry::updateBodyPartVisibility() {
     // FUN_008ef810
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    AvatarClothe &bottom = Slots[AC_Bottom];
+    AvatarClothe &shoes = Slots[AC_Shoes];
+
+    const AvatarClothePart *pTop =
+        static_cast<const AvatarClothePart *>( Slots[AC_Top].getAvatarPart() );
+    if ( pTop == nullptr || pTop->Length == ACL_None ) {
+        Body.setMeshVisibility( gHashcodeArms, true );
+        Body.setMeshVisibility( gHashcodeTorso, true );
+    } else if ( pTop->Length == ACL_Long ) {
+        Body.setMeshVisibility( gHashcodeArms, false );
+        Body.setMeshVisibility( gHashcodeTorso, false );
+    } else if ( pTop->Length == ACL_Short ) {
+        Body.setMeshVisibility( gHashcodeArms, true );
+        Body.setMeshVisibility( gHashcodeTorso, false );
+    }
+
+    const AvatarClothePart *pBottom =
+        static_cast<const AvatarClothePart *>( bottom.getAvatarPart() );
+    if ( pBottom == nullptr ) {
+        Body.setMeshVisibility( gHashcodeLegs, true );
+    } else {
+        const bool bLegsVisible = ( pBottom->Length != ACL_Long );
+        Body.setMeshVisibility( gHashcodeLegs, bLegsVisible );
+        shoes.setMeshVisibility( gHashcodeHideable, bLegsVisible );
+    }
+
+    if ( pTop != nullptr ) {
+        const bool bBottomVisible = ( pTop->bIsPartBoth == 0 );
+        if ( bottom.pLowRes != nullptr &&
+             bottom.pHierarchyNodeLowRes != nullptr &&
+             bottom.bVisible != bBottomVisible ) {
+            if ( bBottomVisible ) {
+                bottom.showLowResHierarchy();
+            } else {
+                bottom.hideLowResHierarchy();
+            }
+        }
+
+        bottom.bVisible = bBottomVisible;
+
+        if ( !bBottomVisible ) {
+            Body.setMeshVisibility( gHashcodeLegs, true );
+            shoes.setMeshVisibility( gHashcodeHideable, true );
+        }
+    }
+
+    const AvatarClothePart *pShoes =
+        static_cast<const AvatarClothePart *>( shoes.getAvatarPart() );
+    Body.setMeshVisibility( gHashcodeFeet,
+                            pShoes == nullptr || pShoes->Length != ACL_Long );
+
+    const AvatarClothePart *pGloves = static_cast<const AvatarClothePart *>(
+        Slots[AC_Gloves].getAvatarPart() );
+    Body.setMeshVisibility( gHashcodeHands,
+                            pGloves == nullptr || pGloves->Length == ACL_None );
+
+    Body.setMeshVisibility( gHashcodeSexe, false );
 }
 
 void PooledAvatarEntry::releaseParts() {

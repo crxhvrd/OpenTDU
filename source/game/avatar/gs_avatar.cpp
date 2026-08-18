@@ -147,6 +147,17 @@ GSAvatar::GSAvatar()
     // FUN_008f6f00
     OTDU_UNIMPLEMENTED;
     gpAvatar = this;
+
+    gHashcodeArms = AvatarCalcHashcode( "ARMS" );
+    gHashcodeEyes = AvatarCalcHashcode( "EYES" );
+    gHashcodeFeet = AvatarCalcHashcode( "FEET" );
+    gHashcodeHands = AvatarCalcHashcode( "HANDS" );
+    gHashcodeHead = AvatarCalcHashcode( "HEAD" );
+    gHashcodeLegs = AvatarCalcHashcode( "LEGS" );
+    gHashcodeSexe = AvatarCalcHashcode( "SEXE" );
+    gHashcodeTeeth = AvatarCalcHashcode( "TEETH" );
+    gHashcodeTorso = AvatarCalcHashcode( "TORSO" );
+    gHashcodeHideable = AvatarCalcHashcode( "HIDEABLE" );
 }
 
 GSAvatar::~GSAvatar() {

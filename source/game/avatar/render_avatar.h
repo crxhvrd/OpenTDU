@@ -72,6 +72,10 @@ struct RenderAvatarBase {
 
     void instanciateHierarchy();
     void releaseHierarchy();
+    void showLowResHierarchy();
+    void hideLowResHierarchy();
+
+    void setMeshVisibility( uint64_t meshHashcode, bool bMeshVisible );
 
     void tickEyeMaterial();
     void tickBodyMaterial();
