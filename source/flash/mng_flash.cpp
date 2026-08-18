@@ -2,6 +2,7 @@
 #include "mng_flash.h"
 #include "gs_flash.h"
 
+#include "database/gs_database.h"
 #include "game/gm_base.h"
 #include "game/gm_scene.h"
 #include "render/camera/gs_camera.h"
@@ -329,7 +330,14 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     }
 
     case kSBDD: {
-        OTDU_UNIMPLEMENTED;
+        if ( gpDatabase != nullptr && pPlayer != nullptr ) {
+            gpDatabase->setFlashLocalization( 0, 0u, pPlayer );
+        }
+
+        if ( bNeedDatabaseInit ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
+            bNeedDatabaseInit = false;
+        }
         return true;
     }
 

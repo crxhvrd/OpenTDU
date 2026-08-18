@@ -2,15 +2,62 @@
 #include "mng_flash_localize.h"
 
 #include "flash/implementation/flash_player.h"
+#include "gs_flash.h"
 #include "tdu_instance.h"
 
 #include "database/gs_database.h"
+#include "player_data/gs_playerdata.h"
 
 MngFlashLocalize *gpMngFlashLocalize = nullptr;
 char MngFlashLocalize::VersionString[64] = "VERSION UKNOW";
 
+static constexpr char kSentenceMarker[3] = "\xC2\xA7"; // DAT_00f04dc8
+
+static constexpr uint64_t kDrivingHelpHashcodes[4] = { // DAT_00f99720
+    0x03326ae2, 0x0341ad22, 0x0350ef62, 0x03b7ee92 };
+
+static inline int32_t GetUTF8CodepointLength( const uint8_t byte ) {
+    if ( ( byte & 0x80u ) == 0 ) {
+        return 1;
+    }
+    if ( ( byte & 0xe0u ) == 0xc0u ) {
+        return 2;
+    }
+    if ( ( byte & 0xf0u ) == 0xe0u ) {
+        return 3;
+    }
+    return 1;
+}
+
+static inline int32_t GetUTF8CodepointLength( const char *pStr ) {
+    return GetUTF8CodepointLength( (uint8_t)*pStr );
+}
+
+static inline bool IsMarkerAt( const char *pStr ) {
+    // FUN_00451aa0 (inlined)
+    return pStr[0] == kSentenceMarker[0] && pStr[1] == kSentenceMarker[1];
+}
+
+static inline size_t
+BoundedCopy( char *pDest, const char *pSrc, const size_t maxLen ) {
+    // FUN_00451a70 (inlined)
+    size_t numCopied = 0;
+    while ( numCopied < maxLen && pSrc[numCopied] != '\0' ) {
+        pDest[numCopied] = pSrc[numCopied];
+        numCopied++;
+    }
+    return numCopied;
+}
+
+static inline const char *SkipToNextMarker( const char *pStr ) {
+    while ( *pStr != '\0' && !IsMarkerAt( pStr ) ) {
+        pStr += GetUTF8CodepointLength( pStr );
+    }
+    return pStr;
+}
+
 MngFlashLocalize::MngFlashLocalize() : Manager(), dbContext( 0x0 ) {
-    localizedStrings.reserve( 32 );
+    // FUN_007173a0
     reset();
 
     if ( gpMngFlashLocalize == nullptr ) {
@@ -21,187 +68,383 @@ MngFlashLocalize::MngFlashLocalize() : Manager(), dbContext( 0x0 ) {
 MngFlashLocalize::~MngFlashLocalize() {}
 
 bool MngFlashLocalize::initialize( TestDriveGameInstance * ) {
+    // FUN_00717370
     strcpy( MngFlashLocalize::VersionString, TestDrive::GetVersion() );
     return true;
 }
 
 void MngFlashLocalize::reset() {
-    localizedStrings.clear();
-    localizedStrings.reserve( 0x20 ); // Original code uses c-array of 32 -
-                                      // 00716f30 83 f8 20        CMP EAX,0x20
+    // FUN_00716f00
+    for ( int32_t i = 0; i < kNumLocalizedStrings; i++ ) {
+        localizedStrings[i].pFlashVarName[0] = '\0';
+        localizedStrings[i].pFormattedString[0] = '\0';
+    }
 
-    resetMenuLocalization();
+    clearAllSysVar();
+}
+
+void MngFlashLocalize::OnFlashInstall() {
+    // FUN_00717770
+    if ( gpFlash == nullptr ) {
+        return;
+    }
+
+    for ( int32_t level = 0; level < 2; level++ ) {
+        const int32_t numMovies = gpFlash->getNumMovies( level );
+        for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+            MoviePlayer *pMoviePlayer =
+                gpFlash->getMoviePlayer( level, movieIndex );
+            if ( pMoviePlayer == nullptr ||
+                 !pMoviePlayer->MovieBank.isLoaded() ) {
+                continue;
+            }
+
+            FlashPlayer *pPlayer = pMoviePlayer->MovieBank.getFlashPlayer();
+            if ( pPlayer == nullptr ) {
+                continue;
+            }
+
+            pPlayer->setVariableValue( "/:Version",
+                                       MngFlashLocalize::VersionString );
+        }
+    }
 }
 
 int32_t MngFlashLocalize::computeNumArgs( const char *pValue ) {
     // FUN_00716f60
-    // Scans pValue for §N markers (§ = U+00A7, UTF-8: 0xC2 0xA7).
-    // Returns the count of consecutive args starting from §1, or -1 if
-    // non-consecutive.
-    static const uint8_t kSep0 = 0xC2, kSep1 = 0xA7;
-
     int32_t consecutiveCount = 0;
     int32_t maxFound = 0;
 
-    const char *p = pValue;
-    while ( *p ) {
-        uint8_t b = (uint8_t)*p;
+    const char *pIt = pValue;
+    while ( *pIt != '\0' ) {
+        if ( !IsMarkerAt( pIt ) ) {
+            pIt += GetUTF8CodepointLength( pIt );
+            continue;
+        }
 
-        if ( b == kSep0 && (uint8_t)p[1] == kSep1 ) {
-            const char *afterSep = p + 2;
-            int32_t argNum = 0;
-            if ( sscanf( afterSep, "%d", &argNum ) == 1 && argNum < 10 ) {
-                if ( argNum == consecutiveCount + 1 ) {
-                    consecutiveCount = argNum;
-                }
-                if ( maxFound < argNum ) {
-                    maxFound = argNum;
-                }
+        pIt += GetUTF8CodepointLength( pIt );
+
+        int32_t argIndex = 0;
+        if ( sscanf( pIt, "%d", &argIndex ) == 1 && argIndex < 10 ) {
+            if ( argIndex == consecutiveCount + 1 ) {
+                consecutiveCount = argIndex;
             }
-            p = afterSep;
-        } else {
-            if ( b < 0x80 )
-                p += 1;
-            else if ( ( b & 0xe0 ) == 0xc0 )
-                p += 2;
-            else if ( ( b & 0xf0 ) == 0xe0 )
-                p += 3;
-            else
-                p += 1;
+            if ( maxFound < argIndex ) {
+                maxFound = argIndex;
+            }
+        }
+
+        pIt = SkipToNextMarker( pIt );
+        if ( *pIt != '\0' ) {
+            pIt += GetUTF8CodepointLength( pIt );
         }
     }
 
     if ( consecutiveCount < maxFound ) {
         return -1;
     }
-    if ( consecutiveCount > 10 ) {
-        consecutiveCount = 10;
+    return Min( consecutiveCount, kMaxLocalizeArgs );
+}
+
+void MngFlashLocalize::clearAllSysVar() {
+    // FUN_00716cf0
+    for ( int32_t i = 0; i < kNumLocalizeSysVars; i++ ) {
+        sysVars[i].pVarName[0] = '\0';
+        sysVars[i].pValue[0] = '\0';
     }
-    return consecutiveCount;
 }
 
-void MngFlashLocalize::expandMacroToken( const char *pToken,
-                                         char *dest,
-                                         size_t maxLen ) {
-    // FUN_007178c0
-    // Expands game-data macro tokens (e.g. "PLNA" → player name, "NEWS" → news
-    // count).
-    OTDU_UNIMPLEMENTED;
-    (void)pToken;
-    dest[0] = '\0';
-    (void)maxLen;
+void MngFlashLocalize::setSysVar( const char *pName, const char *pValue ) {
+    // FUN_00716d30
+    if ( pName == nullptr || pValue == nullptr || pName[0] == '\0' ) {
+        return;
+    }
+
+    for ( int32_t i = 0; i < kNumLocalizeSysVars; i++ ) {
+        FlashLocalizeSysVar &sysVar = sysVars[i];
+        if ( sysVar.pVarName[0] != '\0' ) {
+            continue;
+        }
+
+        snprintf( sysVar.pVarName, sizeof( sysVar.pVarName ), "%s%s", pName,
+                  kSentenceMarker );
+
+        strncpy( sysVar.pValue, pValue, sizeof( sysVar.pValue ) );
+        sysVar.pValue[sizeof( sysVar.pValue ) - 1] = '\0';
+        return;
+    }
 }
 
-bool MngFlashLocalize::makeLocalizedSentence( char *dest,
-                                              size_t maxLen,
-                                              const char *src,
-                                              const char *const *args,
-                                              int numArgs ) {
-    // FUN_00717bf0
-    // Scans src for §N markers and substitutes with args[N-1] (0-indexed),
-    // or expands §<letter> tokens via expandMacroToken.
-    // args[0] = pVarName (from SetVarLocalized), args[1..] = extra substitution
-    // args. Returns true if any § marker was processed.
-    static const uint8_t kSep0 = 0xC2, kSep1 = 0xA7;
+void MngFlashLocalize::setSysVar( const char *pName, const int32_t value ) {
+    // FUN_00716ed0
+    char pFormatted[32];
+    sprintf( pFormatted, "%d", value );
+    setSysVar( pName, pFormatted );
+}
 
-    auto utf8Width = []( uint8_t b ) -> int {
-        if ( b < 0x80 )
-            return 1;
-        if ( ( b & 0xe0 ) == 0xc0 )
-            return 2;
-        if ( ( b & 0xf0 ) == 0xe0 )
-            return 3;
-        return 1;
-    };
+void MngFlashLocalize::setSysVar( const char *pName, const float value ) {
+    // FUN_00716e90
+    char pFormatted[32];
+    sprintf( pFormatted, "%.2f", (double)value );
+    setSysVar( pName, pFormatted );
+}
 
-    bool bFound = false;
-    size_t writePos = 0;
+const char *MngFlashLocalize::findSysVar( const char *pToken ) const {
+    // FUN_00716c40
+    for ( int32_t i = 0; i < kNumLocalizeSysVars; i++ ) {
+        const FlashLocalizeSysVar &sysVar = sysVars[i];
+        if ( sysVar.pVarName[0] == '\0' ) {
+            continue;
+        }
 
-    while ( *src && writePos < maxLen - 1 ) {
-        uint8_t b = (uint8_t)*src;
-
-        if ( b == kSep0 && (uint8_t)src[1] == kSep1 ) {
-            bFound = true;
-            src += 2; // skip §
-
-            char c = *src;
-            if ( c >= '0' && c <= '9' ) {
-                // §N: substitute with args[N-1]
-                int argIdx = atoi( src ) - 1;
-                if ( argIdx < 0 || argIdx > 9 ) {
-                    argIdx = 0;
-                }
-
-                const char *argStr = "";
-                if ( argIdx < numArgs && args[argIdx] != nullptr ) {
-                    argStr = args[argIdx];
-                }
-
-                size_t argLen = strlen( argStr );
-                size_t copy = Min( argLen, maxLen - 1 - writePos );
-                memcpy( dest + writePos, argStr, copy );
-                writePos += copy;
-
-                while ( *src >= '0' && *src <= '9' ) {
-                    src++;
-                }
-            } else {
-                // §<token>: game-data macro expansion
-                char macroResult[512] = {};
-                expandMacroToken( src, macroResult, sizeof( macroResult ) );
-
-                size_t macroLen = strlen( macroResult );
-                size_t copy = Min( macroLen, maxLen - 1 - writePos );
-                memcpy( dest + writePos, macroResult, copy );
-                writePos += copy;
-
-                src += utf8Width( (uint8_t)*src );
-            }
-        } else {
-            int w = utf8Width( b );
-            size_t copy = Min( (size_t)w, maxLen - 1 - writePos );
-            memcpy( dest + writePos, src, copy );
-            writePos += copy;
-            src += w;
+        if ( strncmp( sysVar.pVarName, pToken, strlen( sysVar.pVarName ) ) ==
+             0 ) {
+            return sysVar.pValue;
         }
     }
 
-    dest[writePos < maxLen ? writePos : maxLen - 1] = '\0';
-    return bFound;
+    return nullptr;
+}
+
+void MngFlashLocalize::expandMacroToken( const char *pToken, char *pDest ) {
+    // FUN_007178c0
+    static constexpr size_t kDestLength = 512;
+
+    char pLocalToken[512];
+    strncpy( pLocalToken, pToken, kDestLength );
+    pLocalToken[kDestLength - 1] = '\0';
+
+    if ( strncmp( pLocalToken, "PLNA", 4 ) == 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (savegame driver nickname)
+        pDest[0] = '\0';
+        return;
+    }
+
+    if ( strncmp( pLocalToken, "NEWS", 4 ) == 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (unread news count)
+        pDest[0] = '\0';
+        return;
+    }
+
+    if ( strncmp( pLocalToken, "ACHV_PTS", 8 ) == 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (achievement points)
+        pDest[0] = '\0';
+        return;
+    }
+
+    if ( strncmp( pLocalToken, "LEVEL", 5 ) == 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (AchievementsData level)
+        snprintf( pDest, kDestLength, "%s", "(ERR:LVL)" );
+        return;
+    }
+
+    if ( strncmp( pLocalToken, "COMPL_PCT", 9 ) == 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (completion percentage)
+        pDest[0] = '\0';
+        return;
+    }
+
+    if ( strncmp( pLocalToken, "DRV_MODE", 8 ) == 0 ) {
+        const int32_t drivingHelpLevel =
+            ( gpPlayerData != nullptr ) ? gpPlayerData->getDrivingHelpLevel()
+                                        : 0;
+
+        const char *pDrivingMode = nullptr;
+        if ( drivingHelpLevel > 0 && drivingHelpLevel < 4 &&
+             gpDatabase != nullptr ) {
+            pDrivingMode = gpDatabase->getStringByHashcode(
+                0, kDrivingHelpHashcodes[drivingHelpLevel] );
+        }
+
+        if ( pDrivingMode == nullptr ) {
+            pDrivingMode = "(ERR:NODRVMODE)";
+        }
+
+        snprintf( pDest, kDestLength, "%s", pDrivingMode );
+        return;
+    }
+
+    if ( strncmp( pLocalToken, "RACE_LUX", 8 ) == 0 ) {
+        const char *pRaceLux =
+            ( gpDatabase != nullptr )
+                ? gpDatabase->getStringByHashcode( 7, 0x3ab6967 )
+                : nullptr;
+        if ( pRaceLux == nullptr ) {
+            pRaceLux = "(ERR:RACE_LX)";
+        }
+
+        snprintf( pDest, kDestLength, "%s", pRaceLux );
+        return;
+    }
+
+    if ( strncmp( pLocalToken, "MY_CLUB", 7 ) == 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (savegame driver club)
+        snprintf( pDest, kDestLength, "%s", "ERR:NO_CLUB" );
+        return;
+    }
+
+    if ( strncmp( pLocalToken, "REW_MAX", 7 ) == 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (lobby max reward)
+        pDest[0] = '\0';
+        return;
+    }
+
+    // Not a built-in macro
+    const char *pSysVar = findSysVar( pLocalToken );
+    if ( pSysVar == nullptr ) {
+        snprintf( pDest, kDestLength, "%s", "(ERR:3)" );
+        return;
+    }
+
+    snprintf( pDest, kDestLength, "%s", pSysVar );
+}
+
+bool MngFlashLocalize::makeLocalizedSentence( char *pDest,
+                                              size_t maxLen,
+                                              const char *pSrc,
+                                              const char *const *pArgs,
+                                              int32_t numArgs ) {
+    // FUN_00717bf0
+    bool bFoundMarker = false;
+    size_t writePos = 0;
+
+    while ( *pSrc != '\0' && writePos < maxLen ) {
+        const int32_t codepointLength = GetUTF8CodepointLength( pSrc );
+
+        if ( !IsMarkerAt( pSrc ) ) {
+            const size_t copyLength =
+                Min( (size_t)codepointLength, maxLen - writePos );
+            memcpy( pDest + writePos, pSrc, copyLength );
+
+            writePos += codepointLength;
+            pSrc += codepointLength;
+            continue;
+        }
+
+        bFoundMarker = true;
+        pSrc += codepointLength;
+
+        char pExpanded[512];
+        const char *pSubstitution = nullptr;
+
+        if ( *pSrc < '0' || *pSrc > '9' ) {
+            expandMacroToken( pSrc, pExpanded );
+            pSubstitution = pExpanded;
+        } else if ( !IsMarkerAt( pSrc + GetUTF8CodepointLength( pSrc ) ) ) {
+            expandMacroToken( pSrc, pExpanded );
+            pSubstitution = pExpanded;
+        } else {
+            int32_t argIndex = atoi( pSrc ) - 1;
+            if ( argIndex < 0 || argIndex >= kMaxLocalizeArgs ) {
+                argIndex = 0;
+            }
+
+            pSubstitution = ( argIndex < numArgs && pArgs[argIndex] != nullptr )
+                                ? pArgs[argIndex]
+                                : "(ERR:2)";
+        }
+
+        writePos +=
+            BoundedCopy( pDest + writePos, pSubstitution, maxLen - writePos );
+
+        pSrc = SkipToNextMarker( pSrc );
+        if ( *pSrc != '\0' ) {
+            pSrc += GetUTF8CodepointLength( pSrc );
+        }
+    }
+
+    pDest[Min( writePos, maxLen - 1 )] = '\0';
+    return bFoundMarker;
+}
+
+void MngFlashLocalize::makeSentenceInternal( char *pDest,
+                                             size_t maxLen,
+                                             const char *pSrc,
+                                             va_list args ) {
+    // FUN_007171b0
+    if ( pSrc == nullptr ) {
+        return;
+    }
+
+    const int32_t numArgs = computeNumArgs( pSrc );
+    if ( numArgs < 0 ) {
+        strncpy( pDest, "(ERR:1)", maxLen );
+        pDest[maxLen - 1] = '\0';
+        return;
+    }
+
+    const char *pArgs[kMaxLocalizeArgs] = {};
+    for ( int32_t i = 0; i < numArgs && i < kMaxLocalizeArgs; i++ ) {
+        pArgs[i] = va_arg( args, const char * );
+        if ( pArgs[i] == nullptr ) {
+            break;
+        }
+    }
+
+    makeLocalizedSentence( pDest, maxLen, pSrc, pArgs, numArgs );
+}
+
+void MngFlashLocalize::makeSentence( char *pDest,
+                                     size_t maxLen,
+                                     const char *pSrc,
+                                     ... ) {
+    // FUN_007171b0
+    va_list args;
+    va_start( args, pSrc );
+    makeSentenceInternal( pDest, maxLen, pSrc, args );
+    va_end( args );
+}
+
+void MngFlashLocalize::makeSentenceFromHashcode( char *pDest,
+                                                 size_t maxLen,
+                                                 uint64_t hashcode,
+                                                 ... ) {
+    // FUN_00717280
+    const char *pSrc = gpDatabase->getStringByHashcode( dbContext, hashcode );
+
+    va_list args;
+    va_start( args, hashcode );
+    makeSentenceInternal( pDest, maxLen, pSrc, args );
+    va_end( args );
 }
 
 void MngFlashLocalize::addSentenceAndSet( FlashPlayer *pPlayer,
                                           const char *pVarName,
                                           const char *pValue ) {
     // FUN_00717420
-    // Finds or creates an entry in localizedStrings keyed by pVarName,
-    // stores pValue, then links the Flash variable to the stored string.
-    for ( auto &entry : localizedStrings ) {
-        if ( std::get<0>( entry ) == pVarName ) {
-            std::get<1>( entry ) = pValue;
-            pPlayer->setVariableValue( pVarName, std::get<1>( entry ).c_str() );
-            return;
+    for ( int32_t i = 0; i < kNumLocalizedStrings; i++ ) {
+        FlashLocalizedString &entry = localizedStrings[i];
+        if ( strcmp( entry.pFlashVarName, pVarName ) != 0 ) {
+            continue;
         }
+
+        strncpy( entry.pFormattedString, pValue,
+                 sizeof( entry.pFormattedString ) );
+        entry.pFormattedString[sizeof( entry.pFormattedString ) - 1] = '\0';
+        pPlayer->setVariableValue( entry.pFlashVarName,
+                                   entry.pFormattedString );
+        return;
     }
 
-    // Not found — find first empty slot
-    for ( auto &entry : localizedStrings ) {
-        if ( std::get<0>( entry ).empty() ) {
-            std::get<0>( entry ) = pVarName;
-            std::get<1>( entry ) = pValue;
-            pPlayer->setVariableValue( pVarName, std::get<1>( entry ).c_str() );
-            return;
+    for ( int32_t i = 0; i < kNumLocalizedStrings; i++ ) {
+        FlashLocalizedString &entry = localizedStrings[i];
+        if ( entry.pFlashVarName[0] != '\0' ) {
+            continue;
         }
+
+        strncpy( entry.pFlashVarName, pVarName, sizeof( entry.pFlashVarName ) );
+        entry.pFlashVarName[sizeof( entry.pFlashVarName ) - 1] = '\0';
+
+        strncpy( entry.pFormattedString, pValue,
+                 sizeof( entry.pFormattedString ) );
+        entry.pFormattedString[sizeof( entry.pFormattedString ) - 1] = '\0';
+
+        pPlayer->setVariableValue( entry.pFlashVarName,
+                                   entry.pFormattedString );
+        return;
     }
 
-    // Append if under capacity
-    if ( localizedStrings.size() < 32 ) {
-        localizedStrings.emplace_back( pVarName, pValue );
-        pPlayer->setVariableValue(
-            pVarName, std::get<1>( localizedStrings.back() ).c_str() );
-    } else {
-        pPlayer->setVariableValue( pVarName, "(ERR:4)" );
-    }
+    pPlayer->setVariableValueNonLinked( pVarName, "(ERR:4)" );
 }
 
 void MngFlashLocalize::setVarLocalized( FlashPlayer *pPlayer,
@@ -217,25 +460,21 @@ void MngFlashLocalize::setVarLocalized( FlashPlayer *pPlayer,
         return;
     }
 
-    int32_t numArgs = computeNumArgs( pValue );
+    const int32_t numArgs = computeNumArgs( pValue );
     if ( numArgs < 0 ) {
-        pPlayer->setVariableValue( pVarName, "(ERR:1)" );
+        pPlayer->setVariableValueNonLinked( pVarName, "(ERR:1)" );
         return;
     }
 
-    // Collect substitution args.
-    // args[0] = pVarName, args[1] = pArg1 (matches original stack layout where
-    // the collection starts at &param_4 = pVarName, then &param_5 = pArg1,
-    // ...).
-    const char *args[10] = {};
-    args[0] = pVarName;
-    args[1] = pArg1;
+    const char *pArgs[kMaxLocalizeArgs] = {};
+    pArgs[0] = pVarName;
+    pArgs[1] = pArg1;
 
-    char local_200[512];
-    bool bFormatted =
-        makeLocalizedSentence( local_200, 0x200, pValue, args, numArgs );
+    char pFormatted[512];
+    const bool bFormatted = makeLocalizedSentence(
+        pFormatted, sizeof( pFormatted ), pValue, pArgs, numArgs );
     if ( bFormatted ) {
-        addSentenceAndSet( pPlayer, pVarName, local_200 );
+        addSentenceAndSet( pPlayer, pVarName, pFormatted );
         return;
     }
 
@@ -248,10 +487,4 @@ void MngFlashLocalize::setVarLocalized( FlashPlayer *pPlayer,
     // FUN_00718120
     char *pcVar1 = gpDatabase->getStringByHashcode( dbContext, hashcode );
     setVarLocalized( pPlayer, pcVar1, pVarName );
-}
-
-void MngFlashLocalize::resetMenuLocalization() {
-    menuLocalizedStrings.clear();
-    menuLocalizedStrings.reserve( 0xa ); // Original code uses c-array of 10 -
-                                         // 00716d1d 83 f8 0a        CMP EAX,0xa
 }

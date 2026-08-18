@@ -1556,31 +1556,25 @@ int32_t GSDatabase::setFlashLocalization( int32_t param_2,
         uVar3 = uVar3 | 0x200;
     }
 
-    uint32_t numEntries = engineDatabase.DBList[param_2].Content.NumData;
+    uint32_t numEntries = gameDatabase.pNumItems[param_2];
     for ( uint32_t i = 0; i < numEntries; i++ ) {
         const DBEntryMenu &pDVar5 = gameDatabase.DBMenu[i];
 
         if ( ( uVar3 & pDVar5.Flags ) != 0 ) {
-            if ( pDVar5.Flags < 0 ) {
+            const char *pLabel = (const char *)pDVar5.Name;
+            const char *pFlashName = (const char *)pDVar5.FrontEndResourceName;
+
+            if ( (int32_t)pDVar5.Flags < 0 ) {
                 if ( gpMngFlashLocalize != nullptr ) {
-                    TestDriveString8 str;
-                    str = pDVar5.Name;
-                    iVar4 = gpMngFlashLocalize->computeNumArgs( str.AsChar );
+                    iVar4 = gpMngFlashLocalize->computeNumArgs( pLabel );
                     if ( iVar4 == 0 ) {
-                        TestDriveString8 str2;
-                        str2 = pDVar5.FrontEndResourceName;
-                        gpMngFlashLocalize->setVarLocalized(
-                            param_4, str.AsChar, str2.AsChar );
+                        gpMngFlashLocalize->setVarLocalized( param_4, pLabel,
+                                                             pFlashName );
                     }
                 }
             } else if ( pDVar5.Name != 0ull &&
                         pDVar5.FrontEndResourceName != 0ull ) {
-                TestDriveString8 varName;
-                varName = pDVar5.FrontEndResourceName;
-
-                TestDriveString8 varValue;
-                varValue = pDVar5.Name;
-                param_4->setVariableValue( varName.AsChar, varValue.AsChar );
+                param_4->setVariableValue( pFlashName, pLabel );
             }
 
             local_4++;
@@ -1588,15 +1582,10 @@ int32_t GSDatabase::setFlashLocalization( int32_t param_2,
     }
 
     const char *pLanguage = gpPlayerData->getLanguage();
-    const PlayerDataLanguage langID( pLanguage );
-    eLocale locale = langID;
-    if ( locale == eLocale::L_Spanish || locale == eLocale::L_Japanese ||
-         locale == eLocale::L_Korean || locale != eLocale::L_English ) {
-        uVar3 = 0;
-    } else {
-        uVar3 = 1;
+    if ( pLanguage[0] == '\0' ) {
+        gpPlayerData->setUnitSystem( strcmp( pLanguage, "us" ) == 0 );
     }
-    gpPlayerData->setUnitSystem( uVar3 );
+
     setLanguage( param_4 );
     return local_4;
 }
