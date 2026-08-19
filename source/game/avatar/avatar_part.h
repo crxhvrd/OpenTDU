@@ -20,6 +20,17 @@ enum eAvatarClotheSize : int32_t {
     ACS_Any = 2, // anything else
 };
 
+enum eAvatarBeltSeat : int32_t {
+    ABS_Driver = 0,
+    ABS_Passenger = 1,
+    ABS_Any = 2,
+};
+enum eAvatarBeltType : int32_t {
+    ABT_TwoPoint = 0,
+    ABT_ThreePoint = 1,
+    ABT_FourPoint = 2,
+};
+
 enum eAvatarDrivingType : int32_t {
     ADT_Car = 0,
     ADT_Bike = 1,
@@ -79,6 +90,29 @@ struct AvatarDefaultPart : public AvatarClothePart {
     }
     const char *getBrandFolder() const override { /* FUN_008edd00 */
         return pBrandName;
+    }
+};
+
+struct AvatarBeltPart : public AvatarClothePart {
+    const char *pPartTypeName = nullptr; // always "BELT"
+    const char *pBankName = nullptr;     // always "DEFAULT_BELTS"
+    const char *pMeshName = nullptr;
+    uint64_t MeshHashcode = 0; // AvatarCalcHashcode( pMeshName )
+    eAvatarBeltSeat Seat = ABS_Any;
+    eAvatarBeltType BeltType = ABT_TwoPoint;
+
+    const char *getMeshName() const override { /* FUN_008ee410 */
+        return pMeshName;
+    }
+    const char *getBankName() const override { /* FUN_008ee420 */
+        return pBankName;
+    }
+    const char *getBrandFolder() const override { /* FUN_008ee450 */
+        return "BELTS";
+    }
+    bool isCommonPart() const override { /* FUN_008ee440 */ return true; }
+    uint64_t getMeshHashcode() const override { /* FUN_008ee400 */
+        return MeshHashcode;
     }
 };
 

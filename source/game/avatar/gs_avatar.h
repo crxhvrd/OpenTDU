@@ -15,6 +15,9 @@ struct DBEntryPNJ;
 
 class GSAvatar : public GameSystem {
 public:
+    static constexpr int32_t kNumIdentityBones = 256;
+
+public:
     const char *getName() const override {
         // FUN_00410840
         return "Service : Avatar";
@@ -26,6 +29,9 @@ public:
     }
 
     inline AvatarBnkManager &getBnkManager() { return bankManager; }
+    inline Matrix4x4f_t *getIdentityBonePalette( int32_t index ) {
+        return pBones[index];
+    }
 
 public:
     GSAvatar();
@@ -80,7 +86,7 @@ private:
     void buildDefaultConfig();
 
 private:
-    Matrix4x4f_t pBones[2][256];
+    Matrix4x4f_t pBones[2][kNumIdentityBones];
 
     AvatarPartDB *pClothesDB;
     AvatarPartDB *pDefaultPartsDB;
@@ -119,6 +125,18 @@ extern uint64_t gHashcodeTeeth;
 extern uint64_t gHashcodeTorso;
 extern uint64_t gHashcodeHideable;
 
-extern float gAvatarInCarLightFactor[6];
-extern float gAvatarConvertibleLightFactor[6];
-extern float gAvatarOutCarLightFactor[6];
+enum eAvatarLightFactor : int32_t {
+    ALF_LightModulator = 0,
+    ALF_HeightBase = 1,
+    ALF_HeightEnd = 2,
+    ALF_AmbiantAttenuation = 3,
+    ALF_DiffuseAttenuation = 4,
+    ALF_SpecularAttenuation = 5,
+
+    ALF_Count = 6
+};
+
+extern float gAvatarInCarLightFactor[ALF_Count];
+extern float gAvatarConvertibleLightFactor[ALF_Count];
+extern float gAvatarOutCarLightFactor[ALF_Count];
+extern bool gShowAvatar;

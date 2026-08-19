@@ -2,6 +2,9 @@
 
 class edStore {
 public:
+    inline uint16_t getStreamCRC() const { return CRC; }
+
+public:
     edStore();
     ~edStore();
 
@@ -14,9 +17,15 @@ public:
     uint32_t readStringNoAlloc( char *param_2, uint32_t param_3 );
     int32_t readInteger();
     int16_t readShort();
+    uint16_t readUShort();
+    uint8_t readByte();
+    bool popObjectNoAlloc( edStore &outStore );
 
     int32_t compareStreamCRC( uint32_t param_2 );
     int32_t compareStreamCRC( const char *param_2 );
+
+    int32_t getStatus() const;
+    bool isWithinBounds();
 
 private:
     uint32_t ID;
@@ -32,5 +41,4 @@ private:
     void prepareBuffer();
 
     void packAndWriteToBuffer( int32_t in, int32_t *pOut );
-    bool isWithinBounds();
 };

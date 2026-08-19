@@ -1,10 +1,16 @@
 #include "shared.h"
 #include "entity_avatar.h"
 
+#include "core/maths_helper.h"
 #include "game/game_mechanism.h"
+#include "game/avatar/gs_avatar.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/mng_car_alpha.h"
+#include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
+#include "world/weather/gs_weather.h"
 #include "render/gs_render.h"
+#include "render/mng_reflection.h"
 #include "render/camera/gs_camera.h"
 #include "render/camera/camera_game.h"
 
@@ -15,9 +21,12 @@ EntityAvatar::EntityAvatar()
     : EntityActor(),
       avatarType( 0 ),
       PlayerType( 0 ),
-      pLightingAttenuation( nullptr ),
+      pLightingAttenuation( gAvatarOutCarLightFactor ),
+      currentEnvFactor( 1.0f ),
+      currentEnvFactorBackFace( 0.0f ),
       pSerializedData( nullptr ),
       pPooledAvatarEntry( nullptr ),
+      FaceParams{},
       pBehavior( nullptr ),
       pVoiceEmitter( nullptr ),
       pCineInterface( nullptr ),
@@ -123,7 +132,49 @@ bool EntityAvatar::draw( RenderScene *pScene ) {
         return true;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
+    relightFromWeather( &pPooledAvatarEntry->AvatarLight );
+
+    if ( pLightingAttenuation != nullptr ) {
+        AvatarLightAttenuation attenuation;
+        attenuation.HeightBase = pLightingAttenuation[ALF_HeightBase];
+        attenuation.HeightEnd = pLightingAttenuation[ALF_HeightEnd];
+        attenuation.Ambiant =
+            1.0f - pLightingAttenuation[ALF_AmbiantAttenuation];
+        attenuation.Diffuse =
+            1.0f - pLightingAttenuation[ALF_DiffuseAttenuation];
+        attenuation.Specular =
+            1.0f - pLightingAttenuation[ALF_SpecularAttenuation];
+        attenuation.EnvFactor = currentEnvFactor * 0.5f;
+
+        pPooledAvatarEntry->applyLightingAttenuation( attenuation );
+
+        pPooledAvatarEntry->ShaderParamData = Eigen::Vector4f(
+            currentEnvFactor, 0.0f, currentEnvFactorBackFace, 0.0f );
+    }
+
+    if ( bLowResShadow ) {
+        AvatarClothe &helmet = pPooledAvatarEntry->Slots[AC_Helmet];
+        if ( helmet.pLowRes != nullptr &&
+             helmet.pHierarchyNodeLowRes != nullptr && !helmet.bVisible ) {
+            helmet.showLowResHierarchy();
+        }
+        helmet.bVisible = true;
+    }
+
+    if ( RenderLOD == 2 ) {
+        pPooledAvatarEntry->draw( pScene );
+
+        if ( gpMngReflection != nullptr ) {
+            pPooledAvatarEntry->draw( gpMngReflection->getBoundScene() );
+        }
+
+        return true;
+    }
+
+    if ( RenderLOD == 1 ) {
+        pPooledAvatarEntry->drawLowRes( pScene );
+    }
+
     return true;
 }
 
@@ -251,9 +302,74 @@ void EntityAvatar::onResourceChange() {
     bNeedToRefreshFace = true;
 }
 
-void EntityAvatar::relightFromWeather() {
+void EntityAvatar::relightFromWeather( DirectionalLight *pLight ) {
     // FUN_007f8710
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
+    if ( gpWeather->isConfigDirty() ) {
+        gpWeather->updateActiveConfig();
+    }
+
+    const WeatherConfig &weatherCfg = gpWeather->getActiveWeatherConfig();
+
+    const bool bLitFromGround =
+        avatarType == 5 || avatarType == 7 || avatarType == 8 ||
+        avatarType == 9 ||
+        ( avatarType == 1 && gpScenaric != nullptr &&
+          gpScenaric->getAvatarManager().getUnknownBoolean() );
+
+    Eigen::Vector4f groundColor( 1.0f, 1.0f, 1.0f, 1.0f );
+    if ( bLitFromGround ) {
+        Eigen::Vector4f worldPosition = modelMatrix.row( 3 ).transpose();
+        if ( bShifted ) {
+            worldPosition += gpWorldStreaming->isEnabled()
+                                 ? gpWorldStreaming->getPosition()
+                                 : Eigen::Vector4f::Zero();
+        }
+
+        if ( !gpWorld->computeGroundColor( &groundColor, &worldPosition,
+                                           GCF_Shade ) ) {
+            groundColor.head<3>() = Eigen::Vector3f::Constant( 1.0f );
+        }
+    }
+
+    float luminosity = groundColor.z() * 0.114f + groundColor.y() * 0.587f +
+                       groundColor.x() * 0.299f;
+    if ( luminosity < weatherCfg.getCarLumMin() ) {
+        luminosity = weatherCfg.getCarLumMin();
+    }
+    if ( weatherCfg.getCarLumMax() < luminosity ) {
+        luminosity = weatherCfg.getCarLumMax();
+    }
+
+    const float lightModulator = pLightingAttenuation[ALF_LightModulator];
+
+    const Eigen::Vector4f ambient =
+        Vector4DLerp( weatherCfg.getSunAmbientColor() * luminosity,
+                      weatherCfg.getSunAmbientColor(),
+                      weatherCfg.getCarAmbiantFactor() ) *
+        lightModulator;
+    const Eigen::Vector4f diffuse =
+        Vector4DLerp( weatherCfg.getSunDiffuseColor() * luminosity,
+                      weatherCfg.getSunDiffuseColor(),
+                      weatherCfg.getCarDiffuseFactor() ) *
+        lightModulator;
+    const Eigen::Vector4f specular =
+        Vector4DLerp( weatherCfg.getSunSpecularColor() * luminosity,
+                      weatherCfg.getSunSpecularColor(),
+                      weatherCfg.getCarSpecularFactor() ) *
+        lightModulator;
+
+    pLight->Ambient = ambient;
+    pLight->Ambient.w() = 1.0f;
+    pLight->Diffuse = diffuse;
+    pLight->Diffuse.w() = 1.0f;
+    pLight->Specular = specular;
+    pLight->Specular.w() = 1.0f;
+    pLight->Direction = weatherCfg.getSunDirection();
+
+    currentEnvFactor =
+        ( ( luminosity - 1.0f ) * weatherCfg.getCarReflectionFactor() + 1.0f ) *
+        weatherCfg.getCarGlobalEnv();
+    currentEnvFactorBackFace = 1.0f;
 }
 
 void EntityAvatar::onHeadUpdate( Matrix4x4f_t &headTransform ) {
@@ -269,4 +385,15 @@ void EntityAvatar::updateCarAlpha() {
 bool EntityAvatar::isShadowCaster() {
     // FUN_007f7120
     return pPooledAvatarEntry != nullptr && InstanceRefCount > 0;
+}
+
+void EntityAvatar::setEnvMap( const bool bRealTime, Render2DB *p2DB ) {
+    // FUN_007f8080
+    if ( pPooledAvatarEntry == nullptr ) {
+        return;
+    }
+
+    pPooledAvatarEntry->EnvMap.bRealTime = bRealTime;
+    pPooledAvatarEntry->EnvMap.p2DB = p2DB;
+    pPooledAvatarEntry->setEnvMap();
 }

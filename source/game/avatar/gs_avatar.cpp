@@ -2,6 +2,7 @@
 #include "gs_avatar.h"
 
 #include "config/gs_config.h"
+#include "core/ed_store.h"
 #include "database/gs_database.h"
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -18,11 +19,31 @@ uint64_t gHashcodeTeeth = 0;
 uint64_t gHashcodeTorso = 0;
 uint64_t gHashcodeHideable = 0;
 
-float gAvatarInCarLightFactor[6] = {};       // DAT_010c44d8
-float gAvatarConvertibleLightFactor[6] = {}; // DAT_010c44c0
-float gAvatarOutCarLightFactor[6] = {};      // DAT_010c44f0
+float gAvatarInCarLightFactor[ALF_Count] = {};       // DAT_010c44d8
+float gAvatarConvertibleLightFactor[ALF_Count] = {}; // DAT_010c44c0
+float gAvatarOutCarLightFactor[ALF_Count] = {};      // DAT_010c44f0
+
+bool gShowAvatar = true; // DAT_00f7c6e4
 
 GSAvatar *gpAvatar = nullptr; // DAT_010e7460
+
+static constexpr const char *kAvatarConfigExtension = ".avt"; // DAT_00f11bec
+
+static bool ReadAvatarConfigFromBankEntry( AvatarConfiguration &outConfig,
+                                           Bank &bank,
+                                           int32_t entryIndex ) {
+    // FUN_008f5ec0
+    ParsedBankEntry entry;
+    bank.getEntry( entryIndex, entry );
+
+    if ( entry.pData == nullptr ) {
+        return false;
+    }
+
+    edStore store;
+    store.bindExternalBuffer( entry.pData, entry.Size );
+    return outConfig.deserialize( store );
+}
 
 static eAvatarCustomizable GetClotheCategory( const char *pPartType ) {
     // FUN_008f35f0
@@ -145,6 +166,17 @@ GSAvatar::GSAvatar()
       maxClotheID( 0 ),
       faceParameterCount( 0 ) {
     // FUN_008f6f00
+    for ( int32_t i = 0; i < kNumIdentityBones; i++ ) {
+        pBones[0][i] = Matrix4x4f_t::Identity();
+        pBones[1][i] = Matrix4x4f_t::Identity();
+    }
+
+    for ( int32_t gender = 0; gender < kNumGenders; gender++ ) {
+        for ( int32_t i = 0; i < kNumFaceParams; i++ ) {
+            pFaceRange[gender][i] = Eigen::Vector2f( 0.0f, 1.0f );
+        }
+    }
+
     OTDU_UNIMPLEMENTED;
     gpAvatar = this;
 
@@ -180,6 +212,8 @@ bool GSAvatar::initialize( TestDriveGameInstance * ) {
 
     GSScenaric::LoadScenaricBank( "scenarics/Avatars", "facemodifset",
                                   &faceParametersBank );
+
+    faceParameterCount = faceParametersBank.getEntityCount();
 
     OTDU_UNIMPLEMENTED;
 
@@ -239,7 +273,10 @@ void GSAvatar::readAvatarConfig( const EntityAvatar *pAvatar,
         }
     }
 
-    OTDU_UNIMPLEMENTED;
+    for ( int32_t i = 0; i < kNumFaceParams; i++ ) {
+        outConfig.FaceParams[i] =
+            static_cast<uint8_t>( pAvatar->FaceParams[i] );
+    }
 
     outConfig.bHashMotoGearsOnBike = pRsc->bHasMotoGearsOnBike;
 }
@@ -247,8 +284,19 @@ void GSAvatar::readAvatarConfig( const EntityAvatar *pAvatar,
 bool GSAvatar::loadFaceModifSet( AvatarConfiguration &outConfig,
                                  const char *pFileConfigName ) {
     // FUN_008f6050
-    OTDU_UNIMPLEMENTED_ONCE;
-    return false;
+    if ( !pnjBank.isLoaded() ) {
+        return false;
+    }
+
+    std::string entryName = pFileConfigName;
+    entryName += kAvatarConfigExtension;
+
+    const int32_t entryIndex = pnjBank.getEntryIndex( entryName.data() );
+    if ( entryIndex == -1 ) {
+        return false;
+    }
+
+    return ReadAvatarConfigFromBankEntry( outConfig, pnjBank, entryIndex );
 }
 
 bool GSAvatar::applyPNJConfiguration( AvatarConfiguration &outConfig,
@@ -514,7 +562,14 @@ void GSAvatar::bakeAvatar( EntityAvatar *pAvatar,
     installBodySkin( pAvatar, pConfig );
     installClothes( pAvatar, pConfig, clotheSet, bAsync, bCritical );
 
-    OTDU_UNIMPLEMENTED;
+    for ( int32_t i = 0; i < kNumFaceParams; i++ ) {
+        uint32_t faceParam = pConfig->FaceParams[i];
+        if ( faceParam > 15 ) {
+            faceParam = 15;
+        }
+        pAvatar->FaceParams[i] = static_cast<int32_t>( faceParam );
+    }
+
     pAvatar->bIsToUpdate = true;
 
     bool bMotoHelmet = IsHelmetClotheID( pConfig->ClotheID[0][AC_Top] ) ||
@@ -668,7 +723,35 @@ void GSAvatar::buildBodyDB() {
 
 void GSAvatar::buildSkinDB() {
     // FUN_008f4e60
-    OTDU_UNIMPLEMENTED;
+    static constexpr float kSkinStep = 0.05263158f;   // DAT_00f41c98 (1/19)
+    static constexpr float kFemaleScale = 0.86f;      // DAT_00f41c94
+    static constexpr float kSkinHalf = 0.5f;          // FLOAT_00f41674
+    static constexpr int32_t kNumSkinsPerGender = 20;
+
+    pSkinDB = new AvatarPartDB();
+    pSkinDB->reserveAs<AvatarSkinPart>( kNumSkinsPerGender * kNumGenders );
+
+    for ( int32_t gender = 0; gender < kNumGenders; gender++ ) {
+        const float genderScale = ( gender == 0 ) ? 1.0f : kFemaleScale;
+
+        for ( int32_t i = 0; i < kNumSkinsPerGender; i++ ) {
+            const float tint = i * kSkinStep * genderScale;
+
+            AvatarSkinPart *pPart =
+                static_cast<AvatarSkinPart *>( pSkinDB->addSlot() );
+            if ( pPart == nullptr ) {
+                break;
+            }
+
+            pPart->IDHashcode =
+                static_cast<uint16_t>( i + gender * kNumSkinsPerGender );
+            pPart->Gender = gender;
+            pPart->Tint[0] = ( tint * tint + tint ) * kSkinHalf;
+            pPart->Tint[1] = tint;
+            pPart->Tint[2] = ( sqrtf( tint ) + tint ) * kSkinHalf;
+            pPart->Tint[3] = pPart->Tint[2];
+        }
+    }
 }
 
 void GSAvatar::buildBodyLODDB() {
@@ -735,7 +818,69 @@ void GSAvatar::buildStyleDB() {
 
 void GSAvatar::buildBeltDB() {
     // FUN_008f3970
-    OTDU_UNIMPLEMENTED;
+    // clang-format off
+    static const struct {
+        int32_t Gender;
+        eAvatarClotheSize Size;
+        eAvatarBeltSeat Seat;
+        eAvatarBeltType BeltType;
+        const char *pMeshName;
+    } kBelts[] = {
+        {1, ACS_Small, ABS_Passenger, ABT_TwoPoint,   "W_BELT_2Sx_COMMON"},
+        {1, ACS_Small, ABS_Passenger, ABT_ThreePoint, "W_BELT_3SP_COMMON"},
+        {1, ACS_Small, ABS_Passenger, ABT_FourPoint,  "W_BELT_4Sx_COMMON"},
+        {1, ACS_Small, ABS_Driver,    ABT_TwoPoint,   "W_BELT_2Sx_COMMON"},
+        {1, ACS_Small, ABS_Driver,    ABT_ThreePoint, "W_BELT_3SD_COMMON"},
+        {1, ACS_Small, ABS_Driver,    ABT_FourPoint,  "W_BELT_4Sx_COMMON"},
+        {1, ACS_Large, ABS_Passenger, ABT_TwoPoint,   "W_BELT_2Lx_COMMON"},
+        {1, ACS_Large, ABS_Passenger, ABT_ThreePoint, "W_BELT_3LP_COMMON"},
+        {1, ACS_Large, ABS_Passenger, ABT_FourPoint,  "W_BELT_4Lx_COMMON"},
+        {1, ACS_Large, ABS_Driver,    ABT_TwoPoint,   "W_BELT_2Lx_COMMON"},
+        {1, ACS_Large, ABS_Driver,    ABT_ThreePoint, "W_BELT_3LD_COMMON"},
+        {1, ACS_Large, ABS_Driver,    ABT_FourPoint,  "W_BELT_4Lx_COMMON"},
+        {0, ACS_Small, ABS_Passenger, ABT_TwoPoint,   "M_BELT_2Sx_COMMON"},
+        {0, ACS_Small, ABS_Passenger, ABT_ThreePoint, "M_BELT_3SP_COMMON"},
+        {0, ACS_Small, ABS_Passenger, ABT_FourPoint,  "M_BELT_4Sx_COMMON"},
+        {0, ACS_Small, ABS_Driver,    ABT_TwoPoint,   "M_BELT_2Sx_COMMON"},
+        {0, ACS_Small, ABS_Driver,    ABT_ThreePoint, "M_BELT_3SD_COMMON"},
+        {0, ACS_Small, ABS_Driver,    ABT_FourPoint,  "M_BELT_4Sx_COMMON"},
+        {0, ACS_Large, ABS_Passenger, ABT_TwoPoint,   "M_BELT_2Lx_COMMON"},
+        {0, ACS_Large, ABS_Passenger, ABT_ThreePoint, "M_BELT_3LP_COMMON"},
+        {0, ACS_Large, ABS_Passenger, ABT_FourPoint,  "M_BELT_4Lx_COMMON"},
+        {0, ACS_Large, ABS_Driver,    ABT_TwoPoint,   "M_BELT_2Lx_COMMON"},
+        {0, ACS_Large, ABS_Driver,    ABT_ThreePoint, "M_BELT_3LD_COMMON"},
+        {0, ACS_Large, ABS_Driver,    ABT_FourPoint,  "M_BELT_4Lx_COMMON"},
+    };
+    // clang-format on
+
+    pBeltDB = new AvatarPartDB();
+    pBeltDB->reserveAs<AvatarBeltPart>( 0x28 );
+
+    uint16_t id = 0;
+    for ( const auto &belt : kBelts ) {
+        AvatarBeltPart *pPart =
+            static_cast<AvatarBeltPart *>( pBeltDB->addSlot() );
+        if ( pPart == nullptr ) {
+            break;
+        }
+
+        pPart->IDHashcode = id++;
+        pPart->Gender = belt.Gender;
+        pPart->Category = AC_Count;
+        pPart->Length = ACL_Invalid;
+        pPart->Size = belt.Size;
+        pPart->DrivingType = ADT_Invalid;
+        pPart->Price = 0;
+        pPart->bIsBodyPart = 0;
+        pPart->bIsPartBoth = 0;
+        pPart->Index = -1;
+        pPart->pPartTypeName = "BELT";
+        pPart->pBankName = "DEFAULT_BELTS";
+        pPart->pMeshName = belt.pMeshName;
+        pPart->MeshHashcode = AvatarCalcHashcode( belt.pMeshName );
+        pPart->Seat = belt.Seat;
+        pPart->BeltType = belt.BeltType;
+    }
 }
 
 void GSAvatar::buildEyeDB() {
@@ -839,14 +984,6 @@ void GSAvatar::buildDefaultConfig() {
         memset( config.FaceParams, kDefaultFaceParam,
                 sizeof( config.FaceParams ) );
 
-        static constexpr eAvatarCustomizable kSharedSlots[] = {
-            AC_Hair, AC_FacePilosity, AC_Glasses, AC_Eyebrows };
-        for ( const eAvatarCustomizable slot : kSharedSlots ) {
-            config.ClotheID[1][slot] = config.ClotheID[0][slot];
-            config.ColorID[1][slot] = config.ColorID[0][slot];
-        }
-
-        config.ClotheID[0][AC_Helmet] = config.ClotheID[1][AC_Helmet];
-        config.ColorID[0][AC_Helmet] = config.ColorID[1][AC_Helmet];
+        config.syncSharedSlots();
     }
 }

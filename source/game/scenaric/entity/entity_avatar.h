@@ -45,10 +45,13 @@ public:
     virtual int32_t chooseLODLevel();
     virtual void onSkeletonChange( void *pSkeleton );
     virtual void onResourceChange();
-    virtual void relightFromWeather();
+    virtual void relightFromWeather( DirectionalLight *pLight );
     virtual void onHeadUpdate( Matrix4x4f_t &headTransform );
     virtual void updateCarAlpha();
     virtual bool isShadowCaster();
+
+public:
+    void setEnvMap( bool bRealTime, Render2DB *p2DB );
 
 protected:
     // 'Head' bone name hashcode
@@ -57,9 +60,12 @@ protected:
 protected:
     int32_t avatarType; // 1 = driver
     int32_t PlayerType;
-    void *pLightingAttenuation;
+    const float *pLightingAttenuation;
+    float currentEnvFactor;
+    float currentEnvFactorBackFace;
     void *pSerializedData;
     PooledAvatarEntry *pPooledAvatarEntry;
+    int32_t FaceParams[kNumFaceParams];
     void *pBehavior;
     void *pVoiceEmitter;
     void *pCineInterface;

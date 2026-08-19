@@ -2,10 +2,14 @@
 
 #include "shared.h"
 
+#include "core/color.h"
 #include "render/2dm.h"
 #include "render/3dd.h"
 
 struct AvatarDBEntry;
+struct AvatarEnvMap;
+struct AvatarEyePart;
+struct RenderAvatar;
 class Render2DB;
 class RuntimeRender2DB;
 class Render3DG;
@@ -17,6 +21,7 @@ class ShaderParameterSetupNode;
 struct AvatarImpostor;
 class SkeletonInstance;
 class AvatarBnk;
+class RenderScene;
 
 enum eAvatarLoadingState : int32_t {
     AVT_Unknown = 0,
@@ -29,6 +34,15 @@ static constexpr int32_t kAvatarPartPoolSize = 0x2c00;
 static constexpr int32_t kAvatarPart2DMPoolSize = 0x2800;
 static constexpr int32_t kAvatarPart3DDPoolSize =
     kAvatarPartPoolSize - kAvatarPart2DMPoolSize;
+
+struct AvatarLightAttenuation {
+    float HeightBase = 0.0f;
+    float HeightEnd = 0.0f;
+    float Ambiant = 0.0f;
+    float Diffuse = 0.0f;
+    float Specular = 0.0f;
+    float EnvFactor = 0.0f;
+};
 
 struct RenderAvatarBase {
     AvatarDBEntry *pAvatarPart = nullptr;
@@ -70,15 +84,18 @@ struct RenderAvatarBase {
 
     virtual void bindPartTextures() = 0;
 
+    void draw( RenderScene *pScene, const ColorRGBA &color );
+    void applyLightingAttenuation( const AvatarLightAttenuation &attenuation );
+
     void instanciateHierarchy();
     void releaseHierarchy();
     void showLowResHierarchy();
     void hideLowResHierarchy();
 
     void setMeshVisibility( uint64_t meshHashcode, bool bMeshVisible );
-
-    void tickEyeMaterial();
-    void tickBodyMaterial();
+    void tickEyeMaterial( const AvatarEyePart *pEyeResource );
+    void tickBodyMaterial( const float *pSkinTint, RenderAvatar *pBodyHighRes );
+    void setEnvMap( const AvatarEnvMap *pEnvMap );
 
 protected:
     bool installRenderData( AvatarDBEntry *pPart, AvatarBnk *pBnk );

@@ -214,6 +214,11 @@ private:
     void claimLayerTextures( AvatarBnk *pBnk, AvatarBnk *pCommonBnk );
 };
 
+struct AvatarEnvMap {
+    bool bRealTime = false;
+    Render2DB *p2DB = nullptr;
+};
+
 struct PooledAvatarEntry : public RenderDeviceResetListener {
     AvatarPool *pOwner = nullptr;
     FileCollection3D Collection3D;
@@ -225,6 +230,7 @@ struct PooledAvatarEntry : public RenderDeviceResetListener {
     const float *pSkinTint = nullptr;
     AvatarSkinPart *pSkinResource = nullptr;
     RenderAvatar *pBodyHighRes = nullptr;
+    AvatarEnvMap EnvMap;
     AvatarEyePart *pEyeResource = nullptr;
 
     uint16_t pClothesHC[kNumClotheTypes][AC_Count] = {};
@@ -279,6 +285,12 @@ struct PooledAvatarEntry : public RenderDeviceResetListener {
 
     void tickEyeMaterials();
     void tickBodyMaterials();
+    void setEnvMap();
+
+    void draw( RenderScene *pScene );
+    void drawLowRes( RenderScene *pScene );
+    void applyLightingAttenuation( const AvatarLightAttenuation &attenuation );
+    eAvatarLoadingState getStrictLoadingState() const;
 
 private:
     void stepBodyLoading();

@@ -3,8 +3,14 @@
 
 #include "config/gs_config.h"
 #include "gs_avatar.h"
+#include "game/vehicle/gs_car_common.h"
 #include "render/gs_render.h"
 #include "render/material.h"
+#include "render/hiearchy_node.h"
+#include "render/mng_env_map.h"
+#include "render/render_context.h"
+#include "render/render_scene.h"
+#include "world/gs_mng_resources.h"
 
 static constexpr int32_t kClotheGeometryPoolSize[AC_Count] = { // DAT_010c4508
     0, 0, 0, 0x15800, 0x15800, 0, 0x15800, 0, 0 };
@@ -13,6 +19,22 @@ static constexpr int32_t kClotheTexturePoolSize[AC_Count] = { // DAT_010c452c
 static constexpr float kAvatarPartLODRadius = 3.0f;
 static constexpr char kColorSetSuffix[] = "_MAT"; // DAT_00f12cb0
 static constexpr uint64_t kOpaqueClotheShaderHashcode = 0xd5013ed0db79baba;
+static constexpr uint64_t kEyeShaderHashcode = 0xd5013ed0db79bbbb;
+static constexpr uint32_t kStaticParamSkinBlend = 0x1b;
+static constexpr uint32_t kStaticParamSkinDark = 0xd5;
+static constexpr uint32_t kStaticParamSkinLight = 0xd6;
+static constexpr uint32_t kStaticParamSkinTint = 0xd4;
+static constexpr uint32_t kStaticParamEyeUVOffset = 0xd9;
+static constexpr uint32_t kStaticParamLightHeightRange = 0xe6;
+static constexpr uint32_t kStaticParamLightAttenuation = 0xe7;
+static constexpr uint64_t kLightAttenuationShaderHashcodes[] = {
+    kEyeShaderHashcode, kOpaqueClotheShaderHashcode, 0xd5013ed0db79eaeaull,
+    0xd5013ed0dbaabebeull, 0xd5013ed0dbdededeull };
+static constexpr uint64_t kReflectiveClotheShaderHashcode =
+    0xd5013ed0db79dacbull;
+static constexpr uint64_t kEnvMapShaderHashcodes[] = {
+    kAvatarShaderHashcode, 0xc288dfc455ae5ef8ull, 0x1b38348331d3942aull,
+    0xd5013ed0db79dacbull, kEyeShaderHashcode };
 
 static bool IsEmptyPartName( const char *pName ) {
     // FUN_008f3320
@@ -73,6 +95,17 @@ static void SetRootInstanceLODRadius( Render3DD *p3DD, const float radius ) {
         RenderObject *pObject = (RenderObject *)( pObjectSection + 1 );
 
         pObject->BoundingSphere.w() = radius;
+    }
+}
+
+static void SetHierarchyColor( HiearchyNode *pNode, const ColorRGBA &color ) {
+    // FUN_008f07d0
+    if ( pNode->pInstance != nullptr ) {
+        pNode->pInstance->setColor( color );
+    }
+
+    if ( pNode->NumChildren != 0 && pNode->pNext != nullptr ) {
+        SetHierarchyColor( pNode->pNext, color );
     }
 }
 
@@ -173,6 +206,225 @@ static void ApplyColorMaterial( Material *pDestination, Material *pSource ) {
 
         memcpy( pDestinationData, pSourceData, pSourceDesc->Size );
     }
+}
+
+// TODO: Move to material.cpp?
+static void SetMaterialStaticParam( Material *pMaterial,
+                                    const uint32_t type,
+                                    const float *pValue ) {
+    // FUN_0040fc00
+    MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+    if ( pParameter == nullptr || pParameter->Type != MPT_Generic ) {
+        return;
+    }
+
+    MaterialShaderParameterArray *pParameters =
+        static_cast<MaterialShaderParameterArray *>( pParameter );
+
+    uint32_t parameterIndex = 0;
+    if ( pParameters->getParameter( type, &parameterIndex ) == nullptr ) {
+        return;
+    }
+
+    float *pData =
+        (float *)pParameters->getParameterDataByIndex( parameterIndex );
+    if ( pData == nullptr ) {
+        return;
+    }
+
+    for ( int32_t i = 0; i < 4; i++ ) {
+        pData[i] = pValue[i];
+    }
+}
+
+static void ApplySkinTintToMaterial( Material *pMaterial,
+                                     const float *pSkinTint,
+                                     RenderAvatar *pBodyHighRes ) {
+    // FUN_008ee610
+    MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+    if ( pParameter == nullptr ||
+         pParameter->Hashcode != kOpaqueClotheShaderHashcode ) {
+        return;
+    }
+
+    if ( pBodyHighRes != nullptr &&
+         pBodyHighRes->Material.getNumMaterials() != 0 ) {
+        Material *pBodyMaterial =
+            pBodyHighRes->Material.getMaterialAtIndex( 0 );
+        if ( pBodyMaterial != nullptr ) {
+            ApplyColorMaterial( pMaterial, pBodyMaterial );
+        }
+
+        MaterialParameter *pBodyParameter =
+            ( pBodyMaterial != nullptr )
+                ? pBodyMaterial->getParameterByIndex( 0 )
+                : nullptr;
+        if ( pBodyParameter != nullptr &&
+             pBodyParameter->Type == MPT_Generic ) {
+            MaterialShaderParameterArray *pBodyParameters =
+                static_cast<MaterialShaderParameterArray *>( pBodyParameter );
+
+            const float *pDarkTint = nullptr;
+            const float *pLightTint = nullptr;
+
+            uint32_t parameterIndex = 0;
+            if ( pBodyParameters->getParameter( kStaticParamSkinDark,
+                                                &parameterIndex ) != nullptr ) {
+                pDarkTint =
+                    (const float *)pBodyParameters->getParameterDataByIndex(
+                        parameterIndex );
+            }
+
+            parameterIndex = 0;
+            if ( pBodyParameters->getParameter( kStaticParamSkinLight,
+                                                &parameterIndex ) != nullptr ) {
+                pLightTint =
+                    (const float *)pBodyParameters->getParameterDataByIndex(
+                        parameterIndex );
+            }
+
+            if ( pDarkTint != nullptr && pLightTint != nullptr &&
+                 pSkinTint != nullptr ) {
+                const float blendFactor = pSkinTint[1];
+
+                float blendedTint[4];
+                for ( int32_t i = 0; i < 4; i++ ) {
+                    blendedTint[i] = pLightTint[i] * blendFactor +
+                                     pDarkTint[i] * ( 1.0f - blendFactor );
+                }
+
+                SetMaterialStaticParam( pMaterial, kStaticParamSkinBlend,
+                                        blendedTint );
+            }
+        }
+    }
+
+    if ( pSkinTint != nullptr ) {
+        SetMaterialStaticParam( pMaterial, kStaticParamSkinTint, pSkinTint );
+    }
+}
+
+static void ApplyEyeUVOffsetToMaterial( Material *pMaterial,
+                                        const AvatarEyePart *pEyeResource,
+                                        const uint64_t meshHashcode ) {
+    // FUN_008f2100
+    MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+    if ( pParameter == nullptr || pParameter->Hashcode != kEyeShaderHashcode ||
+         meshHashcode != gHashcodeEyes || pEyeResource == nullptr ) {
+        return;
+    }
+
+    SetMaterialStaticParam( pMaterial, kStaticParamEyeUVOffset,
+                            pEyeResource->UVOffset );
+}
+
+static void
+ApplyLightAttenuationToMaterial( Material *pMaterial,
+                                 const AvatarLightAttenuation &attenuation ) {
+    // FUN_008f0d20
+    MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+    if ( pParameter == nullptr || pParameter->Type != MPT_Generic ) {
+        return;
+    }
+
+    bool bTakesAttenuation = false;
+    for ( const uint64_t hashcode : kLightAttenuationShaderHashcodes ) {
+        if ( pParameter->Hashcode == hashcode ) {
+            bTakesAttenuation = true;
+            break;
+        }
+    }
+
+    if ( !bTakesAttenuation ) {
+        bTakesAttenuation =
+            pParameter->Hashcode == kReflectiveClotheShaderHashcode &&
+            pParameter->Flags.pCustomFlags[3] != 0;
+    }
+
+    if ( !bTakesAttenuation ) {
+        return;
+    }
+
+    const float heightRange[4] = { attenuation.HeightBase,
+                                   attenuation.HeightEnd, 0.0f, 1.0f };
+    SetMaterialStaticParam( pMaterial, kStaticParamLightHeightRange,
+                            heightRange );
+
+    const float factors[4] = { attenuation.Ambiant, attenuation.Diffuse,
+                               attenuation.Specular, attenuation.EnvFactor };
+    SetMaterialStaticParam( pMaterial, kStaticParamLightAttenuation, factors );
+}
+
+static bool RebindEnvMapTexture( MaterialParameter *pParameter,
+                                 const uint64_t cubemapHashcode,
+                                 RenderFile::Section *pCubemapSection ) {
+    // FUN_00900350
+    if ( pParameter->NumLayers == 0 ) {
+        return false;
+    }
+
+    MaterialLayer *pLayer = pParameter->getLayer( 0 );
+    for ( uint32_t i = 0; i < pLayer->NumTextures; i++ ) {
+        MaterialLayerTexture &texture = pLayer->pLayerTextures[i];
+        if ( texture.Hashcode == cubemapHashcode ) {
+            texture.pTextureSection = pCubemapSection;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void ApplyEnvMapToMaterial( Material *pMaterial,
+                                   const AvatarEnvMap *pEnvMap ) {
+    // FUN_009003c0
+    const uint64_t cubemapHashcode = GetIdentifier64bit( "CUBEMAP" );
+
+    Render2DB *pCubemap = ( gpCarCommon != nullptr )
+                              ? gpCarCommon->getRender2DB( cubemapHashcode )
+                              : nullptr;
+    if ( gpMngEnvMap != nullptr ) {
+        if ( pEnvMap->bRealTime ) {
+            pCubemap =
+                &gpMngResources->getCubemapResources().getCubemap().Render2DB;
+        } else if ( pEnvMap->p2DB != nullptr ) {
+            pCubemap = pEnvMap->p2DB;
+        }
+    }
+
+    if ( pCubemap == nullptr ) {
+        return;
+    }
+
+    RenderFile::Section *pCubemapSection = pCubemap->getBitmapSection();
+    if ( pCubemapSection == nullptr || pMaterial->NumParams == 0 ) {
+        return;
+    }
+
+    MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+    if ( pParameter->Type != MPT_Generic ) {
+        return;
+    }
+
+    bool bHasReflectionShader = false;
+    for ( const uint64_t hashcode : kEnvMapShaderHashcodes ) {
+        if ( pParameter->Hashcode == hashcode ) {
+            bHasReflectionShader = true;
+            break;
+        }
+    }
+
+    if ( !bHasReflectionShader || !pParameter->Flags.bUsingReflection ) {
+        return;
+    }
+
+    if ( !RebindEnvMapTexture( pParameter, cubemapHashcode,
+                               pCubemapSection ) ) {
+        return;
+    }
+
+    pParameter->Flags.pCustomFlags[2] = pEnvMap->bRealTime;
+    gpRenderContext->retrieveShadersForMaterial( pMaterial, 0 );
 }
 
 // TODO: Move to material.cpp?
@@ -535,12 +787,71 @@ void RenderAvatarBase::releaseHierarchy() {
 
 void RenderAvatarBase::showLowResHierarchy() {
     // FUN_008f1720
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - impostor render scenes
+    if ( pHierarchyNodeLowRes == nullptr ) {
+        return;
+    }
+
+    pHierarchyNodeLowRes->Flags |= 0x30;
+    SetHierarchyColor( pHierarchyNodeLowRes, gColorWhite );
+
+    Instance *pInstance = pHierarchyNodeLowRes->pInstance;
+    Matrix4x4f_t identityMatrix = Matrix4x4f_t::Identity(); // DAT_00fac2a0
+    pInstance->setModelMatrix( identityMatrix );
+
+    AvatarDBEntry *pLowResPart = pLowRes->getAvatarPart();
+    if ( pLowResPart != nullptr ) {
+        Matrix4x4f_t *pPalette = nullptr;
+        if ( pLowResPart->Gender == 0 ) {
+            pPalette = gpAvatar->getIdentityBonePalette( 1 );
+        } else if ( pLowResPart->Gender == 1 ) {
+            pPalette = gpAvatar->getIdentityBonePalette( 0 );
+        }
+
+        pInstance->setBones( pPalette );
+    }
+
+    if ( pLowRes->Index < kNumAvtScenes ) {
+        RenderScene *pFrontScene =
+            gpRender->getRenderPassAtIndex( RP_AvtLRFront0 + pLowRes->Index )
+                .pScene;
+        if ( pFrontScene != nullptr ) {
+            pFrontScene->enqueueStaticHiearchy( pHierarchyNodeLowRes );
+        }
+
+        RenderScene *pBackScene =
+            gpRender->getRenderPassAtIndex( RP_AvtLRBack0 + pLowRes->Index )
+                .pScene;
+        if ( pBackScene != nullptr ) {
+            pBackScene->enqueueStaticHiearchy( pHierarchyNodeLowRes );
+        }
+    }
+
+    pLowRes->bDirty = 2;
 }
 
 void RenderAvatarBase::hideLowResHierarchy() {
     // FUN_008f1610
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - impostor render scenes
+    if ( pHierarchyNodeLowRes == nullptr ) {
+        return;
+    }
+
+    if ( pLowRes->Index < kNumAvtScenes ) {
+        RenderScene *pFrontScene =
+            gpRender->getRenderPassAtIndex( RP_AvtLRFront0 + pLowRes->Index )
+                .pScene;
+        if ( pFrontScene != nullptr ) {
+            pFrontScene->removeStaticHiearchy( pHierarchyNodeLowRes );
+        }
+
+        RenderScene *pBackScene =
+            gpRender->getRenderPassAtIndex( RP_AvtLRBack0 + pLowRes->Index )
+                .pScene;
+        if ( pBackScene != nullptr ) {
+            pBackScene->removeStaticHiearchy( pHierarchyNodeLowRes );
+        }
+    }
+
+    pLowRes->bDirty = 2;
 }
 
 void RenderAvatarBase::setMeshVisibility( const uint64_t meshHashcode,
@@ -1420,8 +1731,7 @@ bool PooledAvatarEntry::stepLoadingCompletion() {
     }
 
     tickBodyMaterials();
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - Envmap
+    setEnvMap();
     tickEyeMaterials();
 
     return true;
@@ -1591,32 +1901,163 @@ bool PooledAvatarEntry::installBodyPart( AvatarDBEntry *pPart ) {
     return true;
 }
 
-void RenderAvatarBase::tickEyeMaterial() {
+void RenderAvatarBase::tickEyeMaterial( const AvatarEyePart *pEyeResource ) {
     // FUN_00411870
-    OTDU_UNIMPLEMENTED;
+    Render2DMHashEntry *pHashcodes = Material.getHashTableHead();
+    if ( pHashcodes == nullptr ) {
+        return;
+    }
+
+    const uint32_t numMaterials = Material.getNumMaterials();
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        ::Material *pMaterial = Material.getMaterialAtIndex( i );
+        if ( pMaterial != nullptr ) {
+            ApplyEyeUVOffsetToMaterial( pMaterial, pEyeResource,
+                                        pHashcodes[i].Hashcode );
+        }
+    }
 }
 
-void RenderAvatarBase::tickBodyMaterial() {
+void RenderAvatarBase::tickBodyMaterial( const float *pSkinTint,
+                                         RenderAvatar *pBodyHighRes ) {
     // FUN_00411690
-    OTDU_UNIMPLEMENTED;
+    // The original also reads the mesh hashcode of each entry here, then drops
+    // it on the floor: only the eye pass below actually filters on it.
+    const uint32_t numMaterials = Material.getNumMaterials();
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        ::Material *pMaterial = Material.getMaterialAtIndex( i );
+        if ( pMaterial != nullptr ) {
+            ApplySkinTintToMaterial( pMaterial, pSkinTint, pBodyHighRes );
+        }
+    }
+}
+
+void RenderAvatarBase::draw( RenderScene *pScene, const ColorRGBA &color ) {
+    // FUN_008f0f20
+    if ( !bVisible || pHierarchyNode == nullptr ) {
+        return;
+    }
+
+    pHierarchyNode->Flags |= 0x30;
+    SetHierarchyColor( pHierarchyNode, color );
+
+    pScene->enqueueDynamicHiearchy( pHierarchyNode );
+}
+
+void RenderAvatarBase::applyLightingAttenuation(
+    const AvatarLightAttenuation &attenuation ) {
+    // FUN_008f0d20
+    if ( Material.getHeader() == nullptr ) {
+        return;
+    }
+
+    const uint32_t numMaterials = Material.getNumMaterials();
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        ::Material *pMaterial = Material.getMaterialAtIndex( i );
+        if ( pMaterial != nullptr ) {
+            ApplyLightAttenuationToMaterial( pMaterial, attenuation );
+        }
+    }
+}
+
+void RenderAvatarBase::setEnvMap( const AvatarEnvMap *pEnvMap ) {
+    // FUN_00411780
+    if ( Material.getHeader() == nullptr ) {
+        return;
+    }
+
+    const uint32_t numMaterials = Material.getNumMaterials();
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        ::Material *pMaterial = Material.getMaterialAtIndex( i );
+        if ( pMaterial != nullptr ) {
+            ApplyEnvMapToMaterial( pMaterial, pEnvMap );
+        }
+    }
+}
+
+void PooledAvatarEntry::setEnvMap() {
+    // FUN_004114f0
+    for ( AvatarClothe &slot : Slots ) {
+        slot.setEnvMap( &EnvMap );
+    }
+    Body.setEnvMap( &EnvMap );
+    Impostor.setEnvMap( &EnvMap );
+    CarBelt.setEnvMap( &EnvMap );
 }
 
 void PooledAvatarEntry::tickEyeMaterials() {
     // FUN_00411540
     for ( AvatarClothe &slot : Slots ) {
-        slot.tickEyeMaterial();
+        slot.tickEyeMaterial( pEyeResource );
     }
-    Body.tickEyeMaterial();
-    Impostor.tickEyeMaterial();
-    CarBelt.tickEyeMaterial();
+    Body.tickEyeMaterial( pEyeResource );
+    Impostor.tickEyeMaterial( pEyeResource );
+    CarBelt.tickEyeMaterial( pEyeResource );
+}
+
+void PooledAvatarEntry::draw( RenderScene *pScene ) {
+    // FUN_008ef1b0
+    if ( !bVisible || !gShowAvatar ) {
+        return;
+    }
+
+    if ( getStrictLoadingState() != AVT_Ready ) {
+        return;
+    }
+
+    for ( AvatarClothe &slot : Slots ) {
+        slot.draw( pScene, gColorWhite );
+    }
+    Body.draw( pScene, gColorWhite );
+    CarBelt.draw( pScene, gColorWhite );
+}
+
+void PooledAvatarEntry::drawLowRes( RenderScene *pScene ) {
+    // FUN_008ef140
+    if ( !bVisible || !gShowAvatar ) {
+        return;
+    }
+
+    Slots[AC_Hair].draw( pScene, gColorWhite );
+    Slots[AC_Helmet].draw( pScene, gColorWhite );
+    Impostor.draw( pScene, gColorWhite );
+}
+
+void PooledAvatarEntry::applyLightingAttenuation(
+    const AvatarLightAttenuation &attenuation ) {
+    // FUN_008ef760
+    for ( AvatarClothe &slot : Slots ) {
+        slot.applyLightingAttenuation( attenuation );
+    }
+    Body.applyLightingAttenuation( attenuation );
+    CarBelt.applyLightingAttenuation( attenuation );
+}
+
+eAvatarLoadingState PooledAvatarEntry::getStrictLoadingState() const {
+    // FUN_008ef0b0
+    eAvatarLoadingState state = AVT_Ready;
+
+    auto accumulate = [&state]( const eAvatarLoadingState partState ) {
+        if ( partState < state ) {
+            state = partState;
+        }
+    };
+
+    accumulate( Impostor.LoadingState );
+    accumulate( Body.LoadingState );
+    for ( const AvatarClothe &slot : Slots ) {
+        accumulate( slot.LoadingState );
+    }
+
+    return state;
 }
 
 void PooledAvatarEntry::tickBodyMaterials() {
     // FUN_004114a0
     for ( AvatarClothe &slot : Slots ) {
-        slot.tickBodyMaterial();
+        slot.tickBodyMaterial( pSkinTint, pBodyHighRes );
     }
-    Body.tickBodyMaterial();
-    Impostor.tickBodyMaterial();
-    CarBelt.tickBodyMaterial();
+    Body.tickBodyMaterial( pSkinTint, pBodyHighRes );
+    Impostor.tickBodyMaterial( pSkinTint, pBodyHighRes );
+    CarBelt.tickBodyMaterial( pSkinTint, pBodyHighRes );
 }

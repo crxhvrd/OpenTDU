@@ -117,6 +117,8 @@ enum eRenderPass : uint32_t {
     RP_Invalid = 0x4c
 };
 
+static constexpr int32_t kNumAvtScenes = 9;
+
 class GSRender : public GameSystem, public WorldListener {
 public:
     const char *getName() const override { return "Service : Render"; }
@@ -218,7 +220,6 @@ public:
 private:
     static constexpr int32_t kNumSunRT = 8;
     static constexpr int32_t kNumSunDownscaleRT = 3;
-    static constexpr int32_t kNumAvtScenes = 9;
 
 private:
     std::vector<RenderPass> renderPasses;

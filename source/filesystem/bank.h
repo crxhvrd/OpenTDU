@@ -190,6 +190,9 @@ public:
     inline int32_t getEntry( int32_t index, ParsedBankEntry &outEntry ) {
         return bank.getEntry( index, outEntry );
     }
+    inline int32_t getEntryIndex( char *pEntryName ) {
+        return bank.getEntryIndex( pEntryName );
+    }
 
 public:
     Bank();

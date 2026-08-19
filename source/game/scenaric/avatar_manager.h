@@ -22,6 +22,8 @@ public:
 
     EntityAvatar *getDriverAvatar();
 
+    inline bool getUnknownBoolean() const { return bUnknownBoolean; }
+
 private:
     static constexpr int32_t kMaxAvatars = 9;
 

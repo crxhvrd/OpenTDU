@@ -182,6 +182,78 @@ int16_t edStore::readShort() {
     return uVar2;
 }
 
+uint16_t edStore::readUShort() {
+    // FUN_00623880
+    if ( !isWithinBounds() ) {
+        state = 0xff;
+        OTDU_LOG_ERROR(
+            "pop_ushort()=>file .\\sources\\edStore.cpp line:1082\n" );
+        return 0;
+    }
+
+    return static_cast<uint16_t>( readShort() );
+}
+
+uint8_t edStore::readByte() {
+    // FUN_00623990
+    if ( !isWithinBounds() ) {
+        state = 0xff;
+        OTDU_LOG_ERROR(
+            "pop_byte()=>file .\\sources\\edStore.cpp line:1100\n" );
+        return 0;
+    }
+
+    uint8_t uVar2 = *( (uint8_t *)pBuffer + bufferOffset );
+    bufferOffset += 1;
+    return uVar2;
+}
+
+bool edStore::popObjectNoAlloc( edStore &outStore ) {
+    // FUN_00623bc0
+    if ( !isWithinBounds() ) {
+        state = 0xff;
+        OTDU_LOG_ERROR(
+            "pop_object_noalloc()=>file .\\sources\\edStore.cpp line:1240\n" );
+        return false;
+    }
+
+    // The block length shares the byte order fixup every other read uses; the
+    // original inlines it here instead of calling pop_ushort (no bounds check).
+    const uint32_t objectSize = static_cast<uint16_t>( readShort() );
+    if ( objectSize == 0 ) {
+        return false;
+    }
+
+    if ( 0x7ffd < objectSize ) {
+        OTDU_LOG_WARN(
+            "**WARNING** edStore::pop_object_noalloc too BIG = %lu\n",
+            objectSize );
+    }
+
+    // A block the receiver cannot hold is stepped over, leaving outStore on
+    // whatever it held before.
+    if ( outStore.bufferSizeWithPadding < objectSize ) {
+        bufferOffset += objectSize;
+        return false;
+    }
+
+    if ( outStore.pBuffer != nullptr && pBuffer != nullptr ) {
+        memcpy( outStore.pBuffer, (uint8_t *)pBuffer + bufferOffset,
+                objectSize );
+    }
+
+    outStore.bufferSize = objectSize;
+    outStore.prepareBuffer();
+
+    bufferOffset += objectSize;
+    return true;
+}
+
+int32_t edStore::getStatus() const {
+    // FUN_006242d0
+    return ( state != 0xff ) ? 0 : -1;
+}
+
 int32_t edStore::compareStreamCRC( uint32_t param_2 ) {
     // FUN_00623760
     state = 0;

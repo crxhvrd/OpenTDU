@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+class edStore;
+
 enum eAvatarCustomizable : int32_t {
     AC_Hair = 0,
     AC_FacePilosity = 1,
@@ -34,6 +36,12 @@ struct AvatarConfiguration {
 
     AvatarConfiguration();
     bool isSameAs( const AvatarConfiguration &other ) const;
+    bool deserialize( edStore &store );
+    void syncSharedSlots();
+
+private:
+    void deserializeClothes( edStore &store );
+    void deserializeFaceParams( edStore &store );
 };
 
 bool IsHelmetClotheID( uint16_t id );
