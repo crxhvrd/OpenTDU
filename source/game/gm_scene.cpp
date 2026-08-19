@@ -279,14 +279,31 @@ void GameModeScene::onResourceStreamed() {
         rentalWidget.pMovie = pPlayer;
         carInfosWidget.pMovie = pPlayer;
 
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+
         // The online widget observes the global player-data service.
         onlineWidget.pTarget = gpPlayerData;
         gpPlayerData->subscribe( &onlineWidget );
 
-        OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
+        pPlayer->setVariableValue(
+            "/:state_Metric", gpPlayerData->isUsingImperialUnits() ? 0 : 1 );
+
+        FlashPlayer *pGeneralPlayer = gpFlash->getFlashPlayer( "GENERAL" );
+        pPlayer->setVariableValue( "/:state_Demo", 0 );
+        if ( pGeneralPlayer != nullptr ) {
+            pGeneralPlayer->setVariableValue( "/:state_Demo", 0 );
+        }
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+
+        pPlayer->setVariableValue( "/:IsMSKeyboard", 0 );
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: INPUT (pad button layout)
+
+        pPlayer->setVariableValue( "/:state_Cha", 0 );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: FLASH
+    MngFlashLocalize::OnFlashInstall();
 
     bFlashInstalled = true;
 }

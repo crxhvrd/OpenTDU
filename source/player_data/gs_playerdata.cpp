@@ -160,13 +160,13 @@ void GSPlayerData::setUnitSystem( const bool bUseImperial ) {
         gpMngHud->updateUnitSystem();
     }
 
-    MoviePlayer *pMoviePlayer = gpFlash->getMoviePlayer( 0, 1 );
+    MoviePlayer *pMoviePlayer = gpFlash->getMoviePlayer( 1, 0 );
     if ( pMoviePlayer != nullptr &&
          pMoviePlayer->MovieBank.getState() ==
              BankFlash::eBankFlashInit::BFI_Loaded ) {
         FlashPlayer *pFlashPlayer = pMoviePlayer->MovieBank.getFlashPlayer();
         if ( pFlashPlayer != nullptr ) {
-            uint32_t flashUnitsFlash = bUseImperialUnits ? 1u : 0u;
+            uint32_t flashUnitsFlash = bUseImperialUnits ? 0u : 1u;
             pFlashPlayer->setVariableValue( "/:state_Metric", flashUnitsFlash );
         }
     }
