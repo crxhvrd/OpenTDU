@@ -40,6 +40,7 @@
 
 #include "world/mng_background.h"
 #include "world/mng_clouds_plane.h"
+#include "world/mng_ocean.h"
 
 #include "tdu_instance.h"
 
@@ -659,6 +660,10 @@ void GSRender::drawDebug( float deltaTime ) {
     ImGui::Checkbox( "Draw background clouds", &gbBackgroundCloudsEnabled );
     ImGui::Checkbox( "Draw sky dome", &gbBackgroundDomeEnabled );
     ImGui::Checkbox( "Sky dome wireframe", &gbBackgroundDomeWireframe );
+
+    ImGui::SeparatorText( "Ocean" );
+    ImGui::Checkbox( "Reflect opaque heightmap (slot 0)",
+                     &gbDebugOceanReflectOpaqueHeightmap );
 
     ImGui::SeparatorText( "Env Map" );
     ImGui::Checkbox( "Dense reflection", &gbDebugEnvMapDenseReflection );

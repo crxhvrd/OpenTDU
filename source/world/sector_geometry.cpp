@@ -10,6 +10,7 @@
 #include "render/mng_env_map.h"
 #include "render/render_buckets.h"
 #include "render/render_scene.h"
+#include "world/gs_mng_resources.h"
 
 static constexpr float kObjectNodeInstanceCullRatio = 3.0f; // DAT_00f416b4
 
@@ -50,7 +51,7 @@ void SectorGeometry::rebaseHeightmapInstance(
 }
 
 void SectorGeometry::instanciateHeightmapEnvInstances(
-    InstanceEntry *pInstanceEntry, uint64_t hashcode ) {
+    InstanceEntry *pInstanceEntry, uint64_t hashcode, eTerrainTier tier ) {
     // FUN_00703410
     if ( pHeightmapInstance == nullptr || pInstanceEntry == nullptr ) {
         return;
@@ -60,6 +61,10 @@ void SectorGeometry::instanciateHeightmapEnvInstances(
 
     const Matrix4x4f_t matrix = pHeightmapInstance->getModelMatrix();
     for ( uint32_t i = 0; i < kNumHeightmapEnvInstances; i++ ) {
+        if ( i == 1 && tier == eTerrainTier::TT_World ) {
+            continue;
+        }
+
         Instance *pInstance =
             collection.instantiate( pInstanceEntry, hashcode );
         if ( pInstance == nullptr ) {
@@ -76,7 +81,10 @@ void SectorGeometry::instanciateHeightmapEnvInstances(
         heightmapEnvInstances[i] = pInstance;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00703240
+    if ( heightmapEnvInstances[1] != nullptr ) {
+        pHeightmapEnvMaterial = InstallHeightmapEnvMaterial(
+            heightmapEnvInstances[1], heightmapEnvMaterialBank );
+    }
 }
 
 void SectorGeometry::releaseHeightmapEnvInstances() {
@@ -86,6 +94,15 @@ void SectorGeometry::releaseHeightmapEnvInstances() {
             pEnvInstance = nullptr;
         }
     }
+
+    if ( pHeightmapEnvMaterial != nullptr ) {
+        if ( gpMngResources != nullptr ) {
+            gpMngResources->getTerrainResources().releaseMaterial(
+                pHeightmapEnvMaterial );
+        }
+        pHeightmapEnvMaterial = nullptr;
+    }
+    heightmapEnvMaterialBank.clear();
 }
 
 Instance *SectorGeometry::getHeightmapInstance( uint32_t index ) const {

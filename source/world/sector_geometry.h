@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include "area_geometry.h"
 #include "game/scenaric/mng_actor.h"
 #include "impostor.h"
 #include "render/2db.h"
@@ -121,7 +122,8 @@ public:
     void uninstanciateObjectNodes();
 
     void instanciateHeightmapEnvInstances( InstanceEntry *pInstanceEntry,
-                                           uint64_t hashcode );
+                                           uint64_t hashcode,
+                                           eTerrainTier tier );
     void releaseHeightmapEnvInstances();
     Instance *getHeightmapInstance( uint32_t index ) const;
     void submitHeightmapInstance( RenderScene *pScene, uint32_t index );
@@ -163,6 +165,8 @@ public:
         heightmapLODCache = {};
     std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>
         heightmapWorkGrid = {};
+    std::array<uint8_t, kHeightmapNumCoarseCell> heightmapCoarseVis = {};
+    bool bHeightmapVisible = false;
 
     static constexpr uint32_t kNumHeightmapEnvInstances = 2;
     std::array<Instance *, kNumHeightmapEnvInstances> heightmapEnvInstances = {
@@ -171,6 +175,8 @@ public:
         std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>,
         kNumHeightmapEnvInstances>
         heightmapEnvLODCaches = {};
+    std::vector<uint8_t> heightmapEnvMaterialBank;
+    Material *pHeightmapEnvMaterial = nullptr;
 
     std::vector<Instance *> envImpostorInstances;
 

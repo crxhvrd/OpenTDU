@@ -1691,7 +1691,7 @@ TerrainResources::TerrainResources()
       pMaterialsMemory( nullptr ),
       materialSize( 0 ),
       totalMaterialSize( 0 ),
-      pBoundMaterial( nullptr ) {
+      usedMaterialMask( 0u ) {
     // FUN_008a1112 (inlined)
     pMaterials.fill( nullptr );
 }
@@ -1749,7 +1749,45 @@ void TerrainResources::unloadResources() {
     materialSize = 0;
     totalMaterialSize = 0;
     pMaterials.fill( nullptr );
-    pBoundMaterial = nullptr;
+    usedMaterialMask = 0u;
+}
+
+Material *TerrainResources::acquireMaterial() {
+    // FUN_0089f8a0
+    if ( !bLoaded ) {
+        return nullptr;
+    }
+
+    int32_t index = 0;
+    if ( ( usedMaterialMask & 1u ) != 0u ) {
+        do {
+            if ( index > kNumMaterials - 1 ) {
+                return nullptr;
+            }
+            index++;
+        } while ( ( usedMaterialMask & ( 1u << ( index & 0x1f ) ) ) != 0u );
+
+        if ( index > kNumMaterials - 1 ) {
+            return nullptr;
+        }
+    }
+
+    usedMaterialMask |= 1u << ( index & 0x1f );
+    return pMaterials[index];
+}
+
+void TerrainResources::releaseMaterial( Material *pMaterial ) {
+    // FUN_0089f860
+    if ( pMaterial == nullptr ) {
+        return;
+    }
+
+    for ( int32_t index = 0; index < kNumMaterials; index++ ) {
+        if ( pMaterials[index] == pMaterial ) {
+            usedMaterialMask &= ~( 1u << ( index & 0x1f ) );
+            return;
+        }
+    }
 }
 
 bool MngResources::load() {

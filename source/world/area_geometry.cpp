@@ -5,6 +5,7 @@
 #include "render/material.h"
 #include "render/render_context.h"
 #include "render/render_scene.h"
+#include "gs_mng_resources.h"
 #include "sector_manager.h"
 #include "gs_world_streaming.h"
 
@@ -32,6 +33,12 @@ void AreaGeometry::rebaseHeightmapInstance(
     m( 3, 0 ) = heightmapAbsPos.x() - streamOrigin.x();
     m( 3, 2 ) = heightmapAbsPos.z() - streamOrigin.z();
     pHeightmapInstance->setModelMatrix( m );
+
+    for ( Instance *pEnvInstance : heightmapEnvInstances ) {
+        if ( pEnvInstance != nullptr ) {
+            pEnvInstance->setModelMatrix( m );
+        }
+    }
 }
 
 void AreaGeometry::instanciateObjectNodes(
@@ -97,11 +104,21 @@ void AreaGeometry::rebaseObjectNodes( const Eigen::Vector4f &streamOrigin ) {
 
 void AreaGeometry::submitObjectNodes( RenderScene *pScene,
                                       int32_t tilesPerSectorX,
-                                      int32_t tilesPerSectorZ ) {
+                                      int32_t tilesPerSectorZ,
+                                      const AreaGeometry *pEastArea,
+                                      uint32_t &numSubmitted ) {
     // FUN_00707080
     if ( pScene == nullptr || tilesPerSectorX <= 0 || tilesPerSectorZ <= 0 ) {
         return;
     }
+
+    auto isTileCovered = []( const AreaGeometry &geometry, int32_t col,
+                             int32_t row ) -> bool {
+        const int32_t tile = PMITileIndex( col, row );
+        return HeightmapTileHidden(
+            HeightmapResolveTileLOD( geometry.heightmapLODCache[tile],
+                                     geometry.heightmapTileMask[tile] ) );
+    };
 
     ObjectsRenderSet &set = objectsRenderSet;
     for ( uint32_t n = 0; n < ObjectsRenderSet::kNumObjectNodes; n++ ) {
@@ -110,39 +127,48 @@ void AreaGeometry::submitObjectNodes( RenderScene *pScene,
         }
         for ( uint32_t j = 0; j < ObjectsRenderSet::kSubGridDim; j++ ) {
             for ( uint32_t i = 0; i < ObjectsRenderSet::kSubGridDim; i++ ) {
+                if ( numSubmitted >= ObjectsRenderSet::kMaxSubInstances ) {
+                    break;
+                }
                 Instance *pSub =
                     set.subInstances[n][j * ObjectsRenderSet::kSubGridDim + i];
                 if ( pSub == nullptr ) {
                     continue;
                 }
 
-                // The sub-tile is hidden only when EVERY covering area-HM tile
-                // is culled (matches the original's all-four-tiles test).
-                bool bAllCulled = true;
-                for ( int32_t dz = 0; dz < tilesPerSectorZ && bAllCulled;
+                const int32_t baseCol =
+                    (int32_t)i * tilesPerSectorX + (int32_t)( j & 1 );
+                const int32_t baseRow = (int32_t)j * tilesPerSectorZ;
+
+                bool bAllCovered = true;
+                for ( int32_t dz = 0; dz < tilesPerSectorZ && bAllCovered;
                       dz++ ) {
-                    for ( int32_t dx = 0; dx < tilesPerSectorX && bAllCulled;
+                    for ( int32_t dx = 0; dx < tilesPerSectorX && bAllCovered;
                           dx++ ) {
-                        const int32_t col = (int32_t)i * tilesPerSectorX + dx;
-                        const int32_t row = (int32_t)j * tilesPerSectorZ + dz;
-                        if ( col >= kHeightmapNumTile ||
-                             row >= kHeightmapNumTile ) {
+                        const int32_t col = baseCol + dx;
+                        const int32_t row = baseRow + dz;
+                        if ( row >= kHeightmapNumTile ) {
                             continue;
                         }
-                        const uint8_t m =
-                            heightmapTileMask[( col + 1 ) +
-                                              kHeightmapNumRealTile *
-                                                  ( row + 1 )];
-                        if ( m != kHeightmapMaskCull ) {
-                            bAllCulled = false;
+                        if ( col < kHeightmapNumTile ) {
+                            if ( !isTileCovered( *this, col, row ) ) {
+                                bAllCovered = false;
+                            }
+                        } else if ( pEastArea != nullptr ) {
+                            if ( !isTileCovered( *pEastArea,
+                                                 col - kHeightmapNumTile,
+                                                 row ) ) {
+                                bAllCovered = false;
+                            }
                         }
                     }
                 }
-                if ( bAllCulled ) {
+                if ( bAllCovered ) {
                     continue;
                 }
 
                 pScene->enqueueDynamicInstance( pSub );
+                numSubmitted++;
             }
         }
     }
@@ -159,6 +185,7 @@ void AreaGeometry::reset() {
     renderInstances.clear();
     renderInstanceAbsPos.clear();
 
+    releaseHeightmapEnvInstances();
     if ( pHeightmapInstance != nullptr ) {
         collection.uninstantiate( pHeightmapInstance );
         pHeightmapInstance = nullptr;
@@ -272,8 +299,8 @@ void AreaBank::instanciate() {
     }
 
     InstanciateTerrainGeometry( *this, pOwner->geometry, pOwner->heightmap,
-                                (float)pOwner->offsetX,
-                                (float)pOwner->offsetY );
+                                (float)pOwner->offsetX, (float)pOwner->offsetY,
+                                eTerrainTier::TT_Area );
 
     if ( BuildAreaObjectsRenderSet( *this,
                                     pOwner->geometry.objectsRenderSet ) ) {
@@ -356,11 +383,183 @@ void SetupTerrainMaterial(
     gpRenderContext->retrieveShadersForMaterial( pTerrainMat, 0 );
 }
 
+void AreaGeometry::instanciateHeightmapEnvInstances(
+    InstanceEntry *pInstanceEntry, uint64_t hashcode, eTerrainTier tier ) {
+    // FUN_00703410
+    if ( pHeightmapInstance == nullptr || pInstanceEntry == nullptr ) {
+        return;
+    }
+
+    releaseHeightmapEnvInstances();
+
+    const Matrix4x4f_t matrix = pHeightmapInstance->getModelMatrix();
+    for ( uint32_t i = 0; i < kNumHeightmapEnvInstances; i++ ) {
+        if ( i == 1 && tier == eTerrainTier::TT_World ) {
+            continue;
+        }
+
+        Instance *pInstance =
+            collection.instantiate( pInstanceEntry, hashcode );
+        if ( pInstance == nullptr ) {
+            continue;
+        }
+
+        Matrix4x4f_t instanceMatrix = matrix;
+        pInstance->setModelMatrix( instanceMatrix );
+        pInstance->calculateBiggestScale();
+        pInstance->setHeightmapTileMask( nullptr );
+        pInstance->setHeightmapLODCache( heightmapEnvLODCaches[i].data() );
+        pInstance->setHeightmapLODCoef(
+            pHeightmapInstance->getHeightmapLODCoef() );
+        pInstance->getFlagsWrite() &= ~3u;
+
+        heightmapEnvInstances[i] = pInstance;
+    }
+
+    if ( heightmapEnvInstances[1] != nullptr ) {
+        pHeightmapEnvMaterial = InstallHeightmapEnvMaterial(
+            heightmapEnvInstances[1], heightmapEnvMaterialBank );
+    }
+}
+
+void AreaGeometry::releaseHeightmapEnvInstances() {
+    for ( Instance *&pEnvInstance : heightmapEnvInstances ) {
+        if ( pEnvInstance != nullptr ) {
+            collection.uninstantiate( pEnvInstance );
+            pEnvInstance = nullptr;
+        }
+    }
+
+    if ( pHeightmapEnvMaterial != nullptr ) {
+        if ( gpMngResources != nullptr ) {
+            gpMngResources->getTerrainResources().releaseMaterial(
+                pHeightmapEnvMaterial );
+        }
+        pHeightmapEnvMaterial = nullptr;
+    }
+    heightmapEnvMaterialBank.clear();
+}
+
+Instance *AreaGeometry::getHeightmapInstance( uint32_t index ) const {
+    if ( index == 0 ) {
+        return pHeightmapInstance;
+    }
+    if ( index > kNumHeightmapEnvInstances ) {
+        return nullptr;
+    }
+    return heightmapEnvInstances[index - 1];
+}
+
+void AreaGeometry::submitHeightmapInstance( RenderScene *pScene,
+                                            uint32_t index ) {
+    // FUN_0042f170
+    if ( pScene == nullptr ) {
+        return;
+    }
+
+    Instance *pInstance = getHeightmapInstance( index );
+    if ( pInstance != nullptr ) {
+        pScene->enqueueDynamicInstance( pInstance );
+    }
+}
+
+Material *InstallHeightmapEnvMaterial( Instance *pInstance,
+                                       std::vector<uint8_t> &outBankStorage ) {
+    // FUN_00703240
+    outBankStorage.clear();
+    if ( pInstance == nullptr || gpMngResources == nullptr ) {
+        return nullptr;
+    }
+
+    const uint32_t bankSize = pInstance->getMaterialBankSize();
+    if ( bankSize <= sizeof( RenderFile::Section ) ) {
+        return nullptr;
+    }
+
+    outBankStorage.resize( bankSize );
+    RenderFile::Section *pCopyBank =
+        pInstance->copyMaterialBank( outBankStorage.data() );
+    if ( pCopyBank == nullptr ) {
+        outBankStorage.clear();
+        return nullptr;
+    }
+
+    Render3DDHashEntry *pEntries = (Render3DDHashEntry *)( pCopyBank + 1 );
+    RenderFile::Section *pSourceSection = pEntries[0].pEntry;
+    if ( pSourceSection == nullptr ) {
+        outBankStorage.clear();
+        return nullptr;
+    }
+
+    Material *pSource = (Material *)( pSourceSection + 1 );
+    MaterialParameter *pSourceParam = pSource->getParameterByIndex( 0 );
+    if ( pSourceParam == nullptr ||
+         pSourceParam->Type != eMaterialParameterType::MPT_Terrain ) {
+        outBankStorage.clear();
+        return nullptr;
+    }
+
+    TerrainResources &terrainResources = gpMngResources->getTerrainResources();
+    Material *pCopy = terrainResources.acquireMaterial();
+    if ( pCopy == nullptr ) {
+        outBankStorage.clear();
+        return nullptr;
+    }
+
+    MaterialParameter *pCopyParam = pCopy->getParameterByIndex( 0 );
+    if ( pCopyParam == nullptr ) {
+        terrainResources.releaseMaterial( pCopy );
+        outBankStorage.clear();
+        return nullptr;
+    }
+
+    pCopyParam->NumLayers = pSourceParam->NumLayers;
+    MaterialTerrainParameter *pSourceTerrain =
+        (MaterialTerrainParameter *)pSourceParam;
+    MaterialTerrainParameter *pCopyTerrain =
+        (MaterialTerrainParameter *)pCopyParam;
+    for ( uint32_t i = 0; i < pSourceParam->NumLayers; i++ ) {
+        pCopyTerrain->AlphaBlendModeTest[i] =
+            pSourceTerrain->AlphaBlendModeTest[i];
+
+        MaterialLayer *pSourceLayer = pSourceParam->getLayer( i );
+        MaterialLayer *pCopyLayer = pCopyParam->getLayer( i );
+        if ( pSourceLayer != nullptr && pCopyLayer != nullptr ) {
+            *pCopyLayer = *pSourceLayer;
+        }
+    }
+
+    const Eigen::Vector4f specularColor = pCopy->SpecularColor;
+    const Eigen::Vector4f emissiveColor = pCopy->EmissiveColor;
+    *pCopy = *pSource;
+    pCopy->SpecularColor = specularColor;
+    pCopy->EmissiveColor = emissiveColor;
+
+    pCopy->pOTNode = nullptr;
+
+    pCopy->BlendOP = eBlendOP::BO_Add;
+    pCopy->SrcBlend = eBlendMode::BM_SrcAlpha;
+    pCopy->DstBlend = eBlendMode::BM_InvSrcAlpha;
+    pCopy->AlphaRef = 1;
+
+    pCopyParam->Flags = pSourceParam->Flags;
+    pCopyParam->Flags.pCustomFlags[1] = 1;
+
+    gpRenderContext->retrieveShadersForMaterial( pCopy, 0 );
+    pCopy->OT = pCopy->getOTNumber();
+
+    pEntries[0].pEntry = (RenderFile::Section *)pCopy - 1;
+    pInstance->setMaterialBank( pCopyBank );
+
+    return pCopy;
+}
+
 void InstanciateTerrainGeometry( Bank &bank,
                                  AreaGeometry &geometry,
                                  SectorHeightmap &heightmap,
                                  float offsetX,
-                                 float offsetZ ) {
+                                 float offsetZ,
+                                 eTerrainTier tier ) {
     // FUN_00703d10
     geometry.num2DB = 0;
 
@@ -491,6 +690,8 @@ void InstanciateTerrainGeometry( Bank &bank,
                     pInstance->setHeightmapLODCoef(
                         ( heightmap.getQuadScale() > 100.0f ) ? 1.0e-6f
                                                               : 6.0e-6f );
+                    geometry.instanciateHeightmapEnvInstances(
+                        (InstanceEntry *)( pInstSection + 1 ), hashcode, tier );
                 } else {
                     geometry.renderInstances.push_back( pInstance );
                     geometry.renderInstanceAbsPos.push_back( absPos );

@@ -161,7 +161,7 @@ void Level::instanciateHeightmap() {
     heightmapGeometry.pInstanceDefManager = &getGlobalCollection();
     heightmapGeometry.pGroundBitmapCollection = &getGroundBitmapCollection2D();
     InstanciateTerrainGeometry( levelBank, heightmapGeometry, heightmap, 0.0f,
-                                0.0f );
+                                0.0f, eTerrainTier::TT_World );
 }
 
 void Level::unload() {

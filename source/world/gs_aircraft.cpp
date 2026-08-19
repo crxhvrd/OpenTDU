@@ -48,6 +48,31 @@ static constexpr float kSoundAirClipFar = 2000.0f;    // DAT_00f7c598
 static constexpr float kSoundRefractionFactor = 0.7f; // DAT_00f7c59c
 static constexpr float kSoundFadeIn = 0.1f;
 
+#ifdef OTDU_USE_IMGUI
+#include "world/streaming_manager.h"
+
+static int32_t gFocusedAircraft = 0;
+static float gFocusDistance = 60.0f;
+static bool gFollowFocusedAircraft = false;
+
+static void FocusCameraOnAircraft( Entity *pAircraft,
+                                   bool bRecenterStreaming ) {
+    if ( pAircraft == nullptr || gpCamera == nullptr ) {
+        return;
+    }
+
+    const Matrix4x4f_t &modelMatrix = pAircraft->getModelMatrix();
+    const Eigen::Vector4f position( modelMatrix( 3, 0 ), modelMatrix( 3, 1 ),
+                                    modelMatrix( 3, 2 ), 1.0f );
+    gpCamera->focusOnPoint( position, gFocusDistance );
+
+    if ( bRecenterStreaming && gpWorld != nullptr &&
+         gpWorld->getStreamingManager() != nullptr ) {
+        gpWorld->getStreamingManager()->requestDebugJump( position );
+    }
+}
+#endif
+
 // Get the world position an ET_VELU path marker sits at
 static Eigen::Vector4f GetVolumePosition( const Entity *pVolume ) {
     const Matrix4x4f_t &modelMatrix = pVolume->getModelMatrix();
@@ -525,6 +550,13 @@ Entity *AircraftPathFlights::getAircraft( uint32_t index ) const {
     return flights[index]->getInstance();
 }
 
+const Aircraft *AircraftPathFlights::getFlight( uint32_t index ) const {
+    if ( index >= flights.size() ) {
+        return nullptr;
+    }
+    return flights[index].get();
+}
+
 void AircraftPathFlights::initialize( EntityAircraftPath *pEntity ) {
     // FUN_009033f0
     pPathEntity = pEntity;
@@ -803,6 +835,13 @@ void GSAircraft::tick( float totalTime, float deltaTime ) {
     for ( std::unique_ptr<AircraftPathFlights> &pPath : originalPaths ) {
         pPath->tick( deltaTime );
     }
+
+#ifdef OTDU_USE_IMGUI
+    if ( gFollowFocusedAircraft ) {
+        FocusCameraOnAircraft(
+            getAircraft( static_cast<uint32_t>( gFocusedAircraft ) ), false );
+    }
+#endif
 }
 
 void GSAircraft::draw( float deltaTime ) {
@@ -842,6 +881,11 @@ uint32_t GSAircraft::getNumAircrafts() const {
 }
 
 Entity *GSAircraft::getAircraft( uint32_t index ) const {
+    const Aircraft *pFlight = getFlight( index );
+    return pFlight != nullptr ? pFlight->getInstance() : nullptr;
+}
+
+const Aircraft *GSAircraft::getFlight( uint32_t index ) const {
     uint32_t pathIndex = 0;
     uint32_t firstOfPath = 0;
     while ( pathIndex < originalPaths.size() ) {
@@ -857,7 +901,7 @@ Entity *GSAircraft::getAircraft( uint32_t index ) const {
     if ( pathIndex >= originalPaths.size() ) {
         return nullptr;
     }
-    return originalPaths[pathIndex]->getAircraft( index - firstOfPath );
+    return originalPaths[pathIndex]->getFlight( index - firstOfPath );
 }
 
 Entity *GSAircraft::pickAircraftModel( int32_t groupIndex ) {
@@ -930,16 +974,79 @@ void GSAircraft::drawDebug( float deltaTime ) {
         return;
     }
 
-    const uint32_t numAircrafts = getNumAircrafts();
-    for ( uint32_t i = 0; i < numAircrafts; i++ ) {
-        Entity *pAircraft = getAircraft( i );
+    const int32_t numAircrafts = static_cast<int32_t>( getNumAircrafts() );
+    if ( numAircrafts == 0 ) {
+        ImGui::TextDisabled( "No aircraft spawned on any path." );
+        return;
+    }
+
+    ImGui::SeparatorText( "Camera focus" );
+
+#ifdef OTDU_DEVBUILD
+    // Without the free-fly camera the game camera recomputes its transform
+    // every tick and snaps straight back off the aircraft.
+    if ( gpCamera != nullptr ) {
+        bool bFreeCam = gpCamera->isFreeCamEnabled();
+        if ( ImGui::Checkbox( "Free-fly camera", &bFreeCam ) ) {
+            gpCamera->toggleFreeCam();
+        }
+    }
+#endif
+
+    if ( gFocusedAircraft >= numAircrafts ) {
+        gFocusedAircraft = 0;
+    }
+    ImGui::SliderInt( "Aircraft", &gFocusedAircraft, 0, numAircrafts - 1 );
+    ImGui::DragFloat( "Distance", &gFocusDistance, 0.5f, 2.0f, 500.0f );
+
+    Entity *pFocused = getAircraft( static_cast<uint32_t>( gFocusedAircraft ) );
+    if ( pFocused == nullptr ) {
+        ImGui::TextDisabled( "Empty aircraft slot (instanciation failed)." );
+        return;
+    }
+
+    const Matrix4x4f_t &focusedMatrix = pFocused->getModelMatrix();
+    ImGui::Text(
+        "Position %.1f %.1f %.1f | model group %d", focusedMatrix( 3, 0 ),
+        focusedMatrix( 3, 1 ), focusedMatrix( 3, 2 ),
+        static_cast<int32_t>(
+            static_cast<EntityAircraft *>( pFocused )->getAircraftType() ) );
+
+    const Aircraft *pFlight =
+        getFlight( static_cast<uint32_t>( gFocusedAircraft ) );
+    if ( pFlight != nullptr ) {
+        ImGui::Text(
+            "u %.3f of %.0fm | speed %.1f | %s", pFlight->getCurrentU(),
+            pFlight->getTotalLength(), pFlight->getCurrentSpeed(),
+            pFlight->isOnLandingTrack() ? "on the landing track" : "airborne" );
+    }
+
+    if ( ImGui::Button( "Focus camera" ) ) {
+        FocusCameraOnAircraft( pFocused, true );
+    }
+    ImGui::SameLine();
+    if ( ImGui::Button( "Next aircraft" ) ) {
+        gFocusedAircraft = ( gFocusedAircraft + 1 ) % numAircrafts;
+        FocusCameraOnAircraft(
+            getAircraft( static_cast<uint32_t>( gFocusedAircraft ) ), true );
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox( "Follow", &gFollowFocusedAircraft );
+
+    ImGui::TextDisabled( "'Focus camera' also recenters world streaming so the "
+                         "ground below the aircraft loads; 'Follow' only moves "
+                         "the camera, and tracks the aircraft as it flies." );
+
+    ImGui::SeparatorText( "Aircrafts" );
+    for ( int32_t i = 0; i < numAircrafts; i++ ) {
+        Entity *pAircraft = getAircraft( static_cast<uint32_t>( i ) );
         if ( pAircraft == nullptr ) {
-            ImGui::TextDisabled( "#%u: empty slot (instanciation failed)", i );
+            ImGui::TextDisabled( "#%d: empty slot (instanciation failed)", i );
             continue;
         }
 
         const Matrix4x4f_t &modelMatrix = pAircraft->getModelMatrix();
-        ImGui::Text( "#%u: %.1f %.1f %.1f", i, modelMatrix( 3, 0 ),
+        ImGui::Text( "#%d: %.1f %.1f %.1f", i, modelMatrix( 3, 0 ),
                      modelMatrix( 3, 1 ), modelMatrix( 3, 2 ) );
     }
 }

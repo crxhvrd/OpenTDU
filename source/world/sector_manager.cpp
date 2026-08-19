@@ -868,7 +868,8 @@ void SectorBank::instanciate() {
                             geometry.heightmapWorkGrid.data() );
                         pInstance->setHeightmapLODCoef( 6.0e-6f );
                         geometry.instanciateHeightmapEnvInstances(
-                            (InstanceEntry *)( pInstSection + 1 ), hashcode );
+                            (InstanceEntry *)( pInstSection + 1 ), hashcode,
+                            eTerrainTier::TT_Sector );
                     } else {
                         geometry.renderInstances.push_back( pInstance );
                         geometry.renderInstanceAbsPos.push_back( absPos );

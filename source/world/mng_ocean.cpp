@@ -15,6 +15,9 @@
 #include "render/camera/gs_camera.h"
 #include "render/postfx/effects/postfx_blur.h"
 
+#include "game/scenaric/entity/entity_boat.h"
+
+#include "world/gs_boat.h"
 #include "world/gs_mng_resources.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
@@ -26,7 +29,8 @@
 
 #include "system/system_shared.h"
 
-bool gbOceanEnabled = false;    // DAT_010e7fc8
+bool gbOceanEnabled = false; // DAT_010e7fc8
+bool gbDebugOceanReflectOpaqueHeightmap = false;
 MngOcean *gpMngOcean = nullptr; // DAT_010e7fc4
 
 OceanSetup gDefaultOceanSetup; // DAT_00fa9c10
@@ -86,8 +90,7 @@ MngOcean::MngOcean()
       pShaderParamLakeVSParams( nullptr ),
       pShaderParamLakePSParams( nullptr ),
       pShaderParamLakePSDiffuseFix( nullptr ),
-      stencilLayer( -1 ),
-      numAreaObjectToDraw( 0 ) {
+      stencilLayer( -1 ) {
     // FUN_006e13a0
     oceanPlane.DistanceFromOrigin = oceanHeight;
     oceanUpperPlane.DistanceFromOrigin = oceanHeight;
@@ -95,7 +98,7 @@ MngOcean::MngOcean()
 
     memset( corners, 0, sizeof( corners ) );
     memset( vertices, 0, sizeof( vertices ) );
-    memset( pAreaObjectInstanceArray, 0, sizeof( pAreaObjectInstanceArray ) );
+    areaObjectInstances.reserve( kMaxNumAreaObjects );
 
     stencilLayer = (int32_t)gpRender->getFreeStencilMask();
 
@@ -173,6 +176,47 @@ bool MngOcean::initialize( TestDriveGameInstance * ) {
     return true;
 }
 
+static constexpr uint32_t kReflectionHeightmap = 2;
+
+static inline uint32_t GetReflectionHeightmapSlot() {
+    return gbDebugOceanReflectOpaqueHeightmap ? 0u : kReflectionHeightmap;
+}
+
+static Instance *getAreaObjectForSector( StreamingManager &streamingManager,
+                                         const Sector &sector ) {
+    static constexpr uint32_t kBlockObjectNode = 1;
+    static constexpr int32_t kSubGridDim =
+        (int32_t)AreaGeometry::ObjectsRenderSet::kSubGridDim;
+
+    for ( Area &area : streamingManager.areaGrid.areas ) {
+        if ( area.coords.posX != sector.installedArea.posX ||
+             area.coords.posY != sector.installedArea.posY ) {
+            continue;
+        }
+        if ( area.state != 1 ) {
+            return nullptr;
+        }
+
+        AreaGeometry::ObjectsRenderSet &objects =
+            area.geometry.objectsRenderSet;
+        if ( objects.pObjectNodes[kBlockObjectNode] == nullptr ) {
+            return nullptr;
+        }
+
+        const int32_t cellX = sector.installedSector.posX;
+        const int32_t cellY = sector.installedSector.posY;
+        if ( cellX < 0 || cellX >= kSubGridDim || cellY < 0 ||
+             cellY >= kSubGridDim ) {
+            return nullptr;
+        }
+
+        return objects
+            .subInstances[kBlockObjectNode][cellY * kSubGridDim + cellX];
+    }
+
+    return nullptr;
+}
+
 void MngOcean::draw() {
     // FUN_006e35d0
     if ( !gbOceanEnabled || !bResourceLoaded || !oceanVisible ||
@@ -187,44 +231,65 @@ void MngOcean::draw() {
         gpMngBackground->drawReflection( &scnReflFar );
     }
 
+    StreamingManager *pStreamingManager = gpWorld->getStreamingManager();
+
     if ( bDrawWorld ) {
-        // TODO: Enqueue the world geometry instance (WorldStreaming+0x7aec8)
-        // into ScnReflNear; the world render instance is not ported yet
-        // (bDrawWorld defaults to false, so this normally never runs).
-        OTDU_UNIMPLEMENTED; // TODO: WORLD
+        if ( pStreamingManager != nullptr ) {
+            Instance *pLevelInstance = pStreamingManager->getLevel()
+                                           .getHeightmapGeometry()
+                                           .pHeightmapInstance;
+            if ( pLevelInstance != nullptr ) {
+                scnReflNear.enqueueDynamicInstance( pLevelInstance );
+            }
+        }
     }
 
     if ( bDrawArea ) {
-        StreamingManager *pStreamingManager = gpWorld->getStreamingManager();
         if ( pStreamingManager != nullptr ) {
             for ( Area &area : pStreamingManager->areaGrid.areas ) {
                 if ( area.state != 1 ) {
                     continue;
                 }
-                if ( area.geometry.pHeightmapInstance != nullptr ) {
-                    scnReflNear.enqueueDynamicInstance(
-                        area.geometry.pHeightmapInstance );
-                }
+                area.geometry.submitHeightmapInstance(
+                    &scnReflNear, GetReflectionHeightmapSlot() );
             }
         }
     }
 
     if ( bDrawAreaObject ) {
-        OTDU_UNIMPLEMENTED; // TODO: AREA
-        numAreaObjectToDraw = 0;
+        areaObjectInstances.clear();
+
+        if ( pStreamingManager != nullptr ) {
+            for ( Sector &sector : pStreamingManager->sectorManager.sectors ) {
+                if ( areaObjectInstances.size() >=
+                     (size_t)kMaxNumAreaObjects ) {
+                    break;
+                }
+                if ( sector.state != 1 ) {
+                    continue;
+                }
+
+                Instance *pSubInstance =
+                    getAreaObjectForSector( *pStreamingManager, sector );
+                if ( pSubInstance != nullptr ) {
+                    areaObjectInstances.push_back( pSubInstance );
+                }
+            }
+        }
+
+        if ( !areaObjectInstances.empty() ) {
+            scnReflNear.enqueueDynamicInstanceArray( &areaObjectInstances );
+        }
     }
 
     if ( bDrawSector ) {
-        StreamingManager *pStreamingManager = gpWorld->getStreamingManager();
         if ( pStreamingManager != nullptr ) {
             for ( Sector &sector : pStreamingManager->sectorManager.sectors ) {
                 if ( sector.state != 1 ) {
                     continue;
                 }
-                if ( sector.geometry.pHeightmapInstance != nullptr ) {
-                    scnReflNear.enqueueDynamicInstance(
-                        sector.geometry.pHeightmapInstance );
-                }
+                sector.geometry.submitHeightmapInstance(
+                    &scnReflNear, GetReflectionHeightmapSlot() );
             }
         }
     }
@@ -235,10 +300,20 @@ void MngOcean::draw() {
         scnReflFar.enqueueDynamicDrawList( gpMngCloudsPlane->getDrawList() );
     }
 
-    // TODO: Enqueue every boat render instance (FUN_008e8e00 walks the boat
-    // path groups of gGSBoat, instance at boat+0x1f8) into ScnReflNear;
-    // GSBoat is still unimplemented.
-    OTDU_UNIMPLEMENTED; // TODO: BOAT
+    if ( gpBoat != nullptr ) {
+        const uint32_t numBoats = gpBoat->getNumBoats();
+        for ( uint32_t i = 0; i < numBoats; i++ ) {
+            EntityBoat *pBoat =
+                static_cast<EntityBoat *>( gpBoat->getBoat( i ) );
+            if ( pBoat == nullptr ) {
+                continue;
+            }
+            Instance *pRenderInstance = pBoat->getRenderInstance();
+            if ( pRenderInstance != nullptr ) {
+                scnReflNear.enqueueDynamicInstance( pRenderInstance );
+            }
+        }
+    }
 
     // Heightmap -> normal map conversion quad, then the projected-grid
     // surface in the near pass.

@@ -159,7 +159,7 @@ private:
     void submitSectorHeightmap( Sector &sector );
     void submitSectorImpostors( Sector &sector, RenderScene *pScene );
     void submitDynamicProps( Sector &sector, RenderScene *pScene );
-    void submitArea( Area &area );
+    void submitArea( Area &area, uint32_t &numSubInstances );
     void submitAreaHeightmap( Area &area );
     void submitAreaHeightmaps();
     void submitLevelHeightmap();

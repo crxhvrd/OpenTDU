@@ -22,6 +22,7 @@ static TestDriveMutex gDynamicDrawListMutex; // DAT_00fac6a0
 static TestDriveMutex gDynamicInstancesMutex;
 static TestDriveMutex gDynamicHiearchyMutex;          // DAT_00fac820
 static TestDriveMutex gDynamicInstancesOverloadMutex; // DAT_00fac760
+static TestDriveMutex gDynamicInstancesArrayMutex;    // DAT_00fac7c0
 
 RenderScene::RenderScene()
     : RenderObjectBase(),
@@ -105,6 +106,31 @@ void RenderScene::enqueueDynamicHiearchy( HiearchyNode *pNode ) {
     // FUN_00411200
     ScopedMutexLock lock( &gDynamicHiearchyMutex );
     pDrawCommands->DynamicHiearchies.push_front( pNode );
+}
+
+void RenderScene::enqueueStaticHiearchy( HiearchyNode *pNode ) {
+    // FUN_00410d80
+    ScopedMutexLock lock( &gDynamicHiearchyMutex );
+    pDrawCommands->StaticHiearchies.push_front( pNode );
+}
+
+void RenderScene::removeStaticHiearchy( HiearchyNode *pNode ) {
+    // FUN_00410cc0
+    ScopedMutexLock lock( &gDynamicHiearchyMutex );
+
+    for ( auto it = pDrawCommands->StaticHiearchies.begin();
+          it != pDrawCommands->StaticHiearchies.end(); ++it ) {
+        if ( *it == pNode ) {
+            pDrawCommands->StaticHiearchies.erase( it );
+            return;
+        }
+    }
+}
+
+void RenderScene::enqueueDynamicInstanceArray(
+    std::vector<Instance *> *pInstances ) {
+    ScopedMutexLock lock( &gDynamicInstancesArrayMutex );
+    pDrawCommands->DynamicInstancesArrays.push_back( pInstances );
 }
 
 void RenderScene::enqueueDynamicInstanceWithCustomMaterial(

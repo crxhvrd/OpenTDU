@@ -105,6 +105,9 @@ public:
     inline void setStreamActive( bool b ) { bStreamActive = b; }
     inline int32_t getTileKey() const { return defaultTileIndex; }
     inline void setTileKey( int32_t key ) { defaultTileIndex = key; }
+    inline void setTileVisible( bool b ) {
+        flags = b ? ( flags | 4u ) : ( flags & ~4u );
+    }
 
     inline void bindDebugDescriptor( EntityDesc *pNewDesc,
                                      const char *pNewName ) {

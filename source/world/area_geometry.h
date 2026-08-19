@@ -18,8 +18,16 @@
 
 class Instance;
 class Bank;
+struct InstanceEntry;
 class SectorHeightmap;
 class RenderScene;
+struct Material;
+
+enum eTerrainTier : uint32_t {
+    TT_Sector = 1,
+    TT_Area = 2,
+    TT_World = 4,
+};
 
 // Area-tier render geometry (the coarse distant terrain/landmark set). A
 // lightweight counterpart to SectorGeometry: it keeps only the 3D render set
@@ -40,6 +48,7 @@ struct AreaGeometry {
         static constexpr uint32_t kMaxNumUVA = 4;  // FUN_00706560 UVA cap (3)
         static constexpr uint32_t kNumObjectNodes = 2;
         static constexpr uint32_t kSubGridDim = 8;
+        static constexpr uint32_t kMaxSubInstances = 256;
 
         Render3DD render3DD;
         Render3DG render3DG;
@@ -75,6 +84,16 @@ struct AreaGeometry {
     Instance *pHeightmapInstance = nullptr;
     Eigen::Vector4f heightmapAbsPos = Eigen::Vector4f::Zero();
 
+    static constexpr uint32_t kNumHeightmapEnvInstances = 2;
+    std::array<Instance *, kNumHeightmapEnvInstances> heightmapEnvInstances = {
+        nullptr, nullptr };
+    std::array<
+        std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>,
+        kNumHeightmapEnvInstances>
+        heightmapEnvLODCaches = {};
+    std::vector<uint8_t> heightmapEnvMaterialBank;
+    Material *pHeightmapEnvMaterial = nullptr;
+
     std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>
         heightmapTileMask = {};
     std::array<uint8_t, kHeightmapNumRealTile * kHeightmapNumRealTile>
@@ -87,6 +106,12 @@ struct AreaGeometry {
 
     void rebaseRenderInstances( const Eigen::Vector4f &streamOrigin );
     void rebaseHeightmapInstance( const Eigen::Vector4f &streamOrigin );
+    void instanciateHeightmapEnvInstances( InstanceEntry *pInstanceEntry,
+                                           uint64_t hashcode,
+                                           eTerrainTier tier );
+    void releaseHeightmapEnvInstances();
+    Instance *getHeightmapInstance( uint32_t index ) const;
+    void submitHeightmapInstance( RenderScene *pScene, uint32_t index );
     void instanciateObjectNodes( int32_t areaCoordX,
                                  int32_t areaCoordY,
                                  float offsetX,
@@ -95,7 +120,9 @@ struct AreaGeometry {
     void rebaseObjectNodes( const Eigen::Vector4f &streamOrigin );
     void submitObjectNodes( RenderScene *pScene,
                             int32_t tilesPerSectorX,
-                            int32_t tilesPerSectorZ );
+                            int32_t tilesPerSectorZ,
+                            const AreaGeometry *pEastArea,
+                            uint32_t &numSubmitted );
 
     void reset();
 };
@@ -104,7 +131,10 @@ void InstanciateTerrainGeometry( Bank &bank,
                                  AreaGeometry &geometry,
                                  SectorHeightmap &heightmap,
                                  float offsetX,
-                                 float offsetZ );
+                                 float offsetZ,
+                                 eTerrainTier tier );
+Material *InstallHeightmapEnvMaterial( Instance *pInstance,
+                                       std::vector<uint8_t> &outBankStorage );
 
 void SetupTerrainMaterial(
     Material *pTerrainMat,

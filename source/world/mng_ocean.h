@@ -162,9 +162,7 @@ private:
     WaterRenderConfig lakeRenderConfig;
 
     int32_t stencilLayer;
-
-    Instance *pAreaObjectInstanceArray[kMaxNumAreaObjects];
-    int32_t numAreaObjectToDraw;
+    std::vector<Instance *> areaObjectInstances;
 
 private:
     bool loadResources();
@@ -186,4 +184,5 @@ private:
 
 extern OceanSetup gDefaultOceanSetup;
 extern bool gbOceanEnabled;
+extern bool gbDebugOceanReflectOpaqueHeightmap;
 extern MngOcean *gpMngOcean;

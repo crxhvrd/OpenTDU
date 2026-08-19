@@ -134,6 +134,7 @@ public:
         return static_cast<uint32_t>( flights.size() );
     }
     Entity *getAircraft( uint32_t index ) const;
+    const Aircraft *getFlight( uint32_t index ) const;
     inline EntityCinematic *getCinematic() const { return pCinematic; }
 
     inline void requestCinematicPause() { PauseCineRefCount++; }
@@ -186,6 +187,7 @@ public:
     Entity *pickAircraftModel( int32_t groupIndex );
     uint32_t getNumAircrafts() const;
     Entity *getAircraft( uint32_t index ) const;
+    const Aircraft *getFlight( uint32_t index ) const;
 
 #ifdef OTDU_USE_IMGUI
     void drawDebug( float deltaTime ) override;

@@ -109,8 +109,11 @@ public:
     void enqueueDynamicDrawList( DrawList *pDrawList );
     void enqueueDynamicInstance( Instance *pInstance );
     void enqueueDynamicHiearchy( HiearchyNode *pNode );
+    void enqueueStaticHiearchy( HiearchyNode *pNode );
+    void removeStaticHiearchy( HiearchyNode *pNode );
     void enqueueDynamicInstanceWithCustomMaterial( Instance *pInstance,
                                                    Material *pMaterial );
+    void enqueueDynamicInstanceArray( std::vector<Instance *> *pInstances );
 
     void setSceneType( bool param_1 );
     void setShaderIndexes( uint32_t vsIndex, uint32_t psIndex );

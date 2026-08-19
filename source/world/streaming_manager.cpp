@@ -22,6 +22,13 @@
 #include "gs_world.h"
 #include "gs_world_streaming.h"
 
+static void EnsureHeightmapCoordsLUT();
+static Eigen::Vector4f
+ComputeCellWorldPosition( float originX, float originZ, uint32_t cell );
+static float ImpostorCellLODBias( uint32_t cell );
+static bool ImpostorCellVisible( const SectorGeometry &geometry,
+                                 uint32_t cell );
+
 // PMI start fade factor
 static constexpr float kImpostorFadeStartFactor = 0.33f; // DAT_00f41a0c
 
@@ -712,17 +719,48 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
         return;
     }
 
+    EnsureHeightmapCoordsLUT();
+
+    const Eigen::Vector4f camPos = gpMngImpostor->getViewMatrix().row( 3 );
+    const float hideDistanceUnit = gpMngImpostor->getHideDistanceUnit();
+    const Eigen::Vector4f streamPos = gpWorldStreaming->isEnabled()
+                                          ? gpWorldStreaming->getPosition()
+                                          : Eigen::Vector4f::Zero();
+    const float originX = sector.heightmap.worldOriginX - streamPos.x();
+    const float originZ = sector.heightmap.worldOriginZ - streamPos.z();
+
     ImpostorGrid &grid = sector.geometry.impostorGrids[0];
-    for ( std::vector<MassInstanceImpostor *> &cell : grid.cells ) {
+    for ( uint32_t cellIndex = 0; cellIndex < ImpostorGrid::kNumCells;
+          cellIndex++ ) {
+        if ( !ImpostorCellVisible( sector.geometry, cellIndex ) ) {
+            continue;
+        }
+        std::vector<MassInstanceImpostor *> &cell = grid.cells[cellIndex];
+        if ( cell.empty() ) {
+            continue;
+        }
+
+        const Eigen::Vector4f cellPos =
+            ComputeCellWorldPosition( originX, originZ, cellIndex );
+        const float dx = cellPos.x() - camPos.x();
+        const float dz = cellPos.z() - camPos.z();
+        const float cellLODThreshold =
+            ( dx * dx + dz * dz - ImpostorCellLODBias( cellIndex ) ) *
+            hideDistanceUnit;
+
+        bool bTooSmall = false;
         for ( MassInstanceImpostor *pInstance : cell ) {
-            if ( ComputeImpostorBillboardVisible( gpMngImpostor,
-                                                  *pInstance ) ) {
+            if ( !bTooSmall && pInstance->MaxLODDist < cellLODThreshold ) {
+                bTooSmall = true;
+            }
+            if ( bTooSmall || !ComputeImpostorBillboardVisible( gpMngImpostor,
+                                                                *pInstance ) ) {
+                pInstance->DrawFlags &= ~1;
+            } else {
                 pInstance->DrawFlags |= 1;
                 if ( pInstance->pText != nullptr && gpMngPanel != nullptr ) {
                     gpMngPanel->addInstance( pInstance );
                 }
-            } else {
-                pInstance->DrawFlags &= ~1;
             }
         }
     }
@@ -742,9 +780,13 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
         std::vector<Entity *> promoted;
         for ( uint32_t cellIdx = 0; cellIdx < DynamicPropStream::kNumCells;
               cellIdx++ ) {
+            if ( !ImpostorCellVisible( sector.geometry, cellIdx ) ) {
+                continue;
+            }
             std::vector<Entity *> &bucket = dp.buckets[cellIdx];
             for ( size_t i = 0; i < bucket.size(); ) {
                 Entity *pProp = bucket[i];
+                pProp->setTileVisible( true );
                 pProp->tick();
                 if ( pProp->isPMIInTile( &hm, (int32_t)cellIdx ) ) {
                     i++; // still at rest in its tile
@@ -757,8 +799,29 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
             }
         }
 
+        const float invTileSize =
+            ( hm.tileSize != 0.0f ) ? ( 1.0f / hm.tileSize ) : 0.0f;
         for ( size_t i = 0; i < dp.active.size(); ) {
             Entity *pProp = dp.active[i];
+
+            pProp->setTileVisible( false );
+            const eEntityType type = pProp->getType();
+            if ( type != eEntityType::ET_None &&
+                 type != eEntityType::ET__ENT ) {
+                const Matrix4x4f_t &m = pProp->getModelMatrix();
+                const int32_t col =
+                    (int32_t)( ( m( 3, 0 ) - hm.worldOriginX ) * invTileSize );
+                const int32_t row =
+                    (int32_t)( ( m( 3, 2 ) - hm.worldOriginZ ) * invTileSize );
+                if ( col < 0 || col >= kHeightmapNumTile || row < 0 ||
+                     row >= kHeightmapNumTile ||
+                     sector.geometry
+                             .heightmapLODCache[PMITileIndex( col, row )] !=
+                         kHeightmapLODCulled ) {
+                    pProp->setTileVisible( true );
+                }
+            }
+
             pProp->tick();
             const int32_t key = pProp->getTileKey();
             if ( pProp->isPMIInTile( &hm, key ) ) {
@@ -810,8 +873,51 @@ void StreamingManager::submitSector( Sector &sector ) {
     sector.geometry.mngActor.draw();
 }
 
+static void BuildHeightmapCoarseVisibility( const uint8_t *pLODGrid,
+                                            uint8_t *pOutNodes ) {
+    // FUN_00701560
+    // Level 0: 8x8 over the 16x16 interior of the ring grid.
+    for ( int32_t row = 0; row < 8; row++ ) {
+        for ( int32_t col = 0; col < 8; col++ ) {
+            const bool bVisible =
+                pLODGrid[PMITileIndex( col * 2, row * 2 )] !=
+                    kHeightmapLODCulled ||
+                pLODGrid[PMITileIndex( col * 2 + 1, row * 2 )] !=
+                    kHeightmapLODCulled ||
+                pLODGrid[PMITileIndex( col * 2, row * 2 + 1 )] !=
+                    kHeightmapLODCulled ||
+                pLODGrid[PMITileIndex( col * 2 + 1, row * 2 + 1 )] !=
+                    kHeightmapLODCulled;
+            pOutNodes[row * 8 + col] = bVisible ? 1 : 0;
+        }
+    }
+
+    // Levels 1..3: each node ORs the four nodes below it.
+    int32_t childBase = 0;
+    int32_t childDim = 8;
+    int32_t nodeBase = 64;
+    while ( childDim > 1 ) {
+        const int32_t dim = childDim / 2;
+        for ( int32_t row = 0; row < dim; row++ ) {
+            for ( int32_t col = 0; col < dim; col++ ) {
+                const uint8_t *pChild =
+                    pOutNodes + childBase + row * 2 * childDim + col * 2;
+                pOutNodes[nodeBase + row * dim + col] =
+                    ( pChild[0] != 0 || pChild[1] != 0 ||
+                      pChild[childDim] != 0 || pChild[childDim + 1] != 0 )
+                        ? 1
+                        : 0;
+            }
+        }
+        childBase = nodeBase;
+        childDim = dim;
+        nodeBase += dim * dim;
+    }
+}
+
 void StreamingManager::submitSectorHeightmap( Sector &sector ) {
     // FUN_00703390
+    sector.geometry.bHeightmapVisible = false;
     if ( sector.geometry.pHeightmapInstance == nullptr ) {
         return;
     }
@@ -827,10 +933,26 @@ void StreamingManager::submitSectorHeightmap( Sector &sector ) {
                                              : Eigen::Vector4f::Zero();
     sector.geometry.rebaseHeightmapInstance( streamOrigin );
     UpdateHeightmapLODCache( sector.geometry.pHeightmapInstance, pScene );
+    BuildHeightmapCoarseVisibility( sector.geometry.heightmapLODCache.data(),
+                                    sector.geometry.heightmapCoarseVis.data() );
+    sector.geometry.bHeightmapVisible =
+        sector.geometry.heightmapCoarseVis[kHeightmapNumCoarseCell - 1] != 0;
+
     pScene->enqueueDynamicInstance( sector.geometry.pHeightmapInstance );
 }
 
-void StreamingManager::submitArea( Area &area ) {
+static bool ImpostorCellVisible( const SectorGeometry &geometry,
+                                 uint32_t cell ) {
+    // FUN_006fe580 / FUN_006ff4a0
+    static constexpr uint32_t kNumFineCell =
+        kHeightmapNumRealTile * kHeightmapNumRealTile; // 0x144
+    if ( cell < kNumFineCell ) {
+        return geometry.heightmapLODCache[cell] != kHeightmapLODCulled;
+    }
+    return geometry.heightmapCoarseVis[cell - kNumFineCell] != 0;
+}
+
+void StreamingManager::submitArea( Area &area, uint32_t &numSubInstances ) {
     // FUN_00708bc0
     if ( area.state != 1 ) {
         return;
@@ -855,7 +977,18 @@ void StreamingManager::submitArea( Area &area ) {
         kHeightmapNumTile / (int32_t)sectorManager.numSectors;
     const int32_t tilesPerSectorZ =
         kHeightmapNumTile / (int32_t)sectorManager.numSubSectors;
-    area.geometry.submitObjectNodes( pScene, tilesPerSectorX, tilesPerSectorZ );
+
+    GridPos2D eastCoords = area.coords;
+    eastCoords.posX += 1;
+    Area *pEastArea = findAreaEntry( eastCoords );
+    if ( pEastArea != nullptr && pEastArea->state != 1 ) {
+        pEastArea = nullptr;
+    }
+
+    area.geometry.submitObjectNodes(
+        pScene, tilesPerSectorX, tilesPerSectorZ,
+        ( pEastArea != nullptr ) ? &pEastArea->geometry : nullptr,
+        numSubInstances );
 }
 
 void StreamingManager::submitAreaHeightmap( Area &area ) {
@@ -1607,11 +1740,7 @@ struct SectorHmapCoord {
     float z;
 };
 static SectorHmapCoord gSectorHmapCoords[ImpostorGrid::kNumCells];
-static bool gHmapCoordsLUTInitialized = false; // @0x010e7f91
-
-// Per-cell projected-distance bias: base * 2^tier (DAT_00f41900..00f41910). The
-// mantissa is identical across all five, only the exponent increments, so
-// multiplying by the power-of-two is bit-exact.
+static bool gHmapCoordsLUTInitialized = false;              // @0x010e7f91
 static constexpr float kImpostorCellLODBias = 1151.999756f; // DAT_00f41900
 
 static int32_t ImpostorCellTier( uint32_t cell ) {
@@ -1631,6 +1760,12 @@ static int32_t ImpostorCellTier( uint32_t cell ) {
         return 3;
     }
     return 4;
+}
+
+static float ImpostorCellLODBias( uint32_t cell ) {
+    // FUN_007014b0
+    return kImpostorCellLODBias *
+           (float)( 1u << ( 2 * ImpostorCellTier( cell ) ) );
 }
 
 static void InitHeightmapCoordsLUT() {
@@ -1677,6 +1812,12 @@ static void InitHeightmapCoordsLUT() {
         gSectorHmapCoords[cell].z = scale * kHalfFactor;
     }
     gHmapCoordsLUTInitialized = true;
+}
+
+static void EnsureHeightmapCoordsLUT() {
+    if ( !gHmapCoordsLUTInitialized ) {
+        InitHeightmapCoordsLUT();
+    }
 }
 
 static Eigen::Vector4f
@@ -1962,8 +2103,7 @@ void StreamingManager::gatherSectorEnvImpostors( Sector &sector,
             continue;
         }
 
-        const int32_t tier = ImpostorCellTier( cell );
-        const float tierBias = kImpostorCellLODBias * (float)( 1 << tier );
+        const float tierBias = ImpostorCellLODBias( cell );
         const Eigen::Vector4f cellPos =
             ComputeCellWorldPosition( originX, originZ, cell );
         const float dx = cellPos.x() - absCamPos.x();
@@ -1998,6 +2138,10 @@ void StreamingManager::submitSectorImpostors( Sector &sector,
     sector.geometry.submitObjectNodes( pScene );
 
     if ( gpMngImpostor == nullptr || pScene == nullptr ) {
+        return;
+    }
+
+    if ( !sector.geometry.bHeightmapVisible ) {
         return;
     }
 
@@ -2037,6 +2181,9 @@ void StreamingManager::submitSectorImpostors( Sector &sector,
              sector.geometry.impostorGrids[1].cells[cell].empty() ) {
             continue;
         }
+        if ( !ImpostorCellVisible( sector.geometry, cell ) ) {
+            continue;
+        }
         const Eigen::Vector4f cellPos =
             ComputeCellWorldPosition( originX, originZ, cell );
         const float dx = cellPos.x() - camWorldPos.x();
@@ -2058,8 +2205,7 @@ void StreamingManager::submitSectorImpostors( Sector &sector,
 
         // fStack_cf8 — instances whose MaxLODDist falls below the cell's
         // projected distance are too small to draw.
-        const int32_t tier = ImpostorCellTier( entry.cell );
-        const float tierBias = kImpostorCellLODBias * (float)( 1 << tier );
+        const float tierBias = ImpostorCellLODBias( entry.cell );
         const Eigen::Vector4f cellPos =
             ComputeCellWorldPosition( originX, originZ, entry.cell );
         const float dx = cellPos.x() - camWorldPos.x();
@@ -2576,8 +2722,9 @@ void StreamingManager::render() {
     }
 
     if ( areaGrid.bActiveAreasSet ) {
+        uint32_t numAreaSubInstances = 0;
         for ( Area &area : areaGrid.areas ) {
-            submitArea( area );
+            submitArea( area, numAreaSubInstances );
         }
     }
 

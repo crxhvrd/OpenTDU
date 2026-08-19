@@ -13,12 +13,32 @@ static constexpr uint8_t kHeightmapMaskCull = 0xff;
 static constexpr uint8_t kHeightmapLODFlat = 0xfe;
 static constexpr uint8_t kHeightmapLODCulled = 0xff;
 
+static constexpr int32_t kHeightmapNumCoarseCell = 64 + 16 + 4 + 1; // 85
+
 inline static constexpr uint8_t HeightmapMaskForceLOD( uint8_t lod ) {
     return (uint8_t)( lod + 1 );
 }
 
 inline static constexpr int32_t PMITileIndex( int32_t col, int32_t row ) {
     return ( row + 1 ) * kHeightmapNumRealTile + col + 1;
+}
+
+inline static constexpr uint8_t HeightmapResolveTileLOD( uint8_t lod,
+                                                         uint8_t mask ) {
+    if ( mask == kHeightmapMaskCull ) {
+        return kHeightmapLODCulled;
+    }
+    if ( mask != kHeightmapMaskNone && lod != kHeightmapLODCulled &&
+         lod != kHeightmapLODFlat ) {
+        return ( mask == kHeightmapMaskFlat ) ? kHeightmapLODFlat
+                                              : (uint8_t)( mask - 1 );
+    }
+    return lod;
+}
+
+inline static constexpr bool HeightmapTileHidden( uint8_t resolvedLOD ) {
+    return resolvedLOD == kHeightmapLODCulled ||
+           resolvedLOD == kHeightmapLODFlat;
 }
 
 class HeightmapRenderer {

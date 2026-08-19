@@ -407,6 +407,9 @@ public:
     bool loadResources() override;
     void unloadResources() override;
 
+    Material *acquireMaterial();
+    void releaseMaterial( Material *pMaterial );
+
 private:
     static constexpr int32_t kNumMaterials = 0xb;
 
@@ -415,7 +418,7 @@ private:
     int32_t materialSize;
     int32_t totalMaterialSize; // materialSize * kNumMaterials
     std::array<Material *, kNumMaterials> pMaterials;
-    Material *pBoundMaterial;
+    uint32_t usedMaterialMask;
 };
 
 class GSMngResources : public GameSystem {
@@ -430,6 +433,7 @@ public:
     inline SunResources &getSunResources() { return sun; }
     inline TallGrassResources &getTallGrassResources() { return tallGrass; }
     inline CubemapResources &getCubemapResources() { return cubemap; }
+    inline TerrainResources &getTerrainResources() { return terrain; }
 
 public:
     GSMngResources();
