@@ -71,6 +71,7 @@ public:
 
     bool beginPrimitive( ePrimitiveType param_2, int32_t numVertex );
     void pushVertex( float x, float y, float z );
+    void breakPrimitive();
     int32_t commitPrimitive();
 
     // Add raw primitive to this draw list.

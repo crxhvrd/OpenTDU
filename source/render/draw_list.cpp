@@ -26,9 +26,10 @@ static uint32_t CalculatePoolSize( uint32_t numPrimitive,
     }
     // These per-primitive sizes MUST match the sizeof-based carving in
     // DrawList::initialize (DrawPrimitive, matrix, Material*, SetupGraph*). The
-    // original literals (0x108, 4, 4) were 32-bit sizes; on x64 DrawPrimitive is
-    // larger (Primitive grew) and the pointer arrays are 8 wide, so hardcoding
-    // them undersized the pool and the carve overran it -> corrupted ppMaterials.
+    // original literals (0x108, 4, 4) were 32-bit sizes; on x64 DrawPrimitive
+    // is larger (Primitive grew) and the pointer arrays are 8 wide, so
+    // hardcoding them undersized the pool and the carve overran it -> corrupted
+    // ppMaterials.
     uVar1 = iVar2 * (uint32_t)sizeof( DrawPrimitive ) + 0x10;
     if ( ( uVar1 & 0xf ) != 0 ) {
         uVar1 = ( ( uVar1 >> 4 ) + 1 ) * 0x10;
@@ -208,14 +209,21 @@ bool DrawList::initialize( uint32_t newNumPrimitives,
     maxNumVertices = newNumVertices;
     bDynamic = param_7;
 
-    bool bNoPrimRestart = ( numIndices <= newNumVertices );
     if ( param_10 ) {
         maxNumIndex = numIndices;
-        numIndices = ( numIndices - newNumVertices ) >> 1;
+
+        // An indexed list whose index budget does not exceed the vertex budget
+        // cannot afford a single strip break.
+        if ( numIndices <= newNumVertices ) {
+            maxNumBreak = 0;
+        } else {
+            maxNumBreak = ( numIndices - newNumVertices ) >> 1;
+        }
     } else {
+        // Non-indexed lists reserve two extra indices per requested break.
         maxNumIndex = newNumVertices + numIndices * 2;
+        maxNumBreak = numIndices;
     }
-    maxNumBreak = bNoPrimRestart ? 0 : numIndices;
 
     uint32_t uVar9 = 0;
     if ( param_8 == nullptr ) {
@@ -282,7 +290,8 @@ bool DrawList::initialize( uint32_t newNumPrimitives,
     memoryPool.currentUsage += primitiveMemoryUsage;
     memoryPool.pCurrent += primitiveMemoryUsage;
 
-    memoryPool.pCurrent = (uint8_t*)Align( (uintptr_t)memoryPool.pCurrent, sizeof( Matrix4x4f_t ) );
+    memoryPool.pCurrent = (uint8_t *)Align( (uintptr_t)memoryPool.pCurrent,
+                                            sizeof( Matrix4x4f_t ) );
     pMatrices = reinterpret_cast<Matrix4x4f_t *>( memoryPool.pCurrent );
 
     uint32_t matricesMemoryUsage = maxNumPrimitives * sizeof( Matrix4x4f_t );
@@ -402,6 +411,33 @@ void DrawList::pushVertex( float x, float y, float z ) {
 
     activePrimitive.pPrimitive->NumVertex++;
     activePrimitive.pPrimitive->NumIndex++;
+}
+
+void DrawList::breakPrimitive() {
+    // FUN_00406b20
+    // Appends the degenerate index pair needed to restart a strip without
+    // linking the previous primitive to the next one.
+    Primitive *pPrimitive = activePrimitive.pPrimitive;
+
+    const uint32_t breakIndex = ( pPrimitive->Type == PT_TriangleStrip )
+                                    ? pPrimitive->NumVertex - 1
+                                    : pPrimitive->IndexOffset;
+
+    if ( streams.bIndex16 == '\0' ) {
+        *activePrimitive.pVertexIndices = breakIndex;
+        activePrimitive.pVertexIndices++;
+
+        *activePrimitive.pVertexIndices = pPrimitive->NumVertex;
+        activePrimitive.pVertexIndices++;
+    } else {
+        *activePrimitive.pVertexIndices16 = (uint16_t)breakIndex;
+        activePrimitive.pVertexIndices16++;
+
+        *activePrimitive.pVertexIndices16 = (uint16_t)pPrimitive->NumVertex;
+        activePrimitive.pVertexIndices16++;
+    }
+
+    pPrimitive->NumIndex += 2;
 }
 
 int32_t DrawList::commitPrimitive() {

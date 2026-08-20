@@ -43,6 +43,25 @@ public:
     virtual bool executeAction( int32_t param_2, void *param_3 );
 };
 
+static constexpr int32_t kNumICEChallengers = 16;
+
+struct ICEChallenger {
+    static constexpr uint32_t kNoChallenger = 0xffffffffu;
+
+    bool bBot;
+    uint32_t ID =
+        kNoChallenger; // P2P player index, or the bot id when bBot is set.
+    bool bRefusedICE;
+    bool bAcceptedICE;
+
+    inline void reset() {
+        ID = kNoChallenger;
+        bRefusedICE = false;
+        bAcceptedICE = false;
+        bBot = false;
+    }
+};
+
 static constexpr float kWooshNoListener = -1.0f; // FLOAT_00f41664
 struct WooshVoice {
     AudioDispatcherPlaybackSoundInstance *pSound = nullptr;
@@ -75,6 +94,7 @@ public:
         return objectives[index];
     }
     inline Spots &getSpotList() { return spotList; }
+    inline ICEChallenger *getICEChallengers() { return iceChallengers; }
     inline AvatarManager &getAvatarManager() { return avatarManager; }
     inline SCIKOffsetDB &getIKOffsetDB() { return ikOffsetDB; }
     inline ScenaricBank &getPedestrianBank() { return pedestrianBank; }
@@ -183,6 +203,8 @@ private:
     float rentalTimer;
     uint64_t objectiveSpotHashcode;
     ObjectiveMarker objectives[6];
+
+    ICEChallenger iceChallengers[kNumICEChallengers];
 
     uint8_t bDelockChallengesRoad : 1;
     uint8_t bInstantChallengeEnabled : 1;

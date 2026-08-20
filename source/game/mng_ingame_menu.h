@@ -30,6 +30,7 @@ enum eInGameMenu : int32_t {
 class MngInGameMenu : public Manager {
 public:
     inline int32_t getWindowsDirection() const { return WindowsDirection; }
+    inline eInGameMenuState getState() const { return StateMenu; }
 
 public:
     MngInGameMenu();

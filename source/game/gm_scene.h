@@ -33,6 +33,11 @@ class GameModeScene : public WorldListener,
                       public GameMode {
 public:
     bool isVerifyingGameFreeze() const { return bVerifyGameFreeze; }
+    virtual bool isPaused() {
+        // FUN_00630320
+        return false;
+    }
+
     inline MngActor &getActorManager() { return mngActor; }
     inline MngFlashGM &getFlashManager() { return mngFlash; }
     inline VehicleBase *getShowcaseFocusedVehicle() {

@@ -274,6 +274,14 @@ struct Font {
 
 class FontResources : public MngResources, public Bank {
 public:
+    inline bool areFontsLoaded() const { return MngResources::isLoaded(); }
+
+    inline Render2DM *getRender2DM() const { return pRender2DM; }
+    inline Font *getDefaultFont() const { return pDefaultFont; }
+    inline Font *getActiveFont() const { return pActiveFont; }
+    inline void setActiveFont( Font *pFont ) { pActiveFont = pFont; }
+
+public:
     FontResources();
     ~FontResources();
 
@@ -434,6 +442,7 @@ public:
     inline TallGrassResources &getTallGrassResources() { return tallGrass; }
     inline CubemapResources &getCubemapResources() { return cubemap; }
     inline TerrainResources &getTerrainResources() { return terrain; }
+    inline FontResources &getFontResources() { return font; }
 
 public:
     GSMngResources();

@@ -32,11 +32,6 @@ public:
     void initialize() override;
     void destroy() override;
 
-    virtual bool isPaused() {
-        // FUN_00630320
-        return false;
-    }
-
     bool onMessage( FlashMessage *pMessage ) override {
         // FUN_004182d0
         return false;

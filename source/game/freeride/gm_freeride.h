@@ -3,6 +3,7 @@
 #include "game/gm_world.h"
 
 #include "game/bookmark/mng_bookmark.h"
+#include "mng_fr_meeting_ic.h"
 #include "mng_photo_mode.h"
 #include "mng_map_screenshot.h"
 #include "game/mng_logo_display.h"
@@ -10,6 +11,7 @@
 
 #include "online/mng_chat.h"
 #include "render/mng_cam_gps.h"
+#include "render/mng_font_players.h"
 
 struct FlashMessage;
 
@@ -28,10 +30,10 @@ public:
 
 private:
     MngBookmark mngBookmark;
-    // MngFRMeetingIC mngFRMeetingIC;
+    MngFRMeetingIC mngFRMeetingIC;
     MngPhotoMode mngPhotoMode;
     MngCamGPS mngCamGPS;
-    // MngFontPlayers mngFontPlayers;
+    MngFontPlayers mngFontPlayers;
     MngLogoDisplay mngLogoDisplay;
     MngMapScreenshot mngMapScreenshot;
     MngInGameMenu mngInGameMenu;

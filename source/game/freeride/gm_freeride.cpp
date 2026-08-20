@@ -12,19 +12,19 @@
 GMFreeride::GMFreeride()
     : GameModeWorld( 6 ),
       mngBookmark(),
-      // mngFRMeetingIC(),
+      mngFRMeetingIC(),
       mngPhotoMode(),
       mngCamGPS(),
-      // mngFontPlayers(),
+      mngFontPlayers(),
       mngLogoDisplay(),
       mngMapScreenshot(),
       mngInGameMenu(),
       mngChat() {
     // FUN_00793880
     registerManager( &mngBookmark );
-    // registerManager( &mngFRMeetingIC );
+    registerManager( &mngFRMeetingIC );
     registerManager( &mngPhotoMode );
-    // registerManager( &mngFontPlayers );
+    registerManager( &mngFontPlayers );
     registerManager( &mngLogoDisplay );
 
     // The map-screenshot tool manager is only ticked when explicitly enabled.
@@ -74,6 +74,16 @@ bool GMFreeride::onMessage( FlashMessage *pMessage ) {
     if ( gpMngInGameMenu != nullptr &&
          gpMngInGameMenu->onMessage( pMessage ) ) {
         return true;
+    }
+
+    switch ( *pMessage ) {
+    case FlashMessage( "inic" ):
+    case FlashMessage( "goic" ):
+    case FlashMessage( "icbo" ):
+    case FlashMessage( "noic" ):
+        return mngFRMeetingIC.onMessage( pMessage );
+    default:
+        break;
     }
 
     OTDU_UNIMPLEMENTED;
