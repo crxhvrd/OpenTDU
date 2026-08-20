@@ -156,6 +156,7 @@ public:
     DBEntryRim *getRim( DBEntryCarPhysicsData *param_2, int32_t rimID );
     DBEntryAftermarketPack *getAftermarketPack( uint64_t param_1 );
     bool isBike( DBEntryCarPhysicsData *param_1 );
+    bool isTraffic( DBEntryCarPhysicsData *param_1 );
 
     int32_t getNumColors( int32_t carID );
     DBEntryCarColor *getColorByIndex( int32_t carID, int32_t param_3 );

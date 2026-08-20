@@ -3,6 +3,7 @@
 
 #include "config/gs_config.h"
 #include "core/hash/tdu_concat.h"
+#include "filesystem/gs_file.h"
 
 // Suffix the bank uses to tag the material stream of a part
 static constexpr char kMaterialEntrySuffix[] = "_MAT";
@@ -33,12 +34,24 @@ uint64_t AvatarCalcHashcode( const char *pName ) {
     return TestDriveConcatToString8( pName, strlen( pName ) ).AsInteger64;
 }
 
-AvatarBnk::AvatarBnk() : Bank() {}
+AvatarBnk::AvatarBnk( const bool bCommon ) : Bank(), bCommonBank( bCommon ) {}
 
 AvatarBnk::~AvatarBnk() {}
 
-bool AvatarBnk::load( const char *pCharacterFolder, const char *pBankName ) {
+bool AvatarBnk::load( const char *pCharacterFolder,
+                      const char *pBankName,
+                      const bool bAsync,
+                      const bool bCritical,
+                      const bool bUseBootBank ) {
     // FUN_008ed7e0
+    if ( LoadingStatus == ABL_Requested ) {
+        gpFile->flushPendingAsync();
+
+        if ( LoadingStatus == ABL_Installed ) {
+            release();
+        }
+    }
+
     NumReferences = 0;
     bInstallOK = false;
 
@@ -46,8 +59,34 @@ bool AvatarBnk::load( const char *pCharacterFolder, const char *pBankName ) {
     bankPath += pBankName;
     bankPath += ".bnk";
 
-    if ( !loadBootBank( bankPath.c_str(), nullptr ) ) {
-        OTDU_LOG_WARN( "Failed to load avatar bank '%s'\n", bankPath.c_str() );
+    if ( bUseBootBank && pMemoryPool == nullptr ) {
+        LoadingStatus = ABL_Requested;
+        bAsyncLoading = false;
+
+        if ( !loadBootBank( bankPath.c_str(), nullptr ) ) {
+            LoadingStatus = ABL_None;
+            OTDU_LOG_WARN( "Failed to load avatar bank '%s'\n",
+                           bankPath.c_str() );
+            return false;
+        }
+
+        Name = pBankName;
+        return true;
+    }
+
+    if ( !gpFile->fileExists( bankPath.c_str() ) ) {
+        OTDU_LOG_WARN( "bank %s doesnt exist\n", bankPath.c_str() );
+        return false;
+    }
+
+    LoadingStatus = ABL_Requested;
+    bAsyncLoading = bAsync;
+
+    (void)bCritical;
+
+    if ( !loadBankWithMemory( gpFile, bankPath.c_str(), pMemoryPool,
+                              MemoryPoolSize, bAsync ) ) {
+        LoadingStatus = ABL_None;
         return false;
     }
 
@@ -55,9 +94,72 @@ bool AvatarBnk::load( const char *pCharacterFolder, const char *pBankName ) {
     return true;
 }
 
+void AvatarBnk::release() {
+    // FUN_008ed730
+    if ( LoadingStatus == ABL_Requested ) {
+        gpFile->flushPendingAsync();
+    }
+
+    if ( LoadingStatus != ABL_Installed ) {
+        LoadingStatus = ABL_None;
+        return;
+    }
+
+    releaseParsedEntries();
+    unload();
+
+    Name = kAvatarBnkEmptyName;
+    bInstallOK = false;
+    LoadingStatus = ABL_None;
+}
+
+void AvatarBnk::allocateMemoryPool() {
+    // FUN_008ecd60
+    pMemoryPool = TestDrive::AllocAligned( kMemoryPoolSize, 0x10 );
+    if ( pMemoryPool != nullptr ) {
+        MemoryPoolSize = kMemoryPoolSize;
+    }
+}
+
+void AvatarBnk::freeMemoryPool() {
+    // FUN_008ecd30
+    if ( pMemoryPool != nullptr ) {
+        TestDrive::FreeAligned( pMemoryPool );
+        pMemoryPool = nullptr;
+        MemoryPoolSize = 0;
+    }
+}
+
 void AvatarBnk::loadContent() {
     parseEntries();
     bInstallOK = true;
+    LoadingStatus = ABL_Installed;
+}
+
+void AvatarBnk::releaseParsedEntries() {
+    // FUN_008ed730 (inlined)
+    for ( int32_t i = 0; i < NumMaterials; i++ ) {
+        MaterialEntry &material = Materials[i];
+        if ( material.Material.getHeader() != nullptr ) {
+            material.Material.destroy();
+        }
+        material.Hashcode = 0;
+    }
+    NumMaterials = 0;
+
+    for ( int32_t i = 0; i < NumBitmaps; i++ ) {
+        if ( Bitmaps[i].getHeader() != nullptr ) {
+            Bitmaps[i].destroy();
+        }
+    }
+    NumBitmaps = 0;
+
+    for ( int32_t i = 0; i < NumGeometries; i++ ) {
+        if ( Geometries[i].getHeader() != nullptr ) {
+            Geometries[i].destroy();
+        }
+    }
+    NumGeometries = 0;
 }
 
 void AvatarBnk::parseEntries() {
@@ -70,11 +172,13 @@ void AvatarBnk::parseEntries() {
             continue;
         }
 
-        if ( entry.SubType == AT_3DG && NumGeometries < kMaxGeometries ) {
+        if ( bCommonBank && entry.SubType == AT_3DG &&
+             NumGeometries < kMaxGeometries ) {
             Geometries[NumGeometries++].initialize( entry.pData );
         }
 
-        if ( entry.SubType == AT_2DB && NumBitmaps < kMaxBitmaps ) {
+        if ( bCommonBank && entry.SubType == AT_2DB &&
+             NumBitmaps < kMaxBitmaps ) {
             Bitmaps[NumBitmaps++].initialize( entry.pData );
         }
 
@@ -209,24 +313,185 @@ void *AvatarBnk::getSkeleton( const char *pPartName ) {
     return getEntryData( pPartName, ".XSB", kAvatarBankSubTypeSkeleton );
 }
 
+AvatarBnkCache::AvatarBnkCache() {}
+
+AvatarBnkCache::~AvatarBnkCache() {}
+
+void AvatarBnkCache::initialize() {
+    // FUN_009cb890 (tail)
+    for ( AvatarBnk &node : Nodes ) {
+        node.allocateMemoryPool();
+    }
+}
+
+void AvatarBnkCache::terminate() {
+    pHead = nullptr;
+
+    for ( AvatarBnk &node : Nodes ) {
+        node.release();
+        node.freeMemoryPool();
+    }
+}
+
+AvatarBnk *AvatarBnkCache::findLoadedBank( const char *pBankName ) {
+    // FUN_008ec8d0
+    for ( AvatarBnk *pBnk = pHead; pBnk != nullptr;
+          pBnk = pBnk->pNextInCache ) {
+        if ( strcmp( pBnk->getName(), pBankName ) == 0 ) {
+            return pBnk;
+        }
+    }
+
+    return nullptr;
+}
+
+AvatarBnk *AvatarBnkCache::findFreeNode() {
+    // FUN_008ecb00
+    for ( AvatarBnk &node : Nodes ) {
+        if ( node.getNumReferences() < 1 &&
+             strcmp( node.getName(), kAvatarBnkEmptyName ) == 0 ) {
+            return &node;
+        }
+    }
+
+    return nullptr;
+}
+
+AvatarBnk *AvatarBnkCache::getOldestBank() {
+    // FUN_008ec960
+    AvatarBnk *pBnk = pHead;
+    while ( pBnk != nullptr && pBnk->pNextInCache != nullptr ) {
+        pBnk = pBnk->pNextInCache;
+    }
+
+    return pBnk;
+}
+
+AvatarBnk *AvatarBnkCache::removeOldestBank() {
+    // FUN_008ec990
+    AvatarBnk *pPrevious = pHead;
+    AvatarBnk *pBnk = pHead;
+
+    while ( pBnk != nullptr && pBnk->pNextInCache != nullptr ) {
+        pPrevious = pBnk;
+        pBnk = pBnk->pNextInCache;
+    }
+
+    if ( pPrevious != nullptr ) {
+        pPrevious->pNextInCache = nullptr;
+    }
+
+    if ( pBnk == pHead ) {
+        pHead = nullptr;
+    }
+
+    return pBnk;
+}
+
+void AvatarBnkCache::pushFront( AvatarBnk *pBnk ) {
+    // FUN_008ec9d0
+    pBnk->pNextInCache = pHead;
+    pHead = pBnk;
+}
+
+void AvatarBnkCache::moveToFront( AvatarBnk *pBnk ) {
+    // FUN_008ec9f0
+    if ( pHead == pBnk || pHead == nullptr ) {
+        return;
+    }
+
+    AvatarBnk *pPrevious = pHead;
+    AvatarBnk *pIterator = pHead;
+    while ( pIterator != pBnk ) {
+        pPrevious = pIterator;
+        pIterator = pIterator->pNextInCache;
+
+        if ( pIterator == nullptr ) {
+            return;
+        }
+    }
+
+    pPrevious->pNextInCache = pIterator->pNextInCache;
+    pIterator->pNextInCache = pHead;
+    pHead = pIterator;
+}
+
+bool AvatarBnkCache::getBank( const char *pBankName, AvatarBnk **ppOutBnk ) {
+    // FUN_008eca80
+    AvatarBnk *pBnk = findLoadedBank( pBankName );
+    CacheRequest++;
+
+    if ( pBnk == nullptr ) {
+        return true;
+    }
+
+    CacheHit++;
+    moveToFront( pBnk );
+    *ppOutBnk = pBnk;
+
+    return false;
+}
+
+eAvatarBankRequest AvatarBnkCache::requestBank( const char *pCharacterFolder,
+                                                const char *pBankName,
+                                                const bool bAsync,
+                                                const bool bCritical,
+                                                AvatarBnk **ppOutBnk ) {
+    // FUN_008ecc10
+    AvatarBnk *pCachedBnk = nullptr;
+    if ( !getBank( pBankName, &pCachedBnk ) ) {
+        *ppOutBnk = pCachedBnk;
+        return ABR_Ready;
+    }
+
+    AvatarBnk *pNode = findFreeNode();
+    if ( pNode == nullptr ) {
+        AvatarBnk *pOldest = getOldestBank();
+        if ( pOldest == nullptr || pOldest->getNumReferences() > 0 ) {
+            *ppOutBnk = nullptr;
+            CacheWait++;
+            return ABR_Pending;
+        }
+
+        pNode = removeOldestBank();
+        pNode->release();
+        CacheRemove++;
+    }
+
+    if ( !pNode->load( pCharacterFolder, pBankName, bAsync, bCritical,
+                       false ) ) {
+        *ppOutBnk = nullptr;
+        return ABR_Failed;
+    }
+
+    pushFront( pNode );
+    *ppOutBnk = pNode;
+
+    return ABR_Ready;
+}
+
 void AvatarBnkManager::initialize() {
     // FUN_009cb890
     std::string bankFolder = gpConfig->getResRootPath();
     bankFolder += "Avatar/";
 
-    if ( commonBodies.load( bankFolder.c_str(), "COMMON_BODIES" ) ) {
+    if ( commonBodies.load( bankFolder.c_str(), "COMMON_BODIES", false, false,
+                            true ) ) {
         commonBodies.addReference();
     }
 
     bankFolder += "CLOTHES/";
-    if ( commonClothes.load( bankFolder.c_str(), "COMMON_CLOTHES" ) ) {
+    if ( commonClothes.load( bankFolder.c_str(), "COMMON_CLOTHES", false, false,
+                             true ) ) {
         commonClothes.addReference();
     }
 
-    OTDU_UNIMPLEMENTED_ONCE;
+    bankCache.initialize();
 }
 
 void AvatarBnkManager::terminate() {
+    bankCache.terminate();
+
     commonClothes.unload();
     commonBodies.unload();
 }

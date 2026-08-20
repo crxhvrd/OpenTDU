@@ -9,10 +9,13 @@
 #include "game/scenaric/local_player.h"
 #include "game/scenaric/avatar_manager.h"
 #include "game/scenaric/spots.h"
+#include "game/scenaric/ik_offset_db.h"
 
 #include "core/random/bcpl.h"
 
 class MngHud;
+class CarState;
+class EntityDriver;
 class AudioClient;
 class AudioDispatcherPlaybackSoundInstance;
 class edAudioSample;
@@ -72,6 +75,7 @@ public:
     }
     inline Spots &getSpotList() { return spotList; }
     inline AvatarManager &getAvatarManager() { return avatarManager; }
+    inline SCIKOffsetDB &getIKOffsetDB() { return ikOffsetDB; }
     inline ScenaricBank &getPedestrianBank() { return pedestrianBank; }
     inline ScenaricBank &getSpotMeshBank() { return spotMeshBank; }
     inline ScenaricBank &getWorldLifeSetBank() { return worldLifeSetBank; }
@@ -96,6 +100,8 @@ public:
                                   ScenaricBank *pOutBank );
 
     void prepareWorldEntityTemplates();
+
+    bool placeDriver( CarState *pCarState, EntityDriver *pDriver );
 
     void loadPacks();
     void unloadPacks();
@@ -154,6 +160,7 @@ private:
     GameIntroTutorial introTutorial;
     LocalPlayer localPlayer;
     AvatarManager avatarManager;
+    SCIKOffsetDB ikOffsetDB;
     Spots spotList;
     CinematicViewerConfig cineViewConfig;
     std::string defaultIGE;

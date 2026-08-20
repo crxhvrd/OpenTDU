@@ -26,12 +26,6 @@ enum eAvatarLoadingPass : int32_t {
     ALP_Async = 3,         // FUN_008f0330( false )
 };
 
-enum eAvatarBankRequest : int32_t {
-    ABR_Ready = 0,   // the bank is loaded and handed back in pLoadingBnk
-    ABR_Failed = 1,  // the part has no bank, or the load failed
-    ABR_Pending = 2, // no free slot yet, retry next tick
-};
-
 struct AvatarStreamingRequest {
     AvatarBnk *pLoadingBnk = nullptr;
     AvatarDBEntry *pPartInLoading = nullptr;
@@ -269,7 +263,12 @@ struct PooledAvatarEntry : public RenderDeviceResetListener {
     bool stepLoadingCompletion();
     eAvatarLoadingState getLoadingState() const;
     void updateBodyPartVisibility();
+    void setMeshVisibility( uint64_t meshHashcode, bool bMeshVisible );
+    void setMatrix( const Matrix4x4f_t &matrix );
+    void setBones( Matrix4x4f_t *pPalette );
     void releaseParts();
+    bool hasScratchPools() const;
+    void showAllParts();
     void setClothe( int32_t category,
                     uint16_t clotheID,
                     uint8_t colorIndex,

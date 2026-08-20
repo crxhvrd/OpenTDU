@@ -402,7 +402,7 @@ LAB_008e2c4f:
             }
         }
 
-        DeviceAction *pChangeView = pPVar7->pCarBackview; // CAR_CAMERA
+        DeviceAction *pChangeView = pPVar7->pCarCamera;
         const bool bChangeViewPressed =
             ( pChangeView != nullptr ) &&
             ( pChangeView->NumAddedChannels != 0 ) &&
@@ -413,7 +413,7 @@ LAB_008e2c4f:
             bChangeCamTrigger = true;
         }
 
-        DeviceAction *pBackView = pPVar7->pCarLight; // CAR_BACKVIEW
+        DeviceAction *pBackView = pPVar7->pCarBackview;
         const bool bBackViewPressed = ( pBackView != nullptr ) &&
                                       ( pBackView->NumAddedChannels != 0 ) &&
                                       ( ( pBackView->Flags & 1 ) != 0 );

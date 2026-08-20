@@ -5,6 +5,9 @@
 #include "core/maths_helper.h"
 
 #include "gs_car_display.h"
+#include "gs_car_state.h"
+#include "game/avatar/avatar_clothes.h"
+#include "game/scenaric/entity/entity_driver.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/weather/gs_weather.h"
@@ -26,7 +29,7 @@ CarState::CarState()
       colorID( 0xffffffff ),
       pVehicleBase( nullptr ),
       pVehicleSound( nullptr ),
-      field_0x39c0( nullptr ),
+      pDriver( nullptr ),
       field_0x39cc( nullptr ),
       field_0x39d4( nullptr ),
       field_0x39d8( nullptr ),
@@ -353,6 +356,28 @@ bool CarState::FUN_00406ce0() {
     // FUN_00406ce0
     return owner == eOwner::CSO_LocalPlayer &&
            simulationType == eSimulationType::CSST_Local;
+}
+
+bool CarState::unloadDriver() {
+    // FUN_008057d0
+    if ( pDriver == nullptr ) {
+        return true;
+    }
+    if ( gpCarState == nullptr ) {
+        return false;
+    }
+
+    PooledAvatarEntry *pRsc = pDriver->getPooledEntry();
+    if ( pRsc != nullptr ) {
+        pRsc->CarBelt.decreaseReferenceCount();
+    }
+
+    gpCarState->unregisterCallback( this, pDriver );
+
+    EntityDriver *pSeatedDriver = pDriver;
+    pDriver = nullptr;
+    pSeatedDriver->setCarState( nullptr );
+    return true;
 }
 
 void WheelState::reset() {

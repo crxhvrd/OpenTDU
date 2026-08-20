@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "filesystem/bank.h"
+#include "game/avatar/gs_avatar.h"
 #include "game/cinematic/cin_res_collection.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/entity/entity_pedestrian.h"
@@ -401,15 +402,15 @@ namespace {
     // render can be drive-tested next to spawn (no sector-chasing) -----
 
     int gPropCount = 6;
-    float gPropSpacing = 3.0f;   // metres between props (lateral)
+    float gPropSpacing = 3.0f;    // metres between props (lateral)
     float gPropFrontDist = 14.0f; // metres ahead of the look-at
     std::vector<Entity *> gPropClones;
     MngActor *gpPropManager = nullptr;
 
     // A knockable scenaric prop template: an actor whose mechanism owns a
     // pure-dynamic controller that is NOT static (bStatic == 0). These are the
-    // bins/cones/signs/etc. that place a simulated collision body on their first
-    // tick and can be knocked + shattered by the car.
+    // bins/cones/signs/etc. that place a simulated collision body on their
+    // first tick and can be knocked + shattered by the car.
     bool isBreakablePropTemplate( Entity *pTemplate ) {
         if ( pTemplate == nullptr ) {
             return false;
@@ -503,14 +504,14 @@ namespace {
             const float lateral = ( i - ( n - 1 ) * 0.5f ) * gPropSpacing;
             const Eigen::Vector3f pos = origin + rightv * lateral;
             Matrix4x4f_t m = Matrix4x4f_t::Identity();
-            m.row( 3 ) =
-                Eigen::Vector4f( pos.x(), origin.y(), pos.z(), 1.0f );
+            m.row( 3 ) = Eigen::Vector4f( pos.x(), origin.y(), pos.z(), 1.0f );
             pClone->setTransform( m, true );
             gPropClones.push_back( pClone );
         }
 
         OTDU_LOG_ALWAYS(
-            "[PropTest] spawned %zu breakable props (%zu distinct templates, %d "
+            "[PropTest] spawned %zu breakable props (%zu distinct templates, "
+            "%d "
             "scanned) in a row %.0fm ahead — drive forward to knock them\n",
             gPropClones.size(), templates.size(), totalScanned,
             gPropFrontDist );
@@ -721,19 +722,21 @@ namespace {
     // The avatar the manager holds for the debug button below.
     EntityAvatar *gpDebugAvatar = nullptr;
 
-    // Claim a manager slot the way GSScenaric::reset does for the driver, and
-    // drop it at the camera target. AvatarManager::tick/draw own it from there,
-    // so this is the manual stand-in for the service reset the port has yet to
-    // dispatch — without it no avatar is ever allocated outside a cinematic.
+    // Claim a manager slot the way GMWorld::reset does for the driver, and drop
+    // it at the camera target. AvatarManager::tick/draw own it from there, so
+    // this is the manual stand-in for the seating chain (SCDriver) the port has
+    // yet to port — without it no avatar is allocated outside a cinematic.
     void spawnManagedAvatar( const int32_t avatarType ) {
-        if ( gpScenaric == nullptr ) {
+        if ( gpScenaric == nullptr || gpAvatar == nullptr ) {
             return;
         }
 
-        EntityAvatar *pAvatar =
-            gpScenaric->getAvatarManager().allocateAvatar( ~0ull, avatarType );
+        const AvatarConfiguration &config =
+            gpAvatar->getDefaultConfiguration( 0 );
+        EntityAvatar *pAvatar = gpScenaric->getAvatarManager().createAvatar(
+            &config, 0, false, ~0ull, false, avatarType );
         if ( pAvatar == nullptr ) {
-            OTDU_LOG_ALWAYS( "[AVT-DBG] allocateAvatar(type=%d) failed "
+            OTDU_LOG_ALWAYS( "[AVT-DBG] createAvatar(type=%d) failed "
                              "(avatarsdriver template missing?)\n",
                              avatarType );
             return;
@@ -1432,8 +1435,10 @@ namespace TestDrive {
             ImGui::TextDisabled( "Needs an active GameModeScene." );
         } else {
             ImGui::TextWrapped(
-                "Clone knockable scenaric props (dynamic-collision actors) into "
-                "a row a few metres ahead of the view, so the destructible-prop "
+                "Clone knockable scenaric props (dynamic-collision actors) "
+                "into "
+                "a row a few metres ahead of the view, so the "
+                "destructible-prop "
                 "collision + per-piece shatter render can be tested next to "
                 "spawn. Drive forward to ram them; watch the log for "
                 "'Prop place'/'Prop render: .. (PER-PIECE/fallback)'." );

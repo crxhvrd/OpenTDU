@@ -217,8 +217,6 @@ bool edStore::popObjectNoAlloc( edStore &outStore ) {
         return false;
     }
 
-    // The block length shares the byte order fixup every other read uses; the
-    // original inlines it here instead of calling pop_ushort (no bounds check).
     const uint32_t objectSize = static_cast<uint16_t>( readShort() );
     if ( objectSize == 0 ) {
         return false;
@@ -230,8 +228,6 @@ bool edStore::popObjectNoAlloc( edStore &outStore ) {
             objectSize );
     }
 
-    // A block the receiver cannot hold is stepped over, leaving outStore on
-    // whatever it held before.
     if ( outStore.bufferSizeWithPadding < objectSize ) {
         bufferOffset += objectSize;
         return false;

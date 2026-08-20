@@ -8,8 +8,14 @@
 #include "filesystem/bank.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/entity/entity_pedestrian.h"
+#include "database/gs_database.h"
+#include "game/avatar/gs_avatar.h"
+#include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "render/animation/clip.h"
+
+// TDU_PNJ row index in the game database
+static constexpr int32_t kPNJDatabaseIndex = 0x10;
 
 static float FindKeyframe( const void *pTrack,
                            float time,
@@ -1028,14 +1034,14 @@ void *CinResCollection::spawnActorEntity( const char *pName,
             return spawnPedestrian( 0 );
         }
         if ( std::strncmp( pName, "Avatar", 6 ) == 0 ) {
-            return spawnAvatar( eEntityType::ET_AVPL, ~0ull );
+            return spawnAvatar( eEntityType::ET_AVPL, ~0ull, pName );
         }
         if ( std::strncmp( pName, "Hostess", 7 ) == 0 ||
              std::strstr( pName, "PoliceWoman" ) != nullptr ) {
-            return spawnAvatar( eEntityType::ET_AVAT, hashcode );
+            return spawnAvatar( eEntityType::ET_AVAT, hashcode, pName );
         }
         if ( std::strncmp( pName, "Seller", 6 ) == 0 ) {
-            return spawnAvatar( eEntityType::ET_AVAT, hashcode );
+            return spawnAvatar( eEntityType::ET_AVAT, hashcode, pName );
         }
     }
 
@@ -1051,13 +1057,55 @@ void *CinResCollection::spawnPedestrian( int32_t /*gender*/ ) {
     return gpScenaric->getPedestrianBank().getFirst( eEntityType::ET_PTDR );
 }
 
-void *CinResCollection::spawnAvatar( eEntityType type, uint64_t hashcode ) {
+static void ReadAvatarConfigFromPNJ( AvatarConfiguration &outConfig,
+                                     const char *pPNJName ) {
+    // FUN_007e40d0
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const int32_t numPNJ =
+        static_cast<int32_t>( gameDB.pNumItems[kPNJDatabaseIndex] );
+
+    for ( int32_t i = 0; i < numPNJ; i++ ) {
+        const DBEntryPNJ &pnjEntry = gameDB.DBPNJ[i];
+        if ( std::strcmp( pnjEntry.ConfigID.pAsString, pPNJName ) != 0 ) {
+            continue;
+        }
+
+        if ( gpAvatar->applyPNJConfiguration( outConfig, pnjEntry ) ) {
+            return;
+        }
+
+        break;
+    }
+
+    outConfig = gpAvatar->getDefaultConfiguration( 0 );
+}
+
+void *CinResCollection::spawnAvatar( eEntityType type,
+                                     uint64_t hashcode,
+                                     const char *pName ) {
     // FUN_007e5010 / FUN_007e54f0
-    if ( gpScenaric == nullptr ) {
+    if ( gpScenaric == nullptr || gpAvatar == nullptr ) {
         return nullptr;
     }
 
-    const int32_t avatarType = ( type == eEntityType::ET_AVPL ) ? 1 : 0;
-    const uint64_t key = ( avatarType == 1 ) ? ~0ull : hashcode;
-    return gpScenaric->getAvatarManager().allocateAvatar( key, avatarType );
+    AvatarManager &avatarManager = gpScenaric->getAvatarManager();
+
+    if ( type == eEntityType::ET_AVPL ) {
+        EntityAvatar *pAvatar =
+            avatarManager.createAvatar( nullptr, 0, false, ~0ull, false, 1 );
+        if ( pAvatar != nullptr ) {
+            pAvatar->addInstanceReference();
+        }
+
+        return pAvatar;
+    }
+
+    const bool bIsPoliceWoman =
+        pName != nullptr && std::strstr( pName, "PoliceWoman" ) != nullptr;
+
+    AvatarConfiguration config;
+    ReadAvatarConfigFromPNJ( config,
+                             bIsPoliceWoman ? "cop_man" : "shop_lamborghini" );
+
+    return avatarManager.createAvatar( &config, 0, false, hashcode, false, 0 );
 }

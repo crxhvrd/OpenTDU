@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "avatar_manager.h"
 
+#include "game/avatar/gs_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/entity/entity_factory.h"
@@ -170,6 +171,29 @@ EntityAvatar *AvatarManager::allocateAvatar( const uint64_t hashcode,
     }
 
     return nullptr;
+}
+
+EntityAvatar *AvatarManager::createAvatar( const AvatarConfiguration *pConfig,
+                                           const int32_t clotheSet,
+                                           const bool bAsync,
+                                           const uint64_t hashcode,
+                                           const bool bCritical,
+                                           const int32_t type ) {
+    // FUN_007f6260
+    EntityAvatar *pAvatar = allocateAvatar( hashcode, type );
+    if ( pAvatar == nullptr ) {
+        return nullptr;
+    }
+
+    const AvatarConfiguration *pEffectiveConfig = pConfig;
+    if ( type == 1 ) {
+        pEffectiveConfig = &gpAvatar->getDefaultConfiguration( 0 );
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+    }
+
+    pAvatar->installConfiguration( pEffectiveConfig, clotheSet, bAsync,
+                                   bCritical );
+    return pAvatar;
 }
 
 void AvatarManager::releaseAvatar( EntityAvatar *pAvatar ) {

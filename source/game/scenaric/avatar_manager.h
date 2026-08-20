@@ -3,6 +3,7 @@
 #include "game/scenaric/scenaric_bank.h"
 
 class EntityAvatar;
+struct AvatarConfiguration;
 
 class AvatarManager {
 public:
@@ -18,6 +19,12 @@ public:
     void releaseAllAvatars();
 
     EntityAvatar *allocateAvatar( const uint64_t hashcode, const int32_t type );
+    EntityAvatar *createAvatar( const AvatarConfiguration *pConfig,
+                                const int32_t clotheSet,
+                                const bool bAsync,
+                                const uint64_t hashcode,
+                                const bool bCritical,
+                                const int32_t type );
     void releaseAvatar( EntityAvatar *pAvatar );
 
     EntityAvatar *getDriverAvatar();

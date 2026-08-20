@@ -12,6 +12,7 @@
 #include "world/streaming_manager.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
+#include "game/scenaric/entity/entity_driver.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "physics/gs_physics.h" // TDUSurface
 #include "physics/physics_material.h"
@@ -619,8 +620,17 @@ void GSCarState::releaseCarState( CarState *param_2, bool param_3 ) {
     // FUN_008ad980
     VehicleBaseResources *pVVar2 = param_2->pResource;
     param_2->pResource = nullptr;
-    if ( param_2->field_0x39c0 != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AVATAR
+    EntityDriver *pDriver = param_2->getDriver();
+    if ( pDriver != nullptr ) {
+        param_2->unloadDriver();
+
+        if ( param_3 ) {
+            pDriver->removeInstanceReference();
+            pDriver->setEnvMap( false, nullptr );
+            if ( gpScenaric != nullptr ) {
+                gpScenaric->getAvatarManager().releaseAvatar( pDriver );
+            }
+        }
     }
 
     if ( param_2->field_0x39cc != nullptr ) {

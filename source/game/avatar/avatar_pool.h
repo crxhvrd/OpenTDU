@@ -19,6 +19,8 @@ public:
     void tick();
     void terminate();
 
+    PooledAvatarEntry *allocateInstance();
+
     bool onConfigurationChanged() override;
 
 private:

@@ -487,10 +487,7 @@ void GSConfig::parseDeviceIni() {
 
             DeviceAction *iVar3 = peVar2.findActionInList( pIVar9.pName );
             if ( iVar3 != nullptr ) {
-                // Do offset -> index -> offset conversion (since offsets from
-                // the original binary are 32bits)
-                uint64_t actionIndex = ( pIVar9.Index / 4ull ) + 1;
-                ppDeviceActionList[actionIndex] = iVar3;
+                ppDeviceActionList[cVar1 + 1] = iVar3;
             } else {
                 OTDU_LOG_WARN(
                     "Could not find action '%s' in player input config\n",

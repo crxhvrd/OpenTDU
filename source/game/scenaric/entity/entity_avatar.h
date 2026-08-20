@@ -4,6 +4,9 @@
 #include "game/avatar/avatar_clothes.h"
 
 class GSAvatar;
+class EntityDriver;
+
+extern float gAvatarLODDistances[3];
 
 class EntityAvatar : public EntityActor {
     friend class GSAvatar;
@@ -13,6 +16,15 @@ public:
 
 public:
     inline int32_t getAvatarType() const { return avatarType; }
+    inline PooledAvatarEntry *getPooledEntry() const {
+        return pPooledAvatarEntry;
+    }
+    inline void addInstanceReference() { InstanceRefCount++; }
+    inline void removeInstanceReference() {
+        if ( InstanceRefCount > 0 ) {
+            InstanceRefCount--;
+        }
+    }
 
 public:
     EntityAvatar();
@@ -39,7 +51,7 @@ public:
     virtual int32_t getRenderSceneID();
     virtual void setHeadVisible( bool bVisible );
     virtual void setAvatarType( int32_t type );
-    virtual int32_t unknownAvatarFunc1();
+    virtual EntityDriver *getDriver();
     virtual int32_t unknownAvatarFunc2();
     virtual void getLightingFactor( Eigen::Vector4f &outFactor );
     virtual int32_t chooseLODLevel();
@@ -52,6 +64,14 @@ public:
 
 public:
     void setEnvMap( bool bRealTime, Render2DB *p2DB );
+    void installConfiguration( const AvatarConfiguration *pConfig,
+                               int32_t clotheSet,
+                               bool bAsync,
+                               bool bCritical );
+
+private:
+    void onCarAlphaTerm();
+    void freeAlphaSlot();
 
 protected:
     // 'Head' bone name hashcode

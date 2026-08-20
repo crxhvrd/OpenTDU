@@ -29,6 +29,7 @@ public:
     }
 
     inline AvatarBnkManager &getBnkManager() { return bankManager; }
+    inline AvatarPool &getPool() { return pool; }
     inline Matrix4x4f_t *getIdentityBonePalette( int32_t index ) {
         return pBones[index];
     }
@@ -66,6 +67,17 @@ private:
                              const AvatarConfiguration *pConfig );
     void installBodySkin( EntityAvatar *pAvatar,
                           const AvatarConfiguration *pConfig );
+
+public:
+    bool installBelt( const char *pBeltType,
+                      class EntityDriver *pDriver,
+                      eAvatarBeltSeat seat );
+
+private:
+    AvatarBeltPart *findBelt( eAvatarClotheSize size,
+                              int32_t gender,
+                              eAvatarBeltType beltType,
+                              eAvatarBeltSeat seat );
 
     AvatarClothePart *findClotheByID( uint16_t id );
     AvatarClothePart *findDefaultPartByID( uint16_t id );

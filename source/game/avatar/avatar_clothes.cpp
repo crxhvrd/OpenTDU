@@ -854,6 +854,43 @@ void RenderAvatarBase::hideLowResHierarchy() {
     pLowRes->bDirty = 2;
 }
 
+void RenderAvatarBase::setLowResVisible( const bool bNewVisible ) {
+    // FUN_008f0eb0
+    if ( pHierarchyNodeLowRes != nullptr && pLowRes != nullptr &&
+         bVisible != bNewVisible ) {
+        if ( bNewVisible ) {
+            showLowResHierarchy();
+        } else {
+            hideLowResHierarchy();
+        }
+    }
+
+    bVisible = bNewVisible;
+}
+
+void RenderAvatarBase::setMatrix( const Matrix4x4f_t &matrix ) {
+    // FUN_008f1120
+    if ( pHierarchyNode == nullptr ) {
+        return;
+    }
+
+    pHierarchyNode->TransformMatrix = matrix;
+
+    if ( pHierarchyNode->pParent == nullptr ) {
+        pHierarchyNode->pInstance->setModelMatrix(
+            pHierarchyNode->TransformMatrix );
+    } else {
+        Matrix4x4f_t worldMatrix =
+            pHierarchyNode->TransformMatrix *
+            pHierarchyNode->pParent->pInstance->getModelMatrix();
+        pHierarchyNode->pInstance->setModelMatrix( worldMatrix );
+    }
+
+    pHierarchyNode->pInstance->calculateBiggestScale();
+    pHierarchyNode->pInstance->calculateDeterminant();
+    pHierarchyNode->propagateTransformMatrices();
+}
+
 void RenderAvatarBase::setMeshVisibility( const uint64_t meshHashcode,
                                           const bool bMeshVisible ) {
     // FUN_00411590
@@ -1483,8 +1520,9 @@ eAvatarBankRequest AvatarStreamingRequest::requestBank() {
     bankFolder += pBrandFolder;
     bankFolder += "/";
 
-    OTDU_UNIMPLEMENTED_ONCE;
-    return ABR_Failed;
+    AvatarBnkCache &cache = gpAvatar->getBnkManager().getBankCache();
+    return cache.requestBank( bankFolder.c_str(), pBankName, bAsync, bCritical,
+                              &pLoadingBnk );
 }
 
 void AvatarStreamingRequest::decreaseReferenceCount() {
@@ -1809,6 +1847,87 @@ void PooledAvatarEntry::releaseParts() {
     for ( AvatarClothe &slot : Slots ) {
         slot.decreaseReferenceCount();
     }
+}
+
+bool PooledAvatarEntry::hasScratchPools() const {
+    // FUN_008eed30
+    if ( Body.pMemoryPool != nullptr ) {
+        return true;
+    }
+
+    for ( const AvatarClothe &slot : Slots ) {
+        if ( slot.pMemoryPool != nullptr ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void PooledAvatarEntry::setMeshVisibility( const uint64_t meshHashcode,
+                                           const bool bMeshVisible ) {
+    // FUN_00424670
+    for ( AvatarClothe &slot : Slots ) {
+        slot.setMeshVisibility( meshHashcode, bMeshVisible );
+    }
+
+    Body.setMeshVisibility( meshHashcode, bMeshVisible );
+    Impostor.setMeshVisibility( meshHashcode, bMeshVisible );
+    CarBelt.setMeshVisibility( meshHashcode, bMeshVisible );
+}
+
+void PooledAvatarEntry::setBones( Matrix4x4f_t *pPalette ) {
+    // FUN_00424850
+    const auto bindPart = []( RenderAvatarBase &part, Matrix4x4f_t *pBones ) {
+        if ( part.pHierarchyNode != nullptr &&
+             part.pHierarchyNode->pInstance != nullptr ) {
+            part.pHierarchyNode->pInstance->setBones( pBones );
+        }
+    };
+
+    for ( int32_t i = 0; i < AC_Count; i++ ) {
+        if ( i != AC_Helmet ) {
+            bindPart( Slots[i], pPalette );
+        }
+    }
+
+    bindPart( Body, pPalette );
+    bindPart( Impostor, pPalette );
+    bindPart( CarBelt, pPalette );
+}
+
+void PooledAvatarEntry::setMatrix( const Matrix4x4f_t &matrix ) {
+    // FUN_00424800
+    for ( AvatarClothe &slot : Slots ) {
+        slot.setMatrix( matrix );
+    }
+
+    Body.setMatrix( matrix );
+    Impostor.setMatrix( matrix );
+    CarBelt.setMatrix( matrix );
+}
+
+void PooledAvatarEntry::showAllParts() {
+    // FUN_008eff20
+    const auto showPart = []( RenderAvatarBase &part ) {
+        if ( part.pLowRes != nullptr && part.pHierarchyNodeLowRes != nullptr &&
+             !part.bVisible ) {
+            part.showLowResHierarchy();
+        }
+
+        part.bVisible = true;
+    };
+
+    showPart( Impostor );
+    showPart( Body );
+    showPart( CarBelt );
+
+    for ( AvatarClothe &slot : Slots ) {
+        showPart( slot );
+    }
+
+    bVisible = true;
+    ActiveClotheSet = kNoClotheSet;
 }
 
 void PooledAvatarEntry::setClothe( const int32_t category,

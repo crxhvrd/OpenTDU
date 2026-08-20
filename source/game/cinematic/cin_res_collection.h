@@ -127,7 +127,7 @@ private:
     void *findActorByHashcode( uint64_t key );
     void *spawnActorEntity( const char *pName, uint64_t hashcode );
     void *spawnPedestrian( int32_t gender );
-    void *spawnAvatar( eEntityType type, uint64_t hashcode );
+    void *spawnAvatar( eEntityType type, uint64_t hashcode, const char *pName );
 
 private:
     static constexpr int32_t kMaxActors = 128;

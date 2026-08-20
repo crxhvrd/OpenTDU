@@ -202,7 +202,8 @@ public:
     inline eActiveMode getActiveMode() const { return activeMode; }
 
     inline VehicleBase *getVehicleInstance() { return pVehicleBase; }
-    inline bool hasAvatar() const { return field_0x39c0 != nullptr; }
+    inline bool hasAvatar() const { return pDriver != nullptr; }
+    inline class EntityDriver *getDriver() const { return pDriver; }
     inline struct VehicleSoundInstance *getVehicleSound() const {
         return pVehicleSound;
     }
@@ -245,12 +246,15 @@ public:
 
     bool FUN_00406ce0();
 
+    bool unloadDriver();
+
 private:
     static constexpr const uint32_t kMaxNumWheels = 4;
 
     friend class GMCarShowcase;
     friend class GameModeWorld; // installs the local-player car on reset
     friend class BrandCar;      // installs the spot showcase ("brand") cars
+    friend class GSScenaric;    // GSScenaric::placeDriver seats pDriver
     friend class GSCarState; // TODO: Remove once visibility for bInstanceAlive
                              // is fixed
     friend class VehicleCar;
@@ -278,7 +282,7 @@ private:
 
     VehicleBase *pVehicleBase;
     struct VehicleSoundInstance *pVehicleSound;
-    void *field_0x39c0; // TODO: AVATAR
+    class EntityDriver *pDriver;
     void *field_0x39cc;
     void *field_0x39d4;
     void *field_0x39d8;

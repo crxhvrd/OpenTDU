@@ -6,6 +6,8 @@
 
 #include "gs_timer.h"
 #include "game/scenaric/entity/entity_cinematic.h"
+#include "game/scenaric/entity/entity_avatar.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "flash/gs_flash.h"
 #include "flash/flash_mouse.h"
 #include "flash/implementation/flash_sprite.h"
@@ -184,7 +186,37 @@ void GameModeWorld::reset() {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC (driver avatar, HUD bind)
+    CarState *pLocalCar = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pLocalCar != nullptr ) {
+        VehicleBaseResources *pResource = pLocalCar->getResource();
+        if ( pResource != nullptr && pResource->bDriveResource ) {
+            int32_t clotheSet = 0;
+            if ( gpDatabase != nullptr ) {
+                DBEntryCarPhysicsData *pCarData =
+                    gpDatabase->getCarDBEntry( pResource->CarID );
+                if ( pCarData != nullptr && gpDatabase->isBike( pCarData ) ) {
+                    clotheSet = 1;
+                }
+            }
+
+            AvatarManager &avatarManager = gpScenaric->getAvatarManager();
+            EntityAvatar *pAvatar = avatarManager.createAvatar(
+                nullptr, clotheSet, false, ~0ull, false, 1 );
+            if ( pAvatar != nullptr ) {
+                if ( gpScenaric->placeDriver( pLocalCar,
+                                              pAvatar->getDriver() ) ) {
+                    pAvatar->addInstanceReference();
+                    pAvatar->setEnvMap( true, nullptr );
+                } else {
+                    avatarManager.releaseAvatar( pAvatar );
+                }
+            }
+        }
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA / HUD
 }
 
 constexpr int32_t kDefaultPlayerCarID = 1030;
@@ -420,14 +452,10 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
 
     const bool bIsBike = pBody->bIsBike;
 
-    DeviceAction *pAccelAction =
-        bIsBike ? pCfg->pBikeBrake : pCfg->pCarBrake; // *_ACCEL
-    DeviceAction *pBrakeAction =
-        bIsBike ? pCfg->pBikeLeft : pCfg->pCarLeft; // *_BRAKE
-    DeviceAction *pLeftAction =
-        bIsBike ? pCfg->pBikeRight : pCfg->pCarRight; // *_LEFT
-    DeviceAction *pRightAction =
-        bIsBike ? pCfg->pBikeClutch : pCfg->pCarClutch; // *_RIGHT
+    DeviceAction *pAccelAction = bIsBike ? pCfg->pBikeAccel : pCfg->pCarAccel;
+    DeviceAction *pBrakeAction = bIsBike ? pCfg->pBikeBrake : pCfg->pCarBrake;
+    DeviceAction *pLeftAction = bIsBike ? pCfg->pBikeLeft : pCfg->pCarLeft;
+    DeviceAction *pRightAction = bIsBike ? pCfg->pBikeRight : pCfg->pCarRight;
 
     const float rawAccel = ReadActionAxis( pAccelAction );
     const float rawBrake = ReadActionAxis( pBrakeAction );
@@ -440,7 +468,7 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
 
     const PhysicsVehicle::DrivingGearbox gearbox =
         pPlayerPhysicsVehicle->getDrivingGearbox();
-    DeviceAction *pIgnitionAction = pCfg->pCarAccel; // CAR_IGNITION
+    DeviceAction *pIgnitionAction = pCfg->pCarIgnition;
     const bool bIgnitionBound =
         pIgnitionAction != nullptr && pIgnitionAction->NumAddedChannels != 0;
     const bool bIgnitionHeld = bIgnitionBound
@@ -455,14 +483,14 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         bIgnitionBound && gearbox.bEngineRunning && bIgnitionEdge;
 
     DeviceAction *pGearSelectActions[] = {
-        pCfg->pCarGear1,     // CAR_GREV  -> 0 (reverse)
-        pCfg->pCarGear2,     // CAR_G1ST  -> 2
-        pCfg->pCarGear3,     // CAR_G2ND  -> 3
-        pCfg->pCarGear4,     // CAR_G3RD  -> 4
-        pCfg->pCarGear5,     // CAR_G4TH  -> 5
-        pCfg->pCarGear6,     // CAR_G5TH  -> 6
-        pCfg->pCarGear7,     // CAR_G6TH  -> 7
-        pCfg->pCarHandbrake, // CAR_G7TH  -> 8
+        pCfg->pCarGearReverse, // -> 0 (reverse)
+        pCfg->pCarGear1,       // -> 2
+        pCfg->pCarGear2,       // -> 3
+        pCfg->pCarGear3,       // -> 4
+        pCfg->pCarGear4,       // -> 5
+        pCfg->pCarGear5,       // -> 6
+        pCfg->pCarGear6,       // -> 7
+        pCfg->pCarGear7,       // -> 8
     };
     static constexpr int32_t kGearSelectValues[] = { 0, 2, 3, 4, 5, 6, 7, 8 };
     int32_t gearSelect = 1;
@@ -479,28 +507,28 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     }
     pBody->GearRequest = gearSelect;
 
-    DeviceAction *pClutchAction = pCfg->pBikeAccel; // CAR_CLUTCH
+    DeviceAction *pClutchAction = pCfg->pCarClutch;
     if ( pClutchAction == nullptr || pClutchAction->NumAddedChannels == 0 ) {
         pBody->Clutch = 0.0f;
     } else {
         pBody->Clutch =
-            ReadActionAxis( bIsBike ? pCfg->pBikeLeanForward // BIKE_CLUTCH
-                                    : pClutchAction );
+            ReadActionAxis( bIsBike ? pCfg->pBikeClutch : pClutchAction );
     }
 
-    if ( pCfg->pBikeLeanBackward == nullptr || pCfg->pCarGearUp == nullptr ) {
+    if ( pCfg->pBikeLeanForward == nullptr ||
+         pCfg->pBikeLeanBackward == nullptr ) {
         pBody->Lean = 0.0f;
     } else {
-        pBody->Lean = ReadActionAxis( pCfg->pBikeLeanBackward ) - // *_FORWARD
-                      ReadActionAxis( pCfg->pCarGearUp );         // *_BACKWARD
+        pBody->Lean = ReadActionAxis( pCfg->pBikeLeanForward ) -
+                      ReadActionAxis( pCfg->pBikeLeanBackward );
     }
 
-    pBody->Handbrake = ReadActionAxis( pCfg->pCarCamera ); // CAR_HBRAKE
+    pBody->Handbrake = ReadActionAxis( pCfg->pCarHandbrake );
 
     DeviceAction *pGearUpAction =
-        bIsBike ? pCfg->pBikeGearDown : pCfg->pCarGearDown; // *_GUP
+        bIsBike ? pCfg->pBikeGearUp : pCfg->pCarGearUp;
     DeviceAction *pGearDownAction =
-        bIsBike ? pCfg->pCarGearReverse : pCfg->pBikeGearUp; // *_GDOWN
+        bIsBike ? pCfg->pBikeGearDown : pCfg->pCarGearDown;
     pBody->bGearUpEdge = ( gearbox.Gear < gearbox.NumGears - 1 ) &&
                          IsActionPressed( pGearUpAction );
     pBody->bGearDownEdge =
@@ -508,12 +536,11 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
 
     pCfg->bCarReset = false;
     pBody->bBackOnTrackRequest = IsActionPressed( pCfg->pBotPad );
-    pBody->bHeadlightsOn = IsActionDown( pCfg->pCarIgnition ); // CAR_LIGHT
-    pBody->bHonking = IsActionDown( pCfg->pCarHorn );          // CAR_HORN
+    pBody->bHeadlightsOn = IsActionDown( pCfg->pCarLight );
+    pBody->bHonking = IsActionDown( pCfg->pCarHorn );
 
-    const bool bChangeViewHeld =
-        IsActionDown( pCfg->pCarBackview ); // CAR_CAMERA
-    if ( gCamViewLockHoldTime < 0.0f ) {    // Camera lock (freeride)
+    const bool bChangeViewHeld = IsActionDown( pCfg->pCarCamera );
+    if ( gCamViewLockHoldTime < 0.0f ) { // Camera lock (freeride)
         gCamViewLockHoldTime = bChangeViewHeld ? -1.0f : 0.0f;
     } else if ( bChangeViewHeld ) {
         gCamViewLockHoldTime += deltaTime;

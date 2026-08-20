@@ -1744,6 +1744,16 @@ DBEntryAftermarketPack *GSDatabase::getAftermarketPack( uint64_t param_1 ) {
     return nullptr;
 }
 
+bool GSDatabase::isTraffic( DBEntryCarPhysicsData *param_1 ) {
+    // FUN_009a9e20
+    if ( param_1 == nullptr || param_1->Brand == nullptr ) {
+        return false;
+    }
+
+    char *pcVar1 = getStringByHashcode( 6, 0x3540681 );
+    return ( pcVar1 == param_1->Brand->BrandID.pAsString );
+}
+
 bool GSDatabase::isBike( DBEntryCarPhysicsData *param_1 ) {
     // FUN_009a9bc0
     if ( param_1 == nullptr ) {
@@ -1795,7 +1805,7 @@ uint64_t DBEntryList::getHashcodeForPointer( void *param_1 ) const {
         DBEntry *pDVar1 = &List[iVar3];
         char *entryRawPtr = pData + pDVar1->Offset;
         if ( param_1 == entryRawPtr ) {
-            return pDVar1[iVar3].Hashcode;
+            return pDVar1->Hashcode;
         }
     }
     return 0;

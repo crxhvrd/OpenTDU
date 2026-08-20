@@ -17,6 +17,8 @@
 // Binds the playing cinematic interface onto the avatar.
 static constexpr FlashMessage kAvatarOverlap = FlashMessage( 0x706c766f );
 
+float gAvatarLODDistances[3] = { 150.0f, 10.0f, 0.0f }; // DAT_010d6f54
+
 EntityAvatar::EntityAvatar()
     : EntityActor(),
       avatarType( 0 ),
@@ -45,6 +47,9 @@ EntityAvatar::EntityAvatar()
       bIsToUpdate( false ),
       bLowResShadow( false ) {
     // FUN_007f8240
+    gAvatarLODDistances[0] = LODDistances[0];
+    gAvatarLODDistances[1] = LODDistances[1];
+    gAvatarLODDistances[2] = LODDistances[2];
 }
 
 EntityAvatar::~EntityAvatar() {
@@ -104,16 +109,23 @@ void EntityAvatar::tick() {
 
     if ( RenderLOD != 0 ) {
         if ( pPooledAvatarEntry != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: AVATAR — skeleton/resource/attachment
-                                // sync
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — skeleton/resource/
+                                     // attachment sync
         }
 
         EntityActor::tick();
 
+        if ( pPooledAvatarEntry != nullptr && gpAvatar != nullptr ) {
+            pPooledAvatarEntry->setBones(
+                gpAvatar->getIdentityBonePalette( 0 ) );
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — edAnm bone palette
+        }
+
         unknownActorFunc();
 
         if ( pPooledAvatarEntry != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: AVATAR — head update + shadow caster
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — head update + shadow
+                                     // caster
         }
     }
 
@@ -186,16 +198,84 @@ void EntityAvatar::deserialize( BinaryReader *param_2 ) {
 void EntityAvatar::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     // FUN_007f8d90
     EntityActor::instanciate( pMngActor, param_1 );
-    static_cast<EntityAvatar *>( param_1 )->pPooledAvatarEntry = nullptr;
+
+    EntityAvatar *pInstance = static_cast<EntityAvatar *>( param_1 );
+    PooledAvatarEntry *pEntry = ( gpAvatar != nullptr )
+                                    ? gpAvatar->getPool().allocateInstance()
+                                    : nullptr;
+    pInstance->pPooledAvatarEntry = pEntry;
+
+    if ( pEntry != nullptr ) {
+        pEntry->showAllParts();
+
+        AvatarClothe &helmet = pEntry->Slots[AC_Helmet];
+        if ( helmet.pLowRes != nullptr &&
+             helmet.pHierarchyNodeLowRes != nullptr && helmet.bVisible ) {
+            helmet.hideLowResHierarchy();
+        }
+        helmet.bVisible = false;
+    }
+
     param_1->setTransform( modelMatrix, true );
 }
 
 void EntityAvatar::deinstanciate() {
     // FUN_007f8d20
-    pPooledAvatarEntry = nullptr;
+    onCarAlphaTerm();
+
+    if ( pPooledAvatarEntry != nullptr ) {
+        if ( pPooledAvatarEntry->bUsed ) {
+            pPooledAvatarEntry->releaseParts();
+            pPooledAvatarEntry->bUsed = false;
+            pPooledAvatarEntry->pBoneArray = nullptr;
+        }
+
+        pPooledAvatarEntry = nullptr;
+    }
 
     if ( pMechanism != nullptr && pMechanism->isCreated() ) {
         pMechanism->removeAndDestroy();
+    }
+}
+
+void EntityAvatar::onCarAlphaTerm() {
+    // FUN_007f8110
+    freeAlphaSlot();
+    Alpha = 1.0f;
+}
+
+void EntityAvatar::freeAlphaSlot() {
+    // FUN_007f80b0
+    if ( AlphaSceneSlot == -1 ) {
+        return;
+    }
+
+    if ( pPooledAvatarEntry != nullptr ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CARALPHA - FUN_004246c0, the per-part
+                                 // alpha material reset
+    }
+
+    if ( gpMngCarAlpha != nullptr ) {
+        gpMngCarAlpha->freeElement( static_cast<uint32_t>( AlphaSceneSlot ) );
+    }
+
+    AlphaSceneSlot = -1;
+}
+
+void EntityAvatar::installConfiguration( const AvatarConfiguration *pConfig,
+                                         const int32_t clotheSet,
+                                         const bool bAsync,
+                                         const bool bCritical ) {
+    // FUN_007f5ff0
+    if ( pPooledAvatarEntry == nullptr || gpAvatar == nullptr ) {
+        return;
+    }
+
+    const int32_t activeClotheSet = pPooledAvatarEntry->ActiveClotheSet;
+    if ( activeClotheSet == kNoClotheSet ) {
+        gpAvatar->bakeAvatar( this, pConfig, clotheSet, bAsync, bCritical );
+    } else if ( activeClotheSet != clotheSet ) {
+        gpAvatar->installClothes( this, pConfig, clotheSet, bAsync, bCritical );
     }
 }
 
@@ -219,7 +299,7 @@ void EntityAvatar::unknownActorFunc() {
     bLightingValid = false;
 
     if ( pPooledAvatarEntry != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AVATAR
+        pPooledAvatarEntry->setMatrix( worldMatrix );
     }
 }
 
@@ -239,10 +319,24 @@ int32_t EntityAvatar::getRenderSceneID() {
 
 void EntityAvatar::setHeadVisible( bool bVisible ) {
     // FUN_007f8b60
-    if ( pPooledAvatarEntry != nullptr && bLastShowHead != bVisible ) {
-        OTDU_UNIMPLEMENTED; // TODO: AVATAR — toggle head/helmet mesh visibility
-        bLastShowHead = bVisible;
+    if ( pPooledAvatarEntry == nullptr || bLastShowHead == bVisible ) {
+        return;
     }
+
+    pPooledAvatarEntry->setMeshVisibility( gHashcodeHead, bVisible );
+    pPooledAvatarEntry->setMeshVisibility( gHashcodeEyes, bVisible );
+    pPooledAvatarEntry->setMeshVisibility( gHashcodeTeeth, bVisible );
+
+    pPooledAvatarEntry->Slots[AC_Hair].setLowResVisible( bVisible );
+    pPooledAvatarEntry->Slots[AC_FacePilosity].setLowResVisible( bVisible );
+    pPooledAvatarEntry->Slots[AC_Glasses].setLowResVisible( bVisible );
+    pPooledAvatarEntry->Slots[AC_Eyebrows].setLowResVisible( bVisible );
+
+    if ( !bVisible ) {
+        pPooledAvatarEntry->Slots[AC_Helmet].setLowResVisible( false );
+    }
+
+    bLastShowHead = bVisible;
 }
 
 void EntityAvatar::setAvatarType( int32_t type ) {
@@ -250,9 +344,9 @@ void EntityAvatar::setAvatarType( int32_t type ) {
     avatarType = type;
 }
 
-int32_t EntityAvatar::unknownAvatarFunc1() {
+EntityDriver *EntityAvatar::getDriver() {
     // FUN_007f7220
-    return 0;
+    return nullptr;
 }
 
 int32_t EntityAvatar::unknownAvatarFunc2() {
@@ -379,7 +473,7 @@ void EntityAvatar::onHeadUpdate( Matrix4x4f_t &headTransform ) {
 
 void EntityAvatar::updateCarAlpha() {
     // FUN_007f79d0
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
 }
 
 bool EntityAvatar::isShadowCaster() {

@@ -55,3 +55,13 @@ static inline constexpr uint32_t ColorByte( float channel ) {
     }
     return static_cast<uint32_t>( scaled + 0.5f );
 }
+
+static inline uint32_t ReverseEndianness32( uint32_t value ) {
+    return ( ( value & 0x000000ffu ) << 24 ) |
+           ( ( value & 0x0000ff00u ) << 8 ) | ( ( value & 0x00ff0000u ) >> 8 ) |
+           ( ( value & 0xff000000u ) >> 24 );
+}
+
+static inline uint16_t ReverseEndianness16( uint16_t value ) {
+    return (uint16_t)( ( value >> 8 ) | ( value << 8 ) );
+}

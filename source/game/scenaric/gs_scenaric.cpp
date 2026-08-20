@@ -9,6 +9,12 @@
 #include "render/camera/gs_camera.h"
 #include "filesystem/gs_boot_datas.h"
 #include "game/scenaric/scenaric_bank.h"
+#include "game/scenaric/entity/entity_avatar.h"
+#include "game/scenaric/entity/entity_driver.h"
+#include "database/gs_database.h"
+#include "game/avatar/gs_avatar.h"
+#include "game/vehicle/car_state.h"
+#include "game/vehicle/gs_car_state.h"
 #include "game/mng_hud.h"
 #include "render/animation/skeleton.h"
 #include "render/animation/clip.h"
@@ -143,7 +149,7 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: IK-offset DB (FUN_008007f0)
+    ikOffsetDB.initialize();
 
     initWoosh();
 
@@ -416,6 +422,7 @@ void GSScenaric::terminate() {
     unloadBank( &aircraftsPathsBank );
     unloadBank( &boatsPathsBank );
     unloadBank( &spotMeshBank );
+    ikOffsetDB.terminate();
 }
 
 void GSScenaric::unloadBank( ScenaricBank *pBank ) {
@@ -505,11 +512,41 @@ void GSScenaric::pause() {
     avatarManager.releaseAllAvatars();
 }
 
+bool GSScenaric::placeDriver( CarState *pCarState, EntityDriver *pDriver ) {
+    // FUN_00805830
+    if ( pCarState == nullptr || pDriver == nullptr || gpCarState == nullptr ||
+         gpDatabase == nullptr ) {
+        return false;
+    }
+
+    VehicleBaseResources *pResource = pCarState->getResource();
+    DBEntryCarPhysicsData *pCarData = gpDatabase->getCarDBEntry(
+        pResource != nullptr ? pResource->CarID : -1 );
+
+    if ( !gpDatabase->isBike( pCarData ) &&
+         gpDatabase->isTraffic( pCarData ) ) {
+        return false;
+    }
+
+    gpCarState->registerCallback( pCarState, pDriver, nullptr );
+    pDriver->setCarState( pCarState );
+    pCarState->pDriver = pDriver;
+    pDriver->setSeating( true );
+
+    if ( pDriver->getDriveType() == RT_Car && gpAvatar != nullptr &&
+         pCarData != nullptr ) {
+        gpAvatar->installBelt( pCarData->BeltType.pAsString, pDriver,
+                               ABS_Driver );
+    }
+
+    return true;
+}
+
 void GSScenaric::reset() {
     // FUN_00805c30
     EntityAvatar *pDriver = avatarManager.allocateAvatar( ~0ull, 1 );
     if ( pDriver != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AVATAR
+        pDriver->removeInstanceReference();
     }
 }
 

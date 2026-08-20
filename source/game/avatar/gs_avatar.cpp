@@ -5,6 +5,7 @@
 #include "core/ed_store.h"
 #include "database/gs_database.h"
 #include "game/scenaric/entity/entity_avatar.h"
+#include "game/scenaric/entity/entity_driver.h"
 #include "game/scenaric/gs_scenaric.h"
 
 uint64_t gHashcodeNoMesh = 0;
@@ -369,6 +370,85 @@ static AvatarClothePart *FindPartByID( AvatarPartDB *pDB, const uint16_t id ) {
 AvatarClothePart *GSAvatar::findClotheByID( const uint16_t id ) {
     // FUN_008f6390
     return FindPartByID( pClothesDB, id );
+}
+
+AvatarBeltPart *GSAvatar::findBelt( const eAvatarClotheSize size,
+                                    const int32_t gender,
+                                    const eAvatarBeltType beltType,
+                                    const eAvatarBeltSeat seat ) {
+    // FUN_008f4a70
+    if ( pBeltDB == nullptr ) {
+        return nullptr;
+    }
+
+    AvatarGenericCursor cursor( pBeltDB );
+    cursor.findRange();
+    if ( !cursor.hasRange() ) {
+        return nullptr;
+    }
+
+    for ( ; !cursor.isAtEnd(); cursor.advance() ) {
+        AvatarBeltPart *pPart =
+            static_cast<AvatarBeltPart *>( cursor.getResult() );
+        if ( pPart == nullptr ) {
+            continue;
+        }
+
+        if ( pPart->Size == size && pPart->Gender == gender &&
+             pPart->BeltType == beltType && pPart->Seat == seat ) {
+            return pPart;
+        }
+    }
+
+    return nullptr;
+}
+
+bool GSAvatar::installBelt( const char *pBeltType,
+                            EntityDriver *pDriver,
+                            const eAvatarBeltSeat seat ) {
+    // FUN_008f6560
+    if ( pBeltType == nullptr || pDriver == nullptr ) {
+        return false;
+    }
+
+    eAvatarBeltType beltType;
+    switch ( *pBeltType ) {
+    case '2':
+        beltType = ABT_TwoPoint;
+        break;
+    case '3':
+        beltType = ABT_ThreePoint;
+        break;
+    case '4':
+        beltType = ABT_FourPoint;
+        break;
+    default:
+        return false;
+    }
+
+    PooledAvatarEntry *pRsc = pDriver->getPooledEntry();
+    if ( pRsc == nullptr ) {
+        return false;
+    }
+
+    AvatarClothePart *pTop = findClotheByID( pRsc->pClothesHC[0][AC_Top] );
+    if ( pTop == nullptr ) {
+        return false;
+    }
+
+    AvatarDBEntry *pBodyPart = pRsc->Body.getAvatarPart();
+    if ( pBodyPart == nullptr ) {
+        return false;
+    }
+
+    AvatarBeltPart *pBelt =
+        findBelt( pTop->Size, pBodyPart->Gender, beltType, seat );
+    if ( pBelt == nullptr ) {
+        return false;
+    }
+
+    pRsc->CarBelt.requestPart( pBelt, 0, true, false );
+    return true;
 }
 
 AvatarClothePart *GSAvatar::findDefaultPartByID( const uint16_t id ) {

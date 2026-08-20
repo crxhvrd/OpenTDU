@@ -49,6 +49,20 @@ void AvatarPool::tick() {
     }
 }
 
+PooledAvatarEntry *AvatarPool::allocateInstance() {
+    // FUN_008ee790
+    for ( PooledAvatarEntry &instance : pInstances ) {
+        if ( instance.bUsed || !instance.hasScratchPools() ) {
+            continue;
+        }
+
+        instance.bUsed = true;
+        return &instance;
+    }
+
+    return nullptr;
+}
+
 void AvatarPool::terminate() {
     // FUN_008ee8d0
     gpRender->unregisterConfigListener( this );

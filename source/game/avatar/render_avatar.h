@@ -91,6 +91,9 @@ struct RenderAvatarBase {
     void releaseHierarchy();
     void showLowResHierarchy();
     void hideLowResHierarchy();
+    void setLowResVisible( bool bNewVisible );
+
+    void setMatrix( const Matrix4x4f_t &matrix );
 
     void setMeshVisibility( uint64_t meshHashcode, bool bMeshVisible );
     void tickEyeMaterial( const AvatarEyePart *pEyeResource );
