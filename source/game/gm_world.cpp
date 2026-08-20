@@ -894,7 +894,7 @@ void GameModeWorld::updatePauseMenuTrigger() {
                               !gEdSys.isWindowActivated() );
 
     if ( !bPauseMenuAllowed || gpConfig == nullptr ||
-         gpConfig->NbMaxPlayers <= 0 || bPauseMenuActive || !bTriggered ||
+         gpConfig->NbMaxPlayers <= 0 || bPaused || !bTriggered ||
          bPauseMenuLocked || gpActiveGameMode == nullptr ||
          gpActiveGameMode->isMessageBoxVisible() || pHudPlayer == nullptr ||
          gpActiveGameMode->hasRequestedExit() || !bMovieActive ||
@@ -913,7 +913,7 @@ void GameModeWorld::updatePauseMenuTrigger() {
         return;
     }
 
-    bPauseMenuActive = true;
+    bPaused = true;
 
     DeviceAction *pMenuPause = pPlayerCfg->pMenuPause;
     if ( pMenuPause != nullptr ) {

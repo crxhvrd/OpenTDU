@@ -184,7 +184,7 @@ bool PostFXStepGlowPause::allocateRTs() {
 
     pRenderTargets[2] = gpPostFX->allocatePooledRT(
         ( uVar4 + ( uVar4 >> 0x1f & 3U ) ) >> 2,
-        ( uVar4 + ( uVar4 >> 0x1f & 3U ) ) >> 2, 0, eViewFormat::VF_X8R8G8B8,
+        ( uVar5 + ( uVar5 >> 0x1f & 3U ) ) >> 2, 0, eViewFormat::VF_X8R8G8B8,
         eAntiAliasingMethod::AAM_Disabled, 0, 0, "FXGlowP" /* DAT_00f3ca6c */,
         0, 1 );
 
@@ -198,7 +198,7 @@ bool PostFXStepGlowPause::allocateRTs() {
 
     pRenderTargets[3] = gpPostFX->allocatePooledRT(
         ( uVar4 + ( uVar4 >> 0x1f & 7U ) ) >> 3,
-        ( uVar4 + ( uVar4 >> 0x1f & 7U ) ) >> 3, 0, eViewFormat::VF_X8R8G8B8,
+        ( uVar5 + ( uVar5 >> 0x1f & 7U ) ) >> 3, 0, eViewFormat::VF_X8R8G8B8,
         eAntiAliasingMethod::AAM_Disabled, 0, 0,
         "FXGlowPBis" /* DAT_00f3ca60 */, 0, 1 );
 
@@ -212,7 +212,7 @@ bool PostFXStepGlowPause::allocateRTs() {
 
     pRenderTargets[4] = gpPostFX->allocatePooledRT(
         ( uVar4 + ( uVar4 >> 0x1f & 7U ) ) >> 3,
-        ( uVar4 + ( uVar4 >> 0x1f & 7U ) ) >> 3, 0, eViewFormat::VF_X8R8G8B8,
+        ( uVar5 + ( uVar5 >> 0x1f & 7U ) ) >> 3, 0, eViewFormat::VF_X8R8G8B8,
         eAntiAliasingMethod::AAM_Disabled, 0, 0, "FXGlowP" /* DAT_00f3ca6c */,
         0, 0 );
 
