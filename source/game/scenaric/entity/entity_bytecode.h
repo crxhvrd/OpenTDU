@@ -2,6 +2,7 @@
 
 #include "filesystem/binary.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "render/animation/animation.h"
 
 struct BytecodePair {
     uint8_t *pBlock = nullptr;
@@ -46,24 +47,26 @@ inline uint8_t *SkipBytecodeRecordArray( BinaryReader *pReader ) {
     return pStart;
 }
 
-inline uint32_t SkipBytecodeAnimCarTable( BinaryReader *pReader ) {
+inline uint32_t DecodeBytecodeAnimCarTable( BinaryReader *pReader,
+                                            RenderAnm *pOutAnims,
+                                            uint32_t maxAnims ) {
     // FUN_00424960
     const uint32_t count = *reinterpret_cast<uint32_t *>( pReader->pCursor );
     pReader->pCursor += sizeof( uint32_t );
 
-    const bool legacy = gpScenaric->getVersion() < 0x10;
-    for ( uint32_t i = 0; i < count; ++i ) {
-        pReader->pCursor += sizeof( uint32_t ); // leading dword
-        if ( legacy ) {
-            const uint32_t subCount =
-                *reinterpret_cast<uint32_t *>( pReader->pCursor );
-            pReader->pCursor += sizeof( uint32_t );
-            if ( subCount != 0 ) {
-                pReader->pCursor += subCount * 8;
-            }
-        } else {
-            pReader->pCursor += 16; // in-bank ptr (8) + skipped (8)
+    for ( uint32_t i = 0; i < count; i++ ) {
+        RenderAnm anim;
+        anim.deserialize( pReader );
+
+        if ( pOutAnims != nullptr && i < maxAnims ) {
+            pOutAnims[i] = anim;
         }
     }
+
+    OTDU_ASSERT( pOutAnims == nullptr || count <= maxAnims );
     return count;
+}
+
+inline uint32_t SkipBytecodeAnimCarTable( BinaryReader *pReader ) {
+    return DecodeBytecodeAnimCarTable( pReader, nullptr, 0 );
 }
