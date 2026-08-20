@@ -545,7 +545,6 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
             BlendClamp( (float)fovLerp.MinOutput, (float)fovLerp.MaxOutput, t );
         vehicleFov = (uint8_t)fovDeg;
         fovRad = fovDeg * kDegToRad;
-        gCameraShakeDiag.FovDeg = fovDeg; // TEMP DIAGNOSTIC
     }
 
     const Matrix4x4f_t carMatrix = pBody->OffsetedWorldMatrix;
@@ -562,7 +561,6 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
             t = ( hiIn > loIn ) ? ( speed - loIn ) / ( hiIn - loIn ) : 0.0f;
             t = std::min( 1.0f, std::max( 0.0f, t ) );
         }
-        gCameraShakeDiag.FollowBlend = t; // TEMP DIAGNOSTIC
         gWorkFollow.PosZ = BlendClamp( follow.PosZ, followFast.PosZ, t );
         gWorkFollow.PosHeight =
             BlendClamp( follow.PosHeight, followFast.PosHeight, t );
