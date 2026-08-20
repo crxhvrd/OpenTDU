@@ -67,5 +67,5 @@ public:
     MngActorWorld() = default;
     ~MngActorWorld() = default;
 
-    virtual RenderScene *getActiveRenderScene() const;
+    RenderScene *getRenderPass() override;
 };

@@ -4,8 +4,13 @@
 #include "bank_scene_arrays.h"
 #include "entity/base_entity.h"
 #include "entity/entity_factory.h"
+#include "game/gm_scene.h"
 #include "render/gs_render.h"
 #include "world/mng_zone.h"
+
+static inline bool IsGameModeRequestingDOFPass() {
+    return gpActiveGMScene != nullptr && false;
+}
 
 MngActor::MngActor()
     : Manager(),
@@ -155,8 +160,11 @@ void MngActor::Uninstanciate( MngActor *pMngActor, Entity *pActor ) {
                              eInstantiationFlag::IF_DeleteEntity );
 }
 
-RenderScene *MngActorWorld::getActiveRenderScene() const {
+RenderScene *MngActorWorld::getRenderPass() {
     // FUN_006de980
-    OTDU_UNIMPLEMENTED;
-    return nullptr;
+    if ( IsGameModeRequestingDOFPass() ) {
+        return gpRender->getRenderPass<eRenderPass::RP_FakeDOF>().pScene;
+    }
+
+    return gpRender->getRenderPass<eRenderPass::RP_Near>().pScene;
 }

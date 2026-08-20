@@ -328,12 +328,12 @@ void Entity::deinstanciate() {
     }
 }
 
-void Entity::unknownFunc3() {
+void Entity::gmeEditionFactory() {
     // FUN_007fb0a0
     OTDU_UNIMPLEMENTED; // TODO: GAME EDITOR
 }
 
-void Entity::unknownFunc4() {
+void Entity::gmeGetControlIndex() {
     // FUN_007fae70
     OTDU_UNIMPLEMENTED; // TODO: GAME EDITOR
 }

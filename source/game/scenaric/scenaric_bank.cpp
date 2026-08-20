@@ -14,6 +14,18 @@
 #include "physics/gs_physics.h"
 #include "game/gm_world.h"
 #include "world/gs_world_streaming.h"
+#include "audio/implementation/audio_dispatcher_playback.h"
+#include "audio/implementation/ed_audio_stream_entry.h"
+
+static inline void ReleaseTemplateResources( BinaryArray &container ) {
+    // FUN_007db1a0 (inlined)
+    for ( int32_t i = container.getCount() - 1; i >= 0; i-- ) {
+        Entity *pTemplate = static_cast<Entity *>( container.getElement( i ) );
+        if ( pTemplate != nullptr ) {
+            pTemplate->unloadResources();
+        }
+    }
+}
 
 static inline bool ContainerOwns( BinaryArray &container, Entity *pEntity ) {
     // FUN_007db1a0 (inlined)
@@ -183,7 +195,6 @@ void ScenaricBank::unload() {
     bActivated = false;
     pSpotSector = nullptr;
     pSector = nullptr;
-    OTDU_UNIMPLEMENTED;
 
     if ( !bExternalBuffer && pBuffer != nullptr ) {
         TestDrive::Free( pBuffer );
@@ -217,7 +228,6 @@ bool ScenaricBank::stepStreaming() {
         break;
     case BBS_Cancel:
     case BBS_LoadFailed:
-        OTDU_UNIMPLEMENTED;
         unload();
         break;
     case BBS_Term:
@@ -705,7 +715,42 @@ void ScenaricBank::destroy() {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
+    for ( int32_t i = sceneries.getCount() - 1; i >= 0; i-- ) {
+        SceneryBinary *pScenery =
+            static_cast<SceneryBinary *>( sceneries.getElement( i ) );
+        if ( pScenery == nullptr || pScenery->pHierarchyNode == nullptr ) {
+            continue;
+        }
+
+        if ( gpActiveGM != nullptr ) {
+            gpActiveGM->getActorManager().setParentScenery( nullptr );
+        }
+
+        FileCollection3D *pOwnerCollection =
+            pScenery->pBank != nullptr ? pScenery->pBank->getCollection3D()
+                                       : &collection3D;
+        pOwnerCollection->uninstantiate( pScenery->pHierarchyNode );
+
+        sceneryNodes.erase( std::remove( sceneryNodes.begin(),
+                                         sceneryNodes.end(),
+                                         pScenery->pHierarchyNode ),
+                            sceneryNodes.end() );
+        pScenery->pHierarchyNode = nullptr;
+    }
+
+    ReleaseTemplateResources( entities );
+    ReleaseTemplateResources( zones );
+    ReleaseTemplateResources( zoneVolumes );
+
+    for ( int32_t i = sounds.getCount() - 1; i >= 0; i-- ) {
+        SoundBinary *pSound =
+            static_cast<SoundBinary *>( sounds.getElement( i ) );
+        if ( pSound != nullptr && pSound->pSoundInstance != nullptr ) {
+            pSound->pSoundInstance->stop( 0.0f );
+        }
+    }
+
+    pActiveScenery = nullptr;
 }
 
 void ScenaricBank::installStaticPhysics( void *pBlob, uint32_t blobSize ) {

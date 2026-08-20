@@ -81,7 +81,7 @@ void EntitySoundDensity::installSoundBank() {
     bankPath += "Sound/Cinematics/";
     bankPath += pBankName;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FILESYSTEM (async bank install)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (cinematic sound bank install)
 
     Slots[SlotIndex].State = SDS_Finished;
     Slots[SlotIndex].pBankData = nullptr;
@@ -120,5 +120,5 @@ void EntitySoundDensity::onSoundBankInstalled() {
     State = SDS_Finished;
     Slots[SlotIndex].State = SDS_Finished;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (pSample = pBankData)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (pSample = the installed bank)
 }

@@ -4,6 +4,7 @@
 
 struct HiearchyNode;
 class ScenaricBank;
+class AudioDispatcherPlaybackSoundInstance;
 
 class SceneryBinary {
 public:
@@ -43,7 +44,7 @@ protected:
 
 class SoundBinary {
 public:
-    void *pSoundInstance = nullptr;
+    AudioDispatcherPlaybackSoundInstance *pSoundInstance = nullptr;
     void *pWav = nullptr;
     float Volume = 0.0f;
     float ClipDistanceMin = 0.0f;

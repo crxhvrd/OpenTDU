@@ -5,6 +5,8 @@
 #include "render/gs_render.h"
 #include "render/camera/gs_camera.h"
 #include "render/camera/camera_game.h"
+#include "render/mng_shadow.h"
+#include "render/hiearchy_node.h"
 
 EntityPassengerGoodies::EntityPassengerGoodies()
     : EntityActor(),
@@ -51,6 +53,34 @@ void EntityPassengerGoodies::tick() {
     }
 }
 
+static void RegisterModelAsShadowCaster( SerializedSkinnedModel &model ) {
+    // FUN_00808f00
+    if ( gpMngShadow == nullptr ) {
+        return;
+    }
+
+    if ( model.bDrawSimplifiedMesh ) {
+        gpMngShadow->addShadowCaster( model.MIInpostor.pInstance, 1.0f );
+        return;
+    }
+
+    if ( !model.bFullActorMesh ) {
+        return;
+    }
+
+    if ( model.pInstance != nullptr ) {
+        gpMngShadow->addShadowCaster( model.pInstance, 1.0f );
+        return;
+    }
+
+    for ( HiearchyNode *pNode = model.pHiearchNode; pNode != nullptr;
+          pNode = pNode->pNext ) {
+        if ( pNode->pInstance != nullptr ) {
+            gpMngShadow->addShadowCaster( pNode->pInstance, 1.0f );
+        }
+    }
+}
+
 bool EntityPassengerGoodies::draw( RenderScene *pScene ) {
     // FUN_007ebb10
     if ( CurrentBehavior == PG_MovementInCar ) {
@@ -63,8 +93,7 @@ bool EntityPassengerGoodies::draw( RenderScene *pScene ) {
     }
 
     if ( flags & 8 ) {
-        OTDU_UNIMPLEMENTED; // TODO: SHADOW - register the passenger model as a
-                            // shadow receiver
+        RegisterModelAsShadowCaster( Model );
     }
 
     if ( ( flags & 1 ) && ( flags & 4 ) ) {

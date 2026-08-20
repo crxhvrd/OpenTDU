@@ -10,6 +10,7 @@
 #include "game/scenaric/avatar_manager.h"
 #include "game/scenaric/spots.h"
 #include "game/scenaric/ik_offset_db.h"
+#include "game/scenaric/extra_challenge_cine_bank.h"
 
 #include "core/random/bcpl.h"
 
@@ -97,7 +98,8 @@ public:
 
     static void LoadScenaricBank( const char *pBankFolder,
                                   const char *pBankName,
-                                  ScenaricBank *pOutBank );
+                                  ScenaricBank *pOutBank,
+                                  bool bNoCopy = false );
 
     void prepareWorldEntityTemplates();
 
@@ -125,6 +127,13 @@ public:
     // every loaded entity template).
     inline const std::vector<ScenaricBank *> &getRegisteredBanks() const {
         return registeredBanks;
+    }
+    inline ExtraChallengeCineBank &getExtraChallengesCineBank() {
+        return extraChallengesCineBank;
+    }
+    inline ScenaricBank *getWorldScenaricBank() { return &worldScenaricBank; }
+    inline ScenaricBank *getWorldScenaricBank() const {
+        return const_cast<ScenaricBank *>( &worldScenaricBank );
     }
 
     Render3DD *findRender3DD( uint64_t hashcode );
@@ -181,6 +190,8 @@ private:
     // NOTE: The original uses derived bank types for a few of these
     // (aircrafts/boats/spot-mesh); they are plain
     // ScenaricBank here until those subclasses are implemented
+    ExtraChallengeCineBank extraChallengesCineBank;
+
     ScenaricBank worldScenaricBank;        // scworld
     ScenaricBank cinematicPackBank;        // pack_cinematiks
     ScenaricBank worldExtraChallengesBank; // extrachallenges

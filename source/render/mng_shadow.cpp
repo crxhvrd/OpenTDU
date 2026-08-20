@@ -1768,6 +1768,39 @@ void MngShadow::addShadowReceiver( HiearchyNode *pNode, bool bExclude ) {
     }
 }
 
+void MngShadow::addShadowCaster( Instance *param_2, float intensity ) {
+    // FUN_006f6ad0
+    if ( !bRenderCasters || !bLoadedBankResources ||
+         numCaster >= kNumMaxCaster || param_2 == nullptr ||
+         param_2->getNumLODs() == 0 ) {
+        return;
+    }
+
+    Eigen::Vector4f target;
+    target.head<3>() = getTarget();
+    target.w() = 1.0f;
+
+    const Eigen::Vector4f shift =
+        ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() )
+            ? gpWorldStreaming->getPosition()
+            : Eigen::Vector4f::Zero();
+    target -= shift;
+
+    const Eigen::Vector4f instancePosition = param_2->getModelMatrix().row( 3 );
+    const float distanceSq = ( instancePosition - target ).squaredNorm();
+    if ( distanceSq > falloff * falloff ) {
+        return;
+    }
+
+    Material *pMaterial = ( param_2->getBones() == nullptr )
+                              ? pMaterialCaster[numCaster]
+                              : pMaterialCasterSkinned[numCaster];
+    casters[numCaster].bind( param_2, false, pMaterial, sqrtf( distanceSq ),
+                             intensity );
+    expandCasterBoundingBox( instancePosition );
+    numCaster++;
+}
+
 void MngShadow::addShadowCaster( CarState *param_2 ) {
     // FUN_006f6720
     VehicleBase *pDVar1 = nullptr;

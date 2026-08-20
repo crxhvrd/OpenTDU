@@ -24,6 +24,9 @@ public:
 
     virtual const char *getChallengeName() const { return nullptr; }
 
+    inline int32_t getIndex() const { return Index; }
+    inline void setIndex( int32_t index ) { Index = index; }
+
 protected:
     void readAvatarConfigFromPNJ( BinaryReader *pReader,
                                   AvatarConfiguration &outConfig );

@@ -441,8 +441,8 @@ void EntityActor::updateSkinningMatrices() {
     }
 
     if ( Model.pSimplifiedMeshChunk != nullptr && pMechanism != nullptr &&
-         pMechanism->hasPhysicsController() ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+         pMechanism->hasPhysicsController() &&
+         pMechanism->getBrokenJointCount() == 0 ) {
         return;
     }
 

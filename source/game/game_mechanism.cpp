@@ -98,6 +98,27 @@ void GameMechanism::tick() {
     }
 }
 
+int32_t GameMechanism::getBrokenJointCount() const {
+    // FUN_00843140
+    if ( gpPhysics == nullptr ) {
+        return 0;
+    }
+
+    int32_t numBroken = 0;
+    for ( const std::pair<uint64_t, void *> &member : propBodies ) {
+        if ( member.second == nullptr ) {
+            continue;
+        }
+
+        const GSPhysics::PropMemberAttachment attachment =
+            gpPhysics->getPropMemberAttachment(
+                static_cast<RigidBody_t>( member.second ) );
+        numBroken += attachment.NumBroken;
+    }
+
+    return numBroken;
+}
+
 void GameMechanism::placeCollisionBody( const Matrix4x4f_t &worldTransform ) {
     // FUN_004563a0
     if ( propCollisionHashcode == 0 || gpPhysics == nullptr ) {

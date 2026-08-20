@@ -258,7 +258,7 @@ void EntityCheckPoint::deinstanciate() {
     }
 }
 
-void EntityCheckPoint::unknownFunc3() {
+void EntityCheckPoint::gmeEditionFactory() {
     // FUN_007f9690
     OTDU_UNIMPLEMENTED; // TODO: GAME EDITOR
 }

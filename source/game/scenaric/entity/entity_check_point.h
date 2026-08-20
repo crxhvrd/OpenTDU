@@ -42,7 +42,7 @@ public:
     void propagatePosition( Eigen::Vector4f &position, bool param_1 ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
     void deinstanciate() override;
-    void unknownFunc3() override;
+    void gmeEditionFactory() override;
     void onWorldStreamed() override;
 
 protected:

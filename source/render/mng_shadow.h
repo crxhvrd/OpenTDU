@@ -98,6 +98,7 @@ public:
     virtual void reset() override;
 
     void addShadowCaster( CarState *param_2 );
+    void addShadowCaster( Instance *param_2, float intensity );
     void addCockpitShadowCaster( CarState *param_2 );
     void addCockpitShadowCaster( HiearchyNode *param_2 );
 

@@ -11,6 +11,7 @@
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/entity/entity_driver.h"
+#include "game/scenaric/entity/entity_extra_challenge.h"
 #include "database/gs_database.h"
 #include "game/avatar/gs_avatar.h"
 #include "game/vehicle/car_state.h"
@@ -133,11 +134,11 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
     LoadScenaricBank( "scenarics", "world_boats", &boatsPathsBank );
     LoadScenaricBank( "scenarics/Packs", "pack_spots", &spotMeshBank );
 
-    OTDU_UNIMPLEMENTED;
+    extraChallengesCineBank.load( ExtraChallengeCineBank::ECBM_Intro );
 
     extraRewardsCineCount = 0;
     for ( int32_t i = 0; i < worldExtraChallengesBank.getEntityCount(); i++ ) {
-        const Entity *pEntity = worldExtraChallengesBank.getEntity( i );
+        Entity *pEntity = worldExtraChallengesBank.getEntity( i );
         if ( pEntity == nullptr ) {
             continue;
         }
@@ -145,6 +146,8 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
         const eEntityType type = pEntity->getType();
         if ( type == eEntityType::ET_SHOG || type == eEntityType::ET_HIHI ||
              type == eEntityType::ET_TRAN || type == eEntityType::ET_CVOY ) {
+            static_cast<EntityExtraChallenge *>( pEntity )->setIndex(
+                extraRewardsCineCount );
             extraRewardsCineCount++;
         }
     }
@@ -156,6 +159,8 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
     introTutorial.initialize( spotList );
 
     avatarManager.initialize();
+
+    OTDU_UNIMPLEMENTED; // TODO: ONLINE (bookmark refresh throttle)
 
     return true;
 }
@@ -422,6 +427,7 @@ void GSScenaric::terminate() {
     unloadBank( &aircraftsPathsBank );
     unloadBank( &boatsPathsBank );
     unloadBank( &spotMeshBank );
+    extraChallengesCineBank.unload();
     ikOffsetDB.terminate();
 }
 
@@ -580,7 +586,8 @@ void GSScenaric::setDefaultIGE( const char *param_1 ) { defaultIGE = param_1; }
 
 void GSScenaric::LoadScenaricBank( const char *pBankFolder,
                                    const char *pBankName,
-                                   ScenaricBank *pOutBank ) {
+                                   ScenaricBank *pOutBank,
+                                   bool bNoCopy ) {
     // FUN_00806470
     std::string bankPath = gpConfig->getResRootPath();
     bankPath += pBankFolder;
@@ -592,14 +599,15 @@ void GSScenaric::LoadScenaricBank( const char *pBankFolder,
     void *pCachedData = gpBootDatas->findInCache( bankPath.c_str(), &bankSize );
 
     if ( pCachedData == nullptr ) {
-        pOutBank->loadFromFile( bankPath.c_str(), nullptr, false );
+        pOutBank->loadFromFile( bankPath.c_str(), nullptr, bNoCopy );
         pOutBank->forceLoad();
     } else {
-        pOutBank->load( pCachedData, 0, 0, nullptr, false );
+        pOutBank->load( pCachedData, 0, 0, nullptr, bNoCopy );
         pOutBank->forceLoad();
     }
 
-    if ( gpScenaric != nullptr ) {
+    if ( gpScenaric != nullptr &&
+         pOutBank != gpScenaric->getWorldScenaricBank() ) {
         gpScenaric->registerBank( pOutBank );
     }
 }
@@ -618,6 +626,9 @@ void GSScenaric::unloadPacks() {
 }
 
 void GSScenaric::prepareWorldEntityTemplates() {
+    if ( worldScenaricBank.isLoaded() ) {
+        worldScenaricBank.activate( nullptr );
+    }
     for ( ScenaricBank *pBank : registeredBanks ) {
         if ( pBank == nullptr || !pBank->isLoaded() ) {
             continue;
@@ -641,6 +652,24 @@ void GSScenaric::prepareWorldEntityTemplates() {
     OTDU_UNIMPLEMENTED;
 }
 
+// TEMPORARY - Make sure world bank lookup always resolve to a valid entity.
+// Can be removed once we confirm this is NOP/never hits
+template <typename LookupFn>
+static auto FindInUnregisteredWorldBank( ScenaricBank *pWorldBank,
+                                         const char *pWhat,
+                                         uint64_t hashcode,
+                                         LookupFn lookup )
+    -> decltype( lookup( pWorldBank ) ) {
+    auto pResult = lookup( pWorldBank );
+    if ( pResult != nullptr ) {
+        OTDU_TRIGGER_BREAKPOINT;
+        OTDU_LOG_WARN( "%s %016llx resolved from the world scenaric bank, "
+                       "which retail leaves unregistered\n",
+                       pWhat, (unsigned long long)hashcode );
+    }
+    return pResult;
+}
+
 Entity *GSScenaric::findEntityByHashcode( uint64_t hashcode ) const {
     // FUN_00425b90
     for ( ScenaricBank *pBank : registeredBanks ) {
@@ -652,7 +681,11 @@ Entity *GSScenaric::findEntityByHashcode( uint64_t hashcode ) const {
             return pEntity;
         }
     }
-    return nullptr;
+    return FindInUnregisteredWorldBank(
+        getWorldScenaricBank(), "entity", hashcode,
+        [hashcode]( ScenaricBank *pBank ) {
+            return pBank->getEntityByHashcode( hashcode );
+        } );
 }
 
 SoundBinary *GSScenaric::getSCTDSound( uint64_t hashcode ) const {
@@ -670,7 +703,11 @@ SoundBinary *GSScenaric::getSCTDSound( uint64_t hashcode ) const {
             return pSound;
         }
     }
-    return nullptr;
+    return FindInUnregisteredWorldBank(
+        getWorldScenaricBank(), "SCTDSound", hashcode,
+        [hashcode]( ScenaricBank *pBank ) {
+            return pBank->getSoundByHashcode( hashcode );
+        } );
 }
 
 void *GSScenaric::findWavData( uint64_t hashcode, int32_t *pOutSize ) const {
@@ -686,7 +723,11 @@ void *GSScenaric::findWavData( uint64_t hashcode, int32_t *pOutSize ) const {
             return pData;
         }
     }
-    return nullptr;
+    return FindInUnregisteredWorldBank(
+        getWorldScenaricBank(), "wav", hashcode,
+        [hashcode, pOutSize]( ScenaricBank *pBank ) {
+            return pBank->getWavData( hashcode, pOutSize );
+        } );
 }
 
 Entity *GSScenaric::getSCVolume( uint64_t hashcode ) const {
@@ -703,7 +744,11 @@ Entity *GSScenaric::getSCVolume( uint64_t hashcode ) const {
             return pVolume;
         }
     }
-    return nullptr;
+    return FindInUnregisteredWorldBank(
+        getWorldScenaricBank(), "SCVolume", hashcode,
+        [hashcode]( ScenaricBank *pBank ) {
+            return pBank->getVolumeByHashcode( hashcode );
+        } );
 }
 
 void GSScenaric::registerBank( ScenaricBank *pBank ) {
@@ -736,7 +781,11 @@ Render3DD *GSScenaric::findRender3DD( uint64_t hashcode ) {
             return pResult;
         }
     }
-    return nullptr;
+    return FindInUnregisteredWorldBank( getWorldScenaricBank(), "3DD", hashcode,
+                                        [hashcode]( ScenaricBank *pBank ) {
+                                            return pBank->getRender3DD(
+                                                hashcode );
+                                        } );
 }
 
 Render3DG *GSScenaric::findRender3DG( uint64_t hashcode ) {
@@ -752,7 +801,11 @@ Render3DG *GSScenaric::findRender3DG( uint64_t hashcode ) {
             return pResult;
         }
     }
-    return nullptr;
+    return FindInUnregisteredWorldBank( getWorldScenaricBank(), "3DG", hashcode,
+                                        [hashcode]( ScenaricBank *pBank ) {
+                                            return pBank->getRender3DG(
+                                                hashcode );
+                                        } );
 }
 
 Render2DM *GSScenaric::findRender2DM( uint64_t hashcode ) {
@@ -768,7 +821,11 @@ Render2DM *GSScenaric::findRender2DM( uint64_t hashcode ) {
             return pResult;
         }
     }
-    return nullptr;
+    return FindInUnregisteredWorldBank( getWorldScenaricBank(), "2DM", hashcode,
+                                        [hashcode]( ScenaricBank *pBank ) {
+                                            return pBank->getRender2DM(
+                                                hashcode );
+                                        } );
 }
 
 Render2DB *GSScenaric::findRender2DB( uint64_t hashcode ) {
@@ -784,7 +841,11 @@ Render2DB *GSScenaric::findRender2DB( uint64_t hashcode ) {
             return pResult;
         }
     }
-    return nullptr;
+    return FindInUnregisteredWorldBank( getWorldScenaricBank(), "2DB", hashcode,
+                                        [hashcode]( ScenaricBank *pBank ) {
+                                            return pBank->getRender2DB(
+                                                hashcode );
+                                        } );
 }
 
 SkeletonInstance *GSScenaric::findSkeleton( uint64_t hashcode ) {
@@ -800,7 +861,11 @@ SkeletonInstance *GSScenaric::findSkeleton( uint64_t hashcode ) {
             return pResult;
         }
     }
-    return nullptr;
+    return FindInUnregisteredWorldBank(
+        getWorldScenaricBank(), "skeleton", hashcode,
+        [hashcode]( ScenaricBank *pBank ) {
+            return pBank->getSkeleton( hashcode );
+        } );
 }
 
 SkeletonInstance *GSScenaric::resolveSkeleton( ScenaricBank *pBank,
@@ -837,7 +902,11 @@ ClipInstance *GSScenaric::findClip( uint64_t hashcode ) {
             return pResult;
         }
     }
-    return nullptr;
+    return FindInUnregisteredWorldBank( getWorldScenaricBank(), "clip",
+                                        hashcode,
+                                        [hashcode]( ScenaricBank *pBank ) {
+                                            return pBank->getClip( hashcode );
+                                        } );
 }
 
 ClipInstance *GSScenaric::resolveClip( ScenaricBank *pBank, void *pRefAnm ) {

@@ -151,8 +151,9 @@ public:
     virtual void reset();
     virtual void instanciate( MngActor *pMngActor, Entity *param_1 );
     virtual void deinstanciate();
-    virtual void unknownFunc3();
-    virtual void unknownFunc4();
+    // GME (GameModeEditor) vtable entries.
+    virtual void gmeEditionFactory();
+    virtual void gmeGetControlIndex();
     virtual void onWorldStreamed() { /* NOP */ }
     virtual void *getGeometryData() { return nullptr; }
     virtual void setColor( ColorRGBA color ) { /* NOP */ }

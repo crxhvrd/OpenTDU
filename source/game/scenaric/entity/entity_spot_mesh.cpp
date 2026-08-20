@@ -73,8 +73,7 @@ void EntitySpotMesh::unloadResources() {
     // FUN_009d9b30
     Entity::unloadResources();
     Model.uninstanciate();
-
-    OTDU_UNIMPLEMENTED; // TODO: ANIMATION
+    animation.terminate();
 
     if ( bInZone ) {
         notifySpotZoneEvent( SZE_Unloaded );

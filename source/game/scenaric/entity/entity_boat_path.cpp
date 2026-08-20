@@ -6,13 +6,11 @@
 
 EntityBoatPath::EntityBoatPath()
     : Entity(), pRecordArray( nullptr ), Floats{}, bFlag( false ) {
-    // FUN_009da130
-    OTDU_UNIMPLEMENTED;
+    // FUN_009da324 (inlined)
 }
 
 EntityBoatPath::~EntityBoatPath() {
     // FUN_00424120
-    OTDU_UNIMPLEMENTED;
 }
 
 void EntityBoatPath::loadResources( ScenaricBank *param_2 ) {

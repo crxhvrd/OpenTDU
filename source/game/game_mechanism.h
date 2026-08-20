@@ -45,6 +45,8 @@ public:
         return propCollisionHashcode;
     }
 
+    int32_t getBrokenJointCount() const;
+
     void setEntity( Entity *pEntityInstance );
 
     void setPureDynamicControllerDesc( SerializedPureDynamicController *pDesc );
