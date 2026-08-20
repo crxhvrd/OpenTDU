@@ -187,8 +187,8 @@ bool ModalMessageBox::close() {
 
 bool ModalMessageBox::FUN_0099fbe0() {
     // FUN_0099fbe0
-    // Force a currently-displayed box to start closing, guaranteeing it stays up
-    // for at least the minimum on-screen time (3.3s).
+    // Force a currently-displayed box to start closing, guaranteeing it stays
+    // up for at least the minimum on-screen time (3.3s).
     if ( inputState != eInputState::MMBIS_Displayed ) {
         return false;
     }
@@ -271,7 +271,7 @@ void ModalMessageBox::FUN_0099fcc0() {
     if ( iVar1 == 0 ) {
         bUnknownFlag = true;
         if ( ( bGameMessageBox == 2 ) &&
-             ( displayState = eDisplayState::MMBDS_Opened ) ) {
+             ( displayState == eDisplayState::MMBDS_Opened ) ) {
             displayState = eDisplayState::MMBDS_Closing;
             return;
         }

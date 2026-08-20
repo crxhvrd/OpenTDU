@@ -311,3 +311,15 @@ bool FlashPlayer::FUN_00441200( const char *param_2 ) {
 
     return bVar2;
 }
+
+void FlashPlayer::releaseTextInputFocus() {
+    // FUN_00441250
+    ScopedMutexLock lock = gpFlash->scopedLock();
+
+    FlashResource *pFVar1 = gpActiveFlashResource;
+    gpActiveFlashResource = pFlashResource;
+    gpPreviousActiveFlashResource = gpActiveFlashResource;
+    gpActiveFlashResource->getFlashUnknown()->FUN_0044ab50();
+    gpPreviousActiveFlashResource = pFVar1;
+    gpActiveFlashResource = pFVar1;
+}

@@ -42,6 +42,8 @@ public:
     bool spriteExists( const char *param_2 );
     bool FUN_00441200( const char *param_2 );
 
+    void releaseTextInputFocus();
+
 private:
     FlashResource *pFlashResource;
 };
