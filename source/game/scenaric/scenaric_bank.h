@@ -80,6 +80,7 @@ public:
     void instanciateSceneries();
 
     Entity *getFirst( eEntityType type );
+    Entity *findEntity( eEntityType type, const char *pInstanceName );
     Entity *getEntityByHashcode( uint64_t hashcode ) const;
     Entity *getVolumeByHashcode( uint64_t hashcode ) const;
     SoundBinary *getSoundByHashcode( uint64_t hashcode ) const;

@@ -59,3 +59,14 @@ void EntityAnmSet::deinstanciate() {
     // FUN_007f9290
     // NOP
 }
+
+RenderAnm *EntityAnmSet::findAnimation( uint32_t animID ) {
+    // FUN_007f93a0
+    for ( RenderAnm &anim : animations ) {
+        if ( anim.ID == animID ) {
+            return &anim;
+        }
+    }
+
+    return nullptr;
+}

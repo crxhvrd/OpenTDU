@@ -4,6 +4,7 @@
 
 #include "game/gs_base.h"
 #include "game/scenaric/scenaric_bank.h"
+#include "render/gs_render_helper.h"
 #include "filesystem/bank.h"
 #include "avatar_bnk.h"
 #include "avatar_configuration.h"
@@ -13,7 +14,7 @@
 class EntityAvatar;
 struct DBEntryPNJ;
 
-class GSAvatar : public GameSystem {
+class GSAvatar : public GameSystem, public RenderConfigurationChangeListener {
 public:
     static constexpr int32_t kNumIdentityBones = 256;
 
@@ -42,6 +43,8 @@ public:
     void tick( float totalTime, float deltaTime ) override;
     void draw( float deltaTime ) override;
     void terminate() override;
+
+    bool onConfigurationChanged() override;
 
     bool applyPNJConfiguration( AvatarConfiguration &outConfig,
                                 const DBEntryPNJ &pnjEntry );
@@ -96,6 +99,7 @@ private:
     void buildEyeDB();
     void loadConfigBanks();
     void buildDefaultConfig();
+    void buildLowResBonePalettes();
 
 private:
     Matrix4x4f_t pBones[2][kNumIdentityBones];

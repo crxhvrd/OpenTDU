@@ -160,4 +160,6 @@ struct AvatarImpostor : AvatarLOD {
     void terminate() override;
 
     void bindPartTextures() override;
+
+    void updateSceneVisibility();
 };

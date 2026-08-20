@@ -4,9 +4,13 @@
 #include "config/gs_config.h"
 #include "core/ed_store.h"
 #include "database/gs_database.h"
+#include "game/scenaric/entity/entity_anm_set.h"
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "render/animation/animation.h"
+#include "render/animation/skeleton.h"
+#include "render/gs_render.h"
 
 uint64_t gHashcodeNoMesh = 0;
 uint64_t gHashcodeArms = 0;
@@ -154,6 +158,35 @@ static bool ConvertClotheDBEntry( int32_t rowIndex,
     return true;
 }
 
+static void BakeLODPose( void *pSkeletonEntry,
+                         RenderAnm *pAnimation,
+                         Matrix4x4f_t *pOutBones,
+                         int32_t maxNumBones ) {
+    // FUN_008f6a40
+    SkeletonInstance skeleton;
+    if ( !skeleton.wrapBlob( static_cast<uint8_t *>( pSkeletonEntry ) +
+                             kAvatarSkeletonDataOffset ) ) {
+        return;
+    }
+
+    Animation animation;
+    animation.initialize( &skeleton, pAnimation->pClip );
+    animation.update( 1.0f );
+
+    const Matrix4x4f_t *pPalette = animation.getPalette();
+    if ( pPalette == nullptr ) {
+        return;
+    }
+
+    const int32_t numBones =
+        std::min( static_cast<int32_t>( skeleton.getNumNodes() ), maxNumBones );
+    for ( int32_t i = 0; i < numBones; i++ ) {
+        pOutBones[i] = pPalette[i];
+    }
+
+    animation.terminate();
+}
+
 GSAvatar::GSAvatar()
     : GameSystem(),
       pClothesDB( nullptr ),
@@ -178,7 +211,6 @@ GSAvatar::GSAvatar()
         }
     }
 
-    OTDU_UNIMPLEMENTED;
     gpAvatar = this;
 
     gHashcodeArms = AvatarCalcHashcode( "ARMS" );
@@ -195,7 +227,9 @@ GSAvatar::GSAvatar()
 
 GSAvatar::~GSAvatar() {
     // FUN_008f6de0
-    OTDU_UNIMPLEMENTED;
+    styleBank.unload();
+    pnjBank.unload();
+
     gpAvatar = nullptr;
 }
 
@@ -216,11 +250,13 @@ bool GSAvatar::initialize( TestDriveGameInstance * ) {
 
     faceParameterCount = faceParametersBank.getEntityCount();
 
-    OTDU_UNIMPLEMENTED;
-
     bankManager.initialize();
 
     pool.initialize();
+
+    buildLowResBonePalettes();
+
+    gpRender->registerConfigListener( this );
 
     return true;
 }
@@ -232,15 +268,52 @@ void GSAvatar::tick( float totalTime, float deltaTime ) {
 
 void GSAvatar::draw( float deltaTime ) {
     // FUN_008f6a10
-    OTDU_UNIMPLEMENTED;
+    for ( int32_t i = 0; i < AvatarPool::kNumInstances; i++ ) {
+        pool.getInstance( i ).Impostor.updateSceneVisibility();
+    }
 }
 
 void GSAvatar::terminate() {
     // FUN_008f7950
+    gpRender->unregisterConfigListener( this );
+
     pool.terminate();
     bankManager.terminate();
 
-    OTDU_UNIMPLEMENTED;
+    gpScenaric->unloadBank( &faceParametersBank );
+
+    pnjBank.unload();
+    styleBank.unload();
+
+    AvatarPartDB **ppDatabases[] = { &pClothesDB, &pDefaultPartsDB, &pBodyDB,
+                                     &pBodyLODDB, &pStyleDB,        &pSkinDB,
+                                     &pBeltDB,    &pEyeDB };
+
+    const int32_t numDatabases = static_cast<int32_t>(
+        sizeof( ppDatabases ) / sizeof( ppDatabases[0] ) );
+
+    for ( int32_t i = numDatabases - 1; i >= 0; i-- ) {
+        AvatarPartDB *&pDatabase = *ppDatabases[i];
+        if ( pDatabase == nullptr ) {
+            continue;
+        }
+
+        pDatabase->clear();
+        delete pDatabase;
+        pDatabase = nullptr;
+    }
+}
+
+bool GSAvatar::onConfigurationChanged() {
+    // FUN_008f62f0
+    for ( int32_t i = 0; i < AvatarPool::kNumInstances; i++ ) {
+        PooledAvatarEntry &instance = pool.getInstance( i );
+        if ( instance.bUsed ) {
+            instance.setEnvMap();
+        }
+    }
+
+    return true;
 }
 
 void GSAvatar::readAvatarConfig( const EntityAvatar *pAvatar,
@@ -1018,6 +1091,53 @@ void GSAvatar::loadConfigBanks() {
     pnjBank.loadBootBank( bankPath.c_str(), nullptr );
 
     buildDefaultConfig();
+}
+
+void GSAvatar::buildLowResBonePalettes() {
+    // FUN_008f7b50
+    ScenaricBank lodPoseBank;
+    GSScenaric::LoadScenaricBank( "scenarics/Avatars", "lod_bod_anim",
+                                  &lodPoseBank );
+
+    if ( lodPoseBank.getEntityCount() <= 0 ) {
+        return;
+    }
+
+    lodPoseBank.activate( nullptr );
+
+    Entity *pAnimSet =
+        lodPoseBank.findEntity( eEntityType::ET_ANMS, "LOD_pose" );
+
+    RenderAnm *pAnimation =
+        pAnimSet != nullptr
+            ? static_cast<EntityAnmSet *>( pAnimSet )->findAnimation( 1 )
+            : nullptr;
+
+    if ( pAnimation != nullptr && pAnimation->pClip == nullptr ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (LOD_pose clip resolution)
+        pAnimation = nullptr;
+    }
+
+    AvatarBnk &commonBodies = bankManager.getCommonBodies();
+    if ( pAnimation != nullptr && commonBodies.isInstallOK() ) {
+        commonBodies.addReference();
+
+        void *pManSkeleton = commonBodies.getSkeleton( "MAN_BODY" );
+        if ( pManSkeleton != nullptr ) {
+            BakeLODPose( pManSkeleton, pAnimation, pBones[1],
+                         kNumIdentityBones );
+        }
+
+        void *pWomanSkeleton = commonBodies.getSkeleton( "WOMAN_BODY" );
+        if ( pWomanSkeleton != nullptr ) {
+            BakeLODPose( pWomanSkeleton, pAnimation, pBones[0],
+                         kNumIdentityBones );
+        }
+
+        commonBodies.removeReference();
+    }
+
+    gpScenaric->unloadBank( &lodPoseBank );
 }
 
 void GSAvatar::buildDefaultConfig() {

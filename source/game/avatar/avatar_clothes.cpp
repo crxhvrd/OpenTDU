@@ -1097,6 +1097,30 @@ void AvatarImpostor::bindPartTextures() {
     OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
 }
 
+void AvatarImpostor::updateSceneVisibility() {
+    // FUN_008f1670
+    const bool bSceneEnabled = bDirty != 0 && pRenderTargetFront != nullptr &&
+                               pRenderTargetBack != nullptr;
+
+    if ( Index < kNumAvtScenes ) {
+        RenderScene *pFrontScene =
+            gpRender->getRenderPassAtIndex( RP_AvtLRFront0 + Index ).pScene;
+        if ( pFrontScene != nullptr ) {
+            pFrontScene->setEnabled( bSceneEnabled );
+        }
+
+        RenderScene *pBackScene =
+            gpRender->getRenderPassAtIndex( RP_AvtLRBack0 + Index ).pScene;
+        if ( pBackScene != nullptr ) {
+            pBackScene->setEnabled( bSceneEnabled );
+        }
+    }
+
+    if ( bDirty != 0 ) {
+        bDirty--;
+    }
+}
+
 void AvatarClothe::initialize( int32_t index,
                                FileCollection3D *pCollection,
                                int32_t geometryPoolSize,

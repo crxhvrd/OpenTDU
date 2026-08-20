@@ -19,6 +19,8 @@ public:
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
     void deinstanciate() override;
 
+    RenderAnm *findAnimation( uint32_t animID );
+
 protected:
     std::vector<RenderAnm> animations;
 };

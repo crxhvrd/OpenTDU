@@ -644,6 +644,23 @@ Entity *ScenaricBank::getFirst( eEntityType type ) {
     return nullptr;
 }
 
+Entity *ScenaricBank::findEntity( eEntityType type,
+                                  const char *pInstanceName ) {
+    // FUN_007dab40
+    for ( int32_t i = 0; i < entities.getCount(); i++ ) {
+        Entity *pEntity = static_cast<Entity *>( entities.getElement( i ) );
+        if ( pEntity == nullptr || pEntity->getType() != type ) {
+            continue;
+        }
+
+        if ( StringCmpI( pEntity->getInstanceName().c_str(), pInstanceName ) ==
+             0 ) {
+            return pEntity;
+        }
+    }
+    return nullptr;
+}
+
 void ScenaricBank::forceLoad() {
     // FUN_007dbd50
     if ( state == BBS_Request || ( bExternalBuffer && state == BBS_TmpInit ) ) {
