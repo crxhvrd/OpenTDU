@@ -23,6 +23,7 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/save_game_manager.h"
 #include "render/particles/gs_particles.h"
+#include "online/mng_chat.h"
 
 GameMode *gpActiveGameMode = nullptr; // DAT_010e72f0
 
@@ -159,6 +160,18 @@ void GameMode::mainLoop( TestDriveGameInstance *param_1 ) {
         param_1->requestExit();
     } else {
         drawLoadingScreen();
+    }
+
+    if ( gpMngChat != nullptr ) {
+        gpMngChat->addLine( "Work In Progress Build", TestDrive::GetVersion(),
+                            0 );
+        gpMngChat->addLine( "https://tinyurl.com/3dvdz34u", "Report bugs", 1 );
+        gpMngChat->addLine( "https://tinyurl.com/bdey23xf",
+                            "Suggestions/ideas/feedback", 1 );
+#ifdef OTDU_DEVBUILD
+        gpMngChat->addLine( "(F1) Debug Menu / (F2) Freeze Time",
+                            "Devbuild shortcuts", 2 );
+#endif
     }
 
     while ( ( bExitRequested != true || ( bMessageBoxVisible != false ) ) ) {
