@@ -308,13 +308,13 @@ void SCIKOffsetDB::initialize() {
 
         if ( gpDatabase->isBike( pRow ) ) {
             SCIKBikeOffsets &record = pBikeIKOffsets[bikeIndex++];
-            std::memset( &record, 0, sizeof( record ) );
+            std::memset( (void *)&record, 0, sizeof( record ) );
             record.Id = recordID;
             record.HandSize = kDefaultBikeHandSize;
             record.FrontLimit = kDefaultBikeFrontLimit;
         } else {
             SCIKCarOffsets &record = pCarIKOffsets[carIndex++];
-            std::memset( &record, 0, sizeof( record ) );
+            std::memset( (void *)&record, 0, sizeof( record ) );
             record.Id = recordID;
             record.Offsets[kCarIKOffsetFootRight].Offset.z() =
                 kDefaultCarFootRightZ;
