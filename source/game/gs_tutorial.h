@@ -17,6 +17,7 @@ public:
 
 public:
     bool bPopupDisplayed; // TODO: getter/setter
+    bool bEnabled;
 };
 
 extern GSTutorial *gpTutorial;

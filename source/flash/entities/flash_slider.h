@@ -9,6 +9,13 @@ public:
     bool hasFocus() const { return bHasFocus; }
     float getValue() const { return value; }
 
+    inline void rebind( FlashPlayer *pPlayer, const char *pVarName ) {
+        // FUN_009b51a0 (inlined)
+        pFlashPlayer = pPlayer;
+        varName = pVarName;
+        isVertical = 1;
+    }
+
 public:
     FlashSlider();
     ~FlashSlider();

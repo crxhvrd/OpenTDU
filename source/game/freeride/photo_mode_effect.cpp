@@ -1,10 +1,15 @@
 #include "shared.h"
 #include "photo_mode_effect.h"
 
+static constexpr const char *kSliderVarNames[9] = { // DAT_00f9c150
+    "/:PM_FOV",      "/:PM_RadialBlur", "/:PM_Saturation", "/:null", "/:null",
+    "/:PM_Contrast", "/:null",          "/:null",          "/:null" };
+
 PhotoModeEffect::PhotoModeEffect()
     : activeSliderIndex( -1 ),
       field_0x418( 0 ),
       field_0x421( false ),
+      pFlashPlayer( nullptr ),
       field_0x428( 0xffffffff ),
       field_0x42c( 0xffffffff ) {
     // FUN_009b5340
@@ -35,6 +40,15 @@ void PhotoModeEffect::setSlidersRange() {
     pSliders[6].setRange( -1.0f, 1.0f );
     pSliders[7].setRange( -1.0f, 1.0f );
     pSliders[8].setRange( -1.0f, 1.0f );
+}
+
+void PhotoModeEffect::setFlashPlayer( FlashPlayer *pPlayer ) {
+    // FUN_009b51a0
+    pFlashPlayer = pPlayer;
+
+    for ( int32_t i = 0; i < 9; i++ ) {
+        pSliders[i].rebind( pFlashPlayer, kSliderVarNames[i] );
+    }
 }
 
 void PhotoModeEffect::tick( float /*deltaTime*/ ) {

@@ -5,6 +5,7 @@
 #include "photo_mode_effect.h"
 
 struct Material;
+struct FlashMessage;
 class FlashPlayer;
 
 class MngPhotoMode : public Manager {
@@ -21,6 +22,13 @@ public:
     bool initialize( TestDriveGameInstance * ) override;
     void tick( float, float ) override;
     void terminate() override;
+
+    bool onMessage( FlashMessage *pMessage );
+
+    inline void setFlashPlayer( FlashPlayer *pPlayer ) {
+        pFlashPlayer = pPlayer;
+        PhotoFilters.setFlashPlayer( pPlayer );
+    }
 
 private:
     PhotoModeEffect PhotoFilters;

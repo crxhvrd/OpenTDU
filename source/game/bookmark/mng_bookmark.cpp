@@ -125,6 +125,22 @@ bool MngBookmark::onWorldStreamed( Eigen::Vector4f *param_1,
     return true;
 }
 
+void MngBookmark::setFlashPlayer( FlashPlayer *pFlashPlayer ) {
+    // FUN_0070b330
+    pPlayer = pFlashPlayer;
+
+    const char *pMovieName = bGME ? "/array" : "/menus/ss_menus/array/spots";
+    if ( strlen( pMovieName ) < 64 ) {
+        list.setPlayer( pFlashPlayer, pMovieName );
+    }
+}
+
+bool MngBookmark::onMessage( FlashMessage * ) {
+    // FUN_0070cb60
+    OTDU_UNIMPLEMENTED; // TODO: FLASH (bookmark list) / PLAYER_DATA
+    return false;
+}
+
 bool MngBookmark::requestPictureLoad( int32_t bookmarkIndex ) {
     // FUN_0070bb10
     mutexLoad.lock();

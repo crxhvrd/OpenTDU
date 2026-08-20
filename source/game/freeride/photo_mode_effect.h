@@ -2,6 +2,8 @@
 
 #include "flash/entities/flash_slider.h"
 
+class FlashPlayer;
+
 // Post-FX "photo filter" controller owned by MngPhotoMode. It exposes 9 Flash
 // sliders that, while photo mode is active, tweak the active camera FOV and the
 // post-processing stack (HDRI / radial blur).
@@ -11,6 +13,7 @@ public:
     ~PhotoModeEffect();
 
     void tick( float deltaTime );
+    void setFlashPlayer( FlashPlayer *pPlayer );
 
 private:
     void setSlidersRange();
@@ -23,6 +26,7 @@ private:
     int32_t activeSliderIndex; // -1 == none being edited
     int32_t field_0x418;
     bool field_0x421;
-    uint32_t field_0x428; // active filter bitmask
+    FlashPlayer *pFlashPlayer; // 0x424
+    uint32_t field_0x428;      // active filter bitmask
     uint32_t field_0x42c;
 };

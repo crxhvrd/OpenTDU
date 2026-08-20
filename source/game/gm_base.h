@@ -127,6 +127,7 @@ protected:
 
 protected:
     void registerManager( Manager *pManager );
+    void registerManagerFirst( Manager *pManager );
     void drawLoadingScreen();
     bool FUN_0097ed60();
 };

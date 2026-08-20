@@ -52,6 +52,13 @@ void MngPhotoMode::tick( float, float ) {
     }
 }
 
+bool MngPhotoMode::onMessage( FlashMessage * ) {
+    // FUN_006ce940
+    OTDU_UNIMPLEMENTED; // TODO: ONLINE (free-ride manager) / CAMERA (photo
+                        // camera) / POSTFX
+    return false;
+}
+
 void MngPhotoMode::terminate() {
     // FUN_00431f00
     MngScrenshots.destroy();

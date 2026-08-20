@@ -5,7 +5,10 @@ GSTutorial *gpTutorial = nullptr;
 bool gbTutorialEnabled = true;         // DAT_00f77da8
 bool gbScenarioTutorialEnabled = true; // DAT_00f8b208
 
-GSTutorial::GSTutorial() : GameSystem() { gpTutorial = this; }
+GSTutorial::GSTutorial()
+    : GameSystem(), bPopupDisplayed( false ), bEnabled( false ) {
+    gpTutorial = this;
+}
 
 GSTutorial::~GSTutorial() {}
 

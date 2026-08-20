@@ -5,9 +5,14 @@
 #include "tdu_instance.h"
 
 #include "database/gs_database.h"
+#include "game/gs_tutorial.h"
+#include "game/mng_hud.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/entity/entity_extra_challenge.h"
 #include "game/scenaric/local_player.h"
 #include "game/vehicle/car_state.h"
+#include "flash/mng_flash_localize.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 GMFreeride::GMFreeride()
     : GameModeWorld( 6 ),
@@ -19,24 +24,32 @@ GMFreeride::GMFreeride()
       mngLogoDisplay(),
       mngMapScreenshot(),
       mngInGameMenu(),
-      mngChat() {
+      mngChat(),
+      flashListSpots(),
+      bResumedFromPauseMenu( false ),
+      bEnterSpotClipVisible( false ),
+      enterSpotClipTimer( 0.0f ),
+      spotBank(),
+      pExtraChallenges{},
+      numExtraChallenges( 0 ) {
     // FUN_00793880
+    if ( gpMngMapScreenshot == nullptr ) {
+        gpMngMapScreenshot = &mngMapScreenshot;
+    }
+
     registerManager( &mngBookmark );
     registerManager( &mngFRMeetingIC );
     registerManager( &mngPhotoMode );
     registerManager( &mngFontPlayers );
     registerManager( &mngLogoDisplay );
 
-    // The map-screenshot tool manager is only ticked when explicitly enabled.
     if ( gbMapScreenshotsMngEnabled ) {
-        registerManager( &mngMapScreenshot );
+        registerManagerFirst( &mngMapScreenshot );
     }
 
     registerManager( &mngInGameMenu );
     registerManager( &mngCamGPS );
     registerManager( &mngChat );
-
-    OTDU_UNIMPLEMENTED; // TODO: SCENARICS
 
     mngFlash.setWantsAsyncInstall( true );
     mngBookmark.setMngFlash( &mngFlash );
@@ -61,13 +74,150 @@ GMFreeride::~GMFreeride() {
     if ( gpTimer != nullptr ) {
         gpTimer->GameSpeed = gpTimer->PreviousGameSpeed;
     }
+}
 
-    OTDU_UNIMPLEMENTED;
+void GMFreeride::initialize() {
+    // FUN_00797340
+    OTDU_UNIMPLEMENTED; // TODO: SCENARIC / FLASH (ad banners)
+
+    if ( gpScenaric != nullptr ) {
+        gpScenaric->setICEnabled( false );
+    }
+
+    GameModeWorld::initialize();
+}
+
+void GMFreeride::reset() {
+    // FUN_00796830
+    OTDU_UNIMPLEMENTED; // TODO: ONLINE (P2P free-ride manager) / GSAI (cop and
+                        // bot pools, infringement transfer) / MngActor (player
+                        // spawn placement)
+
+    GameModeWorld::reset();
+
+    OTDU_UNIMPLEMENTED; // TODO: SCENARIC/TUTORIAL
+    gatherExtraChallenges();
+
+    OTDU_UNIMPLEMENTED; // TODO: CAMERA (map-exit hand-over) / PHYSICS
+                        // (postponed pause) / WORLD (sector draw toggle)
+}
+
+void GMFreeride::tick( float deltaTime, float totalTime ) {
+    // FUN_00796260
+    GameModeWorld::tick( deltaTime, totalTime );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (pending spot warp / spot cine
+                             // launch) / CAMERA (map return) / MngFade
+}
+
+void GMFreeride::draw( float /*deltaTime*/, float /*totalTime*/ ) {
+    // FUN_007941f0
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic / FLASH
+}
+
+void GMFreeride::pause() {
+    // FUN_00794900
+    OTDU_UNIMPLEMENTED; // TODO: GSAI (bot/cop pools) / PLAYER_DATA (rental
+                        // fee) / SCENARIC
+
+    if ( gpTutorial != nullptr ) {
+        gpTutorial->bEnabled = false;
+    }
+
+    GameModeWorld::pause();
+}
+
+void GMFreeride::destroy() {
+    // FUN_00794860
+    GameModeWorld::destroy();
+
+    OTDU_UNIMPLEMENTED; // TODO: GSAI (bots/cops) / SCENARIC (spot cine slot
+                        // release) / FLASH (ad banners)
+
+    const ScenaricBank::eBankState bankState = spotBank.getState();
+    if ( bankState != ScenaricBank::BBS_Unused &&
+         bankState != ScenaricBank::BBS_LoadFailed && gpScenaric != nullptr ) {
+        gpScenaric->unloadBank( &spotBank );
+    }
+}
+
+void GMFreeride::onResourceStreamed() {
+    // FUN_007940f0
+    GameModeWorld::onResourceStreamed();
+
+    FlashPlayer *pPlayer = mngHudChallenge.getHudPlayer();
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    mngBookmark.setFlashPlayer( pPlayer );
+    mngFRMeetingIC.setFlashPlayer( pPlayer );
+    mngInGameMenu.setFlashPlayer( pPlayer );
+
+    if ( gpMngFlashLocalize != nullptr ) {
+        OTDU_UNIMPLEMENTED; // TODO: PLAYER_DATA
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: PLAYER_DATA
+
+    mngFlash.addWidget( "spot", &flashListSpots );
+    flashListSpots.setPlayer( pPlayer, "/menus/ss_menus/array/spots" );
+    flashListSpots.setFlashPlayer( pPlayer );
+
+    if ( gpTutorial != nullptr ) {
+        gpTutorial->bEnabled = true;
+    }
+
+    mngPhotoMode.setFlashPlayer( pPlayer );
+}
+
+bool GMFreeride::executeAction( int32_t param_2, void *param_3 ) {
+    // FUN_00794ff0
+    OTDU_UNIMPLEMENTED; // TODO: SCENARIC / MngFade / PHYSICS / DATABASE
+
+    return false;
+}
+
+void GMFreeride::gatherExtraChallenges() {
+    // FUN_00792e60
+    numExtraChallenges = 0;
+
+    if ( gpScenaric == nullptr ) {
+        return;
+    }
+
+    ScenaricBank *pBank = gpScenaric->getWorldExtraChallengesBank();
+    for ( int32_t i = 0; i < pBank->getEntityCount(); i++ ) {
+        Entity *pEntity = pBank->getEntity( i );
+        if ( pEntity == nullptr ) {
+            continue;
+        }
+
+        const eEntityType type = pEntity->getType();
+        if ( type != eEntityType::ET_SHOG && type != eEntityType::ET_HIHI &&
+             type != eEntityType::ET_TRAN && type != eEntityType::ET_CVOY ) {
+            continue;
+        }
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA — that per-challenge state
+                                 // array is not ported.
+
+        if ( !gbSimuModeEnabled ) {
+            mngActor.registerActor( pEntity );
+        }
+
+        if ( numExtraChallenges < kMaxNumExtraChallenges ) {
+            pExtraChallenges[numExtraChallenges] = pEntity;
+            numExtraChallenges++;
+        }
+    }
 }
 
 bool GMFreeride::onMessage( FlashMessage *pMessage ) {
     // FUN_00796f40
-    if ( GameModeWorld::onMessage( pMessage ) ) {
+    if ( GameModeWorld::onMessage( pMessage ) ||
+         mngPhotoMode.onMessage( pMessage ) ||
+         mngBookmark.onMessage( pMessage ) ) {
         return true;
     }
 
@@ -86,7 +236,9 @@ bool GMFreeride::onMessage( FlashMessage *pMessage ) {
         break;
     }
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED; // TODO: the "gogp"/"goho"/"home"/"gosh"/"gosp"/"goid"/
+                        // "goch"/"acex"/"acti"/"caex"/"info"/"noch"/"ssmn"
+                        // handlers (spot entry + extra challenges)
 
     return false;
 }
@@ -101,6 +253,8 @@ void GMFreeride::onPauseMenuRequested( bool bOpened ) {
 void GMFreeride::onMenuPauseExit( bool bRestoreState ) {
     // FUN_00793460
     GameModeWorld::onMenuPauseExit( bRestoreState );
+
+    bResumedFromPauseMenu = true;
 
     OTDU_UNIMPLEMENTED; // TODO: ONLINE/PHYSICS
 }

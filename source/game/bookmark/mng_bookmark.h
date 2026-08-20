@@ -9,6 +9,7 @@
 class FlashPlayer;
 class MngFlash;
 struct Material;
+struct FlashMessage;
 class MngBookmark;
 
 // Single bookmark entry
@@ -51,6 +52,9 @@ public:
                           Eigen::Vector4f *param_3 ) override;
 
     void setMngFlash( MngFlash *pFlash ) { pMngFlash = pFlash; }
+    void setFlashPlayer( FlashPlayer *pFlashPlayer );
+
+    bool onMessage( FlashMessage *pMessage );
 
 private:
     static constexpr int32_t kMaxNumBookmarks = 64;

@@ -272,6 +272,13 @@ void GameMode::registerManager( Manager *pManager ) {
                     pManager->getName(), kGameModeNames[currentGameMode] );
 }
 
+void GameMode::registerManagerFirst( Manager *pManager ) {
+    pManager->setIndex( 0 );
+    registeredManagers.insert( registeredManagers.begin(), pManager );
+    OTDU_LOG_DEBUG( "Registered manager '%s' first (for game mode '%s')\n",
+                    pManager->getName(), kGameModeNames[currentGameMode] );
+}
+
 void GameMode::drawLoadingScreen() {
     // FUN_0097e990
     float local_20 = transitionTime;

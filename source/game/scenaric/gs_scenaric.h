@@ -151,6 +151,9 @@ public:
     inline ExtraChallengeCineBank &getExtraChallengesCineBank() {
         return extraChallengesCineBank;
     }
+    inline ScenaricBank *getWorldExtraChallengesBank() {
+        return &worldExtraChallengesBank;
+    }
     inline ScenaricBank *getWorldScenaricBank() { return &worldScenaricBank; }
     inline ScenaricBank *getWorldScenaricBank() const {
         return const_cast<ScenaricBank *>( &worldScenaricBank );
