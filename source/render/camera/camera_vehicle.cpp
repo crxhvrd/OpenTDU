@@ -35,11 +35,12 @@ static constexpr float kGroundContactMin = 0.75f;   // DAT_00fab3d4
 static constexpr float kNoHitSentinel = -100000.0f; // DAT_00f418fc
 static constexpr float kFixedFwdStep =
     20.0f; // DAT_00f03ee0 (in-car target forward step)
-static constexpr float kLeanCross = 1.0f;         // DAT_00fab3c8
-static constexpr float kLeanFwd = -3.0f;          // DAT_00fab3cc
-static constexpr float kMetersPerSecToKmh = 3.6f; // DAT_00f41768
-static constexpr float kBlurSpeedScale = 0.2f;    // DAT_00f41730 (km/h -> byte)
-static constexpr float kBlurOutputScale = 0.04f;  // DAT_00f41980
+static constexpr float kLeanCross = 1.0f;              // DAT_00fab3c8
+static constexpr float kLeanFwd = -3.0f;               // DAT_00fab3cc
+static constexpr float kMetersPerSecToKmh = 3.6f;      // DAT_00f41768
+static constexpr float kKmhToMeterPerSec = 0.2777778f; // DAT_00f41868
+static constexpr float kBlurSpeedScale = 0.2f;   // DAT_00f41730 (km/h -> byte)
+static constexpr float kBlurOutputScale = 0.04f; // DAT_00f41980
 static constexpr float kBlurIntensityScale = 30.0f; // DAT_00fab38c
 static constexpr float kSpringPos =
     0.004f; // DAT_00f41a20  (PosMin/Max byte -> m)
@@ -537,13 +538,14 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
     } else {
         const float loIn = (float)fovLerp.MinInput;
         const float hiIn = (float)fovLerp.MaxInput;
-        float t = ( hiIn > loIn ) ? ( speed - loIn ) / ( hiIn - loIn ) : 0.0f;
-        t = std::min( 1.0f, std::max( 0.0f, t ) );
+        const float speedKmh = speed * kMetersPerSecToKmh;
+        const float t =
+            ( hiIn != loIn ) ? ( speedKmh - loIn ) / ( hiIn - loIn ) : 0.0f;
         const float fovDeg =
-            (float)fovLerp.MinOutput +
-            ( (float)fovLerp.MaxOutput - (float)fovLerp.MinOutput ) * t;
+            BlendClamp( (float)fovLerp.MinOutput, (float)fovLerp.MaxOutput, t );
         vehicleFov = (uint8_t)fovDeg;
         fovRad = fovDeg * kDegToRad;
+        gCameraShakeDiag.FovDeg = fovDeg; // TEMP DIAGNOSTIC
     }
 
     const Matrix4x4f_t carMatrix = pBody->OffsetedWorldMatrix;
@@ -555,11 +557,12 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
     } else {
         float t = 0.0f;
         if ( ( vehicleFlags & 0x80 ) != 0 && (int32_t)gEditCameraFlags >= 0 ) {
-            const float loIn = (float)fovLerp.MinInput;
-            const float hiIn = (float)fovLerp.MaxInput;
+            const float loIn = (float)fovLerp.MinInput * kKmhToMeterPerSec;
+            const float hiIn = (float)fovLerp.MaxInput * kKmhToMeterPerSec;
             t = ( hiIn > loIn ) ? ( speed - loIn ) / ( hiIn - loIn ) : 0.0f;
             t = std::min( 1.0f, std::max( 0.0f, t ) );
         }
+        gCameraShakeDiag.FollowBlend = t; // TEMP DIAGNOSTIC
         gWorkFollow.PosZ = BlendClamp( follow.PosZ, followFast.PosZ, t );
         gWorkFollow.PosHeight =
             BlendClamp( follow.PosHeight, followFast.PosHeight, t );
@@ -1815,7 +1818,8 @@ void CameraVehicle::applySpeedShake( PhysicsVehicle *pPhys, float deltaTime ) {
     const Eigen::Vector4f shakeUp =
         Normalize( Vector4DCross( viewVector, shakeRight ) );
 
-    worldTargetWithUnknownOffset += shakeRight * shakeH + shakeUp * shakeV;
+    const Eigen::Vector4f shakeOffset = shakeRight * shakeH + shakeUp * shakeV;
+    worldTargetWithUnknownOffset += shakeOffset;
 }
 
 void CameraVehicle::updateMotionBlur( PhysicsVehicle *pPhys ) {
