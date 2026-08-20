@@ -1319,7 +1319,7 @@ void VehicleBase::updateLights() {
             local_30.y() = 0.0f;
             local_30.normalize();
 
-            Eigen::Vector4f local_20 = pCarState->getWorldPosition();
+            Eigen::Vector4f local_20 = pCarState->getWorldMatrix().row( 0 );
 
             // Call to FUN_00408070 (0x008c01ad) implicitly set w to 0.0f.
             // We do it inline since we are not re-using their custom math lib
