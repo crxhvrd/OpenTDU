@@ -1015,6 +1015,9 @@ void MngShadow::updateShadowCameraFrustum( bool bCockpit ) {
         cockpitCasterBBRadius = hx > hy ? hx : hy;
         if ( cockpitCasterBBRadius < hz )
             cockpitCasterBBRadius = hz;
+
+        lastCasterCockpitBBMin = casterCockpitBBMin;
+        lastCasterCockpitBBMax = casterCockpitBBMax;
     } else {
         casterBBMin.w() = 1.0f;
         casterBBMax.w() = 1.0f;
@@ -1156,6 +1159,9 @@ void MngShadow::updateShadowCameraFrustum( bool bCockpit ) {
     if ( !bCockpit ) {
         lastOrthoWidth = orthoWidth;
         lastOrthoHeight = orthoHeight;
+    } else {
+        lastOrthoWidthCockpit = orthoWidth;
+        lastOrthoHeightCockpit = orthoHeight;
     }
 
     // Get shader parameter arrays for the receiver materials

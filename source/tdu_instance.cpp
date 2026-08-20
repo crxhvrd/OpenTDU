@@ -677,6 +677,7 @@ bool TestDriveGameInstance::initializeGameServices() {
                         registerService<GSCamera>( gpCamera ) );
     OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSCarDisplay>() );
     OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSCarState>() );
+    reorderService( gpCarState, gpCarDisplay );
     OTDU_ASSERT_ALWAYS( operationResult &=
                         registerService<GSDatabase>( gpDatabase ) );
     OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSDetails>() );
@@ -790,6 +791,27 @@ bool TestDriveGameInstance::registerService( TGS *pSystem ) {
 
     registeredServices.push_back( pSystem );
     return true;
+}
+
+void TestDriveGameInstance::reorderService( GameSystem *pService,
+                                            GameSystem *pTickBefore ) {
+    if ( pService == nullptr || pTickBefore == nullptr ) {
+        return;
+    }
+
+    auto it = std::find( registeredServices.begin(), registeredServices.end(),
+                         pService );
+    auto target = std::find( registeredServices.begin(),
+                             registeredServices.end(), pTickBefore );
+    if ( it == registeredServices.end() || target == registeredServices.end() ||
+         it < target ) {
+        return;
+    }
+
+    registeredServices.erase( it );
+    target = std::find( registeredServices.begin(), registeredServices.end(),
+                        pTickBefore );
+    registeredServices.insert( target, pService );
 }
 
 void TestDriveGameInstance::setNextGameMode( eGameMode nextGameMode ) {

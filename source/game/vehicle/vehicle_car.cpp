@@ -1301,13 +1301,12 @@ void VehicleCar::submitInteriorShadowCasters() {
         if ( gpMngShadow != nullptr ) {
             if ( ( ( gpCamera->getActiveCamera()->getFlags() >> 0x12 ) & 1 ) !=
                  0 ) {
-                if ( bodyResource.pResourceBank != nullptr &&
-                     bodyResource.pResourceBank->isLoaded() ) {
+                if ( interiorResource.pResourceBank != nullptr &&
+                     interiorResource.pResourceBank->isLoaded() ) {
                     if ( ( ( gpCamera->getActiveCamera()->getFlags() ) & 1 ) !=
-                         0 ) {
-                        if ( !pCarState->FUN_00406ce0() ) {
-                            gpMngShadow->addCockpitShadowCaster( pCarState );
-                        }
+                             0 ||
+                         !pCarState->FUN_00406ce0() ) {
+                        gpMngShadow->addCockpitShadowCaster( pCarState );
                     }
                 }
             }

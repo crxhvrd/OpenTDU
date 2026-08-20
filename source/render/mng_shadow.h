@@ -76,6 +76,18 @@ public:
     }
     inline float getLastOrthoWidth() const { return lastOrthoWidth; }
     inline float getLastOrthoHeight() const { return lastOrthoHeight; }
+    inline const Eigen::Vector4f &getCasterCockpitBBMin() const {
+        return lastCasterCockpitBBMin;
+    }
+    inline const Eigen::Vector4f &getCasterCockpitBBMax() const {
+        return lastCasterCockpitBBMax;
+    }
+    inline float getLastOrthoWidthCockpit() const {
+        return lastOrthoWidthCockpit;
+    }
+    inline float getLastOrthoHeightCockpit() const {
+        return lastOrthoHeightCockpit;
+    }
     inline float getLastCasterDistance() const { return lastCasterDistance; }
     inline float getLastCasterIntensity() const { return lastCasterIntensity; }
     inline void setLastCasterDebug( const float param_1, const float param_2 ) {
@@ -203,6 +215,10 @@ private:
     Eigen::Vector4f lastCasterBBMax = Eigen::Vector4f::Zero();
     float lastOrthoWidth = 0.0f;
     float lastOrthoHeight = 0.0f;
+    Eigen::Vector4f lastCasterCockpitBBMin = Eigen::Vector4f::Zero();
+    Eigen::Vector4f lastCasterCockpitBBMax = Eigen::Vector4f::Zero();
+    float lastOrthoWidthCockpit = 0.0f;
+    float lastOrthoHeightCockpit = 0.0f;
     float lastCasterDistance = 0.0f;
     float lastCasterIntensity = 0.0f;
     uint32_t lastNumCasterCockpit;

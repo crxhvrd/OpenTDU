@@ -151,6 +151,7 @@ private:
 #endif
 
     template <typename TGS> bool registerService( TGS *pSystem = nullptr );
+    void reorderService( GameSystem *pService, GameSystem *pTickBefore );
 };
 
 extern TestDriveGameInstance *gpTestDriveInstance;

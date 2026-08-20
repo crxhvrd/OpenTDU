@@ -759,6 +759,24 @@ void GSRender::drawDebug( float deltaTime ) {
                          gpMngShadow->getLastCasterDistance(),
                          gpMngShadow->getLastCasterIntensity() );
 
+            const Eigen::Vector4f &cockpitBBMin =
+                gpMngShadow->getCasterCockpitBBMin();
+            const Eigen::Vector4f &cockpitBBMax =
+                gpMngShadow->getCasterCockpitBBMax();
+            ImGui::Text( "CockpitBB ctr = %.3f %.3f %.3f",
+                         ( cockpitBBMax.x() + cockpitBBMin.x() ) * 0.5f,
+                         ( cockpitBBMax.y() + cockpitBBMin.y() ) * 0.5f,
+                         ( cockpitBBMax.z() + cockpitBBMin.z() ) * 0.5f );
+            ImGui::Text( "CockpitBB size= %.3f %.3f %.3f",
+                         cockpitBBMax.x() - cockpitBBMin.x(),
+                         cockpitBBMax.y() - cockpitBBMin.y(),
+                         cockpitBBMax.z() - cockpitBBMin.z() );
+            ImGui::Text( "Cockpit ortho = %.3f x %.3f m (%.2f mm/texel)",
+                         gpMngShadow->getLastOrthoWidthCockpit(),
+                         gpMngShadow->getLastOrthoHeightCockpit(),
+                         gpMngShadow->getLastOrthoWidthCockpit() * 1000.0f /
+                             900.0f );
+
             ImGui::Text( "Ground   = %d/%d cells (%d gathered vtx)%s",
                          gpMngShadow->getLastNumGroundCells(),
                          gpMngShadow->getMaxGroundCells(),

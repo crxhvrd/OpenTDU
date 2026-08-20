@@ -318,7 +318,7 @@ void VehicleTraffic::draw() {
     if ( !bShouldDraw || !bVisible || !bValidPosition || bNeedToUnstream ||
          displayInstances[0].pNode == nullptr ||
          ( ( gpCamera->getActiveCamera()->getFlags() & 1 ) == 0 &&
-           !pCarState->FUN_00406ce0() ) ) {
+           pCarState->FUN_00406ce0() ) ) {
         return;
     }
     VehicleBase::draw();
