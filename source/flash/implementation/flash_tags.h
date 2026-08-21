@@ -11,15 +11,13 @@ struct FlashTagVTable;
 
 struct FlashTag {
     // On-disk SWF tag header: the tag id and the tag's total byte size. TDU1's
-    // 32-bit build overwrote these two fields in place with a vtable pointer and
-    // a next-tag pointer (the old x86Pointer_t fields). On x64 that needed
+    // 32-bit build overwrote these two fields in place with a vtable pointer
+    // and a next-tag pointer (the old x86Pointer_t fields). On x64 that needed
     // emulation; instead we KEEP the on-disk values and derive both at access
-    // time, so the header stays 8 bytes with no pointer emulation and no repack.
+    // time, so the header stays 8 bytes with no pointer emulation and no
+    // repack.
     uint32_t TagId;
-    uint32_t TagSize; // total bytes of this tag; next tag = this + TagSize (0 = last)
-
-    // Resolves the static function table for this tag's id (see GetVTableForTagId
-    // in flash_tags.cpp). Replaces the old cached `Vtable` field.
+    uint32_t TagSize;
     FlashTagVTable *getVtable() const;
 
     // Next tag in the buffer, or null at the end. Replaces the old `pNextTag`.
@@ -77,8 +75,6 @@ struct FlashTagSetBackgroundColorData : public FlashTag {
 OTDU_SIZE_MUST_MATCH( FlashTagSetBackgroundColorData, 0xc );
 
 struct FlashTagDoActionData : public FlashTag {
-    // Start of the inline ActionScript bytecode (read at this+0x8); never a real
-    // pointer (it only had x86Pointer_t because the struct put a field here).
     uint32_t pAction;
 };
 OTDU_SIZE_MUST_MATCH( FlashTagDoActionData, 0xc );
@@ -115,7 +111,7 @@ struct FlashTagRemoveObject2Data : public FlashTag {
 
 struct FlashTagUnknownData : public FlashTag {
     uint8_t Unknown[0x1c];
-    uint32_t pMaterialInstance; // unused slot; runtime ptr in FlashResource side-store
+    uint32_t pMaterialInstance;
     uint32_t MaterialHashcode[8];
 };
 OTDU_SIZE_MUST_MATCH( FlashTagUnknownData, 0x48 );
@@ -124,13 +120,13 @@ struct FlashTagDefineBitsLosslessData : public FlashTag {
     uint32_t Index;
     uint32_t BB[4];
     float pFloats[2];
-    uint32_t pMaterialInstance; // unused slot; runtime ptr in FlashResource side-store
+    uint32_t pMaterialInstance;
 };
 OTDU_SIZE_MUST_MATCH( FlashTagDefineBitsLosslessData, 0x28 );
 
 struct FlashTagStartSoundData : public FlashTag {
     uint32_t Unknown;
-    uint32_t pSoundInstance; // unused slot; runtime ptr in FlashResource side-store
+    uint32_t pSoundInstance;
 };
 OTDU_SIZE_MUST_MATCH( FlashTagStartSoundData, 0x10 );
 
@@ -141,17 +137,19 @@ struct FlashTagDefineEditTextData : public FlashTagPlaceObject2Data {
     uint16_t DictionaryIndex;
     uint16_t UnknownShort;
     ColorRGBA TextColor;
-    uint16_t field19_0x24;
+    int16_t field19_0x24;
     uint16_t field20_0x26;
     uint16_t field16_0x28;
-    uint16_t field_0x2a;
+    int16_t field_0x2a;
     uint16_t field25_0x2c;
     uint8_t UnknownFlags0;
     uint8_t UnknownFlags;
     uint8_t __PADDING2__[2];
     char pVariableName[62];
-    uint32_t UnknownPtr0; // unused slot; runtime ptr in FlashResource side-store
-    uint32_t UnknownPtr1; // unused slot; runtime ptr in FlashResource side-store
+    uint32_t
+        UnknownPtr0; // unused slot; runtime ptr in FlashResource side-store
+    uint32_t
+        UnknownPtr1; // unused slot; runtime ptr in FlashResource side-store
     char pVariableValue[2048];
 };
 

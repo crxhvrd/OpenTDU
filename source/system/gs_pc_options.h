@@ -20,15 +20,31 @@ enum eMainMenuOption : int32_t {
     MMO_HardcoreMode = 5,
 };
 
+enum eMenuAction : int32_t {
+    MA_None = 0,
+    MA_Resume = 1,
+    MA_NewGame = 2,       // wipe the current game and restart it
+    MA_QuitToDesktop = 3, // leave the process
+    MA_ChangeProfile = 4, // drop back to GM_Login
+};
+
 class GSPCOptions : public GameSystem,
                     public FlashEntity,
                     public PopupCallback {
+public:
+    static constexpr int32_t kMaxProfileEntries = 32;
+    static constexpr int32_t kMaxProfileNameLength = 32;
+    static constexpr int32_t kMaxDisplayedProfiles = 8;
+
 public:
     const char *getName() const override { /* FUN_0042b370 */
         return "PC_Options";
     }
 
     inline bool isMainMenuOpened() const { return bMainMenuOpened; }
+    inline eMenuAction getPendingMenuAction() const {
+        return eMenuAction( pendingMenuAction );
+    }
     inline void setMainMenuAllowed( const bool bAllowed ) {
         bCanOpenMainMenu = bAllowed;
     }
@@ -50,22 +66,43 @@ public:
     void onMainMenuChoice( eMainMenuOption choice );
     void onMainMenuSelection( eMainMenuOption selection );
 
+    void hideOptionsRoot();
+    void showProfileSelection( const int32_t mode );
+    void hideProfileSelection();
+
+    void updateMainMenuVisibility();
+    void refreshOnlineProfileScreen();
+    int32_t refreshProfileList();
+    void openNewProfilePopup();
+
 protected:
     void
     onClose( ePopupAnswer answer, void *param_2, int32_t param_3 ) override;
 
 private:
     void showOptionsRoot();
-    void hideOptionsRoot();
     void closeOptionsMenu();
     void setNotificationClipsVisible( bool bVisible );
     void handlePendingPopupAnswer();
     void settlePoliceFine();
+    void gatherProfileEntries();
 
 private:
     MngOptions mngOptions;
 
     FlashPlayer *pFlashPlayer;
+
+    char nickname[0x40];
+    char email[0x80];
+    char password[0x80];
+
+    bool bProfileScreenOpened;
+    int32_t profileScreenMode;
+    bool field297_0x188;
+
+    bool profileConnected[kMaxProfileEntries];
+    char profileNames[kMaxProfileEntries][kMaxProfileNameLength];
+
     PlayerConfiguration *pInputActions;
 
     bool bCanOpenMainMenu;

@@ -397,6 +397,18 @@ bool GSFile::retrieveSaveFolder() {
 
     OTDU_LOG_DEBUG( "Active savegame folder: '%S'\n", savegameFolder.c_str() );
 
+    std::error_code errorCode;
+    for ( const wchar_t *pSubFolder :
+          { L"", L"savegame", L"publisher", L"marketplace" } ) {
+        std::filesystem::create_directories( savegameFolder + pSubFolder,
+                                             errorCode );
+        if ( errorCode ) {
+            OTDU_LOG_ERROR( "Failed to create save folder '%S%S': %s\n",
+                            savegameFolder.c_str(), pSubFolder,
+                            errorCode.message().c_str() );
+        }
+    }
+
     return true;
 }
 
@@ -657,6 +669,18 @@ void GSFile::flushPendingAsync() {
     }
 
     gpTestDriveInstance->flushPendingFileInstanciation( false );
+}
+
+bool GSFile::isUsingFilemap() const {
+    ScopedMutexLock filemapLock( pFilemapMutex );
+
+    for ( const FileMap &filemap : filemaps ) {
+        if ( filemap.MapSize != 0 ) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool GSFile::fileExists( const char *pFilename ) {

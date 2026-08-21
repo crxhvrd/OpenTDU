@@ -52,7 +52,7 @@ GSPlayerData::GSPlayerData()
       lodQuality( 2 ),
       antiAliasing( eAntiAliasingMethod::AAM_Disabled ),
       bHDREnabled( false ),
-      languageStr( "us" ),
+      languageStr(),
       pMutex( new TestDriveMutex() ) {
     pMutex->initialize();
     // bOnlineOps[0] = DAT_014d5608 == 0;
@@ -142,7 +142,12 @@ void GSPlayerData::setHDREnabled( const bool bEnabled ) {
 
 const char *GSPlayerData::getLanguage() {
     // FUN_00898b40
-    return languageStr.empty() ? "us" : languageStr.c_str();
+    if ( languageStr.empty() ) {
+        languageStr = gpConfig->pLanguage;
+        updateUnitSystem();
+    }
+
+    return languageStr.c_str();
 }
 
 eAntiAliasingMethod GSPlayerData::getAAMethod() const { return antiAliasing; }
@@ -160,7 +165,8 @@ void GSPlayerData::setUnitSystem( const bool bUseImperial ) {
         gpMngHud->updateUnitSystem();
     }
 
-    MoviePlayer *pMoviePlayer = gpFlash->getMoviePlayer( 1, 0 );
+    MoviePlayer *pMoviePlayer =
+        gpFlash != nullptr ? gpFlash->getMoviePlayer( 1, 0 ) : nullptr;
     if ( pMoviePlayer != nullptr &&
          pMoviePlayer->MovieBank.getState() ==
              BankFlash::eBankFlashInit::BFI_Loaded ) {

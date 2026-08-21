@@ -153,6 +153,14 @@ static CmdLineArg CmdLineCinViewer( "cinviewer", []( const char *pArg ) {
     gGameModeOverride = GM_CinViewer;
 } );
 
+static CmdLineArg CmdLineFreeRide( "freeride", []( const char *pArg ) {
+    gGameModeOverride = GM_FreeRide;
+} );
+
+static CmdLineArg CmdLineLogin( "login", []( const char *pArg ) {
+    gGameModeOverride = GM_Login;
+} );
+
 // Runs the asset extractor in-process
 // TODO: Add PSOs precompilation in the future
 static bool OnFirstTimeRun() {

@@ -142,10 +142,28 @@ void edSys::pollEvents() {
         }
         // These are handled via SDL state polling (SDL_GetKeyboardState /
         // SDL_GetMouseState) and do not require event-based processing.
+        case SDL_EVENT_KEY_DOWN: {
+            if ( textInputCallback != nullptr ) {
+                switch ( event.key.key ) {
+                case SDLK_BACKSPACE:
+                    textInputCallback( '\b' );
+                    break;
+                case SDLK_TAB:
+                    textInputCallback( '\t' );
+                    break;
+                case SDLK_RETURN:
+                case SDLK_KP_ENTER:
+                    textInputCallback( '\r' );
+                    break;
+                default:
+                    break;
+                }
+            }
+            break;
+        }
         case SDL_EVENT_MOUSE_MOTION:
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP:
-        case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
             break;
         default:

@@ -18,10 +18,23 @@ UserProfileRegister::UserProfileRegister()
 
 UserProfileRegister::~UserProfileRegister() {}
 
+uint64_t UserProfileRegister::HashProfileName( const char *pProfileName ) {
+    // FUN_0060ab60
+    const uint32_t crc = TestDriveCRC32Unfolded( (const uint8_t *)pProfileName,
+                                                 strlen( pProfileName ) );
+
+    return static_cast<uint64_t>( static_cast<uint16_t>( crc ) );
+}
+
 bool UserProfileRegister::initialize( uint64_t hashcode ) {
     activeProfileHashcode = hashcode;
     activeProfileIndex = getProfileIndex( hashcode );
     activeProfileName.clear();
+
+    if ( activeProfileIndex < 0 ) {
+        OTDU_LOG_ERROR( "No profile matches hashcode %llu\n", hashcode );
+        return false;
+    }
 
     activeProfileName = profileNames[activeProfileIndex];
 
@@ -92,7 +105,7 @@ void UserProfileRegister::deserialize() {
     int32_t deserializedProfileIndex = getProfileIndex( activeProfileCRC );
     if ( deserializedProfileIndex < 0 ) {
         if ( profileNames.size() > 0 ) {
-            listHashcode = TestDriveCRC32( profileNames[0] );
+            listHashcode = HashProfileName( profileNames[0].c_str() );
         }
     } else {
         listHashcode = activeProfileCRC;
@@ -106,15 +119,95 @@ std::string UserProfileRegister::getProfileName( uint64_t hashcode ) const {
     return ( -1 < profileIndex ) ? profileNames[profileIndex] : "";
 }
 
+const char *
+UserProfileRegister::getProfileNameByIndex( const int32_t profileIndex ) const {
+    // FUN_0060a180
+    if ( profileIndex < 0 || size_t( profileIndex ) >= profileNames.size() ) {
+        return "";
+    }
+
+    return profileNames[profileIndex].c_str();
+}
+
 int32_t UserProfileRegister::getProfileIndex( uint64_t hashcode ) const {
+    // FUN_0060a020
     for ( size_t i = 0; i < profileNames.size(); i++ ) {
-        uint32_t profileHash = TestDriveCRC32( profileNames[i] );
-        if ( profileHash == hashcode ) {
+        if ( HashProfileName( profileNames[i].c_str() ) == hashcode ) {
             return static_cast<int32_t>( i );
         }
     }
 
     return -1;
+}
+
+bool UserProfileRegister::registerProfile( const char *pProfileName ) {
+    // FUN_0060a7f0
+    if ( profileNames.size() >= kMaxProfiles ) {
+        return false;
+    }
+
+    for ( const std::string &profileName : profileNames ) {
+        if ( StringCmpI( profileName.c_str(), pProfileName ) == 0 ) {
+            return false;
+        }
+    }
+
+    std::string profileName = pProfileName;
+    profileName.resize(
+        Min( profileName.length(), kMaxProfileNameLength - 1 ) );
+    profileNames.push_back( profileName );
+
+    serialize();
+
+    return true;
+}
+
+bool UserProfileRegister::updateProfileList( const uint64_t hashcode ) {
+    // FUN_0060a7b0
+    if ( getProfileIndex( hashcode ) < 0 ) {
+        return false;
+    }
+
+    listHashcode = hashcode;
+    serialize();
+
+    return true;
+}
+
+void UserProfileRegister::serialize() {
+    // FUN_0060a3b0
+    std::wstring saveLocation =
+        gpFile->getSaveLocation( eContextSource::CS_Savegame );
+    if ( saveLocation.empty() ) {
+        OTDU_LOG_ERROR( "Failed to retrieve save location; profile list will "
+                        "not be written\n" );
+        return;
+    }
+    saveLocation += L"/ProfileList.dat";
+
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    std::string narrowFilename = converter.to_bytes( saveLocation );
+
+    std::ofstream profileListStream( narrowFilename.c_str(),
+                                     std::ios::out | std::ios::binary |
+                                         std::ios::trunc );
+    if ( !profileListStream.good() ) {
+        OTDU_LOG_ERROR( "Failed to open '%s' for writing\n",
+                        narrowFilename.c_str() );
+        return;
+    }
+
+    for ( const std::string &profileName : profileNames ) {
+        const uint16_t nameLength = uint16_t( profileName.length() );
+        profileListStream.write( (const char *)&nameLength,
+                                 sizeof( uint16_t ) );
+        profileListStream.write( profileName.c_str(), nameLength );
+    }
+
+    const uint16_t endMarker = 0xffff;
+    profileListStream.write( (const char *)&endMarker, sizeof( uint16_t ) );
+    profileListStream.write( (const char *)&listHashcode, sizeof( uint64_t ) );
+    profileListStream.close();
 }
 
 void UserProfileRegister::FUN_0060a160() {

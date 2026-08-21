@@ -2825,9 +2825,10 @@ void FlashResourceUnknown::FUN_0044a790() {
         bool bFound = pFlash->getRoot()->resolveVarPath(
             pVarName, &pResolvedName, &pResolvedSprite );
         if ( bFound ) {
-            pResolvedSprite->getVariables()->getVariableAsString(
+            bFound = pFlash->getRoot()->getVariables()->getVariableAsString(
                 pActiveVar, pResolvedSprite->getInstanceID(), pResolvedName );
-        } else {
+        }
+        if ( !bFound ) {
             pActiveVar[0] = '\0';
         }
         if ( pActiveVar[0] == '\0' )
@@ -2869,9 +2870,10 @@ void FlashResourceUnknown::FUN_0044a790() {
         bool bFound = pFlash->getRoot()->resolveVarPath(
             pVarName, &pResolvedName, &pResolvedSprite );
         if ( bFound ) {
-            pResolvedSprite->getVariables()->getVariableAsString(
+            bFound = pFlash->getRoot()->getVariables()->getVariableAsString(
                 pActiveVar, pResolvedSprite->getInstanceID(), pResolvedName );
-        } else {
+        }
+        if ( !bFound ) {
             pActiveVar[0] = '\0';
         }
 
@@ -2895,11 +2897,10 @@ void FlashResourceUnknown::FUN_0044a790() {
 
         bool bReject;
         if ( charCount < (int32_t)(uint32_t)maxChars ) {
-            // Check buffer capacity
             char *pEnd2 = pActiveVar;
             while ( *pEnd2 )
                 pEnd2++;
-            uint32_t used = static_cast<uint32_t>( pEnd2 - ( pActiveVar + 1 ) );
+            uint32_t used = static_cast<uint32_t>( pEnd2 - pActiveVar );
             bReject = ( (uint32_t)maxChars * 4u <= used );
         } else {
             bReject = true;
@@ -2930,6 +2931,7 @@ LAB_0044a962:
             ActionScriptVariable *pVar =
                 pResolvedSprite->getVariables()->retrieveVariable(
                     pResolvedName, pResolvedSprite->getInstanceID() );
+
             if ( pVar != nullptr &&
                  pVar->Type == eFlashStackVarType::FSVT_WritableLinkedString ) {
                 char *pDest = const_cast<char *>( pVar->pStringPointer );

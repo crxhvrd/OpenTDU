@@ -179,6 +179,7 @@ public:
     void setCinematicViewerDefault( const std::string &param_1,
                                     const std::string &param_2 );
     void setDemoTimer( float param_1 );
+    inline float getDemoTimer() const { return demoTimer; }
     void delockChallengeRoads();
     void setTraceSize( uint32_t param_1 );
     void setDefaultIGE( const char *param_1 );

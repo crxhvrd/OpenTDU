@@ -109,6 +109,9 @@ public:
     inline uint32_t getNumChannels() { return channelCount; }
     inline InputChannel *getChannels() const { return pChannels; }
     inline uint32_t getNumChannelsDown() const { return numChannelsDown; }
+    inline bool hasChannelBeenPressed() const {
+        return channelHasBeenPressed >= 0;
+    }
 
 public:
     Device();

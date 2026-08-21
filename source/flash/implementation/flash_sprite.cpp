@@ -435,15 +435,9 @@ FlashTagDefineEditText_InsertLineWraps( FlashTagDefineEditTextData *pEditText,
             wChar = cp1252;
         }
         if ( wChar != 0 ) {
-            // Confusing Ghidra-decompiled pointer arithmetic to compute the
-            // end-of-buffer pointer. The intent is to track the string tail for
-            // memmove-style newline insertion.
-            const char *pBufEnd = pNext +
-                                  ( 0x1c8 - (uintptr_t)( pTextEnd + 1 ) ) +
-                                  (uintptr_t)&gpActiveFlashResource;
-            const char *pBufEndP1 = pNext +
-                                    ( 0x1c9 - (uintptr_t)( pTextEnd + 1 ) ) +
-                                    (uintptr_t)&pFlash;
+            char *const pTextBuffer = gpActiveFlashResource->getfield_0x1c8();
+            const char *pBufEnd = pTextBuffer + activeStringLen;
+            const char *pBufEndP1 = pBufEnd + 1;
             const char *pLineBreakPos = nullptr;
 
             do {
@@ -858,8 +852,7 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
     float yCursor = 0.0f;
     uint32_t charSpacingAdj = 0;
     uint32_t glyphOffset = 0;
-
-    bool bKeepUnicode = true;
+    bool bKeepUnicode = false;
 
     // Copy text from the variable or literal value into the active text buffer
     FlashResource *pFlash = nullptr;
@@ -1089,7 +1082,7 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
                                             (uint32_t)fontInterLineSpacing ) >>
                                 10 ) +
                        yCursor + invScale +
-                       (float)(uint32_t)pEditText->field_0x2a,
+                       (float)(int32_t)pEditText->field_0x2a,
                    lineStartY = yCursor, (float)textBoxHeight <= yCursor ) )
                 break;
             xCursor = FlashTagDefineEditText_ComputeHorizontalTextOffset(

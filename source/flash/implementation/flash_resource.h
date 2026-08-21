@@ -108,6 +108,9 @@ public:
     inline void setUnknownDword( int32_t param_1 ) {
         flashConfig.UnknownDword = param_1;
     }
+    inline void setClearBeforeDraw( bool param_1 ) {
+        flashConfig.bClearBeforeDraw = param_1;
+    }
     inline Eigen::Vector2f getViewportOrigin() {
         return Eigen::Vector2f( pUnknown->Viewport.X, pUnknown->Viewport.Y );
     }

@@ -10,9 +10,10 @@ MngFlashLogin::~MngFlashLogin() {}
 
 bool MngFlashLogin::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_0074e2d0
-    if ( pGameModeInstance != nullptr ) {
-        return pGameModeInstance->onMessage( pMessage, pPlayer );
+    if ( pGameModeInstance != nullptr &&
+         pGameModeInstance->onMessage( pMessage, pPlayer ) ) {
+        return true;
     }
 
-    return false;
+    return MngFlash::onMessage( pMessage, pPlayer );
 }

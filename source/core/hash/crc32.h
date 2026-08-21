@@ -72,6 +72,26 @@ static uint32_t TestDriveCRC32( const uint8_t *pContent,
     return ~uVar1 >> 0x10 ^ ~uVar1;
 }
 
+static uint32_t TestDriveCRC32Unfolded( const uint8_t *pContent,
+                                        size_t contentLength ) {
+    // FUN_00624440
+    static bool bLUTInitialized = false;
+    if ( !bLUTInitialized ) {
+        TestDriveCRC32InitLUT();
+        bLUTInitialized = true;
+    }
+
+    uint32_t uVar1 = 0xffffffff;
+    if ( 0 < contentLength ) {
+        do {
+            uVar1 = uVar1 >> 8 ^ gCRC32LUT[( *pContent ^ uVar1 ) & 0xff];
+            pContent = pContent + 1;
+            contentLength = contentLength + -1;
+        } while ( contentLength != 0 );
+    }
+    return ~uVar1;
+}
+
 static uint32_t TestDriveCRC32( const char *pString ) {
     return TestDriveCRC32( (const uint8_t *)pString, strlen( pString ) );
 }

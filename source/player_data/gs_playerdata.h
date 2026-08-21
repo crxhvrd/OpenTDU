@@ -62,6 +62,7 @@ public:
 
     void setUnitSystem( const bool bUseImperial );
     bool isOnline() const;
+    inline void setOnline( const bool bOnline ) { bIsOnline = bOnline; }
 
     void FUN_008985d0( void *pExternalBuffer, int bufferLength );
     bool FUN_00897990();

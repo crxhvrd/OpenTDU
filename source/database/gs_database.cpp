@@ -1581,10 +1581,7 @@ int32_t GSDatabase::setFlashLocalization( int32_t param_2,
         }
     }
 
-    const char *pLanguage = gpPlayerData->getLanguage();
-    if ( pLanguage[0] == '\0' ) {
-        gpPlayerData->setUnitSystem( strcmp( pLanguage, "us" ) == 0 );
-    }
+    gpPlayerData->getLanguage();
 
     setLanguage( param_4 );
     return local_4;

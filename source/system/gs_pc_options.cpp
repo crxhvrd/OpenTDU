@@ -12,25 +12,25 @@
 #include "flash/implementation/flash_resource.h"
 #include "flash/implementation/flash_sprite.h"
 #include "game/gm_base.h"
+#include "game/login/gm_login.h"
 #include "gs_timer.h"
 #include "input/input_device.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "player_data/save_game_manager.h"
+#include "player_data/user_profile.h"
 #include "tdu_instance.h"
 #include "world/weather/gs_weather.h"
 
 GSPCOptions *gpPCOptions = nullptr; // DAT_01416130
 
+// Hashcodes of the three CONFIGPC main menu confirmations.
+static constexpr uint64_t kClearCurrentGameHashcode = 0x3acf5fa;
+static constexpr uint64_t kReturnToWindowsHashcode = 0x39db3ba;
+static constexpr uint64_t kChangeProfileHashcode = 0x35475ba;
+
 static constexpr const char *kNotificationClips[] = {
     "/achievement", "/reward",   "/levelup",    "/pop_news",
     "/subtitle",    "/tutorial", "/jail_popup",
-};
-
-enum eMenuAction : int32_t {
-    MA_None = 0,
-    MA_Resume = 1,
-    MA_NewGame = 2,       // wipe the current game and restart it
-    MA_QuitToDesktop = 3, // leave the process
-    MA_ChangeProfile = 4, // drop back to GM_Login
 };
 
 GSPCOptions::GSPCOptions()
@@ -39,6 +39,14 @@ GSPCOptions::GSPCOptions()
       PopupCallback(),
       mngOptions(),
       pFlashPlayer( nullptr ),
+      nickname{},
+      email{},
+      password{},
+      bProfileScreenOpened( false ),
+      profileScreenMode( 0 ),
+      field297_0x188( false ),
+      profileConnected{},
+      profileNames{},
       pInputActions( nullptr ),
       bCanOpenMainMenu( true ),
       bMainMenuOpened( false ),
@@ -238,11 +246,13 @@ bool GSPCOptions::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
 
     case 0x6e67616d: // "ngam" — new game
         onMainMenuSelection( MMO_Continue );
+        gbSimuModeEnabled = false;
         return true;
 
     case 0x73696d75: // "simu" — hardcore mode
         pendingMenuAction = MA_Resume;
         onMainMenuSelection( MMO_HardcoreMode );
+        gbSimuModeEnabled = true;
         return true;
 
     case 0x736c6964: // "slid"
@@ -259,18 +269,40 @@ bool GSPCOptions::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         gpMngFlashCounter->onMessage( pMessage + 1, pPlayer );
         return true;
 
-    case 0x6e706f6d:             // "npom" — refresh main menu entry visibility
-    case 0x6c656470:             // "ledp"
-    case 0x70726f66:             // "prof" — profile screen
+    case 0x68696f75: // "hiou"
+    case 0x636b6b79: // "ckky"
+    case 0x6869696e: // "hiin"
+        if ( gpGMLogin != nullptr && gpActiveGameMode != nullptr &&
+             gpActiveGameMode->getCurrentGameMode() == GM_Login ) {
+            return gpGMLogin->onMessage( pMessage, pPlayer );
+        }
+        return false;
+
+    case 0x706f706e: // "popn" — the online profile form was opened
+        refreshOnlineProfileScreen();
+        return true;
+
+    case 0x70726f66: // "prof" — open the profile screen
+        hideOptionsRoot();
+        showProfileSelection( 0 );
+        return true;
+
+    case 0x6d6f706e: // "mopn" — the main menu asks which entries are selectable
+        updateMainMenuVisibility();
+        return true;
+
+    case 0x70636c73: // "pcls" — the profile screen was closed
+        hideProfileSelection();
+        if ( !field23_0x35 ) {
+            showOptionsRoot();
+        }
+        return true;
+
+    case 0x7064656c:             // "pdel" — delete the selected profile
     case 0x706e6577:             // "pnew"
-    case 0x706f706e:             // "popn"
     case 0x7073656c:             // "psel"
     case 0x7063616e:             // "pcan"
-    case 0x70636c73:             // "pcls"
     case 0x6f706f75:             // "opou"
-    case 0x6869696e:             // "hiin"
-    case 0x68696f75:             // "hiou"
-    case 0x636b6b79:             // "ckky" - cd key
     case 0x736e6473:             // "snds"
     case 0x77696467:             // "widg"
         OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND
@@ -474,7 +506,7 @@ void GSPCOptions::onMainMenuChoice( eMainMenuOption choice ) {
 
     case MMO_ChangeProfile:
         hideOptionsRoot();
-        OTDU_UNIMPLEMENTED; // TODO: FRONTEND (profile list screen)
+        showProfileSelection( 0 );
         break;
 
     case MMO_Options:
@@ -502,18 +534,37 @@ void GSPCOptions::onMainMenuSelection( eMainMenuOption selection ) {
     // FUN_007c5650
     switch ( selection ) {
     case MMO_Continue:
-        // "_Clear current game ? Sure ?"
-        OTDU_UNIMPLEMENTED; // TODO: FRONTEND
+        // TODO: PLAYERSAVE:
+        OTDU_UNIMPLEMENTED;
+
+        if ( gpTestDriveInstance->getActiveGameMode() == GM_Login ) {
+            OTDU_UNIMPLEMENTED_ONCE;
+            onClose( ePopupAnswer::PA_Accept, nullptr, 0 );
+            return;
+        }
+
+        TestDrive::DisplayModalPrompt( true, kClearCurrentGameHashcode, 0,
+                                       nullptr, this, nullptr, 0,
+                                       "_Clear current game ? Sure ?", true,
+                                       false, MPT_Warning, gpFlashMessageBox );
         return;
 
     case MMO_QuitToDesktop:
-        // "_Return to Windows ?"
-        OTDU_UNIMPLEMENTED; // TODO: FRONTEND
+        TestDrive::DisplayModalPrompt( true, kReturnToWindowsHashcode, 0,
+                                       nullptr, this, nullptr, 1,
+                                       "_Return to Windows ?", true, false,
+                                       MPT_Warning, gpFlashMessageBox );
         return;
 
     case MMO_ChangeProfile:
-        // "_Change profile ?"
-        OTDU_UNIMPLEMENTED; // TODO: FRONTEND
+        if ( gpTestDriveInstance->getActiveGameMode() == GM_Login ) {
+            onClose( ePopupAnswer::PA_Accept, nullptr, 2 );
+            return;
+        }
+
+        TestDrive::DisplayModalPrompt(
+            true, kChangeProfileHashcode, 0, nullptr, this, nullptr, 2,
+            "_Change profile ?", true, false, MPT_Warning, gpFlashMessageBox );
         return;
 
     case MMO_HardcoreMode:
@@ -526,8 +577,7 @@ void GSPCOptions::onMainMenuSelection( eMainMenuOption selection ) {
 
     case MMO_Quit:
         settlePoliceFine();
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND ("_Confirm Police Fine ?"
-                                 // prompt + fine debit)
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND
 
         onMainMenuSelection( ( pendingMenuAction == MA_QuitToDesktop )
                                  ? MMO_QuitToDesktop
@@ -601,6 +651,130 @@ void GSPCOptions::handlePendingPopupAnswer() {
     }
 }
 
+void GSPCOptions::hideProfileSelection() {
+    // FUN_007c3560
+    FlashClip clip;
+    if ( pFlashPlayer->getClipPlayer( "/profile", &clip ) &&
+         clip.pSprite != nullptr ) {
+        clip.setProperty( eFlashProperty::FP_Visible, false );
+    }
+    bProfileScreenOpened = false;
+}
+
+void GSPCOptions::updateMainMenuVisibility() {
+    // FUN_007c4fe0
+    int32_t playerDataState = 0;
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+
+    const eGameMode activeGameMode = gpTestDriveInstance->getActiveGameMode();
+    const int32_t bHasGameInProgress =
+        int32_t( playerDataState == 1 || activeGameMode != GM_Login );
+    const int32_t bNotIntro = int32_t( activeGameMode != GM_Intro );
+
+    pFlashPlayer->setVariableValue( "/options_root:isReco",
+                                    bHasGameInProgress );
+    pFlashPlayer->setVariableValue( "/options_root:isSimu",
+                                    bHasGameInProgress );
+    pFlashPlayer->setVariableValue( "/options_root:isNgam", bNotIntro );
+    pFlashPlayer->setVariableValue( "/options_root:isProf", bNotIntro );
+    pFlashPlayer->setVariableValue( "/options_root:isOpti",
+                                    int32_t( playerDataState != 0 ) );
+    pFlashPlayer->setVariableValue( "/options_root:isQuit", int32_t( 1 ) );
+}
+
+void GSPCOptions::refreshOnlineProfileScreen() {
+    // FUN_007c3e80
+    const int32_t numProfiles = gUserProfileRegister.getNumProfiles();
+
+    pFlashPlayer->setVariableValue( "/:nickname", nickname );
+    pFlashPlayer->setVariableValue( "/:email", email );
+    pFlashPlayer->setVariableValue( "/:password", password );
+
+    gatherProfileEntries();
+    refreshProfileList();
+
+    if ( numProfiles == 0 || profileScreenMode == 2 ) {
+        openNewProfilePopup();
+    }
+}
+
+void GSPCOptions::gatherProfileEntries() {
+    // FUN_0089b6f0
+    for ( int32_t i = 0; i < kMaxProfileEntries; i++ ) {
+        profileNames[i][0] = '\0';
+        profileConnected[i] = false;
+    }
+
+    const int32_t numProfiles = gUserProfileRegister.getNumProfiles();
+    for ( int32_t i = 0; i < numProfiles && i < kMaxProfileEntries; i++ ) {
+        const char *pProfileName =
+            gUserProfileRegister.getProfileNameByIndex( i );
+        if ( pProfileName == nullptr ) {
+            continue;
+        }
+
+        strncpy( profileNames[i], pProfileName, kMaxProfileNameLength );
+        profileNames[i][kMaxProfileNameLength - 1] = '\0';
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+}
+
+int32_t GSPCOptions::refreshProfileList() {
+    // FUN_007c3790
+    int32_t numProfiles = gUserProfileRegister.getNumProfiles();
+    pFlashPlayer->setVariableValue( "/:NoProfile",
+                                    int32_t( numProfiles == 0 ) );
+
+    if ( numProfiles < 0 ) {
+        numProfiles = 0;
+    } else if ( numProfiles > kMaxDisplayedProfiles ) {
+        numProfiles = kMaxDisplayedProfiles;
+    }
+    pFlashPlayer->setVariableValue( "/profile:nb_profiles", numProfiles );
+
+    int32_t selectedProfile = 0;
+    for ( int32_t i = 0; i < numProfiles; i++ ) {
+        char pVariableName[128];
+
+        sprintf( pVariableName, "/profile:connected_profile%d", i + 1 );
+        pFlashPlayer->setVariableValue( pVariableName,
+                                        int32_t( profileConnected[i] ) );
+
+        const char *pProfileName =
+            gUserProfileRegister.getProfileNameByIndex( i );
+
+        sprintf( pVariableName, "/profile/profile%d:name", i + 1 );
+        pFlashPlayer->setVariableValueNonLinked( pVariableName,
+                                                 profileNames[i] );
+
+        if ( pProfileName != nullptr &&
+             UserProfileRegister::HashProfileName( pProfileName ) ==
+                 gUserProfileRegister.getActiveProfileHashcode() ) {
+            selectedProfile = i;
+        }
+    }
+
+    pFlashPlayer->setVariableValue( "/profile:cur_profile",
+                                    selectedProfile + 1 );
+
+    pFlashPlayer->setVariableValueNonLinked(
+        "/:CurrentProfile",
+        ( numProfiles == 0 ) ? "" : profileNames[selectedProfile] );
+
+    return numProfiles;
+}
+
+void GSPCOptions::openNewProfilePopup() {
+    // FUN_007c35f0
+    if ( profileScreenMode == 2 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    }
+
+    pFlashPlayer->showFrame( "open", "/profile/new_profile", true );
+}
+
 void GSPCOptions::showOptionsRoot() {
     // FUN_007c48d0
     FlashClip clip;
@@ -619,6 +793,24 @@ void GSPCOptions::hideOptionsRoot() {
         clip.setProperty( eFlashProperty::FP_Visible, false );
     }
     bOptionsRootHidden = true;
+}
+
+void GSPCOptions::showProfileSelection( const int32_t mode ) {
+    // FUN_007c3a60
+    FlashClip clip;
+    if ( pFlashPlayer->getClipPlayer( "/profile", &clip ) &&
+         clip.pSprite != nullptr ) {
+        clip.setProperty( eFlashProperty::FP_Visible, true );
+    }
+
+    pFlashPlayer->showFrame( "profiles_in", "/", true );
+
+    bProfileScreenOpened = true;
+    profileScreenMode = mode;
+    field297_0x188 = false;
+
+    pFlashPlayer->setVariableValue( "/:ForceSelection",
+                                    uint32_t( mode != 0 ? 1u : 0u ) );
 }
 
 void GSPCOptions::closeOptionsMenu() {

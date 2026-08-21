@@ -5,6 +5,17 @@ public:
     inline uint64_t getActiveProfileHashcode() const {
         return activeProfileHashcode;
     }
+    inline uint64_t getProfileListHashcode() const { // FUN_0060a150
+        return listHashcode;
+    }
+    inline const std::string &getActiveProfileName() const { // FUN_0060a140
+        return activeProfileName;
+    }
+    inline int32_t getNumProfiles() const { // FUN_0060a170
+        return static_cast<int32_t>( profileNames.size() );
+    }
+
+    static uint64_t HashProfileName( const char *pProfileName );
 
 public:
     UserProfileRegister();
@@ -13,11 +24,20 @@ public:
     bool initialize( uint64_t hashcode );
 
     void deserialize();
+    void serialize();
     std::string getProfileName( uint64_t hashcode ) const;
+    const char *getProfileNameByIndex( const int32_t profileIndex ) const;
     int32_t getProfileIndex( uint64_t hashcode ) const;
+
+    bool registerProfile( const char *pProfileName );
+    bool updateProfileList( const uint64_t hashcode );
 
     void FUN_0060a160();
     uint32_t FUN_00419de0() const;
+
+private:
+    static constexpr size_t kMaxProfiles = 32;
+    static constexpr size_t kMaxProfileNameLength = 32;
 
 private:
     std::string saveRoot;

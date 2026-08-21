@@ -5,6 +5,7 @@
 class GSCDKey : public GameSystem {
 public:
     const char *getName() const override { return "CDKey"; }
+    inline bool hasValidGameKey() const { return bValidGameKey; }
 
 public:
     GSCDKey();

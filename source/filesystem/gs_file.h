@@ -78,6 +78,7 @@ public:
     }
 
     inline bool hasTaskPending() const { return bTaskInProgress; }
+    inline bool isFilemapActive() const { return bFilemapActive; }
     inline bool hasPendingFileToSave() const {
         return !saveQueue.FilesToSave.empty();
     }
@@ -123,6 +124,7 @@ public:
     void flushPendingAsync();
 
     bool fileExists( const char *pFilename );
+    bool isUsingFilemap() const;
 
     static bool SaveFile( const char *pFilename,
                           const void *pContent,

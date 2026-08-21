@@ -7,6 +7,7 @@
 #include "gs_flash.h"
 #include "gs_timer.h"
 #include "implementation/flash_sprite.h"
+#include "mng_flash_localize.h"
 #include "online/ed_net_gamespy_manager.h"
 #include "system/gs_keyboard_pc.h"
 
@@ -17,13 +18,25 @@ ModalMessageBox::ModalMessageBox()
     : pFlashPlayer( nullptr ),
       inputState( eInputState::MMBIS_None ),
       displayState( eDisplayState::MMBDS_Closed ),
+      promptType( MPT_Warning ),
+      bHasCancel( false ),
+      messageHashcode( 0ull ),
+      messageDatabaseIndex( 0 ),
+      pDefaultMessage( nullptr ),
+      pAnswerCallback( nullptr ),
+      pUserCallback( nullptr ),
+      pUserCallbackData( nullptr ),
+      pWaitingCallback( nullptr ),
+      pWaitingCallbackData( nullptr ),
       displayTime( 0.0f ),
       closeAfterDuration( 0.0f ),
-      answer( eCallbackAnswer::CA_None ),
+      answer( ePopupAnswer::PA_Unknown ),
+      userData( 0 ),
       numOpenMessageBox( 0 ),
       bGameMessageBox( 0 ),
       bUnknownFlag( false ),
-      bVisible( false ) {
+      bVisible( false ),
+      bUnknownFlag2( false ) {
     gpFlashMessageBox = this;
 }
 
@@ -34,12 +47,12 @@ void ModalMessageBox::tick() {
     if ( displayState == eDisplayState::MMBDS_Closing ) {
         displayState = eDisplayState::MMBDS_Closed;
 
-        if ( pUserCallback2 != nullptr ) {
-            pUserCallback2( answer, pUserCallbackData, userData );
+        if ( pAnswerCallback != nullptr ) {
+            pAnswerCallback( answer, pUserCallbackData, userData );
         }
 
-        if ( pWaitCallback != nullptr ) {
-            pWaitCallback( answer, pUserCallbackData, userData );
+        if ( pUserCallback != nullptr ) {
+            pUserCallback->onClose( answer, pUserCallbackData, userData );
         }
     }
 
@@ -116,7 +129,7 @@ LAB_009a0071:
 bool ModalMessageBox::display( uint64_t hashcode,
                                float param_2,
                                int32_t param_5,
-                               UserCallback_t *pCallback,
+                               void ( *pCallback )( void * ),
                                void *pCallbackData,
                                bool param_7 ) {
     // FUN_009a0210
@@ -125,15 +138,9 @@ bool ModalMessageBox::display( uint64_t hashcode,
     }
 
     displayTime = 0.0f;
-    pUserCallbackData = pCallbackData;
-    if ( pCallback != nullptr ) {
-        pWaitCallback =
-            std::bind( *pCallback, std::placeholders::_1, std::placeholders::_2,
-                       std::placeholders::_3 );
-    } else {
-        pWaitCallback = nullptr;
-    }
-    bUnknownFlag = param_7;
+    pWaitingCallback = pCallback;
+    pWaitingCallbackData = pCallbackData;
+    bUnknownFlag2 = param_7;
     if ( param_7 ) {
         int32_t iVar1 = gpFlash->getNumMovies( 1 );
         for ( int32_t i = 0; i < iVar1; i++ ) {
@@ -154,7 +161,7 @@ bool ModalMessageBox::display( uint64_t hashcode,
         const char *pcVar4 =
             gpDatabase->getStringByHashcode( param_5, hashcode );
         pPlayer->setVariableValue( "/:msg", pcVar4 );
-        pPlayer->showFrame( "/waiting", pFrameToDisplay, true );
+        pPlayer->showFrame( pFrameToDisplay, "/waiting", true );
     }
 
     updateInputState( param_2 );
@@ -214,7 +221,7 @@ void ModalMessageBox::FUN_0099feb0() {
         pWaitingCallback( pWaitingCallbackData );
     }
 
-    pWaitCallback = nullptr;
+    pWaitingCallback = nullptr;
     pWaitingCallbackData = nullptr;
 
     if ( bUnknownFlag2 != false ) {
@@ -325,8 +332,161 @@ void ModalMessageBox::FUN_009a0110() {
 
 void ModalMessageBox::FUN_0099fc80() {
     // FUN_0099fc80
-    answer = eCallbackAnswer::CA_Cancel;
+    answer = ePopupAnswer::PA_Cancel;
     if ( displayState == eDisplayState::MMBDS_Opened ) {
         displayState = eDisplayState::MMBDS_Closing;
     }
+}
+
+void ModalMessageBox::forceClose() {
+    // FUN_0099fe10
+    if ( gpActiveGameMode != nullptr ) {
+        gpActiveGameMode->setfield7_0x1c( true );
+        gpActiveGameMode->setsMessageBoxVisible( bVisible );
+    }
+
+    FlashPlayer *pPlayer = pFlashPlayer;
+    displayState = eDisplayState::MMBDS_Closed;
+    numOpenMessageBox = 0;
+    bUnknownFlag = true;
+
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    if ( promptType == MPT_Tutorial ) {
+        pPlayer->showFrame( "close", "/tutorial", false );
+        return;
+    }
+
+    pPlayer->showFrame( "default", "/avert", false );
+}
+
+void TestDrive::DisplayModalPrompt( bool bHasCancel,
+                                    uint64_t messageHashcode,
+                                    int32_t messageDatabaseIndex,
+                                    PopupAnswerCallback_t pAnswerCallback,
+                                    PopupCallback *pUserCallback,
+                                    void *pUserCallbackData,
+                                    int32_t userData,
+                                    const char *pDefaultMessage,
+                                    bool bHasValidButton,
+                                    bool bNoData,
+                                    eModalPromptType promptType,
+                                    ModalMessageBox *pMessageBox ) {
+    // FUN_009a03e0
+    if ( pMessageBox->displayState != ModalMessageBox::MMBDS_Closed ) {
+        if ( pMessageBox->pAnswerCallback != nullptr ) {
+            pMessageBox->pAnswerCallback( ePopupAnswer::PA_Unknown,
+                                          pMessageBox->pUserCallbackData,
+                                          pMessageBox->userData );
+        }
+
+        if ( pMessageBox->pUserCallback != nullptr ) {
+            pMessageBox->pUserCallback->onClose( ePopupAnswer::PA_Unknown,
+                                                 pMessageBox->pUserCallbackData,
+                                                 pMessageBox->userData );
+        }
+    }
+
+    if ( !bHasValidButton && !bHasCancel ) {
+        bHasValidButton = true;
+    }
+
+    pMessageBox->messageHashcode = messageHashcode;
+    pMessageBox->messageDatabaseIndex = messageDatabaseIndex;
+    pMessageBox->pUserCallback = pUserCallback;
+    pMessageBox->bHasCancel = bHasCancel;
+    pMessageBox->pAnswerCallback = pAnswerCallback;
+    pMessageBox->displayState = ModalMessageBox::MMBDS_Closed;
+    pMessageBox->promptType = promptType;
+    pMessageBox->pDefaultMessage = pDefaultMessage;
+    pMessageBox->pUserCallbackData = pUserCallbackData;
+    pMessageBox->userData = userData;
+    pMessageBox->answer = ePopupAnswer::PA_Unknown;
+
+    FlashPlayer *pPlayer = pMessageBox->pFlashPlayer;
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    FlashClip clip;
+    const char *pClipPath =
+        ( promptType == MPT_Tutorial ) ? "/tutorial" : "/avert";
+    if ( !pPlayer->getClipPlayer( pClipPath, &clip ) ) {
+        return;
+    }
+
+    if ( gpActiveGameMode != nullptr ) {
+        gpActiveGameMode->setfield7_0x1c( false );
+    }
+    pMessageBox->displayState = ModalMessageBox::MMBDS_Opening;
+
+    const char *pFlashVarName = nullptr;
+    if ( pMessageBox->promptType == MPT_Warning ) {
+        const char *pLabel = "on";
+        if ( pMessageBox->bHasCancel ) {
+            pLabel = bNoData ? "no_data" : "on_choice";
+        }
+
+        clip.goToLabelAndPlay( pLabel, true );
+        pFlashVarName = "/:m_AvertText";
+    } else if ( pMessageBox->promptType == MPT_Default ) {
+        clip.goToLabelAndPlay( "msg", true );
+        pFlashVarName = "/:m_MsgText";
+
+        pPlayer->setVariableValue( "/:IsCancel",
+                                   int32_t( pMessageBox->bHasCancel ) );
+        pPlayer->setVariableValue( "/:NoValidButton",
+                                   int32_t( !bHasValidButton ) );
+    } else {
+        const char *pLabel = "on";
+        if ( userData == 1 ) {
+            pLabel = "on_group";
+        } else if ( userData == 2 ) {
+            pLabel = "on_group_moto";
+        }
+
+        clip.goToLabelAndPlay( pLabel, true );
+        pFlashVarName = "/:TutorialText";
+
+        pPlayer->setVariableValueNonLinked( "/:WhatButton", "empty" );
+        pPlayer->setVariableValueNonLinked( "/:TutorialTitle", "" );
+    }
+
+    if ( pMessageBox->promptType == MPT_Tutorial ) {
+        pPlayer->setVariableValue( pFlashVarName, pDefaultMessage );
+        return;
+    }
+
+    if ( pMessageBox->messageHashcode == 0ull ) {
+        pPlayer->setVariableValueNonLinked(
+            pFlashVarName,
+            pDefaultMessage != nullptr ? pDefaultMessage : "#ERR: no message" );
+        return;
+    }
+
+    if ( gpMngFlashLocalize != nullptr ) {
+        gpMngFlashLocalize->setDatabaseContext(
+            pMessageBox->messageDatabaseIndex );
+        gpMngFlashLocalize->setVarLocalized( pPlayer, pFlashVarName,
+                                             pMessageBox->messageHashcode );
+        gpMngFlashLocalize->setDatabaseContext( 0 ); // BDD_Menus
+        return;
+    }
+
+    const char *pValue = gpDatabase->getStringByHashcode(
+        pMessageBox->messageDatabaseIndex, pMessageBox->messageHashcode );
+    if ( pValue != nullptr ) {
+        pPlayer->setVariableValue( pFlashVarName, pValue );
+        return;
+    }
+
+    if ( pDefaultMessage != nullptr ) {
+        pPlayer->setVariableValueNonLinked( pFlashVarName, pDefaultMessage );
+        return;
+    }
+
+    pPlayer->setVariableValueNonLinked( pFlashVarName,
+                                        "#ERR: no localized message" );
 }

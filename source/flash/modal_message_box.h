@@ -1,8 +1,33 @@
 #pragma once
 
+#include "core/popup_callback.h"
 #include "flash/mng_flash.h"
 
 class FlashPlayer;
+class ModalMessageBox;
+
+enum eModalPromptType : int32_t {
+    MPT_Warning = 0,  // '/avert', label on/on_choice/no_data, /:m_AvertText
+    MPT_Default = 1,  // '/avert', label msg, /:m_MsgText
+    MPT_Tutorial = 2, // '/tutorial', label on/on_group/on_group_moto
+};
+
+using PopupAnswerCallback_t = void ( * )( ePopupAnswer, void *, int32_t );
+
+namespace TestDrive {
+    void DisplayModalPrompt( bool bHasCancel,
+                             uint64_t messageHashcode,
+                             int32_t messageDatabaseIndex,
+                             PopupAnswerCallback_t pAnswerCallback,
+                             PopupCallback *pUserCallback,
+                             void *pUserCallbackData,
+                             int32_t userData,
+                             const char *pDefaultMessage,
+                             bool bHasValidButton,
+                             bool bNoData,
+                             eModalPromptType promptType,
+                             ModalMessageBox *pMessageBox );
+} // namespace TestDrive
 
 class ModalMessageBox {
 public:
@@ -22,10 +47,6 @@ public:
         MMBDS_Closing = 3,
     };
 
-    enum eCallbackAnswer : int32_t { CA_Ok = 0, CA_Cancel = 1, CA_None = 2 };
-    using UserCallback_t =
-        std::function<void( eCallbackAnswer, void *, int32_t )>;
-
 public:
     inline bool getUnknownFlag() const { return bUnknownFlag; }
     inline int32_t getNumOpenMsgBox() const { return numOpenMessageBox; }
@@ -38,7 +59,7 @@ public:
     bool display( uint64_t hashcode,
                   float param_2,
                   int32_t param_5,
-                  UserCallback_t *pCallback,
+                  void ( *pCallback )( void * ),
                   void *pCallbackData,
                   bool param_7 );
     eDisplayState getDisplayState() const;
@@ -47,6 +68,7 @@ public:
 
     void setPlayer( FlashPlayer *pPlayer );
 
+    void forceClose();
     void FUN_0099feb0();
     bool FUN_00403100();
     void FUN_0099fcc0();
@@ -78,14 +100,32 @@ public:
 
 private:
     friend class UnknownEntity;
+    friend void TestDrive::DisplayModalPrompt( bool,
+                                               uint64_t,
+                                               int32_t,
+                                               PopupAnswerCallback_t,
+                                               PopupCallback *,
+                                               void *,
+                                               int32_t,
+                                               const char *,
+                                               bool,
+                                               bool,
+                                               eModalPromptType,
+                                               ModalMessageBox * );
 
 private:
     FlashPlayer *pFlashPlayer;
     eInputState inputState;
     eDisplayState displayState;
 
-    UserCallback_t pWaitCallback;
-    UserCallback_t pUserCallback2;
+    eModalPromptType promptType;
+    bool bHasCancel;
+    uint64_t messageHashcode;
+    int32_t messageDatabaseIndex;
+    const char *pDefaultMessage;
+
+    PopupAnswerCallback_t pAnswerCallback;
+    PopupCallback *pUserCallback;
     void *pUserCallbackData;
 
     void ( *pWaitingCallback )( void * );
@@ -93,7 +133,7 @@ private:
 
     float displayTime;
     float closeAfterDuration;
-    eCallbackAnswer answer;
+    ePopupAnswer answer;
     int32_t userData;
     int32_t numOpenMessageBox;
 

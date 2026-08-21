@@ -1201,7 +1201,7 @@ bool UnknownEntity::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     case ModalMessageBox::kClms:
     case ModalMessageBox::kAnswerYes:
     case ModalMessageBox::kAnswerOk: {
-        gpFlashMessageBox->answer = ModalMessageBox::eCallbackAnswer::CA_Ok;
+        gpFlashMessageBox->answer = ePopupAnswer::PA_Accept;
         if ( gpFlashMessageBox->displayState !=
              ModalMessageBox::eDisplayState::MMBDS_Opened ) {
             return true;
