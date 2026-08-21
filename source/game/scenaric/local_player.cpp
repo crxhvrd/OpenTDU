@@ -7,7 +7,7 @@
 LocalPlayer::LocalPlayer()
     : CarStateEventListener(),
       gameID( -1 ),
-      pPlayerProfile( nullptr ),
+      pDriver( nullptr ),
       pCarState( nullptr ),
       lastPosition( 0.0f, 0.0f, 0.0f, 1.0f ) {
     // FUN_004238e0

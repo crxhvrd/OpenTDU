@@ -577,8 +577,8 @@ void GSFile::initCarPacks( bool param_1 ) {
     uint32_t uStack_aa58 = 0;
     EnumerateContextItem aeStack_9e00[129];
     bool bVar1 = file.enumerateContext(
-        profileHashcode, eContextSource::CS_Marketplace, 0, nullptr, nullptr,
-        0x80, aeStack_9e00, &uStack_aa58 );
+        profileHashcode, eContextSource::CS_Marketplace, nullptr, nullptr, 0x80,
+        aeStack_9e00, &uStack_aa58 );
 
     OTDU_LOG_INFO( "=>EnumerateContext() => %s, %d items\n",
                    ( ( bVar1 ) ? "TRUE" : "FALSE" ), uStack_aa58 );
@@ -767,6 +767,112 @@ bool GSFile::saveFileInContext( const char *pContextName,
     filePath /= pFilename;
 
     return SaveFile( filePath.string().c_str(), pContent, contentSize );
+}
+
+bool GSFile::loadFileFromContext( const char *pContextName,
+                                  const char *pFilename,
+                                  void *pOutBuffer,
+                                  const uint32_t bufferSize,
+                                  uint32_t *pOutContentSize ) {
+    // FUN_009a39c0
+    if ( pOutContentSize != nullptr ) {
+        *pOutContentSize = 0u;
+    }
+
+    const bool bUseCurrentContext =
+        ( pContextName != nullptr ) && ( strcmp( pContextName, "CURRENT" ) == 0 );
+    if ( bUseCurrentContext ) {
+        if ( !bIsCurrentContextReady ) {
+            return false;
+        }
+
+        if ( !currentContextDirectAccess.openFile( pFilename, true, false ) ) {
+            return false;
+        }
+
+        const uint32_t numBytesRead =
+            currentContextDirectAccess.readFromFile( pOutBuffer, bufferSize );
+        currentContextDirectAccess.close();
+
+        if ( pOutContentSize != nullptr ) {
+            *pOutContentSize = numBytesRead;
+        }
+        return numBytesRead != 0u;
+    }
+
+    FileDirectAccess fileAccess;
+    fileAccess.bNeedName = false;
+
+    if ( !fileAccess.openContext(
+             gUserProfileRegister.getActiveProfileHashcode(), pContextName,
+             eContextSource::CS_Savegame ) ) {
+        return false;
+    }
+
+    bool bSuccess = false;
+    if ( fileAccess.openFile( pFilename, true, false ) ) {
+        const uint32_t numBytesRead =
+            fileAccess.readFromFile( pOutBuffer, bufferSize );
+        fileAccess.close();
+
+        if ( pOutContentSize != nullptr ) {
+            *pOutContentSize = numBytesRead;
+        }
+        bSuccess = numBytesRead != 0u;
+    }
+
+    fileAccess.reset();
+    return bSuccess;
+}
+
+bool GSFile::loadFileFromContext( const char *pContextName,
+                                  const char *pFilename,
+                                  void **ppOutContent,
+                                  uint32_t *pOutContentSize ) {
+    // FUN_009a3b40
+    *ppOutContent = nullptr;
+    *pOutContentSize = 0u;
+
+    const bool bUseCurrentContext =
+        ( pContextName != nullptr ) && ( strcmp( pContextName, "CURRENT" ) == 0 );
+    if ( bUseCurrentContext && !bIsCurrentContextReady ) {
+        return false;
+    }
+
+    FileDirectAccess localAccess;
+    FileDirectAccess *pFileAccess = &currentContextDirectAccess;
+
+    if ( !bUseCurrentContext ) {
+        localAccess.bNeedName = false;
+        if ( !localAccess.openContext(
+                 gUserProfileRegister.getActiveProfileHashcode(), pContextName,
+                 eContextSource::CS_Savegame ) ) {
+            return false;
+        }
+        pFileAccess = &localAccess;
+    }
+
+    bool bSuccess = false;
+    if ( pFileAccess->openFile( pFilename, true, false ) ) {
+        const uint32_t fileSize = pFileAccess->getFileSize();
+
+        *ppOutContent =
+            ( fileSize != 0u ) ? TestDrive::Alloc( fileSize ) : nullptr;
+        *pOutContentSize = fileSize;
+
+        if ( *ppOutContent != nullptr ) {
+            bSuccess =
+                pFileAccess->readFromFile( *ppOutContent, fileSize ) == fileSize;
+        }
+
+        pFileAccess->close();
+    }
+
+    if ( !bUseCurrentContext ) {
+        localAccess.reset();
+    }
+
+    return bSuccess;
 }
 
 void GSFile::syncAsyncWorkerThread() {

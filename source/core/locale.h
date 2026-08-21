@@ -72,6 +72,63 @@ struct PlayerDataLanguage {
     }
 };
 
+struct TDULanguageEntry {
+    uint64_t LabelHashcode;
+    int32_t LocaleIndex;
+};
+
+static constexpr int32_t kNumTDULanguages = 5;
+static constexpr TDULanguageEntry kTDULanguages[kNumTDULanguages] = {
+    // DAT_00f6b260
+    {0x035FE382ull, 0}, // us / gb
+    {0x036F25C2ull, 1}, // fr
+    {0x037E6802ull, 2}, // it
+    {0x038DAA42ull, 3}, // ge
+    {0x039CEC82ull, 4}, // sp
+};
+
+namespace TestDrive {
+    // FUN_009a96d0
+    inline eLocale StringToLocale( const char *pLocale ) {
+        static constexpr struct {
+            char Code[3];
+            eLocale Locale;
+        } kLocales[] = {
+            {"gb", eLocale( 0 )},
+            {"us", eLocale( 0 )},
+            {"fr", eLocale( 1 )},
+            {"it", eLocale( 2 )},
+            {"ge", eLocale( 3 )},
+            {"sp", eLocale( 4 )},
+            {"ja", eLocale( 5 )},
+            {"ko", eLocale( 6 )},
+            {"ch", eLocale( 7 )},
+            {"ru", eLocale( 8 )},
+            {"po", eLocale( 9 )},
+        };
+
+        for ( const auto &entry : kLocales ) {
+            if ( strncmp( pLocale, entry.Code, 3 ) == 0 ) {
+                return entry.Locale;
+            }
+        }
+
+        return eLocale( 0 );
+    }
+
+    // Index into kTDULanguages for the given language code (0 when unknown).
+    inline int32_t LanguageToAudioLanguageIndex( const char *pLocale ) {
+        const eLocale locale = StringToLocale( pLocale );
+        for ( int32_t i = 0; i < kNumTDULanguages; i++ ) {
+            if ( kTDULanguages[i].LocaleIndex == int32_t( locale ) ) {
+                return i;
+            }
+        }
+
+        return 0;
+    }
+} // namespace TestDrive
+
 static constexpr PlayerDataLanguage kLangUS( 0x7573 );
 static constexpr PlayerDataLanguage kLangGB( 0x6762 );
 static constexpr PlayerDataLanguage kLangFR( 0x6672 );

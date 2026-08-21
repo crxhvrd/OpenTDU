@@ -311,6 +311,9 @@ bool GSRender::initialize( TestDriveGameInstance *param_2 ) {
                                  gpConfig->FullscreenMode,
                                  gpConfig->bWindowed );
 
+        gBootDisplayMode.Width = renderWidth;
+        gBootDisplayMode.Height = renderHeight;
+
         gEdRender.Config.bAllocateZBufferForMainWindow = true;
         gEdRender.Config.WindowWidth = renderWidth;
         gEdRender.Config.WindowHeight = renderHeight;
@@ -338,6 +341,7 @@ bool GSRender::initialize( TestDriveGameInstance *param_2 ) {
             bWasHDREnabled = bHDREnabled;
 
             gPickedRefreshRate = gEdSys.getMonitorRefreshRate();
+            gBootDisplayMode.RefreshRate = uint32_t( gPickedRefreshRate );
 
             setupRenderPasses();
             allocateDeviceResources();
@@ -589,9 +593,18 @@ bool GSRender::resize( uint32_t width,
     aspectRatio = (float)renderWidth / (float)renderHeight;
     invAspectRatio = 1.0f / aspectRatio;
 
+    const bool bDisplayModeChanged =
+        ( gWindowWidth != width ) || ( gWindowHeight != height ) ||
+        ( uint32_t( gPickedRefreshRate ) != refreshRate );
+
     gWindowWidth = width;
     gWindowHeight = height;
     gPickedRefreshRate = refreshRate;
+
+    if ( bDisplayModeChanged && gpConfig != nullptr ) {
+        gEdSys.resizeGameWindow( width, height, gpConfig->FullscreenMode,
+                                 gpConfig->bWindowed );
+    }
 
     cVar1 = gEdRender.applyVideoSettingsChange(
         gWindowWidth, gWindowHeight, eVSyncMode::VSM_Immediate, activeAA );

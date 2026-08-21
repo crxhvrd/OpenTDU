@@ -22,6 +22,7 @@ public:
     void setFreeRideVersion( const char *pVersion );
     void setXBLModeSecure( bool param_1 );
     void setUsername( const char *param_1 );
+    inline const char *getUsername() const { return pUsername; }
 
     void setServerLogin( const char *param_1, const char *param_2 );
     bool setServerAddress( const char *param_1, const int32_t param_2 );

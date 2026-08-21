@@ -99,100 +99,108 @@ void FUN_006078d0( std::string &param_2 ) {
     }
 }
 
-bool FileDirectAccess::enumerateContext( const uint64_t hashcode,
+bool FileDirectAccess::enumerateContext( const uint64_t profileHashcode,
                                          const eContextSource source,
-                                         const uint32_t param_3,
-                                         char *param_5,
-                                         char *param_6,
-                                         uint32_t param_7,
-                                         EnumerateContextItem *param_8,
-                                         uint32_t *param_9 ) {
-#ifndef OTDU_FILE_NO_CONTEXT_SUPPORT
-    *param_9 = 0;
+                                         const char *pDeviceFilter,
+                                         const char *pContextSuffix,
+                                         const uint32_t maxNumItems,
+                                         EnumerateContextItem *pOutItems,
+                                         uint32_t *pOutNumItems ) {
+    // FUN_00607ff0
+    *pOutNumItems = 0u;
 
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+#ifndef OTDU_FILE_NO_CONTEXT_SUPPORT
+
+    for ( uint32_t i = 0; i < maxNumItems; i++ ) {
+        pOutItems[i] = EnumerateContextItem();
+    }
+
     std::wstring saveFolder = gpFile->getSaveLocation( source );
     if ( saveFolder.empty() ) {
         return false;
     }
 
-    std::string narrowSaveFolder = converter.to_bytes( saveFolder );
-    if ( !bNeedName ) {
-        AbsoluteFilename = narrowSaveFolder;
-    } else {
-        VirtualFileSystem *pVFS = gVirtualFileSystemRegister.get(
-            NormalizedFilename, narrowSaveFolder, false );
-        if ( pVFS == nullptr ) {
-            return false;
-        }
-        FUN_006078d0( NormalizedFilename );
-    }
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    AbsoluteFilename = converter.to_bytes( saveFolder );
 
-    std::string profileName = gUserProfileRegister.getProfileName( hashcode );
+    const std::string profileName =
+        gUserProfileRegister.getProfileName( profileHashcode );
     if ( profileName.empty() ) {
         return false;
     }
 
-    FolderName = converter.from_bytes( AbsoluteFilename );
+    FolderName = saveFolder;
     FolderName += L"/";
     FolderName += converter.from_bytes( profileName );
     FolderName += L"/";
-#if 0
-    FolderName += L"/*.*/";
-#endif
 
-    char *pcVar5 = param_6;
-    char *pcVar11 = param_5;
-    if ( param_5 != (char *)0x0 ) {
-        do {
-            char *pcVar12 = pcVar5;
-            for ( int32_t iVar9 = 0x4f; iVar9 != 0; iVar9 = iVar9 + -1 ) {
-                pcVar12[0] = '\0';
-                pcVar12[1] = '\0';
-                pcVar12[2] = '\0';
-                pcVar12[3] = '\0';
-                pcVar12 = pcVar12 + 4;
-            }
-            *pcVar5 = '\0';
-            pcVar5[4] = -1;
-            pcVar5[5] = '\0';
-            pcVar5[6] = '\0';
-            pcVar5[7] = '\0';
-            pcVar11 = pcVar11 + -1;
-            pcVar5 = pcVar5 + 0x13c;
-        } while ( pcVar11 != (char *)0x0 );
-    }
-
-    OTDU_LOG_DEBUG( "Enumerating items in folder '%S'...\n",
-                    FolderName.c_str() );
-    if ( !std::filesystem::exists( FolderName.c_str() ) ) {
+    std::error_code errorCode;
+    if ( !std::filesystem::is_directory( FolderName, errorCode ) ) {
         OTDU_LOG_WARN(
-            "Directory '%S' does not exist; skipping item enumerate...\n",
+            "Directory '%S' does not exist; skipping context enumeration...\n",
             FolderName.c_str() );
-        return true;
+        return false;
     }
 
-    OTDU_UNIMPLEMENTED; // This is only used on Xbox AFAIK; skip decomp unless
-                        // it's needed
-    for ( const auto &fileEntry :
-          std::filesystem::directory_iterator( FolderName.c_str() ) ) {
-        char *pcVar10 = param_6 + 8;
-        if ( fileEntry.is_directory() ) {
+    const size_t deviceFilterLength =
+        ( pDeviceFilter != nullptr ) ? strlen( pDeviceFilter ) : 0;
+    const size_t contextSuffixLength =
+        ( pContextSuffix != nullptr ) ? strlen( pContextSuffix ) : 0;
+
+    uint32_t numItems = 0u;
+    for ( const auto &entry :
+          std::filesystem::directory_iterator( FolderName, errorCode ) ) {
+        if ( !entry.is_directory() ) {
             continue;
         }
 
-        OTDU_LOG_DEBUG( "\t- Found file '%s'...\n", fileEntry.path().c_str() );
+        const std::string folderName = entry.path().filename().string();
+        if ( deviceFilterLength != 0 &&
+             StringNCmpI( folderName.c_str(), pDeviceFilter,
+                          deviceFilterLength ) != 0 ) {
+            continue;
+        }
+
+        if ( contextSuffixLength != 0 ) {
+            if ( folderName.length() < contextSuffixLength ||
+                 StringNCmpI( folderName.c_str() + folderName.length() -
+                                  contextSuffixLength,
+                              pContextSuffix, contextSuffixLength ) != 0 ) {
+                continue;
+            }
+        }
+
+        OTDU_LOG_DEBUG( "\t-Found savegame context '%s'\n",
+                        folderName.c_str() );
+
+        EnumerateContextItem &item = pOutItems[numItems];
+        item.bIsValid = true;
+        item.StoredOnHDD = uint32_t( profileHashcode );
+        item.Source = source;
+        item.Filename = folderName;
+        item.DisplayName = converter.from_bytes( folderName );
+
+        numItems++;
+        if ( numItems >= maxNumItems ) {
+            break;
+        }
     }
-#endif
+
+    *pOutNumItems = numItems;
     return true;
+#else
+    return false;
+#endif
 }
 
 bool FileDirectAccess::openContext( const uint64_t hashcode,
                                     const char *pFilename,
                                     const eContextSource source ) {
+    // FUN_00607e80
 #ifndef OTDU_FILE_NO_CONTEXT_SUPPORT
     FolderPath.clear();
     ContainerFolderPath.clear();
+    FolderName.clear();
     CurrentHashcode = 0ull;
     StoredOnHDD = 0;
 
@@ -203,25 +211,31 @@ bool FileDirectAccess::openContext( const uint64_t hashcode,
 
     CurrentHashcode = hashcode;
     bIsOpen = true;
-    std::string narrowFilename( pFilename );
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-    std::wstring filename = converter.from_bytes( narrowFilename );
-    filename += saveFolder;
-    const std::string &profileName =
+    ContainerFolderPath = pFilename;
+
+    const std::string profileName =
         gUserProfileRegister.getProfileName( CurrentHashcode );
     if ( profileName.empty() ) {
+        bIsOpen = false;
         return false;
     }
 
-    FolderName += converter.from_bytes( FolderPath );
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    FolderPath = converter.to_bytes( saveFolder );
+
+    FolderName = saveFolder;
     FolderName += L"/";
     FolderName += converter.from_bytes( profileName );
     FolderName += L"/";
-    FolderName += saveFolder;
+    FolderName += converter.from_bytes( ContainerFolderPath );
+    FolderName += L"/";
 
     CreateFolders( FolderName );
-#endif
+
     return true;
+#else
+    return false;
+#endif
 }
 
 bool FileDirectAccess::close() {
@@ -386,13 +400,61 @@ bool FileDirectAccess::loadzCompressFileInMem( const char *pFilename,
 bool FileDirectAccess::openFile( const char *pFilename,
                                  const bool bReadAccess,
                                  const bool bWriteAccess ) {
+    // FUN_00607900
     OTDU_ASSERT( !Stream.is_open() && !StreamWrite.is_open() );
 
-    StreamWrite =
-        std::ofstream( pFilename, std::ifstream::out | std::ifstream::binary );
-    if ( !StreamWrite.is_open() || !StreamWrite.good() ) {
+    // Once a context has been opened every filename is relative to it.
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    std::wstring fullPath = bIsOpen ? FolderName : std::wstring();
+    fullPath += converter.from_bytes( pFilename );
+
+    AbsoluteFilename = converter.to_bytes( fullPath );
+
+    if ( bWriteAccess ) {
+        StreamWrite = std::ofstream(
+            AbsoluteFilename, std::ifstream::out | std::ifstream::binary );
+        return StreamWrite.is_open() && StreamWrite.good();
+    }
+
+    if ( !bReadAccess ) {
         return false;
     }
 
-    return true;
+    Stream = std::ifstream( AbsoluteFilename,
+                            std::ifstream::in | std::ifstream::binary );
+    return Stream.is_open() && Stream.good();
+}
+
+uint32_t FileDirectAccess::getFileSize() {
+    // FUN_00607b60
+    if ( !Stream.is_open() ) {
+        return 0u;
+    }
+
+    const auto currentOffset = Stream.tellg();
+    Stream.seekg( 0, std::ios::end );
+    const auto fileSize = Stream.tellg();
+    Stream.seekg( currentOffset );
+
+    return uint32_t( fileSize );
+}
+
+uint32_t FileDirectAccess::writeToFile( const void *pSource,
+                                        const uint32_t size ) {
+    if ( !StreamWrite.is_open() || pSource == nullptr ) {
+        return 0u;
+    }
+
+    StreamWrite.write( (const char *)pSource, size );
+    return StreamWrite.good() ? size : 0u;
+}
+
+uint32_t FileDirectAccess::readFromFile( void *pDest, const uint32_t size ) {
+    // FUN_00607ab0
+    if ( !Stream.is_open() || pDest == nullptr ) {
+        return 0u;
+    }
+
+    Stream.read( (char *)pDest, size );
+    return uint32_t( Stream.gcount() );
 }

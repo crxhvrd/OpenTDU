@@ -136,6 +136,17 @@ public:
                             const void *pContent,
                             uint32_t contentSize );
 
+    bool loadFileFromContext( const char *pContextName,
+                              const char *pFilename,
+                              void *pOutBuffer,
+                              const uint32_t bufferSize,
+                              uint32_t *pOutContentSize );
+
+    bool loadFileFromContext( const char *pContextName,
+                              const char *pFilename,
+                              void **ppOutContent,
+                              uint32_t *pOutContentSize );
+
 private:
     std::set<AsyncFileOpen *> asyncData;
     std::vector<FileMap> filemaps;

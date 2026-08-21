@@ -10,6 +10,22 @@
 
 class FlashPlayer;
 
+enum class eDisplayMode : int32_t {
+    DM_Windowed = 0,
+    // Exclusive fullscreen
+    DM_Fullscreen = 1,
+    // Borderless / desktop fullscreen
+    DM_Borderless = 2,
+
+    DM_Count
+};
+
+struct VideoResolutionOption {
+    uint32_t Width = 0u;
+    uint32_t Height = 0u;
+    std::vector<uint32_t> RefreshRates;
+};
+
 class AudioOptions {
 public:
     AudioOptions();
@@ -50,7 +66,7 @@ public:
     void FUN_006c60c0( int32_t param_1 );
     void FUN_006c6030();
     void FUN_006c67b0();
-    void FUN_006c6520();
+
     void FUN_006c6650();
 
 private:
@@ -73,7 +89,11 @@ private:
     FlashSlider gammaSlider;
 
     FlashPlayer *pPlayer;
-    void *pArrayOfUnknown;
+
+    std::vector<VideoResolutionOption> videoModes;
+    int32_t videoModeIndex;
+    int32_t refreshRateIndex;
+    bool bVideoModesCached;
     int32_t gearboxMode;
     int32_t driveAssists;
     int32_t audioLanguage;
@@ -86,6 +106,7 @@ private:
     int32_t unitType;
     int32_t languageRefreshStep;
     int32_t lodQuality;
+    eDisplayMode displayMode;
     uint32_t videoWidth;
     uint32_t videoHeight;
     uint32_t refreshRate;
@@ -102,18 +123,34 @@ private:
     void disableAllSliders();
     void deviceSaveTick();
     void onLanguageChanged();
-    void FUN_006c6610();
-    void FUN_006c7280();
-    void FUN_006c6f50();
-    void FUN_006c6470();
-    void FUN_006c7010();
+
+    void buildVideoModeList();
+    void showVideoOptions();
+    void showPreviousVideoOptions();
+    void showPreviousRefreshRate();
+    void showPreviousAntiAliasing();
+    void showRefreshRate();
+    void showAntiAliasing();
+    void applySystemParameters();
+
+    void showResolutionLabel();
+    void showRefreshRateLabel( const bool bEditable );
+    void showAntiAliasingMode();
+    void showAntiAliasingLabel();
+    bool isAntiAliasingSupported( const eAntiAliasingMethod method ) const;
+    const char *getAntiAliasingLabel() const;
+    void showLODQualityLabel();
+
+    void showDisplayModeLabel();
+    void showNextDisplayMode();
+    void showPreviousDisplayMode();
     void FUN_006c7b80();
     void FUN_006c7950( bool param_1 );
     void FUN_006c6730( int32_t param_1 );
     void FUN_006c7fb0();
     void FUN_006c61b0();
     void FUN_006c6a00();
-    void FUN_006c6a70();
+
     void FUN_006c7190();
     void FUN_006c71d0();
     void FUN_006c7210();

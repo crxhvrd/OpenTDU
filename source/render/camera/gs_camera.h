@@ -78,6 +78,13 @@ public:
         return (uintptr_t)pActiveVehicleCamera == (uintptr_t)&transition;
     }
 
+    inline int32_t getActiveTransitionIndex() const {
+        return ( field83_0x92c < numTransition &&
+                 pTransitionIndices != nullptr )
+                   ? pTransitionIndices[field83_0x92c]
+                   : -1;
+    }
+
 public:
     GSCamera();
     ~GSCamera();

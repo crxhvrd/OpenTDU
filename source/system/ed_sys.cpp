@@ -28,6 +28,9 @@ uint32_t gWindowWidth = 0u;     // DAT_00fac8d4
 uint32_t gWindowHeight = 0u;    // DAT_00fac8d8
 int32_t gPickedRefreshRate = 0; // DAT_00fac8ec
 
+// DAT_01041a34 / DAT_01041a38 / DAT_01041a30
+DisplayMode gBootDisplayMode = {};
+
 bool gWindowSizeDirty = false;
 
 edSys::edSys()
@@ -239,6 +242,62 @@ void edSys::retrieveCursorClientPos( double &cursorX, double &cursorY ) {
 void edSys::bindCharInputCallback( edSysInputCallback param_1 ) {
 #if defined( OTDU_USE_SDL )
     textInputCallback = param_1;
+#endif
+}
+
+void edSys::enumerateDisplayModes( std::vector<DisplayMode> &outModes ) {
+    outModes.clear();
+
+#if defined( OTDU_USE_SDL )
+    const SDL_DisplayID mainDisplay = SDL_GetPrimaryDisplay();
+
+    int32_t numModes = 0;
+    SDL_DisplayMode **ppModes =
+        SDL_GetFullscreenDisplayModes( mainDisplay, &numModes );
+    if ( ppModes == nullptr ) {
+        return;
+    }
+
+    for ( int32_t i = 0; i < numModes; i++ ) {
+        const SDL_DisplayMode *pMode = ppModes[i];
+        if ( pMode == nullptr ) {
+            continue;
+        }
+
+        // The original rejects anything below 640x480.
+        if ( pMode->w < 640 || pMode->h < 480 ) {
+            continue;
+        }
+
+        DisplayMode mode = {};
+        mode.Width = uint32_t( pMode->w );
+        mode.Height = uint32_t( pMode->h );
+        mode.RefreshRate = uint32_t( pMode->refresh_rate + 0.5f );
+
+        const bool bAlreadyListed =
+            std::find_if( outModes.begin(), outModes.end(),
+                          [&mode]( const DisplayMode &other ) {
+                              return other.Width == mode.Width &&
+                                     other.Height == mode.Height &&
+                                     other.RefreshRate == mode.RefreshRate;
+                          } ) != outModes.end();
+        if ( !bAlreadyListed ) {
+            outModes.push_back( mode );
+        }
+    }
+
+    SDL_free( ppModes );
+
+    std::sort( outModes.begin(), outModes.end(),
+               []( const DisplayMode &l, const DisplayMode &r ) {
+                   if ( l.Width != r.Width ) {
+                       return l.Width < r.Width;
+                   }
+                   if ( l.Height != r.Height ) {
+                       return l.Height < r.Height;
+                   }
+                   return l.RefreshRate < r.RefreshRate;
+               } );
 #endif
 }
 

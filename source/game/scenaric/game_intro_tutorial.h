@@ -3,6 +3,15 @@
 class Spots;
 struct SpotMap;
 
+// TODO: CONVERT TO ENUM
+static constexpr int32_t kTutorialStatePending = 0;
+static constexpr int32_t kTutorialStateIntro = 2;
+static constexpr int32_t kTutorialStateBuyHouse = 6;
+static constexpr int32_t kTutorialStateHouseBought = 7;
+static constexpr int32_t kTutorialStateBuyCar = 8;
+static constexpr int32_t kTutorialStateCarBought = 9;
+static constexpr int32_t kTutorialStateRunning = 13;
+
 class GameIntroTutorial {
 public:
     GameIntroTutorial();

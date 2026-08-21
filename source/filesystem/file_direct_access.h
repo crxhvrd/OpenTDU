@@ -24,14 +24,13 @@ struct FileDirectAccess {
 
     FileDirectAccess();
 
-    bool enumerateContext( const uint64_t hashcode,
+    bool enumerateContext( const uint64_t profileHashcode,
                            const eContextSource source,
-                           const uint32_t param_3,
-                           char *param_5,
-                           char *param_6,
-                           uint32_t param_7,
-                           EnumerateContextItem *param_8,
-                           uint32_t *param_9 );
+                           const char *pDeviceFilter,
+                           const char *pContextSuffix,
+                           const uint32_t maxNumItems,
+                           EnumerateContextItem *pOutItems,
+                           uint32_t *pOutNumItems );
     bool openContext( const uint64_t hashcode,
                       const char *pFilename,
                       const eContextSource source );
@@ -48,6 +47,10 @@ struct FileDirectAccess {
     bool openFile( const char *pFilename,
                    const bool bReadAccess,
                    const bool bWriteAccess );
+
+    uint32_t getFileSize();
+    uint32_t readFromFile( void *pDest, const uint32_t size );
+    uint32_t writeToFile( const void *pSource, const uint32_t size );
 
     bool close();
     bool reset();

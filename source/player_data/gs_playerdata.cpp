@@ -6,11 +6,20 @@
 #include "game/mng_hud.h"
 #include "input/gs_device.h"
 
+#include "core/crypto/tea.h"
 #include "core/ed_store.h"
 #include "core/locale.h"
 #include "core/mutex.h"
 
+#include "filesystem/file_direct_access.h"
+#include "filesystem/gs_file.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "player_save.h"
+#include "online/gs_online.h"
+#include "render/camera/gs_camera.h"
+#include "render/gs_render.h"
+#include "save_game_manager.h"
+#include "user_profile.h"
 
 #include "tdu_instance.h"
 
@@ -19,94 +28,455 @@ float gSeatPosition[2] = { 0.0f, 0.0f };
 
 GSPlayerData *gpPlayerData = nullptr;
 
+// 'playersave' version
+static constexpr int32_t kExpectedSaveVersion = 2;
+
+char gActiveSaveContextName[128] = {}; // DAT_00f7a038
+
+bool gbSaveAllowed = false; // DAT_0113f408
+
+static constexpr uint32_t kSaveScratchBufferSize = 0x80000;
+static constexpr uint32_t kMaxEnumeratedContexts = 4;
+
+static bool FindProfileSaveContext( uint64_t profileHashcode,
+                                    char *pOutContextName ) {
+    // FUN_0089b040
+    pOutContextName[0] = '\0';
+
+    if ( profileHashcode == 0ull ) {
+        profileHashcode = gUserProfileRegister.getActiveProfileHashcode();
+    }
+
+    const bool bIsActiveProfile =
+        ( profileHashcode == gUserProfileRegister.getActiveProfileHashcode() );
+
+    FileDirectAccess fileAccess;
+    fileAccess.bNeedName = false;
+
+    EnumerateContextItem pContexts[kMaxEnumeratedContexts * 2] = {};
+    uint32_t numContexts = 0u;
+    uint32_t numContexts2 = 0u;
+
+    fileAccess.enumerateContext( profileHashcode, eContextSource::CS_Savegame,
+                                 nullptr, kPlayerSaveContextName,
+                                 kMaxEnumeratedContexts, pContexts,
+                                 &numContexts );
+    fileAccess.enumerateContext( profileHashcode, eContextSource::CS_Savegame,
+                                 nullptr, kPlayerSave2ContextName,
+                                 kMaxEnumeratedContexts,
+                                 pContexts + numContexts, &numContexts2 );
+
+    const uint32_t numItems = numContexts + numContexts2;
+    OTDU_LOG_DEBUG( "EnumerateContext() => %d items\n", numItems );
+
+    bool bFound = false;
+    for ( uint32_t i = 0; i < numItems; i++ ) {
+        const EnumerateContextItem &context = pContexts[i];
+        if ( !context.bIsValid ) {
+            continue;
+        }
+
+        OTDU_LOG_DEBUG( "  -Found SaveGame: Name:%s\n",
+                        context.Filename.c_str() );
+
+        // Only the first 8 bytes are needed: the encrypted { magic, revision }
+        // header of the stream.
+        uint32_t pHeader[2] = {};
+        uint32_t numBytesRead = 0u;
+
+        bool bRead = gpFile->loadFileFromContext(
+            context.Filename.c_str(), "playersave", pHeader, sizeof( pHeader ),
+            &numBytesRead );
+
+        if ( !bRead || numBytesRead == 0u ) {
+            // A context holding only the shared options blob is still valid.
+            bRead = gpFile->loadFileFromContext(
+                context.Filename.c_str(), "commondt.sav", pHeader,
+                sizeof( pHeader ), &numBytesRead );
+            if ( !bRead || numBytesRead == 0u ) {
+                OTDU_LOG_DEBUG( "  -NOT OK: cannot read\n" );
+                continue;
+            }
+
+            OTDU_LOG_DEBUG( "  -SAVE GAME OK\n" );
+            strncpy( pOutContextName, context.Filename.c_str(), 127 );
+            pOutContextName[127] = '\0';
+            bFound = true;
+            continue;
+        }
+
+        TestDriveTEADecryptBuffer( pHeader, sizeof( pHeader ) );
+
+        edStore headerStream;
+        headerStream.bindExternalBuffer( pHeader, sizeof( pHeader ) );
+        headerStream.seek( 0u );
+
+        const int32_t magic = headerStream.readInteger();
+        const int32_t revision = headerStream.readInteger();
+
+        if ( magic != kPlayerSaveMagic ) {
+            OTDU_LOG_DEBUG(
+                "  -NOT OK: not the right one (too old version)\n" );
+            continue;
+        }
+
+        if ( bIsActiveProfile && revision < gSaveStreamRevision ) {
+            OTDU_LOG_DEBUG( "  -NOT OK: not the right one (not the last one "
+                            "according to the savefile we found)\n" );
+            continue;
+        }
+
+        OTDU_LOG_DEBUG( "  -SAVE GAME OK\n" );
+        strncpy( pOutContextName, context.Filename.c_str(), 127 );
+        pOutContextName[127] = '\0';
+        bFound = true;
+
+        if ( bIsActiveProfile ) {
+            gSaveStreamRevision = revision;
+        }
+    }
+
+    return bFound;
+}
+
 GSPlayerData::GSPlayerData()
     : GameSystem(),
       Notifiable(),
       bInitialized( false ),
       bForceUpdate( false ),
-      bUseImperialUnits( true ),
       bTutorialCompleted( false ),
       bIsOnline( false ),
-      field526850_0x967d4( false ),
+      bSaveEnabled( true ),
       field526864_0x967e5( false ),
-      field526854_0x967d8( 0 ),
-      drivingHelpLevel( 0 ),
-      padSensitivity( -7.0f * 0.06666667f ),
-      barSensitivity( 0.5f ),
-      mouseSensitivity( 0.5f ),
+      LastArrestedTime( -1.0f ),
+      OffenceRepetitionFactor( 1u ),
+      pLoadedSave( nullptr ),
+      pLoadedSave2( nullptr ),
+      localPlayerData(),
+      saveScratchBuffer(),
+      saveLoadState( SLS_None ),
+      pendingSaveRequest( 0 ),
+      saveVersion( 0 ),
       timeout( 0.0f ),
-      seatPositionHeight( 0.0f ),
-      seatPositionPosition( 0.0f ),
-      padLinearity( 0.5f ),
-      quiverSensitivity( 0.5f ),
-      gamma( 0.5f ),
-      cameraShake( 1.0f ),
-      radialBlurIntensity( 1.0f ),
-      voicesVolume( 1.0f ),
-      voicesThreshold( 0.5f ),
-      voicesInput( 1.0f ),
-      bAutomaticGearbox( true ),
-      resolutionWidth( 1280 ),
-      resolutionHeight( 720 ),
-      refreshRate( 60 ),
-      lodQuality( 2 ),
-      antiAliasing( eAntiAliasingMethod::AAM_Disabled ),
-      bHDREnabled( false ),
-      languageStr(),
       pMutex( new TestDriveMutex() ) {
+    // FUN_00898b80
     pMutex->initialize();
-    // bOnlineOps[0] = DAT_014d5608 == 0;
-    // bOnlineOps[1] = true;
-    // bOnlineOps[2] = false;
-    // bOnlineOps[3] = true;
-    // bOnlineOps[4] = true;
-    // bOnlineOps[5] = true;
-    // bOnlineOps[6] = true;
-    // bOnlineOps[7] = true;
-    // bOnlineOps[8] = true;
 
-    //{
-    //    std::unique_lock lock( parameterMutex );
+    {
+        ScopedMutexLock lock( pMutex );
 
-    //    FUN_008980c0( param_1->Language );
-    //    if ( PTR_011403d0 != ( undefined* )0x0 ) {
-    //        FUN_00896bd0( &param_1->field_0x184, PTR_011403d0 );
-    //    }
+        localPlayerData.clear();
 
-    //    timeout = -144000.1;
-    //    bUnusedFlag = true;
-    //}
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: INPUT (FUN_00896bd0)
+
+        LastArrestedTime = -1.0f;
+        OffenceRepetitionFactor = 1u;
+    }
 
     gpPlayerData = this;
 }
 
 GSPlayerData::~GSPlayerData() {}
 
-bool GSPlayerData::initialize( TestDriveGameInstance * ) {
+bool GSPlayerData::initialize( TestDriveGameInstance *pGameInstance ) {
+    // FUN_00898db0
     if ( bInitialized ) {
         return true;
     }
-    padSensitivity =
+
+    this->pGameInstance = pGameInstance;
+    bPaused = false;
+
+    pLoadedSave = new PlayerSave();
+    pLoadedSave2 = pLoadedSave;
+    bInitialized = true;
+
+    pLoadedSave2->initialize();
+
+    localPlayerData.PadSensitivity =
         ( static_cast<float>( gDefaultSensitivity ) - 1.0f ) * 0.06666667f;
+    localPlayerData.BarSensitivity = 0.5f;
+    localPlayerData.MouseSensitivity = 0.5f;
+    localPlayerData.SeatPositionHeight = gSeatPosition[0];
+    localPlayerData.SeatPositionPosition = gSeatPosition[1];
+
+    const bool bHasServerAddress = false; // TODO: ONLINE
+    if ( bHasServerAddress != bool( bIsOnline ) ) {
+        bIsOnline = bHasServerAddress;
+        notify( 0u );
+    }
+
+    if ( gpRender != nullptr ) {
+        localPlayerData.RenderWidth = gpRender->getWidth();
+        localPlayerData.RenderHeight = gpRender->getHeight();
+        localPlayerData.LODQuality = gpRender->getLODQuality();
+    }
 
     // TODO: REMOVE ME: Redirect .ini vars to playerdata (to enable MSAA support
-    // before GSPlayerData is implemented)
+    // before the options screen writes them back)
     if ( gpConfig != nullptr ) {
-        antiAliasing = gpConfig->AntiAliasing;
-        bHDREnabled = gpConfig->bEnableHDRI;
+        localPlayerData.AntiAliasing = gpConfig->AntiAliasing;
+        localPlayerData.bHDREnabled = gpConfig->bEnableHDRI;
     }
+
+    prepareActiveProfile();
 
     return true;
 }
 
 void GSPlayerData::tick( float totalTime, float deltaTime ) {}
 
-void GSPlayerData::terminate() {}
+void GSPlayerData::terminate() {
+    // FUN_00898550
+    if ( !bInitialized ) {
+        return;
+    }
+
+    if ( pLoadedSave2 != nullptr ) {
+        pLoadedSave2->terminate();
+    }
+
+    pLoadedSave2 = nullptr;
+
+    if ( pLoadedSave != nullptr ) {
+        delete pLoadedSave;
+        pLoadedSave = nullptr;
+    }
+
+    bInitialized = false;
+}
+
+void GSPlayerData::resetPlayerData( const bool bApplyDefaults,
+                                    const bool bClear ) {
+    // FUN_00898a20
+    ScopedMutexLock lock( pMutex );
+
+    if ( bClear ) {
+        localPlayerData.clear();
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: INPUT (FUN_00896bd0)
+    }
+
+    LastArrestedTime = -1.0f;
+    OffenceRepetitionFactor = 1u;
+
+    if ( bApplyDefaults && bClear ) {
+        localPlayerData.PadSensitivity =
+            ( static_cast<float>( gDefaultSensitivity ) - 1.0f ) * 0.06666667f;
+        localPlayerData.BarSensitivity = 0.5f;
+        localPlayerData.MouseSensitivity = 0.5f;
+        localPlayerData.SeatPositionHeight = gSeatPosition[0];
+        localPlayerData.SeatPositionPosition = gSeatPosition[1];
+
+        if ( gpConfig != nullptr ) {
+            strncpy( localPlayerData.Language, gpConfig->pLanguage,
+                     sizeof( localPlayerData.Language ) - 1 );
+        }
+
+        updateUnitSystem();
+    }
+}
+
+int32_t GSPlayerData::getSaveLoadState() const {
+    // FUN_0089b010
+    if ( pLoadedSave2 == nullptr || !pLoadedSave2->isReady() ) {
+        return SLS_None;
+    }
+
+    return saveLoadState;
+}
+
+bool GSPlayerData::loadActiveProfileSave() {
+    // FUN_0089b4b0
+    if ( !bSaveEnabled ) {
+        return false;
+    }
+
+    char pContextName[128] = {};
+    if ( !FindProfileSaveContext( 0ull, pContextName ) ) {
+        saveLoadState = SLS_NoSave;
+        return false;
+    }
+
+    void *pCommonDT = nullptr;
+    uint32_t commonDTSize = 0u;
+    if ( gpFile->loadFileFromContext( pContextName, "commondt.sav", &pCommonDT,
+                                      &commonDTSize ) ) {
+        TestDriveTEADecryptBuffer( pCommonDT, commonDTSize );
+        loadCommonDT( pCommonDT, int32_t( commonDTSize ), nullptr );
+    }
+    if ( pCommonDT != nullptr ) {
+        TestDrive::Free( pCommonDT );
+    }
+
+    saveScratchBuffer.resize( kSaveScratchBufferSize );
+
+    uint32_t saveSize = 0u;
+    if ( !gpFile->loadFileFromContext( pContextName, "playersave",
+                                       saveScratchBuffer.data(),
+                                       kSaveScratchBufferSize, &saveSize ) ||
+         saveSize == 0u ) {
+        saveLoadState = SLS_NoSave;
+        return false;
+    }
+
+    strncpy( gActiveSaveContextName, pContextName,
+             sizeof( gActiveSaveContextName ) - 1 );
+
+    TestDriveTEADecryptBuffer( saveScratchBuffer.data(), saveSize );
+
+    const bool bDeserialized =
+        pLoadedSave->deserialize( saveScratchBuffer.data(), saveSize );
+    if ( !bDeserialized ) {
+        saveLoadState = SLS_NoSave;
+    } else {
+        saveLoadState = SLS_Loaded;
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (GSFile::InitMapFiles and
+                                 // the garage/current car fixup)
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (save version check/upgrade)
+
+    return bDeserialized;
+}
+
+bool GSPlayerData::loadCommonDT( const void *pSaveBuffer,
+                                 const int32_t bufferLength,
+                                 LocalPlayerData *pOutPlayerData ) {
+    // FUN_00898ef0
+    static constexpr int32_t kCommonDTVersion = 0x34;
+
+    if ( pSaveBuffer == nullptr || bufferLength <= 0 ) {
+        return false;
+    }
+
+    edStore saveStream;
+    saveStream.bindExternalBuffer( const_cast<void *>( pSaveBuffer ),
+                                   uint32_t( bufferLength ) );
+    saveStream.seek( 0u );
+
+    if ( saveStream.readInteger() != kCommonDTVersion ) {
+        return false;
+    }
+
+    if ( pOutPlayerData != nullptr ) {
+        pOutPlayerData->loadFromStream( saveStream );
+        return true;
+    }
+
+    localPlayerData.loadFromStream( saveStream );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (locale switch, camera mode,
+                             // input bindings, audio and radio settings)
+
+    if ( gpRender != nullptr ) {
+        gpRender->setLODQuality( localPlayerData.LODQuality );
+    }
+
+    return true;
+}
+
+bool GSPlayerData::readProfileOptions( const uint64_t profileHashcode,
+                                       LocalPlayerData &outPlayerData ) {
+    // FUN_0089b6f0
+    const uint64_t previousHashcode =
+        gUserProfileRegister.getActiveProfileHashcode();
+    const int32_t previousRevision = gSaveStreamRevision;
+
+    gUserProfileRegister.initialize( profileHashcode );
+    gSaveStreamRevision = 0;
+
+    bool bSuccess = false;
+
+    char pContextName[128] = {};
+    if ( FindProfileSaveContext( profileHashcode, pContextName ) ) {
+        void *pCommonDT = nullptr;
+        uint32_t commonDTSize = 0u;
+
+        if ( gpFile->loadFileFromContext( pContextName, "commondt.sav",
+                                          &pCommonDT, &commonDTSize ) ) {
+            TestDriveTEADecryptBuffer( pCommonDT, commonDTSize );
+            bSuccess = loadCommonDT( pCommonDT, int32_t( commonDTSize ),
+                                     &outPlayerData );
+        }
+
+        if ( pCommonDT != nullptr ) {
+            TestDrive::Free( pCommonDT );
+        }
+    }
+
+    gSaveStreamRevision = previousRevision;
+    gUserProfileRegister.initialize( previousHashcode );
+
+    return bSuccess;
+}
+
+void GSPlayerData::requestSave( const int32_t mode ) {
+    // FUN_00898770
+    if ( !bSaveEnabled || !gbSaveAllowed ) {
+        return;
+    }
+
+    if ( mode == 2 ) {
+        pendingSaveRequest = 2;
+        return;
+    }
+
+    if ( mode == 3 ) {
+        if ( pendingSaveRequest != 2 ) {
+            return;
+        }
+
+        const eGameMode activeGameMode =
+            gpTestDriveInstance->getActiveGameMode();
+        if ( activeGameMode == GM_Login || activeGameMode == GM_VideoBumper ) {
+            pendingSaveRequest = 0;
+            return;
+        }
+
+        if ( activeGameMode == GM_Living && !field526864_0x967e5 &&
+             !gpScenaric->getIntroTutorial().isActive() ) {
+            pendingSaveRequest = 0;
+            field526864_0x967e5 = true;
+            return;
+        }
+    } else if ( mode != 1 ) {
+        return;
+    }
+
+    gSavegameManager.requestSave();
+
+    if ( pLoadedSave != nullptr ) {
+        pLoadedSave->resetPendingOperations();
+    }
+
+    pendingSaveRequest = 0;
+}
+
+void GSPlayerData::prepareActiveProfile() {
+    // FUN_008982a0
+    Driver *pDriver = pLoadedSave2->getDriver();
+    strncpy( pDriver->Nickname,
+             ( gpOnline != nullptr ) ? gpOnline->getUsername() : "",
+             Driver::kNicknameLength );
+    pDriver->Nickname[Driver::kNicknameLength - 1] = '\0';
+    pDriver->notify( 0u );
+
+    if ( gpScenaric != nullptr ) {
+        gpScenaric->getLocalPlayer().setDriver( pDriver );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (hand the default car over to
+                             // the garage)
+}
 
 void GSPlayerData::setDefaultLanguage( const char *pDefaultLanguage,
                                        bool bForceInit ) {
     // FUN_008989b0
-    languageStr = pDefaultLanguage;
+    strncpy( localPlayerData.Language, pDefaultLanguage,
+             sizeof( localPlayerData.Language ) - 1 );
+    localPlayerData.Language[sizeof( localPlayerData.Language ) - 1] = '\0';
     bForceUpdate = bForceInit;
 
     if ( gpTestDriveInstance &&
@@ -119,48 +489,55 @@ void GSPlayerData::setDefaultSeatPosition( const float height,
                                            const float depth ) {}
 
 void GSPlayerData::setLODQuality( const int32_t newValue ) {
-    OTDU_ASSERT( newValue > 0 && newValue < 2 );
-    lodQuality = newValue;
+    OTDU_ASSERT( newValue >= 0 && newValue <= 2 );
+    localPlayerData.LODQuality = uint32_t( newValue );
 }
 
 void GSPlayerData::setResolution( const int32_t width, const int32_t height ) {
-    resolutionWidth = width;
-    resolutionHeight = height;
+    localPlayerData.RenderWidth = uint32_t( width );
+    localPlayerData.RenderHeight = uint32_t( height );
 }
 
 void GSPlayerData::setRefreshRate( const int32_t refreshRate ) {
-    this->refreshRate = refreshRate;
+    localPlayerData.RefreshRate = uint32_t( refreshRate );
 }
 
 void GSPlayerData::setAntiAliasing( const eAntiAliasingMethod method ) {
-    antiAliasing = method;
+    localPlayerData.AntiAliasing = method;
 }
 
 void GSPlayerData::setHDREnabled( const bool bEnabled ) {
-    bHDREnabled = bEnabled;
+    localPlayerData.bHDREnabled = bEnabled;
 }
 
 const char *GSPlayerData::getLanguage() {
     // FUN_00898b40
-    if ( languageStr.empty() ) {
-        languageStr = gpConfig->pLanguage;
+    if ( localPlayerData.Language[0] == '\0' ) {
+        strncpy( localPlayerData.Language, gpConfig->pLanguage,
+                 sizeof( localPlayerData.Language ) - 1 );
         updateUnitSystem();
     }
 
-    return languageStr.c_str();
+    return localPlayerData.Language;
 }
 
-eAntiAliasingMethod GSPlayerData::getAAMethod() const { return antiAliasing; }
+eAntiAliasingMethod GSPlayerData::getAAMethod() const {
+    return localPlayerData.AntiAliasing;
+}
 
-bool GSPlayerData::isHDREnabled() const { return bHDREnabled; }
+bool GSPlayerData::isHDREnabled() const { return localPlayerData.bHDREnabled; }
 
 void GSPlayerData::updateUnitSystem() {
-    bool bUseImperialUnits = ( languageStr == "us" );
-    setUnitSystem( bUseImperialUnits );
+    // FUN_00898960
+    const uint16_t languageID =
+        uint16_t( uint8_t( localPlayerData.Language[0] ) ) << 8 |
+        uint16_t( uint8_t( localPlayerData.Language[1] ) );
+
+    setUnitSystem( languageID == 0x7573 );
 }
 
 void GSPlayerData::setUnitSystem( const bool bUseImperial ) {
-    bUseImperialUnits = bUseImperial;
+    localPlayerData.UnitSystem = bUseImperial ? US_Imperial : US_Metric;
     if ( gpMngHud != nullptr ) {
         gpMngHud->updateUnitSystem();
     }
@@ -172,7 +549,7 @@ void GSPlayerData::setUnitSystem( const bool bUseImperial ) {
              BankFlash::eBankFlashInit::BFI_Loaded ) {
         FlashPlayer *pFlashPlayer = pMoviePlayer->MovieBank.getFlashPlayer();
         if ( pFlashPlayer != nullptr ) {
-            uint32_t flashUnitsFlash = bUseImperialUnits ? 0u : 1u;
+            uint32_t flashUnitsFlash = bUseImperial ? 0u : 1u;
             pFlashPlayer->setVariableValue( "/:state_Metric", flashUnitsFlash );
         }
     }
@@ -180,24 +557,44 @@ void GSPlayerData::setUnitSystem( const bool bUseImperial ) {
 
 bool GSPlayerData::isOnline() const { return bIsOnline; }
 
-void GSPlayerData::FUN_008985d0( void *pExternalBuffer, int bufferLength ) {
+int32_t GSPlayerData::writeCommonDT( void *pExternalBuffer,
+                                     const int32_t bufferLength,
+                                     LocalPlayerData *pPlayerData ) {
     // FUN_008985d0
+    static constexpr int32_t kCommonDTVersion = 0x34;
+
     ScopedMutexLock lock( pMutex );
 
-    edStore local_30;
-    local_30.bindExternalBuffer( pExternalBuffer, bufferLength );
-    local_30.clear();
-    local_30.writeInteger( 0x34 );
+    edStore saveStream;
+    saveStream.bindExternalBuffer( pExternalBuffer, bufferLength );
+    saveStream.clear();
+    saveStream.writeInteger( kCommonDTVersion );
 
-    OTDU_UNIMPLEMENTED;
+    if ( pPlayerData == nullptr ) {
+        pPlayerData = &localPlayerData;
+    }
+
+    // The camera transition the player left the game on is stamped in right
+    // before the write.
+    pPlayerData->field36_0x64 =
+        ( gpCamera != nullptr ) ? gpCamera->getActiveTransitionIndex() : -1;
+
+    pPlayerData->serialize( saveStream );
+
+    OTDU_UNIMPLEMENTED_ONCE;           // TODO: AUDIO/RADIO (FUN_009b2260)
+    saveStream.writeInteger( 0 );      // master volume
+    saveStream.writeInteger( 0 );      // number of mixer groups
+    saveStream.writeULongLong( 0ull ); // current radio station hashcode
+    saveStream.writeFloat( 0.0f );
+
+    return int32_t( saveStream.getWrittenSize() );
 }
 
 bool GSPlayerData::FUN_00897990() {
     // FUN_00897990
     eGameMode eVar1 = gpTestDriveInstance->getActiveGameMode();
 
-    if ( !field526850_0x967d4 || eVar1 == GM_Login ||
-         eVar1 == GM_VideoBumper ) {
+    if ( !bSaveEnabled || eVar1 == GM_Login || eVar1 == GM_VideoBumper ) {
         return false;
     }
 
@@ -206,7 +603,7 @@ bool GSPlayerData::FUN_00897990() {
         return false;
     }
 
-    return field526854_0x967d8 == 2;
+    return pendingSaveRequest == 2;
 }
 
 bool GSPlayerData::isRentingCar() {

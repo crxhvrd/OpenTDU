@@ -18,11 +18,106 @@
 #include "input/input_device.h"
 #include "online/gs_online.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "game/vehicle/gs_car_display.h"
+#include "player_data/achievements_data.h"
+#include "player_data/driver.h"
+#include "player_data/player_save.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/user_profile.h"
+#include "render/ed_render.h"
+#include "render/gs_render.h"
+#include "system/ed_sys.h"
 #include "system/gs_pc_options.h"
+#include "game/scenaric/game_intro_tutorial.h"
 
 #include "tdu_instance.h"
+
+static void ApplySavedVideoSettings() {
+    // FUN_0074dca0
+    static constexpr uint32_t kFallbackWidth = 800u;
+    static constexpr uint32_t kFallbackHeight = 600u;
+
+    do {
+        gEdSys.pollEvents();
+        gEdRender.flushDrawCommands( false );
+    } while ( !gEdSys.isWindowActivated() );
+    gEdRender.flushDrawCommands( false );
+
+    LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
+
+    if ( gpRender != nullptr && gpRender->isInitialized() &&
+         gEdRender.pRenderDevice != nullptr ) {
+        GPUAdapterDesc adapterInfos = {};
+        if ( gEdRender.pRenderDevice->retrieveAdapterInfos( 0u,
+                                                            &adapterInfos ) ) {
+            const bool bSameAdapter =
+                localPlayerData.GPUDeviceId == adapterInfos.DeviceID &&
+                localPlayerData.GPUSubSysId == adapterInfos.SubSysId &&
+                localPlayerData.GPUDriverRevision == adapterInfos.Revision &&
+                localPlayerData.GPUVendorId == adapterInfos.VendorId;
+
+            localPlayerData.GPUDeviceId = adapterInfos.DeviceID;
+            localPlayerData.GPUSubSysId = adapterInfos.SubSysId;
+            localPlayerData.GPUDriverRevision = adapterInfos.Revision;
+            localPlayerData.GPUVendorId = adapterInfos.VendorId;
+
+            if ( bSameAdapter ) {
+                if ( localPlayerData.RenderWidth == gWindowWidth &&
+                     localPlayerData.RenderHeight == gWindowHeight &&
+                     localPlayerData.RefreshRate ==
+                         uint32_t( gPickedRefreshRate ) &&
+                     localPlayerData.AntiAliasing == gpRender->getAAMethod() &&
+                     localPlayerData.bHDREnabled == gpRender->isHDREnabled() ) {
+                    return;
+                }
+
+                OTDU_LOG_DEBUG(
+                    "Restoring saved video mode %ux%u @ %uHz (AA %d, HDR "
+                    "%d)\n",
+                    localPlayerData.RenderWidth, localPlayerData.RenderHeight,
+                    localPlayerData.RefreshRate,
+                    int32_t( localPlayerData.AntiAliasing ),
+                    int32_t( localPlayerData.bHDREnabled ) );
+
+                if ( gpRender->resize( localPlayerData.RenderWidth,
+                                       localPlayerData.RenderHeight,
+                                       localPlayerData.RefreshRate,
+                                       localPlayerData.AntiAliasing,
+                                       localPlayerData.bHDREnabled ) ) {
+                    return;
+                }
+            }
+        }
+    }
+
+    OTDU_LOG_WARN( "Saved video mode could not be restored; falling back to "
+                   "the mode the game came up in\n" );
+
+    if ( gpRender == nullptr ) {
+        return;
+    }
+
+    if ( !gpRender->resize( gBootDisplayMode.Width, gBootDisplayMode.Height,
+                            gBootDisplayMode.RefreshRate,
+                            eAntiAliasingMethod::AAM_Disabled, false ) &&
+         !gpRender->resize( kFallbackWidth, kFallbackHeight,
+                            gBootDisplayMode.RefreshRate,
+                            eAntiAliasingMethod::AAM_Disabled, false ) ) {
+        OTDU_LOG_ERROR( "Could not bring the renderer up in any display "
+                        "mode; giving up\n" );
+        gpTestDriveInstance->requestExit();
+        return;
+    }
+
+    gpRender->setLODQuality( 1u );
+
+    localPlayerData.LODQuality = gpRender->getLODQuality();
+    localPlayerData.bHDREnabled = gpRender->isHDREnabled();
+    localPlayerData.AntiAliasing = gpRender->getAAMethod();
+    localPlayerData.RefreshRate = uint32_t( gPickedRefreshRate );
+    localPlayerData.RenderHeight = gWindowHeight;
+    localPlayerData.RenderWidth = gWindowWidth;
+}
 
 static constexpr const char *kAtariCopyright = "(C) Atari Inc"; // DAT_00f99784
 static constexpr const char *kConnectingToServerMessage =
@@ -71,7 +166,7 @@ GMLogin::GMLogin()
     transitionFlags = 2;
     gpScenaric->getIntroTutorial().reset();
 
-    gpPlayerData->setField526850( false );
+    gpPlayerData->setSaveEnabled( false );
     gpPCOptions->setMainMenuAllowed( false );
 
     gbScenarioTutorialEnabled = true;
@@ -238,8 +333,8 @@ void GMLogin::onClose( ePopupAnswer answer, void *param_2, int32_t param_3 ) {
         }
 
         if ( answer == ePopupAnswer::PA_Accept ) {
-            OTDU_UNIMPLEMENTED; // TODO: ONLINE
-            gpTestDriveInstance->requestExit();
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+            TestDrive::RequestGameExit();
             return;
         }
     }
@@ -320,7 +415,7 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         if ( BOOL_010e7d18 ) {
             OTDU_UNIMPLEMENTED; // TODO: FUN_0074ea80
 
-            gpPlayerData->setField526850( true );
+            gpPlayerData->setSaveEnabled( true );
             BOOL_010e7d18 = false;
             state = GLS_LeaveGameMode;
 
@@ -384,14 +479,14 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
     }
 
     case GLS_WaitStartAnim: {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
-
-        gpPlayerData->setField526850( true );
+        gpPlayerData->resetPlayerData( true, true );
+        gpPlayerData->setSaveEnabled( true );
 
         int32_t numProfiles = gUserProfileRegister.getNumProfiles();
         if ( numProfiles == 0 ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
-
+            // NOTE: the original signs the player up online here and only
+            // registers 'default' when an orphan savegame was found; the port
+            // has no sign-up flow so it always creates the local profile.
             const uint64_t defaultHashcode =
                 UserProfileRegister::HashProfileName( "default" );
             if ( gUserProfileRegister.registerProfile( "default" ) ) {
@@ -420,16 +515,40 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
                     gUserProfileRegister.getProfileNameByIndex( 0 ) ) );
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+        gbSaveAllowed = true;
+        gpPlayerData->loadActiveProfileSave();
 
-        const char *pActiveProfile =
-            gUserProfileRegister.getActiveProfileName().c_str();
+        ApplySavedVideoSettings();
 
-        pConfigPCFlashPlayer->setVariableValueNonLinked( "/:CurrentProfile",
-                                                         pActiveProfile );
-        gpOnline->setUsername( pActiveProfile );
+        AchievementsData *pAchievements =
+            gpPlayerData->getLoadedSave()->getAchievements();
+        if ( !pAchievements->isReady() ) {
+            pAchievements->setReady( true );
+            if ( pAchievements->getField516_0x204() ) {
+                pAchievements->setCurrentGameMode(
+                    gpTestDriveInstance->getActiveGameMode() );
+            }
 
-        // TODO: PLAYERSAVE
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0089e060)
+        }
+
+        LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
+        if ( localPlayerData.Nickname[0] == '\0' ) {
+            strncpy( localPlayerData.Nickname,
+                     gUserProfileRegister.getActiveProfileName().c_str(),
+                     sizeof( localPlayerData.Nickname ) - 1 );
+        }
+
+        pConfigPCFlashPlayer->setVariableValueNonLinked(
+            "/:CurrentProfile", localPlayerData.Nickname );
+        gpOnline->setUsername( localPlayerData.Nickname );
+
+        if ( localPlayerData.bOnlineAccount ) {
+            state = GLS_WaitSaveLoaded;
+            saveWaitStartTicks = 0u;
+            return;
+        }
+
         if ( gpPlayerData->isOnline() ) {
             gpPlayerData->setOnline( false );
             gpPlayerData->notify( 0u );
@@ -527,7 +646,7 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         state = GLS_LeaveGameMode;
         switch ( menuAction ) {
         case MA_Resume:
-            OTDU_UNIMPLEMENTED; // TODO: PLAYERSAVE
+            resumeSavedGame();
             return;
 
         case MA_NewGame:
@@ -537,7 +656,9 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         case MA_QuitToDesktop:
             menuActionCountdown = 0x14;
 
-            OTDU_UNIMPLEMENTED; // TODO: PLAYERSAVE
+            if ( gpPlayerData->getLoadedSave()->getDriver()->isValid() ) {
+                gpPlayerData->requestSave( 1 );
+            }
 
             state = GLS_LeaveApplication;
             return;
@@ -568,14 +689,41 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         }
 
         if ( menuActionCountdown == 0 ) {
-            OTDU_UNIMPLEMENTED_ONCE;
-            gpTestDriveInstance->requestExit();
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+            TestDrive::RequestGameExit();
         }
         return;
 
     default:
         return;
     }
+}
+
+void GMLogin::resumeSavedGame() {
+    // FUN_0074e420
+    Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+
+    gbScenarioTutorialEnabled =
+        ( pDriver->TutorialState == kTutorialStatePending ) ||
+        ( pDriver->TutorialState == kTutorialStateRunning );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+
+    if ( pDriver->TutorialState == kTutorialStateIntro ) {
+        if ( gpCarDisplay != nullptr ) {
+            gpCarDisplay->reset();
+        }
+    } else if ( BOOL_010e74f4 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GAME
+    }
+
+    if ( pDriver->bCheatDetected ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_00884c00)
+    }
+
+    gpTestDriveInstance->setNextGameMode( GM_Living );
+
+    menuActionCountdown = 2;
 }
 
 void GMLogin::pause() {

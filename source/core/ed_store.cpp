@@ -5,6 +5,16 @@
 
 static uint8_t gUseHalfPrecisionIntegers = 0xff; // DAT_00f56a70
 
+static uint64_t SwapEightBytes( const uint64_t value ) {
+    // FUN_00622c30 / FUN_00622d50
+    return ( value >> 56 ) | ( ( value >> 40 ) & 0x000000000000ff00ull ) |
+           ( ( value >> 24 ) & 0x0000000000ff0000ull ) |
+           ( ( value >> 8 ) & 0x00000000ff000000ull ) |
+           ( ( value << 8 ) & 0x000000ff00000000ull ) |
+           ( ( value << 24 ) & 0x0000ff0000000000ull ) |
+           ( ( value << 40 ) & 0x00ff000000000000ull ) | ( value << 56 );
+}
+
 edStore::edStore()
     : ID( 0 ),
       bufferSize( 0 ),
@@ -41,15 +51,14 @@ void edStore::bindExternalBuffer( void *pExtBuffer, uint32_t bufferLength ) {
 
 void edStore::clear() {
     // FUN_00623020
-    if ( isExternalBuffer == 0 && pBuffer != nullptr ) {
-        TestDrive::Free( pBuffer );
-    }
-    pBuffer = nullptr;
-    bufferSize = 0;
-
     if ( isExternalBuffer == 0 ) {
+        if ( pBuffer != nullptr ) {
+            TestDrive::Free( pBuffer );
+            pBuffer = nullptr;
+        }
         bufferSizeWithPadding = 0;
     }
+    bufferSize = 0;
     bufferOffset = 0;
     CRC = 0;
     state = 0;
@@ -104,6 +113,12 @@ int32_t edStore::reserve_buffer( int32_t sizeToReserve ) {
     return 0;
 }
 
+int32_t edStore::seek( const uint32_t offset ) {
+    // FUN_00623750
+    bufferOffset = offset;
+    return 0;
+}
+
 void edStore::writeInteger( int32_t param_2 ) {
     // FUN_006234b0
     int32_t iVar1 = 0;
@@ -115,6 +130,126 @@ void edStore::writeInteger( int32_t param_2 ) {
             bufferOffset = bufferOffset + 4;
         }
     }
+}
+
+void edStore::writeByte( const uint8_t value ) {
+    // FUN_00623240
+    if ( state == 0xff || reserve_buffer( 1 ) != 0 ) {
+        return;
+    }
+
+    *( (uint8_t *)pBuffer + bufferOffset ) = value;
+    bufferOffset += 1;
+}
+
+void edStore::writeUShort( const uint16_t value ) {
+    // FUN_00623270
+    if ( state == 0xff || reserve_buffer( 2 ) != 0 ) {
+        return;
+    }
+
+    uint16_t packedValue = value;
+    if ( gUseHalfPrecisionIntegers == '\x01' ) {
+        packedValue = uint16_t( ( packedValue >> 8 & 0xff ) |
+                                ( packedValue & 0xff ) << 8 );
+    }
+
+    uint16_t *pDest = (uint16_t *)( (uint8_t *)pBuffer + bufferOffset );
+    if ( pDest != nullptr ) {
+        *pDest = packedValue;
+    }
+
+    bufferOffset += 2;
+}
+
+void edStore::writeULongLong( const uint64_t value ) {
+    // FUN_006234f0
+    if ( state == 0xff || reserve_buffer( 8 ) != 0 ) {
+        return;
+    }
+
+    uint64_t packedValue = value;
+    if ( gUseHalfPrecisionIntegers == '\x01' ) {
+        packedValue = SwapEightBytes( packedValue );
+    }
+
+    uint64_t *pDest = (uint64_t *)( (uint8_t *)pBuffer + bufferOffset );
+    if ( pDest != nullptr ) {
+        *pDest = packedValue;
+    }
+
+    bufferOffset += 8;
+}
+
+void edStore::writeFloat( const float value ) {
+    // FUN_00623540
+    if ( state == 0xff || reserve_buffer( 4 ) != 0 ) {
+        return;
+    }
+
+    uint32_t asDword = 0u;
+    memcpy( &asDword, &value, sizeof( uint32_t ) );
+
+    packAndWriteToBuffer( int32_t( asDword ),
+                          (int32_t *)( (uint8_t *)pBuffer + bufferOffset ) );
+    bufferOffset += 4;
+}
+
+void edStore::writeDouble( const double value ) {
+    // FUN_00623580
+    if ( state == 0xff || reserve_buffer( 8 ) != 0 ) {
+        return;
+    }
+
+    uint64_t asQword = 0ull;
+    memcpy( &asQword, &value, sizeof( uint64_t ) );
+
+    if ( gUseHalfPrecisionIntegers == '\x01' ) {
+        asQword = SwapEightBytes( asQword );
+    }
+
+    uint64_t *pDest = (uint64_t *)( (uint8_t *)pBuffer + bufferOffset );
+    if ( pDest != nullptr ) {
+        *pDest = asQword;
+    }
+
+    bufferOffset += 8;
+}
+
+void edStore::writeString( const char *pValue ) {
+    // FUN_006232d0
+    if ( state == 0xff ) {
+        return;
+    }
+
+    const uint32_t length = uint32_t( strlen( pValue ) );
+    writeUShort( uint16_t( length ) );
+
+    if ( reserve_buffer( int32_t( length ) ) != 0 ) {
+        return;
+    }
+
+    memcpy( (uint8_t *)pBuffer + bufferOffset, pValue, length );
+    bufferOffset += length;
+}
+
+void edStore::writeBuffer( const void *pSource, const uint32_t size ) {
+    // FUN_00623370
+    if ( state == 0xff ) {
+        return;
+    }
+
+    writeUShort( uint16_t( size ) );
+
+    if ( reserve_buffer( int32_t( size ) ) != 0 ) {
+        return;
+    }
+
+    if ( pBuffer != nullptr && pSource != nullptr && size != 0u ) {
+        memcpy( (uint8_t *)pBuffer + bufferOffset, pSource, size );
+    }
+
+    bufferOffset += size;
 }
 
 uint32_t edStore::readStringNoAlloc( char *param_2, uint32_t param_3 ) {
@@ -146,6 +281,38 @@ uint32_t edStore::readStringNoAlloc( char *param_2, uint32_t param_3 ) {
     return 0;
 }
 
+uint32_t edStore::readBufferNoAlloc( void *pDest, uint32_t maxSize ) {
+    // FUN_00623d80
+    if ( !isWithinBounds() ) {
+        state = 0xff;
+        OTDU_LOG_ERROR(
+            "pop_buffer_noalloc()=>file .\\sources\\edStore.cpp line:1310\n" );
+        return 0;
+    }
+
+    const uint32_t bufferLength = static_cast<uint16_t>( readShort() );
+    if ( bufferLength == 0 ) {
+        return 0;
+    }
+
+    if ( 0x7ffd < bufferLength ) {
+        OTDU_LOG_WARN(
+            "**WARNING** edStore::pop_buffer_noalloc too BIG = %lu\n",
+            bufferLength );
+    }
+
+    if ( bufferLength <= maxSize ) {
+        maxSize = bufferLength;
+    }
+
+    if ( pDest != nullptr && pBuffer != nullptr && maxSize != 0 ) {
+        memcpy( pDest, (uint8_t *)pBuffer + bufferOffset, maxSize );
+    }
+
+    bufferOffset += bufferLength;
+    return maxSize;
+}
+
 int32_t edStore::readInteger() {
     // FUN_00623910
     if ( !isWithinBounds() ) {
@@ -165,6 +332,120 @@ int32_t edStore::readInteger() {
 
     bufferOffset += 4;
     return uVar2;
+}
+
+uint32_t edStore::readUInteger() {
+    // FUN_006239d0
+    if ( !isWithinBounds() ) {
+        state = 0xff;
+        OTDU_LOG_ERROR(
+            "pop_uint()=>file .\\sources\\edStore.cpp line:1109\n" );
+        return 0;
+    }
+
+    uint32_t uVar2 = 0;
+    if ( (uint32_t *)( (uint8_t *)pBuffer + bufferOffset ) != nullptr ) {
+        uVar2 = *(uint32_t *)( (uint8_t *)pBuffer + bufferOffset );
+    }
+    if ( gUseHalfPrecisionIntegers == '\x01' ) {
+        uVar2 = ( ( uVar2 & 0xff0000 ) | uVar2 >> 0x10 ) >> 8 |
+                ( ( uVar2 & 0xff00 ) | uVar2 << 0x10 ) << 8;
+    }
+
+    bufferOffset += 4;
+    return uVar2;
+}
+
+uint32_t edStore::readULong() {
+    // FUN_006240d0
+    if ( !isWithinBounds() ) {
+        state = 0xff;
+        OTDU_LOG_ERROR(
+            "pop_ulong()=>file .\\sources\\edStore.cpp line:1405\n" );
+        return 0;
+    }
+
+    uint32_t uVar2 = 0;
+    if ( (uint32_t *)( (uint8_t *)pBuffer + bufferOffset ) != nullptr ) {
+        uVar2 = *(uint32_t *)( (uint8_t *)pBuffer + bufferOffset );
+    }
+    if ( gUseHalfPrecisionIntegers == '\x01' ) {
+        uVar2 = ( ( uVar2 & 0xff0000 ) | uVar2 >> 0x10 ) >> 8 |
+                ( ( uVar2 & 0xff00 ) | uVar2 << 0x10 ) << 8;
+    }
+
+    bufferOffset += 4;
+    return uVar2;
+}
+
+uint64_t edStore::readULongLong() {
+    // FUN_00624150
+    if ( !isWithinBounds() ) {
+        state = 0xff;
+        OTDU_LOG_ERROR(
+            "pop_ulonglong()=>file .\\sources\\edStore.cpp line:1415\n" );
+        return 0ull;
+    }
+
+    uint64_t uVar2 = 0ull;
+    if ( (uint64_t *)( (uint8_t *)pBuffer + bufferOffset ) != nullptr ) {
+        uVar2 = *(uint64_t *)( (uint8_t *)pBuffer + bufferOffset );
+    }
+    if ( gUseHalfPrecisionIntegers == '\x01' ) {
+        uVar2 = SwapEightBytes( uVar2 );
+    }
+
+    bufferOffset += 8;
+    return uVar2;
+}
+
+double edStore::readDouble() {
+    // FUN_00624260
+    if ( !isWithinBounds() ) {
+        state = 0xff;
+        OTDU_LOG_ERROR(
+            "pop_double()=>file .\\sources\\edStore.cpp line:1446\n" );
+        return 0.0;
+    }
+
+    uint64_t asQword = 0ull;
+    if ( (uint64_t *)( (uint8_t *)pBuffer + bufferOffset ) != nullptr ) {
+        asQword = *(uint64_t *)( (uint8_t *)pBuffer + bufferOffset );
+    }
+    if ( gUseHalfPrecisionIntegers == '\x01' ) {
+        asQword = SwapEightBytes( asQword );
+    }
+
+    bufferOffset += 8;
+
+    double value = 0.0;
+    memcpy( &value, &asQword, sizeof( double ) );
+    return value;
+}
+
+float edStore::readFloat() {
+    // FUN_00624210
+    if ( !isWithinBounds() ) {
+        state = 0xff;
+        OTDU_LOG_ERROR(
+            "pop_float()=>file .\\sources\\edStore.cpp line:1436\n" );
+        return 0.0f;
+    }
+
+    uint32_t asDword = 0;
+    if ( (uint32_t *)( (uint8_t *)pBuffer + bufferOffset ) != nullptr ) {
+        asDword = *(uint32_t *)( (uint8_t *)pBuffer + bufferOffset );
+    }
+    if ( gUseHalfPrecisionIntegers == '\x01' ) {
+        asDword = ( ( asDword & 0xff0000 ) | asDword >> 0x10 ) >> 8 |
+                  ( ( asDword & 0xff00 ) | asDword << 0x10 ) << 8;
+    }
+
+    bufferOffset += 4;
+
+    float value = 0.0f;
+    memcpy( &value, &asDword, sizeof( float ) );
+    return value;
 }
 
 int16_t edStore::readShort() {
@@ -308,12 +589,14 @@ void edStore::prepareBuffer() {
 
 void edStore::packAndWriteToBuffer( int32_t in, int32_t *pOut ) {
     // FUN_00622df0
+    uint32_t packedValue = uint32_t( in );
     if ( gUseHalfPrecisionIntegers == '\x01' ) {
-        in = ( ( in & 0xff0000 ) | in >> 0x10 ) >> 8 |
-             ( ( in & 0xff00 ) | in << 0x10 ) << 8;
+        packedValue =
+            ( ( packedValue & 0xff0000 ) | packedValue >> 0x10 ) >> 8 |
+            ( ( packedValue & 0xff00 ) | packedValue << 0x10 ) << 8;
     }
     if ( pOut != nullptr ) {
-        *pOut = in;
+        *pOut = int32_t( packedValue );
     }
 }
 

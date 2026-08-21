@@ -117,6 +117,7 @@ private:
 };
 
 extern GSCarDisplay *gpCarDisplay;
+extern bool BOOL_010e74f4;
 
 extern float gSunGlobalFactor;
 extern float gGlobalEnvValue;

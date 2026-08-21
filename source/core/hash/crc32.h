@@ -92,6 +92,12 @@ static uint32_t TestDriveCRC32Unfolded( const uint8_t *pContent,
     return ~uVar1;
 }
 
+static uint32_t TestDriveCRC32Unfolded( const char *pString ) {
+    // FUN_00624880
+    return TestDriveCRC32Unfolded( (const uint8_t *)pString,
+                                   strlen( pString ) );
+}
+
 static uint32_t TestDriveCRC32( const char *pString ) {
     return TestDriveCRC32( (const uint8_t *)pString, strlen( pString ) );
 }

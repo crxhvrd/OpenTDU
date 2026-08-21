@@ -3,6 +3,8 @@
 #include "core/event.h"
 #include "core/mutex.h"
 
+struct LocalPlayerData;
+
 class SavegameManager {
 public:
     SavegameManager();
@@ -10,7 +12,8 @@ public:
 
     void create();
 
-    bool doSaveBlocking();
+    bool doSaveBlocking( LocalPlayerData *pPlayerData = nullptr );
+    void requestSave();
 
     bool isProfileChangeInProgress() const;
     void toggleProfileChange();
@@ -35,6 +38,7 @@ private:
     uint8_t bUnknownBool2 : 1;
     uint8_t bUnknownBool3 : 1;
     uint8_t bUnknownBool4 : 1;
+    uint8_t bSaveRequeued : 1;
 };
 
 extern SavegameManager gSavegameManager;

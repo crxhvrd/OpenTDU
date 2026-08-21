@@ -32,6 +32,12 @@ public:
 
     inline const MouseState &getMouseState() const { return mouseState; }
 
+    // TrackIR / NaturalPoint head tracking (never enabled: the SDK is not
+    // integrated).
+    inline bool isHeadTrackingAvailable() const {
+        return bUseNaturalPointHeadTracking;
+    }
+
 public:
     GSDevice();
     ~GSDevice();

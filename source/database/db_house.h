@@ -2,9 +2,9 @@
 
 struct DBEntryHouse {
     uint64_t Hashcode;
-    uint64_t SpotName;
-    uint64_t RealtorHashcode;
-    uint64_t HouseName;
+    DBReference SpotName;
+    DBReference RealtorHashcode;
+    DBReference HouseName;
     int32_t Level;
     int32_t Model;
     int32_t NumGarageSlot;

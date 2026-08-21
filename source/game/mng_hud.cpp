@@ -17,6 +17,8 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
+#include "player_data/driver.h"
+#include "player_data/player_save.h"
 #include "player_data/gs_playerdata.h"
 #include "render/2db.h"
 #include "render/draw_list.h"
@@ -1575,8 +1577,8 @@ void MngHud::tick( float deltaTime, float totalTime ) {
     }
     speedDigits.update( displaySpeed );
 
-    OTDU_UNIMPLEMENTED; //  v Should be read from the player save system
-    const float odometerKms = 0.0f; // TODO: PLAYERSAVE
+    const float odometerKms =
+        gpPlayerData->getLoadedSave()->getDriver()->getOdometerKms();
     odometer.update( static_cast<int32_t>( odometerKms ) );
     odometerDecimal.update( static_cast<int32_t>(
         ( odometerKms -
@@ -2576,9 +2578,7 @@ void MngHud::showCustomGauges() {
 
     installGaugeFaceCallbacks( bAltExterior );
 
-    // LocalPlayerData.bDisplayGPS gated these in the original; that flag is not
-    // ported, so default the overlay on.
-    const bool bDisplayGauges = true;
+    const bool bDisplayGauges = gpPlayerData->getLocalPlayerData().bDisplayGPS;
 
     bool bSpeedCokpitVis = false;
     bool bCompteurIntVis = false;

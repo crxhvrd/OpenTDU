@@ -1587,19 +1587,15 @@ int32_t GSDatabase::setFlashLocalization( int32_t param_2,
     return local_4;
 }
 
-static constexpr const uint64_t kLanguageHashcodes[5] = {
-    0x0000000035FE382, 0x0000000036F25C2, 0x0000000037E6802,
-    0x0000000038DAA42, 0x0000000039CEC82,
-};
-
 bool GSDatabase::setLanguage( FlashPlayer *param_1 ) {
-    PlayerDataLanguage langID( gpPlayerData->getLanguage() );
-    uint16_t langIndex = langID;
-    uint64_t hashcode =
-        langIndex <= 4 ? kLanguageHashcodes[langIndex] : kLanguageHashcodes[0];
+    // FUN_009ab830 (GSDatabase::SendLanguageString)
+    const int32_t languageIndex =
+        TestDrive::LanguageToAudioLanguageIndex( gpPlayerData->getLanguage() );
 
-    const char *pcVar1 = getStringByHashcode( 0u, hashcode );
-    param_1->setVariableValue( "/:WhatLanguage", pcVar1 );
+    const char *pLabel =
+        getStringByHashcode( 0, kTDULanguages[languageIndex].LabelHashcode );
+    param_1->setVariableValue( "/:WhatLanguage", pLabel );
+
     return true;
 }
 
@@ -1759,6 +1755,20 @@ bool GSDatabase::isBike( DBEntryCarPhysicsData *param_1 ) {
 
     char *pcVar1 = getStringByHashcode( 1, 0x35da5b5 );
     return ( pcVar1 == param_1->Category.pAsString );
+}
+
+int32_t GSDatabase::getNumRims( int32_t carID ) {
+    DBEntryCarPhysicsData *pDVar4 = getCarDBEntry( carID );
+    uint32_t numRims = 0;
+    if ( pDVar4 != nullptr ) {
+        for ( uint32_t uVar5 = 0; uVar5 < gameDatabase.pNumItems[2]; uVar5++ ) {
+            if ( gameDatabase.DBCarRims[uVar5].CarHashcode.pAsRawPointer ==
+                 pDVar4 ) {
+                numRims++;
+            }
+        }
+    }
+    return numRims;
 }
 
 int32_t GSDatabase::getNumColors( int32_t carID ) {

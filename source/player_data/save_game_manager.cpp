@@ -4,7 +4,9 @@
 #include "tdu_instance.h"
 #include "user_profile.h"
 
+#include "core/crypto/tea.h"
 #include "filesystem/gs_file.h"
+#include "gs_playerdata.h"
 
 bool BOOL_010e7364 = false; // Always false at runtime
 
@@ -29,29 +31,52 @@ static std::wstring FormatPlayerSaveTimestamp( const wchar_t *pSaveType ) {
     return formatBuffer;
 }
 
-static bool FUN_0097c0d0( char *param_1, std::wstring &param_2 ) {
-    bool bVar7 = false;
-    bool bVar8 = false;
+static bool WriteSaveContext( const char *pContextName,
+                              const std::wstring &timestamp,
+                              LocalPlayerData *pPlayerData ) {
+    // FUN_0097c0d0
+    bool bPlayerSaveWritten = false;
+    bool bCommonDTWritten = false;
 
     FileDirectAccess file;
     file.bNeedName = false;
 
-    uint32_t uVar4 = gUserProfileRegister.FUN_00419de0();
-    uint64_t hashcode = gUserProfileRegister.getActiveProfileHashcode();
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (profile list bookkeeping)
+    gUserProfileRegister.FUN_00419de0();
 
-    bool bVar1 =
-        file.openContext( hashcode, param_1, eContextSource::CS_Savegame );
-    if ( bVar1 ) {
-        OTDU_UNIMPLEMENTED;
+    const uint64_t hashcode = gUserProfileRegister.getActiveProfileHashcode();
+    if ( !file.openContext( hashcode, pContextName,
+                            eContextSource::CS_Savegame ) ) {
+        return false;
+    }
 
-        file.reset();
+    const int32_t writtenSize =
+        ( gpPlayerData != nullptr )
+            ? gpPlayerData->writeCommonDT( DAT_01041f50, kBufferSize,
+                                           pPlayerData )
+            : 0;
 
-        if ( bVar7 && bVar8 ) {
-            return true;
+    uint32_t contentSize = uint32_t( writtenSize ) & 0xfffffff8u;
+    if ( contentSize < uint32_t( writtenSize ) ) {
+        contentSize += 8u;
+    }
+    TestDriveTEAEncryptBuffer( DAT_01041f50, contentSize );
+
+    // TODO: PLAYERSAVE
+    OTDU_UNIMPLEMENTED_ONCE;
+
+    if ( contentSize != 0u ) {
+        if ( file.openFile( "commondt.sav", false, true ) ) {
+            const uint32_t numBytesWritten =
+                file.writeToFile( DAT_01041f50, contentSize );
+            file.close();
+            bCommonDTWritten = numBytesWritten == contentSize;
         }
     }
 
-    return false;
+    file.reset();
+
+    return bPlayerSaveWritten && bCommonDTWritten;
 }
 
 SavegameManager gSavegameManager = {};
@@ -66,7 +91,8 @@ SavegameManager::SavegameManager()
       bUnknownBool1( false ),
       bUnknownBool2( true ),
       bUnknownBool3( false ),
-      bUnknownBool4( false ) {
+      bUnknownBool4( false ),
+      bSaveRequeued( false ) {
     memset( DAT_01041f50, 0, sizeof( uint8_t ) * kBufferSize );
 }
 
@@ -87,10 +113,11 @@ void SavegameManager::create() {
     unknownDword2 = 0;
     bUnknownBool3 = false;
     bUnknownBool4 = false;
+    bSaveRequeued = false;
     bUnknownBool1 = false;
 }
 
-bool SavegameManager::doSaveBlocking() {
+bool SavegameManager::doSaveBlocking( LocalPlayerData *pPlayerData ) {
     // FUN_0097c2f0
     if ( ( gpTestDriveInstance->hasRequestedExit() ) ||
          ( bUnknownBool4 == false ) ) {
@@ -100,13 +127,45 @@ bool SavegameManager::doSaveBlocking() {
     ScopedMutexLock lock( &mutex );
 
     unknownDword2 = 0;
-    uint32_t uVar1 = unknownDword;
-    uint32_t uVar2 = pendingSaveCount;
+    const uint32_t numQueuedSaves = pendingSaveCount - unknownDword;
     gUserProfileRegister.FUN_0060a160();
 
-    OTDU_UNIMPLEMENTED;
+    const std::wstring timestamp = FormatPlayerSaveTimestamp( L"Player Save" );
+
+    const bool bActiveIsFirstContext =
+        strcmp( gActiveSaveContextName, kPlayerSaveContextName ) == 0;
+    const char *pNextContextName = bActiveIsFirstContext
+                                       ? kPlayerSave2ContextName
+                                       : kPlayerSaveContextName;
+
+    if ( WriteSaveContext( pNextContextName, timestamp, pPlayerData ) ) {
+        strncpy( gActiveSaveContextName, pNextContextName,
+                 sizeof( gActiveSaveContextName ) - 1 );
+        unknownDword2 = 1;
+    }
+
+    bUnknownBool4 = false;
+    if ( bSaveRequeued ) {
+        bSaveRequeued = false;
+        pendingSaveCount++;
+        bUnknownBool4 = true;
+    }
+
+    unknownDword += numQueuedSaves;
 
     return true;
+}
+
+void SavegameManager::requestSave() {
+    ScopedMutexLock lock( &mutex );
+
+    if ( bUnknownBool4 ) {
+        bSaveRequeued = true;
+        return;
+    }
+
+    pendingSaveCount++;
+    bUnknownBool4 = true;
 }
 
 bool SavegameManager::isProfileChangeInProgress() const {

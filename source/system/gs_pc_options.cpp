@@ -16,6 +16,9 @@
 #include "gs_timer.h"
 #include "input/input_device.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "player_data/achievements_data.h"
+#include "player_data/player_save.h"
+#include "player_data/gs_playerdata.h"
 #include "player_data/save_game_manager.h"
 #include "player_data/user_profile.h"
 #include "tdu_instance.h"
@@ -73,7 +76,11 @@ GSPCOptions::~GSPCOptions() {
 
 bool GSPCOptions::initialize( TestDriveGameInstance * ) {
     // FUN_007c4990
-    OTDU_UNIMPLEMENTED;
+    reset();
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND (the two globals FUN_007c4990
+                             // publishes are not ported)
+
     return true;
 }
 
@@ -178,7 +185,7 @@ void GSPCOptions::tick( float totalTime, float deltaTime ) {
            !gpFlashMessageBox->FUN_00403100() ) ) {
         exitCountdown = -1;
         if ( pendingMenuAction == MA_QuitToDesktop ) {
-            gpTestDriveInstance->requestExit();
+            TestDrive::RequestGameExit();
             return;
         }
 
@@ -298,11 +305,20 @@ bool GSPCOptions::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         }
         return true;
 
+    case 0x6f706f75: // "opou" — leaving the options page, back to the main menu
+        if ( gpPlayerData->getLoadedSave()->getDriver()->isValid() ) {
+            gpPlayerData->requestSave( 1 );
+        } else {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0097bf40)
+        }
+
+        showOptionsRoot();
+        return true;
+
     case 0x7064656c:             // "pdel" — delete the selected profile
     case 0x706e6577:             // "pnew"
     case 0x7073656c:             // "psel"
     case 0x7063616e:             // "pcan"
-    case 0x6f706f75:             // "opou"
     case 0x736e6473:             // "snds"
     case 0x77696467:             // "widg"
         OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND
@@ -316,7 +332,13 @@ bool GSPCOptions::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
 void GSPCOptions::openMainMenu( bool bInGameOverlay ) {
     // FUN_007c52f0
     pFlashPlayer->setVariableValue( "/:IsWrongProfile", uint32_t( 0u ) );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    const bool bSimuModeLocked = pAchievements->isRewardLocked(
+        AchievementsData::kSimuModeRewardHashcode );
+    pFlashPlayer->setVariableValue( "/:IsSimuModeAvailable",
+                                    int32_t( !bSimuModeLocked ) );
 
     bMoviesNeedReenable = false;
 
@@ -663,9 +685,7 @@ void GSPCOptions::hideProfileSelection() {
 
 void GSPCOptions::updateMainMenuVisibility() {
     // FUN_007c4fe0
-    int32_t playerDataState = 0;
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    const int32_t playerDataState = gpPlayerData->getSaveLoadState();
 
     const eGameMode activeGameMode = gpTestDriveInstance->getActiveGameMode();
     const int32_t bHasGameInProgress =
@@ -716,9 +736,17 @@ void GSPCOptions::gatherProfileEntries() {
 
         strncpy( profileNames[i], pProfileName, kMaxProfileNameLength );
         profileNames[i][kMaxProfileNameLength - 1] = '\0';
-    }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+        LocalPlayerData profilePlayerData = {};
+        if ( gpPlayerData->readProfileOptions(
+                 UserProfileRegister::HashProfileName( pProfileName ),
+                 profilePlayerData ) ) {
+            strncpy( profileNames[i], profilePlayerData.Nickname,
+                     kMaxProfileNameLength );
+            profileNames[i][kMaxProfileNameLength - 1] = '\0';
+            profileConnected[i] = profilePlayerData.bOnlineAccount;
+        }
+    }
 }
 
 int32_t GSPCOptions::refreshProfileList() {

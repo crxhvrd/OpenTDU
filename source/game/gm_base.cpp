@@ -604,3 +604,18 @@ void GameMode::tickManagers( float param_2,
 }
 
 void GameMode::requestExit() { bExitRequested = true; }
+
+void TestDrive::RequestGameExit() {
+    // FUN_0074dad0
+    GameMode *pGameMode = gpActiveGameMode;
+    TestDriveGameInstance *pInstance = gpTestDriveInstance;
+
+    if ( pGameMode != nullptr ) {
+        pGameMode->setsMessageBoxVisible( false );
+        pGameMode->requestExit();
+    }
+
+    if ( pInstance != nullptr ) {
+        pInstance->requestExit();
+    }
+}

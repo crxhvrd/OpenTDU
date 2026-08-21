@@ -8,6 +8,12 @@ enum class eFullscreenMode;
 typedef void ( *edSysInputCallback )( uint32_t codepoint );
 #endif
 
+struct DisplayMode {
+    uint32_t Width = 0u;
+    uint32_t Height = 0u;
+    uint32_t RefreshRate = 0u;
+};
+
 class edSys : public edBase {
 public:
     inline bool isWindowActivated() const { return bWindowActivated; }
@@ -32,6 +38,7 @@ public:
     void bindCharInputCallback( edSysInputCallback param_1 );
 
     int32_t getMonitorRefreshRate();
+    void enumerateDisplayModes( std::vector<DisplayMode> &outModes );
     float getDPIScale();
 
 public:
@@ -55,4 +62,5 @@ extern edSys gEdSys;
 extern uint32_t gWindowWidth;
 extern uint32_t gWindowHeight;
 extern int32_t gPickedRefreshRate;
+extern DisplayMode gBootDisplayMode;
 extern bool gWindowSizeDirty;

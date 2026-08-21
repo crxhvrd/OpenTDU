@@ -4,6 +4,8 @@
 #include "core/notifier.h"
 #include "paint.h"
 
+class edStore;
+
 struct CarConfig {
     int32_t Hash;
     int32_t PowerCC;
@@ -47,29 +49,49 @@ public:
         CDS_SoldOnEbay = 7
     };
 
+    static constexpr int32_t kDefaultCarConfigID = 0x3e7;
+    static constexpr int32_t kDefaultBikeConfigID = 0x29a;
+    static constexpr int32_t kFirstBikeConfigID = 0x5dc;
+    static constexpr int32_t kFirstAfterBikeConfigID = 0x7cf;
+
+    static constexpr uint32_t kUnsetByteID = 0xffu;
+
 public:
     inline uint32_t getCarID() const { return carID; }
+    inline const CarConfig *getConfig() const { return pConfig; }
+    bool isValid() override { /* FUN_00415fe0 */
+        return state != eState::CDS_Invalid;
+    }
 
 public:
     CarDesc();
     ~CarDesc();
 
-private:
-    uint32_t carConfigID;
-    uint32_t carID;
-    eState state;
-    CarConfig *pConfig;
-    float upgradeLevel;
-    ePaintType paintType;
-    int32_t paintIndex;
-    ColorRGBA paintColor;
-    ColorRGBA paintLogo;
-    ColorRGBA paintSecondColor;
-    ColorRGBA paintSecondColor2;
-    int32_t rimID;
-    int32_t interiorID;
-    int32_t price;
-    float odometer;
-    float usageTime;
-    uint64_t packHashcode;
+    void clear();
+    void deserialize( edStore &stream );
+
+    uint32_t getCarConfigID() const;
+    void setCarConfigID( const uint32_t configID );
+
+    float getUpgradeRate() const;
+    void setUpgradeRate( const float upgradeRate );
+
+public:
+    uint32_t pCarConfigID[2] = {}; // TEA Encrypted
+    uint32_t carID = 0xffffffffu;
+    eState state = eState::CDS_Invalid;
+    const CarConfig *pConfig = nullptr;
+    uint32_t pUpgradeRate[2] = {}; // TEA Encrypted
+    ePaintType paintType = ePaintType::PT_Default;
+    int32_t paintIndex = -1;
+    ColorRGBA deluxeMainColor = 0u;
+    ColorRGBA deluxeSecondColor = 0u;
+    ColorRGBA deluxeLogoColor = 0u;
+    ColorRGBA deluxeSecondColor2 = 0u;
+    int32_t rimID = -1;
+    int32_t interiorID = -1;
+    int32_t price = 0;
+    float odometerKms = 0.0f;
+    double playTime = 0.0;
+    uint64_t packHashcode = 0xffffffffffffffffull;
 };

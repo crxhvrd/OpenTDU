@@ -15,21 +15,41 @@ static constexpr const char *kEdDevBuildTime = "09:48:05";    // DAT_00f3ea04
 edDev gEdDev = {};        // DAT_00fa9d30
 edDev *gpEdDev = nullptr; // DAT_010e8064
 
-struct PCOptionMapping {
-    char pActionName[32];
-    char pCurrentChannel[32];
-    char pCurrentDevice[32];
-    bool Unknown0;
-    bool Unknown1;
-    bool Unknown2;
-    bool Unknown3;
-    uint8_t Unknown4;
-
-    uint64_t ActionID;
-};
-
 static int32_t gNumPCOptionMapping = 0;         // DAT_010e7544
 static PCOptionMapping gPCOptionMapping[0x100]; // DAT_014c0308
+
+int32_t GetNumPCOptionMapping() { return gNumPCOptionMapping; }
+
+PCOptionMapping *GetPCOptionMapping( const int32_t index ) {
+    if ( index < 0 || index >= gNumPCOptionMapping ) {
+        return nullptr;
+    }
+    return &gPCOptionMapping[index];
+}
+
+PCOptionMapping *FindPCOptionMapping( const char *pActionName ) {
+    // FUN_00895f90
+    for ( int32_t i = 0; i < gNumPCOptionMapping; i++ ) {
+        if ( StringNCmpI( pActionName, gPCOptionMapping[i].pActionName,
+                          0x20 ) == 0 ) {
+            return &gPCOptionMapping[i];
+        }
+    }
+
+    return gPCOptionMapping;
+}
+
+bool IsRemappableAction( const char *pActionName ) {
+    // FUN_00895f40
+    for ( int32_t i = 0; i < gNumPCOptionMapping; i++ ) {
+        if ( StringNCmpI( pActionName, gPCOptionMapping[i].pActionName,
+                          0x20 ) == 0 ) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 static uint64_t GetActionID( const char *param_1 ) {
     // FUN_009855a0
@@ -345,10 +365,10 @@ void FUN_008963e0( const char *param_1,
     strncpy( entry.pCurrentChannel, param_1, 0x20 );
     strncpy( entry.pCurrentDevice, param_2, 0x20 );
 
-    entry.Unknown0 = param_3;
+    entry.DeviceIndex = uint8_t( param_3 );
     entry.Unknown1 = param_4;
     entry.Unknown2 = param_5;
-    entry.Unknown3 = param_6;
+    entry.Category = int8_t( param_6 );
 
     entry.Unknown4 = param_7;
 
@@ -364,11 +384,11 @@ void InitializeDeviceMapping() {
         memset( entry.pCurrentChannel, 0, 0x20 * sizeof( char ) );
         memset( entry.pCurrentDevice, 0, 0x20 * sizeof( char ) );
 
-        entry.Unknown0 = false;
+        entry.DeviceIndex = 0u;
         entry.Unknown1 = false;
         entry.Unknown2 = false;
-        entry.Unknown3 = false;
-        entry.Unknown4 = false;
+        entry.Category = 0;
+        entry.Unknown4 = 0u;
 
         entry.ActionID = 0;
     }

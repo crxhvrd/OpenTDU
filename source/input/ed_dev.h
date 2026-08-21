@@ -17,6 +17,24 @@ struct InputActionBinding {
     uint64_t Hashcode; // Action hashcode for input mapping
 };
 
+struct PCOptionMapping {
+    char pActionName[32];
+    char pCurrentChannel[32];
+    char pCurrentDevice[32];
+    uint8_t DeviceIndex;
+    bool Unknown1;
+    bool Unknown2;
+    int8_t Category;
+    uint8_t Unknown4;
+    uint64_t ActionID;
+};
+OTDU_SIZE_MUST_MATCH( PCOptionMapping, 0x70 );
+
+int32_t GetNumPCOptionMapping();
+PCOptionMapping *GetPCOptionMapping( const int32_t index );
+PCOptionMapping *FindPCOptionMapping( const char *pActionName );
+bool IsRemappableAction( const char *pActionName );
+
 static constexpr int32_t kNumInputActionBindings = 75;
 static constexpr InputActionBinding
     kInputActionBindings[kNumInputActionBindings] = {

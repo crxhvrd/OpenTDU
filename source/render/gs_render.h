@@ -185,6 +185,7 @@ public:
 
     void setLODQuality( const uint32_t qualityIndex );
     inline uint32_t getLODQuality() const { return activeLODQuality; }
+    inline bool isInitialized() const { return bInitialized; }
 
     virtual void onWeatherConfigChange( WeatherConfig *param_1 ) override;
 

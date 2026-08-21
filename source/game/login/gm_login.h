@@ -48,6 +48,8 @@ private:
     bool isMenuClipVisible();
     static bool HasInputActivity();
 
+    void resumeSavedGame();
+
 private:
     MngFade fade;
     MngFlashLocalize flashLocalize;

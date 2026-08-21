@@ -133,3 +133,7 @@ protected:
 };
 
 extern GameMode *gpActiveGameMode;
+
+namespace TestDrive {
+    void RequestGameExit();
+} // namespace TestDrive

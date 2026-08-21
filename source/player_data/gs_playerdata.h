@@ -4,39 +4,81 @@
 #include "core/mutex.h"
 #include "core/notifier.h"
 #include "game/gs_base.h"
+#include "local_player_data.h"
 
 #include "render/gs_render_helper.h"
+
+class PlayerSave;
+class IPlayerData;
+
+static constexpr const char *kPlayerSaveContextName =
+    "playersave"; // DAT_00f7a038
+static constexpr const char *kPlayerSave2ContextName = "playersave2";
+extern char gActiveSaveContextName[128];
+extern bool gbSaveAllowed;
+
+enum eSaveLoadState : int32_t {
+    SLS_None = 0,   // nothing was attempted yet
+    SLS_Loaded = 1, // the active profile has a save and it was read back
+    SLS_NoSave = 2, // the active profile has no (readable) save
+};
 
 class GSPlayerData : public GameSystem, public Notifiable {
 public:
     const char *getName() const override { return "Service : PlayerData"; }
     inline bool getOnlineOp( int32_t param_1 ) const {
-        return bOnlineOps[param_1];
+        return localPlayerData.bOnlineOps[param_1];
     }
-    inline bool isUsingImperialUnits() const { return bUseImperialUnits; }
-    inline void setField526850( const bool value ) {
-        field526850_0x967d4 = value;
+    inline bool isUsingImperialUnits() const {
+        return localPlayerData.UnitSystem == US_Imperial;
     }
-    inline float getSeatPositionHeight() const { return seatPositionHeight; }
+    inline void setSaveEnabled( const bool value ) { bSaveEnabled = value; }
+    inline bool isSaveEnabled() const { return bSaveEnabled; }
+    inline float getSeatPositionHeight() const {
+        return localPlayerData.SeatPositionHeight;
+    }
     inline float getSeatPositionPosition() const {
-        return seatPositionPosition;
+        return localPlayerData.SeatPositionPosition;
     }
-    inline float getPadSensitivity() const { return padSensitivity; }
-    inline float getBarSensitivity() const { return barSensitivity; }
-    inline float getMouseSensitivity() const { return mouseSensitivity; }
-    inline float getPadLinearity() const { return padLinearity; }
-    inline float getQuiverSensitivity() const { return quiverSensitivity; }
-    inline float getGamma() const { return gamma; }
-    inline float getCameraShake() const { return cameraShake; }
-    inline float getRadialBlurIntensity() const { return radialBlurIntensity; }
-    inline float getVoicesVolume() const { return voicesVolume; }
-    inline float getVoicesThreshold() const { return voicesThreshold; }
-    inline float getVoicesInput() const { return voicesInput; }
-    inline bool isAutomaticGearbox() const { return bAutomaticGearbox; }
-    inline int32_t getDrivingHelpLevel() const { return drivingHelpLevel; }
+    inline float getPadSensitivity() const {
+        return localPlayerData.PadSensitivity;
+    }
+    inline float getBarSensitivity() const {
+        return localPlayerData.BarSensitivity;
+    }
+    inline float getMouseSensitivity() const {
+        return localPlayerData.MouseSensitivity;
+    }
+    inline float getPadLinearity() const { return localPlayerData.Linearity; }
+    inline float getQuiverSensitivity() const {
+        return localPlayerData.QuiverSensitivity;
+    }
+    inline float getGamma() const { return localPlayerData.Gamma; }
+    inline float getCameraShake() const { return localPlayerData.CameraShake; }
+    inline float getRadialBlurIntensity() const {
+        return localPlayerData.RadialBlurIntensity;
+    }
+    inline float getVoicesVolume() const {
+        return localPlayerData.VoicesVolume;
+    }
+    inline float getVoicesThreshold() const {
+        return localPlayerData.VoicesThreshold;
+    }
+    inline float getVoicesInput() const { return localPlayerData.VoicesInput; }
+    inline bool isAutomaticGearbox() const { return localPlayerData.bAuto; }
+    inline int32_t getDrivingHelpLevel() const {
+        return localPlayerData.DrivingHelpLevel;
+    }
     inline void setDrivingHelpLevel( const int32_t level ) {
-        drivingHelpLevel = level;
+        localPlayerData.DrivingHelpLevel = level;
     }
+
+    inline LocalPlayerData &getLocalPlayerData() { return localPlayerData; }
+    inline const LocalPlayerData &getLocalPlayerData() const {
+        return localPlayerData;
+    }
+    inline IPlayerData *getLoadedSave() const { return pLoadedSave2; }
+    inline void setOnline( const bool bOnline ) { bIsOnline = bOnline; }
 
 public:
     GSPlayerData();
@@ -62,51 +104,46 @@ public:
 
     void setUnitSystem( const bool bUseImperial );
     bool isOnline() const;
-    inline void setOnline( const bool bOnline ) { bIsOnline = bOnline; }
 
-    void FUN_008985d0( void *pExternalBuffer, int bufferLength );
+    void resetPlayerData( const bool bApplyDefaults, const bool bClear );
+    int32_t getSaveLoadState() const;
+    bool loadActiveProfileSave();
+    bool loadCommonDT( const void *pSaveBuffer,
+                       const int32_t bufferLength,
+                       LocalPlayerData *pOutPlayerData );
+    bool readProfileOptions( const uint64_t profileHashcode,
+                             LocalPlayerData &outPlayerData );
+    void requestSave( const int32_t mode );
+    void prepareActiveProfile();
+    int32_t writeCommonDT( void *pExternalBuffer,
+                           const int32_t bufferLength,
+                           LocalPlayerData *pPlayerData = nullptr );
     bool FUN_00897990();
     bool isRentingCar();
 
 private:
     uint8_t bInitialized : 1;
     uint8_t bForceUpdate : 1;
-    uint8_t bUseImperialUnits : 1;
     uint8_t bTutorialCompleted : 1;
-    bool bOnlineOps[9];
-    uint8_t bUnusedFlag : 1;
     uint8_t bIsOnline : 1;
-    uint8_t field526850_0x967d4 : 1;
+    uint8_t bSaveEnabled : 1;
     uint8_t field526864_0x967e5 : 1;
-    int32_t field526854_0x967d8;
 
-    int32_t drivingHelpLevel;
+    float LastArrestedTime;
+    uint32_t OffenceRepetitionFactor;
 
-    float padSensitivity;
-    float barSensitivity;
-    float mouseSensitivity;
+    PlayerSave *pLoadedSave;
+    IPlayerData *pLoadedSave2;
+
+    LocalPlayerData localPlayerData;
+
+    std::vector<uint8_t> saveScratchBuffer;
+
+    int32_t saveLoadState;
+    int32_t pendingSaveRequest;
+    int32_t saveVersion;
+
     float timeout;
-
-    float seatPositionHeight;
-    float seatPositionPosition;
-    float padLinearity;
-    float quiverSensitivity;
-    float gamma;
-    float cameraShake;
-    float radialBlurIntensity;
-    float voicesVolume;
-    float voicesThreshold;
-    float voicesInput;
-    uint8_t bAutomaticGearbox : 1;
-
-    uint32_t resolutionWidth;
-    uint32_t resolutionHeight;
-    uint32_t refreshRate;
-    int32_t lodQuality;
-
-    eAntiAliasingMethod antiAliasing;
-    uint8_t bHDREnabled : 1;
-    std::string languageStr;
 
     TestDriveMutex *pMutex;
 
