@@ -50,6 +50,7 @@ private:
 
     void resumeSavedGame();
     void startNewGame();
+    void changeProfile( const uint64_t profileHashcode );
 
 private:
     MngFade fade;
@@ -69,7 +70,6 @@ private:
     uint32_t waitExitStartTicks;
 
     eGMLoginState state;
-    eGameMode nextGameMode;
 };
 
 extern GMLogin *gpGMLogin;

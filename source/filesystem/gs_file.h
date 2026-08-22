@@ -119,6 +119,8 @@ public:
 
     void initCarPacks( bool param_1 );
     std::wstring getSaveLocation( eContextSource source );
+    bool deleteProfileSaveFolder( const uint64_t profileHashcode,
+                                  const eContextSource source );
 
     bool hasPendingAsyncRequests();
     void flushPendingAsync();

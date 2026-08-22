@@ -36,6 +36,7 @@ public:
     bool getVariableAsString( const char *param_2, char *param_3 );
     bool getClipPlayer( const char *param_2, FlashClip *param_1 );
     void goToFrameAndPlay( int32_t param_2, const char *param_3, bool param_4 );
+    void stopClip( const char *param_2 );
 
     void tick( uint32_t param_1, bool param_2, bool param_3 );
 

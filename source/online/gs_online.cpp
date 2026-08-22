@@ -1,6 +1,10 @@
 #include "shared.h"
 #include "gs_online.h"
 
+#include "player_data/driver.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+
 GSOnline gOnline = {};
 GSOnline *gpOnline = nullptr;
 
@@ -64,4 +68,17 @@ void GSOnline::setGPSTrackerAddress( const char *param_1 ) {
 
 void GSOnline::setDbgCOMAddress( const char *param_1 ) {
     strncpy( pDbgCOM, param_1, 30 );
+}
+
+int32_t GSOnline::notifyCheatDetected( Driver *pDriver ) {
+    // FUN_00884c00
+    if ( pDriver == nullptr || !pDriver->isValid() ) {
+        return -1;
+    }
+
+    gpPlayerData->getLoadedSave()->getDriver()->bCheatDetected = true;
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (gpCP2PGameService)
+
+    return -1;
 }

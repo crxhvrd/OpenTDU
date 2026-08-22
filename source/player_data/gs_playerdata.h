@@ -159,3 +159,7 @@ private:
 extern float gSeatPosition[2];
 
 extern GSPlayerData *gpPlayerData;
+
+namespace TestDrive {
+    void RebakePlayerAvatar();
+} // namespace TestDrive

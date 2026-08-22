@@ -70,6 +70,7 @@ public:
     inline void clearGMChangeInProgressFlag() {
         bPendingGameModeChange = false;
     }
+    inline void setGMChangeInProgressFlag() { bPendingGameModeChange = true; }
     inline bool isUsingDVDVFS() { return bUseDVDVFS; }
     inline bool
     isInstanciatingResource( const StreamedResource *param_1 ) const {

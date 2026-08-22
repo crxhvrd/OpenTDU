@@ -39,6 +39,5 @@ public:
 };
 
 extern GSTutorial *gpTutorial;
-
-extern bool gbTutorialEnabled;
-extern bool gbScenarioTutorialEnabled;
+extern bool gbTutorialEnabled;      
+extern bool gbScenarioTutorialEnabled; 

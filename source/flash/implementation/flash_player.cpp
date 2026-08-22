@@ -269,6 +269,27 @@ void FlashPlayer::goToFrameAndPlay( int32_t param_2,
     gpActiveFlashResource = pFVar3;
 }
 
+void FlashPlayer::stopClip( const char *param_2 ) {
+    // FUN_00440eb0
+    ScopedMutexLock lock = gpFlash->scopedLock();
+
+    FlashResource *pFVar3 = gpActiveFlashResource;
+    gpActiveFlashResource = pFlashResource;
+    FlashSprite *pFVar2 = ( gpActiveFlashResource->getActiveClip() ).pSprite;
+    FlashClip *pFVar1 = &gpActiveFlashResource->getActiveClip();
+    gpPreviousActiveFlashResource = gpActiveFlashResource;
+    pFVar1->pSprite = gpActiveFlashResource->getRoot();
+
+    bool bVar4 = pFVar1->retrieveSpriteFromPath( param_2, nullptr, nullptr );
+    if ( bVar4 ) {
+        flash::actions::stop();
+    }
+
+    ( gpActiveFlashResource->getActiveClip() ).pSprite = pFVar2;
+    gpPreviousActiveFlashResource = pFVar3;
+    gpActiveFlashResource = pFVar3;
+}
+
 void FlashPlayer::tick( uint32_t param_1, bool param_2, bool param_3 ) {
     // FUN_004408d0
     FlashResource *pFVar1 = pFlashResource;

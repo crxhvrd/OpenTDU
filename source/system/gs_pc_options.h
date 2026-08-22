@@ -48,6 +48,20 @@ public:
     inline void setMainMenuAllowed( const bool bAllowed ) {
         bCanOpenMainMenu = bAllowed;
     }
+    inline uint64_t getActiveProfileHashcode() const {
+        // FUN_007c47d0
+        return activeProfileHashcode;
+    }
+    inline void setCloseRequested() {
+        field23_0x35 = true;
+        bCloseRequested = true;
+    }
+    inline void postPendingPopupAnswer( const ePopupAnswer answer,
+                                        const int32_t userData ) {
+        bPendingPopupAnswer = true;
+        pendingPopupAnswer = answer;
+        pendingPopupUserData = userData;
+    }
 
 public:
     GSPCOptions();
@@ -122,6 +136,8 @@ private:
 
     ePopupAnswer pendingPopupAnswer;
     int32_t pendingPopupUserData;
+
+    uint64_t activeProfileHashcode;
 };
 
 extern GSPCOptions *gpPCOptions;

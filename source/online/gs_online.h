@@ -7,6 +7,8 @@ namespace TestDrive {
 } // namespace TestDrive
 #include "game/gs_base.h"
 
+class Driver;
+
 class GSOnline : public GameSystem {
 public:
     const char *getName() const override { return "Service : Online"; }
@@ -34,6 +36,8 @@ public:
     void setGPSTrackerAddress( const char *param_1 );
 
     void setDbgCOMAddress( const char *param_1 );
+
+    int32_t notifyCheatDetected( Driver *pDriver );
 
 private:
     char pFreerideVersion[32];

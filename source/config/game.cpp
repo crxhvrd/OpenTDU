@@ -602,13 +602,13 @@ void GSConfig::registerGameCommands() {
 
     registerCommand( "TUTORIAL", [&]( const char *pArg ) {
         // FUN_009868e0
-        gbTutorialEnabled = ( strncmp( pArg, "ON", strlen( "ON" ) ) == 0 );
+        gbTutorialEnabled = ( strncmp( pArg, "ON", strlen( "ON" ) ) != 0 );
     } );
 
     registerCommand( "SCENARIOTUTORIAL", [&]( const char *pArg ) {
         // FUN_009868b0
         gbScenarioTutorialEnabled =
-            ( strncmp( pArg, "ON", strlen( "ON" ) ) == 0 );
+            ( strncmp( pArg, "ON", strlen( "ON" ) ) != 0 );
     } );
 
     registerCommand( "LOGCHALLENGESINFO", [&]( const char *pArg ) {

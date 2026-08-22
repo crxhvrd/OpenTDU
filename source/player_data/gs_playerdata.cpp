@@ -14,6 +14,9 @@
 
 #include "filesystem/file_direct_access.h"
 #include "filesystem/gs_file.h"
+#include "game/avatar/gs_avatar.h"
+#include "game/scenaric/avatar_manager.h"
+#include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "player_save.h"
 #include "online/gs_online.h"
@@ -139,6 +142,42 @@ static bool FindProfileSaveContext( uint64_t profileHashcode,
 
     return bFound;
 }
+
+
+namespace TestDrive {
+    static const AvatarConfiguration *GetSavedAvatarConfiguration() {
+        const AvatarConfiguration *pConfig =
+            &gpAvatar->getDefaultConfiguration( 0 );
+
+        IPlayerData *pLoadedSave = gpPlayerData->getLoadedSave();
+        if ( pLoadedSave != nullptr ) {
+            SavedAvatar *pSavedAvatar = pLoadedSave->getAvatar();
+            if ( pSavedAvatar != nullptr ) {
+                pConfig = &pSavedAvatar->Config;
+            }
+        }
+
+        return pConfig;
+    }
+
+    void RebakePlayerAvatar() {
+        // FUN_008955f0
+        AvatarManager &avatarManager = gpScenaric->getAvatarManager();
+
+        EntityAvatar *pAvatar = avatarManager.allocateAvatar( ~0ull, 1 );
+        if ( pAvatar == nullptr ) {
+            return;
+        }
+
+        pAvatar->installConfiguration( GetSavedAvatarConfiguration(), 0, false,
+                                       false );
+
+        gpAvatar->bakeAvatar( pAvatar, GetSavedAvatarConfiguration(), 0, false,
+                              true );
+
+        avatarManager.releaseAvatar( pAvatar );
+    }
+} // namespace TestDrive
 
 GSPlayerData::GSPlayerData()
     : GameSystem(),

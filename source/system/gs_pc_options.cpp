@@ -64,7 +64,8 @@ GSPCOptions::GSPCOptions()
       pendingMenuAction( MA_None ),
       exitCountdown( -1 ),
       pendingPopupAnswer( ePopupAnswer::PA_Unknown ),
-      pendingPopupUserData( 0 ) {
+      pendingPopupUserData( 0 ),
+      activeProfileHashcode( 0ull ) {
     // FUN_007c4f10
     gpPCOptions = this;
 }

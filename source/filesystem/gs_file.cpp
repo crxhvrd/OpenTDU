@@ -651,6 +651,29 @@ std::wstring GSFile::getSaveLocation( eContextSource source ) {
     return saveLocation;
 }
 
+bool GSFile::deleteProfileSaveFolder( const uint64_t profileHashcode,
+                                      const eContextSource source ) {
+    // FUN_006085a0
+    std::wstring saveLocation = getSaveLocation( source );
+    if ( saveLocation.empty() ) {
+        return false;
+    }
+
+    const std::string profileName =
+        gUserProfileRegister.getProfileName( profileHashcode );
+    if ( profileName.empty() ) {
+        return false;
+    }
+
+    std::filesystem::path folderPath( saveLocation );
+    folderPath /= std::filesystem::path( profileName );
+
+    std::error_code errorCode;
+    std::filesystem::remove_all( folderPath, errorCode );
+
+    return !errorCode;
+}
+
 bool GSFile::hasPendingAsyncRequests() {
     if ( workerThreadContext.bRunning ) {
         return true;

@@ -180,6 +180,8 @@ public:
                                     const std::string &param_2 );
     void setDemoTimer( float param_1 );
     inline float getDemoTimer() const { return demoTimer; }
+    inline bool isDemoModeActive() const { return bDemoMode; }
+    void startDemoMode();
     void delockChallengeRoads( const bool bDelocked );
     void setTraceSize( uint32_t param_1 );
     void setDefaultIGE( const char *param_1 );
@@ -199,7 +201,9 @@ private:
     std::string defaultIGE;
 
     Eigen::Vector4f startPosition;
-    float demoTimer;
+    bool bDemoMode;      
+    float demoTimer;     
+    uint32_t demoTimeEnd;
     uint32_t traceSize;
     uint32_t currentDefVersion;
     int32_t extraRewardsCineCount;

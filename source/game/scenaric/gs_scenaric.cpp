@@ -20,6 +20,7 @@
 #include "render/animation/skeleton.h"
 #include "render/animation/clip.h"
 #include "game/gm_base.h"
+#include "game/video_bumper/gm_video_bumper.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/sector_manager.h"
@@ -42,6 +43,7 @@ bool gbDisplayWooshDebug = true;     // gDisplayWooshDebug
 
 static bool BOOL_010e7c40 = false; // DAT_010e7c40
 static int32_t DAT_010e7c3c = 0;   // DAT_010e7c3c
+static int32_t gDemoVideoIndex = 0; // DAT_010e7c34
 
 static constexpr float kWooshSpeedToKmh = 3.6f; // DAT_00f41768
 
@@ -90,7 +92,9 @@ GSScenaric::GSScenaric()
     : GameSystem(),
       defaultIGE( "" ),
       startPosition( Eigen::Vector4f::Zero() ),
+      bDemoMode( false ),
       demoTimer( -1.0f ),
+      demoTimeEnd( 0u ),
       traceSize( 300 ),
       currentDefVersion( 0 ),
       extraRewardsCineCount( 0 ),
@@ -195,6 +199,8 @@ void GSScenaric::tick( float totalTime, float deltaTime ) {
     if ( gpWorld != nullptr && gpWorld->getStreamingManager() != nullptr ) {
         gpWorld->getStreamingManager()->tickWoosh( listenerXZ, listenerSpeed );
     }
+
+    introTutorial.tick();
 
     avatarManager.tick( deltaTime );
 
@@ -577,6 +583,29 @@ void GSScenaric::setCinematicViewerDefault( const std::string &param_1,
 }
 
 void GSScenaric::setDemoTimer( float param_1 ) { demoTimer = param_1; }
+
+void GSScenaric::startDemoMode() {
+    // FUN_008037e0
+    static constexpr const char *kDemoVideoNames[2] = { "Trailer.bik",
+                                                        "IntroTDU.bik" }; // DAT_00f8b060
+
+    bDemoMode = true;
+    demoTimeEnd = 0u;
+
+    GMVideoBumper::SetActiveBumper( kDemoVideoNames[gDemoVideoIndex] );
+
+    gDemoVideoIndex++;
+    if ( gDemoVideoIndex >= 2 ) {
+        gDemoVideoIndex = 0;
+    }
+
+    gpActiveGameMode->requestExit();
+
+    GMVideoBumper::SetNextGameMode( GM_Login );
+    GMVideoBumper::SetSkippable();
+
+    gpTestDriveInstance->setNextGameMode( GM_VideoBumper );
+}
 
 void GSScenaric::delockChallengeRoads( const bool bDelocked ) {
     bDelockChallengesRoad = bDelocked;

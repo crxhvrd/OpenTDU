@@ -23,12 +23,16 @@
 #include "player_data/driver.h"
 #include "player_data/player_save.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/save_game_manager.h"
 #include "player_data/user_profile.h"
 #include "render/ed_render.h"
 #include "render/gs_render.h"
 #include "system/ed_sys.h"
 #include "system/gs_pc_options.h"
 #include "game/scenaric/game_intro_tutorial.h"
+
+#include "world/gs_world.h"
+#include "world/streaming_manager.h"
 
 #include "tdu_instance.h"
 
@@ -153,8 +157,7 @@ GMLogin::GMLogin()
       idleTime( 0.0f ),
       saveWaitStartTicks( 0u ),
       waitExitStartTicks( 0u ),
-      state( GLS_LegalDisplay ),
-      nextGameMode( GM_Living ) {
+      state( GLS_LegalDisplay ) {
     // FUN_0074e140
     registerManager( &fade );
     registerManager( &flashLocalize );
@@ -189,8 +192,6 @@ GMLogin::~GMLogin() {
 
 void GMLogin::reset() {
     // FUN_0074ecc0
-    nextGameMode = GM_Living;
-
     gpTestDriveInstance->clearGMChangeInProgressFlag();
 
     pGeneralFlashPlayer = gpFlash->getFlashPlayer( "GENERAL" );
@@ -239,14 +240,25 @@ void GMLogin::reset() {
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
 
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    if ( pAchievements->isReady() ) {
+        pAchievements->setReady( false );
+        pAchievements->notify( ACF_Challenge | ACF_Road | ACF_Collection,
+                               false );
+    }
+
     gpScenaric->clearObjectives();
 
     gpTestDriveInstance->clearGMChangeInProgressFlag();
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND
 
     gpFlash->setLocalizedStrings();
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND
+
+    gSavegameManager.toggleProfileChange();
 
     gbSimuModeEnabled = false;
 
@@ -307,8 +319,7 @@ bool GMLogin::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         return true;
 
     case 0x7369696e: // "siin" — the player asked to sign in
-        gpPCOptions->setMainMenuAllowed( true );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND
+        gpPCOptions->postPendingPopupAnswer( ePopupAnswer::PA_Accept, 5 );
         return true;
 
     default:
@@ -416,14 +427,13 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         }
 
         if ( BOOL_010e7d18 ) {
-            OTDU_UNIMPLEMENTED; // TODO: FUN_0074ea80
+            startNewGame();
 
             gpPlayerData->setSaveEnabled( true );
             BOOL_010e7d18 = false;
             state = GLS_LeaveGameMode;
 
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00440eb0( pLoginFlashPlayer,
-                                     // "/" )
+            pLoginFlashPlayer->stopClip( "/" );
             return;
         }
 
@@ -626,16 +636,20 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         return;
 
     case GLS_MainMenu: {
-        if ( HasInputActivity() || totalTime < idleTime ||
+        const float systemTotalTime = gpTimer->SystemTotalTime;
+
+        if ( HasInputActivity() || systemTotalTime < idleTime ||
              !isMenuClipVisible() || !gpFlash->FUN_0099b240( "CONFIGPC", 0 ) ) {
-            idleTime = totalTime;
+            idleTime = systemTotalTime;
         }
 
         const float demoTimer = gpScenaric->getDemoTimer();
-        if ( demoTimer > 0.0f && demoTimer <= ( totalTime - idleTime ) ) {
-            idleTime = totalTime;
+        if ( demoTimer > 0.0f && demoTimer <= ( systemTotalTime - idleTime ) ) {
+            idleTime = systemTotalTime;
 
-            OTDU_UNIMPLEMENTED; // TODO: FUN_008037e0
+            gpScenaric->startDemoMode();
+
+            gpPCOptions->setCloseRequested();
 
             menuActionCountdown = 2;
             state = GLS_LeaveGameMode;
@@ -668,7 +682,7 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
             return;
 
         case MA_ChangeProfile:
-            OTDU_UNIMPLEMENTED; // TODO: FUN_0074e300
+            changeProfile( gpPCOptions->getActiveProfileHashcode() );
             return;
 
         default:
@@ -683,7 +697,6 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         }
 
         if ( menuActionCountdown == 0 ) {
-            gpTestDriveInstance->setNextGameMode( nextGameMode );
             requestExit();
         }
         return;
@@ -693,8 +706,8 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
             menuActionCountdown--;
         }
 
-        if ( menuActionCountdown == 0 ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+        if ( menuActionCountdown == 0 &&
+             !gSavegameManager.isDwordDiffFromPendingSaveCount() ) {
             TestDrive::RequestGameExit();
         }
         return;
@@ -712,30 +725,40 @@ void GMLogin::resumeSavedGame() {
         ( pDriver->TutorialState == kTutorialStatePending ) ||
         ( pDriver->TutorialState == kTutorialStateRunning );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    IPlayerData *pLoadedSave = gpPlayerData->getLoadedSave();
+    if ( pLoadedSave != nullptr && pLoadedSave->getAvatar() != nullptr ) {
+        TestDrive::RebakePlayerAvatar();
+    }
 
     if ( pDriver->TutorialState == kTutorialStateIntro ) {
         if ( gpCarDisplay != nullptr ) {
             gpCarDisplay->reset();
         }
     } else if ( BOOL_010e74f4 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GAME
+        gpCarDisplay->freeResources();
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+
+        SpotStream &spotStream = gpWorld->getStreamingManager()->spotStream;
+        spotStream.bStream = true;
+        spotStream.bDraw = true;
     }
 
     if ( pDriver->bCheatDetected ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_00884c00)
+        gpOnline->notifyCheatDetected( pDriver );
     }
 
-    nextGameMode = GM_Living;
+    gpTestDriveInstance->setNextGameMode( GM_Living );
+
     menuActionCountdown = 2;
 }
 
 void GMLogin::startNewGame() {
     // FUN_0074ea80
     Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
-    (void)pDriver;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_00884c00)
+    gpOnline->notifyCheatDetected( pDriver );
+
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (drop the lobby, server and GPS
                              // tracker endpoints, then FUN_008768d0 /
                              // FUN_00876970)
@@ -759,8 +782,9 @@ void GMLogin::startNewGame() {
             "/:CurrentProfile", localPlayerData.Nickname );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_006085a0: stamp the new
-                             // save over the active profile list entry)
+    gpFile->deleteProfileSaveFolder(
+        gUserProfileRegister.getActiveProfileHashcode(),
+        eContextSource::CS_Savegame );
 
     AchievementsData *pAchievements =
         gpPlayerData->getLoadedSave()->getAchievements();
@@ -780,6 +804,24 @@ void GMLogin::startNewGame() {
     menuActionCountdown = 2;
 }
 
+void GMLogin::changeProfile( const uint64_t profileHashcode ) {
+    // FUN_0074e300
+    gpPlayerData->setSaveEnabled( false );
+    gSaveStreamRevision = 0;
+
+    gUserProfileRegister.initialize( profileHashcode );
+    gUserProfileRegister.updateProfileList( profileHashcode );
+
+    requestExit();
+
+    gbScenarioTutorialEnabled = true;
+
+    gpTestDriveInstance->setNextGameMode( GM_Login );
+    gpTestDriveInstance->setGMChangeInProgressFlag();
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_0087c520)
+}
+
 void GMLogin::pause() {
     // FUN_0074ec00
     gpPlayerData->unsubscribe( pPanelOnline );
@@ -790,7 +832,18 @@ void GMLogin::pause() {
     pGeneralFlashPlayer = nullptr;
     pConfigPCFlashPlayer = nullptr;
 
-    OTDU_UNIMPLEMENTED; // TODO: PLAYERSAVE
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    if ( !pAchievements->getField516_0x204() ) {
+        pAchievements->setField516_0x204( true );
+        if ( pAchievements->isReady() ) {
+            pAchievements->setCurrentGameMode(
+                gpTestDriveInstance->getActiveGameMode() );
+        }
+
+        pAchievements->notify( ACF_Challenge | ACF_Road | ACF_Collection,
+                               false );
+    }
 
     const int32_t numMovies = gpFlash->getNumMovies( 1 );
     for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
