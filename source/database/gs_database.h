@@ -51,6 +51,7 @@ struct DBEntryList {
     char *pData = nullptr;
 
     uint64_t getHashcodeForPointer( void *param_1 ) const;
+    uint64_t getHashcodeForString( const char *pString ) const;
 };
 
 struct GameDatabase {
@@ -148,6 +149,10 @@ public:
     bool setLanguage( FlashPlayer *param_1 );
 
     bool isInitialized() const;
+    int32_t getVehicleId( const char *pBrand,
+                          const char *pModel,
+                          const char *pVersion,
+                          int32_t *pOutIndex = nullptr ) const;
 
     DBEntryCarPhysicsData *getCarDBEntry( int32_t carID );
     int32_t getRimID( int32_t carID, DBEntryRim *rimRef );

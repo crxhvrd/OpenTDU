@@ -88,6 +88,37 @@ void Driver::deserialize( edStore &stream ) {
     notify( 0u );
 }
 
+void Driver::serialize( edStore &stream, const uint16_t garageCurrentCar ) {
+    // FUN_00891990
+    stream.writeInteger( int32_t( ID ) );
+    stream.writeBuffer( Nickname, kNicknameLength );
+
+    uint32_t pMoneyBlock[2] = {};
+    TestDriveTEAWriteDword(
+        pMoneyBlock, getMoney() + uint32_t( getPendingMoneyOperation() ) );
+
+    stream.writeInteger( int32_t( pMoneyBlock[0] ) );
+    stream.writeInteger( int32_t( pMoneyBlock[1] ) );
+    stream.writeInteger( int32_t( pNumCoupons[0] ) );
+    stream.writeInteger( int32_t( pNumCoupons[1] ) );
+    stream.writeInteger( int32_t( pOdometerKms[0] ) );
+    stream.writeInteger( int32_t( pOdometerKms[1] ) );
+
+    stream.writeUShort( ( CurrentCar == 0x280u ) ? garageCurrentCar
+                                                 : CurrentCar );
+
+    stream.writeInteger( int32_t( TeamID ) );
+    stream.writeInteger( int32_t( pCurrentHouse[0] ) );
+    stream.writeInteger( int32_t( pCurrentHouse[1] ) );
+    stream.writeInteger( int32_t( field28_0x78 ) );
+
+    stream.writeInteger( TutorialState );
+    stream.writeInteger( TutorialUserParam );
+    stream.writeInteger( bCheatDetected ? 1 : 0 );
+
+    stream.writeString( ClubName );
+}
+
 void Driver::initialize( const char *pNickname,
                          const uint32_t id,
                          const uint32_t money,

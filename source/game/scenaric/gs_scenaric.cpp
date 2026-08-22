@@ -578,7 +578,9 @@ void GSScenaric::setCinematicViewerDefault( const std::string &param_1,
 
 void GSScenaric::setDemoTimer( float param_1 ) { demoTimer = param_1; }
 
-void GSScenaric::delockChallengeRoads() { bDelockChallengesRoad = true; }
+void GSScenaric::delockChallengeRoads( const bool bDelocked ) {
+    bDelockChallengesRoad = bDelocked;
+}
 
 void GSScenaric::setTraceSize( uint32_t param_1 ) { traceSize = param_1; }
 

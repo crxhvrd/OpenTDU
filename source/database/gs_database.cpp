@@ -7,7 +7,9 @@
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/mng_flash_localize.h"
+#include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
 
 GSDatabase gDatabase = {};
 GSDatabase *gpDatabase = nullptr; // DAT_011ee900
@@ -108,6 +110,11 @@ bool GSDatabase::reloadDatabases( const char *pLanguage,
     gpFlash->getFlashSound()->getGPSVoice()->initializeFromDatabase();
 
     engineDatabase.bInitialized = true;
+
+    if ( gpPlayerData != nullptr && gpPlayerData->getLoadedSave() != nullptr ) {
+        gpPlayerData->getLoadedSave()->getAchievements()->build();
+    }
+
     return true;
 }
 
@@ -1601,6 +1608,39 @@ bool GSDatabase::setLanguage( FlashPlayer *param_1 ) {
 
 bool GSDatabase::isInitialized() const { return bInitialized; }
 
+int32_t GSDatabase::getVehicleId( const char *pBrand,
+                                  const char *pModel,
+                                  const char *pVersion,
+                                  int32_t *pOutIndex ) const {
+    // FUN_009a8ff0
+    for ( uint32_t i = 0u; i < uint32_t( cars.size() ); i++ ) {
+        const CarConfig &carConfig = cars[i];
+
+        if ( StringCmpI( carConfig.Name.c_str(), pBrand ) != 0 ||
+             StringCmpI( carConfig.Model.c_str(), pModel ) != 0 ) {
+            continue;
+        }
+
+        // An empty version takes the first model that matches.
+        if ( pVersion[0] != '\0' &&
+             StringCmpI( carConfig.SubModel.c_str(), pVersion ) != 0 ) {
+            continue;
+        }
+
+        if ( pOutIndex != nullptr ) {
+            *pOutIndex = int32_t( i );
+        }
+
+        return carConfig.Hash;
+    }
+
+    if ( pOutIndex != nullptr ) {
+        *pOutIndex = -1;
+    }
+
+    return -1;
+}
+
 DBEntryCarPhysicsData *GSDatabase::getCarDBEntry( int32_t carID ) {
     // FUN_009a9480
     for ( uint32_t i = 0; i < gameDatabase.pNumItems[1]; i++ ) {
@@ -1804,6 +1844,22 @@ DBEntryCarColor *GSDatabase::getColorByIndex( DBEntryCarPhysicsData *param_2,
         }
     }
     return nullptr;
+}
+
+uint64_t DBEntryList::getHashcodeForString( const char *pString ) const {
+    // FUN_009ae570
+    if ( pString == nullptr ) {
+        return 0ull;
+    }
+
+    for ( uint32_t iVar3 = 0; iVar3 < NumItems; iVar3++ ) {
+        DBEntry *pDVar1 = &List[iVar3];
+        if ( strcmp( pString, pData + pDVar1->Offset ) == 0 ) {
+            return pDVar1->Hashcode;
+        }
+    }
+
+    return 0ull;
 }
 
 uint64_t DBEntryList::getHashcodeForPointer( void *param_1 ) const {

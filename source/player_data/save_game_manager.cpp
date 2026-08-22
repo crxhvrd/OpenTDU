@@ -7,11 +7,17 @@
 #include "core/crypto/tea.h"
 #include "filesystem/gs_file.h"
 #include "gs_playerdata.h"
+#include "player_data_interface.h"
+#include "player_save.h"
 
 bool BOOL_010e7364 = false; // Always false at runtime
+int32_t gPreviousSaveStreamRevision = 0; // DAT_010e7360
 
 static constexpr uint32_t kBufferSize = 0x2000;
 static uint8_t DAT_01041f50[kBufferSize];
+static constexpr uint32_t kPlayerSaveBufferSize = 0x80000;
+static uint8_t gActivePlayerSave[kPlayerSaveBufferSize]; // DAT_01043f50
+static uint32_t gActivePlayerSaveSize = 0u; // DAT_010c3f50
 
 static std::wstring FormatPlayerSaveTimestamp( const wchar_t *pSaveType ) {
     // FUN_0097bed0
@@ -62,8 +68,14 @@ static bool WriteSaveContext( const char *pContextName,
     }
     TestDriveTEAEncryptBuffer( DAT_01041f50, contentSize );
 
-    // TODO: PLAYERSAVE
-    OTDU_UNIMPLEMENTED_ONCE;
+    if ( gActivePlayerSaveSize != 0u ) {
+        if ( file.openFile( "playersave", false, true ) ) {
+            const uint32_t numBytesWritten =
+                file.writeToFile( gActivePlayerSave, gActivePlayerSaveSize );
+            file.close();
+            bPlayerSaveWritten = numBytesWritten == gActivePlayerSaveSize;
+        }
+    }
 
     if ( contentSize != 0u ) {
         if ( file.openFile( "commondt.sav", false, true ) ) {
@@ -117,6 +129,80 @@ void SavegameManager::create() {
     bUnknownBool1 = false;
 }
 
+void SavegameManager::refreshService() {
+    // FUN_0097c6e0
+    if ( gpPlayerData != nullptr && gpPlayerData->isOnline() ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (flush the pending online
+                                 // savegame notification)
+    }
+
+    if ( BOOL_010e7364 || bUnknownBool4 ) {
+        return;
+    }
+
+    if ( int32_t( pendingSaveCount - unknownDword ) <= 0 ) {
+        return;
+    }
+
+    const bool bOnlineOperationPending = false;
+
+    IPlayerData *pSave =
+        ( gpPlayerData != nullptr ) ? gpPlayerData->getLoadedSave() : nullptr;
+    if ( pSave == nullptr || !pSave->getDriver()->isValid() ) {
+        return;
+    }
+
+    if ( !gbSaveAllowed || bOnlineOperationPending ) {
+        return;
+    }
+
+    gPreviousSaveStreamRevision = gSaveStreamRevision;
+    gSaveStreamRevision++;
+    if ( uint32_t( gSaveStreamRevision ) > 0xffffffeeu ) {
+        gSaveStreamRevision = 0;
+    }
+
+    bUnknownBool3 = buildPlayerSaveBuffer();
+
+    if ( BOOL_010e7364 ) {
+        // The dead threaded path: the save thread would be woken up here
+        // instead of arming the blocking write.
+        OTDU_UNIMPLEMENTED;
+        return;
+    }
+
+    bUnknownBool4 = true;
+}
+
+bool SavegameManager::buildPlayerSaveBuffer() {
+    // FUN_0097c240
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (profile list bookkeeping)
+    const bool bDescriptorAlreadyKnown = false;
+
+    if ( !bDescriptorAlreadyKnown ) {
+        gSaveStreamTrailer++;
+        if ( uint32_t( gSaveStreamTrailer ) > 0xffffffeeu ) {
+            gSaveStreamTrailer = 0;
+        }
+    }
+
+    const int32_t writtenSize =
+        ( gpPlayerData != nullptr )
+            ? gpPlayerData->writePlayerSave( gActivePlayerSave,
+                                             int32_t( kPlayerSaveBufferSize ) )
+            : 0;
+
+    uint32_t contentSize = uint32_t( writtenSize ) & 0xfffffff8u;
+    if ( contentSize < uint32_t( writtenSize ) ) {
+        contentSize += 8u;
+    }
+
+    TestDriveTEAEncryptBuffer( gActivePlayerSave, contentSize );
+    gActivePlayerSaveSize = contentSize;
+
+    return !bDescriptorAlreadyKnown;
+}
+
 bool SavegameManager::doSaveBlocking( LocalPlayerData *pPlayerData ) {
     // FUN_0097c2f0
     if ( ( gpTestDriveInstance->hasRequestedExit() ) ||
@@ -142,6 +228,8 @@ bool SavegameManager::doSaveBlocking( LocalPlayerData *pPlayerData ) {
         strncpy( gActiveSaveContextName, pNextContextName,
                  sizeof( gActiveSaveContextName ) - 1 );
         unknownDword2 = 1;
+    } else {
+        gSaveStreamRevision = gPreviousSaveStreamRevision;
     }
 
     bUnknownBool4 = false;
@@ -157,15 +245,8 @@ bool SavegameManager::doSaveBlocking( LocalPlayerData *pPlayerData ) {
 }
 
 void SavegameManager::requestSave() {
-    ScopedMutexLock lock( &mutex );
-
-    if ( bUnknownBool4 ) {
-        bSaveRequeued = true;
-        return;
-    }
-
+    // FUN_0097bdb0
     pendingSaveCount++;
-    bUnknownBool4 = true;
 }
 
 bool SavegameManager::isProfileChangeInProgress() const {

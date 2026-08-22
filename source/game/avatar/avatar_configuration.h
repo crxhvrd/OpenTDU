@@ -37,6 +37,9 @@ struct AvatarConfiguration {
     AvatarConfiguration();
     bool isSameAs( const AvatarConfiguration &other ) const;
     bool deserialize( edStore &store );
+    bool deserializePacked( edStore &store );
+    void serializePacked( edStore &store ) const;
+
     void syncSharedSlots();
 
 private:

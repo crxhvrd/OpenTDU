@@ -19,6 +19,9 @@ struct ClearCommand {
 
 class FrameGraph {
 public:
+    inline void dropClearCommands() { numClearCommands = 0; }
+
+public:
     FrameGraph();
     ~FrameGraph();
 

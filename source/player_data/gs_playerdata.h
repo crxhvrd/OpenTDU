@@ -10,6 +10,7 @@
 
 class PlayerSave;
 class IPlayerData;
+class CarDesc;
 
 static constexpr const char *kPlayerSaveContextName =
     "playersave"; // DAT_00f7a038
@@ -106,6 +107,8 @@ public:
     bool isOnline() const;
 
     void resetPlayerData( const bool bApplyDefaults, const bool bClear );
+    void newGame( const bool bInstallCheats );
+    void setCurrentCar( const CarDesc *pCar );
     int32_t getSaveLoadState() const;
     bool loadActiveProfileSave();
     bool loadCommonDT( const void *pSaveBuffer,
@@ -118,6 +121,8 @@ public:
     int32_t writeCommonDT( void *pExternalBuffer,
                            const int32_t bufferLength,
                            LocalPlayerData *pPlayerData = nullptr );
+    int32_t writePlayerSave( void *pExternalBuffer,
+                             const int32_t bufferLength );
     bool FUN_00897990();
     bool isRentingCar();
 

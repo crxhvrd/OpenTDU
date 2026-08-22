@@ -54,7 +54,10 @@ inline uint32_t TestDriveTEAReadDword( const uint32_t pBlock[2] ) {
 }
 
 inline void TestDriveTEAWriteDword( uint32_t pBlock[2], const uint32_t value ) {
-    uint32_t pPlainText[2] = { value, 0u };
+    uint32_t pPlainText[2] = {};
+    TestDriveTEADecrypt( pPlainText, pBlock );
+
+    pPlainText[0] = value;
     TestDriveTEAEncrypt( pBlock, pPlainText );
 }
 

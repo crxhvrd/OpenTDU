@@ -13,6 +13,7 @@ public:
 
     void clear();
     void deserialize( edStore &stream );
+    void serialize( edStore &stream ) const;
 
     uint64_t getHouseHashcode() const;
     void setHouseHashcode( const uint64_t houseHashcode );
@@ -39,6 +40,8 @@ public:
 
     void clear( const bool bClearCars );
     void deserialize( edStore &stream );
+    void serialize( edStore &stream ) const;
+    void refreshNumCars();
     GarageSlot *getCarAtIndex( int32_t index,
                                const uint64_t houseHashcode,
                                const bool bIncludeInvalid );

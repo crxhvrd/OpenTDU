@@ -49,6 +49,7 @@ private:
     static bool HasInputActivity();
 
     void resumeSavedGame();
+    void startNewGame();
 
 private:
     MngFade fade;
@@ -68,6 +69,7 @@ private:
     uint32_t waitExitStartTicks;
 
     eGMLoginState state;
+    eGameMode nextGameMode;
 };
 
 extern GMLogin *gpGMLogin;

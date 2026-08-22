@@ -144,7 +144,7 @@ GMLogin::GMLogin()
       flashLocalize(),
       flashLogin( this ),
       flashCounter(),
-      pPanelOnline( new( TestDrive::Alloc( sizeof( FlashPanelOnline ) ) )
+      pPanelOnline( new ( TestDrive::Alloc( sizeof( FlashPanelOnline ) ) )
                         FlashPanelOnline() ),
       pGeneralFlashPlayer( nullptr ),
       pConfigPCFlashPlayer( nullptr ),
@@ -153,7 +153,8 @@ GMLogin::GMLogin()
       idleTime( 0.0f ),
       saveWaitStartTicks( 0u ),
       waitExitStartTicks( 0u ),
-      state( GLS_LegalDisplay ) {
+      state( GLS_LegalDisplay ),
+      nextGameMode( GM_Living ) {
     // FUN_0074e140
     registerManager( &fade );
     registerManager( &flashLocalize );
@@ -188,6 +189,8 @@ GMLogin::~GMLogin() {
 
 void GMLogin::reset() {
     // FUN_0074ecc0
+    nextGameMode = GM_Living;
+
     gpTestDriveInstance->clearGMChangeInProgressFlag();
 
     pGeneralFlashPlayer = gpFlash->getFlashPlayer( "GENERAL" );
@@ -529,7 +532,8 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
                     gpTestDriveInstance->getActiveGameMode() );
             }
 
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0089e060)
+            pAchievements->notify( ACF_Challenge | ACF_Road | ACF_Collection,
+                                   false );
         }
 
         LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
@@ -650,7 +654,7 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
             return;
 
         case MA_NewGame:
-            OTDU_UNIMPLEMENTED;
+            startNewGame();
             return;
 
         case MA_QuitToDesktop:
@@ -679,6 +683,7 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         }
 
         if ( menuActionCountdown == 0 ) {
+            gpTestDriveInstance->setNextGameMode( nextGameMode );
             requestExit();
         }
         return;
@@ -721,7 +726,56 @@ void GMLogin::resumeSavedGame() {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_00884c00)
     }
 
-    gpTestDriveInstance->setNextGameMode( GM_Living );
+    nextGameMode = GM_Living;
+    menuActionCountdown = 2;
+}
+
+void GMLogin::startNewGame() {
+    // FUN_0074ea80
+    Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+    (void)pDriver;
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_00884c00)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (drop the lobby, server and GPS
+                             // tracker endpoints, then FUN_008768d0 /
+                             // FUN_00876970)
+
+    if ( gpScenaric != nullptr ) {
+        gpScenaric->getIntroTutorial().reset();
+    }
+
+    gpPlayerData->prepareActiveProfile();
+    gpPlayerData->newGame( false );
+
+    gbScenarioTutorialEnabled = false;
+
+    if ( !BOOL_010e74f4 && gpCarDisplay != nullptr ) {
+        gpCarDisplay->reset();
+    }
+
+    LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
+    if ( localPlayerData.Nickname[0] != '\0' ) {
+        pConfigPCFlashPlayer->setVariableValueNonLinked(
+            "/:CurrentProfile", localPlayerData.Nickname );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_006085a0: stamp the new
+                             // save over the active profile list entry)
+
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    if ( !pAchievements->isReady() ) {
+        pAchievements->setReady( true );
+        if ( pAchievements->getField516_0x204() ) {
+            pAchievements->setCurrentGameMode(
+                gpTestDriveInstance->getActiveGameMode() );
+        }
+
+        pAchievements->notify( ACF_Challenge | ACF_Road | ACF_Collection,
+                               false );
+    }
+
+    gpPlayerData->requestSave( 2 );
 
     menuActionCountdown = 2;
 }

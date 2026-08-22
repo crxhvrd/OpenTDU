@@ -609,6 +609,8 @@ bool GSRender::resize( uint32_t width,
     cVar1 = gEdRender.applyVideoSettingsChange(
         gWindowWidth, gWindowHeight, eVSyncMode::VSM_Immediate, activeAA );
     if ( cVar1 ) {
+        gFrameGraph.dropClearCommands();
+
         FUN_00994330();
 
         bVar1 = allocateRenderTargets();

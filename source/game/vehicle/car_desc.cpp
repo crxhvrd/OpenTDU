@@ -107,6 +107,55 @@ void CarDesc::deserialize( edStore &stream ) {
     notify( 0u );
 }
 
+void CarDesc::serialize( edStore &stream ) const {
+    // FUN_00891570
+    stream.writeInteger( int32_t( carID ) );
+    stream.writeInteger( int32_t( pCarConfigID[0] ) );
+    stream.writeInteger( int32_t( pCarConfigID[1] ) );
+
+    stream.writeByte( uint8_t( state ) );
+    stream.writeULongLong( packHashcode );
+
+    stream.writeInteger( int32_t( pUpgradeRate[0] ) );
+    stream.writeInteger( int32_t( pUpgradeRate[1] ) );
+
+    stream.writeInteger( int32_t( paintType ) );
+    stream.writeByte( uint8_t( paintIndex ) );
+    stream.writeByte( uint8_t( rimID ) );
+    stream.writeByte( uint8_t( interiorID ) );
+
+    const ColorRGBA *pDeluxeColors[4] = { &deluxeMainColor, &deluxeSecondColor,
+                                          &deluxeLogoColor,
+                                          &deluxeSecondColor2 };
+    for ( const ColorRGBA *pColor : pDeluxeColors ) {
+        stream.writeByte( pColor->R );
+        stream.writeByte( pColor->G );
+        stream.writeByte( pColor->B );
+        stream.writeByte( pColor->A );
+    }
+
+    stream.writeInteger( price );
+    stream.writeFloat( odometerKms );
+    stream.writeDouble( playTime );
+}
+
+void CarDesc::setArchetype( const uint32_t configID ) {
+    // FUN_00891320
+    setCarConfigID( configID );
+    state = eState::CDS_None;
+
+    pConfig = FindCarConfig( int32_t( getCarConfigID() ) );
+
+    setUpgradeRate( 0.0f );
+
+    paintIndex = -1;
+    rimID = -1;
+    interiorID = -1;
+    paintType = ePaintType::PT_Default;
+
+    notify( 0u );
+}
+
 uint32_t CarDesc::getCarConfigID() const {
     return TestDriveTEAReadDword( pCarConfigID );
 }

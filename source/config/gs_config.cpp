@@ -110,6 +110,8 @@ GSConfig::GSConfig()
     OTDU_ASSERT( gpConfig == nullptr );
     gpConfig = this;
 
+    memset( pDefaultCarConfig, 0, sizeof( pDefaultCarConfig ) );
+
     systemPCIniPath.resize( OTDU_MAX_PATH );
     radioIniPath.resize( OTDU_MAX_PATH );
 }

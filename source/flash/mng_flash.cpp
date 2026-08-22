@@ -80,7 +80,7 @@ bool RequestMapGameMode( FlashPlayer *param_1 ) {
                                   gpFlash->getContactTypeRW() );
 
     if ( gpTestDriveInstance->getActiveGameMode() == GM_FreeRide ) {
-        gpTutorial->FUN_00981140();
+        gpTutorial->cancelDisplayedMessages();
         TransitionFromFreerideToMap( 2 );
         return true;
     }

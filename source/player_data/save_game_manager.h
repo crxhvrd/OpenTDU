@@ -11,6 +11,7 @@ public:
     ~SavegameManager();
 
     void create();
+    void refreshService();
 
     bool doSaveBlocking( LocalPlayerData *pPlayerData = nullptr );
     void requestSave();
@@ -24,6 +25,9 @@ public:
     bool isDword2Zero() const;
     bool isDwordDiffFromPendingSaveCount() const;
     void increaseNumSaveCount();
+
+private:
+    bool buildPlayerSaveBuffer();
 
 private:
     TestDriveEvent event;
@@ -43,3 +47,4 @@ private:
 
 extern SavegameManager gSavegameManager;
 extern bool BOOL_010e7364; // DAT_010e7364
+extern int32_t gPreviousSaveStreamRevision;

@@ -1,27 +1,28 @@
 #pragma once
 
-#include "core/random/bcpl.h"
+class edStore;
 
 class SavedCarReserve {
+public:
+    static constexpr uint32_t kDefaultSeed = 0x3039u;
+    static constexpr int32_t kStockSize = 0x10;
+
 public:
     SavedCarReserve();
     ~SavedCarReserve();
 
-private:
-    struct Reservation {
-        uint32_t CarID;
-        uint32_t ColorID;
-        uint32_t InteriorColorID;
-        uint32_t RimsID;
-    };
+    void clear();
+    void deserialize( edStore &stream );
+    void serialize( edStore &stream ) const;
+    bool restock( const bool bFromSave );
 
-private:
-    std::vector<Reservation> carReservations;
-
-    RandomGen randomGenerator;
-    uint32_t timeSinceRestock;
-    uint32_t lastRestock;
-    uint32_t unknown;
-    uint32_t seedUpdate;
-    uint32_t seedRestock;
+public:
+    uint32_t NumRestocks = 0u;      
+    uint32_t Stock[kStockSize] = {}; 
+    uint32_t LastRestockDate = 0u;   
+    uint32_t RestockCounter = 0u;   
+    uint32_t LastRestockTicks = 0u;  
+    bool bStockLocked = false;      
+    uint32_t RestockTimer = 0u;     
+    uint32_t Seed = kDefaultSeed;   
 };

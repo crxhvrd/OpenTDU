@@ -2,6 +2,7 @@
 #include "gs_playerdata.h"
 
 #include "config/gs_config.h"
+#include "database/gs_database.h"
 #include "flash/gs_flash.h"
 #include "game/mng_hud.h"
 #include "input/gs_device.h"
@@ -467,8 +468,59 @@ void GSPlayerData::prepareActiveProfile() {
         gpScenaric->getLocalPlayer().setDriver( pDriver );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (hand the default car over to
-                             // the garage)
+    if ( gpDatabase == nullptr || gpConfig == nullptr ) {
+        return;
+    }
+
+    const int32_t defaultCarID = gpDatabase->getVehicleId(
+        gpConfig->pDefaultCarConfig[0], gpConfig->pDefaultCarConfig[1],
+        gpConfig->pDefaultCarConfig[2] );
+    if ( defaultCarID <= 0 ) {
+        return;
+    }
+
+    Garage *pGarage = pLoadedSave->getGarage();
+    if ( pGarage->getNumCars() > 0 ) {
+        setCurrentCar( pGarage->getCarAtIndex( 0, 0ull, false ) );
+    } else {
+        pDriver->CurrentCar = 0u;
+        pDriver->notify( 0u );
+    }
+
+    pGarage->pCars[pDriver->CurrentCar].setArchetype(
+        uint32_t( defaultCarID ) );
+}
+
+void GSPlayerData::newGame( const bool bInstallCheats ) {
+    // FUN_00898d20
+    {
+        ScopedMutexLock lock( pMutex );
+
+        LastArrestedTime = -1.0f;
+        OffenceRepetitionFactor = 1u;
+    }
+
+    pLoadedSave2->newGame( bInstallCheats );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: RENDER (GSRender::setGammaRamp)
+}
+
+void GSPlayerData::setCurrentCar( const CarDesc *pCar ) {
+    // FUN_00897900
+    Garage *pGarage = pLoadedSave->getGarage();
+
+    int32_t slotIndex = 0;
+    for ( ; slotIndex <= Garage::kNumSavedCarSlots; slotIndex++ ) {
+        if ( pGarage->pCars[slotIndex].getCarID() == pCar->getCarID() ) {
+            break;
+        }
+    }
+
+    if ( slotIndex > Garage::kNumSavedCarSlots ) {
+        slotIndex = 0;
+    }
+
+    pLoadedSave->setCurrentCar( uint16_t( slotIndex ) );
 }
 
 void GSPlayerData::setDefaultLanguage( const char *pDefaultLanguage,
@@ -586,6 +638,30 @@ int32_t GSPlayerData::writeCommonDT( void *pExternalBuffer,
     saveStream.writeInteger( 0 );      // number of mixer groups
     saveStream.writeULongLong( 0ull ); // current radio station hashcode
     saveStream.writeFloat( 0.0f );
+
+    return int32_t( saveStream.getWrittenSize() );
+}
+
+int32_t GSPlayerData::writePlayerSave( void *pExternalBuffer,
+                                       const int32_t bufferLength ) {
+    // FUN_00899420
+    ScopedMutexLock lock( pMutex );
+
+    memset( pExternalBuffer, 0, size_t( bufferLength ) );
+
+    if ( pLoadedSave == nullptr ) {
+        return 0;
+    }
+
+    edStore saveStream;
+    saveStream.bindExternalBuffer( pExternalBuffer, bufferLength );
+    saveStream.clear();
+
+    pLoadedSave->serialize( saveStream );
+
+    if ( saveStream.getStatus() != 0 ) {
+        return 0;
+    }
 
     return int32_t( saveStream.getWrittenSize() );
 }

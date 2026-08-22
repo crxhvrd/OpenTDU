@@ -9,6 +9,7 @@
 
 #include "online/gs_online.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/saved_road_discovery.h"
 #include "tdu_instance.h"
 
 #include "ai/gs_ai.h"
@@ -48,11 +49,14 @@ void GSConfig::registerGameCommands() {
                         &gpDatabase->NbChallengeDesc ); // FUN_00986a20
 
     registerCommand( "UNLOCKALLROADS", [&]( const char *pArg ) {
-        gbUnlockAllRoads = true;
-    } ); // FUN_00986a60
-    registerCommand( "DELOCKCHALLENGESROAD", [&]( const char *pArg ) {
-        gpScenaric->delockChallengeRoads();
-    } ); // FUN_00986a70
+        // FUN_00986a60
+        gUnlockAllRoads = kDevCheatsEnabled;
+    } );
+
+    registerCommand( "DELOCKCHALLENGESROADS", [&]( const char *pArg ) {
+        // FUN_00986a70
+        gpScenaric->delockChallengeRoads( kDevCheatsEnabled );
+    } );
 
     registerCommand( "SETRESPATH", [&]( const char *pArg ) {
         // FUN_00984fb0
@@ -365,8 +369,20 @@ void GSConfig::registerGameCommands() {
         gAIConfig.bEnableBots = ( atoi( pArg ) != 0 );
     } );
 
-    registerCommand( "DEFAULTCARCONFIG",
-                     [&]( const char *pArg ) { OTDU_UNIMPLEMENTED } );
+    registerCommand( "DEFAULTCARCONFIG", [&]( const char *pArg ) {
+        // FUN_00984660
+        std::string argStr( pArg );
+        size_t it = 0ull;
+
+        for ( int32_t i = 0; i < 3; i++ ) {
+            const std::string token = ParseStringNoQuotes( argStr, it );
+            strncpy( pDefaultCarConfig[i], token.c_str(),
+                     sizeof( pDefaultCarConfig[i] ) - 1 );
+            pDefaultCarConfig[i][sizeof( pDefaultCarConfig[i] ) - 1] = '\0';
+        }
+
+        bDefaultCarConfig = HasRemainingArg( argStr, it );
+    } );
 
     registerCommand( "DEFAULTGARAGECONFIG", [&]( const char *pArg ) {
         // FUN_00984600
@@ -389,12 +405,12 @@ void GSConfig::registerGameCommands() {
 
     registerCommand( "DEFAULTMONEY", [&]( const char *pArg ) {
         // FUN_009845b0
-        gDefaultMoney = atoi( pArg );
+        gDefaultMoney = kDevCheatsEnabled ? atoi( pArg ) : 0;
     } );
 
     registerCommand( "ALLHOUSESWITHDEFCARS", [&]( const char *pArg ) {
         // FUN_009845a0
-        gbAllHousesWithDefCar = true;
+        gbAllHousesWithDefCar = kDevCheatsEnabled;
     } );
 
     registerCommand( "SERVER", [&]( const char *pArg ) {

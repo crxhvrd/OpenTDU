@@ -7,6 +7,7 @@
 #include "filesystem/gs_file.h"
 #include "gs_playerdata.h"
 #include "online/gs_online.h"
+#include "game/gs_tutorial.h"
 #include "game/scenaric/game_intro_tutorial.h"
 
 #include "tdu_instance.h"
@@ -20,24 +21,33 @@ int32_t gSaveStreamTrailer = 0;  // DAT_010e7534
 PlayerSave::PlayerSave()
     : IPlayerData(),
       driver(),
+      carReserve(),
       garage(),
+      ranking(),
+      mailbox(),
+      newsList(),
       nextCarUniqueID( 0u ),
+      itemTable(),
+      avatar(),
+      roadDiscovery(),
+      stringTable(),
       achievements(),
+      extraChallenges(),
       numPendingOperations( 0 ),
       bInitialized( false ),
       saveIndex( -1 ) {
     // FUN_0089ac90
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (stock, eBay, news, team
-                             // invites, extra challenges, avatar save, road
-                             // discovery, environment and radio tables)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (eBay state, the classic car
+                             // stock at +0x145b8, and the environment and
+                             // radio tables)
 }
 
 PlayerSave::~PlayerSave() {}
 
 void PlayerSave::initialize() {
     // FUN_0089ae80
-    // The original also binds the achievement service to this save and attaches
-    // an inline observer to the driver (to keep the money HUD in sync).
+    achievements.build();
+
     OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
 
     bInitialized = true;
@@ -57,17 +67,23 @@ void PlayerSave::terminate() {
 
 void PlayerSave::tick( const float deltaTime ) {
     // FUN_0089a5b0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    achievements.tick();
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original also ticks the
+                             // driver, restocks the classic car stock on a
+                             // timer and drives the profile prompts)
 }
 
-void PlayerSave::newGame( const bool bResetOnly ) {
+void PlayerSave::newGame( const bool bInstallCheats ) {
     // FUN_0089a500
     clear();
 
-    if ( bResetOnly ) {
+    if ( bInstallCheats ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0089a050)
         return;
     }
+
+    nextCarUniqueID = 1u;
 
     uint32_t driverID = 0u;
     if ( gpPlayerData != nullptr && gpPlayerData->isOnline() ) {
@@ -80,7 +96,13 @@ void PlayerSave::newGame( const bool bResetOnly ) {
     driver.initialize( ( gpOnline != nullptr ) ? gpOnline->getUsername() : "",
                        driverID, kNewGameMoney, 0u, 0u, 0u, 0u, 0u );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (garage reset)
+    garage.refreshNumCars();
+}
+
+void PlayerSave::setCurrentCar( const uint16_t index ) {
+    // FUN_00899200
+    driver.CurrentCar = index;
+    driver.notify( 0u );
 }
 
 void PlayerSave::clear() {
@@ -89,12 +111,56 @@ void PlayerSave::clear() {
     gSaveStreamTrailer = 0;
 
     driver.clear();
+    carReserve.clear();
     garage.clear( true );
+    ranking.clear();
+    mailbox.clear();
+    newsList.clear();
+    nextCarUniqueID = 0u;
+    itemTable.clear();
+    avatar.clear();
+    roadDiscovery.clear();
+    stringTable.clear();
     achievements.reset();
+    extraChallenges.clear();
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (stock, eBay, news, team
-                             // invites, extra challenges, avatar save and road
-                             // discovery)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (eBay state and the classic
+                             // car stock)
+}
+
+void PlayerSave::serialize( edStore &stream ) {
+    // FUN_00899420 (inlined)
+    stream.writeInteger( kPlayerSaveMagic );
+    stream.writeInteger( gSaveStreamRevision );
+
+    const LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
+    stream.writeInteger(
+        int32_t( TestDriveCRC32Unfolded( localPlayerData.Nickname ) ) );
+    stream.writeInteger(
+        int32_t( TestDriveCRC32Unfolded( localPlayerData.Email ) ) );
+    stream.writeInteger(
+        int32_t( TestDriveCRC32Unfolded( localPlayerData.Password ) ) );
+
+    driver.serialize( stream, uint16_t( garage.getCurrentCar() ) );
+    garage.serialize( stream );
+
+    ranking.serialize( stream );
+    mailbox.serialize( stream );
+    newsList.serialize( stream );
+    avatar.serialize( stream );
+    itemTable.serialize( stream );
+    roadDiscovery.serialize( stream );
+    stringTable.serialize( stream );
+    carReserve.serialize( stream );
+    achievements.serialize( stream );
+    extraChallenges.serialize( stream );
+
+    OTDU_ASSERT( gpTutorial != nullptr );
+    if ( gpTutorial != nullptr ) {
+        gpTutorial->serialize( stream );
+    }
+
+    stream.writeInteger( gSaveStreamTrailer );
 }
 
 bool PlayerSave::deserialize( const void *pSaveData,
@@ -153,8 +219,49 @@ bool PlayerSave::deserialize( const void *pSaveData,
                     driver.getMoney(), driver.getOdometerKms(),
                     driver.CurrentCar, garage.getNumCars(), nextCarUniqueID );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
-    gSaveStreamTrailer = 0;
+    ranking.deserialize( saveStream );
+    mailbox.deserialize( saveStream );
+    newsList.deserialize( saveStream );
+
+    const time_t nowSeconds = time( nullptr );
+    const struct tm *pNow = localtime( &nowSeconds );
+    if ( pNow != nullptr ) {
+        newsList.removeExpiredEntries( PackSaveDate(
+            uint32_t( pNow->tm_year + 1900 ), uint32_t( pNow->tm_mon + 1 ),
+            uint32_t( pNow->tm_mday ) ) );
+    }
+
+    avatar.deserialize( saveStream );
+    itemTable.deserialize( saveStream );
+
+    roadDiscovery.deserialize( saveStream );
+    if ( gUnlockAllRoads ) {
+        roadDiscovery.unlockAllRoads();
+    }
+
+    stringTable.deserialize( saveStream );
+    carReserve.deserialize( saveStream );
+    achievements.deserialize( saveStream );
+    extraChallenges.deserialize( saveStream );
+
+    OTDU_ASSERT( gpTutorial != nullptr );
+    if ( gpTutorial != nullptr ) {
+        gpTutorial->deserialize( saveStream );
+    }
+
+    gSaveStreamTrailer =
+        saveStream.isWithinBounds() ? int32_t( saveStream.readULong() ) : 0;
+
+    const uint32_t bytesLeft = saveDataSize - saveStream.getReadCursor();
+    if ( bytesLeft >= 8u ) {
+        OTDU_LOG_WARN( "'playersave' was not fully consumed: stopped at %u of "
+                       "%u (%u bytes left)\n",
+                       saveStream.getReadCursor(), saveDataSize, bytesLeft );
+    } else {
+        OTDU_LOG_DEBUG( "'playersave' fully consumed: %u of %u bytes (%u byte "
+                        "of TEA padding)\n",
+                        saveStream.getReadCursor(), saveDataSize, bytesLeft );
+    }
 
     bool bTutorialAdvanced = false;
     if ( driver.TutorialState == kTutorialStateBuyHouse &&

@@ -180,7 +180,7 @@ public:
                                     const std::string &param_2 );
     void setDemoTimer( float param_1 );
     inline float getDemoTimer() const { return demoTimer; }
-    void delockChallengeRoads();
+    void delockChallengeRoads( const bool bDelocked );
     void setTraceSize( uint32_t param_1 );
     void setDefaultIGE( const char *param_1 );
 

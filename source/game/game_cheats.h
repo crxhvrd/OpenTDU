@@ -2,7 +2,20 @@
 
 // TODO: Temporary header; will move those
 // globals to the right place later
-static bool gbUnlockAllRoads = false;
+
+
+// Enables cheats:
+// -UNLOCKALLROADS
+// -DELOCKCHALLENGESROADS
+// -ALLHOUSESWITHDEFCARS
+// -DEFAULTMONEY
+// 
+// Off in non devbuilds to match what the original binary did.
+#ifdef OTDU_DEVBUILD
+static constexpr bool kDevCheatsEnabled = true;
+#else
+static constexpr bool kDevCheatsEnabled = false;
+#endif
 
 static bool gbAllHousesWithDefCar = false;      // DAT_010e7538
 static int32_t gDefaultMoney = 100000000;       // DAT_00f7f574

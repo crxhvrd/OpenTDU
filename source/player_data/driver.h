@@ -18,6 +18,7 @@ public:
 
     void clear();
     void deserialize( edStore &stream );
+    void serialize( edStore &stream, const uint16_t garageCurrentCar );
     void initialize( const char *pNickname,
                      const uint32_t id,
                      const uint32_t money,

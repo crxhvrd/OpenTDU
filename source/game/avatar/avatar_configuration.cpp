@@ -27,8 +27,14 @@ namespace {
         "AVATAR_FOREHEAD_WIDTH",   "AVATAR_HEAD_HEIGHT",
         "AVATAR_HEAD_WIDTH" };
 
+    static constexpr const char *kPackedHeaderSignature =
+        "avatarconfig::avatarconfig(edU32 style,edU32 body,edU32 skin,edU16 "
+        "eye,edU12.4 _clotheID[2][9],_color,edU8 opfaceParam[31],edU8 "
+        "moto_clothes)"; // DAT_01478a70
+
     struct AvatarConfigurationTags {
         uint16_t Avatar;
+        uint16_t PackedHeader;
         uint16_t StyleID;
         uint16_t BodyID;
         uint16_t SkinID;
@@ -52,6 +58,7 @@ namespace {
 
             const std::string prefix = "AvatarConfiguration::";
             out.Avatar = CalcTag( prefix + "AvatarConfiguration()" );
+            out.PackedHeader = CalcTag( kPackedHeaderSignature );
             out.BodyID = CalcTag( prefix + "_BodyID" );
             out.SkinID = CalcTag( prefix + "_SkinID" );
             out.StyleID = CalcTag( prefix + "_StyleID" );
@@ -182,6 +189,72 @@ bool AvatarConfiguration::deserialize( edStore &store ) {
     store.getStatus();
     syncSharedSlots();
     return true;
+}
+
+bool AvatarConfiguration::deserializePacked( edStore &store ) {
+    // FUN_008ff740
+    const AvatarConfigurationTags &tags = GetTags();
+
+    if ( store.compareStreamCRC( tags.PackedHeader ) == -1 ) {
+        return false;
+    }
+
+    StyleID = store.readUShort();
+    BodyID = store.readUShort();
+    SkinID = store.readUShort();
+    EyeID = store.readUShort();
+
+    for ( int32_t set = 0; set < kNumClotheTypes; set++ ) {
+        for ( int32_t slot = 0; slot < AC_Count; slot++ ) {
+            const uint16_t packedValue = store.readUShort();
+
+            ClotheID[set][slot] = uint16_t( packedValue >> 4 );
+            ColorID[set][slot] = uint8_t( packedValue & 0xf );
+        }
+    }
+
+    for ( int32_t i = 0; i < kNumFaceParams; i += 2 ) {
+        const uint8_t packedValue = store.readByte();
+
+        FaceParams[i] = uint8_t( packedValue >> 4 );
+        if ( i + 1 < kNumFaceParams ) {
+            FaceParams[i + 1] = uint8_t( packedValue & 0xf );
+        }
+    }
+
+    bHashMotoGearsOnBike = store.readByte();
+
+    store.getStatus();
+    return true;
+}
+
+void AvatarConfiguration::serializePacked( edStore &store ) const {
+    // FUN_008ff820
+    const AvatarConfigurationTags &tags = GetTags();
+    store.updateCRC( tags.PackedHeader );
+
+    store.writeUShort( StyleID );
+    store.writeUShort( BodyID );
+    store.writeUShort( SkinID );
+    store.writeUShort( EyeID );
+
+    for ( int32_t set = 0; set < kNumClotheTypes; set++ ) {
+        for ( int32_t slot = 0; slot < AC_Count; slot++ ) {
+            store.writeUShort( uint16_t( ( ClotheID[set][slot] << 4 ) |
+                                         ( ColorID[set][slot] & 0xf ) ) );
+        }
+    }
+
+    for ( int32_t i = 0; i < kNumFaceParams; i += 2 ) {
+        uint8_t packedValue = uint8_t( FaceParams[i] << 4 );
+        if ( i + 1 < kNumFaceParams ) {
+            packedValue |= uint8_t( FaceParams[i + 1] & 0xf );
+        }
+
+        store.writeByte( packedValue );
+    }
+
+    store.writeByte( bHashMotoGearsOnBike );
 }
 
 void AvatarConfiguration::deserializeClothes( edStore &store ) {

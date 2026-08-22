@@ -29,6 +29,15 @@ void GarageSlot::deserialize( edStore &stream ) {
     ebayID = stream.readULong();
 }
 
+void GarageSlot::serialize( edStore &stream ) const {
+    // FUN_00894790 (inlined)
+    CarDesc::serialize( stream );
+
+    stream.writeInteger( int32_t( pHouse[0] ) );
+    stream.writeInteger( int32_t( pHouse[1] ) );
+    stream.writeInteger( int32_t( ebayID ) );
+}
+
 uint64_t GarageSlot::getHouseHashcode() const {
     return TestDriveTEAReadQword( pHouse );
 }
@@ -59,20 +68,32 @@ void Garage::clear( const bool bClearCars ) {
     currentCar = 0u;
 }
 
-void Garage::deserialize( edStore &stream ) {
-    // FUN_008947e0
-    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
-        pCars[i].deserialize( stream );
-    }
-
+void Garage::refreshNumCars() {
+    // FUN_0088eb30
     numCars = 0;
     for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
         if ( pCars[i].isValid() ) {
             numCars++;
         }
     }
+}
+
+void Garage::deserialize( edStore &stream ) {
+    // FUN_008947e0
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        pCars[i].deserialize( stream );
+    }
+
+    refreshNumCars();
 
     notify( 0u );
+}
+
+void Garage::serialize( edStore &stream ) const {
+    // FUN_00894790
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        pCars[i].serialize( stream );
+    }
 }
 
 GarageSlot *Garage::getCarAtIndex( int32_t index,

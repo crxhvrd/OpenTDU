@@ -4,6 +4,8 @@ class edStore {
 public:
     inline uint16_t getStreamCRC() const { return CRC; }
     inline uint32_t getWrittenSize() const { return bufferSize; }
+    inline uint32_t getReadCursor() const { return bufferOffset; }
+    inline void setWrittenSize( const uint32_t size ) { bufferSize = size; }
 
 public:
     edStore();
@@ -24,6 +26,10 @@ public:
     void writeDouble( const double value );
     void writeString( const char *pValue );
     void writeBuffer( const void *pSource, const uint32_t size );
+    void writeObject( edStore &source );
+
+    void updateCRC( const uint16_t crc );
+    int32_t seekToEnd();
 
     uint32_t readStringNoAlloc( char *param_2, uint32_t param_3 );
     uint32_t readBufferNoAlloc( void *pDest, uint32_t maxSize );

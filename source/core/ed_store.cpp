@@ -252,6 +252,69 @@ void edStore::writeBuffer( const void *pSource, const uint32_t size ) {
     bufferOffset += size;
 }
 
+void edStore::writeObject( edStore &source ) {
+    // FUN_00623410
+    if ( state == 0xff || reserve_buffer( 2 ) != 0 ) {
+        return;
+    }
+
+    const uint32_t objectSize = source.bufferSize;
+
+    uint16_t packedSize = uint16_t( objectSize );
+    if ( gUseHalfPrecisionIntegers == '\x01' ) {
+        packedSize =
+            uint16_t( ( packedSize >> 8 & 0xff ) | ( packedSize & 0xff ) << 8 );
+    }
+
+    uint16_t *pDest = (uint16_t *)( (uint8_t *)pBuffer + bufferOffset );
+    if ( pDest != nullptr ) {
+        *pDest = packedSize;
+    }
+    bufferOffset += 2;
+
+    if ( reserve_buffer( int32_t( objectSize ) ) != 0 ) {
+        return;
+    }
+
+    if ( pBuffer != nullptr && source.pBuffer != nullptr && objectSize != 0u ) {
+        memcpy( (uint8_t *)pBuffer + bufferOffset, source.pBuffer, objectSize );
+    }
+
+    bufferOffset += objectSize;
+}
+
+void edStore::updateCRC( const uint16_t crc ) {
+    // FUN_006231b0
+    CRC = crc;
+    bufferOffset = 0;
+    bufferSize = 0;
+    state = 0;
+
+    if ( isExternalBuffer == 0 && reserve_buffer( 4 ) != 0 ) {
+        return;
+    }
+
+    uint16_t packedCRC = CRC;
+    if ( gUseHalfPrecisionIntegers == '\x01' ) {
+        packedCRC =
+            uint16_t( ( packedCRC >> 8 & 0xff ) | ( packedCRC & 0xff ) << 8 );
+    }
+
+    uint16_t *pDest = (uint16_t *)( (uint8_t *)pBuffer + bufferOffset );
+    if ( pDest != nullptr ) {
+        *pDest = packedCRC;
+    }
+
+    bufferOffset += 2;
+    bufferSize = bufferOffset;
+}
+
+int32_t edStore::seekToEnd() {
+    // FUN_00623740
+    bufferOffset = bufferSize;
+    return 0;
+}
+
 uint32_t edStore::readStringNoAlloc( char *param_2, uint32_t param_3 ) {
     // FUN_00623e60
     if ( !isWithinBounds() ) {
@@ -321,9 +384,9 @@ int32_t edStore::readInteger() {
         return 0;
     }
 
-    int32_t uVar2 = 0;
-    if ( (int32_t *)( (uint8_t *)pBuffer + bufferOffset ) != nullptr ) {
-        uVar2 = *(int32_t *)( (uint8_t *)pBuffer + bufferOffset );
+    uint32_t uVar2 = 0u;
+    if ( (uint32_t *)( (uint8_t *)pBuffer + bufferOffset ) != nullptr ) {
+        uVar2 = *(uint32_t *)( (uint8_t *)pBuffer + bufferOffset );
     }
     if ( gUseHalfPrecisionIntegers == '\x01' ) {
         uVar2 = ( ( uVar2 & 0xff0000 ) | uVar2 >> 0x10 ) >> 8 |
@@ -331,7 +394,7 @@ int32_t edStore::readInteger() {
     }
 
     bufferOffset += 4;
-    return uVar2;
+    return int32_t( uVar2 );
 }
 
 uint32_t edStore::readUInteger() {

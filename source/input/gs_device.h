@@ -31,9 +31,6 @@ public:
     inline void setKeyboardInputEnabled( bool state ) { field14_0x54 = state; }
 
     inline const MouseState &getMouseState() const { return mouseState; }
-
-    // TrackIR / NaturalPoint head tracking (never enabled: the SDK is not
-    // integrated).
     inline bool isHeadTrackingAvailable() const {
         return bUseNaturalPointHeadTracking;
     }
