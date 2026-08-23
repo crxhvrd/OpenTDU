@@ -9,7 +9,7 @@ The goal of this project is to create a new client fixing various issues encount
 
 **This project is not a replacement for the game (you still need to own a legal copy); and does not provide any game assets!**
 
-<img src="/screenshots/carshowcase_ccr.jpeg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/worldviewer_1.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/worldviewer_3.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/gmeter.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/interiorgps.jpg" alt="Alt Text" width="256" height="144"> 
+<img src="/screenshots/carshowcase_ccr.jpeg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/worldviewer_1.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/worldviewer_3.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/gmeter.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/login.jpg" alt="Alt Text" width="256" height="144"> 
 
 Regular updates/screenshots can be found in this [thread](https://github.com/opentestdriveunlimited/OpenTestDriveUnlimited/discussions/175).
 
@@ -32,22 +32,33 @@ Copy the opentdu binary and EURO folder content (**must be merged with your orig
 | Command | Description |
 | ----------- |  ----------- |
 | -w | Enable windowed mode |
+| -vbl (value) | Set target vsync blank |
+| -fps | Enable FPS counter |
+| -pos | Enable debug position text overlay |
+| -orb | Override ORB address for online login |
+| -nopub | Disable GSPub |
 | -gm (id) | Launch game with a specific game mode (see eGameMode) |
 | -worldviewer | Launch world viewer |
 | -carshowcase | Launch car showcase (alias for '-gm 7') |
 | -cinviewer | Launch cinematic viewer (alias for '-gm 20') |
+| -freeride | Launch cinematic viewer (alias for '-gm 1') |
+| -login | Launch login screen (alias for '-gm 24') |
 | -vk_enable_validation_layer | Create Vulkan render device with validation layer enabled |
+| -break_on_assert_failure | Trigger debug breakpoint on assert failure |
+| -disable_assert | Disable assert log/debug break |
+| -norunlock | Disable single game instance run lock |
 
 ## Debug Menu
 Debug Menu can be toggled with the *F1* key.
 
 ## Project progress
 Progress is tracked on a game mode basis:
-| GameMode | Project Page | Status |
-| ----------- | ----------- | ----------- |
-| VideoBumper | N/A |**Done**|
-| CarShowCase | https://github.com/orgs/opentestdriveunlimited/projects/1 |**Done**|
-| Sandbox | N/A |**Done**|
-| CinViewer | N/A |**In Progress**|
-| FreeRide | https://github.com/orgs/opentestdriveunlimited/projects/6 |**In Progress**|
-| Login | https://github.com/orgs/opentestdriveunlimited/projects/5 |**In Progress**|
+| GameMode  | Status |
+| -----------  | ----------- |
+| VideoBumper|**Done**|
+| CarShowCase|**Done**|
+| Sandbox|**Done**|
+| Login|**Done**|
+| Living|**In Progress**|
+| FreeRide|**In Progress**|
+| CinViewer|**In Progress**|
