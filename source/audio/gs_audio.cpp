@@ -54,7 +54,9 @@ public:
                 bMuted = true;
             }
 
-            pClient->rebuildSpatialGraph();
+            if ( pClient->isPositional() ) {
+                pClient->rebuildSpatialGraph();
+            }
         }
 
         return edAudioObject::prepare( node );
@@ -75,15 +77,24 @@ AudioClient::AudioClient( const ClientConfig *pInConfig,
       bPositional( bInPositional ),
       pParentBuffer( pParent ),
       pRoot( nullptr ),
+      pStereoPipeline( nullptr ),
       Clustering(),
       pClusters{} {
-    pRoot = new ClientRootModule( kSpatialChannelCount, kSpatialChannelCount,
-                                  this );
+    const int32_t rootChannelCount = ( bPositional || pParent == nullptr )
+                                         ? kSpatialChannelCount
+                                         : pParent->getInputChannelCount();
+
+    pRoot = new ClientRootModule( rootChannelCount, rootChannelCount, this );
     pRoot->debugSetDescription( ( pConfig != nullptr ) ? pConfig->pName
                                                        : "Pipeline Spatial" );
 
-    for ( int32_t i = 0; i < SpatialClustering::kMaxClusters; i++ ) {
-        pClusters[i] = std::make_unique<edAudioCluster>();
+    if ( bPositional ) {
+        for ( int32_t i = 0; i < SpatialClustering::kMaxClusters; i++ ) {
+            pClusters[i] = std::make_unique<edAudioCluster>();
+        }
+    } else {
+        pStereoPipeline = std::make_unique<PipelineStereo>();
+        pStereoPipeline->create( pRoot );
     }
 
     if ( pParentBuffer != nullptr ) {
@@ -129,6 +140,11 @@ float AudioClient::resolveVolume() {
 AudioClient::~AudioClient() {
     // FUN_0040df20
     UnlinkFromParent( pRoot );
+
+    if ( pStereoPipeline != nullptr ) {
+        pStereoPipeline->destroy();
+        pStereoPipeline.reset();
+    }
 
     if ( pRoot != nullptr ) {
         pRoot->unlinkAllEntries();
@@ -504,6 +520,150 @@ void PipelineMono::destroy() {
     pBuffer = nullptr;
     pAdapter = nullptr;
     pRoot = nullptr;
+}
+
+AudioStereoSource::AudioStereoSource() : bStarted( false ) {
+    // FUN_004312e0
+    ChannelLeft.debugSetDescription( "StereoSource Left" );
+    ChannelRight.debugSetDescription( "StereoSource Right" );
+}
+
+AudioStereoSource::~AudioStereoSource() {
+    ChannelLeft.setSample( nullptr );
+    ChannelRight.setSample( nullptr );
+}
+
+bool AudioStereoSource::setSamples( const edAudioSample *pLeft,
+                                    const edAudioSample *pRight ) {
+    const bool bLeft = ChannelLeft.setSample( pLeft );
+    const bool bRight = ChannelRight.setSample( pRight );
+    return bLeft && bRight;
+}
+
+void AudioStereoSource::setVolume( float volume ) {
+    ChannelLeft.Volume = volume;
+    ChannelRight.Volume = volume;
+}
+
+void AudioStereoSource::setPitch( float pitch ) {
+    ChannelLeft.Pitch = pitch;
+    ChannelRight.Pitch = pitch;
+}
+
+void AudioStereoSource::setLoopState( bool bLoop ) {
+    // FUN_006137f0
+    ChannelLeft.setLoopCount( bLoop ? -1 : 0 );
+    ChannelRight.setLoopCount( bLoop ? -1 : 0 );
+}
+
+void AudioStereoSource::play() {
+    ChannelLeft.play();
+    ChannelRight.play();
+    bStarted = true;
+}
+
+void AudioStereoSource::stop( float fadeTime ) {
+    // FUN_009b0260
+    bStarted = false;
+    ChannelLeft.stop( fadeTime );
+    ChannelRight.stop( fadeTime );
+}
+
+PipelineStereo::PipelineStereo()
+    : pLeftBuffer( nullptr ),
+      pRightBuffer( nullptr ),
+      pLeftRouter( nullptr ),
+      pRightRouter( nullptr ),
+      pBuffer( nullptr ),
+      pAdapter( nullptr ) {}
+
+PipelineStereo::~PipelineStereo() { destroy(); }
+
+bool PipelineStereo::create( edAudioObject *pParent ) {
+    // FUN_004316a0
+    if ( pParent == nullptr || pAdapter != nullptr ) {
+        return false;
+    }
+
+    const int32_t channelCount = pParent->getInputChannelCount();
+
+    pLeftBuffer = new edAudioBuffer( 1 );
+    pLeftBuffer->debugSetDescription( "PipelineStereo Left Buffer" );
+
+    pRightBuffer = new edAudioBuffer( 1 );
+    pRightBuffer->debugSetDescription( "PipelineStereo Right Buffer" );
+
+    pLeftRouter = new edAudioSpatializer( 1, 2 );
+    pLeftRouter->debugSetDescription( "PipelineStereo Left Router" );
+    pLeftRouter->setGain( 1.0f, 0, 0 );
+    pLeftRouter->addNewEntry( pLeftBuffer );
+
+    pRightRouter = new edAudioSpatializer( 1, 2 );
+    pRightRouter->debugSetDescription( "PipelineStereo Right Router" );
+    pRightRouter->setGain( 1.0f, 0, 1 );
+    pRightRouter->addNewEntry( pRightBuffer );
+
+    pBuffer = new edAudioBuffer( 2 );
+    pBuffer->debugSetDescription( "PipelineStereo Buffer" );
+    pBuffer->addNewEntry( pLeftRouter );
+    pBuffer->addNewEntry( pRightRouter );
+
+    pAdapter = new edAudioChannelAdapter( 2, channelCount );
+    pAdapter->debugSetDescription( "PipelineStereo Adapter" );
+    pAdapter->addNewEntry( pBuffer );
+
+    pParent->addNewEntry( pAdapter );
+
+    return true;
+}
+
+void PipelineStereo::destroy() {
+    UnlinkFromParent( pAdapter );
+
+    for ( edAudioObject *pModule :
+          { static_cast<edAudioObject *>( pAdapter ),
+            static_cast<edAudioObject *>( pBuffer ),
+            static_cast<edAudioObject *>( pLeftRouter ),
+            static_cast<edAudioObject *>( pRightRouter ),
+            static_cast<edAudioObject *>( pLeftBuffer ),
+            static_cast<edAudioObject *>( pRightBuffer ) } ) {
+        if ( pModule != nullptr ) {
+            pModule->unlinkAllEntries();
+        }
+    }
+
+    delete pAdapter;
+    delete pBuffer;
+    delete pLeftRouter;
+    delete pRightRouter;
+    delete pLeftBuffer;
+    delete pRightBuffer;
+
+    pAdapter = nullptr;
+    pBuffer = nullptr;
+    pLeftRouter = nullptr;
+    pRightRouter = nullptr;
+    pLeftBuffer = nullptr;
+    pRightBuffer = nullptr;
+}
+
+void PipelineStereo::addSource( AudioStereoSource *pSource ) {
+    // FUN_00431430
+    if ( pSource == nullptr || pLeftBuffer == nullptr ) {
+        return;
+    }
+
+    pLeftBuffer->addNewEntry( &pSource->getLeftChannel() );
+    pRightBuffer->addNewEntry( &pSource->getRightChannel() );
+}
+
+void PipelineStereo::removeSource( AudioStereoSource *pSource ) {
+    if ( pSource == nullptr || pLeftBuffer == nullptr ) {
+        return;
+    }
+
+    pLeftBuffer->unlinkEntry( &pSource->getLeftChannel() );
+    pRightBuffer->unlinkEntry( &pSource->getRightChannel() );
 }
 
 Mixer *GSAudio::findMixer( const char *pName ) {

@@ -358,9 +358,19 @@ void ScenaricBank::releaseResourceLists() {
     listsClip.clear();
 }
 
+void *ScenaricBank::getCinData( uint64_t hashcode, int32_t *pOutSize ) {
+    return getFileRefData( FR_Cin, hashcode, pOutSize );
+}
+
 void *ScenaricBank::getWavData( uint64_t hashcode, int32_t *pOutSize ) {
-    const uint32_t *pStructs = fileRefs[FR_Wav].pStructs;
-    const uint64_t *pHashcodes = fileRefs[FR_Wav].pHashcodes;
+    return getFileRefData( FR_Wav, hashcode, pOutSize );
+}
+
+void *ScenaricBank::getFileRefData( int32_t table,
+                                    uint64_t hashcode,
+                                    int32_t *pOutSize ) {
+    const uint32_t *pStructs = fileRefs[table].pStructs;
+    const uint64_t *pHashcodes = fileRefs[table].pHashcodes;
     if ( pStructs == nullptr || pHashcodes == nullptr || hashcode == 0 ) {
         return nullptr;
     }
@@ -629,6 +639,7 @@ void ScenaricBank::instanciateSceneries() {
         pActiveScenery->shiftObjects( streamOrigin );
     }
     pActiveScenery->shiftObjects( streamOrigin );
+
 
     sceneryNodes.push_back( pNode );
 }

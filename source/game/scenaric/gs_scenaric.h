@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "game/gs_base.h"
+#include "game/gm_base.h"
 #include "game_intro_tutorial.h"
 
 #include "game/scenaric/scenaric_bank.h"
@@ -36,6 +37,15 @@ struct ObjectiveMarker {
     Eigen::Vector4f Position = Eigen::Vector4f::Zero();
     uint64_t NetPlayerID = 0;
     const char *Type = nullptr;
+};
+
+struct NextIntroInfo {
+    bool bIsActive = false;
+    const char *pPath = nullptr;
+    const char *pFilename = nullptr;
+    const char *pCinematicName = nullptr;
+    eGameMode NextGameMode = GM_Invalid;
+    struct SpotMap *pSpot = nullptr;
 };
 
 class CinematicPlayer {
@@ -94,6 +104,17 @@ public:
         return objectives[index];
     }
     inline Spots &getSpotList() { return spotList; }
+    inline int32_t getCurrentSpotIndex() const { return currentSpotIndex; }
+    inline void setCurrentSpotIndex( const int32_t index ) {
+        currentSpotIndex = index;
+    }
+    // FUN_008031f0
+    void setNextIntro( const char *pPath,
+                       const char *pFilename,
+                       const char *pCinematicName,
+                       eGameMode nextGameMode,
+                       SpotMap *pSpot );
+    inline NextIntroInfo &getNextIntro() { return nextIntro; }
     inline ICEChallenger *getICEChallengers() { return iceChallengers; }
     inline AvatarManager &getAvatarManager() { return avatarManager; }
     inline SCIKOffsetDB &getIKOffsetDB() { return ikOffsetDB; }
@@ -181,6 +202,7 @@ public:
     void setDemoTimer( float param_1 );
     inline float getDemoTimer() const { return demoTimer; }
     inline bool isDemoModeActive() const { return bDemoMode; }
+    inline void setDemoModeActive( const bool value ) { bDemoMode = value; }
     void startDemoMode();
     void delockChallengeRoads( const bool bDelocked );
     void setTraceSize( uint32_t param_1 );
@@ -206,6 +228,8 @@ private:
     uint32_t demoTimeEnd;
     uint32_t traceSize;
     uint32_t currentDefVersion;
+    int32_t currentSpotIndex; // DAT_01214744
+    NextIntroInfo nextIntro;
     int32_t extraRewardsCineCount;
 
     float rentalTimer;

@@ -922,14 +922,7 @@ void GSCamera::bindToRender() {
                                activeCamera.getUp(),
                                activeCamera.getTargetOffset() );
 
-    // Cinematic/debug override: latch the render camera to the cinematic camera
-    // view (the live cinematic playback feeds it; no effect during normal
-    // play).
-    if ( bCinematicCameraOverride ) {
-        activeCamera.updateMatrix( cinematicCamPosition, cinematicCamUp,
-                                   cinematicCamTarget );
-        activeCamera.setFOV( cinematicCamFov );
-    }
+    applyCinematicOverride( activeCamera );
 
     // Copy activeCamera into cameraMain so all render scenes that reference
     // &cameraMain receive the correct per-frame camera transform.
@@ -940,6 +933,24 @@ void GSCamera::bindToRender() {
     gpRender->updateFovVsLOD( gpRender->getRenderPass<eRenderPass::RP_Near>()
                                   .pScene->getCamera()
                                   ->getTanHalfFov() );
+}
+
+void GSCamera::applyCinematicOverride( CameraGame &camera ) {
+    if ( !bCinematicCameraOverride ) {
+        return;
+    }
+
+    camera.setPositionOffseted(
+        Eigen::Vector4f( cinematicCamPosition.x(), cinematicCamPosition.y(),
+                         cinematicCamPosition.z(), 1.0f ) );
+    camera.setTargetOffseted(
+        Eigen::Vector4f( cinematicCamTarget.x(), cinematicCamTarget.y(),
+                         cinematicCamTarget.z(), 1.0f ) );
+    camera.setUp( Eigen::Vector4f( cinematicCamUp.x(), cinematicCamUp.y(),
+                                   cinematicCamUp.z(), 0.0f ) );
+    camera.setFOV( cinematicCamFov );
+    camera.updateMatrix( cinematicCamPosition, cinematicCamUp,
+                         cinematicCamTarget );
 }
 
 void GSCamera::setCinematicCameraOverride( const Eigen::Vector3f &position,

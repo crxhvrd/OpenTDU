@@ -9,6 +9,8 @@
 #include "render/camera/gs_camera.h"
 
 #include "world/gs_world.h"
+#include "tdu_instance.h"
+#include "game/gm_base.h"
 #include "world/gs_world_streaming.h"
 #include "world/sector_manager.h"
 #include "world/streaming_manager.h"
@@ -548,8 +550,7 @@ bool MngElectricalNetwork::initialize( TestDriveGameInstance * ) {
         Sector &sector = pStreaming->sectorManager.sectors[sectorIndex];
         SectorGeometry &geometry = sector.geometry;
 
-        if ( sector.state != 1 || geometry.pElectricalStream == nullptr ||
-             geometry.renderInstances.empty() ) {
+        if ( sector.state != 1 || geometry.pElectricalStream == nullptr ) {
             continue;
         }
 
@@ -575,6 +576,29 @@ bool MngElectricalNetwork::initialize( TestDriveGameInstance * ) {
     }
 
     bActivated = bResLoaded;
+
+    int32_t numRegistered = 0;
+    for ( const ElectricalNetwork &network : networks ) {
+        if ( network.bActive ) {
+            numRegistered++;
+        }
+    }
+    int32_t numEligible = 0;
+    for ( uint32_t i = 0; i < kNumNetworks; i++ ) {
+        const Sector &sector = pStreaming->sectorManager.sectors[i];
+        if ( sector.state == 1 && sector.geometry.pElectricalStream != nullptr ) {
+            numEligible++;
+        }
+    }
+    OTDU_LOG_DEBUG( "Electrical network [%s]: layout=%s resources=%s active=%d "
+                   "networks=%d eligibleSectors=%d\n",
+                   gpTestDriveInstance != nullptr
+                       ? kGameModeNames[gpTestDriveInstance
+                                            ->getActiveGameMode()]
+                       : "?",
+                   pLayoutStream != nullptr ? "yes" : "NO",
+                   bResLoaded ? "yes" : "NO", bActivated ? 1 : 0,
+                   numRegistered, numEligible );
     return true;
 }
 
@@ -590,11 +614,13 @@ int32_t MngElectricalNetwork::registerNetwork( const Sector *pSector,
         slotIndex++;
     }
     if ( slotIndex > 6 ) {
+        OTDU_LOG_WARN( "Electrical network: no free slot\n" );
         return -1;
     }
     ElectricalNetwork &network = networks[slotIndex];
 
     if ( !ParseWorldPEN( network.Stream, pStream ) ) {
+        OTDU_LOG_WARN( "Electrical network: ParseWorldPEN FAILED\n" );
         return -1;
     }
     network.pSector = pSector;
@@ -628,8 +654,14 @@ int32_t MngElectricalNetwork::registerNetwork( const Sector *pSector,
 
     if ( buildQuadTree( network, numLinks ) ) {
         network.bActive = true;
-        return slotIndex;
+        OTDU_LOG_DEBUG( "Electrical network: registered slot %d (%d links)\n",
+                        slotIndex, numLinks );
+        return network.bActive ? slotIndex : -1;
     }
+
+    OTDU_LOG_WARN( "Electrical network: quadtree build FAILED for slot %d "
+                   "(%d links)\n",
+                   slotIndex, numLinks );
 
     if ( network.pRoot != nullptr ) {
         releaseNodeRecursive( network, network.pRoot );

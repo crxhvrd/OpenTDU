@@ -80,6 +80,10 @@ public:
     }
     inline IPlayerData *getLoadedSave() const { return pLoadedSave2; }
     inline void setOnline( const bool bOnline ) { bIsOnline = bOnline; }
+    inline void resetArrestState( const float lastArrestedTime ) {
+        LastArrestedTime = lastArrestedTime;
+        OffenceRepetitionFactor = 1u;
+    }
 
 public:
     GSPlayerData();
@@ -125,6 +129,10 @@ public:
                              const int32_t bufferLength );
     bool FUN_00897990();
     bool isRentingCar();
+
+#ifdef OTDU_USE_IMGUI
+    void drawDebug( float deltaTime ) override;
+#endif
 
 private:
     uint8_t bInitialized : 1;

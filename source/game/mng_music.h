@@ -3,7 +3,12 @@
 #include "game/mng_base.h"
 #include "core/mutex.h"
 
+#include <memory>
+
 class TestDriveGameInstance;
+class AudioClient;
+class AudioStereoSource;
+class edAudioSample;
 
 class MngMusic : public Manager {
 public:
@@ -35,10 +40,13 @@ private:
     void onMusicInstalled();
 
 private:
-    void *pAudioClient; // TODO: GSAUDIO
+    AudioClient *pAudioClient;
     uint32_t playFlags;
-    void *pMusic;  // TODO: GSAUDIO
-    void *pSource; // TODO: GSAUDIO
+    void *pMusicData;
+    uint32_t musicDataSize;
+    std::shared_ptr<bool> pInstallGuard;
+    std::unique_ptr<AudioStereoSource> pSource;
+    std::unique_ptr<edAudioSample> pChannelSamples[2];
     bool bPlaying;
     char musicFilename[32];
     float currentVolume;

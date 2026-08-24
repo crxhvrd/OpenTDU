@@ -566,10 +566,11 @@ void CinResCollection::applyActorTransform( const CinematicActor *pActor,
     transform.row( 0 ) *= scale.x();
     transform.row( 1 ) *= scale.y();
     transform.row( 2 ) *= scale.z();
-    const Eigen::Vector3f worldTranslation = position + baseTranslation;
     transform.row( 3 ) =
-        Eigen::Vector4f( worldTranslation.x(), worldTranslation.y(),
-                         worldTranslation.z(), 1.0f );
+        Eigen::Vector4f( position.x(), position.y(), position.z(), 1.0f );
+    if ( bHasBaseMatrix ) {
+        transform = transform * baseMatrix;
+    }
 
     pEntity->setTransform( transform, true );
 
@@ -735,10 +736,16 @@ void CinResCollection::applyCameraTransform( int32_t transformType,
         return;
     }
 
-    const Matrix4x4f_t rotation = BuildRotationMatrix( heading );
+    Matrix4x4f_t rotation = BuildRotationMatrix( heading );
+    rotation.row( 3 ) =
+        Eigen::Vector4f( position.x(), position.y(), position.z(), 1.0f );
+    if ( bHasBaseMatrix ) {
+        rotation = rotation * baseMatrix;
+    }
+
     const Eigen::Vector3f forward = rotation.row( 2 ).head<3>();
     const Eigen::Vector3f up = rotation.row( 1 ).head<3>();
-    const Eigen::Vector3f worldPos = position + baseTranslation;
+    const Eigen::Vector3f worldPos = rotation.row( 3 ).head<3>();
     const Eigen::Vector3f target = worldPos + forward;
 
     // Publish the view so the active render camera can be latched to it.

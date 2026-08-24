@@ -13,6 +13,12 @@ public:
     inline void setDriver( Driver *pNewDriver ) { pDriver = pNewDriver; }
     inline void setGameID( int32_t id ) { gameID = id; }
     inline int32_t getGameID() const { return gameID; }
+    inline const Eigen::Vector4f &getLastPosition() const {
+        return lastPosition;
+    }
+    inline void setLastPosition( const Eigen::Vector4f &position ) {
+        lastPosition = position;
+    }
 
 public:
     LocalPlayer();

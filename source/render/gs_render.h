@@ -142,6 +142,10 @@ public:
             pScene->setEnabled( bState );
         }
     }
+    inline float getFovVsLodFactor() const { return fovVsLodFactor; }
+    inline void setFovVsLodFactor( const float value ) {
+        fovVsLodFactor = value;
+    }
 
     inline RenderPass &getRenderPassAtIndex( uint32_t index ) {
         return renderPasses.at( index );

@@ -2,6 +2,7 @@
 
 #include "game/gs_base.h"
 #include "implementation/ed_audio.h"
+#include "implementation/ed_audio_stream_entry.h"
 #include "implementation/pipeline_spatial.h"
 
 class AudioDispatcherPlaybackSoundInstance;
@@ -10,6 +11,8 @@ class edAudioMixer;
 class edAudioChannelAdapter;
 class edAudioCluster;
 class edAudioObject;
+class edAudioSample;
+class edAudioSpatializer;
 class AudioClient;
 
 static constexpr int32_t kMaxMixers = 9;
@@ -96,6 +99,49 @@ struct MixPreset {
     uint32_t MixState = 0;
 };
 
+class AudioStereoSource {
+public:
+    inline edAudioStreamEntry &getLeftChannel() { return ChannelLeft; }
+    inline edAudioStreamEntry &getRightChannel() { return ChannelRight; }
+    inline bool isStarted() const { return bStarted; }
+
+public:
+    AudioStereoSource(); 
+    ~AudioStereoSource();
+
+    bool setSamples( const edAudioSample *pLeft, const edAudioSample *pRight );
+    void setVolume( float volume );
+    void setPitch( float pitch );
+    void setLoopState( bool bLoop );
+    void play();                 
+    void stop( float fadeTime );
+
+private:
+    edAudioStreamEntry ChannelLeft;
+    edAudioStreamEntry ChannelRight;
+    bool bStarted;
+};
+
+class PipelineStereo {
+public:
+    PipelineStereo();
+    ~PipelineStereo();
+
+    bool create( edAudioObject *pParent ); 
+    void destroy();
+
+    void addSource( AudioStereoSource *pSource ); 
+    void removeSource( AudioStereoSource *pSource );
+
+private:
+    edAudioBuffer *pLeftBuffer;
+    edAudioBuffer *pRightBuffer;
+    edAudioSpatializer *pLeftRouter;
+    edAudioSpatializer *pRightRouter;
+    edAudioBuffer *pBuffer;
+    edAudioChannelAdapter *pAdapter;
+};
+
 class AudioClient {
 public:
     static constexpr float kDefaultMinSeparation = 0.05f; // DAT_00f41778
@@ -106,6 +152,7 @@ public:
     inline Mixer *getMixer() const { return pMixer; }
     inline edAudioObject *getRoot() const { return pRoot; }
     inline bool isPositional() const { return bPositional; }
+    inline PipelineStereo *getStereoPipeline() { return pStereoPipeline.get(); }
     inline SpatialClustering &getClustering() { return Clustering; }
     inline edAudioCluster *getCluster( int32_t index ) {
         return pClusters[index].get();
@@ -145,6 +192,7 @@ private:
 
     edAudioObject *pParentBuffer;
     edAudioObject *pRoot;
+    std::unique_ptr<PipelineStereo> pStereoPipeline;
     SpatialClustering Clustering;
     std::unique_ptr<edAudioCluster> pClusters[SpatialClustering::kMaxClusters];
     AudioDispatcherPlaybackSoundInstance *pInstances = nullptr;

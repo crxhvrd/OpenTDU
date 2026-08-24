@@ -82,6 +82,25 @@ inline bool IsActionPressed( DeviceAction *param_1 ) {
     return false;
 }
 
+inline bool IsActionReleased( DeviceAction *param_1 ) {
+    if ( ( param_1 != nullptr ) && ( ( param_1->Flags & 0x10u ) != 0 ) ) {
+        return true;
+    }
+    return false;
+}
+
+inline bool IsChannelJustPressed( const InputChannel *param_1 ) {
+    return param_1 != nullptr &&
+           ( static_cast<uint8_t>( param_1->Flags ) & 0x80u ) != 0;
+}
+
+inline void ClearActionFlags( DeviceAction *pAction ) {
+    if ( pAction != nullptr ) {
+        pAction->Flags = static_cast<uint8_t>(
+            ( ( pAction->Flags & 1u ) << 1 ) | ( pAction->Flags & 0xe1u ) );
+    }
+}
+
 inline bool IsActionDown( DeviceAction *param_1 ) {
     if ( ( param_1 != nullptr ) && ( ( param_1->Flags & 1 ) != 0 ) ) {
         return true;

@@ -39,6 +39,8 @@ public:
                           Eigen::Vector4f *param_3 ) override;
 
     Entity *instanciateActor( Entity *pEntity );
+    Matrix4x4f_t placePlayerVehicle( int32_t spawnMode, bool bApply );
+    void applyPlayerVehicleFrame( const Matrix4x4f_t &frame, bool bApply );
 
     void registerActor( Entity *pActor );
     void removeActorFromList( Entity *pActor );

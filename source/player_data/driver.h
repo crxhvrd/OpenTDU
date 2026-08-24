@@ -39,6 +39,7 @@ public:
 
     uint64_t getCurrentHouse() const;
     void setCurrentHouse( const uint64_t hashcode );
+    void selectCurrentHouse( const uint64_t hashcode );
 
     uint32_t getLocale() const;
     void setLocale( const uint32_t value );

@@ -40,6 +40,12 @@ public:
         return previousTransformMatrix;
     }
     inline bool isAreaStreamingEnabled() const { return bAreaStreamingEnabled; }
+    inline void setAreaStreamingEnabled( const bool value ) {
+        bAreaStreamingEnabled = value;
+    }
+    inline void setDirtyStreaming( const bool value ) {
+        bDirtyStreaming = value;
+    }
 
     inline FileCollection3D &getCollection3D() { return collection3D; }
 

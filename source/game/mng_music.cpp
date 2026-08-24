@@ -1,14 +1,20 @@
 #include "shared.h"
 #include "mng_music.h"
 
+#include "audio/gs_audio.h"
+#include "audio/implementation/ed_audio_sample.h"
 #include "config/gs_config.h"
+#include "core/ed_xmb.h"
+#include "filesystem/gs_file.h"
 
 MngMusic *gpMngMusic = nullptr; // DAT_010e7fd8
 
 MngMusic::MngMusic()
     : pAudioClient( nullptr ),
       playFlags( 0 ),
-      pMusic( nullptr ),
+      pMusicData( nullptr ),
+      musicDataSize( 0 ),
+      pInstallGuard( std::make_shared<bool>( true ) ),
       pSource( nullptr ),
       bPlaying( false ),
       currentVolume( -1.0f ), // FLOAT_00f41664
@@ -27,17 +33,40 @@ MngMusic::~MngMusic() {
 
 bool MngMusic::initialize( TestDriveGameInstance * ) {
     // FUN_006d73e0
-    OTDU_UNIMPLEMENTED;
+    if ( pInstallGuard == nullptr ) {
+        pInstallGuard = std::make_shared<bool>( true );
+    }
+
+    if ( gpAudio != nullptr ) {
+        pAudioClient = gpAudio->createClient( "ClientMenuMusic" );
+    }
+
+    if ( pAudioClient == nullptr ) {
+        OTDU_LOG_WARN( "MngMusic: no 'ClientMenuMusic' audio client, front end "
+                       "music will stay silent\n" );
+    }
+
     return true;
 }
 
 void MngMusic::terminate() {
     // FUN_006d7480
-    stop();
-    if ( pAudioClient != nullptr ) {
-        OTDU_UNIMPLEMENTED;
-        pAudioClient = nullptr;
+    const bool bStillInstalling = ( state == MMS_Loading );
+    if ( bStillInstalling ) {
+        OTDU_LOG_WARN( "MngMusic: '%s' is still installing, leaving its buffer "
+                       "behind\n",
+                       musicFilename );
     }
+
+    stop();
+
+    if ( bStillInstalling ) {
+        pMusicData = nullptr;
+        musicDataSize = 0;
+    }
+
+    pInstallGuard.reset();
+    pAudioClient = nullptr;
 }
 
 void MngMusic::tick( float, float ) {
@@ -48,11 +77,12 @@ void MngMusic::tick( float, float ) {
 
     if ( !bPlaying ) {
         if ( ( playFlags & 1 ) != 0 && pSource != nullptr ) {
-            OTDU_UNIMPLEMENTED;
+            pSource->play();
+            pSource->setVolume( currentVolume );
             bPlaying = true;
         }
     } else if ( ( playFlags & 1 ) == 0 && pSource != nullptr ) {
-        OTDU_UNIMPLEMENTED;
+        pSource->stop( 0.0f );
         bPlaying = false;
     }
 }
@@ -67,13 +97,24 @@ void MngMusic::stop() {
     currentVolume = -1.0f; // FLOAT_00f41664
 
     if ( pSource != nullptr ) {
-        OTDU_UNIMPLEMENTED;
-        pSource = nullptr;
+        pSource->stop( 0.0f );
+        pSource->setSamples( nullptr, nullptr );
+
+        if ( pAudioClient != nullptr &&
+             pAudioClient->getStereoPipeline() != nullptr ) {
+            pAudioClient->getStereoPipeline()->removeSource( pSource.get() );
+        }
+
+        pSource.reset();
     }
 
-    if ( pMusic != nullptr && state == MMS_Ready ) {
-        OTDU_UNIMPLEMENTED;
-        pMusic = nullptr;
+    pChannelSamples[0].reset();
+    pChannelSamples[1].reset();
+
+    if ( pMusicData != nullptr && state == MMS_Ready ) {
+        TestDrive::Free( pMusicData );
+        pMusicData = nullptr;
+        musicDataSize = 0;
     }
 
     state = MMS_None;
@@ -93,39 +134,59 @@ void MngMusic::loadMusic( const char *pFilename, float volume ) {
         // Same track: just retune the volume if it changed.
         OTDU_LOG_DEBUG( "MngMusic::LoadMusic: music already loaded\n" );
         if ( currentVolume != volume && pSource != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: AUDIO
+            pSource->setVolume( volume );
             currentVolume = volume;
         }
         return;
     }
 
-    // Different track: drop the current one and install the new bank.
+    // Different track: drop the current one and install the new file.
     if ( musicFilename[0] != '\0' ) {
         bPlaying = false;
         stop();
         state = MMS_Loading;
     }
-    pSource = nullptr;
+    pSource.reset();
     currentVolume = volume;
 
-    std::string path = gpConfig->getResRootPath();
-    path += "Sound/Musics/";
-    path += pFilename;
+    char path[512];
+    snprintf( path, sizeof( path ), "%sSound/Musics/%s",
+              gpConfig->getResRootPath(), pFilename );
 
     bool bInstalling = false;
-    OTDU_UNIMPLEMENTED; // TODO: FILE
+    if ( gpFile != nullptr ) {
+        if ( pMusicData != nullptr ) {
+            TestDrive::Free( pMusicData );
+            pMusicData = nullptr;
+        }
+        musicDataSize = 0;
+
+        std::weak_ptr<bool> guard = pInstallGuard;
+        bInstalling = gpFile->loadBank(
+            path, &pMusicData, &musicDataSize, this,
+            [this, guard]( int32_t type, int32_t bSuccess ) { 
+                if ( guard.expired() ) {
+                    return;
+                }
+                if ( type == 4 && bSuccess ) {
+                    onMusicInstalled();
+                }
+            } );
+    }
+
     if ( bInstalling ) {
         strncpy( musicFilename, pFilename, sizeof( musicFilename ) - 1 );
         musicFilename[sizeof( musicFilename ) - 1] = '\0';
         return;
     }
 
+    OTDU_LOG_WARN( "MngMusic::LoadMusic: can't install '%s'\n", path );
     state = MMS_None;
 }
 
 void MngMusic::onMusicInstalled() {
     // FUN_006d7270
-    if ( pMusic == nullptr ) {
+    if ( pMusicData == nullptr ) {
         OTDU_LOG_WARN(
             "MngMusic::InstallMusicAsyncCLBK: can't find music '%s'\n",
             musicFilename );
@@ -133,6 +194,58 @@ void MngMusic::onMusicInstalled() {
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO
+    const edXMBNode root( pMusicData );
+    const edXMBNode channels = root.findChild( "Channels" );
+    const edXMBNode buffers = root.findChild( "Buffers" );
+
+    for ( int32_t i = 0; i < 2; i++ ) {
+        pChannelSamples[i].reset();
+
+        const edXMBNode channel = channels.getElement( i );
+        const edXMBNode data =
+            buffers.getElement( channel.readInt( "BufferIndex", i ) )
+                .findChild( "Data" );
+
+        const void *pSampleData = data.getValue();
+        if ( pSampleData == nullptr || !data.isArray() ) {
+            continue;
+        }
+
+        auto sample = std::make_unique<edAudioSample>();
+        if ( sample->loadFromMemory( pSampleData, data.getArrayCount() ) ) {
+            pChannelSamples[i] = std::move( sample );
+        }
+    }
+
+    if ( pChannelSamples[0] == nullptr || pChannelSamples[1] == nullptr ) {
+        OTDU_LOG_WARN( "MngMusic::InstallMusicAsyncCLBK: '%s' has no usable "
+                       "stereo pair\n",
+                       musicFilename );
+        state = MMS_None;
+        return;
+    }
+
+    PipelineStereo *pPipeline = ( pAudioClient != nullptr )
+                                    ? pAudioClient->getStereoPipeline()
+                                    : nullptr;
+    if ( pPipeline == nullptr ) {
+        state = MMS_None;
+        return;
+    }
+
+    pSource = std::make_unique<AudioStereoSource>();
+    pSource->getLeftChannel().debugSetDescription( "MngMusic" );
+    pSource->getRightChannel().debugSetDescription( "MngMusic" );
+    pSource->setSamples( pChannelSamples[0].get(), pChannelSamples[1].get() );
+    pPipeline->addSource( pSource.get() );
+
+    pSource->setLoopState( true );
+    pSource->setVolume( currentVolume );
+    pSource->setPitch( 1.0f ); // FLOAT_00f4165c
+
+    OTDU_LOG_INFO( "Music '%s' installed (%d frames at %dHz, volume %.2f)\n",
+                   musicFilename, pChannelSamples[0]->getFrameCount(),
+                   pChannelSamples[0]->getSampleRate(), currentVolume );
+
     state = MMS_Ready;
 }

@@ -21,6 +21,15 @@ GSDetails::~GSDetails() {
     gpDetails = nullptr;
 }
 
+TDUDetail *GSDetails::getDetailByHash( const uint32_t detailHash ) {
+    for ( int32_t i = 0; i < numDetails; i++ ) {
+        if ( pDetailsList[i]->getHash() == detailHash ) {
+            return pDetailsList[i];
+        }
+    }
+    return nullptr;
+}
+
 bool GSDetails::initialize( TestDriveGameInstance * ) {
     // FUN_008a75c0
     for ( int32_t i = 0; i < numDetails; i++ ) {

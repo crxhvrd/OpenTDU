@@ -113,6 +113,7 @@ public:
     void addShadowCaster( Instance *param_2, float intensity );
     void addCockpitShadowCaster( CarState *param_2 );
     void addCockpitShadowCaster( HiearchyNode *param_2 );
+    void addShadowReceiver( HiearchyNode *pNode, bool bExclude );
 
     void expandCasterBoundingBox( const Eigen::Vector4f &param_2 );
     void expandCockpitCasterBoundingBox( const Eigen::Vector4f &param_2 );
@@ -285,8 +286,6 @@ private:
     void buildRoadReceiverTriangles( const Eigen::Vector4f *pVerts,
                                      int32_t numVerts,
                                      const Eigen::Vector3f &streamOrigin );
-
-    void addShadowReceiver( HiearchyNode *pNode, bool bExclude );
 
     void enqueueCockpitCasterInstance( Instance *param_2 );
     void enqueueCockpitReceiverInstance( Instance *param_2 );

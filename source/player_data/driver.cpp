@@ -4,6 +4,9 @@
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "gs_playerdata.h"
+#include "player_data_interface.h"
+#include "saved_garage.h"
 
 Driver::Driver() : Notifiable() {
     // FUN_00893cb0
@@ -185,6 +188,16 @@ uint64_t Driver::getCurrentHouse() const {
 
 void Driver::setCurrentHouse( const uint64_t hashcode ) {
     TestDriveTEAWriteQword( pCurrentHouse, hashcode );
+}
+
+void Driver::selectCurrentHouse( const uint64_t hashcode ) {
+    // FUN_00891bd0
+    Garage *pGarage = gpPlayerData->getLoadedSave()->getGarage();
+    if ( pGarage->isHouseOwned( hashcode ) ) {
+        setCurrentHouse( hashcode );
+    }
+
+    notify( 1u );
 }
 
 uint32_t Driver::getLocale() const { return TestDriveTEAReadDword( pLocale ); }

@@ -221,6 +221,7 @@ void GameModeWorld::reset() {
 
 constexpr int32_t kDefaultPlayerCarID = 1030;
 int32_t gRequestedPlayerCarID = -1;
+int32_t gRequestedPlayerCarColorID = -1;
 
 // Debug teleport request
 bool gRequestedPlayerTeleport = false;
@@ -620,7 +621,11 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
     // Runtime vehicle switch
     if ( gRequestedPlayerCarID >= 0 ) {
         const int32_t carID = gRequestedPlayerCarID;
+        const int32_t colorID = gRequestedPlayerCarColorID;
+
         gRequestedPlayerCarID = -1;
+        gRequestedPlayerCarColorID = -1;
+
         DBEntryCarPhysicsData *pDB = ( gpDatabase != nullptr )
                                          ? gpDatabase->getCarDBEntry( carID )
                                          : nullptr;

@@ -36,7 +36,17 @@ public:
     }
     inline const CameraView &getCameraView() const { return cameraView; }
     inline void setBaseTranslation( const Eigen::Vector3f &t ) {
-        baseTranslation = t;
+        baseMatrix = Matrix4x4f_t::Identity();
+        baseMatrix.row( 3 ) << t.x(), t.y(), t.z(), 1.0f;
+        bHasBaseMatrix = true;
+    }
+    inline void setBaseMatrix( const Matrix4x4f_t &m ) {
+        baseMatrix = m;
+        bHasBaseMatrix = true;
+    }
+    inline void clearBaseMatrix() {
+        baseMatrix = Matrix4x4f_t::Identity();
+        bHasBaseMatrix = false;
     }
     inline void *getActorEntity( int32_t index ) const {
         return ( index >= 0 && index < numActors ) ? actors[index].pEntity
@@ -143,7 +153,8 @@ private:
     int32_t numActors = 0;
     bool bCreated = false;
     CameraView cameraView{};
-    Eigen::Vector3f baseTranslation = Eigen::Vector3f::Zero();
+    Matrix4x4f_t baseMatrix = Matrix4x4f_t::Identity();
+    bool bHasBaseMatrix = false;
     int32_t lastMessageRef = -1;
 };
 

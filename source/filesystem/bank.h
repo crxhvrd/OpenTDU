@@ -193,6 +193,8 @@ public:
     inline int32_t getEntryIndex( char *pEntryName ) {
         return bank.getEntryIndex( pEntryName );
     }
+    inline void *getBankFile() const { return pBankFile; }
+    inline uint32_t getBankFileSize() const { return bankFileSize; }
 
 public:
     Bank();

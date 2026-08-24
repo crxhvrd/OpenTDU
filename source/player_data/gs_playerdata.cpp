@@ -726,3 +726,20 @@ bool GSPlayerData::isRentingCar() {
     OTDU_UNIMPLEMENTED;
     return false;
 }
+
+#ifdef OTDU_USE_IMGUI
+void GSPlayerData::drawDebug( float deltaTime ) {
+    if (pLoadedSave == nullptr) {
+        ImGui::Text("No active profile");
+        return;
+    }
+
+    Driver* pDriver = pLoadedSave->getDriver();
+    ImGui::InputText( "Nickname", pDriver->Nickname, Driver::kNicknameLength );
+
+    if (ImGui::Button("Save")) {
+        gSavegameManager.refreshService();
+        gSavegameManager.doSaveBlocking();
+    }
+}
+#endif

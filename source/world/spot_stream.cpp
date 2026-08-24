@@ -8,14 +8,16 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/spots.h"
+#include "game/scenaric/entity/entity_cinematic.h"
+#include "game/cinematic/mng_cinematics.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_garage.h"
 #include "render/2dm.h"
 #include "render/material.h"
 #include "render/render_scene.h"
 #include "sector_manager.h"
 #include "tdu_instance.h"
-
-#include <cstring>
-#include <cstdio>
 
 // Each spot streams into its own 0x380000 (3.5 MiB) slice of the shared intro
 // pool, handed out round-robin as the three Spots are constructed (matches the
@@ -95,7 +97,10 @@ void Spot::instanciate() {
                     }
                 }
 
-                OTDU_UNIMPLEMENTED; // TODO: CINEMATIC
+                if ( pWorld != nullptr && pWorld->Type == eSpotType::ST_House ) {
+                    launchHouseGateCine( pWorld );
+                }
+
                 setupGroundMaterials();
             }
         }
@@ -103,6 +108,36 @@ void Spot::instanciate() {
 
     status = SS_Loaded;
     markAsInstanciated();
+}
+
+void Spot::launchHouseGateCine( SpotMap *pWorld ) {
+    // FUN_007dbbb0
+    if ( pSCBank == nullptr || pWorld == nullptr ||
+         gpMngCinematics == nullptr ) {
+        return;
+    }
+
+    IPlayerData *pSave =
+        ( gpPlayerData != nullptr ) ? gpPlayerData->getLoadedSave() : nullptr;
+    Garage *pGarage = ( pSave != nullptr ) ? pSave->getGarage() : nullptr;
+    if ( pGarage == nullptr ) {
+        return;
+    }
+
+    const bool bOwned = pGarage->isHouseOwned( pWorld->Hashcode );
+    const char *pCineName = bOwned ? "C_OPEN" : "C_CLOSE";
+
+    EntityCinematic *pCine = static_cast<EntityCinematic *>(
+        pSCBank->findEntity( eEntityType::ET_CINE, pCineName ) );
+    if ( pCine == nullptr || ( pCine->getFlags() & 0x4u ) != 0 ) {
+        return;
+    }
+
+    pCine->setLoop( false );
+    pCine->launchSpotCine( pWorld, 0.0f );
+
+    OTDU_LOG_DEBUG( "House gate cinematic '%s' launched for spot 0x%016llx\n",
+                   pCineName, (unsigned long long)pWorld->Hashcode );
 }
 
 void Spot::setupGroundMaterials() {

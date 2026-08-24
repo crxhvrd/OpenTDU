@@ -19,6 +19,10 @@
 #include "render/animation/clip.h"
 #include "render/animation/skeleton.h"
 #include "world/gs_world_streaming.h"
+#include "render/camera/gs_camera.h"
+#include "tdu_instance.h"
+
+static constexpr float kMillisecondsToSeconds = 0.001f; // FLOAT_00f4167c
 
 namespace {
     void ResolveCinematicEntry( BankInstance &bank,
@@ -97,7 +101,21 @@ EntityCinematic::EntityCinematic()
       Time( 0.0f ),
       CineTotalTime( 0.0f ),
       FadeTime( 0.0f ),
+      pCameraRef( nullptr ),
+      pZoneRef( nullptr ),
+      cinematicZNear( 0.0f ),
+      cinematicZFar( 0.0f ),
+      pMusic1Ref( nullptr ),
+      pSoundEmitter1Ref( nullptr ),
+      pMusic2Ref( nullptr ),
+      pSoundEmitter2Ref( nullptr ),
+      pMicroRef( nullptr ),
+      pStreamCenterRef( nullptr ),
+      numRefs( 0 ),
+      pCinRef( nullptr ),
+      pSceneRefs( nullptr ),
       pSCBank( nullptr ),
+      pGMInterface( nullptr ),
       pSpotWorld( nullptr ),
       pCinData( nullptr ),
       cinDataSize( 0 ),
@@ -107,11 +125,13 @@ EntityCinematic::EntityCinematic()
       bHideFrontEnd( false ),
       bOnFinalFrame( false ),
       bSkipped( false ),
+      bStopWhenSkipped( false ),
       bDontSwitchCamera( false ),
       bInitialized( false ),
       bForceStop( false ),
       bStopGuard( false ),
       bStackActive( false ),
+      bCameraHandedOver( false ),
       activeGameMode( GM_FreeRide ) {
     // FUN_007e80d0
 }
@@ -127,18 +147,30 @@ void EntityCinematic::initialize() {
     cinematicBuffer.clear();
     bInitialized = true;
 
+    bLoop = ( cinematicPlaybackFlags & 0x2u ) != 0;
+
     if ( pSCBank == nullptr || cutsceneName.empty() ) {
         return;
     }
 
-    ParsedBankEntry entry;
-    ResolveCinematicEntry( pSCBank->getBank(), cutsceneName, entry );
-    if ( entry.pData == nullptr ) {
-        return;
+    if ( pCinRef != nullptr ) {
+        const uint64_t cinHashcode =
+            *reinterpret_cast<const uint64_t *>( pCinRef );
+        int32_t cinSize = 0;
+        pCinData = pSCBank->getCinData( cinHashcode, &cinSize );
+        cinDataSize = static_cast<uint32_t>( cinSize );
     }
-    pCinData = entry.pData;
-    cinDataSize = static_cast<uint32_t>( entry.Size );
-    entry.Clear();
+
+    if ( pCinData == nullptr ) {
+        ParsedBankEntry entry;
+        ResolveCinematicEntry( pSCBank->getBank(), cutsceneName, entry );
+        if ( entry.pData == nullptr ) {
+            return;
+        }
+        pCinData = entry.pData;
+        cinDataSize = static_cast<uint32_t>( entry.Size );
+        entry.Clear();
+    }
 
     const uint32_t bufferSize = ExtractBufferSize( pCinData, cinDataSize );
     if ( bufferSize != 0 ) {
@@ -153,6 +185,7 @@ void EntityCinematic::loadResources( ScenaricBank *param_2 ) {
     }
     resolveSoundReference();
     pSCBank = param_2;
+    bStopWhenSkipped = true;
 }
 
 void EntityCinematic::initializeInstance( void *param_2, void *param_3 ) {
@@ -192,10 +225,21 @@ void EntityCinematic::tick() {
         const bool reachedEnd = totalTime < Time;
         if ( !reachedEnd ) {
             cinematicPlayer.tick( Time, dt );
-        } else if ( !bLoop ) {
-            stop( true );
-            return;
-        } else {
+            publishCameraView();
+        }
+        if ( pGMInterface != nullptr &&
+             Time >= totalTime - FadeTime * kMillisecondsToSeconds ) {
+            pGMInterface->executeAction( CE_StartEndFade, this );
+        }
+
+        if ( reachedEnd ) {
+            if ( !bLoop ) {
+                if ( pGMInterface != nullptr ) {
+                    pGMInterface->executeAction( CE_Finished, this );
+                }
+                stop( true );
+                return;
+            }
             Time = 0.0f;
         }
     }
@@ -229,12 +273,58 @@ void EntityCinematic::deserialize( BinaryReader *pReader ) {
     // FUN_007e8400
     Entity::deserialize( pReader );
 
+    auto readRef = [pReader]() -> const void * {
+        return ReadStreamRef( pReader );
+    };
+
+    const uint32_t version = gpScenaric->getVersion();
+
     cinematicPlaybackFlags = ReadStreamU32( pReader );
-    if ( gpScenaric->getVersion() > 0xc ) {
+    if ( version > 0xc ) {
         cinematicPlaybackFlags2 = ReadStreamU32( pReader );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO:
+    pCameraRef = readRef();
+    pZoneRef = readRef();
+
+    if ( version >= 9 ) {
+        cinematicZNear = *reinterpret_cast<const float *>( pReader->pCursor );
+        pReader->pCursor += sizeof( float );
+        cinematicZFar = *reinterpret_cast<const float *>( pReader->pCursor );
+        pReader->pCursor += sizeof( float );
+
+        if ( version >= 0x13 ) {
+            pSoundEmitter1Ref = readRef();
+            pSoundEmitter2Ref = readRef();
+        } else {
+            if ( ReadStreamU32( pReader ) != 0 ) {
+                pMusic1Ref = readRef();
+            }
+            if ( ReadStreamU32( pReader ) != 0 ) {
+                pMusic2Ref = readRef();
+            }
+        }
+
+        if ( version >= 0xa ) {
+            if ( version >= 0xc ) {
+                pMicroRef = readRef();
+            }
+            pStreamCenterRef = readRef();
+        }
+    }
+
+    numRefs = ReadStreamU32( pReader );
+    if ( numRefs != 0 ) {
+        pCinRef = readRef();
+        pSceneRefs = pReader->pCursor;
+        pReader->pCursor += ( numRefs - 1 ) * 8;
+    }
+
+    if ( version >= 0x20 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (the trailing per-actor
+                                 // override list)
+    }
+
     cutsceneName = name;
 }
 
@@ -263,6 +353,7 @@ void EntityCinematic::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     pInstance->bLoop = bLoop;
     pInstance->bHideFrontEnd = bHideFrontEnd;
     pInstance->bSkipped = bSkipped;
+    pInstance->bStopWhenSkipped = bStopWhenSkipped;
     pInstance->playbackSpeed = playbackSpeed;
 
     OTDU_UNIMPLEMENTED;
@@ -283,11 +374,20 @@ void EntityCinematic::start( bool bBeginNow ) {
 
     OTDU_UNIMPLEMENTED; // TODO: INPUT
 
-    activeGameMode = GM_FreeRide;
+    if ( gpActiveGMScene != nullptr ) {
+        FadeTime = gpActiveGMScene->getTransitionTime();
+    }
+
+    activeGameMode =
+        ( gpTestDriveInstance != nullptr )
+            ? gpTestDriveInstance->getActiveGameMode()
+            : GM_FreeRide;
     bSkipped = false;
     cinematicFlags |= 0x1u;
 
-    OTDU_UNIMPLEMENTED; // TODO: GAMEMODE
+    if ( pGMInterface != nullptr ) {
+        pGMInterface->executeAction( CE_Requested, this );
+    }
 
     if ( !bBeginNow || begin() ) {
         if ( gpMngCinematics == nullptr ) {
@@ -301,22 +401,29 @@ void EntityCinematic::start( bool bBeginNow ) {
 void EntityCinematic::stop( bool bEndNow ) {
     // FUN_007e8d10
     const uint32_t flags = cinematicFlags;
-    if ( ( ( flags & 0x4u ) == 0 && !bStopGuard ) || bForceStop ) {
-        if ( ( flags & 0x1u ) != 0 ) {
-            cinematicFlags = flags & ~0x1u;
-            OTDU_UNIMPLEMENTED; // TODO: GAMEMODE
-        }
-        if ( bStackActive ) {
-            OTDU_UNIMPLEMENTED;
-            bStackActive = false;
-        }
-    } else {
+
+    if ( ( ( flags & 0x4u ) != 0 || bForceStop ) && !bStopGuard ) {
         cinematicFlags = flags | 0x2u;
-        OTDU_UNIMPLEMENTED; // TODO: GAMEMODE
+        if ( pGMInterface != nullptr ) {
+            pGMInterface->executeAction( CE_Stopping, this );
+        }
         if ( bEndNow ) {
             end();
-            return;
         }
+        return;
+    }
+
+    if ( ( flags & 0x1u ) != 0 ) {
+        cinematicFlags = flags & ~0x1u;
+        if ( pGMInterface != nullptr ) {
+            pGMInterface->executeAction( CE_Stopping, this );
+            pGMInterface->executeAction( CE_Ended, this );
+        }
+    }
+
+    if ( cinematicPlayer.isCreated() ) {
+        cinematicPlayer.reset();
+        bStackActive = false;
     }
 }
 
@@ -330,11 +437,7 @@ bool EntityCinematic::calculateSpotMatrix( SpotMap *pSpot,
     if ( pSector == nullptr ) {
         return false;
     }
-
-    // TODO: confirm the full XYZ-euler against more spot assets.
-    const Eigen::Quaternionf rotation(
-        Eigen::AngleAxisf( pSector->Angle, Eigen::Vector3f::UnitY() ) );
-    outMatrix = BuildRotationMatrix( rotation );
+    outMatrix = BuildSpotSectorRotation( pSector );
 
     Eigen::Vector4f shift = gpWorldStreaming->isEnabled()
                                 ? gpWorldStreaming->getPosition()
@@ -346,6 +449,18 @@ bool EntityCinematic::calculateSpotMatrix( SpotMap *pSpot,
     return true;
 }
 
+bool EntityCinematic::createTDUInterface() {
+    // FUN_007e7c10
+    if ( pCinData == nullptr || cinematicBuffer.empty() ||
+         pSCBank == nullptr ) {
+        return false;
+    }
+
+    return cinematicPlayer.createInterface( pCinData, cinDataSize,
+                                            cinematicBuffer.data(),
+                                            &pSCBank->getBank() );
+}
+
 bool EntityCinematic::launchSpotCine( SpotMap *pSpot, float startTime ) {
     // FUN_007e96c0
     Matrix4x4f_t mat;
@@ -353,8 +468,7 @@ bool EntityCinematic::launchSpotCine( SpotMap *pSpot, float startTime ) {
     pSpotWorld = pSpot;
     mat( 3, 1 ) += startTime;
 
-    cinematicPlayer.setBaseTranslation(
-        Eigen::Vector3f( mat( 3, 0 ), mat( 3, 1 ), mat( 3, 2 ) ) );
+    cinematicPlayer.setBaseMatrix( mat );
 
     start( true );
     return true;
@@ -364,6 +478,10 @@ bool EntityCinematic::begin() {
     // FUN_007e8f90
     if ( pCinData == nullptr || cinematicBuffer.empty() ||
          pSCBank == nullptr ) {
+        OTDU_LOG_WARN( "Cinematic '%s': no playable data (cin=%p size=%u "
+                       "buffer=%zu bank=%p); playback aborted\n",
+                       name.c_str(), pCinData, cinDataSize,
+                       cinematicBuffer.size(), (void *)pSCBank );
         stop( true );
         return false;
     }
@@ -400,16 +518,49 @@ bool EntityCinematic::begin() {
         }
     }
 
-    OTDU_UNIMPLEMENTED;
+    if ( pGMInterface != nullptr ) {
+        pGMInterface->executeAction( CE_Begun, this );
+    }
 
     CineTotalTime = cinematicPlayer.getTotalTime();
     Time = StartTime;
     cinematicFlags = ( cinematicFlags & 0xfffffffcu ) | 4u;
+    if ( pGMInterface != nullptr ) {
+        pGMInterface->executeAction( CE_Started, this );
+    }
+
     return true;
+}
+
+void EntityCinematic::publishCameraView() {
+    if ( !hasFocus() || gpCamera == nullptr ) {
+        return;
+    }
+
+    const CinResCollection::CameraView &view = cinematicPlayer.getCameraView();
+    if ( !view.bValid ) {
+        return;
+    }
+
+    if ( !bCameraHandedOver ) {
+        bCameraHandedOver = true;
+        OTDU_LOG_INFO( "Cinematic '%s' took the camera: pos=(%.1f %.1f %.1f) "
+                       "target=(%.1f %.1f %.1f) fov=%.1f deg, %.2fs%s "
+                       "(LED flags 0x%08x)\n",
+                       name.c_str(), view.Position.x(), view.Position.y(),
+                       view.Position.z(), view.Target.x(), view.Target.y(),
+                       view.Target.z(), view.Fov, CineTotalTime,
+                       bLoop ? ", looping" : "", cinematicPlaybackFlags );
+    }
+
+    gpCamera->setCinematicCameraOverride( view.Position, view.Up, view.Target,
+                                          view.Fov * kDegToRad );
 }
 
 void EntityCinematic::end() {
     // FUN_007e8840
+    const bool bWasRunning = ( cinematicFlags & 0x4u ) != 0 || bForceStop;
+
     if ( gpActiveGMScene != nullptr ) {
         MngActor &sceneActors = gpActiveGMScene->getActorManager();
         const int32_t count = cinematicPlayer.getActorCount();
@@ -433,6 +584,17 @@ void EntityCinematic::end() {
     cinematicFlags = ( cinematicFlags & 0xfffffff8u ) | 0x10u;
     Time = 0.0f;
     bStopGuard = false;
+    if ( bWasRunning ) {
+        bForceStop = false;
+    }
+    if ( hasFocus() && gpCamera != nullptr ) {
+        gpCamera->clearCinematicCameraOverride();
+        bCameraHandedOver = false;
+    }
+    if ( bWasRunning && pGMInterface != nullptr ) {
+        pGMInterface->executeAction( CE_Ended, this );
+    }
+
     if ( gpMngCinematics != nullptr ) {
         gpMngCinematics->removeCinematic( this );
     }

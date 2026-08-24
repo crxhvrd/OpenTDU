@@ -110,6 +110,11 @@ void Render2DM::destroy() {
         unparse();
         reset();
     }
+
+    pMatArray = nullptr;
+    pHashcodes = nullptr;
+    pParameters = nullptr;
+    pLayers = nullptr;
 #if OTDU_NATIVE_MATERIAL
     if ( pUpgradedBuffer != nullptr ) {
         std::free( pUpgradedBuffer );
@@ -679,7 +684,16 @@ Material *Render2DM::CreateTerrainMaterial( void *pContent,
 
 Material *Render2DM::getMaterialAtIndex( uint32_t param_2 ) {
     // FUN_00403370
+    if ( pMatArray == nullptr ) {
+        return nullptr;
+    }
+
+    uint8_t *pArrayEnd = (uint8_t *)pMatArray + pMatArray->Size;
     uint8_t *piVar1 = (uint8_t *)pMatArray + pMatArray->DataSize;
+    if ( piVar1 == nullptr || (uintptr_t)pArrayEnd <= (uintptr_t)piVar1 ) {
+        return nullptr;
+    }
+
     RenderFile::Section *pHashcodeSection = (RenderFile::Section *)piVar1;
     OTDU_ASSERT( pHashcodeSection->Type == kHashcodesMagic );
 
@@ -694,6 +708,10 @@ Material *Render2DM::getMaterialAtIndex( uint32_t param_2 ) {
 
     Render2DMHashEntry *pEntryAtIndex = pIterator + param_2;
     RenderFile::Section *pMatSection = pEntryAtIndex->pEntry;
+    if ( pMatSection == nullptr ) {
+        return nullptr;
+    }
+
     return (Material *)( pMatSection + 1 );
 }
 

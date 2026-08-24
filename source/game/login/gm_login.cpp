@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "gm_login.h"
 
+#include "game/living/gm_living.h"
+
 #include "database/gs_database.h"
 #include "filesystem/gs_dirty_disk.h"
 #include "filesystem/gs_file.h"
@@ -259,6 +261,9 @@ void GMLogin::reset() {
     OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND
 
     gSavegameManager.toggleProfileChange();
+
+    gpScenaric->setCurrentSpotIndex( -1 );
+    gbEnteringLivingHub = true;
 
     gbSimuModeEnabled = false;
 

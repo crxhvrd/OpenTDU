@@ -4,6 +4,7 @@ class Sector;
 class Bank;
 class ScenaricBank;
 class Entity;
+class EntityCinematic;
 
 // TODO: INCOMPLETE
 enum eSpotType : uint8_t {
@@ -39,6 +40,11 @@ struct SpotMap {
 OTDU_SIZE_MUST_MATCH( SpotMap, 64 );
 
 bool IsSpotAvailableInCurrentMode( const SpotMap *pSpot );
+ScenaricBank *FindStreamedSpotBank( const struct SpotSector *pSpotSector );
+EntityCinematic *FindStreamedSpotCinematic( const struct SpotSector *pSpotSector,
+                                            const char *pName,
+                                            ScenaricBank **ppOutBank = nullptr );
+Matrix4x4f_t BuildSpotSectorRotation( const struct SpotSector *pSector );
 
 struct SpotSector {
     uint64_t Hashcode; //  ASCII spot id (e.g. "RSFE0022")
@@ -82,6 +88,12 @@ public:
     inline SpotMap *getWorldSpot( int32_t index ) {
         return &spotsWorld.pSpotsMapOrSector.pWorld[index];
     }
+    inline SpotMap *getWorldSpotChecked( int32_t index ) {
+        if ( index < 0 || index >= (int32_t)spotsWorld.NumSpots ) {
+            return nullptr;
+        }
+        return &spotsWorld.pSpotsMapOrSector.pWorld[index];
+    }
     inline const SpotsList &getSectorList( int32_t index ) const {
         return spotsSectors[index];
     }
@@ -91,6 +103,10 @@ public:
 
     int32_t getSpotMapIndex( uint64_t hashcode ) const;
     SpotMap *getSpotMap( uint64_t hashcode );
+    SpotMap *findSpotMapByType( uint8_t type,
+                                uint8_t subType,
+                                int32_t occurrence,
+                                int32_t *pOutIndex );
     SpotSector *getSpotSector( uint64_t hashcode );
     void updateSpotMeshValidity();
 

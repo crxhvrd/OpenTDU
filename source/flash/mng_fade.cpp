@@ -38,28 +38,35 @@ MngFade::MngFade()
 
 MngFade::~MngFade() {}
 
+void MngFade::startTransition( const uint32_t newFlags,
+                               const float durationInSeconds,
+                               PostTransitionCallback_t callback,
+                               void *pSource,
+                               void *pData ) {
+    transitionDuration = durationInSeconds;
+    pCallback = callback;
+    pCallbackSource = pSource;
+    pCallbackData = pData;
+    flags = newFlags;
+    elapsedTime = 0.0f;
+}
+
 bool MngFade::initialize( TestDriveGameInstance * ) {
-    // FUN_006cfb3
-    DrawStreams eStack_20;
-    eStack_20.Tangent = '\0';
-    eStack_20.Binormal = '\0';
-    eStack_20.bIndex16 = '\0';
-    eStack_20.Custom = '\0';
-    eStack_20.Normals = '\0';
-    eStack_20.Diffuse = '\0';
-    eStack_20.Specular = '\0';
-    eStack_20.UVMap = '\0';
-    pDrawListTransition->initialize( 1, 4, 0, true, &eStack_20, "Trans_rlist2d",
+    // FUN_006cfb30
+    DrawStreams streams;
+    streams.Normals = '\0';
+    streams.Diffuse = '\x01';
+    streams.Specular = '\0';
+    streams.UVMap = '\0';
+    streams.Tangent = '\0';
+    streams.Binormal = '\0';
+    streams.bIndex16 = '\x01';
+    streams.Custom = '\0';
+    pDrawListTransition->initialize( 1, 4, 0, true, &streams, "Trans_rlist2d",
                                      false );
 
-    DrawStreams uStack_18;
-    uStack_18.Normals = '\0';
-    uStack_18.Diffuse = '\0';
-    uStack_18.Specular = '\0';
-    uStack_18.UVMap = '\0';
-    uStack_18.UVMap = '\x01';
-    pDrawListLogo->initialize( 1, 4, 0, true, &uStack_18, "Logo_rlist2d",
-                               false );
+    streams.UVMap = '\x01';
+    pDrawListLogo->initialize( 1, 4, 0, true, &streams, "Logo_rlist2d", false );
 
     return true;
 }
@@ -96,7 +103,9 @@ void MngFade::tick( float deltaTime, float ) {
             elapsedTime = 0.0f;
 
             if ( pCallback != nullptr ) {
-                pCallback( pCallbackData, pCallbackSource );
+                PostTransitionCallback_t callback = std::move( pCallback );
+                pCallback = nullptr;
+                callback( pCallbackData, pCallbackSource );
             }
 
             if ( ( flags >> 2 & 1 ) != 0 ) {

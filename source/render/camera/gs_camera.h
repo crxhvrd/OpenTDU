@@ -60,6 +60,7 @@ public:
     inline bool isPaused() const { return bPaused; }
     inline bool isLookingBack() const { return bLookingBack; }
     inline bool isInteriorView() const { return bInterior; }
+    inline void setInteriorView( const bool value ) { bInterior = value; }
     inline float getLeftView() const { return leftView; }
     inline float getRightView() const { return rightView; }
     inline float getUpView() const { return upView; }
@@ -71,6 +72,7 @@ public:
 
     inline void setActiveCameraAsDefault() {
         defaultCamera = pActiveVehicleCamera;
+        applyCinematicOverride( defaultCamera );
     }
 
     inline bool isInTransition() const {
@@ -117,7 +119,7 @@ public:
     void tickActiveCamera( float param_2 );
     void bindToRender();
 
-    // Cinematic/debug camera overrides.
+    void applyCinematicOverride( CameraGame &camera );
     void setCinematicCameraOverride( const Eigen::Vector3f &position,
                                      const Eigen::Vector3f &up,
                                      const Eigen::Vector3f &target,

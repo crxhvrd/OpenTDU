@@ -6,6 +6,7 @@
 class EntityMusicDesc : public Entity {
 public:
     const char *GetName() override { return "MusicDesc"; /* FUN_00427bf0 */ }
+    inline const char *getMusicName() const { return pMusicName; }
 
 public:
     EntityMusicDesc();

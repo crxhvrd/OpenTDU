@@ -75,6 +75,8 @@
 #include "game/sandbox/gm_sandbox.h"
 #include "game/cinviewer/gm_cin_viewer.h"
 #include "game/login/gm_login.h"
+#include "game/living/gm_living.h"
+#include "game/scene_interior.h"
 
 #include "render/ed_render.h"
 
@@ -101,18 +103,24 @@ uint64_t gAvailableMemory = 0; // DAT_01041a2c
 
 static constexpr const char *kDefaultORBAddress = "orb.testdriveunlimited.com";
 
-#if OTDU_DEVBUILD
 bool gBreakOnAssertFailure = false; // DAT_00f47931
+bool gDisableAssert = false;
+bool gDisableRunLock = false;
+
+#if OTDU_DEVBUILD
 static CmdLineArg CmdLineArgDbgBreakOnAssertFailure( "break_on_assert_failure",
                                                      []( const char *pArg ) {
                                                          gBreakOnAssertFailure =
                                                              true;
                                                      } );
-
-bool gDisableAssert = false;
 static CmdLineArg CmdLineArgDisableAssert( "disable_assert",
                                            []( const char *pArg ) {
                                                gDisableAssert = true;
+                                           } );
+
+static CmdLineArg CmdLineArgNoRunLock( "norunlock",
+                                           []( const char *pArg ) {
+                                               gDisableRunLock = true;
                                            } );
 #endif
 
@@ -299,7 +307,7 @@ int32_t TestDrive::InitAndRun( const char **pCmdLineArgs,
     TestDriveGameInstance gameInstance( pCmdLineArgs, argCount );
     gSavegameManager.create();
 
-    if ( !IsAlreadyRunning() ) {
+    if ( gDisableRunLock || !IsAlreadyRunning() ) {
         bool bCheckSuccessful = HasEnoughSysMemAvail();
 
         if ( bCheckSuccessful ) {
@@ -437,6 +445,11 @@ void TestDriveGameInstance::mainLoop() {
         case GM_CinViewer:
             pGameModeAlloc = TestDrive::Alloc( sizeof( GMCinViewer ) );
             pGVar6 = new ( pGameModeAlloc ) GMCinViewer();
+            break;
+        case GM_Living:
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLiving ),
+                                                      alignof( GMLiving ) );
+            pGVar6 = new ( pGameModeAlloc ) GMLiving();
             break;
         default:
             OTDU_FATAL_ERROR( "GAME MODE '%s' (%u) IS NOT IMPLEMENTED!\n",

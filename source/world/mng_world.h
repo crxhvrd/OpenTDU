@@ -26,6 +26,8 @@ public:
     inline bool getDisableStreamingOnCamera() const {
         return bDisableStreamingOnCamera;
     }
+    inline void setStreamEnabled( const bool value ) { bStream = value; }
+    inline bool isStreamEnabled() const { return bStream; }
 
 private:
     bool bDraw;

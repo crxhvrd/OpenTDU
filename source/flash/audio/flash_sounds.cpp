@@ -5,6 +5,10 @@
 #include "audio/implementation/ed_audio_object.h"
 #include "audio/implementation/ed_audio_stream_entry.h"
 #include "config/gs_config.h"
+#include "game/gm_scene.h"
+#include "game/mng_music.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "tdu_instance.h"
 
 FlashSounds::FlashSounds() : Bank(), pMemoryPool( nullptr ) {
     // FUN_0099ddc0
@@ -99,8 +103,10 @@ void FlashSounds::loadFrontEndSounds() {
 
     parseSoundList();
 
-    OTDU_LOG_INFO( "Front end sounds loaded ('%s', %d entries, %zu messages)\n",
-                   bankPath, getNumElements(), soundList.size() );
+    OTDU_LOG_INFO( "Front end sounds loaded ('%s', %d entries, %zu messages, "
+                   "%d music tracks)\n",
+                   bankPath, getNumElements(), soundList.size(),
+                   numMusicEntries );
 }
 
 void FlashSounds::parseSoundList() {
@@ -124,17 +130,24 @@ void FlashSounds::parseSoundList() {
         const std::string line( pText, size_t( pLineEnd - pText ) );
         pText = ( pLineEnd < pEnd ) ? pLineEnd + 1 : pEnd;
 
-        if ( line.find( "AddFESound" ) == std::string::npos ||
-             line.find( "//" ) == 0 ) {
+        if ( line.find( "//" ) == 0 ) {
             continue;
         }
 
-        // AddFESound  "message"  "file.wav"  volume
-        std::string token[3];
-        int32_t tokenCount = 0;
-        size_t cursor = line.find( "AddFESound" ) + 10;
+        // AddFESound  "message"    "file.wav"  volume
+        // SetMusic    "FRONTENDID" "file.wav"  volume  waitCine
+        const bool bMusicLine = line.find( "SetMusic" ) != std::string::npos;
+        const size_t keywordStart =
+            bMusicLine ? line.find( "SetMusic" ) : line.find( "AddFESound" );
+        if ( keywordStart == std::string::npos ) {
+            continue;
+        }
 
-        while ( tokenCount < 3 && cursor < line.size() ) {
+        std::string token[4];
+        int32_t tokenCount = 0;
+        size_t cursor = keywordStart + ( bMusicLine ? 8 : 10 );
+
+        while ( tokenCount < 4 && cursor < line.size() ) {
             while ( cursor < line.size() &&
                     ( line[cursor] == ' ' || line[cursor] == '\t' ) ) {
                 cursor++;
@@ -166,6 +179,25 @@ void FlashSounds::parseSoundList() {
             continue;
         }
 
+        if ( bMusicLine ) {
+            if ( numMusicEntries >= kMaxMusicEntries ) {
+                OTDU_LOG_WARN( "sounds.ini declares more than %d SetMusic "
+                               "entries; '%s' was dropped\n",
+                               kMaxMusicEntries, token[0].c_str() );
+                continue;
+            }
+
+            FrontEndMusic &music = musicList[numMusicEntries++];
+            strncpy( music.Key, token[0].c_str(), sizeof( music.Key ) - 1 );
+            strncpy( music.FileName, token[1].c_str(),
+                     sizeof( music.FileName ) - 1 );
+            music.Volume =
+                ( tokenCount > 2 ) ? float( atof( token[2].c_str() ) ) : 1.0f;
+            music.bWaitCine =
+                ( tokenCount > 3 ) && atoi( token[3].c_str() ) != 0;
+            continue;
+        }
+
         FrontEndSound sound;
         sound.FileName = token[1];
         sound.Volume =
@@ -179,6 +211,162 @@ const FlashSounds::FrontEndSound *
 FlashSounds::findSound( const char *pFlashMessage ) const {
     auto it = soundList.find( std::string( pFlashMessage ) );
     return ( it != soundList.end() ) ? &it->second : nullptr;
+}
+
+const FlashSounds::FrontEndMusic *
+FlashSounds::findMusic( const char *pKey ) const {
+    // FUN_0099d280
+    if ( pKey == nullptr ) {
+        return nullptr;
+    }
+
+    for ( int32_t i = 0; i < kMaxMusicEntries; i++ ) {
+        if ( strcmp( musicList[i].Key, pKey ) == 0 ) {
+            return &musicList[i];
+        }
+    }
+
+    return nullptr;
+}
+
+const char *FlashSounds::ResolveGameModeMusicKey() {
+    // FUN_0099e410 (inlined)
+    if ( gpTestDriveInstance == nullptr ) {
+        return nullptr;
+    }
+
+    switch ( gpTestDriveInstance->getActiveGameMode() ) {
+    case GM_Map:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (the "CREDITS" variant)
+        return "MAP";
+
+    case GM_Home:
+        return "HOME";
+
+    case GM_Shop: {
+        if ( gpScenaric == nullptr ||
+             gpScenaric->getCurrentSpotIndex() == -1 ) {
+            return nullptr;
+        }
+
+        SpotMap *pSpot = gpScenaric->getSpotList().getWorldSpotChecked(
+            gpScenaric->getCurrentSpotIndex() );
+        if ( pSpot == nullptr ) {
+            return nullptr;
+        }
+
+        switch ( pSpot->Type ) {
+        case 1:
+        case 2:
+            return "CARDEAL";
+        case 4:
+            return "TUNING";
+        case 8:
+            switch ( pSpot->SubType ) {
+            case 0:
+                return "CARWASH";
+            case 1:
+            case 9:
+                return "CARPAINT";
+            case 2:
+            case 3:
+                return "CARRENT";
+            case 4:
+                return "REALTOR";
+            default:
+                return nullptr;
+            }
+        default:
+            return nullptr;
+        }
+    }
+
+    case GM_Mission:
+        // Only on the rewards screen.
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: HUD ("RANKING")
+        return nullptr;
+
+    case GM_GameModeEdit:
+        return "GMEDITOR";
+    case GM_InstantChallenge:
+        return "MAP";
+    case GM_Garage:
+        return "GARAGE";
+    case GM_Living:
+        // TODO: "ETRADE"
+        return "LIVING";
+    case GM_Goodies:
+        return "GOODIES";
+    case GM_DriveIn:
+        return "DRIVEIN";
+    case GM_Dressing:
+        return "DRESSING";
+    case GM_AfterMarket:
+        return "TUNING";
+    case GM_Estates:
+        return "REALTOR";
+    case GM_Club:
+        return "CLUB";
+    case GM_Lobby:
+        return "LOBBY";
+    case GM_Login:
+        return "LOGIN";
+    case GM_OutroDemo:
+        return "OUT_DEMO";
+    case GM_Jail:
+        return "JAIL";
+    case GM_IntroDemo:
+        return "IN_DEMO";
+    default:
+        return nullptr;
+    }
+}
+
+bool FlashSounds::playFrontEndMusic( bool bFromCine ) {
+    // FUN_0099e410
+    if ( gpTestDriveInstance == nullptr ) {
+        return false;
+    }
+
+    if ( gpActiveGameMode != nullptr && gpActiveGameMode->hasRequestedExit() ) {
+        OTDU_LOG_DEBUG( "FlashSounds::playFrontEndMusic: leaving this game "
+                        "mode, no need to play music now\n" );
+        return false;
+    }
+
+    const FrontEndMusic *pMusic = nullptr;
+    if ( gpActiveGMScene != nullptr &&
+         gpActiveGMScene->getMusicDesc()[0] != '\0' ) {
+        pMusic = findMusic( gpActiveGMScene->getMusicDesc() );
+        if ( pMusic == nullptr ) {
+            OTDU_LOG_WARN( "The music you have referenced in your .bnk is not "
+                           "referenced in sounds.ini : %s\n",
+                           gpActiveGMScene->getMusicDesc() );
+        }
+    }
+
+    if ( pMusic == nullptr ) {
+        pMusic = findMusic( ResolveGameModeMusicKey() );
+    }
+
+    if ( pMusic == nullptr || gpMngMusic == nullptr ) {
+        OTDU_LOG_DEBUG(
+            "FlashSounds::playFrontEndMusic: aborted, no music set\n" );
+        return true;
+    }
+
+    if ( !bFromCine && pMusic->bWaitCine ) {
+        OTDU_LOG_DEBUG( "FlashSounds::playFrontEndMusic: wait cine is true and "
+                        "fromcine is false for file: %s\n",
+                        pMusic->FileName );
+        return false;
+    }
+
+    OTDU_LOG_INFO( "Playing music: %s\n", pMusic->FileName );
+
+    gpMngMusic->loadMusic( pMusic->FileName, pMusic->Volume );
+    gpMngMusic->setPlayFlags( 1 );
+    return true;
 }
 
 const edAudioSample *FlashSounds::getSample( const char *pName ) {

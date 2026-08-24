@@ -19,7 +19,11 @@ MngZone::MngZone()
     gpMngZone = this;
 }
 
-MngZone::~MngZone() {}
+MngZone::~MngZone() {
+    if ( gpMngZone == this ) {
+        gpMngZone = nullptr;
+    }
+}
 
 void MngZone::terminate() {
     // FUN_00715760

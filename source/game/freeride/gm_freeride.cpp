@@ -8,10 +8,14 @@
 #include "game/gs_tutorial.h"
 #include "game/mng_hud.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_extra_challenge.h"
 #include "game/scenaric/local_player.h"
 #include "game/vehicle/car_state.h"
+#include "flash/mng_fade.h"
 #include "flash/mng_flash_localize.h"
+#include "render/camera/gs_camera.h"
+#include "world/gs_world.h"
 #include "physics/vehicle/physics_vehicle.h"
 
 GMFreeride::GMFreeride()
@@ -30,6 +34,11 @@ GMFreeride::GMFreeride()
       bEnterSpotClipVisible( false ),
       enterSpotClipTimer( 0.0f ),
       spotBank(),
+      nextIntro(),
+      pIntroCine( nullptr ),
+      pSavedVehicleCamera( nullptr ),
+      bIntroLevelLaunched( false ),
+      bIntroCineDone( false ),
       pExtraChallenges{},
       numExtraChallenges( 0 ) {
     // FUN_00793880
@@ -81,17 +90,76 @@ void GMFreeride::initialize() {
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC / FLASH (ad banners)
 
     if ( gpScenaric != nullptr ) {
+        nextIntro = gpScenaric->getNextIntro();
+        gpScenaric->getNextIntro().bIsActive = false;
+    }
+
+    if ( nextIntro.bIsActive && nextIntro.NextGameMode == GM_FreeRide ) {
+        if ( nextIntro.pSpot == nullptr ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (FUN_007fcdc0 — load
+                                     // NextIntro.pPath/pFilename as a package)
+        } else {
+            Spots &spots = gpScenaric->getSpotList();
+            resolveNextIntroCine(
+                spots.getSpotSector( nextIntro.pSpot->Hashcode ) );
+
+            const Eigen::Vector4f spotPosition( nextIntro.pSpot->X,
+                                                nextIntro.pSpot->Y,
+                                                nextIntro.pSpot->Z, 1.0f );
+            gpWorld->setPlayerPosition( &spotPosition );
+            gpScenaric->getLocalPlayer().setLastPosition( spotPosition );
+        }
+
+        if ( pIntroCine == nullptr ) {
+            nextIntro.bIsActive = false;
+        }
+    }
+
+    if ( gpScenaric != nullptr ) {
         gpScenaric->setICEnabled( false );
     }
 
     GameModeWorld::initialize();
 }
 
+void GMFreeride::resolveNextIntroCine( const SpotSector *pSector ) {
+    // FUN_00797340 (inlined)
+    pIntroCine =
+        FindStreamedSpotCinematic( pSector, nextIntro.pCinematicName );
+    if ( pIntroCine == nullptr ) {
+        return;
+    }
+
+    pIntroCine->setGameModeInterface( this );
+    pIntroCine->setStopWhenSkipped( true );
+    
+    gpWorld->setAreaStreamingEnabled( false );
+}
+
 void GMFreeride::reset() {
     // FUN_00796830
     OTDU_UNIMPLEMENTED; // TODO: ONLINE (P2P free-ride manager) / GSAI (cop and
-                        // bot pools, infringement transfer) / MngActor (player
-                        // spawn placement)
+                        // bot pools, infringement transfer)
+
+    int32_t spawnMode = 6;
+    switch ( gpTestDriveInstance->getPreviousGameMode() ) {
+    case GM_BootMenu:
+    case GM_Login:
+        spawnMode = 8;
+        break;
+    case GM_Map:
+    case GM_Mission:
+    case GM_GameModeEdit:
+    case GM_InstantChallenge:
+    case GM_Estates:
+        spawnMode = 7;
+        break;
+    default:
+        spawnMode = 6;
+        break;
+    }
+
+    mngActor.placePlayerVehicle( spawnMode, true );
 
     GameModeWorld::reset();
 
@@ -104,6 +172,47 @@ void GMFreeride::reset() {
 
 void GMFreeride::tick( float deltaTime, float totalTime ) {
     // FUN_00796260
+    if ( pIntroCine == nullptr ) {
+        if ( nextIntro.bIsActive && nextIntro.NextGameMode == GM_FreeRide &&
+             nextIntro.pSpot != nullptr ) {
+            Spots &spots = gpScenaric->getSpotList();
+            const SpotSector *pSector =
+                spots.getSpotSector( nextIntro.pSpot->Hashcode );
+            if ( pSector != nullptr ) {
+                resolveNextIntroCine( pSector );
+
+                const Eigen::Vector4f spotPosition( nextIntro.pSpot->X,
+                                                    nextIntro.pSpot->Y,
+                                                    nextIntro.pSpot->Z, 1.0f );
+                gpWorld->setPlayerPosition( &spotPosition );
+                gpScenaric->getLocalPlayer().setLastPosition( spotPosition );
+            }
+        }
+    } else if ( ( pIntroCine->getFlags() & 0x5u ) == 0 && nextIntro.bIsActive &&
+                nextIntro.NextGameMode == GM_FreeRide ) {
+        if ( ( transitionFlags & 1 ) == 0 && bFlashInstalled ) {
+            if ( gpMngFade != nullptr ) {
+                gpMngFade->restartTransition(
+                    ( gpMngFade->getTransitionFlags() & ~8u ) | 5u,
+                    transitionTime * 0.001f );
+            }
+
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (postponed pause) /
+                                     // VEHICLE (show the display vehicle, bump
+                                     // the driver's counter)
+
+            pSavedVehicleCamera = gpCamera->getActiveCamera();
+            if ( nextIntro.pSpot == nullptr ) {
+                pIntroCine->start( true );
+            } else {
+                pIntroCine->launchSpotCine( nextIntro.pSpot, 0.0f );
+            }
+        } else if ( gpMngFade != nullptr ) {
+            gpMngFade->setTransitionFlags( gpMngFade->getTransitionFlags() |
+                                           8u );
+        }
+    }
+
     GameModeWorld::tick( deltaTime, totalTime );
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (pending spot warp / spot cine
@@ -171,11 +280,35 @@ void GMFreeride::onResourceStreamed() {
     mngPhotoMode.setFlashPlayer( pPlayer );
 }
 
-bool GMFreeride::executeAction( int32_t param_2, void *param_3 ) {
+bool GMFreeride::executeAction( int32_t param_2, void * /*param_3*/ ) {
     // FUN_00794ff0
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC / MngFade / PHYSICS / DATABASE
+    if ( param_2 != CE_Ended ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC / MngFade / PHYSICS /
+                                 // DATABASE (CE_Started, CE_StartEndFade and
+                                 // the flash-message case)
+        return false;
+    }
 
-    return false;
+    if ( nextIntro.bIsActive ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL (FUN_007fcd40 — advance the
+                                 // scenario tutorial past
+                                 // STS_AirplaneCinematic, or relaunch the
+                                 // current state's dialog)
+        nextIntro.bIsActive = false;
+        bIntroLevelLaunched = false;
+        bIntroCineDone = true;
+        gpWorld->setAreaStreamingEnabled( true );
+    }
+
+    if ( !bIntroLevelLaunched ) {
+        gpCamera->restoreCamera();
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI (wake the bot/cop pools and
+                                 // unpause the traffic)
+    }
+
+    pIntroCine = nullptr;
+    bIntroLevelLaunched = false;
+    return true;
 }
 
 void GMFreeride::gatherExtraChallenges() {
@@ -265,25 +398,42 @@ void GMFreeride::drawDebug( float deltaTime ) {
         const GameDatabase &gdb = gpDatabase->getGameDB();
         const int32_t numCars = static_cast<int32_t>( gdb.pNumItems[1] );
         if ( numCars > 0 && gdb.DBCarData != nullptr ) {
+            auto &carList = gpDatabase->getCarList();
             static int32_t carSlot = 0;
-            carSlot = Clamp( carSlot, 0, numCars - 1 );
-            ImGui::Text( "Test vehicle: slot %d/%d  ->  CarID %d", carSlot,
-                         numCars - 1, gdb.DBCarData[carSlot].CarID );
-            if ( ImGui::Button( "< Prev car" ) ) {
-                carSlot = ( carSlot + numCars - 1 ) % numCars;
-                gRequestedPlayerCarID = gdb.DBCarData[carSlot].CarID;
+            static int32_t carColorID = 0;
+            static int32_t carRimID = 0;
+            if ( ImGui::BeginListBox( "##MyListBox" ) ) {
+                for ( auto &car : carList ) {
+                    const bool bSelected = ( car.Hash == carSlot );
+
+                    if ( ImGui::Selectable( car.FullName.c_str(), bSelected ) )
+                        carSlot = car.Hash;
+
+                    if ( bSelected )
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndListBox();
             }
-            ImGui::SameLine();
-            if ( ImGui::Button( "Next car >" ) ) {
-                carSlot = ( carSlot + 1 ) % numCars;
-                gRequestedPlayerCarID = gdb.DBCarData[carSlot].CarID;
+
+            if ( ImGui::BeginListBox( "##MyListBox3" ) ) {
+                int32_t numColors = gpDatabase->getNumColors( carSlot );
+                for ( int32_t i = 0; i < numColors; i++ ) {
+                    auto color = gpDatabase->getColorByIndex( carSlot, i );
+
+                    const bool bSelected = ( carColorID == i );
+
+                    if ( ImGui::Selectable( color->ColorName.pAsString,
+                                            bSelected ) )
+                        carColorID = i;
+
+                    if ( bSelected )
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndListBox();
             }
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth( 140.0f );
-            ImGui::SliderInt( "##carslot", &carSlot, 0, numCars - 1 );
-            ImGui::SameLine();
+
             if ( ImGui::Button( "Spawn" ) ) {
-                gRequestedPlayerCarID = gdb.DBCarData[carSlot].CarID;
+                gRequestedPlayerCarID = carSlot;
             }
         }
     }

@@ -65,7 +65,11 @@ MngFlashLocalize::MngFlashLocalize() : Manager(), dbContext( 0x0 ) {
     }
 }
 
-MngFlashLocalize::~MngFlashLocalize() {}
+MngFlashLocalize::~MngFlashLocalize() {
+    if ( gpMngFlashLocalize == this ) {
+        gpMngFlashLocalize = nullptr;
+    }
+}
 
 bool MngFlashLocalize::initialize( TestDriveGameInstance * ) {
     // FUN_00717370

@@ -79,6 +79,7 @@ public:
         bMessageBoxVisible = param_1;
     }
     inline uint32_t getTransitionFlags() const { return transitionFlags; }
+    inline float getTransitionTime() const { return transitionTime; }
     inline bool hasRequestedExit() const { return bExitRequested; }
 
 public:

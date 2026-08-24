@@ -5,6 +5,7 @@
 class EntityWeatherDesc : public Entity {
 public:
     const char *GetName() override { return "WeatherDesc"; /* FUN_00427b00 */ }
+    inline const char *getWeatherName() const { return pWeatherName; }
 
 public:
     EntityWeatherDesc();

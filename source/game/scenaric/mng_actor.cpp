@@ -7,6 +7,12 @@
 #include "game/gm_scene.h"
 #include "render/gs_render.h"
 #include "world/mng_zone.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/spots.h"
+#include "game/scenaric/scenaric_bank.h"
+#include "game/scenaric/local_player.h"
+#include "game/vehicle/car_state.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 static inline bool IsGameModeRequestingDOFPass() {
     return gpActiveGMScene != nullptr && false;
@@ -78,6 +84,83 @@ bool MngActor::onWorldStreamed( Eigen::Vector4f *param_1,
     }
 
     return true;
+}
+
+static constexpr const char *kPlayerParkingName = "PosCarParking"; // DAT_00f8e5b8 
+
+Matrix4x4f_t MngActor::placePlayerVehicle( const int32_t spawnMode,
+                                           const bool bApply ) {
+    // FUN_006df7d0
+    Matrix4x4f_t frame = Matrix4x4f_t::Identity();
+
+    if ( spawnMode != 6 || gpScenaric == nullptr ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (spawn modes 7 and 8)
+        return frame;
+    }
+
+    Spots &spots = gpScenaric->getSpotList();
+    SpotMap *pSpot =
+        spots.getWorldSpotChecked( gpScenaric->getCurrentSpotIndex() );
+    if ( pSpot == nullptr ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (the no-spot fallback walks
+                                 // the actor list for an ET_CARP, then falls
+                                 // back to GSScenaric's default position)
+        return frame;
+    }
+
+    Eigen::Vector4f fallbackPosition( pSpot->X, pSpot->Y, pSpot->Z, 1.0f );
+    const SpotSector *pSector = spots.getSpotSector( pSpot->Hashcode );
+    if ( pSector != nullptr ) {
+        fallbackPosition =
+            Eigen::Vector4f( pSector->X, pSector->Y, pSector->Z, 1.0f );
+
+        ScenaricBank *pBank = FindStreamedSpotBank( pSector );
+        Entity *pParking =
+            ( pBank != nullptr )
+                ? pBank->findEntity( eEntityType::ET_CARP, kPlayerParkingName )
+                : nullptr;
+        if ( pParking != nullptr ) {
+            frame = pParking->getModelMatrix();
+            OTDU_LOG_INFO( "Player spawn: '%s' of spot 0x%016llx at "
+                           "%.1f %.1f %.1f\n",
+                           kPlayerParkingName,
+                           (unsigned long long)pSpot->Hashcode,
+                           frame( 3, 0 ), frame( 3, 1 ), frame( 3, 2 ) );
+            applyPlayerVehicleFrame( frame, bApply );
+            return frame;
+        }
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI (AiRoadMap snap for the spawn frame)
+    OTDU_LOG_WARN( "Player spawn: no '%s' marker for spot 0x%016llx (bank %s) "
+                   "- dropping the car at %.1f %.1f %.1f\n",
+                   kPlayerParkingName, (unsigned long long)pSpot->Hashcode,
+                   ( pSector != nullptr && FindStreamedSpotBank( pSector ) )
+                       ? "streamed"
+                       : "NOT streamed",
+                   fallbackPosition.x(), fallbackPosition.y(),
+                   fallbackPosition.z() );
+    frame.col( 3 ) = fallbackPosition;
+    applyPlayerVehicleFrame( frame, bApply );
+    return frame;
+}
+
+void MngActor::applyPlayerVehicleFrame( const Matrix4x4f_t &frame,
+                                        const bool bApply ) {
+    // FUN_0083d900 
+    if ( !bApply || gpScenaric == nullptr ) {
+        return;
+    }
+
+    CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+    if ( pCarState == nullptr ) {
+        return;
+    }
+
+    PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
+    if ( pVehicle != nullptr ) {
+        pVehicle->resetToTransform( frame );
+    }
 }
 
 Entity *MngActor::instanciateActor( Entity *pEntity ) {

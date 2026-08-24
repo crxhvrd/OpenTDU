@@ -11,6 +11,7 @@
 #include "game/gm_base.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
+#include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_spot_mesh.h"
 
 #include "config/gs_config.h"
@@ -93,6 +94,31 @@ SpotMap *Spots::getSpotMap( uint64_t hashcode ) {
     return nullptr;
 }
 
+SpotMap *Spots::findSpotMapByType( const uint8_t type,
+                                   const uint8_t subType,
+                                   const int32_t occurrence,
+                                   int32_t *pOutIndex ) {
+    // FUN_007d6f40
+    int32_t numMatches = 0;
+    for ( int32_t i = 0; i < static_cast<int32_t>( spotsWorld.NumSpots );
+          i++ ) {
+        SpotMap *pSpot = &spotsWorld.pSpotsMapOrSector.pWorld[i];
+        if ( pSpot == nullptr || pSpot->Type != type ||
+             pSpot->SubType != subType ) {
+            continue;
+        }
+
+        if ( numMatches == occurrence ) {
+            *pOutIndex = i;
+            return pSpot;
+        }
+        numMatches++;
+    }
+
+    *pOutIndex = -1;
+    return nullptr;
+}
+
 SpotSector *Spots::getSpotSector( uint64_t hashcode ) {
     // FUN_007d6fb0
     for ( int32_t list = 0; list < 7; list++ ) {
@@ -105,6 +131,60 @@ SpotSector *Spots::getSpotSector( uint64_t hashcode ) {
         }
     }
     return nullptr;
+}
+
+ScenaricBank *FindStreamedSpotBank( const SpotSector *pSpotSector ) {
+    // FUN_006fbeb0
+    StreamingManager *pStreaming =
+        ( gpWorld != nullptr ) ? gpWorld->getStreamingManager() : nullptr;
+    if ( pStreaming == nullptr ) {
+        return nullptr;
+    }
+
+    for ( SpotCell &cell : pStreaming->spotStream.cells ) {
+        if ( cell.pSpotSector != pSpotSector ) {
+            continue;
+        }
+
+        ScenaricBank *pBank = cell.spot.pSCBank;
+        if ( pBank == nullptr || !pBank->isLoaded() ) {
+            return nullptr;
+        }
+        return pBank;
+    }
+
+    return nullptr;
+}
+
+EntityCinematic *FindStreamedSpotCinematic( const SpotSector *pSpotSector,
+                                            const char *pName,
+                                            ScenaricBank **ppOutBank ) {
+    // FUN_007d78a0
+    ScenaricBank *pBank = FindStreamedSpotBank( pSpotSector );
+    if ( pBank == nullptr ) {
+        return nullptr;
+    }
+
+    if ( ppOutBank != nullptr ) {
+        *ppOutBank = pBank;
+    }
+
+    // SCBank::FindCinematicByName (FUN_007dac10).
+    return static_cast<EntityCinematic *>(
+        pBank->findEntity( eEntityType::ET_CINE, pName ) );
+}
+
+Matrix4x4f_t BuildSpotSectorRotation( const SpotSector *pSector ) {
+    // FUN_00503c80 w/ "XYZ" ordering
+    Matrix4x4f_t rotation = Matrix4x4f_t::Identity();
+    if ( pSector == nullptr ) {
+        return rotation;
+    }
+
+    MatrixRotateX( rotation, pSector->EulerX );
+    MatrixRotateY( rotation, pSector->EulerY );
+    MatrixRotateZ( rotation, pSector->EulerZ );
+    return rotation;
 }
 
 bool IsSpotAvailableInCurrentMode( const SpotMap *pSpot ) {

@@ -21,6 +21,20 @@
 #include "render/postfx/effects/postfx_radial_blur.h"
 #include "render/postfx/effects/postfx_modulate.h"
 
+#include "config/gs_config.h"
+#include "database/gs_database.h"
+#include "game/vehicle/car_state.h"
+#include "game/vehicle/vehicle_base.h"
+#include "game/scenaric/local_player.h"
+#include "input/input_device.h"
+#include "input/gs_device.h"
+#include "core/maths_helper.h"
+#include "flash/audio/flash_sounds.h"
+#include "flash/movie_player.h"
+#include "render/mng_shadow.h"
+#include "render/mng_reflection.h"
+#include "render/render_scene.h"
+
 GameModeScene *gpActiveGMScene = nullptr; // DAT_010e7c80
 
 uint32_t gFrameAccumulator = 0;  // DAT_010e7c74
@@ -362,14 +376,333 @@ bool GameModeScene::updatePostFX() {
     return true;
 }
 
+namespace {
+    EntityCinematic *FindCinematic( ScenaricBank *pBank, const char *pName ) {
+        // FUN_007dac10
+        return static_cast<EntityCinematic *>(
+            pBank->findEntity( eEntityType::ET_CINE, pName ) );
+    }
+
+    void SetHUDMoviesPaused( bool bPaused ) {
+        const int32_t numMovies = gpFlash->getNumMovies( 1 );
+        for ( int32_t i = 0; i < numMovies; i++ ) {
+            MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, i );
+            if ( pMovie == nullptr ) {
+                continue;
+            }
+            pMovie->IsMoviePaused = bPaused ? ( pMovie->IsMoviePaused | 2 )
+                                            : ( pMovie->IsMoviePaused & ~2 );
+        }
+    }
+
+    void SetReflectionSceneEnabled( bool bEnabled ) {
+        if ( gpMngReflection == nullptr ) {
+            return;
+        }
+        RenderScene *pScene = gpMngReflection->getBoundScene();
+        if ( pScene != nullptr ) {
+            pScene->setEnabled( bEnabled );
+        }
+    }
+
+    inline bool IsMappedActionPressed( DeviceAction *pAction ) {
+        return pAction != nullptr && pAction->NumAddedChannels != 0 &&
+               IsActionPressed( pAction );
+    }
+
+    bool IsCinematicSkipRequested() {
+        PlayerConfiguration *pPlayerConfig =
+            ( gpConfig != nullptr ) ? gpConfig->pPlayerConfig : nullptr;
+        if ( pPlayerConfig == nullptr ) {
+            return false;
+        }
+
+        if ( IsMappedActionPressed( pPlayerConfig->pMenuPause ) ||
+             IsMappedActionPressed( pPlayerConfig->pMenuValidate ) ) {
+            return true;
+        }
+
+        return gpDevice != nullptr &&
+               IsChannelJustPressed(
+                   gpDevice->getMouseState().pChannelButton0 );
+    }
+} // namespace
+
+static constexpr float kCinematicIntroFadeTime = 500.0f; // DAT_00f417f4
+static constexpr float kMillisecondsToSeconds = 0.001f; // FLOAT_00f4167c
+static constexpr float kCinematicFadeInDuration = 0.5f; // FLOAT_00f41674
+
+void GameModeScene::IntroExtToIntroInCallback( void *pData, void *pSource ) {
+    // FUN_007bceb0
+    if ( gpMngFade == nullptr ) {
+        return;
+    }
+
+    const float fadeTimeInMs =
+        static_cast<float>( reinterpret_cast<intptr_t>( pSource ) );
+    gpMngFade->startTransition( ( gpMngFade->getTransitionFlags() & ~8u ) | 5u,
+                                fadeTimeInMs * kMillisecondsToSeconds );
+
+    GameModeScene *pScene = static_cast<GameModeScene *>( pData );
+    if ( pScene != nullptr && pScene->pCinematicIntroE != nullptr ) {
+        pScene->pCinematicIntroE->stop( true );
+    }
+}
+
+void GameModeScene::installCinematics( SpotMap *pSpot, ScenaricBank *pBank ) {
+    // FUN_007bc920
+    if ( pBank == nullptr || pSpot == nullptr ) {
+        return;
+    }
+
+    pCurrentSpotWorld = pSpot;
+    pCinematicIntroI = nullptr;
+
+    bool bIsBike = false;
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar != nullptr && pPlayerCar->getResource() != nullptr ) {
+        bIsBike = gpDatabase->isBike(
+            gpDatabase->getCarDBEntry( pPlayerCar->getResource()->CarID ) );
+    }
+
+    if ( currentGameMode != GM_DriveIn || !bIsBike ) {
+        const int32_t tutorialStep = gpScenaric->getIntroTutorial().getStep();
+        if ( tutorialStep != kTutorialStatePending &&
+             tutorialStep != kTutorialStateRunning ) {
+            pCinematicIntroI = FindCinematic( pBank, "C_INTRO_TUTORIAL" );
+        }
+
+        if ( pCinematicIntroI == nullptr ) {
+            static const char *const kIntroNames[] = {
+                "C_INTRO_I", "C_INTRO_I_1", "C_INTRO_I_2", "C_INTRO" };
+            for ( const char *pName : kIntroNames ) {
+                pCinematicIntroI = FindCinematic( pBank, pName );
+                if ( pCinematicIntroI != nullptr ) {
+                    break;
+                }
+            }
+        }
+
+        if ( pCinematicIntroI != nullptr ) {
+            pCinematicIntroI->clearEnded();
+            pCinematicIntroI->createTDUInterface();
+        }
+    }
+
+    static const char *const kLoopNames[] = { "C_INT_L", "C_INTERIOR_L",
+                                              "C_LIVING" };
+    pCinematicLoop = nullptr;
+    for ( const char *pName : kLoopNames ) {
+        pCinematicLoop = FindCinematic( pBank, pName );
+        if ( pCinematicLoop != nullptr ) {
+            break;
+        }
+    }
+
+    if ( pCinematicLoop != nullptr ) {
+        pCinematicLoop->clearEnded();
+        if ( pCinematicIntroI != nullptr ) {
+            pCinematicLoop->createTDUInterface();
+        }
+    }
+
+    OTDU_LOG_DEBUG( "Cinematics installed for spot 0x%016llx: introI='%s' "
+                   "loop='%s'\n",
+                   (unsigned long long)pSpot->Hashcode,
+                   pCinematicIntroI != nullptr
+                       ? pCinematicIntroI->getInstanceName().c_str()
+                       : "<none>",
+                   pCinematicLoop != nullptr
+                       ? pCinematicLoop->getInstanceName().c_str()
+                       : "<none>" );
+}
+
+void GameModeScene::applyCineWeather() {
+    if ( weatherDesc[0] == '\0' ) {
+        const eGameMode activeGM = gpTestDriveInstance->getActiveGameMode();
+        if ( activeGM > GM_Invalid && activeGM < GM_Count ) {
+            gpWeather->setCurrentWeatherDesc(
+                gpWeather->getWeatherDescName( activeGM ) );
+        }
+    } else {
+        gpWeather->setCurrentWeatherDesc( weatherDesc );
+    }
+    bNeedWeatherUpdate = false;
+}
+
 void GameModeScene::launchCine() {
     // FUN_007bd1c0
-    OTDU_UNIMPLEMENTED; // TODO: CINEMATIC
+    if ( ( transitionFlags & 1 ) != 0 ) {
+        return;
+    }
+
+    if ( !bWeatherSet ) {
+        if ( pCinematicIntroE != nullptr ) {
+            gpWeather->setCurrentWeatherDesc(
+                gpWeather->getWeatherDescName( GM_FreeRide ) );
+        } else {
+            applyCineWeather();
+        }
+        bWeatherSet = true;
+        bNeedWeatherUpdate = false;
+    }
+
+    if ( !bFrontEndMusicLaunched &&
+         ( pCinematicIntroE == nullptr ||
+           !pCinematicIntroE->hasMusicEmitter() ) &&
+         ( pCinematicIntroI == nullptr ||
+           !pCinematicIntroI->hasMusicEmitter() ) ) {
+        gpFlash->getFlashSound()->playFrontEndMusic( true );
+        bFrontEndMusicLaunched = true;
+    }
+
+    if ( pCurrentSpotWorld == nullptr ) {
+        return;
+    }
+
+    if ( pCinematicIntroE != nullptr ) {
+        if ( !pCinematicIntroE->isPlaying() && !pCinematicIntroE->hasEnded() ) {
+            pCinematicIntroE->setFadeTime( kCinematicIntroFadeTime );
+            pCinematicIntroE->setGameModeInterface( this );
+            pCinematicIntroE->launchSpotCine( pCurrentSpotWorld, 0.0f );
+
+            SetReflectionSceneEnabled( false );
+            gpMngShadow->setCastersEnabled( true );
+            SetHUDMoviesPaused( true );
+        }
+        return;
+    }
+
+    if ( pCinematicIntroI != nullptr ) {
+        if ( !pCinematicIntroI->isPlaying() && !pCinematicIntroI->hasEnded() ) {
+            pCinematicIntroI->setGameModeInterface( this );
+            pCinematicIntroI->launchSpotCine( pCurrentSpotWorld,
+                                              cinematicTimer );
+
+            SetReflectionSceneEnabled( true );
+            gpMngShadow->setCastersEnabled( true );
+            SetHUDMoviesPaused( true );
+            applyCineWeather();
+        }
+        return;
+    }
+
+    if ( pCinematicLoop != nullptr && !pCinematicLoop->isPlaying() &&
+         !pCinematicLoop->hasEnded() ) {
+        pCinematicLoop->setGameModeInterface( this );
+        pCinematicLoop->launchSpotCine( pCurrentSpotWorld, cinematicTimer );
+
+        SetReflectionSceneEnabled( true );
+        gpMngShadow->setCastersEnabled( true );
+        SetHUDMoviesPaused( false );
+        applyCineWeather();
+    }
 }
 
 void GameModeScene::stopCine() {
     // FUN_007bd060
-    OTDU_UNIMPLEMENTED; // TODO: CINEMATIC
+    if ( !IsCinematicSkipRequested() ) {
+        return;
+    }
+
+    EntityCinematic *pCine = pCinematicIntroE;
+    if ( pCine != nullptr && pCine->isPlaying() ) {
+        if ( !pCine->isSkippable() ) {
+            return;
+        }
+        notifyCinematicEndFade( pCine );
+        pCine->markSkipped();
+        return;
+    }
+
+    pCine = pCinematicIntroI;
+    if ( pCine == nullptr || !pCine->isPlaying() || !pCine->isSkippable() ) {
+        return;
+    }
+
+    notifyCinematicEndFade( pCine );
+    pCine->markSkipped();
+    pCine->stop( false );
+}
+
+void GameModeScene::notifyCinematicEndFade( EntityCinematic *pCine ) {
+    if ( pCine->getGameModeInterface() == nullptr ) {
+        return;
+    }
+
+    const float fadeStart =
+        pCine->getDuration() - pCine->getFadeTime() * 0.001f;
+    if ( pCine->getTime() < fadeStart ) {
+        pCine->getGameModeInterface()->executeAction( CE_StartEndFade, pCine );
+    }
+}
+
+bool GameModeScene::executeAction( int32_t param_2, void *param_3 ) {
+    // FUN_007bd850
+    EntityCinematic *pCine = static_cast<EntityCinematic *>( param_3 );
+
+    switch ( param_2 ) {
+    case CE_StartEndFade:
+        if ( pCinematicIntroE != nullptr && pCinematicIntroE == pCine &&
+             gpMngFade != nullptr &&
+             ( gpMngFade->getTransitionFlags() & 1 ) == 0 ) {
+            const float fadeTimeInMs = pCinematicIntroE->getFadeTime();
+            gpMngFade->startTransition(
+                ( gpMngFade->getTransitionFlags() & ~0xcu ) | 1u,
+                fadeTimeInMs * kMillisecondsToSeconds,
+                &GameModeScene::IntroExtToIntroInCallback,
+                reinterpret_cast<void *>(
+                    static_cast<intptr_t>( fadeTimeInMs ) ),
+                this );
+        }
+        break;
+
+    case CE_Started:
+        if ( pCinematicIntroE != nullptr && pCinematicIntroE == pCine &&
+             gpMngFade != nullptr ) {
+            gpMngFade->setTransitionColorRGB( 0x00, 0x00, 0x00 );
+            gpMngFade->startTransition(
+                ( gpMngFade->getTransitionFlags() & ~8u ) | 5u,
+                kCinematicFadeInDuration );
+        }
+        return true;
+
+    case CE_Ended: {
+        if ( pCinematicIntroE != nullptr && pCinematicIntroE == pCine ) {
+            pCinematicIntroE = nullptr;
+            applyCineWeather();
+            break;
+        }
+
+        if ( pCinematicIntroI == nullptr || pCinematicIntroI != pCine ) {
+            break;
+        }
+
+        pCinematicIntroI = nullptr;
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL (relaunch the STS_CarRental
+                                 // dialog)
+
+        if ( pCinematicLoop != nullptr && !pCinematicLoop->isPlaying() ) {
+            pCinematicLoop->setGameModeInterface( this );
+            pCinematicLoop->launchSpotCine( pCurrentSpotWorld, 0.0f );
+
+            gpMngShadow->setCastersEnabled( true );
+            SetReflectionSceneEnabled( true );
+        }
+
+        SetHUDMoviesPaused( false );
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (snapshot the vehicle camera
+                                 // the intro left behind)
+        break;
+    }
+
+    default:
+        break;
+    }
+
+    return false;
 }
 
 void GameModeScene::updateWeather() {

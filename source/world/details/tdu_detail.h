@@ -14,6 +14,7 @@ public:
     inline bool isInitialized() const { return bInitialized; }
     inline bool isEnabled() const { return bEnabled; }
     inline const char *getName() const { return pName; }
+    inline uint32_t getHash() const { return hash; }
 
 public:
     TDUDetail();

@@ -894,6 +894,10 @@ void RenderAvatarBase::setMatrix( const Matrix4x4f_t &matrix ) {
 void RenderAvatarBase::setMeshVisibility( const uint64_t meshHashcode,
                                           const bool bMeshVisible ) {
     // FUN_00411590
+    if ( Material.getHeader() == nullptr ) {
+        return;
+    }
+
     Render2DMHashEntry *pHashcodes = Material.getHashTableHead();
     if ( pHashcodes == nullptr ) {
         return;
@@ -1249,6 +1253,10 @@ void AvatarClothe::applyColorSet( AvatarDBEntry *pPart, AvatarBnk *pBnk ) {
 void AvatarClothe::claimLayerTextures( AvatarBnk *pBnk,
                                        AvatarBnk *pCommonBnk ) {
     // FUN_008f25c0 (second half)
+    if ( Material.getHeader() == nullptr ) {
+        return;
+    }
+
     const uint64_t cubemapHashcode = GetCubemapTextureHashcode();
     const uint32_t numMaterials = Material.getNumMaterials();
     Render2DMHashEntry *pHashcodes = Material.getHashTableHead();
@@ -2046,6 +2054,10 @@ bool PooledAvatarEntry::installBodyPart( AvatarDBEntry *pPart ) {
 
 void RenderAvatarBase::tickEyeMaterial( const AvatarEyePart *pEyeResource ) {
     // FUN_00411870
+    if ( Material.getHeader() == nullptr ) {
+        return;
+    }
+
     Render2DMHashEntry *pHashcodes = Material.getHashTableHead();
     if ( pHashcodes == nullptr ) {
         return;
@@ -2066,6 +2078,10 @@ void RenderAvatarBase::tickBodyMaterial( const float *pSkinTint,
     // FUN_00411690
     // The original also reads the mesh hashcode of each entry here, then drops
     // it on the floor: only the eye pass below actually filters on it.
+    if ( Material.getHeader() == nullptr ) {
+        return;
+    }
+
     const uint32_t numMaterials = Material.getNumMaterials();
     for ( uint32_t i = 0; i < numMaterials; i++ ) {
         ::Material *pMaterial = Material.getMaterialAtIndex( i );

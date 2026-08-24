@@ -16,6 +16,8 @@ public:
     GSDetails();
     ~GSDetails();
 
+    TDUDetail *getDetailByHash( uint32_t detailHash );
+
     bool initialize( TestDriveGameInstance * ) override;
     void tick( float totalTime, float deltaTime ) override;
     void draw( float deltaTime ) override;

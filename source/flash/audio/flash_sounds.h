@@ -30,6 +30,7 @@ public:
     void loadFrontEndSounds();
 
     bool playFrontEndSound( const char *param_2, int32_t param_3, bool param_4 );
+    bool playFrontEndMusic( bool bFromCine );
     bool stopGroup( const char *pGroupName, float fadeTime );
 
 public:
@@ -38,6 +39,14 @@ public:
         std::string FileName;
         float Volume = 1.0f;
     };
+
+    struct FrontEndMusic {
+        char FileName[32] = {};
+        char Key[12] = {};
+        float Volume = 1.0f;
+        bool bWaitCine = false;
+    };
+    static constexpr int32_t kMaxMusicEntries = 21;
 
 private:
     void parseSoundList();
@@ -57,6 +66,8 @@ private:
 
     const edAudioSample *getSample( const char *pName );
     int32_t getFreeVoice();
+    const FrontEndMusic *findMusic( const char *pKey ) const;
+    static const char *ResolveGameModeMusicKey();
 
 private:
     void *pMemoryPool;
@@ -67,4 +78,6 @@ private:
     char voiceGroups[kNumVoices][kMaxGroupNameLength] = {};
     std::unordered_map<std::string, std::unique_ptr<edAudioSample>> samples;
     std::unordered_map<std::string, FrontEndSound> soundList;
+    FrontEndMusic musicList[kMaxMusicEntries] = {};
+    int32_t numMusicEntries = 0;
 };

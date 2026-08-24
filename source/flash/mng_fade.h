@@ -15,16 +15,37 @@ public:
 public:
     const char *getName() const override { return "MngFade"; }
     inline uint32_t getTransitionFlags() const { return flags; }
+    inline void setTransitionFlags( const uint32_t newFlags ) {
+        flags = newFlags;
+    }
+    inline void setTransitionColorRGB( const uint8_t r,
+                                       const uint8_t g,
+                                       const uint8_t b ) {
+        transitionColor.R = r;
+        transitionColor.G = g;
+        transitionColor.B = b;
+    }
+    inline void restartTransition( const uint32_t newFlags,
+                                   const float durationInSeconds ) {
+        transitionDuration = durationInSeconds;
+        flags = newFlags;
+        elapsedTime = 0.0f;
+    }
 
 public:
     MngFade();
-    virtual ~MngFade();
+    ~MngFade();
 
-    virtual bool initialize( TestDriveGameInstance * ) override;
-    virtual void tick( float, float ) override;
-    virtual void terminate() override;
-    virtual void draw() override;
-    virtual void pause() override;
+    void startTransition( uint32_t newFlags,
+                          float durationInSeconds,
+                          PostTransitionCallback_t callback = nullptr,
+                          void *pSource = nullptr,
+                          void *pData = nullptr );
+    bool initialize( TestDriveGameInstance * ) override;
+    void tick( float, float ) override;
+    void terminate() override;
+    void draw() override;
+    void pause() override;
 
 private:
     FileCollection2D fileCollection;

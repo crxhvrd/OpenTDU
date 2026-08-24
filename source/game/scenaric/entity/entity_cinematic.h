@@ -7,6 +7,18 @@
 #include "game/cinematic/cin_res_collection.h"
 #include "game/gm_base.h"
 
+class CinematicPlayer;
+
+enum eCinematicEvent : int32_t {
+    CE_Requested = 0,
+    CE_Stopping = 2,
+    CE_Ended = 3,
+    CE_Started = 5,
+    CE_StartEndFade = 6,
+    CE_Finished = 7,
+    CE_Begun = 10,
+};
+
 class EntityCinematic : public Entity {
 public:
     const char *GetName() override { return "SCCinematic"; /* FUN_00425b30 */ }
@@ -20,6 +32,29 @@ public:
         return ( cinematicPlaybackFlags & 0x10u ) == 0;
     }
     inline uint32_t getFlags() const { return cinematicFlags; }
+    inline bool hasEnded() const { return ( cinematicFlags & 0x10u ) != 0; }
+    inline bool isSkippable() const {
+        return ( cinematicPlaybackFlags & 0x4u ) != 0;
+    }
+    inline void markSkipped() { bSkipped = true; }
+    inline void clearEnded() { cinematicFlags &= ~0x10u; }
+    inline bool hasMusicEmitter() const {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO
+        return false;
+    }
+    inline bool wasSkipped() const { return bSkipped; }
+    inline bool stopsWhenSkipped() const { return bStopWhenSkipped; }
+    inline void setStopWhenSkipped( bool bEnabled ) {
+        bStopWhenSkipped = bEnabled;
+    }
+    inline float getFadeTime() const { return FadeTime; }
+    inline void setFadeTime( float milliseconds ) { FadeTime = milliseconds; }
+    inline void setGameModeInterface( CinematicPlayer *pInterface ) {
+        pGMInterface = pInterface;
+    }
+    inline CinematicPlayer *getGameModeInterface() const {
+        return pGMInterface;
+    }
     inline bool isLooping() const { return bLoop; }
     inline bool isPlaying() const {
         return ( cinematicFlags & 0x4u ) != 0 && ( cinematicFlags & 0x2u ) == 0;
@@ -52,12 +87,14 @@ public:
     void stop( bool bEndNow );
 
     bool launchSpotCine( struct SpotMap *pSpot, float startTime );
+    bool createTDUInterface();
     void seek( float time );
     void setPlaybackAnchor( const Eigen::Vector3f &pos );
 
 private:
     bool begin();
     void end();
+    void publishCameraView();
     bool calculateSpotMatrix( struct SpotMap *pSpot, Matrix4x4f_t &outMatrix );
 
 private:
@@ -70,7 +107,22 @@ private:
     float CineTotalTime;
     float FadeTime;
 
+    const void *pCameraRef;        
+    const void *pZoneRef;          
+    float cinematicZNear;          
+    float cinematicZFar;           
+    const void *pMusic1Ref;        // (bank version < 0x13)
+    const void *pSoundEmitter1Ref; // (bank version >= 0x13)
+    const void *pMusic2Ref;        // (bank version < 0x13)
+    const void *pSoundEmitter2Ref; // (bank version >= 0x13)
+    const void *pMicroRef;         
+    const void *pStreamCenterRef; 
+    uint32_t numRefs;              
+    const void *pCinRef;           // the .cin blob
+    const void *pSceneRefs;        // the (numRefs - 1) .sce blobs
+
     ScenaricBank *pSCBank;
+    CinematicPlayer *pGMInterface;
     CinResCollection cinematicPlayer;
     struct SpotMap *pSpotWorld;
     std::string cutsceneName;
@@ -84,11 +136,13 @@ private:
     bool bHideFrontEnd;
     bool bOnFinalFrame;
     bool bSkipped;
+    bool bStopWhenSkipped;
     bool bDontSwitchCamera;
     bool bInitialized;
     bool bForceStop;
     bool bStopGuard;
     bool bStackActive;
+    bool bCameraHandedOver; 
 
     eGameMode activeGameMode;
 };

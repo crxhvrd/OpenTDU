@@ -100,6 +100,7 @@ public:
 
     void setBankTransform( const Matrix4x4f_t &transform );
     void *getWavData( uint64_t hashcode, int32_t *pOutSize = nullptr );
+    void *getCinData( uint64_t hashcode, int32_t *pOutSize = nullptr );
 
     Render3DD *getRender3DD( uint64_t hashcode );
     Render3DG *getRender3DG( uint64_t hashcode );
@@ -137,6 +138,9 @@ protected:
         FR_Sce,
         FR_Count,
     };
+
+    void *
+    getFileRefData( int32_t table, uint64_t hashcode, int32_t *pOutSize );
 
     struct BankFileRefArray {
         uint32_t *pStructs = nullptr;   // [count][count * 32-bit struct ptr]

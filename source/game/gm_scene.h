@@ -24,6 +24,7 @@
 #include "world/mng_panel.h"
 
 class PhysVehicleSerialized;
+class EntityCinematic;
 
 // Game Mode running with an active scene (not part of the world).
 // e.g. GMGarage; GMDressing
@@ -39,6 +40,16 @@ public:
     }
 
     inline MngActor &getActorManager() { return mngActor; }
+    inline void setWeatherDesc( const char *pDesc ) {
+        strncpy( weatherDesc, pDesc, sizeof( weatherDesc ) - 1 );
+        weatherDesc[sizeof( weatherDesc ) - 1] = '\0';
+        bNeedWeatherUpdate = true;
+    }
+    inline const char *getMusicDesc() const { return musicDesc; }
+    inline void setMusicDesc( const char *pDesc ) {
+        strncpy( musicDesc, pDesc, sizeof( musicDesc ) - 1 );
+        musicDesc[sizeof( musicDesc ) - 1] = '\0';
+    }
     inline MngFlashGM &getFlashManager() { return mngFlash; }
     inline VehicleBase *getShowcaseFocusedVehicle() {
         return showcaseCarControl.getFocusedVehicle();
@@ -57,10 +68,16 @@ public:
     void onResourceStreamed() override;
     bool isStaticFrontEndScene() const;
 
+    bool executeAction( int32_t param_2, void *param_3 ) override;
+    virtual void installCinematics( SpotMap *pSpot, ScenaricBank *pBank );
+
 protected:
     bool updatePostFX();
     void launchCine();
     void stopCine();
+    void applyCineWeather();
+    void notifyCinematicEndFade( EntityCinematic *pCine );
+    static void IntroExtToIntroInCallback( void *pData, void *pSource );
     void updateWeather();
     void toggleHDRRadialBlur();
 

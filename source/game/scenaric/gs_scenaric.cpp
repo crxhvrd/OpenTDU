@@ -83,8 +83,6 @@ bool IsWooshImpostor( uint64_t instanceHashcode, int32_t gridIndex ) {
 }
 
 bool CinematicPlayer::executeAction( int32_t param_2, void *param_3 ) {
-    // FUN_007bd850
-    OTDU_UNIMPLEMENTED; // TODO: FLASH/WEATHER
     return false;
 }
 
@@ -97,6 +95,7 @@ GSScenaric::GSScenaric()
       demoTimeEnd( 0u ),
       traceSize( 300 ),
       currentDefVersion( 0 ),
+      currentSpotIndex( -1 ),
       extraRewardsCineCount( 0 ),
       rentalTimer( -1.0f ),
       objectiveSpotHashcode( 0 ),
@@ -580,6 +579,20 @@ void GSScenaric::setCinematicViewerDefault( const std::string &param_1,
                                             const std::string &param_2 ) {
     cineViewConfig.BankName = param_1;
     cineViewConfig.CinematicName = param_2;
+}
+
+void GSScenaric::setNextIntro( const char *pPath,
+                               const char *pFilename,
+                               const char *pCinematicName,
+                               const eGameMode nextGameMode,
+                               SpotMap *pSpot ) {
+    // FUN_008031f0
+    nextIntro.pPath = pPath;
+    nextIntro.pFilename = pFilename;
+    nextIntro.pCinematicName = pCinematicName;
+    nextIntro.bIsActive = true;
+    nextIntro.NextGameMode = nextGameMode;
+    nextIntro.pSpot = pSpot;
 }
 
 void GSScenaric::setDemoTimer( float param_1 ) { demoTimer = param_1; }

@@ -38,6 +38,7 @@ public:
     void destroy();
 
     void setupGroundMaterials();
+    void launchHouseGateCine( struct SpotMap *pWorld );
 
     eSpotStatus status = SS_None;
     void *pSpotPool = nullptr; // slice of the shared intro pool

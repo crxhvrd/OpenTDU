@@ -10,12 +10,15 @@
 #include "game/mng_logo_display.h"
 #include "game/mng_ingame_menu.h"
 
+#include "game/scenaric/gs_scenaric.h"
 #include "online/mng_chat.h"
 #include "render/mng_cam_gps.h"
 #include "render/mng_font_players.h"
 
 struct FlashMessage;
 class Entity;
+class EntityCinematic;
+class CameraGame;
 
 class GMFreeride : public GameModeWorld {
 public:
@@ -45,6 +48,7 @@ private:
 
 private:
     void gatherExtraChallenges();
+    void resolveNextIntroCine( const struct SpotSector *pSector );
 
 private:
     MngBookmark mngBookmark;
@@ -62,6 +66,13 @@ private:
     bool bEnterSpotClipVisible;
     float enterSpotClipTimer;
     ScenaricBank spotBank;
+
+    NextIntroInfo nextIntro; 
+    EntityCinematic *pIntroCine; 
+    CameraGame *pSavedVehicleCamera; 
+    bool bIntroLevelLaunched;
+    bool bIntroCineDone;
+
     Entity *pExtraChallenges[kMaxNumExtraChallenges];
     int32_t numExtraChallenges;
 };

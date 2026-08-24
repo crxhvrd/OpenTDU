@@ -27,6 +27,7 @@ public:
     inline Eigen::Vector3f getTarget() { return worldTarget.head<3>(); }
     inline Eigen::Vector4f *getWorldPositionRW() { return &worldPosition; }
     inline Eigen::Vector3f getUp() { return upVector.head<3>(); }
+    inline void setUp( const Eigen::Vector4f &value ) { upVector = value; }
 
     inline float getNearPlane() const { return nearPlane; }
     inline float getFarPlane() const { return farPlane; }

@@ -22,6 +22,7 @@ public:
     ~GameIntroTutorial();
 
     void initialize( Spots &spotList );
+    inline int32_t getStep() const { return tutorialStep; }
 
     bool isActive() const;
     void reset();

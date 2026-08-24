@@ -2,6 +2,12 @@
 #include "mng_cinematics.h"
 
 #include "game/scenaric/entity/entity_cinematic.h"
+#include "game/gm_base.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "config/gs_config.h"
+#include "input/input_device.h"
+#include "input/gs_device.h"
+#include "flash/modal_message_box.h"
 #include "world/gs_world.h"
 #include "world/sector_manager.h"
 #include "world/streaming_manager.h"
@@ -100,14 +106,41 @@ bool MngCinematics::initialize( TestDriveGameInstance * ) {
 
 void MngCinematics::tick( float, float ) {
     // FUN_006de720
+    PlayerConfiguration *pPlayerConfig =
+        ( gpConfig != nullptr ) ? gpConfig->pPlayerConfig : nullptr;
+
     bool bVar6 = gpActiveGameMode->isMessageBoxVisible();
 
     EntityCinematic *pSVar2 = pActiveCinematic;
     if ( ( ( ( pSVar2 != nullptr ) &&
              ( ( pSVar2->getFlags() >> 2 & 1 ) != 0 ) ) &&
            ( pSVar2->isLooping() == false ) ) &&
-         ( bVar6 == '\0' ) ) {
-        OTDU_UNIMPLEMENTED;
+         ( bVar6 == '\0' ) && pPlayerConfig != nullptr ) {
+        const bool bSkipRequested = IsActionReleased( pPlayerConfig->pMenuPause ) ||
+            IsActionPressed( pPlayerConfig->pMenuValidate ) ||
+            ( gpDevice != nullptr &&
+              IsChannelJustPressed(
+                  gpDevice->getMouseState().pChannelButton0 ) );
+
+        if ( bSkipRequested && gpFlashMessageBox != nullptr &&
+             !gpFlashMessageBox->FUN_00403100() && pSVar2->isSkippable() ) {
+            CinematicPlayer *pInterface = pSVar2->getGameModeInterface();
+            if ( pInterface != nullptr ) {
+                const float fadeStart =
+                    pSVar2->getDuration() - pSVar2->getFadeTime() * 0.001f;
+                if ( pSVar2->getTime() < fadeStart ) {
+                    pInterface->executeAction( CE_StartEndFade, pSVar2 );
+                }
+            }
+
+            pSVar2->markSkipped();
+            if ( pSVar2->stopsWhenSkipped() ) {
+                pSVar2->stop( false );
+            }
+        }
+
+        ClearActionFlags( pPlayerConfig->pMenuPause );
+        ClearActionFlags( pPlayerConfig->pMenuValidate );
     }
 
     for ( EntityCinematic *pCinematic : pCinematics ) {
