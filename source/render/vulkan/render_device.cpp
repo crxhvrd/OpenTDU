@@ -436,7 +436,38 @@ RenderDevice::getAvailableDeviceExtensions() {
     return availableDeviceExtensions;
 }
 
+#if defined( OTDU_MACOS ) && defined( OTDU_USE_SDL )
+static void SetupBundledVulkanDriver() {
+    if ( SDL_getenv( "VK_DRIVER_FILES" ) != nullptr ||
+         SDL_getenv( "VK_ICD_FILENAMES" ) != nullptr ) {
+        return;
+    }
+
+    const char *pBasePath = SDL_GetBasePath();
+    if ( pBasePath == nullptr ) {
+        return;
+    }
+
+    const std::filesystem::path manifestPath =
+        std::filesystem::path( pBasePath ) / "vulkan" / "icd.d" /
+        "MoltenVK_icd.json";
+    if ( !std::filesystem::exists( manifestPath ) ) {
+        return;
+    }
+
+    const std::string manifest = manifestPath.string();
+    SDL_setenv_unsafe( "VK_DRIVER_FILES", manifest.c_str(), 0 );
+    SDL_setenv_unsafe( "VK_ICD_FILENAMES", manifest.c_str(),
+                       0 ); // Loaders older than 1.3.207
+    OTDU_LOG_INFO( "Using bundled Vulkan driver manifest '%s'\n",
+                   manifest.c_str() );
+}
+#endif
+
 void RenderDevice::initialize() {
+#if defined( OTDU_MACOS ) && defined( OTDU_USE_SDL )
+    SetupBundledVulkanDriver();
+#endif
     OTDU_ASSERT_FATAL( volkInitialize() == VK_SUCCESS );
     OTDU_ASSERT_FATAL( createVulkanInstance() );
     createDebugCallback();

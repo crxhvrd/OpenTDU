@@ -1103,8 +1103,74 @@ if (${OTDU_GFX_API} STREQUAL "OTDU_VULKAN")
         set_target_properties( opentdu PROPERTIES OUTPUT_NAME "opentdu_${CMAKE_GENERATOR_PLATFORM}_vulkan")
     elseif ( APPLE )
         set_target_properties( opentdu PROPERTIES OUTPUT_NAME "opentdu_darwin_vulkan")
+
+        set_target_properties( opentdu PROPERTIES
+                               BUILD_WITH_INSTALL_RPATH TRUE
+                               INSTALL_RPATH "@executable_path;/usr/local/lib" )
+
+        get_filename_component( OTDU_VULKAN_LOADER_LIB "${Vulkan_LIBRARY}" REALPATH )
+        get_filename_component( OTDU_VULKAN_LIB_FOLDER "${Vulkan_LIBRARY}" DIRECTORY )
+
+        find_file( OTDU_MOLTENVK_LIB
+                   NAMES "libMoltenVK.dylib"
+                   HINTS "${OTDU_VULKAN_LIB_FOLDER}"
+                         "$ENV{VULKAN_SDK}/lib"
+                         "$ENV{VULKAN_SDK}/macOS/lib"
+                         "/usr/local/lib"
+                   NO_DEFAULT_PATH )
+
+        add_custom_command(
+            TARGET opentdu
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${OTDU_VULKAN_LOADER_LIB}"
+                    "${OTDU_BIN_FOLDER}/libvulkan.1.dylib"
+            COMMENT "Copying Vulkan loader next to the executable..."
+        )
+
+        if ( OTDU_MOLTENVK_LIB )
+            add_custom_command(
+                TARGET opentdu
+                POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${OTDU_MOLTENVK_LIB}"
+                        "${OTDU_BIN_FOLDER}/libMoltenVK.dylib"
+                COMMENT "Copying MoltenVK driver next to the executable..."
+            )
+
+            find_file( OTDU_MOLTENVK_ICD
+                       NAMES "MoltenVK_icd.json"
+                       HINTS "${OTDU_VULKAN_LIB_FOLDER}/../share/vulkan/icd.d"
+                             "$ENV{VULKAN_SDK}/share/vulkan/icd.d"
+                             "$ENV{VULKAN_SDK}/macOS/share/vulkan/icd.d"
+                             "/usr/local/share/vulkan/icd.d"
+                       NO_DEFAULT_PATH )
+
+            if ( OTDU_MOLTENVK_ICD )
+                file( READ "${OTDU_MOLTENVK_ICD}" OTDU_MOLTENVK_ICD_CONTENT )
+                string( REGEX REPLACE "\"library_path\"[ \t]*:[ \t]*\"[^\"]*\""
+                        "\"library_path\": \"../../libMoltenVK.dylib\""
+                        OTDU_MOLTENVK_ICD_CONTENT "${OTDU_MOLTENVK_ICD_CONTENT}" )
+            else()
+                message( WARNING "MoltenVK_icd.json not found in the Vulkan SDK; falling back to a generated driver manifest." )
+                set( OTDU_MOLTENVK_ICD_CONTENT
+"{
+    \"file_format_version\": \"1.0.0\",
+    \"ICD\": {
+        \"library_path\": \"../../libMoltenVK.dylib\",
+        \"api_version\": \"1.2.0\",
+        \"is_portability_driver\": true
+    }
+}" )
+            endif()
+
+            file( WRITE "${OTDU_BIN_FOLDER}/vulkan/icd.d/MoltenVK_icd.json" "${OTDU_MOLTENVK_ICD_CONTENT}" )
+        else()
+            message( WARNING "libMoltenVK.dylib was not found next to the Vulkan loader: the resulting build will only run on a machine that has the Vulkan SDK installed." )
+        endif()
     else()
         set_target_properties( opentdu PROPERTIES OUTPUT_NAME "opentdu_unix_vulkan")
+        set_target_properties( opentdu PROPERTIES SKIP_BUILD_RPATH TRUE )
     endif()
 endif()
 
