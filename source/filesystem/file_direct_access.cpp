@@ -238,6 +238,18 @@ bool FileDirectAccess::openContext( const uint64_t hashcode,
 #endif
 }
 
+bool FileDirectAccess::copyContextFrom( const FileDirectAccess &other ) {
+    FolderPath = other.FolderPath;
+    ContainerFolderPath = other.ContainerFolderPath;
+    FolderName = other.FolderName;
+    CurrentHashcode = other.CurrentHashcode;
+    StoredOnHDD = other.StoredOnHDD;
+    bNeedName = other.bNeedName;
+    bIsOpen = other.bIsOpen;
+
+    return bIsOpen;
+}
+
 bool FileDirectAccess::close() {
     Stream.close();
     StreamWrite.close();

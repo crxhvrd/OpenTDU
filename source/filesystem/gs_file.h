@@ -117,7 +117,14 @@ public:
                        void **pOutContent,
                        uint32_t *pOutContentSize );
 
-    void initCarPacks( bool param_1 );
+    void initCarPacks( bool bApplyContent );
+    int32_t appendMapFile( const char *pVFSName,
+                           const char *pPackBigName,
+                           const char *pPackMapName,
+                           FileDirectAccess *pContext,
+                           const int32_t maxFilemapCount,
+                           const bool bReadFromVFS,
+                           int32_t filemapIndex );
     std::wstring getSaveLocation( eContextSource source );
     bool deleteProfileSaveFolder( const uint64_t profileHashcode,
                                   const eContextSource source );
@@ -175,6 +182,10 @@ private:
     bool retrieveSaveFolder();
     bool findFileOutsideFilemap( const char *pFilename,
                                  uint32_t *pOutFilesize );
+    bool resolveFileInFilemaps( const char *pFilename,
+                                FileMapEntry **ppOutEntry,
+                                FileMap **ppOutFilemap,
+                                uint32_t *pOutFileSize );
     void syncAsyncWorkerThread();
 };
 

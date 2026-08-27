@@ -4,6 +4,7 @@
 #include "config/gs_config.h"
 #include "filesystem/bank.h"
 #include "filesystem/gs_file.h"
+#include "filesystem/mod_installer.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/mng_flash_localize.h"
@@ -18,13 +19,18 @@ GSDatabase::GSDatabase()
     : NbChallengeNames( 0xa0 ),
       NbChallengeDesc( 0x38 ),
       activeLocale( eLocale::L_Unknown ),
-      bInitialized( false ) {
+      bInitialized( false ),
+      bModDatabaseInjectionDisabled( false ) {
     // FUN_009aa0e0
     gpDatabase = this;
 }
 
 GSDatabase::~GSDatabase() {
     // FUN_009ea7b0
+    for ( void *pRetired : retiredAllocations ) {
+        TestDrive::Free( pRetired );
+    }
+    retiredAllocations.clear();
 }
 
 bool GSDatabase::initialize( TestDriveGameInstance * ) {
@@ -77,32 +83,43 @@ bool GSDatabase::reloadDatabases( const char *pLanguage,
     }
 
     OTDU_LOG_INFO( "Loading Databases.\n" ); // DAT_00f05070
+
+    if ( bForceReload ) {
+        cars.clear();
+    }
+
     gpFile->initCarPacks( false );
 
     if ( strncmp( pLanguage, "gb", 3 ) == 0 ) {
         gpPlayerData->setDefaultLanguage( "us", false );
     }
 
-    loadDatabases( gpPlayerData->getLanguage() );
+    bool bLoaded = false;
+    for ( int32_t attempt = 0; attempt < 2 && !bLoaded; attempt++ ) {
+        loadDatabases( gpPlayerData->getLanguage() );
 
-    if ( !dbFillExternals( 1, 0x12 ) )
-        return false;
-    if ( !dbFillExternals( 3, 0x12 ) )
-        return false;
-    if ( !dbFillExternals( 4, 0x12 ) )
-        return false;
-    if ( !dbFillExternals( 5, 0x12 ) )
-        return false;
-    if ( !dbFillExternals( 8, 0x12 ) )
-        return false;
-    if ( !dbFillExternals( 0xd, 0x12 ) )
-        return false;
-    if ( !dbFillExternals( 0xe, 0x12 ) )
-        return false;
-    if ( !dbFillExternals( 9, 0x12 ) )
-        return false;
-    if ( !dbFillExternals( 0x10, 0x12 ) )
-        return false;
+        static constexpr int32_t kExternalPasses[] = { 1,   3,   4, 5,   8,
+                                                       0xd, 0xe, 9, 0x10 };
+        bLoaded = true;
+        for ( const int32_t pass : kExternalPasses ) {
+            if ( !dbFillExternals( pass, 0x12 ) ) {
+                bLoaded = false;
+                break;
+            }
+        }
+
+        if ( !bLoaded ) {
+            if ( bModDatabaseInjectionDisabled ) {
+                return false;
+            }
+
+            OTDU_LOG_ERROR( "Database xreferences failed to resolve; mods will "
+                            "be disabled\n" );
+            bModDatabaseInjectionDisabled = true;
+            releaseDatabases();
+            cars.clear();
+        }
+    }
 
     fillCarList();
     initCommonStrings();
@@ -134,22 +151,47 @@ char *GSDatabase::getStringByHashcode( const uint32_t dbIndex,
     return nullptr;
 }
 
-void GSDatabase::releaseDatabases() {
+void GSDatabase::releaseDatabases( const bool bRetainBuffers ) {
     // FUN_009a9800
     for ( int32_t i = 0; i < kNumDatabases; i++ ) {
         if ( gameDatabase.Databases[i].List != nullptr ) {
-            TestDrive::Free( gameDatabase.Databases[i].List );
+            if ( bRetainBuffers ) {
+                retiredAllocations.push_back( gameDatabase.Databases[i].List );
+            } else {
+                TestDrive::Free( gameDatabase.Databases[i].List );
+            }
             gameDatabase.Databases[i].List = nullptr;
         }
 
         if ( gameDatabase.Databases[i].pData != nullptr ) {
-            TestDrive::Free( gameDatabase.Databases[i].pData );
+            if ( bRetainBuffers ) {
+                retiredAllocations.push_back( gameDatabase.Databases[i].pData );
+            } else {
+                TestDrive::Free( gameDatabase.Databases[i].pData );
+            }
             gameDatabase.Databases[i].pData = nullptr;
         }
     }
 
     bInitialized = false;
     activeLocale = eLocale::L_Unknown;
+
+    if ( bRetainBuffers ) {
+        OTDU_LOG_INFO( "Database buffers retired rather than freed (%zu held); "
+                       "the front end still points into them\n",
+                       retiredAllocations.size() );
+    }
+}
+
+void GSDatabase::republishFrontEndStrings() {
+    if ( !engineDatabase.bInitialized || gpFlash == nullptr ) {
+        return;
+    }
+
+    const int32_t numRefreshed =
+        gpFlash->forEachLoadedPlayer( [this]( FlashPlayer *pPlayer ) {
+            setFlashLocalization( 0, 0u, pPlayer );
+        } );
 }
 
 struct DBToLoadDesc {
@@ -226,6 +268,8 @@ bool GSDatabase::loadDatabases( const char *pLanguage ) {
                         (char *)local_44c.pData;
                     localizedDbInstallRequests[iVar4].BufferSize =
                         local_44c.Size;
+                    baseLocalizedDbInstallRequests[iVar4] =
+                        localizedDbInstallRequests[iVar4];
                 }
             }
         }
@@ -270,15 +314,17 @@ bool GSDatabase::loadDatabases( const char *pLanguage ) {
                             OTDU_LOG_DEBUG(
                                 "Opening %s...\n",
                                 kDatabasesToLoad[local_44c.SubType].pName );
-                            dbInstallRequests
-                                [kDatabasesToLoad[local_44c.SubType].Index]
-                                    .BufferSize = bankSize;
-                            dbInstallRequests
-                                [kDatabasesToLoad[local_44c.SubType].Index]
-                                    .pBuffer = (char *)pBankData;
-                            if ( !initializeDatabase(
+                            const uint32_t dbIndex =
+                                kDatabasesToLoad[local_44c.SubType].Index;
+                            dbInstallRequests[dbIndex].BufferSize = bankSize;
+                            dbInstallRequests[dbIndex].pBuffer =
+                                (char *)pBankData;
+                            baseDbInstallRequests[dbIndex] =
+                                dbInstallRequests[dbIndex];
+
+                            if ( !loadDatabaseWithInjections(
                                      kDatabasesToLoad[local_44c.SubType].pName,
-                                     kDatabasesToLoad[local_44c.SubType].Index,
+                                     dbIndex,
                                      kDatabasesToLoad[local_44c.SubType].Stride,
                                      pDatabaseItems[local_44c.SubType] ) ) {
                                 OTDU_LOG_ERROR(
@@ -1243,26 +1289,244 @@ void GSDatabase::parseMenusForVars() {
 bool GSDatabase::initializeDatabase( const char *pName,
                                      const uint32_t index,
                                      const uint32_t stride,
-                                     char **pDatabaseItems ) {
+                                     char **pDatabaseItems,
+                                     const uint32_t numInjectedRows ) {
     // FUN_009ab470
     bool bVar2 = openDatabase( pName, index );
     if ( bVar2 ) {
-        gameDatabase.pNumItems[index] =
-            engineDatabase.DBList[index].Content.NumData;
-
         CommonDBEntry &database = engineDatabase.DBList[index];
+
+        database.Content.NumData += numInjectedRows;
+
+        gameDatabase.pNumItems[index] = database.Content.NumData;
+
         DBEntryList &entryList = gameDatabase.Databases[index];
 
         FillList( database, entryList );
 
-        finalizeDatabaseLoad( index, stride, pDatabaseItems );
+        const bool bParsed =
+            finalizeDatabaseLoad( index, stride, pDatabaseItems );
 
         engineDatabase.DBList[index].Content.pDB = nullptr;
         engineDatabase.DBList[index].Content.pList = nullptr;
-        return true;
+
+        return bParsed;
     }
 
     return false;
+}
+
+void GSDatabase::releaseDatabase( const uint32_t index,
+                                  char **pDatabaseItems ) {
+    DBEntryList &entryList = gameDatabase.Databases[index];
+
+    if ( entryList.List != nullptr ) {
+        TestDrive::Free( entryList.List );
+        entryList.List = nullptr;
+    }
+    if ( entryList.pData != nullptr ) {
+        TestDrive::Free( entryList.pData );
+        entryList.pData = nullptr;
+    }
+    entryList.NumItems = 0;
+
+    if ( pDatabaseItems != nullptr && *pDatabaseItems != nullptr ) {
+        TestDrive::Free( *pDatabaseItems );
+        *pDatabaseItems = nullptr;
+    }
+
+    engineDatabase.DBList[index].Content = CommonDBContent();
+    gameDatabase.pNumItems[index] = 0;
+}
+
+uint32_t GSDatabase::buildInjectedBuffers(
+    const uint32_t index,
+    const std::vector<const ModDBInjection *> &injections ) {
+    const DBInstallRequest<char> &baseText = baseDbInstallRequests[index];
+    const DBInstallRequest<char> &baseList =
+        baseLocalizedDbInstallRequests[index];
+
+    dbInstallRequests[index] = baseText;
+    localizedDbInstallRequests[index] = baseList;
+
+    injectedDbText.clear();
+    injectedDbList.clear();
+
+    if ( injections.empty() ) {
+        return 0u;
+    }
+
+    uint32_t numRows = 0u;
+    uint32_t numStrings = 0u;
+    for ( const ModDBInjection *pInjection : injections ) {
+        numRows += (uint32_t)pInjection->Rows.size();
+        numStrings += (uint32_t)pInjection->Strings.size();
+    }
+
+    if ( numRows != 0u && baseText.pBuffer != nullptr ) {
+        size_t textLength = baseText.BufferSize;
+        for ( size_t i = 0; i < baseText.BufferSize; i++ ) {
+            if ( baseText.pBuffer[i] == '\0' ) {
+                textLength = i;
+                break;
+            }
+        }
+
+        injectedDbText.assign( baseText.pBuffer,
+                               baseText.pBuffer + textLength );
+        if ( !injectedDbText.empty() && injectedDbText.back() != '\n' ) {
+            injectedDbText.push_back( '\r' );
+            injectedDbText.push_back( '\n' );
+        }
+
+        for ( const ModDBInjection *pInjection : injections ) {
+            for ( const std::string &row : pInjection->Rows ) {
+                injectedDbText.insert( injectedDbText.end(), row.begin(),
+                                       row.end() );
+                injectedDbText.push_back( '\r' );
+                injectedDbText.push_back( '\n' );
+            }
+        }
+        injectedDbText.push_back( '\0' );
+
+        dbInstallRequests[index].pBuffer = injectedDbText.data();
+        dbInstallRequests[index].BufferSize = injectedDbText.size();
+    }
+
+    if ( numStrings != 0u && baseList.pBuffer != nullptr ) {
+        const bool bUTF16 = baseList.BufferSize >= 2 &&
+                            (uint8_t)baseList.pBuffer[0] == 0xff &&
+                            (uint8_t)baseList.pBuffer[1] == 0xfe;
+
+        injectedDbList.assign( baseList.pBuffer,
+                               baseList.pBuffer + baseList.BufferSize );
+
+        for ( const ModDBInjection *pInjection : injections ) {
+            for ( const ModDBString &string : pInjection->Strings ) {
+                std::string record = "\r\n{";
+                record += string.Value;
+                record += "} ";
+                record += std::to_string( string.Hashcode );
+
+                for ( const char c : record ) {
+                    injectedDbList.push_back( c );
+                    if ( bUTF16 ) {
+                        injectedDbList.push_back( '\0' );
+                    }
+                }
+            }
+        }
+
+        localizedDbInstallRequests[index].pBuffer = injectedDbList.data();
+        localizedDbInstallRequests[index].BufferSize = injectedDbList.size();
+    }
+
+    return numRows;
+}
+
+bool GSDatabase::tryLoadDatabase(
+    const char *pName,
+    const uint32_t index,
+    const uint32_t stride,
+    char **pDatabaseItems,
+    const std::vector<const ModDBInjection *> &injections ) {
+    releaseDatabase( index, pDatabaseItems );
+
+    const uint32_t numInjectedRows = buildInjectedBuffers( index, injections );
+
+    return initializeDatabase( pName, index, stride, pDatabaseItems,
+                               numInjectedRows );
+}
+
+bool GSDatabase::loadDatabaseWithInjections( const char *pName,
+                                             const uint32_t index,
+                                             const uint32_t stride,
+                                             char **pDatabaseItems ) {
+    std::vector<const ModDBInjection *> candidates;
+    if ( gpModInstaller != nullptr && !bModDatabaseInjectionDisabled ) {
+        for ( const ModDBInjection &injection :
+              gpModInstaller->getDatabaseInjections() ) {
+            if ( StringCmpI( injection.Table.c_str(), pName ) == 0 &&
+                 ( !injection.Rows.empty() || !injection.Strings.empty() ) ) {
+                candidates.push_back( &injection );
+            }
+        }
+    }
+
+    std::vector<const ModDBInjection *> accepted;
+    if ( !tryLoadDatabase( pName, index, stride, pDatabaseItems, accepted ) ) {
+        return false;
+    }
+
+    if ( candidates.empty() ) {
+        return true;
+    }
+
+    std::vector<std::pair<uint64_t, std::wstring>> stringOwners;
+
+    bool bLastAttemptAccepted = true;
+    for ( const ModDBInjection *pInjection : candidates ) {
+        const char *pRejection = nullptr;
+        std::wstring collidesWith;
+
+        for ( const ModDBString &string : pInjection->Strings ) {
+            const DBEntryList &loadedList = gameDatabase.Databases[index];
+            for ( uint32_t i = 0; i < loadedList.NumItems; i++ ) {
+                if ( loadedList.List[i].Hashcode == string.Hashcode ) {
+                    collidesWith = L"the base game";
+                    break;
+                }
+            }
+
+            for ( const auto &owner : stringOwners ) {
+                if ( owner.first == string.Hashcode ) {
+                    collidesWith = owner.second;
+                    break;
+                }
+            }
+
+            if ( !collidesWith.empty() ) {
+                pRejection = "it redefines a string hashcode";
+                break;
+            }
+        }
+
+        if ( pRejection == nullptr ) {
+            std::vector<const ModDBInjection *> trial = accepted;
+            trial.push_back( pInjection );
+
+            if ( tryLoadDatabase( pName, index, stride, pDatabaseItems,
+                                  trial ) ) {
+                accepted.swap( trial );
+                for ( const ModDBString &string : pInjection->Strings ) {
+                    stringOwners.push_back(
+                        { string.Hashcode, pInjection->PackName } );
+                }
+                bLastAttemptAccepted = true;
+                OTDU_LOG_INFO( "  -'%S' added %zu row(s) to %s\n",
+                               pInjection->PackName.c_str(),
+                               pInjection->Rows.size(), pName );
+                continue;
+            }
+
+            bLastAttemptAccepted = false;
+            pRejection = "its rows do not parse";
+        }
+
+        OTDU_LOG_ERROR( "  -Rejected '%S' from %s: %s%S%S\n",
+                        pInjection->PackName.c_str(), pName, pRejection,
+                        collidesWith.empty() ? L"" : L" already owned by ",
+                        collidesWith.c_str() );
+    }
+
+    if ( !bLastAttemptAccepted &&
+         !tryLoadDatabase( pName, index, stride, pDatabaseItems, accepted ) ) {
+        OTDU_LOG_ERROR( "Failed to reload %s without the rejected packs\n",
+                        pName );
+        return false;
+    }
+
+    return true;
 }
 
 uint32_t FUN_00451d50( char *param_1 ) {

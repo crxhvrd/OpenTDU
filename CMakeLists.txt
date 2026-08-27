@@ -276,6 +276,8 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/debug/gs_profile.cpp"
                     "${OTDU_SRC_FOLDER}/debug/debug_streaming.cpp"
                     "${OTDU_SRC_FOLDER}/debug/debug_entity.cpp"
+                    "${OTDU_SRC_FOLDER}/game/mods/flash_list_mods.cpp"
+                    "${OTDU_SRC_FOLDER}/game/mods/mng_mods_ui.cpp"
                     "${OTDU_SRC_FOLDER}/config/gs_config.cpp"
                     "${OTDU_SRC_FOLDER}/config/audio.cpp"
                     "${OTDU_SRC_FOLDER}/config/device.cpp"
@@ -475,6 +477,9 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/game/police_state.cpp"
                     "${OTDU_SRC_FOLDER}/filesystem/file_direct_access.cpp"
                     "${OTDU_SRC_FOLDER}/filesystem/file_map.cpp"
+                    "${OTDU_SRC_FOLDER}/filesystem/xml_reader.cpp"
+                    "${OTDU_SRC_FOLDER}/filesystem/mod_installer.cpp"
+                    "${OTDU_SRC_FOLDER}/filesystem/mod_manager.cpp"
                     "${OTDU_SRC_FOLDER}/render/camera/camera_transition.cpp"
                     "${OTDU_SRC_FOLDER}/core/tcb_spline.cpp"
                     "${OTDU_SRC_FOLDER}/system/ed_sys.cpp"
@@ -750,6 +755,8 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/debug/gs_profile.h"
                     "${OTDU_SRC_FOLDER}/debug/debug_streaming.h"
                     "${OTDU_SRC_FOLDER}/debug/debug_entity.h"
+                    "${OTDU_SRC_FOLDER}/game/mods/flash_list_mods.h"
+                    "${OTDU_SRC_FOLDER}/game/mods/mng_mods_ui.h"
                     "${OTDU_SRC_FOLDER}/config/gs_config.h"
                     "${OTDU_SRC_FOLDER}/online/gs_online.h"
                     "${OTDU_SRC_FOLDER}/online/packets_crc.h"
@@ -925,6 +932,9 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/game/police_state.h"
                     "${OTDU_SRC_FOLDER}/filesystem/file_direct_access.h"
                     "${OTDU_SRC_FOLDER}/filesystem/file_map.h"
+                    "${OTDU_SRC_FOLDER}/filesystem/xml_reader.h"
+                    "${OTDU_SRC_FOLDER}/filesystem/mod_installer.h"
+                    "${OTDU_SRC_FOLDER}/filesystem/mod_manager.h"
                     "${OTDU_SRC_FOLDER}/render/camera/camera_transition.h"
                     "${OTDU_SRC_FOLDER}/core/tcb_spline.h"
                     "${OTDU_SRC_FOLDER}/system/ed_sys.h"
@@ -1237,11 +1247,12 @@ endif()
 
 # Tools subprojects
 add_subdirectory( tools/asset_extractor )
+add_subdirectory( tools/mod_packer )
 add_subdirectory( tools/save_decryptor )
 add_subdirectory( tools/zc_uncompressor )
 
 if( MSVC AND OTDU_TARGET_WIN7 )
-    foreach( OTDU_WIN7_TOOL opentdu_assetExtractor opentdu_savedecryptor opentdu_zcuncompressor )
+    foreach( OTDU_WIN7_TOOL opentdu_assetExtractor opentdu_modPacker opentdu_savedecryptor opentdu_zcuncompressor )
         target_sources( ${OTDU_WIN7_TOOL} PRIVATE $<TARGET_OBJECTS:otdu_win7thunks> )
     endforeach()
 endif()

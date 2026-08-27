@@ -1,0 +1,117 @@
+#pragma once
+
+#include "file_map.h"
+#include "xml_reader.h"
+
+static constexpr uint32_t kMaxContentDescSize = 0x8000;
+static constexpr uint32_t kMaxFoundCars = 0x180;
+static constexpr uint32_t kMaxInstalledContent = 0x7f;
+static constexpr uint32_t kMaxContentDescriptionLength = 0x100;
+
+struct FoundCar {
+    uint32_t DatabaseID = 0;
+    uint8_t bUnlocked : 1;
+    char CardealerSpotName[32] = {};
+
+    FoundCar() : bUnlocked( false ) {}
+};
+
+enum eContentAction : uint32_t {
+    CA_AddVehicle = 1,
+    CA_UnlockVehicle = 2,
+    CA_AddRadioStation = 4,
+};
+
+enum eContentDescResult : int32_t {
+    CDR_Invalid = 0,
+    CDR_Valid = 1,
+    CDR_NoVehicle = 2,
+};
+
+struct InstalledContent {
+    std::wstring DisplayName;
+    uint32_t ActionMask = 0;
+};
+
+struct ModDBString {
+    uint64_t Hashcode = 0;
+    std::string Value;
+};
+
+struct ModDBInjection {
+    std::wstring PackName;
+    std::string Table;
+    std::vector<std::string> Rows;
+    std::vector<ModDBString> Strings;
+};
+
+class ModInstaller {
+public:
+    inline const char *getDescription() const { return pDescription; }
+    inline const std::vector<InstalledContent> &getInstalledContent() const {
+        return installedContent;
+    }
+    inline const std::vector<ModDBInjection> &getDatabaseInjections() const {
+        return dbInjections;
+    }
+
+public:
+    ModInstaller();
+    ~ModInstaller();
+
+    void reset();
+
+    static bool HasContentDesc( const EnumerateContextItem &item );
+
+    eContentDescResult loadContentDesc( const EnumerateContextItem &item,
+                                        const bool bApplyContent );
+
+    eContentDescResult checkContentFromMem();
+    eContentDescResult loadFromMem( const uint32_t licenceFlags,
+                                    const EnumerateContextItem &item,
+                                    const bool bApplyContent );
+
+    const FoundCar *findCar( const uint32_t databaseId,
+                             const char *pEnvName ) const;
+
+private:
+    FoundCar *findCarSlot( const uint32_t databaseId, const char *pEnvName );
+    FoundCar *allocateCarSlot();
+
+    void onAddVehicle( const char *pLanguage,
+                       const uint32_t databaseId,
+                       const char *pEnvName );
+    void onUnlockVehicle( const char *pLanguage,
+                          const uint32_t databaseId,
+                          const char *pEnvName );
+    void onPostNews( const char *pText, const int32_t moneyReward );
+    void onAddRadioStation( const char *pEnvName,
+                            const EnumerateContextItem &item );
+
+    void onAddDBRow( const EnumerateContextItem &item,
+                     const char *pTable,
+                     const char *pRow );
+    void onAddDBString( const EnumerateContextItem &item,
+                        const char *pTable,
+                        const char *pHashcode,
+                        const char *pValue );
+    ModDBInjection &getInjectionSlot( const EnumerateContextItem &item,
+                                      const char *pTable );
+
+    bool addInstalledContent( const std::wstring &displayName,
+                              const uint32_t actionMask );
+
+private:
+    std::vector<char> contentDescBuffer;
+    uint32_t contentDescSize;
+
+    FoundCar foundCars[kMaxFoundCars];
+    std::vector<InstalledContent> installedContent;
+    std::vector<ModDBInjection> dbInjections;
+
+    char pDescription[kMaxContentDescriptionLength];
+
+    XMLReader reader;
+};
+
+extern ModInstaller *gpModInstaller;

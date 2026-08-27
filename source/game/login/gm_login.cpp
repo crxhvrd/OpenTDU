@@ -8,6 +8,7 @@
 #include "filesystem/gs_file.h"
 #include "flash/entities/flash_panel.h"
 #include "flash/gs_flash.h"
+#include "game/mods/mng_mods_ui.h"
 #include "flash/implementation/flash_resource.h"
 #include "flash/implementation/flash_sprite.h"
 #include "flash/modal_message_box.h"
@@ -150,7 +151,7 @@ GMLogin::GMLogin()
       flashLocalize(),
       flashLogin( this ),
       flashCounter(),
-      pPanelOnline( new ( TestDrive::Alloc( sizeof( FlashPanelOnline ) ) )
+      pPanelOnline( new( TestDrive::Alloc( sizeof( FlashPanelOnline ) ) )
                         FlashPanelOnline() ),
       pGeneralFlashPlayer( nullptr ),
       pConfigPCFlashPlayer( nullptr ),
@@ -180,6 +181,8 @@ GMLogin::GMLogin()
 
 GMLogin::~GMLogin() {
     // FUN_0074e080
+    gpModsUI->unbind();
+
     if ( pPanelOnline != nullptr ) {
         pPanelOnline->~FlashPanelOnline();
         TestDrive::Free( pPanelOnline );
@@ -199,6 +202,8 @@ void GMLogin::reset() {
     pGeneralFlashPlayer = gpFlash->getFlashPlayer( "GENERAL" );
     pConfigPCFlashPlayer = gpFlash->getFlashPlayer( "CONFIGPC" );
     pLoginFlashPlayer = gpFlash->getFlashPlayer( "LOG_IN" );
+
+    gpModsUI->bind();
 
     // Original game returns version only (i.e. for 'MC 1.66 A' => '1.66 A')
     pGeneralFlashPlayer->setVariableValue( "/:BetaVersion",
@@ -420,6 +425,9 @@ bool GMLogin::HasInputActivity() {
 
 void GMLogin::tick( float deltaTime, float totalTime ) {
     // FUN_0074f030
+    gpModsUI->pollInput();
+    gpModsUI->tick( totalTime, deltaTime );
+
     switch ( state ) {
     case GLS_Signing:
         gpFlash->getMouse()->field12_0x30 = true;

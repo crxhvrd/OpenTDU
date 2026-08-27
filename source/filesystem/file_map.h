@@ -1,15 +1,17 @@
 #pragma once
 
 struct FileMapEntry {
-    uint32_t CRC;
-    uint32_t SizeWithPadding;
-    uint32_t Offset;
-    uint32_t Size;
-    uint32_t Version;
-    uint32_t StoredAsUint16;
+    uint32_t CRC = 0;
+    uint32_t SizeWithPadding = 0;
+    uint32_t Offset = 0;
+    uint32_t Size = 0;
+    uint32_t Version = 0;
+    uint32_t EndiannessProbe = 0;
     uint8_t bCompressed : 1;
 
-    int32_t deserialize( void *pMemory );
+    FileMapEntry() : bCompressed( false ) {}
+
+    int32_t deserialize( const void *pMemory );
 };
 
 enum class eContextSource {
@@ -30,11 +32,13 @@ struct EnumerateContextItem {
 };
 
 struct FileMap {
-    uint32_t pCRCLUT[256];
+    uint32_t pCRCLUT[256] = {};
     std::string FilenameBigFile;
 
-    void *pMapStart;
-    uint32_t MapSize;
+    void *pMapAllocation = nullptr;
+
+    void *pMapStart = nullptr;
+    uint32_t MapSize = 0;
 
     EnumerateContextItem Context;
     FileMapEntry Entry;
@@ -47,6 +51,13 @@ struct FileMap {
     uint8_t bNeedName : 1;
     uint8_t bUnknown : 1;
 
+    FileMap() : bUseBigFile( false ), bNeedName( false ), bUnknown( false ) {}
+
+    bool initFromMem( void *pMemory, const uint32_t mapFileSize );
+    void setHeaderToSkip( const char *pHeaderToSkip );
+    bool setBigFileName( const char *pFilename );
+    void releaseMap();
+
     void initializeCRCLUT();
     bool findEntryInSet( const char *pFilename, FileMapEntry **ppOutEntry );
     FileMapEntry *findEntry( const char *pFilename );
@@ -54,5 +65,6 @@ struct FileMap {
     void normalizeFilename( const char *pFilename );
     uint32_t hashFilename( const char *pFilename );
     uint32_t crc32( const char *pString, size_t length );
+    bool startsWithHeaderToSkip( const char *pFilename ) const;
     std::string &resolveName( const char *pFilename, const bool bCompressed );
 };

@@ -116,6 +116,8 @@ template <typename TCharType> struct DBInstallRequest {
     size_t BufferSize = 0ull;
 };
 
+struct ModDBInjection;
+
 class GSDatabase : public GameSystem {
 public:
     int32_t NbChallengeNames;
@@ -141,7 +143,8 @@ public:
                           const bool bForceReload = false );
     char *getStringByHashcode( const uint32_t dbIndex,
                                const uint64_t hashcode );
-    void releaseDatabases();
+    void releaseDatabases( const bool bRetainBuffers = false );
+    void republishFrontEndStrings();
 
     int32_t setFlashLocalization( int32_t param_2,
                                   uint32_t param_3,
@@ -177,18 +180,41 @@ private:
     std::array<DBInstallRequest<char>, kNumDatabases>
         localizedDbInstallRequests;
 
+    std::array<DBInstallRequest<char>, kNumDatabases> baseDbInstallRequests;
+    std::array<DBInstallRequest<char>, kNumDatabases>
+        baseLocalizedDbInstallRequests;
+    std::vector<char> injectedDbText;
+    std::vector<char> injectedDbList;
+    std::vector<void *> retiredAllocations;
+
     std::vector<CarConfig> cars;
     char pActiveLanguage[3];
     eLocale activeLocale;
 
     uint8_t bInitialized : 1;
+    uint8_t bModDatabaseInjectionDisabled : 1;
 
 private:
     bool loadDatabases( const char *pLanguage );
     bool initializeDatabase( const char *pName,
                              const uint32_t index,
                              const uint32_t maxNumElements,
-                             char **pDatabaseItems );
+                             char **pDatabaseItems,
+                             const uint32_t numInjectedRows = 0u );
+    bool loadDatabaseWithInjections( const char *pName,
+                                     const uint32_t index,
+                                     const uint32_t stride,
+                                     char **pDatabaseItems );
+    bool
+    tryLoadDatabase( const char *pName,
+                     const uint32_t index,
+                     const uint32_t stride,
+                     char **pDatabaseItems,
+                     const std::vector<const ModDBInjection *> &injections );
+    uint32_t buildInjectedBuffers(
+        const uint32_t index,
+        const std::vector<const ModDBInjection *> &injections );
+    void releaseDatabase( const uint32_t index, char **pDatabaseItems );
     bool openDatabase( const char *pName, const uint32_t index );
     bool finalizeDatabaseLoad( const int32_t databaseIndex,
                                const uint32_t stride,

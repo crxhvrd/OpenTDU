@@ -3,6 +3,31 @@
 #include "game/gm_base.h"
 #include "game/gs_base.h"
 
+// Codes GSFlash::getInputMask() hands to a movie: one per frame, as the ASCII
+// value the movie's ActionScript compares against.
+enum eFlashKey : uint32_t {
+    FK_Left = 0x01,        // left arrow
+    FK_Right = 0x02,       // right arrow
+    FK_Pause = 0x03,       // home key (mapped to pause action)
+    FK_Back = 0x08,        // backspace
+    FK_Validate = 0x0d,    // enter
+    FK_Up = 0x0e,          // up arrow
+    FK_Down = 0x0f,        // down arrow
+    FK_WheelUp = 0x2b,     // '+'
+    FK_WheelDown = 0x2d,   // '-'
+    FK_SortRight = 0x31,   // '1'
+    FK_InGameDown = 0x32,  // '2'
+    FK_SortLeft = 0x33,    // '3'
+    FK_InGameLeft = 0x34,  // '4'
+    FK_Option4 = 0x35,     // '5'
+    FK_InGameRight = 0x36, // '6'
+    FK_SortInsert = 0x37,  // '7'
+    FK_InGameUp = 0x38,    // '8'
+    FK_Option3 = 0x39,     // '9'
+    FK_Option1 = 0x78,     // 'x'
+    FK_Option2 = 0x79,     // 'y'
+};
+
 #include "bank/bank_common_flash.h"
 #include "bank/flash_bank_resources.h"
 #include "core/mutex.h"
@@ -66,11 +91,15 @@ public:
 
     int32_t getNumMovies( const int32_t param_1 );
     MoviePlayer *getMoviePlayer( int32_t levelIndex, int32_t movieIndex );
+    int32_t
+    forEachLoadedPlayer( const std::function<void( FlashPlayer * )> &callback );
 
     void addMovieForGameMode( const int32_t param_1, FlashEntity *pEntity );
     void addMovie( FlashMovie &movie, FlashEntity *pEntity );
 
     void flashCallback( const char *param_1 );
+    void grantMovieInput( const char *pMovieName );
+    void setMovieDrawnOnTop( const char *pMovieName, const bool bOnTop );
 
     void enablePlayer( const char *param_2,
                        ModalMessageBox::eDisplayState param_3,
@@ -102,6 +131,7 @@ public:
 
     void registerFlashListener( FlashStreamListener *listener );
     void unregisterFlashListener( FlashStreamListener *listener );
+    uint32_t getInputMask();
 
 private:
     std::string commonPath;
@@ -156,7 +186,6 @@ private:
     void setupLevel( const bool param_1 );
     void initMoviePlayer( bool param_1, MoviePlayer &param_2 );
     void setViewport( MoviePlayer &param_1 );
-    uint32_t getInputMask();
 };
 
 extern GSFlash gFlash;

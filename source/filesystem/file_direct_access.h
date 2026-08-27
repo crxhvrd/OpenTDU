@@ -52,6 +52,8 @@ struct FileDirectAccess {
     uint32_t readFromFile( void *pDest, const uint32_t size );
     uint32_t writeToFile( const void *pSource, const uint32_t size );
 
+    bool copyContextFrom( const FileDirectAccess &other );
+
     bool close();
     bool reset();
 };

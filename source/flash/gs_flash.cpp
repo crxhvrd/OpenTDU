@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "gs_flash.h"
 
+#include "game/mods/mng_mods_ui.h"
+
 #include "movie_player.h"
 
 #include "config/gs_config.h"
@@ -35,7 +37,7 @@ bool gbFlashServiceCreated = false; // DAT_010e7280
 GSFlash::GSFlash()
     : commonPath( "FRONTEND" ),
       rootPath( "FRONTEND" ),
-      maxFlashMovies( 32 ),
+      maxFlashMovies( 32 + 1 ),
       currentLevel( 0 ),
       unicodeFontID( 0 ),
       pNullMaterial( nullptr ),
@@ -272,19 +274,56 @@ void GSFlash::terminate() {
 
 void GSFlash::draw( float deltaTime ) {
     // FUN_0099b440
-    for ( MoviePlayer &player : moviePlayers ) {
-        if ( player.MovieBank.isLoaded() && player.IsMoviePaused == 0 ) {
-            gpRender->getRenderPass<eRenderPass::RP_2D>().bIs3DScene = false;
-            gpRender->getRenderPass<eRenderPass::RP_2D>()
-                .pScene->getFrustumWrite()
-                .setIs2DFrustum( true );
+    for ( int32_t pass = 0; pass < 2; pass++ ) {
+        const bool bOnTopPass = ( pass == 0 );
 
-            DrawList *local_4 = player.MovieBank.getDrawList();
-            if ( local_4 != nullptr ) {
+        for ( MoviePlayer &player : moviePlayers ) {
+            if ( player.bOverlay != bOnTopPass ) {
+                continue;
+            }
+
+            if ( player.MovieBank.isLoaded() && player.IsMoviePaused == 0 ) {
+                gpRender->getRenderPass<eRenderPass::RP_2D>().bIs3DScene =
+                    false;
                 gpRender->getRenderPass<eRenderPass::RP_2D>()
-                    .pScene->enqueueDynamicDrawList( local_4 );
+                    .pScene->getFrustumWrite()
+                    .setIs2DFrustum( true );
+
+                DrawList *local_4 = player.MovieBank.getDrawList();
+                if ( local_4 != nullptr ) {
+                    gpRender->getRenderPass<eRenderPass::RP_2D>()
+                        .pScene->enqueueDynamicDrawList( local_4 );
+                }
             }
         }
+    }
+}
+
+void GSFlash::grantMovieInput( const char *pMovieName ) {
+    uint32_t level = 0u;
+    uint32_t index = 0u;
+    if ( !getFlashMovieIndex( &level, &index, pMovieName ) ) {
+        return;
+    }
+
+    MoviePlayer *pPlayer = getMoviePlayer( (int32_t)level, (int32_t)index );
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    pPlayer->Flags = 0u;
+}
+
+void GSFlash::setMovieDrawnOnTop( const char *pMovieName, const bool bOnTop ) {
+    uint32_t level = 0u;
+    uint32_t index = 0u;
+    if ( !getFlashMovieIndex( &level, &index, pMovieName ) ) {
+        return;
+    }
+
+    MoviePlayer *pPlayer = getMoviePlayer( (int32_t)level, (int32_t)index );
+    if ( pPlayer != nullptr ) {
+        pPlayer->bOverlay = bOnTop;
     }
 }
 
@@ -342,6 +381,8 @@ void GSFlash::initGameMode( const eGameMode gameMode,
                             FlashEntity *pEntity,
                             const bool param_4 ) {
     // FUN_0099c9a0
+    MngModsUI::RegisterMovie();
+
     if ( currentLevel == 0 ) {
         initLevel( nullptr );
     }
@@ -379,6 +420,28 @@ FlashPlayer *GSFlash::getFlashPlayer( const char *pName ) {
     }
 
     return nullptr;
+}
+
+int32_t GSFlash::forEachLoadedPlayer(
+    const std::function<void( FlashPlayer * )> &callback ) {
+    int32_t numVisited = 0;
+
+    for ( MoviePlayer &moviePlayer : moviePlayers ) {
+        if ( moviePlayer.MovieBank.getState() !=
+             BankFlash::eBankFlashInit::BFI_Loaded ) {
+            continue;
+        }
+
+        FlashPlayer *pPlayer = moviePlayer.MovieBank.getFlashPlayer();
+        if ( pPlayer == nullptr ) {
+            continue;
+        }
+
+        callback( pPlayer );
+        numVisited++;
+    }
+
+    return numVisited;
 }
 
 bool GSFlash::getFlashMovieIndex( uint32_t *pOutIsValidGameMode,
@@ -973,28 +1036,6 @@ void GSFlash::setViewport( MoviePlayer &param_1 ) {
 
 // SWF button-action key codes passed to FlashPlayer::tick each frame.
 // Values < 0x20 follow the SWF spec; values >= 0x20 are ASCII character codes.
-enum eFlashKey : uint32_t {
-    FK_Left = 0x01,        // left arrow
-    FK_Right = 0x02,       // right arrow
-    FK_Pause = 0x03,       // home key (mapped to pause action)
-    FK_Back = 0x08,        // backspace
-    FK_Validate = 0x0d,    // enter
-    FK_Up = 0x0e,          // up arrow
-    FK_Down = 0x0f,        // down arrow
-    FK_WheelUp = 0x2b,     // '+'
-    FK_WheelDown = 0x2d,   // '-'
-    FK_SortRight = 0x31,   // '1'
-    FK_InGameDown = 0x32,  // '2'
-    FK_SortLeft = 0x33,    // '3'
-    FK_InGameLeft = 0x34,  // '4'
-    FK_Option4 = 0x35,     // '5'
-    FK_InGameRight = 0x36, // '6'
-    FK_SortInsert = 0x37,  // '7'
-    FK_InGameUp = 0x38,    // '8'
-    FK_Option3 = 0x39,     // '9'
-    FK_Option1 = 0x78,     // 'x'
-    FK_Option2 = 0x79,     // 'y'
-};
 
 uint32_t GSFlash::getInputMask() {
     // FUN_0099aa60

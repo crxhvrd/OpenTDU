@@ -1,20 +1,31 @@
 #include "shared.h"
 #include "file_map.h"
 
-int32_t FileMapEntry::deserialize( void *pMemory ) {
-    StoredAsUint16 = 0x1020304; // For some reason this is never deserialized?
+#include "core/binary_helpers.h"
 
-    uint32_t *pMemoryAsDword = (uint32_t *)pMemory;
-    OTDU_ASSERT( pMemoryAsDword );
+int32_t FileMapEntry::deserialize( const void *pMemory ) {
+    // FUN_009a6800
+    OTDU_ASSERT( pMemory );
 
-    uint32_t crc = pMemoryAsDword[0];
-    uint32_t size = pMemoryAsDword[1];
-    uint32_t offset = pMemoryAsDword[2];
-    uint32_t uncompressedSize = pMemoryAsDword[3];
-    uint32_t version = pMemoryAsDword[4];
+    EndiannessProbe = 0x1020304;
 
-    uint8_t *pbCompressed = (uint8_t *)( pMemory ) + 0x14;
-    bool bCompressed = *(bool *)pbCompressed;
+    const uint8_t *pMemoryAsByte = (const uint8_t *)pMemory;
+
+    uint32_t crc = ReadUint32( pMemoryAsByte + 0x00 );
+    uint32_t size = ReadUint32( pMemoryAsByte + 0x04 );
+    uint32_t offset = ReadUint32( pMemoryAsByte + 0x08 );
+    uint32_t uncompressedSize = ReadUint32( pMemoryAsByte + 0x0c );
+    uint32_t version = ReadUint32( pMemoryAsByte + 0x10 );
+
+    bCompressed = ( pMemoryAsByte[0x14] != 0 );
+
+    if ( *(const uint8_t *)&EndiannessProbe != 1 ) {
+        crc = ReverseEndianness32( crc );
+        size = ReverseEndianness32( size );
+        offset = ReverseEndianness32( offset );
+        uncompressedSize = ReverseEndianness32( uncompressedSize );
+        version = ReverseEndianness32( version );
+    }
 
     CRC = crc;
     SizeWithPadding = size;
@@ -23,6 +34,69 @@ int32_t FileMapEntry::deserialize( void *pMemory ) {
     Version = version;
 
     return 0x18;
+}
+
+bool FileMap::initFromMem( void *pMemory, const uint32_t mapFileSize ) {
+    // FUN_009a6500
+    releaseMap();
+
+    if ( pMemory == nullptr || mapFileSize <= 5 ) {
+        return false;
+    }
+
+    const char *pMagic = (const char *)pMemory;
+    if ( pMagic[0] != 'M' || pMagic[1] != 'A' || pMagic[2] != 'P' ) {
+        return false;
+    }
+
+    if ( pMagic[3] == '3' ) {
+        bUnknown = true;
+    } else if ( pMagic[3] != '4' ) {
+        return false;
+    }
+
+    if ( pMagic[4] != '\0' ) {
+        return false;
+    }
+
+    pMapAllocation = pMemory;
+    pMapStart = (uint8_t *)pMemory + 5;
+    MapSize = mapFileSize - 5;
+
+    return true;
+}
+
+void FileMap::setHeaderToSkip( const char *pHeaderToSkip ) {
+    // FUN_009a6770
+    HeaderToSkip.clear();
+    if ( pHeaderToSkip != nullptr ) {
+        HeaderToSkip = pHeaderToSkip;
+    }
+}
+
+bool FileMap::setBigFileName( const char *pFilename ) {
+    // FUN_009a3310
+    if ( pFilename == nullptr || strlen( pFilename ) > 0x103 ) {
+        return false;
+    }
+
+    FilenameBigFile = pFilename;
+    bUseBigFile = true;
+
+    return true;
+}
+
+void FileMap::releaseMap() {
+    if ( pMapAllocation != nullptr ) {
+        TestDrive::FreeAligned( pMapAllocation );
+        pMapAllocation = nullptr;
+    }
+
+    pMapStart = nullptr;
+    MapSize = 0;
+    bUnknown = false;
+    bUseBigFile = false;
+    FilenameBigFile.clear();
 }
 
 void FileMap::initializeCRCLUT() {
@@ -97,16 +171,17 @@ bool FileMap::findEntryInSet( const char *pFilename,
     return true;
 }
 
+bool FileMap::startsWithHeaderToSkip( const char *pFilename ) const {
+    return HeaderToSkip.length() > 0 &&
+           StringNCmpI( pFilename, HeaderToSkip.c_str(),
+                        HeaderToSkip.length() ) == 0;
+}
+
 FileMapEntry *FileMap::findEntry( const char *pFilename ) {
-    if ( HeaderToSkip.length() > 0 ) {
-        std::string filename = pFilename;
-        size_t iVar3 = filename.rfind( HeaderToSkip, 0 );
-        if ( iVar3 == 0 ) {
-            std::string filenameWithoutHeader =
-                filename.substr( HeaderToSkip.length() );
-            uint32_t hashcode = hashFilename( filenameWithoutHeader.c_str() );
-            return findEntry( hashcode );
-        }
+    // FUN_009a6bb0
+    if ( startsWithHeaderToSkip( pFilename ) ) {
+        uint32_t hashcode = hashFilename( pFilename + HeaderToSkip.length() );
+        return findEntry( hashcode );
     }
 
     uint32_t hashcode = hashFilename( pFilename );
@@ -114,6 +189,7 @@ FileMapEntry *FileMap::findEntry( const char *pFilename ) {
 }
 
 FileMapEntry *FileMap::findEntry( const uint32_t crc ) {
+    // FUN_009a6b10
     if ( pMapStart == nullptr ) {
         return nullptr;
     }
@@ -127,6 +203,8 @@ FileMapEntry *FileMap::findEntry( const uint32_t crc ) {
                 return &Entry;
             }
         }
+
+        return nullptr;
     }
 
     int32_t iVar6 = 0;
@@ -187,11 +265,8 @@ std::string &FileMap::resolveName( const char *pFilename,
     TempFilename.clear();
 
     std::string filename = pFilename;
-    if ( HeaderToSkip.length() > 0 ) {
-        size_t iVar3 = filename.rfind( HeaderToSkip, 0 );
-        if ( iVar3 == 0 ) {
-            filename = filename.substr( HeaderToSkip.length() );
-        }
+    if ( startsWithHeaderToSkip( pFilename ) ) {
+        filename = filename.substr( HeaderToSkip.length() );
     }
 
     std::string extension = bCompressed ? ".zc" : "";

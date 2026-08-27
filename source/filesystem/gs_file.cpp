@@ -8,6 +8,8 @@
 #include "file_path_register.h"
 #include "flash/modal_message_box.h"
 #include "gs_dirty_disk.h"
+#include "mod_installer.h"
+#include "mod_manager.h"
 #include "player_data/user_profile.h"
 #include "tdu_instance.h"
 
@@ -21,6 +23,11 @@ TestDriveMutex *gpFilemapMutex = nullptr; // TODO: Define the thread routine in
                                           // GSFile to avoid doing this crap
 
 static constexpr const char *kCameraBinPath = "Euro/BNK/DataBase/Cameras.bin";
+static constexpr uint32_t kMaxFilemapCount = 0x80;
+static constexpr uint32_t kFirstPackFilemapIndex = 2;
+static constexpr const char *kModsFolderPath = "Mods";
+static constexpr const char *kPackMapFilename = "CarPack.map";
+static constexpr const char *kPackBigFilename = "CarPack.big";
 
 static TestDriveThread::ThreadReturnType_t ThreadRoutine( void *in_param_1 ) {
     WorkerThreadContext *param_1 = (WorkerThreadContext *)in_param_1;
@@ -92,7 +99,7 @@ GSFile::GSFile()
       bDeletingInProgress( false ) {
     gpFile = this;
 
-    filemaps.resize( 127u );
+    filemaps.resize( kMaxFilemapCount );
     for ( FileMap &filemap : filemaps ) {
         filemap.initializeCRCLUT();
     }
@@ -104,7 +111,13 @@ GSFile::GSFile()
                                &workerThreadContext, 0, 0 );
 }
 
-GSFile::~GSFile() { delete pFilemapMutex; }
+GSFile::~GSFile() {
+    for ( FileMap &filemap : filemaps ) {
+        filemap.releaseMap();
+    }
+
+    delete pFilemapMutex;
+}
 
 bool GSFile::initialize( TestDriveGameInstance * ) {
     bool bInitialized = retrieveSaveFolder();
@@ -172,23 +185,10 @@ bool GSFile::loadFile( const char *pFilename,
             return false;
         }
     } else {
-        bool bVar3 = findMapEntriesForFile( pFilename, &pEntry, &pFilemap );
-
-        // If not found in the map, check external
-        if ( !bVar3 ) {
-            std::string filename = pFilename;
-            const char *pResRoot = gpConfig->getResRootPath();
-            size_t iVar5 = filename.rfind( pResRoot, 0 );
-            if ( iVar5 == 0 ) {
-                return false;
-            }
-            bool bVar2 = findFileOutsideFilemap( pFilename, &fileSize );
-            if ( !bVar2 ) {
-                return false;
-            }
+        if ( !resolveFileInFilemaps( pFilename, &pEntry, &pFilemap,
+                                     &fileSize ) ) {
+            return false;
         }
-
-        fileSize = pEntry->Size;
     }
 
     // TODO: What's the 0x801 required for?
@@ -238,23 +238,10 @@ bool GSFile::loadBank( const char *pFilename,
             return false;
         }
     } else {
-        bool bVar3 = findMapEntriesForFile( pFilename, &pEntry, &pFilemap );
-
-        // If not found in the map, check external
-        if ( !bVar3 ) {
-            std::string filename = pFilename;
-            const char *pResRoot = gpConfig->getResRootPath();
-            size_t iVar5 = filename.rfind( pResRoot, 0 );
-            if ( iVar5 == 0 ) {
-                return false;
-            }
-            bool bVar2 = findFileOutsideFilemap( pFilename, &fileSize );
-            if ( !bVar2 ) {
-                return false;
-            }
+        if ( !resolveFileInFilemaps( pFilename, &pEntry, &pFilemap,
+                                     &fileSize ) ) {
+            return false;
         }
-
-        fileSize = pEntry->Size;
     }
 
     if ( param_5 == 0 ) {
@@ -293,20 +280,9 @@ bool GSFile::loadBank( const char *pFilename,
             return false;
         }
     } else {
-        bool bFound = findMapEntriesForFile( pFilename, &pEntry, &pFilemap );
-
-        // If not found in the map, check external
-        if ( !bFound ) {
-            std::string filename = pFilename;
-            const char *pResRoot = gpConfig->getResRootPath();
-            if ( filename.rfind( pResRoot, 0 ) == 0 ) {
-                return false;
-            }
-            if ( !findFileOutsideFilemap( pFilename, &fileSize ) ) {
-                return false;
-            }
-        } else {
-            fileSize = pEntry->Size;
+        if ( !resolveFileInFilemaps( pFilename, &pEntry, &pFilemap,
+                                     &fileSize ) ) {
+            return false;
         }
     }
 
@@ -437,6 +413,24 @@ bool GSFile::findFileOutsideFilemap( const char *pFilename,
     return true;
 }
 
+bool GSFile::resolveFileInFilemaps( const char *pFilename,
+                                    FileMapEntry **ppOutEntry,
+                                    FileMap **ppOutFilemap,
+                                    uint32_t *pOutFileSize ) {
+    const bool bFound =
+        findMapEntriesForFile( pFilename, ppOutEntry, ppOutFilemap );
+
+    if ( bFound && ( *ppOutEntry )->Size != 0 ) {
+        *pOutFileSize = ( *ppOutEntry )->Size;
+        return true;
+    }
+
+    *ppOutEntry = nullptr;
+    *ppOutFilemap = nullptr;
+
+    return findFileOutsideFilemap( pFilename, pOutFileSize );
+}
+
 bool GSFile::findMapEntriesForFile( const char *pEntryName,
                                     FileMapEntry **ppOutMapEntry,
                                     FileMap **ppOutMap ) {
@@ -447,7 +441,7 @@ bool GSFile::findMapEntriesForFile( const char *pEntryName,
 
     FileMap *pBestMap = nullptr;
     FileMapEntry *pBestEntry = nullptr;
-    int32_t filemapIndex = 0;
+    int32_t filemapIndex = -1;
     for ( FileMap &filemap : filemaps ) {
         filemapIndex++;
 
@@ -563,42 +557,163 @@ bool GSFile::loadFileRaw( const char *pFilename,
     return bVar1;
 }
 
-void GSFile::initCarPacks( bool param_1 ) {
-    // FUN_009a6040
-    // TODO: This could be re-used to support standalone mods (just need to
-    // re-implement the missing XML parsing)
-    ScopedMutexLock filemapLock( pFilemapMutex );
-
-    FileDirectAccess file;
-    file.bNeedName = false;
-
-    uint64_t profileHashcode = gUserProfileRegister.getActiveProfileHashcode();
-
-    uint32_t uStack_aa58 = 0;
-    EnumerateContextItem aeStack_9e00[129];
-    bool bVar1 = file.enumerateContext(
-        profileHashcode, eContextSource::CS_Marketplace, nullptr, nullptr, 0x80,
-        aeStack_9e00, &uStack_aa58 );
-
-    OTDU_LOG_INFO( "=>EnumerateContext() => %s, %d items\n",
-                   ( ( bVar1 ) ? "TRUE" : "FALSE" ), uStack_aa58 );
-    if ( param_1 ) {
-        OTDU_UNIMPLEMENTED;
-        // FUN_008a3750(0x147aef0);
+int32_t GSFile::appendMapFile( const char *pVFSName,
+                               const char *pPackBigName,
+                               const char *pPackMapName,
+                               FileDirectAccess *pContext,
+                               const int32_t maxFilemapCount,
+                               const bool bReadFromVFS,
+                               int32_t filemapIndex ) {
+    // FUN_009a4530
+    if ( filemapIndex < maxFilemapCount ) {
+        while ( filemaps[filemapIndex].MapSize != 0 ) {
+            filemapIndex++;
+            if ( maxFilemapCount <= filemapIndex ) {
+                return -1;
+            }
+        }
     }
 
-    for ( uint32_t i = 0; i < uStack_aa58; i++ ) {
-        EnumerateContextItem &item = aeStack_9e00[i];
-        if ( !item.bIsValid ) {
+    OTDU_ASSERT( filemapIndex >= 0 && filemapIndex < (int32_t)filemaps.size() );
+    FileMap &filemap = filemaps[filemapIndex];
+
+    FileDirectAccess file;
+    file.bNeedName = bReadFromVFS;
+    if ( pContext != nullptr ) {
+        file.copyContextFrom( *pContext );
+    }
+
+    bool bMounted = false;
+    if ( file.openFile( pPackMapName, true, false ) ) {
+        const uint32_t mapFileSize = file.getFileSize();
+        if ( mapFileSize != 0 ) {
+            void *pMapMemory =
+                TestDrive::AllocAligned( mapFileSize + 0x801, 0x10 );
+            if ( pMapMemory != nullptr ) {
+                if ( file.readFromFile( pMapMemory, mapFileSize ) ==
+                     mapFileSize ) {
+                    filemap.bNeedName = bReadFromVFS;
+
+                    if ( filemap.initFromMem( pMapMemory, mapFileSize ) ) {
+                        filemap.setHeaderToSkip( pVFSName );
+                        bMounted = true;
+
+                        if ( pPackBigName != nullptr ) {
+                            filemap.setBigFileName( pPackBigName );
+                        }
+                    } else {
+                        OTDU_LOG_ERROR( "Failed to mount '%s': not a valid "
+                                        "MAP3/MAP4 file\n",
+                                        pPackMapName );
+                        TestDrive::FreeAligned( pMapMemory );
+                    }
+                } else {
+                    OTDU_LOG_ERROR( "Failed to read '%s' (%u bytes)\n",
+                                    pPackMapName, mapFileSize );
+                    TestDrive::FreeAligned( pMapMemory );
+                }
+            }
+        }
+    }
+    file.close();
+
+    if ( !bFilemapActive ) {
+        bFilemapActive = bMounted;
+    }
+
+    return bMounted ? filemapIndex : -1;
+}
+
+void GSFile::initCarPacks( bool bApplyContent ) {
+    // FUN_009a6040
+    ScopedMutexLock filemapLock( pFilemapMutex );
+
+    for ( uint32_t i = kFirstPackFilemapIndex; i < kMaxFilemapCount; i++ ) {
+        filemaps[i].releaseMap();
+    }
+
+    gpModManager->refresh();
+    std::vector<ModPack> &packs = gpModManager->getPacks();
+
+    gpModInstaller->reset();
+
+    OTDU_LOG_INFO( "=>EnumerateContext() => %s, %zu items\n",
+                   packs.empty() ? "FALSE" : "TRUE", packs.size() );
+
+    uint32_t numMounted = 0u;
+    for ( ModPack &pack : packs ) {
+        OTDU_LOG_INFO( "  -Found Pack: Name:%S  Enabled:%d Conflicting:%d\n",
+                       pack.DisplayName.c_str(), pack.bEnabled,
+                       pack.bConflicting );
+
+        if ( !pack.bEnabled || pack.bConflicting ) {
+            OTDU_LOG_INFO( "  -Skipping '%S': %s\n", pack.DisplayName.c_str(),
+                           pack.Status.empty() ? "disabled"
+                                               : pack.Status.c_str() );
             continue;
         }
 
-        OTDU_LOG_INFO( "  -Found Pack: Name:%S  Type:%d DeviceID=%d\n",
-                       item.DisplayName.c_str(), item.Source,
-                       item.StoredOnHDD );
+        if ( numMounted >= kMaxFilemapCount - kFirstPackFilemapIndex ) {
+            pack.Status = "there are no filemap slots left";
+            OTDU_LOG_WARN( "  -Skipping '%S': %s\n", pack.DisplayName.c_str(),
+                           pack.Status.c_str() );
+            continue;
+        }
 
-        OTDU_UNIMPLEMENTED;
+        EnumerateContextItem item;
+        item.bIsValid = true;
+        item.StoredOnHDD = 0u;
+        item.Source = eContextSource::CS_None;
+        item.Filename = pack.Path;
+        item.DisplayName = pack.DisplayName;
+
+        if ( ModInstaller::HasContentDesc( item ) ) {
+            const eContentDescResult descResult =
+                gpModInstaller->loadContentDesc( item, bApplyContent );
+
+            OTDU_LOG_INFO( "  -CXmlInstaller=> Content Desc is %s\n",
+                           ( descResult != CDR_Invalid ) ? "VALID"
+                                                         : "INVALID" );
+
+            if ( descResult == CDR_Invalid ) {
+                pack.Status = "its content descriptor is unusable";
+                OTDU_LOG_ERROR( "  -Skipping pack '%S': %s\n",
+                                pack.DisplayName.c_str(), pack.Status.c_str() );
+                continue;
+            }
+        }
+
+        const std::filesystem::path packPath( pack.Path );
+        const std::string mapPath = ( packPath / kPackMapFilename ).string();
+        const std::string bigPath = ( packPath / kPackBigFilename ).string();
+
+        const int32_t filemapIndex = appendMapFile(
+            gpConfig->getResRootPath(), bigPath.c_str(), mapPath.c_str(),
+            nullptr, kMaxFilemapCount, false, kFirstPackFilemapIndex );
+        if ( filemapIndex <= 0 ) {
+            pack.Status = "its CarPack.map could not be mounted";
+            OTDU_LOG_ERROR( "  -Failed to mount pack '%S'\n",
+                            pack.DisplayName.c_str() );
+            continue;
+        }
+
+        FileMap &filemap = filemaps[filemapIndex];
+        filemap.bNeedName = false;
+        filemap.Context = item;
+        filemap.Context.bIsValid = false;
+
+        pack.bMounted = true;
+        pack.FilemapIndex = filemapIndex;
+        pack.NumEntries = filemap.MapSize / 0x18;
+        pack.Status.clear();
+        numMounted++;
+
+        OTDU_LOG_INFO( "  -Mounted '%S' on map %d: %u entries\n",
+                       pack.DisplayName.c_str(), filemapIndex,
+                       pack.NumEntries );
     }
+
+    gpModManager->setPendingChanges( false );
 }
 
 bool GSFile::loadBootFile( const char *pFilename,
@@ -802,8 +917,8 @@ bool GSFile::loadFileFromContext( const char *pContextName,
         *pOutContentSize = 0u;
     }
 
-    const bool bUseCurrentContext =
-        ( pContextName != nullptr ) && ( strcmp( pContextName, "CURRENT" ) == 0 );
+    const bool bUseCurrentContext = ( pContextName != nullptr ) &&
+                                    ( strcmp( pContextName, "CURRENT" ) == 0 );
     if ( bUseCurrentContext ) {
         if ( !bIsCurrentContextReady ) {
             return false;
@@ -856,8 +971,8 @@ bool GSFile::loadFileFromContext( const char *pContextName,
     *ppOutContent = nullptr;
     *pOutContentSize = 0u;
 
-    const bool bUseCurrentContext =
-        ( pContextName != nullptr ) && ( strcmp( pContextName, "CURRENT" ) == 0 );
+    const bool bUseCurrentContext = ( pContextName != nullptr ) &&
+                                    ( strcmp( pContextName, "CURRENT" ) == 0 );
     if ( bUseCurrentContext && !bIsCurrentContextReady ) {
         return false;
     }
@@ -884,8 +999,8 @@ bool GSFile::loadFileFromContext( const char *pContextName,
         *pOutContentSize = fileSize;
 
         if ( *ppOutContent != nullptr ) {
-            bSuccess =
-                pFileAccess->readFromFile( *ppOutContent, fileSize ) == fileSize;
+            bSuccess = pFileAccess->readFromFile( *ppOutContent, fileSize ) ==
+                       fileSize;
         }
 
         pFileAccess->close();

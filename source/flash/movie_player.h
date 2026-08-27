@@ -20,6 +20,7 @@ struct MoviePlayer {
     //  bEnabled
     //  bShouldDraw
     uint32_t Flags;
+    bool bOverlay = false;
 
     MoviePlayer()
         : pEntityInstance( nullptr ),
