@@ -253,6 +253,7 @@ private:
 
     friend class GMCarShowcase;
     friend class GameModeWorld; // installs the local-player car on reset
+    friend class CinResCollection; // spawns the PLAYER_CAR cinematic actor
     friend class BrandCar;      // installs the spot showcase ("brand") cars
     friend class GSScenaric;    // GSScenaric::placeDriver seats pDriver
     friend class GSCarState; // TODO: Remove once visibility for bInstanceAlive

@@ -86,7 +86,8 @@ bool MngActor::onWorldStreamed( Eigen::Vector4f *param_1,
     return true;
 }
 
-static constexpr const char *kPlayerParkingName = "PosCarParking"; // DAT_00f8e5b8 
+static constexpr const char *kPlayerParkingName =
+    "PosCarParking"; // DAT_00f8e5b8
 
 Matrix4x4f_t MngActor::placePlayerVehicle( const int32_t spawnMode,
                                            const bool bApply ) {
@@ -103,8 +104,9 @@ Matrix4x4f_t MngActor::placePlayerVehicle( const int32_t spawnMode,
         spots.getWorldSpotChecked( gpScenaric->getCurrentSpotIndex() );
     if ( pSpot == nullptr ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (the no-spot fallback walks
-                                 // the actor list for an ET_CARP, then falls
-                                 // back to GSScenaric's default position)
+                                 // the actor list for an ET_CARP first)
+        frame.row( 3 ) = gpScenaric->getDefaultStartPosition();
+        applyPlayerVehicleFrame( frame, bApply );
         return frame;
     }
 
@@ -124,8 +126,8 @@ Matrix4x4f_t MngActor::placePlayerVehicle( const int32_t spawnMode,
             OTDU_LOG_INFO( "Player spawn: '%s' of spot 0x%016llx at "
                            "%.1f %.1f %.1f\n",
                            kPlayerParkingName,
-                           (unsigned long long)pSpot->Hashcode,
-                           frame( 3, 0 ), frame( 3, 1 ), frame( 3, 2 ) );
+                           (unsigned long long)pSpot->Hashcode, frame( 3, 0 ),
+                           frame( 3, 1 ), frame( 3, 2 ) );
             applyPlayerVehicleFrame( frame, bApply );
             return frame;
         }
@@ -140,14 +142,14 @@ Matrix4x4f_t MngActor::placePlayerVehicle( const int32_t spawnMode,
                        : "NOT streamed",
                    fallbackPosition.x(), fallbackPosition.y(),
                    fallbackPosition.z() );
-    frame.col( 3 ) = fallbackPosition;
+    frame.row( 3 ) = fallbackPosition;
     applyPlayerVehicleFrame( frame, bApply );
     return frame;
 }
 
 void MngActor::applyPlayerVehicleFrame( const Matrix4x4f_t &frame,
                                         const bool bApply ) {
-    // FUN_0083d900 
+    // FUN_0083d900
     if ( !bApply || gpScenaric == nullptr ) {
         return;
     }

@@ -178,6 +178,12 @@ void GameModeWorld::reset() {
          gpScenaric->getLocalPlayer().getCarState() == nullptr ) {
         installLocalPlayerCar();
     }
+    if ( gpScenaric != nullptr ) {
+        CarState *pExistingCar = gpScenaric->getLocalPlayer().getCarState();
+        if ( pExistingCar != nullptr ) {
+            pPlayerPhysicsVehicle = pExistingCar->getPhysicsVehicle();
+        }
+    }
 
     if ( gpCamera != nullptr && gpScenaric != nullptr ) {
         CarState *pCar = gpScenaric->getLocalPlayer().getCarState();

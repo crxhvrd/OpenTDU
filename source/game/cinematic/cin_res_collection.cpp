@@ -12,10 +12,46 @@
 #include "game/avatar/gs_avatar.h"
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/mng_actor.h"
+#include "game/gm_scene.h"
+#include "game/vehicle/gs_car_state.h"
+#include "game/vehicle/gs_car_display.h"
+#include "game/vehicle/vehicle_controller.h"
+#include "audio/vehicle/gs_vehicle_sound.h"
+#include "physics/gs_physics.h"
+#include "physics/vehicle/physics_vehicle.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/driver.h"
+#include "player_data/saved_garage.h"
+#include "render/mng_env_map.h"
 #include "render/animation/clip.h"
+#include "world/gs_world_streaming.h"
 
 // TDU_PNJ row index in the game database
 static constexpr int32_t kPNJDatabaseIndex = 0x10;
+static constexpr int32_t kDefaultCarDBID = 999;
+static constexpr int32_t kDefaultBikeDBID = 666;
+
+static GarageSlot *GetCurrentGarageSlot() {
+    IPlayerData *pSave =
+        ( gpPlayerData != nullptr ) ? gpPlayerData->getLoadedSave() : nullptr;
+    if ( pSave == nullptr ) {
+        return nullptr;
+    }
+
+    Driver *pDriver = pSave->getDriver();
+    Garage *pGarage = pSave->getGarage();
+    if ( pDriver == nullptr || pGarage == nullptr ) {
+        return nullptr;
+    }
+
+    const int32_t index = static_cast<int32_t>( pDriver->CurrentCar );
+    if ( index < 0 || index >= Garage::kNumCarSlots ) {
+        return nullptr;
+    }
+    return &pGarage->pCars[index];
+}
 
 static float FindKeyframe( const void *pTrack,
                            float time,
@@ -492,6 +528,7 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
     Eigen::Quaternionf heading = Eigen::Quaternionf::Identity();
     Eigen::Vector3f scale( 1.0f, 1.0f, 1.0f );
     bool bVisible = true;
+    bool bHasTransformTrack = false;
 
     const uint8_t *pProp = pEntry + propOffset;
     for ( int32_t i = 0; i < numProps; i++ ) {
@@ -506,6 +543,7 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
         case 0x64c8d3b1u: // heading
             if ( subtype == 0 ) {
                 heading = InterpolateQuatTrack( pTrack, time );
+                bHasTransformTrack = true;
             }
             break;
         case 0x6c6163b8u: // scale
@@ -516,6 +554,7 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
         case 0xd7e2d8c4u: // position
             if ( subtype == 1 ) {
                 position = InterpolateVec3Track( pTrack, time );
+                bHasTransformTrack = true;
             }
             break;
         case 0xd2df4b2cu: { // visibility flag (byte keyframes after the
@@ -549,18 +588,22 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
             position.x(), position.y(), position.z(), heading.x(), heading.y(),
             heading.z(), heading.w(), scale.x(), scale.y(), scale.z() );
 
-    applyActorTransform( pActor, position, heading, scale );
+    applyActorTransform( pActor, position, heading, scale, bHasTransformTrack );
 }
 
 void CinResCollection::applyActorTransform( const CinematicActor *pActor,
                                             const Eigen::Vector3f &position,
                                             const Eigen::Quaternionf &heading,
-                                            const Eigen::Vector3f &scale ) {
+                                            const Eigen::Vector3f &scale,
+                                            bool bHasTransformTrack ) {
     // FUN_007e3e30
-    if ( pActor == nullptr || pActor->pEntity == nullptr ) {
+    if ( pActor == nullptr ) {
         return;
     }
-    Entity *pEntity = static_cast<Entity *>( pActor->pEntity );
+    if ( pActor->Kind != CinematicActor::CAK_PlayerCar &&
+         pActor->pEntity == nullptr ) {
+        return;
+    }
 
     Matrix4x4f_t transform = BuildRotationMatrix( heading );
     transform.row( 0 ) *= scale.x();
@@ -572,6 +615,14 @@ void CinResCollection::applyActorTransform( const CinematicActor *pActor,
         transform = transform * baseMatrix;
     }
 
+    if ( pActor->Kind == CinematicActor::CAK_PlayerCar ) {
+        if ( bHasTransformTrack ) {
+            applyPlayerCarTransform( transform );
+        }
+        return;
+    }
+
+    Entity *pEntity = static_cast<Entity *>( pActor->pEntity );
     pEntity->setTransform( transform, true );
 
     const Eigen::Vector4f worldPos = pEntity->getModelMatrix().row( 3 );
@@ -962,12 +1013,13 @@ void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
         *reinterpret_cast<const uint32_t *>( pRaw + 0x38 );
     const uint64_t key = ( static_cast<uint64_t>( hashLow ) << 32 ) | hashHigh;
 
+    CinematicActor::eKind kind = CinematicActor::CAK_Entity;
     void *pEntity = findActorByHashcode( key );
     if ( pEntity == nullptr ) {
-        pEntity = spawnActorEntity( pName, key );
+        pEntity = spawnActorEntity( pName, key, kind );
     }
 
-    return registerActor( pName, pMedia, pEntity );
+    return registerActor( pName, pMedia, pEntity, kind );
 }
 
 CinematicActor *CinResCollection::findActor( const char *pName ) {
@@ -985,7 +1037,8 @@ CinematicActor *CinResCollection::findActor( const char *pName ) {
 
 CinematicActor *CinResCollection::registerActor( const char *pName,
                                                  const void *pSceneData,
-                                                 void *pEntity ) {
+                                                 void *pEntity,
+                                                 CinematicActor::eKind kind ) {
     // FUN_007e0b70 + FUN_007e0c90
     if ( pName == nullptr || numActors >= kMaxActors ) {
         return nullptr;
@@ -995,6 +1048,7 @@ CinematicActor *CinResCollection::registerActor( const char *pName,
     actor.Name[sizeof( actor.Name ) - 1] = '\0';
     actor.pSceneData = pSceneData;
     actor.pEntity = pEntity;
+    actor.Kind = kind;
     numActors++;
     return &actor;
 }
@@ -1028,8 +1082,11 @@ void *CinResCollection::findActorByHashcode( uint64_t key ) {
 }
 
 void *CinResCollection::spawnActorEntity( const char *pName,
-                                          uint64_t hashcode ) {
+                                          uint64_t hashcode,
+                                          CinematicActor::eKind &outKind ) {
     // FUN_007e6cb0
+    outKind = CinematicActor::CAK_Entity;
+
     if ( pName != nullptr ) {
         if ( std::strncmp( pName, "Pietonne", 8 ) == 0 ) {
             return spawnPedestrian( 1 );
@@ -1050,9 +1107,218 @@ void *CinResCollection::spawnActorEntity( const char *pName,
         if ( std::strncmp( pName, "Seller", 6 ) == 0 ) {
             return spawnAvatar( eEntityType::ET_AVAT, hashcode, pName );
         }
+
+        if ( std::strncmp( pName, "glass", 6 ) == 0 ) {
+            return findSceneActorByName( "glass" );
+        }
+        if ( std::strncmp( pName, "remote", 7 ) == 0 ) {
+            return findSceneActorByName( "remote" );
+        }
+        if ( std::strncmp( pName, "phone", 6 ) == 0 ) {
+            return findSceneActorByName( "telephone" );
+        }
+
+        if ( std::strncmp( "PLAYER_CAR", pName, 10 ) == 0 ) {
+            void *pCar = spawnPlayerCar();
+            if ( pCar != nullptr ) {
+                outKind = CinematicActor::CAK_PlayerCar;
+            }
+            return nullptr;
+        }
+
+        if ( std::strncmp( "TRAFFICCAR", pName, 10 ) == 0 ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+            return nullptr;
+        }
     }
 
     return nullptr;
+}
+
+void *CinResCollection::findSceneActorByName( const char *pName ) {
+    // FUN_007e4050
+    if ( pName == nullptr || gpActiveGMScene == nullptr ) {
+        return nullptr;
+    }
+
+    MngActor &sceneActors = gpActiveGMScene->getActorManager();
+    const int32_t numSceneActors = sceneActors.getActorCount();
+    for ( int32_t i = 0; i < numSceneActors; i++ ) {
+        Entity *pActor = sceneActors.getActor( i );
+        if ( pActor != nullptr &&
+             std::strcmp( pActor->getInstanceName().c_str(), pName ) == 0 ) {
+            return pActor;
+        }
+    }
+
+    return nullptr;
+}
+
+void *CinResCollection::spawnPlayerCar() {
+    // FUN_007e6520
+    if ( gpScenaric == nullptr ) {
+        return nullptr;
+    }
+
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar != nullptr ) {
+        return pLocalCar;
+    }
+
+    const int32_t tutorialStep = gpScenaric->getIntroTutorial().getStep();
+    if ( tutorialStep != kTutorialStatePending &&
+         tutorialStep != kTutorialStateRunning &&
+         tutorialStep < kTutorialStateBuyCar ) {
+        return nullptr;
+    }
+
+    GarageSlot *pSlot = GetCurrentGarageSlot();
+    if ( pSlot == nullptr || gpCarState == nullptr || gpCarDisplay == nullptr ||
+         gpDatabase == nullptr ) {
+        return nullptr;
+    }
+
+    Matrix4x4f_t spawn = Matrix4x4f_t::Identity();
+    Eigen::Vector4f shift = Eigen::Vector4f::Zero();
+    if ( gpWorldStreaming != nullptr ) {
+        shift = gpWorldStreaming->getPosition();
+        spawn.row( 3 ) << shift.x(), shift.y(), shift.z(), 1.0f;
+    }
+
+    VehicleBaseResources *pRes = gpCarState->grabFreeResourceEntry();
+    if ( pRes == nullptr ) {
+        return nullptr;
+    }
+
+    const int32_t configID = static_cast<int32_t>( pSlot->getCarConfigID() );
+    if ( !pRes->load( configID, pSlot->rimID, 0, 0, pSlot->packHashcode, 0,
+                      eVehicleResourceType::VRT_Exterior ) ) {
+        gpCarState->releaseResourceEntry( pRes );
+        return nullptr;
+    }
+
+    CarState &state = gpCarState->grabNextFreeCarState();
+    state.reset();
+    state.owner = CarState::eOwner::CSO_LocalPlayer;
+    state.simulationType = CarState::eSimulationType::CSST_Local;
+    state.bUseShowcaseControl = false;
+    state.carID = pRes->CarID;
+    state.tireID = pRes->TireID;
+    state.rimID = pRes->RimID;
+    state.body.BackOnTrackState = 0;
+    state.body.resetBackOnTrack();
+
+    DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry( state.carID );
+    if ( pCarEntry == nullptr ) {
+        pCarEntry = gpDatabase->getCarDBEntry( kDefaultCarDBID );
+    } else if ( ( ( pCarEntry->BitField & 1 ) == 0 ) ||
+                ( pCarEntry->Brand == nullptr ) ||
+                ( ( pCarEntry->Brand->Flags & 1 ) == 0 ) ) {
+        const char *pBikeCategory =
+            gpDatabase->getStringByHashcode( 1, 0x35da5b5 );
+        pCarEntry = gpDatabase->getCarDBEntry(
+            ( pBikeCategory == pCarEntry->Category.pAsString )
+                ? kDefaultBikeDBID
+                : kDefaultCarDBID );
+    }
+
+    VehicleController *pController =
+        gpDatabase->isBike( pCarEntry )
+            ? static_cast<VehicleController *>( gpCarDisplay->instantiateBike(
+                  &state, &pRes->Exterior, &pRes->Interior, &pRes->FrontRims,
+                  &pRes->RearRims ) )
+            : static_cast<VehicleController *>( gpCarDisplay->instantiateCar(
+                  &state, &pRes->Exterior, &pRes->Interior, &pRes->FrontRims,
+                  &pRes->RearRims ) );
+    if ( pController == nullptr ) {
+        gpCarState->releaseResourceEntry( pRes );
+        return nullptr;
+    }
+
+    if ( gpMngEnvMap != nullptr ) {
+        GSCarDisplay::SetRealTimeEnvMappedCar( pController );
+    }
+
+    PhysicsVehicle *pPhysicsVehicle = nullptr;
+    if ( pRes->bUseGamePhysics != 0 && gpPhysics != nullptr ) {
+        DBEntryCarPhysicsData *pPhysEntry = pCarEntry;
+        if ( state.carID == kDefaultCarDBID ) {
+            pPhysEntry = gpDatabase->getCarDBEntry( 223 );
+        } else if ( state.carID == kDefaultBikeDBID ) {
+            pPhysEntry = gpDatabase->getCarDBEntry( 1502 );
+        }
+
+        BankVehicle *pBank = pRes->Exterior.pBankInstance;
+        PhysFactory *pFactory =
+            ( pBank != nullptr ) ? pBank->getPhysFactory() : nullptr;
+        const void *pTorqueBin =
+            ( pBank != nullptr ) ? pBank->getTorqueBinary() : nullptr;
+        if ( pPhysEntry != nullptr ) {
+            pPhysicsVehicle = gpPhysics->createVehicle(
+                pFactory, spawn, *pPhysEntry, pTorqueBin );
+        }
+    }
+
+    state.pPhysicsVehicle = pPhysicsVehicle;
+    state.bIsIndoor = false;
+    state.pVehicleBase = pController;
+    state.pResource = pRes;
+    if ( pRes->bSoundResource && gpVehicleSound != nullptr ) {
+        state.pVehicleSound = gpVehicleSound->createInstance( &state );
+    }
+    pRes->RefCount++;
+
+    if ( pPhysicsVehicle != nullptr && gpPhysics != nullptr ) {
+        PhysicsLock lock;
+        pPhysicsVehicle->resetToTransform( spawn );
+    }
+
+    gpScenaric->getLocalPlayer().setCarState( &state );
+    pController->applyGaragePaint( *pSlot );
+
+    state.body.WorldMatrix = spawn;
+    Matrix4x4f_t offseted = spawn;
+    offseted( 3, 0 ) -= shift.x();
+    offseted( 3, 1 ) -= shift.y();
+    offseted( 3, 2 ) -= shift.z();
+    state.body.OffsetedWorldMatrix = offseted;
+
+    if ( pController->getType() == VehicleBase::eType::VBT_Car ||
+         pController->getType() == VehicleBase::eType::VBT_Bike ) {
+        GSCarDisplay::SetRealTimeEnvMappedCar( pController );
+    } else {
+        GSCarDisplay::SetRealTimeEnvMappedCar( nullptr );
+    }
+
+    return &state;
+}
+
+void CinResCollection::applyPlayerCarTransform(
+    const Matrix4x4f_t &transform ) {
+    CarState *pCarState = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pCarState == nullptr ) {
+        return;
+    }
+
+    Matrix4x4f_t world = transform;
+    if ( gpWorldStreaming != nullptr ) {
+        const Eigen::Vector4f &shift = gpWorldStreaming->getPosition();
+        world( 3, 0 ) += shift.x();
+        world( 3, 1 ) += shift.y();
+        world( 3, 2 ) += shift.z();
+    }
+
+    PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
+    if ( pVehicle != nullptr && gpPhysics != nullptr ) {
+        PhysicsLock lock;
+        pVehicle->resetToTransform( world );
+    }
+
+    CarBodyState *pBody = pCarState->getBody();
+    pBody->WorldMatrix = world;
+    pBody->OffsetedWorldMatrix = transform;
 }
 
 void *CinResCollection::spawnPedestrian( int32_t /*gender*/ ) {

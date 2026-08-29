@@ -9,9 +9,15 @@ class BankInstance;
 class ClipInstance;
 
 struct CinematicActor {
+    enum eKind : int32_t {
+        CAK_Entity = 0,    // pEntity is an Entity* (scene actor / ped / avatar)
+        CAK_PlayerCar = 1, // the local player car; pEntity stays null
+    };
+
     char Name[32];
     void *pEntity; // the bound EntityActor / avatar (null until spawned)
     const void *pSceneData; // this actor's CinScene media descriptor
+    eKind Kind = CAK_Entity;
 };
 
 class CinResCollection {
@@ -51,6 +57,10 @@ public:
     inline void *getActorEntity( int32_t index ) const {
         return ( index >= 0 && index < numActors ) ? actors[index].pEntity
                                                    : nullptr;
+    }
+    inline CinematicActor::eKind getActorKind( int32_t index ) const {
+        return ( index >= 0 && index < numActors ) ? actors[index].Kind
+                                                   : CinematicActor::CAK_Entity;
     }
     inline void setActorEntity( int32_t index, void *pEntity ) {
         if ( index >= 0 && index < numActors ) {
@@ -113,7 +123,9 @@ private:
     void applyActorTransform( const CinematicActor *pActor,
                               const Eigen::Vector3f &position,
                               const Eigen::Quaternionf &heading,
-                              const Eigen::Vector3f &scale );
+                              const Eigen::Vector3f &scale,
+                              bool bHasTransformTrack );
+    void applyPlayerCarTransform( const Matrix4x4f_t &transform );
     void applyCameraTransform( int32_t transformType,
                                const Eigen::Vector3f &position,
                                const Eigen::Quaternionf &heading,
@@ -132,12 +144,18 @@ private:
     void *createCameraMedia( const CinSceneMediaHeader *pMedia );
     void *createActorMedia( const CinSceneMediaHeader *pMedia );
     CinematicActor *findActor( const char *pName );
-    CinematicActor *
-    registerActor( const char *pName, const void *pSceneData, void *pEntity );
+    CinematicActor *registerActor( const char *pName,
+                                   const void *pSceneData,
+                                   void *pEntity,
+                                   CinematicActor::eKind kind );
     void *findActorByHashcode( uint64_t key );
-    void *spawnActorEntity( const char *pName, uint64_t hashcode );
+    void *spawnActorEntity( const char *pName,
+                            uint64_t hashcode,
+                            CinematicActor::eKind &outKind );
     void *spawnPedestrian( int32_t gender );
     void *spawnAvatar( eEntityType type, uint64_t hashcode, const char *pName );
+    void *findSceneActorByName( const char *pName );
+    void *spawnPlayerCar();
 
 private:
     static constexpr int32_t kMaxActors = 128;
