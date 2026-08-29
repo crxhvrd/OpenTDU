@@ -34,7 +34,7 @@ bool MngReflection::initialize( TestDriveGameInstance * ) {
 
     pScene = reflectionRenderPass.pScene;
     pScene->setEnabled( true );
-    pScene->setBucketsMask( 0xffefbfffffffff7f );
+    pScene->setBucketsMask( 0xffffff7fffefbfffull );
 
     pCamera = reflectionRenderPass.pCamera;
     instances.clear();

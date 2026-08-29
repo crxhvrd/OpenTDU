@@ -30,6 +30,7 @@ public:
     void removeNode( HiearchyNode *pNode );
 
     void setPlanarCoords( const Eigen::Vector3f &normal, const float offset );
+    inline void setClipEnabled( const bool bState ) { bEnableClip = bState; }
 
 private:
     RenderScene *pScene;

@@ -21,6 +21,7 @@ struct InstanceLOD {
 
 // TODO: Typed enum for clarity (+ remove hardcoded masks)
 static constexpr uint32_t kInstanceAutoLODFlag = 2u;
+static constexpr uint32_t kInstanceHiddenFlag = 4u;
 
 class Instance {
 public:

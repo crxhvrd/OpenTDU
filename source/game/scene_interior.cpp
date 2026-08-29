@@ -234,14 +234,38 @@ void SceneInterior::instanciate() {
     }
 
     if ( pRootNode != nullptr && gpMngReflection != nullptr ) {
-        Instance *pReflectInstance =
-            pRootNode->findInstance( GetIdentifier64bit( kReflectPlaneNode ) );
-        if ( pReflectInstance != nullptr ) {
-            const Matrix4x4f_t &planeMatrix =
-                pReflectInstance->getModelMatrix();
-            const Eigen::Vector3f normal = planeMatrix.row( 1 ).head<3>();
-            gpMngReflection->setPlanarCoords( normal,
-                                              planeMatrix( 3, 1 ) * 2.0f );
+        HiearchyNode *pReflectNode =
+            pRootNode->findChild( GetIdentifier64bit( kReflectPlaneNode ) );
+        if ( pReflectNode != nullptr ) {
+            gpMngReflection->addNode( pRootNode );
+        }
+    }
+
+    if ( gpMngReflection != nullptr ) {
+        RenderScene *pReflectScene = gpMngReflection->getBoundScene();
+        if ( pReflectScene != nullptr ) {
+            pReflectScene->setEnabled( false );
+        }
+
+        if ( pRootNode != nullptr ) {
+            Instance *pReflectInstance = pRootNode->findInstance(
+                GetIdentifier64bit( kReflectPlaneNode ) );
+            if ( pReflectInstance != nullptr ) {
+                const Matrix4x4f_t &planeMatrix =
+                    pReflectInstance->getModelMatrix();
+                const Eigen::Vector3f normal = planeMatrix.row( 1 ).head<3>();
+
+                if ( pReflectScene != nullptr ) {
+                    pReflectScene->setEnabled( true );
+                }
+
+                gpMngReflection->setPlanarCoords( normal,
+                                                  planeMatrix( 3, 1 ) * 2.0f );
+
+                if ( gpTestDriveInstance->getActiveGameMode() == GM_Dressing ) {
+                    gpMngReflection->setClipEnabled( false );
+                }
+            }
         }
     }
 
