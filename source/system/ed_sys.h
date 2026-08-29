@@ -33,6 +33,7 @@ public:
                            const eFullscreenMode fullscreenMode,
                            const bool bWindowed );
     void showCursor( bool param_1 );
+    void setRelativeMouseMode( bool bEnabled );
 
     void retrieveCursorClientPos( double &cursorX, double &cursorY );
     void bindCharInputCallback( edSysInputCallback param_1 );

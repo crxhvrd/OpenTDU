@@ -56,6 +56,34 @@
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/EActivation.h>
+#include <Jolt/Physics/Character/CharacterVirtual.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+
+class PhysicsCharacter {
+public:
+    JPH::Ref<JPH::CharacterVirtual> pCharacter;
+    // Invalid = collide with everything (the default).
+    JPH::BodyID RestrictToBody;
+};
+
+class SingleBodyFilter final : public JPH::BodyFilter {
+public:
+    explicit SingleBodyFilter( const JPH::BodyID &bodyID )
+        : allowed( bodyID ) {}
+
+    bool ShouldCollide( const JPH::BodyID &inBodyID ) const override {
+        return inBodyID == allowed;
+    }
+
+    bool ShouldCollideLocked( const JPH::Body &inBody ) const override {
+        return inBody.GetID() == allowed;
+    }
+
+private:
+    JPH::BodyID allowed;
+};
+
+static constexpr float kMaxCharacterFallSpeed = 15.0f;
 
 namespace {
     // Terrain replaces terrain, so another sector's heightfield never counts.
@@ -777,6 +805,14 @@ void GSPhysics::terminate() {
     // Remove and destroy Jolt bodies before tearing down the physics system
     if ( pPhysicsSystem != nullptr ) {
         JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+        for ( auto &staticMesh : staticMeshBodies ) {
+            JPH::Body *pBody = static_cast<JPH::Body *>( staticMesh.second );
+            if ( pBody != nullptr ) {
+                bodyInterface.RemoveBody( pBody->GetID() );
+                bodyInterface.DestroyBody( pBody->GetID() );
+            }
+        }
+        staticMeshBodies.clear();
 
         if ( worldRefBody != nullptr ) {
             JPH::Body *pBody = static_cast<JPH::Body *>( worldRefBody );
@@ -1643,6 +1679,270 @@ void GSPhysics::destroyRigidBody( RigidBody_t pRigidBody ) {
     JPH::Body *pBody = static_cast<JPH::Body *>( pRigidBody );
     bodyInterface.RemoveBody( pBody->GetID() );
     bodyInterface.DestroyBody( pBody->GetID() );
+}
+
+RigidBody_t GSPhysics::addStaticMesh( const void *pKey,
+                                      const Eigen::Vector3f *pVertices,
+                                      uint32_t numVertices,
+                                      const uint32_t *pIndices,
+                                      uint32_t numIndices,
+                                      uint32_t surfaceClass ) {
+    if ( pPhysicsSystem == nullptr || pKey == nullptr || pVertices == nullptr ||
+         pIndices == nullptr || numVertices < 3 || numIndices < 3 ) {
+        return nullptr;
+    }
+
+    removeStaticMesh( pKey );
+
+    const Eigen::Vector4f origin = GetShiftOrigin();
+
+    JPH::VertexList vertices;
+    vertices.reserve( numVertices );
+    for ( uint32_t i = 0; i < numVertices; i++ ) {
+        vertices.push_back( JPH::Float3( pVertices[i].x() - origin.x(),
+                                         pVertices[i].y() - origin.y(),
+                                         pVertices[i].z() - origin.z() ) );
+    }
+
+    JPH::IndexedTriangleList triangles;
+    triangles.reserve( numIndices / 3 );
+    for ( uint32_t i = 0; i + 2 < numIndices; i += 3 ) {
+        const uint32_t i0 = pIndices[i + 0];
+        const uint32_t i1 = pIndices[i + 1];
+        const uint32_t i2 = pIndices[i + 2];
+        if ( i0 >= numVertices || i1 >= numVertices || i2 >= numVertices ) {
+            continue;
+        }
+        triangles.push_back( JPH::IndexedTriangle( i0, i1, i2, 0 ) );
+    }
+    if ( triangles.empty() ) {
+        return nullptr;
+    }
+
+    JPH::MeshShapeSettings meshSettings( std::move( vertices ),
+                                         std::move( triangles ) );
+    JPH::ShapeSettings::ShapeResult shapeResult = meshSettings.Create();
+    if ( !shapeResult.IsValid() ) {
+        return nullptr;
+    }
+
+    JPH::BodyCreationSettings settings(
+        shapeResult.Get(), JPH::RVec3::sZero(), JPH::Quat::sIdentity(),
+        JPH::EMotionType::Static, TDUPhysLayers::NON_MOVING );
+    settings.mUserData = surfaceClass;
+    settings.mFriction = TDUSurface::friction( surfaceClass );
+
+    PhysicsLock lock;
+
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    JPH::Body *pBody = bodyInterface.CreateBody( settings );
+    if ( pBody == nullptr ) {
+        OTDU_LOG_ERROR( "Static mesh: body creation failed\n" );
+        return nullptr;
+    }
+
+    bodyInterface.AddBody( pBody->GetID(), JPH::EActivation::DontActivate );
+    staticMeshBodies.push_back( { pKey, pBody } );
+
+    OTDU_LOG_INFO( "Static mesh installed: %u vertices, %u triangles\n",
+                   numVertices, numIndices / 3 );
+    return pBody;
+}
+
+void GSPhysics::removeStaticMesh( const void *pKey ) {
+    if ( pKey == nullptr || pPhysicsSystem == nullptr ) {
+        return;
+    }
+
+    for ( auto it = staticMeshBodies.begin(); it != staticMeshBodies.end(); ) {
+        if ( it->first == pKey ) {
+            destroyRigidBody( it->second );
+            it = staticMeshBodies.erase( it );
+        } else {
+            ++it;
+        }
+    }
+}
+
+CharacterController_t GSPhysics::createCharacter(
+    const Eigen::Vector4f &worldPosition, float radius, float cylinderHeight ) {
+    if ( pPhysicsSystem == nullptr ) {
+        return nullptr;
+    }
+
+    JPH::ShapeSettings::ShapeResult shapeResult =
+        JPH::RotatedTranslatedShapeSettings(
+            JPH::Vec3( 0.0f, 0.5f * cylinderHeight + radius, 0.0f ),
+            JPH::Quat::sIdentity(),
+            new JPH::CapsuleShape( 0.5f * cylinderHeight, radius ) )
+            .Create();
+    if ( !shapeResult.IsValid() ) {
+        return nullptr;
+    }
+
+    JPH::CharacterVirtualSettings settings;
+    settings.mShape = shapeResult.Get();
+    settings.mMaxSlopeAngle = JPH::DegreesToRadians( 50.0f );
+    settings.mMass = 80.0f;
+    settings.mBackFaceMode = JPH::EBackFaceMode::IgnoreBackFaces;
+    settings.mSupportingVolume = JPH::Plane( JPH::Vec3::sAxisY(), -radius );
+
+    const Eigen::Vector4f origin = GetShiftOrigin();
+    const JPH::RVec3 position( worldPosition.x() - origin.x(),
+                               worldPosition.y() - origin.y(),
+                               worldPosition.z() - origin.z() );
+
+    PhysicsLock lock;
+
+    PhysicsCharacter *pCharacter = new PhysicsCharacter();
+    pCharacter->pCharacter = new JPH::CharacterVirtual(
+        &settings, position, JPH::Quat::sIdentity(), 0, pPhysicsSystem );
+
+    return pCharacter;
+}
+
+void GSPhysics::setCharacterCollisionRestriction(
+    CharacterController_t pCharacter, RigidBody_t pOnlyBody ) {
+    if ( pCharacter == nullptr ) {
+        return;
+    }
+    pCharacter->RestrictToBody =
+        ( pOnlyBody != nullptr ) ? pOnlyBody->GetID() : JPH::BodyID();
+}
+
+void GSPhysics::destroyCharacter( CharacterController_t pCharacter ) {
+    if ( pCharacter == nullptr ) {
+        return;
+    }
+
+    PhysicsLock lock;
+    pCharacter->pCharacter = nullptr;
+    delete pCharacter;
+}
+
+void GSPhysics::updateCharacter( CharacterController_t pCharacter,
+                                 const Eigen::Vector3f &desiredVelocity,
+                                 float deltaTime ) {
+    if ( pCharacter == nullptr || pCharacter->pCharacter == nullptr ||
+         pPhysicsSystem == nullptr || deltaTime <= 0.0f ) {
+        return;
+    }
+
+    PhysicsLock lock;
+
+    JPH::CharacterVirtual *pCV = pCharacter->pCharacter;
+    const JPH::Vec3 up = pCV->GetUp();
+    const JPH::Vec3 gravity = pPhysicsSystem->GetGravity();
+    const JPH::Vec3 verticalVelocity = pCV->GetLinearVelocity().Dot( up ) * up;
+    const JPH::Vec3 groundVelocity = pCV->GetGroundVelocity();
+
+    JPH::Vec3 newVelocity;
+    if ( pCV->GetGroundState() ==
+             JPH::CharacterVirtual::EGroundState::OnGround &&
+         ( verticalVelocity - groundVelocity ).Dot( up ) < 0.1f ) {
+        newVelocity = groundVelocity;
+    } else {
+        newVelocity = verticalVelocity;
+    }
+    newVelocity += gravity * deltaTime;
+
+    const float verticalSpeed = newVelocity.Dot( up );
+    if ( verticalSpeed < -kMaxCharacterFallSpeed ) {
+        newVelocity -= up * ( verticalSpeed + kMaxCharacterFallSpeed );
+    }
+
+    newVelocity += JPH::Vec3( desiredVelocity.x(), 0.0f, desiredVelocity.z() );
+
+    pCV->SetLinearVelocity( newVelocity );
+
+    const SingleBodyFilter restrictFilter( pCharacter->RestrictToBody );
+    const JPH::BodyFilter defaultFilter;
+    const JPH::BodyFilter &bodyFilter =
+        pCharacter->RestrictToBody.IsInvalid()
+            ? defaultFilter
+            : static_cast<const JPH::BodyFilter &>( restrictFilter );
+
+    JPH::CharacterVirtual::ExtendedUpdateSettings updateSettings;
+    pCV->ExtendedUpdate(
+        deltaTime, gravity, updateSettings,
+        pPhysicsSystem->GetDefaultBroadPhaseLayerFilter(
+            TDUPhysLayers::MOVING ),
+        pPhysicsSystem->GetDefaultLayerFilter( TDUPhysLayers::MOVING ),
+        bodyFilter, {}, *pTempAllocator );
+}
+
+Eigen::Vector4f
+GSPhysics::getCharacterPosition( CharacterController_t pCharacter ) {
+    if ( pCharacter == nullptr || pCharacter->pCharacter == nullptr ) {
+        return Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
+    }
+
+    const Eigen::Vector4f origin = GetShiftOrigin();
+    const JPH::RVec3 position = pCharacter->pCharacter->GetPosition();
+    return Eigen::Vector4f( (float)position.GetX() + origin.x(),
+                            (float)position.GetY() + origin.y(),
+                            (float)position.GetZ() + origin.z(), 1.0f );
+}
+
+void GSPhysics::setCharacterPosition( CharacterController_t pCharacter,
+                                      const Eigen::Vector4f &worldPosition ) {
+    if ( pCharacter == nullptr || pCharacter->pCharacter == nullptr ||
+         pPhysicsSystem == nullptr ) {
+        return;
+    }
+
+    PhysicsLock lock;
+
+    const Eigen::Vector4f origin = GetShiftOrigin();
+    pCharacter->pCharacter->SetPosition( JPH::RVec3(
+        worldPosition.x() - origin.x(), worldPosition.y() - origin.y(),
+        worldPosition.z() - origin.z() ) );
+    pCharacter->pCharacter->SetLinearVelocity( JPH::Vec3::sZero() );
+
+    const SingleBodyFilter restrictFilter( pCharacter->RestrictToBody );
+    const JPH::BodyFilter defaultFilter;
+    const JPH::BodyFilter &bodyFilter =
+        pCharacter->RestrictToBody.IsInvalid()
+            ? defaultFilter
+            : static_cast<const JPH::BodyFilter &>( restrictFilter );
+
+    pCharacter->pCharacter->RefreshContacts(
+        pPhysicsSystem->GetDefaultBroadPhaseLayerFilter(
+            TDUPhysLayers::MOVING ),
+        pPhysicsSystem->GetDefaultLayerFilter( TDUPhysLayers::MOVING ),
+        bodyFilter, {}, *pTempAllocator );
+}
+
+const char *
+GSPhysics::getCharacterGroundState( CharacterController_t pCharacter,
+                                    Eigen::Vector3f &outGroundNormal ) {
+    outGroundNormal = Eigen::Vector3f::Zero();
+    if ( pCharacter == nullptr || pCharacter->pCharacter == nullptr ) {
+        return "<none>";
+    }
+
+    const JPH::Vec3 normal = pCharacter->pCharacter->GetGroundNormal();
+    outGroundNormal =
+        Eigen::Vector3f( normal.GetX(), normal.GetY(), normal.GetZ() );
+    return JPH::CharacterBase::sToString(
+        pCharacter->pCharacter->GetGroundState() );
+}
+
+Eigen::Vector3f
+GSPhysics::getCharacterVelocity( CharacterController_t pCharacter ) {
+    if ( pCharacter == nullptr || pCharacter->pCharacter == nullptr ) {
+        return Eigen::Vector3f::Zero();
+    }
+    const JPH::Vec3 velocity = pCharacter->pCharacter->GetLinearVelocity();
+    return Eigen::Vector3f( velocity.GetX(), velocity.GetY(), velocity.GetZ() );
+}
+
+bool GSPhysics::isCharacterOnGround( CharacterController_t pCharacter ) {
+    if ( pCharacter == nullptr || pCharacter->pCharacter == nullptr ) {
+        return false;
+    }
+    return pCharacter->pCharacter->GetGroundState() ==
+           JPH::CharacterVirtual::EGroundState::OnGround;
 }
 
 void GSPhysics::moveSphereBody( RigidBody_t body,

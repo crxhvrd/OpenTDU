@@ -20,9 +20,19 @@
 #include "world/gs_world.h"
 #include "world/mng_ocean.h"
 #include "world/streaming_manager.h"
+#include "physics/gs_physics.h"
+#include "render/camera/camera_first_person.h"
+#include "render/camera/gs_camera.h"
 
 bool gbEnteringLivingHub = false;                       // BOOL_00f94778
 static constexpr float kArrestedTimeReset = -144000.0f; // DAT_00f41a00
+
+static inline void BuildHouseBankName( const SpotMap *pSpot,
+                                       char ( &outName )[9] ) {
+    memcpy( outName, &pSpot->SourceHashcode, sizeof( pSpot->SourceHashcode ) );
+    outName[8] = '\0';
+    outName[0] = 'L';
+}
 
 GMLiving::GMLiving()
     : GameModeWorldBase(),
@@ -31,12 +41,14 @@ GMLiving::GMLiving()
       mngCollection(),
       mngRankings(),
       sceneLiving(),
+      firstPerson(),
       pFlashPlayer( nullptr ),
       resetTime( 0.0f ),
       bBlockSceneUpdate( false ),
       bSceneResumeAllowed( false ),
       bHouseSpotInstalled( false ),
-      bRadialMenuOpen( false ) {
+      bRadialMenuOpen( false ),
+      pendingHouseSpotIndex( -1 ) {
     // FUN_0076a6f0
     registerManager( &mngReflection );
 
@@ -139,6 +151,137 @@ void GMLiving::installHouseSpot() {
     }
 }
 
+#ifdef OTDU_DEVBUILD
+void GMLiving::requestHouseSwitch( int32_t spotIndex ) {
+    pendingHouseSpotIndex = spotIndex;
+}
+
+void GMLiving::switchHouse( int32_t spotIndex ) {
+    if ( gpScenaric == nullptr ) {
+        return;
+    }
+
+    SpotMap *pSpot = gpScenaric->getSpotList().getWorldSpotChecked( spotIndex );
+    if ( pSpot == nullptr || pSpot->Type != eSpotType::ST_House ) {
+        return;
+    }
+
+    char bankName[9];
+    BuildHouseBankName( pSpot, bankName );
+    OTDU_LOG_INFO( "Switching to house spot %d '%s' at (%.1f %.1f %.1f)\n",
+                   spotIndex, bankName, pSpot->X, pSpot->Y, pSpot->Z );
+
+    firstPerson.leave();
+
+    pCinematicLoop = nullptr;
+    pCinematicIntroI = nullptr;
+
+    sceneLiving.terminate();
+
+    gpScenaric->setCurrentSpotIndex( spotIndex );
+    if ( gpPlayerData != nullptr && gpPlayerData->getLoadedSave() != nullptr ) {
+        gpPlayerData->getLoadedSave()->getDriver()->selectCurrentHouse(
+            pSpot->Hashcode );
+    }
+
+    sceneLiving.initialize();
+    bHouseSpotInstalled = false;
+}
+#endif
+
+#ifdef OTDU_USE_IMGUI
+void GMLiving::drawDebug( float deltaTime ) {
+    if ( gpScenaric == nullptr ) {
+        return;
+    }
+
+    SceneInterior *pInterior = sceneLiving.getContent();
+    Spots &spots = gpScenaric->getSpotList();
+
+    ImGui::SeparatorText( "House" );
+
+    const int32_t currentIndex = gpScenaric->getCurrentSpotIndex();
+    SpotMap *pCurrentSpot = spots.getWorldSpotChecked( currentIndex );
+    if ( pCurrentSpot != nullptr ) {
+        char bankName[9];
+        BuildHouseBankName( pCurrentSpot, bankName );
+        ImGui::Text( "Spot %d '%s'  hashcode 0x%016llx", currentIndex, bankName,
+                     (unsigned long long)pCurrentSpot->Hashcode );
+        ImGui::Text( "Origin %.1f %.1f %.1f", pCurrentSpot->X, pCurrentSpot->Y,
+                     pCurrentSpot->Z );
+    } else {
+        ImGui::Text( "No house spot resolved (index %d)", currentIndex );
+    }
+
+    ImGui::Text( "Scene state %d (4 = Live), root node %p",
+                 (int32_t)pInterior->getState(),
+                 (void *)pInterior->getRootNode() );
+
+    ImGui::SeparatorText( "Jump to house" );
+    if ( ImGui::BeginChild( "HouseList", ImVec2( 0.0f, 200.0f ),
+                            ImGuiChildFlags_Borders ) ) {
+        const uint32_t numSpots = spots.getNumWorldSpots();
+        int32_t numHouses = 0;
+        for ( uint32_t i = 0; i < numSpots; i++ ) {
+            SpotMap *pSpot = spots.getWorldSpotChecked( (int32_t)i );
+            if ( pSpot == nullptr || pSpot->Type != eSpotType::ST_House ) {
+                continue;
+            }
+            numHouses++;
+
+            char bankName[9];
+            BuildHouseBankName( pSpot, bankName );
+
+            char label[96];
+            snprintf( label, sizeof( label ),
+                      "%s##%u   lvl %u   %.0f %.0f %.0f", bankName, i,
+                      (uint32_t)pSpot->MinLevelRequired, pSpot->X, pSpot->Y,
+                      pSpot->Z );
+
+            const bool bSelected = ( (int32_t)i == currentIndex );
+            if ( ImGui::Selectable( label, bSelected ) && !bSelected ) {
+                requestHouseSwitch( (int32_t)i );
+            }
+        }
+
+        if ( numHouses == 0 ) {
+            ImGui::TextUnformatted( "No house spots loaded yet." );
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::SeparatorText( "Camera" );
+
+    ImGui::Text( "First Person Mode Active: %i", firstPerson.isActive() );
+    if ( ImGui::Button( firstPerson.isActive() ? "Leave first person"
+                                               : "Enter first person" ) ) {
+        if ( firstPerson.isActive() ) {
+            firstPerson.leave();
+        } else {
+            firstPerson.enter( pInterior, pCinematicLoop );
+        }
+    }
+
+    const Eigen::Vector4f &hullMin = firstPerson.getHullMin();
+    const Eigen::Vector4f &hullMax = firstPerson.getHullMax();
+    ImGui::Text( "Hull %u triangles", firstPerson.getHullNumTriangles() );
+    ImGui::Text( "  min %.1f %.1f %.1f", hullMin.x(), hullMin.y(),
+                 hullMin.z() );
+    ImGui::Text( "  max %.1f %.1f %.1f", hullMax.x(), hullMax.y(),
+                 hullMax.z() );
+
+    if ( gpCamera != nullptr && gpCamera->getRenderCamera() != nullptr ) {
+        const Eigen::Vector3f renderPos =
+            gpCamera->getRenderCamera()->getWorldPosition();
+        ImGui::Text( "Render camera %.1f %.1f %.1f", renderPos.x(),
+                     renderPos.y(), renderPos.z() );
+    }
+
+    ImGui::Checkbox( "Draw collision wireframe (gDrawCollisionVis)",
+                     &gDrawCollisionVis );
+}
+#endif
+
 void GMLiving::initialize() {
     // FUN_0076b1c0
     GameModeWorldBase::initialize();
@@ -217,6 +360,12 @@ void GMLiving::reset() {
 
 void GMLiving::tick( float deltaTime, float totalTime ) {
     // FUN_0076abe0
+    if ( pendingHouseSpotIndex >= 0 ) {
+        const int32_t spotIndex = pendingHouseSpotIndex;
+        pendingHouseSpotIndex = -1;
+        switchHouse( spotIndex );
+    }
+
     if ( !bBlockSceneUpdate && bSceneResumeAllowed &&
          gpTestDriveInstance != nullptr ) {
         const eGameMode previousGM = gpTestDriveInstance->getPreviousGameMode();
@@ -249,11 +398,15 @@ void GMLiving::tick( float deltaTime, float totalTime ) {
         bHouseSpotInstalled = true;
     }
 
+    firstPerson.tick( sceneLiving.getContent(), pCinematicLoop );
+
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
 }
 
 void GMLiving::pause() {
     // FUN_007698b0
+    firstPerson.leave();
+
     sceneLiving.suspend();
 
     OTDU_UNIMPLEMENTED; // TODO: ONLINE
@@ -264,6 +417,8 @@ void GMLiving::pause() {
 
 void GMLiving::destroy() {
     // FUN_00769bd0
+    firstPerson.leave();
+
     OTDU_UNIMPLEMENTED; // TODO: ONLINE
 
     mngWorld.setDisableStreamingOnCar( false );

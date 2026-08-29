@@ -226,6 +226,14 @@ void edSys::showCursor( bool param_1 ) {
 #endif
 }
 
+void edSys::setRelativeMouseMode( bool bEnabled ) {
+#if defined( OTDU_USE_SDL )
+    if ( pWindow != nullptr ) {
+        SDL_SetWindowRelativeMouseMode( pWindow, bEnabled );
+    }
+#endif
+}
+
 void edSys::retrieveCursorClientPos( double &cursorX, double &cursorY ) {
 #if defined( OTDU_USE_SDL )
     float screenX, screenY;

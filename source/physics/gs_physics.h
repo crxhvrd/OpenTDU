@@ -31,8 +31,10 @@ class DrawList;
 struct PhysicsSHK;
 struct PhysicsSHKRoad;
 struct DBEntryCarPhysicsData;
+class PhysicsCharacter;
 
 using RigidBody_t = JPH::Body *;
+using CharacterController_t = PhysicsCharacter *;
 
 namespace TDUSurface {
     enum Class : uint32_t {
@@ -217,6 +219,29 @@ public:
                               float massScale,
                               bool registerNow,
                               bool bPhantom = true );
+    RigidBody_t addStaticMesh( const void *pKey,
+                               const Eigen::Vector3f *pVertices,
+                               uint32_t numVertices,
+                               const uint32_t *pIndices,
+                               uint32_t numIndices,
+                               uint32_t surfaceClass = TDUSurface::Generic );
+    void removeStaticMesh( const void *pKey );
+    CharacterController_t createCharacter( const Eigen::Vector4f &worldPosition,
+                                           float radius,
+                                           float cylinderHeight );
+    void destroyCharacter( CharacterController_t pCharacter );
+    void setCharacterCollisionRestriction( CharacterController_t pCharacter,
+                                           RigidBody_t pOnlyBody );
+    void updateCharacter( CharacterController_t pCharacter,
+                          const Eigen::Vector3f &desiredVelocity,
+                          float deltaTime );
+    Eigen::Vector4f getCharacterPosition( CharacterController_t pCharacter );
+    void setCharacterPosition( CharacterController_t pCharacter,
+                               const Eigen::Vector4f &worldPosition );
+    bool isCharacterOnGround( CharacterController_t pCharacter );
+    const char *getCharacterGroundState( CharacterController_t pCharacter,
+                                         Eigen::Vector3f &outGroundNormal );
+    Eigen::Vector3f getCharacterVelocity( CharacterController_t pCharacter );
 
     void destroyRigidBody( RigidBody_t pRigidBody );
 
@@ -350,6 +375,7 @@ private:
 #endif
 
     std::vector<std::pair<const void *, RigidBody_t>> sceneryInstanceBodies;
+    std::vector<std::pair<const void *, RigidBody_t>> staticMeshBodies;
     std::vector<PendingSceneryInstance> pendingSceneryInstances;
 
 private:
