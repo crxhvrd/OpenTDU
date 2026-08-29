@@ -173,6 +173,17 @@ struct PhysicsGearboxSim {
     float BaseInertia = 0.15f;
     float DiffInertia = 0.01f;
     bool bAutomatic = true;
+    enum eShiftBlock {
+        SB_None = 0,   // upshift allowed / not asked for
+        SB_BelowBand,  // still under the shift point
+        SB_TopGear,    // no gear left
+        SB_Throttle,   // throttle <= 0.1
+        SB_WheelLift,  // a grounded wheel is unloaded (traction gate)
+        SB_WheelSlip,  // driven wheels outrunning the road (>= 1.2)
+        SB_ClutchOpen, // clutch not locked in 1st/2nd
+    };
+    int ShiftBlockReason = SB_None;
+    float WheelOverRoad = 0.0f;
 };
 
 struct PhysicsClutchSim {

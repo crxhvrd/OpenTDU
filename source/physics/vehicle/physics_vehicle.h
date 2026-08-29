@@ -10,6 +10,7 @@
 namespace JPH {
     class PhysicsSystem;
     class Body;
+    class BodyInterface;
 } // namespace JPH
 
 struct DBEntryCarPhysicsData;
@@ -24,7 +25,8 @@ public:
         float SuspensionLength;        // m (current, from the hard point)
         float SuspensionDeflection;    // m, rest - current (+ = compressed/up)
         float SuspensionStaticLength;  // m, ride height
-        float SuspensionDroopStop;     // m, full droop
+        float SuspensionDroopStop;     // m, full droop (max length)
+        float SuspensionBumpStop;      // m, full compression (min length)
         float LongitudinalSlip;
         float LateralSlip;
         float LongitudinalGroundSpeed; // m/s along contact-forward (0 airborne)
@@ -111,6 +113,29 @@ public:
     float getEngineThrottle() const { return vehicle.Engine.Throttle; }
     float getEngineTorqueOut() const { return vehicle.Engine.TorqueOut; }
     float getEngineOmegaMax() const { return vehicle.Engine.OmegaMax; }
+    int getShiftBlockReason() const { return vehicle.GearBox.ShiftBlockReason; }
+    float getWheelOverRoad() const { return vehicle.GearBox.WheelOverRoad; }
+    float getEngineRevRate() const { return revRateSmoothed; }
+    int getClutchState() const { return vehicle.Clutch.State; }
+    float getClutchTarget() const { return vehicle.Clutch.Target; }
+    float getClutchEngagement() const { return vehicle.Clutch.Engagement; }
+    float getClutchLockThreshold() const {
+        return vehicle.Clutch.LockThreshold;
+    }
+    float getEngineAngAccel() const { return vehicle.Engine.AngAccel; }
+    float getUpshiftRpm() const {
+        const PhysicsGearboxSim &g = vehicle.GearBox;
+        return ( ( 1.0f - g.UpshiftBand ) * vehicle.Engine.PeakPowerOmega +
+                 g.UpshiftBand * vehicle.Engine.OmegaMax ) *
+               9.549296f;
+    }
+    float getPeakPowerRpm() const {
+        return vehicle.Engine.PeakPowerOmega * 9.549296f;
+    }
+    float getClutchEngageRef() const {
+        return ( vehicle.Engine.PeakTorqueOmega - vehicle.Engine.OmegaIdle ) *
+               0.2f;
+    }
     float getEngineSmoothedTorque() const {
         return vehicle.Engine.SmoothedTorque;
     }
@@ -202,8 +227,9 @@ public:
 
     void armChrono();
     void updateChrono( float dt );
-
-    float getChassisSpeed() const; // Main Thread call only
+    void updateRevRate( float dt );
+    void reportStuckClutch( float dt );
+    float getChassisSpeed() const;
     Eigen::Vector4f getChassisVelocity() const;
 
     float getEngineAngularVelocity() const;
@@ -232,9 +258,14 @@ private:
                           const JPH::Body &chassis,
                           float deltaTime );
     void applyAntiRollBars();
+    void applyGroundAlignment( JPH::PhysicsSystem &system,
+                               const JPH::Body &chassis,
+                               JPH::BodyInterface &bi,
+                               float deltaTime );
 
     void updateGripModulation( float chassisSpeed );
     void arbitrateAutomaticGearbox( float deltaTime, float chassisSpeed );
+    void logRollDiagnostics() const;
 
 private:
     JPH::PhysicsSystem *pPhysicsSystem;
@@ -267,6 +298,17 @@ private:
                                                            // (damper velocity)
     float wheelWidth[PhysicsVehicleState::kMaxWheels] = {};
     float wheelGroundGap[PhysicsVehicleState::kMaxWheels] = {};
+    float wheelRumbleTimer[PhysicsVehicleState::kMaxWheels] = {};
+    float wheelRumbleAmount[PhysicsVehicleState::kMaxWheels] = {};
+    Eigen::Vector4f groundAlignNormal =
+        Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
+    float groundAlignRoll = 0.0f;
+    float groundAlignRollPrev = 0.0f;
+    float groundAlignRollRate = 0.0f;
+    float groundAlignPitch = 0.0f;
+    float groundAlignPitchPrev = 0.0f;
+    float groundAlignPitchRate = 0.0f;
+    int32_t groundAlignQueryTimer = 0;
     uint32_t wheelSurface[PhysicsVehicleState::kMaxWheels] =
         {}; // raycast contact phys-type code
     uint32_t wheelMaterial[PhysicsVehicleState::kMaxWheels] =
@@ -328,6 +370,16 @@ private:
     float rideHeightRear;
 
     Chrono chrono;
+
+    float revRateSmoothed = 0.0f;
+    float revGearTime = 0.0f;
+    float revGearEntryRpm = 0.0f;
+    float revGearPeakRate = 0.0f;
+    int revGearTracked = -1;
+    float stuckClutchTimer = 0.0f;
+    float launchEntryRpm = 0.0f;
+    float launchEntrySpeed = 0.0f;
+    bool bStuckClutchReported = false;
 
     // Pose published at the end of each physics step (see publishStepPose).
     Matrix4x4f_t physicsMatrix = Matrix4x4f_t::Identity();

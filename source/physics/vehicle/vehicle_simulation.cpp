@@ -12,7 +12,7 @@ static constexpr float kLatSlipMinSpeed = 2.0f; // m/s
 static constexpr float kLoadToPerMille =
     0.001f; // FLOAT_00f4167c (load -> cf50/ceb0 scale)
 
-static constexpr float kMaxCoupling = 4000.0f; // FIXME
+static constexpr float kMaxCoupling = 0.0f; // FIXME
 
 static constexpr float kZeroSpeedSlipRatio = 20.0f;    // DAT_00f03ee0
 static constexpr float kWattToPS = 0.0013597f;         // DAT_00f41694 = 1/735.5
@@ -714,6 +714,7 @@ static void EvaluateAutoShift( PhysicsVehicleState &v,
             }
         }
         if ( loaded < grounded ) { // no shift this step
+            g.ShiftBlockReason = PhysicsGearboxSim::SB_WheelLift;
             return;
         }
     }
@@ -724,7 +725,7 @@ static void EvaluateAutoShift( PhysicsVehicleState &v,
 
     // Driven wheel slip guard
     bool slipOkForUpshift = true;
-    float actOmega = 0.0f, freeOmega = 0.0f;
+    float actOmega = 0.0f, freeOmega = 0.0f, normLongSum = 0.0f;
     int nd = 0;
     for ( int i = 0; i < v.NumWheels; ++i ) {
         const PhysicsWheelState &w = v.Wheels[i];
@@ -732,6 +733,7 @@ static void EvaluateAutoShift( PhysicsVehicleState &v,
             actOmega += std::fabs( w.AngularVel );
             freeOmega +=
                 std::fabs( w.ContactVelLong / std::max( w.Radius, 0.05f ) );
+            normLongSum += std::fabs( w.NormLong );
             ++nd;
         }
     }
@@ -740,6 +742,20 @@ static void EvaluateAutoShift( PhysicsVehicleState &v,
         slipOkForUpshift = ( freeOmega > 1e-4f ) &&
                            ( actOmega / freeOmega < kShiftSlipRatioMax );
     }
+
+    const float wheelOverRoad =
+        ( nd > 0 && freeOmega > 1e-4f ) ? ( actOmega / freeOmega ) : 0.0f;
+    const float normLong =
+        ( nd > 0 ) ? ( normLongSum / static_cast<float>( nd ) ) : 0.0f;
+
+    g.WheelOverRoad = wheelOverRoad;
+    g.ShiftBlockReason =
+        !nearRedline                    ? PhysicsGearboxSim::SB_BelowBand
+        : gear >= g.NumGears - 1        ? PhysicsGearboxSim::SB_TopGear
+        : throttle <= 0.1f              ? PhysicsGearboxSim::SB_Throttle
+        : !slipOkForUpshift             ? PhysicsGearboxSim::SB_WheelSlip
+        : !( clutchLocked || gear > 2 ) ? PhysicsGearboxSim::SB_ClutchOpen
+                                        : PhysicsGearboxSim::SB_None;
 
     if ( gear < g.NumGears - 1 && throttle > 0.1f && nearRedline &&
          slipOkForUpshift && ( clutchLocked || gear > 2 ) ) {

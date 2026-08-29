@@ -1301,8 +1301,12 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     }
     const float gcLengthFrac =
         db.GravityCenterLength > 0 ? db.GravityCenterLength * 0.01f : 0.5f;
+    constexpr float kCGHeightCarCoef = 0.75f; // DAT_00f416a4; bikes get 0.0
+    const float gcHeightFrac =
+        ( db.GravityCenterHeight > 0 ? db.GravityCenterHeight * 0.01f : 0.4f ) *
+        kCGHeightCarCoef;
     const float bodyLengthM = ( db.Length > 0 ? db.Length : 4000 ) * 0.001f;
-    const float comOffsetY = -bodyHeightM * 0.5f;
+    const float comOffsetY = -( 1.0f - gcHeightFrac ) * bodyHeightM * 0.5f;
     const float comOffsetZ = ( gcLengthFrac - 0.5f ) * bodyLengthM;
 
     JPH::OffsetCenterOfMassShapeSettings comShapeSettings(
@@ -1512,13 +1516,15 @@ void GSPhysics::drawDebug( float ) {
                 it->getEspMagFront(), it->getEspMagRear() );
 
             const char *pWheelNames[4] = { "FL", "FR", "RL", "RR" };
-            if ( ImGui::BeginTable( "wheels", 9,
+            if ( ImGui::BeginTable( "wheels", 11,
                                     ImGuiTableFlags_Borders |
                                         ImGuiTableFlags_RowBg ) ) {
                 ImGui::TableSetupColumn( "Wheel" );
                 ImGui::TableSetupColumn( "Ground" );
                 ImGui::TableSetupColumn( "Load" );
+                ImGui::TableSetupColumn( "Bump" );
                 ImGui::TableSetupColumn( "Susp" );
+                ImGui::TableSetupColumn( "Droop" );
                 ImGui::TableSetupColumn( "SlipLong" );
                 ImGui::TableSetupColumn( "SlipLat" );
                 ImGui::TableSetupColumn( "ESP" );
@@ -1544,7 +1550,11 @@ void GSPhysics::drawDebug( float ) {
                     ImGui::Text( "%.0f", w < 4 ? smoothedLoad[w]
                                                : wheel.SuspensionLoad );
                     ImGui::TableNextColumn();
+                    ImGui::Text( "%.3f", wheel.SuspensionBumpStop );
+                    ImGui::TableNextColumn();
                     ImGui::Text( "%.3f", wheel.SuspensionLength );
+                    ImGui::TableNextColumn();
+                    ImGui::Text( "%.3f", wheel.SuspensionDroopStop );
                     ImGui::TableNextColumn();
                     ImGui::Text( "%+.2f", wheel.LongitudinalSlip );
                     ImGui::TableNextColumn();
