@@ -8,9 +8,39 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
 #include "render/gs_render.h"
+#include "render/hiearchy_node.h"
 #include "render/render_scene.h"
+#include "render/postfx/gs_postfx.h"
+#include "render/postfx/effects/postfx_blur.h"
+#include "render/postfx/effects/postfx_fake_dof.h"
 
 static constexpr const char *kDefaultInteriorBank = "Interior/LPH_L3A.bnk";
+
+static void UpdateSunSceneBlurFlag() {
+    // FUN_007744b0 (inlined)
+    RenderScene *pSunScene =
+        gpRender->getRenderPassAtIndex( eRenderPass::RP_Sun ).pScene;
+    if ( pSunScene == nullptr ) {
+        return;
+    }
+
+    PostFXStep *pRadialBlur =
+        gpPostFX->getEffect<ePostFXStep::PFXS_RadialBlur>();
+    PostFXStep *pFakeDOF = gpPostFX->getEffect<ePostFXStep::PFXS_FakeDOF>();
+
+    const bool bIsBlurred =
+        ( pRadialBlur != nullptr && pRadialBlur->getInput()->isEnabled() ) ||
+        ( pFakeDOF != nullptr && pFakeDOF->getInput()->isEnabled() );
+
+    uint32_t flags = pSunScene->getFlags();
+    if ( bIsBlurred ) {
+        flags &= 0xffffffdf;
+    } else {
+        flags |= 0x20;
+    }
+
+    pSunScene->setFlags( flags );
+}
 
 SceneLiving::SceneLiving() : content(), interiorBank(), spotBank() {
     // FUN_0076a6f0 (inlined)
@@ -100,43 +130,77 @@ void SceneLiving::resume() {
     RenderScene *pDOFPrePassScene =
         gpRender->getRenderPassAtIndex( eRenderPass::RP_FakeDOFPrePass ).pScene;
 
-    if ( pNearScene == nullptr || pDOFScene == nullptr ) {
+    if ( pNearScene == nullptr || pDOFScene == nullptr ||
+         content.isDrawnInDOFPass() ) {
         return;
     }
 
-    if ( content.getRootNode() == nullptr ) {
+    HiearchyNode *pRootNode = content.getRootNode();
+    if ( pRootNode == nullptr || pRootNode->pInstance == nullptr ) {
         return;
     }
 
     content.setDrawInDOFPass( true );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: POSTFX
-
-    if ( pDOFPrePassScene != nullptr ) {
-        pDOFPrePassScene->setEnabled( true );
+    if ( gpPostFX == nullptr ) {
+        return;
     }
-    pDOFScene->setEnabled( true );
+
+    PostFXStepFakeDOF *pFakeDOF =
+        (PostFXStepFakeDOF *)gpPostFX->getEffect<ePostFXStep::PFXS_FakeDOF>();
+    if ( !gpPostFX->shouldUpdateEffects() && pFakeDOF != nullptr ) {
+        pFakeDOF->getInput()->setEnabled( true );
+
+        UpdateSunSceneBlurFlag();
+
+        if ( pDOFPrePassScene != nullptr ) {
+            pDOFPrePassScene->setEnabled( true );
+        }
+        pDOFScene->setEnabled( true );
+    }
+
+    if ( pFakeDOF != nullptr ) {
+        pFakeDOF->pBlur->setNumPass( 1 );
+    }
 }
 
 void SceneLiving::suspend() {
     // FUN_007743c0
-    if ( gpRender == nullptr || content.getRootNode() == nullptr ) {
+    if ( gpRender == nullptr || !content.isDrawnInDOFPass() ) {
         return;
     }
 
+    RenderScene *pNearScene =
+        gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
     RenderScene *pDOFScene =
         gpRender->getRenderPassAtIndex( eRenderPass::RP_FakeDOF ).pScene;
     RenderScene *pDOFPrePassScene =
         gpRender->getRenderPassAtIndex( eRenderPass::RP_FakeDOFPrePass ).pScene;
 
+    if ( pNearScene == nullptr || pDOFScene == nullptr ) {
+        return;
+    }
+
+    HiearchyNode *pRootNode = content.getRootNode();
+    if ( pRootNode == nullptr || pRootNode->pInstance == nullptr ) {
+        return;
+    }
+
     content.setDrawInDOFPass( false );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: POSTFX (glow/radial-blur disable)
-
-    if ( pDOFPrePassScene != nullptr ) {
-        pDOFPrePassScene->setEnabled( false );
+    if ( gpPostFX == nullptr ) {
+        return;
     }
-    if ( pDOFScene != nullptr ) {
+
+    PostFXStep *pFakeDOF = gpPostFX->getEffect<ePostFXStep::PFXS_FakeDOF>();
+    if ( !gpPostFX->shouldUpdateEffects() && pFakeDOF != nullptr ) {
+        pFakeDOF->getInput()->setEnabled( false );
+
+        UpdateSunSceneBlurFlag();
+
+        if ( pDOFPrePassScene != nullptr ) {
+            pDOFPrePassScene->setEnabled( false );
+        }
         pDOFScene->setEnabled( false );
     }
 }

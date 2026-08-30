@@ -27,6 +27,7 @@ public:
     inline HiearchyNode *getRootNode() const { return pRootNode; }
     inline ScenaricBank &getBank() { return bank; }
     inline void setDrawInDOFPass( const bool value ) { bDrawInDOFPass = value; }
+    inline bool isDrawnInDOFPass() const { return bDrawInDOFPass; }
 
 public:
     SceneInterior();
