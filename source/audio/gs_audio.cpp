@@ -146,18 +146,30 @@ AudioClient::~AudioClient() {
         pStereoPipeline.reset();
     }
 
+    for ( int32_t c = 0; c < Clustering.ClusterCount; c++ ) {
+        if ( pClusters[c] != nullptr ) {
+            pClusters[c]->getBuffer()->unlinkAllEntries();
+        }
+    }
+
     if ( pRoot != nullptr ) {
         pRoot->unlinkAllEntries();
     }
 
-    while ( pInstances != nullptr ) {
-        AudioDispatcherPlaybackSoundInstance *pNext = pInstances->pNextInstance;
-        DestroySoundInstance( pInstances );
-        pInstances = pNext;
-    }
-
     for ( std::unique_ptr<edAudioCluster> &cluster : pClusters ) {
         cluster.reset();
+    }
+
+    {
+        // FUN_0040dde0
+        ScopedMutexLock lock( &GetAudioGraphMutex() );
+
+        while ( pInstances != nullptr ) {
+            AudioDispatcherPlaybackSoundInstance *pNext =
+                pInstances->pNextInstance;
+            DestroySoundInstance( pInstances );
+            pInstances = pNext;
+        }
     }
 
     delete pRoot;
@@ -201,8 +213,13 @@ AudioDispatcherPlaybackSoundInstance *AudioClient::acquireSoundInstance() {
     AudioDispatcherPlaybackSoundInstance *pInstance =
         new ( pMemory ) AudioDispatcherPlaybackSoundInstance();
 
-    pInstance->pNextInstance = pInstances;
-    pInstances = pInstance;
+    {
+        // FUN_0040d020
+        ScopedMutexLock lock( &GetAudioGraphMutex() );
+
+        pInstance->pNextInstance = pInstances;
+        pInstances = pInstance;
+    }
 
     return pInstance;
 }
@@ -215,6 +232,8 @@ void AudioClient::DestroySoundInstance(
 
 bool AudioClient::sweepInstances() {
     // FUN_0040cf10
+    ScopedMutexLock lock( &GetAudioGraphMutex() );
+
     AudibleSourceCount = 0;
     MutedSourceCount = 0;
 

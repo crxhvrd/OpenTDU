@@ -2509,23 +2509,25 @@ void GSPhysics::addSectorCollision( const void *pKey,
         return;
     }
 
-    // Claim a free sector slot.
-    PhysicsSHK *pSlot = nullptr;
-    for ( PhysicsSHK *it = pSectorsBegin; it != pSectorsEnd; ++it ) {
-        if ( it->pKey == nullptr && it->NumObjects == 0 ) {
-            pSlot = it;
-            break;
-        }
-    }
-    if ( pSlot == nullptr ) {
-        OTDU_LOG_WARN( "Sector collision: no free sector slot\n" );
-        return;
-    }
-
     const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
 
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
     lockMutex();
+
+    PhysicsSHK *pSlot = nullptr;
+    for ( PhysicsSHK *it = pSectorsBegin; it != pSectorsEnd; ++it ) {
+        if ( it->pKey == nullptr && it->NumObjects == 0 ) {
+            pSlot = it;
+            pSlot->pKey = pKey;
+            break;
+        }
+    }
+    if ( pSlot == nullptr ) {
+        unlockMutex();
+        OTDU_LOG_WARN( "Sector collision: no free sector slot\n" );
+        return;
+    }
+
     for ( const HavokToJolt::RigidBody &body : bodies ) {
         if ( pSlot->NumObjects >= pSlot->MaxNumObjects )
             break;
@@ -2565,7 +2567,6 @@ void GSPhysics::addSectorCollision( const void *pKey,
             }
         }
     }
-    pSlot->pKey = pKey;
     unlockMutex();
 
     // TEMP: REMOVEME: absolute AABB of body positions + how many carry a
@@ -2855,21 +2856,24 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
         return;
     }
 
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    lockMutex();
+
     PhysicsSHK *pSlot = nullptr;
     for ( PhysicsSHK *it = pSectorsBegin; it != pSectorsEnd; ++it ) {
         if ( it->pKey == nullptr && it->NumObjects == 0 ) {
             pSlot = it;
+            pSlot->pKey = pKey;
             break;
         }
     }
     if ( pSlot == nullptr ) {
+        unlockMutex();
         OTDU_LOG_WARN( "SR20 road ground: no free sector slot\n" );
         return;
     }
 
-    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
-    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
-    lockMutex();
     JPH::BodyCreationSettings settings(
         meshResult.Get(),
         JPH::RVec3( originRef - JPH::Vec3( shiftOrigin.x(), shiftOrigin.y(),
@@ -2877,13 +2881,14 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
         JPH::Quat::sIdentity(), JPH::EMotionType::Static, TDUPhysLayers::ROAD );
     settings.mUserData = TDUSurface::RoadMesh;
     settings.mFriction = TDUSurface::friction( TDUSurface::RoadMesh );
-    JPH::Body *pBody = bodyInterface.CreateBody( settings );
+    JPH::Body *pBody = ( pSlot->NumObjects < pSlot->MaxNumObjects )
+                           ? bodyInterface.CreateBody( settings )
+                           : nullptr;
     if ( pBody != nullptr ) {
         bodyInterface.AddBody( pBody->GetID(), JPH::EActivation::DontActivate );
         PhysicsSectorObj &obj = pSlot->pObjects[pSlot->NumObjects++];
         obj.pRigidBody = pBody;
         obj.pShape = meshResult.Get();
-        pSlot->pKey = pKey;
     }
     unlockMutex();
 

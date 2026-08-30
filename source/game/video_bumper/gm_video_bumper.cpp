@@ -11,11 +11,11 @@ std::string GMVideoBumper::ActiveVideoName = "bumper.avi";    // DAT_00f994a0
 eGameMode GMVideoBumper::NextGameMode = eGameMode::GM_Living; // DAT_00f995a4
 bool GMVideoBumper::bCanSkipBumper = true;                    // DAT_00f995a8
 
-bool GMVideoBumper::BOOL_010e7d3d = false;          // DAT_010e7d3d
-bool GMVideoBumper::BOOL_010e7da0 = false;          // DAT_010e7da0
-std::string GMVideoBumper::FlashMovie = "";         // DAT_010e7d40
-std::string GMVideoBumper::FlashVariable = "";      // DAT_010e7d60
-std::string GMVideoBumper::FlashVariableValue = ""; // DAT_010e7d80
+bool GMVideoBumper::BOOL_010e7d3d = false;       // DAT_010e7d3d
+bool GMVideoBumper::BOOL_010e7da0 = false;       // DAT_010e7da0
+std::string GMVideoBumper::FlashMovie = "";      // DAT_010e7d40
+std::string GMVideoBumper::FlashSpritePath = ""; // DAT_010e7d60
+std::string GMVideoBumper::FlashFrameLabel = ""; // DAT_010e7d80
 
 static bool DAT_0129cfb0 = false; // DAT_0129cfb0
 
@@ -107,8 +107,8 @@ void GMVideoBumper::tick( float deltaTime, float totalTime ) {
         if ( BOOL_010e7d3d ) {
             FlashPlayer *peVar6 = gpFlash->getFlashPlayer( FlashMovie.c_str() );
             if ( peVar6 != nullptr ) {
-                peVar6->showFrame( FlashVariable.c_str(),
-                                   FlashVariableValue.c_str(), BOOL_010e7da0 );
+                peVar6->showFrame( FlashFrameLabel.c_str(),
+                                   FlashSpritePath.c_str(), BOOL_010e7da0 );
             }
             BOOL_010e7d3d = false;
             return;
@@ -153,12 +153,13 @@ void GMVideoBumper::ClearActiveBumper() { ActiveVideoName.clear(); }
 void GMVideoBumper::SetSkippable() { bCanSkipBumper = true; }
 
 void GMVideoBumper::OnPlaybackComplete( const char *pFlashMovieName,
-                                        const char *pFlashVariable,
-                                        const char *pState,
+                                        const char *pSpritePath,
+                                        const char *pFrameLabel,
                                         const bool param_4 ) {
     // FUN_0071e8c0
+    BOOL_010e7d3d = true;
     FlashMovie = pFlashMovieName;
-    FlashVariable = pFlashVariable;
-    FlashVariableValue = pState;
+    FlashSpritePath = pSpritePath;
+    FlashFrameLabel = pFrameLabel;
     BOOL_010e7da0 = param_4;
 }

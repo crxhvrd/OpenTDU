@@ -226,7 +226,9 @@ void GameMode::mainLoop( TestDriveGameInstance *param_1 ) {
     gEdRender.flushDrawCommands( false );
 
     gpFile->flushPendingAsync();
-    gpParticles->stopAllParticleSystems();
+    if ( gpParticles ) {
+        gpParticles->stopAllParticleSystems();
+    }
     gpTestDriveInstance->flushPendingFileInstanciation( false );
 
     for ( Manager *pMVar4 : registeredManagers ) {

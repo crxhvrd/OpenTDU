@@ -118,10 +118,9 @@ static CmdLineArg CmdLineArgDisableAssert( "disable_assert",
                                                gDisableAssert = true;
                                            } );
 
-static CmdLineArg CmdLineArgNoRunLock( "norunlock",
-                                           []( const char *pArg ) {
-                                               gDisableRunLock = true;
-                                           } );
+static CmdLineArg CmdLineArgNoRunLock( "norunlock", []( const char *pArg ) {
+    gDisableRunLock = true;
+} );
 #endif
 
 static CmdLineArg CmdLineArgORB( "orb", []( const char *pArg ) {
@@ -479,6 +478,7 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6->setTransitionFlags( 0x0 );
             pGVar6->mainLoop( this );
 
+            pGVar6->~GameMode();
             TestDrive::Free( pGameModeAlloc );
             GMVideoBumper::ClearActiveBumper();
 
@@ -494,6 +494,7 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6->setTransitionFlags( 0x30 );
             pGVar6->mainLoop( this );
 
+            pGVar6->~GameMode();
             TestDrive::Free( pGameModeAlloc );
 
             setNextGameMode( GM_Login );
@@ -535,6 +536,7 @@ bool TestDriveGameInstance::initialize() {
         pGVar3->setTransitionFlags( 0x0 );
         pGVar3->mainLoop( this );
 
+        pGVar3->~GMVideoBumper();
         TestDrive::Free( pGVar3 );
         GMVideoBumper::ClearActiveBumper();
 
@@ -549,6 +551,7 @@ bool TestDriveGameInstance::initialize() {
         pGVar3->setTransitionFlags( 0x30 );
         pGVar3->mainLoop( this );
 
+        pGVar3->~GMVideoBumper();
         TestDrive::Free( pGVar3 );
 
         setNextGameMode( GM_Login );
@@ -661,13 +664,6 @@ bool TestDriveGameInstance::initializeBaseServices() {
 #endif
 
     gpConfig->parseIniFiles();
-
-#if 1 // TODO: REMOVEME: FreeRide bringup: enable freeride by default
-    if ( gGameModeOverride == GM_Invalid ) {
-        gGameModeOverride = GM_FreeRide;
-        gbEnableWorldViewer = true;
-    }
-#endif
 
     if ( gGameModeOverride != GM_Invalid ) {
         gpConfig->bEnableMainMenu = false;

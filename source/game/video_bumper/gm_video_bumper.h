@@ -20,8 +20,8 @@ public:
     static void SetActiveBumper( const std::string &bumperFilename );
     static void ClearActiveBumper();
     static void OnPlaybackComplete( const char *pFlashMovieName,
-                                    const char *pFlashVariable,
-                                    const char *pState,
+                                    const char *pSpritePath,
+                                    const char *pFrameLabel,
                                     const bool param_4 );
     static void SetSkippable();
 
@@ -33,8 +33,8 @@ private:
     static bool BOOL_010e7d3d;
     static bool BOOL_010e7da0; // param_4 for FlashPlayer::ShowFrame
     static std::string FlashMovie;
-    static std::string FlashVariable;
-    static std::string FlashVariableValue;
+    static std::string FlashSpritePath;
+    static std::string FlashFrameLabel;
 
 private:
     MngMovie movieManager;
