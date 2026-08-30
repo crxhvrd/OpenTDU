@@ -2490,11 +2490,15 @@ void VehicleBase::setInteriorColorsFromDB( DBEntryInterior *pInterior ) {
                          pInterior->InteriorColorID2.pAsString );
     setVehiclePartColor( CCP_InteriorMaterial, pInterior->Material.pAsString );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PAINT (FUN_008b6aa0 - the low-res
-                             // interior color pair)
+    setLowResInteriorColors( pInterior->InteriorColorID1.pAsString,
+                             pInterior->InteriorColorID2.pAsString );
 }
 
 void VehicleBase::setRimsFromDB( DBEntryRim * ) {
+    // NOP
+}
+
+void VehicleBase::setLowResInteriorColors( const char *, const char * ) {
     // NOP
 }
 

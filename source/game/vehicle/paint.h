@@ -135,6 +135,21 @@ static bool IsPaintOrTwoTonesShaderGUID( const uint64_t guid,
                             guid == 0x111157b8bc6c7111ull );
 }
 
+static bool IsCarInteriorShaderGUID( const uint64_t guid ) {
+    return guid == 0xb39c35015789e65cull || guid == 0x69f07f72719bf862ull ||
+           guid == 0xcab12190a00d5c4eull;
+}
+
+static bool IsCarMaterialShaderGUID( const uint64_t guid ) {
+    return guid == 0x183157b81c6c7357ull || guid == 0x1b38348331d3942aull ||
+           guid == 0xc288dfc455ae5ef8ull;
+}
+
+static bool IsCarPaintShaderGUID( const uint64_t guid ) {
+    return guid == 0x213157b8bc6c7363ull || guid == 0x222157b8bc6c7222ull ||
+           guid == 0x111157b8bc6c7111ull;
+}
+
 struct InteriorTextureRemap {
     int32_t Dst;
     int32_t Src;

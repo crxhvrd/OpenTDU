@@ -4,6 +4,7 @@
 #include "bank_vehicle.h"
 #include "car_state.h"
 #include "gs_car_state.h"
+#include "gs_car_colors.h"
 #include "gs_car_display.h"
 #include "filesystem/gs_file.h"
 
@@ -53,6 +54,16 @@ static void ReleaseWheelResource( VehicleResource &resource,
         pBank->pBankInstance = nullptr;
         pBank->pBankData = nullptr;
     }
+}
+
+static void ModulateMaterialColors( Material *pSource,
+                                    Material *pDest,
+                                    const Eigen::Vector4f &tint ) {
+    // FUN_008b5d50
+    pDest->AmbientColor = pSource->AmbientColor.cwiseProduct( tint );
+    pDest->DiffuseColor = pSource->DiffuseColor.cwiseProduct( tint );
+    pDest->SpecularColor = pSource->SpecularColor.cwiseProduct( tint );
+    pDest->EmissiveColor = pSource->EmissiveColor.cwiseProduct( tint );
 }
 
 EnvmapUnknown *PTR_00fa9c0c = nullptr; // DAT_00fa9c0c
@@ -490,6 +501,56 @@ void VehicleController::setupInteriorLowRes() {
         bodyResource.Resource2DM.getMaterial( kCarInteriorCustomColor0LowRes );
     pMaterialInteriorColor1LR =
         bodyResource.Resource2DM.getMaterial( kCarInteriorCustomColor1LowRes );
+}
+
+void VehicleController::setLowResInteriorColors( const char *param_2,
+                                                 const char *param_3 ) {
+    // FUN_008b6aa0
+    if ( gpCarColors == nullptr ) {
+        return;
+    }
+
+    Render2DM &colors2DM = gpCarColors->get2DM();
+    if ( colors2DM.getMaterialArray() == nullptr ) {
+        return;
+    }
+
+    struct LowResInteriorColor {
+        const char *pColorName;
+        Material *pInteriorMaterial;
+    };
+    const LowResInteriorColor colors[2] = {
+        {param_2, pMaterialInteriorColor0LR},
+        {param_3, pMaterialInteriorColor1LR},
+    };
+
+    for ( const LowResInteriorColor &color : colors ) {
+        if ( color.pColorName == nullptr ) {
+            continue;
+        }
+
+        const uint64_t colorHashcode = GetIdentifier64bit( color.pColorName );
+        RenderFile::Section *pColorSection =
+            colors2DM.getMaterial( colorHashcode );
+        if ( pColorSection == nullptr ) {
+            continue;
+        }
+        Material *pColorMaterial = (Material *)( pColorSection + 1 );
+
+        Eigen::Vector4f tint = Eigen::Vector4f::Ones();
+
+        MaterialParameter *pColorParameters =
+            pColorMaterial->getParameterByIndex( 0 );
+        if ( pColorParameters != nullptr &&
+             !IsCarInteriorShaderGUID( pColorParameters->Hashcode ) ) {
+            tint = gpCarColors->getColorFloat( colorHashcode );
+        }
+
+        if ( color.pInteriorMaterial != nullptr ) {
+            ModulateMaterialColors( pColorMaterial, color.pInteriorMaterial,
+                                    tint );
+        }
+    }
 }
 
 void VehicleController::bindGlassMaterial( bool bExteriorMaterial ) {

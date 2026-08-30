@@ -53,6 +53,8 @@ public:
     virtual eRenderPass getRenderPassWithAlpha() override;
 
     void setRimsFromDB( DBEntryRim *pRim ) override;
+    void setLowResInteriorColors( const char *param_2,
+                                  const char *param_3 ) override;
 
 protected:
     struct InteriorGaugeNeedles {

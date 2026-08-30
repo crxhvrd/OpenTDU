@@ -17,6 +17,8 @@ public:
     bool initialize( TestDriveGameInstance * ) override;
     void terminate() override;
 
+    Eigen::Vector4f getColorFloat( const uint64_t colorHashcode );
+
 private:
     FileCollection2D collection2D;
     Render2DM render2DM;

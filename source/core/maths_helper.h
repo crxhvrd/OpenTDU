@@ -44,31 +44,12 @@ static Eigen::Vector3f Lerp( const Eigen::Vector3f &vec1,
     return local_40;
 }
 
-static Eigen::Vector4f Vector4DLerp( const Eigen::Vector4f &vec1,
-                                     const Eigen::Vector4f &vec2,
-                                     float param_4 ) {
-    float fVar1;
-    float fVar2;
-    float fVar3;
-    float fVar4;
-    float fVar5;
-    float fVar6;
-    float fVar7;
+static Eigen::Vector4f Vector4DLerp( const Eigen::Vector4f &param_2,
+                                     const Eigen::Vector4f &param_3,
+                                     const float t ) {
 
-    fVar1 = vec1.y();
-    fVar2 = vec1.z();
-    fVar3 = vec1.w();
-    fVar4 = vec2.y();
-    fVar7 = 1.0f - param_4;
-    fVar5 = vec2.z();
-    fVar6 = vec2.w();
-
-    Eigen::Vector4f param_1;
-    param_1.x() = vec2.x() * fVar7 + vec1.x() * param_4;
-    param_1.y() = fVar4 * fVar7 + fVar1 * param_4;
-    param_1.z() = fVar5 * fVar7 + fVar2 * param_4;
-    param_1.w() = fVar6 * fVar7 + fVar3 * param_4;
-    return param_1;
+    // FUN_00412520
+    return param_2 * ( 1.0f - t ) + param_3 * t;
 }
 
 static Eigen::Vector4f &Vector4DSaturate( Eigen::Vector4f &vec1 ) {

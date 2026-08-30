@@ -223,6 +223,8 @@ public:
                      const ColorRGBA *pSecondColor2 );
     void setInteriorColorsFromDB( DBEntryInterior *pInterior );
     virtual void setRimsFromDB( DBEntryRim *pRim );
+    virtual void setLowResInteriorColors( const char *param_2,
+                                          const char *param_3 );
     void applyDeluxePaint( ePaintType paintType,
                            const ColorRGBA *pMainColor,
                            const ColorRGBA *pSecondColor,
