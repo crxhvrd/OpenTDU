@@ -156,11 +156,11 @@ bool CameraFirstPerson::tick( float /*deltaTime*/,
     setUp( Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f ) );
     setFOV( 90.0f );
 
-    gpCamera->setNearPlane( 0.01f );
-    gpCamera->setFarPlane( 1000.0f );
+    gpCamera->setNearPlane( 0.1f );
+    gpCamera->setFarPlane( 40000.0f );
     gpCamera->setEnableDepthAware( true );
-    gpCamera->setInteriorNearPlane( 0.01f );
-    gpCamera->setInteriorFarPlane( 1000.0f );
+    gpCamera->setInteriorNearPlane( 0.1f );
+    gpCamera->setInteriorFarPlane( 40000.0f );
     gpCamera->setEnableDepthAwareInterior( true );
 
     updateMatrix( eyePosition.head<3>(), Eigen::Vector3f( 0.0f, 1.0f, 0.0f ),
