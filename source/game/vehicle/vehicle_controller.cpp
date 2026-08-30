@@ -4,6 +4,8 @@
 #include "bank_vehicle.h"
 #include "car_state.h"
 #include "gs_car_state.h"
+#include "gs_car_display.h"
+#include "filesystem/gs_file.h"
 
 #include "core/maths_helper.h"
 #include "database/gs_database.h"
@@ -32,6 +34,26 @@ float gGlassDirtFresnelPower = 3.0f; // DAT_00f7cfe0
 float gGlassUnknown = 0.0f;          // DAT_010e74e8
 float gGlassDirtFresnelCoef = 0.0f;  // DAT_010e74ec
 bool BOOL_00f7cfc8 = true;           // DAT_00f7cfc8
+
+static void ReleaseWheelResource( VehicleResource &resource,
+                                  StreamedInBankVehicle *pBank,
+                                  const bool bShared ) {
+    // FUN_008b7470
+    if ( resource.pResourceBank == nullptr ||
+         resource.pResourceBank->getState() !=
+             BankVehicle::eState::BVS_Ready ) {
+        return;
+    }
+
+    resource.release( bShared );
+    resource.pResourceBank->unload();
+
+    if ( pBank != nullptr ) {
+        gpCarDisplay->releaseEntry( pBank );
+        pBank->pBankInstance = nullptr;
+        pBank->pBankData = nullptr;
+    }
+}
 
 EnvmapUnknown *PTR_00fa9c0c = nullptr; // DAT_00fa9c0c
 
@@ -168,6 +190,76 @@ bool VehicleController::loadBankResources() {
     }
 
     return true;
+}
+
+void VehicleController::setRimsFromDB( DBEntryRim *pRim ) {
+    // FUN_008b7770
+    if ( pCurrentRimDB == pRim || pRim == nullptr ) {
+        return;
+    }
+
+    pCurrentRimDB = pRim;
+
+    uninstantiateWheels();
+    ReleaseWheelResource( wheelsFront, pRimsFrontBank, bShared );
+    ReleaseWheelResource( wheelsRear, pRimsRearBank, bShared );
+
+    gpCarDisplay->allocateFromPool( eVehicleResourceType::VRT_Rims,
+                                    pRimsFrontBank );
+    gpCarDisplay->allocateFromPool( eVehicleResourceType::VRT_Rims,
+                                    pRimsRearBank );
+
+    if ( pRimsFrontBank->pBankInstance == nullptr ||
+         pRimsRearBank->pBankInstance == nullptr ) {
+        return;
+    }
+
+    const bool bIsBike =
+        ( type == eType::VBT_Bike || type == eType::VBT_TrafficBike );
+
+    static constexpr bool kLoadRimsAsync = true; // DAT_00fab4cc
+
+    if ( pRim->ResourcePathFront.Hashcode == pRim->ResourcePathRear.Hashcode ) {
+        pRimsFrontBank->pBankInstance->setOriginal(
+            pRimsRearBank->pBankInstance, pRimsRearBank->pBankData, 0x87ae1 );
+    } else {
+        std::string rearPath = "rim/";
+        rearPath += pRim->ResourcePath.pAsString;
+        rearPath += "/";
+        rearPath += pRim->ResourcePathRear.pAsString;
+
+        pRimsRearBank->pBankInstance->validateResourcePath( bIsBike, false,
+                                                            rearPath, 0x87ae1 );
+        pRimsRearBank->pBankInstance->loadToPooledMemory(
+            kLoadRimsAsync, pRimsRearBank->pBankData, 0x87ae1,
+            rearPath.c_str() );
+    }
+
+    std::string frontPath = "rim/";
+    frontPath += pRim->ResourcePath.pAsString;
+    frontPath += "/";
+    frontPath += pRim->ResourcePathFront.pAsString;
+
+    pRimsFrontBank->pBankInstance->validateResourcePath( bIsBike, true,
+                                                         frontPath, 0x87ae1 );
+    pRimsFrontBank->pBankInstance->loadToPooledMemory(
+        kLoadRimsAsync, pRimsFrontBank->pBankData, 0x87ae1, frontPath.c_str() );
+
+    wheelsFront.pResourceBank = pRimsFrontBank->pBankInstance;
+    wheelsRear.pResourceBank = pRimsRearBank->pBankInstance;
+
+    gpFile->flushPendingAsync();
+
+    LoadVehicleResource( &wheelsFront, bShared );
+    LoadVehicleResource( &wheelsRear, bShared );
+
+    if ( wheelsFront.pResourceBank != nullptr ) {
+        setupWheels();
+
+        if ( bIsRealTimeEnvMap ) {
+            setRealTimeEnvMap( nullptr, true, nullptr );
+        }
+    }
 }
 
 void VehicleController::InitializeGaugeHashes() {
@@ -417,13 +509,37 @@ void VehicleController::bindGlassMaterial( bool bExteriorMaterial ) {
 void VehicleController::applyPaintConfig() {
     // FUN_008bfb20
     if ( pCarState == nullptr || pCarState->getResource() == nullptr ||
-         !paint.bSaved ) {
+         pCarState->getResource()->bDefault || !paint.bSaved ) {
         return;
     }
 
-    DBEntryCarPhysicsData *pDVar3 =
-        gpDatabase->getCarDBEntry( pCarState->getCarID() );
+    const int32_t carID = pCarState->getCarID();
+    DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry( carID );
+
     setPaintColorFromDB( paint.PaintIndex );
+
+    if ( gpDatabase->isTraffic( pCarEntry ) ) {
+        return;
+    }
+
+    DBEntryCarColor *pColor =
+        gpDatabase->getColorByIndex( carID, paint.PaintIndex );
+    if ( pColor != nullptr ) {
+        DBEntryInterior *pInterior =
+            gpDatabase->getInteriorByIndex( pColor, paint.InteriorIndex );
+        if ( pInterior != nullptr ) {
+            setInteriorColorsFromDB( pInterior );
+        }
+    }
+
+    if ( paint.Type == ePaintType::PT_CustomSolid ||
+         paint.Type == ePaintType::PT_CustomMetal ||
+         paint.Type == ePaintType::PT_CustomSolidTwoTones ||
+         paint.Type == ePaintType::PT_CustomMetalTwoTones ) {
+        applyDeluxePaint( paint.Type, &paint.CustomMainColor,
+                          &paint.CustomSecondColor, &paint.CustomTwoToneColor1,
+                          &paint.CustomTwoToneColor2 );
+    }
 }
 
 void VehicleController::registerEnvmapUnknown() {

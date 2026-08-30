@@ -68,3 +68,9 @@ static TestDriveString8 TestDriveConcatToString8( const char *pString ) {
 static TestDriveString8 TestDriveConcatToString8( const std::string &string ) {
     return TestDriveConcatToString8( string.c_str(), string.length() );
 }
+
+static inline bool TestDriveString8StartsWith( const uint64_t hashcode,
+                                               const char *pPrefix ) {
+    // FUN_008b97f0
+    return TestDriveString8( hashcode ).startsWith( pPrefix );
+}

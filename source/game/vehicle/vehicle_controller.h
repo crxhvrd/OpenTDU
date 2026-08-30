@@ -52,6 +52,8 @@ public:
     virtual eRenderPass getRenderPass() override;
     virtual eRenderPass getRenderPassWithAlpha() override;
 
+    void setRimsFromDB( DBEntryRim *pRim ) override;
+
 protected:
     struct InteriorGaugeNeedles {
         HiearchyNode *pNeedles[kNumGaugeNeedles] = { nullptr, nullptr };

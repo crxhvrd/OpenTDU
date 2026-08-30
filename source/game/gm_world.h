@@ -109,7 +109,10 @@ protected:
     void updatePauseFade();
     void installLocalPlayerCar();
     void installLocalPlayerCar( int32_t carID,
-                                const Matrix4x4f_t *pSpawnOverride );
+                                const Matrix4x4f_t *pSpawnOverride,
+                                int32_t rimID = -1,
+                                int32_t paintIndex = -1,
+                                int32_t interiorIndex = 0 );
     void uninstallLocalPlayerCar();
     void updateLocalPlayerDrivingInput( float deltaTime );
     void resetAutomaticGearbox();
@@ -156,5 +159,9 @@ extern float gFXPModCoeff1;
 extern GameModeWorld *gpActiveGM;
 
 extern int32_t gRequestedPlayerCarID;
+extern int32_t gRequestedPlayerCarColorID;
+extern int32_t gRequestedPlayerCarRimID;
+extern int32_t gRequestedPlayerCarInteriorID;
+extern bool gRequestedCarChange;
 extern bool gRequestedPlayerTeleport;
 extern Eigen::Vector3f gRequestedPlayerTeleportPos;

@@ -157,6 +157,32 @@ void Render2DM::bindBitmapReference( const Render2DB *param_2 ) {
     }
 }
 
+void BindMaterialBitmapReference( Material *pMaterial,
+                                  const Render2DB *param_2 ) {
+    // FUN_00504f90
+    MaterialParameter *pParameters = pMaterial->getParameterByIndex( 0 );
+    if ( pParameters == nullptr ) {
+        return;
+    }
+
+    const uint64_t bitmapHashcode = param_2->getBitmapHashcode();
+    const int32_t numLayers = pMaterial->getNumLayers();
+
+    for ( int32_t layerIndex = 0; layerIndex < numLayers; layerIndex++ ) {
+        MaterialLayer *pLayer = pParameters->getLayer( layerIndex );
+        if ( pLayer == nullptr ) {
+            continue;
+        }
+
+        for ( uint32_t i = 0; i < pLayer->NumTextures; i++ ) {
+            if ( pLayer->pLayerTextures[i].Hashcode == bitmapHashcode ) {
+                pLayer->pLayerTextures[i].pTextureSection =
+                    param_2->getBitmapSection();
+            }
+        }
+    }
+}
+
 void Render2DM::bindUVAnimationReference( const RenderUVA *param_2 ) {
     // FUN_005050e0
     if ( param_2 == nullptr ) {

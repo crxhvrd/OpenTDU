@@ -8,6 +8,7 @@
 class GSCarColors : public GameSystem, public Bank {
 public:
     const char *getName() const override { return "GServiceCarColors"; }
+    inline Render2DM &get2DM() { return render2DM; }
 
 public:
     GSCarColors();

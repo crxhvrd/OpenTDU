@@ -62,11 +62,6 @@ template <typename T, typename R> constexpr T Align( T value, R to ) {
     return ( value + ( to - 1 ) ) & ~( ( to - 1 ) );
 }
 
-inline int32_t FloatToInt( float value ) {
-    // FUN_00674eb4
-    return (int32_t)value;
-}
-
 static std::string IntegerToHexString( const size_t w,
                                        const size_t hex_len = sizeof( size_t )
                                                               << 1 ) {

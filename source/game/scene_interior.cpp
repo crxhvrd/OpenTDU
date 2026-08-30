@@ -65,7 +65,14 @@ SceneInterior::SceneInterior()
 }
 
 SceneInterior::~SceneInterior() {
-    // FUN_0042cd50 
+    // FUN_00775640
+    if ( gpCamera != nullptr ) {
+        gpCamera->setInteriorView( false );
+    }
+
+    if ( bEntered ) {
+        leave();
+    }
 }
 
 Eigen::Vector4f SceneInterior::getWorldPosition() const {

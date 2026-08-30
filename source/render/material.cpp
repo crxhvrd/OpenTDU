@@ -910,7 +910,6 @@ void Material::bindParameter( MaterialShaderParameterArray *param_1 ) {
 
         UploadConstant( &peVar5, puVar4->Type * 4, pData, numVectors );
 
-
         iVar2 += puVar4->Size;
         puVar4++;
     }
@@ -1177,6 +1176,15 @@ float *MaterialShaderParameterArray::getStaticParamData( uint32_t type,
     return nullptr;
 }
 
+float *MaterialShaderParameterArray::getStaticParamDataPS( uint32_t type ) {
+    uint32_t parameterIndex = 0;
+    if ( getParameter( type, &parameterIndex ) == nullptr ) {
+        return nullptr;
+    }
+
+    return (float *)getParameterDataByIndex( parameterIndex );
+}
+
 MaterialLayer *MaterialParameter::getLayer( const uint32_t index ) {
     // FUN_005094c0
     // Layer section pointers live in the derived parameter struct: terrain
@@ -1228,4 +1236,43 @@ uint8_t MaterialLayer::getNumUsedTextureSlots() {
     }
 
     return numBoundTextures;
+}
+
+void Material::copyStatesTo( Material *pDest ) {
+    // FUN_008b9ba0
+    if ( pDest == nullptr ) {
+        return;
+    }
+
+    pDest->OT = this->OT;
+
+    pDest->DepthTest = this->DepthTest;
+    pDest->DepthWrite = this->DepthWrite;
+    pDest->AlphaSource = this->AlphaSource;
+    pDest->BackfaceCullingMode = this->BackfaceCullingMode;
+    pDest->FillMode = this->FillMode;
+    pDest->AlphaTest = this->AlphaTest;
+    pDest->MatrixParam = this->MatrixParam;
+    pDest->AlphaRef = this->AlphaRef;
+    pDest->SrcBlend = this->SrcBlend;
+    pDest->DstBlend = this->DstBlend;
+    pDest->BlendOP = this->BlendOP;
+
+    pDest->StencilEnable = this->StencilEnable;
+
+    pDest->StencilFail = this->StencilFail;
+    pDest->StencilZFail = this->StencilZFail;
+    pDest->StencilPass = this->StencilPass;
+    pDest->StencilFunc = this->StencilFunc;
+    pDest->StencilRef = this->StencilRef;
+    pDest->StencilMask = this->StencilMask;
+    pDest->StencilWriteMask = this->StencilWriteMask;
+
+    pDest->StencilFailCW = this->StencilFailCW;
+    pDest->StencilZFailCW = this->StencilZFailCW;
+    pDest->StencilPassCW = this->StencilPassCW;
+    pDest->StencilFuncCW = this->StencilFuncCW;
+    pDest->StencilRefCW = this->StencilRefCW;
+    pDest->StencilMaskCW = this->StencilMaskCW;
+    pDest->StenwilWriteMaskCW = this->StenwilWriteMaskCW;
 }

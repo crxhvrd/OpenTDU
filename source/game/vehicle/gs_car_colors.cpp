@@ -36,8 +36,13 @@ bool GSCarColors::initialize( TestDriveGameInstance * ) {
 
     loadContentAsync();
 
-    p2DMFileResource = (char *)getFirstEntry( AG_CarFX, AT_CarColors, nullptr );
-    render2DM.initialize( p2DMFileResource );
+    p2DMFileResource = (char *)getFirstEntry( AG_Common, AT_2DM, nullptr );
+    if ( p2DMFileResource == nullptr ||
+         !render2DM.initialize( p2DMFileResource ) ) {
+        OTDU_LOG_ERROR( "GSCarColors .2DM (%s) not found!\n",
+                        colorBankPath.c_str() );
+        return false;
+    }
 
     collection2D.register2DM( &render2DM );
     collection2D.bindBitmapReferences( &render2DM );

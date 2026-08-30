@@ -55,24 +55,28 @@ public:
     // Native-layout total for a generic 1-layer/1-material .2DM: header +
     // LAYA[LAY] + PARA[PAR] + MATA[HASH,MAT], each leaf payload padded to 16 so
     // sections stay 16-aligned. Mirrors the layout built by Create() and the
-    // upgrader (see asset upgrader plan). param_1 = shader param count, param_2 =
-    // packed param data size.
+    // upgrader (see asset upgrader plan). param_1 = shader param count, param_2
+    // = packed param data size.
     static uint32_t CalcSize( int32_t param_1, uint32_t param_2 ) {
-        auto a16 = []( uint32_t v ) -> uint32_t { return ( v + 0xfu ) & ~0xfu; };
+        auto a16 = []( uint32_t v ) -> uint32_t {
+            return ( v + 0xfu ) & ~0xfu;
+        };
         const uint32_t hdr = (uint32_t)sizeof( RenderFile::Section );
-        uint32_t parPayload =
-            a16( (uint32_t)sizeof( MaterialShaderParameterArray ) +
-                 (uint32_t)param_1 * (uint32_t)sizeof( MaterialShaderParameter ) +
-                 param_2 );
-        return (uint32_t)sizeof( RenderFile::Header )         //
-               + hdr                                          // LAYA
-               + hdr + a16( (uint32_t)sizeof( MaterialLayer ) ) // LAY
-               + hdr                                          // PARA
-               + hdr + parPayload                             // PAR
-               + hdr                                          // MATA
+        uint32_t parPayload = a16(
+            (uint32_t)sizeof( MaterialShaderParameterArray ) +
+            (uint32_t)param_1 * (uint32_t)sizeof( MaterialShaderParameter ) +
+            param_2 );
+        return (uint32_t)sizeof( RenderFile::Header )                //
+               + hdr                                                 // LAYA
+               + hdr + a16( (uint32_t)sizeof( MaterialLayer ) )      // LAY
+               + hdr                                                 // PARA
+               + hdr + parPayload                                    // PAR
+               + hdr                                                 // MATA
                + hdr + a16( (uint32_t)sizeof( Render2DMHashEntry ) ) // HASH (1)
-               + hdr + a16( (uint32_t)sizeof( Material ) +
-                            (uint32_t)sizeof( AssetPtr<RenderFile::Section> ) ); // MAT (1)
+               + hdr +
+               a16( (uint32_t)sizeof( Material ) +
+                    (uint32_t)sizeof(
+                        AssetPtr<RenderFile::Section> ) ); // MAT (1)
     }
 #else
     static uint32_t CalcSize( int32_t param_1, uint32_t param_2 ) {
@@ -83,21 +87,29 @@ public:
 
 #if OTDU_NATIVE_MATERIAL
     // Native-layout total for a terrain .2DM: header + LAYA[param_1 x LAY] +
-    // PARA[PAR(MaterialTerrainParameter)] + MATA[HASH,MAT], leaf payloads padded
-    // to 16. param_1 = layer count.
+    // PARA[PAR(MaterialTerrainParameter)] + MATA[HASH,MAT], leaf payloads
+    // padded to 16. param_1 = layer count.
     static int32_t CalcSizeTerrain( const int32_t param_1 ) {
-        auto a16 = []( uint32_t v ) -> uint32_t { return ( v + 0xfu ) & ~0xfu; };
+        auto a16 = []( uint32_t v ) -> uint32_t {
+            return ( v + 0xfu ) & ~0xfu;
+        };
         const uint32_t hdr = (uint32_t)sizeof( RenderFile::Section );
-        return (int32_t)(
-            (uint32_t)sizeof( RenderFile::Header )                          //
-            + hdr                                                           // LAYA
-            + (uint32_t)param_1 * ( hdr + a16( (uint32_t)sizeof( MaterialLayer ) ) ) // LAY x N
-            + hdr                                                           // PARA
-            + hdr + a16( (uint32_t)sizeof( MaterialTerrainParameter ) )     // PAR
-            + hdr                                                           // MATA
-            + hdr + a16( (uint32_t)sizeof( Render2DMHashEntry ) )           // HASH (1)
-            + hdr + a16( (uint32_t)sizeof( Material ) +
-                         (uint32_t)sizeof( AssetPtr<RenderFile::Section> ) ) ); // MAT (1)
+        return (
+            int32_t)( (uint32_t)sizeof( RenderFile::Header ) //
+                      + hdr                                  // LAYA
+                      + (uint32_t)param_1 *
+                            ( hdr + a16( (uint32_t)sizeof(
+                                        MaterialLayer ) ) ) // LAY x N
+                      + hdr                                 // PARA
+                      + hdr +
+                      a16( (uint32_t)sizeof( MaterialTerrainParameter ) ) // PAR
+                      + hdr // MATA
+                      + hdr +
+                      a16( (uint32_t)sizeof( Render2DMHashEntry ) ) // HASH (1)
+                      + hdr +
+                      a16( (uint32_t)sizeof( Material ) +
+                           (uint32_t)sizeof(
+                               AssetPtr<RenderFile::Section> ) ) ); // MAT (1)
     }
 #else
     static int32_t CalcSizeTerrain( const int32_t param_1 ) {
@@ -112,11 +124,14 @@ private:
     RenderFile::Section *pParameters;
     RenderFile::Section *pLayers;
 #if OTDU_NATIVE_MATERIAL
-    // Native-layout blob produced by the upgrader and owned by this 2DM (the raw
-    // disk blob stays owned by the caller). Freed in destroy().
+    // Native-layout blob produced by the upgrader and owned by this 2DM (the
+    // raw disk blob stays owned by the caller). Freed in destroy().
     void *pUpgradedBuffer = nullptr;
 #endif
 };
+
+void BindMaterialBitmapReference( Material *pMaterial,
+                                  const Render2DB *param_2 );
 
 // Helper for statically allocated 2DMs (created at runtime)
 struct StaticRender2DM {

@@ -1929,7 +1929,7 @@ int32_t GSDatabase::getRimID( DBEntryCarPhysicsData *param_3,
     int32_t iVar2;
     uint32_t iVar3;
     DBEntryCarRim *pDVar4;
-    uint64_t pDVar5;
+    DBEntryRim *pDVar5;
     int32_t iVar6;
 
     iVar2 = 0;
@@ -1940,9 +1940,10 @@ LAB_009a9900:
            ( uVar1 = gameDatabase.pNumItems[3], uVar1 != 0 ) ) &&
          ( iVar3 = 0, 0 < (int)uVar1 ) ) {
         do {
-            if ( pDVar4->CarHashcode.Hashcode == param_3->Hashcode ) {
+            if ( pDVar4->CarHashcode.pAsRawPointer == param_3 ) {
                 if ( iVar6 == iVar2 ) {
-                    pDVar5 = pDVar4->RimHashcode.Hashcode;
+                    pDVar5 = static_cast<DBEntryRim *>(
+                        pDVar4->RimHashcode.pAsRawPointer );
                     goto LAB_009a9933;
                 }
                 iVar6 = iVar6 + 1;
@@ -1951,9 +1952,9 @@ LAB_009a9900:
             pDVar4 = pDVar4 + 1;
         } while ( iVar3 < uVar1 );
     }
-    pDVar5 = 0;
+    pDVar5 = nullptr;
 LAB_009a9933:
-    if ( pDVar5 == param_2->Hashcode ) {
+    if ( pDVar5 == param_2 ) {
         return iVar2;
     }
     iVar6 = 0;
@@ -1964,7 +1965,7 @@ LAB_009a9933:
         return -1;
     }
     do {
-        if ( pDVar4->CarHashcode.Hashcode == param_3->Hashcode ) {
+        if ( pDVar4->CarHashcode.pAsRawPointer == param_3 ) {
             if ( iVar6 == iVar2 )
                 break;
             iVar6 = iVar6 + 1;
@@ -1975,7 +1976,7 @@ LAB_009a9933:
             return -1;
         }
     } while ( true );
-    if ( pDVar4->RimHashcode.Hashcode == 0 ) {
+    if ( pDVar4->RimHashcode.pAsRawPointer == nullptr ) {
         return -1;
     }
     iVar2 = iVar2 + 1;
@@ -2000,18 +2001,10 @@ DBEntryRim *GSDatabase::getRim( DBEntryCarPhysicsData *param_2,
            ( uVar1 = gameDatabase.pNumItems[3], uVar1 != 0 ) ) &&
          ( iVar2 = 0, 0 < (int)uVar1 ) ) {
         do {
-            if ( pDVar3->CarHashcode.Hashcode == param_2->Hashcode ) {
+            if ( pDVar3->CarHashcode.pAsRawPointer == param_2 ) {
                 if ( iVar4 == rimID ) {
-                    // FIXME: Rims are never resolved for some reason?! Do
-                    // explicit lookup in Rim table as a result
-                    for ( uint32_t x = 0; x < gameDatabase.pNumItems[2]; x++ ) {
-                        if ( gameDatabase.DBRim[x].Hashcode ==
-                             pDVar3->RimHashcode.Hashcode ) {
-                            return &gameDatabase.DBRim[x];
-                        }
-                    }
-
-                    OTDU_TRIGGER_BREAKPOINT;
+                    return static_cast<DBEntryRim *>(
+                        pDVar3->RimHashcode.pAsRawPointer );
                 }
                 iVar4 = iVar4 + 1;
             }
@@ -2064,8 +2057,8 @@ bool GSDatabase::isBike( DBEntryCarPhysicsData *param_1 ) {
 int32_t GSDatabase::getNumRims( int32_t carID ) {
     DBEntryCarPhysicsData *pDVar4 = getCarDBEntry( carID );
     uint32_t numRims = 0;
-    if ( pDVar4 != nullptr ) {
-        for ( uint32_t uVar5 = 0; uVar5 < gameDatabase.pNumItems[2]; uVar5++ ) {
+    if ( pDVar4 != nullptr && gameDatabase.DBCarRims != nullptr ) {
+        for ( uint32_t uVar5 = 0; uVar5 < gameDatabase.pNumItems[3]; uVar5++ ) {
             if ( gameDatabase.DBCarRims[uVar5].CarHashcode.pAsRawPointer ==
                  pDVar4 ) {
                 numRims++;
@@ -2107,6 +2100,32 @@ DBEntryCarColor *GSDatabase::getColorByIndex( DBEntryCarPhysicsData *param_2,
             iVar4++;
         }
     }
+    return nullptr;
+}
+
+DBEntryInterior *GSDatabase::getInteriorByIndex( DBEntryCarColor *param_2,
+                                                 int32_t param_3 ) {
+    // FUN_009a8c90
+    if ( param_2 == nullptr ) {
+        return nullptr;
+    }
+
+    const DBEntryInterior *pNoInterior = gameDatabase.DBInterior;
+
+    int32_t numValid = 0;
+    for ( DBReference &interiorRef : param_2->InteriorColors ) {
+        DBEntryInterior *pInterior =
+            static_cast<DBEntryInterior *>( interiorRef.pAsRawPointer );
+        if ( pInterior == nullptr || pInterior == pNoInterior ) {
+            continue;
+        }
+
+        if ( numValid == param_3 ) {
+            return pInterior;
+        }
+        numValid++;
+    }
+
     return nullptr;
 }
 

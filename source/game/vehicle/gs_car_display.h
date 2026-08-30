@@ -24,6 +24,18 @@ public:
     }
 
     inline HiearchyNode *getHelmetNode() const { return pHelmet; }
+    inline uint8_t *getInteriorMaterialPool() const {
+        return (uint8_t *)pMatInteriorPool;
+    }
+    inline uint32_t getInteriorMaterialSize() const {
+        return sizeMaterialInterior;
+    }
+    inline uint8_t *getInteriorMaterialSpecialPool() const {
+        return (uint8_t *)pMatInteriorSpecialPool;
+    }
+    inline uint32_t getInteriorMaterialSpecialSize() const {
+        return sizeMaterialInteriorSpecial;
+    }
 
 public:
     GSCarDisplay();

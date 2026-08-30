@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "gm_world.h"
 
+#include "tdu_instance.h"
+
 #include <cmath>
 #include <iterator>
 
@@ -177,7 +179,24 @@ void GameModeWorld::reset() {
     if ( ( flags & 4 ) != 0 && gpScenaric != nullptr &&
          gpScenaric->getLocalPlayer().getCarState() == nullptr ) {
         installLocalPlayerCar();
+    } else if ( gpScenaric != nullptr &&
+                gpScenaric->getLocalPlayer().getCarState() != nullptr ) {
+        CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+
+        if ( pCarState->getPhysicsVehicle() != nullptr &&
+             gpTestDriveInstance->getActiveGameMode() != GM_Mission ) {
+            PhysicsLock lock;
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (postponed pause = 2)
+        }
+
+        VehicleBase *pVehicleBase = pCarState->getVehicleInstance();
+        if ( pVehicleBase != nullptr &&
+             ( pVehicleBase->getType() == VehicleBase::eType::VBT_Car ||
+               pVehicleBase->getType() == VehicleBase::eType::VBT_Bike ) ) {
+            GSCarDisplay::SetRealTimeEnvMappedCar( pVehicleBase );
+        }
     }
+
     if ( gpScenaric != nullptr ) {
         CarState *pExistingCar = gpScenaric->getLocalPlayer().getCarState();
         if ( pExistingCar != nullptr ) {
@@ -226,8 +245,11 @@ void GameModeWorld::reset() {
 }
 
 constexpr int32_t kDefaultPlayerCarID = 1030;
-int32_t gRequestedPlayerCarID = -1;
+int32_t gRequestedPlayerCarID = kDefaultPlayerCarID;
 int32_t gRequestedPlayerCarColorID = -1;
+int32_t gRequestedPlayerCarRimID = -1;
+int32_t gRequestedPlayerCarInteriorID = 0;
+bool gRequestedCarChange = false;
 
 // Debug teleport request
 bool gRequestedPlayerTeleport = false;
@@ -237,8 +259,11 @@ void GameModeWorld::installLocalPlayerCar() {
     installLocalPlayerCar( kDefaultPlayerCarID, nullptr );
 }
 
-void GameModeWorld::installLocalPlayerCar(
-    int32_t carID, const Matrix4x4f_t *pSpawnOverride ) {
+void GameModeWorld::installLocalPlayerCar( int32_t carID,
+                                           const Matrix4x4f_t *pSpawnOverride,
+                                           int32_t rimID,
+                                           int32_t paintIndex,
+                                           int32_t interiorIndex ) {
     // FUN_007bf280 (inlined) / FUN_0079da80.
     if ( gpCarState == nullptr || gpCarDisplay == nullptr ||
          gpScenaric == nullptr ) {
@@ -249,7 +274,7 @@ void GameModeWorld::installLocalPlayerCar(
     if ( pRes == nullptr ) {
         return;
     }
-    if ( !pRes->load( carID, -1, 0, 4, -1, 0,
+    if ( !pRes->load( carID, rimID, 0, 4, -1, 0,
                       eVehicleResourceType::VRT_Exterior ) ) {
         OTDU_LOG_ERROR(
             "Failed to load local-player vehicle resources (car %d)\n", carID );
@@ -284,6 +309,12 @@ void GameModeWorld::installLocalPlayerCar(
     pRes->RefCount++;
 
     gpCarState->registerCallback( &state, pController, nullptr );
+
+    if ( paintIndex >= 0 ) {
+        pController->applyPaint( (uint32_t)carID, ePaintType::PT_Default,
+                                 paintIndex, rimID, interiorIndex, nullptr,
+                                 nullptr, nullptr, nullptr );
+    }
 
     if ( gpMngEnvMap != nullptr ) {
         GSCarDisplay::SetRealTimeEnvMappedCar( pController );
@@ -625,12 +656,13 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
 
 #ifdef OTDU_DEVBUILD
     // Runtime vehicle switch
-    if ( gRequestedPlayerCarID >= 0 ) {
+    if ( gRequestedCarChange ) {
         const int32_t carID = gRequestedPlayerCarID;
         const int32_t colorID = gRequestedPlayerCarColorID;
+        const int32_t rimID = gRequestedPlayerCarRimID;
+        const int32_t interiorID = gRequestedPlayerCarInteriorID;
 
-        gRequestedPlayerCarID = -1;
-        gRequestedPlayerCarColorID = -1;
+        gRequestedCarChange = false;
 
         DBEntryCarPhysicsData *pDB = ( gpDatabase != nullptr )
                                          ? gpDatabase->getCarDBEntry( carID )
@@ -654,14 +686,16 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
             pose( 3, 2 ) = cur( 3, 2 );
 
             uninstallLocalPlayerCar();
-            installLocalPlayerCar( carID, &pose );
+            installLocalPlayerCar( carID, &pose, rimID, colorID, interiorID );
 
             if ( gpMngHud != nullptr && gpScenaric != nullptr ) {
                 gpMngHud->FUN_006e6a00(
                     gpScenaric->getLocalPlayer().getCarState() );
             }
 
-            OTDU_LOG_INFO( "Debug: switched player car to %d\n", carID );
+            OTDU_LOG_INFO( "Switched player car to %d (paint %d, rim "
+                           "%d, interior %d)\n",
+                           carID, colorID, rimID, interiorID );
         } else {
             OTDU_LOG_INFO(
                 "Debug: car %d not switchable (missing DB or bike)\n", carID );

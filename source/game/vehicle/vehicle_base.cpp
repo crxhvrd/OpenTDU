@@ -20,6 +20,7 @@
 #include "render/render_context.h"
 
 #include "gs_car_common.h"
+#include "gs_car_colors.h"
 #include "game/mng_hud.h"
 #include "world/gs_mng_resources.h"
 
@@ -303,6 +304,95 @@ inline void LAB_008bc033( Material *puVar15,
     }
 }
 
+static bool IsMaterialForColorPart( const VehicleBase::eType type,
+                                    const eCarColorPart part,
+                                    const uint64_t hashcode ) {
+    // FUN_008b9fd0
+    const bool bIsTraffic = ( type == VehicleBase::eType::VBT_TrafficCar ||
+                              type == VehicleBase::eType::VBT_TrafficBike );
+    const bool bIsTrafficLightCluster =
+        bIsTraffic && ( TestDriveString8StartsWith( hashcode, "LGT_L" ) ||
+                        TestDriveString8StartsWith( hashcode, "LGT_R" ) );
+
+    const bool bIsMainPaint = TestDriveString8StartsWith( hashcode, "PAINT" ) &&
+                              !TestDriveString8StartsWith( hashcode, "PAINT2" );
+
+    switch ( part ) {
+    case CCP_BodyColor:
+        return bIsMainPaint || TestDriveString8StartsWith( hashcode, "P_" ) ||
+               bIsTrafficLightCluster;
+
+    case CCP_InteriorColor1:
+        return TestDriveString8StartsWith( hashcode, "C1" );
+
+    case CCP_InteriorColor2:
+        return TestDriveString8StartsWith( hashcode, "C2" );
+
+    case CCP_LogoColor1:
+        return bIsMainPaint || bIsTrafficLightCluster;
+
+    case CCP_LogoColor2:
+        return TestDriveString8StartsWith( hashcode, "PAINT2" ) ||
+               bIsTrafficLightCluster;
+
+    case CCP_InteriorMaterial:
+        return TestDriveString8StartsWith( hashcode, "MAT_" );
+
+    case CCP_BodyColor2:
+        return TestDriveString8StartsWith( hashcode, "PAINT2" );
+
+    default:
+        break;
+    }
+
+    return false;
+}
+
+template <typename TCallback>
+static void
+ForEachColorPartMaterial( const std::array<VehicleResource *, 2> &pResNodes,
+                          const int32_t numResNodes,
+                          const VehicleBase::eType type,
+                          const eCarColorPart part,
+                          TCallback &&callback ) {
+    // FUN_008bc940 / FUN_008bc6a0 / FUN_008bcbd0 / FUN_008bce60 / FUN_008bd0b0
+    // (inlined)
+    for ( int32_t nodeIndex = 0; nodeIndex < numResNodes; nodeIndex++ ) {
+        VehicleResource *pResNode = pResNodes[nodeIndex];
+        if ( pResNode == nullptr || pResNode->pRender3DD == nullptr ||
+             pResNode->pResourceBank == nullptr ) {
+            continue;
+        }
+
+        Render2DM &resource2DM = pResNode->Resource2DM;
+        const uint32_t numMaterials = resource2DM.getNumMaterials();
+        for ( uint32_t matIndex = 0; matIndex < numMaterials; matIndex++ ) {
+            Material *pMaterial = resource2DM.getMaterialAtIndex( matIndex );
+            if ( pMaterial == nullptr ||
+                 !IsMaterialForColorPart(
+                     type, part,
+                     resource2DM.getMaterialHashcode( matIndex ) ) ) {
+                continue;
+            }
+
+            callback( pMaterial );
+        }
+    }
+}
+
+static void InstallClonedInteriorMaterial( VehicleResource &resource,
+                                           Material *pClone,
+                                           const uint64_t hashcode ) {
+    // FUN_008ba480
+    if ( pClone == nullptr ) {
+        return;
+    }
+
+    resource.Resource3DD.rebindMaterial( hashcode,
+                                         (RenderFile::Section *)pClone - 1 );
+    gpRenderContext->retrieveShadersForMaterial( pClone, 0 );
+}
+
 VehicleBase::VehicleBase()
     : CarStateEventListener(),
       CarAlphaListener(),
@@ -326,6 +416,7 @@ VehicleBase::VehicleBase()
     // FUN_008baf80
     memset( pTireBuffer, 0, sizeof( uint8_t ) * 4096 );
     vehicleWheelLowResInstances.fill( nullptr );
+    pCurResNodesUsed.fill( nullptr );
 }
 
 VehicleBase::~VehicleBase() {
@@ -1383,7 +1474,7 @@ void VehicleBase::updateCarAlpha() {
         alphaSlotIndex = -1;
     }
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE;
 }
 
 void VehicleBase::registerCarAlphaInstances( uint32_t param_2, bool param_3 ) {
@@ -1793,8 +1884,10 @@ char *VehicleBase::setPaintColorFromDB( int32_t paintIndex ) {
             DBEntryCarColor *pDVar2 = gpDatabase->getColorByIndex(
                 pCarState->getCarID(), paintIndex );
             if ( pDVar2 != nullptr ) {
-                setVehiclePartColor( 0, pDVar2->ColorID1.pAsString );
-                setVehiclePartColor( 6, pDVar2->ColorID2.pAsString );
+                setVehiclePartColor( CCP_BodyColor,
+                                     pDVar2->ColorID1.pAsString );
+                setVehiclePartColor( CCP_BodyColor2,
+                                     pDVar2->ColorID2.pAsString );
                 setCalliperColor( pDVar2->CallipersColor.pAsString );
                 return pDVar2->ColorName.pAsString;
             }
@@ -1804,17 +1897,815 @@ char *VehicleBase::setPaintColorFromDB( int32_t paintIndex ) {
     return nullptr;
 }
 
-Material *VehicleBase::setVehiclePartColor( int32_t param_2,
+int32_t VehicleBase::getResNodesForColorPart( eCarColorPart param_2 ) {
+    // FUN_008b9720
+    if ( type == eType::VBT_Car || type == eType::VBT_TrafficCar ) {
+        switch ( param_2 ) {
+        case CCP_BodyColor:
+        case CCP_BodyColor2:
+            pCurResNodesUsed[0] = &bodyResource;
+            pCurResNodesUsed[1] = &interiorResource;
+            return 2;
+
+        case CCP_InteriorColor1:
+        case CCP_InteriorColor2:
+        case CCP_InteriorMaterial:
+            pCurResNodesUsed[1] = nullptr;
+            pCurResNodesUsed[0] = &interiorResource;
+            return 1;
+
+        case CCP_LogoColor1:
+        case CCP_LogoColor2:
+            pCurResNodesUsed[0] = &bodyResource;
+            pCurResNodesUsed[1] = &interiorResource;
+            return 1;
+
+        default:
+            break;
+        }
+    } else if ( type == eType::VBT_Bike || type == eType::VBT_TrafficBike ) {
+        if ( param_2 >= CCP_BodyColor && param_2 <= CCP_BodyColor2 ) {
+            pCurResNodesUsed[0] = &bodyResource;
+            pCurResNodesUsed[1] = &interiorResource;
+            return 2;
+        }
+    } else {
+        return 0;
+    }
+
+    pCurResNodesUsed[0] = nullptr;
+    pCurResNodesUsed[1] = nullptr;
+    return 0;
+}
+
+void VehicleBase::applyColorToResNodes( const ColorRGBA &param_2,
+                                        int32_t param_3,
+                                        eCarColorPart param_4 ) {
+    // FUN_008bc940
+    const int32_t numResNodes = getResNodesForColorPart( param_4 );
+    const Eigen::Vector4f color = UnpackColorBytes( param_2 );
+
+    ForEachColorPartMaterial( pCurResNodesUsed, numResNodes, type, param_4,
+                              [&]( Material *pMaterial ) {
+                                  switch ( param_3 ) {
+                                  case 0:
+                                      pMaterial->SpecularColor = color;
+                                      break;
+                                  case 1:
+                                      pMaterial->AmbientColor = color;
+                                      break;
+                                  case 2:
+                                      pMaterial->DiffuseColor = color;
+                                      break;
+                                  default:
+                                      break;
+                                  }
+                              } );
+}
+
+void VehicleBase::applyReflectionParamsToResNodes( const float *param_2,
+                                                   eCarColorPart param_6,
+                                                   bool bNPaint ) {
+    // FUN_008bcbd0
+    const int32_t numResNodes = getResNodesForColorPart( param_6 );
+
+    ForEachColorPartMaterial(
+        pCurResNodesUsed, numResNodes, type, param_6,
+        [&]( Material *pMaterial ) {
+            MaterialShaderParameterArray *pParameters =
+                pMaterial->getShaderParameters();
+            if ( pParameters == nullptr ||
+                 !IsPaintShaderGUID( pParameters->Hashcode, bNPaint ) ) {
+                return;
+            }
+
+            float *pParamData = pParameters->getStaticParamDataPS( 0x3e );
+            if ( pParamData == nullptr ) {
+                return;
+            }
+
+            pParamData[0] = param_2[0];
+            pParamData[1] = param_2[1];
+
+            const bool bIsTrafficCar = ( type == eType::VBT_TrafficCar );
+            pParamData[2] = bIsTrafficCar ? 1.0f : param_2[2]; // FLOAT_00f4165c
+            pParamData[3] = bIsTrafficCar ? 1.0f : param_2[3];
+        } );
+}
+
+void VehicleBase::applySpecularParamToResNodes( float param_2,
+                                                eCarColorPart param_3,
+                                                bool bNPaint ) {
+    // FUN_008bce60
+    const int32_t numResNodes = getResNodesForColorPart( param_3 );
+
+    ForEachColorPartMaterial(
+        pCurResNodesUsed, numResNodes, type, param_3,
+        [&]( Material *pMaterial ) {
+            MaterialShaderParameterArray *pParameters =
+                pMaterial->getShaderParameters();
+            if ( pParameters == nullptr ||
+                 !IsPaintShaderGUID( pParameters->Hashcode, bNPaint ) ) {
+                return;
+            }
+
+            float *pParamData = pParameters->getStaticParamDataPS( 0x1b );
+            if ( pParamData != nullptr ) {
+                pParamData[0] = param_2;
+            }
+        } );
+}
+
+void VehicleBase::applyColorStripToResNodes( const ColorRGBA &param_2,
+                                             const ColorRGBA &param_3,
+                                             float param_4,
+                                             eCarColorPart param_5,
+                                             bool bNPaint ) {
+    // FUN_008bd0b0
+    const int32_t numResNodes = getResNodesForColorPart( param_5 );
+    const Eigen::Vector4f firstColor = UnpackColorBytes( param_2 );
+    const Eigen::Vector4f secondColor = UnpackColorBytes( param_3 );
+
+    ForEachColorPartMaterial(
+        pCurResNodesUsed, numResNodes, type, param_5,
+        [&]( Material *pMaterial ) {
+            MaterialShaderParameterArray *pParameters =
+                pMaterial->getShaderParameters();
+            if ( pParameters == nullptr ||
+                 !IsPaintOrTwoTonesShaderGUID( pParameters->Hashcode,
+                                               bNPaint ) ) {
+                return;
+            }
+
+            float *pParamData = pParameters->getStaticParamDataPS( 0x7c );
+            if ( pParamData != nullptr ) {
+                pParamData[0] = param_4;
+            }
+
+            pParamData = pParameters->getStaticParamDataPS( 0x7a );
+            if ( pParamData != nullptr ) {
+                memcpy( pParamData, firstColor.data(), sizeof( float ) * 4 );
+            }
+
+            pParamData = pParameters->getStaticParamDataPS( 0x7b );
+            if ( pParamData != nullptr ) {
+                memcpy( pParamData, secondColor.data(), sizeof( float ) * 4 );
+            }
+        } );
+}
+
+void VehicleBase::applyTwoTonesColorToResNodes( const ColorRGBA &param_2,
+                                                eCarColorPart param_3,
+                                                bool bNPaint ) {
+    // FUN_008bc6a0
+    const int32_t numResNodes = getResNodesForColorPart( param_3 );
+    const Eigen::Vector4f color = UnpackColorBytes( param_2 );
+
+    ForEachColorPartMaterial(
+        pCurResNodesUsed, numResNodes, type, param_3,
+        [&]( Material *pMaterial ) {
+            MaterialShaderParameterArray *pParameters =
+                pMaterial->getShaderParameters();
+            if ( pParameters == nullptr ||
+                 !IsPaintShaderGUID( pParameters->Hashcode, bNPaint ) ) {
+                return;
+            }
+
+            float *pParamData = pParameters->getStaticParamDataPS( 0xd5 );
+            if ( pParamData != nullptr ) {
+                memcpy( pParamData, color.data(), sizeof( float ) * 4 );
+            }
+        } );
+}
+
+void VehicleBase::cloneInteriorMaterials( eCarColorPart param_2,
+                                          Material *pColorMaterial,
+                                          Material *pColorMaterialN,
+                                          bool bPaintFamilyInterior,
+                                          bool bNPaint ) {
+    // FUN_008bdd90
+    if ( gpCarDisplay == nullptr ) {
+        return;
+    }
+
+    Material *const *ppInteriorMaterials = nullptr;
+    const uint64_t *pInteriorHashcodes = nullptr;
+    int32_t numInteriorMaterials = 0;
+    int32_t poolSlotBase = 0;
+
+    switch ( param_2 ) {
+    case CCP_InteriorColor1:
+        ppInteriorMaterials = interiorMaterials.pMaterialsColor0.data();
+        pInteriorHashcodes = interiorMaterials.pHashcodesColor0.data();
+        numInteriorMaterials = interiorMaterials.NumMaterialColor0;
+        poolSlotBase = 0;
+        break;
+    case CCP_InteriorColor2:
+        ppInteriorMaterials = interiorMaterials.pMaterialsColor1.data();
+        pInteriorHashcodes = interiorMaterials.pHashcodesColor1.data();
+        numInteriorMaterials = interiorMaterials.NumMaterialColor1;
+        poolSlotBase = 0x10;
+        break;
+    case CCP_InteriorMaterial:
+        ppInteriorMaterials = interiorMaterials.pMaterialsSurfaces.data();
+        pInteriorHashcodes = interiorMaterials.pHashcodesSurfaces.data();
+        numInteriorMaterials = interiorMaterials.NumMaterialSurfaces;
+        poolSlotBase = 0x20;
+        break;
+    default:
+        return;
+    }
+
+    uint8_t *pPool = bPaintFamilyInterior
+                         ? gpCarDisplay->getInteriorMaterialSpecialPool()
+                         : gpCarDisplay->getInteriorMaterialPool();
+    const uint32_t poolStride =
+        bPaintFamilyInterior ? gpCarDisplay->getInteriorMaterialSpecialSize()
+                             : gpCarDisplay->getInteriorMaterialSize();
+    if ( pPool == nullptr || poolStride == 0 ) {
+        return;
+    }
+
+    const InteriorTextureRemap *pRemap = bPaintFamilyInterior
+                                             ? kRemapPoolB[bNPaint ? 1 : 0]
+                                             : kRemapPoolA[bNPaint ? 1 : 0];
+
+    const int32_t numSlots =
+        Min( numInteriorMaterials,
+             (int32_t)CustomMaterialsInterior::kMaxNumMaterial );
+
+    for ( int32_t i = 0; i < numSlots; i++ ) {
+        Material *pInteriorMaterial = ppInteriorMaterials[i];
+        if ( pInteriorMaterial == nullptr ) {
+            continue;
+        }
+
+        Material *pSourceMaterial = bNPaint ? pColorMaterialN : pColorMaterial;
+        Material *pClone = pSourceMaterial->copyTo(
+            pPool + (size_t)( poolSlotBase + i ) * poolStride, 2 );
+        if ( pClone == nullptr ) {
+            continue;
+        }
+
+        MaterialParameter *pInteriorParameters =
+            pInteriorMaterial->getParameterByIndex( 0 );
+        MaterialLayer *pInteriorLayer = ( pInteriorParameters != nullptr )
+                                            ? pInteriorParameters->getLayer( 0 )
+                                            : nullptr;
+        MaterialParameter *pCloneParameters = pClone->getParameterByIndex( 0 );
+        MaterialLayer *pCloneLayer = ( pCloneParameters != nullptr )
+                                         ? pCloneParameters->getLayer( 0 )
+                                         : nullptr;
+
+        if ( pInteriorLayer != nullptr && pCloneLayer != nullptr ) {
+            for ( int32_t r = 0; pRemap[r].Dst >= 0; r++ ) {
+                MaterialLayerTexture &dst =
+                    pCloneLayer->pLayerTextures[pRemap[r].Dst];
+                const MaterialLayerTexture &src =
+                    pInteriorLayer->pLayerTextures[pRemap[r].Src];
+
+                dst.Hashcode = src.Hashcode;
+                dst.pTextureSection = src.pTextureSection;
+            }
+        }
+
+        RefreshClonedMaterialFlags( pClone, bNPaint );
+        pInteriorMaterial->copyStatesTo( pClone );
+        InstallClonedInteriorMaterial( interiorResource, pClone,
+                                       pInteriorHashcodes[i] );
+    }
+}
+
+Material *VehicleBase::setVehiclePartColor( eCarColorPart param_2,
                                             const char *param_3 ) {
     // FUN_008bdd90
-    OTDU_UNIMPLEMENTED;
-    return nullptr;
+    if ( param_3 == nullptr || gpCarColors == nullptr ) {
+        return nullptr;
+    }
+
+    Render2DM &colors2DM = gpCarColors->get2DM();
+    if ( colors2DM.getMaterialArray() == nullptr ) {
+        return nullptr;
+    }
+
+    char normalMapColorName[64];
+    snprintf( normalMapColorName, sizeof( normalMapColorName ), "%s_N",
+              param_3 );
+
+    RenderFile::Section *pColorSection =
+        colors2DM.getMaterial( GetIdentifier64bit( param_3 ) );
+    if ( pColorSection == nullptr ) {
+        return nullptr;
+    }
+    Material *pColorMaterial = (Material *)( pColorSection + 1 );
+
+    RenderFile::Section *pColorSectionN =
+        colors2DM.getMaterial( GetIdentifier64bit( normalMapColorName ) );
+    Material *pColorMaterialN = ( pColorSectionN != nullptr )
+                                    ? (Material *)( pColorSectionN + 1 )
+                                    : pColorMaterial;
+
+    Material *pInteriorMaterial = nullptr;
+    switch ( param_2 ) {
+    case CCP_InteriorColor1:
+        pInteriorMaterial = interiorMaterials.pMaterialsColor0[0];
+        break;
+    case CCP_InteriorColor2:
+        pInteriorMaterial = interiorMaterials.pMaterialsColor1[0];
+        break;
+    case CCP_InteriorMaterial:
+        pInteriorMaterial = interiorMaterials.pMaterialsSurfaces[0];
+        break;
+    default:
+        break;
+    }
+
+    if ( pInteriorMaterial != nullptr ) {
+        MaterialParameter *pInteriorParams =
+            pInteriorMaterial->getParameterByIndex( 0 );
+        MaterialParameter *pColorParams =
+            pColorMaterial->getParameterByIndex( 0 );
+
+        if ( pInteriorParams != nullptr && pColorParams != nullptr ) {
+            auto isPaintFamily = []( const uint64_t guid ) {
+                return guid == 0xb39c35015789e65cull ||
+                       guid == 0xcab12190a00d5c4eull ||
+                       guid == 0x69f07f72719bf862ull;
+            };
+            auto isTwoTonesFamily = []( const uint64_t guid ) {
+                return guid == 0x213157b8bc6c7363ull ||
+                       guid == 0x111157b8bc6c7111ull ||
+                       guid == 0x222157b8bc6c7222ull;
+            };
+
+            const uint64_t interiorGUID = pInteriorParams->Hashcode;
+            const uint64_t colorGUID = pColorParams->Hashcode;
+
+            const bool bPaintFamilyInterior = isPaintFamily( interiorGUID );
+            const bool bNeedsClone =
+                ( bPaintFamilyInterior && !isPaintFamily( colorGUID ) ) ||
+                ( isTwoTonesFamily( interiorGUID ) &&
+                  !isTwoTonesFamily( colorGUID ) );
+
+            if ( bNeedsClone ) {
+                const bool bNPaint = ( interiorGUID == 0xcab12190a00d5c4eull ||
+                                       interiorGUID == 0x69f07f72719bf862ull ||
+                                       interiorGUID == 0x111157b8bc6c7111ull ||
+                                       interiorGUID == 0x222157b8bc6c7222ull );
+
+                cloneInteriorMaterials( param_2, pColorMaterial,
+                                        pColorMaterialN, bPaintFamilyInterior,
+                                        bNPaint );
+
+                bPaintChange = true;
+                return nullptr;
+            }
+        }
+    }
+
+    float stripParam = 0.0f;
+    ColorRGBA stripFirstColor = gColorBlackNoAlpha;
+    ColorRGBA stripSecondColor = gColorBlackNoAlpha;
+
+    Material *pSourceMaterial = pColorMaterial;
+    for ( int32_t pass = 0; pass < 2; pass++ ) {
+        const bool bNPaint = ( pass != 0 );
+        if ( bNPaint ) {
+            pSourceMaterial = pColorMaterialN;
+        }
+
+        const bool bIsLogoColor =
+            ( param_2 == CCP_LogoColor1 || param_2 == CCP_LogoColor2 );
+
+        applyColorToResNodes(
+            TruncateColorToBytesOpaque( pSourceMaterial->AmbientColor ), 1,
+            param_2 );
+        applyColorToResNodes(
+            TruncateColorToBytesOpaque( pSourceMaterial->DiffuseColor ), 2,
+            param_2 );
+        applyColorToResNodes(
+            TruncateColorToBytesOpaque( pSourceMaterial->SpecularColor ), 0,
+            param_2 );
+
+        MaterialShaderParameterArray *pSourceParams =
+            pSourceMaterial->getShaderParameters();
+
+        const float *pReflectionParams =
+            pSourceParams->getStaticParamDataPS( 0x3e );
+        if ( pReflectionParams != nullptr ) {
+            applyReflectionParamsToResNodes( pReflectionParams, param_2,
+                                             bNPaint );
+            if ( bIsLogoColor ) {
+                applyReflectionParamsToResNodes( pReflectionParams,
+                                                 CCP_BodyColor, bNPaint );
+            }
+        }
+
+        const float *pSpecularParam =
+            pSourceParams->getStaticParamDataPS( 0x1b );
+        if ( pSpecularParam != nullptr ) {
+            applySpecularParamToResNodes( pSpecularParam[0], param_2, bNPaint );
+            if ( bIsLogoColor ) {
+                applySpecularParamToResNodes( pSpecularParam[0], CCP_BodyColor,
+                                              bNPaint );
+            }
+        }
+
+        const float *pStripParam = pSourceParams->getStaticParamDataPS( 0x7c );
+        if ( pStripParam != nullptr ) {
+            stripParam = pStripParam[0];
+        }
+
+        const float *pStripFirstColor =
+            pSourceParams->getStaticParamDataPS( 0x7a );
+        if ( pStripFirstColor != nullptr ) {
+            stripFirstColor = TruncateColorToBytes( pStripFirstColor );
+        }
+
+        const float *pStripSecondColor =
+            pSourceParams->getStaticParamDataPS( 0x7b );
+        if ( pStripSecondColor != nullptr ) {
+            stripSecondColor = TruncateColorToBytes( pStripSecondColor );
+            applyColorStripToResNodes( stripFirstColor, stripSecondColor,
+                                       stripParam, param_2, bNPaint );
+            if ( bIsLogoColor ) {
+                applyColorStripToResNodes( stripFirstColor, stripSecondColor,
+                                           stripParam, CCP_BodyColor, bNPaint );
+            }
+        }
+
+        const float *pTwoTonesColor =
+            pSourceParams->getStaticParamDataPS( 0xd5 );
+        const bool bIsBodyColor =
+            ( param_2 == CCP_BodyColor || param_2 == CCP_BodyColor2 );
+
+        if ( pTwoTonesColor != nullptr && bIsBodyColor ) {
+            const eCarColorPart twoTonesPart =
+                ( param_2 == CCP_BodyColor ) ? CCP_LogoColor1 : CCP_LogoColor2;
+
+            applyColorStripToResNodes( stripFirstColor, stripSecondColor,
+                                       stripParam, twoTonesPart, bNPaint );
+            applyTwoTonesColorToResNodes(
+                TruncateColorToBytes( pTwoTonesColor ), twoTonesPart, false );
+        } else if ( param_2 == CCP_InteriorMaterial ) {
+            MaterialParameter *pSourceParameters =
+                pSourceMaterial->getParameterByIndex( 0 );
+            MaterialLayer *pSourceLayer = ( pSourceParameters != nullptr )
+                                              ? pSourceParameters->getLayer( 0 )
+                                              : nullptr;
+
+            for ( int32_t i = 0; i < interiorMaterials.NumMaterialSurfaces;
+                  i++ ) {
+                Material *pInteriorMaterial =
+                    interiorMaterials.pMaterialsSurfaces[i];
+                if ( pInteriorMaterial == nullptr || pSourceLayer == nullptr ) {
+                    continue;
+                }
+
+                MaterialParameter *pInteriorParameters =
+                    pInteriorMaterial->getParameterByIndex( 0 );
+                MaterialLayer *pInteriorLayer =
+                    ( pInteriorParameters != nullptr )
+                        ? pInteriorParameters->getLayer( 0 )
+                        : nullptr;
+                if ( pInteriorLayer == nullptr ) {
+                    continue;
+                }
+
+                pInteriorLayer->pLayerTextures[0].Hashcode =
+                    pSourceLayer->pLayerTextures[0].Hashcode;
+
+                if ( gpCarCommon != nullptr ) {
+                    gpCarCommon->getCollection2D().bindBitmapReferences(
+                        pInteriorMaterial );
+                }
+                interiorResource.Collection2D.bindBitmapReferences(
+                    pInteriorMaterial );
+            }
+        }
+    }
+
+    bPaintChange = true;
+    return pSourceMaterial;
+}
+
+void VehicleBase::applyGaragePaint( CarDesc &carDesc ) {
+    // FUN_008c1250 + FUN_008c11e0
+    if ( !carDesc.isValid() ) {
+        return;
+    }
+
+    applyPaint( carDesc.getCarConfigID(), carDesc.paintType, carDesc.paintIndex,
+                carDesc.rimID, carDesc.interiorID, &carDesc.deluxeMainColor,
+                &carDesc.deluxeSecondColor, &carDesc.deluxeLogoColor,
+                &carDesc.deluxeSecondColor2 );
+}
+
+void VehicleBase::applyPaint( uint32_t carConfigID,
+                              ePaintType paintType,
+                              int32_t paintIndex,
+                              int32_t rimID,
+                              int32_t interiorIndex,
+                              const ColorRGBA *pMainColor,
+                              const ColorRGBA *pSecondColor,
+                              const ColorRGBA *pLogoColor,
+                              const ColorRGBA *pSecondColor2 ) {
+    // FUN_008c1060
+    if ( pCarState == nullptr || pCarState->getResource() == nullptr ||
+         pCarState->getResource()->bDefault ) {
+        return;
+    }
+
+    paint.InteriorIndex = interiorIndex;
+    paint.bSaved = true;
+    paint.Type = paintType;
+    paint.PaintIndex = paintIndex;
+    if ( pMainColor != nullptr ) {
+        paint.CustomMainColor = *pMainColor;
+    }
+    if ( pSecondColor != nullptr ) {
+        paint.CustomSecondColor = *pSecondColor;
+    }
+    if ( pLogoColor != nullptr ) {
+        paint.CustomTwoToneColor1 = *pLogoColor;
+    }
+    if ( pSecondColor2 != nullptr ) {
+        paint.CustomTwoToneColor2 = *pSecondColor2;
+    }
+
+    const int32_t carID = static_cast<int32_t>( carConfigID );
+    DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry( carID );
+    if ( pCarEntry == nullptr ) {
+        return;
+    }
+
+    setPaintColorFromDB( paintIndex );
+
+    if ( gpDatabase->isTraffic( pCarEntry ) ) {
+        return;
+    }
+
+    VehicleBaseResources *pResource = pCarState->getResource();
+    if ( pResource->RimID != rimID ) {
+        pResource->RimID = rimID;
+
+        DBEntryRim *pRim =
+            static_cast<DBEntryRim *>( pCarEntry->DefaultRims.pAsRawPointer );
+        if ( rimID != -1 ) {
+            DBEntryRim *pSelected = gpDatabase->getRim( carID, rimID );
+            if ( pSelected != nullptr ) {
+                pRim = pSelected;
+            }
+        }
+        setRimsFromDB( pRim );
+    }
+
+    DBEntryCarColor *pColor = gpDatabase->getColorByIndex( carID, paintIndex );
+    if ( pColor != nullptr ) {
+        DBEntryInterior *pInterior =
+            gpDatabase->getInteriorByIndex( pColor, interiorIndex );
+        if ( pInterior != nullptr ) {
+            setInteriorColorsFromDB( pInterior );
+        }
+    }
+
+    if ( paintType == ePaintType::PT_CustomSolid ||
+         paintType == ePaintType::PT_CustomMetal ||
+         paintType == ePaintType::PT_CustomSolidTwoTones ||
+         paintType == ePaintType::PT_CustomMetalTwoTones ) {
+        applyDeluxePaint( paintType, pMainColor, pSecondColor, pLogoColor,
+                          pSecondColor2 );
+    }
+}
+
+void VehicleBase::setInteriorColorsFromDB( DBEntryInterior *pInterior ) {
+    // FUN_008b73f0
+    if ( pInterior == nullptr ) {
+        return;
+    }
+
+    setVehiclePartColor( CCP_InteriorColor1,
+                         pInterior->InteriorColorID1.pAsString );
+    setVehiclePartColor( CCP_InteriorColor2,
+                         pInterior->InteriorColorID2.pAsString );
+    setVehiclePartColor( CCP_InteriorMaterial, pInterior->Material.pAsString );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PAINT (FUN_008b6aa0 - the low-res
+                             // interior color pair)
+}
+
+void VehicleBase::setRimsFromDB( DBEntryRim * ) {
+    // NOP
+}
+
+void VehicleBase::applyDeluxeColorPairToResNodes( const ColorRGBA &param_2,
+                                                  const ColorRGBA &param_3,
+                                                  eCarColorPart param_4 ) {
+    // FUN_008bd600
+    const int32_t numResNodes = getResNodesForColorPart( param_4 );
+    const Eigen::Vector4f firstColor = UnpackColorBytes( param_2 );
+    const Eigen::Vector4f secondColor = UnpackColorBytes( param_3 );
+
+    ForEachColorPartMaterial(
+        pCurResNodesUsed, numResNodes, type, param_4,
+        [&]( Material *pMaterial ) {
+            MaterialShaderParameterArray *pParameters =
+                pMaterial->getShaderParameters();
+
+            float *pParamData = pParameters->getStaticParamDataPS( 0x7a );
+            if ( pParamData != nullptr ) {
+                memcpy( pParamData, firstColor.data(), sizeof( float ) * 4 );
+            }
+
+            pParamData = pParameters->getStaticParamDataPS( 0x7b );
+            if ( pParamData != nullptr ) {
+                memcpy( pParamData, secondColor.data(), sizeof( float ) * 4 );
+            }
+        } );
+}
+
+void VehicleBase::applyRampExpToResNodes( float param_2,
+                                          eCarColorPart param_3 ) {
+    // FUN_008bd420
+    const int32_t numResNodes = getResNodesForColorPart( param_3 );
+
+    ForEachColorPartMaterial(
+        pCurResNodesUsed, numResNodes, type, param_3,
+        [&]( Material *pMaterial ) {
+            float *pParamData =
+                pMaterial->getShaderParameters()->getStaticParamDataPS( 0x7c );
+            if ( pParamData != nullptr ) {
+                pParamData[0] = param_2;
+            }
+        } );
+}
+
+void VehicleBase::applyDeluxePaint( ePaintType paintType,
+                                    const ColorRGBA *pMainColor,
+                                    const ColorRGBA *pSecondColor,
+                                    const ColorRGBA *pLogoColor,
+                                    const ColorRGBA *pSecondColor2 ) {
+    // FUN_0071fcb0
+    if ( pMainColor == nullptr || paintType == ePaintType::PT_Default ) {
+        return;
+    }
+
+    const bool bIsTwoTones =
+        ( paintType == ePaintType::PT_CustomSolidTwoTones ||
+          paintType == ePaintType::PT_CustomMetalTwoTones );
+    const bool bLogoDrivesTones =
+        ( pLogoColor != nullptr &&
+          ( paintType == ePaintType::PT_CustomSolid ||
+            paintType == ePaintType::PT_CustomMetal ) );
+
+    const ColorRGBA mainColor =
+        ScaleDeluxeColor( *pMainColor, kDeluxeColorScale );
+    const ColorRGBA secondColor =
+        ( pSecondColor != nullptr )
+            ? ScaleDeluxeColor( *pSecondColor, kDeluxeColorScale )
+            : gColorBlackNoAlpha;
+    const ColorRGBA secondColor2 =
+        ( pSecondColor2 != nullptr )
+            ? ScaleDeluxeColor( *pSecondColor2, kDeluxeColorScale )
+            : gColorBlackNoAlpha;
+
+    ColorRGBA logoColor = gColorBlackNoAlpha;
+    if ( bLogoDrivesTones ) {
+        logoColor = ScaleDeluxeColor( *pLogoColor, 1.0f ); // FLOAT_00fab97c
+    } else if ( bIsTwoTones && pLogoColor != nullptr ) {
+        logoColor = ScaleDeluxeColor( *pLogoColor, kDeluxeColorScale );
+    }
+
+    ColorRGBA darkenedColor = gColorBlackNoAlpha;
+    ColorRGBA specularColor = gColorBlackNoAlpha;
+
+    ComputeDeluxeShades( mainColor, paintType, &darkenedColor, &specularColor );
+    applyDeluxeColorPairToResNodes(
+        mainColor, ( pSecondColor != nullptr ) ? secondColor : darkenedColor,
+        CCP_BodyColor );
+    applyColorToResNodes( specularColor, 0, CCP_BodyColor );
+
+    ColorRGBA toneSpecular = gColorBlackNoAlpha;
+    if ( bLogoDrivesTones ) {
+        applyTwoTonesColorToResNodes( logoColor, CCP_LogoColor1, true );
+        applyTwoTonesColorToResNodes( logoColor, CCP_LogoColor1, false );
+        applyTwoTonesColorToResNodes( logoColor, CCP_LogoColor2, true );
+        applyTwoTonesColorToResNodes( logoColor, CCP_LogoColor2, false );
+    } else if ( bIsTwoTones ) {
+        ComputeDeluxeShades( logoColor, paintType, &darkenedColor,
+                             &toneSpecular );
+        applyDeluxeColorPairToResNodes(
+            logoColor,
+            ( pSecondColor2 != nullptr ) ? secondColor2 : darkenedColor,
+            CCP_BodyColor2 );
+        applyColorToResNodes( specularColor, 0, CCP_BodyColor2 );
+    }
+
+    // Ford GT always gets the second tone (even for deliveries w/o stripes)
+    if ( pCarState != nullptr && pCarState->getCarID() == 0x75 ) {
+        ComputeDeluxeShades( logoColor, ePaintType::PT_CustomSolid,
+                             &darkenedColor, &toneSpecular );
+        applyDeluxeColorPairToResNodes( logoColor, darkenedColor,
+                                        CCP_BodyColor2 );
+        applyColorToResNodes( specularColor, 0, CCP_BodyColor2 );
+    }
+
+    const DeluxeSurfaceSettings &surface =
+        ( paintType == ePaintType::PT_CustomSolid ||
+          paintType == ePaintType::PT_CustomSolidTwoTones )
+            ? gSolidSurfaceSettings
+            : gMetalSurfaceSettings;
+
+    applyRampExpToResNodes( surface.RampExp, CCP_BodyColor );
+    applySpecularParamToResNodes( surface.SpecularExp, CCP_BodyColor, true );
+    applySpecularParamToResNodes( surface.SpecularExp, CCP_BodyColor, false );
+    applyReflectionParamsToResNodes( surface.EnvMap, CCP_BodyColor, true );
+    applyReflectionParamsToResNodes( surface.EnvMap, CCP_BodyColor, false );
 }
 
 Material *VehicleBase::setCalliperColor( const char *param_2 ) {
     // FUN_008bc480
-    OTDU_UNIMPLEMENTED;
-    return nullptr;
+    if ( param_2 == nullptr || gpCarColors == nullptr ) {
+        return nullptr;
+    }
+
+    Render2DM &colors2DM = gpCarColors->get2DM();
+    if ( colors2DM.getMaterialArray() == nullptr ) {
+        return nullptr;
+    }
+
+    RenderFile::Section *pColorSection =
+        colors2DM.getMaterial( GetIdentifier64bit( param_2 ) );
+    if ( pColorSection == nullptr ) {
+        return nullptr;
+    }
+
+    Material *pColorMaterial = (Material *)( pColorSection + 1 );
+    MaterialShaderParameterArray *pColorParams =
+        (MaterialShaderParameterArray *)pColorMaterial->getParameterByIndex(
+            0 );
+
+    Eigen::Vector4f paintShaderColor = Eigen::Vector4f::Zero();
+    Eigen::Vector4f otherShaderColor = Eigen::Vector4f::Zero();
+
+    const float *pParamData = pColorParams->getStaticParamDataPS( 0x7a );
+    if ( pParamData != nullptr ) {
+        paintShaderColor = Eigen::Vector4f( pParamData[0], pParamData[1],
+                                            pParamData[2], pParamData[3] );
+    }
+
+    pParamData = pColorParams->getStaticParamDataPS( 0xd5 );
+    if ( pParamData != nullptr ) {
+        otherShaderColor = Eigen::Vector4f( pParamData[0], pParamData[1],
+                                            pParamData[2], pParamData[3] );
+    }
+
+    HiearchyNode *pNodeFL =
+        ( pParentNode != nullptr )
+            ? pParentNode->findChild( GetIdentifier64bit( "STIR_FL" ) )
+            : nullptr;
+    HiearchyNode *pNodeRL =
+        ( pParentNode != nullptr )
+            ? pParentNode->findChild( GetIdentifier64bit( "STIR_RL" ) )
+            : nullptr;
+    if ( pNodeFL == nullptr || pNodeRL == nullptr ) {
+        return pColorMaterial;
+    }
+
+    Instance *pInstance = pNodeFL->pInstance;
+    RenderFile::Section *pBankMat =
+        ( pInstance != nullptr ) ? pInstance->getMaterialBank() : nullptr;
+    if ( pBankMat == nullptr ) {
+        return nullptr;
+    }
+
+    const uint32_t numMaterials =
+        ( pBankMat->DataSize - 0x10 ) / (uint32_t)sizeof( Render3DDHashEntry );
+    if ( numMaterials == 0 ) {
+        return nullptr;
+    }
+
+    Render3DDHashEntry *pEntries = (Render3DDHashEntry *)( pBankMat + 1 );
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        RenderFile::Section *pMatSection = pEntries[i].pEntry;
+        if ( pMatSection == nullptr ) {
+            continue;
+        }
+
+        Material *pMaterial = (Material *)( pMatSection + 1 );
+        MaterialParameter *pParameters = pMaterial->getParameterByIndex( 0 );
+
+        const bool bIsPaintShader =
+            ( pParameters != nullptr &&
+              pParameters->Hashcode == 0xc288dfc455ae5ef8ull );
+        const Eigen::Vector4f &color =
+            bIsPaintShader ? paintShaderColor : otherShaderColor;
+
+        pMaterial->DiffuseColor = color;
+        pMaterial->AmbientColor = color;
+    }
+
+    return pColorMaterial;
 }
 
 void VehicleBase::setCurrentLuminosity( const float param_1 ) {

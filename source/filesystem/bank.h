@@ -25,7 +25,6 @@ enum eAssetType : int32_t {
     AT_2DM = 2,
     AT_2DB = 3,
     AT_PhysicsBinary = 4,
-    AT_CarColors = 0xe,
     AT_UVA = 0xf,
     AT_OceanBitmaps = 0xf,
     AT_PostFXBitmaps = 0xf,

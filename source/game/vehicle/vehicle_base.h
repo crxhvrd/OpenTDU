@@ -16,6 +16,8 @@ static constexpr uint32_t kMaxNumVehicles = 32;
 static constexpr uint32_t kMaxNumWheels = 4;
 
 struct DBEntryRim;
+struct DBEntryInterior;
+class CarDesc;
 class BankVehicle;
 class Render2DB;
 enum eRenderPass : uint32_t;
@@ -164,6 +166,9 @@ public:
     inline RenderFile::Section *getShadowPlaneTexture() const {
         return pShadowTexture;
     }
+    inline bool shouldUseDeluxeTwoTones() const {
+        return bHasColorStrips || bUseTwoTonesPaint;
+    }
 
 public:
     VehicleBase();
@@ -204,8 +209,25 @@ public:
     void onAlphaChange() override;
 
     char *setPaintColorFromDB( int32_t paintIndex );
-    Material *setVehiclePartColor( int32_t param_2, const char *param_3 );
+    Material *setVehiclePartColor( eCarColorPart param_2, const char *param_3 );
     Material *setCalliperColor( const char *param_2 );
+    void applyGaragePaint( CarDesc &carDesc );
+    void applyPaint( uint32_t carConfigID,
+                     ePaintType paintType,
+                     int32_t paintIndex,
+                     int32_t rimID,
+                     int32_t interiorIndex,
+                     const ColorRGBA *pMainColor,
+                     const ColorRGBA *pSecondColor,
+                     const ColorRGBA *pLogoColor,
+                     const ColorRGBA *pSecondColor2 );
+    void setInteriorColorsFromDB( DBEntryInterior *pInterior );
+    virtual void setRimsFromDB( DBEntryRim *pRim );
+    void applyDeluxePaint( ePaintType paintType,
+                           const ColorRGBA *pMainColor,
+                           const ColorRGBA *pSecondColor,
+                           const ColorRGBA *pLogoColor,
+                           const ColorRGBA *pSecondColor2 );
 
     virtual void applyLOD() = 0;
 
@@ -315,6 +337,7 @@ protected:
     VehicleResource interiorResource;
     VehicleResource wheelsFront;
     VehicleResource wheelsRear;
+    std::array<VehicleResource *, 2> pCurResNodesUsed;
 
     float currentEnvFactor;
     float currentEnvFactorBackFace;
@@ -418,6 +441,33 @@ protected:
 
     void FUN_008ba190();
     void bindFlareUniforms();
+    int32_t getResNodesForColorPart( eCarColorPart param_2 );
+    void applyColorToResNodes( const ColorRGBA &param_2,
+                               int32_t param_3,
+                               eCarColorPart param_4 );
+    void applyReflectionParamsToResNodes( const float *param_2,
+                                          eCarColorPart param_6,
+                                          bool bNPaint );
+    void applySpecularParamToResNodes( float param_2,
+                                       eCarColorPart param_3,
+                                       bool bNPaint );
+    void applyColorStripToResNodes( const ColorRGBA &param_2,
+                                    const ColorRGBA &param_3,
+                                    float param_4,
+                                    eCarColorPart param_5,
+                                    bool bNPaint );
+    void applyTwoTonesColorToResNodes( const ColorRGBA &param_2,
+                                       eCarColorPart param_3,
+                                       bool bNPaint );
+    void applyDeluxeColorPairToResNodes( const ColorRGBA &param_2,
+                                         const ColorRGBA &param_3,
+                                         eCarColorPart param_4 );
+    void applyRampExpToResNodes( float param_2, eCarColorPart param_3 );
+    void cloneInteriorMaterials( eCarColorPart param_2,
+                                 Material *pColorMaterial,
+                                 Material *pColorMaterialN,
+                                 bool bPaintFamilyInterior,
+                                 bool bNPaint );
     void FUN_008b9e80();
     void FUN_008bb100();
 

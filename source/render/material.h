@@ -145,6 +145,7 @@ struct MaterialShaderParameterArray : public MaterialParameter {
     MaterialShaderParameter *getLastParameter();
     MaterialShaderParameter *getParameterByIndex( const uint32_t index );
     float *getStaticParamData( uint32_t type, bool bBindToVS );
+    float *getStaticParamDataPS( uint32_t type );
 };
 OTDU_DISK_SIZE_MUST_MATCH( MaterialShaderParameterArray, 0x50 );
 
@@ -215,11 +216,16 @@ struct Material {
 
     uint32_t FUN_00504bc0( int32_t param_1 );
     Material *copyTo( uint8_t *param_1, uint32_t param_2 );
+    void copyStatesTo( Material *param_1 );
 
     int32_t getNumLayers();
     int32_t getSizeAsTerrainMaterial();
 
     Material *createInheritedTerrainMaterial( uint8_t *param_1 );
+
+    inline MaterialShaderParameterArray *getShaderParameters() {
+        return (MaterialShaderParameterArray *)getParameterByIndex( 0 );
+    }
 };
 OTDU_DISK_SIZE_MUST_MATCH( Material, 0xd0 );
 

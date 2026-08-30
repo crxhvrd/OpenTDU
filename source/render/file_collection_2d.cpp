@@ -27,6 +27,13 @@ void FileCollection2D::bindBitmapReferences( Render2DM *render2DM ) {
     }
 }
 
+void FileCollection2D::bindBitmapReferences( Material *pMaterial ) {
+    // FUN_005056b0
+    for ( const Render2DB *render2DB : Render2DBs ) {
+        BindMaterialBitmapReference( pMaterial, render2DB );
+    }
+}
+
 void FileCollection2D::bindUVAReferences( Render2DM *render2DM ) {
     // FUN_005057a0
     for ( const RenderUVA *renderUVA : RenderUVAs ) {

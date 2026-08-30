@@ -114,6 +114,37 @@ void Render3DD::bindMaterialsBank( Render2DM *param_2 ) {
     }
 }
 
+void Render3DD::rebindMaterial( uint64_t hashcode,
+                                RenderFile::Section *pMaterial ) {
+    // FUN_008ba480 (inlined)
+    if ( pMatBankArray == nullptr || pMaterial == nullptr ) {
+        return;
+    }
+
+    uint8_t *pArrayEnd = (uint8_t *)pMatBankArray + pMatBankArray->Size;
+    uint8_t *pIterator = (uint8_t *)pMatBankArray + pMatBankArray->DataSize;
+    if ( pIterator >= pArrayEnd ) {
+        return;
+    }
+
+    RenderFile::Section *pBank = (RenderFile::Section *)pIterator;
+    while ( pBank->Type == kMaterialBankMagic ) {
+        const uint32_t numMaterials =
+            ( pBank->Size - (uint32_t)sizeof( RenderFile::Section ) ) /
+            (uint32_t)sizeof( Render3DDHashEntry );
+        Render3DDHashEntry *pEntries = (Render3DDHashEntry *)( pBank + 1 );
+
+        for ( uint32_t i = 0; i < numMaterials; i++ ) {
+            if ( pEntries[i].Hashcode == hashcode ) {
+                pEntries[i].pEntry = pMaterial;
+            }
+        }
+
+        pIterator += pBank->Size;
+        pBank = (RenderFile::Section *)pIterator;
+    }
+}
+
 void Render3DD::bindGeometryReferences( Render3DG *param_2 ) {
     // FUN_0050a350
     if ( pObjectArray == nullptr ) {

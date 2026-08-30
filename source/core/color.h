@@ -1,5 +1,7 @@
 #pragma once
 
+#include "binary_helpers.h"
+
 struct ColorRGBA {
     union {
         struct {
@@ -26,6 +28,22 @@ struct ColorRGBA {
             return R;
         }
     }
+    constexpr uint8_t operator[]( const int32_t i ) const {
+        switch ( i ) {
+        case 0:
+            return R;
+        case 1:
+            return G;
+        case 2:
+            return B;
+        case 3:
+            return A;
+        default:
+            OTDU_ASSERT( false );
+            return R;
+        }
+    }
+
     constexpr ColorRGBA( const uint8_t r = 0x00,
                          const uint8_t g = 0x00,
                          const uint8_t b = 0x00,
@@ -60,5 +78,27 @@ static ColorRGBA PackFloatColor( const Eigen::Vector4f &color ) {
     packedColor.G = toByte( color.y() );
     packedColor.B = toByte( color.z() );
     packedColor.A = toByte( color.w() );
+    return packedColor;
+}
+
+static Eigen::Vector4f UnpackColorBytes( const ColorRGBA &color ) {
+    static constexpr float kByteToFloat = 0.003921569f; // DAT_00f41680
+    return Eigen::Vector4f( color.R * kByteToFloat, color.G * kByteToFloat,
+                            color.B * kByteToFloat, color.A * kByteToFloat );
+}
+
+static ColorRGBA TruncateColorToBytes( const float *pColor ) {
+    static constexpr float kFloatToByte = 255.0f; // DAT_00f41688
+    ColorRGBA packedColor;
+    packedColor.R = (uint8_t)FloatToInt( pColor[0] * kFloatToByte );
+    packedColor.G = (uint8_t)FloatToInt( pColor[1] * kFloatToByte );
+    packedColor.B = (uint8_t)FloatToInt( pColor[2] * kFloatToByte );
+    packedColor.A = (uint8_t)FloatToInt( pColor[3] * kFloatToByte );
+    return packedColor;
+}
+
+static ColorRGBA TruncateColorToBytesOpaque( const Eigen::Vector4f &color ) {
+    ColorRGBA packedColor = TruncateColorToBytes( color.data() );
+    packedColor.A = 0xff;
     return packedColor;
 }

@@ -96,6 +96,7 @@ public:
 #endif
 
     void bindMaterialsBank( Render2DM *param_2 );
+    void rebindMaterial( uint64_t hashcode, RenderFile::Section *pMaterial );
     void bindGeometryReferences( Render3DG *param_2 );
 
     RenderFile::Section *findHiearchyNode( uint64_t hashcode );

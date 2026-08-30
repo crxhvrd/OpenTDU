@@ -19,5 +19,6 @@ struct FileCollection2D {
     void unregister2DB( Render2DB *render2DB );
     void unregisterUVA( RenderUVA *renderUVA );
     void bindBitmapReferences( Render2DM *render2DM );
+    void bindBitmapReferences( Material *pMaterial );
     void bindUVAReferences( Render2DM *render2DM );
 };

@@ -171,6 +171,8 @@ public:
     DBEntryCarColor *getColorByIndex( int32_t carID, int32_t param_3 );
     DBEntryCarColor *getColorByIndex( DBEntryCarPhysicsData *param_2,
                                       int32_t param_3 );
+    DBEntryInterior *getInteriorByIndex( DBEntryCarColor *param_2,
+                                         int32_t param_3 );
 
 private:
     CommonDB engineDatabase;
