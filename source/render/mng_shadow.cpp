@@ -306,6 +306,8 @@ bool MngShadow::initialize( TestDriveGameInstance * ) {
         initializeShadowPass();
         initializeInteriorShadowPass();
         bLoadedBankResources = true;
+    } else {
+        OTDU_LOG_ERROR( "createMaterials() failed\n" );
     }
 
     return bVar1;
@@ -482,18 +484,21 @@ void MngShadow::draw() {
 
 void MngShadow::terminate() {
     // FUN_006f52d0
-    auto &peVar1 = gpRender->getRenderPass<eRenderPass::RP_Shadow>();
-    peVar1.pFramebufferAttachments->pAttachments[0] = nullptr;
-    peVar1.pFramebufferAttachments->pAttachments[1] = nullptr;
-    peVar1.pFramebufferAttachments->pAttachments[2] = nullptr;
-    peVar1.pFramebufferAttachments->pAttachments[3] = nullptr;
+    RenderPass &shadowPass = gpRender->getRenderPass<eRenderPass::RP_Shadow>();
+    FramebufferAttachments *pAttachments = shadowPass.pFramebufferAttachments;
+    pAttachments->pAttachments[0] = nullptr;
+    pAttachments->pAttachments[1] = nullptr;
+    pAttachments->pAttachments[2] = nullptr;
+    pAttachments->pAttachments[3] = nullptr;
 
-    if ( peVar1.pScene != nullptr ) {
-        peVar1.pScene->setEnabled( false );
+    if ( shadowPass.pScene != nullptr ) {
+        shadowPass.pScene->setEnabled( false );
     }
-    peVar1 = gpRender->getRenderPass<eRenderPass::RP_ShadowClear>();
-    if ( peVar1.pScene != nullptr ) {
-        peVar1.pScene->setEnabled( false );
+
+    RenderPass &shadowClearPass =
+        gpRender->getRenderPass<eRenderPass::RP_ShadowClear>();
+    if ( shadowClearPass.pScene != nullptr ) {
+        shadowClearPass.pScene->setEnabled( false );
     }
 
     release2DMs();

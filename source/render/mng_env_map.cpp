@@ -105,6 +105,7 @@ MngEnvMap::~MngEnvMap() {
 bool MngEnvMap::initialize( TestDriveGameInstance * ) {
     // FUN_006f1b60
     if ( !createMaterials() ) {
+        OTDU_LOG_ERROR( "createMaterials() failed\n" );
         return true;
     }
 
@@ -122,9 +123,16 @@ bool MngEnvMap::initialize( TestDriveGameInstance * ) {
         return true;
     }
 
-    if ( setupScenes() && createPostFXStack() ) {
+    const bool bScenesReady = setupScenes();
+    const bool bPostFXReady = createPostFXStack();
+    if ( bScenesReady && bPostFXReady ) {
         bindRenderTargets();
         bInitialized = true;
+    } else {
+        OTDU_LOG_ERROR( "PostFX setup failed (setupScenes: %s, "
+                        "createPostFXStack: %s)\n",
+                        bScenesReady ? "OK" : "FAILED",
+                        bPostFXReady ? "OK" : "FAILED" );
     }
 
     return true;
