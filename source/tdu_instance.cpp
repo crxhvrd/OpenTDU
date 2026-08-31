@@ -118,6 +118,11 @@ static CmdLineArg CmdLineArgDisableAssert( "disable_assert",
                                                gDisableAssert = true;
                                            } );
 
+static CmdLineArg
+    CmdLineArgLogTransient( "logtransient", []( const char *pArg ) {
+        GlobalLogger::bLogTransientToFile = true;
+    } );
+
 static CmdLineArg CmdLineArgNoRunLock( "norunlock", []( const char *pArg ) {
     gDisableRunLock = true;
 } );

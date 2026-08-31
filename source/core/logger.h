@@ -2,6 +2,8 @@
 
 class GlobalLogger {
 public:
+    static bool bLogTransientToFile;
+
     static bool OpenLogFile( const char *pFilePath );
     static void CloseLogFile();
     static void Write( const char *pFormat, ... );

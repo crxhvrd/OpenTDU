@@ -19,6 +19,8 @@ inline void OutputToDebugger( const char *pFormatedString ) {
 }
 #endif
 
+bool GlobalLogger::bLogTransientToFile = false;
+
 static constexpr int32_t MaxLogSize = 8192;
 static FILE *gpLogFile = nullptr;
 static float gLogFileOpenTimeInSeconds = 0.0f;
@@ -138,7 +140,7 @@ void GlobalLogger::WriteTransient( const char *pFormat, ... ) {
     va_list argList;
     va_start( argList, pFormat );
 
-    WriteImpl( false, pFormat, argList );
+    WriteImpl( bLogTransientToFile, pFormat, argList );
 
     va_end( argList );
 }
