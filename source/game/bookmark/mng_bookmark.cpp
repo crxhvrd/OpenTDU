@@ -304,7 +304,7 @@ bool MngBookmark::loadBookmarkPositions() {
 
     while ( numBookmarks != kMaxNumBookmarks ) {
         Bookmark &bookmark = arrayBookmarks[numBookmarks];
-        memset( &bookmark, 0, sizeof( Bookmark ) );
+        memset( (void*)&bookmark, 0, sizeof( Bookmark ) );
 
         const char *pNameStart = strchr( pLine, '"' );
         const char *pNameEnd = strrchr( pLine, '"' );
