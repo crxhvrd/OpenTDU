@@ -9,6 +9,7 @@ public:
 
     bool initialize( TestDriveGameInstance * ) override;
     void reset() override;
+    const char *getSectorName( const Eigen::Vector4f &worldPosition ) const;
 
 public:
     bool bEnabled; // (toggled externally, e.g. by photo mode)

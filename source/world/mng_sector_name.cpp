@@ -3,6 +3,7 @@
 
 #include "world/gs_world.h"
 #include "world/streaming_manager.h"
+#include "world/sector_manager.h"
 
 MngSectorName *gpMngSectorName = nullptr; // DAT_010e8000
 
@@ -102,4 +103,27 @@ void MngSectorName::reset() {
     pCurrentSector = nullptr;
     state = SNS_Inactive;
     startTime = 2.0f; // DAT_00f416b0
+}
+
+const char *
+MngSectorName::getSectorName( const Eigen::Vector4f &worldPosition ) const {
+    // FUN_006c4c00
+    static const char *pDefaultSectorName = "Ohau"; // DAT_00f9c20c
+
+    if ( pAreas == nullptr || pSectors == nullptr ) {
+        return pDefaultSectorName;
+    }
+
+    GridPos2D sectorCell;
+    GridPos2D areaCell;
+    gpWorld->getStreamingManager()->sectorManager.computeCell(
+        worldPosition, sectorCell, areaCell );
+
+    const uint32_t sectorNameIndex =
+        pAreas[numAreaCols * areaCell.posY + areaCell.posX]
+              [numSectorColRow * sectorCell.posY + sectorCell.posX];
+    if ( sectorNameIndex < numSectors ) {
+        return pSectors[sectorNameIndex];
+    }
+    return pDefaultSectorName;
 }

@@ -147,6 +147,17 @@ void MngFlash::addWidget( const char pName[4], FlashEntity *pWidget ) {
     flashWidgets.push_back( widget );
 }
 
+void MngFlash::removeWidget( FlashEntity *pWidget ) {
+    // FUN_007182c0
+    for ( auto it = flashWidgets.begin(); it != flashWidgets.end(); ) {
+        if ( it->pWidgetInstance == pWidget ) {
+            it = flashWidgets.erase( it );
+        } else {
+            ++it;
+        }
+    }
+}
+
 void MngFlash::removeWidgets() { flashWidgets.clear(); }
 
 bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {

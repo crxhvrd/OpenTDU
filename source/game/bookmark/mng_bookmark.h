@@ -33,9 +33,23 @@ class MngBookmark : public Manager,
                     public StreamedResource,
                     public StreamingCallback {
 public:
+    static constexpr FlashMessage kCloseScreen = 0x756f6f62u; // boou
+    static constexpr FlashMessage kSaveBookmark = 0x61736f62u; // bosa
+    static constexpr FlashMessage kHidePicture = 0x6f626968u; // hibo
+    static constexpr FlashMessage kNewBookmark = 0x6277656eu; // newb
+    static constexpr FlashMessage kGrabScreenshot = 0x6f626661u; // afbo
+    static constexpr FlashMessage kOpenScreen = 0x6e696f62u; // boin
+    static constexpr FlashMessage kCreateBookmark = 0x616e6f62u; // bona
+
+public:
     const char *getName() const override {
         // FUN_0042f0a0
         return "Bookmark";
+    }
+    inline bool isGME() const { return bGME; }
+    inline int32_t getNumBookmarks() const { return numBookmarks; }
+    inline const Bookmark &getBookmark( const int32_t index ) const {
+        return arrayBookmarks[index];
     }
 
 public:
@@ -55,6 +69,17 @@ public:
     void setFlashPlayer( FlashPlayer *pFlashPlayer );
 
     bool onMessage( FlashMessage *pMessage );
+
+    static void PictureDrawCallback( struct FlashRECT *pViewport,
+                                     float depth,
+                                     class DrawList *pDrawList,
+                                     void *pUser,
+                                     class FlashResource *pResource,
+                                     const char *pClipName );
+
+    void onDelete( const int32_t bookmarkIndex );
+    void goTo( const int32_t bookmarkIndex );
+    void onSelectionChanged( const int32_t bookmarkIndex );
 
 private:
     static constexpr int32_t kMaxNumBookmarks = 64;
@@ -96,10 +121,19 @@ private:
     bool requestPictureLoad( int32_t bookmarkIndex );
     void recordAutosaveBookmark();
     void applyBookmarkTeleport();
-    void prepareSaveQuery();
     void updateSaveQuery();
     void updateMessageBoxState();
     Material *loadBookmarkPicture( const char *pFileName );
+
+    void openBookmarkScreen();
+    void closeBookmarkScreen();
+    void grabBookmarkScreenshot();
+    void saveNewBookmark();
+    void createBookmarkAtPlayer();
+    bool loadBookmarkPositions();
+    void computePictureLayout();
+
+    static void OnGotoFadeCompleted( void *pData, void *pSource );
 };
 
 extern MngBookmark *gpMngBookmark;

@@ -525,6 +525,10 @@ void GMFreeride::onResourceStreamed() {
     // FUN_007940f0
     GameModeWorld::onResourceStreamed();
 
+    if ( mngHudChallenge.getHudPlayer() == nullptr ) {
+        mngHudChallenge.initializeFlash();
+    }
+
     FlashPlayer *pPlayer = mngHudChallenge.getHudPlayer();
     if ( pPlayer == nullptr ) {
         return;

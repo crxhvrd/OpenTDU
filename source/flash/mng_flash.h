@@ -27,6 +27,7 @@ public:
     virtual void terminate() override;
 
     void addWidget( const char pName[4], FlashEntity *pWidget );
+    void removeWidget( FlashEntity *pWidget );
     void removeWidgets();
 
     void setWantsAsyncInstall( bool state ) { bWantAsyncInstall = state; }

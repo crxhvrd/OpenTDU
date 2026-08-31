@@ -392,6 +392,16 @@ private:
     HudFlashNumber countdownCents;
 };
 
+void DrawGaugeQuad( float u0,
+                    float v0,
+                    float u1,
+                    float v1,
+                    float xLeft,
+                    float yTop,
+                    float xRight,
+                    float yBottom,
+                    FlashResource *pResource );
+
 extern MngHud *gpMngHud;
 
 extern bool gEnableMinimapDensity;

@@ -30,6 +30,8 @@ public:
         PhotoFilters.setFlashPlayer( pPlayer );
     }
 
+    inline MngScreenshots &getScreenshots() { return MngScrenshots; }
+
 private:
     PhotoModeEffect PhotoFilters;
     bool bPhotoModeActive;

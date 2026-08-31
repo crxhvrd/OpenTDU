@@ -82,6 +82,9 @@ public:
     inline bool hasPendingFileToSave() const {
         return !saveQueue.FilesToSave.empty();
     }
+    inline void forceSaveQueueFlush() {
+        saveQueue.bPauseFlush = false;
+    }
 
 public:
     GSFile();

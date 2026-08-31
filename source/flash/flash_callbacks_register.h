@@ -8,19 +8,16 @@ class DrawList;
 
 class FlashCallbacksRegister {
 public:
-    using Callback_t = std::function<void( FlashRECT *,
-                                           float,
-                                           DrawList *,
-                                           void *,
-                                           FlashResource *,
-                                           const char * )>;
+    using Callback_t = void ( * )(
+        FlashRECT *, float, DrawList *, void *, FlashResource *, const char * );
 
 public:
     FlashCallbacksRegister();
     ~FlashCallbacksRegister();
 
-    void add( const char *param_1, Callback_t &param_2, void *param_4 );
+    void add( const char *param_1, Callback_t param_2, void *param_4 );
     void remove( const char *param_1 );
+    void removeAllSynonyms( Callback_t param_1 );
     void executeCallbacks( FlashRenderer::State *param_2,
                            float param_3,
                            DrawList *param_4,

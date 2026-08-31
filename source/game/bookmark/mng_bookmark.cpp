@@ -3,6 +3,19 @@
 
 #include "tdu_instance.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/implementation/flash_sprite.h"
+#include "flash/implementation/flash_resource.h"
+#include "flash/gs_flash.h"
+#include "flash/mng_fade.h"
+#include "flash/modal_message_box.h"
+#include "flash/movie_player.h"
+#include "flash/flash_callbacks_register.h"
+#include "render/draw_list.h"
+#include "game/mng_hud.h"
+#include "world/mng_sector_name.h"
+#include "flash/mng_flash.h"
+#include "game/freeride/mng_photo_mode.h"
+#include "filesystem/gs_file.h"
 
 MngBookmark *gpMngBookmark = nullptr;          // DAT_010e7f60
 int32_t gAutosaveBookmarkLength = 0xffffffff;  // DAT_00f998f8
@@ -82,7 +95,8 @@ void MngBookmark::tick( float, float ) {
 
 void MngBookmark::terminate() {
     // FUN_0070bf40
-    OTDU_UNIMPLEMENTED; // TODO: FLASH
+    gFlashCallbacksRegister.removeAllSynonyms(
+        &MngBookmark::PictureDrawCallback );
     mutexLoad.terminate();
 }
 
@@ -99,7 +113,8 @@ void MngBookmark::instanciate() {
                   arrayBookmarks[index].PictureID );
         pBookmarkScreen = loadBookmarkPicture( fileName );
         if ( pBookmarkScreen != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: FLASH
+            gFlashCallbacksRegister.add(
+                "picture", &MngBookmark::PictureDrawCallback, this );
         }
 
         mutexLoad.lock();
@@ -135,10 +150,394 @@ void MngBookmark::setFlashPlayer( FlashPlayer *pFlashPlayer ) {
     }
 }
 
-bool MngBookmark::onMessage( FlashMessage * ) {
+bool MngBookmark::onMessage( FlashMessage *pMessage ) {
     // FUN_0070cb60
-    OTDU_UNIMPLEMENTED; // TODO: FLASH (bookmark list) / PLAYER_DATA
-    return false;
+    if ( pPlayer == nullptr ) {
+        return false;
+    }
+
+    switch ( *pMessage ) {
+    case kCloseScreen:
+        closeBookmarkScreen();
+        return true;
+
+    case kGrabScreenshot:
+        grabBookmarkScreenshot();
+        return true;
+
+    case kOpenScreen:
+        openBookmarkScreen();
+        return true;
+
+    case kCreateBookmark:
+        createBookmarkAtPlayer();
+        return true;
+
+    case kHidePicture:
+        gFlashCallbacksRegister.removeAllSynonyms(
+            &MngBookmark::PictureDrawCallback );
+        return true;
+
+    case kNewBookmark:
+        grabBookmarkScreenshot();
+        saveNewBookmark();
+        return true;
+
+    case kSaveBookmark:
+        saveNewBookmark();
+        return true;
+
+    default:
+        return false;
+    }
+}
+
+void MngBookmark::openBookmarkScreen() {
+    // FUN_0070cad0
+    pNewBookmark = nullptr;
+    loadBookmarkPositions();
+    state = 1;
+
+    if ( pMngFlash != nullptr ) {
+        pMngFlash->addWidget( "book", &list );
+    }
+
+    pPlayer->setVariableValueNonLinked(
+        "/:IsFull", ( numBookmarks < kMaxNumBookmarks ) ? "0" : "1" );
+    pPlayer->setVariableValue( "/:NbBookmarks", numBookmarks );
+}
+
+void MngBookmark::closeBookmarkScreen() {
+    // FUN_0070bf00
+    pNewBookmark = nullptr;
+    gFlashCallbacksRegister.removeAllSynonyms(
+        &MngBookmark::PictureDrawCallback );
+    pPlayer->setVariableValueNonLinked( "/:TxtInput", "none" );
+
+    if ( pMngFlash != nullptr ) {
+        pMngFlash->removeWidget( &list );
+    }
+}
+
+void MngBookmark::grabBookmarkScreenshot() {
+    // FUN_0070bee0
+    if ( gpMngPhotoMode == nullptr ) {
+        return;
+    }
+    pBookmarkScreen = gpMngPhotoMode->getScreenshots().grabAndGetMaterial();
+}
+
+void MngBookmark::saveNewBookmark() {
+    // FUN_0070bc40
+    if ( pNewBookmark == nullptr ) {
+        return;
+    }
+
+    if ( gpFlashMessageBox != nullptr ) {
+        gpFlashMessageBox->display( 0x37ba8e2, 4.0f, 0, nullptr, this, true );
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: FLASH (MngScreenshots clip callback/FUN_006cdc70)
+
+    if ( currentName[0] == '\0' ) {
+        strcpy( currentName, "none" );
+    }
+    if ( strlen( currentName ) > 0x3f ) {
+        currentName[0x3f] = '\0';
+    }
+    strcpy( pNewBookmark->pName, currentName );
+
+    numBookmarks++;
+    pNewBookmark = nullptr;
+
+    OTDU_UNIMPLEMENTED; // TODO: FILE (FUN_0070b1f0 + FUN_0070b110)
+
+    pPlayer->setVariableValueNonLinked(
+        "/:IsFull", ( numBookmarks < kMaxNumBookmarks ) ? "0" : "1" );
+    pPlayer->setVariableValue( "/:NbBookmarks", numBookmarks );
+}
+
+void MngBookmark::createBookmarkAtPlayer() {
+    // FUN_0070c280
+    OTDU_UNIMPLEMENTED; // TODO: AI (road map lookup) / SCENARIC (local player)
+}
+
+bool MngBookmark::loadBookmarkPositions() {
+    // FUN_0070c5f0
+    numBookmarks = 0;
+    memset( arrayBookmarks, 0, sizeof( arrayBookmarks ) );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FILE (savegame context probe)
+
+    static constexpr uint32_t kMaxFileSize = 0x19000;
+    std::vector<char> content( kMaxFileSize );
+    uint32_t contentSize = 0;
+    if ( !gpFile->loadFileFromContext( "bookmark", "bookmark.txt",
+                                       content.data(), kMaxFileSize,
+                                       &contentSize ) ) {
+        return false;
+    }
+    content[contentSize - 1] = '\0';
+
+    char *pLine = strtok( content.data(), "\n\r" );
+    if ( pLine == nullptr ) {
+        return false;
+    }
+
+    char expectedHeader[128];
+    sprintf( expectedHeader, "bookmarks version %s", "BO11" );
+
+    int32_t version = 11;
+    if ( strcmp( pLine, expectedHeader ) != 0 ) {
+        sprintf( expectedHeader, "bookmarks version %s", "BO10" );
+        if ( strcmp( pLine, expectedHeader ) != 0 ) {
+            return false;
+        }
+        version = 10;
+    }
+
+    numBookmarks = 0;
+    pLine = strtok( nullptr, "\n\r" );
+    if ( pLine == nullptr ) {
+        return true;
+    }
+
+    while ( numBookmarks != kMaxNumBookmarks ) {
+        Bookmark &bookmark = arrayBookmarks[numBookmarks];
+        memset( &bookmark, 0, sizeof( Bookmark ) );
+
+        const char *pNameStart = strchr( pLine, '"' );
+        const char *pNameEnd = strrchr( pLine, '"' );
+        if ( pNameStart == nullptr || pNameEnd == nullptr ||
+             pNameStart == pNameEnd ) {
+            numBookmarks = 0;
+            memset( arrayBookmarks, 0, sizeof( arrayBookmarks ) );
+            return false;
+        }
+
+        size_t nameLength = (size_t)( pNameEnd - ( pNameStart + 1 ) );
+        if ( nameLength > 0x3f ) {
+            nameLength = 0x3f;
+        }
+        strncpy( bookmark.pName, pNameStart + 1, nameLength );
+        bookmark.pName[nameLength] = '\0';
+
+        if ( version == 10 ) {
+            const int32_t numRead = sscanf(
+                pNameEnd + 1, "%d %f %f %f %f %f %f", &bookmark.PictureID,
+                &bookmark.Position.x(), &bookmark.Position.y(),
+                &bookmark.Position.z(), &bookmark.Orientation.x(),
+                &bookmark.Orientation.y(), &bookmark.Orientation.z() );
+            if ( numRead != 7 ) {
+                numBookmarks = 0;
+                memset( arrayBookmarks, 0, sizeof( arrayBookmarks ) );
+                return false;
+            }
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (legacy BO10)
+        } else {
+            const int32_t numRead =
+                sscanf( pNameEnd + 1, "%d %f %f %f %f %f %f %d",
+                        &bookmark.PictureID, &bookmark.Position.x(),
+                        &bookmark.Position.y(), &bookmark.Position.z(),
+                        &bookmark.Orientation.x(), &bookmark.Orientation.y(),
+                        &bookmark.Orientation.z(), &bookmark.DynaMapID );
+            if ( numRead != 8 ) {
+                numBookmarks = 0;
+                memset( arrayBookmarks, 0, sizeof( arrayBookmarks ) );
+                return false;
+            }
+        }
+
+        numBookmarks++;
+        pLine = strtok( nullptr, "\n\r" );
+        if ( pLine == nullptr ) {
+            return true;
+        }
+    }
+    return true;
+}
+
+void MngBookmark::onDelete( const int32_t bookmarkIndex ) {
+    // FUN_0070bd60
+    if ( bookmarkIndex < 0 || numBookmarks <= bookmarkIndex ) {
+        return;
+    }
+
+    char fileName[512];
+    snprintf( fileName, sizeof( fileName ), "%d.jpg",
+              arrayBookmarks[bookmarkIndex].PictureID );
+    OTDU_UNIMPLEMENTED; // TODO: FILE (delete file)
+
+    int32_t slotToClear = bookmarkIndex + 1;
+    for ( int32_t i = bookmarkIndex; slotToClear < numBookmarks;
+          i++, slotToClear++ ) {
+        arrayBookmarks[i] = arrayBookmarks[i + 1];
+    }
+
+    if ( slotToClear >= kMaxNumBookmarks ) {
+        slotToClear = kMaxNumBookmarks - 1;
+    }
+    arrayBookmarks[slotToClear].pName[0] = '\0';
+    arrayBookmarks[slotToClear].DynaMapID = 0;
+    arrayBookmarks[slotToClear].PictureID = 0;
+    arrayBookmarks[slotToClear].Position = Eigen::Vector3f::Zero();
+    arrayBookmarks[slotToClear].Orientation = Eigen::Vector3f::Zero();
+
+    numBookmarks--;
+    list.reset();
+
+    OTDU_UNIMPLEMENTED; // TODO: FILE (bookmark array serialization / FUN_0070b1f0)
+
+    pPlayer->setVariableValueNonLinked(
+        "/:IsFull", ( numBookmarks < kMaxNumBookmarks ) ? "0" : "1" );
+    pPlayer->setVariableValue( "/:NbBookmarks", numBookmarks );
+
+    if ( gpFlashMessageBox != nullptr ) {
+        gpFlashMessageBox->display( 0x37ba8e2, 3.0f, 0, nullptr, nullptr,
+                                    false );
+    }
+
+    gpFile->forceSaveQueueFlush();
+}
+
+void MngBookmark::OnGotoFadeCompleted( void *pData, void *pSource ) {
+    // FUN_0070b6b0
+    MngBookmark *pManager = static_cast<MngBookmark *>( pData );
+    if ( pManager != nullptr ) {
+        pManager->tgtBookmarkIndex =
+            static_cast<int32_t>( reinterpret_cast<intptr_t>( pSource ) );
+        pManager->state = 2;
+
+        const int32_t numMovies = gpFlash->getNumMovies( 1 );
+        for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+            MoviePlayer *pMoviePlayer =
+                gpFlash->getMoviePlayer( 1, movieIndex );
+            if ( pMoviePlayer != nullptr ) {
+                pMoviePlayer->Flags |= 4;
+                FlashPlayer *pFlashPlayer =
+                    pMoviePlayer->MovieBank.getFlashPlayer();
+                if ( pFlashPlayer != nullptr ) {
+                    pFlashPlayer->getBoundFlashResource()->setDrawMode(
+                        ( pMoviePlayer->Flags != 0 ) ? 2 : 0 );
+                }
+            }
+        }
+    }
+
+    gpMngFade->setTransitionFlags( gpMngFade->getTransitionFlags() | 8 );
+}
+
+void MngBookmark::goTo( const int32_t bookmarkIndex ) {
+    // FUN_0070b750
+    int32_t targetIndex = bookmarkIndex;
+    if ( targetIndex < 0 || numBookmarks <= targetIndex ) {
+        targetIndex = 0;
+    }
+
+    if ( gpMngFade == nullptr ) {
+        return;
+    }
+
+    gpMngFade->startTransition(
+        ( gpMngFade->getTransitionFlags() & 0xfffffff3u ) | 3, 0.5f,
+        &MngBookmark::OnGotoFadeCompleted, (void *)(intptr_t)targetIndex,
+        this );
+    gpMngFade->setRenderLogo( true );
+
+    const int32_t numMovies = gpFlash->getNumMovies( 1 );
+    for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+        MoviePlayer *pMoviePlayer = gpFlash->getMoviePlayer( 1, movieIndex );
+        if ( pMoviePlayer != nullptr ) {
+            pMoviePlayer->Flags |= 4;
+        }
+    }
+
+    uint32_t isValidGameMode = 0;
+    uint32_t movieIndex = 0;
+    if ( gpFlash->getFlashMovieIndex( &isValidGameMode, &movieIndex,
+                                      "CONFIGPC" ) ) {
+        MoviePlayer *pMoviePlayer =
+            gpFlash->getMoviePlayer( isValidGameMode, movieIndex );
+        if ( pMoviePlayer != nullptr ) {
+            pMoviePlayer->Flags |= 4;
+        }
+    }
+}
+
+void MngBookmark::onSelectionChanged( const int32_t bookmarkIndex ) {
+    // FUN_0070bbb0
+    computePictureLayout();
+    requestPictureLoad( bookmarkIndex );
+
+    const Bookmark &bookmark = arrayBookmarks[bookmarkIndex];
+    pPlayer->setVariableValue( "/:SpotName", bookmark.pName );
+
+    if ( gpMngSectorName != nullptr ) {
+        const Eigen::Vector3f &position = bookmark.Position;
+        const char *pSectorName = gpMngSectorName->getSectorName(
+            Eigen::Vector4f( position.x(), position.y(), position.z(), 1.0f ) );
+        if ( pSectorName != nullptr ) {
+            pPlayer->setVariableValue( "/:Adress", pSectorName );
+        }
+    }
+}
+
+void MngBookmark::PictureDrawCallback( FlashRECT * /*pViewport*/,
+                                       float /*depth*/,
+                                       DrawList *pDrawList,
+                                       void *pUser,
+                                       FlashResource *pResource,
+                                       const char * /*pClipName*/ ) {
+    // FUN_0070baf0
+    // FUN_0070ba80 (inlined)
+    MngBookmark *pManager = static_cast<MngBookmark *>( pUser );
+
+    pDrawList->setActiveMaterial( pManager->pBookmarkScreen );
+    pDrawList->setDiffuse( 0, 0xffffffffu );
+
+    pManager->computePictureLayout();
+
+    DrawGaugeQuad( pManager->pictureU0, pManager->pictureV0,
+                   pManager->pictureU1, pManager->pictureV1,
+                   pManager->pictureX0, pManager->pictureY0,
+                   pManager->pictureX1, pManager->pictureY1, pResource );
+}
+
+void MngBookmark::computePictureLayout() {
+    // FUN_0070b820
+    FlashRECT pictureRect;
+    FlashClip pictureClip;
+    if ( pPlayer->getClipPlayer( "menus/ss_menus/array/spots/pict/picture",
+                                 &pictureClip ) ) {
+        pictureClip.getPropertyViewport( eFlashProperty::FP_Viewport,
+                                         pictureRect );
+    } else {
+        pictureRect.X = 0.0f;
+        pictureRect.Y = 0.0f;
+        pictureRect.Width = 0.0f;
+        pictureRect.Height = 0.0f;
+    }
+
+    pictureX0 = pictureRect.X;
+    pictureY0 = pictureRect.Y;
+    pictureX1 = pictureRect.Width + pictureRect.X;
+    pictureY1 = pictureRect.Height + pictureRect.Y;
+
+    const float aspectRatio =
+        ( pictureX1 - pictureRect.X ) / ( pictureY1 - pictureRect.Y );
+    if ( aspectRatio <= 1.0f ) {
+        const float crop = ( 1.0f - aspectRatio ) * 0.5f;
+        pictureU0 = crop;
+        pictureV0 = 0.0f;
+        pictureU1 = 1.0f - crop;
+        pictureV1 = 1.0f;
+    } else {
+        const float crop = ( 1.0f - 1.0f / aspectRatio ) * 0.5f;
+        pictureU0 = 0.0f;
+        pictureV0 = crop;
+        pictureU1 = 1.0f;
+        pictureV1 = 1.0f - crop;
+    }
 }
 
 bool MngBookmark::requestPictureLoad( int32_t bookmarkIndex ) {
@@ -149,7 +548,8 @@ bool MngBookmark::requestPictureLoad( int32_t bookmarkIndex ) {
         pPlayer->setVariableValue( "/:InfosLoaded", 0 );
         bookmarkPicState = BPS_LoadRequested;
         picIndexToLoad = bookmarkIndex;
-        OTDU_UNIMPLEMENTED; // TODO: FLASH
+        gFlashCallbacksRegister.removeAllSynonyms(
+            &MngBookmark::PictureDrawCallback );
         gpTestDriveInstance->pushResourceToStream( this );
         mutexLoad.unlock();
         return true;
@@ -169,11 +569,6 @@ void MngBookmark::recordAutosaveBookmark() {
 void MngBookmark::applyBookmarkTeleport() {
     // FUN_0070bfb0
     OTDU_UNIMPLEMENTED; // TODO: PHYSICS/WORLD
-}
-
-void MngBookmark::prepareSaveQuery() {
-    // FUN_0070cad0
-    OTDU_UNIMPLEMENTED; // TODO: FILE/PLAYERDATA
 }
 
 void MngBookmark::updateSaveQuery() {

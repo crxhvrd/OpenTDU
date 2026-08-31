@@ -8,7 +8,7 @@ FlashCallbacksRegister::FlashCallbacksRegister() : numCallbacks( 0 ) {}
 FlashCallbacksRegister::~FlashCallbacksRegister() {}
 
 void FlashCallbacksRegister::add( const char *param_1,
-                                  Callback_t &param_2,
+                                  Callback_t param_2,
                                   void *param_4 ) {
     // FUN_0099ccd0
     if ( numCallbacks < kMaxNumCallbacks ) {
@@ -37,6 +37,24 @@ void FlashCallbacksRegister::remove( const char *param_1 ) {
         writeIndex++;
     }
     // Release the shifted-out tail so stale std::functions/users don't linger.
+    for ( uint32_t i = writeIndex; i < numCallbacks; i++ ) {
+        pCallbacks[i] = CallbackEntry{};
+    }
+    numCallbacks = writeIndex;
+}
+
+void FlashCallbacksRegister::removeAllSynonyms( Callback_t param_1 ) {
+    // FUN_0099cac0
+    uint32_t writeIndex = 0;
+    for ( uint32_t readIndex = 0; readIndex < numCallbacks; readIndex++ ) {
+        if ( pCallbacks[readIndex].pCallback == param_1 ) {
+            continue; // drop
+        }
+        if ( writeIndex != readIndex ) {
+            pCallbacks[writeIndex] = pCallbacks[readIndex];
+        }
+        writeIndex++;
+    }
     for ( uint32_t i = writeIndex; i < numCallbacks; i++ ) {
         pCallbacks[i] = CallbackEntry{};
     }
