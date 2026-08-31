@@ -26,6 +26,7 @@ public:
     void pause() override;
 
     void addPlayingCinematic( EntityCinematic *pCinematic );
+    EntityCinematic *findFocusedPlayingCinematic() const;
     void removeCinematic( EntityCinematic *pCinematic );
 
     bool onWorldStreamed( Eigen::Vector4f *param_1,

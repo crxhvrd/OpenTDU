@@ -5,23 +5,35 @@
 #include "tdu_instance.h"
 
 #include "database/gs_database.h"
+#include "game/game_mechanism_player.h"
 #include "game/gs_tutorial.h"
+#include "game/cinematic/mng_cinematics.h"
 #include "game/mng_hud.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_extra_challenge.h"
 #include "game/scenaric/local_player.h"
+#include "game/scenaric/spots.h"
+#include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
 #include "flash/mng_fade.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/implementation/flash_sprite.h"
 #include "flash/mng_flash_localize.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_garage.h"
+#include "player_data/driver.h"
+#include "player_data/achievements_data.h"
 #include "render/camera/gs_camera.h"
 #include "world/gs_world.h"
 #include "physics/vehicle/physics_vehicle.h"
+
+static constexpr uint64_t kRewardBikeDealership = 0x5f2d20ull;
+static constexpr uint64_t kRewardCarPaintDeluxe = 0x5da680ull;
+
+static constexpr uint32_t kAchievementDBIndex = 0xfu;
 
 GMFreeride::GMFreeride()
     : GameModeWorld( 6 ),
@@ -92,6 +104,10 @@ GMFreeride::~GMFreeride() {
 
 void GMFreeride::initialize() {
     // FUN_00797340
+    if ( gpScenaric != nullptr ) {
+        gpScenaric->getSpotList().spawnPendingSectorSpotMeshes();
+    }
+
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC / FLASH (ad banners)
 
     if ( gpScenaric != nullptr ) {
@@ -224,7 +240,259 @@ void GMFreeride::tick( float deltaTime, float totalTime ) {
 
 void GMFreeride::draw( float /*deltaTime*/, float /*totalTime*/ ) {
     // FUN_007941f0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic / FLASH
+    if ( gpMngCinematics != nullptr &&
+         gpMngCinematics->findFocusedPlayingCinematic() != nullptr ) {
+        enterSpotClipTimer = 0.0f;
+        return;
+    }
+
+    FlashPlayer *pPlayer = mngHudChallenge.getHudPlayer();
+
+    enterSpotClipTimer +=
+        ( gpTimer != nullptr ) ? gpTimer->GameDeltaTime : 0.0f;
+
+    if ( !canEnterSpot() ||
+         ( gpTimer != nullptr && gpTimer->GameSpeed <= 0.0f ) ) {
+        enterSpotClipTimer = kEnterSpotClipDelay;
+
+        if ( bEnterSpotClipVisible && pPlayer != nullptr ) {
+            pPlayer->showFrame( "out", "/HUD/enter", true );
+            bEnterSpotClipVisible = false;
+        }
+        return;
+    }
+
+    if ( bEnterSpotClipVisible ) {
+        return;
+    }
+
+    FlashClip clip;
+    if ( pPlayer == nullptr || !pPlayer->getClipPlayer( "/HUD/enter", &clip ) ||
+         enterSpotClipTimer <= kEnterSpotClipDelay ) {
+        return;
+    }
+
+    clip.setProperty( eFlashProperty::FP_Visible, true );
+
+    pPlayer->setVariableValue( "/:WhatSpotType",
+                               pGameMech->getDisplayTypeName() );
+    pPlayer->setVariableValue( "/:WhatSpot", pGameMech->getDisplayName() );
+
+    populateEnterSpotPrompt( pPlayer );
+    markCurrentSpotDiscovered();
+
+    pPlayer->showFrame( "on", "/HUD/enter", true );
+    bEnterSpotClipVisible = true;
+}
+
+static void SetSpotLockedTextFromReward( FlashPlayer *pPlayer,
+                                         const uint64_t rewardHashcode ) {
+    // FUN_00793b50 (inlined)
+    if ( gpDatabase == nullptr || gpMngFlashLocalize == nullptr ) {
+        return;
+    }
+
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const DBEntryAchievement *pEntries = gameDB.DBAchivement;
+    if ( pEntries == nullptr ) {
+        return;
+    }
+
+    const DBEntryList &achievementDB = gameDB.Databases[kAchievementDBIndex];
+    const uint32_t numEntries = gameDB.pNumItems[kAchievementDBIndex];
+    for ( uint32_t i = 0u; i < numEntries; i++ ) {
+        if ( achievementDB.getHashcodeForPointer(
+                 pEntries[i].Reward.pAsRawPointer ) != rewardHashcode ) {
+            continue;
+        }
+
+        gpMngFlashLocalize->setVarLocalized(
+            pPlayer, pEntries[i].FailedExplanation.pAsString,
+            "/:SpotLockedtext" );
+    }
+}
+
+static CarDesc *GetCurrentGarageCar() {
+    // FUN_008978d0
+    if ( gpPlayerData == nullptr || gpPlayerData->getLoadedSave() == nullptr ) {
+        return nullptr;
+    }
+
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    Driver *pDriver = pSave->getDriver();
+    Garage *pGarage = pSave->getGarage();
+    if ( pDriver == nullptr || pGarage == nullptr ||
+         pDriver->CurrentCar >= Garage::kNumCarSlots ) {
+        return nullptr;
+    }
+
+    return &pGarage->pCars[pDriver->CurrentCar];
+}
+
+static bool IsSpotRewardLocked( const uint64_t rewardHashcode ) {
+    // FUN_00793b50 (inlined)
+    if ( gpPlayerData == nullptr || gpPlayerData->getLoadedSave() == nullptr ) {
+        return false;
+    }
+
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    return pAchievements != nullptr &&
+           pAchievements->isRewardLocked( rewardHashcode );
+}
+
+void GMFreeride::populateEnterSpotPrompt( FlashPlayer *pPlayer ) {
+    // FUN_00793b50
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    pPlayer->setVariableValue( "/:reward_type", 0 );
+    pPlayer->setVariableValue( "/:IsChaLocked", 0 );
+    pPlayer->setVariableValue( "/:IsSpotLocked", 0 );
+
+    SpotMap *pSpot =
+        ( pGameMech != nullptr ) ? pGameMech->getCurrentSpot() : nullptr;
+    if ( pSpot == nullptr ) {
+        refreshChallengeLockState( pPlayer );
+        return;
+    }
+
+    CarDesc *pCurrentCar = GetCurrentGarageCar();
+    DBEntryCarPhysicsData *pCurrentCarData = nullptr;
+    if ( pCurrentCar != nullptr && gpDatabase != nullptr ) {
+        pCurrentCarData =
+            gpDatabase->getCarDBEntry( pCurrentCar->getCarConfigID() );
+    }
+
+    const bool bRentedCar = pCurrentCar != nullptr &&
+                            pCurrentCar->state == CarDesc::eState::CDS_Rental;
+
+    // Bike dealerships
+    if ( pSpot->Type == 2 && IsSpotRewardLocked( kRewardBikeDealership ) ) {
+        pPlayer->setVariableValue( "/:reward_type", 1 );
+        pPlayer->setVariableValue( "/:SpotLockedtext",
+                                   "_No idea how to unlock..." );
+        SetSpotLockedTextFromReward( pPlayer, kRewardBikeDealership );
+        refreshChallengeLockState( pPlayer );
+        return;
+    }
+
+    if ( pSpot->Type == ST_Unknown8 ) {
+        if ( pSpot->SubType == 9 &&
+             IsSpotRewardLocked( kRewardCarPaintDeluxe ) ) {
+            pPlayer->setVariableValue( "/:reward_type", 1 );
+            pPlayer->setVariableValue( "/:SpotLockedtext",
+                                       "_No idea how to unlock..." );
+            SetSpotLockedTextFromReward( pPlayer, kRewardCarPaintDeluxe );
+            refreshChallengeLockState( pPlayer );
+            return;
+        }
+
+        if ( ( pSpot->SubType == 9 || pSpot->SubType == 1 ) && bRentedCar ) {
+            pPlayer->setVariableValue( "/:IsSpotLocked", 1 );
+            if ( gpMngFlashLocalize != nullptr ) {
+                gpMngFlashLocalize->setVarLocalized(
+                    pPlayer, "/:SpotLockedtext", 0x330bd32ull );
+            }
+            refreshChallengeLockState( pPlayer );
+            return;
+        }
+
+        if ( pSpot->SubType == 9 && gpDatabase != nullptr &&
+             gpDatabase->isBike( pCurrentCarData ) ) {
+            pPlayer->setVariableValue( "/:IsSpotLocked", 1 );
+            if ( gpMngFlashLocalize != nullptr ) {
+                gpMngFlashLocalize->setVarLocalized(
+                    pPlayer, "/:SpotLockedtext", 0x3310f3aull );
+            }
+            refreshChallengeLockState( pPlayer );
+            return;
+        }
+
+        if ( pSpot->SubType == 9 ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: DATABASE
+        }
+
+        if ( pSpot->SubType == 1 && pCurrentCar != nullptr &&
+             gpDatabase != nullptr &&
+             gpDatabase->getNumColors( pCurrentCar->getCarConfigID() ) < 2 ) {
+            pPlayer->setVariableValue( "/:IsSpotLocked", 1 );
+            if ( gpMngFlashLocalize != nullptr ) {
+                gpMngFlashLocalize->setVarLocalized(
+                    pPlayer, "/:SpotLockedtext", 0x22d50512ull );
+            }
+            refreshChallengeLockState( pPlayer );
+            return;
+        }
+    }
+
+    // Tuning
+    if ( pSpot->Type == 4 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: DATABASE
+
+        if ( bRentedCar ) {
+            pPlayer->setVariableValue( "/:IsSpotLocked", 1 );
+            if ( gpMngFlashLocalize != nullptr ) {
+                gpMngFlashLocalize->setVarLocalized(
+                    pPlayer, "/:SpotLockedtext", 0x3778a32ull );
+            }
+            refreshChallengeLockState( pPlayer );
+            return;
+        }
+    }
+
+    // Challenge
+    if ( pSpot->Type == ST_Challenge ) {
+        bool bCarOK = true;
+        bool bChallengeLocked = false;
+
+        bool bLevelTooLow = false;
+        bool bHasEligibleCar = false;
+        GetChallengeCarAvailability( pSpot, &bLevelTooLow, &bHasEligibleCar );
+
+        bChallengeLocked = !bHasEligibleCar;
+        if ( bChallengeLocked ) {
+            bCarOK = false;
+        }
+        if ( bLevelTooLow ) {
+            bChallengeLocked = true;
+        }
+
+        pPlayer->setVariableValue( "/:IsCarOK", bCarOK ? 1 : 0 );
+        pPlayer->setVariableValue( "/:IsChaLocked", bChallengeLocked ? 1 : 0 );
+    }
+
+    refreshChallengeLockState( pPlayer );
+}
+
+void GMFreeride::refreshChallengeLockState( FlashPlayer *pPlayer ) {
+    // FUN_00792f30
+    Entity *pExtraChallenge = ( pGameMech != nullptr )
+                                  ? pGameMech->getCurrentExtraChallenge()
+                                  : nullptr;
+    if ( pExtraChallenge == nullptr ) {
+        return;
+    }
+
+    (void)pPlayer;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC/PLAYER_DATA
+}
+
+void GMFreeride::markCurrentSpotDiscovered() {
+    // FUN_007941c0
+    SpotMap *pSpot =
+        ( pGameMech != nullptr ) ? pGameMech->getCurrentSpot() : nullptr;
+    if ( pSpot == nullptr || gpPlayerData == nullptr ||
+         gpPlayerData->getLoadedSave() == nullptr ) {
+        return;
+    }
+
+    if ( gpPlayerData->getLoadedSave()->getRoadDiscovery() == nullptr ) {
+        return;
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA
 }
 
 void GMFreeride::pause() {

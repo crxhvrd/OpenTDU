@@ -7,7 +7,7 @@ struct DBEntryAchievement {
     DBReference Tile;   
     DBReference Unknown0x18; 
     DBReference Text;       
-    DBReference Unknown0x28; 
+    DBReference FailedExplanation; 
     DBReference Reward;     
     int32_t RewardData;     
     int32_t Flags;          

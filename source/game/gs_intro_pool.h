@@ -20,3 +20,4 @@ public:
 };
 
 extern GSIntroPool *gpIntroPool;
+void EnableWorldSpotStreaming();

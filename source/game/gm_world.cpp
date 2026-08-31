@@ -31,6 +31,7 @@
 #include "game/vehicle/vehicle_base.h"
 #include "game/vehicle/vehicle_car.h"
 #include "game/vehicle/car_state.h"
+#include "game/game_mechanism_player.h"
 
 #include "render/mng_env_map.h"
 #include "render/gs_render.h"
@@ -129,6 +130,7 @@ GameModeWorld::GameModeWorld( uint32_t gameModeFlags )
       carColorIndex( 0 ),
       carRimIndex( 0 ),
       carTireIndex( 0 ),
+      lastDistance( 0.0f ),
       initializeTime( 0.0f ),
       pauseFadeTimer( 0.0f ) {
     // FUN_007be500
@@ -153,7 +155,8 @@ void GameModeWorld::initialize() {
     createGameMech( gameMechID, gameMechType );
 
     if ( pGameMech != nullptr && ( flags & 1 ) == 0 ) {
-        OTDU_UNIMPLEMENTED; // TODO: GameLogic
+        mngActor.setGameMech( pGameMech );
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: HUD 
     }
 
     VehicleBase::bApplyWheelAttenuation = true;
@@ -168,8 +171,9 @@ void GameModeWorld::reset() {
     if ( gpFlash != nullptr && gpFlash->getMouse() != nullptr ) {
         gpFlash->getMouse()->field12_0x30 = true;
     }
-    bPauseMenuLocked = false; // 0x1031fc
-    gameMechType = 0;         // 0x1031f4
+    bPaused = false;          
+    bPauseMenuLocked = false; 
+    lastDistance = 0.0f;     
 
     if ( gpCamera != nullptr && gpPlayerData != nullptr ) {
         gpCamera->setSeatPosition( gpPlayerData->getSeatPositionHeight(),
@@ -732,7 +736,7 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
     }
 
     if ( pGameMech != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: GameLogic
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
     }
 
     updatePauseMenuTrigger();
@@ -745,7 +749,7 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
 void GameModeWorld::draw( float /*deltaTime*/, float /*totalTime*/ ) {
     // FUN_007bdc10
     if ( pGameMech != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: GameLogic
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
     }
 }
 
@@ -908,17 +912,43 @@ bool GameModeWorld::createGameMech( uint32_t mechID, int32_t mechType ) {
         return true;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: GameLogic
-    pGameMech = nullptr;
+    if ( mechType == 4 ) {
+        pGameMech = new PlayerGameMech( mechType, mechID );
+    } else {
+        OTDU_UNIMPLEMENTED; // TODO: GameLogic
+        pGameMech = nullptr;
+        return true;
+    }
+
+    pGameMech->setOwner( this );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic 
     return true;
 }
 
 void GameModeWorld::destroyGameMech() {
-    // FUN_007bdc30
+    // FUN_007bdc30 (inlined)
     if ( pGameMech != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: GameLogic
+        delete pGameMech;
         pGameMech = nullptr;
     }
+
+    mngActor.setGameMech( nullptr );
+}
+
+bool GameModeWorld::canEnterSpot() const {
+    // FUN_00792d90
+    bool bVehicleBusy = false;
+
+    CarState *pLocalCar = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pLocalCar != nullptr && pLocalCar->getPhysicsVehicle() != nullptr ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+    }
+
+    return pGameMech != nullptr && pGameMech->hasCurrentActivity() &&
+           !bVehicleBusy;
 }
 
 void GameModeWorld::updatePauseMenuTrigger() {

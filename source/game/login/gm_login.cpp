@@ -22,6 +22,7 @@
 #include "online/gs_online.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "game/vehicle/gs_car_display.h"
+#include "game/gs_intro_pool.h"
 #include "player_data/achievements_data.h"
 #include "player_data/driver.h"
 #include "player_data/player_save.h"
@@ -748,13 +749,7 @@ void GMLogin::resumeSavedGame() {
             gpCarDisplay->reset();
         }
     } else if ( BOOL_010e74f4 ) {
-        gpCarDisplay->freeResources();
-
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
-
-        SpotStream &spotStream = gpWorld->getStreamingManager()->spotStream;
-        spotStream.bStream = true;
-        spotStream.bDraw = true;
+        EnableWorldSpotStreaming();
     }
 
     if ( pDriver->bCheatDetected ) {
@@ -864,5 +859,11 @@ void GMLogin::pause() {
         if ( pMovie != nullptr ) {
             pMovie->Flags = pMovie->Flags & 0xfffffffd;
         }
+    }
+
+    if ( gpTestDriveInstance != nullptr &&
+         gpTestDriveInstance->getActiveGameMode() != GM_Intro &&
+         gpTestDriveInstance->getActiveGameMode() != GM_VideoBumper ) {
+        EnableWorldSpotStreaming();
     }
 }

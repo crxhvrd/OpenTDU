@@ -3,6 +3,7 @@
 
 #include "core/maths_helper.h"
 #include "filesystem/binary.h"
+#include "game/game_mechanism_player.h"
 #include "game/gm_world.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
@@ -57,8 +58,6 @@ static bool IsFreeRideActive() {
 
 void EntitySpotMesh::notifySpotZoneEvent( eSpotZoneEvent eventCode ) {
     // FUN_009d9c10 / FUN_009d9b30 (inlined)
-    (void)eventCode;
-
     if ( !IsFreeRideActive() ) {
         return;
     }
@@ -66,7 +65,7 @@ void EntitySpotMesh::notifySpotZoneEvent( eSpotZoneEvent eventCode ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GAMELOGIC
+    gpActiveGM->getGameMech()->onMessage( this, eventCode, this );
 }
 
 void EntitySpotMesh::unloadResources() {

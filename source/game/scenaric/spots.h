@@ -40,6 +40,9 @@ struct SpotMap {
 OTDU_SIZE_MUST_MATCH( SpotMap, 64 );
 
 bool IsSpotAvailableInCurrentMode( const SpotMap *pSpot );
+void GetChallengeCarAvailability( const SpotMap *pSpot,
+                                  bool *pOutLevelTooLow,
+                                  bool *pOutHasEligibleCar );
 ScenaricBank *FindStreamedSpotBank( const struct SpotSector *pSpotSector );
 EntityCinematic *FindStreamedSpotCinematic( const struct SpotSector *pSpotSector,
                                             const char *pName,
@@ -118,7 +121,7 @@ public:
 
 private:
     bool isSpotValid( const SpotMap *pSpot ) const;
-    void spawnSectorSpotMeshes( Sector *pSector, const SpotsList &slot );
+    void spawnSectorSpotMeshes( Sector *pSector, SpotsList &slot );
     static Entity *selectSpotTemplate( ScenaricBank &meshBank,
                                        int32_t spotType,
                                        int32_t ownedFlag );

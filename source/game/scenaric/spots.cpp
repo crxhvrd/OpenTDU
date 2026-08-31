@@ -9,6 +9,7 @@
 
 #include "core/maths_helper.h"
 #include "game/gm_base.h"
+#include "game/gm_world.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/entity/entity_cinematic.h"
@@ -19,6 +20,8 @@
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/achievements_data.h"
 
 #include <algorithm>
 #include <cstring>
@@ -212,6 +215,29 @@ bool IsSpotAvailableInCurrentMode( const SpotMap *pSpot ) {
     return true;
 }
 
+void GetChallengeCarAvailability( const SpotMap *pSpot,
+                                  bool *pOutLevelTooLow,
+                                  bool *pOutHasEligibleCar ) {
+    // FUN_007d7900
+    *pOutLevelTooLow = false;
+    *pOutHasEligibleCar = true;
+
+    if ( pSpot == nullptr || gpPlayerData == nullptr ||
+         gpPlayerData->getLoadedSave() == nullptr ) {
+        return;
+    }
+
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    if ( pAchievements != nullptr ) {
+        const int32_t playerLevel = pAchievements->getPlayerLevel();
+        *pOutLevelTooLow = pSpot->MinLevelRequired != 0 &&
+                           ( playerLevel + 1 ) < pSpot->MinLevelRequired;
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA
+}
+
 bool Spots::isSpotValid( const SpotMap *pSpot ) const {
     // FUN_007d6b80 (inlined)
     if ( !bUseOnlyValid ) {
@@ -370,16 +396,15 @@ bool Spots::installSectorSpots( Sector *pSector, Bank *pSpotsBank ) {
     }
     pSector->pSpotBlob = pBlob;
 
-    // Spawn the per-sector ET_SPTM marker meshes
     if ( getNumWorldSpots() > 0 ) {
         spawnSectorSpotMeshes( pSector, *pSlot );
-        pSlot->bMeshesSpawned = true;
     }
     pSlot->bInstalled = true;
     return true;
 }
 
 void Spots::spawnPendingSectorSpotMeshes() {
+    // FUN_007d7fb0
     if ( getNumWorldSpots() == 0 ) {
         return;
     }
@@ -388,7 +413,6 @@ void Spots::spawnPendingSectorSpotMeshes() {
         if ( slot.pFile != nullptr && slot.pSector != nullptr &&
              !slot.bMeshesSpawned ) {
             spawnSectorSpotMeshes( slot.pSector, slot );
-            slot.bMeshesSpawned = true;
         }
     }
 }
@@ -419,13 +443,18 @@ Entity *Spots::selectSpotTemplate( ScenaricBank &meshBank,
     return pFallback;
 }
 
-void Spots::spawnSectorSpotMeshes( Sector *pSector, const SpotsList &slot ) {
+void Spots::spawnSectorSpotMeshes( Sector *pSector, SpotsList &slot ) {
     // FUN_007d7b00
     if ( gpActiveGameMode == nullptr ||
          gpActiveGameMode->getCurrentGameMode() != GM_FreeRide ) {
+        slot.bMeshesSpawned = false;
+        return;
+    }
+    if ( gpActiveGM == nullptr ) {
         return;
     }
     if ( gpScenaric == nullptr || slot.pSpotsMapOrSector.pSector == nullptr ) {
+        slot.bMeshesSpawned = true;
         return;
     }
 
@@ -473,6 +502,8 @@ void Spots::spawnSectorSpotMeshes( Sector *pSector, const SpotsList &slot ) {
         pInstance->setTransform( transform, true );
         pInstance->onWorldStreamed();
     }
+
+    slot.bMeshesSpawned = true;
 }
 
 void Spots::removeSectorSpots( void *pBlob ) {

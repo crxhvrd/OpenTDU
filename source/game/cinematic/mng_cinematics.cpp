@@ -116,7 +116,8 @@ void MngCinematics::tick( float, float ) {
              ( ( pSVar2->getFlags() >> 2 & 1 ) != 0 ) ) &&
            ( pSVar2->isLooping() == false ) ) &&
          ( bVar6 == '\0' ) && pPlayerConfig != nullptr ) {
-        const bool bSkipRequested = IsActionReleased( pPlayerConfig->pMenuPause ) ||
+        const bool bSkipRequested =
+            IsActionReleased( pPlayerConfig->pMenuPause ) ||
             IsActionPressed( pPlayerConfig->pMenuValidate ) ||
             ( gpDevice != nullptr &&
               IsChannelJustPressed(
@@ -173,6 +174,20 @@ void MngCinematics::addPlayingCinematic( EntityCinematic *pCinematic ) {
             return;
         }
     }
+}
+
+EntityCinematic *MngCinematics::findFocusedPlayingCinematic() const {
+    // FUN_007941f0 (inlined)
+    for ( EntityCinematic *pCinematic : pCinematics ) {
+        if ( pCinematic == nullptr ) {
+            continue;
+        }
+        if ( ( pCinematic->getFlags() & 4u ) != 0 && pCinematic->hasFocus() ) {
+            return pCinematic;
+        }
+    }
+
+    return nullptr;
 }
 
 void MngCinematics::removeCinematic( EntityCinematic *pCinematic ) {

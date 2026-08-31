@@ -1,0 +1,277 @@
+#include "shared.h"
+#include "game_mechanism_player.h"
+
+#include "game/scenaric/entity/base_entity.h"
+#include "game/scenaric/entity/entity_factory.h"
+#include "game/scenaric/entity/entity_spot_mesh.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/local_player.h"
+#include "game/scenaric/spots.h"
+#include "game/vehicle/car_state.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_garage.h"
+
+// DAT_00f97070
+static const char *gpSpotDisplayTypeNames[PlayerGameMech::SDT_Count] = {
+    "solo",
+    "multi",
+    "club",
+    "GMT_Error",
+};
+
+// DAT_00f97080
+static const char *gpSpotDisplayNames[PlayerGameMech::SDN_Count] = {
+    "timeAttack", "speed",     "driving", "race",        "bikeDealer",
+    "carDealer",  "carRental", "carWash", "estates",     "goodies",
+    "tuning",     "home",      "forsale", "club",        "driveIn",
+    "carPaint",   "sgirl",     "hiker",   "transporter", "convoy",
+    "carPaint_d",
+};
+
+int32_t GetSpotChallengeKind( const SpotMap *pSpot ) {
+    // FUN_007d69b0
+    if ( pSpot == nullptr || pSpot->Type != ST_Challenge ) {
+        return -1;
+    }
+
+    const int32_t kind = pSpot->SubType >> 4;
+    return kind == 0xf ? -1 : kind;
+}
+
+int32_t GetSpotGameModeID( const SpotMap *pSpot ) {
+    // FUN_007d6980
+    if ( pSpot == nullptr ) {
+        return 0xc0c3;
+    }
+
+    if ( pSpot->Type == 6 ) {
+        return 0xc0c0;
+    }
+    if ( pSpot->Type == ST_Challenge ) {
+        return 0xc0c0 + ( pSpot->SubType & 0xf );
+    }
+    return 0xc0c3;
+}
+
+void GetSpotDisplayIndices( const SpotMap *pSpot,
+                            int32_t *pOutTypeIndex,
+                            int32_t *pOutNameIndex ) {
+    // FUN_007d7760
+    *pOutTypeIndex = PlayerGameMech::SDT_Solo;
+    *pOutNameIndex = -1;
+
+    if ( pSpot == nullptr ) {
+        return;
+    }
+
+    switch ( pSpot->Type ) {
+    case ST_House: {
+        bool bOwned = false;
+        if ( gpPlayerData != nullptr &&
+             gpPlayerData->getLoadedSave() != nullptr ) {
+            Garage *pGarage = gpPlayerData->getLoadedSave()->getGarage();
+            bOwned =
+                pGarage != nullptr && pGarage->isHouseOwned( pSpot->Hashcode );
+        }
+        *pOutNameIndex =
+            bOwned ? PlayerGameMech::SDN_Home : PlayerGameMech::SDN_ForSale;
+    } break;
+    case 1:
+        *pOutNameIndex = PlayerGameMech::SDN_CarDealer;
+        break;
+    case 3:
+        *pOutNameIndex = PlayerGameMech::SDN_Goodies;
+        break;
+    case 4:
+        *pOutNameIndex = PlayerGameMech::SDN_Tuning;
+        break;
+    case 5:
+        *pOutNameIndex = PlayerGameMech::SDN_Club;
+        break;
+    case 6:
+        *pOutNameIndex = PlayerGameMech::SDN_DriveIn;
+        break;
+    case ST_Challenge: {
+        const int32_t kind = GetSpotChallengeKind( pSpot );
+        if ( kind == 1 ) {
+            *pOutNameIndex = PlayerGameMech::SDN_Speed;
+        } else if ( kind == 3 ) {
+            *pOutNameIndex = PlayerGameMech::SDN_Race;
+        } else {
+            *pOutNameIndex = PlayerGameMech::SDN_TimeAttack;
+        }
+
+        const int32_t gameModeID = GetSpotGameModeID( pSpot );
+        if ( gameModeID == 0xc0c1 ) {
+            *pOutTypeIndex = PlayerGameMech::SDT_Multi;
+        } else if ( gameModeID == 0xc0c2 ) {
+            *pOutTypeIndex = PlayerGameMech::SDT_Club;
+        } else {
+            *pOutTypeIndex = PlayerGameMech::SDT_Solo;
+        }
+    } break;
+    case ST_Unknown8:
+        switch ( pSpot->SubType ) {
+        case 0:
+            *pOutNameIndex = PlayerGameMech::SDN_CarWash;
+            break;
+        case 1:
+            *pOutNameIndex = PlayerGameMech::SDN_CarPaint;
+            break;
+        case 2:
+        case 3:
+            *pOutNameIndex = PlayerGameMech::SDN_CarRental;
+            break;
+        case 4:
+            *pOutNameIndex = PlayerGameMech::SDN_Estates;
+            break;
+        case 9:
+            *pOutNameIndex = PlayerGameMech::SDN_CarPaintDeluxe;
+            break;
+        }
+        break;
+    default:
+        *pOutNameIndex = PlayerGameMech::SDN_BikeDealer;
+        break;
+    }
+}
+
+void GetExtraChallengeDisplayIndices( const Entity *pEntity,
+                                      int32_t *pOutTypeIndex,
+                                      int32_t *pOutNameIndex ) {
+    // FUN_007dc930
+    *pOutTypeIndex = PlayerGameMech::SDT_Solo;
+    *pOutNameIndex = -1;
+
+    if ( pEntity == nullptr ) {
+        return;
+    }
+
+    switch ( pEntity->getType() ) {
+    case eEntityType::ET_SHOG:
+        *pOutNameIndex = PlayerGameMech::SDN_ShoppingGirl;
+        break;
+    case eEntityType::ET_CVOY:
+        *pOutNameIndex = PlayerGameMech::SDN_Convoy;
+        break;
+    case eEntityType::ET_HIHI:
+        *pOutNameIndex = PlayerGameMech::SDN_Hiker;
+        break;
+    case eEntityType::ET_TRAN:
+        *pOutNameIndex = PlayerGameMech::SDN_Transporter;
+        break;
+    default:
+        break;
+    }
+}
+
+PlayerGameMech::PlayerGameMech( int32_t type, uint32_t id )
+    : mechType( type ),
+      mechID( id ),
+      pOwner( nullptr ),
+      currentActivityHashcode( 0ull ),
+      pCurrentSpot( nullptr ),
+      pCurrentSpotEntity( nullptr ),
+      spotDisplayTypeIndex( -1 ),
+      spotDisplayNameIndex( -1 ),
+      pCurrentExtraChallenge( nullptr ) {
+    // FUN_00737730
+    OTDU_UNIMPLEMENTED; // TODO: GameLogic
+}
+
+PlayerGameMech::~PlayerGameMech() {}
+
+void PlayerGameMech::clearCurrentActivity() {
+    // FUN_00738220 (inlined)
+    spotDisplayTypeIndex = -1;
+    spotDisplayNameIndex = -1;
+    pCurrentExtraChallenge = nullptr;
+    pCurrentSpot = nullptr;
+}
+
+bool PlayerGameMech::onMessage( Entity *pSender,
+                                int32_t eventCode,
+                                void * /*pParam*/ ) {
+    // FUN_00738220
+    switch ( eventCode ) {
+    case ME_Reset:
+        return true;
+
+    case ME_SpotEntered: {
+        if ( pSender == nullptr ) {
+            return true;
+        }
+
+        SpotMap *pSpot =
+            static_cast<EntitySpotMesh *>( pSender )->getSpotWorld();
+        if ( pSpot == nullptr ) {
+            return true;
+        }
+
+        if ( currentActivityHashcode != pSpot->Hashcode ||
+             spotDisplayNameIndex == -1 ) {
+            currentActivityHashcode = pSpot->Hashcode;
+            pCurrentSpotEntity = pSender;
+
+            GetSpotDisplayIndices( pSpot, &spotDisplayTypeIndex,
+                                   &spotDisplayNameIndex );
+
+            pCurrentSpot = pSpot;
+            pCurrentExtraChallenge = nullptr;
+        }
+        return true;
+    }
+
+    case ME_ExtraChallengeEntered: {
+        CarState *pLocalCar = ( gpScenaric != nullptr )
+                                  ? gpScenaric->getLocalPlayer().getCarState()
+                                  : nullptr;
+        if ( pLocalCar == nullptr ||
+             pLocalCar->getPoliceState().isArrested() ) {
+            return true;
+        }
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI/Police
+
+        const uint64_t challengeKey =
+            static_cast<uint64_t>( reinterpret_cast<uintptr_t>( pSender ) );
+        if ( currentActivityHashcode != challengeKey ||
+             spotDisplayNameIndex == -1 ) {
+            currentActivityHashcode = challengeKey;
+
+            GetExtraChallengeDisplayIndices( pSender, &spotDisplayTypeIndex,
+                                             &spotDisplayNameIndex );
+
+            pCurrentExtraChallenge = pSender;
+            pCurrentSpot = nullptr;
+        }
+        return true;
+    }
+
+    case ME_SpotLeft:
+    case ME_SpotUnloaded:
+        clearCurrentActivity();
+        return true;
+
+    default:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
+        return false;
+    }
+}
+
+const char *PlayerGameMech::getDisplayTypeName() const {
+    // FUN_0042c4e0
+    if ( spotDisplayTypeIndex != -1 ) {
+        return gpSpotDisplayTypeNames[spotDisplayTypeIndex];
+    }
+    return gpSpotDisplayTypeNames[0];
+}
+
+const char *PlayerGameMech::getDisplayName() const {
+    // FUN_0042c4c0
+    if ( spotDisplayNameIndex != -1 ) {
+        return gpSpotDisplayNames[spotDisplayNameIndex];
+    }
+    return gpSpotDisplayNames[0];
+}

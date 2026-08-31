@@ -399,12 +399,7 @@ void TestDriveGameInstance::mainLoop() {
 
     // gpOnGSFileInit = &LAB_009a3360;
     if ( activeGameMode != eGameMode::GM_Login ) {
-        gpCarDisplay->freeResources();
-        OTDU_UNIMPLEMENTED; // TODO: AI
-        SpotStream &spotStream = gpWorld->getStreamingManager()->spotStream;
-        spotStream.arm();
-        spotStream.bStream = true;
-        spotStream.bDraw = true;
+        EnableWorldSpotStreaming();
     }
 
     if ( gGameModeOverride != GM_Invalid ) {
@@ -449,6 +444,7 @@ void TestDriveGameInstance::mainLoop() {
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLiving ),
                                                       alignof( GMLiving ) );
             pGVar6 = new ( pGameModeAlloc ) GMLiving();
+            EnableWorldSpotStreaming();
             break;
         default:
             OTDU_FATAL_ERROR( "GAME MODE '%s' (%u) IS NOT IMPLEMENTED!\n",

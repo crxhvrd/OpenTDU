@@ -21,6 +21,7 @@
 
 class EventParameters;
 class PhysicsVehicle;
+class PlayerGameMech;
 
 // Game Mode running with the world active.
 // e.g. GMShop; GMHome; GMBoatTour
@@ -62,7 +63,7 @@ public:
     }
 
     inline bool isPauseMenuActive() const { return bPauseMenuActive; }
-    inline void *getGameMech() const { return pGameMech; }
+    inline PlayerGameMech *getGameMech() const { return pGameMech; }
 
 public:
     // gameModeFlags:
@@ -89,6 +90,7 @@ public:
 
     virtual EventParameters *getMissionDescription();
     virtual bool isDrivingInputScripted() { return false; }
+    bool canEnterSpot() const;
 
     // Pause-menu flow: onPauseMenuRequested (flash clip flag or focus loss)
     // -> pauseMenuActivated -> "pain" (pause in) -> "afok" (fade anim over)
@@ -121,8 +123,7 @@ protected:
 protected:
     MngHudChallenge mngHudChallenge;
 
-    // TODO: CGameMech (player vehicle state machine; not ported yet)
-    void *pGameMech; // field4271_0x1031f0
+    PlayerGameMech *pGameMech; 
     int32_t
         gameMechType; // field4272_0x1031f4 — -1 default; 4: player car; 5: none
     uint32_t
@@ -139,6 +140,7 @@ protected:
     int32_t carRimIndex;   // garage entry +0x6c
     int32_t carTireIndex;  // garage entry +0x70
 
+    float lastDistance; 
     float initializeTime; // GSTimer total time at initialize()
     float pauseFadeTimer; // Pause radial-blur fade countdown
     bool bGearSelectBlocked = false;

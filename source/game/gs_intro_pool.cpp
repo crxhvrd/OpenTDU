@@ -1,6 +1,11 @@
 #include "shared.h"
 #include "gs_intro_pool.h"
 
+#include "game/vehicle/gs_car_display.h"
+#include "world/gs_world.h"
+#include "world/spot_stream.h"
+#include "world/streaming_manager.h"
+
 GSIntroPool gIntroPool = {};
 GSIntroPool *gpIntroPool = nullptr;
 
@@ -31,4 +36,25 @@ void GSIntroPool::terminate() {
         TestDrive::Free( pIntroPool );
         pIntroPool = nullptr;
     }
+}
+
+void EnableWorldSpotStreaming() {
+    // FUN_008a4d90
+    if ( gpCarDisplay != nullptr ) {
+        gpCarDisplay->freeResources();
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+
+    if ( gpWorld == nullptr || gpWorld->getStreamingManager() == nullptr ) {
+        return;
+    }
+
+    SpotStream &spotStream = gpWorld->getStreamingManager()->spotStream;
+
+    // TODO: FIXME: REMOVE
+    spotStream.arm();
+
+    spotStream.bStream = true;
+    spotStream.bDraw = true;
 }

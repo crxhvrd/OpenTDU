@@ -45,10 +45,15 @@ public:
 
 private:
     static constexpr int32_t kMaxNumExtraChallenges = 100;
+    static constexpr float kEnterSpotClipDelay = 5.0f; // DAT_00f41750
 
 private:
     void gatherExtraChallenges();
     void resolveNextIntroCine( const struct SpotSector *pSector );
+
+    void populateEnterSpotPrompt( class FlashPlayer *pPlayer );
+    void refreshChallengeLockState( class FlashPlayer *pPlayer );
+    void markCurrentSpotDiscovered();
 
 private:
     MngBookmark mngBookmark;
