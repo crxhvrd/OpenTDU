@@ -150,6 +150,7 @@ public:
     }
     void resetAutomaticGearbox();
     bool isActive() const { return pChassisBody != nullptr; }
+    const JPH::Body *getChassisBody() const { return pChassisBody; }
     bool isSimulated() const { return bRegistered; }
     void setDrivingMode( uint8_t mode ) { drivingMode = mode; }
     uint8_t getDrivingMode() const { return drivingMode; }

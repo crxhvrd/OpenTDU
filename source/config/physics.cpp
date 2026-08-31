@@ -36,6 +36,12 @@ void GSConfig::registerPhysicsCommands() {
         gDrawCollisionVisTerrain = mode >= 2;
     } );
 
+    registerCommand( "VEHICLEVIS", []( const char *pArg ) {
+        const int32_t mode = atoi( pArg );
+        gDrawVehicleCollisionVis = ( mode & 1 ) != 0;
+        gDrawVehicleCoMVis = ( mode & 2 ) != 0;
+    } );
+
     registerCommand( "GRASSASTARMAC", [&]( const char *pArg ) {
         // FUN_009847c0
         gbGrassAsTarmac = atoi( pArg ) != 0;

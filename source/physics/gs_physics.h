@@ -372,6 +372,7 @@ private:
 
 #if OTDU_DEVBUILD
     DrawList *pCollisionDebugList = nullptr;
+    DrawList *pVehicleDebugList = nullptr;
 #endif
 
     std::vector<std::pair<const void *, RigidBody_t>> sceneryInstanceBodies;
@@ -384,6 +385,7 @@ private:
     void buildProcessPendingProps();
     void physicsStep( float dt, float accTime );
     void drawCollisionShapes();
+    void drawVehicleShapes();
     void updateGMeterToggle();
     bool
     hasCollisionBelow( float worldX, float worldZ, float startY, float depth );
@@ -398,6 +400,8 @@ private:
 extern GSPhysics *gpPhysics;
 extern bool gDrawCollisionVis;
 extern bool gDrawCollisionVisTerrain;
+extern bool gDrawVehicleCollisionVis;
+extern bool gDrawVehicleCoMVis;
 extern bool gbShowGMeter;
 
 // Mirrors ScopedMutexLock. This is required; as GSPhysics uses a

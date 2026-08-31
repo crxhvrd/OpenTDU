@@ -17,6 +17,8 @@
 
 #include "render/draw_list.h"
 #include "render/gs_render.h"
+#include "render/2dm.h"
+#include "render/render_context.h"
 #include "world/gs_world_streaming.h"
 #include "world/streaming_manager.h"
 
@@ -29,6 +31,7 @@
 
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Collision/TransformedShape.h>
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Factory.h>
@@ -241,6 +244,8 @@ GSPhysics *gpPhysics = nullptr;
 
 bool gDrawCollisionVis = false;
 bool gDrawCollisionVisTerrain = false;
+bool gDrawVehicleCollisionVis = false;
+bool gDrawVehicleCoMVis = false;
 
 ePhysicsThreadMode gPhysicsThreadPriority = PTM_Off; // DAT_010e765c
 int32_t gPhysicsThreadFrequency = 0x64;              // DAT_00f87ffc
@@ -741,11 +746,19 @@ void GSPhysics::terminate() {
         simulationThread.terminate();
     }
 
+#if OTDU_DEVBUILD
     if ( pCollisionDebugList != nullptr ) {
         pCollisionDebugList->destroy();
         delete pCollisionDebugList;
         pCollisionDebugList = nullptr;
     }
+
+    if ( pVehicleDebugList != nullptr ) {
+        pVehicleDebugList->destroy();
+        delete pVehicleDebugList;
+        pVehicleDebugList = nullptr;
+    }
+#endif
 
     // Reset all factories (destroy any Havok/physics objects they hold)
     for ( auto &factory : pFactories ) {
@@ -1133,6 +1146,191 @@ void GSPhysics::drawCollisionShapes() {
     gpRender->getRenderPass<eRenderPass::RP_Near>()
         .pScene->enqueueDynamicDrawList( pCollisionDebugList );
 }
+
+constexpr uint32_t kMaxVehicleDebugLineVerts = 65536u;
+
+static Material *GetDebugNoDepthMaterial() {
+    static StaticRender2DM debug2DM( false, 0x0d7b9f2a4c61e305ull );
+    static bool bPrepared = false;
+    if ( !bPrepared ) {
+        gpRenderContext->prepareMaterial( debug2DM.pMaterial );
+        bPrepared = true;
+    }
+    debug2DM.pMaterial->OT = DAT_00fe6d50.pMaterial->OT;
+    debug2DM.pMaterial->DepthTest = eDepthTest::DT_NoneZTest;
+    debug2DM.pMaterial->DepthWrite = 2; // no depth write
+    return debug2DM.pMaterial;
+}
+
+void GSPhysics::drawVehicleShapes() {
+    if ( pPhysicsSystem == nullptr || gpRender == nullptr ) {
+        return;
+    }
+
+    struct VehicleSnapshot {
+        JPH::RefConst<JPH::Shape> shape;
+        // shape -> shifted world, origin at the CoM
+        JPH::Mat44 comTransform;
+        // center of mass, shifted world
+        JPH::Vec3 comPosition;
+        // body/shape origin, shifted world
+        JPH::Vec3 bodyPosition;
+    };
+    std::vector<VehicleSnapshot> snapshots;
+
+    lockMutex();
+    for ( PhysicsVehicle *it = pPhysicsVehiclesBegin; it != pPhysicsVehiclesEnd;
+          ++it ) {
+        if ( !it->isActive() ) {
+            continue;
+        }
+        const JPH::Body *pChassis = it->getChassisBody();
+        if ( pChassis == nullptr || pChassis->GetShape() == nullptr ) {
+            continue;
+        }
+        VehicleSnapshot s;
+        s.shape = pChassis->GetShape();
+        s.comTransform = pChassis->GetCenterOfMassTransform();
+        s.comPosition = JPH::Vec3( pChassis->GetCenterOfMassPosition() );
+        s.bodyPosition = JPH::Vec3( pChassis->GetPosition() );
+        snapshots.push_back( std::move( s ) );
+    }
+    unlockMutex();
+
+    if ( snapshots.empty() ) {
+        return;
+    }
+
+    if ( pVehicleDebugList == nullptr ) {
+        pVehicleDebugList = new DrawList();
+        if ( !pVehicleDebugList->initialize( 2, kMaxVehicleDebugLineVerts, 0,
+                                             true, nullptr, "VehicleDebug",
+                                             false ) ) {
+            pVehicleDebugList->destroy();
+            delete pVehicleDebugList;
+            pVehicleDebugList = nullptr;
+            return;
+        }
+    }
+
+    struct LineVert {
+        float x, y, z;
+        uint32_t color;
+    };
+    static std::vector<LineVert> colliderVerts;
+    static std::vector<LineVert> gizmoVerts;
+    colliderVerts.clear();
+    gizmoVerts.clear();
+
+    auto pushSeg = [&]( std::vector<LineVert> &out, const JPH::Vec3 &a,
+                        const JPH::Vec3 &b, uint32_t color ) {
+        if ( out.size() + 2 > kMaxVehicleDebugLineVerts ) {
+            return;
+        }
+        out.push_back( { a.GetX(), a.GetY(), a.GetZ(), color } );
+        out.push_back( { b.GetX(), b.GetY(), b.GetZ(), color } );
+    };
+
+    auto pushMarker = [&]( const JPH::Vec3 &center, const JPH::Mat44 &basis,
+                           float radius, uint32_t color ) {
+        const JPH::Vec3 axis[3] = { basis.GetAxisX() * radius,
+                                    basis.GetAxisY() * radius,
+                                    basis.GetAxisZ() * radius };
+        for ( const JPH::Vec3 &a : axis ) {
+            pushSeg( gizmoVerts, center - a, center + a, color );
+        }
+        for ( int32_t i = 0; i < 3; i++ ) {
+            const JPH::Vec3 h = axis[i] * 0.5f;
+            const JPH::Vec3 k = axis[( i + 1 ) % 3] * 0.5f;
+            pushSeg( gizmoVerts, center + h, center + k, color );
+            pushSeg( gizmoVerts, center + k, center - h, color );
+            pushSeg( gizmoVerts, center - h, center - k, color );
+            pushSeg( gizmoVerts, center - k, center + h, color );
+        }
+    };
+
+    const uint32_t kColliderColor = PackDebugColor( 0, 230, 255 ).Color;
+    const uint32_t kCoMColor = PackDebugColor( 255, 40, 200 ).Color;
+    const uint32_t kOriginColor = PackDebugColor( 240, 240, 240 ).Color;
+
+    for ( const VehicleSnapshot &s : snapshots ) {
+        if ( gDrawVehicleCollisionVis ) {
+            JPH::AllHitCollisionCollector<JPH::TransformedShapeCollector>
+                leaves;
+            s.shape->CollectTransformedShapes(
+                JPH::AABox::sBiggest(), s.comTransform.GetTranslation(),
+                s.comTransform.GetQuaternion(), JPH::Vec3::sReplicate( 1.0f ),
+                JPH::SubShapeIDCreator(), leaves, {} );
+
+            for ( const JPH::TransformedShape &leaf : leaves.mHits ) {
+                if ( colliderVerts.size() + 2 > kMaxVehicleDebugLineVerts ) {
+                    break;
+                }
+                JPH::Shape::GetTrianglesContext ctx;
+                leaf.GetTrianglesStart( ctx, JPH::AABox::sBiggest(),
+                                        JPH::RVec3::sZero() );
+                constexpr int kBatch = 64;
+                JPH::Float3 tri[3 * kBatch];
+                for ( ;; ) {
+                    const int n = leaf.GetTrianglesNext( ctx, kBatch, tri );
+                    if ( n == 0 ) {
+                        break;
+                    }
+                    for ( int t = 0; t < n; t++ ) {
+                        const JPH::Vec3 a( tri[3 * t + 0].x, tri[3 * t + 0].y,
+                                           tri[3 * t + 0].z );
+                        const JPH::Vec3 b( tri[3 * t + 1].x, tri[3 * t + 1].y,
+                                           tri[3 * t + 1].z );
+                        const JPH::Vec3 c( tri[3 * t + 2].x, tri[3 * t + 2].y,
+                                           tri[3 * t + 2].z );
+                        pushSeg( colliderVerts, a, b, kColliderColor );
+                        pushSeg( colliderVerts, b, c, kColliderColor );
+                        pushSeg( colliderVerts, c, a, kColliderColor );
+                    }
+                    if ( colliderVerts.size() + 2 >
+                         kMaxVehicleDebugLineVerts ) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ( gDrawVehicleCoMVis ) {
+            pushMarker( s.bodyPosition, s.comTransform, 0.15f, kOriginColor );
+            pushMarker( s.comPosition, s.comTransform, 0.30f, kCoMColor );
+            pushSeg( gizmoVerts, s.bodyPosition, s.comPosition, kCoMColor );
+        }
+    }
+
+    pVehicleDebugList->reset();
+    pVehicleDebugList->setIdentityTransform();
+
+    auto emit = [&]( const std::vector<LineVert> &in, Material *pMaterial ) {
+        if ( in.empty() ) {
+            return;
+        }
+        pVehicleDebugList->setActiveMaterial( pMaterial );
+        if ( !pVehicleDebugList->beginPrimitive(
+                 ePrimitiveType::PT_Line,
+                 static_cast<int32_t>( in.size() ) ) ) {
+            return;
+        }
+        for ( const LineVert &v : in ) {
+            pVehicleDebugList->setDiffuse( 0, ColorRGBA( v.color ) );
+            pVehicleDebugList->pushVertex( v.x, v.y, v.z );
+        }
+        pVehicleDebugList->commitPrimitive();
+    };
+
+    emit( colliderVerts, GetDebugNoDepthMaterial() );
+    emit( gizmoVerts, GetDebugNoDepthMaterial() );
+
+    if ( pVehicleDebugList->getNumPrimitives() == 0 ) {
+        return;
+    }
+    gpRender->getRenderPass<eRenderPass::RP_Near>()
+        .pScene->enqueueDynamicDrawList( pVehicleDebugList );
+}
 #endif
 
 void GSPhysics::draw( float deltaTime ) {
@@ -1140,6 +1338,11 @@ void GSPhysics::draw( float deltaTime ) {
     if ( gDrawCollisionVis ) {
 #if OTDU_DEVBUILD
         drawCollisionShapes();
+#endif
+    }
+    if ( gDrawVehicleCollisionVis || gDrawVehicleCoMVis ) {
+#if OTDU_DEVBUILD
+        drawVehicleShapes();
 #endif
     }
     // Both debug flags must be set for any rendering to occur.
@@ -1409,6 +1612,10 @@ void GSPhysics::drawDebug( float ) {
         ImGui::SameLine();
         ImGui::Checkbox( "+terrain", &gDrawCollisionVisTerrain );
     }
+    ImGui::Checkbox( "Vehicle chassis collider (cyan)",
+                     &gDrawVehicleCollisionVis );
+    ImGui::Checkbox( "Vehicle CoM (magenta = CoM, white = body origin)",
+                     &gDrawVehicleCoMVis );
 
     extern int32_t gVehicleDrivingHelpOverride;
     extern bool gVehicleAntiRoll;
