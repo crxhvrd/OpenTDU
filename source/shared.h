@@ -8,9 +8,9 @@ extern int32_t gCmdLineArgCount;
 #include "core/assert.h"
 
 #ifdef OTDU_DEVBUILD
-// Function needs to be implemented
-#define OTDU_UNIMPLEMENTED OTDU_ASSERT( false && "UNIMPLEMENTED" );
-#define OTDU_UNIMPLEMENTED_ONCE OTDU_ASSERT_ONCE( false && "UNIMPLEMENTED" )
+#define OTDU_UNIMPLEMENTED OTDU_ASSERT_TRANSIENT( false && "UNIMPLEMENTED" );
+#define OTDU_UNIMPLEMENTED_ONCE                                                \
+    OTDU_ASSERT_ONCE_TRANSIENT( false && "UNIMPLEMENTED" )
 #else
 #define OTDU_UNIMPLEMENTED
 #define OTDU_UNIMPLEMENTED_ONCE

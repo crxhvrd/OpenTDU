@@ -168,6 +168,30 @@ static CmdLineArg CmdLineLogin( "login", []( const char *pArg ) {
     gGameModeOverride = GM_Login;
 } );
 
+static char gLogFilePath[OTDU_MAX_PATH] = "opentdu.log";
+static CmdLineArg CmdLineArgLog( "log", []( const char *pArg ) {
+    strncpy( gLogFilePath, pArg, OTDU_MAX_PATH - 1 );
+    gLogFilePath[OTDU_MAX_PATH - 1] = '\0';
+} );
+
+static CmdLineArg CmdLineArgNoLog( "nolog", []( const char *pArg ) {
+    gLogFilePath[0] = '\0';
+} );
+
+static void StartLogFile() {
+    if ( !GlobalLogger::OpenLogFile( gLogFilePath ) ) {
+        return;
+    }
+
+    std::string cmdLine;
+    for ( int32_t argIdx = 1; argIdx < gCmdLineArgCount; argIdx++ ) {
+        cmdLine += gpCmdLineArgs[argIdx];
+        cmdLine += ' ';
+    }
+
+    OTDU_LOG_ALWAYS( "Command line: %s\n\n", cmdLine.c_str() );
+}
+
 // Runs the asset extractor in-process
 // TODO: Add PSOs precompilation in the future
 static bool OnFirstTimeRun() {
@@ -302,6 +326,9 @@ int32_t TestDrive::InitAndRun( const char **pCmdLineArgs,
     gCmdLineArgCount = argCount;
 
     GetArgParserRegister().parseCmdLineArgs( gpCmdLineArgs, gCmdLineArgCount );
+    if ( gLogFilePath[0] != '\0' ) {
+        StartLogFile();
+    }
 
     TestDriveGameInstance gameInstance( pCmdLineArgs, argCount );
     gSavegameManager.create();

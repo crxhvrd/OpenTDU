@@ -2,7 +2,10 @@
 
 class GlobalLogger {
 public:
+    static bool OpenLogFile( const char *pFilePath );
+    static void CloseLogFile();
     static void Write( const char *pFormat, ... );
+    static void WriteTransient( const char *pFormat, ... );
 };
 
 #if OTDU_MSVC
@@ -26,6 +29,9 @@ public:
 #define OTDU_LOG_ERROR( format, ... )                                          \
     GlobalLogger::Write( "[ERROR] %s:%u >> " format, OTDU_FILENAME, __LINE__,  \
                          ##__VA_ARGS__ )
+#define OTDU_LOG_ERROR_TRANSIENT( format, ... )                                \
+    GlobalLogger::WriteTransient( "[ERROR] %s:%u >> " format, OTDU_FILENAME,   \
+                                  __LINE__, ##__VA_ARGS__ )
 #ifdef OTDU_VERBOSE_LOG
 #define OTDU_LOG_DEBUG( format, ... )                                          \
     GlobalLogger::Write( "[DEBUG] %s:%u >> " format, OTDU_FILENAME, __LINE__,  \
@@ -37,6 +43,7 @@ public:
 #define OTDU_LOG_INFO( format, ... )
 #define OTDU_LOG_WARN( format, ... )
 #define OTDU_LOG_ERROR( format, ... )
+#define OTDU_LOG_ERROR_TRANSIENT( format, ... )
 #define OTDU_LOG_DEBUG( format, ... )
 #endif
 

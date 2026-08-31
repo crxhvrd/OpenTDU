@@ -27,30 +27,41 @@ extern bool gBreakOnAssertFailure; // DAT_00f47931
         OTDU_LOG_ERROR( "Assertion failure: '%s'\n", #condition );             \
         OTDU_TRIGGER_BREAKPOINT;                                               \
     }
-#define OTDU_ASSERT( condition )                                               \
+#define OTDU_ASSERT_IMPL( condition, logMacro )                                \
     if ( !gDisableAssert && !( condition ) ) {                                 \
-        OTDU_LOG_ERROR( "Assertion failure: '%s'\n", #condition );             \
+        logMacro( "Assertion failure: '%s'\n", #condition );                   \
         if ( gBreakOnAssertFailure ) {                                         \
             OTDU_TRIGGER_BREAKPOINT;                                           \
         }                                                                      \
     }
-// Same as OTDU_ASSERT but only triggers once
-#define OTDU_ASSERT_ONCE( condition )                                          \
+#define OTDU_ASSERT_ONCE_IMPL( condition, logMacro )                           \
     do {                                                                       \
         static std::atomic_flag sAssertOnceReported = ATOMIC_FLAG_INIT;        \
         if ( !gDisableAssert && !( condition ) &&                              \
              !sAssertOnceReported.test_and_set(                                \
                  std::memory_order_relaxed ) ) {                               \
-            OTDU_LOG_ERROR( "Assertion failure (only reported once): '%s'\n",  \
-                            #condition );                                      \
+            logMacro( "Assertion failure (only reported once): '%s'\n",        \
+                      #condition );                                            \
             if ( gBreakOnAssertFailure ) {                                     \
                 OTDU_TRIGGER_BREAKPOINT;                                       \
             }                                                                  \
         }                                                                      \
     } while ( false )
+
+#define OTDU_ASSERT( condition ) OTDU_ASSERT_IMPL( condition, OTDU_LOG_ERROR )
+#define OTDU_ASSERT_ONCE( condition )                                          \
+    OTDU_ASSERT_ONCE_IMPL( condition, OTDU_LOG_ERROR )
+#define OTDU_ASSERT_TRANSIENT( condition )                                     \
+    OTDU_ASSERT_IMPL( condition, OTDU_LOG_ERROR_TRANSIENT )
+#define OTDU_ASSERT_ONCE_TRANSIENT( condition )                                \
+    OTDU_ASSERT_ONCE_IMPL( condition, OTDU_LOG_ERROR_TRANSIENT )
 #else
 #define OTDU_ASSERT( condition )
+#define OTDU_ASSERT_TRANSIENT( condition )
 #define OTDU_ASSERT_ONCE( condition )                                          \
+    do {                                                                       \
+    } while ( false )
+#define OTDU_ASSERT_ONCE_TRANSIENT( condition )                                \
     do {                                                                       \
     } while ( false )
 #endif

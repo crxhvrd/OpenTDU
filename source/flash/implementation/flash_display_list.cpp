@@ -1181,7 +1181,7 @@ int32_t FlashDisplayList::getSpriteChild( const char *&param_1,
     FlashDisplayListEntry *pFVar3 = pEntries;
     do {
         if ( pFVar3 == nullptr ) {
-            OTDU_LOG_ERROR( "Sprite '%s' not found\n", param_1 );
+            OTDU_LOG_DEBUG( "Sprite '%s' not found\n", param_1 );
             *param_3 = nullptr;
             return -1;
         }

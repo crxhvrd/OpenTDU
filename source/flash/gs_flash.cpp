@@ -570,7 +570,7 @@ void GSFlash::flashCallback( const char *param_1 ) {
     // FUN_0099a6c0
     // FUN_0099a350 (inlined)
     if ( pActiveMoviePlayer != nullptr ) {
-        OTDU_LOG_INFO( "FlashMessage '%s'\n", param_1 );
+        OTDU_LOG_DEBUG( "FlashMessage '%s'\n", param_1 );
 
         std::vector<FlashMessage> messages;
 
