@@ -168,6 +168,14 @@ float CarDesc::getUpgradeRate() const {
     return TestDriveTEAReadFloat( pUpgradeRate );
 }
 
+int32_t CarDesc::getPackLevel( int32_t *pOutMaxLevel ) const {
+    // FUN_008954a0
+    DBEntryCarPhysicsData *pCarEntry =
+        gpDatabase->getCarDBEntry( int32_t( getCarConfigID() ) );
+
+    return gpDatabase->getPackLevel( pCarEntry, packHashcode, pOutMaxLevel );
+}
+
 void CarDesc::setUpgradeRate( const float upgradeRate ) {
     TestDriveTEAWriteFloat( pUpgradeRate, upgradeRate );
 }

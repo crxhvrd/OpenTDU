@@ -54,6 +54,9 @@ static constexpr const char *kLoadingPleaseMessages[10] = {
     "_no trad",
 };
 
+// 'Saving... Please wait...'
+static constexpr uint64_t kSavingMessageHashcode = 0x37ba8e2ull;
+
 GameMode::GameMode()
     : transitionFlags( 0x39 ),
       transitionTime( 1000.0f ),
@@ -65,6 +68,7 @@ GameMode::GameMode()
       bAsync( false ),
       bLoadedAsync( false ),
       bDraw( true ),
+      bSaveMessageDisplayed( false ),
       field7_0x1c( true ) {
     // FUN_0097e6c0
     if ( gpTestDriveInstance != nullptr ) {
@@ -425,10 +429,10 @@ bool GameMode::FUN_0097ed60() {
     bool bVar8 = true;
     bool bVar11 = false;
     while ( true ) {
-        if ( bDraw == false && gpPlayerData->FUN_00897990() &&
-             !gpFile->hasTaskPending() ) {
-            bDraw = gpFlashMessageBox->display( 0x37ba8e2, 3.0f, 0, nullptr,
-                                                nullptr, false );
+        if ( !bSaveMessageDisplayed && gpPlayerData->FUN_00897990() &&
+             gpFile->hasTaskPending() ) {
+            bSaveMessageDisplayed = gpFlashMessageBox->display(
+                kSavingMessageHashcode, 3.0f, 0, nullptr, nullptr, false );
         }
 
         uint32_t uVar3 = transitionFlags;
@@ -482,7 +486,7 @@ bool GameMode::FUN_0097ed60() {
         if ( ( ( ( transitionFlags >> 5 & 1 ) != 0 ) &&
                ( local_18 - fVar18 * 1000.0 <= 0.0 ) ) &&
              ( pMVar14 != ( nullptr ) ) && ( field7_0x1c != false ) ) {
-            bVar11 = ( bDraw != false || gpPlayerData->FUN_00897990() );
+            bVar11 = ( bSaveMessageDisplayed || gpPlayerData->FUN_00897990() );
 
             if ( gpFlashMessageBox->getInputState() ==
                  ModalMessageBox::eInputState::MMBIS_None ) {

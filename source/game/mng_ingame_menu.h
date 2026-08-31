@@ -45,6 +45,8 @@ public:
         pFlashVariable = pPlayer;
     }
 
+    void refreshDrivingHelpLabel();
+
 private:
     FlashPlayer *pFlashVariable;
     bool bEnabled;
@@ -78,7 +80,6 @@ private:
     void changeDrivingMode( bool bNext, bool bPlayAnim );
     void updateMenuTimeout();
     void refreshHasWindows();
-    void refreshDrivingHelpLabel();
     void resetSpeedChrono( bool bArm );
 };
 

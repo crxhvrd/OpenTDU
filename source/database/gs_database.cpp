@@ -15,6 +15,17 @@
 GSDatabase gDatabase = {};
 GSDatabase *gpDatabase = nullptr; // DAT_011ee900
 
+static inline bool IsUpgradePackEmpty( const uint64_t packReference ) {
+    const DBEntryAftermarketPack *pPack =
+        reinterpret_cast<const DBEntryAftermarketPack *>( packReference );
+    if ( pPack == nullptr || pPack->PackID == 0ull ) {
+        return false;
+    }
+
+    return strcmp( reinterpret_cast<const char *>( pPack->PackID ), "None" ) ==
+           0;
+}
+
 GSDatabase::GSDatabase()
     : NbChallengeNames( 0xa0 ),
       NbChallengeDesc( 0x38 ),
@@ -2032,6 +2043,135 @@ DBEntryAftermarketPack *GSDatabase::getAftermarketPack( uint64_t param_1 ) {
     }
 
     return nullptr;
+}
+
+bool GSDatabase::isCarPackAvailable( DBEntryCarPack *pCarPack ) {
+    // FUN_009aa890
+    DBEntryCarPhysicsData *pLevel2Car =
+        reinterpret_cast<DBEntryCarPhysicsData *>(
+            pCarPack->Upgrades[1].CarHashcode );
+    DBEntryCarPhysicsData *pLevel3Car =
+        reinterpret_cast<DBEntryCarPhysicsData *>(
+            pCarPack->Upgrades[2].CarHashcode );
+    DBEntryCarPhysicsData *pLevel1Car =
+        reinterpret_cast<DBEntryCarPhysicsData *>(
+            pCarPack->Upgrades[0].CarHashcode );
+
+    if ( pLevel1Car == nullptr ) {
+        return false;
+    }
+
+    if ( !isTraffic( pLevel1Car ) ) {
+        DBEntryBrand *pBrand = pLevel1Car->Brand;
+        if ( ( pLevel1Car->BitField & 1 ) == 0 || pBrand == nullptr ||
+             ( pBrand->Flags & 1 ) == 0 ) {
+            return false;
+        }
+    }
+
+    if ( pLevel2Car == nullptr || !isTraffic( pLevel2Car ) ) {
+        // FUN_009aa915
+        if ( pLevel3Car == nullptr || ( pLevel3Car->BitField & 1 ) == 0 ) {
+            return false;
+        }
+
+        DBEntryBrand *pBrand = pLevel3Car->Brand;
+        if ( pBrand == nullptr || ( pBrand->Flags & 1 ) == 0 ) {
+            return false;
+        }
+    }
+
+    if ( pLevel3Car == nullptr ) {
+        return false;
+    }
+
+    if ( isTraffic( pLevel3Car ) ) {
+        return true;
+    }
+
+    DBEntryBrand *pBrand = pLevel3Car->Brand;
+    return ( pLevel3Car->BitField & 1 ) != 0 && pBrand != nullptr &&
+           ( pBrand->Flags & 1 ) != 0;
+}
+
+int32_t GSDatabase::getCarPackMaxLevel( DBEntryCarPack *pCarPack ) {
+    // FUN_009aade0
+    if ( pCarPack == nullptr || !isCarPackAvailable( pCarPack ) ) {
+        return 0;
+    }
+
+    DBEntryCarPhysicsData *pLevel1Car =
+        reinterpret_cast<DBEntryCarPhysicsData *>(
+            pCarPack->Upgrades[0].CarHashcode );
+    if ( pLevel1Car != nullptr && isTraffic( pLevel1Car ) &&
+         IsUpgradePackEmpty( pCarPack->Upgrades[0].PackHashcode ) ) {
+        return 0;
+    }
+
+    if ( isTraffic( reinterpret_cast<DBEntryCarPhysicsData *>(
+             pCarPack->Upgrades[1].CarHashcode ) ) &&
+         IsUpgradePackEmpty( pCarPack->Upgrades[1].PackHashcode ) ) {
+        return 1;
+    }
+
+    if ( isTraffic( reinterpret_cast<DBEntryCarPhysicsData *>(
+             pCarPack->Upgrades[2].CarHashcode ) ) &&
+         IsUpgradePackEmpty( pCarPack->Upgrades[2].PackHashcode ) ) {
+        return 2;
+    }
+
+    return 3;
+}
+
+int32_t GSDatabase::getPackLevel( DBEntryCarPhysicsData *pCarEntry,
+                                  const uint64_t packHashcode,
+                                  int32_t *pOutMaxLevel ) {
+    // FUN_009ab020
+    DBEntryAftermarketPack *pInstalledPack = nullptr;
+    if ( packHashcode != 0ull ) {
+        pInstalledPack = getAftermarketPack( packHashcode );
+    }
+
+    const uint32_t numCarPacks = gameDatabase.pNumItems[0xd];
+    DBEntryCarPack *pCarPacks = gameDatabase.DBCarPack;
+    if ( int32_t( numCarPacks ) < 1 ) {
+        return 0;
+    }
+
+    for ( uint32_t i = 0; i < numCarPacks; i++ ) {
+        DBEntryCarPack &carPack = pCarPacks[i];
+
+        if ( reinterpret_cast<DBEntryCarPhysicsData *>( carPack.CarHashcode ) ==
+                 pCarEntry &&
+             isCarPackAvailable( &carPack ) ) {
+            if ( pOutMaxLevel != nullptr ) {
+                *pOutMaxLevel = getCarPackMaxLevel( &carPack );
+            }
+
+            for ( int32_t level = 0; level < 3; level++ ) {
+                if ( reinterpret_cast<DBEntryAftermarketPack *>(
+                         carPack.Upgrades[level].PackHashcode ) ==
+                     pInstalledPack ) {
+                    return level + 1;
+                }
+            }
+
+            return 0;
+        }
+
+        for ( int32_t level = 0; level < 3; level++ ) {
+            if ( reinterpret_cast<DBEntryCarPhysicsData *>(
+                     carPack.Upgrades[level].CarHashcode ) == pCarEntry ) {
+                if ( pOutMaxLevel != nullptr ) {
+                    *pOutMaxLevel = getCarPackMaxLevel( &carPack );
+                }
+
+                return level + 1;
+            }
+        }
+    }
+
+    return 0;
 }
 
 bool GSDatabase::isTraffic( DBEntryCarPhysicsData *param_1 ) {

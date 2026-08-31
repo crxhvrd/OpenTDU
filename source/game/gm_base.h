@@ -124,6 +124,7 @@ protected:
     uint8_t bAsync : 1;
     uint8_t bLoadedAsync : 1;
     uint8_t bDraw : 1;
+    uint8_t bSaveMessageDisplayed : 1;
     uint8_t field7_0x1c : 1;
 
 protected:

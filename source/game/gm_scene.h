@@ -51,6 +51,9 @@ public:
         musicDesc[sizeof( musicDesc ) - 1] = '\0';
     }
     inline MngFlashGM &getFlashManager() { return mngFlash; }
+    inline EntityCinematic *getIntroExteriorCinematic() const {
+        return pCinematicIntroE;
+    }
     inline VehicleBase *getShowcaseFocusedVehicle() {
         return showcaseCarControl.getFocusedVehicle();
     }

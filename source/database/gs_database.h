@@ -163,6 +163,11 @@ public:
     DBEntryRim *getRim( int32_t carID, int32_t rimID );
     DBEntryRim *getRim( DBEntryCarPhysicsData *param_2, int32_t rimID );
     DBEntryAftermarketPack *getAftermarketPack( uint64_t param_1 );
+    bool isCarPackAvailable( DBEntryCarPack *pCarPack );
+    int32_t getCarPackMaxLevel( DBEntryCarPack *pCarPack );
+    int32_t getPackLevel( DBEntryCarPhysicsData *pCarEntry,
+                          const uint64_t packHashcode,
+                          int32_t *pOutMaxLevel = nullptr );
     bool isBike( DBEntryCarPhysicsData *param_1 );
     bool isTraffic( DBEntryCarPhysicsData *param_1 );
 

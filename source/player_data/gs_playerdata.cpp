@@ -9,6 +9,7 @@
 
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
+#include "core/format.h"
 #include "core/locale.h"
 #include "core/mutex.h"
 
@@ -264,7 +265,12 @@ bool GSPlayerData::initialize( TestDriveGameInstance *pGameInstance ) {
     return true;
 }
 
-void GSPlayerData::tick( float totalTime, float deltaTime ) {}
+void GSPlayerData::tick( float totalTime, float deltaTime ) {
+    // FUN_00897640
+    if ( pLoadedSave2 != nullptr ) {
+        pLoadedSave2->tick( deltaTime );
+    }
+}
 
 void GSPlayerData::terminate() {
     // FUN_00898550
@@ -729,15 +735,39 @@ bool GSPlayerData::isRentingCar() {
 
 #ifdef OTDU_USE_IMGUI
 void GSPlayerData::drawDebug( float deltaTime ) {
-    if (pLoadedSave == nullptr) {
-        ImGui::Text("No active profile");
+    if ( pLoadedSave == nullptr ) {
+        ImGui::Text( "No active profile" );
         return;
     }
 
-    Driver* pDriver = pLoadedSave->getDriver();
+    Driver *pDriver = pLoadedSave->getDriver();
     ImGui::InputText( "Nickname", pDriver->Nickname, Driver::kNicknameLength );
 
-    if (ImGui::Button("Save")) {
+    // Editing either of these notifies the driver's observers, which is what
+    // repaints the '/:money' and '/:coupon' widgets on the HUD movie.
+    int32_t money = int32_t( pDriver->getMoney() );
+    if ( ImGui::InputInt( "Credits", &money, 1000, 100000 ) ) {
+        pDriver->setMoney( uint32_t( Max( money, 0 ) ) );
+        pDriver->notify();
+    }
+
+    int32_t numCoupons = int32_t( pDriver->getNumCoupons() );
+    if ( ImGui::InputInt( "Coupons", &numCoupons ) ) {
+        pDriver->setNumCoupons( uint32_t( Max( numCoupons, 0 ) ) );
+        pDriver->notify();
+    }
+
+    // What the HUD should be showing for the credits above.
+    char pMoneyString[32];
+    FormatMoneyString( pMoneyString, int32_t( pDriver->getMoney() ) );
+    ImGui::Text( "HUD reads '%s' / %u coupon(s)", pMoneyString,
+                 pDriver->getNumCoupons() );
+
+    if ( ImGui::CollapsingHeader( "Achievements" ) ) {
+        pLoadedSave->getAchievements()->drawDebug();
+    }
+
+    if ( ImGui::Button( "Save" ) ) {
         gSavegameManager.refreshService();
         gSavegameManager.doSaveBlocking();
     }

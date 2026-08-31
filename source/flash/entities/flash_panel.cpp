@@ -1,9 +1,15 @@
 #include "shared.h"
 #include "flash_panel.h"
 
+#include "core/format.h"
+#include "database/gs_database.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
+#include "game/vehicle/car_desc.h"
+#include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_garage.h"
 
 static bool gbEtradeAvailable =
     false; // DAT_014d5af2 // TODO: ONLINE: MOVE ME TO ONLINE
@@ -68,7 +74,15 @@ FlashPanelMoney::~FlashPanelMoney() {}
 
 void FlashPanelMoney::tick() {
     // FUN_00719c50
-    OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+
+    char pMoneyString[32];
+    FormatMoneyString( pMoneyString,
+                       int32_t( pSave->getDriver()->getMoney() ) );
+    pMovie->setVariableValueNonLinked( "/:money", pMoneyString );
+
+    pMovie->setVariableValue( "/:coupon",
+                              int32_t( pSave->getDriver()->getNumCoupons() ) );
 }
 
 FlashPanelRental::FlashPanelRental() : FlashPanel() {}
@@ -86,5 +100,32 @@ FlashPanelInfoCurCar::~FlashPanelInfoCurCar() {}
 
 void FlashPanelInfoCurCar::tick() {
     // FUN_007199e0
-    OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA/DATABASE
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+
+    Garage *pGarage = pSave->getGarage();
+    if ( pGarage->getNumCars() < 1 ) {
+        GarageSlot &rentalSlot = pGarage->pCars[Garage::kNumSavedCarSlots];
+        if ( rentalSlot.state != CarDesc::eState::CDS_Rental ) {
+            pMovie->setVariableValueNonLinked( "/:player_car", "" );
+            return;
+        }
+    }
+
+    const uint16_t currentCar = pSave->getDriver()->CurrentCar;
+    GarageSlot &car = pSave->getGarage()->pCars[currentCar];
+    if ( !car.isValid() ) {
+        return;
+    }
+
+    DBEntryCarPhysicsData *pCarEntry =
+        gpDatabase->getCarDBEntry( int32_t( car.getCarConfigID() ) );
+    if ( pCarEntry == nullptr ) {
+        return;
+    }
+
+    pMovie->setVariableValue( "/:player_car",
+                              car.getConfig()->FullName.c_str() );
+    pMovie->setVariableValueNonLinked( "/:player_group",
+                                       pCarEntry->CarGroup.pAsString );
+    pMovie->setVariableValue( "/:player_cur_upgrade", car.getPackLevel() );
 }

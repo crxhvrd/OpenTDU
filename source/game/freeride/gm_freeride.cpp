@@ -14,7 +14,11 @@
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
 #include "flash/mng_fade.h"
+#include "flash/implementation/flash_player.h"
 #include "flash/mng_flash_localize.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_garage.h"
 #include "render/camera/gs_camera.h"
 #include "world/gs_world.h"
 #include "physics/vehicle/physics_vehicle.h"
@@ -263,10 +267,12 @@ void GMFreeride::onResourceStreamed() {
     mngInGameMenu.setFlashPlayer( pPlayer );
 
     if ( gpMngFlashLocalize != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: PLAYER_DATA
+        mngInGameMenu.refreshDrivingHelpLabel();
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: PLAYER_DATA
+    pPlayer->setVariableValue(
+        "/:nb_houses",
+        gpPlayerData->getLoadedSave()->getGarage()->getNumOwnedHouses() );
 
     mngFlash.addWidget( "spot", &flashListSpots );
     flashListSpots.setPlayer( pPlayer, "/menus/ss_menus/array/spots" );

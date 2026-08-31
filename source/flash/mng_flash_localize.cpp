@@ -6,7 +6,10 @@
 #include "tdu_instance.h"
 
 #include "database/gs_database.h"
+#include "player_data/achievements_data.h"
+#include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
 
 MngFlashLocalize *gpMngFlashLocalize = nullptr;
 char MngFlashLocalize::VersionString[64] = "VERSION UKNOW";
@@ -15,6 +18,16 @@ static constexpr char kSentenceMarker[3] = "\xC2\xA7"; // DAT_00f04dc8
 
 static constexpr uint64_t kDrivingHelpHashcodes[4] = { // DAT_00f99720
     0x03326ae2, 0x0341ad22, 0x0350ef62, 0x03b7ee92 };
+
+// Rookie / Amateur / Pro / Expert / Champion / Ace
+static constexpr uint64_t kPlayerLevelNameHashcodes[6] = {
+    0x037add73, 0x038a1fb3, 0x03a8a433, 0x039961f3, 0x03b7e673, 0x039a7b82 };
+static constexpr int32_t kNumPlayerLevelNames =
+    int32_t( sizeof( kPlayerLevelNameHashcodes ) /
+             sizeof( kPlayerLevelNameHashcodes[0] ) );
+
+// Completion percentage is the achieved points over the 1000pts Ace requires
+static constexpr float kPointsToCompletionRatio = 0.001f; // FLOAT_00f4167c
 
 static inline int32_t GetUTF8CodepointLength( const uint8_t byte ) {
     if ( ( byte & 0x80u ) == 0 ) {
@@ -218,9 +231,16 @@ void MngFlashLocalize::expandMacroToken( const char *pToken, char *pDest ) {
     strncpy( pLocalToken, pToken, kDestLength );
     pLocalToken[kDestLength - 1] = '\0';
 
+    IPlayerData *pSave =
+        ( gpPlayerData != nullptr ) ? gpPlayerData->getLoadedSave() : nullptr;
+
     if ( strncmp( pLocalToken, "PLNA", 4 ) == 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (savegame driver nickname)
-        pDest[0] = '\0';
+        if ( pSave != nullptr ) {
+            strncpy( pDest, pSave->getDriver()->Nickname, kDestLength );
+            pDest[kDestLength - 1] = '\0';
+        } else {
+            pDest[0] = '\0';
+        }
         return;
     }
 
@@ -231,20 +251,40 @@ void MngFlashLocalize::expandMacroToken( const char *pToken, char *pDest ) {
     }
 
     if ( strncmp( pLocalToken, "ACHV_PTS", 8 ) == 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (achievement points)
-        pDest[0] = '\0';
+        const uint32_t achievedPoints =
+            ( pSave != nullptr ) ? pSave->getAchievements()->getAchievedPoints()
+                                 : 0u;
+        snprintf( pDest, kDestLength, "%d", int32_t( achievedPoints ) );
         return;
     }
 
     if ( strncmp( pLocalToken, "LEVEL", 5 ) == 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (AchievementsData level)
-        snprintf( pDest, kDestLength, "%s", "(ERR:LVL)" );
+        const int32_t playerLevel =
+            ( pSave != nullptr ) ? pSave->getAchievements()->getPlayerLevel()
+                                 : -1;
+
+        const char *pLevelName = nullptr;
+        if ( playerLevel >= 0 && playerLevel < kNumPlayerLevelNames &&
+             gpDatabase != nullptr ) {
+            pLevelName = gpDatabase->getStringByHashcode(
+                0, kPlayerLevelNameHashcodes[playerLevel] );
+        }
+
+        if ( pLevelName == nullptr ) {
+            pLevelName = "(ERR:LVL)";
+        }
+
+        snprintf( pDest, kDestLength, "%s", pLevelName );
         return;
     }
 
     if ( strncmp( pLocalToken, "COMPL_PCT", 9 ) == 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (completion percentage)
-        pDest[0] = '\0';
+        const uint32_t achievedPoints =
+            ( pSave != nullptr ) ? pSave->getAchievements()->getAchievedPoints()
+                                 : 0u;
+        const float completion = floorf( float( int32_t( achievedPoints ) ) *
+                                         kPointsToCompletionRatio * 100.0f );
+        snprintf( pDest, kDestLength, "%d", int32_t( completion ) );
         return;
     }
 
@@ -282,8 +322,13 @@ void MngFlashLocalize::expandMacroToken( const char *pToken, char *pDest ) {
     }
 
     if ( strncmp( pLocalToken, "MY_CLUB", 7 ) == 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (savegame driver club)
-        snprintf( pDest, kDestLength, "%s", "ERR:NO_CLUB" );
+        const char *pClubName =
+            ( pSave != nullptr ) ? pSave->getDriver()->ClubName : nullptr;
+        if ( pClubName == nullptr || pClubName[0] == '\0' ) {
+            pClubName = "ERR:NO_CLUB";
+        }
+
+        snprintf( pDest, kDestLength, "%s", pClubName );
         return;
     }
 

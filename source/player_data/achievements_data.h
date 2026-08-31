@@ -8,6 +8,9 @@ struct DBEntryAchievement;
 class AchievementsData {
 public:
     static constexpr uint64_t kSimuModeRewardHashcode = 0x5a9940ull;
+    static constexpr uint64_t kChronoRewardHashcode = 0x52f820ull;
+    static constexpr uint64_t kSnapshotRewardHashcode = 0x560560ull;
+    static constexpr uint64_t kGameModeEditorRewardHashcode = 0x578c00ull;
     static constexpr int32_t kNumAchievementFlags = 0x96;
     static constexpr int32_t kNumRewardCars = 8;
     static constexpr int32_t kNumPlayerLevels = 5;
@@ -64,6 +67,10 @@ public:
 
     void unlockAllChecks();
 
+#ifdef OTDU_USE_IMGUI
+    void drawDebug();
+#endif
+
     bool isRewardLocked( const uint64_t rewardHashcode ) const;
     uint32_t getAchievedPoints() const;
     int32_t getPlayerLevel() const;
@@ -77,12 +84,17 @@ private:
     void grantReward( const AchievementCheck *pCheck );
 
     void processAsyncRequest();
+    void displayLevelUp();
     void deserializeChecks( edStore &stream );
     void serializeChecks( edStore &stream ) const;
 
 private:
     std::vector<AchievementCheck *> achievements;
     bool bMustLevelUp;
+    // '/:LevelUpText' is LINKED, so the sentence has to outlive the call that
+    // builds it.
+    char pLevelUpText[400];
+    float levelUpDisplayTime;
     int32_t currentGameMode;
     bool field516_0x204;
     bool bReady;

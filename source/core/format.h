@@ -26,8 +26,4 @@ inline float StringToFloat( const char *inparam_1 ) {
     return static_cast<float>( dVar4 );
 }
 
-inline const char *FormatMoneyString( char *param_1, int32_t param_2 ) {
-    // FUN_00719ad0
-    OTDU_UNIMPLEMENTED;
-    return param_1;
-}
+const char *FormatMoneyString( char *param_1, int32_t param_2 );

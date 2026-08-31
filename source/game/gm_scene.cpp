@@ -11,7 +11,10 @@
 #include "tdu_instance.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
+#include "player_data/achievements_data.h"
+#include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
 #include "world/weather/gs_weather.h"
 #include "world/weather/hdri_config.h"
 
@@ -293,11 +296,22 @@ void GameModeScene::onResourceStreamed() {
         rentalWidget.pMovie = pPlayer;
         carInfosWidget.pMovie = pPlayer;
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+        IPlayerData *pSave = gpPlayerData->getLoadedSave();
 
-        // The online widget observes the global player-data service.
+        Driver *pDriver = pSave->getDriver();
+        carInfosWidget.pTarget = pDriver;
+        pDriver->subscribe( &carInfosWidget );
+
         onlineWidget.pTarget = gpPlayerData;
         gpPlayerData->subscribe( &onlineWidget );
+
+        pDriver = pSave->getDriver();
+        moneyWidget.pTarget = pDriver;
+        pDriver->subscribe( &moneyWidget );
+
+        pDriver = pSave->getDriver();
+        rentalWidget.pTarget = pDriver;
+        pDriver->subscribe( &rentalWidget );
 
         pPlayer->setVariableValue(
             "/:state_Metric", gpPlayerData->isUsingImperialUnits() ? 0 : 1 );
@@ -308,11 +322,35 @@ void GameModeScene::onResourceStreamed() {
             pGeneralPlayer->setVariableValue( "/:state_Demo", 0 );
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+        pPlayer->setVariableValue( "/:Unlock_Chrono",
+                                   pSave->getAchievements()->isRewardLocked(
+                                       AchievementsData::kChronoRewardHashcode )
+                                       ? 0
+                                       : 1 );
+        pPlayer->setVariableValue(
+            "/:Unlock_Snapshot", pSave->getAchievements()->isRewardLocked(
+                                     AchievementsData::kSnapshotRewardHashcode )
+                                     ? 0
+                                     : 1 );
+        pPlayer->setVariableValue(
+            "/:Unlock_GME",
+            pSave->getAchievements()->isRewardLocked(
+                AchievementsData::kGameModeEditorRewardHashcode )
+                ? 0
+                : 1 );
 
         pPlayer->setVariableValue( "/:IsMSKeyboard", 0 );
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: INPUT (pad button layout)
+        const uint32_t padConfig = gpPlayerData->getLocalPlayerData().PadConfig;
+        pPlayer->setVariableValue( "/:IsAlternateButton",
+                                   ( padConfig == 3u ) ? 1 : 0 );
+        pPlayer->setVariableValue( "/:IsAlternateButton2",
+                                   ( padConfig == 4u ) ? 1 : 0 );
+
+        pPlayer->setVariableValue(
+            "/:player_level", pSave->getAchievements()->getPlayerLevel() + 1 );
+        pPlayer->setVariableValue( "/:player_reputation",
+                                   int32_t( pSave->getDriver()->getLevel() ) );
 
         pPlayer->setVariableValue( "/:state_Cha", 0 );
     }
@@ -429,8 +467,8 @@ namespace {
 } // namespace
 
 static constexpr float kCinematicIntroFadeTime = 500.0f; // DAT_00f417f4
-static constexpr float kMillisecondsToSeconds = 0.001f; // FLOAT_00f4167c
-static constexpr float kCinematicFadeInDuration = 0.5f; // FLOAT_00f41674
+static constexpr float kMillisecondsToSeconds = 0.001f;  // FLOAT_00f4167c
+static constexpr float kCinematicFadeInDuration = 0.5f;  // FLOAT_00f41674
 
 void GameModeScene::IntroExtToIntroInCallback( void *pData, void *pSource ) {
     // FUN_007bceb0
@@ -507,14 +545,14 @@ void GameModeScene::installCinematics( SpotMap *pSpot, ScenaricBank *pBank ) {
     }
 
     OTDU_LOG_DEBUG( "Cinematics installed for spot 0x%016llx: introI='%s' "
-                   "loop='%s'\n",
-                   (unsigned long long)pSpot->Hashcode,
-                   pCinematicIntroI != nullptr
-                       ? pCinematicIntroI->getInstanceName().c_str()
-                       : "<none>",
-                   pCinematicLoop != nullptr
-                       ? pCinematicLoop->getInstanceName().c_str()
-                       : "<none>" );
+                    "loop='%s'\n",
+                    (unsigned long long)pSpot->Hashcode,
+                    pCinematicIntroI != nullptr
+                        ? pCinematicIntroI->getInstanceName().c_str()
+                        : "<none>",
+                    pCinematicLoop != nullptr
+                        ? pCinematicLoop->getInstanceName().c_str()
+                        : "<none>" );
 }
 
 void GameModeScene::applyCineWeather() {

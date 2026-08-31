@@ -89,7 +89,7 @@ static double MonotonicToMs( uint64_t param_1 ) {
 static float GetTimeSeconds() {
     struct timespec t;
     clock_gettime( CLOCK_MONOTONIC, &t );
-    return t.tv_sec + ( t.tv_nsec / 1000000 );
+    return float( t.tv_sec ) + float( t.tv_nsec ) * 1e-9f;
 }
 #endif
 

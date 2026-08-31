@@ -4,7 +4,12 @@
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
 #include "database/gs_database.h"
+#include "core/time.h"
+#include "flash/gs_flash.h"
+#include "flash/implementation/flash_player.h"
+#include "flash/mng_flash_localize.h"
 #include "game/gm_base.h"
+#include "game/gm_scene.h"
 #include "game/vehicle/car_desc.h"
 #include "gs_playerdata.h"
 #include "player_data_interface.h"
@@ -12,21 +17,26 @@
 #include "saved_garage.h"
 #include "tdu_instance.h"
 
-
 static bool gbForceAchievementUnlock = false; // DAT_016a2d2f
 
 static constexpr uint64_t kRewardUnknown0x5912a0 = 0x5912a0ull;
-static constexpr uint64_t kRewardChrono = 0x52f820ull;
-static constexpr uint64_t kRewardSnapshot = 0x560560ull;
-static constexpr uint64_t kRewardGameModeEditor = 0x578c00ull;
 static constexpr uint64_t kRewardHouse = 0x5c1fe0ull;
 static const char *const kRewardHouseSpotName = "EPH_L4A_0340";
 
 static constexpr uint64_t kRewardNone = 0x517180ull;
 
+static constexpr uint64_t kLevelUpTextHashcode = 0x3867e52ull;
+static constexpr uint64_t kLevelUpMailTitleHashcode = 0x3c07a12ull;
+static constexpr uint64_t kCurrentLevelHashcode = 0x3a502d2ull;
+
+// How long a level up / achievement unlock panel stays up.
+static constexpr float kPopupDisplayDuration = 12.0f; // DAT_00f41850
+
 AchievementsData::AchievementsData()
     : achievements(),
       bMustLevelUp( false ),
+      pLevelUpText{},
+      levelUpDisplayTime( 0.0f ),
       currentGameMode( -1 ),
       field516_0x204( false ),
       bReady( false ),
@@ -216,10 +226,108 @@ void AchievementsData::tick() {
     // FUN_0089e240
     processAsyncRequest();
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original then drives the
-                             // level-up popup off bMustLevelUp and
-                             // bDisplayLevelUp; AchievementPopUp is not
-                             // ported)
+    bool bCanDisplay = false;
+    bool bPopupTick = false;
+
+    if ( currentGameMode == GM_Invalid ||
+         ( currentGameMode != gpTestDriveInstance->getActiveGameMode() &&
+           gpActiveGameMode != nullptr &&
+           !gpActiveGameMode->hasRequestedExit() &&
+           ( gpActiveGameMode->getTransitionFlags() & 1u ) == 0u ) ) {
+        bCanDisplay = true;
+        bPopupTick = true;
+        currentGameMode = GM_Invalid;
+    }
+
+    if ( gpActiveGMScene != nullptr &&
+         gpActiveGMScene->getCurrentGameMode() == GM_Living &&
+         gpActiveGMScene->getIntroExteriorCinematic() == nullptr ) {
+        bCanDisplay = true;
+        bPopupTick = true;
+    }
+
+    if ( bMustLevelUp && bCanDisplay ) {
+        displayLevelUp();
+        bMustLevelUp = false;
+    }
+
+    if ( bDisplayLevelUp &&
+         ( levelUpDisplayTime + kPopupDisplayDuration ) < GetTimeSeconds() ) {
+        FlashPlayer *pPlayer = gpFlash->getFlashPlayer( "GENERAL" );
+        if ( pPlayer != nullptr ) {
+            pPlayer->showFrame( "close", "/levelup", true );
+        }
+
+        bDisplayLevelUp = false;
+    }
+
+    (void)bPopupTick;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0089d600 then ticks
+                             // AchievementPopUp - the '/achievement' and
+                             // '/reward' panels - which is not ported)
+}
+
+void AchievementsData::displayLevelUp() {
+    // FUN_0089dde0
+    uint32_t movieValidity = 0u;
+    uint32_t movieIndex = 0u;
+    if ( gpFlash->getFlashMovieIndex( &movieValidity, &movieIndex,
+                                      "GENERAL" ) ) {
+        MoviePlayer *pMoviePlayer = gpFlash->getMoviePlayer(
+            int32_t( movieValidity ), int32_t( movieIndex ) );
+        if ( pMoviePlayer != nullptr && pMoviePlayer->MovieBank.isLoaded() &&
+             pMoviePlayer->MovieBank.getFlashPlayer() != nullptr &&
+             gpMngFlashLocalize != nullptr ) {
+            FlashPlayer *pPlayer = pMoviePlayer->MovieBank.getFlashPlayer();
+
+            pPlayer->setVariableValue( "/:IsLevelUp", 1 );
+
+            gpMngFlashLocalize->makeSentenceFromHashcode(
+                pLevelUpText, sizeof( pLevelUpText ), kLevelUpTextHashcode,
+                nullptr );
+            pPlayer->setVariableValue( "/:LevelUpText", pLevelUpText );
+
+            pPlayer->showFrame( "open", "/levelup", true );
+
+            levelUpDisplayTime = GetTimeSeconds();
+            bDisplayLevelUp = true;
+
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original also
+                                     // posts the level up as a mailbox entry -
+                                     // FUN_008956c0 builds a 'OneNews' titled
+                                     // with kLevelUpMailTitleHashcode; the
+                                     // mail system is not ported)
+        }
+    }
+
+    MoviePlayer *pHud = gpFlash->getMoviePlayer( 1, 0 );
+    if ( pHud == nullptr || !pHud->MovieBank.isLoaded() ||
+         pHud->MovieBank.getFlashPlayer() == nullptr ||
+         gpMngFlashLocalize == nullptr ) {
+        return;
+    }
+
+    FlashPlayer *pPlayer = pHud->MovieBank.getFlashPlayer();
+    const int32_t playerLevel = getPlayerLevel();
+
+    gpMngFlashLocalize->setVarLocalized( pPlayer, "/:m_CurrentLevel",
+                                         kCurrentLevelHashcode );
+    pPlayer->setVariableValue( "/:player_level", playerLevel + 1 );
+
+    if ( gpActiveGameMode == nullptr ) {
+        return;
+    }
+
+    const eGameMode activeGameMode = gpActiveGameMode->getCurrentGameMode();
+    const char *pSpritePath =
+        ( activeGameMode == GM_Map || activeGameMode == GM_Living )
+            ? "player_datas/level"
+            : "title/player_datas/level";
+    if ( !pPlayer->spriteExists( pSpritePath ) ) {
+        return;
+    }
+
+    pPlayer->goToFrameAndPlay( playerLevel, pSpritePath, false );
 }
 
 void AchievementsData::processAsyncRequest() {
@@ -363,14 +471,26 @@ void AchievementsData::grantReward( const AchievementCheck *pCheck ) {
         bSimulationModeUnlocked = true;
         return;
 
-    case kRewardChrono:
-    case kRewardSnapshot: // Bookmark
-    case kRewardGameModeEditor:
-        // '/:Unlock_Chrono', '/:Unlock_Snapshot' and '/:Unlock_GME' on the
-        // frontend movie.
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (set the matching
-                                 // frontend variable)
+    case AchievementsData::kChronoRewardHashcode:
+    case AchievementsData::kSnapshotRewardHashcode: // Bookmark
+    case AchievementsData::kGameModeEditorRewardHashcode: {
+        MoviePlayer *pHud =
+            ( gpFlash != nullptr ) ? gpFlash->getMoviePlayer( 1, 0 ) : nullptr;
+        if ( pHud == nullptr || !pHud->MovieBank.isLoaded() ||
+             pHud->MovieBank.getFlashPlayer() == nullptr ) {
+            return;
+        }
+
+        const char *pVariableName = "/:Unlock_GME";
+        if ( reward == AchievementsData::kChronoRewardHashcode ) {
+            pVariableName = "/:Unlock_Chrono";
+        } else if ( reward == AchievementsData::kSnapshotRewardHashcode ) {
+            pVariableName = "/:Unlock_Snapshot";
+        }
+
+        pHud->MovieBank.getFlashPlayer()->setVariableValue( pVariableName, 1 );
         return;
+    }
 
     case kRewardHouse: {
         IPlayerData *pSave = ( gpPlayerData != nullptr )
@@ -398,6 +518,81 @@ void AchievementsData::grantReward( const AchievementCheck *pCheck ) {
         break;
     }
 }
+
+#ifdef OTDU_USE_IMGUI
+void AchievementsData::drawDebug() {
+    static const char *const kLevelNames[kNumPlayerLevels + 1] = {
+        "0 Rookie", "1 Novice", "2 Pro", "3 Expert", "4 Master", "5 Ace" };
+
+    uint32_t totalPoints = 0u;
+    int32_t numUnlocked = 0;
+    for ( const AchievementCheck *pCheck : achievements ) {
+        if ( pCheck != nullptr ) {
+            totalPoints += pCheck->NumPoints;
+            numUnlocked += pCheck->bLock ? 0 : 1;
+        }
+    }
+
+    ImGui::Text( "%u/%u point(s), %d/%d check(s), level %s",
+                 getAchievedPoints(), totalPoints, numUnlocked,
+                 getNumAchievements(), kLevelNames[getPlayerLevel()] );
+    ImGui::Text( "Thresholds: %u / %u / %u / %u / %u", pointsNeeded[0],
+                 pointsNeeded[1], pointsNeeded[2], pointsNeeded[3],
+                 pointsNeeded[4] );
+
+    static int32_t targetLevel = 0;
+    ImGui::Combo( "Level", &targetLevel, kLevelNames, kNumPlayerLevels + 1 );
+
+    ImGui::SameLine();
+    if ( ImGui::Button( "Set" ) ) {
+        const int32_t levelBefore = getPlayerLevel();
+        const uint32_t pointsWanted =
+            ( targetLevel > 0 ) ? pointsNeeded[targetLevel - 1] : 0u;
+
+        for ( AchievementCheck *pCheck : achievements ) {
+            if ( pCheck != nullptr ) {
+                pCheck->bLock = true;
+            }
+        }
+
+        for ( AchievementCheck *pCheck : achievements ) {
+            if ( getAchievedPoints() >= pointsWanted ) {
+                break;
+            }
+            if ( pCheck != nullptr ) {
+                pCheck->bLock = false;
+            }
+        }
+
+        const int32_t levelAfter = getPlayerLevel();
+        if ( levelBefore != levelAfter ) {
+            IPlayerData *pSave = ( gpPlayerData != nullptr )
+                                     ? gpPlayerData->getLoadedSave()
+                                     : nullptr;
+            if ( pSave != nullptr ) {
+                pSave->getExtraChallenges()->PlayerLevel = levelAfter;
+            }
+
+            bMustLevelUp = true;
+        }
+    }
+
+    if ( ImGui::Button( "Unlock all checks" ) ) {
+        unlockAllChecks();
+    }
+
+    ImGui::SameLine();
+    if ( ImGui::Button( "Replay level up" ) ) {
+        bMustLevelUp = true;
+    }
+
+    ImGui::Checkbox( "Force unlock on refresh", &gbForceAchievementUnlock );
+    ImGui::SameLine();
+    if ( ImGui::Button( "Notify" ) ) {
+        notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
+    }
+}
+#endif
 
 void AchievementsData::unlockAllChecks() {
     // FUN_0089e8d0

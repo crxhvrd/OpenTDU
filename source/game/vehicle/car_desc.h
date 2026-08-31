@@ -78,6 +78,8 @@ public:
     float getUpgradeRate() const;
     void setUpgradeRate( const float upgradeRate );
 
+    int32_t getPackLevel( int32_t *pOutMaxLevel = nullptr ) const;
+
 public:
     uint32_t pCarConfigID[2] = {}; // TEA Encrypted
     uint32_t carID = 0xffffffffu;
