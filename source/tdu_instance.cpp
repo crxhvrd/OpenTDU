@@ -385,6 +385,7 @@ TestDriveGameInstance::TestDriveGameInstance( const char **argv,
 #endif
 
     registeredServices.reserve( 64 );
+    servicesInitOrder.reserve( 64 );
 
     instanciationThread.initialize(
         (TestDriveThread::StartRoutine_t)InstanciationWorker,
@@ -401,14 +402,15 @@ TestDriveGameInstance::TestDriveGameInstance( const char **argv,
 TestDriveGameInstance::~TestDriveGameInstance() {
     bRequestedExit = true;
 
-    while ( !registeredServices.empty() ) {
-        GameSystem *pIt = registeredServices.back();
+    while ( !servicesInitOrder.empty() ) {
+        GameSystem *pIt = servicesInitOrder.back();
         pIt->terminate();
         if ( !pIt->isStaticallyAllocated() ) {
             delete pIt;
         }
-        registeredServices.pop_back();
+        servicesInitOrder.pop_back();
     }
+    registeredServices.clear();
 }
 
 void TestDriveGameInstance::terminate() {
@@ -835,6 +837,7 @@ bool TestDriveGameInstance::registerService( TGS *pSystem ) {
                    pSystem->getName() );
 
     registeredServices.push_back( pSystem );
+    servicesInitOrder.push_back( pSystem );
     return true;
 }
 

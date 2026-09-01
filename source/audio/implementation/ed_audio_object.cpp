@@ -460,6 +460,14 @@ edAudioCluster::edAudioCluster()
     debugSetDescription( "Cluster" );
 }
 
+edAudioCluster::~edAudioCluster() {
+    // FUN_00615100
+    unlinkEntry( &Buffer );
+
+    Buffer.unlinkAllEntries();
+    unlinkAllEntries();
+}
+
 edAudioMixer::edAudioMixer( int32_t channelCount )
     : edAudioObject( channelCount, channelCount ) {
     // FUN_00612500

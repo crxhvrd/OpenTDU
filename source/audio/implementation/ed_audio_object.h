@@ -123,6 +123,7 @@ public:
 
 public:
     edAudioCluster();
+    ~edAudioCluster() override;
 
 private:
     edAudioBuffer Buffer;

@@ -901,11 +901,13 @@ void GSAudio::drawDebug( float ) {
 
 void GSAudio::terminate() {
     // FUN_009b2750
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED; // TODO: REVERB
 
     Clients.clear();
     ClientHandlerPool.clear();
 
+    ClientConfigPool.clear();
+    MixerPool.clear();
     UnlinkFromParent( pSpatialBuffer );
     delete pSpatialBuffer;
     pSpatialBuffer = nullptr;
@@ -921,9 +923,6 @@ void GSAudio::terminate() {
     UnlinkFromParent( pSpatialAdapter );
     delete pSpatialAdapter;
     pSpatialAdapter = nullptr;
-
-    MixerPool.clear();
-    ClientConfigPool.clear();
 
     gEdAudio.destroy();
 

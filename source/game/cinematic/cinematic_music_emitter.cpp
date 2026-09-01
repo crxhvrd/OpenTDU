@@ -5,6 +5,13 @@
 #include "game/cinematic/gs_cinematics.h"
 #include "game/scenaric/entity/entity_sound_density.h"
 
+static void UnlinkChannelFromPipeline( edAudioStreamEntry &channel ) {
+    edAudioObject *pParent = channel.getParent();
+    if ( pParent != nullptr ) {
+        pParent->unlinkEntry( &channel );
+    }
+}
+
 CinematicMusicEmitter::CinematicMusicEmitter( uint8_t *pInLeftRef,
                                               uint8_t *pInRightRef )
     : pLeftRef( pInLeftRef ),
@@ -148,12 +155,8 @@ void CinematicMusicEmitter::releaseChannels() {
     source.setSamples( nullptr, nullptr );
 
     if ( bAddedToPipeline ) {
-        PipelineStereo *pPipeline = ( gpCinematics != nullptr )
-                                        ? gpCinematics->getMusicPipeline()
-                                        : nullptr;
-        if ( pPipeline != nullptr ) {
-            pPipeline->removeSource( &source );
-        }
+        UnlinkChannelFromPipeline( source.getLeftChannel() );
+        UnlinkChannelFromPipeline( source.getRightChannel() );
         bAddedToPipeline = false;
     }
 

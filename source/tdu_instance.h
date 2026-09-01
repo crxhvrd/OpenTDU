@@ -110,6 +110,7 @@ public:
 
 private:
     std::vector<GameSystem *> registeredServices;
+    std::vector<GameSystem *> servicesInitOrder;
 
     uint32_t argc;
     const char **argv;
