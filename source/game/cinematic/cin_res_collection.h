@@ -62,6 +62,9 @@ public:
         return ( index >= 0 && index < numActors ) ? actors[index].Kind
                                                    : CinematicActor::CAK_Entity;
     }
+    inline void setMusicEmitter( class CinematicMusicEmitter *pEmitter ) {
+        pMusicEmitter = pEmitter;
+    }
     inline void setActorEntity( int32_t index, void *pEntity ) {
         if ( index >= 0 && index < numActors ) {
             actors[index].pEntity = pEntity;
@@ -113,6 +116,8 @@ private:
     void tickActorMedia( const CinMediaContext *pCtx, float time );
     void tickCameraMedia( const CinMediaContext *pCtx, float time );
 
+    bool processMusicMessage( uint32_t tag4 );
+    void processCinematicMessages( const uint16_t *pTrack, float time );
     void processActorMessages( const CinMediaContext *pCtx,
                                const uint16_t *pTrack,
                                float time );
@@ -159,6 +164,7 @@ private:
 
 private:
     static constexpr int32_t kMaxActors = 128;
+    static constexpr size_t kMaxFiredMessages = 64;
 
 private:
     const CinematicHeader *pCinematicData = nullptr;
@@ -173,7 +179,11 @@ private:
     CameraView cameraView{};
     Matrix4x4f_t baseMatrix = Matrix4x4f_t::Identity();
     bool bHasBaseMatrix = false;
-    int32_t lastMessageRef = -1;
+    std::vector<const void *> firedMessages;
+    class CinematicMusicEmitter *pMusicEmitter = nullptr;
+
+public:
+    char debugName[64] = {}; // the owning cinematic's name, for logs
 };
 
 extern uint32_t ExtractBufferSize( const void *pData, uint32_t size );

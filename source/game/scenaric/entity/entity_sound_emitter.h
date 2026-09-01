@@ -14,6 +14,8 @@ class AudioDispatcherPlaybackSoundInstance;
 class EntitySoundEmitter : public Entity, public edAudioStreamEntryListener {
 public:
     const char *GetName() override { return "Actor"; /* FUN_00423f40 */ }
+    inline const edAudioSample *getSample() const { return pSample; }
+    inline float getVolume() const { return Volume; }
 
 public:
     EntitySoundEmitter();
@@ -35,6 +37,9 @@ public:
     void onPipeEntryPlayed( edAudioStreamEntry *pEntry ) override;
     void onPipeEntryStopped( edAudioStreamEntry *pEntry ) override;
     void play( bool bInLoop );
+    virtual void installSoundBank() {}
+    virtual void uninstallSoundBank() {}
+    virtual int32_t getSoundBankState() const { return 0; }
 
 protected:
     static constexpr uint32_t kMessagePlay = 0x706c6179;     // "play"

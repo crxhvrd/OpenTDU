@@ -152,6 +152,7 @@ void GMFreeride::resolveNextIntroCine( const SpotSector *pSector ) {
 
     pIntroCine->setGameModeInterface( this );
     pIntroCine->setStopWhenSkipped( true );
+    pIntroCine->installMusicBanks();
 
     gpWorld->setAreaStreamingEnabled( false );
 }

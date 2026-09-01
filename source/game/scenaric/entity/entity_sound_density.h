@@ -30,15 +30,19 @@ public:
     void unloadResources() override;
     void deserialize( BinaryReader *param_2 ) override;
 
-    virtual void installSoundBank();
-    virtual void uninstallSoundBank();
-    virtual int32_t getState() const { return State; /* FUN_004268f0 */ }
+    void installSoundBank() override;
+    void uninstallSoundBank() override;
+    int32_t getSoundBankState() const override {
+        return State; /* FUN_004268f0 */
+    }
 
     void onSoundBankInstalled();
 
 protected:
     const char *pBankName;
     void *pBankData;
+    uint32_t bankDataSize;
     int32_t SlotIndex;
     int32_t State;
+    std::shared_ptr<bool> pInstallGuard;
 };

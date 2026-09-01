@@ -2,8 +2,10 @@
 #include "entity_sound_density.h"
 
 #include "audio/implementation/audio_dispatcher_playback.h"
+#include "audio/implementation/ed_audio_sample.h"
 #include "config/gs_config.h"
 #include "filesystem/binary.h"
+#include "filesystem/gs_file.h"
 #include "game/game_mechanism.h"
 #include "system/system_shared.h"
 
@@ -14,8 +16,10 @@ EntitySoundDensity::EntitySoundDensity()
     : EntitySoundEmitter(),
       pBankName( nullptr ),
       pBankData( nullptr ),
+      bankDataSize( 0 ),
       SlotIndex( -1 ),
-      State( SDS_Idle ) {
+      State( SDS_Idle ),
+      pInstallGuard( std::make_shared<bool>( true ) ) {
     // FUN_007dfec0
 }
 
@@ -77,11 +81,35 @@ void EntitySoundDensity::installSoundBank() {
     Slots[freeSlot].State = SDS_Idle;
     SlotIndex = freeSlot;
 
-    std::string bankPath = gpConfig->getResRootPath();
-    bankPath += "Sound/Cinematics/";
-    bankPath += pBankName;
+    char path[512];
+    snprintf( path, sizeof( path ), "%sSound/Cinematics/%s",
+              gpConfig->getResRootPath(), pBankName );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (cinematic sound bank install)
+    bool bInstalling = false;
+    if ( gpFile != nullptr ) {
+        bankDataSize = 0;
+
+        std::weak_ptr<bool> guard = pInstallGuard;
+        bInstalling =
+            gpFile->loadBank( path, &pBankData, &bankDataSize, this,
+                              [this, guard]( int32_t type, int32_t bSuccess ) {
+                                  if ( guard.expired() ) {
+                                      return;
+                                  }
+                                  if ( type == 4 && bSuccess ) {
+                                      onSoundBankInstalled();
+                                  }
+                              } );
+    }
+
+    if ( bInstalling ) {
+        Slots[SlotIndex].State = SDS_Installing;
+        Slots[SlotIndex].pBankData = pBankData;
+        State = SDS_Installing;
+        return;
+    }
+
+    OTDU_LOG_WARN( "EntitySoundDensity: can't install '%s'\n", path );
 
     Slots[SlotIndex].State = SDS_Finished;
     Slots[SlotIndex].pBankData = nullptr;
@@ -101,24 +129,54 @@ void EntitySoundDensity::uninstallSoundBank() {
     }
 
     if ( State != SDS_Installing ) {
+        sampleStorage.reset();
         if ( pBankData != nullptr ) {
             TestDrive::FreeAligned( pBankData );
         }
         pBankData = nullptr;
+        bankDataSize = 0;
         pSample = nullptr;
 
-        Slots[SlotIndex].pOwner = nullptr;
-        Slots[SlotIndex].pBankData = nullptr;
+        if ( SlotIndex >= 0 ) {
+            Slots[SlotIndex].pOwner = nullptr;
+            Slots[SlotIndex].pBankData = nullptr;
+        }
     }
 
     State = SDS_Idle;
-    Slots[SlotIndex].State = SDS_Idle;
+    if ( SlotIndex >= 0 ) {
+        Slots[SlotIndex].State = SDS_Idle;
+    }
 }
 
 void EntitySoundDensity::onSoundBankInstalled() {
     // FUN_007df1d0
     State = SDS_Finished;
-    Slots[SlotIndex].State = SDS_Finished;
+    if ( SlotIndex >= 0 ) {
+        Slots[SlotIndex].State = SDS_Finished;
+        Slots[SlotIndex].pBankData = pBankData;
+    }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (pSample = the installed bank)
+    sampleStorage.reset();
+    pSample = nullptr;
+
+    if ( pBankData == nullptr || bankDataSize == 0 ) {
+        OTDU_LOG_WARN( "EntitySoundDensity: '%s' installed empty\n",
+                       pBankName != nullptr ? pBankName : "<none>" );
+        return;
+    }
+
+    auto sample = std::make_unique<edAudioSample>();
+    if ( !sample->loadFromMemory( pBankData,
+                                  static_cast<int32_t>( bankDataSize ) ) ) {
+        OTDU_LOG_WARN( "EntitySoundDensity: '%s' is not a decodable sound\n",
+                       pBankName );
+        return;
+    }
+
+    sampleStorage = std::move( sample );
+    pSample = sampleStorage.get();
+    OTDU_LOG_DEBUG( "Cinematic sound '%s' installed (%d frames at %dHz)\n",
+                    pBankName, pSample->getFrameCount(),
+                    pSample->getSampleRate() );
 }

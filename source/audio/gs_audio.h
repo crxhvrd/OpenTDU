@@ -249,6 +249,7 @@ public:
     }
     inline uint32_t getMixState() const { return MixState; }
     inline void setMusicMuted( bool bMuted ) { bMusicMuted = bMuted; }
+    inline void requestMixStateResync() { bMixStateTransitionSync = true; }
 
 public:
     GSAudio();

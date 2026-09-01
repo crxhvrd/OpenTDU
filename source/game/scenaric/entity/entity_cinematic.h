@@ -5,6 +5,7 @@
 
 #include "base_entity.h"
 #include "game/cinematic/cin_res_collection.h"
+#include "game/cinematic/cinematic_music_emitter.h"
 #include "game/gm_base.h"
 
 class CinematicPlayer;
@@ -38,10 +39,7 @@ public:
     }
     inline void markSkipped() { bSkipped = true; }
     inline void clearEnded() { cinematicFlags &= ~0x10u; }
-    inline bool hasMusicEmitter() const {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO
-        return false;
-    }
+    inline bool hasMusicEmitter() const { return pMusicEmitter != nullptr; }
     inline bool wasSkipped() const { return bSkipped; }
     inline bool stopsWhenSkipped() const { return bStopWhenSkipped; }
     inline void setStopWhenSkipped( bool bEnabled ) {
@@ -59,7 +57,7 @@ public:
     inline bool isPlaying() const {
         return ( cinematicFlags & 0x4u ) != 0 && ( cinematicFlags & 0x2u ) == 0;
     }
-    inline void setPaused( bool bEnabled ) { bPaused = bEnabled; }
+    void setPaused( bool bEnabled );
     inline bool isPaused() const { return bPaused; }
     inline void setPlaybackSpeed( float speed ) { playbackSpeed = speed; }
     inline float getPlaybackSpeed() const { return playbackSpeed; }
@@ -87,13 +85,18 @@ public:
     void stop( bool bEndNow );
 
     bool launchSpotCine( struct SpotMap *pSpot, float startTime );
+    void installMusicBanks();
     bool createTDUInterface();
     void seek( float time );
     void setPlaybackAnchor( const Eigen::Vector3f &pos );
 
 private:
     bool begin();
+    bool prepareResources();
+    void applyForegroundCine();
+    void restoreForegroundCine();
     void end();
+    void releaseMusicEmitter();
     void publishCameraView();
     bool calculateSpotMatrix( struct SpotMap *pSpot, Matrix4x4f_t &outMatrix );
 
@@ -122,6 +125,7 @@ private:
     const void *pSceneRefs;        // the (numRefs - 1) .sce blobs
 
     ScenaricBank *pSCBank;
+    std::unique_ptr<CinematicMusicEmitter> pMusicEmitter;
     CinematicPlayer *pGMInterface;
     CinResCollection cinematicPlayer;
     struct SpotMap *pSpotWorld;
@@ -140,6 +144,11 @@ private:
     bool bDontSwitchCamera;
     bool bInitialized;
     bool bForceStop;
+    bool bResourcesPrepared;      
+    bool bForegroundCineApplied;  
+    bool bApplyCineMix;         
+    bool bRestoreCineMix;        
+    uint32_t savedMutedVehicleCategories; 
     bool bStopGuard;
     bool bStackActive;
     bool bCameraHandedOver; 

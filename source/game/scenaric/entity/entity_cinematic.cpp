@@ -6,9 +6,12 @@
 #include "core/maths_helper.h"
 #include "filesystem/bank.h"
 #include "filesystem/binary.h"
+#include "audio/gs_audio.h"
+#include "audio/vehicle/gs_vehicle_sound.h"
 #include "gs_timer.h"
 #include "game/game_mechanism.h"
 #include "game/gm_scene.h"
+#include "game/cinematic/gs_cinematics.h"
 #include "game/cinematic/mng_cinematics.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/entity/entity_avatar.h"
@@ -115,6 +118,7 @@ EntityCinematic::EntityCinematic()
       pCinRef( nullptr ),
       pSceneRefs( nullptr ),
       pSCBank( nullptr ),
+      pMusicEmitter( nullptr ),
       pGMInterface( nullptr ),
       pSpotWorld( nullptr ),
       pCinData( nullptr ),
@@ -129,6 +133,11 @@ EntityCinematic::EntityCinematic()
       bDontSwitchCamera( false ),
       bInitialized( false ),
       bForceStop( false ),
+      bResourcesPrepared( false ),
+      bForegroundCineApplied( false ),
+      bApplyCineMix( true ),
+      bRestoreCineMix( true ),
+      savedMutedVehicleCategories( 0 ),
       bStopGuard( false ),
       bStackActive( false ),
       bCameraHandedOver( false ),
@@ -176,6 +185,92 @@ void EntityCinematic::initialize() {
     if ( bufferSize != 0 ) {
         cinematicBuffer.assign( bufferSize, 0 );
     }
+
+    bResourcesPrepared = false;
+    bApplyCineMix = true;
+    bRestoreCineMix = true;
+    bForegroundCineApplied = false;
+}
+
+void EntityCinematic::applyForegroundCine() {
+    // FUN_007e89d0
+    if ( bForegroundCineApplied ) {
+        return;
+    }
+    bForegroundCineApplied = true;
+
+    if ( gpAudio != nullptr ) {
+        if ( bApplyCineMix ) {
+            uint32_t mix = gpAudio->getMixFlags( "MixCinematicDefault" );
+            if ( static_cast<int8_t>( cinematicPlaybackFlags & 0xffu ) >= 0 ) {
+                mix |= gpAudio->getMixFlags( "MixAmbiance" );
+            }
+            if ( pMusicEmitter == nullptr ) {
+                mix |= gpAudio->getMixFlags( "ClientMenuMusic" );
+            }
+            gpAudio->changeMixState( mix );
+        }
+
+        Mixer *pMixer = gpAudio->findMixer( "MixerCinematic" );
+        if ( pMixer != nullptr ) {
+            pMixer->bEnabled = true;
+        }
+    }
+
+    if ( ( cinematicPlaybackFlags & 0x100u ) != 0 && gpVehicleSound != nullptr ) {
+        savedMutedVehicleCategories = gpVehicleSound->getMutedCategoryMask();
+        gpVehicleSound->setMutedCategoryMask( 0x1eu );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: the rest of FUN_007e89d0
+}
+
+void EntityCinematic::restoreForegroundCine() {
+    // FUN_007e8650
+    if ( !bForegroundCineApplied ) {
+        return;
+    }
+    bForegroundCineApplied = false;
+
+    if ( bLoop || gpAudio == nullptr ) {
+        return;
+    }
+
+    Mixer *pMixer = gpAudio->findMixer( "MixerCinematic" );
+    if ( pMixer != nullptr ) {
+        pMixer->bEnabled = false;
+    }
+
+    if ( ( cinematicPlaybackFlags & 0x100u ) != 0 && gpVehicleSound != nullptr ) {
+        gpVehicleSound->setMutedCategoryMask( savedMutedVehicleCategories );
+    }
+
+    if ( bRestoreCineMix ) {
+        gpAudio->requestMixStateResync();
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: the rest of FUN_007e8650
+}
+
+bool EntityCinematic::prepareResources() {
+    // FUN_007e7ed0
+    if ( bResourcesPrepared ) {
+        return true;
+    }
+
+    strncpy( cinematicPlayer.debugName, name.c_str(),
+             sizeof( cinematicPlayer.debugName ) - 1 );
+
+    if ( !createTDUInterface() ) {
+        return false;
+    }
+
+    if ( pMusicEmitter != nullptr ) {
+        pMusicEmitter->installSoundBanks();
+    }
+
+    bResourcesPrepared = true;
+    return true;
 }
 
 void EntityCinematic::loadResources( ScenaricBank *param_2 ) {
@@ -185,7 +280,61 @@ void EntityCinematic::loadResources( ScenaricBank *param_2 ) {
     }
     resolveSoundReference();
     pSCBank = param_2;
+
+    uint8_t *pLeftRef = const_cast<uint8_t *>(
+        static_cast<const uint8_t *>( pSoundEmitter1Ref ) );
+    uint8_t *pRightRef = const_cast<uint8_t *>(
+        static_cast<const uint8_t *>( pSoundEmitter2Ref ) );
+    if ( pLeftRef != nullptr &&
+         *reinterpret_cast<uint32_t *>( pLeftRef ) != 0 &&
+         pRightRef != nullptr &&
+         *reinterpret_cast<uint32_t *>( pRightRef ) != 0 ) {
+        pMusicEmitter =
+            std::make_unique<CinematicMusicEmitter>( pLeftRef, pRightRef );
+        pMusicEmitter->resolveEmitters( param_2 );
+        cinematicPlayer.setMusicEmitter( pMusicEmitter.get() );
+
+        OTDU_LOG_DEBUG( "Cinematic '%s' owns a music emitter (%s)\n",
+                        name.c_str(),
+                        pMusicEmitter->hasBothEmitters()
+                            ? "both sound emitters resolved"
+                            : "unresolved sound emitters" );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (camera/micro/stream refs)
+
     bStopWhenSkipped = true;
+}
+
+void EntityCinematic::installMusicBanks() {
+    // FUN_007e7c90
+    if ( gpCinematics != nullptr && gpCinematics->isInitialized() &&
+         pMusicEmitter != nullptr ) {
+        pMusicEmitter->installSoundBanks();
+    }
+}
+
+void EntityCinematic::setPaused( bool bEnabled ) {
+    // FUN_007e7b50
+    if ( bPaused == bEnabled ) {
+        return;
+    }
+
+    if ( pMusicEmitter != nullptr ) {
+        pMusicEmitter->setPaused( bEnabled, 0.0f );
+    }
+
+    bPaused = bEnabled;
+}
+
+void EntityCinematic::releaseMusicEmitter() {
+    if ( pMusicEmitter == nullptr ) {
+        return;
+    }
+
+    cinematicPlayer.setMusicEmitter( nullptr );
+    pMusicEmitter->releaseChannels();
+    pMusicEmitter.reset();
 }
 
 void EntityCinematic::initializeInstance( void *param_2, void *param_3 ) {
@@ -195,6 +344,7 @@ void EntityCinematic::initializeInstance( void *param_2, void *param_3 ) {
 
 void EntityCinematic::unloadResources() {
     // FUN_007e8dd0
+    releaseMusicEmitter();
     cinematicPlayer.reset();
     cinematicBuffer.clear();
     pCinData = nullptr;
@@ -216,6 +366,10 @@ void EntityCinematic::tick() {
 
     if ( isPlaying() ) {
         const float totalTime = cinematicPlayer.getTotalTime();
+
+        if ( pMusicEmitter != nullptr ) {
+            pMusicEmitter->setPaused( bPaused, 0.0f );
+        }
 
         const float advance = playbackSpeed * dt;
         if ( Time + advance > 0.0f && !bPaused ) {
@@ -486,6 +640,15 @@ bool EntityCinematic::begin() {
         return false;
     }
 
+    if ( !prepareResources() ) {
+        stop( true );
+        return false;
+    }
+
+    if ( pMusicEmitter != nullptr && pMusicEmitter->areSoundBanksInstalling() ) {
+        return true;
+    }
+
     if ( !cinematicPlayer.createInterface( pCinData, cinDataSize,
                                            cinematicBuffer.data(),
                                            &pSCBank->getBank() ) ) {
@@ -522,9 +685,18 @@ bool EntityCinematic::begin() {
         pGMInterface->executeAction( CE_Begun, this );
     }
 
+    if ( hasFocus() ) {
+        applyForegroundCine();
+    }
+
     CineTotalTime = cinematicPlayer.getTotalTime();
     Time = StartTime;
     cinematicFlags = ( cinematicFlags & 0xfffffffcu ) | 4u;
+
+    if ( pMusicEmitter != nullptr ) {
+        pMusicEmitter->setPaused( bPaused, 0.0f );
+    }
+
     if ( pGMInterface != nullptr ) {
         pGMInterface->executeAction( CE_Started, this );
     }
@@ -560,6 +732,13 @@ void EntityCinematic::publishCameraView() {
 void EntityCinematic::end() {
     // FUN_007e8840
     const bool bWasRunning = ( cinematicFlags & 0x4u ) != 0 || bForceStop;
+
+    restoreForegroundCine();
+
+    if ( pMusicEmitter != nullptr ) {
+        pMusicEmitter->uninstallSoundBanks();
+        releaseMusicEmitter();
+    }
 
     if ( gpActiveGMScene != nullptr ) {
         MngActor &sceneActors = gpActiveGMScene->getActorManager();

@@ -1,6 +1,9 @@
 #include "shared.h"
 #include "cin_res_collection.h"
 
+#include "game/cinematic/cinematic_music_emitter.h"
+
+#include <algorithm>
 #include <cstring>
 
 #include "core/maths_helper.h"
@@ -179,7 +182,7 @@ void CinResCollection::reset() {
     pBank = nullptr;
     numActors = 0;
     bCreated = false;
-    lastMessageRef = -1;
+    firedMessages.clear();
 }
 
 bool CinResCollection::parseCinematic( const void *pData, uint32_t size ) {
@@ -351,6 +354,70 @@ void CinResCollection::debugDumpControllers() const {
     }
 }
 
+void CinResCollection::processCinematicMessages( const uint16_t *pTrack,
+                                                 float time ) {
+    if ( pRefTable == nullptr || pRefData == nullptr ) {
+        return;
+    }
+
+    int32_t lower = 0;
+    int32_t upper = 0;
+    FindKeyframe( pTrack, time, &lower, &upper );
+
+    const float *pKeyTimes = reinterpret_cast<const float *>( pTrack + 2 );
+    const float elapsed = time - pKeyTimes[lower];
+    if ( elapsed < 0.0f ) {
+        return;
+    }
+
+    const float *pValues = TrackKeyframeBase( pTrack );
+    const int32_t refIdx =
+        reinterpret_cast<const int32_t *>( pValues )[lower * 2];
+    const float duration = pValues[lower * 2 + 1];
+
+    if ( elapsed >= duration ) {
+        return;
+    }
+
+    const int32_t numRefs = *static_cast<const int32_t *>( pRefData );
+    if ( refIdx < 0 || refIdx >= numRefs ) {
+        return;
+    }
+
+    const void *pKeyframeEntry = pValues + lower * 2;
+    if ( std::find( firedMessages.begin(), firedMessages.end(),
+                    pKeyframeEntry ) != firedMessages.end() ) {
+        return;
+    }
+
+    const uint8_t *pDesc =
+        static_cast<const uint8_t *>( pRefTable[refIdx].pDescriptor );
+    if ( pDesc == nullptr || pDesc[0] != 0x0b ) {
+        return;
+    }
+
+    const char *pMsg = reinterpret_cast<const char *>(
+        pDesc + ( ( pDesc[1] & 1 ) ? 0xc : 4 ) );
+    if ( pMsg[0] == '\0' ) {
+        return;
+    }
+
+    if ( firedMessages.size() < kMaxFiredMessages ) {
+        firedMessages.push_back( pKeyframeEntry );
+    }
+
+    const uint32_t tag4 =
+        ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[0] ) ) << 24 ) |
+        ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[1] ) ) << 16 ) |
+        ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[2] ) ) << 8 ) |
+        static_cast<uint32_t>( static_cast<uint8_t>( pMsg[3] ) );
+
+    OTDU_LOG_DEBUG( "Cinematic '%s' message '%s' at %.2fs (%.2fs)\n",
+                    debugName, pMsg, time, duration );
+
+    processMusicMessage( tag4 );
+}
+
 uint32_t ExtractBufferSize( const void *pData, uint32_t size ) {
     // FUN_0067b1e0
     const uint8_t *pCursor = static_cast<const uint8_t *>( pData );
@@ -405,6 +472,23 @@ void CinResCollection::tick( float time, float /*deltaTime*/ ) {
         if ( type == 1 ) {
             tickController( pCtrl, time );
         }
+        if ( advance == 0 ) {
+            break;
+        }
+        pCtrl += advance;
+    }
+
+    const int32_t numCineTracks = pCinematicData->NumSubAnimatedProps;
+    for ( int32_t i = 0; i < numCineTracks; i++ ) {
+        const uint32_t typeHash =
+            *reinterpret_cast<const uint32_t *>( pCtrl + 8 );
+        if ( typeHash == 0x73d8ccaeu ) {
+            processCinematicMessages(
+                reinterpret_cast<const uint16_t *>( pCtrl + 0xc ), time );
+        }
+
+        const uint32_t advance =
+            *reinterpret_cast<const uint32_t *>( pCtrl + 4 );
         if ( advance == 0 ) {
             break;
         }
@@ -636,8 +720,7 @@ void CinResCollection::processActorMessages( const CinMediaContext *pCtx,
                                              const uint16_t *pTrack,
                                              float time ) {
     // FUN_0067c4a0
-    if ( pCtx->pSource == nullptr || pCtx->pSource->pSceneRefs == nullptr ||
-         ( pTrack[1] & 1 ) != 0 ) {
+    if ( pCtx->pSource == nullptr || pCtx->pSource->pSceneRefs == nullptr ) {
         return;
     }
 
@@ -669,8 +752,15 @@ void CinResCollection::processActorMessages( const CinMediaContext *pCtx,
     const char *pMsg =
         reinterpret_cast<const char *>( pDesc + ( ( flags & 1 ) ? 0xc : 4 ) );
 
-    if ( lastMessageRef != refIdx && pMsg[0] != '\0' ) {
-        lastMessageRef = refIdx;
+    const void *pKeyframeEntry = pValues + lower * 2;
+    const bool bAlreadyFired =
+        std::find( firedMessages.begin(), firedMessages.end(),
+                   pKeyframeEntry ) != firedMessages.end();
+
+    if ( !bAlreadyFired && pMsg[0] != '\0' ) {
+        if ( firedMessages.size() < kMaxFiredMessages ) {
+            firedMessages.push_back( pKeyframeEntry );
+        }
         const CinematicActor *pActor =
             static_cast<const CinematicActor *>( *pCtx->pHandleSlot );
 
@@ -684,13 +774,46 @@ void CinResCollection::processActorMessages( const CinMediaContext *pCtx,
             gpScenaric != nullptr ? gpScenaric->findClip( nameHash ) : nullptr;
 
         OTDU_LOG_ALWAYS(
-            "[CINMSG] t=%.2f actor='%s' refType=0x%x msg='%s' dur=%.2f "
-            "tag4=0x%08x hash=0x%llx clip=%p\n",
-            time, pActor != nullptr ? pActor->Name : "?", pDesc[0], pMsg,
+            "[CINMSG] cine='%s' t=%.2f actor='%s' refType=0x%x msg='%s' "
+            "dur=%.2f tag4=0x%08x hash=0x%llx clip=%p\n",
+            debugName, time, pActor != nullptr ? pActor->Name : "?", pDesc[0],
+            pMsg,
             duration, tag4, static_cast<unsigned long long>( nameHash ),
             (void *)pClip );
 
-        playClipOnActorEntity( pActor, pClip );
+        if ( !processMusicMessage( tag4 ) ) {
+            playClipOnActorEntity( pActor, pClip );
+        }
+    }
+}
+
+bool CinResCollection::processMusicMessage( uint32_t tag4 ) {
+    // FUN_007e1dc0 (inlined)
+    static constexpr uint32_t kMessagePlay = 0x706c6179;     // "play"
+    static constexpr uint32_t kMessagePlayLoop = 0x706c6c6f; // "pllo"
+    static constexpr uint32_t kMessagePlayOnce = 0x706c6f6e; // "plon"
+    static constexpr uint32_t kMessageStop = 0x73746f70;     // "stop"
+
+    if ( pMusicEmitter == nullptr ) {
+        return false;
+    }
+
+    switch ( tag4 ) {
+    case kMessagePlay:     
+    case kMessagePlayOnce:
+        pMusicEmitter->play( false, 0.0f );
+        return true;
+
+    case kMessagePlayLoop: 
+        pMusicEmitter->play( true, 0.0f );
+        return true;
+
+    case kMessageStop: 
+        pMusicEmitter->stop( 0.0f );
+        return true;
+
+    default:
+        return false;
     }
 }
 

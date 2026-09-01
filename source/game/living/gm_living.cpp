@@ -144,6 +144,7 @@ void GMLiving::installHouseSpot() {
     }
 
     pCinematicIntroE->setStopWhenSkipped( false );
+    pCinematicIntroE->installMusicBanks();
     pCinematicIntroE->clearEnded();
 
     if ( gpMngFade != nullptr ) {
