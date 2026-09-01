@@ -123,6 +123,11 @@ static CmdLineArg
         GlobalLogger::bLogTransientToFile = true;
     } );
 
+static CmdLineArg
+    CmdLineArgLogVerbose( "verbose", []( const char *pArg ) {
+        GlobalLogger::bVerbose = true;
+    } );
+
 static CmdLineArg CmdLineArgNoRunLock( "norunlock", []( const char *pArg ) {
     gDisableRunLock = true;
 } );

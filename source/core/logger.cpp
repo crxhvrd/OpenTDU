@@ -20,6 +20,7 @@ inline void OutputToDebugger( const char *pFormatedString ) {
 #endif
 
 bool GlobalLogger::bLogTransientToFile = false;
+bool GlobalLogger::bVerbose = false;
 
 static constexpr int32_t MaxLogSize = 8192;
 static FILE *gpLogFile = nullptr;
@@ -35,7 +36,11 @@ static constexpr const char *GetPlatformName() {
 #elif defined( OTDU_UNIX )
     return "Linux";
 #elif defined( OTDU_WIN32 )
-    return "Windows";
+    #if defined (OTDU_WIN7)
+        return "Windows 7";
+    #else
+        return "Windows 8+";
+    #endif
 #else
     return "Unknown";
 #endif
@@ -141,6 +146,19 @@ void GlobalLogger::WriteTransient( const char *pFormat, ... ) {
     va_start( argList, pFormat );
 
     WriteImpl( bLogTransientToFile, pFormat, argList );
+
+    va_end( argList );
+}
+
+void GlobalLogger::WriteVerbose( const char *pFormat, ... ) {
+    if ( !bVerbose ) {
+        return;
+    }
+
+    va_list argList;
+    va_start( argList, pFormat );
+
+    WriteImpl( true, pFormat, argList );
 
     va_end( argList );
 }
