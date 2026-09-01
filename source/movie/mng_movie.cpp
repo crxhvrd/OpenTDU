@@ -456,7 +456,7 @@ bool MngMovie::SkipMovieRequested() {
     for ( uint32_t iVar6 = 0; iVar6 < gEdDev.NumDevices; iVar6++ ) {
         peVar1 = gEdDev.getDevice( eDeviceType::DT_Other, iVar6 );
         if ( peVar1 != nullptr ) {
-            if ( peVar1->getNumChannelsDown() > -1 &&
+            if ( peVar1->getPressedChannelIndex() > -1 &&
                  peVar1->getNumChannels() > 0 ) {
                 for ( uint32_t i = 0; i < peVar1->getNumChannels(); i++ ) {
                     InputChannel &iVar5 = peVar1->getChannels()[i];

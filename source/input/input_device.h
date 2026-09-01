@@ -128,6 +128,7 @@ public:
     inline uint32_t getNumChannels() { return channelCount; }
     inline InputChannel *getChannels() const { return pChannels; }
     inline uint32_t getNumChannelsDown() const { return numChannelsDown; }
+    inline int32_t getPressedChannelIndex() const { return channelIsPressed; }
     inline bool hasChannelBeenPressed() const {
         return channelHasBeenPressed >= 0;
     }

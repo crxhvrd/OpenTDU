@@ -96,6 +96,11 @@ void GMVideoBumper::tick( float deltaTime, float totalTime ) {
 
                 bool bVar6 = MngMovie::SkipMovieRequested();
                 if ( !bVar6 ) {
+                    bSkipRequested = true;
+                    return;
+                }
+
+                if ( !bSkipRequested ) {
                     return;
                 }
             }

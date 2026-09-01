@@ -37,6 +37,9 @@ private:
     static std::string FlashFrameLabel;
 
 private:
+    bool bSkipRequested = false;
+
+private:
     MngMovie movieManager;
     MngFlashLocalize flashLocalization;
     MngVideoBumper videoBumperManager;
