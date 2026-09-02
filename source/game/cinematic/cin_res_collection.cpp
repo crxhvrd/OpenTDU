@@ -8,6 +8,7 @@
 
 #include "core/maths_helper.h"
 #include "core/hash/crc64.h"
+#include "core/random/bcpl.h"
 #include "filesystem/bank.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/entity/entity_pedestrian.h"
@@ -29,12 +30,71 @@
 #include "player_data/saved_garage.h"
 #include "render/mng_env_map.h"
 #include "render/animation/clip.h"
+#include "render/camera/gs_camera.h"
+#include "render/camera/camera_cinematic.h"
+#include "game/scenaric/entity/entity_cinematic.h"
 #include "world/gs_world_streaming.h"
 
 // TDU_PNJ row index in the game database
 static constexpr int32_t kPNJDatabaseIndex = 0x10;
 static constexpr int32_t kDefaultCarDBID = 999;
 static constexpr int32_t kDefaultBikeDBID = 666;
+
+static constexpr int32_t kCinematicCameraMode = 0xa; // DAT_00f143b4
+
+static constexpr float kCinematicReferenceAspectRatio = 1.7777778f;
+static float gCinematicShakePreviousTime = 0.0f; // DAT_016a6a14
+
+static void StepCameraShakeAngle( float &angle,
+                                  float &target,
+                                  const float speed,
+                                  const float amplitude,
+                                  const float deltaTime ) {
+    const float step = speed * deltaTime;
+
+    float value = target;
+    if ( target - angle > step ) {
+        value = angle + step;
+    }
+    if ( -step > value - angle ) {
+        value = angle - step;
+    }
+    angle = value;
+
+    if ( value == target && gpScenaric != nullptr ) {
+        target = RandomUnit( gpScenaric->getRandomGenerator() ) * amplitude;
+    }
+}
+
+static void SetPlayerCarCinematicMode( bool bCinematic ) {
+    if ( gpScenaric == nullptr ) {
+        return;
+    }
+    CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+    if ( pCarState == nullptr ) {
+        return;
+    }
+    PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
+    if ( pVehicle == nullptr || !pVehicle->isActive() ) {
+        return;
+    }
+
+    if ( pVehicle->isInCinematicMode() == bCinematic ) {
+        return;
+    }
+
+    OTDU_LOG_DEBUG( "PLAYER_CAR: %s cinematic mode (driving input %s)\n",
+                    bCinematic ? "entered" : "left",
+                    bCinematic ? "detached" : "restored" );
+
+    PhysicsLock lock;
+    pVehicle->setCinematicMode( bCinematic );
+    if ( bCinematic ) {
+        pVehicle->setIgnition( false, false );
+    } else {
+        pVehicle->setKeyframed( false, false );
+    }
+}
 
 static GarageSlot *GetCurrentGarageSlot() {
     IPlayerData *pSave =
@@ -173,7 +233,18 @@ InterpolateVec3RefTrack( const uint16_t *pTrack, float time, int32_t *pRefId ) {
     return Lerp( vLower, vUpper, frac );
 }
 
+void CinResCollection::releasePlayerCarActors() {
+    for ( int32_t i = 0; i < numActors; i++ ) {
+        if ( actors[i].Kind == CinematicActor::CAK_PlayerCar ) {
+            SetPlayerCarCinematicMode( false );
+            return;
+        }
+    }
+}
+
 void CinResCollection::reset() {
+    releasePlayerCarActors();
+    releaseCinematicCamera();
     pCinematicData = nullptr;
     pRefData = nullptr;
     pBuffer = nullptr;
@@ -304,7 +375,7 @@ bool CinResCollection::load( const void *pData,
             pRefTable[i].pHandle = nullptr;
             // Low byte of the first dword is the ref type; type 3 is data-only.
             if ( ( pEntry[0] & 0xff ) != 3 ) {
-                buildRefMedia( pEntry, i );
+                pRefTable[i].pHandle = buildRefMedia( pEntry );
             }
             pEntry += *reinterpret_cast<const uint16_t *>( pEntry + 2 );
         }
@@ -531,12 +602,6 @@ void CinResCollection::tickController( const uint8_t *pController,
 
     const int32_t sourceIdx = static_cast<int32_t>( kf[1] );
     const uint32_t mediaId = *reinterpret_cast<const uint32_t *>( &kf[2] );
-
-    if ( !bQuiet )
-        OTDU_LOG_ALWAYS(
-            "[CINEVAL] t=%.3f numKeys=%u lower=%d frac=%.3f -> remapped=%.3f "
-            "sourceIdx=%d mediaId=0x%x\n",
-            time, numKeys, lower, frac, remapped, sourceIdx, mediaId );
 
     if ( pSourceTable == nullptr || pCinematicData == nullptr ) {
         return;
@@ -896,15 +961,105 @@ void CinResCollection::tickCameraMedia( const CinMediaContext *pCtx,
             heading.x(), heading.y(), heading.z(), heading.w(), up.x(), up.y(),
             up.z(), target.x(), target.y(), target.z(), targetRef, posRef );
 
-    applyCameraTransform( transformType, position, heading, fov );
+    applyCameraTransform( pCtx, transformType, position, heading, fov, target,
+                          up, posRef, targetRef, time );
 }
 
-void CinResCollection::applyCameraTransform( int32_t transformType,
+bool CinResCollection::resolveRefMatrix( const CinMediaContext *pCtx,
+                                         int32_t refIdx,
+                                         Matrix4x4f_t &outMatrix ) const {
+    if ( pCtx == nullptr || pCtx->pSource == nullptr ||
+         pCtx->pSource->pSceneRefs == nullptr || refIdx < 0 ) {
+        return false;
+    }
+
+    const CinRefSlot &slot = pCtx->pSource->pSceneRefs[refIdx];
+    const uint8_t *pDesc = static_cast<const uint8_t *>( slot.pDescriptor );
+    if ( pDesc == nullptr || pDesc[0] != 0x0c || slot.pHandle == nullptr ) {
+        return false;
+    }
+
+    const CinematicActor *pActor =
+        static_cast<const CinematicActor *>( slot.pHandle );
+    if ( pActor->Kind == CinematicActor::CAK_PlayerCar ) {
+        CarState *pCarState = ( gpScenaric != nullptr )
+                                  ? gpScenaric->getLocalPlayer().getCarState()
+                                  : nullptr;
+        if ( pCarState == nullptr ) {
+            return false;
+        }
+        outMatrix = pCarState->getBody()->OffsetedWorldMatrix;
+        return true;
+    }
+
+    Entity *pEntity = static_cast<Entity *>( pActor->pEntity );
+    if ( pEntity == nullptr ) {
+        return false;
+    }
+    outMatrix = pEntity->getModelMatrix();
+    return true;
+}
+
+void CinResCollection::applyCameraTransform( const CinMediaContext *pCtx,
+                                             int32_t transformType,
                                              const Eigen::Vector3f &position,
                                              const Eigen::Quaternionf &heading,
-                                             float fov ) {
+                                             float fov,
+                                             const Eigen::Vector3f &target,
+                                             const Eigen::Vector3f &up,
+                                             int32_t posRef,
+                                             int32_t targetRef,
+                                             float time ) {
     // FUN_007e3a50
     cameraView.bValid = false;
+    CameraCinematic *pCamera =
+        ( pCtx != nullptr && pCtx->pHandleSlot != nullptr )
+            ? static_cast<CameraCinematic *>( *pCtx->pHandleSlot )
+            : nullptr;
+
+    if ( transformType == 2 ) {
+        Matrix4x4f_t refMatrix = Matrix4x4f_t::Identity();
+
+        Eigen::Vector3f worldPos = position;
+        if ( resolveRefMatrix( pCtx, posRef, refMatrix ) ) {
+            worldPos = TDUMat4x4MulVec( refMatrix, position );
+        } else if ( bHasBaseMatrix ) {
+            worldPos = TDUMat4x4MulVec( baseMatrix, position );
+        }
+
+        Eigen::Vector3f worldTarget = target;
+        Matrix4x4f_t targetMatrix = Matrix4x4f_t::Identity();
+        const bool bTargetRelative =
+            resolveRefMatrix( pCtx, targetRef, targetMatrix );
+        if ( bTargetRelative ) {
+            worldTarget = TDUMat4x4MulVec( targetMatrix, target );
+        } else if ( bHasBaseMatrix ) {
+            worldTarget = TDUMat4x4MulVec( baseMatrix, target );
+        }
+
+        if ( ( worldTarget - worldPos ).squaredNorm() < 1.0e-6f ) {
+            return; 
+        }
+
+        Eigen::Vector3f worldUp = up;
+        if ( worldUp.squaredNorm() < 1.0e-6f ) {
+            worldUp = Eigen::Vector3f( 0.0f, 1.0f, 0.0f );
+        } else if ( bTargetRelative || posRef >= 0 ) {
+            const Matrix4x4f_t &m = ( posRef >= 0 ) ? refMatrix : targetMatrix;
+            worldUp = ( m.topLeftCorner<3, 3>().transpose() * worldUp )
+                          .normalized();
+        }
+
+        cameraView.Position = worldPos;
+        cameraView.Target = worldTarget;
+        cameraView.Up = worldUp;
+        cameraView.Fov = fov;
+        cameraView.bValid = true;
+
+        applyViewToCinematicCamera( pCamera, time, false );
+        return;
+    }
+
     if ( transformType != 1 ) {
         OTDU_UNIMPLEMENTED;
         return;
@@ -915,19 +1070,25 @@ void CinResCollection::applyCameraTransform( int32_t transformType,
         Eigen::Vector4f( position.x(), position.y(), position.z(), 1.0f );
     if ( bHasBaseMatrix ) {
         rotation = rotation * baseMatrix;
+    } else if ( gpWorldStreaming != nullptr &&
+                gpWorldStreaming->isEnabled() ) {
+        const Eigen::Vector4f &shift = gpWorldStreaming->getPosition();
+        rotation.row( 3 ).head<3>() -= shift.head<3>();
     }
 
     const Eigen::Vector3f forward = rotation.row( 2 ).head<3>();
-    const Eigen::Vector3f up = rotation.row( 1 ).head<3>();
+    const Eigen::Vector3f rotUp = rotation.row( 1 ).head<3>();
     const Eigen::Vector3f worldPos = rotation.row( 3 ).head<3>();
-    const Eigen::Vector3f target = worldPos + forward;
+    const Eigen::Vector3f lookAt = worldPos + forward;
 
     // Publish the view so the active render camera can be latched to it.
     cameraView.Position = worldPos;
-    cameraView.Target = target;
-    cameraView.Up = up;
+    cameraView.Target = lookAt;
+    cameraView.Up = rotUp;
     cameraView.Fov = fov;
     cameraView.bValid = true;
+
+    applyViewToCinematicCamera( pCamera, time, true );
 
     if ( !bQuiet )
         OTDU_LOG_ALWAYS(
@@ -1005,9 +1166,49 @@ bool CinResCollection::buildSourceMedia( const CinSourceEntry &source,
     return parseSourceScene( pHandle, sceneSize, pSourceData );
 }
 
-void CinResCollection::buildRefMedia( const uint8_t *, int32_t ) {
+void *CinResCollection::buildRefMedia( const uint8_t *pRefEntry ) {
     // FUN_007e2420
-    OTDU_UNIMPLEMENTED;
+    if ( pRefEntry == nullptr ) {
+        return nullptr;
+    }
+
+    const uint8_t refType = pRefEntry[0];
+    const bool bHasId = ( pRefEntry[1] & 1 ) != 0;
+    const char *pPayload =
+        reinterpret_cast<const char *>( pRefEntry + ( bHasId ? 0xc : 4 ) );
+
+    switch ( refType ) {
+    case 0x02: {
+        // FUN_007e7cc0
+        if ( !bHasId ) {
+            return nullptr;
+        }
+        const uint32_t low = *reinterpret_cast<const uint32_t *>( pRefEntry + 4 );
+        const uint32_t high =
+            *reinterpret_cast<const uint32_t *>( pRefEntry + 8 );
+        (void)low;
+        (void)high;
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCCinematic id table 
+        return nullptr;
+    }
+    case 0x0c: {
+        char scratch[200] = {};
+        strncpy( scratch, pPayload, sizeof( scratch ) - 1 );
+        char *pActors = std::strstr( scratch, "Actors:" );
+        if ( pActors == nullptr ) {
+            return nullptr;
+        }
+        char *pName = pActors + 7;
+        char *pEnd = std::strchr( pName, ':' );
+        if ( pEnd == nullptr ) {
+            return nullptr;
+        }
+        *pEnd = '\0';
+        return findActor( pName );
+    }
+    default:
+        return nullptr;
+    }
 }
 
 void *CinResCollection::loadSourceByName( const char *pName,
@@ -1104,7 +1305,7 @@ bool CinResCollection::parseSourceScene( void *pSceneBlob,
             pSceneRefTable[i].pDescriptor = pRefEntry;
             pSceneRefTable[i].pHandle = nullptr;
             if ( ( pRefEntry[0] & 0xff ) != 3 ) {
-                buildRefMedia( pRefEntry, i );
+                pSceneRefTable[i].pHandle = buildRefMedia( pRefEntry );
             }
             pRefEntry += *reinterpret_cast<const uint16_t *>( pRefEntry + 2 );
         }
@@ -1117,8 +1318,94 @@ bool CinResCollection::parseSourceScene( void *pSceneBlob,
 
 void *CinResCollection::createCameraMedia( const CinSceneMediaHeader * ) {
     // FUN_007e3720
-    OTDU_UNIMPLEMENTED;
-    return nullptr;
+    if ( pOwner != nullptr && !pOwner->hasFocus() ) {
+        return nullptr;
+    }
+
+    if ( pCinematicCamera == nullptr && gpCamera != nullptr ) {
+        CameraGame *pFound = gpCamera->findCameraWithMode(
+            kCinematicCameraMode, gpCamera->getBoundCarState() );
+        if ( pFound != nullptr && gpCamera->isRegisteredCamera( pFound ) ) {
+            pCinematicCamera = static_cast<CameraCinematic *>( pFound );
+        }
+    }
+
+    if ( pCinematicCamera != nullptr ) {
+        pCinematicCamera->setCinematicInterface(
+            const_cast<CinResCollection *>( this ) );
+        pCinematicCamera->setKeepGlobalPlanes( false );
+    }
+
+    return pCinematicCamera;
+}
+
+Eigen::Vector3f CinResCollection::tickCameraShake( CameraCinematic *pCamera,
+                                                   const float deltaTime ) {
+    // FUN_007e0620
+    if ( !cameraShake.bEnabled ) {
+        return Eigen::Vector3f::Zero();
+    }
+
+    const Eigen::Vector3f viewVector =
+        pCamera->getTargetOffset() - pCamera->getWorldPositionOffset();
+    const float distance = viewVector.norm();
+
+    StepCameraShakeAngle( cameraShake.AngleX, cameraShake.TargetAngleX,
+                          cameraShake.Speed, cameraShake.Amplitude, deltaTime );
+    StepCameraShakeAngle( cameraShake.AngleY, cameraShake.TargetAngleY,
+                          cameraShake.Speed, cameraShake.Amplitude, deltaTime );
+
+    const Eigen::Vector3f right =
+        pCamera->getUp().cross( viewVector ).normalized();
+    const Eigen::Vector3f up = viewVector.cross( right ).normalized();
+
+    return right * tanf( cameraShake.AngleX ) * distance +
+           up * tanf( cameraShake.AngleY ) * distance;
+}
+
+void CinResCollection::applyViewToCinematicCamera( CameraCinematic *pCamera,
+                                                   const float time,
+                                                   const bool bApplyShake ) {
+    if ( pCamera == nullptr || !cameraView.bValid ) {
+        return;
+    }
+
+    pCamera->setFOV( cameraView.Fov * kDegToRad );
+    pCamera->setPositionOffseted(
+        Eigen::Vector4f( cameraView.Position.x(), cameraView.Position.y(),
+                         cameraView.Position.z(), 1.0f ) );
+    pCamera->setUp( Eigen::Vector4f( cameraView.Up.x(), cameraView.Up.y(),
+                                     cameraView.Up.z(), 0.0f ) );
+    pCamera->setTargetOffseted(
+        Eigen::Vector4f( cameraView.Target.x(), cameraView.Target.y(),
+                         cameraView.Target.z(), 1.0f ) );
+
+    if ( bApplyShake ) {
+        float shakeDelta = time - gCinematicShakePreviousTime;
+        shakeDelta = std::min( std::max( shakeDelta, 0.0f ), 1.0f );
+        gCinematicShakePreviousTime = time;
+
+        const Eigen::Vector3f shake = tickCameraShake( pCamera, shakeDelta );
+        const Eigen::Vector3f shakenTarget = cameraView.Target + shake;
+        pCamera->setTargetOffseted( Eigen::Vector4f(
+            shakenTarget.x(), shakenTarget.y(), shakenTarget.z(), 1.0f ) );
+    }
+
+    pCamera->setFOVAndAspectRatio( kCinematicReferenceAspectRatio,
+                                   pCamera->getFOV() );
+
+    pCamera->updateMatrix( pCamera->getWorldPosition(), pCamera->getUp(),
+                           pCamera->getTarget() );
+}
+
+void CinResCollection::releaseCinematicCamera() {
+    if ( pCinematicCamera == nullptr ) {
+        return;
+    }
+    if ( pCinematicCamera->getCinematicInterface() == this ) {
+        pCinematicCamera->destroy();
+    }
+    pCinematicCamera = nullptr;
 }
 
 void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
@@ -1245,6 +1532,8 @@ void *CinResCollection::spawnActorEntity( const char *pName,
             void *pCar = spawnPlayerCar();
             if ( pCar != nullptr ) {
                 outKind = CinematicActor::CAK_PlayerCar;
+                // FUN_007e4b90
+                SetPlayerCarCinematicMode( true );
             }
             return nullptr;
         }
@@ -1393,6 +1682,8 @@ void *CinResCollection::spawnPlayerCar() {
 
     if ( pPhysicsVehicle != nullptr && gpPhysics != nullptr ) {
         PhysicsLock lock;
+        pPhysicsVehicle->setCinematicMode( true );
+        pPhysicsVehicle->setIgnition( false, false );
         pPhysicsVehicle->resetToTransform( spawn );
     }
 
@@ -1436,12 +1727,11 @@ void CinResCollection::applyPlayerCarTransform(
     PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
     if ( pVehicle != nullptr && gpPhysics != nullptr ) {
         PhysicsLock lock;
-        pVehicle->resetToTransform( world );
+        if ( !pVehicle->isKeyframed() ) {
+            pVehicle->setKeyframed( true, true );
+        }
+        pVehicle->moveKeyframed( world );
     }
-
-    CarBodyState *pBody = pCarState->getBody();
-    pBody->WorldMatrix = world;
-    pBody->OffsetedWorldMatrix = transform;
 }
 
 void *CinResCollection::spawnPedestrian( int32_t /*gender*/ ) {

@@ -152,6 +152,7 @@ private:
     bool bStopGuard;
     bool bStackActive;
     bool bCameraHandedOver; 
+    bool bCameraDrivenByObject;
 
     eGameMode activeGameMode;
 };

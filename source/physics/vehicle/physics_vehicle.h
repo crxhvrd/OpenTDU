@@ -148,6 +148,11 @@ public:
     void setDrivingInputScripted( bool bScripted ) {
         bDrivingInputScripted = bScripted;
     }
+    void setCinematicMode( bool bCinematic ) { bCinematicMode = bCinematic; }
+    bool isInCinematicMode() const { return bCinematicMode; }
+    bool isKeyframed() const { return bKeyframed; }
+    void setPhysicsPaused( bool bPaused ) { bPausePhysics = bPaused; }
+    bool isPhysicsPaused() const { return bPausePhysics; }
     void resetAutomaticGearbox();
     bool isActive() const { return pChassisBody != nullptr; }
     const JPH::Body *getChassisBody() const { return pChassisBody; }
@@ -209,6 +214,9 @@ public:
     void setClutchOverride( float engagement );
 
     void resetToTransform( const Matrix4x4f_t &transform );
+    void setKeyframed( bool bInKeyframed, bool bForceMatrix );
+    void moveKeyframed( const Matrix4x4f_t &worldTransform );
+    void updateKeyframedVelocity( float deltaTime );
 
     void OnStep( const JPH::PhysicsStepListenerContext &inContext ) override;
 
@@ -335,6 +343,13 @@ private:
     float autoGearboxThrottle;
     float autoGearboxBrake;
     bool bDrivingInputScripted;
+    bool bCinematicMode;
+    bool bPausePhysics;
+    bool bKeyframed;
+    bool bForceKeyframeMatrix;
+    Matrix4x4f_t keyframeMatrix;
+    Eigen::Vector3f prevKeyframePosition;
+    bool bKeyframedVelocityPrimed;
     float filteredSteer;
     float steerCommand; // shaped, speed-scaled steer (drives the wheel angle)
 

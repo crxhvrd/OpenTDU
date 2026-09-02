@@ -2296,7 +2296,8 @@ float GSPhysics::getGroundHeight( float x, float z ) {
     JPH::RayCastResult hit;
 
     lockMutex();
-    const bool bHit = pPhysicsSystem->GetNarrowPhaseQuery().CastRay( ray, hit );
+    const bool bHit = pPhysicsSystem->GetNarrowPhaseQuery().CastRay(
+        ray, hit, JPH::BroadPhaseLayerFilter(), StaticOrRoadLayerFilter() );
     unlockMutex();
 
     if ( !bHit ) {

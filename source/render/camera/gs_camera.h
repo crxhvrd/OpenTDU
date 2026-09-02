@@ -75,6 +75,24 @@ public:
         applyCinematicOverride( defaultCamera );
     }
 
+    inline void setNextCamera( CameraGame *pCamera,
+                               CameraGame *pTransition,
+                               const float time ) {
+        nextCameraMode = -1;
+        pTransitionCamera = pTransition;
+        transitionTime = time;
+        pNextCamera = pCamera;
+    }
+
+    inline bool isRegisteredCamera( const CameraGame *pCamera ) const {
+        for ( uint32_t i = 0; i < numCameraRegistered; i++ ) {
+            if ( cameraRegister[i] == pCamera ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     inline bool isInTransition() const {
         // TODO: Most likely incorrect
         return (uintptr_t)pActiveVehicleCamera == (uintptr_t)&transition;

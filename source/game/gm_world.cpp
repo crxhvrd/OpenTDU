@@ -467,6 +467,9 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
          !pPlayerPhysicsVehicle->isActive() ) {
         return;
     }
+    if ( pPlayerPhysicsVehicle->isInCinematicMode() ) {
+        return;
+    }
     CarState *pCar = ( gpScenaric != nullptr )
                          ? gpScenaric->getLocalPlayer().getCarState()
                          : nullptr;

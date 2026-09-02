@@ -7,6 +7,8 @@
 
 class BankInstance;
 class ClipInstance;
+class CameraCinematic;
+class EntityCinematic;
 
 struct CinematicActor {
     enum eKind : int32_t {
@@ -22,6 +24,16 @@ struct CinematicActor {
 
 class CinResCollection {
 public:
+    struct CameraShakeState {
+        bool bEnabled = false;     
+        float Amplitude = 0.002f;  // DAT_00f41754
+        float Speed = 0.2f;        // FLOAT_00f41730
+        float TargetAngleX = 0.0f; 
+        float TargetAngleY = 0.0f; 
+        float AngleX = 0.0f;       
+        float AngleY = 0.0f;      
+    };
+
     struct CameraView {
         Eigen::Vector3f Position = Eigen::Vector3f::Zero();
         Eigen::Vector3f Target = Eigen::Vector3f::Zero();
@@ -65,6 +77,10 @@ public:
     inline void setMusicEmitter( class CinematicMusicEmitter *pEmitter ) {
         pMusicEmitter = pEmitter;
     }
+    inline void setOwner( EntityCinematic *pCinematic ) { pOwner = pCinematic; }
+    inline CameraCinematic *getCinematicCamera() const {
+        return pCinematicCamera;
+    }
     inline void setActorEntity( int32_t index, void *pEntity ) {
         if ( index >= 0 && index < numActors ) {
             actors[index].pEntity = pEntity;
@@ -79,6 +95,7 @@ public:
     void debugDumpControllers() const; // TODO: REMOVE ME
 
     void reset();
+    void releasePlayerCarActors();
 
     bool createInterface( const void *pBankData,
                           uint32_t size,
@@ -115,6 +132,8 @@ private:
     tickSource( const CinSourceContext *pCtx, float time, uint32_t mediaId );
     void tickActorMedia( const CinMediaContext *pCtx, float time );
     void tickCameraMedia( const CinMediaContext *pCtx, float time );
+    Eigen::Vector3f tickCameraShake( CameraCinematic *pCamera,
+                                     float deltaTime );
 
     bool processMusicMessage( uint32_t tag4 );
     void processCinematicMessages( const uint16_t *pTrack, float time );
@@ -131,16 +150,29 @@ private:
                               const Eigen::Vector3f &scale,
                               bool bHasTransformTrack );
     void applyPlayerCarTransform( const Matrix4x4f_t &transform );
-    void applyCameraTransform( int32_t transformType,
+    void applyCameraTransform( const CinMediaContext *pCtx,
+                               int32_t transformType,
                                const Eigen::Vector3f &position,
                                const Eigen::Quaternionf &heading,
-                               float fov );
+                               float fov,
+                               const Eigen::Vector3f &target,
+                               const Eigen::Vector3f &up,
+                               int32_t posRef,
+                               int32_t targetRef,
+                               float time );
+    bool resolveRefMatrix( const CinMediaContext *pCtx,
+                           int32_t refIdx,
+                           Matrix4x4f_t &outMatrix ) const;
+    void applyViewToCinematicCamera( CameraCinematic *pCamera,
+                                     float time,
+                                     bool bApplyShake );
+    void releaseCinematicCamera();
 
 private:
     bool parseCinematic( const void *pData, uint32_t size );
     const uint8_t *resolveRef( int32_t index ) const;
     bool buildSourceMedia( const CinSourceEntry &source, void **&pSourceData );
-    void buildRefMedia( const uint8_t *pRefEntry, int32_t slot );
+    void *buildRefMedia( const uint8_t *pRefEntry );
     void *loadSourceByName( const char *pName,
                             const uint64_t *pId,
                             uint32_t *pOutSize );
@@ -181,6 +213,9 @@ private:
     bool bHasBaseMatrix = false;
     std::vector<const void *> firedMessages;
     class CinematicMusicEmitter *pMusicEmitter = nullptr;
+    EntityCinematic *pOwner = nullptr;
+    CameraCinematic *pCinematicCamera = nullptr;
+    CameraShakeState cameraShake{};
 
 public:
     char debugName[64] = {}; // the owning cinematic's name, for logs

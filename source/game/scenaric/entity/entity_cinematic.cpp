@@ -23,9 +23,12 @@
 #include "render/animation/skeleton.h"
 #include "world/gs_world_streaming.h"
 #include "render/camera/gs_camera.h"
+#include "render/camera/camera_cinematic.h"
+#include "render/gs_render.h"
 #include "tdu_instance.h"
 
 static constexpr float kMillisecondsToSeconds = 0.001f; // FLOAT_00f4167c
+static constexpr float kCinematicPlaneUnset = -1.0f; // FLOAT_00f41664
 
 namespace {
     void ResolveCinematicEntry( BankInstance &bank,
@@ -141,8 +144,10 @@ EntityCinematic::EntityCinematic()
       bStopGuard( false ),
       bStackActive( false ),
       bCameraHandedOver( false ),
+      bCameraDrivenByObject( false ),
       activeGameMode( GM_FreeRide ) {
     // FUN_007e80d0
+    cinematicPlayer.setOwner( this );
 }
 
 EntityCinematic::~EntityCinematic() {
@@ -220,6 +225,31 @@ void EntityCinematic::applyForegroundCine() {
     if ( ( cinematicPlaybackFlags & 0x100u ) != 0 && gpVehicleSound != nullptr ) {
         savedMutedVehicleCategories = gpVehicleSound->getMutedCategoryMask();
         gpVehicleSound->setMutedCategoryMask( 0x1eu );
+    }
+
+    float shotNearPlane = gpRender->getDefaultNearPlane();
+    if ( cinematicZNear != kCinematicPlaneUnset ) {
+        shotNearPlane = cinematicZNear;
+    }
+
+    float shotFarPlane = gpRender->getDefaultFarPlane();
+    if ( cinematicZFar != kCinematicPlaneUnset ) {
+        shotFarPlane = cinematicZFar;
+    }
+
+    CameraCinematic *pCinematicCamera = cinematicPlayer.getCinematicCamera();
+    if ( pCinematicCamera != nullptr && gpCamera != nullptr ) {
+        pCinematicCamera->setNearPlane( shotNearPlane );
+        pCinematicCamera->setFarPlane( shotFarPlane );
+
+        gpCamera->setFarPlane( pCinematicCamera->getFarPlane() );
+        gpCamera->setNearPlane( pCinematicCamera->getNearPlane() );
+        gpCamera->setEnableDepthAware( true );
+        gpCamera->setInteriorFarPlane(
+            pCinematicCamera->getInteriorFarPlane() );
+        gpCamera->setInteriorNearPlane(
+            pCinematicCamera->getInteriorNearPlane() );
+        gpCamera->setEnableDepthAwareInterior( true );
     }
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: the rest of FUN_007e89d0
@@ -501,6 +531,8 @@ void EntityCinematic::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     pInstance->cinematicPlaybackFlags2 = cinematicPlaybackFlags2;
     pInstance->StartTime = StartTime;
     pInstance->CineTotalTime = CineTotalTime;
+    pInstance->cinematicZNear = cinematicZNear;
+    pInstance->cinematicZFar = cinematicZFar;
     pInstance->pSCBank = pSCBank;
     pInstance->cutsceneName = cutsceneName;
     pInstance->pSpotWorld = pSpotWorld;
@@ -686,6 +718,13 @@ bool EntityCinematic::begin() {
     }
 
     if ( hasFocus() ) {
+        CameraCinematic *pCinematicCamera =
+            cinematicPlayer.getCinematicCamera();
+        if ( pCinematicCamera != nullptr && !bDontSwitchCamera &&
+             gpCamera != nullptr ) {
+            gpCamera->setNextCamera( pCinematicCamera, nullptr, 0.0f );
+        }
+
         applyForegroundCine();
     }
 
@@ -714,15 +753,28 @@ void EntityCinematic::publishCameraView() {
         return;
     }
 
-    if ( !bCameraHandedOver ) {
+    CameraCinematic *pCinematicCamera = cinematicPlayer.getCinematicCamera();
+    const bool bDrivesCamera = pCinematicCamera != nullptr &&
+                               gpCamera->getActiveCamera() == pCinematicCamera;
+
+    if ( !bCameraHandedOver || bCameraDrivenByObject != bDrivesCamera ) {
         bCameraHandedOver = true;
-        OTDU_LOG_INFO( "Cinematic '%s' took the camera: pos=(%.1f %.1f %.1f) "
+        bCameraDrivenByObject = bDrivesCamera;
+        OTDU_LOG_DEBUG( "Cinematic '%s' took the camera: pos=(%.1f %.1f %.1f) "
                        "target=(%.1f %.1f %.1f) fov=%.1f deg, %.2fs%s "
-                       "(LED flags 0x%08x)\n",
+                       "(LED flags 0x%08x, via %s, active cam flags 0x%x)\n",
                        name.c_str(), view.Position.x(), view.Position.y(),
                        view.Position.z(), view.Target.x(), view.Target.y(),
                        view.Target.z(), view.Fov, CineTotalTime,
-                       bLoop ? ", looping" : "", cinematicPlaybackFlags );
+                       bLoop ? ", looping" : "", cinematicPlaybackFlags,
+                       bDrivesCamera ? "the CINEMATIC camera"
+                                     : "the view override",
+                       gpCamera->getActiveCamera()->getFlags() );
+    }
+
+    if ( bDrivesCamera ) {
+        gpCamera->clearCinematicCameraOverride();
+        return;
     }
 
     gpCamera->setCinematicCameraOverride( view.Position, view.Up, view.Target,
@@ -739,6 +791,8 @@ void EntityCinematic::end() {
         pMusicEmitter->uninstallSoundBanks();
         releaseMusicEmitter();
     }
+
+    cinematicPlayer.releasePlayerCarActors();
 
     if ( gpActiveGMScene != nullptr ) {
         MngActor &sceneActors = gpActiveGMScene->getActorManager();
@@ -769,6 +823,7 @@ void EntityCinematic::end() {
     if ( hasFocus() && gpCamera != nullptr ) {
         gpCamera->clearCinematicCameraOverride();
         bCameraHandedOver = false;
+        bCameraDrivenByObject = false;
     }
     if ( bWasRunning && pGMInterface != nullptr ) {
         pGMInterface->executeAction( CE_Ended, this );

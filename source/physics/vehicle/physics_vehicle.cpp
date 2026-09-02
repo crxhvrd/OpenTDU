@@ -722,6 +722,13 @@ PhysicsVehicle::PhysicsVehicle()
       autoGearboxThrottle( 0.0f ),
       autoGearboxBrake( 0.0f ),
       bDrivingInputScripted( false ),
+      bCinematicMode( false ),
+      bPausePhysics( false ),
+      bKeyframed( false ),
+      bForceKeyframeMatrix( false ),
+      keyframeMatrix( Matrix4x4f_t::Identity() ),
+      prevKeyframePosition( Eigen::Vector3f::Zero() ),
+      bKeyframedVelocityPrimed( false ),
       filteredSteer( 0.0f ),
       steerCommand( 0.0f ),
       steerCurveScale( 1.0f ),
@@ -871,6 +878,13 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     resetAutomaticGearbox();
     bDrivingInputScripted = false;
+    bCinematicMode = false;
+    bPausePhysics = false;
+    bKeyframed = false;
+    bForceKeyframeMatrix = false;
+    keyframeMatrix = Matrix4x4f_t::Identity();
+    prevKeyframePosition = Eigen::Vector3f::Zero();
+    bKeyframedVelocityPrimed = false;
     rawInputThrottle = 0.0f;
     rawInputBrake = 0.0f;
 
@@ -2269,6 +2283,10 @@ void PhysicsVehicle::OnStep(
     }
 
     const JPH::Body &chassis = *pChassisBody;
+    if ( bPausePhysics ) {
+        return;
+    }
+
     {
         const JPH::Vec3 v = chassis.GetLinearVelocity();
         arbitrateAutomaticGearbox(
@@ -2704,6 +2722,8 @@ void PhysicsVehicle::tick( float deltaTime ) {
         return;
     }
 
+    updateKeyframedVelocity( deltaTime );
+
     const int32_t requestedLevel =
         ( gVehicleDrivingHelpOverride >= 0 )
             ? gVehicleDrivingHelpOverride
@@ -2793,6 +2813,7 @@ void PhysicsVehicle::onWorldShifted( const Eigen::Vector3f &worldShift ) {
 
     translate( physicsMatrix, worldShift );
     translate( displayMatrix, worldShift );
+    translate( keyframeMatrix, worldShift );
     invChassisMatrix = OrthoInvert( physicsMatrix );
 }
 
@@ -2856,7 +2877,9 @@ PhysicsVehicle::computeDisplayMatrix( const Matrix4x4f_t &sourceMatrix ) const {
 
 void PhysicsVehicle::publishStepPose() {
     // FUN_0081dfd0
-    physicsMatrix = getChassisShiftedMatrix();
+    physicsMatrix = ( bKeyframed && bForceKeyframeMatrix )
+                        ? keyframeMatrix
+                        : getChassisShiftedMatrix();
 
     // TODO: REPLAY
     displayMatrix = computeDisplayMatrix( physicsMatrix );
@@ -2904,6 +2927,88 @@ void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform ) {
     const Eigen::Vector4f origin = GSPhysics::GetShiftOrigin();
     world.SetTranslation( world.GetTranslation() -
                           JPH::Vec3( origin.x(), origin.y(), origin.z() ) );
+
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    const JPH::BodyID id = pChassisBody->GetID();
+    bi.SetPositionAndRotation( id, world.GetTranslation(),
+                               world.GetQuaternion().Normalized(),
+                               JPH::EActivation::Activate );
+    bi.SetLinearAndAngularVelocity( id, JPH::Vec3::sZero(),
+                                    JPH::Vec3::sZero() );
+
+    publishStepPose();
+}
+
+void PhysicsVehicle::setKeyframed( bool bInKeyframed, bool bForceMatrix ) {
+    // FUN_0082e400
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return;
+    }
+
+    if ( bKeyframed != bInKeyframed ) {
+        JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+        bi.SetMotionType( pChassisBody->GetID(),
+                          bInKeyframed ? JPH::EMotionType::Kinematic
+                                       : JPH::EMotionType::Dynamic,
+                          JPH::EActivation::Activate );
+        bKeyframed = bInKeyframed;
+        bKeyframedVelocityPrimed = false;
+        OTDU_LOG_DEBUG( "Vehicle body is now %s\n",
+                        bInKeyframed ? "KEYFRAMED (cinematic owns the pose)"
+                                     : "dynamic again" );
+    }
+
+    bForceKeyframeMatrix = bInKeyframed && bForceMatrix;
+    if ( bForceKeyframeMatrix ) {
+        keyframeMatrix = getChassisShiftedMatrix();
+    }
+}
+
+void PhysicsVehicle::updateKeyframedVelocity( float deltaTime ) {
+    if ( !bKeyframed || pPhysicsSystem == nullptr || pChassisBody == nullptr ||
+         deltaTime <= 0.0f ) {
+        return;
+    }
+
+    const Eigen::Vector3f position( keyframeMatrix( 3, 0 ),
+                                    keyframeMatrix( 3, 1 ),
+                                    keyframeMatrix( 3, 2 ) );
+    if ( bKeyframedVelocityPrimed ) {
+        const Eigen::Vector3f velocity =
+            ( position - prevKeyframePosition ) / deltaTime;
+        pPhysicsSystem->GetBodyInterface().SetLinearVelocity(
+            pChassisBody->GetID(),
+            JPH::Vec3( velocity.x(), velocity.y(), velocity.z() ) );
+    }
+    prevKeyframePosition = position;
+    bKeyframedVelocityPrimed = true;
+}
+
+void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform ) {
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return;
+    }
+
+    const float lift = bodyHeight * 0.5f;
+    Matrix4x4f_t chassis = worldTransform;
+    for ( int c = 0; c < 3; ++c ) {
+        chassis( 3, c ) += worldTransform( 1, c ) * lift;
+    }
+
+    Matrix4x4f_t shifted = chassis;
+    const Eigen::Vector4f origin = GSPhysics::GetShiftOrigin();
+    shifted( 3, 0 ) -= origin.x();
+    shifted( 3, 1 ) -= origin.y();
+    shifted( 3, 2 ) -= origin.z();
+
+    keyframeMatrix = shifted;
+    bForceKeyframeMatrix = bKeyframed;
+
+    JPH::Mat44 world = JPH::Mat44::sIdentity();
+    for ( int c = 0; c < 4; ++c ) {
+        world.SetColumn3( c, JPH::Vec3( shifted( c, 0 ), shifted( c, 1 ),
+                                        shifted( c, 2 ) ) );
+    }
 
     JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
     const JPH::BodyID id = pChassisBody->GetID();
