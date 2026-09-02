@@ -30,7 +30,7 @@ static constexpr float kHornFadeIn = 0.1f;
 static constexpr float kHornClipNear = 50.0f;
 static constexpr float kHornClipFar = 2000.0f;
 static constexpr float kHornMinVolume = 0.8f;
-static constexpr float kMaxHornDistanceSq = 1e30f; // DAT_00f41fe4
+static constexpr float kMaxHornDistanceSq = 4000000.0f; // DAT_00f41fe4
 
 #ifdef OTDU_DEVBUILD
 #include "world/gs_world.h"
@@ -686,10 +686,10 @@ void GSBoat::tick( float totalTime, float deltaTime ) {
 
     timeSinceLastHorn += deltaTime;
     if ( hornInterval <= timeSinceLastHorn ) {
-        Eigen::Vector3f listener = Eigen::Vector3f::Zero();
-        if ( gpCamera != nullptr && gpCamera->getActiveCamera() != nullptr ) {
-            listener = gpCamera->getActiveCamera()->getWorldPosition();
-        }
+        const Eigen::Vector3f &listenerPosition =
+            gEdAudio.getListener().Position;
+        const Eigen::Vector4f listener( listenerPosition.x(), 0.0f,
+                                        listenerPosition.z(), 1.0f );
 
         pHornBoat = nullptr;
         const edAudioSample *pHornSample = nullptr;
@@ -709,9 +709,10 @@ void GSBoat::tick( float totalTime, float deltaTime ) {
             }
 
             const Matrix4x4f_t &modelMatrix = pBoat->getModelMatrix();
-            const float deltaX = modelMatrix( 3, 0 ) - listener.x();
-            const float deltaZ = modelMatrix( 3, 2 ) - listener.z();
-            const float distanceSq = deltaX * deltaX + deltaZ * deltaZ;
+            const Eigen::Vector4f boatPosition( modelMatrix( 3, 0 ), 0.0f,
+                                                modelMatrix( 3, 2 ),
+                                                modelMatrix( 3, 3 ) );
+            const float distanceSq = ( boatPosition - listener ).squaredNorm();
             if ( distanceSq < bestDistanceSq ) {
                 bestDistanceSq = distanceSq;
                 pHornBoat = pBoat;
@@ -719,24 +720,24 @@ void GSBoat::tick( float totalTime, float deltaTime ) {
             }
         }
 
-        if ( pHornBoat != nullptr && pHornSoundInstance != nullptr ) {
-            const Matrix4x4f_t &modelMatrix = pHornBoat->getModelMatrix();
-            pHornSoundInstance->setSample( pHornSample );
-            pHornSoundInstance->setPosition(
-                modelMatrix.row( 3 ).head<3>(),
-                AudioDispatcherPlaybackInstanceValues::ADPCS_World );
-            pHornSoundInstance->setVolume( 1.0f );
-            pHornSoundInstance->setPitch(
-                static_cast<float>( rand() & 0x7fff ) * kRandNorm *
-                    kHornPitchRange +
-                kHornPitchBase );
-            pHornSoundInstance->play( kHornFadeIn );
-        } else {
-            pHornBoat = nullptr;
-        }
+        if ( pHornBoat != nullptr ) {
+            if ( pHornSoundInstance != nullptr ) {
+                const Matrix4x4f_t &modelMatrix = pHornBoat->getModelMatrix();
+                pHornSoundInstance->setSample( pHornSample );
+                pHornSoundInstance->setPosition(
+                    modelMatrix.row( 3 ).head<3>(),
+                    AudioDispatcherPlaybackInstanceValues::ADPCS_World );
+                pHornSoundInstance->setVolume( 1.0f );
+                pHornSoundInstance->setPitch(
+                    static_cast<float>( rand() & 0x7fff ) * kRandNorm *
+                        kHornPitchRange +
+                    kHornPitchBase );
+                pHornSoundInstance->play( kHornFadeIn );
+            }
 
-        timeSinceLastHorn = 0.0f;
-        hornInterval = ComputeHornInterval();
+            timeSinceLastHorn = 0.0f;
+            hornInterval = ComputeHornInterval();
+        }
     }
 
     // Keep the instance following the boat that is sounding.
