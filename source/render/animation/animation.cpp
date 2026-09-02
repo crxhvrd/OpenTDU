@@ -54,25 +54,6 @@ static float BracketKeyframe( int32_t numKeys,
     return d <= 0.0f ? 0.0f : ( time - p[-1] ) / d;
 }
 
-static Eigen::Quaternionf SlerpNoFlip( const Eigen::Quaternionf &q0,
-                                       const Eigen::Quaternionf &q1,
-                                       float frac ) {
-    // FUN_00501fc0
-    float dot =
-        q0.x() * q1.x() + q0.y() * q1.y() + q0.z() * q1.z() + q0.w() * q1.w();
-    dot = std::max( -1.0f, std::min( 1.0f, dot ) );
-    const float theta = std::acos( dot );
-    const float s = std::sin( theta );
-    if ( s < 1e-4f ) {
-        return q1;
-    }
-    const float a = std::sin( ( 1.0f - frac ) * theta ) / s;
-    const float b = std::sin( frac * theta ) / s;
-    return Eigen::Quaternionf( a * q0.w() + b * q1.w(), a * q0.x() + b * q1.x(),
-                               a * q0.y() + b * q1.y(),
-                               a * q0.z() + b * q1.z() );
-}
-
 static const uint8_t *
 ParseRotation( const uint8_t *pSub, float time, Eigen::Quaternionf &out ) {
     // FUN_006787d0

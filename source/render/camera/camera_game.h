@@ -55,6 +55,15 @@ public:
     void setTarget( const Eigen::Vector4f &param_1 );
     void setTargetOffseted( const Eigen::Vector4f &param_1 );
 
+    void setTransformFromQuaternion( const Eigen::Vector4f &position,
+                                     const Eigen::Quaternionf &rotation,
+                                     bool bSwapUpAndForward,
+                                     float targetDistance );
+
+protected:
+    void updateTargetAndUpFromCamToWorld( const Matrix4x4f_t &camToWorld,
+                                          float targetDistance );
+
 private:
     friend class GSCamera;
 

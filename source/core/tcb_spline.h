@@ -39,6 +39,12 @@ struct TCBSplinePosition {
     float TotalLength = 0.0f;
 
     void initialize( uint32_t param_1 );
+    void compute();
+    void computeKey( int32_t prevIndex, int32_t index, int32_t nextNextIndex );
+
+    const TCBSplinePolygon<Eigen::Vector4f> *
+    findPolygon( float time, float *pPolygonTime ) const;
+    Eigen::Vector4f evaluate( float time ) const;
 };
 
 struct TCBSplineRotation {
@@ -49,6 +55,13 @@ struct TCBSplineRotation {
     TCBSplinePolygon<Eigen::Quaternionf> *pPolygons = nullptr;
 
     void initialize( uint32_t param_1 );
+
+    void compute();
+    void computeKey( int32_t prevIndex, int32_t index, int32_t nextNextIndex );
+
+    const TCBSplinePolygon<Eigen::Quaternionf> *
+    findPolygon( float time, float *pPolygonTime ) const;
+    Eigen::Quaternionf evaluate( float time ) const;
 };
 
 struct TCBKeyFrame {

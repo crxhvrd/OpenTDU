@@ -164,3 +164,46 @@ void CameraGame::setTargetOffseted( const Eigen::Vector4f &param_1 ) {
     worldTarget.w() = 1.0f;
     worldTargetWithUnknownOffset.w() = 1.0f;
 }
+
+void CameraGame::updateTargetAndUpFromCamToWorld(
+    const Matrix4x4f_t &camToWorld, float targetDistance ) {
+    // FUN_008e1700 (inlined)
+    setTargetOffseted( camToWorld.row( 2 ).transpose() * targetDistance +
+                       worldPositionWithUnknownOffset );
+
+    upVector = camToWorld.row( 1 ).transpose();
+}
+
+void CameraGame::setTransformFromQuaternion( const Eigen::Vector4f &position,
+                                             const Eigen::Quaternionf &rotation,
+                                             bool bSwapUpAndForward,
+                                             float targetDistance ) {
+    // FUN_008e1700
+    Matrix4x4f_t camToWorld = Matrix4x4f_t::Identity();
+    camToWorld.block<3, 3>( 0, 0 ) = rotation.toRotationMatrix();
+    Orthonormalize( camToWorld );
+
+    if ( bSwapUpAndForward ) {
+        const Eigen::Vector4f forward =
+            camToWorld.row( 2 ).transpose() * kMinusOne;
+        camToWorld.row( 2 ) = camToWorld.row( 1 );
+        camToWorld.row( 1 ) = forward.transpose();
+    }
+
+    camToWorld.row( 3 ) = position.transpose();
+
+    setCamToWorld( camToWorld );
+    setWorldToCam( OrthoInvert( camToWorld ) );
+
+    Eigen::Vector4f pTVar7 = Eigen::Vector4f::Zero();
+    if ( gpWorldStreaming->isEnabled() ) {
+        auto &streamPos = gpWorldStreaming->getPosition();
+        pTVar7 = streamPos;
+    }
+
+    Eigen::Vector4f offsetedPosition = camToWorld.row( 3 ).transpose() - pTVar7;
+    offsetedPosition.w() = 1.0f;
+    setPositionOffseted( offsetedPosition );
+
+    updateTargetAndUpFromCamToWorld( camToWorld, -targetDistance );
+}

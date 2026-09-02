@@ -17,6 +17,11 @@ static constexpr float kDegToRad =
     static_cast<float>( EIGEN_PI / 180.0 );   // DAT_00f41864
 static constexpr float kRadToDeg = 57.29578f; // DAT_00f41b0c
 static constexpr float kHalf = 0.5f;          // FLOAT_00f41674
+static constexpr float kTwo = 2.0f;       // DAT_00f416b0
+static constexpr float kThree = 3.0f;     // DAT_00f416b4
+static constexpr float kMinusTwo = -2.0f; // DAT_00f417d0
+static constexpr float kQuaternionEpsilon = 1.0e-4f; // DAT_00f41760
+
 
 struct TDUPlane {
     Eigen::Vector4f Normal = kWorldUpVector;
@@ -435,4 +440,75 @@ static Eigen::Vector4f Normalize( const Eigen::Vector4f &param_1 ) {
         return Eigen::Vector4f::Zero();
     }
     return param_1 / length;
+}
+
+inline Eigen::Quaternionf SlerpNoFlip( const Eigen::Quaternionf &q0,
+                                       const Eigen::Quaternionf &q1,
+                                       float frac ) {
+    // FUN_00501fc0
+    float dot =
+        q0.x() * q1.x() + q0.y() * q1.y() + q0.z() * q1.z() + q0.w() * q1.w();
+    dot = std::max( -1.0f, std::min( 1.0f, dot ) );
+    const float theta = acosf( dot );
+    const float s = sinf( theta );
+    if ( s < kQuaternionEpsilon ) {
+        return q1;
+    }
+    const float a = sinf( ( 1.0f - frac ) * theta ) / s;
+    const float b = sinf( frac * theta ) / s;
+    return Eigen::Quaternionf( a * q0.w() + b * q1.w(), a * q0.x() + b * q1.x(),
+                               a * q0.y() + b * q1.y(),
+                               a * q0.z() + b * q1.z() );
+}
+
+inline Eigen::Vector4f QuaternionLog( const Eigen::Quaternionf &param_2 ) {
+    // FUN_00502260
+    if ( fabsf( param_2.w() ) < kOne ) {
+        const float theta = acosf( param_2.w() );
+        const float sinTheta = sinf( theta );
+
+        if ( kQuaternionEpsilon <= fabsf( sinTheta ) ) {
+            const float scale = theta / sinTheta;
+            return Eigen::Vector4f( param_2.x() * scale, param_2.y() * scale,
+                                    param_2.z() * scale, 0.0f );
+        }
+    }
+    return Eigen::Vector4f( param_2.x(), param_2.y(), param_2.z(), 0.0f );
+}
+
+inline Eigen::Quaternionf QuaternionExp( const Eigen::Vector4f &param_2 ) {
+    // FUN_00502360
+    const float theta =
+        sqrtf( param_2.z() * param_2.z() + param_2.y() * param_2.y() +
+               param_2.x() * param_2.x() );
+    const float sinTheta = sinf( theta );
+    const float cosTheta = cosf( theta );
+
+    Eigen::Vector3f axis = param_2.head<3>();
+    if ( kQuaternionEpsilon <= fabsf( sinTheta ) ) {
+        axis *= sinTheta / theta;
+    }
+    return Eigen::Quaternionf( cosTheta, axis.x(), axis.y(), axis.z() );
+}
+
+inline Matrix4x4f_t &Orthonormalize( Matrix4x4f_t &param_1 ) {
+    // FUN_00503e60
+    // Gram-Schmidt over the three leading columns; the fourth one is cleared.
+    Eigen::Vector3f axisX = param_1.col( 0 ).head<3>();
+    axisX *= kOne / sqrtf( axisX.dot( axisX ) );
+
+    Eigen::Vector3f axisY = param_1.col( 1 ).head<3>();
+    axisY -= axisY.dot( axisX ) * axisX;
+    axisY *= kOne / sqrtf( axisY.dot( axisY ) );
+
+    Eigen::Vector3f axisZ = param_1.col( 2 ).head<3>();
+    axisZ -= axisZ.dot( axisY ) * axisY + axisZ.dot( axisX ) * axisX;
+    axisZ *= kOne / sqrtf( axisZ.dot( axisZ ) );
+
+    param_1.col( 0 ).head<3>() = axisX;
+    param_1.col( 1 ).head<3>() = axisY;
+    param_1.col( 2 ).head<3>() = axisZ;
+    param_1.col( 3 ) = Eigen::Vector4f::Zero();
+
+    return param_1;
 }
