@@ -5,6 +5,8 @@
 class AudioClient;
 class PipelineStereo;
 
+enum eCinematicType : int32_t; // mng_cinematics.h
+
 class GSCinematics : public GameSystem {
 public:
     const char *getName() const override { return "Service : Cinematics"; }
@@ -17,6 +19,10 @@ public:
     bool initialize( TestDriveGameInstance * ) override;
     void terminate() override;
     PipelineStereo *getMusicPipeline() const;
+
+    bool isCinematicPlaying( eCinematicType type,
+                             bool bRequireAudio,
+                             bool bIncludeRequested ) const;
 
 private:
     AudioClient *pMusicClient;

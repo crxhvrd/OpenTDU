@@ -7,6 +7,12 @@ class Entity;
 class EntityCinematic;
 class TestDriveGameInstance;
 
+enum eCinematicType : int32_t {
+    CT_All = 0,
+    CT_Background = 1, // shots flagged 0x10
+    CT_Foreground = 2,
+};
+
 class MngCinematics : public Manager, public StreamingCallback {
 public:
     const char *getName() const override { /* FUN_00430be0 */
@@ -27,6 +33,9 @@ public:
 
     void addPlayingCinematic( EntityCinematic *pCinematic );
     EntityCinematic *findFocusedPlayingCinematic() const;
+    bool isCinematicPlaying( eCinematicType type,
+                             bool bRequireAudio,
+                             bool bIncludeRequested ) const;
     void removeCinematic( EntityCinematic *pCinematic );
 
     bool onWorldStreamed( Eigen::Vector4f *param_1,

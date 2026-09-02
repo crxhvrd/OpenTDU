@@ -2,6 +2,7 @@
 #include "gs_cinematics.h"
 
 #include "audio/gs_audio.h"
+#include "game/cinematic/mng_cinematics.h"
 #include "game/scenaric/entity/entity_sound_density.h"
 
 GSCinematics *gpCinematics = nullptr;
@@ -12,6 +13,17 @@ GSCinematics::GSCinematics()
 }
 
 GSCinematics::~GSCinematics() {}
+
+bool GSCinematics::isCinematicPlaying( eCinematicType type,
+                                       bool bRequireAudio,
+                                       bool bIncludeRequested ) const {
+    // FUN_009afd80
+    if ( gpMngCinematics == nullptr ) {
+        return false;
+    }
+    return gpMngCinematics->isCinematicPlaying( type, bRequireAudio,
+                                                bIncludeRequested );
+}
 
 bool GSCinematics::initialize( TestDriveGameInstance * ) {
     // FUN_009afde0

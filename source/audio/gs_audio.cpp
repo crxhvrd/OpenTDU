@@ -7,6 +7,8 @@
 #include "implementation/ed_audio_object.h"
 
 #include "game/gm_base.h"
+#include "game/cinematic/gs_cinematics.h"
+#include "game/cinematic/mng_cinematics.h"
 
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
@@ -753,13 +755,17 @@ void GSAudio::tick( float totalTime, float deltaTime ) {
                                 ( transitionFlags & ( 1u << 3 ) ) != 0;
 
     if ( bMixStateTransitionSync && !bTransitioning && GameMode >= 0 &&
-         GameMode < kMaxGameModes ) {
+         GameMode < kMaxGameModes &&
+         ( gpCinematics == nullptr ||
+           !gpCinematics->isCinematicPlaying( CT_Foreground, true, false ) ) ) {
         bMixStateTransitionSync = false;
         changeMixState( GameModeMixState[GameMode] );
 
         OTDU_LOG_INFO( "Audio mix state for game mode %d is 0x%08x\n", GameMode,
                        GameModeMixState[GameMode] );
     }
+
+    OTDU_UNIMPLEMENTED; // TODO: AUDIO
 
     updateClientPriorities();
 

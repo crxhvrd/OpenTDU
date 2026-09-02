@@ -3,6 +3,7 @@
 
 #include "tdu_instance.h"
 
+#include "audio/vehicle/gs_vehicle_sound.h"
 #include "game/gm_scene.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
@@ -124,8 +125,10 @@ void SceneInterior::enter( Bank *pBank, const bool bIsReentry ) {
     }
 
     if ( gpActiveGMScene != nullptr &&
-         gpActiveGMScene->isStaticFrontEndScene() ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (mute the vehicle layer)
+         gpActiveGMScene->isStaticFrontEndScene() &&
+         gpVehicleSound != nullptr ) {
+        gpVehicleSound->setMutedCategoryMask( GSVehicleSound::VSC_Car |
+                                              GSVehicleSound::VSC_Bike );
     }
 
     pInteriorBank = pBank;
@@ -463,6 +466,10 @@ void SceneInterior::leave() {
         if ( gpScenaric != nullptr ) {
             gpScenaric->unloadBank( &bank );
         }
+    }
+
+    if ( gpVehicleSound != nullptr ) {
+        gpVehicleSound->setMutedCategoryMask( 0u );
     }
 
     pShopData = nullptr;

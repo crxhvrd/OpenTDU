@@ -190,6 +190,51 @@ EntityCinematic *MngCinematics::findFocusedPlayingCinematic() const {
     return nullptr;
 }
 
+bool MngCinematics::isCinematicPlaying( eCinematicType type,
+                                        bool bRequireAudio,
+                                        bool bIncludeRequested ) const {
+    // FUN_006de410
+    EntityCinematic *pFound = nullptr;
+    for ( EntityCinematic *pCinematic : pCinematics ) {
+        if ( pFound != nullptr ) {
+            break;
+        }
+        if ( pCinematic == nullptr ) {
+            continue;
+        }
+
+        const uint32_t flags = pCinematic->getFlags();
+        const bool bRunning =
+            ( flags & 4u ) != 0 || ( bIncludeRequested && ( flags & 1u ) != 0 );
+        if ( !bRunning ) {
+            continue;
+        }
+
+        switch ( type ) {
+        case CT_All:
+            pFound = pCinematic;
+            break;
+        case CT_Background:
+            if ( !pCinematic->hasFocus() ) {
+                pFound = pCinematic;
+            }
+            break;
+        case CT_Foreground:
+            if ( pCinematic->hasFocus() ) {
+                pFound = pCinematic;
+            }
+            break;
+        }
+    }
+
+    if ( pFound != nullptr && bRequireAudio ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (sound density count)
+        return pFound->hasMusicEmitter();
+    }
+
+    return pFound != nullptr;
+}
+
 void MngCinematics::removeCinematic( EntityCinematic *pCinematic ) {
     // FUN_006de4d0
     for ( EntityCinematic *&pSlot : pCinematics ) {

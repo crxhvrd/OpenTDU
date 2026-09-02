@@ -61,6 +61,10 @@ public:
     inline AudioClient *getClient() const { return pClient; }
     inline uint32_t getMutedCategoryMask() const { return mutedCategoryMask; }
     inline void setMutedCategoryMask( uint32_t mask ) {
+        if ( mutedCategoryMask != mask ) {
+            OTDU_LOG_DEBUG( "Vehicle sound muted categories 0x%02x -> 0x%02x\n",
+                            mutedCategoryMask, mask );
+        }
         mutedCategoryMask = mask;
     }
 
