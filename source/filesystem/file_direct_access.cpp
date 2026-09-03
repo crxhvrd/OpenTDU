@@ -295,6 +295,19 @@ bool FileDirectAccess::loadContentIntoMemory( const char *pFilename,
     Stream.read( (char *)pOutContent, sizeToRead );
 
     auto numBytesRead = Stream.gcount();
+    const int64_t numBytesAvailable =
+        static_cast<int64_t>( fileSize ) - static_cast<int64_t>( offset );
+    if ( static_cast<int64_t>( numBytesRead ) < numBytesAvailable ) {
+        OTDU_LOG_ERROR( "Short read on '%s': got %lld bytes, expected %lld "
+                        "(requested %d, file is %lld bytes)\n",
+                        pFilename, static_cast<int64_t>( numBytesRead ),
+                        numBytesAvailable, sizeToRead,
+                        static_cast<int64_t>( fileSize ) );
+    } else {
+        OTDU_LOG_DEBUG( "Read %lld/%d bytes from '%s' (file is %lld bytes)\n",
+                        static_cast<int64_t>( numBytesRead ), sizeToRead,
+                        pFilename, static_cast<int64_t>( fileSize ) );
+    }
 
     if ( pContentSize != nullptr ) {
         *pContentSize = static_cast<uint32_t>( numBytesRead );

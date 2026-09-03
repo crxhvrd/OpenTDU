@@ -40,13 +40,16 @@ ShaderBinaryCache::getOrLoadBytecode( const ShaderTableEntry *pTableEntry ) {
         shaderTablePath += pTableEntry->pShaderCategory;
         shaderTablePath += kShaderTableExtension;
 
+        OTDU_LOG_DEBUG( "Loading shader table '%s'...\n",
+                        shaderTablePath.c_str() );
+
         void *pShaderTable = nullptr;
         uint32_t contentSize = 0;
         bool bFoundShaderTable = gpFile->loadFile(
             shaderTablePath.c_str(), &pShaderTable, &contentSize );
         if ( !bFoundShaderTable ) {
-            OTDU_LOG_ERROR( "Failed to register shader '%s' (hashcode 0x%p): "
-                            "shader table '%s' does not exist\n",
+            OTDU_LOG_ERROR( "Failed to register shader '%s' (hashcode "
+                            "0x%016llx): shader table '%s' does not exist\n",
                             shaderTablePath.c_str(), pTableEntry->Hashcode,
                             pTableEntry->pShaderCategory );
             return std::make_tuple( nullptr, 0ull );
@@ -56,14 +59,45 @@ ShaderBinaryCache::getOrLoadBytecode( const ShaderTableEntry *pTableEntry ) {
             std::make_pair( pTableEntry->pShaderCategory, pShaderTable ) );
 
         ShaderTableHeader header;
-        header.NumEntries = *(size_t *)pShaderTable;
+        header.NumEntries = *(uint64_t *)pShaderTable;
 
         int8_t *pShaderContent = (int8_t *)pShaderTable;
+        const uint64_t tableSizeInBytes = contentSize;
+        const uint64_t headerSizeInBytes = header.GetHeaderSize();
+
+        OTDU_LOG_DEBUG(
+            "  '%s': %u bytes on disk, NumEntries=%llu (header: %llu bytes)\n",
+            shaderTablePath.c_str(), contentSize, header.NumEntries,
+            headerSizeInBytes );
+
+        if ( header.NumEntries == 0ull ||
+             headerSizeInBytes > tableSizeInBytes ) {
+            OTDU_LOG_ERROR(
+                "Shader table '%s' is corrupt or was extracted by another "
+                "build: its header claims %llu entries (%llu bytes) but the "
+                "file is only %u bytes. Delete 'EURO/Shaders' and "
+                "'opentdu.txt', then relaunch to force a re-extraction.\n",
+                shaderTablePath.c_str(), header.NumEntries, headerSizeInBytes,
+                contentSize );
+            return std::make_tuple( nullptr, 0ull );
+        }
 
         ShaderTableHeaderEntry *pHeaderIt =
             (ShaderTableHeaderEntry *)( (int8_t *)pShaderTable +
-                                        sizeof( size_t ) );
-        for ( size_t i = 0; i < header.NumEntries; i++ ) {
+                                        sizeof( uint64_t ) );
+        for ( uint64_t i = 0; i < header.NumEntries; i++ ) {
+            if ( pHeaderIt->Offset < headerSizeInBytes ||
+                 pHeaderIt->Offset + pHeaderIt->Size > tableSizeInBytes ) {
+                OTDU_LOG_ERROR(
+                    "Shader table '%s' is corrupt: entry %llu (hashcode "
+                    "0x%016llx) bytecode range [%llu, %llu) is outside the %u "
+                    "byte table\n",
+                    shaderTablePath.c_str(), i, pHeaderIt->Hashcode,
+                    pHeaderIt->Offset, pHeaderIt->Offset + pHeaderIt->Size,
+                    contentSize );
+                return std::make_tuple( nullptr, 0ull );
+            }
+
             int8_t *pShaderPointer = pShaderContent + pHeaderIt->Offset;
 
             shaderBinaries.insert( std::make_pair(
@@ -71,9 +105,54 @@ ShaderBinaryCache::getOrLoadBytecode( const ShaderTableEntry *pTableEntry ) {
                 std::make_tuple( pShaderPointer, pHeaderIt->Size ) ) );
 
             if ( pHeaderIt->MetadataOffset != kInvalidMetadataOffset ) {
+                if ( pHeaderIt->MetadataOffset < headerSizeInBytes ||
+                     pHeaderIt->MetadataOffset + sizeof( ShaderMetadataSPIRV ) >
+                         tableSizeInBytes ) {
+                    OTDU_LOG_ERROR(
+                        "Shader table '%s' is corrupt: entry %llu (hashcode "
+                        "0x%016llx) metadata offset %llu is outside the %u "
+                        "byte table\n",
+                        shaderTablePath.c_str(), i, pHeaderIt->Hashcode,
+                        pHeaderIt->MetadataOffset, contentSize );
+                    return std::make_tuple( nullptr, 0ull );
+                }
+
                 ShaderMetadataSPIRV *pShaderMetadataPointer =
                     (ShaderMetadataSPIRV *)( pShaderContent +
                                              pHeaderIt->MetadataOffset );
+
+                const uint64_t metadataSizeInBytes =
+                    sizeof( ShaderMetadataSPIRV ) +
+                    static_cast<uint64_t>(
+                        pShaderMetadataPointer->NumBindings ) *
+                        sizeof( SPIRVBindingInfo ) +
+                    static_cast<uint64_t>(
+                        pShaderMetadataPointer->NumInputElements ) *
+                        sizeof( SPIRVInputElement );
+
+                OTDU_LOG_DEBUG(
+                    "  entry %llu (hashcode 0x%016llx): bytecode @%llu (%llu "
+                    "bytes), metadata @%llu (NumBindings=%u, "
+                    "NumInputElements=%u, %llu bytes)\n",
+                    i, pHeaderIt->Hashcode, pHeaderIt->Offset, pHeaderIt->Size,
+                    pHeaderIt->MetadataOffset,
+                    pShaderMetadataPointer->NumBindings,
+                    pShaderMetadataPointer->NumInputElements,
+                    metadataSizeInBytes );
+
+                if ( pHeaderIt->MetadataOffset + metadataSizeInBytes >
+                     tableSizeInBytes ) {
+                    OTDU_LOG_ERROR(
+                        "Shader table '%s' is corrupt: entry %llu (hashcode "
+                        "0x%016llx) metadata range [%llu, %llu) is outside the "
+                        "%u byte table (NumBindings=%u, NumInputElements=%u)\n",
+                        shaderTablePath.c_str(), i, pHeaderIt->Hashcode,
+                        pHeaderIt->MetadataOffset,
+                        pHeaderIt->MetadataOffset + metadataSizeInBytes,
+                        contentSize, pShaderMetadataPointer->NumBindings,
+                        pShaderMetadataPointer->NumInputElements );
+                    return std::make_tuple( nullptr, 0ull );
+                }
 
                 ShaderMetadataSPIRVRuntime runtimeInfos;
                 runtimeInfos.InputMask = pShaderMetadataPointer->InputMask;
@@ -94,7 +173,8 @@ ShaderBinaryCache::getOrLoadBytecode( const ShaderTableEntry *pTableEntry ) {
                     pBindings++;
                 }
 
-                runtimeInfos.InputElements.resize( runtimeInfos.NumInputElements );
+                runtimeInfos.InputElements.resize(
+                    runtimeInfos.NumInputElements );
                 const SPIRVInputElement *pInputElements =
                     (const SPIRVInputElement *)pBindings;
                 for ( auto &elem : runtimeInfos.InputElements ) {
@@ -117,7 +197,7 @@ ShaderBinaryCache::getOrLoadBytecode( const ShaderTableEntry *pTableEntry ) {
     // done on its first use)
     auto shaderBinIt = shaderBinaries.find( pTableEntry->Hashcode );
     if ( shaderBinIt == shaderBinaries.end() ) {
-        OTDU_LOG_ERROR( "Failed to register shader %p from shader table "
+        OTDU_LOG_ERROR( "Failed to register shader 0x%016llx from shader table "
                         "'%s': shader not found in hashtable!\n",
                         pTableEntry->Hashcode, pTableEntry->pShaderCategory );
         return std::make_tuple( nullptr, 0ull );

@@ -123,10 +123,9 @@ static CmdLineArg
         GlobalLogger::bLogTransientToFile = true;
     } );
 
-static CmdLineArg
-    CmdLineArgLogVerbose( "verbose", []( const char *pArg ) {
-        GlobalLogger::bVerbose = true;
-    } );
+static CmdLineArg CmdLineArgLogVerbose( "verbose", []( const char *pArg ) {
+    GlobalLogger::bVerbose = true;
+} );
 
 static CmdLineArg CmdLineArgNoRunLock( "norunlock", []( const char *pArg ) {
     gDisableRunLock = true;
@@ -215,14 +214,13 @@ static bool OnFirstTimeRun() {
     char pWorkingDir[OTDU_MAX_PATH];
     TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
 
-    OTDU_LOG_ALWAYS(
-        "EURO/Shaders not found; running one-shot asset extraction "
-        "from '%s'...\n",
-        gExecutablePath );
+    OTDU_LOG_ALWAYS( "Running asset extraction from '%s'...\n",
+                     gExecutablePath );
 
     AssetExtractor::ExtractionParams params;
     params.pExecutablePath = gExecutablePath;
     params.pOutputPath = pWorkingDir;
+    params.bForceShaderExtraction = true;
 
     AssetExtractor::ExtractionResult result = AssetExtractor::Run( params );
     return result.bSuccess;
@@ -634,7 +632,11 @@ bool TestDriveGameInstance::initializeBaseServices() {
 #error "Not Implemented!"
 #endif
     bool bNeedToRunExtractor = !gpFile->fileExists( kOpenTDUAssetsStamp );
-    if ( !bNeedToRunExtractor ) {
+    if ( bNeedToRunExtractor ) {
+        OTDU_LOG_ALWAYS( "Asset stamp '%s' not found; assets will be "
+                         "(re)extracted for build '%s'\n",
+                         kOpenTDUAssetsStamp, OTDU_COMMIT_HASH );
+    } else {
         char *pStamp = nullptr;
         uint32_t stampLength = 0;
         bool bLoaded = gpFile->loadFile( kOpenTDUAssetsStamp, (void **)&pStamp,
@@ -643,6 +645,17 @@ bool TestDriveGameInstance::initializeBaseServices() {
             bNeedToRunExtractor =
                 ( strncmp( pStamp, OTDU_COMMIT_HASH,
                            strlen( OTDU_COMMIT_HASH ) ) != 0 );
+
+            const uint32_t hashLength =
+                static_cast<uint32_t>( strlen( OTDU_COMMIT_HASH ) );
+            std::string stampOnDisk( pStamp, ( stampLength < hashLength )
+                                                 ? stampLength
+                                                 : hashLength );
+            OTDU_LOG_ALWAYS(
+                "Asset stamp: on disk '%s', this build '%s' => assets are %s\n",
+                stampOnDisk.c_str(), OTDU_COMMIT_HASH,
+                bNeedToRunExtractor ? "STALE (re-extracting)" : "up to date" );
+
             TestDrive::Free( pStamp );
         }
     }

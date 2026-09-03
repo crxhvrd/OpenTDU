@@ -49,7 +49,12 @@ namespace {
     struct ExtractorContext {
         std::string OutputPath;
         bool bForceExtraction = false;
+        bool bForceShaderExtraction = false;
         AssetExtractor::ShaderSourceGenerator *pSourceGenerator = nullptr;
+
+        inline bool shouldOverwriteShaderTables() const {
+            return bForceExtraction || bForceShaderExtraction;
+        }
     };
 
     // Unpack .ini (in place).
@@ -88,9 +93,9 @@ namespace {
     void WriteShaderTableHeaderToStream( const ShaderTableHeader &header,
                                          const size_t shaderBytecodeSize,
                                          std::ofstream &outputFileStream ) {
-        size_t tableSize = header.GetHeaderSize();
-        outputFileStream.write( (const char *)&header.NumEntries,
-                                sizeof( size_t ) );
+        uint64_t tableSize = header.GetHeaderSize();
+        const uint64_t numEntries = header.NumEntries;
+        outputFileStream.write( (const char *)&numEntries, sizeof( uint64_t ) );
         for ( auto &headerEntry : header.Entries ) {
             uint64_t offsetInFile = headerEntry.Offset;
             offsetInFile += tableSize;
@@ -116,7 +121,8 @@ namespace {
                                  const std::string &fileOutputPath ) {
         std::filesystem::path folderFS =
             std::filesystem::path( fileOutputPath );
-        if ( !ctx.bForceExtraction && std::filesystem::exists( folderFS ) ) {
+        if ( !ctx.shouldOverwriteShaderTables() &&
+             std::filesystem::exists( folderFS ) ) {
             OTDU_LOG_INFO( "'%s' already exists; skipping...\n",
                            fileOutputPath.c_str() );
             return false;
@@ -143,7 +149,8 @@ namespace {
                                        const std::string &fileOutputPath ) {
         std::filesystem::path folderFS =
             std::filesystem::path( fileOutputPath );
-        if ( !ctx.bForceExtraction && std::filesystem::exists( folderFS ) ) {
+        if ( !ctx.shouldOverwriteShaderTables() &&
+             std::filesystem::exists( folderFS ) ) {
             OTDU_LOG_INFO( "'%s' already exists; skipping...\n",
                            fileOutputPath.c_str() );
             return false;
@@ -223,6 +230,7 @@ namespace AssetExtractor {
         ExtractorContext ctx;
         ctx.OutputPath = params.pOutputPath;
         ctx.bForceExtraction = params.bForceExtraction;
+        ctx.bForceShaderExtraction = params.bForceShaderExtraction;
         ctx.pSourceGenerator = params.pSourceGenerator;
 
         OTDU_LOG_DEBUG( "executable: '%s'\n", params.pExecutablePath );
@@ -489,7 +497,8 @@ namespace AssetExtractor {
 
             // Write to disk
             std::ofstream outputFileStream;
-            outputFileStream.open( fileOutputPath.c_str(), std::ios_base::out );
+            outputFileStream.open( fileOutputPath.c_str(),
+                                   std::ios_base::out | std::ios_base::binary );
             outputFileStream.write( (char *)pBuffer,
                                     sizeof( char ) * packedIni.LengthInBytes );
             outputFileStream.close();

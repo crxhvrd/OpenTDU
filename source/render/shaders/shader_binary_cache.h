@@ -72,11 +72,15 @@ struct ShaderMetadataSPIRVRuntime : public ShaderMetadataSPIRV {
 #endif
 
 struct ShaderTableHeader {
-    size_t NumEntries;
+    // NOTE: Serialized as-is at the very beginning of a shader table; must be
+    // a fixed width type (a 32bits build would otherwise read 4 bytes where a
+    // 64bits extractor wrote 8, and walk the entry array way out of bounds).
+    uint64_t NumEntries;
     std::vector<ShaderTableHeaderEntry> Entries;
 
-    inline size_t GetHeaderSize() const {
-        return NumEntries * sizeof( ShaderTableHeaderEntry ) + sizeof( size_t );
+    inline uint64_t GetHeaderSize() const {
+        return NumEntries * sizeof( ShaderTableHeaderEntry ) +
+               sizeof( uint64_t );
     }
 
     inline void Clear() {

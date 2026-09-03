@@ -25,7 +25,9 @@ namespace AssetExtractor {
         const char *pExecutablePath = nullptr; // Path to TestDriveUnlimited.exe
         const char *pOutputPath = nullptr; // Base output path (parent of EURO/)
         bool bForceExtraction =
-            false; // Re-extract even if assets already exist
+            false; // Re-extract everything even if assets already exist
+        bool bForceShaderExtraction =
+            false; // Re-extract the shader tables only
         ShaderSourceGenerator *pSourceGenerator =
             nullptr; // Optional GLSL generator (nullptr disables
                      // -gen_shader_source)
