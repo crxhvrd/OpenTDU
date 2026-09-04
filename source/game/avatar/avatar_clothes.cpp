@@ -601,8 +601,10 @@ void RenderAvatarBase::initialize( int32_t index,
                                    LightSetupNode *pLightSetup,
                                    ShaderParameterSetupNode *pShaderSetup ) {
     // FUN_008f0760
-    pMemoryPool = TestDrive::AllocAligned( kAvatarPartPoolSize, 0 );
+    pMemoryPool = TestDrive::AllocAligned( kAvatarPartPoolSize, 0x10 );
     if ( pMemoryPool == nullptr ) {
+        OTDU_LOG_ERROR( "RenderAvatarBase pool allocation failed "
+                        "(pMemoryPool is null)!\n" );
         return;
     }
 
