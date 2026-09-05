@@ -28,7 +28,7 @@
 #include "tdu_instance.h"
 
 static constexpr float kMillisecondsToSeconds = 0.001f; // FLOAT_00f4167c
-static constexpr float kCinematicPlaneUnset = -1.0f; // FLOAT_00f41664
+static constexpr float kCinematicPlaneUnset = -1.0f;    // FLOAT_00f41664
 
 namespace {
     void ResolveCinematicEntry( BankInstance &bank,
@@ -222,7 +222,8 @@ void EntityCinematic::applyForegroundCine() {
         }
     }
 
-    if ( ( cinematicPlaybackFlags & 0x100u ) != 0 && gpVehicleSound != nullptr ) {
+    if ( ( cinematicPlaybackFlags & 0x100u ) != 0 &&
+         gpVehicleSound != nullptr ) {
         savedMutedVehicleCategories = gpVehicleSound->getMutedCategoryMask();
         gpVehicleSound->setMutedCategoryMask( 0x1eu );
     }
@@ -271,7 +272,8 @@ void EntityCinematic::restoreForegroundCine() {
         pMixer->bEnabled = false;
     }
 
-    if ( ( cinematicPlaybackFlags & 0x100u ) != 0 && gpVehicleSound != nullptr ) {
+    if ( ( cinematicPlaybackFlags & 0x100u ) != 0 &&
+         gpVehicleSound != nullptr ) {
         gpVehicleSound->setMutedCategoryMask( savedMutedVehicleCategories );
     }
 
@@ -324,11 +326,10 @@ void EntityCinematic::loadResources( ScenaricBank *param_2 ) {
         pMusicEmitter->resolveEmitters( param_2 );
         cinematicPlayer.setMusicEmitter( pMusicEmitter.get() );
 
-        OTDU_LOG_DEBUG( "Cinematic '%s' owns a music emitter (%s)\n",
-                        name.c_str(),
-                        pMusicEmitter->hasBothEmitters()
-                            ? "both sound emitters resolved"
-                            : "unresolved sound emitters" );
+        OTDU_LOG_DEBUG(
+            "Cinematic '%s' owns a music emitter (%s)\n", name.c_str(),
+            pMusicEmitter->hasBothEmitters() ? "both sound emitters resolved"
+                                             : "unresolved sound emitters" );
     }
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (camera/micro/stream refs)
@@ -564,10 +565,9 @@ void EntityCinematic::start( bool bBeginNow ) {
         FadeTime = gpActiveGMScene->getTransitionTime();
     }
 
-    activeGameMode =
-        ( gpTestDriveInstance != nullptr )
-            ? gpTestDriveInstance->getActiveGameMode()
-            : GM_FreeRide;
+    activeGameMode = ( gpTestDriveInstance != nullptr )
+                         ? gpTestDriveInstance->getActiveGameMode()
+                         : GM_FreeRide;
     bSkipped = false;
     cinematicFlags |= 0x1u;
 
@@ -642,9 +642,8 @@ bool EntityCinematic::createTDUInterface() {
         return false;
     }
 
-    return cinematicPlayer.createInterface( pCinData, cinDataSize,
-                                            cinematicBuffer.data(),
-                                            &pSCBank->getBank() );
+    return cinematicPlayer.createInterface(
+        pCinData, cinDataSize, cinematicBuffer.data(), &pSCBank->getBank() );
 }
 
 bool EntityCinematic::launchSpotCine( SpotMap *pSpot, float startTime ) {
@@ -677,7 +676,8 @@ bool EntityCinematic::begin() {
         return false;
     }
 
-    if ( pMusicEmitter != nullptr && pMusicEmitter->areSoundBanksInstalling() ) {
+    if ( pMusicEmitter != nullptr &&
+         pMusicEmitter->areSoundBanksInstalling() ) {
         return true;
     }
 
@@ -761,15 +761,15 @@ void EntityCinematic::publishCameraView() {
         bCameraHandedOver = true;
         bCameraDrivenByObject = bDrivesCamera;
         OTDU_LOG_DEBUG( "Cinematic '%s' took the camera: pos=(%.1f %.1f %.1f) "
-                       "target=(%.1f %.1f %.1f) fov=%.1f deg, %.2fs%s "
-                       "(LED flags 0x%08x, via %s, active cam flags 0x%x)\n",
-                       name.c_str(), view.Position.x(), view.Position.y(),
-                       view.Position.z(), view.Target.x(), view.Target.y(),
-                       view.Target.z(), view.Fov, CineTotalTime,
-                       bLoop ? ", looping" : "", cinematicPlaybackFlags,
-                       bDrivesCamera ? "the CINEMATIC camera"
-                                     : "the view override",
-                       gpCamera->getActiveCamera()->getFlags() );
+                        "target=(%.1f %.1f %.1f) fov=%.1f deg, %.2fs%s "
+                        "(LED flags 0x%08x, via %s, active cam flags 0x%x)\n",
+                        name.c_str(), view.Position.x(), view.Position.y(),
+                        view.Position.z(), view.Target.x(), view.Target.y(),
+                        view.Target.z(), view.Fov, CineTotalTime,
+                        bLoop ? ", looping" : "", cinematicPlaybackFlags,
+                        bDrivesCamera ? "the CINEMATIC camera"
+                                      : "the view override",
+                        gpCamera->getActiveCamera()->getFlags() );
     }
 
     if ( bDrivesCamera ) {
@@ -785,14 +785,24 @@ void EntityCinematic::end() {
     // FUN_007e8840
     const bool bWasRunning = ( cinematicFlags & 0x4u ) != 0 || bForceStop;
 
+    if ( ( cinematicFlags & 0x2u ) != 0 && ( cinematicFlags & 0x4u ) != 0 ) {
+        const bool bSeekToStart = cinematicPlaybackFlags2 == 1;
+        const bool bSeekToEnd = cinematicPlaybackFlags2 == 3;
+        if ( bSeekToStart || bSeekToEnd ) {
+            const float endFrameTime =
+                bSeekToEnd ? cinematicPlayer.getTotalTime() : 0.0f;
+            cinematicPlayer.tick( endFrameTime, 0.0f );
+        }
+    }
+
+    cinematicPlayer.releasePlayerCarActors();
+
     restoreForegroundCine();
 
     if ( pMusicEmitter != nullptr ) {
         pMusicEmitter->uninstallSoundBanks();
         releaseMusicEmitter();
     }
-
-    cinematicPlayer.releasePlayerCarActors();
 
     if ( gpActiveGMScene != nullptr ) {
         MngActor &sceneActors = gpActiveGMScene->getActorManager();
