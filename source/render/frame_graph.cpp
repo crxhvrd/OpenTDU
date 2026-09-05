@@ -174,6 +174,13 @@ void FrameGraph::pushClearCommand( RenderTarget *param_2,
         return;
     }
 
+    if ( numClearCommands >= clearCommands.size() ) {
+        OTDU_LOG_WARN( "Clear command queue is full (%u entries); dropping "
+                       "clear request!\n",
+                       (uint32_t)clearCommands.size() );
+        return;
+    }
+
     ClearCommand &cmd = clearCommands[numClearCommands++];
     cmd.pRenderTarget = param_2;
     cmd.ClearColor = param_3;
@@ -184,6 +191,16 @@ void FrameGraph::pushClearCommand( RenderTarget *param_2,
         cmd.Region.Y = 0;
         cmd.Region.Width = param_2->getWidth();
         cmd.Region.Height = param_2->getHeight();
+    }
+}
+
+void FrameGraph::dropClearCommandsFor( const RenderTarget *param_2 ) {
+    for ( uint32_t i = 0; i < numClearCommands; ) {
+        if ( clearCommands[i].pRenderTarget == param_2 ) {
+            clearCommands[i] = clearCommands[--numClearCommands];
+        } else {
+            i++;
+        }
     }
 }
 

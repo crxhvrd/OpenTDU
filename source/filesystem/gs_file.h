@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "file_direct_access.h"
 #include "file_handle.h"
 #include "game/gs_base.h"
@@ -58,7 +60,7 @@ struct WorkerThreadContext {
     TestDriveEvent *pEvent;
     AsyncFileOpen *pAsyncData;
     uint8_t bRunning : 1;
-    uint8_t bJobDone : 1;
+    std::atomic<bool> bJobDone;
 
     WorkerThreadContext()
         : pEvent( nullptr ),

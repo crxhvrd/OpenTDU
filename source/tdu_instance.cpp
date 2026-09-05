@@ -127,6 +127,10 @@ static CmdLineArg CmdLineArgLogVerbose( "verbose", []( const char *pArg ) {
     GlobalLogger::bVerbose = true;
 } );
 
+static CmdLineArg CmdLineArgLogSilent( "silent", []( const char *pArg ) {
+    GlobalLogger::bSilent = true;
+} );
+
 static CmdLineArg CmdLineArgNoRunLock( "norunlock", []( const char *pArg ) {
     gDisableRunLock = true;
 } );
@@ -456,11 +460,13 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6 = new ( pGameModeAlloc ) GMCarShowcase();
             break;
         case GM_Login:
-            pGameModeAlloc = TestDrive::Alloc( sizeof( GMLogin ) );
+            pGameModeAlloc =
+                TestDrive::AllocAligned( sizeof( GMLogin ), alignof( GMLogin ) );
             pGVar6 = new ( pGameModeAlloc ) GMLogin();
             break;
         case GM_VideoBumper:
-            pGameModeAlloc = TestDrive::Alloc( sizeof( GMVideoBumper ) );
+            pGameModeAlloc = TestDrive::AllocAligned(
+                sizeof( GMVideoBumper ), alignof( GMVideoBumper ) );
             pGVar6 = new ( pGameModeAlloc ) GMVideoBumper();
             break;
         case GM_FreeRide:
@@ -474,7 +480,8 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6 = new ( pGameModeAlloc ) GMSandbox();
             break;
         case GM_CinViewer:
-            pGameModeAlloc = TestDrive::Alloc( sizeof( GMCinViewer ) );
+            pGameModeAlloc = TestDrive::AllocAligned(
+                sizeof( GMCinViewer ), alignof( GMCinViewer ) );
             pGVar6 = new ( pGameModeAlloc ) GMCinViewer();
             break;
         case GM_Living:
@@ -512,7 +519,7 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6->mainLoop( this );
 
             pGVar6->~GameMode();
-            TestDrive::Free( pGameModeAlloc );
+            TestDrive::FreeAligned( pGameModeAlloc );
             GMVideoBumper::ClearActiveBumper();
 
             GMVideoBumper::SetActiveBumper( "bumper_EDEN_TDU.bik" );
@@ -522,13 +529,14 @@ void TestDriveGameInstance::mainLoop() {
             GMVideoBumper::OnPlaybackComplete( "LOG_IN", "/popup", "on",
                                                false );
 
-            pGameModeAlloc = TestDrive::Alloc( sizeof( GMVideoBumper ) );
+            pGameModeAlloc = TestDrive::AllocAligned(
+                sizeof( GMVideoBumper ), alignof( GMVideoBumper ) );
             pGVar6 = new ( pGameModeAlloc ) GMVideoBumper();
             pGVar6->setTransitionFlags( 0x30 );
             pGVar6->mainLoop( this );
 
             pGVar6->~GameMode();
-            TestDrive::Free( pGameModeAlloc );
+            TestDrive::FreeAligned( pGameModeAlloc );
 
             setNextGameMode( GM_Login );
         }
@@ -564,13 +572,14 @@ bool TestDriveGameInstance::initialize() {
                               // 0x0097c91e and 0x0097c96d). Not sure why
         GMVideoBumper::OnPlaybackComplete( "LOG_IN", "/popup", "on", false );
 
-        GMVideoBumper *pGVar3 =
-            new ( TestDrive::Alloc( sizeof( GMVideoBumper ) ) ) GMVideoBumper();
+        GMVideoBumper *pGVar3 = new ( TestDrive::AllocAligned(
+            sizeof( GMVideoBumper ), alignof( GMVideoBumper ) ) )
+            GMVideoBumper();
         pGVar3->setTransitionFlags( 0x0 );
         pGVar3->mainLoop( this );
 
         pGVar3->~GMVideoBumper();
-        TestDrive::Free( pGVar3 );
+        TestDrive::FreeAligned( pGVar3 );
         GMVideoBumper::ClearActiveBumper();
 
         GMVideoBumper::SetActiveBumper( "bumper_EDEN_TDU.bik" );
@@ -579,13 +588,14 @@ bool TestDriveGameInstance::initialize() {
 
         GMVideoBumper::OnPlaybackComplete( "LOG_IN", "/popup", "on", false );
 
-        pGVar3 =
-            new ( TestDrive::Alloc( sizeof( GMVideoBumper ) ) ) GMVideoBumper();
+        pGVar3 = new ( TestDrive::AllocAligned(
+            sizeof( GMVideoBumper ), alignof( GMVideoBumper ) ) )
+            GMVideoBumper();
         pGVar3->setTransitionFlags( 0x30 );
         pGVar3->mainLoop( this );
 
         pGVar3->~GMVideoBumper();
-        TestDrive::Free( pGVar3 );
+        TestDrive::FreeAligned( pGVar3 );
 
         setNextGameMode( GM_Login );
     } else {
@@ -920,6 +930,7 @@ void TestDriveGameInstance::flushPendingFileInstanciation( bool param_2 ) {
 
         while ( iVar3 < uVar2 && uVar2 != 0 ) {
             updateFileInstanciation();
+            ThreadYield();
             uVar2 = pendingStreamedResources.size();
         }
 

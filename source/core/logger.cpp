@@ -21,6 +21,7 @@ inline void OutputToDebugger( const char *pFormatedString ) {
 
 bool GlobalLogger::bLogTransientToFile = false;
 bool GlobalLogger::bVerbose = false;
+bool GlobalLogger::bSilent = false;
 
 static constexpr int32_t MaxLogSize = 8192;
 static FILE *gpLogFile = nullptr;
@@ -109,6 +110,10 @@ void GlobalLogger::CloseLogFile() {
 static void
 WriteImpl( const bool bWriteToDisk, const char *pFormat, va_list argList ) {
     thread_local char pBuffer[MaxLogSize];
+
+    if (GlobalLogger::bSilent) {
+        return;
+    }
 
     int32_t bufferOutputSize =
         vsnprintf( pBuffer, sizeof( pBuffer ), pFormat, argList );

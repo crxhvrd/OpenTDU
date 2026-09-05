@@ -4,6 +4,7 @@ class GlobalLogger {
 public:
     static bool bLogTransientToFile;
     static bool bVerbose;
+    static bool bSilent;
 
     static bool OpenLogFile( const char *pFilePath );
     static void CloseLogFile();

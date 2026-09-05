@@ -45,6 +45,13 @@ struct WheelState {
     uint8_t bOnBridge : 1;
     uint8_t bInsideTunnel : 1;
 
+    WheelState()
+        : bInitialized( false ),
+          bGrounded( false ),
+          bOnRoad( false ),
+          bOnBridge( false ),
+          bInsideTunnel( false ) {}
+
     void reset();
     Eigen::Vector4f getShadowColor() const;
 };
@@ -91,6 +98,25 @@ struct CarBodyState {
     uint8_t bIsBike : 1;
     uint8_t bBikeIdle : 1;
     uint8_t bHasBikeAvatar : 1;
+
+    CarBodyState()
+        : bInitialized( false ),
+          bIsBraking( false ),
+          bIsReversing( false ),
+          bHeadlightsOn( false ),
+          bFlashingLights( false ),
+          bHazardLightsOn( false ),
+          bHonking( false ),
+          bIndicatingLeft( false ),
+          bIndicatingRight( false ),
+          bPoliceGyroEnabled( false ),
+          bBackOnTracked( false ),
+          bUseWheelMatrix( false ),
+          bIsInTunnel( false ),
+          bHasBrokenPart( false ),
+          bIsBike( false ),
+          bBikeIdle( false ),
+          bHasBikeAvatar( false ) {}
 
     int32_t WindowState;
     int32_t Gears;

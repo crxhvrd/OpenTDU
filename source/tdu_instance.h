@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "core/event.h"
 #include "core/mutex.h"
 #include "core/thread.h"
@@ -49,7 +51,7 @@ public:
         StreamedResource *pCurrentFile;
         StreamedResource *pNextFile;
 
-        uint8_t bDone : 1;
+        std::atomic<bool> bDone;
 
         FileInstanciationWorkerInfos()
             : Event(),

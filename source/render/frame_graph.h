@@ -37,6 +37,7 @@ public:
     void pushClearCommand( RenderTarget *param_2,
                            const ColorRGBA param_3,
                            ClearRegion *param_4 = nullptr );
+    void dropClearCommandsFor( const RenderTarget *param_2 );
 
 private:
     FrameGraphConfig config;

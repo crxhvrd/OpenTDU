@@ -1085,6 +1085,8 @@ include_directories( "${OTDU_THIRDPARTY_FOLDER}/cityhash/src/" )
 include_directories( "${OTDU_THIRDPARTY_FOLDER}/eigen" )
 include_directories( "${OTDU_THIRDPARTY_FOLDER}/eigen/unsupported" ) # Required for EulerAngles calc
 
+add_definitions( -DEIGEN_MAX_ALIGN_BYTES=16 )
+
 if ( ${OTDU_USE_IMGUI} )
 include_directories( "${OTDU_THIRDPARTY_FOLDER}/imgui" )
 endif()

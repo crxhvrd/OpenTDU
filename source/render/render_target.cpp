@@ -3,6 +3,7 @@
 
 #include "2db.h"
 #include "ed_render.h"
+#include "frame_graph.h"
 #include "gs_render.h"
 #include "gs_render_helper.h"
 
@@ -24,6 +25,7 @@ RenderTarget::RenderTarget()
       activeFramebufferIndex( ~0 ),
       pTexture( nullptr ),
       pDepthBuffer( nullptr ),
+      pParentRT( nullptr ),
       bOwnTexture( false ),
       bOwnZBuffer( false ) {}
 
@@ -595,6 +597,7 @@ void ReleasePooledRenderTarget( RenderTarget *param_1 ) {
     // FUN_005f5960 (inlined)
     param_1->destroy( gEdRender.pRenderDevice );
     gRenderTargetPool.removeFromPool( param_1 );
+    gFrameGraph.dropClearCommandsFor( param_1 );
     param_1->~RenderTarget();
     TestDrive::Free( param_1 );
     param_1 = nullptr;
