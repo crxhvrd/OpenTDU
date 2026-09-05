@@ -135,6 +135,7 @@ public:
     void bindCamera( CameraGame *param_1, CameraGame *param_2, float param_3 );
 
     void tickActiveCamera( float param_2 );
+    bool updateActiveCamera( float deltaTime, float accTime );
     void bindToRender();
 
     void applyCinematicOverride( CameraGame &camera );

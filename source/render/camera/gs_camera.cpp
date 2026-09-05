@@ -753,6 +753,43 @@ void GSCamera::bindCamera( CameraGame *param_1,
     bUpdatedView = false;
 }
 
+bool GSCamera::updateActiveCamera( float deltaTime, float accTime ) {
+    // FUN_008e45d0
+    if ( pActiveVehicleCamera == nullptr ) {
+        return false;
+    }
+
+    if ( bReplayMode || pActiveVehicleCamera->getType() == 9 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_008e4230 (replay camera switch)
+    }
+    (void)accTime;
+
+    if ( pActiveVehicleCamera == nullptr || bLocked ) {
+        return true;
+    }
+
+    const Eigen::Vector3f previousPosition =
+        pActiveVehicleCamera->getWorldPositionOffset();
+
+    pActiveVehicleCamera->tick( deltaTime, false, false );
+
+    const Eigen::Vector3f currentPosition =
+        pActiveVehicleCamera->getWorldPositionOffset();
+
+    if ( deltaTime <= 0.0f ) {
+        pActiveVehicleCamera->setVelocity( Eigen::Vector4f::Zero() );
+    } else {
+        const Eigen::Vector3f delta =
+            ( currentPosition - previousPosition ) / deltaTime;
+        pActiveVehicleCamera->setVelocity(
+            Eigen::Vector4f( delta.x(), delta.y(), delta.z(), 0.0f ) );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE;
+
+    return true;
+}
+
 void GSCamera::tickActiveCamera( float param_2 ) {
     // FUN_008e48a0
     CarState *local_4 = gpCarState->getCarStates();
@@ -762,10 +799,6 @@ void GSCamera::tickActiveCamera( float param_2 ) {
     if ( field_0x938 != '\0' ) {
         pCVar4 = local_4;
     }
-
-    pActiveVehicleCamera->tick(
-        0.016666668f, true,
-        true ); // FIXME: Temporary hack until GSCamera tick is implemented
 
     if ( ( pCVar4 != pTarget ) ||
          ( ( ( pCVar4 != nullptr && ( pTarget != nullptr ) ) &&
@@ -943,9 +976,9 @@ void GSCamera::applyCinematicOverride( CameraGame &camera ) {
     camera.setPositionOffseted(
         Eigen::Vector4f( cinematicCamPosition.x(), cinematicCamPosition.y(),
                          cinematicCamPosition.z(), 1.0f ) );
-    camera.setTargetOffseted(
-        Eigen::Vector4f( cinematicCamTarget.x(), cinematicCamTarget.y(),
-                         cinematicCamTarget.z(), 1.0f ) );
+    camera.setTargetOffseted( Eigen::Vector4f( cinematicCamTarget.x(),
+                                               cinematicCamTarget.y(),
+                                               cinematicCamTarget.z(), 1.0f ) );
     camera.setUp( Eigen::Vector4f( cinematicCamUp.x(), cinematicCamUp.y(),
                                    cinematicCamUp.z(), 0.0f ) );
     camera.setFOV( cinematicCamFov );

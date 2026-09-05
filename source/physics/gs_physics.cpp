@@ -15,6 +15,7 @@
 #include "input/ed_dev.h"
 #include "input/input_device.h"
 
+#include "render/camera/gs_camera.h"
 #include "render/draw_list.h"
 #include "render/gs_render.h"
 #include "render/2dm.h"
@@ -2216,6 +2217,64 @@ GSPhysics::queryCameraCollisions( const Eigen::Vector4f &center,
     return static_cast<int32_t>( hits.size() );
 }
 
+int32_t GSPhysics::castCameraSegment( const Eigen::Vector4f &from,
+                                      const Eigen::Vector4f &to,
+                                      std::vector<CameraSegmentHit> &hits ) {
+    hits.clear();
+    if ( pPhysicsSystem == nullptr ) {
+        return 0;
+    }
+
+    const Eigen::Vector4f origin = GetShiftOrigin();
+    const Eigen::Vector3f delta = ( to - from ).head<3>();
+    if ( delta.squaredNorm() <= 0.0f ) {
+        return 0;
+    }
+
+    const JPH::RRayCast ray( JPH::RVec3( from.x() - origin.x(),
+                                         from.y() - origin.y(),
+                                         from.z() - origin.z() ),
+                             JPH::Vec3( delta.x(), delta.y(), delta.z() ) );
+
+    JPH::RayCastSettings settings;
+    settings.mTreatConvexAsSolid = false;
+    settings.mBackFaceModeTriangles = JPH::EBackFaceMode::CollideWithBackFaces;
+
+    JPH::AllHitCollisionCollector<JPH::CastRayCollector> collector;
+
+    lockMutex();
+    pPhysicsSystem->GetNarrowPhaseQuery().CastRay( ray, settings, collector );
+
+    hits.reserve( collector.mHits.size() );
+    for ( const JPH::RayCastResult &result : collector.mHits ) {
+        const JPH::RVec3 point = ray.GetPointOnRay( result.mFraction );
+
+        CameraSegmentHit hit;
+        hit.Fraction = result.mFraction;
+        hit.Point = Eigen::Vector4f(
+            static_cast<float>( point.GetX() ) + origin.x(),
+            static_cast<float>( point.GetY() ) + origin.y(),
+            static_cast<float>( point.GetZ() ) + origin.z(), 1.0f );
+        hit.Normal = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
+
+        JPH::BodyLockRead lock( pPhysicsSystem->GetBodyLockInterfaceNoLock(),
+                                result.mBodyID );
+        if ( lock.Succeeded() ) {
+            const JPH::Body &body = lock.GetBody();
+            const JPH::Vec3 normal =
+                body.GetWorldSpaceSurfaceNormal( result.mSubShapeID2, point );
+            hit.Normal = Eigen::Vector4f( normal.GetX(), normal.GetY(),
+                                          normal.GetZ(), 0.0f );
+            hit.SurfaceClass = static_cast<uint32_t>( body.GetUserData() &
+                                                      TDUSurface::kClassMask );
+        }
+        hits.push_back( hit );
+    }
+    unlockMutex();
+
+    return static_cast<int32_t>( hits.size() );
+}
+
 bool GSPhysics::probeSurface( const Eigen::Vector4f &position,
                               bool bSearchAbove,
                               float &outHeight,
@@ -3696,6 +3755,10 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
         if ( it->isActive() ) {
             it->publishStepPose();
         }
+    }
+
+    if ( gpCamera != nullptr ) {
+        gpCamera->updateActiveCamera( dt, accTime );
     }
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_0081cd10 (FFB)

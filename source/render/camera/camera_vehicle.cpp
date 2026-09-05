@@ -38,6 +38,10 @@ static constexpr float kFixedFwdStep =
 static constexpr float kLeanCross = 1.0f;              // DAT_00fab3c8
 static constexpr float kLeanFwd = -3.0f;               // DAT_00fab3cc
 static constexpr float kMetersPerSecToKmh = 3.6f;      // DAT_00f41768
+static constexpr float kSweepMargin = 0.5f;            // FLOAT_00f7c80c
+static constexpr float kSweepNormalY = 0.75f;          // DAT_00f416a4
+static constexpr float kSweepBodyPad = 1.0f;           // DAT_00fab3a8
+static constexpr float kSweepBodyLift = 1.5f;          // DAT_00fab3a4
 static constexpr float kKmhToMeterPerSec = 0.2777778f; // DAT_00f41868
 static constexpr float kBlurSpeedScale = 0.2f;   // DAT_00f41730 (km/h -> byte)
 static constexpr float kBlurOutputScale = 0.04f; // DAT_00f41980
@@ -97,6 +101,8 @@ Eigen::Vector4f gSmoothUp( 0.0f, 1.0f, 0.0f, 0.0f ); // DAT_016a8240
 bool gSmoothUpInitialized = false;                   // DAT_016a8250 & 1
 FollowParams gWorkFollow; // DAT_00fa9484 (blended follow workspace)
 bool gCameraSnap = false; // DAT_010e74a4 (snap this frame)
+static std::vector<CameraSegmentHit> gCameraSweepHits; // DAT_014796e0
+static float gCameraSweepDistance = 0.0f;              // DAT_016a2c98
 
 bool gbFreeLookUnlocked = true;            // BOOL_00f7c808
 bool gbFixedCamLookSnap = false;           // BOOL_010e7484
@@ -215,7 +221,7 @@ static float QueryLookLeadInput( PhysicsVehicle *pPhys ) {
     if ( pPhys == nullptr || !pPhys->isActive() ) {
         return 0.0f;
     }
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
     return 0.0f;
 }
 
@@ -248,13 +254,7 @@ static inline void YawSmooth( Matrix4x4f_t &frame,
     const float newAngle =
         work.LastAngleY + work.CameraSmoothAngle * delta * deltaTime;
     if ( flags & 2 ) {
-        const float a = newAngle - heading;
-        const float c = std::cos( a );
-        const float s = std::sin( a );
-        const Eigen::Vector4f r0 = frame.row( 0 ).transpose();
-        const Eigen::Vector4f r2 = frame.row( 2 ).transpose();
-        frame.row( 0 ) = ( c * r0 + s * r2 ).transpose();
-        frame.row( 2 ) = ( -s * r0 + c * r2 ).transpose();
+        MatrixPreRotateY( frame, newAngle - heading );
     }
     work.LastAngleY = newAngle;
 }
@@ -522,7 +522,6 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
     }
 
     carSpeed = pPhys->getChassisVelocity();
-    velocity = carSpeed;
 
     float speed = pPhys->getForwardSpeed();
     if ( !gCameraSnap ) {
@@ -533,9 +532,16 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
     gSmoothedSpeed = speed;
 
     float fovRad;
-    if ( ( vehicleFlags & 0x10 ) == 0 ) {
+    if ( (int32_t)gEditCameraFlags < 0 && ( vehicleFlags & 0x10 ) != 0 ) {
+        // Camera editor active: pin the FOV to the lerp's top output.
+        fovRad = (float)fovLerp.MaxOutput * kDegToRad;
+    } else if ( ( vehicleFlags & 0x10 ) == 0 ) {
         fovRad = (float)vehicleFov * kDegToRad;
     } else {
+        if ( speed < 0.0f ) {
+            speed = 0.0f;
+            gSmoothedSpeed = 0.0f;
+        }
         const float loIn = (float)fovLerp.MinInput;
         const float hiIn = (float)fovLerp.MaxInput;
         const float speedKmh = speed * kMetersPerSecToKmh;
@@ -547,7 +553,9 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
         fovRad = fovDeg * kDegToRad;
     }
 
-    const Matrix4x4f_t carMatrix = pBody->OffsetedWorldMatrix;
+    const Matrix4x4f_t carMatrix = ( pPhys != nullptr )
+                                       ? pPhys->getDisplayMatrix()
+                                       : pBody->OffsetedWorldMatrix;
 
     Eigen::Vector4f outPos, outTarget, outUp;
     const bool bFixed = ( vehicleFlags & 1 ) != 0;
@@ -574,10 +582,13 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
         gWorkFollow.GroundHeight =
             BlendClamp( follow.GroundHeight, followFast.GroundHeight, t );
         if ( gCameraSnap ) {
-            gWorkFollow.LastAngleY = follow.LastAngleY;
+            gWorkFollow.LastAngleY =
+                BlendClamp( follow.LastAngleY, followFast.LastAngleY, t );
         }
         tickFollow( carMatrix, pCar, pPhys, deltaTime, gCameraSnap, outPos,
                     outTarget, outUp );
+        follow.LastAngleY = gWorkFollow.LastAngleY;
+        followFast.LastAngleY = gWorkFollow.LastAngleY;
     }
 
     if ( ( vehicleFlags & 0x8000 ) != 0 ) {
@@ -672,7 +683,79 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
             setPositionOffseted( clampedPos );
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+        if ( !param_2 && gpPhysics != nullptr ) {
+            const Matrix4x4f_t &carWorld = pBody->WorldMatrix;
+            Matrix4x4f_t carChassis = pBody->PhysicsWorldMatrix;
+            carChassis.row( 3 ) += ( pBody->WorldMatrix.row( 3 ) -
+                                     pBody->OffsetedWorldMatrix.row( 3 ) );
+            const Matrix4x4f_t invCarWorld = OrthoInvert( carChassis );
+
+            Eigen::Vector4f segStart = carWorld.row( 3 ).transpose();
+            segStart.w() = 1.0f;
+            Eigen::Vector4f segEnd = worldPosition;
+            segEnd.w() = 1.0f;
+
+            Eigen::Vector4f segment = segEnd - segStart;
+            segment.w() = 0.0f;
+            const float segLength = segment.head<3>().norm();
+
+            float bestDistance = segLength + kSweepMargin;
+            int32_t numAccepted = 0;
+
+            if ( segLength > 0.0f ) {
+                gpPhysics->castCameraSegment( segStart, segEnd,
+                                              gCameraSweepHits );
+                for ( const CameraSegmentHit &hit : gCameraSweepHits ) {
+                    const uint32_t surface = hit.SurfaceClass;
+                    if ( surface == TDUSurface::Vehicle || surface == 0xbu ||
+                         surface == 8u ) {
+                        continue;
+                    }
+                    if ( gbCamClampedUp && surface == TDUSurface::RoadMesh ) {
+                        continue;
+                    }
+
+                    const Eigen::Vector4f pointCar =
+                        TDUMat4x4MulVec( invCarWorld, hit.Point );
+                    const Eigen::Vector4f normalCar =
+                        TDUMat4x4MulVec( invCarWorld, hit.Normal );
+                    if ( normalCar.y() > kSweepNormalY &&
+                         pointCar.y() < 0.0f ) {
+                        continue;
+                    }
+
+                    numAccepted++;
+                    const float distance =
+                        hit.Fraction * segLength - kSweepMargin;
+                    if ( distance < bestDistance ) {
+                        bestDistance = distance;
+                    }
+                }
+            }
+
+            gCameraSweepDistance = bestDistance; // DAT_016a2c98
+            if ( numAccepted != 0 && bestDistance < segLength + kSweepMargin ) {
+                Eigen::Vector4f pulled =
+                    segStart + segment * ( bestDistance / segLength );
+                pulled.w() = 1.0f;
+
+                const Eigen::Vector4f pulledCar =
+                    TDUMat4x4MulVec( invCarWorld, pulled );
+                const Eigen::Vector4f halfDims = pBody->BodyDimensions * 0.5f;
+                if ( std::fabs( pulledCar.x() ) <
+                         halfDims.x() + kSweepBodyPad ||
+                     std::fabs( pulledCar.z() ) <
+                         halfDims.z() + kSweepBodyPad ) {
+                    pulled.y() =
+                        carChassis( 3, 1 ) + halfDims.y() + kSweepBodyLift;
+                }
+
+                Eigen::Vector4f shifted = worldPositionWithUnknownOffset;
+                shifted.head<3>() +=
+                    ( pulled.head<3>() - worldPosition.head<3>() );
+                setPositionOffseted( shifted );
+            }
+        }
 
         bool bWheelInTunnel = false;
         for ( uint32_t i = 0; i < pCar->getNumWheels(); i++ ) {
@@ -1299,7 +1382,6 @@ void CameraVehicle::resetTransform() {
     lastAngleHorizontal = 0.0f;
     gCameraSnap = true; // DAT_010e74a4 = 1
     lastAngleVertical = 0.0f;
-    gWorkFollow.LastAngleY = follow.LastAngleY;
 }
 
 bool CameraVehicle::tickFollow( const Matrix4x4f_t &carMatrix,
@@ -1407,7 +1489,9 @@ void CameraVehicle::tickFixed( CarState *pCar,
                                Eigen::Vector4f &outTarget,
                                Eigen::Vector4f &outUp ) {
     // FUN_008d4540
-    const Matrix4x4f_t carMatrix = pCar->getBody()->OffsetedWorldMatrix;
+    const Matrix4x4f_t carMatrix = ( pPhys != nullptr )
+                                       ? pPhys->getDisplayMatrix()
+                                       : pCar->getBody()->OffsetedWorldMatrix;
 
     Eigen::Vector4f localPos = params.PosIncar;
     Eigen::Vector4f localTgt;

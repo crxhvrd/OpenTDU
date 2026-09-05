@@ -34,6 +34,9 @@ public:
     inline float getInteriorNearPlane() const { return interiorNearPlane; }
     inline float getInteriorFarPlane() const { return interiorFarPlane; }
     inline Eigen::Vector3f getVelocity() { return velocity.head<3>(); }
+    inline void setVelocity( const Eigen::Vector4f &value ) {
+        velocity = value;
+    }
     inline uint32_t getFlags() const { return flags; }
     inline int32_t getType() { return cameraType; }
 

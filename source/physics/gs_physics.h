@@ -66,6 +66,14 @@ struct CameraCollisionHit {
     float penetrationDepth;
 };
 
+// One hit from GSPhysics::castCameraSegment, in absolute world space.
+struct CameraSegmentHit {
+    Eigen::Vector4f Point;
+    Eigen::Vector4f Normal;
+    float Fraction = 0.0f;     // [0,1] along the segment
+    uint32_t SurfaceClass = 0; // TDUSurface::Class from the body user data
+};
+
 struct TirePacejka {
     float MaxSlipRatio = 0.0f;
     float MaxSlipAngle = 0.0f;
@@ -251,6 +259,9 @@ public:
                                    float radius,
                                    std::vector<CameraCollisionHit> &hits );
     float getGroundHeight( float x, float z );
+    int32_t castCameraSegment( const Eigen::Vector4f &from,
+                               const Eigen::Vector4f &to,
+                               std::vector<CameraSegmentHit> &hits );
     bool probeSurface( const Eigen::Vector4f &position,
                        bool bSearchAbove,
                        float &outHeight,

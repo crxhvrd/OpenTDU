@@ -41,8 +41,6 @@ float gDebugEnvMapFarPlaneScale = 4.0f;
 float gDebugEnvMapFarPlaneCoeff = 1.0f;
 float gDebugEnvMapObjectCullScale = 8.0f;
 bool gbDebugEnvMapOverlay = false;
-float gDebugEnvMapMinLookSpeed = 0.05f;
-float gDebugEnvMapLookSmoothTime = 0.25f;
 
 static constexpr float kCockpitFOV = 1.0471976f;        // DAT_00f417dc (60deg)
 static constexpr float kCockpitFarPlane = 150.0f;       // DAT_00f4182c
@@ -89,8 +87,6 @@ MngEnvMap::MngEnvMap()
       cockpitCoefDiffuse( 1.0f ),
       cockpitCoefSpecular( 0.5f ),
       userVector( Eigen::Vector4f::Zero() ),
-      lastLookDirection( Eigen::Vector3f::Zero() ),
-      lastLookView( EMV_Exterior ),
       lastDeltaTime( 0.0f ) {
     // FUN_006f0f40
     pSectors.fill( nullptr );
@@ -660,9 +656,22 @@ void MngEnvMap::updateCameras( bool bUseActiveCamera, bool bUpdateBackScene ) {
     CameraGame *pSourceCamera = bUseActiveCamera ? gpCamera->getRenderCamera()
                                                  : gpCamera->getDefaultCamera();
 
+    const CarState *pCarState = ( gpCurEnvMappedCar != nullptr )
+                                    ? gpCurEnvMappedCar->getCarState()
+                                    : nullptr;
+    if ( pCarState == nullptr ) {
+        return;
+    }
+
+    const CarBodyState *pBody = pCarState->getBody();
+    const Matrix4x4f_t &carMatrix =
+        bUseActiveCamera ? pBody->OffsetedWorldMatrix : pBody->WorldMatrix;
+    const Eigen::Vector3f carForward = carMatrix.row( 2 ).head<3>().transpose();
+    const Eigen::Vector3f carPosition =
+        carMatrix.row( 3 ).head<3>().transpose();
+
     const Eigen::Vector3f eyePosition =
         pSourceCamera->getCamToWorld().row( 3 ).head<3>().transpose();
-    const Eigen::Vector3f velocity = pSourceCamera->getVelocity();
 
     float fov;
     Eigen::Vector3f position;
@@ -670,26 +679,20 @@ void MngEnvMap::updateCameras( bool bUseActiveCamera, bool bUpdateBackScene ) {
     if ( view == EMV_Hood ) {
         fov = camFOV * kDegToRad;
         position = eyePosition;
-        lookTarget = eyePosition + velocity * kLookDistance;
+        lookTarget = eyePosition + carForward * kLookDistance;
         lookTarget.y() += hoodHeightBias;
     } else if ( view == EMV_Cockpit ) {
         fov = kCockpitFOV;
         position = eyePosition;
-        lookTarget = eyePosition - velocity * kLookDistance;
+        lookTarget = eyePosition - carForward * kLookDistance;
     } else {
         fov = camFOV * kDegToRad;
-        position = pSourceCamera->getTargetOffset();
+        position = carPosition;
         position.y() += camHeight;
         lookTarget = eyePosition;
         if ( ( eyePosition - position ).norm() >= 1.0f ) {
             lookTarget.y() *= heightBias;
         }
-    }
-
-    debugCaptureState.bLookDirectionHeld = false;
-    if ( view != EMV_Exterior ) {
-        lookTarget = position + resolveInteriorLookDirection(
-                                    lookTarget - position, pSourceCamera );
     }
 
     pEnvCamera->updateMatrix( position, kWorldUpVector.head<3>(), lookTarget );
@@ -701,7 +704,7 @@ void MngEnvMap::updateCameras( bool bUseActiveCamera, bool bUpdateBackScene ) {
     debugCaptureState.SourceEye = eyePosition;
     debugCaptureState.SourceViewDir =
         -pSourceCamera->getCamToWorld().row( 2 ).head<3>().transpose();
-    debugCaptureState.SourceVelocity = velocity;
+    debugCaptureState.CarForward = carForward;
     debugCaptureState.FOV = fov;
 
     if ( bUpdateBackScene ) {
@@ -736,44 +739,6 @@ void MngEnvMap::updateCameras( bool bUseActiveCamera, bool bUpdateBackScene ) {
     envFrustum.setPlanes( nearPlane, viewFarPlane );
 
     debugCaptureState.FarPlane = viewFarPlane;
-}
-
-Eigen::Vector3f
-MngEnvMap::resolveInteriorLookDirection( const Eigen::Vector3f &rawDirection,
-                                         CameraGame *pSourceCamera ) {
-    // FIXME: Hack for hood camera (or any camera relying on the vehicle
-    // velocity). This fix tentatively try to prevent the view vector from
-    // pointing up at idle.
-    if ( lastLookView != view || lastLookDirection.isZero() ) {
-        const Eigen::Vector3f viewDirection =
-            -pSourceCamera->getCamToWorld().row( 2 ).head<3>().transpose();
-        lastLookDirection =
-            ( view == EMV_Cockpit ) ? -viewDirection : viewDirection;
-        lastLookView = view;
-    }
-
-    const float minLookDistance = gDebugEnvMapMinLookSpeed * kLookDistance;
-    const float rawLength = rawDirection.norm();
-    if ( rawLength <= minLookDistance ) {
-        debugCaptureState.bLookDirectionHeld = true;
-        return lastLookDirection * kLookDistance;
-    }
-
-    const Eigen::Vector3f target = rawDirection / rawLength;
-    if ( gDebugEnvMapLookSmoothTime > 0.0f && lastDeltaTime > 0.0f ) {
-        const float alpha =
-            1.0f - std::exp( -lastDeltaTime / gDebugEnvMapLookSmoothTime );
-        lastLookDirection += ( target - lastLookDirection ) * alpha;
-
-        const float smoothedLength = lastLookDirection.norm();
-        lastLookDirection = ( smoothedLength > 0.0001f )
-                                ? ( lastLookDirection / smoothedLength )
-                                : target;
-    } else {
-        lastLookDirection = target;
-    }
-
-    return lastLookDirection * kLookDistance;
 }
 
 void MngEnvMap::drawMiniQuad() {
@@ -857,17 +822,10 @@ void MngEnvMap::DrawEnvMapDebugPanel( float viewSize ) {
     const MngEnvMap::DebugCaptureState &state =
         gpMngEnvMap->getDebugCaptureState();
 
-    ImGui::Text( "View: %s   Capture: %s   Look dir: %s",
-                 kViewNames[state.View],
-                 gpMngEnvMap->isCapturing() ? "on" : "off",
-                 state.bLookDirectionHeld ? "HELD (too slow)" : "live" );
-    ImGui::Text( "FOV: %.1f deg   Far plane: %.1f m   Speed: %.4f m/s",
-                 state.FOV * kRadToDeg, state.FarPlane,
-                 state.SourceVelocity.norm() );
-    ImGui::SliderFloat( "Min look speed", &gDebugEnvMapMinLookSpeed, 0.0f, 1.0f,
-                        "%.3f m/s" );
-    ImGui::SliderFloat( "Look smoothing", &gDebugEnvMapLookSmoothTime, 0.0f,
-                        1.0f, "%.2f s" );
+    ImGui::Text( "View: %s   Capture: %s", kViewNames[state.View],
+                 gpMngEnvMap->isCapturing() ? "on" : "off" );
+    ImGui::Text( "FOV: %.1f deg   Far plane: %.1f m", state.FOV * kRadToDeg,
+                 state.FarPlane );
 
     Eigen::Vector3f lookDirection = state.LookTarget - state.Position;
     const float lookDistance = lookDirection.norm();
@@ -883,7 +841,7 @@ void MngEnvMap::DrawEnvMapDebugPanel( float viewSize ) {
     ImGui::SeparatorText( "Source camera (game camera)" );
     DrawDebugVector( "Eye", state.SourceEye );
     DrawDebugVector( "View dir", state.SourceViewDir );
-    DrawDebugVector( "Velocity", state.SourceVelocity );
+    DrawDebugVector( "Car forward", state.CarForward );
     ImGui::Text( "dot( look dir, view dir ): %+.3f  (%s)",
                  lookDirection.dot( state.SourceViewDir ),
                  ( lookDirection.dot( state.SourceViewDir ) < 0.0f )
