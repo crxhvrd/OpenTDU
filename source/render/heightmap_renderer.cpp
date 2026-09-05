@@ -43,23 +43,21 @@ static uint32_t generateTileStripIndices( int32_t lodStep, uint16_t *pOut ) {
                 uint16_t *puVar8 = pOut + 2;
                 pOut = puVar8;
                 if ( 1 < iVar10 ) {
-                    int32_t idx2 = local_2c;
-                    int32_t iVar2 = coarseStep * 0x202;
-                    int32_t iVar11 = local_28;
-                    int32_t iVar14 = iVar15;
-                    int32_t local_20 = iVar12;
+                    const int32_t iVar2 = coarseStep * 0x202;
+                    const int32_t base0 = local_28;
+                    const int32_t base1 = iVar15;
+                    const int32_t base2 = local_2c;
+                    const int32_t base3 = iVar12;
+                    int32_t row = 0;
                     do {
-                        int32_t idx = idx2;
-                        idx2 = idx + iVar2;
-                        puVar8[0] = (uint16_t)iVar11;
-                        puVar8[1] = (uint16_t)iVar14;
-                        puVar8[2] = (uint16_t)idx;
-                        puVar8[3] = (uint16_t)local_20;
-                        local_20 = local_20 + iVar2;
+                        const int32_t delta = row * iVar2;
+                        puVar8[0] = (uint16_t)( base0 + delta );
+                        puVar8[1] = (uint16_t)( base1 + delta );
+                        puVar8[2] = (uint16_t)( base2 + delta );
+                        puVar8[3] = (uint16_t)( base3 + delta );
                         uVar13 = uVar13 + 2;
-                        iVar11 = iVar11 + iVar2;
                         puVar8 = puVar8 + 4;
-                        iVar14 = iVar14 + iVar2;
+                        row++;
                     } while ( uVar13 < iVar10 );
                     pOut = puVar8;
                 }
