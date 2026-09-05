@@ -10,7 +10,6 @@
 #include "filesystem/gs_file.h"
 #include "game/scenaric/entity/entity_car_player.h"
 #include "physics/gs_physics.h"
-#include "render/mng_env_map.h"
 #include "world/gs_world_streaming.h"
 #include "tdu_instance.h"
 
@@ -201,10 +200,6 @@ void BrandCar::instanciate() {
         }
 
         if ( pVehicle != nullptr ) {
-            if ( gpMngEnvMap != nullptr ) {
-                GSCarDisplay::SetRealTimeEnvMappedCar( pVehicle );
-            }
-
             carState.pVehicleBase = pVehicle;
             carState.pPhysicsVehicle = nullptr;
             carState.bIsIndoor = false;
