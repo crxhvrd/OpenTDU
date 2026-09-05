@@ -157,7 +157,7 @@ void GameModeWorld::initialize() {
 
     if ( pGameMech != nullptr && ( flags & 1 ) == 0 ) {
         mngActor.setGameMech( pGameMech );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: HUD 
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: HUD
     }
 
     VehicleBase::bApplyWheelAttenuation = true;
@@ -172,9 +172,9 @@ void GameModeWorld::reset() {
     if ( gpFlash != nullptr && gpFlash->getMouse() != nullptr ) {
         gpFlash->getMouse()->field12_0x30 = true;
     }
-    bPaused = false;          
-    bPauseMenuLocked = false; 
-    lastDistance = 0.0f;     
+    bPaused = false;
+    bPauseMenuLocked = false;
+    lastDistance = 0.0f;
 
     if ( gpCamera != nullptr && gpPlayerData != nullptr ) {
         gpCamera->setSeatPosition( gpPlayerData->getSeatPositionHeight(),
@@ -246,7 +246,11 @@ void GameModeWorld::reset() {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA / HUD
+    if ( gpMngHud != nullptr ) {
+        gpMngHud->FUN_006e6a00( pLocalCar );
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
 }
 
 constexpr int32_t kDefaultPlayerCarID = 1030;
@@ -933,7 +937,7 @@ bool GameModeWorld::createGameMech( uint32_t mechID, int32_t mechType ) {
 
     pGameMech->setOwner( this );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic 
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
     return true;
 }
 
