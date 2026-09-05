@@ -512,3 +512,12 @@ inline Matrix4x4f_t &Orthonormalize( Matrix4x4f_t &param_1 ) {
 
     return param_1;
 }
+
+static inline float Lerp2Clamped( float x, float x0, float x1, float y0, float y1 ) {
+    // FUN_0041f030
+    const float span = x1 - x0;
+    const float r = ( std::fabs( span ) > 1.0e-6f )
+                        ? ( ( x - x0 ) * ( y1 - y0 ) / span + y0 )
+                        : y0;
+    return Clamp( r, Min( y0, y1 ), Max( y0, y1 ) );
+}

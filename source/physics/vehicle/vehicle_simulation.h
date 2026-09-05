@@ -61,7 +61,9 @@ struct PhysicsWheelState {
     float BaseGripLong = 1.0f;
     float BaseGripLat = 1.0f;
     float BrakeGripLong = 1.0f; // longitudinal brake-grip fallback
-    float BrakeGripLat = 1.0f;  // lateral brake-grip fallback
+    float BrakeGripLat = 1.0f;  // lateral brake-grip, re-blended every step
+    float BrakeGripLatSlow = 1.0f;
+    float BrakeGripLatFast = 1.0f;
     float LoadScaleLong = 1.0f; // longitudinal tire-force load scale
     float LoadScaleDrag = 0.0f; // v^2 drag load scale
     float DynamicGrip = 1.0f;   // dynamic-grip accumulator
