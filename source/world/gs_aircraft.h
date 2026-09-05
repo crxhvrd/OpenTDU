@@ -3,6 +3,7 @@
 #include "core/cubic_bezier.h"
 #include "core/response_curve.h"
 #include "game/gs_base.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_actor.h"
 
 class AudioClient;
@@ -73,7 +74,7 @@ protected:
 class AircraftPathFlights;
 
 // One aircraft travelling along its own (jittered) copy of a path.
-class Aircraft : public AircraftPath {
+class Aircraft : public AircraftPath, public CinematicPlayer {
 public:
     inline Entity *getInstance() const { return pInstance; }
     inline float getCurrentU() const { return CurrentU; }
@@ -82,7 +83,7 @@ public:
 
 public:
     Aircraft();
-    ~Aircraft();
+    virtual ~Aircraft();
 
     void spawn( Entity *pAircraftInstance,
                 AudioDispatcherPlaybackSoundInstance *pSound,
@@ -92,6 +93,8 @@ public:
     void seedSpeed();
     void tick( AircraftPathFlights &owner, float deltaTime );
     void terminateSound();
+
+    bool executeAction( int32_t event, void *pParameters ) override;
 
 private:
     void updateSound( bool bAtListener );

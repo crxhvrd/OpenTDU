@@ -246,7 +246,7 @@ Aircraft::Aircraft()
       bCineWindowLatched( 0 ),
       bCineArmed( 0 ),
       bCinePauseRequested( 0 ),
-      bSoundDirty( 0 ),
+      bSoundDirty( 1 ),
       bCineDriven( 0 ),
       bCinePauseCounted( 0 ),
       pSoundInstance( nullptr ),
@@ -282,6 +282,15 @@ void Aircraft::spawn( Entity *pAircraftInstance,
     pSoundInstance->setVolume( GetAmbianceVolumeFactor() * kSoundVolumeScale );
     pSoundInstance->setRefractionFactor( kSoundRefractionFactor );
     updateSound( false );
+}
+
+bool Aircraft::executeAction( int32_t event, void *pParameters ) {
+    // FUN_00903010
+    (void)pParameters;
+    if ( event == CE_Ended ) {
+        bCineDriven = 0;
+    }
+    return true;
 }
 
 void Aircraft::seedSpeed() {
@@ -411,8 +420,10 @@ void Aircraft::updateCinematic( AircraftPathFlights &owner,
         const Eigen::Vector3f anchor = GetListenerAnchor();
         cineMatrix.row( 3 ) << -anchor.x(), -anchor.y(), -anchor.z(), 1.0f;
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: Cinematic
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: Cinematic interface hand-over
+                                 // (bAvatar/MatTransformOffset/bCineOffset)
 
+        pCinematic->setGameModeInterface( this );
         bCineDriven = 1;
         pCinematic->start( true );
         CurrentU = cineStartU;
@@ -736,6 +747,11 @@ void AircraftPathFlights::terminate() {
     // FUN_00903090 / FUN_00903ad0
     for ( std::unique_ptr<Aircraft> &pAircraft : flights ) {
         pAircraft->terminateSound();
+
+        if ( pCinematic != nullptr &&
+             pCinematic->getGameModeInterface() == pAircraft.get() ) {
+            pCinematic->setGameModeInterface( nullptr );
+        }
     }
     flights.clear();
 }
