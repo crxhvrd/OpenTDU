@@ -43,6 +43,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
 #include "game/mng_ingame_menu.h"
+#include "audio/gs_audio.h"
 
 float gFXPFadeInDelay = 0.5f;   // DAT_00f9c0f4
 float gFXPFadeOutDelay = 0.5f;  // DAT_00f9c0f8
@@ -834,7 +835,10 @@ void GameModeWorld::onPauseMenuRequested( bool bOpened ) {
             gpWeather->setUpdateTimerEnabled( false );
         }
 
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO
+        if ( gpAudio != nullptr ) {
+            gpAudio->changeMixState( gpAudio->getMixFlags( "MixMenu" ) );
+        }
+
         if ( gpTimer != nullptr ) {
             if ( gpTimer->PreviousGameSpeed != gpTimer->GameSpeed &&
                  gpTimer->GameSpeed != 0.0f ) {
@@ -894,7 +898,9 @@ void GameModeWorld::onMenuPauseExit( bool bRestoreState ) {
             if ( gpTimer != nullptr ) {
                 gpTimer->GameSpeed = gpTimer->PreviousGameSpeed;
             }
-            OTDU_UNIMPLEMENTED; // TODO: AUDIO
+            if ( gpAudio != nullptr ) {
+                gpAudio->requestMixStateResync();
+            }
         }
 
         pauseFadeTimer = gFXPFadeOutDelay - pauseFadeTimer;
