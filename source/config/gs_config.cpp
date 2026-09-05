@@ -410,8 +410,11 @@ bool GSConfig::parseIniFile( const char *pPath ) {
             }
 
             // HACK: FIXME: Skip bike section for now (until vehicle physics are
-            // correctly implemented)
-            if ( currentSection == "Bike" ) {
+            // correctly implemented).
+            const bool bGlobalInBikeSection =
+                ( variableName == "SENSITIVTY" ||
+                  variableName == "USESTEERCONTROL" );
+            if ( currentSection == "Bike" && !bGlobalInBikeSection ) {
                 while ( inputLine[lineIt] != '\n' ) {
                     lineIt++;
                 }

@@ -509,7 +509,9 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     const float brake = ApplyInputDeadZone( rawBrake, gBrakeDeadZone );
 
     const float steer =
-        ReadActionAxis( pRightAction ) - ReadActionAxis( pLeftAction );
+        ApplyInputDeadZone( ReadActionAxis( pRightAction ),
+                            gSteeringDeadZone ) -
+        ApplyInputDeadZone( ReadActionAxis( pLeftAction ), gSteeringDeadZone );
 
     const PhysicsVehicle::DrivingGearbox gearbox =
         pPlayerPhysicsVehicle->getDrivingGearbox();
