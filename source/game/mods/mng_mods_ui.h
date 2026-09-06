@@ -29,7 +29,10 @@ private:
     void hide();
     void setClipVisible( const char *pPath, const bool bShow );
     void setListHidden( const bool bHidden );
-    void showPanes();
+    void resizePackHighlight();
+    void showPanes( const bool bAnimate );
+    void updatePaneSequence();
+    int32_t getRootFrame();
     void setScreenActive( const bool bActive );
     bool isFrontEndScreenUp();
     void setInputExclusive( const bool bExclusive );
@@ -37,6 +40,14 @@ private:
     void rebuildDetailRows();
     void toggleSelectedPack();
     void applyChanges();
+
+private:
+    enum ePaneSequence : uint8_t {
+        PS_Hidden,
+        PS_PackSliding,
+        PS_DetailSliding,
+        PS_Visible,
+    };
 
 private:
     std::vector<ModsListRow> packRows;
@@ -48,11 +59,14 @@ private:
     FlashPlayer *pMovie;
     int32_t autoOpenTicks;
     int32_t numOpenLists;
+    int32_t paneSequenceTicks;
+    ePaneSequence paneSequence;
     uint8_t bInputExclusive : 1;
     uint8_t bListHidden : 1;
     uint8_t bListKeyLatched : 1;
     uint8_t bPaneKeyLatched : 1;
     uint8_t bPanesPlaced : 1;
+    uint8_t bAnimationDone : 1;
     uint8_t bSuspended : 1;
     uint8_t bTickSeen : 1;
     uint8_t bVisible : 1;

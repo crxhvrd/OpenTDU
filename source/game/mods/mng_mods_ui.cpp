@@ -26,11 +26,18 @@ static constexpr int32_t kAutoOpenTicks = 3;
 static constexpr const char *kMovieName = "VIEWER";
 static constexpr const char *kPackListPath = "/array_bnk";
 static constexpr const char *kDetailListPath = "/array_cine";
+static constexpr const char *kHighlightClipName = "barre";
+static constexpr const char *kPackHighlightPath = "/array_bnk/barre";
 
 static constexpr const char *kPackPaneFrame = "bnk_clic";
 static constexpr const char *kDetailPaneFrame = "cine_clic";
 
+static int32_t gPackRestFrame = -1;
 static int32_t gPaneRestFrame = -1;
+static float gPackPaneRestX = 0.0f;
+static float gDetailPaneRestX = 0.0f;
+static float gPackHighlightX = 0.0f;
+static float gPackHighlightScaleX = 0.0f;
 
 static constexpr FlashMessage kPackListWidget = FlashMessage( "bnkl" );
 static constexpr FlashMessage kDetailListWidget = FlashMessage( "cinl" );
@@ -193,6 +200,74 @@ static FlashTag *FindTagForCharacter( FlashTag *pFirstTag,
         }
 
         if ( *(const uint32_t *)( (const uint8_t *)pTag + 8 ) == character ) {
+            return pTag;
+        }
+    }
+
+    return nullptr;
+}
+
+static FlashTag *GetRootTimeline( FlashResourceHeader *pHeader ) {
+    uint8_t *pRoot = (uint8_t *)pHeader + 0x48;
+    return (FlashTag *)( pRoot + *(const int32_t *)( pRoot + 0x14 ) );
+}
+
+static int32_t FindRootCharacterByName( FlashTag *pFirstTag,
+                                        const char *pName ) {
+    static constexpr uint32_t kEndTagId = 0u;
+    static constexpr uint32_t kPlaceObject2TagId = 0x1au;
+    static constexpr uint32_t kDefineSpriteTagId = 0x27u;
+
+    int32_t nesting = 0;
+    for ( FlashTag *pTag = pFirstTag; pTag != nullptr;
+          pTag = pTag->getNextTag() ) {
+        if ( pTag->TagId == kDefineSpriteTagId ) {
+            nesting++;
+            continue;
+        }
+        if ( pTag->TagId == kEndTagId ) {
+            if ( nesting == 0 ) {
+                break;
+            }
+            nesting--;
+            continue;
+        }
+        if ( nesting != 0 || pTag->TagId != kPlaceObject2TagId ) {
+            continue;
+        }
+
+        FlashTagPlaceObject2Data *pPlace = (FlashTagPlaceObject2Data *)pTag;
+        const char *pPlaceName = GetPlaceObjectName( pPlace );
+        if ( pPlaceName != nullptr && strcmp( pPlaceName, pName ) == 0 ) {
+            return (int32_t)pPlace->Unknown;
+        }
+    }
+
+    return -1;
+}
+
+static FlashTag *FindSpriteForCharacter( FlashTag *pFirstTag,
+                                         const int32_t character ) {
+    static constexpr uint32_t kEndTagId = 0u;
+    static constexpr uint32_t kDefineSpriteTagId = 0x27u;
+
+    int32_t nesting = 0;
+    for ( FlashTag *pTag = pFirstTag; pTag != nullptr;
+          pTag = pTag->getNextTag() ) {
+        if ( pTag->TagId == kEndTagId ) {
+            if ( nesting == 0 ) {
+                break;
+            }
+            nesting--;
+            continue;
+        }
+        if ( pTag->TagId != kDefineSpriteTagId ) {
+            continue;
+        }
+
+        nesting++;
+        FlashTagDefineSpriteData *pSprite = (FlashTagDefineSpriteData *)pTag;
+        if ( nesting == 1 && (int32_t)pSprite->Index == character ) {
             return pTag;
         }
     }
@@ -558,6 +633,7 @@ static void PatchPanesSideBySide( FlashPlayer *pMovie ) {
             }
 
             if ( bLeavesPackPane ) {
+                gPackRestFrame = frameIndex - 2;
                 range = R_HoldPackPane;
             } else if ( strcmp( pLabel, kDetailPaneFrame ) == 0 ) {
                 range = R_DetailPane;
@@ -581,6 +657,20 @@ static void PatchPanesSideBySide( FlashPlayer *pMovie ) {
             continue;
         }
 
+        if ( pTag->TagId == kPlaceObject2TagId &&
+             *(const uint16_t *)( (const uint8_t *)pTag + 8 ) == 0u ) {
+            float restX = 0.0f;
+            float restY = 0.0f;
+            if ( GetPlaceObjectTranslation( (FlashTagPlaceObject2Data *)pTag,
+                                            &restX, &restY ) ) {
+                if ( range == R_Untouched ) {
+                    gPackPaneRestX = restX;
+                } else if ( range == R_DetailPane ) {
+                    gDetailPaneRestX = restX;
+                }
+            }
+        }
+
         if ( range == R_Untouched ) {
             continue;
         }
@@ -598,6 +688,303 @@ static void PatchPanesSideBySide( FlashPlayer *pMovie ) {
         *pDepth = ( range == R_DetailPane ) ? kDetailPaneDepth : kDeadDepth;
         numRetargeted++;
     }
+}
+
+static void GatherSpriteExtentX( FlashTag *pFirstTag,
+                                 FlashTag *pSprite,
+                                 const float offsetX,
+                                 const int32_t depthBudget,
+                                 float *pMinX,
+                                 float *pMaxX ) {
+    static constexpr uint32_t kEndTagId = 0u;
+    static constexpr uint32_t kDefineShapeTagId = 2u;
+    static constexpr uint32_t kPlaceObject2TagId = 0x1au;
+    static constexpr uint8_t kHasCharacter = 0x02u;
+
+    if ( pSprite == nullptr || depthBudget < 0 ) {
+        return;
+    }
+
+    for ( FlashTag *pChild = pSprite->getNextTag();
+          pChild != nullptr && pChild->TagId != kEndTagId;
+          pChild = pChild->getNextTag() ) {
+        if ( pChild->TagId != kPlaceObject2TagId ) {
+            continue;
+        }
+
+        FlashTagPlaceObject2Data *pPlace = (FlashTagPlaceObject2Data *)pChild;
+        if ( ( pPlace->LowFlags & kHasCharacter ) == 0 ) {
+            continue;
+        }
+
+        float placeX = 0.0f;
+        float placeY = 0.0f;
+        GetPlaceObjectTranslation( pPlace, &placeX, &placeY );
+
+        FlashTag *pCharacter =
+            FindTagForCharacter( pFirstTag, pPlace->Unknown );
+        if ( pCharacter != nullptr && pCharacter->TagId == kDefineShapeTagId ) {
+            const FlashRECT &bb = ( (FlashTagDefineShapeData *)pCharacter )->BB;
+            *pMinX = Min( *pMinX, offsetX + placeX + bb.X );
+            *pMaxX = Max( *pMaxX, offsetX + placeX + bb.Y );
+            continue;
+        }
+
+        GatherSpriteExtentX(
+            pFirstTag, FindSpriteForCharacter( pFirstTag, pPlace->Unknown ),
+            offsetX + placeX, depthBudget - 1, pMinX, pMaxX );
+    }
+}
+
+static void NarrowShapeRight( FlashTagDefineShapeData *pShape,
+                              const int16_t cutFromX,
+                              const int16_t shift ) {
+    static constexpr uint32_t kEndRecord = 0u;
+    static constexpr uint32_t kStyleTableRecord = 3u;
+    static constexpr uint32_t kTriangleListRecord = 8u;
+    static constexpr uint32_t kFilledTriangleListRecord = 9u;
+    static constexpr uint32_t kLineStripRecord = 0x108u;
+
+    uint8_t *pBase = (uint8_t *)&pShape->TagSize;
+    uint8_t *pEnd = (uint8_t *)pShape + pShape->TagSize;
+    uint8_t *pRecord = pBase + pShape->field_0x1ci;
+
+    while ( pRecord >= pBase && pRecord + 8 <= pEnd ) {
+        const uint32_t record = *(const uint32_t *)pRecord;
+        if ( record == kEndRecord ) {
+            break;
+        }
+
+        if ( record == kStyleTableRecord ) {
+            pRecord = pBase + *(const uint32_t *)( pRecord + 4 );
+            continue;
+        }
+
+        const uint32_t numEntries = *(const uint16_t *)( pRecord + 4 );
+
+        uint8_t *pVertices = nullptr;
+        uint32_t numVertices = 0u;
+        if ( record == kTriangleListRecord ) {
+            pVertices = pRecord + 8;
+            numVertices = numEntries * 3u;
+        } else if ( record == kLineStripRecord ) {
+            pVertices = pRecord + 8;
+            numVertices = numEntries;
+        } else if ( record == kFilledTriangleListRecord ) {
+            pVertices = pRecord + 0xc;
+            numVertices = numEntries;
+        } else {
+            break;
+        }
+
+        if ( pVertices + numVertices * 4u > pEnd ) {
+            break;
+        }
+
+        for ( uint32_t i = 0; i < numVertices; i++ ) {
+            int16_t *pX = (int16_t *)( pVertices + i * 4u );
+            if ( *pX > cutFromX ) {
+                *pX = (int16_t)( *pX - shift );
+            }
+        }
+
+        pRecord = pVertices + numVertices * 4u;
+    }
+
+    if ( pShape->BB.Y > (float)cutFromX ) {
+        pShape->BB.Y -= (float)shift;
+    }
+}
+
+static void PatchPackPaneWidth( FlashPlayer *pMovie ) {
+    static constexpr int16_t kCutFromX = 8000;
+    static constexpr float kPaneGap = 300.0f;
+
+    static constexpr uint32_t kEndTagId = 0u;
+    static constexpr uint32_t kDefineShapeTagId = 2u;
+    static constexpr uint32_t kPlaceObject2TagId = 0x1au;
+    static constexpr uint8_t kHasCharacter = 0x02u;
+
+    if ( pMovie == nullptr || pMovie->getBoundFlashResource() == nullptr ) {
+        return;
+    }
+
+    FlashResourceHeader *pHeader = pMovie->getBoundFlashResource()->getHeader();
+    if ( pHeader == nullptr ) {
+        return;
+    }
+
+    FlashTag *pFirstTag = GetRootTimeline( pHeader );
+
+    FlashTag *pPackPane = FindSpriteForCharacter(
+        pFirstTag, FindRootCharacterByName( pFirstTag, kPackListPath + 1 ) );
+    FlashTag *pDetailPane = FindSpriteForCharacter(
+        pFirstTag, FindRootCharacterByName( pFirstTag, kDetailListPath + 1 ) );
+    if ( pPackPane == nullptr || pDetailPane == nullptr ) {
+        return;
+    }
+
+    auto gatherShapes = []( FlashTag *pDictionary, FlashTag *pPane,
+                            FlashTagDefineShapeData **pOutShapes,
+                            const int32_t maxShapes ) {
+        int32_t numShapes = 0;
+        for ( FlashTag *pChild = pPane->getNextTag();
+              pChild != nullptr && pChild->TagId != kEndTagId;
+              pChild = pChild->getNextTag() ) {
+            if ( pChild->TagId != kPlaceObject2TagId ) {
+                continue;
+            }
+
+            FlashTagPlaceObject2Data *pPlace =
+                (FlashTagPlaceObject2Data *)pChild;
+            if ( ( pPlace->LowFlags & kHasCharacter ) == 0 ) {
+                continue;
+            }
+
+            FlashTag *pCharacter =
+                FindTagForCharacter( pDictionary, pPlace->Unknown );
+            if ( pCharacter == nullptr ||
+                 pCharacter->TagId != kDefineShapeTagId ) {
+                continue;
+            }
+
+            FlashTagDefineShapeData *pShape =
+                (FlashTagDefineShapeData *)pCharacter;
+
+            bool bAlreadyGathered = false;
+            for ( int32_t i = 0; i < numShapes; i++ ) {
+                bAlreadyGathered |= pOutShapes[i] == pShape;
+            }
+
+            if ( !bAlreadyGathered && numShapes < maxShapes ) {
+                pOutShapes[numShapes++] = pShape;
+            }
+        }
+
+        return numShapes;
+    };
+
+    static constexpr int32_t kMaxPaneShapes = 8;
+    FlashTagDefineShapeData *pPackShapes[kMaxPaneShapes] = {};
+    FlashTagDefineShapeData *pDetailShapes[kMaxPaneShapes] = {};
+
+    const int32_t numPackShapes =
+        gatherShapes( pFirstTag, pPackPane, pPackShapes, kMaxPaneShapes );
+    const int32_t numDetailShapes =
+        gatherShapes( pFirstTag, pDetailPane, pDetailShapes, kMaxPaneShapes );
+    if ( numPackShapes == 0 || numDetailShapes == 0 ) {
+        return;
+    }
+
+    float packRightEdge = pPackShapes[0]->BB.Y;
+    for ( int32_t i = 1; i < numPackShapes; i++ ) {
+        packRightEdge = Max( packRightEdge, pPackShapes[i]->BB.Y );
+    }
+
+    float detailLeftEdge = pDetailShapes[0]->BB.X;
+    for ( int32_t i = 1; i < numDetailShapes; i++ ) {
+        detailLeftEdge = Min( detailLeftEdge, pDetailShapes[i]->BB.X );
+    }
+
+    const float targetRightEdge =
+        gDetailPaneRestX + detailLeftEdge - gPackPaneRestX - kPaneGap;
+
+    float keptContentRightEdge = 0.0f;
+    for ( FlashTag *pChild = pPackPane->getNextTag();
+          pChild != nullptr && pChild->TagId != kEndTagId;
+          pChild = pChild->getNextTag() ) {
+        if ( pChild->TagId != kPlaceObject2TagId ) {
+            continue;
+        }
+
+        float placeX = 0.0f;
+        float placeY = 0.0f;
+        if ( GetPlaceObjectTranslation( (FlashTagPlaceObject2Data *)pChild,
+                                        &placeX, &placeY ) &&
+             placeX <= (float)kCutFromX ) {
+            keptContentRightEdge = Max( keptContentRightEdge, placeX );
+        }
+    }
+
+    if ( targetRightEdge <= keptContentRightEdge ) {
+        gPackHighlightScaleX = 0.0f;
+        return;
+    }
+
+    if ( packRightEdge <= targetRightEdge ) {
+        return;
+    }
+
+    const int16_t shift = (int16_t)( packRightEdge - targetRightEdge );
+
+    for ( int32_t i = 0; i < numPackShapes; i++ ) {
+        NarrowShapeRight( pPackShapes[i], kCutFromX, shift );
+    }
+
+    for ( FlashTag *pChild = pPackPane->getNextTag();
+          pChild != nullptr && pChild->TagId != kEndTagId;
+          pChild = pChild->getNextTag() ) {
+        if ( pChild->TagId != kPlaceObject2TagId ) {
+            continue;
+        }
+
+        FlashTagPlaceObject2Data *pPlace = (FlashTagPlaceObject2Data *)pChild;
+        float placeX = 0.0f;
+        float placeY = 0.0f;
+        if ( !GetPlaceObjectTranslation( pPlace, &placeX, &placeY ) ||
+             placeX <= (float)kCutFromX ) {
+            continue;
+        }
+
+        SetPlaceObjectTranslation( pPlace, placeX - (float)shift, placeY );
+    }
+
+    FlashTag *pHighlight = nullptr;
+    float highlightPlaceX = 0.0f;
+    for ( FlashTag *pChild = pPackPane->getNextTag();
+          pChild != nullptr && pChild->TagId != kEndTagId;
+          pChild = pChild->getNextTag() ) {
+        if ( pChild->TagId != kPlaceObject2TagId ) {
+            continue;
+        }
+
+        FlashTagPlaceObject2Data *pPlace = (FlashTagPlaceObject2Data *)pChild;
+        const char *pName = GetPlaceObjectName( pPlace );
+        if ( pName == nullptr || strcmp( pName, kHighlightClipName ) != 0 ) {
+            continue;
+        }
+
+        float placeY = 0.0f;
+        GetPlaceObjectTranslation( pPlace, &highlightPlaceX, &placeY );
+        pHighlight = FindSpriteForCharacter( pFirstTag, pPlace->Unknown );
+        break;
+    }
+
+    if ( pHighlight == nullptr ) {
+        return;
+    }
+
+    float highlightLeft = FLT_MAX;
+    float highlightRight = -FLT_MAX;
+    GatherSpriteExtentX( pFirstTag, pHighlight, highlightPlaceX, 2,
+                         &highlightLeft, &highlightRight );
+
+    if ( highlightRight <= highlightLeft ) {
+        return;
+    }
+
+    const float highlightInset = packRightEdge - highlightRight;
+    const float scale = ( targetRightEdge - highlightInset - highlightLeft ) /
+                        ( highlightRight - highlightLeft );
+    if ( scale <= 0.0f || scale >= 1.0f ) {
+        return;
+    }
+
+    static constexpr float kTwipsPerPixel = 20.0f;
+    gPackHighlightScaleX = scale * 100.0f;
+    gPackHighlightX =
+        ( highlightLeft - ( highlightLeft - highlightPlaceX ) * scale ) /
+        kTwipsPerPixel;
 }
 
 static std::string GetTextRun( const FlashTag *pTextTag ) {
@@ -681,11 +1068,14 @@ MngModsUI::MngModsUI()
       pMovie( nullptr ),
       autoOpenTicks( -1 ),
       numOpenLists( 0 ),
+      paneSequenceTicks( 0 ),
+      paneSequence( PS_Hidden ),
       bInputExclusive( false ),
       bListHidden( false ),
       bListKeyLatched( false ),
       bPaneKeyLatched( false ),
       bPanesPlaced( false ),
+      bAnimationDone( false ),
       bSuspended( false ),
       bTickSeen( false ),
       bVisible( false ),
@@ -739,6 +1129,7 @@ void MngModsUI::bind() {
     bListHidden = true;
     bPanesPlaced = false;
     bSuspended = false;
+    paneSequence = PS_Hidden;
     setInputExclusive( false );
     setScreenActive( false );
 
@@ -746,6 +1137,7 @@ void MngModsUI::bind() {
 
     RetitleHeaders( pMovie );
     PatchPanesSideBySide( pMovie );
+    PatchPackPaneWidth( pMovie );
     PatchTabBar( pMovie );
 }
 
@@ -769,6 +1161,7 @@ void MngModsUI::setListHidden( const bool bHidden ) {
     setClipVisible( kDetailListPath, !bHidden );
 
     if ( bHidden ) {
+        paneSequence = PS_Hidden;
         packList.close();
         detailList.close();
         setInputExclusive( false );
@@ -777,19 +1170,100 @@ void MngModsUI::setListHidden( const bool bHidden ) {
     }
 }
 
-void MngModsUI::showPanes() {
+void MngModsUI::resizePackHighlight() {
+    if ( pMovie == nullptr || gPackHighlightScaleX <= 0.0f ) {
+        return;
+    }
+
+    FlashClip highlightClip;
+    if ( !pMovie->getClipPlayer( kPackHighlightPath, &highlightClip ) ||
+         highlightClip.pSprite == nullptr ) {
+        return;
+    }
+
+    highlightClip.setProperty( eFlashProperty::FP_X, gPackHighlightX );
+    highlightClip.setProperty( eFlashProperty::FP_ScaleX,
+                               gPackHighlightScaleX );
+}
+
+int32_t MngModsUI::getRootFrame() {
+    FlashClip rootClip;
+    if ( pMovie == nullptr || !pMovie->getClipPlayer( "/", &rootClip ) ||
+         rootClip.pSprite == nullptr ) {
+        return -1;
+    }
+
+    return rootClip.pSprite->getDisplayList()->getCurrentFrameIndex() - 1;
+}
+
+void MngModsUI::showPanes( const bool bAnimate ) {
     if ( pMovie == nullptr ) {
         return;
     }
 
     setListHidden( false );
+    bPanesPlaced = true;
+    paneSequenceTicks = 0;
 
+    const bool bCanAnimate =
+        bAnimate && gPackRestFrame >= 0 && gPaneRestFrame > gPackRestFrame;
+    if ( bCanAnimate ) {
+        paneSequence = PS_PackSliding;
+        bAnimationDone = false;
+        pMovie->showFrame( kPackPaneFrame, "/", true );
+        return;
+    }
+
+    paneSequence = PS_Visible;
     if ( gPaneRestFrame >= 0 ) {
         pMovie->goToFrameAndPlay( gPaneRestFrame, "/", false );
     } else {
         pMovie->showFrame( kPackPaneFrame, "/", true );
     }
-    bPanesPlaced = true;
+}
+
+void MngModsUI::updatePaneSequence() {
+    static constexpr int32_t kPaneSequenceTimeoutTicks = 240;
+
+    if ( pMovie == nullptr || gPaneRestFrame < 0 ) {
+        return;
+    }
+
+    if ( paneSequence == PS_Visible ) {
+        pMovie->goToFrameAndPlay( gPaneRestFrame, "/", false );
+        return;
+    }
+
+    const int32_t rootFrame = getRootFrame();
+    paneSequenceTicks++;
+
+    if ( rootFrame < 0 || paneSequenceTicks > kPaneSequenceTimeoutTicks ) {
+        paneSequence = PS_Visible;
+        pMovie->goToFrameAndPlay( gPaneRestFrame, "/", false );
+        return;
+    }
+
+    const int32_t landingFrame =
+        ( paneSequence == PS_PackSliding ) ? gPackRestFrame : gPaneRestFrame;
+
+    if ( !bAnimationDone ) {
+        bAnimationDone = rootFrame < landingFrame;
+        return;
+    }
+
+    if ( rootFrame < landingFrame ) {
+        return;
+    }
+
+    if ( paneSequence == PS_PackSliding ) {
+        paneSequence = PS_DetailSliding;
+        paneSequenceTicks = 0;
+        bAnimationDone = false;
+        pMovie->showFrame( kDetailPaneFrame, "/", true );
+        return;
+    }
+
+    paneSequence = PS_Visible;
 }
 
 bool MngModsUI::isFrontEndScreenUp() {
@@ -882,6 +1356,7 @@ void MngModsUI::show() {
 
     bListHidden = true;
     bPanesPlaced = false;
+    paneSequence = PS_Hidden;
     pMovie->showFrame( "remote", "/", false );
 
     FlashClip rootClip;
@@ -906,6 +1381,7 @@ void MngModsUI::hide() {
     bListHidden = true;
     bPanesPlaced = false;
     bSuspended = false;
+    paneSequence = PS_Hidden;
     setInputExclusive( false );
     setScreenActive( false );
 
@@ -919,7 +1395,7 @@ void MngModsUI::pollInput() {
     const bool bListKeyDown = ( mask & FK_Option1 ) == FK_Option1;
     if ( bListKeyDown && !bListKeyLatched && !bSuspended ) {
         if ( bListHidden ) {
-            showPanes();
+            showPanes( true );
         } else {
             setListHidden( true );
         }
@@ -953,7 +1429,7 @@ void MngModsUI::tick( float totalTime, float deltaTime ) {
         } else {
             setScreenActive( true );
             if ( !bListHidden ) {
-                showPanes();
+                showPanes( false );
             }
         }
     }
@@ -968,8 +1444,8 @@ void MngModsUI::tick( float totalTime, float deltaTime ) {
     setClipVisible( kTabBarClip, true );
     setClipVisible( kTabBarCursorClip, false );
 
-    if ( !bListHidden && gPaneRestFrame >= 0 ) {
-        pMovie->goToFrameAndPlay( gPaneRestFrame, "/", false );
+    if ( !bListHidden ) {
+        updatePaneSequence();
     }
 
     if ( bListHidden && bPanesPlaced ) {
@@ -982,6 +1458,8 @@ void MngModsUI::tick( float totalTime, float deltaTime ) {
     if ( bListHidden ) {
         return;
     }
+
+    resizePackHighlight();
 
     if ( packList.getCapacity() != 0 ) {
         packList.tick( totalTime, deltaTime );
