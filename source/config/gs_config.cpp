@@ -114,6 +114,7 @@ GSConfig::GSConfig()
 
     systemPCIniPath.resize( OTDU_MAX_PATH );
     radioIniPath.resize( OTDU_MAX_PATH );
+    deviceIniPath.resize( OTDU_MAX_PATH );
 }
 
 GSConfig::~GSConfig() {}
@@ -220,6 +221,18 @@ void GSConfig::registerCommand( const char *pCommandName,
     OTDU_ASSERT_FATAL( it == registeredCommands.end() );
 
     registeredCommands.insert( std::make_pair( cmdHash, pCommandCallback ) );
+}
+
+bool GSConfig::executeCommand( const char *pCommandName, const char *pArgs ) {
+    uint32_t cmdHash = CityHash32( pCommandName, strlen( pCommandName ) );
+    auto it = registeredCommands.find( cmdHash );
+    if ( it == registeredCommands.end() ) {
+        return false;
+    }
+
+    it->second( pArgs );
+
+    return true;
 }
 
 static void SetVariableFloat( const char *pArg, float *pVariable ) {
@@ -482,6 +495,8 @@ void GSConfig::parseDeviceIni() {
     ParseArgValueFromCmdLine( "device", deviceIniPath.data(), OTDU_MAX_PATH );
     InitializeDeviceMapping();
     parseIniFile( deviceIniPath.c_str() );
+
+    applyDefaultPadMapping();
 
     for ( int32_t iVar13 = 0; iVar13 < NbMaxPlayers; iVar13++ ) {
         PlayerConfiguration &peVar2 = pPlayerConfig[iVar13];

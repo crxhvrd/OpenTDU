@@ -191,6 +191,11 @@ int32_t edDev::createDevices() {
             SDL_GetJoysticks( &numJoysticksConnected );
         if ( numJoysticksConnected != 0 ) {
             OTDU_ASSERT( pConnectedJoysticks );
+
+            if ( numJoysticksConnected > int32_t( MaxNumJoystick ) ) {
+                numJoysticksConnected = int32_t( MaxNumJoystick );
+            }
+
             for ( int32_t i = 0; i < numJoysticksConnected; i++ ) {
                 bool bVar4 =
                     pDevicesJoystick[i].initialize( pConnectedJoysticks[i] );

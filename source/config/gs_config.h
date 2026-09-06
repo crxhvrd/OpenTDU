@@ -245,6 +245,7 @@ private:
 
     void registerCommand( const char *pCommandName,
                           CommandCallback_t pCommandCallback );
+    bool executeCommand( const char *pCommandName, const char *pArgs );
     void registerCommandFloat( const char *pCommandName, float *pVariable );
     void registerCommandInt( const char *pCommandName, int32_t *pVariable );
     void registerCommandUInt( const char *pCommandName, uint32_t *pVariable );
@@ -256,6 +257,7 @@ private:
 
     void parseAudioIni();
     void parseDeviceIni();
+    void applyDefaultPadMapping(); // TODO: REMOVEME: Remove once PCOptions control mapping lands
 
     bool loadIniFromBootData( const char *pIniPath,
                               char **ppOutIni,

@@ -25,6 +25,12 @@ enum class eDeviceSpecialization : uint32_t {
     DS_Count
 };
 
+enum class eInputChannelType : int32_t {
+    ICT_Digital = 0,
+    ICT_Analog = 1,
+    ICT_Keyboard = 2
+};
+
 struct InputChannel {
     int32_t Unknown = 0;
     int32_t Index = 0;
