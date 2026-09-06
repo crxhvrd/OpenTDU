@@ -97,11 +97,19 @@ void GSConfig::registerAudioCommands() {
 
     registerCommand( "SETVEHICLEREVERBMODULE", [&]( const char *pArg ) {
         // FUN_00987e00
-        OTDU_UNIMPLEMENTED
+        std::string argStr( pArg );
+        size_t it = 0;
+
+        const std::string moduleName = ParseString( argStr, it );
+        gpAudio->setVehicleReverbModule( moduleName.c_str() );
     } );
 
     registerCommand( "SETAMBIANCEREVERBMODULE", [&]( const char *pArg ) {
         // FUN_00987de0
-        OTDU_UNIMPLEMENTED
+        std::string argStr( pArg );
+        size_t it = 0;
+
+        const std::string moduleName = ParseString( argStr, it );
+        gpAudio->setAmbianceReverbModule( moduleName.c_str() );
     } );
 }

@@ -5,6 +5,7 @@
 #include "ambiance_environment.h"
 
 class AudioClient;
+class edAudioReverb;
 
 class GSAmbiance : public GameSystem {
 public:
@@ -40,7 +41,7 @@ private:
     bool isShowcaseInteriorActive() const;
     void resetReverbModule();
     void applyReverbPreset( AmbianceReverbPreset *pPreset );
-    void updateReverbModule();
+    void updateReverbModule( float weight );
     bool loadCommonConfig();
 
 private:
@@ -49,7 +50,7 @@ private:
     float InteriorVolumeMin = 0.1f; // FLOAT_00f41668
     float InteriorVolumeMax = 0.7f; // DAT_00f41828
 
-    void *pReverbModule = nullptr; // TODO:
+    edAudioReverb *pReverbModule = nullptr;
 
     void *pCommonConfig = nullptr; // the whole common.xmb document
     bool bOwnsCommonConfig = false;

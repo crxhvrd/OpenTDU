@@ -11,11 +11,13 @@ class edAudioMixer;
 class edAudioChannelAdapter;
 class edAudioCluster;
 class edAudioObject;
+class edAudioReverb;
 class edAudioSample;
 class edAudioSpatializer;
 class AudioClient;
 
 static constexpr int32_t kMaxMixers = 9;
+static constexpr int32_t kMaxReverbs = 2;
 static constexpr int32_t kMaxClientConfigs = 20;
 static constexpr int32_t kMaxClientHandlers = 19;
 static constexpr int32_t kMaxMixPresets = 16; // pMixPresets[16]
@@ -106,14 +108,14 @@ public:
     inline bool isStarted() const { return bStarted; }
 
 public:
-    AudioStereoSource(); 
+    AudioStereoSource();
     ~AudioStereoSource();
 
     bool setSamples( const edAudioSample *pLeft, const edAudioSample *pRight );
     void setVolume( float volume );
     void setPitch( float pitch );
     void setLoopState( bool bLoop );
-    void play();                 
+    void play();
     void stop( float fadeTime );
 
 private:
@@ -127,10 +129,10 @@ public:
     PipelineStereo();
     ~PipelineStereo();
 
-    bool create( edAudioObject *pParent ); 
+    bool create( edAudioObject *pParent );
     void destroy();
 
-    void addSource( AudioStereoSource *pSource ); 
+    void addSource( AudioStereoSource *pSource );
     void removeSource( AudioStereoSource *pSource );
 
 private:
@@ -240,6 +242,7 @@ public:
     edAudioBuffer *pSpatialOutput;
 
     edAudioChannelAdapter *pSpatialAdapter = nullptr;
+    edAudioReverb *pReverbPool[kMaxReverbs] = {};
     bool bListenerSyncToCamera = true;
 
 public:
@@ -250,6 +253,12 @@ public:
     inline uint32_t getMixState() const { return MixState; }
     inline void setMusicMuted( bool bMuted ) { bMusicMuted = bMuted; }
     inline void requestMixStateResync() { bMixStateTransitionSync = true; }
+    inline edAudioReverb *getAmbianceReverbModule() const {
+        return pAmbianceReverbModule;
+    }
+    inline edAudioReverb *getVehicleReverbModule() const {
+        return pVehicleReverbModule;
+    }
 
 public:
     GSAudio();
@@ -266,6 +275,9 @@ public:
 
     void addMixer( ParsedAudioMixer &mixer );
     void addReverb( ParsedAudioReverb &reverb );
+    edAudioReverb *findReverbModule( const char *pName );
+    void setAmbianceReverbModule( const char *pName );
+    void setVehicleReverbModule( const char *pName );
     void addClient( ParsedAudioClient &client );
     void setGameModeMix( const char *pGameModeName, const char *pPresetName );
     void addMixPreset( const char *pName,
@@ -291,6 +303,9 @@ private:
     bool bMixStateTransitionSync = false;
     bool bMusicMuted = false;
     bool bMusicMuteApplied = false;
+
+    edAudioReverb *pAmbianceReverbModule = nullptr;
+    edAudioReverb *pVehicleReverbModule = nullptr;
 
 private:
     void updateClientPriorities();

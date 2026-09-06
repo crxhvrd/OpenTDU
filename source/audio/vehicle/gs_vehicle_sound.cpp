@@ -4,6 +4,7 @@
 #include "config/gs_config.h"
 #include "database/gs_database.h"
 #include "audio/implementation/audio_dispatcher_playback.h"
+#include "audio/implementation/ed_audio_reverb.h"
 #include "audio/implementation/ed_audio_sample.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
@@ -13,6 +14,9 @@
 #include <string>
 
 GSVehicleSound *gpVehicleSound = nullptr;
+
+static constexpr float kReverbOpeningInertia = 0.9f; // DAT_00f416a0
+static constexpr float kReverbOpeningRate = 0.1f;    // FLOAT_00f41668
 
 VehicleVoiceSource::~VehicleVoiceSource() = default;
 
@@ -133,6 +137,7 @@ bool GSVehicleSound::initialize( TestDriveGameInstance * ) {
     // FUN_007d5cd0
     if ( gpAudio != nullptr ) {
         pClient = gpAudio->createClient( "ClientVehicle" );
+        pReverbModule = gpAudio->getVehicleReverbModule();
     }
     pVoiceSource = std::make_unique<VehicleVoiceSource>( pClient );
 
@@ -165,6 +170,7 @@ void GSVehicleSound::terminate() {
 
     pVoiceSource.reset();
     pClient = nullptr;
+    pReverbModule = nullptr;
 }
 
 VehicleSoundInstance *
@@ -416,5 +422,91 @@ void GSVehicleSound::tickInstances( const Eigen::Vector3f &listenerPosition ) {
         instance.Model.update( instance.Wrapper.getSettings(),
                                instance.Wrapper.getPanelVolumeFactors(),
                                listenerPosition, pVoiceSource.get() );
+
+        if ( instance.Wrapper.getSettings().bIsPlayerState ) {
+            updateInteriorReverb( instance );
+        }
+    }
+}
+
+void GSVehicleSound::updateInteriorReverb( VehicleSoundInstance &instance ) {
+    // FUN_007d3ec0
+    if ( pReverbModule == nullptr ) {
+        return;
+    }
+
+    const VSTPhysicsSettings &settings = instance.Wrapper.getSettings();
+
+    if ( settings.bEventViewChanged && settings.bCurrentViewInternal ) {
+        instance.bReverbPresetDirty = true;
+    }
+
+    if ( !pReverbModule->isAttached() ) {
+        return;
+    }
+
+    const VehicleSoundBank *pBank = instance.Model.getBank();
+    const int32_t presetIndex =
+        ( pBank != nullptr )
+            ? pBank->getDocument().readInt( "nReverbInternal", 0 )
+            : 0;
+
+    const edXMBNode preset = gCommonVehicleSounds.getDocument()
+                                 .findChild( "ReverbPresets" )
+                                 .getElement( presetIndex );
+    if ( !preset.isValid() ) {
+        return;
+    }
+
+    const int32_t channelCount = pReverbModule->getChannelCount();
+
+    float opening = 1.0f;
+    if ( settings.bCurrentViewInternal ) {
+        opening = Max( settings.PhysicsValues[VSTPC_WindowAperture],
+                       settings.PhysicsValues[VSTPC_DoorAperture] );
+    }
+
+    instance.ReverbOpening = instance.ReverbOpening * kReverbOpeningInertia +
+                             opening * kReverbOpeningRate;
+    opening = instance.ReverbOpening;
+
+    const float presetDryVolume = preset.readFloat( "DryVolume", 0.0f );
+    const float presetWetVolume = preset.readFloat( "WetVolume", 0.0f );
+
+    if ( instance.bReverbPresetDirty ) {
+        const float dryWetRatio = preset.readFloat( "DryWetRatio", 0.0f );
+        const float cutoffFrequency =
+            preset.readFloat( "LowPassCutoffFrequency", 0.0f );
+
+        const edXMBNode room = preset.findChild( "Room" );
+        const float roomSize = room.readFloat( "Size", 0.0f );
+        const int32_t roomComplexity = room.readInt( "Complexity", 0 );
+        const float roomDiffusion = room.readFloat( "Diffusion", 0.0f );
+
+        for ( int32_t channel = 0; channel < channelCount; channel++ ) {
+            edAudioReverbChannel *pChannel =
+                pReverbModule->getChannel( channel );
+            if ( pChannel == nullptr ) {
+                continue;
+            }
+
+            pChannel->setDryWetRatio( dryWetRatio );
+            pChannel->setLowPassCutoff( cutoffFrequency );
+            pChannel->setRoom( roomSize, roomComplexity, roomDiffusion );
+        }
+
+        pReverbModule->reset();
+        instance.bReverbPresetDirty = false;
+    }
+
+    for ( int32_t channel = 0; channel < channelCount; channel++ ) {
+        edAudioReverbChannel *pChannel = pReverbModule->getChannel( channel );
+        if ( pChannel == nullptr ) {
+            continue;
+        }
+
+        pChannel->setDryVolume( ( 1.0f - opening ) * presetDryVolume +
+                                opening );
+        pChannel->setWetVolume( ( 1.0f - opening ) * presetWetVolume );
     }
 }

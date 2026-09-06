@@ -12,6 +12,7 @@
 #include "game/vehicle/vehicle_car.h"
 #include "gs_audio.h"
 #include "implementation/audio_sound_resource.h"
+#include "implementation/ed_audio_reverb.h"
 #include "render/camera/gs_camera.h"
 #include "core/binary_helpers.h"
 
@@ -26,7 +27,8 @@ static constexpr int32_t kMaxEmitters = 128;
 static constexpr int32_t kNoEnvironmentPriority = 100;
 static constexpr int32_t kNoReverbPriority = 101;
 static constexpr uint32_t kInteriorViewFlag = 1u << 18;
-static constexpr float kDoorApertureScale = 0.5f; // FLOAT_00f41674
+static constexpr float kDoorApertureScale = 0.5f;          // FLOAT_00f41674
+static constexpr float kNeutralCutoffFrequency = 22000.0f; // DAT_46abe000
 
 GSAmbiance::GSAmbiance() : GameSystem(), Mutex() {
     // FUN_009de4b0
@@ -72,6 +74,10 @@ bool GSAmbiance::initialize( TestDriveGameInstance *pInstance ) {
     bPaused = false;
     Mutex.initialize( "GSAmbiance" );
 
+    if ( gpAudio != nullptr ) {
+        pReverbModule = gpAudio->getAmbianceReverbModule();
+    }
+
     if ( !loadCommonConfig() ) {
         resetReverbModule();
         return true;
@@ -116,6 +122,7 @@ void GSAmbiance::terminate() {
     // FUN_00901d10
     pActiveEnvironment = nullptr;
     pActiveReverbPreset = nullptr;
+    pReverbModule = nullptr;
 
     Emitters.destroy();
 
@@ -309,7 +316,7 @@ void GSAmbiance::updateEnvironments(
     if ( pReverbEnvironment->getReverbPreset() != pActiveReverbPreset ) {
         applyReverbPreset( pReverbEnvironment->getReverbPreset() );
     }
-    updateReverbModule();
+    updateReverbModule( pReverbEnvironment->getWeight() );
 }
 
 float GSAmbiance::computeInternalViewVolumeFactor() {
@@ -517,28 +524,68 @@ void GSAmbiance::drawDebug( float ) {
 void GSAmbiance::resetReverbModule() {
     // FUN_00901300
     pActiveReverbPreset = nullptr;
-    if ( pReverbModule == nullptr ) {
+    if ( pReverbModule == nullptr || !pReverbModule->isAttached() ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO: Reverb
+    for ( int32_t channel = 0; channel < pReverbModule->getChannelCount();
+          channel++ ) {
+        edAudioReverbChannel *pChannel = pReverbModule->getChannel( channel );
+        if ( pChannel == nullptr ) {
+            continue;
+        }
+
+        pChannel->setDryVolume( 1.0f );
+        pChannel->setWetVolume( 0.0f );
+        pChannel->setDryWetRatio( 0.0f );
+        pChannel->setLowPassCutoff( kNeutralCutoffFrequency );
+        pChannel->setRoom( 0.0f, 0, 0.0f );
+    }
+
+    pReverbModule->reset();
 }
 
 void GSAmbiance::applyReverbPreset( AmbianceReverbPreset *pPreset ) {
     // FUN_009013a0
     pActiveReverbPreset = pPreset;
-    if ( pReverbModule == nullptr ) {
+    if ( pReverbModule == nullptr || !pReverbModule->isAttached() ||
+         pPreset == nullptr ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO: Reverb
+    for ( int32_t channel = 0; channel < pReverbModule->getChannelCount();
+          channel++ ) {
+        edAudioReverbChannel *pChannel = pReverbModule->getChannel( channel );
+        if ( pChannel == nullptr ) {
+            continue;
+        }
+
+        pChannel->setDryWetRatio( pPreset->DryWetRatio );
+        pChannel->setLowPassCutoff( pPreset->LowPassCutoffFrequency );
+        pChannel->setRoom( pPreset->RoomSize, pPreset->RoomComplexity,
+                           pPreset->RoomDiffusion );
+    }
 }
 
-void GSAmbiance::updateReverbModule() {
+void GSAmbiance::updateReverbModule( float weight ) {
     // FUN_00901260
-    if ( pReverbModule == nullptr ) {
+    if ( pReverbModule == nullptr || !pReverbModule->isAttached() ||
+         pActiveReverbPreset == nullptr ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO: Reverb
+    const float dryVolume =
+        pActiveReverbPreset->DryVolume * weight + 1.0f - weight;
+    const float wetVolume = pActiveReverbPreset->WetVolume * weight;
+
+    for ( int32_t channel = 0; channel < pReverbModule->getChannelCount();
+          channel++ ) {
+        edAudioReverbChannel *pChannel = pReverbModule->getChannel( channel );
+        if ( pChannel == nullptr ) {
+            continue;
+        }
+
+        pChannel->setDryVolume( dryVolume );
+        pChannel->setWetVolume( wetVolume );
+    }
 }

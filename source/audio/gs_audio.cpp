@@ -3,8 +3,10 @@
 
 #include "implementation/audio_dispatcher_playback.h"
 #include "implementation/ed_audio.h"
+#include "implementation/ed_audio_backend.h"
 #include "implementation/ed_audio_memory.h"
 #include "implementation/ed_audio_object.h"
+#include "implementation/ed_audio_reverb.h"
 
 #include "game/gm_base.h"
 #include "game/cinematic/gs_cinematics.h"
@@ -14,6 +16,13 @@
 #include "render/camera/gs_camera.h"
 
 GSAudio *gpAudio = nullptr;
+
+#ifdef OTDU_USE_IMGUI
+// A reverb tap delay is stored as a fraction of the delay line.
+static constexpr float kDelayLineToMilliseconds =
+    float( edAudioReverbChannel::kDelayLineSize ) * 1000.0f /
+    float( kAudioOutputSampleRate );
+#endif
 
 static constexpr float kMinAudibleClientVolume = 0.01f; // DAT_00f416d4
 static constexpr float kClientVolumeSmoothing = 0.5f;   // DAT_00f41674
@@ -360,8 +369,6 @@ GSAudio::~GSAudio() { OTDU_UNIMPLEMENTED; }
 
 bool GSAudio::initialize( TestDriveGameInstance * ) {
     // FUN_009b1df0
-    OTDU_UNIMPLEMENTED; // TODO: REVERB
-
     MemorySize = 0x300000;
     pMemory = new uint8_t[MemorySize];
     edAudioHeap::InitMemory( pMemory, MemorySize );
@@ -394,6 +401,12 @@ bool GSAudio::initialize( TestDriveGameInstance * ) {
     pSpatialOutput->addNewEntry( pSpatialMixer );
     pSpatialAdapter->addNewEntry( pSpatialOutput );
     gEdAudio.getOutputModule()->addNewEntry( pSpatialAdapter );
+
+    for ( edAudioReverb *&pReverb : pReverbPool ) {
+        pReverb = nullptr;
+    }
+    pAmbianceReverbModule = nullptr;
+    pVehicleReverbModule = nullptr;
 
     return true;
 }
@@ -761,6 +774,12 @@ void GSAudio::tick( float totalTime, float deltaTime ) {
         bMixStateTransitionSync = false;
         changeMixState( GameModeMixState[GameMode] );
 
+        for ( int32_t i = kMaxReverbs - 1; i >= 0; i-- ) {
+            if ( pReverbPool[i] != nullptr ) {
+                pReverbPool[i]->reset();
+            }
+        }
+
         OTDU_LOG_INFO( "Audio mix state for game mode %d is 0x%08x\n", GameMode,
                        GameModeMixState[GameMode] );
     }
@@ -837,6 +856,45 @@ void GSAudio::drawDebug( float ) {
         setMusicMuted( bMusic );
     }
 
+    ImGui::SeparatorText( "Reverbs" );
+    for ( edAudioReverb *pReverb : pReverbPool ) {
+        if ( pReverb == nullptr ) {
+            continue;
+        }
+
+        ImGui::PushID( pReverb );
+
+        edAudioReverbChannel *pChannel = pReverb->getChannel( 0 );
+        const char *pRole =
+            ( pReverb == pAmbianceReverbModule )
+                ? " (ambiance)"
+                : ( pReverb == pVehicleReverbModule ? " (vehicle)" : "" );
+
+        if ( pChannel == nullptr ) {
+            ImGui::Text( "%s%s: detached", pReverb->getDescription(), pRole );
+        } else {
+            ImGui::Text( "%s%s -> %s", pReverb->getDescription(), pRole,
+                         ( pReverb->getParent() != nullptr )
+                             ? pReverb->getParent()->getDescription()
+                             : "<none>" );
+            // Both are stored normalized, so scale them back for display.
+            const float cutoffHz =
+                pChannel->LowPassCutoff * float( kAudioOutputSampleRate );
+            const float firstTapMs =
+                ( pChannel->TapCount > 0 )
+                    ? pChannel->Taps[0].Delay * kDelayLineToMilliseconds
+                    : 0.0f;
+
+            ImGui::Text( "  dry %.3f  wet %.3f  ratio %.3f  cutoff %.0f Hz",
+                         pChannel->DryVolume, pChannel->WetVolume,
+                         pChannel->DryWetRatio, cutoffHz );
+            ImGui::Text( "  %i taps, first %.1f ms", pChannel->TapCount,
+                         firstTapMs );
+        }
+
+        ImGui::PopID();
+    }
+
     ImGui::SeparatorText( "Mixers" );
     for ( Mixer &mixer : MixerPool ) {
         ImGui::PushID( &mixer );
@@ -907,13 +965,20 @@ void GSAudio::drawDebug( float ) {
 
 void GSAudio::terminate() {
     // FUN_009b2750
-    OTDU_UNIMPLEMENTED; // TODO: REVERB
-
     Clients.clear();
     ClientHandlerPool.clear();
 
     ClientConfigPool.clear();
     MixerPool.clear();
+
+    pAmbianceReverbModule = nullptr;
+    pVehicleReverbModule = nullptr;
+    for ( int32_t i = kMaxReverbs - 1; i >= 0; i-- ) {
+        UnlinkFromParent( pReverbPool[i] );
+        delete pReverbPool[i];
+        pReverbPool[i] = nullptr;
+    }
+
     UnlinkFromParent( pSpatialBuffer );
     delete pSpatialBuffer;
     pSpatialBuffer = nullptr;
@@ -959,7 +1024,93 @@ void GSAudio::addMixer( ParsedAudioMixer &mixer ) {
 
 void GSAudio::addReverb( ParsedAudioReverb &reverb ) {
     // FUN_009b1ba0
-    OTDU_UNIMPLEMENTED;
+    const edAudioObject *pOutputModule = gEdAudio.getOutputModule();
+
+    edAudioObject *pOutput = nullptr;
+    if ( pOutputModule != nullptr &&
+         strcmp( reverb.Output.c_str(), pOutputModule->getDescription() ) ==
+             0 ) {
+        pOutput = pSpatialOutput;
+    } else {
+        edAudioReverb *pParentReverb =
+            findReverbModule( reverb.Output.c_str() );
+        if ( pParentReverb == nullptr ) {
+            OTDU_LOG_WARN( "Reverb '%s' routes to unknown output '%s'\n",
+                           reverb.Name.c_str(), reverb.Output.c_str() );
+            return;
+        }
+        pOutput = pParentReverb->getBuffer();
+    }
+
+    if ( pOutput == nullptr || pSpatialMixer == nullptr ) {
+        return;
+    }
+
+    edAudioObject *pInput = pSpatialMixer;
+    for ( edAudioObject *pNode = pSpatialMixer->getParent(); pNode != pOutput;
+          pNode = pNode->getParent() ) {
+        if ( pNode == nullptr ) {
+            OTDU_LOG_WARN( "Reverb '%s': '%s' is not above the spatial mixer\n",
+                           reverb.Name.c_str(), reverb.Output.c_str() );
+            return;
+        }
+        pInput = pNode;
+    }
+
+    int32_t slot = 0;
+    while ( pReverbPool[slot] != nullptr ) {
+        slot++;
+        if ( slot >= kMaxReverbs ) {
+            OTDU_LOG_WARN( "Reverb pool is full; '%s' dropped\n",
+                           reverb.Name.c_str() );
+            return;
+        }
+    }
+
+    edAudioReverb *pReverb =
+        new edAudioReverb( kSpatialChannelCount, reverb.Name.c_str() );
+
+    UnlinkFromParent( pInput );
+    pOutput->addNewEntry( pReverb );
+    pReverb->getBuffer()->addNewEntry( pInput );
+
+    pReverbPool[slot] = pReverb;
+
+    OTDU_LOG_INFO( "Reverb '%s' inserted between '%s' and '%s'\n",
+                   reverb.Name.c_str(), pOutput->getDescription(),
+                   pInput->getDescription() );
+}
+
+edAudioReverb *GSAudio::findReverbModule( const char *pName ) {
+    // FUN_009b1970
+    if ( pName == nullptr ) {
+        return nullptr;
+    }
+
+    for ( edAudioReverb *pReverb : pReverbPool ) {
+        if ( pReverb != nullptr &&
+             strcmp( pReverb->getDescription(), pName ) == 0 ) {
+            return pReverb;
+        }
+    }
+
+    return nullptr;
+}
+
+void GSAudio::setAmbianceReverbModule( const char *pName ) {
+    // FUN_00987de0
+    pAmbianceReverbModule = findReverbModule( pName );
+    if ( pAmbianceReverbModule == nullptr ) {
+        OTDU_LOG_WARN( "Unknown ambiance reverb module '%s'\n", pName );
+    }
+}
+
+void GSAudio::setVehicleReverbModule( const char *pName ) {
+    // FUN_00987e00
+    pVehicleReverbModule = findReverbModule( pName );
+    if ( pVehicleReverbModule == nullptr ) {
+        OTDU_LOG_WARN( "Unknown vehicle reverb module '%s'\n", pName );
+    }
 }
 
 void GSAudio::addClient( ParsedAudioClient &client ) {
