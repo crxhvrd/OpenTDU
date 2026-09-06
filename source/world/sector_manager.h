@@ -105,6 +105,8 @@ struct AreaGrid {
 
     int32_t activeConfig = 0;
     bool bActiveAreasSet = false;
+    bool bNeedStreamUpdate = true;
+    bool bDrawArea = false;
     bool bStreamArea = true;
 
     Area areas[4];

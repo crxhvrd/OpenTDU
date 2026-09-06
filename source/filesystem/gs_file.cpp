@@ -907,6 +907,166 @@ bool GSFile::saveFileInContext( const char *pContextName,
     return SaveFile( filePath.string().c_str(), pContent, contentSize );
 }
 
+bool GSFile::openContextAsCurrent( const char *pContextName,
+                                   const wchar_t * /*pDisplayName*/,
+                                   const bool /*bCreateIfMissing*/ ) {
+    // FUN_009a41b0
+    if ( bIsCurrentContextReady || pContextName == nullptr ||
+         strcmp( pContextName, "CURRENT" ) == 0 ) {
+        return false;
+    }
+
+    currentContextDirectAccess.bNeedName = false;
+    if ( !currentContextDirectAccess.openContext(
+             gUserProfileRegister.getActiveProfileHashcode(), pContextName,
+             eContextSource::CS_Savegame ) ) {
+        return false;
+    }
+
+    bIsCurrentContextReady = true;
+    return true;
+}
+
+void GSFile::closeCurrentContext() {
+    if ( !bIsCurrentContextReady ) {
+        return;
+    }
+
+    currentContextDirectAccess.reset();
+    bIsCurrentContextReady = false;
+}
+
+GSFile::eContextState GSFile::ensureContext( const char *pContextName,
+                                             const wchar_t *pDisplayName ) {
+    // FUN_009a4250
+    const uint64_t profileHashcode =
+        gUserProfileRegister.getActiveProfileHashcode();
+
+    FileDirectAccess fileAccess;
+    fileAccess.bNeedName = false;
+
+    EnumerateContextItem items[16] = {};
+    uint32_t numItems = 0u;
+    fileAccess.enumerateContext(
+        profileHashcode, eContextSource::CS_Savegame, pContextName, nullptr,
+        (uint32_t)std::size( items ), items, &numItems );
+    if ( numItems == 0u ) {
+        return CST_Empty;
+    }
+
+    if ( !fileAccess.openContext( profileHashcode, pContextName,
+                                  eContextSource::CS_Savegame ) ) {
+        return CST_Error;
+    }
+
+    OTDU_LOG_DEBUG( "Save context '%s' ('%S') is ready\n", pContextName,
+                    ( pDisplayName != nullptr ) ? pDisplayName : L"" );
+
+    fileAccess.reset();
+    return CST_Ready;
+}
+
+bool GSFile::visitContextFiles(
+    const char *pContextName,
+    const char *pPattern,
+    const std::function<
+        bool( FileDirectAccess &, const std::string &, int32_t )> &visitor ) {
+    const bool bUseCurrentContext = ( pContextName != nullptr ) &&
+                                    ( strcmp( pContextName, "CURRENT" ) == 0 );
+    if ( bUseCurrentContext && !bIsCurrentContextReady ) {
+        return false;
+    }
+
+    FileDirectAccess localAccess;
+    FileDirectAccess *pFileAccess = &currentContextDirectAccess;
+
+    if ( !bUseCurrentContext ) {
+        localAccess.bNeedName = false;
+        if ( !localAccess.openContext(
+                 gUserProfileRegister.getActiveProfileHashcode(), pContextName,
+                 eContextSource::CS_Savegame ) ) {
+            return false;
+        }
+        pFileAccess = &localAccess;
+    }
+
+    std::string filename;
+    int32_t index = 0;
+    bool bFound = pFileAccess->findFirstFile( pPattern, filename );
+    while ( bFound ) {
+        if ( !visitor( *pFileAccess, filename, index ) ) {
+            break;
+        }
+        index++;
+        bFound = pFileAccess->findNextFile( filename );
+    }
+    pFileAccess->findClose();
+
+    if ( !bUseCurrentContext ) {
+        localAccess.reset();
+    }
+
+    return true;
+}
+
+int32_t GSFile::countFilesInContext( const char *pContextName,
+                                     const char *pPattern ) {
+    // FUN_009a3740
+    int32_t numFiles = 0;
+    visitContextFiles(
+        pContextName, pPattern,
+        [&numFiles]( FileDirectAccess &, const std::string &, int32_t ) {
+            numFiles++;
+            return true;
+        } );
+    return numFiles;
+}
+
+bool GSFile::getFileNameInContext( const char *pContextName,
+                                   const char *pPattern,
+                                   const int32_t index,
+                                   char *pOutFilename,
+                                   const size_t outFilenameSize ) {
+    // FUN_009a2f30
+    if ( pOutFilename == nullptr || outFilenameSize == 0u ) {
+        return false;
+    }
+    pOutFilename[0] = '\0';
+
+    bool bFound = false;
+    visitContextFiles( pContextName, pPattern,
+                       [&]( FileDirectAccess &, const std::string &filename,
+                            int32_t fileIndex ) {
+                           if ( fileIndex != index ) {
+                               return true;
+                           }
+                           snprintf( pOutFilename, outFilenameSize, "%s",
+                                     filename.c_str() );
+                           bFound = true;
+                           return false;
+                       } );
+    return bFound;
+}
+
+bool GSFile::deleteFileInContext( const char *pContextName,
+                                  const char *pPattern,
+                                  const int32_t index ) {
+    // FUN_009a35a0
+    bool bDeleted = false;
+    visitContextFiles( pContextName, pPattern,
+                       [&]( FileDirectAccess &fileAccess,
+                            const std::string &filename, int32_t fileIndex ) {
+                           if ( fileIndex != index ) {
+                               return true;
+                           }
+                           fileAccess.findClose();
+                           bDeleted = fileAccess.deleteFileInContext(
+                               filename.c_str() );
+                           return false;
+                       } );
+    return bDeleted;
+}
+
 bool GSFile::loadFileFromContext( const char *pContextName,
                                   const char *pFilename,
                                   void *pOutBuffer,

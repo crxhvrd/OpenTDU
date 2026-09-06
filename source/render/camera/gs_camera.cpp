@@ -93,7 +93,7 @@ GSCamera::GSCamera()
       bPaused( false ),
       bLookAtPlayerPos( true ),
       bFinishedCamTransition( true ),
-      field_0x938( 1 ),
+      bMouseCam( 1 ),
       field_0x939( 0 ),
       field_0x932( 0 ),
       bUseBlur( false ),
@@ -542,7 +542,7 @@ void GSCamera::terminate() {
 
 void GSCamera::pause() {
     // FUN_008e1f10
-    field_0x938 = true;
+    bMouseCam = true;
 }
 
 void GSCamera::reset() {
@@ -796,7 +796,7 @@ void GSCamera::tickActiveCamera( float param_2 ) {
     OTDU_UNIMPLEMENTED; // TODO: Scenaric
 
     CarState *pCVar4 = pTarget;
-    if ( field_0x938 != '\0' ) {
+    if ( bMouseCam ) {
         pCVar4 = local_4;
     }
 

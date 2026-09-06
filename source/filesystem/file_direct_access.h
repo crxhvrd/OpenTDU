@@ -53,7 +53,16 @@ struct FileDirectAccess {
     uint32_t writeToFile( const void *pSource, const uint32_t size );
 
     bool copyContextFrom( const FileDirectAccess &other );
+    bool findFirstFile( const char *pPattern, std::string &outFilename );
+    bool findNextFile( std::string &outFilename );
+    void findClose();
+
+    bool deleteFileInContext( const char *pFilename );
 
     bool close();
     bool reset();
+
+private:
+    std::vector<std::string> FindResults;
+    size_t FindIndex;
 };

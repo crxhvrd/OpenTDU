@@ -2,6 +2,7 @@
 
 #include "game/gm_base.h"
 #include "game/scenaric/scenaric_bank.h"
+#include "world/gs_world_streaming.h"
 
 class Bank;
 class Entity;
@@ -9,15 +10,16 @@ struct HiearchyNode;
 struct SpotMap;
 struct SpotSector;
 
-// Scene for game modes using interior banks (e.g. GMLiving, GMGarage, GMHome, GMShop, GMDressing, ...)
-class SceneInterior {
+// Scene for game modes using interior banks (e.g. GMLiving, GMGarage, GMHome,
+// GMShop, GMDressing, ...)
+class SceneInterior : public StreamingCallback {
 public:
     enum eState : int32_t {
-        SIS_Idle = 0,        
-        SIS_Instanciate = 1, 
-        SIS_Streaming = 2,   
-        SIS_Ready = 3,       
-        SIS_Live = 4,      
+        SIS_Idle = 0,
+        SIS_Instanciate = 1,
+        SIS_Streaming = 2,
+        SIS_Ready = 3,
+        SIS_Live = 4,
     };
 
 public:
@@ -28,13 +30,21 @@ public:
     inline ScenaricBank &getBank() { return bank; }
     inline void setDrawInDOFPass( const bool value ) { bDrawInDOFPass = value; }
     inline bool isDrawnInDOFPass() const { return bDrawInDOFPass; }
+    inline void setModeActive( const bool value ) {
+        // FUN_007745d0
+        bModeActive = value;
+    }
 
 public:
     SceneInterior();
-    ~SceneInterior();
+    ~SceneInterior() override;
 
-    void enter( Bank *pInteriorBank, bool bReentry ); 
-    void leave(); 
+    bool onWorldStreamed( Eigen::Vector4f *param_1,
+                          Eigen::Vector4f *param_2,
+                          Eigen::Vector4f *param_3 ) override;
+
+    void enter( Bank *pInteriorBank, bool bReentry );
+    void leave();
     void tick();
     void draw();
 
@@ -46,23 +56,23 @@ private:
     void applyWeatherDescriptor();
 
 private:
-    HiearchyNode *pRootNode; 
-    ScenaricBank bank;      
+    HiearchyNode *pRootNode;
+    ScenaricBank bank;
 
-    Entity *pShopData;         // ET_SHDA
-    eState state;             
-    bool bEntered;             
-    Bank *pInteriorBank;       
-    SpotMap *pSpot;            
-    SpotSector *pSpotSector;  
-    bool bReentry;            
-    float savedFovVsLodFactor; 
-    bool bOverrideFovVsLod;   
+    Entity *pShopData; // ET_SHDA
+    eState state;
+    bool bEntered;
+    Bank *pInteriorBank;
+    SpotMap *pSpot;
+    SpotSector *pSpotSector;
+    bool bReentry;
+    float savedFovVsLodFactor;
+    bool bOverrideFovVsLod;
 
     bool bDrawInDOFPass;
+    bool bModeActive;
     int32_t spotSectorWaitTicks;
 };
 
-bool BuildInteriorBankPath( eGameMode gameMode,
-                            char *pOutPath );
+bool BuildInteriorBankPath( eGameMode gameMode, char *pOutPath );
 extern bool gbSceneInteriorLeaving;

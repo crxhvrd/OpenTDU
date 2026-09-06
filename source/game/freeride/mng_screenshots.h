@@ -43,7 +43,8 @@ public:
                uint32_t width = kUseBitmapSize,
                uint32_t height = kUseBitmapSize );
     Material *loadFromMemory( const void *pContent, uint32_t contentSize );
-    Material *loadFromFile( const char *pFilepath );
+    Material *loadFromFile( const char *pFilepath,
+                            const char *pContextName = nullptr );
     void instanciate() override;
 
 private:

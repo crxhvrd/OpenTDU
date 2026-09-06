@@ -7,6 +7,8 @@
 #include "filesystem/gs_file.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
+#include "render/camera/camera_game.h"
+#include "render/camera/gs_camera.h"
 #include "render/gs_render.h"
 #include "render/hiearchy_node.h"
 #include "render/render_scene.h"
@@ -15,6 +17,8 @@
 #include "render/postfx/effects/postfx_fake_dof.h"
 
 static constexpr const char *kDefaultInteriorBank = "Interior/LPH_L3A.bnk";
+static constexpr float kDrawCameraNearPlane = 0.5f;    // FLOAT_00fab928
+static constexpr float kDrawCameraFarPlane = 10000.0f; // FLOAT_00fab92c
 
 static void UpdateSunSceneBlurFlag() {
     // FUN_007744b0 (inlined)
@@ -57,7 +61,9 @@ void SceneLiving::initialize() {
     if ( interiorBank.isLoaded() ) {
         content.enter( &interiorBank, false );
 
-        OTDU_UNIMPLEMENTED; // TODO: CAMERA
+        if ( gpCamera != nullptr ) {
+            gpCamera->setMouseCam( false );
+        }
     }
 }
 
@@ -88,7 +94,9 @@ void SceneLiving::loadInteriorBank() {
 
 void SceneLiving::terminate() {
     // FUN_009c38b0
-    OTDU_UNIMPLEMENTED; // TODO: CAMERA (restore the debug fly-camera toggle)
+    if ( gpCamera != nullptr ) {
+        gpCamera->setMouseCam( true );
+    }
 
     content.leave();
     interiorBank.unload();
@@ -109,7 +117,26 @@ void SceneLiving::tick( float /*deltaTime*/, float /*totalTime*/ ) {
 
 void SceneLiving::draw() {
     // FUN_009c37a0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA
+    if ( gpCamera != nullptr ) {
+        CameraGame *pCamera =
+            gpCamera->findCameraWithMode( 1, gpCamera->getBoundCarState() );
+        if ( pCamera != nullptr ) {
+            const Eigen::Vector4f position( 0.0f, 0.0f, 0.0f, 1.0f );
+            const Eigen::Vector4f target( 9.0f, 2.0f, -8.0f, 1.0f );
+            const Eigen::Vector4f up( 0.0f, 1.0f, 0.0f, 0.0f );
+
+            pCamera->setPosition( position );
+            pCamera->setTarget( target );
+            pCamera->setUp( up );
+            pCamera->updateMatrix( position.head<3>(), up.head<3>(),
+                                   target.head<3>() );
+
+            pCamera->setNearPlane( kDrawCameraNearPlane );
+            pCamera->setFarPlane( kDrawCameraFarPlane );
+        }
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (FUN_008d7b70)
 }
 
 void SceneLiving::pause() {

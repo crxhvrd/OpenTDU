@@ -61,6 +61,7 @@ public:
     inline bool isLookingBack() const { return bLookingBack; }
     inline bool isInteriorView() const { return bInterior; }
     inline void setInteriorView( const bool value ) { bInterior = value; }
+    inline void setMouseCam( const bool value ) { bMouseCam = value; }
     inline float getLeftView() const { return leftView; }
     inline float getRightView() const { return rightView; }
     inline float getUpView() const { return upView; }
@@ -180,7 +181,7 @@ private:
     uint8_t bPaused : 1;
     uint8_t bLookAtPlayerPos : 1;
     uint8_t bFinishedCamTransition : 1;
-    uint8_t field_0x938 : 1;
+    uint8_t bMouseCam : 1;
     uint8_t field_0x939 : 1;
     uint8_t field_0x932 : 1;
     uint8_t bUseBlur : 1;

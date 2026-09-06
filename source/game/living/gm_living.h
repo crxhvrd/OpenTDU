@@ -17,6 +17,9 @@ extern bool gbEnteringLivingHub;
 
 class GMLiving : public GameModeWorldBase {
 public:
+    inline FlashPlayer *getFlashPlayer() const { return pFlashPlayer; }
+
+public:
     GMLiving();
     ~GMLiving();
 

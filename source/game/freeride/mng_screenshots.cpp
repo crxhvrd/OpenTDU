@@ -318,11 +318,22 @@ Material *MngScreenshots::loadFromMemory( const void *pContent,
     return getMaterial();
 }
 
-Material *MngScreenshots::loadFromFile( const char *pFilepath ) {
+Material *MngScreenshots::loadFromFile( const char *pFilepath,
+                                        const char *pContextName ) {
     // FUN_006cedb0
+    const bool bFromContext =
+        ( pContextName != nullptr ) && ( pContextName[0] != '\0' );
+
     void *pContent = nullptr;
     uint32_t contentSize = 0;
-    if ( !gpFile->loadFile( pFilepath, &pContent, &contentSize ) ) {
+
+    const bool bLoaded =
+        bFromContext
+            ? gpFile->loadFileFromContext( pContextName, pFilepath, &pContent,
+                                           &contentSize )
+            : gpFile->loadFile( pFilepath, &pContent, &contentSize );
+
+    if ( !bLoaded ) {
         if ( pContent != nullptr ) {
             TestDrive::Free( pContent );
         }

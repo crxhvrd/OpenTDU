@@ -38,7 +38,7 @@ static constexpr const char *kReflectPlaneNode = "D_REFLECT";
 static constexpr const char *kOceanLevelNode = "D_OCEAN";
 
 static constexpr float kUndergroundInteriorDepth = 50.0f; // DAT_00f41848
-static constexpr float kInteriorFovVsLodFactor = 0.5f; // FLOAT_00f41674
+static constexpr float kInteriorFovVsLodFactor = 0.5f;    // FLOAT_00f41674
 // Path Camera Index
 static constexpr int32_t kInteriorCameraMode = 7;
 static constexpr int32_t kMaxSpotSectorWaitTicks = 600;
@@ -56,10 +56,9 @@ SceneInterior::SceneInterior()
       savedFovVsLodFactor( -1.0f ),
       bOverrideFovVsLod( true ),
       bDrawInDOFPass( false ),
+      bModeActive( false ),
       spotSectorWaitTicks( 0 ) {
     // FUN_00774930
-    OTDU_UNIMPLEMENTED; // TODO: WORLD 
-
     if ( gpCamera != nullptr ) {
         gpCamera->setInteriorView( true );
     }
@@ -74,6 +73,18 @@ SceneInterior::~SceneInterior() {
     if ( bEntered ) {
         leave();
     }
+}
+
+bool SceneInterior::onWorldStreamed( Eigen::Vector4f * /*param_1*/,
+                                     Eigen::Vector4f * /*param_2*/,
+                                     Eigen::Vector4f *param_3 ) {
+    // FUN_007754f0
+    SceneryBinary *pScenery = bank.getActiveScenery();
+    if ( pScenery != nullptr ) {
+        pScenery->shiftObjects( *param_3 );
+    }
+
+    return true;
 }
 
 Eigen::Vector4f SceneInterior::getWorldPosition() const {
@@ -98,9 +109,8 @@ bool SceneInterior::waitForSpotSector() {
 
     SpotMap *pCurrentSpot = gpScenaric->getSpotList().getWorldSpotChecked(
         gpScenaric->getCurrentSpotIndex() );
-    if ( pCurrentSpot == nullptr ||
-         gpScenaric->getSpotList().getSpotSector( pCurrentSpot->Hashcode ) !=
-             nullptr ) {
+    if ( pCurrentSpot == nullptr || gpScenaric->getSpotList().getSpotSector(
+                                        pCurrentSpot->Hashcode ) != nullptr ) {
         return true;
     }
 
@@ -143,8 +153,10 @@ void SceneInterior::enter( Bank *pBank, const bool bIsReentry ) {
 
         if ( gpWorld != nullptr && gpWorld->isAreaStreamingEnabled() ) {
             gpWorld->setStreamingPositionPtr( nullptr );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: WORLD (drop the origin-shift
-                                     // follow target)
+            if ( gpWorldStreaming != nullptr &&
+                 gpWorldStreaming->isStreamingActive() ) {
+                gpWorldStreaming->setStreamCenter( nullptr );
+            }
         }
     }
 
@@ -159,7 +171,13 @@ void SceneInterior::enter( Bank *pBank, const bool bIsReentry ) {
     if ( pCurrentSpot == nullptr ) {
         Eigen::Vector4f origin( 0.0f, 0.0f, 0.0f, 1.0f );
         gpWorld->setStreamingPosition( &origin );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: WORLD (origin-shift recenter)
+
+        if ( gpWorldStreaming != nullptr &&
+             gpWorldStreaming->isStreamingActive() ) {
+            gpWorldStreaming->setStreamCenter( nullptr );
+            gpWorldStreaming->setStreamCenterPosition( origin );
+            gpWorldStreaming->updateStreaming();
+        }
     } else {
         pSpot = pCurrentSpot;
 
@@ -168,13 +186,16 @@ void SceneInterior::enter( Bank *pBank, const bool bIsReentry ) {
             pStreaming->sectorManager.bNeedStreamUpdate = true;
             pStreaming->sectorManager.bDrawSector = false;
 
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: SECTOR
+            pStreaming->areaGrid.bNeedStreamUpdate = true;
+            pStreaming->areaGrid.bDrawArea = false;
 
             pStreaming->setActiveRenderLayers( 1 );
             pStreaming->sectorManager.bStreamSector = true;
 
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: WORLD (origin-shift recenter) /
-                                     // SECTOR
+            if ( gpWorldStreaming != nullptr ) {
+                gpWorldStreaming->updateStreaming();
+            }
+            pStreaming->areaGrid.bStreamArea = true;
 
             Eigen::Vector4f interiorPosition = getWorldPosition();
             gpWorld->setStreamingPosition( &interiorPosition );

@@ -69,6 +69,12 @@ struct WorkerThreadContext {
           bJobDone( false ) {}
 };
 
+enum eContextState : int32_t {
+    CST_Empty = 1, // the profile has no such context yet
+    CST_Error = 2, // the context exists but could not be opened
+    CST_Ready = 3, // opened (and immediately released again)
+};
+
 class GSFile : public GameSystem {
 public:
     const char *getName() const override { return "Service : File"; }
@@ -84,9 +90,7 @@ public:
     inline bool hasPendingFileToSave() const {
         return !saveQueue.FilesToSave.empty();
     }
-    inline void forceSaveQueueFlush() {
-        saveQueue.bPauseFlush = false;
-    }
+    inline void forceSaveQueueFlush() { saveQueue.bPauseFlush = false; }
 
 public:
     GSFile();
@@ -161,6 +165,25 @@ public:
                               void **ppOutContent,
                               uint32_t *pOutContentSize );
 
+    bool openContextAsCurrent( const char *pContextName,
+                               const wchar_t *pDisplayName,
+                               const bool bCreateIfMissing );
+    void closeCurrentContext();
+
+    eContextState ensureContext( const char *pContextName,
+                                 const wchar_t *pDisplayName );
+
+    int32_t countFilesInContext( const char *pContextName,
+                                 const char *pPattern );
+    bool getFileNameInContext( const char *pContextName,
+                               const char *pPattern,
+                               const int32_t index,
+                               char *pOutFilename,
+                               const size_t outFilenameSize );
+    bool deleteFileInContext( const char *pContextName,
+                              const char *pPattern,
+                              const int32_t index );
+
 private:
     std::set<AsyncFileOpen *> asyncData;
     std::vector<FileMap> filemaps;
@@ -192,6 +215,11 @@ private:
                                 FileMap **ppOutFilemap,
                                 uint32_t *pOutFileSize );
     void syncAsyncWorkerThread();
+    bool visitContextFiles(
+        const char *pContextName,
+        const char *pPattern,
+        const std::function<bool(
+            FileDirectAccess &, const std::string &, int32_t )> &visitor );
 };
 
 extern GSFile *gpFile;

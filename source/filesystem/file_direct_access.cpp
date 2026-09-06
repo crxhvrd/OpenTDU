@@ -79,13 +79,35 @@ uint16_t FUN_0060abe0( uint16_t param_1 ) {
     return param_1;
 }
 
+static bool MatchesFilePattern( const std::string &filename,
+                                const char *pPattern ) {
+    if ( pPattern == nullptr || strcmp( pPattern, "*" ) == 0 ) {
+        return true;
+    }
+
+    const char *pWildcard = strchr( pPattern, '*' );
+    if ( pWildcard == nullptr ) {
+        return StringNCmpI( filename.c_str(), pPattern,
+                            filename.length() + 1u ) == 0;
+    }
+
+    const size_t suffixLength = strlen( pWildcard + 1 );
+    if ( filename.length() < suffixLength ) {
+        return false;
+    }
+
+    return StringNCmpI( filename.c_str() + filename.length() - suffixLength,
+                        pWildcard + 1, suffixLength ) == 0;
+}
+
 FileDirectAccess::FileDirectAccess()
     : CurrentHashcode( 0 ),
       pContext( nullptr ),
       pHandle( nullptr ),
       StoredOnHDD( 0 ),
       bNeedName( false ),
-      bIsOpen( false ) {}
+      bIsOpen( false ),
+      FindIndex( 0 ) {}
 
 void FUN_006078d0( std::string &param_2 ) {
     size_t pcVar2 = param_2.find( '>' );
@@ -257,7 +279,71 @@ bool FileDirectAccess::close() {
     return true;
 }
 
+bool FileDirectAccess::findFirstFile( const char *pPattern,
+                                      std::string &outFilename ) {
+    // FUN_00608380
+    findClose();
+
+    if ( !bIsOpen || FolderName.empty() ) {
+        return false;
+    }
+
+    std::error_code errorCode;
+    for ( const auto &entry :
+          std::filesystem::directory_iterator( FolderName, errorCode ) ) {
+        if ( entry.is_directory() ) {
+            continue;
+        }
+
+        std::string filename = entry.path().filename().string();
+        if ( MatchesFilePattern( filename, pPattern ) ) {
+            FindResults.push_back( std::move( filename ) );
+        }
+    }
+
+    std::sort( FindResults.begin(), FindResults.end() );
+
+    return findNextFile( outFilename );
+}
+
+bool FileDirectAccess::findNextFile( std::string &outFilename ) {
+    // FUN_006084e0
+    if ( FindIndex >= FindResults.size() ) {
+        return false;
+    }
+
+    outFilename = FindResults[FindIndex];
+    FindIndex++;
+    return true;
+}
+
+void FileDirectAccess::findClose() {
+    // FUN_00608540
+    FindResults.clear();
+    FindIndex = 0;
+}
+
+bool FileDirectAccess::deleteFileInContext( const char *pFilename ) {
+    // FUN_00607cb0
+    if ( !bIsOpen || pFilename == nullptr || FolderName.empty() ) {
+        return false;
+    }
+
+    std::error_code errorCode;
+    const bool bRemoved = std::filesystem::remove(
+        std::filesystem::path( FolderName ) / pFilename, errorCode );
+    if ( !bRemoved || errorCode ) {
+        OTDU_LOG_WARN( "Failed to delete '%S%s': %s\n", FolderName.c_str(),
+                       pFilename, errorCode.message().c_str() );
+        return false;
+    }
+
+    return true;
+}
+
 bool FileDirectAccess::reset() {
+    findClose();
+
     if ( !bIsOpen ) {
         return false;
     }

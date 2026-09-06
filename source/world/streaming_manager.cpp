@@ -2721,11 +2721,15 @@ void StreamingManager::render() {
         sectorManager.bDrawSector = false;
     }
 
-    if ( areaGrid.bActiveAreasSet ) {
+    if ( areaGrid.bNeedStreamUpdate && areaGrid.bActiveAreasSet ) {
         uint32_t numAreaSubInstances = 0;
         for ( Area &area : areaGrid.areas ) {
             submitArea( area, numAreaSubInstances );
         }
+    }
+    if ( areaGrid.bDrawArea ) {
+        areaGrid.bNeedStreamUpdate = false;
+        areaGrid.bDrawArea = false;
     }
 
     if ( activeRenderLayers != 0 ) {

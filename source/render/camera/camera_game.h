@@ -31,6 +31,8 @@ public:
 
     inline float getNearPlane() const { return nearPlane; }
     inline float getFarPlane() const { return farPlane; }
+    inline void setNearPlane( const float value ) { nearPlane = value; }
+    inline void setFarPlane( const float value ) { farPlane = value; }
     inline float getInteriorNearPlane() const { return interiorNearPlane; }
     inline float getInteriorFarPlane() const { return interiorFarPlane; }
     inline Eigen::Vector3f getVelocity() { return velocity.head<3>(); }

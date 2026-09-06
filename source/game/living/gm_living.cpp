@@ -18,6 +18,7 @@
 #include "player_data/achievement_checks.h"
 #include "world/details/gs_details.h"
 #include "world/gs_world.h"
+#include "world/gs_world_streaming.h"
 #include "world/mng_ocean.h"
 #include "world/streaming_manager.h"
 #include "physics/gs_physics.h"
@@ -52,13 +53,13 @@ GMLiving::GMLiving()
     // FUN_0076a6f0
     registerManager( &mngReflection );
 
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING
+    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (house menu)
 
     registerManager( &mngLogoDisplay );
     registerManager( &mngCollection );
     registerManager( &mngRankings );
 
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING
+    OTDU_UNIMPLEMENTED; // TODO: ONLINE (news manager)
 
     mngCollection.setGameMode( this );
     mngRankings.setGameMode( this );
@@ -296,13 +297,16 @@ void GMLiving::initialize() {
 
     sceneLiving.initialize();
 
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (house menu back-pointers)
+    sceneLiving.getContent()->setModeActive( true );
+
+    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (house menu)
 
     StreamingManager *pStreaming = gpWorld->getStreamingManager();
     pStreaming->sectorManager.bNeedStreamUpdate = true;
     pStreaming->sectorManager.bDrawSector = false;
 
-    OTDU_UNIMPLEMENTED; // TODO: SECTOR
+    pStreaming->areaGrid.bNeedStreamUpdate = true;
+    pStreaming->areaGrid.bDrawArea = false;
 
     pStreaming->setActiveRenderLayers( 1 );
 
@@ -344,8 +348,12 @@ void GMLiving::reset() {
         pFlashPlayer->setVariableValueNonLinked( "/:WhereFrom", "avatar" );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING
-    OTDU_UNIMPLEMENTED; // TODO: WORLD
+    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (weather + FUN_00765fd0)
+
+    if ( gpWorldStreaming != nullptr &&
+         gpWorldStreaming->isStreamingActive() ) {
+        gpWorldStreaming->setStreamCenter( nullptr );
+    }
 
     resetTime = GetTimeSeconds();
 
@@ -391,7 +399,7 @@ void GMLiving::tick( float deltaTime, float totalTime ) {
 
     sceneLiving.tick( deltaTime, totalTime );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLIVING
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLIVING (FUN_00768a90)
 
     if ( !bHouseSpotInstalled &&
          sceneLiving.getContent()->getState() == SceneInterior::SIS_Live ) {
@@ -410,8 +418,8 @@ void GMLiving::pause() {
 
     sceneLiving.suspend();
 
-    OTDU_UNIMPLEMENTED; // TODO: ONLINE
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING
+    OTDU_UNIMPLEMENTED; // TODO: ONLINE (detach the news observer)
+    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (FUN_00765f80)
 
     GameModeScene::pause();
 }
@@ -424,16 +432,18 @@ void GMLiving::destroy() {
 
     mngWorld.setDisableStreamingOnCar( false );
 
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING
+    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (FUN_009dc690)
 
     sceneLiving.pause();
+    sceneLiving.getContent()->setModeActive( false );
     sceneLiving.terminate();
 
     StreamingManager *pStreaming = gpWorld->getStreamingManager();
     pStreaming->sectorManager.bNeedStreamUpdate = true;
     pStreaming->sectorManager.bDrawSector = false;
 
-    OTDU_UNIMPLEMENTED; // TODO: SECTOR
+    pStreaming->areaGrid.bNeedStreamUpdate = true;
+    pStreaming->areaGrid.bDrawArea = false;
 
     pStreaming->setActiveRenderLayers( 1 );
 
@@ -502,7 +512,9 @@ bool GMLiving::onMessage( FlashMessage *pMessage ) {
         return true;
 
     case FlashMessage( "rsdm" ):
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (cheat switch)
+        // Restart game with cheats enabled. NOTE: unreachable in retail game
+        // (no flash movie send this message AFAIK)
+        gpPlayerData->newGame( true );
         return true;
 
     case FlashMessage( "news" ): // open a news item
@@ -519,7 +531,7 @@ bool GMLiving::onMessage( FlashMessage *pMessage ) {
         break;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLIVING (house menu message handler)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLIVING (ebay)
 
     return mngCollection.onMessage( pMessage ) ||
            mngRankings.onMessage( pMessage );
