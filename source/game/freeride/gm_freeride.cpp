@@ -313,23 +313,6 @@ static void SetSpotLockedTextFromReward( FlashPlayer *pPlayer,
     }
 }
 
-static CarDesc *GetCurrentGarageCar() {
-    // FUN_008978d0
-    if ( gpPlayerData == nullptr || gpPlayerData->getLoadedSave() == nullptr ) {
-        return nullptr;
-    }
-
-    IPlayerData *pSave = gpPlayerData->getLoadedSave();
-    Driver *pDriver = pSave->getDriver();
-    Garage *pGarage = pSave->getGarage();
-    if ( pDriver == nullptr || pGarage == nullptr ||
-         pDriver->CurrentCar >= Garage::kNumCarSlots ) {
-        return nullptr;
-    }
-
-    return &pGarage->pCars[pDriver->CurrentCar];
-}
-
 static bool IsSpotRewardLocked( const uint64_t rewardHashcode ) {
     // FUN_00793b50 (inlined)
     if ( gpPlayerData == nullptr || gpPlayerData->getLoadedSave() == nullptr ) {
@@ -359,7 +342,8 @@ void GMFreeride::populateEnterSpotPrompt( FlashPlayer *pPlayer ) {
         return;
     }
 
-    CarDesc *pCurrentCar = GetCurrentGarageCar();
+    CarDesc *pCurrentCar =
+        ( gpPlayerData != nullptr ) ? gpPlayerData->getCurrentCar() : nullptr;
     DBEntryCarPhysicsData *pCurrentCarData = nullptr;
     if ( pCurrentCar != nullptr && gpDatabase != nullptr ) {
         pCurrentCarData =

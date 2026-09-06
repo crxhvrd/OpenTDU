@@ -11,6 +11,7 @@
 #include "physics/gs_physics.h"
 #include "physics/physics_material.h"
 #include "database/gs_database.h"
+#include "database/db_aftermarket_pack.h"
 #include "player_data/gs_playerdata.h"
 
 #include <Jolt/Jolt.h>
@@ -101,6 +102,11 @@ constexpr float kSteerCurveYDefault[PhysicsVehicle::SC_Count][3] = {
     {1.5f, 2.5f, 2.5f}, // SteeringStraightSpeed
     {3.2f, 3.0f, 3.0f}, // SteeringCounterSpeed
 };
+
+// A performance pack lifts lateral friction on both axles; the multiplier is smaller in simu mode.
+constexpr float kPackLatFrictionBoost = 1.05f;     // DAT_00fab5b0
+constexpr float kPackLatFrictionBoostSimu = 1.01f; // DAT_00fab5ac
+constexpr float kSuspLoadCapAWD = 1.5f;
 
 constexpr float kAeroLiftCoef = 0.2f;     // DAT_00f41730
 constexpr float kAeroSimuLiftMult = 2.0f; // DAT_00f416b0, simu only
@@ -799,16 +805,36 @@ PhysicsVehicle::PhysicsVehicle()
 
 PhysicsVehicle::~PhysicsVehicle() { destroy(); }
 
-PhysicsVehicle::SuspensionSetup
-PhysicsVehicle::ComputeAxleSuspension( const DBEntryCarPhysicsData &db,
-                                       bool bFront ) {
+PhysicsVehicle::PerfPackCoefs
+PhysicsVehicle::BuildPerfPackCoefs( const DBEntryAftermarketPack *pPack ) {
+    // FUN_008345e0 (inlined)
+    PerfPackCoefs coefs;
+    if ( pPack == nullptr ) {
+        return coefs;
+    }
+
+    constexpr float kPercentToRatio = 0.01f;
+    coefs.BHP = pPack->BHPRatio * kPercentToRatio + 1.0f;
+    coefs.TopSpeed = pPack->SpeedRatio * kPercentToRatio + 1.0f;
+    coefs.Suspension = pPack->SuspensionRatio * kPercentToRatio + 1.0f;
+    coefs.Weight = pPack->WeightRatio * kPercentToRatio + 1.0f;
+    coefs.Cx = pPack->CxRatio * kPercentToRatio + 1.0f;
+    coefs.Brake = pPack->BrakeRatio * kPercentToRatio + 1.0f;
+    coefs.Accel = pPack->AccelerationRatio * kPercentToRatio;
+    coefs.bInstalled = true;
+    return coefs;
+}
+
+PhysicsVehicle::SuspensionSetup PhysicsVehicle::ComputeAxleSuspension(
+    const DBEntryCarPhysicsData &db, bool bFront, const PerfPackCoefs &pack ) {
     // FUN_008345e0
     constexpr float kGravity = 9.81f;
     const float springCoef =
         gPhysicsConfig.SpringCoef > 0.0f ? gPhysicsConfig.SpringCoef : 1.0f;
 
-    const float weight =
+    const float dbWeight =
         db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f;
+    const float weight = dbWeight * pack.Weight;
     const float frontFrac =
         db.GravityCenterLength > 0 ? db.GravityCenterLength * 0.01f : 0.5f;
     const float axleFrac = bFront ? frontFrac : ( 1.0f - frontFrac );
@@ -822,13 +848,15 @@ PhysicsVehicle::ComputeAxleSuspension( const DBEntryCarPhysicsData &db,
     const float dampRate = dampRaw > 0 ? static_cast<float>( dampRaw ) : 100.0f;
 
     // Base rate per corner (N/m): 0.006 = 0.01(coef)*0.01(rate)*30*2.
-    float kBase = 0.006f * coefSuspRaw * weight * axleFrac * suspRate;
-    if ( weight > 3500.0f ) {
-        kBase *= 2.5f; // heavy-car boost (DAT_00f416c0)
+    float kBase =
+        0.006f * coefSuspRaw * weight * axleFrac * suspRate * pack.Suspension;
+    if ( dbWeight > 3500.0f ) {
+        kBase *= 2.5f; // heavy car boost (DAT_00f416c0)
     }
     const float k = Max( 1000.0f, kBase * springCoef * 1.2f );
     const float d = kSuspDampingScale * kBase * 0.0625f *
-                    ( coefSuspRaw * 0.01f ) * ( dampRate * 0.01f ) * springCoef;
+                    ( coefSuspRaw * 0.01f ) * ( dampRate * 0.01f ) *
+                    springCoef * pack.Suspension;
 
     const float cornerLoad = weight * axleFrac * kGravity * 0.5f;
     const float sag = cornerLoad / k;
@@ -868,9 +896,19 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                              JPH::Body *pChassis,
                              const DBEntryCarPhysicsData &db,
                              const void *pTorqueBinary,
-                             bool bFactoryShape ) {
+                             bool bFactoryShape,
+                             const DBEntryAftermarketPack *pPack ) {
     if ( pSystem == nullptr || pChassis == nullptr ) {
         return false;
+    }
+
+    const PerfPackCoefs pack = BuildPerfPackCoefs( pPack );
+    if ( pack.bInstalled ) {
+        OTDU_LOG_DEBUG( "Vehicle perf pack: topSpeed x%.4f bhp x%.4f "
+                        "accel +%.4f cx x%.4f weight x%.4f susp x%.4f "
+                        "brake x%.4f\n",
+                        pack.TopSpeed, pack.BHP, pack.Accel, pack.Cx,
+                        pack.Weight, pack.Suspension, pack.Brake );
     }
 
     if ( bRegistered ) {
@@ -961,8 +999,10 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         }
     }
 
-    const SuspensionSetup attachSuspFront = ComputeAxleSuspension( db, true );
-    const SuspensionSetup attachSuspRear = ComputeAxleSuspension( db, false );
+    const SuspensionSetup attachSuspFront =
+        ComputeAxleSuspension( db, true, pack );
+    const SuspensionSetup attachSuspRear =
+        ComputeAxleSuspension( db, false, pack );
     const float attachYFront =
         ( frontRadius - rideHeightFront - bodyHeight * 0.5f ) +
         attachSuspFront.staticLength;
@@ -982,7 +1022,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     const float bodyWidth = ( db.Width > 0 ? db.Width : 1800 ) * kMmToM;
     const float frontalArea = Max( 0.0f, bodyWidth * dbBodyHeight );
-    const float cxDrag = Max( 0.0f, db.CxLength );
+    const float cxDrag = Max( 0.0f, db.CxLength ) * pack.Cx;
     const float czLift = Max( 0.0f, db.CxHeight ) * kAeroLiftCoef *
                          ( gbSimuModeEnabled ? kAeroSimuLiftMult : 1.0f );
     aeroDragArea = 0.5f * frontalArea * cxDrag;
@@ -1005,7 +1045,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     // Suspension
     const float mass =
-        db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f;
+        ( db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f ) *
+        pack.Weight;
     const float massPerWheel = mass * 0.25f;
     const float brakeBalance = bFWD ? 0.75f : ( bRWD ? 0.70f : 0.72f );
 
@@ -1030,9 +1071,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     }
 
     const PhysicsVehicle::SuspensionSetup suspFront =
-        PhysicsVehicle::ComputeAxleSuspension( db, true );
+        PhysicsVehicle::ComputeAxleSuspension( db, true, pack );
     const PhysicsVehicle::SuspensionSetup suspRear =
-        PhysicsVehicle::ComputeAxleSuspension( db, false );
+        PhysicsVehicle::ComputeAxleSuspension( db, false, pack );
     const float kTwoPiSusp = 6.28318530718f;
 
     const float groundY =
@@ -1085,9 +1126,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     const float gripPerMille =
         db.CoefGrip > 0 ? db.CoefGrip * kDBPerMille : 1.0f;
     const float gripCal =
-        db.CoefAccel > 0 ? db.CoefAccel * kDBHundredths : 1.0f;
+        ( db.CoefAccel > 0 ? db.CoefAccel * kDBHundredths : 1.0f ) + pack.Accel;
     const float brakeCal =
-        db.CoefBrake > 0 ? db.CoefBrake * kDBHundredths : 1.0f;
+        ( db.CoefBrake > 0 ? db.CoefBrake * kDBHundredths : 1.0f ) * pack.Brake;
     const float axleBalance =
         db.CoefOverturning > 0 ? db.CoefOverturning * kDBHundredths : 1.0f;
 
@@ -1124,8 +1165,10 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         w.DeadbandLong = kWheelVelDeadband;
         w.DeadbandLat = kWheelVelDeadband;
         w.DeadbandOmega = kWheelOmegaDeadband;
-        w.SuspMaxLoad =
-            mass * kSuspLoadCapCoef / static_cast<float>( vehicle.NumWheels );
+        const float loadCapDriveCoef =
+            ( !bFWD && !bRWD ) ? kSuspLoadCapAWD : 1.0f;
+        w.SuspMaxLoad = mass * loadCapDriveCoef * kSuspLoadCapCoef /
+                        static_cast<float>( vehicle.NumWheels );
         w.SuspMinLoad = 0.0f;
         w.LoadScaleLong = 1.0f;
         w.LoadScaleDrag = 0.0f; // v^2 drag off for the spike
@@ -1139,12 +1182,16 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         const float frictionCoef =
             bFront ? ( c.FrontFrictionCoef > 0 ? c.FrontFrictionCoef : 1.7f )
                    : ( c.RearFrictionCoef > 0 ? c.RearFrictionCoef : 1.7f );
-        const float lateralCoef =
+        float lateralCoef =
             bFront
                 ? ( c.FrontLateralFrictionCoef > 0 ? c.FrontLateralFrictionCoef
                                                    : 1.4f )
                 : ( c.RearLateralFrictionCoef > 0 ? c.RearLateralFrictionCoef
                                                   : 1.4f );
+        if ( pack.bInstalled ) {
+            lateralCoef *= gbSimuModeEnabled ? kPackLatFrictionBoostSimu
+                                             : kPackLatFrictionBoost;
+        }
         const float lngBrakeCoef = bFront ? ( c.FrontLngBrakeFrictionCoef > 0
                                                   ? c.FrontLngBrakeFrictionCoef
                                                   : 1.2f )
@@ -1227,7 +1274,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         const float topGear = gb.Ratios[gb.NumGears - 1];
 
         const float topSpeedMS =
-            ( db.TopSpeedKMH > 0.0f ? db.TopSpeedKMH : 200.0f ) * kKmhToMs;
+            ( db.TopSpeedKMH > 0.0f ? db.TopSpeedKMH : 200.0f ) * kKmhToMs *
+            pack.TopSpeed;
         const float rearRadiusM = ( rearRadius > 1.0e-3f )
                                       ? rearRadius
                                       : kDefaultWheelRadius;
@@ -1288,7 +1336,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
             ? db.IgnitionTimeIgnite
             : 0.5f;
 
-    const float bhp = ( db.BHP > 0 ? (float)db.BHP : 200.0f );
+    const float bhp = ( db.BHP > 0 ? (float)db.BHP : 200.0f ) * pack.BHP;
 
     const float engBrakeScale =
         0.1f * 2.0f; // = 0.2 (FLOAT_00f41668*DAT_00f416b0)
@@ -1820,7 +1868,7 @@ float PhysicsVehicle::filterSteering( float rawSteer,
         blend = JPH::Clamp( ( slip - blend ) * t + blend,
                             std::min( blend, slip ), std::max( blend, slip ) );
     }
-    steerSideslipTerm = blend;
+    steerSideslipTerm = -blend; // FIXME: Has to be inverted for keyboard input (or else the steering dir never reset somehow).
     steerHelpState = 0;
 
     const float limit = EvalHelpCurveSqrt(

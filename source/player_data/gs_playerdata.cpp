@@ -550,6 +550,22 @@ void GSPlayerData::newGame( const bool bInstallCheats ) {
     OTDU_UNIMPLEMENTED_ONCE; // TODO: RENDER (GSRender::setGammaRamp)
 }
 
+CarDesc *GSPlayerData::getCurrentCar() {
+    // FUN_008978d0
+    if ( pLoadedSave == nullptr ) {
+        return nullptr;
+    }
+
+    Driver *pDriver = pLoadedSave->getDriver();
+    Garage *pGarage = pLoadedSave->getGarage();
+    if ( pDriver == nullptr || pGarage == nullptr ||
+         pDriver->CurrentCar >= uint32_t( Garage::kNumCarSlots ) ) {
+        return nullptr;
+    }
+
+    return &pGarage->pCars[pDriver->CurrentCar];
+}
+
 void GSPlayerData::setCurrentCar( const CarDesc *pCar ) {
     // FUN_00897900
     Garage *pGarage = pLoadedSave->getGarage();

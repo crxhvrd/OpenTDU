@@ -14,6 +14,7 @@ namespace JPH {
 } // namespace JPH
 
 struct DBEntryCarPhysicsData;
+struct DBEntryAftermarketPack;
 
 class PhysicsVehicle final : public JPH::PhysicsStepListener {
 public:
@@ -56,6 +57,18 @@ public:
         float
             staticLength; // suspLength at ride height (spring == cornerLoad), m
         float droopStop;  // == maxLength; full droop is the zero-force point
+    };
+
+    // Aftermarket perf pack coefficients
+    struct PerfPackCoefs {
+        float TopSpeed = 1.0f;   
+        float BHP = 1.0f;       
+        float Accel = 0.0f;    
+        float Cx = 1.0f;         
+        float Weight = 1.0f;     
+        float Suspension = 1.0f; 
+        float Brake = 1.0f;     
+        bool bInstalled = false; 
     };
 
     struct DrivingGearbox {
@@ -188,15 +201,20 @@ public:
     PhysicsVehicle();
     ~PhysicsVehicle() override;
 
+    static PerfPackCoefs
+    BuildPerfPackCoefs( const DBEntryAftermarketPack *pPack );
     static SuspensionSetup
-    ComputeAxleSuspension( const DBEntryCarPhysicsData &db, bool bFront );
+    ComputeAxleSuspension( const DBEntryCarPhysicsData &db,
+                           bool bFront,
+                           const PerfPackCoefs &pack );
 
     void initialize();
     bool create( JPH::PhysicsSystem *pSystem,
                  JPH::Body *pChassis,
                  const DBEntryCarPhysicsData &db,
                  const void *pTorqueBinary = nullptr,
-                 bool bFactoryShape = false );
+                 bool bFactoryShape = false,
+                 const DBEntryAftermarketPack *pPack = nullptr );
     void destroy();
 
     void setInput( float throttle, float brake, float steer );

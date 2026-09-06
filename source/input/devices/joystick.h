@@ -15,6 +15,13 @@ public:
     bool tick() override;
 
 private:
+    bool createChannels();
+
+    bool readButton( const int32_t buttonIndex ) const;
+    int16_t readAxis( const int32_t axisIndex ) const;
+    int32_t readPOVAngle( const int32_t hatIndex ) const;
+
+private:
     int32_t field_0x70;
     int32_t field_0x74;
     bool field_0x78;
@@ -23,4 +30,5 @@ private:
 
     SDL_JoystickID joystickID;
     SDL_Joystick *pJoystick;
+    SDL_Gamepad *pGamepad;
 };
