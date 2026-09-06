@@ -21,6 +21,7 @@
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "database/gs_database.h"
+#include "database/db_aftermarket_pack.h"
 #include "config/gs_config.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
@@ -31,6 +32,7 @@
 #include "game/vehicle/vehicle_base.h"
 #include "game/vehicle/vehicle_car.h"
 #include "game/vehicle/car_state.h"
+#include "game/vehicle/car_desc.h"
 #include "game/game_mechanism_player.h"
 
 #include "render/mng_env_map.h"
@@ -283,7 +285,17 @@ void GameModeWorld::installLocalPlayerCar( int32_t carID,
     if ( pRes == nullptr ) {
         return;
     }
-    if ( !pRes->load( carID, rimID, 0, 4, -1, 0,
+
+    uint64_t packHashcode = kNoPackHashcode;
+    if ( gpPlayerData != nullptr ) {
+        const CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+        if ( pCurrentCar != nullptr &&
+             int32_t( pCurrentCar->getCarConfigID() ) == carID ) {
+            packHashcode = pCurrentCar->packHashcode;
+        }
+    }
+
+    if ( !pRes->load( carID, rimID, 0, 4, packHashcode, 0,
                       eVehicleResourceType::VRT_Exterior ) ) {
         OTDU_LOG_ERROR(
             "Failed to load local-player vehicle resources (car %d)\n", carID );
@@ -379,10 +391,12 @@ void GameModeWorld::installLocalPlayerCar( int32_t carID,
                 ? pRes->Exterior.pBankInstance->getTorqueBinary()
                 : nullptr;
         DBEntryCarPhysicsData *pDB = gpDatabase->getCarDBEntry( state.carID );
+        const DBEntryAftermarketPack *pPack =
+            gpDatabase->getAftermarketPack( pRes->PackHashcode );
         if ( pDB != nullptr ) {
             gpPhysics->destroyVehicle( state.pPhysicsVehicle );
-            pPlayerPhysicsVehicle =
-                gpPhysics->createVehicle( pFactory, spawn, *pDB, pTorqueBin );
+            pPlayerPhysicsVehicle = gpPhysics->createVehicle(
+                pFactory, spawn, *pDB, pTorqueBin, pPack );
             state.pPhysicsVehicle = pPlayerPhysicsVehicle;
         }
     }

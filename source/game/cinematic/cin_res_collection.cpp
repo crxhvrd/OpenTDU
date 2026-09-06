@@ -13,6 +13,7 @@
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/entity/entity_pedestrian.h"
 #include "database/gs_database.h"
+#include "database/db_aftermarket_pack.h"
 #include "game/avatar/gs_avatar.h"
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -1654,10 +1655,14 @@ void *CinResCollection::spawnPlayerCar() {
     PhysicsVehicle *pPhysicsVehicle = nullptr;
     if ( pRes->bUseGamePhysics != 0 && gpPhysics != nullptr ) {
         DBEntryCarPhysicsData *pPhysEntry = pCarEntry;
+        const DBEntryAftermarketPack *pPack =
+            gpDatabase->getAftermarketPack( pRes->PackHashcode );
         if ( state.carID == kDefaultCarDBID ) {
             pPhysEntry = gpDatabase->getCarDBEntry( 223 );
+            pPack = nullptr;
         } else if ( state.carID == kDefaultBikeDBID ) {
             pPhysEntry = gpDatabase->getCarDBEntry( 1502 );
+            pPack = nullptr;
         }
 
         BankVehicle *pBank = pRes->Exterior.pBankInstance;
@@ -1667,7 +1672,7 @@ void *CinResCollection::spawnPlayerCar() {
             ( pBank != nullptr ) ? pBank->getTorqueBinary() : nullptr;
         if ( pPhysEntry != nullptr ) {
             pPhysicsVehicle = gpPhysics->createVehicle(
-                pFactory, spawn, *pPhysEntry, pTorqueBin );
+                pFactory, spawn, *pPhysEntry, pTorqueBin, pPack );
         }
     }
 

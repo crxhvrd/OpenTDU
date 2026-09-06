@@ -113,6 +113,7 @@ public:
     void resetPlayerData( const bool bApplyDefaults, const bool bClear );
     void newGame( const bool bInstallCheats );
     void setCurrentCar( const CarDesc *pCar );
+    CarDesc *getCurrentCar();
     int32_t getSaveLoadState() const;
     bool loadActiveProfileSave();
     bool loadCommonDT( const void *pSaveBuffer,

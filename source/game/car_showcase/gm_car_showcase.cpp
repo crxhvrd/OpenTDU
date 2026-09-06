@@ -3,6 +3,7 @@
 
 #include "audio/vehicle/gs_vehicle_sound.h"
 #include "database/gs_database.h"
+#include "database/db_aftermarket_pack.h"
 #include "render/draw_list.h"
 #include "render/gs_render.h"
 #include "render/postfx/gs_postfx.h"
@@ -479,10 +480,14 @@ bool GMCarShowcase::loadCar() {
     PhysicsVehicle *local_c4 = nullptr;
     if ( pCarState->bUseGamePhysics != 0 && gpPhysics != nullptr ) {
         DBEntryCarPhysicsData *pPhysDB = pDVar13;
+        const DBEntryAftermarketPack *pPack =
+            gpDatabase->getAftermarketPack( pCarState->PackHashcode );
         if ( pCarState->CarID == 999 ) {
             pPhysDB = gpDatabase->getCarDBEntry( 223 );
+            pPack = nullptr;
         } else if ( pCarState->CarID == 666 ) {
             pPhysDB = gpDatabase->getCarDBEntry( 1502 );
+            pPack = nullptr;
         }
 
         BankVehicle *pBank = pCarState->Exterior.pBankInstance;
@@ -492,7 +497,7 @@ bool GMCarShowcase::loadCar() {
             ( pBank != nullptr ) ? pBank->getTorqueBinary() : nullptr;
         if ( pPhysDB != nullptr ) {
             local_c4 = gpPhysics->createVehicle( pFactory, local_50, *pPhysDB,
-                                                 pTorqueBin );
+                                                 pTorqueBin, pPack );
         }
     }
 

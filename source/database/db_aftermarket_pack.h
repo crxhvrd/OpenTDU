@@ -1,5 +1,7 @@
 #pragma once
 
+static constexpr uint64_t kNoPackHashcode = 0xffffffffffffffffull;
+
 struct DBEntryAftermarketPack {
     uint64_t Hashcode;
     uint64_t PackID;

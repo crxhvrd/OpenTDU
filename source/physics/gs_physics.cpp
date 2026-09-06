@@ -1459,10 +1459,12 @@ PhysFactory *GSPhysics::createFromBinary( void *param_3, int32_t param_2 ) {
     return pFactory;
 }
 
-PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
-                                          const Matrix4x4f_t &worldTransform,
-                                          const DBEntryCarPhysicsData &db,
-                                          const void *pTorqueBinary ) {
+PhysicsVehicle *
+GSPhysics::createVehicle( PhysFactory *pFactory,
+                          const Matrix4x4f_t &worldTransform,
+                          const DBEntryCarPhysicsData &db,
+                          const void *pTorqueBinary,
+                          const DBEntryAftermarketPack *pPack ) {
     // FUN_0082fc80
     if ( pPhysicsSystem == nullptr ) {
         return nullptr;
@@ -1539,8 +1541,11 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         comResult.Get(), JPH::RVec3( world.GetTranslation() ),
         world.GetQuaternion().Normalized(), JPH::EMotionType::Dynamic,
         TDUPhysLayers::VEHICLE );
+    const PhysicsVehicle::PerfPackCoefs packCoefs =
+        PhysicsVehicle::BuildPerfPackCoefs( pPack );
     const float chassisMass =
-        db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f;
+        ( db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f ) *
+        packCoefs.Weight;
     settings.mMassPropertiesOverride.mMass = chassisMass;
 
     const JPH::Vec3 h( halfW + kConvexRadius,
@@ -1579,7 +1584,7 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         }
         if ( pCar == nullptr ||
              !pCar->create( pPhysicsSystem, pChassis, db, pTorqueBinary,
-                            bHasFactoryShape ) ) {
+                            bHasFactoryShape, pPack ) ) {
             bodyInterface.RemoveBody( pChassis->GetID() );
             bodyInterface.DestroyBody( pChassis->GetID() );
             pCar = nullptr;

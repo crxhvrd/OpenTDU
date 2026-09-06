@@ -31,6 +31,7 @@ class DrawList;
 struct PhysicsSHK;
 struct PhysicsSHKRoad;
 struct DBEntryCarPhysicsData;
+struct DBEntryAftermarketPack;
 class PhysicsCharacter;
 
 using RigidBody_t = JPH::Body *;
@@ -214,10 +215,12 @@ public:
     bool
     getBodyPose( RigidBody_t body, Matrix4x4f_t &outMatrix, bool &outActive );
 
-    PhysicsVehicle *createVehicle( PhysFactory *pFactory,
-                                   const Matrix4x4f_t &worldTransform,
-                                   const DBEntryCarPhysicsData &db,
-                                   const void *pTorqueBinary = nullptr );
+    PhysicsVehicle *
+    createVehicle( PhysFactory *pFactory,
+                   const Matrix4x4f_t &worldTransform,
+                   const DBEntryCarPhysicsData &db,
+                   const void *pTorqueBinary = nullptr,
+                   const DBEntryAftermarketPack *pPack = nullptr );
     void destroyVehicle( PhysicsVehicle *pVehicle );
 
     RigidBody_t createSphere( uint32_t collisionGroup,
