@@ -936,8 +936,8 @@ void GSFile::closeCurrentContext() {
     bIsCurrentContextReady = false;
 }
 
-GSFile::eContextState GSFile::ensureContext( const char *pContextName,
-                                             const wchar_t *pDisplayName ) {
+eContextState GSFile::ensureContext( const char *pContextName,
+                                     const wchar_t *pDisplayName ) {
     // FUN_009a4250
     const uint64_t profileHashcode =
         gUserProfileRegister.getActiveProfileHashcode();
