@@ -26,11 +26,11 @@ static FlashSlider *gpFlashSliderCache[kFlashSlideCacheSize] = { // DAT_010e7da8
 
 static constexpr float FLOAT_00fab988 = 5.0f; // DAT_00fab988
 
-static constexpr FlashMessage kArrowRight( 0x61727772u ); // arwr
-static constexpr FlashMessage kArrowLeft( 0x6172776cu );  // arwl
-static constexpr FlashMessage kArrowDown( 0x61727764u );  // arwd
-static constexpr FlashMessage kArrowUp( 0x61727775u );    // arwu
-static constexpr FlashMessage kPrga( 0x70726761u );       // prga
+static constexpr FlashMessage kArrowRight( "arwr" );
+static constexpr FlashMessage kArrowLeft( "arwl" );
+static constexpr FlashMessage kArrowDown( "arwd" );
+static constexpr FlashMessage kArrowUp( "arwu" );
+static constexpr FlashMessage kPrga( "prga" );
 
 FlashSlider::FlashSlider()
     : velocity( 1.0f ),
@@ -314,8 +314,12 @@ void FlashSlider::FUN_0071baf0() {
     if ( ( bVar1 ) &&
          ( bVar1 = pFlashPlayer->getVariableAsString( "/:WhatGauge", local_40 ),
            bVar1 ) ) {
-        std::string spriteName = local_40;
-        spriteName += "/gauge_length";
+        char gaugeBarPath[64];
+        snprintf( gaugeBarPath, sizeof( gaugeBarPath ), "%s/gauge_length",
+                  local_40 );
+        strncpy( local_40, gaugeBarPath, sizeof( local_40 ) - 1 );
+        local_40[sizeof( local_40 ) - 1] = '\0';
+
         bVar1 = pFlashPlayer->spriteExists( local_40 );
         if ( bVar1 ) {
             FlashClip FStack_58;

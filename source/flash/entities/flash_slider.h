@@ -8,6 +8,9 @@ class FlashSlider {
 public:
     bool hasFocus() const { return bHasFocus; }
     float getValue() const { return value; }
+    bool isDirty() const { return bDirty; }
+    float getMinValue() const { return minMaxValues[0]; }
+    float getMaxValue() const { return minMaxValues[1]; }
 
     inline void rebind( FlashPlayer *pPlayer, const char *pVarName ) {
         // FUN_009b51a0 (inlined)
