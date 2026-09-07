@@ -1077,7 +1077,8 @@ uint32_t GSFlash::getInputMask() {
         const bool bPopupDisplayed = ( gpActiveGameMode != nullptr ) &&
                                      gpActiveGameMode->isMessageBoxVisible();
         if ( !gpActiveGM->isPauseMenuActive() && gameSpeed > 0.0f &&
-             !bPopupDisplayed && activeGM != GM_GameModeEdit ) {
+             !bPopupDisplayed && activeGM != GM_GameModeEdit &&
+             !gpActiveGM->usesFrontEndDirections() ) {
             bFrontEndDirections = false;
             if ( IsActionPressed( pPVar12->pInGameMenuUp ) ) {
                 return FK_InGameUp;

@@ -63,6 +63,7 @@ public:
     }
 
     inline bool isPauseMenuActive() const { return bPauseMenuActive; }
+    virtual bool usesFrontEndDirections() const { return false; }
     inline PlayerGameMech *getGameMech() const { return pGameMech; }
 
 public:
@@ -123,7 +124,7 @@ protected:
 protected:
     MngHudChallenge mngHudChallenge;
 
-    PlayerGameMech *pGameMech; 
+    PlayerGameMech *pGameMech;
     int32_t
         gameMechType; // field4272_0x1031f4 — -1 default; 4: player car; 5: none
     uint32_t
@@ -140,7 +141,7 @@ protected:
     int32_t carRimIndex;   // garage entry +0x6c
     int32_t carTireIndex;  // garage entry +0x70
 
-    float lastDistance; 
+    float lastDistance;
     float initializeTime; // GSTimer total time at initialize()
     float pauseFadeTimer; // Pause radial-blur fade countdown
     bool bGearSelectBlocked = false;

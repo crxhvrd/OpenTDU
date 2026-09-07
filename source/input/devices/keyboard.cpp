@@ -225,7 +225,7 @@ static void InitVirtualKeysLUT()
 inline const char* SDLScancodeToTestDrive(const SDL_Scancode code)
 {
     // Converts SDL scancode name to DirectInput/TDU1 names
-    switch (code) {
+    switch (code) { // DAT_00fa1c88
     case SDL_SCANCODE_ESCAPE:   return "ESC";
     case SDL_SCANCODE_SPACE:    return "SPACE";
     case SDL_SCANCODE_RETURN:
@@ -238,6 +238,58 @@ inline const char* SDLScancodeToTestDrive(const SDL_Scancode code)
         return "LCTRL";
     case SDL_SCANCODE_RCTRL:
         return "RCTRL";
+    case SDL_SCANCODE_LSHIFT:
+        return "LSHIFT";
+    case SDL_SCANCODE_RSHIFT:
+        return "RSHIFT";
+    case SDL_SCANCODE_LALT:
+        return "LALT";
+    case SDL_SCANCODE_RALT:
+        return "RALT";
+    case SDL_SCANCODE_CAPSLOCK:
+        return "CAPS_LOCK";
+    case SDL_SCANCODE_NUMLOCKCLEAR:
+        return "LOCK_NUM";
+    case SDL_SCANCODE_SCROLLLOCK:
+        return "SCROLL_LOCK";
+    case SDL_SCANCODE_PRINTSCREEN:
+        return "PRINT_SCRN";
+    case SDL_SCANCODE_INSERT:
+        return "INS";
+    case SDL_SCANCODE_DELETE:
+        return "SUP";
+    case SDL_SCANCODE_KP_0:
+        return "PAD_0";
+    case SDL_SCANCODE_KP_1:
+        return "PAD_1";
+    case SDL_SCANCODE_KP_2:
+        return "PAD_2";
+    case SDL_SCANCODE_KP_3:
+        return "PAD_3";
+    case SDL_SCANCODE_KP_4:
+        return "PAD_4";
+    case SDL_SCANCODE_KP_5:
+        return "PAD_5";
+    case SDL_SCANCODE_KP_6:
+        return "PAD_6";
+    case SDL_SCANCODE_KP_7:
+        return "PAD_7";
+    case SDL_SCANCODE_KP_8:
+        return "PAD_8";
+    case SDL_SCANCODE_KP_9:
+        return "PAD_9";
+    case SDL_SCANCODE_KP_PERIOD:
+        return "PAD_DOT";
+    case SDL_SCANCODE_KP_PLUS:
+        return "PAD_PLUS";
+    case SDL_SCANCODE_KP_MINUS:
+        return "PAD_MINUS";
+    case SDL_SCANCODE_KP_MULTIPLY:
+        return "PAD_MUL";
+    case SDL_SCANCODE_KP_DIVIDE:
+        return "PAD_DIV";
+    case SDL_SCANCODE_KP_ENTER:
+        return "PAD_ENTER";
     default:                    return SDL_GetScancodeName(code);
     }
 }

@@ -9,6 +9,7 @@
 #include "flash/entities/flash_entity.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/implementation/flash_sprite.h"
 #include "gs_timer.h"
 #include "game/cinematic/mng_cinematics.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -19,6 +20,15 @@
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
 #include "world/gs_world.h"
+
+static constexpr float kFlashSeekBarWidth = 600.0f; // DAT_00f41690
+
+static inline const char *GetBankFolder( const char *pBankName ) {
+    const bool bSpotBank =
+        pBankName != nullptr &&
+        ::toupper( static_cast<unsigned char>( pBankName[0] ) ) == 'E';
+    return bSpotBank ? "Level/Hawai/Spots" : "Interior";
+}
 
 GMCinViewer::GMCinViewer()
     : GameModeWorld( 6 ),
@@ -32,11 +42,27 @@ GMCinViewer::~GMCinViewer() { stopCine(); }
 
 void GMCinViewer::initialize() {
     // FUN_007b4440
+    bPlayRequested = false;
+    bPlayPending = false;
+
     contentBanks.clear();
     scanContentBanks( "Level/Hawai/Spots/" );
     scanContentBanks( "Interior/" );
 
     GameModeWorld::initialize();
+
+    if ( gpScenaric != nullptr ) {
+        const CinematicViewerConfig &cfg =
+            gpScenaric->getCinematicViewerDefault();
+        if ( !cfg.BankName.empty() && !cfg.CinematicName.empty() ) {
+            const size_t slash = cfg.BankName.find_last_of( "\\/" );
+            selectedBankName = ( slash != std::string::npos )
+                                   ? cfg.BankName.substr( slash + 1 )
+                                   : cfg.BankName;
+            selectedBankName = selectedBankName.substr( 0, 8 );
+            selectedCineName = cfg.CinematicName;
+        }
+    }
 
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC
 }
@@ -58,6 +84,8 @@ void GMCinViewer::scanContentBanks( const char *pSubDir ) {
 void GMCinViewer::reset() {
     // FUN_007b4340
     GameModeWorld::reset();
+
+    positionAtSpot( selectedBankName.c_str() );
 
     gpCamera->setCameraMode( 10, nullptr, 0.0f );
 
@@ -81,10 +109,16 @@ void GMCinViewer::tick( float deltaTime, float totalTime ) {
     // FUN_007b4120
     GameModeWorld::tick( deltaTime, totalTime );
 
-    if ( pCurrentCine != nullptr ) {
-        // Advance + tick the cinematic
-        pCurrentCine->tick();
+    if ( bPlayRequested ) {
+        bPlayPending = true;
+    }
+    if ( bPlayPending ) {
+        playCine( selectedCineName.c_str() );
+        bPlayPending = false;
+        bPlayRequested = false;
+    }
 
+    if ( pCurrentCine != nullptr ) {
         const CinResCollection::CameraView &view =
             pCurrentCine->getCameraView();
 
@@ -94,9 +128,20 @@ void GMCinViewer::tick( float deltaTime, float totalTime ) {
                                                   view.Fov * 0.01745329252f );
         }
 
+        const float curTime = pCurrentCine->getTime();
+        const float totalTime = pCurrentCine->getDuration();
+
         FlashPlayer *pViewer = gpFlash->getFlashPlayer( "VIEWER" );
         if ( pViewer != nullptr ) {
-            pViewer->setVariableValue( "/:cur_time", pCurrentCine->getTime() );
+            FlashClip seekBar;
+            if ( totalTime > 0.0f &&
+                 pViewer->getClipPlayer( "barre/cur", &seekBar ) ) {
+                const float x = static_cast<float>( static_cast<int32_t>(
+                                    curTime * kFlashSeekBarWidth ) ) /
+                                totalTime;
+                seekBar.setProperty( eFlashProperty::FP_X, x );
+            }
+            pViewer->setVariableValue( "/:cur_time", curTime );
         }
     }
 
@@ -118,6 +163,8 @@ void GMCinViewer::destroy() {
 
 void GMCinViewer::positionAtSpot( const char *pBankName ) {
     // FUN_007b3450
+    bPlayRequested = true;
+
     if ( pBankName == nullptr || gpScenaric == nullptr ) {
         return;
     }
@@ -146,17 +193,25 @@ void GMCinViewer::positionAtSpot( const char *pBankName ) {
         return;
     }
 
-    Eigen::Vector4f pos( pCurrentSpot->X, pCurrentSpot->Y, pCurrentSpot->Z,
-                         1.0f );
-    if ( gpWorld != nullptr ) {
-        gpWorld->setStreamingPosition( &pos );
-        gpWorld->setPlayerPosition( &pos );
-    }
+    const Eigen::Vector4f pos( pCurrentSpot->X, pCurrentSpot->Y,
+                               pCurrentSpot->Z, 1.0f );
+
+    teleportLocalPlayerCar( pos.head<3>() );
+
     if ( gpCamera != nullptr ) {
         CameraGame *pCam = gpCamera->findCamera( gpCamera->getBoundCarState() );
         if ( pCam != nullptr ) {
             pCam->setPosition( pos );
         }
+    }
+    if ( gpActiveGMScene != nullptr ) {
+        gpActiveGMScene->setVerifyGameFreeze( false );
+    }
+    if ( gpWorld != nullptr ) {
+        Eigen::Vector4f streamPosition = pos;
+        gpWorld->setPlayerPosition( &streamPosition );
+        gpWorld->setStreamingPosition( &streamPosition );
+        gpWorld->setDirtyStreaming( true );
     }
 }
 
@@ -167,8 +222,7 @@ void GMCinViewer::loadBankCinematics( const char *pBankName ) {
         return;
     }
 
-    const char *pFolder =
-        ( pBankName[0] == 'E' ) ? "Level/Hawai/Spots" : "Interior";
+    const char *pFolder = GetBankFolder( pBankName );
 
     ScenaricBank tempBank;
     GSScenaric::LoadScenaricBank( pFolder, pBankName, &tempBank );
@@ -188,19 +242,34 @@ void GMCinViewer::loadBankCinematics( const char *pBankName ) {
 bool GMCinViewer::onMessage( FlashMessage *pMessage ) {
     // FUN_007b3b00
     switch ( *pMessage ) {
-    case FlashMessage( "bnch" ): {
+    case FlashMessage( "bnch" ): { // a bank was picked in the bnkl list
         const char *pBankName = flashListBank.getSelectedName();
         selectedBankName = ( pBankName != nullptr ) ? pBankName : "";
-        loadBankCinematics( pBankName );
-        positionAtSpot( pBankName );
-        if ( !contentCine.empty() ) {
-            playCine( contentCine[0].c_str() );
+        const size_t dot = selectedBankName.find_last_of( '.' );
+        if ( dot != std::string::npos ) {
+            selectedBankName.resize( dot );
         }
+        loadBankCinematics( selectedBankName.c_str() );
         return true;
     }
-    case FlashMessage( "cich" ): // a cinematic was picked in the cinl list
-        playCine( flashListCine.getSelectedName() );
+    case FlashMessage( "cich" ): { // a cinematic was picked in the cinl list
+        const char *pCineName = flashListCine.getSelectedName();
+        selectedCineName = ( pCineName != nullptr ) ? pCineName : "";
+        if ( pCurrentCine != nullptr ) {
+            FlashPlayer *pViewer = gpFlash->getFlashPlayer( "VIEWER" );
+            if ( pViewer != nullptr ) {
+                pViewer->setVariableValue( "/:IsPlay", 0 );
+            }
+            pCurrentCine->setPaused( false );
+            if ( gpTimer != nullptr ) {
+                gpTimer->GameSpeed = gpTimer->PreviousGameSpeed;
+            }
+            releaseCurrentCine();
+        }
+
+        positionAtSpot( selectedBankName.c_str() );
         return true;
+    }
     case FlashMessage( "play" ): // toggle play / pause of the current cinematic
         togglePlayPause();
         return true;
@@ -216,6 +285,33 @@ bool GMCinViewer::onMessage( FlashMessage *pMessage ) {
     default:
         return GameModeWorld::onMessage( pMessage );
     }
+}
+
+bool GMCinViewer::executeAction( int32_t param_2, void *param_3 ) {
+    // FUN_007b3380
+    FlashPlayer *pViewer = gpFlash->getFlashPlayer( "VIEWER" );
+
+    if ( param_2 == CE_Started ) {
+        EntityCinematic *pCine = static_cast<EntityCinematic *>( param_3 );
+        if ( pViewer != nullptr && pCine != nullptr ) {
+            pViewer->setVariableValue( "/:total_time", pCine->getDuration() );
+        }
+    } else if ( param_2 == CE_Finished ) {
+        if ( pViewer != nullptr ) {
+            pViewer->setVariableValue( "/:IsPlay", 1 );
+        }
+        if ( pCurrentCine != nullptr ) {
+            pCurrentCine->setPaused( true );
+        }
+        if ( gpTimer != nullptr && gpTimer->GameSpeed != 0.0f ) {
+            if ( gpTimer->PreviousGameSpeed != gpTimer->GameSpeed ) {
+                gpTimer->PreviousGameSpeed = gpTimer->GameSpeed;
+            }
+            gpTimer->GameSpeed = 0.0f;
+        }
+    }
+
+    return true;
 }
 
 std::string GMCinViewer::resolveCineResource( const char *pCineName ) {
@@ -274,8 +370,7 @@ void GMCinViewer::playCine( const char *pCineName ) {
         return;
     }
 
-    const char *pFolder =
-        ( selectedBankName[0] == 'E' ) ? "Level/Hawai/Spots" : "Interior";
+    const char *pFolder = GetBankFolder( selectedBankName.c_str() );
     GSScenaric::LoadScenaricBank( pFolder, selectedBankName.c_str(),
                                   &playbackBank );
     bPlaybackBankActive = true;
@@ -283,6 +378,7 @@ void GMCinViewer::playCine( const char *pCineName ) {
     std::string cinName = resolveCineResource( pCineName );
 
     pCurrentCine = new EntityCinematic();
+    pCurrentCine->setGameModeInterface( this );
     pCurrentCine->setBank( &playbackBank );
     pCurrentCine->setCutsceneName( cinName.c_str() );
     pCurrentCine->initialize();
@@ -300,7 +396,7 @@ void GMCinViewer::playCine( const char *pCineName ) {
     playbackSpeed = 1.0f;
 }
 
-void GMCinViewer::stopCine() {
+void GMCinViewer::releaseCurrentCine() {
     if ( pCurrentCine != nullptr ) {
         pCurrentCine->stop( true );
         delete pCurrentCine;
@@ -312,6 +408,10 @@ void GMCinViewer::stopCine() {
         }
         bPlaybackBankActive = false;
     }
+}
+
+void GMCinViewer::stopCine() {
+    releaseCurrentCine();
     if ( gpCamera != nullptr ) {
         gpCamera->clearCinematicCameraOverride();
     }
@@ -367,4 +467,9 @@ void GMCinViewer::restartCine() {
     }
     pCurrentCine->setPaused( false );
     pCurrentCine->seek( 0.0f );
+
+    FlashPlayer *pViewer = gpFlash->getFlashPlayer( "VIEWER" );
+    if ( pViewer != nullptr ) {
+        pViewer->setVariableValue( "/:IsPlay", 0 );
+    }
 }

@@ -444,44 +444,34 @@ void FlashResource::FloatToString( int32_t param_1,
 
             char local_80[128];
             sprintf( local_80, "%d", _Value );
-            pcVar7 = local_80;
-            char cVar1 = '\0';
-            do {
-                cVar1 = *pcVar7;
-                pcVar7 = pcVar7 + 1;
-            } while ( cVar1 != '\0' );
-            uint32_t pcVar7Len =
-                (uint32_t)strlen( local_80 ) - 1; // TODO: Check
-            uint32_t uVar5 = param_1 - pcVar7Len;
-            if ( 0 < uVar5 ) {
-                uint32_t uVar3 = uVar5 >> 2;
+
+            const int32_t numDigits =
+                static_cast<int32_t>( strlen( local_80 ) );
+            const int32_t padCount = param_1 - numDigits;
+            if ( 0 < padCount ) {
+                uint32_t uVar3 = static_cast<uint32_t>( padCount ) >> 2;
                 pcVar7 = pcVar6;
                 while ( uVar3 != 0 ) {
                     uVar3 = uVar3 - 1;
                     strncpy( pcVar7, "0000", 4 );
                     pcVar7 = pcVar7 + 4;
                 }
-                for ( uVar3 = uVar5 & 3; uVar3 != 0; uVar3 = uVar3 - 1 ) {
+                for ( uVar3 = static_cast<uint32_t>( padCount ) & 3; uVar3 != 0;
+                      uVar3 = uVar3 - 1 ) {
                     *pcVar7 = '0';
                     pcVar7 = pcVar7 + 1;
                 }
-                pcVar6 = pcVar6 + uVar5;
+                pcVar6 = pcVar6 + padCount;
             }
             *pcVar6 = '\0';
-            pcVar7 = local_80;
-            do {
-                cVar1 = *pcVar7;
-                pcVar7 = pcVar7 + 1;
-            } while ( cVar1 != '\0' );
-            size_t ullVar5 = strlen( local_80 );
+
             pcVar6 = pcVar6 + -1;
             do {
                 pcVar7 = pcVar6 + 1;
                 pcVar6 = pcVar6 + 1;
             } while ( *pcVar7 != '\0' );
 
-            pcVar7 = local_80;
-            memcpy( pcVar6, pcVar7, ullVar5 );
+            memcpy( pcVar6, local_80, numDigits + 1 );
         }
     }
 }

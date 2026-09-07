@@ -34,6 +34,7 @@ class GameModeScene : public WorldListener,
                       public GameMode {
 public:
     bool isVerifyingGameFreeze() const { return bVerifyGameFreeze; }
+    void setVerifyGameFreeze( const bool value ) { bVerifyGameFreeze = value; }
     virtual bool isPaused() {
         // FUN_00630320
         return false;

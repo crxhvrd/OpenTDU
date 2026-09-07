@@ -199,6 +199,9 @@ public:
 
     void setCinematicViewerDefault( const std::string &param_1,
                                     const std::string &param_2 );
+    inline const CinematicViewerConfig &getCinematicViewerDefault() const {
+        return cineViewConfig;
+    }
     void setDemoTimer( float param_1 );
     inline float getDemoTimer() const { return demoTimer; }
     inline bool isDemoModeActive() const { return bDemoMode; }

@@ -21,12 +21,15 @@ public:
     void pause() override;
     void destroy() override;
     bool onMessage( FlashMessage *pMessage ) override;
+    bool executeAction( int32_t param_2, void *param_3 ) override;
+    bool usesFrontEndDirections() const override { return true; }
 
 private:
     void scanContentBanks( const char *pSubDir );
     void positionAtSpot( const char *pBankName );
     void loadBankCinematics( const char *pBankName );
     void playCine( const char *pCineName );
+    void releaseCurrentCine();
     void stopCine();
     std::string resolveCineResource( const char *pCineName );
     void togglePlayPause();      // "play"
@@ -40,6 +43,9 @@ private:
     FlashListCinViewer flashListCine;
     struct SpotMap *pCurrentSpot = nullptr;
     std::string selectedBankName;
+    std::string selectedCineName;
+    bool bPlayRequested = false;
+    bool bPlayPending = false;
     EntityCinematic *pCurrentCine = nullptr;
     ScenaricBank playbackBank;
     bool bPlaybackBankActive = false;
