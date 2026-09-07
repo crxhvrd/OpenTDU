@@ -1,10 +1,13 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "game/gm_world.h"
+#include "filesystem/bank.h"
 #include "flash_list_cin_viewer.h"
+#include "game/gm_world.h"
+#include "game/scene_interior.h"
 #include "game/scenaric/scenaric_bank.h"
 
 class EntityCinematic;
@@ -31,10 +34,16 @@ private:
     void playCine( const char *pCineName );
     void releaseCurrentCine();
     void stopCine();
-    std::string resolveCineResource( const char *pCineName );
+    std::string resolveCineResource( ScenaricBank &cineBank,
+                                     const char *pCineName );
     void togglePlayPause();      // "play"
     void stepFrame( float dir ); // "frwd" (+1) / "rewd" (-1)
     void restartCine();          // "strt"
+    struct SpotMap *findSpotForBank( const char *pBankName,
+                                     int32_t *pOutIndex = nullptr );
+    bool isSpotFrameReady();
+    void enterInteriorPreview( const char *pBankName );
+    void leaveInteriorPreview();
 
 private:
     std::vector<std::string> contentBanks;
@@ -42,6 +51,7 @@ private:
     std::vector<std::string> contentCine;
     FlashListCinViewer flashListCine;
     struct SpotMap *pCurrentSpot = nullptr;
+    int32_t spotSectorWaitTicks = 0;
     std::string selectedBankName;
     std::string selectedCineName;
     bool bPlayRequested = false;
@@ -50,4 +60,6 @@ private:
     ScenaricBank playbackBank;
     bool bPlaybackBankActive = false;
     float playbackSpeed = 1.0f;
+    Bank interiorBank;
+    std::unique_ptr<SceneInterior> pInteriorScene;
 };
