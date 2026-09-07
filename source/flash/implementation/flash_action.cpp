@@ -9,7 +9,7 @@
 
 #include "core/time.h"
 
-static bool DAT_00fabfb4 = false; // DAT_00fabfb4
+static bool DAT_00fabfb4 = true; // DAT_00fabfb4
 
 namespace flash {
     namespace actions {
@@ -671,13 +671,16 @@ namespace flash {
                 OTDU_UNIMPLEMENTED;
                 pStack->pushString( "0" );
                 break;
-            case 11:
+            case 11: {
+                char propertyValue[64];
+                pFVar6->getStringProperty( 11, propertyValue );
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
-                    OTDU_LOG_DEBUG( "GetProperty _target = (unimplemented)\n" );
+                    OTDU_LOG_DEBUG( "GetProperty _target = '%s'\n",
+                                    propertyValue );
                 }
-                OTDU_UNIMPLEMENTED;
-                pStack->pushString( "" );
+                pStack->pushString( propertyValue );
                 break;
+            }
             case 12:
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
                     OTDU_LOG_DEBUG(
@@ -686,13 +689,16 @@ namespace flash {
                 OTDU_UNIMPLEMENTED;
                 pStack->pushString( "0" );
                 break;
-            case 13:
+            case 13: {
+                char propertyValue[64];
+                pFVar6->getStringProperty( 13, propertyValue );
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
-                    OTDU_LOG_DEBUG( "GetProperty _name = (unimplemented)\n" );
+                    OTDU_LOG_DEBUG( "GetProperty _name = '%s'\n",
+                                    propertyValue );
                 }
-                OTDU_UNIMPLEMENTED;
-                pStack->pushString( "" );
+                pStack->pushString( propertyValue );
                 break;
+            }
             case 14:
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
                     OTDU_LOG_DEBUG( "GetProperty _droptarget = ''\n" );
@@ -915,11 +921,14 @@ namespace flash {
 
         void trace( FlashAction *param_1 ) {
             // FUN_00445920
-            if ( DAT_00fabfb4 ) {
-                const char *pcVar3 =
-                    ( (FlashStack *)param_1->pStack )->popString();
+            if ( !DAT_00fabfb4 ) {
+                return;
+            }
+
+            const char *pcVar3 = ( (FlashStack *)param_1->pStack )->popString();
+
+            if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
                 OTDU_LOG_DEBUG( "FlashTrace => '%s'\n", pcVar3 );
-                OTDU_TRIGGER_BREAKPOINT;
             }
         }
 

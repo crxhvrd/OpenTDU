@@ -25,6 +25,7 @@ public:
     void showFrame( const char *param_1, const char *param_2, bool param_3 );
     void setVariableValue( const char *param_1, const char *param_2 );
     void setVariableValueNonLinked( const char *param_1, const char *param_2 );
+    void setVariableValueWritableLinked( const char *param_1, char *param_2 );
     void setVariableValue( const char *param_1, const int32_t param_2 );
     void setVariableValue( const char *param_1, const uint32_t param_2 );
     void setVariableValue( const char *param_2, const float param_3 );

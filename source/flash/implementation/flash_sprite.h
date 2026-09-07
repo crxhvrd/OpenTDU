@@ -57,6 +57,7 @@ public:
     void setVariable( const char *param_1, const char *param_2 );
     void setVariable( const char *param_1, float param_2 );
     void setVariableNonLinked( const char *param_1, const char *param_2 );
+    void setVariableWritableLinked( const char *param_1, char *param_2 );
 
     bool resolveVarPath( const char *pVariableName,
                          const char **ppResolvedPath,
@@ -65,6 +66,7 @@ public:
                              int32_t *param_2,
                              FlashDisplayList **param_3 );
     int32_t findLabel( const char *param_2 );
+    void getStringProperty( int32_t propertyIndex, char *pOutValue );
 
     void setFrameIndex( int32_t param_1 );
 

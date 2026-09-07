@@ -222,6 +222,28 @@ void FlashVariables::setVariable( const char *param_1,
     }
 }
 
+void FlashVariables::setVariableWritableLinked( char *param_1,
+                                               uint32_t param_2,
+                                               const char *param_3 ) {
+    // FUN_00443860
+    if ( param_1 != nullptr && param_3 != nullptr ) {
+        ActionScriptVariable *pFVar1 = insertVariable( param_3, param_2 );
+        if ( pFVar1 != nullptr ) {
+            if ( pFVar1->Type != eFlashStackVarType::FSVT_Unknown ) {
+                pFVar1->Type = eFlashStackVarType::FSVT_WritableLinkedString;
+                pFVar1->pStringPointer = param_1;
+                return;
+            }
+            strncpy( pFVar1->pName, param_3, 0x20 );
+            pFVar1->pName[0x1f] = '\0';
+            pFVar1->Type = eFlashStackVarType::FSVT_WritableLinkedString;
+            pFVar1->Hashcode = param_2;
+            pFVar1->pStringPointer = param_1;
+            numVariables++;
+        }
+    }
+}
+
 void FlashVariables::setVariableNonLinked( const char *param_1,
                                            uint32_t param_2,
                                            const char *param_3 ) {

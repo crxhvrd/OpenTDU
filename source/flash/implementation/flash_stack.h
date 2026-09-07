@@ -13,9 +13,10 @@ struct FlashStackVariable {
 
 class FlashStack {
 public:
-    inline FlashStackVariable *getTop() {
-        return pStackEnd;
-    }
+    static constexpr size_t kOriginalSlotSize = 8;
+
+public:
+    inline FlashStackVariable *getTop() { return pStackEnd; }
     inline bool empty() const { return numVariables == 0; }
 
 public:
@@ -40,4 +41,5 @@ private:
     uint8_t *pStackCurrentPos;
     FlashStackVariable *pStackEnd;
     uint32_t numVariables;
+    size_t allocationSize;
 };

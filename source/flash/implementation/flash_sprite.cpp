@@ -1339,6 +1339,18 @@ void FlashTagDefineEditText_Draw( FlashTagDefineEditTextData *pEditText,
     }
 }
 
+static const char *FindInstanceNameInParent( FlashSprite *pSprite,
+                                             FlashDisplayList *pParentList ) {
+    // FUN_00448070
+    for ( FlashDisplayListEntry *pEntry = pParentList->getFirstEntry();
+          pEntry != nullptr; pEntry = pEntry->pNext ) {
+        if ( pEntry->pSprite == pSprite ) {
+            return pEntry->pName;
+        }
+    }
+    return nullptr;
+}
+
 FlashSprite::FlashSprite( FlashStack *param_1, FlashVariables *param_2 )
     : FlashRenderResource(),
       displayList( param_1, param_2 ),
@@ -1525,6 +1537,19 @@ void FlashSprite::setVariableNonLinked( const char *param_1,
     }
 }
 
+void FlashSprite::setVariableWritableLinked( const char *param_1,
+                                             char *param_2 ) {
+    // FUN_00449330
+    FlashSprite *local_8 = nullptr;
+    const char *local_4 = nullptr;
+    bool bVar1 = resolveVarPath( param_1, &local_4, &local_8 );
+    if ( bVar1 ) {
+        displayList.pVariables->setVariableWritableLinked(
+            param_2, local_8->getInstanceID(), local_4 );
+        local_8->displayList.flags = local_8->displayList.flags | 0x200;
+    }
+}
+
 bool FlashSprite::resolveVarPath( const char *pVariableName,
                                   const char **ppResolvedPath,
                                   FlashSprite **ppFound ) {
@@ -1610,6 +1635,21 @@ FlashSprite *FlashSprite::findSprite( const char *pVariableName,
     }
 
     return local_8;
+}
+
+void FlashSprite::getStringProperty( const int32_t propertyIndex,
+                                     char *pOutValue ) {
+    // FUN_00449d80
+    if ( propertyIndex == 13 && pChild != nullptr ) {
+        const char *pName =
+            FindInstanceNameInParent( this, pChild->getDisplayList() );
+        if ( pName != nullptr ) {
+            strcpy( pOutValue, pName );
+            return;
+        }
+    }
+
+    *pOutValue = '\0';
 }
 
 int32_t FlashSprite::findLabel( const char *param_2 ) {

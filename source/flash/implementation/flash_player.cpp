@@ -100,6 +100,20 @@ void FlashPlayer::setVariableValueNonLinked( const char *param_1,
     gpActiveFlashResource = pFVar1;
 }
 
+void FlashPlayer::setVariableValueWritableLinked( const char *param_1,
+                                                 char *param_2 ) {
+    // FUN_00440d00
+    ScopedMutexLock lock = gpFlash->scopedLock();
+
+    FlashResource *pFVar1 = gpActiveFlashResource;
+    gpActiveFlashResource = pFlashResource;
+    gpPreviousActiveFlashResource = gpActiveFlashResource;
+    gpActiveFlashResource->getRoot()->setVariableWritableLinked( param_1,
+                                                                param_2 );
+    gpPreviousActiveFlashResource = pFVar1;
+    gpActiveFlashResource = pFVar1;
+}
+
 void FlashPlayer::setVariableValue( const char *param_1,
                                     const int32_t param_2 ) {
     // FUN_00440ba0

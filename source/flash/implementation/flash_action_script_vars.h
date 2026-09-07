@@ -49,6 +49,9 @@ public:
     void setVariableNonLinked( const char *param_1,
                                uint32_t param_2,
                                const char *param_3 );
+    void setVariableWritableLinked( char *param_1,
+                                    uint32_t param_2,
+                                    const char *param_3 );
 
     bool
     getVariableAsString( char *param_2, uint32_t param_3, const char *param_4 );

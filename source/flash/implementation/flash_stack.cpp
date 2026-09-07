@@ -10,7 +10,8 @@ FlashStack::FlashStack()
     : pMemoryAlloc( nullptr ),
       pStackCurrentPos( nullptr ),
       pStackEnd( nullptr ),
-      numVariables( 0 ) {}
+      numVariables( 0 ),
+      allocationSize( 0 ) {}
 
 FlashStack::~FlashStack() { OTDU_UNIMPLEMENTED; }
 
@@ -20,8 +21,8 @@ void FlashStack::initialize() {
 
     numVariables = 0;
 
-    // TODO: Pooled memory allocs for Flash
-    size_t allocationSize = gpActiveFlashResource->getStackSize();
+    allocationSize = (size_t)gpActiveFlashResource->getStackSize() *
+                     ( sizeof( FlashStackVariable ) / kOriginalSlotSize );
     pMemoryAlloc = TestDrive::Alloc( allocationSize );
     memset( pMemoryAlloc, 0, allocationSize );
 
@@ -44,7 +45,7 @@ void FlashStack::pushFloat( const float param_2 ) {
 void FlashStack::pushString( const char *param_2 ) {
     // FUN_0044b2e0
     const char *pcVar2 = param_2;
-    size_t pcVar2Length = Min( 0x20, strlen( pcVar2 ) );
+    size_t pcVar2Length = Min( (size_t)0x20, strlen( pcVar2 ) + 1 );
 
     uint8_t *pNextPos = (uint8_t *)pStackCurrentPos + ( pcVar2Length + 1 );
     if ( (uintptr_t)pNextPos < (uintptr_t)pStackEnd ) {
@@ -56,7 +57,7 @@ void FlashStack::pushString( const char *param_2 ) {
         strncpy( pMemory, param_2, 0x20 );
         pMemory[0x1f] = '\0';
         pStackEnd->RawPointer = pStackCurrentPos;
-        pStackCurrentPos += pcVar2Length + 1;
+        pStackCurrentPos += pcVar2Length;
     }
 }
 
@@ -150,9 +151,7 @@ void *FlashStack::popRawPointer() {
 
 void FlashStack::push( const char *param_2 ) {
     // FUN_0044b350
-    FlashStackVariable *pVariables = (FlashStackVariable *)pStackCurrentPos;
-
-    if ( (uintptr_t)( pVariables + 1 ) < (uintptr_t)pStackEnd ) {
+    if ( (uintptr_t)( pStackCurrentPos + 1 ) < (uintptr_t)pStackEnd ) {
         FlashStackVariable *pFVar1 = pStackEnd + -1;
         pStackEnd = pFVar1;
         numVariables++;
