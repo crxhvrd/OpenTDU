@@ -473,6 +473,10 @@ void SceneInterior::leave() {
 
     OTDU_UNIMPLEMENTED; // TODO: PHYSICS (remove the interior floor plane)
 
+    if ( gpMngReflection != nullptr && pRootNode != nullptr ) {
+        gpMngReflection->removeNode( pRootNode );
+    }
+
     const ScenaricBank::eBankState bankState = bank.getState();
     if ( bankState != ScenaricBank::BBS_Unused &&
          bankState != ScenaricBank::BBS_LoadFailed ) {
@@ -492,6 +496,8 @@ void SceneInterior::leave() {
     if ( gpVehicleSound != nullptr ) {
         gpVehicleSound->setMutedCategoryMask( 0u );
     }
+
+    pRootNode = nullptr;
 
     pShopData = nullptr;
     bEntered = false;

@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "config/gs_config.h"
+#include "filesystem/gs_file.h"
 #include "flash/entities/flash_entity.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
@@ -20,14 +21,33 @@
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
 #include "world/gs_world.h"
+#include "world/gs_world_streaming.h"
 
 static constexpr float kFlashSeekBarWidth = 600.0f; // DAT_00f41690
+static constexpr int32_t kMaxSpotSectorWaitTicks = 600;
 
 static inline const char *GetBankFolder( const char *pBankName ) {
     const bool bSpotBank =
         pBankName != nullptr &&
         ::toupper( static_cast<unsigned char>( pBankName[0] ) ) == 'E';
     return bSpotBank ? "Level/Hawai/Spots" : "Interior";
+}
+
+static bool IsExteriorSpotBank( const char *pBankName ) {
+    return pBankName != nullptr &&
+           ( pBankName[0] == 'E' || pBankName[0] == 'e' );
+}
+
+static void BankStemToHash8( const char *pBankName, char out[8] ) {
+    memset( out, 0, 8 );
+    if ( pBankName == nullptr ) {
+        return;
+    }
+    for ( int32_t i = 0; i < 8 && pBankName[i] != '\0' && pBankName[i] != '.';
+          i++ ) {
+        const char c = pBankName[i];
+        out[i] = ( c >= 'a' && c <= 'z' ) ? static_cast<char>( c - 32 ) : c;
+    }
 }
 
 GMCinViewer::GMCinViewer()
@@ -38,7 +58,10 @@ GMCinViewer::GMCinViewer()
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC (BANK)
 }
 
-GMCinViewer::~GMCinViewer() { stopCine(); }
+GMCinViewer::~GMCinViewer() {
+    stopCine();
+    leaveInteriorPreview();
+}
 
 void GMCinViewer::initialize() {
     // FUN_007b4440
@@ -91,8 +114,8 @@ void GMCinViewer::reset() {
 
     FlashPlayer *pViewer = gpFlash->getFlashPlayer( "VIEWER" );
     if ( pViewer != nullptr ) {
-        // NOTE: Not part of the original pcode (this is tentatively trying to
-        // restore the flash logic for this GM)
+        // NOTE: Not part of the original pcode (this is tentatively trying
+        // to restore the flash logic for this GM)
         mngFlash.addWidget( "bnkl", &flashListBank );
         flashListBank.setPlayer( pViewer, "/array_bnk" );
 
@@ -109,10 +132,15 @@ void GMCinViewer::tick( float deltaTime, float totalTime ) {
     // FUN_007b4120
     GameModeWorld::tick( deltaTime, totalTime );
 
+    if ( pInteriorScene != nullptr ) {
+        pInteriorScene->tick();
+        pInteriorScene->draw();
+    }
+
     if ( bPlayRequested ) {
         bPlayPending = true;
     }
-    if ( bPlayPending ) {
+    if ( bPlayPending && isSpotFrameReady() ) {
         playCine( selectedCineName.c_str() );
         bPlayPending = false;
         bPlayRequested = false;
@@ -158,45 +186,40 @@ void GMCinViewer::destroy() {
     // FUN_007b3980
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC
     stopCine();
+    leaveInteriorPreview();
     GameModeWorld::destroy();
 }
 
 void GMCinViewer::positionAtSpot( const char *pBankName ) {
     // FUN_007b3450
     bPlayRequested = true;
+    spotSectorWaitTicks = 0;
+    pCurrentSpot = nullptr;
 
     if ( pBankName == nullptr || gpScenaric == nullptr ) {
         return;
     }
 
-    char name8[8] = { 0 };
-    for ( int32_t i = 0; i < 8 && pBankName[i] != '\0' && pBankName[i] != '.';
-          i++ ) {
-        const char c = pBankName[i];
-        name8[i] = ( c >= 'a' && c <= 'z' ) ? static_cast<char>( c - 32 ) : c;
-    }
-    uint64_t sourceHash = 0;
-    std::memcpy( &sourceHash, name8, sizeof( sourceHash ) );
+    int32_t spotIndex = -1;
+    pCurrentSpot = findSpotForBank( pBankName, &spotIndex );
 
-    Spots &spots = gpScenaric->getSpotList();
-    pCurrentSpot = nullptr;
-    const uint32_t count = spots.getNumWorldSpots();
-
-    for ( uint32_t i = 0; i < count; i++ ) {
-        SpotMap *pSpot = spots.getWorldSpot( static_cast<int32_t>( i ) );
-        if ( pSpot != nullptr && pSpot->SourceHashcode == sourceHash ) {
-            pCurrentSpot = pSpot;
-            break;
-        }
-    }
     if ( pCurrentSpot == nullptr ) {
         return;
     }
 
-    const Eigen::Vector4f pos( pCurrentSpot->X, pCurrentSpot->Y,
-                               pCurrentSpot->Z, 1.0f );
+    Eigen::Vector4f pos( pCurrentSpot->X, pCurrentSpot->Y, pCurrentSpot->Z,
+                         1.0f );
 
     teleportLocalPlayerCar( pos.head<3>() );
+
+    if ( gpScenaric != nullptr && spotIndex >= 0 ) {
+        gpScenaric->setCurrentSpotIndex( spotIndex );
+    }
+
+    if ( gpWorld != nullptr ) {
+        gpWorld->setStreamingPosition( &pos );
+        gpWorld->setPlayerPosition( &pos );
+    }
 
     if ( gpCamera != nullptr ) {
         CameraGame *pCam = gpCamera->findCamera( gpCamera->getBoundCarState() );
@@ -212,6 +235,84 @@ void GMCinViewer::positionAtSpot( const char *pBankName ) {
         gpWorld->setPlayerPosition( &streamPosition );
         gpWorld->setStreamingPosition( &streamPosition );
         gpWorld->setDirtyStreaming( true );
+    }
+}
+
+SpotMap *GMCinViewer::findSpotForBank( const char *pBankName,
+                                       int32_t *pOutIndex ) {
+    // FUN_007b3450 (the spot lookup half)
+    if ( pOutIndex != nullptr ) {
+        *pOutIndex = -1;
+    }
+    if ( pBankName == nullptr || gpScenaric == nullptr ) {
+        return nullptr;
+    }
+
+    char name8[8] = {};
+    BankStemToHash8( pBankName, name8 );
+
+    name8[0] = 'E';
+
+    uint64_t bankHash = 0;
+    std::memcpy( &bankHash, name8, sizeof( bankHash ) );
+
+    Spots &spots = gpScenaric->getSpotList();
+    const uint32_t count = spots.getNumWorldSpots();
+    for ( uint32_t i = 0; i < count; i++ ) {
+        SpotMap *pSpot = spots.getWorldSpot( static_cast<int32_t>( i ) );
+        if ( pSpot != nullptr && pSpot->SourceHashcode == bankHash ) {
+            if ( pOutIndex != nullptr ) {
+                *pOutIndex = static_cast<int32_t>( i );
+            }
+            return pSpot;
+        }
+    }
+    return nullptr;
+}
+
+bool GMCinViewer::isSpotFrameReady() {
+    const bool bSpotSectorReady =
+        pCurrentSpot == nullptr || gpScenaric == nullptr ||
+        gpScenaric->getSpotList().getSpotSector( pCurrentSpot->Hashcode ) !=
+            nullptr;
+    const bool bInteriorReady =
+        pInteriorScene == nullptr ||
+        pInteriorScene->getState() == SceneInterior::SIS_Live;
+
+    if ( bSpotSectorReady && bInteriorReady ) {
+        return true;
+    }
+
+    return ++spotSectorWaitTicks >= kMaxSpotSectorWaitTicks;
+}
+
+void GMCinViewer::enterInteriorPreview( const char *pBankName ) {
+    leaveInteriorPreview();
+    if ( pBankName == nullptr || pBankName[0] == '\0' || gpFile == nullptr ||
+         gpConfig == nullptr ) {
+        return;
+    }
+
+    char bankPath[512] = {};
+    snprintf( bankPath, sizeof( bankPath ), "%sInterior/%s.bnk",
+              gpConfig->getResRootPath(), pBankName );
+
+    if ( !interiorBank.loadBank( gpFile, bankPath ) ) {
+        OTDU_LOG_WARN( "Failed to load interior bank '%s'\n", bankPath );
+        return;
+    }
+    interiorBank.loadContentAsync();
+
+    pInteriorScene = std::make_unique<SceneInterior>();
+    pInteriorScene->enter( &interiorBank, false );
+}
+
+void GMCinViewer::leaveInteriorPreview() {
+    stopCine();
+
+    pInteriorScene.reset();
+    if ( interiorBank.isLoaded() || interiorBank.getBankFile() != nullptr ) {
+        interiorBank.unload();
     }
 }
 
@@ -245,11 +346,21 @@ bool GMCinViewer::onMessage( FlashMessage *pMessage ) {
     case FlashMessage( "bnch" ): { // a bank was picked in the bnkl list
         const char *pBankName = flashListBank.getSelectedName();
         selectedBankName = ( pBankName != nullptr ) ? pBankName : "";
+
         const size_t dot = selectedBankName.find_last_of( '.' );
         if ( dot != std::string::npos ) {
             selectedBankName.resize( dot );
         }
         loadBankCinematics( selectedBankName.c_str() );
+        selectedCineName = contentCine.empty() ? std::string() : contentCine[0];
+
+        positionAtSpot( selectedBankName.c_str() );
+
+        if ( IsExteriorSpotBank( selectedBankName.c_str() ) ) {
+            leaveInteriorPreview();
+        } else {
+            enterInteriorPreview( selectedBankName.c_str() );
+        }
         return true;
     }
     case FlashMessage( "cich" ): { // a cinematic was picked in the cinl list
@@ -314,7 +425,8 @@ bool GMCinViewer::executeAction( int32_t param_2, void *param_3 ) {
     return true;
 }
 
-std::string GMCinViewer::resolveCineResource( const char *pCineName ) {
+std::string GMCinViewer::resolveCineResource( ScenaricBank &cineBank,
+                                              const char *pCineName ) {
     std::string suffix = pCineName;
     if ( suffix.size() > 2 && suffix[0] == 'C' && suffix[1] == '_' ) {
         suffix = suffix.substr( 2 );
@@ -323,7 +435,7 @@ std::string GMCinViewer::resolveCineResource( const char *pCineName ) {
         c = static_cast<char>( ::toupper( static_cast<unsigned char>( c ) ) );
     }
 
-    BankInstance &bi = playbackBank.getBank();
+    BankInstance &bi = cineBank.getBank();
     const int32_t n = bi.getNumElements();
     std::string firstCin;
     for ( int32_t i = 0; i < n; i++ ) {
@@ -370,27 +482,61 @@ void GMCinViewer::playCine( const char *pCineName ) {
         return;
     }
 
-    const char *pFolder = GetBankFolder( selectedBankName.c_str() );
-    GSScenaric::LoadScenaricBank( pFolder, selectedBankName.c_str(),
-                                  &playbackBank );
-    bPlaybackBankActive = true;
+    const Eigen::Vector4f streamOrigin =
+        ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() )
+            ? gpWorldStreaming->getPosition()
+            : Eigen::Vector4f::Zero();
 
-    std::string cinName = resolveCineResource( pCineName );
+    SpotSector *pSpotSector =
+        ( pCurrentSpot != nullptr )
+            ? gpScenaric->getSpotList().getSpotSector( pCurrentSpot->Hashcode )
+            : nullptr;
+
+    ScenaricBank *pCineBank = nullptr;
+    if ( pInteriorScene != nullptr && pInteriorScene->getBank().isLoaded() ) {
+        pCineBank = &pInteriorScene->getBank();
+    } else {
+        Matrix4x4f_t bankTransform = Matrix4x4f_t::Identity();
+        if ( pCurrentSpot != nullptr ) {
+            if ( pSpotSector != nullptr ) {
+                bankTransform = BuildSpotSectorRotation( pSpotSector );
+            }
+            bankTransform.row( 3 ) << pCurrentSpot->X, pCurrentSpot->Y,
+                pCurrentSpot->Z, 1.0f;
+        }
+        playbackBank.setBankTransform( bankTransform );
+
+        const char *pFolder = GetBankFolder( selectedBankName.c_str() );
+        GSScenaric::LoadScenaricBank( pFolder, selectedBankName.c_str(),
+                                      &playbackBank );
+        bPlaybackBankActive = true;
+        pCineBank = &playbackBank;
+    }
+
+    std::string cinName = resolveCineResource( *pCineBank, pCineName );
 
     pCurrentCine = new EntityCinematic();
     pCurrentCine->setGameModeInterface( this );
-    pCurrentCine->setBank( &playbackBank );
+    pCurrentCine->setBank( pCineBank );
     pCurrentCine->setCutsceneName( cinName.c_str() );
     pCurrentCine->initialize();
 
-    if ( pCurrentSpot != nullptr ) {
+    if ( pCurrentSpot != nullptr && pSpotSector != nullptr ) {
         pCurrentCine->launchSpotCine( pCurrentSpot, 0.0f );
     } else {
-        pCurrentCine->start( true );
-        if ( gpCamera != nullptr ) {
+        if ( pCurrentSpot != nullptr ) {
             pCurrentCine->setPlaybackAnchor(
-                gpCamera->getRenderCamera()->getTarget() );
+                Eigen::Vector3f( pCurrentSpot->X - streamOrigin.x(),
+                                 pCurrentSpot->Y - streamOrigin.y(),
+                                 pCurrentSpot->Z - streamOrigin.z() ) );
+        } else {
+            pCurrentCine->setPlaybackAnchor( -streamOrigin.head<3>() );
         }
+        pCurrentCine->start( true );
+    }
+
+    if ( gpActiveGMScene != nullptr ) {
+        gpActiveGMScene->setVerifyGameFreeze( true );
     }
 
     playbackSpeed = 1.0f;
