@@ -460,8 +460,8 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6 = new ( pGameModeAlloc ) GMCarShowcase();
             break;
         case GM_Login:
-            pGameModeAlloc =
-                TestDrive::AllocAligned( sizeof( GMLogin ), alignof( GMLogin ) );
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLogin ),
+                                                      alignof( GMLogin ) );
             pGVar6 = new ( pGameModeAlloc ) GMLogin();
             break;
         case GM_VideoBumper:
@@ -480,8 +480,8 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6 = new ( pGameModeAlloc ) GMSandbox();
             break;
         case GM_CinViewer:
-            pGameModeAlloc = TestDrive::AllocAligned(
-                sizeof( GMCinViewer ), alignof( GMCinViewer ) );
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMCinViewer ),
+                                                      alignof( GMCinViewer ) );
             pGVar6 = new ( pGameModeAlloc ) GMCinViewer();
             break;
         case GM_Living:
@@ -588,8 +588,8 @@ bool TestDriveGameInstance::initialize() {
 
         GMVideoBumper::OnPlaybackComplete( "LOG_IN", "/popup", "on", false );
 
-        pGVar3 = new ( TestDrive::AllocAligned(
-            sizeof( GMVideoBumper ), alignof( GMVideoBumper ) ) )
+        pGVar3 = new ( TestDrive::AllocAligned( sizeof( GMVideoBumper ),
+                                                alignof( GMVideoBumper ) ) )
             GMVideoBumper();
         pGVar3->setTransitionFlags( 0x30 );
         pGVar3->mainLoop( this );
@@ -619,10 +619,22 @@ bool TestDriveGameInstance::initialize() {
     return true;
 }
 
+// clang-format off
+#define OTDU_INIT_SERVICE( condition )                                                        \
+    do {                                                                                      \
+        if ( !condition ) {                                                                   \
+            std::string errorMsg = #condition " failed!\nCheck opentdu.log for more infos.\n" \
+                "If you think this is a bug, please go to "                                   \
+                "https://github.com/opentestdriveunlimited/OpenTestDriveUnlimited/issues"     \
+                " and create a new issue (with your opentdu.log attached)";                   \
+            TestDrive::DisplayMessageBox( errorMsg.c_str() );                                 \
+            return false;                                                                     \
+        }                                                                                     \
+    } while ( 0 );
+// clang-format on
+
 bool TestDriveGameInstance::initializeBaseServices() {
     // FUN_009b4e40
-    bool operationResult = true;
-
     // NOTE: Initialization order does NOT match the original executable. This
     // is due to several things:
     // - Some GS relies on statically allocated allocators (that did not exist
@@ -631,8 +643,8 @@ bool TestDriveGameInstance::initializeBaseServices() {
     // - Some GS were statically allocated in the original executable (we always
     // dynamically allocate GS
     //   to avoid undeterministic allocation order)
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSSystem>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSFile>() );
+    OTDU_INIT_SERVICE( registerService<GSSystem>() );
+    OTDU_INIT_SERVICE( registerService<GSFile>() );
 
 // TODO: Might want to use a dummy file to track the state of shader
 // extraction instead of checking folder...
@@ -701,24 +713,21 @@ bool TestDriveGameInstance::initializeBaseServices() {
         stampStream.close();
     }
 
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSBootDatas>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSConsole>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSTimer>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSConfig>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSPlayerData>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSWeather>() );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSRender>( gpRender ) );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSProfile>() );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSDevice>( gpDevice ) );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSDebug>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSAudio>() );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSFlash>( gpFlash ) );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSMovie>() );
+    OTDU_INIT_SERVICE( registerService<GSBootDatas>() );
+    OTDU_INIT_SERVICE( registerService<GSConsole>() );
+    OTDU_INIT_SERVICE( registerService<GSTimer>() );
+    OTDU_INIT_SERVICE( registerService<GSConfig>() );
+    OTDU_INIT_SERVICE( registerService<GSPlayerData>() );
+    OTDU_INIT_SERVICE( registerService<GSWeather>() );
+    OTDU_INIT_SERVICE( registerService<GSRender>( gpRender ) );
+    OTDU_INIT_SERVICE( registerService<GSProfile>() );
+    OTDU_INIT_SERVICE( registerService<GSDevice>( gpDevice ) );
+    OTDU_INIT_SERVICE( registerService<GSDebug>() );
+    OTDU_INIT_SERVICE( registerService<GSAudio>() );
+    OTDU_INIT_SERVICE( registerService<GSFlash>( gpFlash ) );
+    OTDU_INIT_SERVICE( registerService<GSMovie>() );
 #ifdef OTDU_USE_IMGUI
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSImgui>() );
+    OTDU_INIT_SERVICE( registerService<GSImgui>() );
 #endif
 
     gpConfig->parseIniFiles();
@@ -727,63 +736,53 @@ bool TestDriveGameInstance::initializeBaseServices() {
         gpConfig->bEnableMainMenu = false;
     }
 
-    return operationResult;
+    return true;
 }
 
 bool TestDriveGameInstance::initializeGameServices() {
-    bool operationResult = true;
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSIntroPool>( gpIntroPool ) );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSWorld>( gpWorld ) );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSNoise>() );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSWorldStreaming>( gpWorldStreaming ) );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSVehicleSound>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSCarCommon>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSCarColors>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSPostFX>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSAmbiance>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSSubtitles>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSCinematics>() );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSPhysics>( gpPhysics ) );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSCamera>( gpCamera ) );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSCarDisplay>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSCarState>() );
+    OTDU_INIT_SERVICE( registerService<GSIntroPool>( gpIntroPool ) );
+    OTDU_INIT_SERVICE( registerService<GSWorld>( gpWorld ) );
+    OTDU_INIT_SERVICE( registerService<GSNoise>() );
+    OTDU_INIT_SERVICE( registerService<GSWorldStreaming>( gpWorldStreaming ) );
+    OTDU_INIT_SERVICE( registerService<GSVehicleSound>() );
+    OTDU_INIT_SERVICE( registerService<GSCarCommon>() );
+    OTDU_INIT_SERVICE( registerService<GSCarColors>() );
+    OTDU_INIT_SERVICE( registerService<GSPostFX>() );
+    OTDU_INIT_SERVICE( registerService<GSAmbiance>() );
+    OTDU_INIT_SERVICE( registerService<GSSubtitles>() );
+    OTDU_INIT_SERVICE( registerService<GSCinematics>() );
+    OTDU_INIT_SERVICE( registerService<GSPhysics>( gpPhysics ) );
+    OTDU_INIT_SERVICE( registerService<GSCamera>( gpCamera ) );
+    OTDU_INIT_SERVICE( registerService<GSCarDisplay>() );
+    OTDU_INIT_SERVICE( registerService<GSCarState>() );
     reorderService( gpCarState, gpCarDisplay );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSDatabase>( gpDatabase ) );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSDetails>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSPhysicsFX>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSParticles>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSClothSystem>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSAvatar>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSPedestrians>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSPub>() );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSScenaric>( gpScenaric ) );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSAircraft>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSBoat>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSAI>() );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSOnline>( gpOnline ) );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSTutorial>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSBrandCar>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSMngResources>() );
-    OTDU_ASSERT_ALWAYS( operationResult &=
-                        registerService<GSKeyboardPC>( gpKeyboardPC ) );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSDirtyDisk>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSRadio>() );
+    OTDU_INIT_SERVICE( registerService<GSDatabase>( gpDatabase ) );
+    OTDU_INIT_SERVICE( registerService<GSDetails>() );
+    OTDU_INIT_SERVICE( registerService<GSPhysicsFX>() );
+    OTDU_INIT_SERVICE( registerService<GSParticles>() );
+    OTDU_INIT_SERVICE( registerService<GSClothSystem>() );
+    OTDU_INIT_SERVICE( registerService<GSAvatar>() );
+    OTDU_INIT_SERVICE( registerService<GSPedestrians>() );
+    OTDU_INIT_SERVICE( registerService<GSPub>() );
+    OTDU_INIT_SERVICE( registerService<GSScenaric>( gpScenaric ) );
+    OTDU_INIT_SERVICE( registerService<GSAircraft>() );
+    OTDU_INIT_SERVICE( registerService<GSBoat>() );
+    OTDU_INIT_SERVICE( registerService<GSAI>() );
+    OTDU_INIT_SERVICE( registerService<GSOnline>( gpOnline ) );
+    OTDU_INIT_SERVICE( registerService<GSTutorial>() );
+    OTDU_INIT_SERVICE( registerService<GSBrandCar>() );
+    OTDU_INIT_SERVICE( registerService<GSMngResources>() );
+    OTDU_INIT_SERVICE( registerService<GSKeyboardPC>( gpKeyboardPC ) );
+    OTDU_INIT_SERVICE( registerService<GSDirtyDisk>() );
+    OTDU_INIT_SERVICE( registerService<GSRadio>() );
 
     gpConfig->parseRadioIni();
     gpConfig->parseLeaderboardIni();
 
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSPCOptions>() );
-    OTDU_ASSERT_ALWAYS( operationResult &= registerService<GSCDKey>() );
+    OTDU_INIT_SERVICE( registerService<GSPCOptions>() );
+    OTDU_INIT_SERVICE( registerService<GSCDKey>() );
 
-    return operationResult;
+    return true;
 }
 
 void TestDriveGameInstance::drawDebugMenu( float deltaTime ) {

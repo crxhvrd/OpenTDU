@@ -21,7 +21,12 @@ bool GSSystem::initialize( TestDriveGameInstance *param_2 ) {
     pGameInstance = param_2;
     bPaused = false;
 
-    gEdSys.initialize();
+    int32_t backendInit = gEdSys.initialize();
+    if ( backendInit != 0 ) {
+        OTDU_LOG_ERROR(
+            "System backend initialization failed! (check opentdu.log)\n" );
+        return false;
+    }
 
     return true;
 }
