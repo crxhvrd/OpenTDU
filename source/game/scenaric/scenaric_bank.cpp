@@ -138,6 +138,21 @@ Entity *ScenaricBank::getVolumeByHashcode( uint64_t hashcode ) const {
     return nullptr;
 }
 
+Path *ScenaricBank::getPathByHashcode( uint64_t hashcode ) const {
+    // FUN_004291e0
+    if ( hashcode == 0 ) {
+        return nullptr;
+    }
+
+    const int32_t count = paths.getCount();
+    for ( int32_t i = 0; i < count; i++ ) {
+        if ( paths.getHashcode( i ) == hashcode ) {
+            return static_cast<Path *>( paths.getElement( i ) );
+        }
+    }
+    return nullptr;
+}
+
 SoundBinary *ScenaricBank::getSoundByHashcode( uint64_t hashcode ) const {
     // FUN_00428e80 (inlined)
     if ( hashcode == 0 ) {
@@ -639,7 +654,6 @@ void ScenaricBank::instanciateSceneries() {
         pActiveScenery->shiftObjects( streamOrigin );
     }
     pActiveScenery->shiftObjects( streamOrigin );
-
 
     sceneryNodes.push_back( pNode );
 }

@@ -34,6 +34,10 @@ public:
         // FUN_007745d0
         bModeActive = value;
     }
+    inline void setPlacementGameMode( const eGameMode mode ) {
+        placementGameMode = mode;
+    }
+    eGameMode getPlacementGameMode() const;
 
 public:
     SceneInterior();
@@ -71,6 +75,7 @@ private:
 
     bool bDrawInDOFPass;
     bool bModeActive;
+    eGameMode placementGameMode;
     int32_t spotSectorWaitTicks;
 };
 

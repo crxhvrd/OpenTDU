@@ -57,6 +57,7 @@ SceneInterior::SceneInterior()
       bOverrideFovVsLod( true ),
       bDrawInDOFPass( false ),
       bModeActive( false ),
+      placementGameMode( GM_Invalid ),
       spotSectorWaitTicks( 0 ) {
     // FUN_00774930
     if ( gpCamera != nullptr ) {
@@ -87,13 +88,19 @@ bool SceneInterior::onWorldStreamed( Eigen::Vector4f * /*param_1*/,
     return true;
 }
 
+eGameMode SceneInterior::getPlacementGameMode() const {
+    return ( placementGameMode != GM_Invalid )
+               ? placementGameMode
+               : gpTestDriveInstance->getActiveGameMode();
+}
+
 Eigen::Vector4f SceneInterior::getWorldPosition() const {
     // FUN_00774780
     if ( pSpot == nullptr ) {
         return Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
     }
 
-    const eGameMode activeGM = gpTestDriveInstance->getActiveGameMode();
+    const eGameMode activeGM = getPlacementGameMode();
     if ( activeGM != GM_Garage && activeGM != GM_Dressing && !bReentry ) {
         return Eigen::Vector4f( pSpot->X, pSpot->Y, pSpot->Z, 1.0f );
     }
@@ -146,7 +153,7 @@ void SceneInterior::enter( Bank *pBank, const bool bIsReentry ) {
     if ( !bReentry ) {
         if ( bOverrideFovVsLod && gpRender != nullptr ) {
             savedFovVsLodFactor = gpRender->getFovVsLodFactor();
-            if ( gpTestDriveInstance->getActiveGameMode() != GM_Living ) {
+            if ( getPlacementGameMode() != GM_Living ) {
                 gpRender->setFovVsLodFactor( kInteriorFovVsLodFactor );
             }
         }
@@ -237,8 +244,7 @@ void SceneInterior::instanciate() {
     }
 
     Matrix4x4f_t transform = Matrix4x4f_t::Identity();
-    if ( pSpotSector != nullptr &&
-         gpTestDriveInstance->getActiveGameMode() != GM_Dressing ) {
+    if ( pSpotSector != nullptr && getPlacementGameMode() != GM_Dressing ) {
         transform = BuildSpotSectorRotation( pSpotSector );
     }
 
@@ -293,7 +299,7 @@ void SceneInterior::instanciate() {
                 gpMngReflection->setPlanarCoords( normal,
                                                   planeMatrix( 3, 1 ) * 2.0f );
 
-                if ( gpTestDriveInstance->getActiveGameMode() == GM_Dressing ) {
+                if ( getPlacementGameMode() == GM_Dressing ) {
                     gpMngReflection->setClipEnabled( false );
                 }
             }

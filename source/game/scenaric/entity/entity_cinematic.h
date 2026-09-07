@@ -88,6 +88,7 @@ public:
     void stop( bool bEndNow );
 
     bool launchSpotCine( struct SpotMap *pSpot, float startTime );
+    bool launchCineAtFrame( struct SpotMap *pSpot, const Matrix4x4f_t &frame );
     void installMusicBanks();
     bool createTDUInterface();
     void seek( float time );

@@ -661,6 +661,15 @@ bool EntityCinematic::launchSpotCine( SpotMap *pSpot, float startTime ) {
     return true;
 }
 
+bool EntityCinematic::launchCineAtFrame( SpotMap *pSpot,
+                                         const Matrix4x4f_t &frame ) {
+    pSpotWorld = pSpot;
+    cinematicPlayer.setBaseMatrix( frame );
+
+    start( true );
+    return true;
+}
+
 bool EntityCinematic::begin() {
     // FUN_007e8f90
     if ( pCinData == nullptr || cinematicBuffer.empty() ||

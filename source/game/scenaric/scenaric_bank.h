@@ -83,6 +83,7 @@ public:
     Entity *findEntity( eEntityType type, const char *pInstanceName );
     Entity *getEntityByHashcode( uint64_t hashcode ) const;
     Entity *getVolumeByHashcode( uint64_t hashcode ) const;
+    Path *getPathByHashcode( uint64_t hashcode ) const;
     SoundBinary *getSoundByHashcode( uint64_t hashcode ) const;
 
     void forceLoad();
@@ -99,6 +100,9 @@ public:
     loadFromFile( const char *pBankPath, MngActor *pMngActor, bool param_6 );
 
     void setBankTransform( const Matrix4x4f_t &transform );
+    inline const Matrix4x4f_t &getBankTransform() const {
+        return bankTransform;
+    }
     void *getWavData( uint64_t hashcode, int32_t *pOutSize = nullptr );
     void *getCinData( uint64_t hashcode, int32_t *pOutSize = nullptr );
 
@@ -139,8 +143,7 @@ protected:
         FR_Count,
     };
 
-    void *
-    getFileRefData( int32_t table, uint64_t hashcode, int32_t *pOutSize );
+    void *getFileRefData( int32_t table, uint64_t hashcode, int32_t *pOutSize );
 
     struct BankFileRefArray {
         uint32_t *pStructs = nullptr;   // [count][count * 32-bit struct ptr]

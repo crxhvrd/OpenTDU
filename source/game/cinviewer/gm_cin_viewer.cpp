@@ -22,6 +22,7 @@
 #include "render/camera/gs_camera.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
+#include "world/streaming_manager.h"
 
 static constexpr float kFlashSeekBarWidth = 600.0f; // DAT_00f41690
 static constexpr int32_t kMaxSpotSectorWaitTicks = 600;
@@ -48,6 +49,19 @@ static void BankStemToHash8( const char *pBankName, char out[8] ) {
         const char c = pBankName[i];
         out[i] = ( c >= 'a' && c <= 'z' ) ? static_cast<char>( c - 32 ) : c;
     }
+}
+
+static eGameMode GetInteriorPlacementMode( const char *pBankName ) {
+    char name8[8] = {};
+    BankStemToHash8( pBankName, name8 ); // uppercases
+
+    if ( name8[0] == 'G' ) {
+        return GM_Garage;
+    }
+    if ( std::memcmp( name8, "IDR", 3 ) == 0 ) {
+        return GM_Dressing;
+    }
+    return GM_Invalid;
 }
 
 GMCinViewer::GMCinViewer()
@@ -204,7 +218,18 @@ void GMCinViewer::positionAtSpot( const char *pBankName ) {
     pCurrentSpot = findSpotForBank( pBankName, &spotIndex );
 
     if ( pCurrentSpot == nullptr ) {
-        return;
+        // Dressing/ETrade edge cases
+        const int32_t currentIndex = gpScenaric->getCurrentSpotIndex();
+        pCurrentSpot =
+            gpScenaric->getSpotList().getWorldSpotChecked( currentIndex );
+        spotIndex = ( pCurrentSpot != nullptr ) ? currentIndex : -1;
+
+        if ( pCurrentSpot == nullptr ) {
+            pCurrentSpot = findSpotForBank( "IAS_A", &spotIndex );
+        }
+        if ( pCurrentSpot == nullptr ) {
+            return;
+        }
     }
 
     Eigen::Vector4f pos( pCurrentSpot->X, pCurrentSpot->Y, pCurrentSpot->Z,
@@ -304,15 +329,29 @@ void GMCinViewer::enterInteriorPreview( const char *pBankName ) {
     interiorBank.loadContentAsync();
 
     pInteriorScene = std::make_unique<SceneInterior>();
+    pInteriorScene->setPlacementGameMode(
+        GetInteriorPlacementMode( pBankName ) );
     pInteriorScene->enter( &interiorBank, false );
 }
 
 void GMCinViewer::leaveInteriorPreview() {
     stopCine();
 
+    const bool bWasEntered = pInteriorScene != nullptr;
+
     pInteriorScene.reset();
     if ( interiorBank.isLoaded() || interiorBank.getBankFile() != nullptr ) {
         interiorBank.unload();
+    }
+
+    if ( !bWasEntered || gpWorld == nullptr ) {
+        return;
+    }
+
+    StreamingManager *pStreaming = gpWorld->getStreamingManager();
+    if ( pStreaming != nullptr ) {
+        pStreaming->sectorManager.bDrawSector = true;
+        pStreaming->areaGrid.bDrawArea = true;
     }
 }
 
@@ -521,17 +560,24 @@ void GMCinViewer::playCine( const char *pCineName ) {
     pCurrentCine->setCutsceneName( cinName.c_str() );
     pCurrentCine->initialize();
 
-    if ( pCurrentSpot != nullptr && pSpotSector != nullptr ) {
+    const bool bUseInteriorFrame = pInteriorScene != nullptr &&
+                                   pInteriorScene->getBank().isLoaded() &&
+                                   pInteriorScene->getSourceSpot() != nullptr;
+
+    if ( bUseInteriorFrame ) {
+        Matrix4x4f_t frame = pInteriorScene->getBank().getBankTransform();
+        frame.row( 3 ).head<3>() -= streamOrigin.head<3>();
+        pCurrentCine->launchCineAtFrame( pCurrentSpot, frame );
+    } else if ( pCurrentSpot != nullptr && pSpotSector != nullptr ) {
         pCurrentCine->launchSpotCine( pCurrentSpot, 0.0f );
     } else {
+        Eigen::Vector3f anchor = -streamOrigin.head<3>();
         if ( pCurrentSpot != nullptr ) {
-            pCurrentCine->setPlaybackAnchor(
-                Eigen::Vector3f( pCurrentSpot->X - streamOrigin.x(),
-                                 pCurrentSpot->Y - streamOrigin.y(),
-                                 pCurrentSpot->Z - streamOrigin.z() ) );
-        } else {
-            pCurrentCine->setPlaybackAnchor( -streamOrigin.head<3>() );
+            anchor = Eigen::Vector3f( pCurrentSpot->X, pCurrentSpot->Y,
+                                      pCurrentSpot->Z ) -
+                     streamOrigin.head<3>();
         }
+        pCurrentCine->setPlaybackAnchor( anchor );
         pCurrentCine->start( true );
     }
 
