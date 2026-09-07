@@ -27,6 +27,7 @@ edAudio::edAudio()
       pOutputModule( nullptr ),
       channelCount( 0 ),
       bAudioThreadMustLoop( false ),
+      bOutputMuted( false ),
       FrameProcessTime( 0.0f ),
       ProcessorUsage( 0.0f ),
       ThreadSleepTime( 0.0f ) {
@@ -106,6 +107,10 @@ void edAudio::setVolume( float volume ) {
     }
 }
 
+void edAudio::setOutputMuted( bool bMuted ) {
+    bOutputMuted.store( bMuted, std::memory_order_relaxed );
+}
+
 void edAudio::audioThreadMain() {
     // FUN_006109a0
     while ( bAudioThreadMustLoop ) {
@@ -162,12 +167,19 @@ int32_t edAudio::processOneBlock() {
             return 0;
         }
 
-        for ( int32_t frame = 0; frame < frameCount; frame++ ) {
-            for ( int32_t channel = 0; channel < channelCount; channel++ ) {
-                const float sample =
-                    pMixed[channel * frameCount + frame] * kAudioSampleScale;
-                interleavedBlock[frame * channelCount + channel] =
-                    Clamp( sample, -1.0f, 1.0f );
+        if ( bOutputMuted.load( std::memory_order_relaxed ) ) {
+            std::fill( interleavedBlock.begin(),
+                       interleavedBlock.begin() + blockSampleCount, 0.0f );
+        } else {
+            for ( int32_t frame = 0; frame < frameCount; frame++ ) {
+                for ( int32_t channel = 0; channel < channelCount;
+                      channel++ ) {
+                    const float sample =
+                        pMixed[channel * frameCount + frame] *
+                        kAudioSampleScale;
+                    interleavedBlock[frame * channelCount + channel] =
+                        Clamp( sample, -1.0f, 1.0f );
+                }
             }
         }
     }

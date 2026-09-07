@@ -71,6 +71,10 @@ public:
     void destroy() override;
 
     void setVolume( float volume );
+    void setOutputMuted( bool bMuted );
+    inline bool isOutputMuted() const {
+        return bOutputMuted.load( std::memory_order_relaxed );
+    }
     void audioThreadMain();
 
 private:
@@ -88,6 +92,7 @@ public:
     edAudioListener Listener;
     TestDriveThread audioThread;
     std::atomic<bool> bAudioThreadMustLoop;
+    std::atomic<bool> bOutputMuted{ false };
     float FrameProcessTime;
     float ProcessorUsage;
     float ThreadSleepTime;
