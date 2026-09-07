@@ -116,6 +116,17 @@ Eigen::Vector4f &CarState::getDimensions() {
     return body.BodyDimensions;
 }
 
+void CarState::retrieveBoundingBox( Matrix4x4f_t &pOutBoundingBox ) {
+    // FUN_008af950
+    Eigen::Vector3f dimensions = body.BodyDimensions.head<3>();
+    pOutBoundingBox = MakeScaleMatrix( dimensions );
+
+    pOutBoundingBox.row( 3 ) +=
+        Eigen::Vector4f( 0.0f, body.BodyDimensions.y() * 0.5f, 0.0f, 0.0f );
+
+    pOutBoundingBox = pOutBoundingBox * body.WorldMatrix;
+}
+
 void CarState::retrieveAcceleration( Eigen::Vector4f &param_1 ) {
     // FUN_008afa00
     Eigen::Vector4f local_20 =

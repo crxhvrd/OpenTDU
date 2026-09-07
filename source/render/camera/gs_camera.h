@@ -62,6 +62,7 @@ public:
     inline bool isInteriorView() const { return bInterior; }
     inline void setInteriorView( const bool value ) { bInterior = value; }
     inline void setMouseCam( const bool value ) { bMouseCam = value; }
+    inline void setUseBlur( const bool value ) { bUseBlur = value; }
     inline float getLeftView() const { return leftView; }
     inline float getRightView() const { return rightView; }
     inline float getUpView() const { return upView; }
@@ -126,6 +127,7 @@ public:
                                     CarState *pState = nullptr );
     CameraGame *findCamera( CarState *pState );
     CameraGame *findCameraByCurrentTransition();
+    int32_t findFirstVisibleTransitionMode();
     void restoreDefaultVehicleCamera( CarState *pCar );
     void restoreCamera();
 

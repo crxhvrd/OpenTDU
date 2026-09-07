@@ -3,30 +3,65 @@
 #include "flash/entities/flash_slider.h"
 
 class FlashPlayer;
+struct FlashMessage;
 
 // Post-FX "photo filter" controller owned by MngPhotoMode. It exposes 9 Flash
 // sliders that, while photo mode is active, tweak the active camera FOV and the
 // post-processing stack (HDRI / radial blur).
 class PhotoModeEffect {
 public:
+    inline bool isPopupOpen() const { return bPopupOpen; }
+
+public:
     PhotoModeEffect();
     ~PhotoModeEffect();
 
+    void start();
+    void stop();
     void tick( float deltaTime );
+    bool onMessage( FlashMessage *pMessage );
     void setFlashPlayer( FlashPlayer *pPlayer );
 
 private:
-    void setSlidersRange();
+    static constexpr int32_t kNumSliders = 9;
 
 private:
-    float pParametersBeforeOptions[9];
-    float pParametersBeforePhotoMode[9];
-    FlashSlider pSliders[9];
+    inline bool isParameterEnabled( const int32_t index ) const {
+        return ( ( activeFilterMask >> index ) & 1 ) != 0;
+    }
 
-    int32_t activeSliderIndex; // -1 == none being edited
-    int32_t field_0x418;
-    bool field_0x421;
-    FlashPlayer *pFlashPlayer; // 0x424
-    uint32_t field_0x428;      // active filter bitmask
+private:
+    void setSlidersRange();
+    void saveParametersBeforeOptions();
+    void restoreParametersBeforeOptions();
+    void refreshGauges();
+    void setActiveSlider( int32_t index );
+    void applyParameter( int32_t index );
+    void applyAllParameters();
+
+    void applyFilterPreset( int32_t index );
+    void loadFilterPresetNone();
+    void loadFilterPresetBlackAndWhite();
+    void loadFilterPresetSepia();
+    void stepTimeOfDay( uint32_t selector, bool bNext );
+    void toggleAvatarInShot();
+    void refreshAvatarLabels( bool bVisible );
+
+    void applyCameraFOV();
+    void applyRadialBlur();
+    void applyColorFilters();
+
+private:
+    float pParametersBeforeOptions[kNumSliders];
+    float pParametersBeforePhotoMode[kNumSliders];
+    FlashSlider pSliders[kNumSliders];
+    int32_t activeSliderIndex;
+    int32_t activeFilterIndex;
+    bool bPopupOpen;
+    int32_t filterIndexBeforeOptions;
+    bool bAvatarVisibleBeforeOptions;
+    bool bCameraTranslationWasEnabled;
+    FlashPlayer *pFlashPlayer;
+    uint32_t activeFilterMask;
     uint32_t field_0x42c;
 };

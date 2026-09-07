@@ -15,6 +15,13 @@ struct PooledPostFXRT;
 
 class PostFXNodeHDR : public PostFXNode {
 public:
+    inline float getSaturation() const { return saturation; }
+    inline float getContrast() const { return contrast; }
+    inline float getRedFactor() const { return redFactor; }
+    inline float getGreenFactor() const { return greenFactor; }
+    inline float getBlueFactor() const { return blueFactor; }
+
+public:
     PostFXNodeHDR();
     ~PostFXNodeHDR();
 
@@ -67,6 +74,7 @@ public:
     PostFXNode *getInput() override;
     void FUN_006d5df0();
 
+    inline PostFXNodeHDR *getHDRNode() { return pHDR; }
     inline PostFXNodeModulate *getGlowModulate() { return pModulate; }
     inline PostFXNodeModulate *getStarModulate() { return pModulate2; }
 

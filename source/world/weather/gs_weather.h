@@ -37,6 +37,7 @@ public:
         bUpdateTimerEnabled = bEnabled;
     }
     inline int32_t getCurrentDayPeriod() const { return currentTimeOfDay; }
+    inline const TimeOfDay &getCurrentTime() const { return currentTOD; }
     inline float getDayPeriodInterpolationCoeff() const {
         return todInterpolationCoeff;
     }

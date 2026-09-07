@@ -237,7 +237,8 @@ void MngBookmark::saveNewBookmark() {
         gpFlashMessageBox->display( 0x37ba8e2, 4.0f, 0, nullptr, this, true );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: FLASH (MngScreenshots clip callback/FUN_006cdc70)
+    OTDU_UNIMPLEMENTED; // TODO: FLASH (MngScreenshots clip
+                        // callback/FUN_006cdc70)
 
     if ( currentName[0] == '\0' ) {
         strcpy( currentName, "none" );
@@ -304,7 +305,7 @@ bool MngBookmark::loadBookmarkPositions() {
 
     while ( numBookmarks != kMaxNumBookmarks ) {
         Bookmark &bookmark = arrayBookmarks[numBookmarks];
-        memset( (void*)&bookmark, 0, sizeof( Bookmark ) );
+        memset( (void *)&bookmark, 0, sizeof( Bookmark ) );
 
         const char *pNameStart = strchr( pLine, '"' );
         const char *pNameEnd = strrchr( pLine, '"' );
@@ -386,7 +387,8 @@ void MngBookmark::onDelete( const int32_t bookmarkIndex ) {
     numBookmarks--;
     list.reset();
 
-    OTDU_UNIMPLEMENTED; // TODO: FILE (bookmark array serialization / FUN_0070b1f0)
+    OTDU_UNIMPLEMENTED; // TODO: FILE (bookmark array serialization /
+                        // FUN_0070b1f0)
 
     pPlayer->setVariableValueNonLinked(
         "/:IsFull", ( numBookmarks < kMaxNumBookmarks ) ? "0" : "1" );
@@ -584,8 +586,12 @@ void MngBookmark::updateMessageBoxState() {
     OTDU_UNIMPLEMENTED; // TODO: FLASH
 }
 
-Material *MngBookmark::loadBookmarkPicture( const char * ) {
+Material *MngBookmark::loadBookmarkPicture( const char *pFileName ) {
     // FUN_006cedb0
-    OTDU_UNIMPLEMENTED; // TODO: FILE/LIBJPEG
-    return nullptr;
+    if ( gpMngPhotoMode == nullptr ) {
+        return nullptr;
+    }
+
+    return gpMngPhotoMode->getScreenshots().loadFromFile( pFileName,
+                                                          "bookmark" );
 }

@@ -898,13 +898,29 @@ bool GSFile::saveFileInContext( const char *pContextName,
         }
     }
 
-    std::filesystem::path filePath( getSaveFolder() );
-    if ( pContextName != nullptr && pContextName[0] != '\0' ) {
-        filePath /= pContextName;
+    if ( pContextName == nullptr || pContextName[0] == '\0' ) {
+        std::filesystem::path filePath( getSaveFolder() );
+        filePath /= pFilename;
+        return SaveFile( filePath.string().c_str(), pContent, contentSize );
     }
-    filePath /= pFilename;
 
-    return SaveFile( filePath.string().c_str(), pContent, contentSize );
+    FileDirectAccess fileAccess;
+    fileAccess.bNeedName = false;
+    if ( !fileAccess.openContext(
+             gUserProfileRegister.getActiveProfileHashcode(), pContextName,
+             eContextSource::CS_Savegame ) ) {
+        return false;
+    }
+
+    bool bSuccess = false;
+    if ( fileAccess.openFile( pFilename, false, true ) ) {
+        bSuccess =
+            fileAccess.writeToFile( pContent, contentSize ) == contentSize;
+        fileAccess.close();
+    }
+
+    fileAccess.reset();
+    return bSuccess;
 }
 
 bool GSFile::openContextAsCurrent( const char *pContextName,

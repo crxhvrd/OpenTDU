@@ -9,6 +9,13 @@ class PostFXNodeDesaturate;
 
 class PostFXNodeDesaturate : public PostFXNode {
 public:
+    inline float getSaturation() const { return saturation; }
+    inline float getContrast() const { return contrast; }
+    inline float getRedFactor() const { return rgbFactor[0]; }
+    inline float getGreenFactor() const { return rgbFactor[1]; }
+    inline float getBlueFactor() const { return rgbFactor[2]; }
+
+public:
     PostFXNodeDesaturate();
     ~PostFXNodeDesaturate();
 

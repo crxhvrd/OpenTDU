@@ -3141,21 +3141,25 @@ bool RenderDevice::createSwapchain() {
     backbuffer.Width = swapchainDimension.width;
     backbuffer.Height = swapchainDimension.height;
 
+    // NOTE: Only maps to what the original game support for now (in
+    // the future this could be extended to support HW HDR)
     switch ( swapchainFormat.format ) {
     case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
         backbuffer.Format = eViewFormat::VF_A2R10G10B10;
         break;
 
     case VK_FORMAT_B8G8R8A8_SRGB:
+    case VK_FORMAT_B8G8R8A8_UNORM:
         backbuffer.Format = eViewFormat::VF_X8R8G8B8;
         break;
 
-        break;
     case VK_FORMAT_R5G6B5_UNORM_PACK16:
         backbuffer.Format = eViewFormat::VF_R5G6B5;
         break;
 
     default:
+        OTDU_FATAL_ERROR( "Unsupported/invalid swapchain format %x",
+                          swapchainFormat.format );
         backbuffer.Format = eViewFormat::VF_Invalid;
         break;
     }

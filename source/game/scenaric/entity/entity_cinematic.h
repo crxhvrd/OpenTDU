@@ -69,6 +69,9 @@ public:
     }
 
 public:
+    static void ShowSpots( bool bShow );
+
+public:
     EntityCinematic();
     ~EntityCinematic();
 
@@ -110,19 +113,19 @@ private:
     float CineTotalTime;
     float FadeTime;
 
-    const void *pCameraRef;        
-    const void *pZoneRef;          
-    float cinematicZNear;          
-    float cinematicZFar;           
+    const void *pCameraRef;
+    const void *pZoneRef;
+    float cinematicZNear;
+    float cinematicZFar;
     const void *pMusic1Ref;        // (bank version < 0x13)
     const void *pSoundEmitter1Ref; // (bank version >= 0x13)
     const void *pMusic2Ref;        // (bank version < 0x13)
     const void *pSoundEmitter2Ref; // (bank version >= 0x13)
-    const void *pMicroRef;         
-    const void *pStreamCenterRef; 
-    uint32_t numRefs;              
-    const void *pCinRef;           // the .cin blob
-    const void *pSceneRefs;        // the (numRefs - 1) .sce blobs
+    const void *pMicroRef;
+    const void *pStreamCenterRef;
+    uint32_t numRefs;
+    const void *pCinRef;    // the .cin blob
+    const void *pSceneRefs; // the (numRefs - 1) .sce blobs
 
     ScenaricBank *pSCBank;
     std::unique_ptr<CinematicMusicEmitter> pMusicEmitter;
@@ -144,14 +147,13 @@ private:
     bool bDontSwitchCamera;
     bool bInitialized;
     bool bForceStop;
-    bool bResourcesPrepared;      
-    bool bForegroundCineApplied;  
-    bool bApplyCineMix;         
-    bool bRestoreCineMix;        
-    uint32_t savedMutedVehicleCategories; 
+    bool bResourcesPrepared;
+    bool bApplyCineMix;
+    bool bRestoreCineMix;
+    uint32_t savedMutedVehicleCategories;
     bool bStopGuard;
     bool bStackActive;
-    bool bCameraHandedOver; 
+    bool bCameraHandedOver;
     bool bCameraDrivenByObject;
 
     eGameMode activeGameMode;

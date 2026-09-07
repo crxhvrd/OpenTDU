@@ -250,6 +250,7 @@ public:
                                  float *pOutSphereRadius ) override;
     Eigen::Vector4f &getLinearVelocity() override;
     Eigen::Vector4f &getDimensions() override;
+    void retrieveBoundingBox( Matrix4x4f_t &pOutBoundingBox ) override;
     void retrieveAcceleration( Eigen::Vector4f &param_1 ) override;
 
     void reset();

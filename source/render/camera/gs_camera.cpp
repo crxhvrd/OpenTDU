@@ -676,6 +676,18 @@ CameraGame *GSCamera::findCameraByCurrentTransition() {
     return findCameraWithMode( index, pTarget );
 }
 
+int32_t GSCamera::findFirstVisibleTransitionMode() {
+    // FUN_008e3f00
+    for ( uint32_t i = 0; i < numTransition; i++ ) {
+        CameraGame *pCamera =
+            findCameraWithMode( pTransitionIndices[i], pTarget );
+        if ( ( pCamera != nullptr ) && ( ( pCamera->getFlags() & 0xd0000 ) == 0 ) ) {
+            return pTransitionIndices[i];
+        }
+    }
+    return -1;
+}
+
 CameraMouse *GSCamera::getMouseCamera() {
     CameraMouse *pFlyCam = nullptr;
     for ( uint32_t i = 0; i < numCameraRegistered; i++ ) {

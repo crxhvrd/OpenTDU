@@ -137,7 +137,6 @@ EntityCinematic::EntityCinematic()
       bInitialized( false ),
       bForceStop( false ),
       bResourcesPrepared( false ),
-      bForegroundCineApplied( false ),
       bApplyCineMix( true ),
       bRestoreCineMix( true ),
       savedMutedVehicleCategories( 0 ),
@@ -194,18 +193,12 @@ void EntityCinematic::initialize() {
     bResourcesPrepared = false;
     bApplyCineMix = true;
     bRestoreCineMix = true;
-    bForegroundCineApplied = false;
 }
 
 void EntityCinematic::applyForegroundCine() {
     // FUN_007e89d0
-    if ( bForegroundCineApplied ) {
-        return;
-    }
-    bForegroundCineApplied = true;
-
-    if ( gpAudio != nullptr ) {
-        if ( bApplyCineMix ) {
+    if ( !bLoop ) {
+        if ( gpAudio != nullptr && bApplyCineMix ) {
             uint32_t mix = gpAudio->getMixFlags( "MixCinematicDefault" );
             if ( static_cast<int8_t>( cinematicPlaybackFlags & 0xffu ) >= 0 ) {
                 mix |= gpAudio->getMixFlags( "MixAmbiance" );
@@ -216,17 +209,22 @@ void EntityCinematic::applyForegroundCine() {
             gpAudio->changeMixState( mix );
         }
 
-        Mixer *pMixer = gpAudio->findMixer( "MixerCinematic" );
+        if ( ( cinematicPlaybackFlags & 0x100u ) != 0 &&
+             gpVehicleSound != nullptr ) {
+            savedMutedVehicleCategories =
+                gpVehicleSound->getMutedCategoryMask();
+            gpVehicleSound->setMutedCategoryMask( 0x1eu );
+        }
+
+        Mixer *pMixer = ( gpAudio != nullptr )
+                            ? gpAudio->findMixer( "MixerCinematic" )
+                            : nullptr;
         if ( pMixer != nullptr ) {
             pMixer->bEnabled = true;
         }
     }
 
-    if ( ( cinematicPlaybackFlags & 0x100u ) != 0 &&
-         gpVehicleSound != nullptr ) {
-        savedMutedVehicleCategories = gpVehicleSound->getMutedCategoryMask();
-        gpVehicleSound->setMutedCategoryMask( 0x1eu );
-    }
+    ShowSpots( false );
 
     float shotNearPlane = gpRender->getDefaultNearPlane();
     if ( cinematicZNear != kCinematicPlaneUnset ) {
@@ -258,30 +256,34 @@ void EntityCinematic::applyForegroundCine() {
 
 void EntityCinematic::restoreForegroundCine() {
     // FUN_007e8650
-    if ( !bForegroundCineApplied ) {
-        return;
-    }
-    bForegroundCineApplied = false;
+    ShowSpots( true );
 
-    if ( bLoop || gpAudio == nullptr ) {
-        return;
-    }
+    if ( !bLoop && gpAudio != nullptr ) {
+        Mixer *pMixer = gpAudio->findMixer( "MixerCinematic" );
+        if ( pMixer != nullptr ) {
+            pMixer->bEnabled = false;
+        }
 
-    Mixer *pMixer = gpAudio->findMixer( "MixerCinematic" );
-    if ( pMixer != nullptr ) {
-        pMixer->bEnabled = false;
-    }
+        if ( ( cinematicPlaybackFlags & 0x100u ) != 0 &&
+             gpVehicleSound != nullptr ) {
+            gpVehicleSound->setMutedCategoryMask( savedMutedVehicleCategories );
+        }
 
-    if ( ( cinematicPlaybackFlags & 0x100u ) != 0 &&
-         gpVehicleSound != nullptr ) {
-        gpVehicleSound->setMutedCategoryMask( savedMutedVehicleCategories );
-    }
-
-    if ( bRestoreCineMix ) {
-        gpAudio->requestMixStateResync();
+        if ( bRestoreCineMix ) {
+            gpAudio->requestMixStateResync();
+        }
     }
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: the rest of FUN_007e8650
+}
+
+void EntityCinematic::ShowSpots( bool bShow ) {
+    // FUN_007e7a00
+    if ( gpScenaric == nullptr ) {
+        return;
+    }
+
+    gpScenaric->getSpotList().showSpotMeshes( bShow );
 }
 
 bool EntityCinematic::prepareResources() {
@@ -797,7 +799,9 @@ void EntityCinematic::end() {
 
     cinematicPlayer.releasePlayerCarActors();
 
-    restoreForegroundCine();
+    if ( hasFocus() && ( cinematicFlags & 0x4u ) != 0 ) {
+        restoreForegroundCine();
+    }
 
     if ( pMusicEmitter != nullptr ) {
         pMusicEmitter->uninstallSoundBanks();

@@ -362,7 +362,7 @@ void GameModeScene::onResourceStreamed() {
 
 bool GameModeScene::updatePostFX() {
     // FUN_007bccd0
-    if ( isStaticFrontEndScene() ) {
+    if ( isPaused() ) {
         return true;
     }
 

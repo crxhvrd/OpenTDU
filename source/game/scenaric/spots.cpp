@@ -253,6 +253,11 @@ bool Spots::isSpotValid( const SpotMap *pSpot ) const {
 
 void Spots::updateSpotMeshValidity() {
     // FUN_007d6b80
+    showSpotMeshes( true );
+}
+
+void Spots::showSpotMeshes( bool bShow ) {
+    // FUN_007e7a00
     // NOTE: the original re-checks both globals on every sector iteration; they
     // cannot change mid-loop, so the checks are hoisted here.
     if ( gpMngWorld == nullptr || gpWorld == nullptr ) {
@@ -282,7 +287,8 @@ void Spots::updateSpotMeshValidity() {
             }
 
             EntitySpotMesh *pSpotMesh = static_cast<EntitySpotMesh *>( pActor );
-            pSpotMesh->setSpotValid( isSpotValid( pSpotMesh->getSpotWorld() ) );
+            pSpotMesh->setSpotValid( bShow &&
+                                     isSpotValid( pSpotMesh->getSpotWorld() ) );
         }
     }
 }

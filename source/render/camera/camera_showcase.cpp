@@ -10,8 +10,11 @@
 
 #include "flash/gs_flash.h"
 
+#include "game/freeride/mng_photo_mode.h"
+#include "game/vehicle/car_state.h"
 #include "gs_camera.h"
 #include "physics/gs_physics.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "core/maths_helper.h"
 
 #include <vector>
@@ -29,17 +32,21 @@ static float FLOAT_00fab370 = 0.07f;           // DAT_00fab370
 static float FLOAT_00fab374 = 1.0f;            // DAT_00fab374
 static float FLOAT_00fab378 = 0.18f;           // DAT_00fab378
 
-inline bool IsShowcaseAvailable() {
+inline bool IsShowcaseInputCaptured() {
     // FUN_008d80b0
-    if ( !gpActiveGameMode->hasRequestedExit() ) {
-        if ( gpActiveGameMode->getCurrentGameMode() == GM_Shop ) {
-            OTDU_UNIMPLEMENTED; // TODO: Shop/CarPaint
-            return true;
-        }
-
-        OTDU_UNIMPLEMENTED; // TODO: FreeRide/PhotoMode
+    if ( gpActiveGameMode->hasRequestedExit() ) {
+        return true;
     }
-    return true;
+
+    if ( gpActiveGameMode->getCurrentGameMode() == GM_Shop ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: Shop/CarPaint
+    }
+
+    if ( gpActiveGameMode->getCurrentGameMode() != GM_FreeRide ) {
+        return false;
+    }
+
+    return ( gpMngPhotoMode != nullptr ) && gpMngPhotoMode->isFilterPopupOpen();
 }
 
 CameraShowcase::CameraShowcase()
@@ -65,6 +72,7 @@ CameraShowcase::CameraShowcase()
       lastTranslation( Eigen::Vector4f::Zero() ),
       lastAngles( Eigen::Vector4f::Zero() ),
       lastDistanceToTarget( 0.0f ),
+      lastPlacementPosition( Eigen::Vector4f::Zero() ),
       bInputEnabled( false ),
       bCanMoveCamera( false ),
       bAllowRoll( false ) {
@@ -212,6 +220,62 @@ void CameraShowcase::lookAt( Eigen::Vector4f *param_1 ) {
     rollAngle = 0.0f;
 }
 
+void CameraShowcase::updateOrbitFromPosition(
+    const Eigen::Vector4f &worldPosition, const bool bWriteToPreviousSlots ) {
+    // FUN_008d8540
+    Eigen::Vector4f toCamera = worldPosition - offset;
+    if ( pTarget != nullptr ) {
+        toCamera -= *pTarget;
+    }
+
+    float *pDistance =
+        bWriteToPreviousSlots ? &lastDistanceToTarget : &distanceToTarget;
+    Eigen::Vector4f *pAngles = bWriteToPreviousSlots ? &lastAngles : &angles;
+
+    const float distance = toCamera.norm();
+    const Eigen::Vector4f direction = toCamera / distance;
+
+    *pDistance = distance;
+    if ( minDistance > distance ) {
+        *pDistance = minDistance;
+    } else if ( distance > maxDistance ) {
+        *pDistance = maxDistance;
+    }
+
+    const float yaw = atan2f( direction.x(), direction.z() );
+
+    Matrix4x4f_t unyaw = MakeRotationMatY( -yaw );
+    const Eigen::Vector4f flattened = TDUMat4x4MulVec( unyaw, direction );
+
+    float pitch = -atan2f( flattened.y(), flattened.z() );
+
+    const float maxPitch =
+        ( ( flagsShowcase >> 10 ) & 1 ) != 0 ? 1.0f : maxRotAngle;
+    if ( minRotAngle > pitch ) {
+        pitch = minRotAngle;
+    } else if ( pitch > maxPitch ) {
+        pitch = maxPitch;
+    }
+
+    *pAngles = Eigen::Vector4f( pitch, yaw, 0.0f, 0.0f );
+}
+
+bool CameraShowcase::placeAt( const Eigen::Vector4f &worldPosition,
+                              const bool bSnapToTarget ) {
+    // FUN_008da4b0
+    setPosition( worldPosition );
+    updateOrbitFromPosition( worldPosition, false );
+
+    if ( bSnapToTarget ) {
+        lastPlacementPosition = worldPosition;
+        FUN_008d7fb0();
+        tick( 0.0f, false, true );
+    }
+
+    Eigen::Vector4f resolvedPosition = worldPosition;
+    return FUN_008d90e0( &resolvedPosition, true, 0.18f );
+}
+
 void CameraShowcase::FUN_008da540( Eigen::Vector4f &param_2,
                                    Eigen::Vector4f &param_3 ) {
     // FUN_008da540
@@ -237,6 +301,67 @@ void CameraShowcase::FUN_008da540( Eigen::Vector4f &param_2,
     FUN_008d8750( param_3 );
 }
 
+float CameraShowcase::sweepCameraSegment( Eigen::Vector4f &out,
+                                          const Eigen::Vector4f &from,
+                                          const Eigen::Vector4f &to ) {
+    // FUN_008d88f0
+    const Eigen::Vector4f delta = to - from;
+    const float distance = delta.norm();
+    if ( distance <= 0.0f ) {
+        return -1.0f; // FLOAT_00f41664
+    }
+    const Eigen::Vector4f direction = delta / distance;
+
+    gpPhysics->moveSphereBody( pPhysicsBoundingSphere, from );
+
+    std::vector<CameraSegmentHit> hits;
+    gpPhysics->castCameraSegment( from, to, hits );
+
+    // TODO: PHYSICS
+    OTDU_UNIMPLEMENTED_ONCE;
+
+    const Matrix4x4f_t *pWorldToCar = nullptr;
+    PhysicsVehicle *pVehicle = (PhysicsVehicle *)pTargetPhysicsVehicle;
+    if ( pVehicle != nullptr ) {
+        pWorldToCar = &pVehicle->getInvChassisMatrix();
+    }
+    const Eigen::Vector4f shiftOrigin = GSPhysics::GetShiftOrigin();
+
+    const float limit = distance + 1.0f;
+    float furthestHit = -99.0f; // DAT_00f41e30
+    int32_t numAccepted = 0;
+
+    for ( const CameraSegmentHit &hit : hits ) {
+        if ( pWorldToCar != nullptr ) {
+            Eigen::Vector4f pointInCar = hit.Point - shiftOrigin;
+            pointInCar.w() = 1.0f;
+            pointInCar = TDUMat4x4MulVec( *pWorldToCar, pointInCar );
+
+            const Eigen::Vector4f normalInCar =
+                TDUMat4x4MulVec( *pWorldToCar, hit.Normal );
+
+            if ( normalInCar.y() > 0.75f && pointInCar.y() < 0.0f ) {
+                continue;
+            }
+        }
+
+        numAccepted++;
+
+        const float alongSegment = hit.Fraction * distance;
+        if ( furthestHit < alongSegment ) {
+            furthestHit = alongSegment;
+        }
+    }
+
+    if ( numAccepted != 0 && furthestHit < limit ) {
+        out = from + direction * furthestHit;
+        out.w() = 1.0f;
+        return furthestHit;
+    }
+
+    return -1.0f; // FLOAT_00f41664
+}
+
 bool CameraShowcase::FUN_008d90e0( Eigen::Vector4f *param_2,
                                    bool param_3,
                                    float param_4 ) {
@@ -250,12 +375,39 @@ bool CameraShowcase::FUN_008d90e0( Eigen::Vector4f *param_2,
         pPhysicsBoundingSphere =
             gpPhysics->createSphere( 2, local_d30, 1.0f, 1.0f, 1.0f, false );
     } else {
-        float local_da4 = -3.4028235e+38f;
+        float local_da4 = -3.4028235e+38f; // DAT_00f41790
 
-        if ( ( flagsShowcase & 1 ) != 0 ) {
-            // TODO: Physics - floor height from car body (requires CarState
-            // layout, FUN_00849150, FUN_00843dd0)
-            OTDU_UNIMPLEMENTED;
+        if ( ( ( flagsShowcase & 1 ) != 0 ) &&
+             ( pTargetCarState == nullptr || !pTargetCarState->isIndoor() ) ) {
+            Eigen::Vector4f probePosition = *param_2;
+            probePosition.y() += 1000.0f; // DAT_00f41718
+
+            float surfaceHeight = kNoSurfaceSentinel;
+            Eigen::Vector4f surfaceNormal = Eigen::Vector4f::Zero();
+            gpPhysics->probeSurface( probePosition, false, surfaceHeight,
+                                     surfaceNormal );
+
+            const float heightmapHeight = kNoSurfaceSentinel;
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: WORLD (heightmap height sample)
+
+            float radius = param_4;
+            if ( 0.18f > radius ) {
+                radius = 0.18f;
+            } else if ( radius > 1.0f ) {
+                radius = 1.0f;
+            }
+            const float clearance =
+                ( radius - 0.18f ) * 1.2195122f * ( 2.0f - 0.5f ) + 0.5f;
+
+            constexpr float kMinCameraHeight = 0.0f;
+
+            if ( surfaceHeight > kNoSurfaceSentinel &&
+                 clearance + surfaceHeight > kMinCameraHeight ) {
+                local_da4 = clearance + surfaceHeight;
+            } else if ( heightmapHeight > kNoSurfaceSentinel &&
+                        clearance + heightmapHeight > kMinCameraHeight ) {
+                local_da4 = clearance + heightmapHeight;
+            }
         }
 
         if ( ( ( flagsShowcase >> 7 ) & 1 ) != 0 && local_da4 < floorHeight ) {
@@ -264,7 +416,7 @@ bool CameraShowcase::FUN_008d90e0( Eigen::Vector4f *param_2,
 
         if ( ( flagsShowcase >> 1 ) & 1 ) {
             // TODO: Physics - vehicle avoidance (requires FUN_0082d990)
-            OTDU_UNIMPLEMENTED;
+            OTDU_UNIMPLEMENTED_ONCE;
         }
 
         if ( param_2->y() <= local_da4 ) {
@@ -273,42 +425,16 @@ bool CameraShowcase::FUN_008d90e0( Eigen::Vector4f *param_2,
 
         if ( ( ( flagsShowcase >> 2 ) & 1 ) != 0 &&
              pPhysicsBoundingSphere != nullptr ) {
-            // FUN_008d88f0 - sphere-cast camera collision avoidance
-            // Moves the bounding sphere to the camera position, collects all
-            // geometry contacts, then pulls the camera toward the look-at
-            // target by an amount proportional to how horizontal each contact
-            // normal is. Walls (normalY≈0) collapse the camera to the look-at;
-            // floors (normalY≈1) leave it unchanged.
-            Eigen::Vector4f lookAt;
-            FUN_008d8750( lookAt );
-
-            Eigen::Vector3f delta = param_2->head<3>() - lookAt.head<3>();
-            float dist = delta.norm();
-            Eigen::Vector4f dir = Eigen::Vector4f::Zero();
-            if ( dist > 1e-6f ) {
-                dir.head<3>() = delta / dist;
+            if ( pTarget == nullptr ) {
+                return false;
             }
 
-            gpPhysics->moveSphereBody( pPhysicsBoundingSphere, *param_2 );
+            const Eigen::Vector4f lookAt = *pTarget + translation;
+            Eigen::Vector4f resolved = lookAt;
+            if ( sweepCameraSegment( resolved, lookAt, *param_2 ) > 0.0f ) {
+                *param_2 = resolved;
 
-            std::vector<CameraCollisionHit> hits;
-            int32_t numHits =
-                gpPhysics->queryCameraCollisions( *param_2, 1.0f, hits );
-
-            float maxPullback = 0.0f; // DAT_00f41e30
-            for ( const CameraCollisionHit &hit : hits ) {
-                float normalY = hit.exitNormal.y();
-                float pointY = hit.contactPoint.y();
-                if ( normalY > 0.0f && pointY < 0.0f )
-                    continue;
-                float contribution = normalY * dist;
-                if ( contribution > maxPullback )
-                    maxPullback = contribution;
-            }
-
-            if ( numHits > 0 && maxPullback < dist ) {
-                *param_2 = lookAt + dir * maxPullback;
-                param_2->w() = 1.0f;
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (sweep passes 2 and 3)
             }
         }
 
@@ -332,12 +458,11 @@ bool CameraShowcase::FUN_008d90e0( Eigen::Vector4f *param_2,
         }
 
         if ( ( ( flagsShowcase >> 6 ) & 1 ) != 0 &&
-             pTargetCarState != nullptr && pPhysicsBoundingSphere != nullptr ) {
+             pTargetCarState != nullptr && pTargetCarState->isIndoor() &&
+             pPhysicsBoundingSphere != nullptr ) {
             // TODO: Physics - interior collision avoidance (FUN_00844730,
-            // FUN_00404b40). Requires VehiclePhysics::field_0x900 (world
-            // matrix) and VehiclePhysics::field_0x7b0 — unimplemented until
-            // VehiclePhysics is defined.
-            OTDU_UNIMPLEMENTED;
+            // FUN_00404b40, FUN_008449f0).
+            OTDU_UNIMPLEMENTED_ONCE;
         }
     }
 
@@ -353,7 +478,7 @@ void CameraShowcase::FUN_008d7fb0() {
 
 void CameraShowcase::FUN_008d8180() {
     // FUN_008d8180
-    OTDU_UNIMPLEMENTED; // TODO: Physics
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: POSTFX (radial blur centre)
 }
 
 void CameraShowcase::updateMouse( float param_1 ) {
@@ -421,7 +546,7 @@ void CameraShowcase::updateMouseCursor() {
                 goto LAB_008d850b;
         }
     }
-    bVar3 = IsShowcaseAvailable();
+    bVar3 = IsShowcaseInputCaptured();
     if ( !bVar3 ) {
         return;
     }
@@ -439,7 +564,7 @@ void CameraShowcase::updateAngles( float param_1 ) {
 
     float fVar5 = 0.0f;
     float fVar6 = 0.0f;
-    bool bVar3 = IsShowcaseAvailable();
+    bool bVar3 = IsShowcaseInputCaptured();
     if ( bVar3 ) {
         DAT_016a2c90 = 0.0f;
     } else {
@@ -504,7 +629,7 @@ void CameraShowcase::updateAngles( float param_1 ) {
 float CameraShowcase::getAngleForChannel( InputChannel *pChannel ) {
     const MouseState &mouse = gpDevice->getMouseState();
 
-    bool bVar3 = IsShowcaseAvailable();
+    bool bVar3 = IsShowcaseInputCaptured();
     if ( bVar3 ) {
         cursorType = 3;
     }
@@ -542,7 +667,7 @@ void CameraShowcase::updateTranslation( float param_1 ) {
     // FUN_008da1a0
     const MouseState &mouse = gpDevice->getMouseState();
 
-    bool bVar3 = IsShowcaseAvailable();
+    bool bVar3 = IsShowcaseInputCaptured();
     if ( bVar3 ) {
         cursorType = 3;
     }
@@ -576,7 +701,7 @@ void CameraShowcase::updateTranslation( float param_1 ) {
         }
     }
 
-    bVar3 = IsShowcaseAvailable();
+    bVar3 = IsShowcaseInputCaptured();
     if ( bVar3 ) {
         cursorType = 3;
     }
@@ -637,7 +762,7 @@ void CameraShowcase::updateTranslation( float param_1 ) {
 void CameraShowcase::updateRoll( float param_1 ) {
     // FUN_008da0d0
     const MouseState &mouse = gpDevice->getMouseState();
-    bool bVar3 = IsShowcaseAvailable();
+    bool bVar3 = IsShowcaseInputCaptured();
     if ( bVar3 ) {
         cursorType = 3;
     }

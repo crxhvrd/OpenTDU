@@ -54,6 +54,7 @@ public:
                                          float *pOutSphereRadius ) = 0;
     virtual Eigen::Vector4f &getLinearVelocity();
     virtual Eigen::Vector4f &getDimensions() = 0;
+    virtual void retrieveBoundingBox( Matrix4x4f_t &pOutBoundingBox ) = 0;
     virtual void retrieveAcceleration( Eigen::Vector4f &param_1 ) = 0;
 
 protected:

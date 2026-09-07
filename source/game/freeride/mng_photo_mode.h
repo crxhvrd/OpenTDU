@@ -7,6 +7,8 @@
 struct Material;
 struct FlashMessage;
 class FlashPlayer;
+class CameraGame;
+class CarState;
 
 class MngPhotoMode : public Manager {
 public:
@@ -14,6 +16,14 @@ public:
         // FUN_00431f10
         return "MngPhotoMode";
     }
+
+    inline void setFlashPlayer( FlashPlayer *pPlayer ) {
+        pFlashPlayer = pPlayer;
+        PhotoFilters.setFlashPlayer( pPlayer );
+    }
+
+    inline MngScreenshots &getScreenshots() { return MngScrenshots; }
+    inline bool isFilterPopupOpen() const { return PhotoFilters.isPopupOpen(); }
 
 public:
     MngPhotoMode();
@@ -25,22 +35,39 @@ public:
 
     bool onMessage( FlashMessage *pMessage );
 
-    inline void setFlashPlayer( FlashPlayer *pPlayer ) {
-        pFlashPlayer = pPlayer;
-        PhotoFilters.setFlashPlayer( pPlayer );
-    }
+private:
+    static constexpr size_t kMaxCaptionLength = 0x20;
 
-    inline MngScreenshots &getScreenshots() { return MngScrenshots; }
+private:
+    void enterPhotoMode();
+    void leavePhotoMode();
+    void takeShot();
+    void saveShot();
+    void showLiveView();
+    void cancelShot();
+
+    void setShowcaseCameraInput( bool bEnabled );
+
+    static void ShotDrawCallback( struct FlashRECT *pViewport,
+                                  float depth,
+                                  class DrawList *pDrawList,
+                                  void *pUser,
+                                  class FlashResource *pResource,
+                                  const char *pClipName );
+    static void OnSavePopupClosed( void *pUser );
 
 private:
     PhotoModeEffect PhotoFilters;
     bool bPhotoModeActive;
-    float nullMatrix[4][4];
+    Matrix4x4f_t carTransform;
     MngScreenshots MngScrenshots;
     Material *pShotMaterial;
     FlashPlayer *pFlashPlayer;
     bool bWaitingSaveResult;
     bool bFXWasOn;
+
+    bool bGlowPauseWasEnabled = false;
+    char caption[kMaxCaptionLength] = {};
 };
 
 extern MngPhotoMode *gpMngPhotoMode;
