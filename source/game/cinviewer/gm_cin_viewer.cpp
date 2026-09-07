@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "config/gs_config.h"
+#include "filesystem/gs_file.h"
 #include "flash/entities/flash_entity.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
@@ -20,6 +21,23 @@
 #include "render/camera/gs_camera.h"
 #include "world/gs_world.h"
 
+static bool IsExteriorSpotBank( const char *pBankName ) {
+    return pBankName != nullptr &&
+           ( pBankName[0] == 'E' || pBankName[0] == 'e' );
+}
+
+static void BankStemToHash8( const char *pBankName, char out[8] ) {
+    memset( out, 0, 8 );
+    if ( pBankName == nullptr ) {
+        return;
+    }
+    for ( int32_t i = 0; i < 8 && pBankName[i] != '\0' && pBankName[i] != '.';
+          i++ ) {
+        const char c = pBankName[i];
+        out[i] = ( c >= 'a' && c <= 'z' ) ? static_cast<char>( c - 32 ) : c;
+    }
+}
+
 GMCinViewer::GMCinViewer()
     : GameModeWorld( 6 ),
       flashListBank( &contentBanks ),
@@ -28,7 +46,10 @@ GMCinViewer::GMCinViewer()
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC (BANK)
 }
 
-GMCinViewer::~GMCinViewer() { stopCine(); }
+GMCinViewer::~GMCinViewer() {
+    stopCine();
+    leaveInteriorPreview();
+}
 
 void GMCinViewer::initialize() {
     // FUN_007b4440
@@ -100,6 +121,11 @@ void GMCinViewer::tick( float deltaTime, float totalTime ) {
         }
     }
 
+    if ( pInteriorScene != nullptr ) {
+        pInteriorScene->tick();
+        pInteriorScene->draw();
+    }
+
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC
 }
 
@@ -113,37 +139,21 @@ void GMCinViewer::destroy() {
     // FUN_007b3980
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC
     stopCine();
+    leaveInteriorPreview();
     GameModeWorld::destroy();
 }
 
 void GMCinViewer::positionAtSpot( const char *pBankName ) {
-    // FUN_007b3450
-    if ( pBankName == nullptr || gpScenaric == nullptr ) {
-        return;
-    }
-
-    char name8[8] = { 0 };
-    for ( int32_t i = 0; i < 8 && pBankName[i] != '\0' && pBankName[i] != '.';
-          i++ ) {
-        const char c = pBankName[i];
-        name8[i] = ( c >= 'a' && c <= 'z' ) ? static_cast<char>( c - 32 ) : c;
-    }
-    uint64_t sourceHash = 0;
-    std::memcpy( &sourceHash, name8, sizeof( sourceHash ) );
-
-    Spots &spots = gpScenaric->getSpotList();
-    pCurrentSpot = nullptr;
-    const uint32_t count = spots.getNumWorldSpots();
-
-    for ( uint32_t i = 0; i < count; i++ ) {
-        SpotMap *pSpot = spots.getWorldSpot( static_cast<int32_t>( i ) );
-        if ( pSpot != nullptr && pSpot->SourceHashcode == sourceHash ) {
-            pCurrentSpot = pSpot;
-            break;
-        }
-    }
+    // FUN_007b3450 — exterior world spots plus interior (L/G/I) banks mapped
+    // back onto the matching world SourceHashcode.
+    int32_t spotIndex = -1;
+    pCurrentSpot = findSpotForBank( pBankName, &spotIndex );
     if ( pCurrentSpot == nullptr ) {
         return;
+    }
+
+    if ( gpScenaric != nullptr && spotIndex >= 0 ) {
+        gpScenaric->setCurrentSpotIndex( spotIndex );
     }
 
     Eigen::Vector4f pos( pCurrentSpot->X, pCurrentSpot->Y, pCurrentSpot->Z,
@@ -160,6 +170,78 @@ void GMCinViewer::positionAtSpot( const char *pBankName ) {
     }
 }
 
+SpotMap *GMCinViewer::findSpotForBank( const char *pBankName,
+                                       int32_t *pOutIndex ) {
+    if ( pOutIndex != nullptr ) {
+        *pOutIndex = -1;
+    }
+    if ( pBankName == nullptr || gpScenaric == nullptr ) {
+        return nullptr;
+    }
+
+    char name8[8] = {};
+    BankStemToHash8( pBankName, name8 );
+    uint64_t bankHash = 0;
+    std::memcpy( &bankHash, name8, sizeof( bankHash ) );
+
+    Spots &spots = gpScenaric->getSpotList();
+    const uint32_t count = spots.getNumWorldSpots();
+    for ( uint32_t i = 0; i < count; i++ ) {
+        SpotMap *pSpot = spots.getWorldSpot( static_cast<int32_t>( i ) );
+        if ( pSpot == nullptr ) {
+            continue;
+        }
+        if ( pSpot->SourceHashcode == bankHash || pSpot->Hashcode == bankHash ) {
+            if ( pOutIndex != nullptr ) {
+                *pOutIndex = static_cast<int32_t>( i );
+            }
+            return pSpot;
+        }
+        char source[8] = {};
+        std::memcpy( source, &pSpot->SourceHashcode, sizeof( source ) );
+        char remapped[8];
+        std::memcpy( remapped, source, sizeof( remapped ) );
+        remapped[0] = name8[0];
+        if ( std::memcmp( remapped, name8, sizeof( remapped ) ) == 0 ) {
+            if ( pOutIndex != nullptr ) {
+                *pOutIndex = static_cast<int32_t>( i );
+            }
+            return pSpot;
+        }
+    }
+    return nullptr;
+}
+
+void GMCinViewer::enterInteriorPreview( const char *pBankName ) {
+    leaveInteriorPreview();
+    if ( pBankName == nullptr || pBankName[0] == '\0' || gpFile == nullptr ||
+         gpConfig == nullptr ) {
+        return;
+    }
+
+    char bankPath[512] = {};
+    snprintf( bankPath, sizeof( bankPath ), "%sInterior/%s.bnk",
+              gpConfig->getResRootPath(), pBankName );
+
+    if ( !interiorBank.loadBank( gpFile, bankPath ) ) {
+        OTDU_LOG_WARN( "CinViewer: failed to load interior bank '%s'\n",
+                       bankPath );
+        return;
+    }
+    interiorBank.loadContentAsync();
+
+    pInteriorScene = std::make_unique<SceneInterior>();
+    pInteriorScene->enter( &interiorBank, false );
+    OTDU_LOG_INFO( "CinViewer: instanced interior preview '%s'\n", pBankName );
+}
+
+void GMCinViewer::leaveInteriorPreview() {
+    pInteriorScene.reset();
+    if ( interiorBank.isLoaded() || interiorBank.getBankFile() != nullptr ) {
+        interiorBank.unload();
+    }
+}
+
 void GMCinViewer::loadBankCinematics( const char *pBankName ) {
     // FUN_007b39e0
     contentCine.clear();
@@ -168,7 +250,7 @@ void GMCinViewer::loadBankCinematics( const char *pBankName ) {
     }
 
     const char *pFolder =
-        ( pBankName[0] == 'E' ) ? "Level/Hawai/Spots" : "Interior";
+        IsExteriorSpotBank( pBankName ) ? "Level/Hawai/Spots" : "Interior";
 
     ScenaricBank tempBank;
     GSScenaric::LoadScenaricBank( pFolder, pBankName, &tempBank );
@@ -193,6 +275,11 @@ bool GMCinViewer::onMessage( FlashMessage *pMessage ) {
         selectedBankName = ( pBankName != nullptr ) ? pBankName : "";
         loadBankCinematics( pBankName );
         positionAtSpot( pBankName );
+        if ( IsExteriorSpotBank( pBankName ) ) {
+            leaveInteriorPreview();
+        } else {
+            enterInteriorPreview( pBankName );
+        }
         if ( !contentCine.empty() ) {
             playCine( contentCine[0].c_str() );
         }
@@ -274,8 +361,9 @@ void GMCinViewer::playCine( const char *pCineName ) {
         return;
     }
 
-    const char *pFolder =
-        ( selectedBankName[0] == 'E' ) ? "Level/Hawai/Spots" : "Interior";
+    const char *pFolder = IsExteriorSpotBank( selectedBankName.c_str() )
+                              ? "Level/Hawai/Spots"
+                              : "Interior";
     GSScenaric::LoadScenaricBank( pFolder, selectedBankName.c_str(),
                                   &playbackBank );
     bPlaybackBankActive = true;

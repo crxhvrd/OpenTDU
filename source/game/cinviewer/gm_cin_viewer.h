@@ -1,10 +1,13 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "game/gm_world.h"
+#include "filesystem/bank.h"
 #include "flash_list_cin_viewer.h"
+#include "game/gm_world.h"
+#include "game/scene_interior.h"
 #include "game/scenaric/scenaric_bank.h"
 
 class EntityCinematic;
@@ -32,6 +35,10 @@ private:
     void togglePlayPause();      // "play"
     void stepFrame( float dir ); // "frwd" (+1) / "rewd" (-1)
     void restartCine();          // "strt"
+    struct SpotMap *findSpotForBank( const char *pBankName,
+                                     int32_t *pOutIndex = nullptr );
+    void enterInteriorPreview( const char *pBankName );
+    void leaveInteriorPreview();
 
 private:
     std::vector<std::string> contentBanks;
@@ -44,4 +51,6 @@ private:
     ScenaricBank playbackBank;
     bool bPlaybackBankActive = false;
     float playbackSpeed = 1.0f;
+    Bank interiorBank;
+    std::unique_ptr<SceneInterior> pInteriorScene;
 };
