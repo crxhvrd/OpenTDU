@@ -4,6 +4,7 @@
 #include "config/gs_config.h"
 #include "core/time.h"
 #include "tdu_instance.h"
+#include "audio/implementation/ed_audio.h"
 
 #if defined( OTDU_USE_SDL )
 #include <SDL3/SDL.h>
@@ -105,10 +106,12 @@ void edSys::pollEvents() {
         }
         case SDL_EVENT_WINDOW_FOCUS_GAINED: {
             gEdSys.bWindowActivated = true;
+            gEdAudio.setOutputMuted( false );
             break;
         }
         case SDL_EVENT_WINDOW_FOCUS_LOST: {
             gEdSys.bWindowActivated = false;
+            gEdAudio.setOutputMuted( true );
             break;
         }
         case SDL_EVENT_TEXT_INPUT: {
