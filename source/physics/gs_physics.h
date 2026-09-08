@@ -39,7 +39,8 @@ using CharacterController_t = PhysicsCharacter *;
 
 namespace TDUSurface {
     enum Class : uint32_t {
-        None = 0,     // nothing under the wheel
+        None = 0, // nothing under the wheel
+        RoadGround = 1, // SR20 .rd
         Paved = 2,    // .shk world MESH (FUN_00844f00) + AddInfinitePlane
         RoadMesh = 3, // -R.shk road MESH (FUN_00845380)
         Terrain = 4,  // heightfield — never tagged; the only off-road surface
@@ -52,8 +53,8 @@ namespace TDUSurface {
 
     inline bool isOnRoad( uint32_t physType ) {
         // FUN_0083bbd0
-        return physType == 1 || physType == Paved || physType == RoadMesh ||
-               physType == Generic;
+        return physType == RoadGround || physType == Paved ||
+               physType == RoadMesh || physType == Generic;
     }
 
     inline float friction( uint32_t physType ) {

@@ -711,7 +711,9 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
                          surface == 8u ) {
                         continue;
                     }
-                    if ( gbCamClampedUp && surface == TDUSurface::RoadMesh ) {
+                    if ( gbCamClampedUp &&
+                         ( surface == TDUSurface::RoadMesh ||
+                           surface == TDUSurface::RoadGround ) ) {
                         continue;
                     }
 

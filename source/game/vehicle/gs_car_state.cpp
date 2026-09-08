@@ -354,6 +354,7 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 }
                 switch ( ro.ContactSurface ) {
                 case TDUSurface::RoadMesh:
+                case TDUSurface::RoadGround:
                     wheel.ContactMaterial = eMaterialType::MT_Asphalt;
                     break;
                 case TDUSurface::Paved:
