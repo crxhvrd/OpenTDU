@@ -2002,9 +2002,9 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
     JPH::RRayCast ray{ attachW, rayLen * down };
 
     const JPH::DefaultBroadPhaseLayerFilter bpFilter =
-        system.GetDefaultBroadPhaseLayerFilter( TDUPhysLayers::WHEEL );
+        system.GetDefaultBroadPhaseLayerFilter( TDUPhysLayers::VEHICLE );
     const JPH::DefaultObjectLayerFilter objFilter =
-        system.GetDefaultLayerFilter( TDUPhysLayers::WHEEL );
+        system.GetDefaultLayerFilter( TDUPhysLayers::VEHICLE );
     const JPH::IgnoreSingleBodyFilter bodyFilter( chassis.GetID() );
 
     JPH::RayCastSettings settings;

@@ -114,6 +114,32 @@ namespace {
     // Equivalent of hkCollisionListener used by the original game.
     class PhysicsFXContactListener : public JPH::ContactListener {
     public:
+        JPH::ValidateResult OnContactValidate(
+            const JPH::Body &inBody1,
+            const JPH::Body &inBody2,
+            JPH::RVec3Arg,
+            const JPH::CollideShapeResult &inCollisionResult ) override {
+            // FUN_00833BA0
+            const bool bVehicle1 = IsVehicle( inBody1 );
+            if ( bVehicle1 == IsVehicle( inBody2 ) ) {
+                return JPH::ValidateResult::AcceptContact;
+            }
+            const JPH::Body &world = bVehicle1 ? inBody2 : inBody1;
+            const JPH::SubShapeID &subShapeID =
+                bVehicle1 ? inCollisionResult.mSubShapeID2
+                          : inCollisionResult.mSubShapeID1;
+            const JPH::Shape *pShape = world.GetShape();
+            if ( pShape == nullptr ) {
+                return JPH::ValidateResult::AcceptContact;
+            }
+            const uint32_t material = TDUPhysicsMaterials::codeOf(
+                pShape->GetMaterial( subShapeID ) );
+            return ( material ==
+                     static_cast<uint32_t>( eMaterialType::MT_SP1 ) )
+                       ? JPH::ValidateResult::RejectContact
+                       : JPH::ValidateResult::AcceptContact;
+        }
+
         void OnContactAdded( const JPH::Body &inBody1,
                              const JPH::Body &inBody2,
                              const JPH::ContactManifold &inManifold,
@@ -131,6 +157,11 @@ namespace {
         }
 
     private:
+        static bool IsVehicle( const JPH::Body &body ) {
+            return ( body.GetUserData() & TDUSurface::kClassMask ) ==
+                   TDUSurface::Vehicle;
+        }
+
         static int32_t ResolveMaterial( const JPH::Body &body,
                                         const JPH::SubShapeID &subShapeID ) {
             uint32_t code = TDUMaterialValue::kDefault;
@@ -987,6 +1018,7 @@ static uint32_t CollisionBodyColor( JPH::EShapeSubType subType,
     }
     switch ( userData ) {
     case TDUSurface::RoadMesh:
+    case TDUSurface::RoadGround:
         return PackDebugColor( 60, 120, 255 ).Color; // road mesh: blue
     case TDUSurface::Paved:
     case TDUSurface::Generic:
@@ -2407,7 +2439,8 @@ int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
     for ( const JPH::BodyID id : bodyIDs ) {
         const uint32_t surf = static_cast<uint32_t>( bi.GetUserData( id ) &
                                                      TDUSurface::kClassMask );
-        if ( surf != TDUSurface::Paved && surf != TDUSurface::RoadMesh ) {
+        if ( surf != TDUSurface::Paved && surf != TDUSurface::RoadMesh &&
+             surf != TDUSurface::RoadGround ) {
             continue;
         }
         JPH::RefConst<JPH::Shape> shape = bi.GetShape( id );
@@ -2734,9 +2767,9 @@ void GSPhysics::removeHeightfield( const void *pKey ) {
     }
 }
 
-static uint32_t PhysTypeForShape( const JPH::Shape *pShape, bool bRoad ) {
-    if ( pShape == nullptr ||
-         pShape->GetSubType() != JPH::EShapeSubType::Mesh ) {
+static uint32_t PhysTypeForShape( bool bBvTreeShape, bool bRoad ) {
+    // FUN_00844f00
+    if ( !bBvTreeShape ) {
         return TDUSurface::Generic;
     }
     return bRoad ? TDUSurface::RoadMesh : TDUSurface::Paved;
@@ -2809,8 +2842,8 @@ void GSPhysics::addSectorCollision( const void *pKey,
             body.Position.GetY() - shiftOrigin.y(),
             baseZ + body.Position.GetZ() - shiftOrigin.z() );
 
-        const bool bRoadSurface = bRoadBlob && body.bBvTreeShape;
-        const uint32_t physType = PhysTypeForShape( body.Shape, bRoadSurface );
+        const uint32_t physType =
+            PhysTypeForShape( body.bBvTreeShape, bRoadBlob );
 
         JPH::BodyCreationSettings settings( body.Shape, position, body.Rotation,
                                             JPH::EMotionType::Static,
@@ -2977,7 +3010,7 @@ GSPhysics::installStaticCollision( void *pBlob,
             continue;
         }
 
-        const uint32_t physType = PhysTypeForShape( body.Shape, false );
+        const uint32_t physType = PhysTypeForShape( body.bBvTreeShape, false );
 
         const JPH::RVec3 position( worldRot * body.Position + worldTrans );
         const JPH::Quat rotation = ( worldRot * body.Rotation ).Normalized();
@@ -3151,8 +3184,8 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
         JPH::RVec3( originRef - JPH::Vec3( shiftOrigin.x(), shiftOrigin.y(),
                                            shiftOrigin.z() ) ),
         JPH::Quat::sIdentity(), JPH::EMotionType::Static, TDUPhysLayers::ROAD );
-    settings.mUserData = TDUSurface::RoadMesh;
-    settings.mFriction = TDUSurface::friction( TDUSurface::RoadMesh );
+    settings.mUserData = TDUSurface::RoadGround;
+    settings.mFriction = TDUSurface::friction( TDUSurface::RoadGround );
     JPH::Body *pBody = ( pSlot->NumObjects < pSlot->MaxNumObjects )
                            ? bodyInterface.CreateBody( settings )
                            : nullptr;
