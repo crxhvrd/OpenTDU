@@ -8,6 +8,10 @@
 #include "physics/gs_physics.h"
 #include "gs_camera.h"
 
+#include "game/gm_base.h"
+#include "game/gm_scene.h"
+#include "system/gs_pc_options.h"
+
 static constexpr float kLookSensitivity = 2.2f;
 
 static constexpr float kWalkSpeed = 2.4f;
@@ -19,6 +23,33 @@ static constexpr float kMaxPitch = 1.5533431f; // 89 degrees
 
 static constexpr float kFallResetDepth = 25.0f;
 static constexpr float kMaxDeltaTime = 0.1f;
+
+bool IsFirstPersonInputCaptured() {
+    if ( gpActiveGameMode != nullptr ) {
+        if ( gpActiveGameMode->isMessageBoxVisible() ||
+             gpActiveGameMode->hasRequestedExit() ) {
+            return true;
+        }
+    }
+
+    if ( gpActiveGMScene != nullptr && gpActiveGMScene->isPaused() ) {
+        return true;
+    }
+
+    if ( gpPCOptions != nullptr && gpPCOptions->isMainMenuOpened() ) {
+        return true;
+    }
+
+    if ( gpTimer != nullptr && gpTimer->GameSpeed <= 0.0f ) {
+        return true;
+    }
+
+    if ( gpCamera != nullptr && gpCamera->isPaused() ) {
+        return true;
+    }
+
+    return false;
+}
 
 CameraFirstPerson::CameraFirstPerson()
     : CameraGame(),
@@ -67,46 +98,57 @@ bool CameraFirstPerson::tick( float /*deltaTime*/,
                                                      0.0f, kMaxDeltaTime )
                                             : ( 1.0f / 60.0f );
 
+    const bool bInputCaptured = IsFirstPersonInputCaptured();
+
     Device *pMouse = gEdDev.getDevice( eDeviceType::DT_Mouse, 0 );
-    const float mouseX = pMouse->getChannelValue( "LEFT" ); // +X = moving right
-    const float mouseY = pMouse->getChannelValue( "UP" );   // +Y = moving up
-
-    const float invert =
-        ( gpConfig != nullptr && gpConfig->bInvertMouse ) ? -1.0f : 1.0f;
-
-    yaw += mouseX * lookSensitivity;
-    pitch = Clamp( pitch + mouseY * lookSensitivity * invert, -kMaxPitch,
-                   kMaxPitch );
-
-    if ( yaw > (float)EIGEN_PI ) {
-        yaw -= 2.0f * (float)EIGEN_PI;
-    } else if ( yaw < -(float)EIGEN_PI ) {
-        yaw += 2.0f * (float)EIGEN_PI;
-    }
-
     Device *pKeyboard = gEdDev.getDevice( eDeviceType::DT_Keyboard, 0 );
 
     float forwardInput = 0.0f;
     float strafeInput = 0.0f;
-    if ( pKeyboard->getChannelValueBinary( "W" ) ||
-         pKeyboard->getChannelValueBinary( "UP" ) ) {
-        forwardInput += 1.0f;
-    }
-    if ( pKeyboard->getChannelValueBinary( "S" ) ||
-         pKeyboard->getChannelValueBinary( "DOWN" ) ) {
-        forwardInput -= 1.0f;
-    }
-    if ( pKeyboard->getChannelValueBinary( "D" ) ||
-         pKeyboard->getChannelValueBinary( "RIGHT" ) ) {
-        strafeInput += 1.0f;
-    }
-    if ( pKeyboard->getChannelValueBinary( "A" ) ||
-         pKeyboard->getChannelValueBinary( "LEFT" ) ) {
-        strafeInput -= 1.0f;
+    bool bRunning = false;
+
+    if ( !bInputCaptured && pMouse != nullptr ) {
+        const float mouseX =
+            pMouse->getChannelValue( "LEFT" ); // +X = moving right
+        const float mouseY =
+            pMouse->getChannelValue( "UP" ); // +Y = moving up
+
+        const float invert =
+            ( gpConfig != nullptr && gpConfig->bInvertMouse ) ? -1.0f : 1.0f;
+
+        yaw += mouseX * lookSensitivity;
+        pitch = Clamp( pitch + mouseY * lookSensitivity * invert, -kMaxPitch,
+                       kMaxPitch );
+
+        if ( yaw > (float)EIGEN_PI ) {
+            yaw -= 2.0f * (float)EIGEN_PI;
+        } else if ( yaw < -(float)EIGEN_PI ) {
+            yaw += 2.0f * (float)EIGEN_PI;
+        }
     }
 
-    const bool bRunning = pKeyboard->getChannelValueBinary( "LEFT SHIFT" ) ||
-                          pKeyboard->getChannelValueBinary( "RIGHT SHIFT" );
+    if ( !bInputCaptured && pKeyboard != nullptr ) {
+        if ( pKeyboard->getChannelValueBinary( "W" ) ||
+             pKeyboard->getChannelValueBinary( "UP" ) ) {
+            forwardInput += 1.0f;
+        }
+        if ( pKeyboard->getChannelValueBinary( "S" ) ||
+             pKeyboard->getChannelValueBinary( "DOWN" ) ) {
+            forwardInput -= 1.0f;
+        }
+        if ( pKeyboard->getChannelValueBinary( "D" ) ||
+             pKeyboard->getChannelValueBinary( "RIGHT" ) ) {
+            strafeInput += 1.0f;
+        }
+        if ( pKeyboard->getChannelValueBinary( "A" ) ||
+             pKeyboard->getChannelValueBinary( "LEFT" ) ) {
+            strafeInput -= 1.0f;
+        }
+
+        bRunning = pKeyboard->getChannelValueBinary( "LEFT SHIFT" ) ||
+                   pKeyboard->getChannelValueBinary( "RIGHT SHIFT" );
+    }
+
     const float speed = bRunning ? runSpeed : walkSpeed;
 
     const Eigen::Vector3f forwardFlat( sinf( yaw ), 0.0f, -cosf( yaw ) );
@@ -126,21 +168,28 @@ bool CameraFirstPerson::tick( float /*deltaTime*/,
     const Eigen::Vector3f desiredVelocity = moveDirection * speed;
     Eigen::Vector4f eyePosition;
     if ( !bNoClip && pCharacterController != nullptr && gpPhysics != nullptr ) {
-        gpPhysics->updateCharacter( pCharacterController, desiredVelocity, dt );
+        if ( !bInputCaptured ) {
+            gpPhysics->updateCharacter( pCharacterController, desiredVelocity,
+                                        dt );
+        }
 
         // Cheap way to prevent OOB/falling under the map
         Eigen::Vector4f feet =
             gpPhysics->getCharacterPosition( pCharacterController );
-        if ( feet.y() < spawnPosition.y() - kFallResetDepth ) {
+        if ( !bInputCaptured &&
+             feet.y() < spawnPosition.y() - kFallResetDepth ) {
             gpPhysics->setCharacterPosition( pCharacterController,
                                              spawnPosition );
             feet = spawnPosition;
         }
 
         eyePosition = feet;
-    } else {
+    } else if ( !bInputCaptured ) {
         eyePosition = worldPosition;
         eyePosition.head<3>() += desiredVelocity * dt;
+        eyePosition.y() -= eyeHeight;
+    } else {
+        eyePosition = worldPosition;
         eyePosition.y() -= eyeHeight;
     }
 
