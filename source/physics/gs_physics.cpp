@@ -111,6 +111,114 @@ namespace {
         }
     };
 
+    class AsphaltNormalCollector final : public JPH::CollideShapeCollector {
+    public:
+        AsphaltNormalCollector( JPH::CollideShapeCollector &inChained,
+                                const JPH::Body &inBody1,
+                                const JPH::Body &inBody2,
+                                bool bInWorldIsBody2 )
+            : JPH::CollideShapeCollector( inChained ),
+              chained( inChained ),
+              body1( inBody1 ),
+              pWorld( bInWorldIsBody2 ? &inBody2 : &inBody1 ),
+              bWorldIsBody2( bInWorldIsBody2 ) {}
+
+        void Reset() override {
+            JPH::CollideShapeCollector::Reset();
+            chained.Reset();
+        }
+
+        void OnBody( const JPH::Body &inBody ) override {
+            chained.OnBody( inBody );
+        }
+
+        void AddHit( const JPH::CollideShapeResult &inResult ) override {
+            const JPH::SubShapeID &subShapeID = bWorldIsBody2
+                                                    ? inResult.mSubShapeID2
+                                                    : inResult.mSubShapeID1;
+            const JPH::Shape *pShape = pWorld->GetShape();
+            const uint32_t material =
+                ( pShape != nullptr )
+                    ? TDUPhysicsMaterials::codeOf(
+                          pShape->GetMaterial( subShapeID ) )
+                    : TDUMaterialValue::kDefault;
+            if ( material !=
+                 static_cast<uint32_t>( eMaterialType::MT_Asphalt ) ) {
+                forward( inResult );
+                return;
+            }
+
+            // Results are relative to body com
+            const JPH::Vec3 &pointOnWorld = bWorldIsBody2
+                                                ? inResult.mContactPointOn2
+                                                : inResult.mContactPointOn1;
+            const JPH::RVec3 worldPoint =
+                body1.GetCenterOfMassPosition() + pointOnWorld;
+            JPH::Vec3 normal =
+                pWorld->GetWorldSpaceSurfaceNormal( subShapeID, worldPoint );
+
+            constexpr float kFlattenCosine = 0.75f; // FUN_0041a0d0
+            if ( std::fabs( normal.GetY() ) < kFlattenCosine ) {
+                normal.SetY( 0.0f );
+            }
+            normal = normal.NormalizedOr( JPH::Vec3::sZero() );
+            if ( normal.IsNearZero() ) {
+                forward( inResult );
+                return;
+            }
+
+            JPH::CollideShapeResult result = inResult;
+            result.mPenetrationAxis =
+                ( bWorldIsBody2 ? -normal : normal ) *
+                inResult.mPenetrationAxis.Length();
+            forward( result );
+        }
+
+    private:
+        void forward( const JPH::CollideShapeResult &inResult ) {
+            chained.SetContext( GetContext() );
+            chained.AddHit( inResult );
+            UpdateEarlyOutFraction( chained.GetEarlyOutFraction() );
+        }
+
+        JPH::CollideShapeCollector &chained;
+        const JPH::Body &body1;
+        const JPH::Body *pWorld;
+        bool bWorldIsBody2;
+    };
+
+    // Only the world meshes carry the listener in the original
+    // (addCollisionListener, FUN_0047b390); everything else keeps Jolt's
+    // normals.
+    inline bool IsWorldMesh( const JPH::Body &inBody ) {
+        const uint32_t surface =
+            static_cast<uint32_t>( inBody.GetUserData() & TDUSurface::kClassMask );
+        return surface == TDUSurface::Paved || surface == TDUSurface::RoadMesh;
+    }
+
+    void TDUSimCollideBodyVsBody( const JPH::Body &inBody1,
+                                  const JPH::Body &inBody2,
+                                  JPH::Mat44Arg inCenterOfMassTransform1,
+                                  JPH::Mat44Arg inCenterOfMassTransform2,
+                                  JPH::CollideShapeSettings &ioSettings,
+                                  JPH::CollideShapeCollector &ioCollector,
+                                  const JPH::ShapeFilter &inShapeFilter ) {
+        const bool bWorld2 = IsWorldMesh( inBody2 );
+        if ( !bWorld2 && !IsWorldMesh( inBody1 ) ) {
+            JPH::PhysicsSystem::sDefaultSimCollideBodyVsBody(
+                inBody1, inBody2, inCenterOfMassTransform1,
+                inCenterOfMassTransform2, ioSettings, ioCollector,
+                inShapeFilter );
+            return;
+        }
+
+        AsphaltNormalCollector collector( ioCollector, inBody1, inBody2,
+                                          bWorld2 );
+        JPH::PhysicsSystem::sDefaultSimCollideBodyVsBody(
+            inBody1, inBody2, inCenterOfMassTransform1,
+            inCenterOfMassTransform2, ioSettings, collector, inShapeFilter );
+    }
+
     // Equivalent of hkCollisionListener used by the original game.
     class PhysicsFXContactListener : public JPH::ContactListener {
     public:
@@ -1529,10 +1637,28 @@ GSPhysics::createVehicle( PhysFactory *pFactory,
         }
         shapeResult = compound.Create();
     } else {
-        const JPH::Vec3 halfExtents( Max( 0.10f, halfW ), Max( 0.10f, halfH ),
-                                     Max( 0.10f, halfL ) );
-        JPH::BoxShapeSettings box( halfExtents, kConvexRadius );
-        shapeResult = box.Create();
+        const auto addBox = [&]( JPH::StaticCompoundShapeSettings &compound,
+                                 const JPH::Vec3 &coreHalfExtents,
+                                 const JPH::Vec3 &offset ) {
+            const JPH::Vec3 halfExtents(
+                Max( kConvexRadius, coreHalfExtents.GetX() + kConvexRadius ),
+                Max( kConvexRadius, coreHalfExtents.GetY() + kConvexRadius ),
+                Max( kConvexRadius, coreHalfExtents.GetZ() + kConvexRadius ) );
+            compound.AddShape(
+                offset, JPH::Quat::sIdentity(),
+                new JPH::BoxShapeSettings( halfExtents, kConvexRadius ) );
+        };
+
+        JPH::StaticCompoundShapeSettings hull;
+        addBox( hull, JPH::Vec3( halfW - 0.05f, halfH - 0.15f, halfL - 0.55f ),
+                JPH::Vec3( 0.0f, 0.10f, 0.0f ) );
+        addBox( hull, JPH::Vec3( halfW - 0.15f, 0.225f, 0.275f ),
+                JPH::Vec3( 0.0f, 0.375f - halfH, halfL - 0.375f ) );
+        addBox( hull, JPH::Vec3( halfW - 0.15f, 0.350f, 0.275f ),
+                JPH::Vec3( 0.0f, 0.500f - halfH, -( halfL - 0.375f ) ) );
+        addBox( hull, JPH::Vec3( halfW * 0.8f - 0.05f, 0.20f, halfL - 0.30f ),
+                JPH::Vec3( 0.0f, 0.25f - halfH, 0.0f ) );
+        shapeResult = hull.Create();
     }
     if ( !shapeResult.IsValid() ) {
         return nullptr;
@@ -1596,6 +1722,7 @@ GSPhysics::createVehicle( PhysFactory *pFactory,
     settings.mOverrideMassProperties =
         JPH::EOverrideMassProperties::MassAndInertiaProvided;
 
+    settings.mEnhancedInternalEdgeRemoval = true;
     settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     settings.mLinearDamping = 0.0f;
     settings.mAngularDamping = 0.05f;
@@ -3834,6 +3961,7 @@ void GSPhysics::initializeJolt() {
 
     pContactListener = new PhysicsFXContactListener();
     pPhysicsSystem->SetContactListener( pContactListener );
+    pPhysicsSystem->SetSimCollideBodyVsBody( &TDUSimCollideBodyVsBody );
 
     // Create world-reference body (equivalent of the Havok sphere at origin
     // stored in DAT_010e749c; used as a stable anchor in the physics world).
