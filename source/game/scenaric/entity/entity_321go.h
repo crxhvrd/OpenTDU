@@ -17,7 +17,7 @@ public:
 
 protected:
     uint32_t Field0;
-    uint32_t *pList;
-    uint8_t *pBlock1;
-    uint8_t *pBlock2;
+    uint32_t *pPathList;
+    uint8_t *pPathRef1;
+    uint8_t *pPathRef2;
 };

@@ -348,13 +348,13 @@ bool Entity::isPMIInTile( const SectorHeightmap *pHeightmap, int32_t tileKey ) {
     return PMITileIndex( col, row ) == tileKey;
 }
 
-void ResolveVolumeList( uint32_t *pList ) {
+void ResolvePathList( uint32_t *pList ) {
     // FUN_00425880
     uint64_t *pEntry = reinterpret_cast<uint64_t *>( pList + 1 );
     for ( int32_t remaining = static_cast<int32_t>( *pList ); remaining != 0;
           remaining-- ) {
-        Entity *pVolume = gpScenaric->getSCVolume( *pEntry );
-        *reinterpret_cast<Entity **>( pEntry ) = pVolume;
+        Path *pPath = gpScenaric->getSCPath( *pEntry );
+        *reinterpret_cast<Path **>( pEntry ) = pPath;
         pEntry++;
     }
 }
@@ -370,13 +370,6 @@ void ResolveEntityRefList( uint32_t *pList ) {
     }
 }
 
-void ResolveVolumeBlock( uint8_t *pBlock ) {
-    // FUN_00428e00
-    Entity *pVolume =
-        gpScenaric->getSCVolume( *reinterpret_cast<uint64_t *>( pBlock ) );
-    *reinterpret_cast<Entity **>( pBlock ) = pVolume;
-}
-
 void ResolveEntityRef( uint8_t *pBlock ) {
     // FUN_00425b90 lookup + a null hashcode resolves to nullptr.
     const uint64_t hashcode = *reinterpret_cast<uint64_t *>( pBlock );
@@ -386,9 +379,10 @@ void ResolveEntityRef( uint8_t *pBlock ) {
 }
 
 void ResolveVolumeBlock( uint8_t *pBlock, ScenaricBank *pBank ) {
-    // FUN_007da770
+    // FUN_007e9d60
     if ( pBank == nullptr ) {
-        ResolveVolumeBlock( pBlock );
+        *reinterpret_cast<Entity **>( pBlock ) =
+            gpScenaric->getSCVolume( *reinterpret_cast<uint64_t *>( pBlock ) );
         return;
     }
 
@@ -423,6 +417,33 @@ void ResolveEntityRef( uint8_t *pBlock, ScenaricBank *pBank ) {
         pEntity = gpScenaric->findEntityByHashcode( hashcode );
     }
     *reinterpret_cast<Entity **>( pBlock ) = pEntity;
+}
+
+void ResolvePathBlock( uint8_t *pBlock ) {
+    // FUN_00428e00
+    const uint64_t hashcode = *reinterpret_cast<uint64_t *>( pBlock );
+    Path *pPath = gpScenaric->getSCPath( hashcode );
+    *reinterpret_cast<Path **>( pBlock ) = pPath;
+}
+
+void ResolvePathBlock( uint8_t *pBlock, ScenaricBank *pBank ) {
+    // FUN_007da770
+    if ( pBank == nullptr ) {
+        ResolvePathBlock( pBlock );
+        return;
+    }
+
+    const uint64_t hashcode = *reinterpret_cast<uint64_t *>( pBlock );
+    if ( hashcode == 0 ) {
+        *reinterpret_cast<Path **>( pBlock ) = nullptr;
+        return;
+    }
+
+    Path *pPath = pBank->getPathByHashcode( hashcode );
+    if ( pPath == nullptr ) {
+        pPath = gpScenaric->getSCPath( hashcode );
+    }
+    *reinterpret_cast<Path **>( pBlock ) = pPath;
 }
 
 uint32_t ReadStreamU32( BinaryReader *pReader ) {

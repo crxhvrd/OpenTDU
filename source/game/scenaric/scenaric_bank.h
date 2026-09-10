@@ -44,6 +44,9 @@ public:
     inline Entity *getEntity( int32_t index ) const {
         return static_cast<Entity *>( entities.getElement( index ) );
     }
+    inline uint64_t getEntityHashcode( int32_t index ) const {
+        return entities.getHashcode( index );
+    }
     inline bool isLoaded() const { return state == BBS_Loaded; }
     inline eBankState getState() const { return state; }
     inline BankInstance &getBank() { return bank; }

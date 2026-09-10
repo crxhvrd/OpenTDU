@@ -150,6 +150,7 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/game/gm_base.cpp"
                     "${OTDU_SRC_FOLDER}/game/gm_scene.cpp"
                     "${OTDU_SRC_FOLDER}/game/gm_world.cpp"
+                    "${OTDU_SRC_FOLDER}/game/boat_tour/gm_boat_tour.cpp"
                     "${OTDU_SRC_FOLDER}/game/cinviewer/gm_cin_viewer.cpp"
                     "${OTDU_SRC_FOLDER}/game/cinviewer/flash_list_cin_viewer.cpp"
                     "${OTDU_SRC_FOLDER}/game/mng_flash_gm.cpp"
@@ -611,6 +612,7 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/game/gm_base.h"
                     "${OTDU_SRC_FOLDER}/game/gm_scene.h"
                     "${OTDU_SRC_FOLDER}/game/gm_world.h"
+                    "${OTDU_SRC_FOLDER}/game/boat_tour/gm_boat_tour.h"
                     "${OTDU_SRC_FOLDER}/game/cinviewer/gm_cin_viewer.h"
                     "${OTDU_SRC_FOLDER}/game/cinviewer/flash_list_cin_viewer.h"
                     "${OTDU_SRC_FOLDER}/game/mng_flash_gm.h"
@@ -1042,6 +1044,15 @@ add_custom_command(
             "${OTDU_RSC_FOLDER}/dbg_font_courier.2db"
             "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/dbg_font_courier.2db"
     COMMENT "Copying debug font atlas 2DB to bin output..."
+)
+
+add_custom_command(
+    TARGET opentdu
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${OTDU_RSC_FOLDER}/boattour.bnk"
+            "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/boattour.bnk"
+    COMMENT "Copying BOPA boattour bank..."
 )
 
 add_custom_command(

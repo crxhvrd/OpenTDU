@@ -41,8 +41,8 @@ std::vector<uint64_t> gRemovedSpots; // DAT_010dfe08 / DAT_010e7d24
 bool gbWooshEnabled = false;         // DAT_010e7c30
 bool gbDisplayWooshDebug = true;     // gDisplayWooshDebug
 
-static bool BOOL_010e7c40 = false; // DAT_010e7c40
-static int32_t DAT_010e7c3c = 0;   // DAT_010e7c3c
+static bool BOOL_010e7c40 = false;  // DAT_010e7c40
+static int32_t DAT_010e7c3c = 0;    // DAT_010e7c3c
 static int32_t gDemoVideoIndex = 0; // DAT_010e7c34
 
 static constexpr float kWooshSpeedToKmh = 3.6f; // DAT_00f41768
@@ -599,8 +599,8 @@ void GSScenaric::setDemoTimer( float param_1 ) { demoTimer = param_1; }
 
 void GSScenaric::startDemoMode() {
     // FUN_008037e0
-    static constexpr const char *kDemoVideoNames[2] = { "Trailer.bik",
-                                                        "IntroTDU.bik" }; // DAT_00f8b060
+    static constexpr const char *kDemoVideoNames[2] = {
+        "Trailer.bik", "IntroTDU.bik" }; // DAT_00f8b060
 
     bDemoMode = true;
     demoTimeEnd = 0u;
@@ -792,6 +792,27 @@ Entity *GSScenaric::getSCVolume( uint64_t hashcode ) const {
         getWorldScenaricBank(), "SCVolume", hashcode,
         [hashcode]( ScenaricBank *pBank ) {
             return pBank->getVolumeByHashcode( hashcode );
+        } );
+}
+
+Path *GSScenaric::getSCPath( uint64_t hashcode ) const {
+    // FUN_00428e00
+    if ( hashcode == 0 ) {
+        return nullptr;
+    }
+    for ( ScenaricBank *pBank : registeredBanks ) {
+        if ( pBank == nullptr ) {
+            continue;
+        }
+        Path *pPath = pBank->getPathByHashcode( hashcode );
+        if ( pPath != nullptr ) {
+            return pPath;
+        }
+    }
+    return FindInUnregisteredWorldBank(
+        getWorldScenaricBank(), "SCPath", hashcode,
+        [hashcode]( ScenaricBank *pBank ) {
+            return pBank->getPathByHashcode( hashcode );
         } );
 }
 

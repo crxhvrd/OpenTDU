@@ -6,7 +6,7 @@
 
 EntityShopData::EntityShopData()
     : Entity(),
-      pVolumeRef( nullptr ),
+      pPathRef( nullptr ),
       pEntityRef( nullptr ),
       pEntityRefList( nullptr ) {
     // FUN_00424150
@@ -22,14 +22,14 @@ void EntityShopData::loadResources( ScenaricBank *param_2 ) {
 
     ResolveEntityRefList( pEntityRefList );
     ResolveEntityRef( pEntityRef );
-    ResolveVolumeBlock( pVolumeRef );
+    ResolvePathBlock( pPathRef );
 }
 
 void EntityShopData::deserialize( BinaryReader *param_2 ) {
     // FUN_007ea640
     Entity::deserialize( param_2 );
 
-    pVolumeRef = param_2->pCursor;
+    pPathRef = param_2->pCursor;
     param_2->pCursor += 8;
 
     pEntityRef = param_2->pCursor;
@@ -47,7 +47,7 @@ void EntityShopData::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     Entity::instanciate( pMngActor, param_1 );
 
     EntityShopData *pInstance = static_cast<EntityShopData *>( param_1 );
-    pInstance->pVolumeRef = pVolumeRef;
+    pInstance->pPathRef = pPathRef;
     pInstance->pEntityRef = pEntityRef;
     pInstance->pEntityRefList = pEntityRefList;
 }

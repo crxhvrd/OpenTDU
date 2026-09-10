@@ -18,7 +18,7 @@ protected:
     static constexpr int32_t kNumEntityRefs = 10;
 
 protected:
-    uint8_t *pVolumeRef;
+    uint8_t *pPathRef;
     uint8_t *pEntityRefs[kNumEntityRefs];
     uint8_t *pZoneVolumeRef;
     uint8_t *pLateEntityRef;

@@ -28,6 +28,20 @@ protected:
 
 class Path {
 public:
+    inline uint32_t getNumWaypoints() const {
+        return pArray0 != nullptr
+                   ? *reinterpret_cast<const uint32_t *>( pArray0 )
+                   : 0u;
+    }
+    inline const float *getWaypoint( uint32_t index ) const {
+        if ( pArray0 == nullptr || index >= getNumWaypoints() ) {
+            return nullptr;
+        }
+        return reinterpret_cast<const float *>(
+            static_cast<const uint8_t *>( pArray0 ) + 4 + index * 0x20 );
+    }
+
+public:
     uint32_t field_0x4 = 0;  // +0x04
     uint32_t field_0x8 = 0;  // +0x08
     uint32_t field_0xc = 0;  // +0x0c

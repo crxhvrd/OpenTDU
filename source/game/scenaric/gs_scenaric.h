@@ -153,6 +153,7 @@ public:
     SoundBinary *getSCTDSound( uint64_t hashcode ) const;
     void *findWavData( uint64_t hashcode, int32_t *pOutSize = nullptr ) const;
     Entity *getSCVolume( uint64_t hashcode ) const;
+    Path *getSCPath( uint64_t hashcode ) const;
     void registerBank( ScenaricBank *pBank );
     void unregisterBank( ScenaricBank *pBank );
     void unloadBank( ScenaricBank *pBank );

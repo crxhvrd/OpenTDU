@@ -11,6 +11,9 @@ static constexpr float kQuadratureWeights[kNumQuadraturePoints] = {
     0.11846344f, 0.23931434f, 0.28444445f, 0.23931434f,
     0.11846344f }; // DAT_00f9c0e0
 
+static constexpr float kArcLengthEpsilon = 1.0e-6f; // FLOAT_00f41888
+static constexpr int32_t kMaxArcLengthIterations = 0x20;
+
 static Eigen::Vector4f
 EvaluatePolygon( const TCBSplinePolygon<Eigen::Vector4f> &polygon,
                  const float t ) {
@@ -27,16 +30,18 @@ EvaluatePolygonDerivative( const TCBSplinePolygon<Eigen::Vector4f> &polygon,
            ( polygon.K[2] * kTwo + polygon.K[3] * ( kThree * t ) ) * t;
 }
 
+// Arc length of the polygon over [0; tMax].
 static float
-ComputePolygonLength( const TCBSplinePolygon<Eigen::Vector4f> &polygon ) {
+ComputePolygonLength( const TCBSplinePolygon<Eigen::Vector4f> &polygon,
+                      const float tMax = kOne ) {
     // FUN_006d9320
     float length = 0.0f;
     for ( int32_t i = 0; i < kNumQuadraturePoints; i++ ) {
         const Eigen::Vector4f derivative =
-            EvaluatePolygonDerivative( polygon, kQuadratureNodes[i] );
+            EvaluatePolygonDerivative( polygon, kQuadratureNodes[i] * tMax );
         length += kQuadratureWeights[i] * derivative.norm();
     }
-    return length;
+    return length * tMax;
 }
 
 template <typename T>
@@ -187,6 +192,65 @@ Eigen::Vector4f TCBSplinePosition::evaluate( float time ) const {
     const TCBSplinePolygon<Eigen::Vector4f> *pPolygon =
         findPolygon( time, &polygonTime );
     return EvaluatePolygon( *pPolygon, polygonTime );
+}
+
+Eigen::Vector4f TCBSplinePosition::evaluatePolygon( int32_t polygonIndex,
+                                                    float t ) const {
+    return EvaluatePolygon( pPolygons[polygonIndex], t );
+}
+
+Eigen::Vector4f
+TCBSplinePosition::evaluatePolygonDerivative( int32_t polygonIndex,
+                                              float t ) const {
+    return EvaluatePolygonDerivative( pPolygons[polygonIndex], t );
+}
+
+void TCBSplinePosition::positionAL( float distance,
+                                    int32_t *pOutPolygonIndex,
+                                    float *pOutPolygonTime ) const {
+    // FUN_006d93a0
+    if ( distance <= 0.0f ) {
+        *pOutPolygonIndex = 0;
+        *pOutPolygonTime = 0.0f;
+        return;
+    }
+
+    if ( TotalLength <= distance ) {
+        *pOutPolygonIndex = NumPolys - 1;
+        *pOutPolygonTime = kOne;
+        return;
+    }
+
+    int32_t index = 0;
+    while ( index < NumPolys && pLengths[index + 1] < distance ) {
+        index++;
+    }
+
+    if ( index >= NumPolys ) {
+        *pOutPolygonIndex = NumPolys - 1;
+        *pOutPolygonTime = kOne;
+        return;
+    }
+
+    const float segmentTarget = distance - pLengths[index];
+    const float segmentLength = pLengths[index + 1] - pLengths[index];
+    float polygonTime = segmentTarget / segmentLength;
+
+    for ( int32_t i = 0; i < kMaxArcLengthIterations; i++ ) {
+        const float error =
+            ComputePolygonLength( pPolygons[index], polygonTime ) -
+            segmentTarget;
+        if ( std::fabs( error ) <= kArcLengthEpsilon ) {
+            break;
+        }
+
+        const float speed =
+            EvaluatePolygonDerivative( pPolygons[index], polygonTime ).norm();
+        polygonTime -= error / speed;
+    }
+
+    *pOutPolygonIndex = index;
+    *pOutPolygonTime = polygonTime;
 }
 
 void TCBSplineRotation::initialize( uint32_t param_1 ) {

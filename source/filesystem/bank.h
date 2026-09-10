@@ -14,7 +14,8 @@ enum eAssetGroup : int32_t {
     AG_Common = 0xe,  // */common_*.bnk
     AG_FX = 0xf,      // EURO/BNK/FX
     AG_Panel = 0x12,  // in-world text-sign (panel) symbol + layout streams
-    AG_Detail = 0x14, // EURO/BNK/Details (TDUDetail banks: RoadPatch, Birds, ...)
+    AG_Detail =
+        0x14, // EURO/BNK/Details (TDUDetail banks: RoadPatch, Birds, ...)
 };
 
 enum eAssetType : int32_t {
@@ -29,6 +30,8 @@ enum eAssetType : int32_t {
     AT_OceanBitmaps = 0xf,
     AT_PostFXBitmaps = 0xf,
 };
+
+uint32_t CaclulateBankCRC( const uint8_t *pBankMemory, uint32_t numBytes );
 
 struct Timestamp {
     int32_t Years;

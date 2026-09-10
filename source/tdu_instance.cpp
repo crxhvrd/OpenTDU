@@ -74,6 +74,7 @@
 #include "game/freeride/gm_freeride.h"
 #include "game/sandbox/gm_sandbox.h"
 #include "game/cinviewer/gm_cin_viewer.h"
+#include "game/boat_tour/gm_boat_tour.h"
 #include "game/login/gm_login.h"
 #include "game/living/gm_living.h"
 #include "game/scene_interior.h"
@@ -179,6 +180,10 @@ static CmdLineArg CmdLineFreeRide( "freeride", []( const char *pArg ) {
 
 static CmdLineArg CmdLineLogin( "login", []( const char *pArg ) {
     gGameModeOverride = GM_Login;
+} );
+
+static CmdLineArg CmdLineBoatTour( "boattour", []( const char *pArg ) {
+    gGameModeOverride = GM_BoatTour;
 } );
 
 static char gLogFilePath[OTDU_MAX_PATH] = "opentdu.log";
@@ -483,6 +488,11 @@ void TestDriveGameInstance::mainLoop() {
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMCinViewer ),
                                                       alignof( GMCinViewer ) );
             pGVar6 = new ( pGameModeAlloc ) GMCinViewer();
+            break;
+        case GM_BoatTour:
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMBoatTour ),
+                                                      alignof( GMBoatTour ) );
+            pGVar6 = new ( pGameModeAlloc ) GMBoatTour();
             break;
         case GM_Living:
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLiving ),

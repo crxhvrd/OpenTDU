@@ -16,7 +16,7 @@ public:
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
 
 protected:
-    uint8_t *pVolumeRef;
+    uint8_t *pPathRef;
     uint8_t *pEntityRef;
     uint32_t *pEntityRefList;
 };

@@ -7,9 +7,9 @@
 Entity321Go::Entity321Go()
     : Entity(),
       Field0( 0 ),
-      pList( nullptr ),
-      pBlock1( nullptr ),
-      pBlock2( nullptr ) {
+      pPathList( nullptr ),
+      pPathRef1( nullptr ),
+      pPathRef2( nullptr ) {
     // FUN_009da130
 }
 
@@ -21,9 +21,9 @@ void Entity321Go::loadResources( ScenaricBank *param_2 ) {
     // FUN_009d3cd0
     (void)param_2;
 
-    ResolveVolumeList( pList );
-    ResolveVolumeBlock( pBlock1 );
-    ResolveVolumeBlock( pBlock2 );
+    ResolvePathList( pPathList );
+    ResolvePathBlock( pPathRef1 );
+    ResolvePathBlock( pPathRef2 );
 }
 
 void Entity321Go::deserialize( BinaryReader *param_2 ) {
@@ -33,16 +33,16 @@ void Entity321Go::deserialize( BinaryReader *param_2 ) {
     Field0 = *reinterpret_cast<uint32_t *>( param_2->pCursor );
     param_2->pCursor += sizeof( uint32_t );
 
-    pList = reinterpret_cast<uint32_t *>( param_2->pCursor );
+    pPathList = reinterpret_cast<uint32_t *>( param_2->pCursor );
     param_2->pCursor += sizeof( uint32_t );
-    if ( *pList != 0 ) {
-        param_2->pCursor += *pList * 8;
+    if ( *pPathList != 0 ) {
+        param_2->pCursor += *pPathList * 8;
     }
 
-    pBlock1 = param_2->pCursor;
+    pPathRef1 = param_2->pCursor;
     param_2->pCursor += 8;
 
-    pBlock2 = param_2->pCursor;
+    pPathRef2 = param_2->pCursor;
     param_2->pCursor += 8;
 }
 
@@ -52,7 +52,7 @@ void Entity321Go::instanciate( MngActor *pMngActor, Entity *param_1 ) {
 
     Entity321Go *pInstance = static_cast<Entity321Go *>( param_1 );
     pInstance->Field0 = Field0;
-    pInstance->pList = pList;
-    pInstance->pBlock1 = pBlock1;
-    pInstance->pBlock2 = pBlock2;
+    pInstance->pPathList = pPathList;
+    pInstance->pPathRef1 = pPathRef1;
+    pInstance->pPathRef2 = pPathRef2;
 }

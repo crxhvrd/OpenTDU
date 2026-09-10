@@ -18,6 +18,9 @@ public:
     inline bool hasRenderInstance() const {
         return pObjectInCommonRenderInstance != nullptr;
     }
+    inline bool hasInstanceDefChunk() const {
+        return pObjectInCommonInstanceDefChunk != nullptr;
+    }
     inline void setRenderEcume( bool bEnabled ) { bMustRenderEcume = bEnabled; }
     inline const edAudioSample *getHornSample() const { return pHornSample; }
 

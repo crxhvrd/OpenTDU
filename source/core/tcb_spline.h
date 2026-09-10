@@ -45,6 +45,13 @@ struct TCBSplinePosition {
     const TCBSplinePolygon<Eigen::Vector4f> *
     findPolygon( float time, float *pPolygonTime ) const;
     Eigen::Vector4f evaluate( float time ) const;
+    void positionAL( float distance,
+                     int32_t *pOutPolygonIndex,
+                     float *pOutPolygonTime ) const;
+
+    Eigen::Vector4f evaluatePolygon( int32_t polygonIndex, float t ) const;
+    Eigen::Vector4f evaluatePolygonDerivative( int32_t polygonIndex,
+                                               float t ) const;
 };
 
 struct TCBSplineRotation {

@@ -8,7 +8,7 @@ EntityHouseData::EntityHouseData()
     : Entity(),
       pEntityRef0( nullptr ),
       pEntityRef1( nullptr ),
-      pVolumeList( nullptr ) {
+      pPathList( nullptr ) {
     // FUN_00424180
 }
 
@@ -22,7 +22,7 @@ void EntityHouseData::loadResources( ScenaricBank *param_2 ) {
 
     ResolveEntityRef( pEntityRef0 );
     ResolveEntityRef( pEntityRef1 );
-    ResolveVolumeList( pVolumeList );
+    ResolvePathList( pPathList );
 }
 
 void EntityHouseData::deserialize( BinaryReader *param_2 ) {
@@ -35,9 +35,9 @@ void EntityHouseData::deserialize( BinaryReader *param_2 ) {
     pEntityRef1 = param_2->pCursor;
     param_2->pCursor += 8;
 
-    pVolumeList = reinterpret_cast<uint32_t *>( param_2->pCursor );
+    pPathList = reinterpret_cast<uint32_t *>( param_2->pCursor );
     param_2->pCursor += sizeof( uint32_t );
-    if ( *pVolumeList != 0 ) {
-        param_2->pCursor += *pVolumeList * 8;
+    if ( *pPathList != 0 ) {
+        param_2->pCursor += *pPathList * 8;
     }
 }

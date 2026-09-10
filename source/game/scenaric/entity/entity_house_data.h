@@ -17,5 +17,5 @@ public:
 protected:
     uint8_t *pEntityRef0;
     uint8_t *pEntityRef1;
-    uint32_t *pVolumeList;
+    uint32_t *pPathList;
 };

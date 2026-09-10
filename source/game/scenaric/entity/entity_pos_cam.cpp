@@ -6,7 +6,7 @@
 
 EntityPosCam::EntityPosCam()
     : Entity(),
-      pVolumeRef( nullptr ),
+      pPathRef( nullptr ),
       pEntityRefs{},
       pZoneVolumeRef( nullptr ),
       pLateEntityRef( nullptr ) {
@@ -29,7 +29,7 @@ void EntityPosCam::loadResources( ScenaricBank *param_2 ) {
         ResolveEntityRef( pLateEntityRef, param_2 );
     }
 
-    ResolveVolumeBlock( pVolumeRef, param_2 );
+    ResolvePathBlock( pPathRef, param_2 );
     ResolveVolumeBlock( pZoneVolumeRef, param_2 );
 }
 
@@ -39,7 +39,7 @@ void EntityPosCam::deserialize( BinaryReader *param_2 ) {
 
     const uint32_t version = gpScenaric->getVersion();
 
-    pVolumeRef = ReadStreamRef( param_2 );
+    pPathRef = ReadStreamRef( param_2 );
     pEntityRefs[0] = ReadStreamRef( param_2 );
 
     if ( version >= 0x0b ) {
@@ -78,7 +78,7 @@ void EntityPosCam::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     Entity::instanciate( pMngActor, param_1 );
 
     EntityPosCam *pTarget = static_cast<EntityPosCam *>( param_1 );
-    pTarget->pVolumeRef = pVolumeRef;
+    pTarget->pPathRef = pPathRef;
     for ( int32_t i = 0; i < kNumEntityRefs; i++ ) {
         pTarget->pEntityRefs[i] = pEntityRefs[i];
     }

@@ -2,14 +2,15 @@
 #include "entity_boat_tour.h"
 
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/bank_scene_arrays.h"
 #include "filesystem/binary.h"
 
 EntityBoatTour::EntityBoatTour()
     : Entity(),
       pPathRef( nullptr ),
-      pVolumeRef1( nullptr ),
-      pVolumeRef2( nullptr ),
-      Field0( 0 ) {
+      pBoatRef( nullptr ),
+      pCameraRef( nullptr ),
+      TourType( 0 ) {
     // FUN_004242c0
 }
 
@@ -22,32 +23,41 @@ EntityBoatTour::~EntityBoatTour() {
     }
 }
 
-static void ResolveVolumeReference( uint8_t *pReference ) {
-    if ( pReference == nullptr ) {
+void EntityBoatTour::loadResources( ScenaricBank *param_2 ) {
+    // FUN_007dbe10
+    ResolvePathBlock( pPathRef, param_2 );
+    ResolveEntityRef( pBoatRef, param_2 );
+    ResolveEntityRef( pCameraRef, param_2 );
+    bReferencesResolved = true;
+
+    const Path *pPath = pPathRef != nullptr
+                            ? *reinterpret_cast<const Path **>( pPathRef )
+                            : nullptr;
+    if ( pPath == nullptr ) {
         return;
     }
 
-    const uint64_t hashcode = *reinterpret_cast<uint64_t *>( pReference );
-    Entity *pVolume = ( hashcode != 0 && gpScenaric != nullptr )
-                          ? gpScenaric->getSCVolume( hashcode )
-                          : nullptr;
-    *reinterpret_cast<Entity **>( pReference ) = pVolume;
-}
-
-void EntityBoatTour::loadResources( ScenaricBank *param_2 ) {
-    // FUN_007dbe10
-    (void)param_2;
-
-    ResolveVolumeReference( pPathRef );
-    ResolveVolumeReference( pVolumeRef1 );
-    ResolveVolumeReference( pVolumeRef2 );
-
-    Entity *pPathVolume = pPathRef != nullptr
-                              ? *reinterpret_cast<Entity **>( pPathRef )
-                              : nullptr;
-    if ( pPathVolume != nullptr ) {
-        OTDU_UNIMPLEMENTED;
+    const uint32_t numWaypoints = pPath->getNumWaypoints();
+    if ( numWaypoints < 2 ) {
+        return;
     }
+
+    Spline.initialize( numWaypoints );
+    Spline.NumKeys = numWaypoints;
+
+    for ( uint32_t i = 0; i < numWaypoints; i++ ) {
+        const float *pWaypoint = pPath->getWaypoint( i );
+
+        TCBKeyPos &key = Spline.pKeys[i];
+        key.Position = pWaypoint[0];
+        key.Vec4 =
+            Eigen::Vector4f( pWaypoint[1], pWaypoint[2], pWaypoint[3], kOne );
+        key.T = pWaypoint[5];
+        key.C = pWaypoint[6];
+        key.B = pWaypoint[7];
+    }
+
+    Spline.compute();
 }
 
 void EntityBoatTour::unloadResources() {
@@ -65,12 +75,12 @@ void EntityBoatTour::deserialize( BinaryReader *param_2 ) {
     pPathRef = param_2->pCursor;
     param_2->pCursor += sizeof( uint64_t );
 
-    pVolumeRef1 = param_2->pCursor;
+    pBoatRef = param_2->pCursor;
     param_2->pCursor += sizeof( uint64_t );
 
-    pVolumeRef2 = param_2->pCursor;
+    pCameraRef = param_2->pCursor;
     param_2->pCursor += sizeof( uint64_t );
 
-    Field0 = *reinterpret_cast<uint32_t *>( param_2->pCursor );
+    TourType = *reinterpret_cast<uint32_t *>( param_2->pCursor );
     param_2->pCursor += sizeof( uint32_t );
 }
