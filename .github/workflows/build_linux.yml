@@ -43,10 +43,11 @@ jobs:
         version: 1.4.309.0
         cache: true
 
-    - name: Install X11 and libudev dependencies
+    - name: Install X11, audio and libudev dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libudev-dev xorg-dev libx11-dev libxrandr-dev libxi-dev libglu1-mesa-dev
+        sudo apt-get install -y libudev-dev xorg-dev libx11-dev libxrandr-dev libxi-dev libglu1-mesa-dev \
+                                libasound2-dev libpulse-dev libpipewire-0.3-dev
 
     - name: Build
       run: >
