@@ -4,6 +4,8 @@
 
 class PhysicsCharacter;
 
+bool IsFirstPersonInputCaptured();
+
 class CameraFirstPerson : public CameraGame {
 public:
     static constexpr int32_t kCameraType = 0x100;

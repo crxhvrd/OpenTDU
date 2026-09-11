@@ -401,8 +401,16 @@ void FirstPersonMode::tick( SceneInterior *pScene,
     const bool bTogglePressed = bToggleDown && !bToggleKeyDown;
     bToggleKeyDown = bToggleDown;
 
+    const bool bInputCaptured = IsFirstPersonInputCaptured();
     if ( bActive ) {
-        pointer.draw();
+        gEdSys.setRelativeMouseMode( !bInputCaptured );
+        if ( !bInputCaptured ) {
+            pointer.draw();
+        }
+    }
+
+    if ( bInputCaptured ) {
+        return;
     }
 
     if ( !bTogglePressed ) {
