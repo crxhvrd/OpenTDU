@@ -9,7 +9,7 @@ The goal of this project is to create a new client fixing various issues encount
 
 **This project is not a replacement for the game (you still need to own a legal copy); and does not provide any game assets!**
 
-<img src="/screenshots/carshowcase_ccr.jpeg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/worldviewer_1.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/worldviewer_3.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/gmeter.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/login.jpg" alt="Alt Text" width="256" height="144"> 
+<img src="/screenshots/carshowcase_exige.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/worldviewer_3.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/gmeter.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/login.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/cinviewer.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/boattour.jpg" alt="Alt Text" width="256" height="144"> 
 
 Regular updates/screenshots can be found in this [thread](https://github.com/opentestdriveunlimited/OpenTestDriveUnlimited/discussions/175).
 
@@ -59,6 +59,9 @@ Progress is tracked on a game mode basis:
 | CarShowCase|**Done**|
 | Sandbox|**Done**|
 | Login|**Done**|
+| CinViewer|**Done**|
+| BoatTour|**Done**|
 | Living|**In Progress**|
+| Garage|**In Progress**|
+| Dressing|**In Progress**|
 | FreeRide|**In Progress**|
-| CinViewer|**In Progress**|
