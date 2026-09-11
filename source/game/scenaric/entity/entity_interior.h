@@ -8,5 +8,7 @@ public:
     EntityInterior();
     ~EntityInterior();
 
-    void tick() override;
+    void tick( PlayerGameMech *pGameMech,
+               float deltaTime,
+               float totalTime ) override;
 };

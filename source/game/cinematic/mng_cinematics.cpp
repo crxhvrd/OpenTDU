@@ -104,7 +104,7 @@ bool MngCinematics::initialize( TestDriveGameInstance * ) {
     return true;
 }
 
-void MngCinematics::tick( float, float ) {
+void MngCinematics::tick( float deltaTime, float totalTime ) {
     // FUN_006de720
     PlayerConfiguration *pPlayerConfig =
         ( gpConfig != nullptr ) ? gpConfig->pPlayerConfig : nullptr;
@@ -146,7 +146,7 @@ void MngCinematics::tick( float, float ) {
 
     for ( EntityCinematic *pCinematic : pCinematics ) {
         if ( pCinematic != nullptr ) {
-            pCinematic->tick();
+            pCinematic->tick( nullptr, deltaTime, totalTime );
         }
     }
 }

@@ -34,10 +34,10 @@ MngActor::~MngActor() {
     // FUN_006deac0
 }
 
-void MngActor::tick( float, float ) {
+void MngActor::tick( float deltaTime, float totalTime ) {
     // FUN_006de8b0
     for ( int32_t i = 0; i < numActors; i++ ) {
-        pActors[i]->tick();
+        pActors[i]->tick( pGameMech, deltaTime, totalTime );
     }
 }
 

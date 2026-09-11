@@ -100,7 +100,7 @@ void EntityBoat::unloadResources() {
     Ecume3DModel.uninstanciate();
 }
 
-void EntityBoat::tick() {
+void EntityBoat::tick( PlayerGameMech *, float, float ) {
     // FUN_007eabe0
 }
 

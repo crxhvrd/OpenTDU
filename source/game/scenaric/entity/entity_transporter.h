@@ -12,6 +12,10 @@ public:
 
     void loadResources( ScenaricBank *param_2 ) override;
     void deserialize( BinaryReader *param_2 ) override;
+    Eigen::Vector4f getSpotMeshPosition() const override;
+
+private:
+    static constexpr float kSpotMeshForwardOffset = 2.0f; // DAT_00f416b0
 
 private:
     const char *pMapName;

@@ -50,9 +50,11 @@ void EntityAircraftMaterials::unloadResources() {
     Entity::unloadResources();
 }
 
-void EntityAircraftMaterials::tick() {
+void EntityAircraftMaterials::tick( PlayerGameMech *pGameMech,
+                                    float deltaTime,
+                                    float totalTime ) {
     // FUN_009c6eb0
-    Entity::tick();
+    Entity::tick( pGameMech, deltaTime, totalTime );
 }
 
 void EntityAircraftMaterials::deserialize( BinaryReader *param_2 ) {

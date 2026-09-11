@@ -153,9 +153,11 @@ void EntitySoundEmitter::unloadResources() {
     pSample = nullptr;
 }
 
-void EntitySoundEmitter::tick() {
+void EntitySoundEmitter::tick( PlayerGameMech *pGameMech,
+                               float deltaTime,
+                               float totalTime ) {
     // FUN_007e01c0
-    Entity::tick();
+    Entity::tick( pGameMech, deltaTime, totalTime );
 
     if ( pSoundInstance == nullptr || pSoundInstance->isStopped() ) {
         return;

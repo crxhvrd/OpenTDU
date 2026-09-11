@@ -18,7 +18,9 @@ public:
 
     void initialize() override;
     void unloadResources() override;
-    void tick() override;
+    void tick( PlayerGameMech *pGameMech,
+               float deltaTime,
+               float totalTime ) override;
     void deserialize( BinaryReader *param_2 ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
 

@@ -11,7 +11,9 @@ EntityInterior::~EntityInterior() {
     // FUN_00424120
 }
 
-void EntityInterior::tick() {
+void EntityInterior::tick( PlayerGameMech *pGameMech,
+                           float deltaTime,
+                           float totalTime ) {
     // FUN_007e9b90
     if ( gpActiveGM != nullptr && gpActiveGM->isPaused() ) {
         flags |= 1;
@@ -19,5 +21,5 @@ void EntityInterior::tick() {
         flags &= ~1u;
     }
 
-    EntityActor::tick();
+    EntityActor::tick( pGameMech, deltaTime, totalTime );
 }

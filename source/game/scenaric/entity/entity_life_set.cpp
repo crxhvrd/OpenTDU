@@ -115,7 +115,7 @@ void EntityLifeSet::loadResources( ScenaricBank *pBank ) {
     bank.prepare( pBank );
 }
 
-void EntityLifeSet::tick() {
+void EntityLifeSet::tick( PlayerGameMech *, float, float ) {
     // FUN_007de810
     if ( bLoaded && !bPlaying ) {
         if ( gpMngLifeSet != nullptr ) {

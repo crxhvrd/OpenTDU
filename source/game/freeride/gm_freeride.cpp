@@ -12,10 +12,13 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_extra_challenge.h"
+#include "game/scenaric/entity/entity_spot_mesh.h"
+#include "game/scenaric/game_intro_tutorial.h"
 #include "game/scenaric/local_player.h"
 #include "game/scenaric/spots.h"
 #include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
+#include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_base.h"
 #include "flash/mng_fade.h"
 #include "flash/implementation/flash_player.h"
@@ -28,6 +31,7 @@
 #include "player_data/achievements_data.h"
 #include "render/camera/gs_camera.h"
 #include "world/gs_world.h"
+#include "world/gs_world_streaming.h"
 #include "physics/vehicle/physics_vehicle.h"
 
 static constexpr uint64_t kRewardBikeDealership = 0x5f2d20ull;
@@ -57,7 +61,11 @@ GMFreeride::GMFreeride()
       bIntroLevelLaunched( false ),
       bIntroCineDone( false ),
       pExtraChallenges{},
-      numExtraChallenges( 0 ) {
+      numExtraChallenges( 0 ),
+      extraChallengeKind( -1 ),
+      extraChallengeProp{ nullptr },
+      pNearestExtraChallenge( nullptr ),
+      pExtraChallengeMarker( nullptr ) {
     // FUN_00793880
     if ( gpMngMapScreenshot == nullptr ) {
         gpMngMapScreenshot = &mngMapScreenshot;
@@ -237,6 +245,10 @@ void GMFreeride::tick( float deltaTime, float totalTime ) {
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (pending spot warp / spot cine
                              // launch) / CAMERA (map return) / MngFade
+
+    if ( !gpScenaric->getIntroTutorial().isActive() ) {
+        updateNearestExtraChallenge();
+    }
 }
 
 void GMFreeride::draw( float /*deltaTime*/, float /*totalTime*/ ) {
@@ -489,6 +501,13 @@ void GMFreeride::pause() {
         gpTutorial->bEnabled = false;
     }
 
+    releaseExtraChallengeProp();
+
+    if ( pExtraChallengeMarker != nullptr ) {
+        MngActor::Uninstanciate( &mngActor, pExtraChallengeMarker );
+        pExtraChallengeMarker = nullptr;
+    }
+
     GameModeWorld::pause();
 }
 
@@ -594,10 +613,7 @@ void GMFreeride::gatherExtraChallenges() {
             continue;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA — that per-challenge state
-                                 // array is not ported.
-
-        if ( !gbSimuModeEnabled ) {
+        if ( static_cast<EntityExtraChallenge *>( pEntity )->isAvailable() ) {
             mngActor.registerActor( pEntity );
         }
 
@@ -606,6 +622,178 @@ void GMFreeride::gatherExtraChallenges() {
             numExtraChallenges++;
         }
     }
+}
+
+static bool IsMapScreenshotCapturing() {
+    return gpMngMapScreenshot != nullptr && gpMngMapScreenshot->isCapturing();
+}
+
+void GMFreeride::updateNearestExtraChallenge() {
+    // FUN_007956d0
+    const CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr ) {
+        return;
+    }
+
+    const Eigen::Vector4f carPosition =
+        pLocalCar->getBody()->WorldMatrix.row( 3 );
+    const float streamSize = gpWorldStreaming->getSize();
+    float nearestDistanceSq = streamSize * streamSize;
+    EntityExtraChallenge *pNearest = nullptr;
+
+    for ( int32_t i = 0; i < numExtraChallenges; i++ ) {
+        EntityExtraChallenge *pChallenge =
+            static_cast<EntityExtraChallenge *>( pExtraChallenges[i] );
+        if ( !pChallenge->isAvailable() && !IsMapScreenshotCapturing() ) {
+            continue;
+        }
+
+        const Eigen::Vector4f challengePosition =
+            pChallenge->getModelMatrix().row( 3 );
+        const float distanceSq =
+            ( challengePosition - carPosition ).squaredNorm();
+        if ( distanceSq < nearestDistanceSq ) {
+            nearestDistanceSq = distanceSq;
+            pNearest = pChallenge;
+        }
+    }
+
+    if ( pNearest == nullptr ) {
+        pNearestExtraChallenge = nullptr;
+        releaseExtraChallengeProp();
+        return;
+    }
+
+    if ( pNearest == pNearestExtraChallenge ) {
+        return;
+    }
+
+    pNearestExtraChallenge = pNearest;
+    if ( !selectExtraChallenge( pNearest ) ) {
+        return;
+    }
+
+    if ( pExtraChallengeMarker != nullptr ) {
+        MngActor::Uninstanciate( &mngActor, pExtraChallengeMarker );
+        pExtraChallengeMarker = nullptr;
+    }
+
+    int32_t displayType = 0;
+    int32_t displayName = -1;
+    GetExtraChallengeDisplayIndices( pNearest, &displayType, &displayName );
+    switch ( displayName ) {
+    case PlayerGameMech::SDN_ShoppingGirl:
+        pExtraChallengeMarker = spawnExtraChallengeMarker( 5 );
+        break;
+    case PlayerGameMech::SDN_Hiker:
+        pExtraChallengeMarker = spawnExtraChallengeMarker( 6 );
+        break;
+    case PlayerGameMech::SDN_Transporter:
+        pExtraChallengeMarker = spawnExtraChallengeMarker( 7 );
+        break;
+    case PlayerGameMech::SDN_Convoy:
+        pExtraChallengeMarker = spawnExtraChallengeMarker( 8 );
+        break;
+    default:
+        break;
+    }
+
+    if ( pExtraChallengeMarker != nullptr ) {
+        Matrix4x4f_t identity = Matrix4x4f_t::Identity();
+        pExtraChallengeMarker->setTransform( identity, true );
+
+        Matrix4x4f_t markerMatrix = pNearest->getModelMatrix();
+        markerMatrix.row( 3 ) = pNearest->getSpotMeshPosition();
+        pExtraChallengeMarker->propagateTransform( markerMatrix, true );
+    }
+
+    const bool bHasGoodies =
+        extraChallengeKind == PlayerGameMech::SDN_ShoppingGirl ||
+        extraChallengeKind == PlayerGameMech::SDN_Hiker ||
+        extraChallengeKind == PlayerGameMech::SDN_Transporter;
+    if ( bHasGoodies && extraChallengeProp.pGoodies != nullptr ) {
+        Matrix4x4f_t identity = Matrix4x4f_t::Identity();
+        extraChallengeProp.pGoodies->setTransform( identity, true );
+
+        Matrix4x4f_t goodiesMatrix = pNearest->getGoodiesMatrix();
+        extraChallengeProp.pGoodies->propagateTransform( goodiesMatrix, true );
+    }
+}
+
+bool GMFreeride::selectExtraChallenge( EntityExtraChallenge *pChallenge ) {
+    // FUN_00794e90
+    if ( pChallenge == nullptr ) {
+        return false;
+    }
+
+    if ( IsMapScreenshotCapturing() ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    }
+
+    releaseExtraChallengeProp();
+
+    int32_t displayType = 0;
+    GetExtraChallengeDisplayIndices( pChallenge, &displayType,
+                                     &extraChallengeKind );
+
+    if ( extraChallengeKind == PlayerGameMech::SDN_Convoy &&
+         IsMapScreenshotCapturing() ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: VEHICLE
+    }
+
+    return true;
+}
+
+Entity *GMFreeride::spawnExtraChallengeMarker( const int32_t subType ) {
+    // FUN_00793230
+    ScenaricBank &meshBank = gpScenaric->getSpotMeshBank();
+    for ( int32_t i = 0; i < meshBank.getEntityCount(); i++ ) {
+        Entity *pTemplate = meshBank.getEntity( i );
+        if ( pTemplate == nullptr ||
+             pTemplate->getType() != eEntityType::ET_SPTM ) {
+            continue;
+        }
+
+        const EntitySpotMesh *pSpotMesh =
+            static_cast<const EntitySpotMesh *>( pTemplate );
+        if ( pSpotMesh->getTemplateType() == ST_Unknown8 &&
+             pSpotMesh->getTemplateSubType() == subType ) {
+            return mngActor.instanciateActor( pTemplate );
+        }
+    }
+
+    return nullptr;
+}
+
+void GMFreeride::releaseExtraChallengeProp() {
+    // FUN_007932f0
+    switch ( extraChallengeKind ) {
+    case PlayerGameMech::SDN_ShoppingGirl:
+    case PlayerGameMech::SDN_Hiker:
+    case PlayerGameMech::SDN_Transporter:
+        if ( extraChallengeProp.pGoodies != nullptr ) {
+            MngActor::Uninstanciate( &mngActor, extraChallengeProp.pGoodies );
+            extraChallengeProp.pGoodies = nullptr;
+        }
+        break;
+    case PlayerGameMech::SDN_Convoy: {
+        CarState *pConvoyCar = extraChallengeProp.pConvoyCar;
+        if ( pConvoyCar != nullptr ) {
+            VehicleBaseResources *pResource = pConvoyCar->getResource();
+            gpCarState->releaseCarState( pConvoyCar, false );
+            if ( pResource != nullptr ) {
+                pResource->unload();
+                gpCarState->releaseResourceEntry( pResource );
+            }
+            extraChallengeProp.pConvoyCar = nullptr;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+
+    extraChallengeKind = -1;
 }
 
 bool GMFreeride::onMessage( FlashMessage *pMessage ) {
@@ -971,6 +1159,11 @@ void GMFreeride::drawDebug( float deltaTime ) {
             target[0] = 48413.344f;
             target[1] = 309.431f;
             target[2] = 41670.789f;
+        }
+        if ( ImGui::Button( "Hitchhiker" ) ) {
+            target[0] = 3615.492f;
+            target[1] = 2.727f;
+            target[2] = 20461.934f;
         }
 
         ImGui::SetNextItemWidth( 300.0f );

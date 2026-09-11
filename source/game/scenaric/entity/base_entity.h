@@ -18,6 +18,7 @@ class SerializedEntity;
 struct BinaryReader;
 class RenderScene;
 class MngActor;
+class PlayerGameMech;
 class SectorHeightmap;
 
 struct SoundScene {
@@ -139,7 +140,8 @@ public:
     virtual void destroyInstance();
     virtual void unknownFunc() { /* NOP */ }
     virtual void unloadResources();
-    virtual void tick();
+    virtual void
+    tick( PlayerGameMech *pGameMech, float deltaTime, float totalTime );
     virtual bool draw( RenderScene *pScene );
     virtual void deserialize( BinaryReader *param_2 );
     virtual void unknownFunc2( void *param_2 ) { /* NOP */ }

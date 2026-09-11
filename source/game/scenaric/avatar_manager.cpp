@@ -51,7 +51,7 @@ void AvatarManager::initialize() {
                                   &avatarBank );
 }
 
-void AvatarManager::tick( const float deltaTime ) {
+void AvatarManager::tick( const float deltaTime, const float totalTime ) {
     // FUN_007f5a30
     currentFrameIndex++;
 
@@ -108,11 +108,9 @@ void AvatarManager::tick( const float deltaTime ) {
         }
     }
 
-    (void)deltaTime;
-
     for ( PlayerAvatar &slot : playerAvatars ) {
         if ( slot.ReferenceCount > 0 && slot.pAvatar != nullptr ) {
-            slot.pAvatar->tick();
+            slot.pAvatar->tick( nullptr, deltaTime, totalTime );
         }
     }
 }

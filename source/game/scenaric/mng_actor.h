@@ -31,7 +31,7 @@ public:
     MngActor();
     ~MngActor();
 
-    void tick( float, float ) override;
+    void tick( float deltaTime, float totalTime ) override;
     void draw() override;
     void terminate() override;
 

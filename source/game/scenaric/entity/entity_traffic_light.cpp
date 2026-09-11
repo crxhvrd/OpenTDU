@@ -99,9 +99,11 @@ void EntityTrafficLight::loadResources( ScenaricBank *param_2 ) {
     }
 }
 
-void EntityTrafficLight::tick() {
+void EntityTrafficLight::tick( PlayerGameMech *pGameMech,
+                               float deltaTime,
+                               float totalTime ) {
     // FUN_009c8ac0
-    EntityActor::tick();
+    EntityActor::tick( pGameMech, deltaTime, totalTime );
 
     uint32_t lightState;
     if ( ( flags & 8 ) != 0 ) {

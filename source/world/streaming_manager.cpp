@@ -712,9 +712,6 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
                                               float totalTime,
                                               float deltaTime ) {
     // FUN_006ff4a0
-    (void)totalTime;
-    (void)deltaTime;
-
     if ( gpMngImpostor == nullptr || sector.state != 1 ) {
         return;
     }
@@ -769,7 +766,7 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
     for ( int32_t i = 0; i < sectorActors.getActorCount(); i++ ) {
         Entity *pActor = sectorActors.getActor( i );
         if ( pActor != nullptr && !pActor->isStreamManaged() ) {
-            pActor->tick();
+            pActor->tick( sectorActors.getGameMech(), deltaTime, totalTime );
         }
     }
 
@@ -787,7 +784,7 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
             for ( size_t i = 0; i < bucket.size(); ) {
                 Entity *pProp = bucket[i];
                 pProp->setTileVisible( true );
-                pProp->tick();
+                pProp->tick( nullptr, deltaTime, totalTime );
                 if ( pProp->isPMIInTile( &hm, (int32_t)cellIdx ) ) {
                     i++; // still at rest in its tile
                 } else {
@@ -822,7 +819,7 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
                 }
             }
 
-            pProp->tick();
+            pProp->tick( nullptr, deltaTime, totalTime );
             const int32_t key = pProp->getTileKey();
             if ( pProp->isPMIInTile( &hm, key ) ) {
                 if ( gpScenaric != nullptr && key >= 0 &&

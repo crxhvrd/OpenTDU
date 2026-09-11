@@ -14,7 +14,7 @@ public:
     ~AvatarManager();
 
     void initialize();
-    void tick( const float deltaTime );
+    void tick( const float deltaTime, const float totalTime );
     void draw();
     void releaseAllAvatars();
 

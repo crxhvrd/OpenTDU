@@ -30,6 +30,7 @@ public:
     inline const Eigen::Vector4f &getOffset() const { return nextSectorOffset; }
     inline bool isEnabled() const { return bEnabled; }
     inline bool isStreamingActive() const { return bStreamingActive; }
+    inline float getSize() const { return size; }
 
     inline void setStreamCenter( Eigen::Vector4f *param_1 ) {
         pStreamCenter = param_1;

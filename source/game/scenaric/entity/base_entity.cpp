@@ -150,7 +150,9 @@ void Entity::unloadResources() {
     }
 }
 
-void Entity::tick() {
+void Entity::tick( PlayerGameMech *pGameMech,
+                   float deltaTime,
+                   float totalTime ) {
     // FUN_007fb8a0
     if ( pParticleInstance != nullptr ) {
         Matrix4x4f_t particleMatrix = modelMatrix;

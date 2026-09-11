@@ -26,7 +26,7 @@ void EntityAnmSet::loadResources( ScenaricBank *param_2 ) {
     }
 }
 
-void EntityAnmSet::tick() {
+void EntityAnmSet::tick( PlayerGameMech *, float, float ) {
     // FUN_007f9280
     // NOP
 }

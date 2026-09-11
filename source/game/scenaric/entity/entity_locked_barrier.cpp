@@ -24,9 +24,11 @@ EntityLockedBarrier::~EntityLockedBarrier() {
     // FUN_00424120
 }
 
-void EntityLockedBarrier::tick() {
+void EntityLockedBarrier::tick( PlayerGameMech *pGameMech,
+                                float deltaTime,
+                                float totalTime ) {
     // FUN_009c8070
-    EntityActor::tick();
+    EntityActor::tick( pGameMech, deltaTime, totalTime );
 
     if ( bFirstManage ) {
         OriginalPos = modelMatrix.row( 3 );

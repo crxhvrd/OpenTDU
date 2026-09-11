@@ -34,9 +34,11 @@ void EntityMicro::unloadResources() {
     // FUN_007e0270
 }
 
-void EntityMicro::tick() {
+void EntityMicro::tick( PlayerGameMech *pGameMech,
+                        float deltaTime,
+                        float totalTime ) {
     // FUN_007e05c0
-    Entity::tick();
+    Entity::tick( pGameMech, deltaTime, totalTime );
 }
 
 bool EntityMicro::draw( RenderScene * ) {

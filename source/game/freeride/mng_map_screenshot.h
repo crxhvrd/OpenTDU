@@ -7,6 +7,9 @@ class CameraGame;
 
 class MngMapScreenshot : public Manager {
 public:
+    inline bool isCapturing() const { return State != 0; }
+
+public:
     MngMapScreenshot();
     ~MngMapScreenshot();
 

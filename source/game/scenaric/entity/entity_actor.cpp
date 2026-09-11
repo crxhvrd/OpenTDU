@@ -1,7 +1,6 @@
 #include "shared.h"
 #include "entity_actor.h"
 
-#include "gs_timer.h"
 #include "core/maths_helper.h"
 #include "game/game_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -198,9 +197,11 @@ void EntityActor::unloadResources() {
     animation.terminate();
 }
 
-void EntityActor::tick() {
+void EntityActor::tick( PlayerGameMech *pGameMech,
+                        float deltaTime,
+                        float totalTime ) {
     // FUN_007facb0
-    Entity::tick();
+    Entity::tick( pGameMech, deltaTime, totalTime );
 
     if ( ( flags & 1 ) && ( flags & 4 ) ) {
         Model.updateLOD( pMechanism, pDesc );
@@ -208,8 +209,7 @@ void EntityActor::tick() {
 
     if ( animation.isValid() ) {
         if ( ( flags & 8 ) == 0 ) {
-            DeltaTime += ( gpTimer != nullptr ) ? gpTimer->GameDeltaTime
-                                                : ( 1.0f / 60.0f );
+            DeltaTime += deltaTime;
 
             if ( bRefreshAnimationThisFrame ) {
                 animation.update( DeltaTime );

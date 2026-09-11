@@ -4,6 +4,7 @@
 #include "game/avatar/avatar_configuration.h"
 
 struct BinaryReader;
+class EntityVolume;
 
 // Base class for freeride challenges.
 class EntityExtraChallenge : public Entity {
@@ -19,13 +20,25 @@ public:
     void initialize() override;
     void loadResources( ScenaricBank *param_2 ) override;
     void initializeInstance( void *param_2, void *param_3 ) override;
-    void tick() override;
+    void tick( PlayerGameMech *pGameMech,
+               float deltaTime,
+               float totalTime ) override;
     void deserialize( BinaryReader *param_2 ) override;
 
     virtual const char *getChallengeName() const { return nullptr; }
 
+    virtual Eigen::Vector4f getSpotMeshPosition() const {
+        // FUN_00427b20
+        return modelMatrix.row( 3 );
+    }
+
+    bool isAvailable() const;
+
     inline int32_t getIndex() const { return Index; }
     inline void setIndex( int32_t index ) { Index = index; }
+    inline const Matrix4x4f_t &getGoodiesMatrix() const {
+        return GoodiesMatrix;
+    }
 
 protected:
     void readAvatarConfigFromPNJ( BinaryReader *pReader,
@@ -44,7 +57,7 @@ protected:
     SerializedTransform *pGoodiesBinMatrix;
     Matrix4x4f_t GoodiesMatrix;
     uint64_t TriggerHashcode;
-    Entity *pTrigger;
+    EntityVolume *pTrigger;
     uint32_t AvatarVoiceType;
     AvatarConfiguration AvatarConfig;
     bool bInZone;

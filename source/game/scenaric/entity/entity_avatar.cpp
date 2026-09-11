@@ -103,7 +103,9 @@ void EntityAvatar::unloadResources() {
     Entity::unloadResources();
 }
 
-void EntityAvatar::tick() {
+void EntityAvatar::tick( PlayerGameMech *pGameMech,
+                         float deltaTime,
+                         float totalTime ) {
     // FUN_007f90a0
     RenderLOD = chooseLODLevel();
 
@@ -113,7 +115,7 @@ void EntityAvatar::tick() {
                                      // attachment sync
         }
 
-        EntityActor::tick();
+        EntityActor::tick( pGameMech, deltaTime, totalTime );
 
         if ( pPooledAvatarEntry != nullptr && gpAvatar != nullptr ) {
             pPooledAvatarEntry->setBones(

@@ -72,9 +72,11 @@ void EntityAircraft::unloadResources() {
     Model.uninstanciate();
 }
 
-void EntityAircraft::tick() {
+void EntityAircraft::tick( PlayerGameMech *pGameMech,
+                           float deltaTime,
+                           float totalTime ) {
     // FUN_007eb7e0
-    EntityActor::tick();
+    EntityActor::tick( pGameMech, deltaTime, totalTime );
 }
 
 void EntityAircraft::deserialize( BinaryReader *param_2 ) {

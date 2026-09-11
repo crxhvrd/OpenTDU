@@ -4,7 +4,6 @@
 #include "entity_bytecode.h"
 #include "filesystem/binary.h"
 
-#include "gs_timer.h"
 #include "tdu_instance.h"
 #include "core/maths_helper.h"
 #include "database/gs_database.h"
@@ -569,11 +568,10 @@ void EntityDriver::setSeating( bool bState ) {
     bMustPlayAnims = true;
 }
 
-void EntityDriver::tick() {
+void EntityDriver::tick( PlayerGameMech *pGameMech,
+                         float deltaTime,
+                         float totalTime ) {
     // FUN_007f29c0
-    const float deltaTime =
-        ( gpTimer != nullptr ) ? gpTimer->GameDeltaTime : ( 1.0f / 60.0f );
-
     if ( pCarState != nullptr ) {
         VehicleBase *pDisplay = pCarState->getVehicleInstance();
         if ( pDisplay != nullptr ) {
@@ -647,13 +645,14 @@ void EntityDriver::tick() {
         AnimationDeltaTime += deltaTime;
 
         if ( bRefreshAnimationThisFrame || bBikerLost || ( flags & 8 ) != 0 ) {
+            deltaTime = AnimationDeltaTime;
+            AnimationDeltaTime = 0.0f;
+
             if ( !bIsFreeMovement || bIsUsedIK || bIsSeating ) {
                 OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
             } else {
                 OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
             }
-
-            AnimationDeltaTime = 0.0f;
         }
     }
 
@@ -670,7 +669,7 @@ void EntityDriver::tick() {
         pPooledAvatarEntry->CarBelt.setLowResVisible( bIsSeating );
     }
 
-    EntityAvatar::tick();
+    EntityAvatar::tick( pGameMech, deltaTime, totalTime );
 }
 
 bool EntityDriver::draw( RenderScene *pScene ) {

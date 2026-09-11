@@ -27,7 +27,9 @@ public:
     EntityPassengerGoodies();
     ~EntityPassengerGoodies();
 
-    void tick() override;
+    void tick( PlayerGameMech *pGameMech,
+               float deltaTime,
+               float totalTime ) override;
     bool draw( RenderScene *pScene ) override;
     void deserialize( BinaryReader *param_2 ) override;
 

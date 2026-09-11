@@ -80,9 +80,11 @@ void EntitySpotMesh::unloadResources() {
     }
 }
 
-void EntitySpotMesh::tick() {
+void EntitySpotMesh::tick( PlayerGameMech *pGameMech,
+                           float deltaTime,
+                           float totalTime ) {
     // FUN_009d9c10
-    EntityActor::tick();
+    EntityActor::tick( pGameMech, deltaTime, totalTime );
 
     const CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
     if ( pLocalCar == nullptr ) {

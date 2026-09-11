@@ -21,6 +21,15 @@ EntityTransporter::~EntityTransporter() {
     // FUN_00424120
 }
 
+Eigen::Vector4f EntityTransporter::getSpotMeshPosition() const {
+    // FUN_007dcd80
+    Eigen::Vector4f forward = modelMatrix.row( 2 );
+    forward.y() = 0.0f;
+
+    const Eigen::Vector4f position = modelMatrix.row( 3 );
+    return position + forward.normalized() * kSpotMeshForwardOffset;
+}
+
 void EntityTransporter::loadResources( ScenaricBank *param_2 ) {
     // FUN_007dd840
     EntityExtraChallenge::loadResources( param_2 );

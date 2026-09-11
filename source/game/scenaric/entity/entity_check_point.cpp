@@ -130,11 +130,13 @@ void EntityCheckPoint::unloadResources() {
     animation.terminate();
 }
 
-void EntityCheckPoint::tick() {
+void EntityCheckPoint::tick( PlayerGameMech *pGameMech,
+                             float deltaTime,
+                             float totalTime ) {
     // FUN_007f9ef0
     for ( int32_t i = 0; i < kNumGateActors; i++ ) {
         if ( pInstanciatedActors[i] != nullptr ) {
-            pInstanciatedActors[i]->tick();
+            pInstanciatedActors[i]->tick( pGameMech, deltaTime, totalTime );
         }
     }
 
@@ -142,7 +144,7 @@ void EntityCheckPoint::tick() {
         return;
     }
 
-    EntityActor::tick();
+    EntityActor::tick( pGameMech, deltaTime, totalTime );
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
 }

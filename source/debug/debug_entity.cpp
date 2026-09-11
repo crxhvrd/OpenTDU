@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "gs_timer.h"
 #include "filesystem/bank.h"
 #include "game/avatar/gs_avatar.h"
 #include "game/cinematic/cin_res_collection.h"
@@ -982,7 +983,11 @@ namespace {
         if ( gLiveEntityCine.pCine == nullptr ) {
             return;
         }
-        gLiveEntityCine.pCine->tick();
+        const float deltaTime =
+            ( gpTimer != nullptr ) ? gpTimer->GameDeltaTime : ( 1.0f / 60.0f );
+        const float totalTime =
+            ( gpTimer != nullptr ) ? gpTimer->GameTotalTime : 0.0f;
+        gLiveEntityCine.pCine->tick( nullptr, deltaTime, totalTime );
         if ( gLiveEntityCine.latchCamera && gpCamera != nullptr ) {
             const CinResCollection::CameraView &view =
                 gLiveEntityCine.pCine->getCameraView();

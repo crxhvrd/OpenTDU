@@ -157,9 +157,11 @@ void EntityItac::unloadResources() {
     EntityActor::unloadResources();
 }
 
-void EntityItac::tick() {
+void EntityItac::tick( PlayerGameMech *pGameMech,
+                       float deltaTime,
+                       float totalTime ) {
     // FUN_009c8800
-    EntityActor::tick();
+    EntityActor::tick( pGameMech, deltaTime, totalTime );
     refreshLights();
 }
 

@@ -29,9 +29,11 @@ EntityPassengerGoodies::~EntityPassengerGoodies() {
     // FUN_00424120
 }
 
-void EntityPassengerGoodies::tick() {
+void EntityPassengerGoodies::tick( PlayerGameMech *pGameMech,
+                                   float deltaTime,
+                                   float totalTime ) {
     // FUN_007ebba0
-    EntityActor::tick();
+    EntityActor::tick( pGameMech, deltaTime, totalTime );
 
     if ( pCarState != nullptr && CurrentBehavior == PG_MovementInCar ) {
         Matrix4x4f_t seatMatrix = pCarState->getWorldMatrix();

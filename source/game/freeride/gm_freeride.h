@@ -18,7 +18,9 @@
 struct FlashMessage;
 class Entity;
 class EntityCinematic;
+class EntityExtraChallenge;
 class CameraGame;
+class CarState;
 
 class GMFreeride : public GameModeWorld {
 public:
@@ -47,8 +49,17 @@ private:
     static constexpr int32_t kMaxNumExtraChallenges = 100;
     static constexpr float kEnterSpotClipDelay = 5.0f; // DAT_00f41750
 
+    union ExtraChallengeProp {
+        Entity *pGoodies;
+        CarState *pConvoyCar;
+    };
+
 private:
     void gatherExtraChallenges();
+    void updateNearestExtraChallenge();
+    bool selectExtraChallenge( EntityExtraChallenge *pChallenge );
+    Entity *spawnExtraChallengeMarker( const int32_t subType );
+    void releaseExtraChallengeProp();
     void resolveNextIntroCine( const struct SpotSector *pSector );
 
     void populateEnterSpotPrompt( class FlashPlayer *pPlayer );
@@ -72,12 +83,16 @@ private:
     float enterSpotClipTimer;
     ScenaricBank spotBank;
 
-    NextIntroInfo nextIntro; 
-    EntityCinematic *pIntroCine; 
-    CameraGame *pSavedVehicleCamera; 
+    NextIntroInfo nextIntro;
+    EntityCinematic *pIntroCine;
+    CameraGame *pSavedVehicleCamera;
     bool bIntroLevelLaunched;
     bool bIntroCineDone;
 
     Entity *pExtraChallenges[kMaxNumExtraChallenges];
     int32_t numExtraChallenges;
+    int32_t extraChallengeKind;
+    ExtraChallengeProp extraChallengeProp;
+    EntityExtraChallenge *pNearestExtraChallenge;
+    Entity *pExtraChallengeMarker;
 };

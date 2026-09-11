@@ -1,11 +1,19 @@
 #include "shared.h"
 #include "entity_extra_challenge.h"
 
+#include "entity_volume.h"
 #include "game/game_mechanism.h"
+#include "game/game_mechanism_player.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/local_player.h"
+#include "game/vehicle/car_state.h"
 #include "game/avatar/gs_avatar.h"
 #include "database/gs_database.h"
 #include "filesystem/binary.h"
+#include "physics/vehicle/physics_vehicle.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_item_table.h"
 
 // Index of TDU_PNJ in GameDatabase::pNumItems
 static constexpr int32_t kPNJDatabaseIndex = 0x10;
@@ -47,7 +55,8 @@ void EntityExtraChallenge::loadResources( ScenaricBank *param_2 ) {
 
     resolveSoundReference();
 
-    pTrigger = gpScenaric->getSCVolume( TriggerHashcode );
+    pTrigger = static_cast<EntityVolume *>(
+        gpScenaric->getSCVolume( TriggerHashcode ) );
 }
 
 void EntityExtraChallenge::initializeInstance( void *param_2, void *param_3 ) {
@@ -55,15 +64,50 @@ void EntityExtraChallenge::initializeInstance( void *param_2, void *param_3 ) {
     Entity::initializeInstance( param_2, param_3 );
 }
 
-void EntityExtraChallenge::tick() {
+void EntityExtraChallenge::tick( PlayerGameMech *pGameMech,
+                                 float deltaTime,
+                                 float totalTime ) {
     // FUN_007dd8d0
     if ( ( flags & 2 ) == 0 ) {
         return;
     }
 
-    Entity::tick();
+    Entity::tick( pGameMech, deltaTime, totalTime );
 
-    OTDU_UNIMPLEMENTED; // TODO: PLAYERSAVE/GAME
+    if ( !isAvailable() ) {
+        return;
+    }
+
+    const CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr ) {
+        return;
+    }
+
+    const CarBodyState *pBody = pLocalCar->getBody();
+    const Eigen::Vector4f worldPosition = pBody->WorldMatrix.row( 3 );
+    const Eigen::Vector4f previousWorldPosition =
+        pBody->PreviousWorldMatrix.row( 3 );
+
+    if ( pTrigger != nullptr &&
+         pTrigger->isPointInside( worldPosition, &previousWorldPosition ) ) {
+        bInZone = true;
+        pGameMech->onMessage( this, PlayerGameMech::ME_ExtraChallengeEntered,
+                              this );
+        return;
+    }
+
+    if ( bInZone ) {
+        pGameMech->onMessage( this, PlayerGameMech::ME_SpotLeft, this );
+        bInZone = false;
+    }
+}
+
+bool EntityExtraChallenge::isAvailable() const {
+    // FUN_007dd8d0 (inlined)
+    const SavedItemTable *pChallengeStates =
+        gpPlayerData->getLoadedSave()->getItemTable();
+    return !gbSimuModeEnabled && pChallengeStates->getExtraChallengeState(
+                                     Index ) != SavedItemTable::ECS_Done;
 }
 
 void EntityExtraChallenge::deserialize( BinaryReader *param_2 ) {

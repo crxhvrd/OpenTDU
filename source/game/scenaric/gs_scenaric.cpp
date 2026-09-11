@@ -201,7 +201,7 @@ void GSScenaric::tick( float totalTime, float deltaTime ) {
 
     introTutorial.tick();
 
-    avatarManager.tick( deltaTime );
+    avatarManager.tick( deltaTime, totalTime );
 
     if ( objectives[1].Type != nullptr && objectives[1].Type[0] != '\0' &&
          objectiveSpotHashcode != 0 ) {

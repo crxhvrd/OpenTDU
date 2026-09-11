@@ -8,7 +8,6 @@
 #include "filesystem/binary.h"
 #include "audio/gs_audio.h"
 #include "audio/vehicle/gs_vehicle_sound.h"
-#include "gs_timer.h"
 #include "game/game_mechanism.h"
 #include "game/gm_scene.h"
 #include "game/cinematic/gs_cinematics.h"
@@ -390,32 +389,31 @@ void EntityCinematic::unloadResources() {
     }
 }
 
-void EntityCinematic::tick() {
+void EntityCinematic::tick( PlayerGameMech *pGameMech,
+                            float deltaTime,
+                            float totalTime ) {
     // FUN_007e9320
-    Entity::tick();
-
-    const float dt =
-        ( gpTimer != nullptr ) ? gpTimer->GameDeltaTime : ( 1.0f / 60.0f );
+    Entity::tick( pGameMech, deltaTime, totalTime );
 
     if ( isPlaying() ) {
-        const float totalTime = cinematicPlayer.getTotalTime();
+        const float duration = cinematicPlayer.getTotalTime();
 
         if ( pMusicEmitter != nullptr ) {
             pMusicEmitter->setPaused( bPaused, 0.0f );
         }
 
-        const float advance = playbackSpeed * dt;
+        const float advance = playbackSpeed * deltaTime;
         if ( Time + advance > 0.0f && !bPaused ) {
             Time += advance;
         }
 
-        const bool reachedEnd = totalTime < Time;
+        const bool reachedEnd = duration < Time;
         if ( !reachedEnd ) {
-            cinematicPlayer.tick( Time, dt );
+            cinematicPlayer.tick( Time, deltaTime );
             publishCameraView();
         }
         if ( pGMInterface != nullptr &&
-             Time >= totalTime - FadeTime * kMillisecondsToSeconds ) {
+             Time >= duration - FadeTime * kMillisecondsToSeconds ) {
             pGMInterface->executeAction( CE_StartEndFade, this );
         }
 

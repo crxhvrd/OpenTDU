@@ -1,7 +1,6 @@
 #include "shared.h"
 #include "entity_pedestrian.h"
 
-#include "gs_timer.h"
 #include "world/gs_pedestrians.h"
 #include "world/gs_world_streaming.h"
 #include "render/instance.h"
@@ -55,18 +54,18 @@ void EntityPedestrian::initialize() {
     // TODO: REMOVEME: TEST
 }
 
-void EntityPedestrian::tick() {
+void EntityPedestrian::tick( PlayerGameMech *pGameMech,
+                             float deltaTime,
+                             float totalTime ) {
     // FUN_007dc410
-    Entity::tick();
+    Entity::tick( pGameMech, deltaTime, totalTime );
 
     if ( pPedestrianAnim == nullptr || pPedestrianResource == nullptr ) {
         return;
     }
 
     if ( pPedestrianAnim->bHasAnim ) {
-        const float dt =
-            ( flags & 8 ) || gpTimer == nullptr ? 0.0f : gpTimer->GameDeltaTime;
-        pPedestrianAnim->Anim.update( dt );
+        pPedestrianAnim->Anim.update( ( flags & 8 ) ? 0.0f : deltaTime );
     }
 
     pPedestrianAnim->bDoRefresh = false;

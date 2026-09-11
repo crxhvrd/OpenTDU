@@ -87,9 +87,11 @@ void EntityCarPlayer::unloadResources() {
     OTDU_UNIMPLEMENTED; // TODO: AI
 }
 
-void EntityCarPlayer::tick() {
+void EntityCarPlayer::tick( PlayerGameMech *pGameMech,
+                            float deltaTime,
+                            float totalTime ) {
     // FUN_009c7dc0
-    Entity::tick();
+    Entity::tick( pGameMech, deltaTime, totalTime );
 
     if ( SpawnKind == SK_None || gpScenaric == nullptr ) {
         return;
