@@ -48,6 +48,9 @@ public:
     }
 
     inline void setCastersEnabled( bool param_1 ) { bRenderCasters = param_1; }
+    inline void setReceiversEnabled( bool param_1 ) {
+        bRenderReceivers = param_1;
+    }
     inline bool getReceiversEnabled() const { return bRenderReceivers; }
 
     // Debug counters (last completed frame; the live ones are reset in draw()).

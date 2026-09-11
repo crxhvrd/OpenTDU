@@ -1010,15 +1010,16 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         ( rearRadius - rideHeightRear - bodyHeight * 0.5f ) +
         attachSuspRear.staticLength;
 
-    // FL, FR, RL, RR (TDU: right = +x, forward = +z).
+    // FL, FR, RL, RR (TDU: left = +x, forward = +z). FUN_00832420 places
+    // wheel i at X = (1 - (2 & 2i)) * halfTrack, matching the FORK_* nodes.
     wheelAttach[0] =
-        Eigen::Vector3f( -halfTrackF, attachYFront, wheelBaseM * 0.5f );
-    wheelAttach[1] =
         Eigen::Vector3f( halfTrackF, attachYFront, wheelBaseM * 0.5f );
+    wheelAttach[1] =
+        Eigen::Vector3f( -halfTrackF, attachYFront, wheelBaseM * 0.5f );
     wheelAttach[2] =
-        Eigen::Vector3f( -halfTrackR, attachYRear, -wheelBaseM * 0.5f );
-    wheelAttach[3] =
         Eigen::Vector3f( halfTrackR, attachYRear, -wheelBaseM * 0.5f );
+    wheelAttach[3] =
+        Eigen::Vector3f( -halfTrackR, attachYRear, -wheelBaseM * 0.5f );
 
     const float bodyWidth = ( db.Width > 0 ? db.Width : 1800 ) * kMmToM;
     const float frontalArea = Max( 0.0f, bodyWidth * dbBodyHeight );

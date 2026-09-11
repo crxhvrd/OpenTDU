@@ -138,7 +138,7 @@ void GMCarShowcase::reset() {
     bFreezeCarSwitch = false;
 
     mngShadow.setHeightmapOffset( 0.01f );
-    mngShadow.setCastersEnabled( true );
+    mngShadow.setReceiversEnabled( true );
 
     mngFlash.addWidget( "cars", &flashList );
     flashList.setPlayer( pFlashPlayer, "/array_cars" );
