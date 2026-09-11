@@ -110,8 +110,7 @@ bool CameraFirstPerson::tick( float /*deltaTime*/,
     if ( !bInputCaptured && pMouse != nullptr ) {
         const float mouseX =
             pMouse->getChannelValue( "LEFT" ); // +X = moving right
-        const float mouseY =
-            pMouse->getChannelValue( "UP" ); // +Y = moving up
+        const float mouseY = pMouse->getChannelValue( "UP" ); // +Y = moving up
 
         const float invert =
             ( gpConfig != nullptr && gpConfig->bInvertMouse ) ? -1.0f : 1.0f;
@@ -145,8 +144,8 @@ bool CameraFirstPerson::tick( float /*deltaTime*/,
             strafeInput -= 1.0f;
         }
 
-        bRunning = pKeyboard->getChannelValueBinary( "LEFT SHIFT" ) ||
-                   pKeyboard->getChannelValueBinary( "RIGHT SHIFT" );
+        bRunning = pKeyboard->getChannelValueBinary( "LSHIFT" ) ||
+                   pKeyboard->getChannelValueBinary( "RSHIFT" );
     }
 
     const float speed = bRunning ? runSpeed : walkSpeed;
