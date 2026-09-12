@@ -4,12 +4,25 @@
 #include "game/gm_base.h"
 #include "game/game_mechanism.h"
 #include "filesystem/binary.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/achievements_data.h"
 
 enum eLockedBarrierType : int32_t {
     LBT_Unknown = 0,
     LBT_OahuRaceway = 1, // unlocked by achievement byte 0x3551
     LBT_FordIsland = 2,  // unlocked by achievement byte 0x3550
 };
+
+static bool IsBarrierZoneUnlocked( const int32_t type ) {
+    // FUN_009c80cd
+    const AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+
+    return ( type == LBT_OahuRaceway )
+               ? pAchievements->isSimulationModeUnlocked()
+               : pAchievements->isReward0x5912a0Unlocked();
+}
 
 EntityLockedBarrier::EntityLockedBarrier()
     : EntityActor(),
@@ -37,8 +50,7 @@ void EntityLockedBarrier::tick( PlayerGameMech *pGameMech,
 
     bool bKeepLocked = false;
     if ( Type == LBT_OahuRaceway || Type == LBT_FordIsland ) {
-        OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
-        const bool bAchievementEarned = false;
+        const bool bAchievementEarned = IsBarrierZoneUnlocked( Type );
         const bool bInMission =
             gpActiveGameMode != nullptr &&
             gpActiveGameMode->getCurrentGameMode() == GM_Mission;

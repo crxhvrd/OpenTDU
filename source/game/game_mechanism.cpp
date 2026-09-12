@@ -249,4 +249,5 @@ void GameMechanism::setMechanismPosition( const Eigen::Vector4f &position ) {
 void GameMechanism::setMechanismInitialTransform( const Matrix4x4f_t &matrix ) {
     // FUN_009c8070 (inlined)
     initialTransformMatrix = matrix;
+    bPlacementTried = false;
 }

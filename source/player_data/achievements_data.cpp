@@ -462,12 +462,12 @@ void AchievementsData::grantReward( const AchievementCheck *pCheck ) {
 
     switch ( reward ) {
     case kRewardUnknown0x5912a0:
-        // BOOL_010e7d34 - ??? (could be Ford Island/racetrack)
+        // BOOL_010e7d34 - Ford Island
         bReward0x5912a0Unlocked = true;
         return;
 
     case kSimuModeRewardHashcode:
-        // BOOL_010e7d35 - simulation / hardcore mode.
+        // BOOL_010e7d35 - simulation / hardcore mode + Oahu Raceway
         bSimulationModeUnlocked = true;
         return;
 
@@ -591,6 +591,11 @@ void AchievementsData::drawDebug() {
     if ( ImGui::Button( "Notify" ) ) {
         notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
     }
+
+    ImGui::Separator();
+    ImGui::Checkbox( "Ford Island unlocked", &bReward0x5912a0Unlocked );
+    ImGui::Checkbox( "Simu mode / Oahu Raceway unlocked",
+                     &bSimulationModeUnlocked );
 }
 #endif
 
