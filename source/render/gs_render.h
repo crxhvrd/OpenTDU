@@ -191,6 +191,11 @@ public:
     inline uint32_t getLODQuality() const { return activeLODQuality; }
     inline bool isInitialized() const { return bInitialized; }
 
+    void setGammaRamp( const uint32_t gammaLevel );
+    inline void setGamma( const float gamma ) {
+        setGammaRamp( uint32_t( Saturate( gamma ) * 10.0f ) );
+    }
+
     virtual void onWeatherConfigChange( WeatherConfig *param_1 ) override;
 
     uint32_t getFreeStencilMask();

@@ -365,6 +365,8 @@ RenderDevice::~RenderDevice() {
     renderPassManager.releaseCachedRenderPass( device );
     samplerHeap.destroy( device );
     resourceBinder.destroy( device, allocator );
+    gammaRampPass.releaseSwapchainResources( device );
+    gammaRampPass.destroy( device, allocator );
 
     for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
         vkDestroySemaphore( device, nextImageSemaphore[i], nullptr );
@@ -473,8 +475,8 @@ void RenderDevice::initialize() {
     createDebugCallback();
     OTDU_ASSERT_FATAL( selectPhysicalDevice() );
     OTDU_ASSERT_FATAL( createDevice() );
-    OTDU_ASSERT_FATAL( createSwapchain() );
     createVMAAllocator();
+    OTDU_ASSERT_FATAL( createSwapchain() );
 
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -496,6 +498,9 @@ void RenderDevice::initialize() {
         deviceProperties.properties.limits.minUniformBufferOffsetAlignment;
     resourceBinder.initialize( device, allocator, uboAlignment );
     psoFactory.initialize( device, samplerHeap, resourceBinder );
+    gammaRampPass.initialize( device, allocator );
+    gammaRampPass.createSwapchainResources( device, backbuffer.pTexture,
+                                            swapchainImageViews );
 
     VkCommandPoolCreateInfo texUploadPoolInfos = {};
     texUploadPoolInfos.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -1544,11 +1549,7 @@ void RenderDevice::present() {
             activeRenderPass = VK_NULL_HANDLE;
         }
 
-        // Sync before present
-        insertMemoryBarrier( backbuffer.pTexture,
-                             backbuffer.pTexture->CurrentLayout[imageIndex],
-                             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, imageIndex );
+        presentBackbuffer();
 
         VkResult opResult = vkEndCommandBuffer( commandBuffer );
         OTDU_ASSERT( opResult == VK_SUCCESS );
@@ -1577,6 +1578,10 @@ void RenderDevice::present() {
         bNeedRecreateSwapchain = false;
         recreateSwapchain();
     }
+}
+
+void RenderDevice::setGammaRamp( const GammaRamp &ramp ) {
+    gammaRampPass.setRamp( ramp );
 }
 
 bool RenderDevice::isFramebufferUsingMSAA() const { return bIsMainRTUsingMSAA; }
@@ -3083,39 +3088,6 @@ bool RenderDevice::createSwapchain() {
     vkGetSwapchainImagesKHR( device, swapchain, &imageCount,
                              swapchainImages.data() );
 
-    if ( backbuffer.pTexture == nullptr ) {
-        backbuffer.pTexture = new GPUTexture();
-    }
-
-    backbuffer.pTexture->ViewFormat = swapchainFormat.format;
-    backbuffer.pTexture->SampleCount = VK_SAMPLE_COUNT_1_BIT;
-    backbuffer.pTexture->bNeedMSAAResolve = false;
-    backbuffer.pTexture->Width = swapchainDimension.width;
-    backbuffer.pTexture->Height = swapchainDimension.height;
-    backbuffer.pTexture->NumMips = 1;
-    backbuffer.pTexture->Depth = 1;
-
-    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        backbuffer.pTexture->Image[i] = swapchainImages[i];
-#if OTDU_DEVBUILD
-        std::string objName = "Backbuffer[" + std::to_string( i ) + "]";
-        VkDebugUtilsObjectNameInfoEXT nameInfo = {};
-        nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-        nameInfo.objectType = VkObjectType::VK_OBJECT_TYPE_IMAGE;
-        nameInfo.objectHandle = (uint64_t)backbuffer.pTexture->Image[i];
-        nameInfo.pObjectName = objName.c_str();
-        vkSetDebugUtilsObjectNameEXT( device, &nameInfo );
-#endif
-    }
-
-    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        backbuffer.pTexture->CurrentLayout[i] = VK_IMAGE_LAYOUT_UNDEFINED;
-    }
-
-    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        backbuffer.pTexture->Allocation[i] = nullptr;
-    }
-
     VkImageViewCreateInfo viewInfos = {};
     viewInfos.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfos.pNext = nullptr;
@@ -3131,11 +3103,17 @@ bool RenderDevice::createSwapchain() {
     viewInfos.subresourceRange.baseArrayLayer = 0;
     viewInfos.subresourceRange.layerCount = 1;
 
-    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        viewInfos.image = backbuffer.pTexture->Image[i];
+    swapchainImageViews.resize( swapchainImages.size(), VK_NULL_HANDLE );
+    for ( size_t i = 0; i < swapchainImages.size(); i++ ) {
+        viewInfos.image = swapchainImages[i];
         VkResult imageCreationResult = vkCreateImageView(
-            device, &viewInfos, nullptr, &backbuffer.pTexture->ImageView[i] );
+            device, &viewInfos, nullptr, &swapchainImageViews[i] );
         OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
+    }
+
+    if ( !createBackbufferTexture( swapchainFormat.format,
+                                   swapchainDimension ) ) {
+        return false;
     }
 
     backbuffer.Width = swapchainDimension.width;
@@ -3165,6 +3143,147 @@ bool RenderDevice::createSwapchain() {
     }
 
     return true;
+}
+
+bool RenderDevice::createBackbufferTexture( const VkFormat format,
+                                            const VkExtent2D extent ) {
+    VkImageCreateInfo imageInfo = {};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = format;
+    imageInfo.extent = { extent.width, extent.height, 1 };
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage =
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo allocCreateInfo = {};
+    allocCreateInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocCreateInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    allocCreateInfo.priority = 1.0f;
+
+    if ( backbuffer.pTexture == nullptr ) {
+        backbuffer.pTexture = new GPUTexture();
+    }
+
+    backbuffer.pTexture->ViewFormat = format;
+    backbuffer.pTexture->SampleCount = VK_SAMPLE_COUNT_1_BIT;
+    backbuffer.pTexture->bNeedMSAAResolve = false;
+    backbuffer.pTexture->Width = extent.width;
+    backbuffer.pTexture->Height = extent.height;
+    backbuffer.pTexture->NumMips = 1;
+    backbuffer.pTexture->Depth = 1;
+    backbuffer.pTexture->NumResources = PendingFrameCount;
+
+    VkImageViewCreateInfo viewInfos = {};
+    viewInfos.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfos.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfos.format = format;
+    viewInfos.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfos.subresourceRange.levelCount = 1;
+    viewInfos.subresourceRange.layerCount = 1;
+
+    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
+        VkResult imageCreationResult =
+            vmaCreateImage( allocator, &imageInfo, &allocCreateInfo,
+                            &backbuffer.pTexture->Image[i],
+                            &backbuffer.pTexture->Allocation[i], nullptr );
+        if ( imageCreationResult != VK_SUCCESS ) {
+            OTDU_LOG_ERROR( "Failed to allocate the backbuffer (format %u)\n",
+                            format );
+            return false;
+        }
+
+        backbuffer.pTexture->CurrentLayout[i] = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        viewInfos.image = backbuffer.pTexture->Image[i];
+        imageCreationResult = vkCreateImageView(
+            device, &viewInfos, nullptr, &backbuffer.pTexture->ImageView[i] );
+        OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
+
+#if OTDU_DEVBUILD
+        std::string objName = "Backbuffer[" + std::to_string( i ) + "]";
+        VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+        nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+        nameInfo.objectType = VkObjectType::VK_OBJECT_TYPE_IMAGE;
+        nameInfo.objectHandle = (uint64_t)backbuffer.pTexture->Image[i];
+        nameInfo.pObjectName = objName.c_str();
+        vkSetDebugUtilsObjectNameEXT( device, &nameInfo );
+#endif
+    }
+
+    return true;
+}
+
+void RenderDevice::presentBackbuffer() {
+    pushDebugLabel( "Present" );
+
+    GPUTexture *pBackbuffer = backbuffer.pTexture;
+
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = swapchainImages[imageIndex];
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+
+    if ( gammaRampPass.isActive() ) {
+        gammaRampPass.uploadRamp( commandBuffer );
+
+        insertImageBarrier(
+            pBackbuffer, frameIndex, pBackbuffer->CurrentLayout[frameIndex],
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT );
+
+        gammaRampPass.draw( commandBuffer, frameIndex, imageIndex );
+    } else {
+        insertImageBarrier(
+            pBackbuffer, frameIndex, pBackbuffer->CurrentLayout[frameIndex],
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT );
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier( commandBuffer,
+                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                              nullptr, 1, &barrier );
+
+        VkImageCopy region = {};
+        region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.srcSubresource.layerCount = 1;
+        region.dstSubresource = region.srcSubresource;
+        region.extent = { backbuffer.Width, backbuffer.Height, 1 };
+        vkCmdCopyImage( commandBuffer, pBackbuffer->Image[frameIndex],
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        swapchainImages[imageIndex],
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = 0;
+        vkCmdPipelineBarrier( commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                              VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
+                              nullptr, 0, nullptr, 1, &barrier );
+    }
+
+    popDebugLabel();
 }
 
 void RenderDevice::submitPendingCommandBuffer() {
@@ -3659,9 +3778,13 @@ void RenderDevice::recreateSwapchain() {
 
     vkDeviceWaitIdle( device );
 
+    gammaRampPass.releaseSwapchainResources( device );
     releaseSwapchain();
     releaseFramebufferCache();
-    createSwapchain();
+    if ( createSwapchain() ) {
+        gammaRampPass.createSwapchainResources( device, backbuffer.pTexture,
+                                                swapchainImageViews );
+    }
 }
 
 void RenderDevice::releaseSwapchain() {
@@ -3672,9 +3795,19 @@ void RenderDevice::releaseSwapchain() {
                                     nullptr );
                 backbuffer.pTexture->ImageView[i] = VK_NULL_HANDLE;
             }
-            backbuffer.pTexture->Image[i] = VK_NULL_HANDLE;
+            if ( backbuffer.pTexture->Image[i] != VK_NULL_HANDLE ) {
+                vmaDestroyImage( allocator, backbuffer.pTexture->Image[i],
+                                 backbuffer.pTexture->Allocation[i] );
+                backbuffer.pTexture->Image[i] = VK_NULL_HANDLE;
+                backbuffer.pTexture->Allocation[i] = nullptr;
+            }
         }
     }
+
+    for ( VkImageView &imageView : swapchainImageViews ) {
+        vkDestroyImageView( device, imageView, nullptr );
+    }
+    swapchainImageViews.clear();
 
     vkDestroySwapchainKHR( device, swapchain, nullptr );
     swapchain = VK_NULL_HANDLE;

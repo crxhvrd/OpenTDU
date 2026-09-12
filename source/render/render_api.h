@@ -449,3 +449,12 @@ struct ClearRegion {
     int32_t Width = 0;
     int32_t Height = 0;
 };
+
+// D3DGAMMARAMP
+struct GammaRamp {
+    static constexpr uint32_t kNumControlPoints = 256;
+
+    uint16_t Red[kNumControlPoints];
+    uint16_t Green[kNumControlPoints];
+    uint16_t Blue[kNumControlPoints];
+};

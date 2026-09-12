@@ -144,7 +144,6 @@ static bool FindProfileSaveContext( uint64_t profileHashcode,
     return bFound;
 }
 
-
 namespace TestDrive {
     static const AvatarConfiguration *GetSavedAvatarConfiguration() {
         const AvatarConfiguration *pConfig =
@@ -417,6 +416,7 @@ bool GSPlayerData::loadCommonDT( const void *pSaveBuffer,
                              // input bindings, audio and radio settings)
 
     if ( gpRender != nullptr ) {
+        gpRender->setGamma( localPlayerData.Gamma );
         gpRender->setLODQuality( localPlayerData.LODQuality );
     }
 
@@ -547,7 +547,7 @@ void GSPlayerData::newGame( const bool bInstallCheats ) {
 
     pLoadedSave2->newGame( bInstallCheats );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: RENDER (GSRender::setGammaRamp)
+    gpRender->setGamma( localPlayerData.Gamma );
 }
 
 CarDesc *GSPlayerData::getCurrentCar() {

@@ -440,6 +440,23 @@ void GSRender::setLODQuality( const uint32_t qualityIndex ) {
     }
 }
 
+void GSRender::setGammaRamp( const uint32_t gammaLevel ) {
+    // FUN_00509e70
+    const float exponent =
+        1.0f / ( float( Min( gammaLevel, 10u ) ) * 0.1f * 1.4f + 0.6f );
+
+    GammaRamp ramp;
+    for ( uint32_t i = 0; i < GammaRamp::kNumControlPoints; i++ ) {
+        const uint16_t value = uint16_t(
+            std::pow( float( i ) * ( 1.0f / 255.0f ), exponent ) * 65535.0f );
+        ramp.Red[i] = value;
+        ramp.Green[i] = value;
+        ramp.Blue[i] = value;
+    }
+
+    gEdRender.pRenderDevice->setGammaRamp( ramp );
+}
+
 void GSRender::onWeatherConfigChange( WeatherConfig *param_1 ) {
     // FUN_009982e0
     defaultAmbientLight.Color = param_1->getGlobalAmbientColor();
@@ -651,6 +668,8 @@ bool GSRender::resizeToWindow( uint32_t width, uint32_t height ) {
 void GSRender::drawDebug( float deltaTime ) {
     ImGui::Text( "Render Time: %.3f (internal frame index %u)", gEdRender.Time,
                  gEdRender.pRenderDevice->getInternalFrameIndex() );
+    ImGui::Checkbox( "Enable Gamma Ramp",
+                     &gEdRender.pRenderDevice->getGammaRampPass().bEnabled );
 
     ImGui::SeparatorText( "Geometry" );
     ImGui::SliderFloat( "LOD factor", &DebugLODFactor, 0.01f, 1.0f, "%.2f" );

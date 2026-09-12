@@ -7,6 +7,7 @@
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/mng_flash_localize.h"
+#include "game/mng_hud.h"
 #include "gs_timer.h"
 #include "input/gs_device.h"
 #include "player_data/gs_playerdata.h"
@@ -169,8 +170,7 @@ void MngOptions::tick( float, float ) {
     }
     if ( gammaSlider.hasFocus() ) {
         gammaSlider.tick( deltaTime );
-        OTDU_UNIMPLEMENTED; // TODO: apply the gamma ramp (GSRender exposes no
-                            // gamma API yet).
+        gpRender->setGamma( gammaSlider.getValue() );
     }
 
     pAudioOptions->tick();
@@ -259,8 +259,7 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         refreshOptionsScreen();
         gpCamera->setSeatPosition( gpPlayerData->getSeatPositionHeight(),
                                    gpPlayerData->getSeatPositionPosition() );
-        OTDU_UNIMPLEMENTED; // TODO: re-apply the saved gamma ramp (no GSRender
-                            // gamma API yet).
+        gpRender->setGamma( gpPlayerData->getGamma() );
         gammaSlider.setFocusState( false );
         if ( field30_0x80c ) {
             gpRender->setLODQuality( lodQuality );
@@ -279,6 +278,8 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
 
     case 0x63686f70: // "chop" — commit gameplay options
         FUN_006c7fb0();
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+        FUN_006c6db0();
         return true;
 
     case 0x67616d73: // "gams"
@@ -286,8 +287,8 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         gammaSlider.setFocusState( true );
         return true;
 
-    case 0x6469696e:        // "diin" — GPS option
-        OTDU_UNIMPLEMENTED; // TODO: GPS
+    case 0x6469696e: // "diin" — GPS option
+        flashGPSOption();
         return true;
 
     case 0x656e746f: // "ento"
@@ -810,6 +811,60 @@ void MngOptions::FUN_006c7fb0() {
     }
 }
 
+void MngOptions::FUN_006c6db0() {
+    // FUN_006c6db0
+    LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
+
+    localPlayerData.bDispOP1 = pPlayer->getVariableAsInt( "/:DispOp_f_1" ) != 0;
+    localPlayerData.bDisplayGPS =
+        pPlayer->getVariableAsInt( "/:DispOp_f_2" ) != 0;
+
+    // FUN_008986b0
+    localPlayerData.bHelpSystem =
+        pPlayer->getVariableAsInt( "/:DispOp_f_3" ) != 0;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+
+    localPlayerData.bDisplayPlayerNames =
+        pPlayer->getVariableAsInt( "/:DispOp_f_4" ) != 0;
+    localPlayerData.bGPSRotation =
+        pPlayer->getVariableAsInt( "/:GPSRotation" ) != 0;
+
+    localPlayerData.Gamma = gammaSlider.getValue();
+    gammaSlider.setFocusState( false );
+
+    gpPlayerData->setUnitSystem( unitType != US_Metric );
+
+    if ( gpMngHud != nullptr ) {
+        gpMngHud->setGPSRotation( localPlayerData.bGPSRotation );
+    }
+}
+
+void MngOptions::flashGPSOption() {
+    // FUN_006c7a90
+    if ( pPlayer == nullptr || gpMngFlashLocalize == nullptr ) {
+        return;
+    }
+
+    const LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
+
+    pPlayer->setVariableValue( "/:DispOp_f_1",
+                               int32_t( localPlayerData.bDispOP1 ) );
+    pPlayer->setVariableValue( "/:DispOp_f_2",
+                               int32_t( localPlayerData.bDisplayGPS ) );
+    pPlayer->setVariableValue( "/:DispOp_f_3",
+                               int32_t( localPlayerData.bHelpSystem ) );
+    pPlayer->setVariableValue( "/:DispOp_f_4",
+                               int32_t( localPlayerData.bDisplayPlayerNames ) );
+    pPlayer->setVariableValue( "/:GPSRotation",
+                               int32_t( localPlayerData.bGPSRotation ) );
+
+    unitType = localPlayerData.UnitSystem;
+
+    const uint64_t labelHash =
+        ( localPlayerData.UnitSystem != US_Metric ) ? 0x368c7f2 : 0x35905b2;
+    gpMngFlashLocalize->setVarLocalized( pPlayer, "/:UnitSystem", labelHash );
+}
+
 void MngOptions::bindFlashPlayer( FlashPlayer *pFlashPlayer,
                                   int32_t orientation ) {
     // FUN_006c6ac0
@@ -913,7 +968,7 @@ void MngOptions::refreshOptionsScreen() {
     pPlayer->setVariableValue( "/:IsPlayerVoices",
                                int32_t( localPlayerData.bEnablePlayerVoices ) );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GPS (TestDrive::FlashGPSOption)
+    flashGPSOption();
 
     FUN_006c6650();
 

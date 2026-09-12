@@ -148,6 +148,8 @@ private:
     void FUN_006c7950( bool param_1 );
     void FUN_006c6730( int32_t param_1 );
     void FUN_006c7fb0();
+    void FUN_006c6db0();
+    void flashGPSOption();
     void FUN_006c61b0();
     void FUN_006c6a00();
 

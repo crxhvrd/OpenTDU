@@ -15,6 +15,7 @@
 #include "vk_mem_alloc.h"
 #include "volk.h"
 
+#include "gamma_ramp_pass.h"
 #include "pso_factory.h"
 #include "render_pass_manager.h"
 #include "sampler_heap_manager.h"
@@ -131,6 +132,8 @@ public:
     inline bool isInitialized() const { return device != VK_NULL_HANDLE; }
     inline bool isDeviceLost() const { return bDeviceLost; }
 
+    inline GammaRampPass &getGammaRampPass() { return gammaRampPass; }
+
 public:
     RenderDevice();
     ~RenderDevice();
@@ -233,6 +236,7 @@ public:
     void resetCachedStates();
 
     void present();
+    void setGammaRamp( const GammaRamp &ramp );
 
     bool isFramebufferUsingMSAA() const;
     void setMSAAState( bool param_1 );
@@ -369,6 +373,7 @@ private:
 
     VkSwapchainKHR swapchain;
     std::vector<VkImage> swapchainImages;
+    std::vector<VkImageView> swapchainImageViews;
     VkSemaphore nextImageSemaphore[PendingFrameCount];
 
     VkSemaphore frameSubmissionSemaphore[PendingFrameCount];
@@ -385,6 +390,8 @@ private:
 
     SamplerHeapManager samplerHeap;
     uint32_t boundSamplers[8];
+
+    GammaRampPass gammaRampPass;
 
     GPUBuffer *pIndexBuffer;
 #if defined( OTDU_MACOS )
@@ -475,6 +482,10 @@ private:
     bool createSwapchain();
 
     void submitPendingCommandBuffer();
+
+    void presentBackbuffer();
+    bool createBackbufferTexture( const VkFormat format,
+                                  const VkExtent2D extent );
 
     bool prepareDrawCall( ePrimitiveType primitiveType );
     void insertMemoryBarrier( GPUTexture *pTexture,

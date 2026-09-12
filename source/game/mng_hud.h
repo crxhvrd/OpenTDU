@@ -273,6 +273,7 @@ public:
     }
 
     inline void setEnabled( const bool value ) { bEnabled = value; }
+    inline void setGPSRotation( const bool value ) { bGPSRotation = value; }
     inline FlashPlayer *getHudPlayer() { return pHudPlayer; }
 
     inline float getMinimapViewportU() const { return minimap.ViewportU; }
