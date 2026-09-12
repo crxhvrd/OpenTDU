@@ -37,3 +37,6 @@ private:
 };
 
 extern GSDetails *gpDetails;
+
+static constexpr uint32_t kDetailHashBirds = 0x62697264;  // "bird"
+static constexpr uint32_t kDetailHashPapers = 0x70617072; // "papr"

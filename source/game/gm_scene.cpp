@@ -37,6 +37,8 @@
 #include "render/mng_shadow.h"
 #include "render/mng_reflection.h"
 #include "render/render_scene.h"
+#include "render/gs_render.h"
+#include "world/details/gs_details.h"
 
 GameModeScene *gpActiveGMScene = nullptr; // DAT_010e7c80
 
@@ -47,10 +49,29 @@ uint32_t gCurrentFPS = 0;
 // Dirty disk watchdog
 uint32_t gFreezeWatchdogCounter = 0; // DAT_016a6a4c
 
+void EnableDetail( const uint32_t detailHash ) {
+    TDUDetail *pDetail = gpDetails->getDetailByHash( detailHash );
+    if ( pDetail != nullptr ) {
+        pDetail->setEnabled( true );
+    }
+}
+
+void DisablePostFXNode( PostFXStep *pStep ) {
+    if ( pStep == nullptr ) {
+        return;
+    }
+
+    PostFXNode *pNode = pStep->getInput();
+    if ( pNode != nullptr ) {
+        pNode->setEnabled( false );
+    }
+}
+
 GameModeScene::GameModeScene()
     : WorldListener(),
       CinematicPlayer(),
       FlashStreamListener(),
+      RenderConfigurationChangeListener(),
       GameMode(),
       mngFlash( this ),
       mngShadow(),
@@ -114,13 +135,17 @@ GameModeScene::GameModeScene()
     pSavedPhysicsControl = nullptr;
 
     gpFlash->registerFlashListener( this );
-
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
+    if ( gpRender != nullptr ) {
+        gpRender->registerConfigListener( this );
+    }
 }
 
 GameModeScene::~GameModeScene() {
     // FUN_007bc120
-    OTDU_UNIMPLEMENTED;
+    if ( gpRender != nullptr ) {
+        gpRender->unregisterConfigListener( this );
+    }
+
     gpFlash->unregisterFlashListener( this );
     gpActiveGMScene = nullptr;
     gpMngFade = nullptr;
@@ -159,7 +184,7 @@ void GameModeScene::initialize() {
     }
 
     if ( !bWithWorld ) {
-        OTDU_UNIMPLEMENTED; // TODO: SCENARICS/AI
+        OTDU_UNIMPLEMENTED; // TODO: AI
     }
 
     cinematicTimer = 0.0f; // field48_0xfdc8
@@ -192,7 +217,11 @@ void GameModeScene::reset() {
 
     updatePostFX();
 
-    OTDU_UNIMPLEMENTED; // TODO:: WORLD
+    if ( gpPlayerData != nullptr && activeGM != GM_FreeRide &&
+         activeGM != GM_Map && activeGM != GM_TestCar &&
+         activeGM != GM_Mission && activeGM != GM_Dressing ) {
+        gpPlayerData->requestSave( 2 );
+    }
 
     cinematicTimer = 0.0f; // field48_0xfdc8
 
@@ -224,8 +253,6 @@ void GameModeScene::tick( float /*deltaTime*/, float /*totalTime*/ ) {
         bWorldEntitiesInstanciated = true;
     }
 
-    OTDU_UNIMPLEMENTED;
-
     updatePostFX();
 
     // Once-per-second FPS sampling. The original measures wall-clock since app
@@ -253,8 +280,13 @@ void GameModeScene::tick( float /*deltaTime*/, float /*totalTime*/ ) {
 
 void GameModeScene::pause() {
     // FUN_007bcf10
-    OTDU_UNIMPLEMENTED; // TODO: POSTFX
-    OTDU_UNIMPLEMENTED; // TODO: TUTORIAL
+    if ( gpPostFX != nullptr && !gpPostFX->isFXLocked() ) {
+        DisablePostFXNode(
+            gpPostFX->getEffect<ePostFXStep::PFXS_Desaturation>() );
+        DisablePostFXNode( gpPostFX->getEffect<ePostFXStep::PFXS_HDRI>() );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
 
     // Stop the intro / loop spot cinematics if still playing.
     if ( pCinematicIntroE != nullptr ) {
@@ -272,7 +304,10 @@ void GameModeScene::pause() {
     rentalWidget.detach();
     carInfosWidget.detach();
 
-    OTDU_UNIMPLEMENTED; // TODO: DETAILS
+    if ( gpDetails != nullptr ) {
+        EnableDetail( kDetailHashBirds );
+        EnableDetail( kDetailHashPapers );
+    }
 }
 
 void GameModeScene::destroy() {
@@ -729,10 +764,21 @@ bool GameModeScene::executeAction( int32_t param_2, void *param_3 ) {
             SetReflectionSceneEnabled( true );
         }
 
-        SetHUDMoviesPaused( false );
+        const int32_t numMovies = gpFlash->getNumMovies( 1 );
+        for ( int32_t i = 0; i < numMovies; i++ ) {
+            if ( i == 0 && gpScenaric != nullptr &&
+                 gpScenaric->getIntroTutorial().isModalHintVisible() ) {
+                bScenarioTutorialMustReactivateFlash = true;
+                continue;
+            }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (snapshot the vehicle camera
-                                 // the intro left behind)
+            MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, i );
+            if ( pMovie != nullptr ) {
+                pMovie->IsMoviePaused &= ~2;
+            }
+        }
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA
         break;
     }
 

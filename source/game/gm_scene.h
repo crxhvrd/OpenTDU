@@ -4,6 +4,7 @@
 #include "world/world_listener.h"
 #include "scenaric/gs_scenaric.h"
 #include "flash/gs_flash.h"
+#include "render/gs_render_helper.h"
 
 #include "game/mng_flash_gm.h"
 #include "render/mng_shadow.h"
@@ -31,6 +32,7 @@ class EntityCinematic;
 class GameModeScene : public WorldListener,
                       public CinematicPlayer,
                       public FlashStreamListener,
+                      public RenderConfigurationChangeListener,
                       public GameMode {
 public:
     bool isVerifyingGameFreeze() const { return bVerifyGameFreeze; }
@@ -71,6 +73,12 @@ public:
 
     void onResourceStreamed() override;
     bool isStaticFrontEndScene() const;
+
+    bool onConfigurationChanged() override {
+        // FUN_007bc910
+        toggleHDRRadialBlur();
+        return true;
+    }
 
     bool executeAction( int32_t param_2, void *param_3 ) override;
     virtual void installCinematics( SpotMap *pSpot, ScenaricBank *pBank );

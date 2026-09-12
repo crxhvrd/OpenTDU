@@ -23,6 +23,7 @@ public:
 
     void initialize( Spots &spotList );
     inline int32_t getStep() const { return tutorialStep; }
+    inline bool isModalHintVisible() const { return bModalHintVisible; }
 
     bool isActive() const;
     void reset();
