@@ -529,10 +529,6 @@ void GMFreeride::onResourceStreamed() {
     // FUN_007940f0
     GameModeWorld::onResourceStreamed();
 
-    if ( mngHudChallenge.getHudPlayer() == nullptr ) {
-        mngHudChallenge.initializeFlash();
-    }
-
     FlashPlayer *pPlayer = mngHudChallenge.getHudPlayer();
     if ( pPlayer == nullptr ) {
         return;
@@ -915,7 +911,9 @@ void GMFreeride::drawDebug( float deltaTime ) {
                         gRequestedPlayerCarColorID = 0;
                         gRequestedPlayerCarRimID = -1;
                         gRequestedPlayerCarInteriorID = 0;
-                        gRequestedCarChange = true;
+                        gRequestedCarChange =
+                            ( pPaintTarget == nullptr ||
+                              pPaintTarget->getCarID() != car.Hash );
                     }
 
                     if ( bSelected )

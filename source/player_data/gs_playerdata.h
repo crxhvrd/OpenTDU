@@ -122,6 +122,7 @@ public:
     bool readProfileOptions( const uint64_t profileHashcode,
                              LocalPlayerData &outPlayerData );
     void requestSave( const int32_t mode );
+    void applyDrivingOptions();
     void prepareActiveProfile();
     int32_t writeCommonDT( void *pExternalBuffer,
                            const int32_t bufferLength,

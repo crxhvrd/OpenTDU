@@ -269,6 +269,7 @@ public:
     void resolveCollisionEvents();
 
     void updateGroundColor();
+    void openConvertibleWindows();
     void retrieveLights( DirectionalLight *param_1, DirectionalLight *param_2 );
 
     bool FUN_00406ce0();

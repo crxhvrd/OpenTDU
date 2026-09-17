@@ -54,6 +54,9 @@ public:
 
     void releaseResourceEntry( VehicleBaseResources *pResource );
     void releaseCarState( CarState *param_2, bool param_3 );
+    void unloadVehicle( CarState *pCarState,
+                        const bool bDeferred,
+                        const bool bReleaseDriver );
 
     void notifyListeners( float param_1 );
 

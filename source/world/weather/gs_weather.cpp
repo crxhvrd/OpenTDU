@@ -328,6 +328,15 @@ void GSWeather::setTime( bool bNotifyListeners, const TimeOfDay *pTime ) {
     }
 }
 
+void GSWeather::setUpdateTimer( const bool bEnabled,
+                                const TimeOfDay &interval ) {
+    // FUN_007d1340
+    bUpdateTimerEnabled = bEnabled;
+    if ( bEnabled ) {
+        TimeOfDay::Add( currentTOD, interval, nextTOD );
+    }
+}
+
 int32_t GSWeather::getWeatherConfigIndex( const char *pWeatherCfg ) {
     // FUN_007d1040
     for ( uint32_t i = 0; i < registeredWeatherConfigs.size(); i++ ) {

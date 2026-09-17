@@ -65,6 +65,7 @@ public:
     inline Entity *getCurrentExtraChallenge() const {
         return pCurrentExtraChallenge;
     }
+    inline bool getUnknown75C() const { return bUnknown75C; }
 
 public:
     PlayerGameMech( int32_t type, uint32_t id );
@@ -89,6 +90,7 @@ private:
     int32_t spotDisplayTypeIndex;
     int32_t spotDisplayNameIndex;
     Entity *pCurrentExtraChallenge;
+    bool bUnknown75C;
 };
 
 void GetSpotDisplayIndices( const SpotMap *pSpot,

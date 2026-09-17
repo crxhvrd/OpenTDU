@@ -642,6 +642,23 @@ void GSCarState::releaseResourceEntry( VehicleBaseResources *pResource ) {
     vehicleResources.NumUsed--;
 }
 
+void GSCarState::unloadVehicle( CarState *pCarState,
+                                const bool bDeferred,
+                                const bool bReleaseDriver ) {
+    // FUN_008ad230
+    if ( bDeferred ) {
+        carToDeinstanciate.push( pCarState );
+        return;
+    }
+
+    VehicleBaseResources *pResource = pCarState->getResource();
+    releaseCarState( pCarState, bReleaseDriver );
+    if ( pResource != nullptr ) {
+        pResource->unload();
+        releaseResourceEntry( pResource );
+    }
+}
+
 void GSCarState::releaseCarState( CarState *param_2, bool param_3 ) {
     // FUN_008ad980
     VehicleBaseResources *pVVar2 = param_2->pResource;

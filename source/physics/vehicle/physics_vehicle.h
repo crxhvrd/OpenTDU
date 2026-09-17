@@ -61,14 +61,14 @@ public:
 
     // Aftermarket perf pack coefficients
     struct PerfPackCoefs {
-        float TopSpeed = 1.0f;   
-        float BHP = 1.0f;       
-        float Accel = 0.0f;    
-        float Cx = 1.0f;         
-        float Weight = 1.0f;     
-        float Suspension = 1.0f; 
-        float Brake = 1.0f;     
-        bool bInstalled = false; 
+        float TopSpeed = 1.0f;
+        float BHP = 1.0f;
+        float Accel = 0.0f;
+        float Cx = 1.0f;
+        float Weight = 1.0f;
+        float Suspension = 1.0f;
+        float Brake = 1.0f;
+        bool bInstalled = false;
     };
 
     struct DrivingGearbox {
@@ -80,6 +80,16 @@ public:
         bool bShiftIdle;     // gearbox will take a shift request right now
         bool bEngineRunning; // engine in the running state (orig state 2)
         int32_t ShiftDirection;
+    };
+
+    struct DrivingOptions {
+        bool bAutomatic = true;
+        bool bSteerControl = false;
+        bool bHShifter = false;
+        bool bManualClutch = false;
+        float Sensitivity = 1.0f;
+        float Linearity = 0.0f;
+        float RumbleMax = 0.0f;
     };
 
     enum eDrivingMode : uint8_t {
@@ -167,6 +177,7 @@ public:
     void setPhysicsPaused( bool bPaused ) { bPausePhysics = bPaused; }
     bool isPhysicsPaused() const { return bPausePhysics; }
     void resetAutomaticGearbox();
+    void applyDrivingOptions( const DrivingOptions &options );
     bool isActive() const { return pChassisBody != nullptr; }
     const JPH::Body *getChassisBody() const { return pChassisBody; }
     bool isSimulated() const { return bRegistered; }
@@ -392,6 +403,10 @@ private:
     // whole assist + rate-limit tail is bypassed), != 0 = wheel/bar.
     bool bUseSteerControl;
     float steerAssistBlend;
+    float steerSensitivity;
+    float rumbleMax;
+    bool bHShifterEnabled;
+    bool bManualClutch;
     float engineOmega; // rad/s, for the tacho / CarBodyState::Omega
     int32_t currentGear;
     float finalDriveRatio;

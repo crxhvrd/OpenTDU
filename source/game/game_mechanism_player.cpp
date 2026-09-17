@@ -175,7 +175,8 @@ PlayerGameMech::PlayerGameMech( int32_t type, uint32_t id )
       pCurrentSpotEntity( nullptr ),
       spotDisplayTypeIndex( -1 ),
       spotDisplayNameIndex( -1 ),
-      pCurrentExtraChallenge( nullptr ) {
+      pCurrentExtraChallenge( nullptr ),
+      bUnknown75C( false ) {
     // FUN_00737730
     OTDU_UNIMPLEMENTED; // TODO: GameLogic
 }

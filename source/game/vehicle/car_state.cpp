@@ -6,6 +6,8 @@
 
 #include "gs_car_display.h"
 #include "gs_car_state.h"
+#include "vehicle_car.h"
+#include "database/gs_database.h"
 #include "game/avatar/avatar_clothes.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "world/gs_world.h"
@@ -260,6 +262,26 @@ void CarState::updateGroundColor() {
 
             hierarchyIndex = bIsBike ? 6 : ( hierarchyIndex + 1 );
         }
+    }
+}
+
+void CarState::openConvertibleWindows() {
+    // FUN_008af100
+    DBEntryCarPhysicsData *pCarData = gpDatabase->getCarDBEntry( carID );
+    if ( pCarData != nullptr && pVehicleBase != nullptr &&
+         pVehicleBase->getType() == VehicleBase::eType::VBT_Car ) {
+        const uint64_t bodyHashcode =
+            gpDatabase->getGameDB().Databases[1].getHashcodeForPointer(
+                pCarData->CarBody.pAsRawPointer );
+        if ( bodyHashcode == 0x56760d || bodyHashcode == 0x57fcad ) {
+            VehicleCar *pCar = static_cast<VehicleCar *>( pVehicleBase );
+            pCar->setWindowOpenRight( 1.0f );
+            pCar->setWindowOpenLeft( 1.0f );
+        }
+    }
+
+    if ( pPhysicsVehicle != nullptr ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
     }
 }
 

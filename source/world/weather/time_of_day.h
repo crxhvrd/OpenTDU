@@ -21,6 +21,14 @@ struct TimeOfDay {
         out.Minutes = mins;
         out.Seconds = rem - mins * 60.0f;
     }
+
+    static void
+    Add( const TimeOfDay &lhs, const TimeOfDay &rhs, TimeOfDay &out ) {
+        // FUN_007d0ae0
+        ToStdUnit( lhs.Hours * 3600.0f + lhs.Minutes * 60.0f + lhs.Seconds +
+                       rhs.Minutes * 60.0f + rhs.Hours * 3600.0f + rhs.Seconds,
+                   out );
+    }
 };
 
 static constexpr TimeOfDay kTimeOfDayMax = { 23.0f, 59.0f, 59.999f };

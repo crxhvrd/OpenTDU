@@ -74,7 +74,6 @@ constexpr float kSteerScale = 900.0f; // DAT_00f41c10 (900/gSteeringTurn = gain)
 constexpr float kSteerLinearity = 5.0f;    // DAT_00fab71c
 constexpr float kSteerLinearityMin = 0.1f; // FLOAT_00f41668 (expo gate)
 constexpr float kSteerTurnScale = 1.0f;
-constexpr float kSteerNormSpeed = 1.0f;
 constexpr float kSteerSensRetailHigh = 2.0f;
 constexpr float kSteerAuxDeadBand = 0.01f;        // DAT_00fab704
 constexpr float kSteerCounterMinRate = 0.1f;      // DAT_00fab710
@@ -774,6 +773,10 @@ PhysicsVehicle::PhysicsVehicle()
       steerHelpState( 0 ),
       bUseSteerControl( false ),
       steerAssistBlend( 0.0f ),
+      steerSensitivity( 1.0f ),
+      rumbleMax( 0.0f ),
+      bHShifterEnabled( false ),
+      bManualClutch( false ),
       engineOmega( 0.0f ),
       currentGear( 1 ),
       finalDriveRatio( 4.0f ),
@@ -1488,6 +1491,22 @@ void PhysicsVehicle::resetAutomaticGearbox() {
     autoGearboxBrake = 0.0f;
 }
 
+void PhysicsVehicle::applyDrivingOptions( const DrivingOptions &options ) {
+    // FUN_00897790 (inlined)
+    vehicle.GearBox.bAutomatic = options.bAutomatic;
+    vehicle.GearBox.ShiftState = 1;
+    vehicle.GearBox.ShiftTimer = 0.0f;
+    vehicle.Clutch.Engagement = 1.0f;
+    vehicle.Clutch.State = 0;
+
+    steerSensitivity = options.Sensitivity;
+    steerAssistBlend = options.Linearity;
+    bUseSteerControl = options.bSteerControl;
+    rumbleMax = options.RumbleMax;
+    bHShifterEnabled = options.bHShifter;
+    bManualClutch = options.bManualClutch;
+}
+
 static float PedalResponseCurve( float x, float k ) {
     // FUN_00824730
     if ( k < 0.0f ) {
@@ -1788,24 +1807,24 @@ float PhysicsVehicle::filterSteering( float rawSteer,
                                       float deltaTime ) {
     // FUN_0041ad60
     const float speed = chassis.GetLinearVelocity().Length(); // local_44
-    const float normSpeed = kSteerNormSpeed;
+    const float sensSlider = steerSensitivity;
 
     float sens = kSteerSensRetailHigh;
     if ( gSensitivity[1] > gSensitivity[0] &&
          gSensitivity[2] > gSensitivity[1] ) {
         float base, slope, lo, hi;
-        if ( normSpeed >= gSensitivity[1] ) { // upper segment [0.5,1]
+        if ( sensSlider >= gSensitivity[1] ) { // upper segment [0.5,1]
             slope = ( gSensitivity[5] - gSensitivity[4] ) /
                     ( gSensitivity[2] - gSensitivity[1] );
             base = gSensitivity[4];
-            sens = slope * ( normSpeed - gSensitivity[1] ) + base;
+            sens = slope * ( sensSlider - gSensitivity[1] ) + base;
             lo = gSensitivity[4];
             hi = gSensitivity[5];
         } else { // lower segment [0,0.5]
             slope = ( gSensitivity[4] - gSensitivity[3] ) /
                     ( gSensitivity[1] - gSensitivity[0] );
             base = gSensitivity[3];
-            sens = slope * ( normSpeed - gSensitivity[0] ) + base;
+            sens = slope * ( sensSlider - gSensitivity[0] ) + base;
             lo = gSensitivity[3];
             hi = gSensitivity[4];
         }

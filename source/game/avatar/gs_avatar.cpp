@@ -316,6 +316,16 @@ bool GSAvatar::onConfigurationChanged() {
     return true;
 }
 
+void GSAvatar::setEnvMap( const bool bRealTime, Render2DB *p2DB ) {
+    // FUN_008f6350
+    for ( int32_t i = 0; i < AvatarPool::kNumInstances; i++ ) {
+        PooledAvatarEntry &instance = pool.getInstance( i );
+        instance.EnvMap.bRealTime = bRealTime;
+        instance.EnvMap.p2DB = p2DB;
+        instance.setEnvMap();
+    }
+}
+
 void GSAvatar::readAvatarConfig( const EntityAvatar *pAvatar,
                                  AvatarConfiguration &outConfig ) {
     // FUN_007f76d0

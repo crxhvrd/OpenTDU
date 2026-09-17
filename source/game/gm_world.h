@@ -120,6 +120,8 @@ protected:
     void updateLocalPlayerDrivingInput( float deltaTime );
     void resetAutomaticGearbox();
     void teleportLocalPlayerCar( const Eigen::Vector3f &worldPos );
+    void updateCarHotReload();
+    void loadHotReloadedCar();
 
 protected:
     MngHudChallenge mngHudChallenge;
@@ -141,6 +143,7 @@ protected:
     int32_t carRimIndex;   // garage entry +0x6c
     int32_t carTireIndex;  // garage entry +0x70
 
+    int32_t lastOdometerKms;
     float lastDistance;
     float initializeTime; // GSTimer total time at initialize()
     float pauseFadeTimer; // Pause radial-blur fade countdown

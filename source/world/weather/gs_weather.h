@@ -63,6 +63,7 @@ public:
     void setWeatherDesc( int32_t index, const char *pName );
     void setCurrentWeatherDesc( const char *pWeatherDesc );
     void setTime( bool bNotifyListeners, const TimeOfDay *pTime );
+    void setUpdateTimer( const bool bEnabled, const TimeOfDay &interval );
 
     void setTimeScale( float param_1 );
 

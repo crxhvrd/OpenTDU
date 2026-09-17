@@ -46,6 +46,8 @@ public:
 
     bool onConfigurationChanged() override;
 
+    void setEnvMap( const bool bRealTime, Render2DB *p2DB );
+
     bool applyPNJConfiguration( AvatarConfiguration &outConfig,
                                 const DBEntryPNJ &pnjEntry );
     void bakeAvatar( EntityAvatar *pAvatar,

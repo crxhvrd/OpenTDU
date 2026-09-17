@@ -16,6 +16,7 @@
 
 class CarState;
 class FlashPlayer;
+class PlayerGameMech;
 class Render2DB;
 class FlashResource;
 struct FlashRECT;
@@ -125,6 +126,7 @@ public:
     FlashPlayer *pPlayer = nullptr;
     char pClipPath[64] = { '\0' };
     MngGPS *pGps = nullptr;
+    PlayerGameMech *pGameMech = nullptr;
     int32_t MapMode = 3;
     int32_t MapModeTarget = 3;
     float RotationBlend = 1.0f;
@@ -275,6 +277,9 @@ public:
     inline void setEnabled( const bool value ) { bEnabled = value; }
     inline void setGPSRotation( const bool value ) { bGPSRotation = value; }
     inline FlashPlayer *getHudPlayer() { return pHudPlayer; }
+    inline void setGameMech( PlayerGameMech *pMech ) {
+        minimap.pGameMech = pMech;
+    }
 
     inline float getMinimapViewportU() const { return minimap.ViewportU; }
     inline float getMinimapViewportV() const { return minimap.ViewportV; }

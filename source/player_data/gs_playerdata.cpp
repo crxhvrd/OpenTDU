@@ -19,6 +19,9 @@
 #include "game/scenaric/avatar_manager.h"
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/local_player.h"
+#include "game/vehicle/car_state.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "player_save.h"
 #include "online/gs_online.h"
 #include "render/camera/gs_camera.h"
@@ -456,6 +459,38 @@ bool GSPlayerData::readProfileOptions( const uint64_t profileHashcode,
     gUserProfileRegister.initialize( previousHashcode );
 
     return bSuccess;
+}
+
+void GSPlayerData::applyDrivingOptions() {
+    // FUN_00897790
+    CarState *pCarState = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pCarState == nullptr ) {
+        return;
+    }
+
+    PhysicsVehicle *pPhysicsVehicle = pCarState->getPhysicsVehicle();
+    if ( pPhysicsVehicle == nullptr ) {
+        return;
+    }
+
+    PhysicsVehicle::DrivingOptions options = {};
+    options.bAutomatic = localPlayerData.bAuto;
+    options.bSteerControl = !localPlayerData.bUseWheel;
+    options.bHShifter = localPlayerData.bHShifterEnabled;
+    options.bManualClutch = !localPlayerData.bAutoClutch;
+    options.Sensitivity = pCarState->getBody()->bIsBike
+                              ? localPlayerData.BarSensitivity
+                              : localPlayerData.PadSensitivity;
+    options.Linearity =
+        localPlayerData.bUseWheel ? localPlayerData.Linearity : 0.0f;
+    options.RumbleMax = localPlayerData.QuiverSensitivity;
+
+    pPhysicsVehicle->applyDrivingOptions( options );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (mouse sensitivity, invert mouse
+                             // and TrackIR are read from the device config)
 }
 
 void GSPlayerData::requestSave( const int32_t mode ) {
