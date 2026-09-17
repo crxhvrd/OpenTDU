@@ -21,6 +21,8 @@
 #include "audio/gs_audio.h"
 #include "audio/vehicle/gs_vehicle_sound.h"
 #include "render/camera/camera_game.h"
+#include "game/mng_hud.h"
+#include "flash/implementation/flash_player.h"
 
 GSCarState *gpCarState = nullptr; // DAT_010e7518
 
@@ -37,7 +39,7 @@ GSCarState::GSCarState()
     eventNotifiablesData.fill( nullptr );
     eventNotifiablesProcessed.fill( nullptr );
     eventListenersDataProcessed.fill( nullptr );
-    policeStateJobs.fill( PoliceStateJob() );
+    policeStateJobs.fill( nullptr );
 
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
         carStates[i].setInstanceID( i );
@@ -442,7 +444,7 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             phantoms.clearEvents();
         }
 
-        OTDU_UNIMPLEMENTED;
+        OTDU_UNIMPLEMENTED; // TODO: GMDriveIn
     }
 
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
@@ -464,8 +466,31 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: Scenarics
-                        // TODO: MngHUD
+    bool bLocalPlayerArrested = false;
+    if ( gpScenaric != nullptr ) {
+        CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+        if ( pLocalCar != nullptr ) {
+            const int32_t instanceID = pLocalCar->carInstanceID;
+            if ( instanceID >= 0 && policeStateJobs[instanceID] != nullptr ) {
+                policeStateJobs[instanceID]->check( &carStates[instanceID],
+                                                    deltaTime );
+            }
+            bLocalPlayerArrested = pLocalCar->getPoliceState().isArrested();
+        }
+    }
+
+    if ( gpMngHud != nullptr ) {
+        FlashPlayer *pHudPlayer = gpMngHud->getHudPlayer();
+        if ( pHudPlayer != nullptr ) {
+            const bool bMapAvailable =
+                pHudPlayer->getVariableAsInt( "/:IsMapAvailable" ) != 0;
+            if ( bMapAvailable == bLocalPlayerArrested ) {
+                pHudPlayer->setVariableValue(
+                    "/:IsMapAvailable",
+                    static_cast<int32_t>( !bLocalPlayerArrested ) );
+            }
+        }
+    }
 
     if ( gpMngShadow != nullptr ) {
         for ( uint32_t iVar3 = 0; iVar3 < kMaxNumVehicles; iVar3++ ) {

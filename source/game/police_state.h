@@ -14,4 +14,7 @@ private:
     bool bArrested = false;
 };
 
-struct PoliceStateJob {};
+class PoliceStateJob {
+public:
+    virtual void check( class CarState *param_1, float param_2 ) = 0;
+};

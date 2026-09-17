@@ -66,7 +66,7 @@ private:
     std::array<void *, kMaxNumVehicles * 4> eventNotifiablesData;
     std::array<CarStateEventListener *, 4> eventNotifiablesProcessed;
     std::array<void *, 4> eventListenersDataProcessed;
-    std::array<PoliceStateJob, kMaxNumVehicles> policeStateJobs;
+    std::array<PoliceStateJob *, kMaxNumVehicles> policeStateJobs;
     std::queue<CarState *> carToDeinstanciate;
     ResourcePool<VehicleBaseResources> vehicleResources;
     uint32_t bUsedSlot;
