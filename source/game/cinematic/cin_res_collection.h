@@ -8,12 +8,15 @@
 class BankInstance;
 class ClipInstance;
 class CameraCinematic;
+class EntityActor;
 class EntityCinematic;
 
 struct CinematicActor {
     enum eKind : int32_t {
         CAK_Entity = 0,    // pEntity is an Entity* (scene actor / ped / avatar)
         CAK_PlayerCar = 1, // the local player car; pEntity stays null
+        CAK_Plane = 2, // pEntity is the live GSAircraft instance (Interface
+                       // pPlane); owned by GSAircraft, never cloned or freed
     };
 
     char Name[32];
@@ -66,6 +69,8 @@ public:
         baseMatrix = Matrix4x4f_t::Identity();
         bHasBaseMatrix = false;
     }
+    inline void setPlane( EntityActor *pActor ) { pPlane = pActor; }
+    inline EntityActor *getPlane() const { return pPlane; }
     inline void *getActorEntity( int32_t index ) const {
         return ( index >= 0 && index < numActors ) ? actors[index].pEntity
                                                    : nullptr;
@@ -211,6 +216,7 @@ private:
     CameraView cameraView{};
     Matrix4x4f_t baseMatrix = Matrix4x4f_t::Identity();
     bool bHasBaseMatrix = false;
+    EntityActor *pPlane = nullptr;
     std::vector<const void *> firedMessages;
     class CinematicMusicEmitter *pMusicEmitter = nullptr;
     EntityCinematic *pOwner = nullptr;

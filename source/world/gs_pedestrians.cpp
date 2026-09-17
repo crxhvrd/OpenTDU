@@ -3,15 +3,105 @@
 
 #include "config/gs_config.h"
 #include "core/random/bcpl.h"
+#include "game/avatar/avatar_bnk.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "render/2dm.h"
 #include "render/3dd.h"
 #include "render/instance.h"
+#include "render/material.h"
 #include "render/mng_reflection.h"
+#include "render/mng_shadow.h"
 #include "render/render_scene.h"
 
 static constexpr int32_t kNumPedestrians = 20;
 static constexpr uint32_t kInstanceMagic = 0x2e534e49;
+static constexpr int32_t kNumBodyParts = 5;
+static constexpr uint32_t kBodyPartParameterID = 0xd4;
+
+static int32_t GetBodyPartIndex( const uint64_t hashcode ) {
+    // FUN_00850ff0
+    static const uint64_t accessoryHashcode = AvatarCalcHashcode( "ACC" );
+    static const uint64_t bodyHashcode = AvatarCalcHashcode( "BOD" );
+    static const uint64_t topHashcode = AvatarCalcHashcode( "TOP" );
+    static const uint64_t bottomHashcode = AvatarCalcHashcode( "BOT" );
+    static const uint64_t shadowHashcode = AvatarCalcHashcode( "SHADOW" );
+
+    if ( hashcode == accessoryHashcode ) {
+        return 0;
+    }
+    if ( hashcode == bodyHashcode ) {
+        return 1;
+    }
+    if ( hashcode == topHashcode ) {
+        return 2;
+    }
+    if ( hashcode == bottomHashcode ) {
+        return 3;
+    }
+    if ( hashcode == shadowHashcode ) {
+        return 4;
+    }
+    return kNumBodyParts;
+}
+
+static Material *GetMaterialByHashcode( Render2DM *p2DM,
+                                        const uint64_t hashcode ) {
+    // FUN_0040fc50
+    RenderFile::Section *pSection = p2DM->getMaterial( hashcode );
+    return ( pSection != nullptr )
+               ? reinterpret_cast<Material *>( pSection + 1 )
+               : nullptr;
+}
+
+static Material *GetBodyPartMaterial( AvatarCommonBnk &characterBank,
+                                      const int32_t partIndex,
+                                      const int32_t *pPartDescriptor ) {
+    // FUN_008513c0
+    Render2DM *p2DM = characterBank.getExtraMaterial( partIndex );
+    if ( p2DM->getHeader() == nullptr ) {
+        return nullptr;
+    }
+
+    const uint32_t numMaterials = p2DM->getNumMaterials();
+    if ( numMaterials == 0 ) {
+        return nullptr;
+    }
+
+    const uint32_t materialIndex = static_cast<uint32_t>( pPartDescriptor[1] );
+    if ( pPartDescriptor[0] == 2 ) {
+        return p2DM->getMaterialAtIndex( materialIndex % numMaterials );
+    }
+    if ( pPartDescriptor[0] == 1 ) {
+        return p2DM->getMaterialAtIndex( materialIndex );
+    }
+    return nullptr;
+}
+
+static bool BindBodyPartLayer( ShaderParameter *pLayer,
+                               Material *pSourceMaterial,
+                               Material *pTargetMaterial ) {
+    // FUN_00851260
+    MaterialParameter *pParameter = pSourceMaterial->getParameterByIndex( 0 );
+    if ( pParameter == nullptr || pParameter->Type != MPT_Generic ) {
+        return false;
+    }
+
+    MaterialShaderParameterArray *pShaderParameters =
+        static_cast<MaterialShaderParameterArray *>( pParameter );
+    float *pData =
+        pShaderParameters->getStaticParamDataPS( kBodyPartParameterID );
+    if ( pData == nullptr ) {
+        return false;
+    }
+
+    pLayer->ShaderHashcode = 0ull;
+    pLayer->pMaterial = pTargetMaterial;
+    pLayer->ParameterID = kBodyPartParameterID;
+    pLayer->pParameters = pData;
+    pLayer->NumParameters = 1;
+    pLayer->bBindToPixelShader = true;
+    return true;
+}
 
 GSPedestrians *gpPedestrians = nullptr;
 
@@ -219,8 +309,39 @@ bool GSPedestrians::assemblePedestrian( PedestrianResource *pRsc,
          p2DM != nullptr && p2DM->getHeader() != nullptr &&
          characterBank.isSharedMaterialLoaded() &&
          pRsc->pSkeleton != nullptr ) {
-        OTDU_UNIMPLEMENTED;
-        pRsc->NumLayers = 0;
+        Render2DM *pSharedMaterial = characterBank.getSharedMaterial();
+        const int32_t numMaterials =
+            static_cast<int32_t>( p2DM->getNumMaterials() );
+        for ( int32_t i = 0; i < numMaterials; i++ ) {
+            const uint64_t hashcode =
+                p2DM->getMaterialHashcode( static_cast<uint32_t>( i ) );
+            if ( hashcode == 0ull ) {
+                continue;
+            }
+
+            Material *pTargetMaterial =
+                GetMaterialByHashcode( pSharedMaterial, hashcode );
+            Material *pDefaultMaterial =
+                GetMaterialByHashcode( p2DM, hashcode );
+            const int32_t partIndex = GetBodyPartIndex( hashcode );
+            if ( pTargetMaterial == nullptr || pDefaultMaterial == nullptr ||
+                 partIndex >= kNumBodyParts ) {
+                continue;
+            }
+
+            const int32_t *pPartDescriptor = &pDescriptor[4 + partIndex * 2];
+            Material *pSourceMaterial = GetBodyPartMaterial(
+                characterBank, partIndex, pPartDescriptor );
+            if ( pSourceMaterial == nullptr || pPartDescriptor[0] == 0 ) {
+                pSourceMaterial = pDefaultMaterial;
+            }
+
+            if ( BindBodyPartLayer( &pRsc->Layers[pRsc->NumLayers],
+                                    pSourceMaterial, pTargetMaterial ) ) {
+                pRsc->NumLayers++;
+            }
+        }
+
         pRsc->ShaderSetup.bindParameters(
             pRsc->Layers, static_cast<uint32_t>( pRsc->NumLayers ) );
         return true;
@@ -286,7 +407,9 @@ void GSPedestrians::submitPedestrian( RenderScene *pScene,
 
     pScene->enqueueDynamicInstance( pRsc->pInstance );
 
-    OTDU_UNIMPLEMENTED;
+    if ( gpMngShadow != nullptr && pRsc->bIsShadowCaster ) {
+        gpMngShadow->addShadowCaster( pRsc->pInstance, 1.0f );
+    }
 
     if ( gpMngReflection != nullptr && pRsc->bIsReflected &&
          gpMngReflection->getBoundScene() != nullptr ) {

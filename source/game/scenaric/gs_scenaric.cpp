@@ -96,6 +96,7 @@ GSScenaric::GSScenaric()
       traceSize( 300 ),
       currentDefVersion( 0 ),
       currentSpotIndex( -1 ),
+      bIsFromDriveIn( false ),
       extraRewardsCineCount( 0 ),
       rentalTimer( -1.0f ),
       objectiveSpotHashcode( 0 ),

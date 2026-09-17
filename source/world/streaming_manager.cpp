@@ -2997,7 +2997,15 @@ bool StreamingManager::computeGroundColor( Eigen::Vector4f *pOutColor,
     }
 
     if ( ( flags & GCF_Type ) != 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ground type greyscale branch
+        *pOutColor = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
+        if ( desc.pTypeBitmap != nullptr ) {
+            const Eigen::Vector4f type =
+                SampleGroundBitmap( desc.pTypeBitmap, u, v );
+            if ( type.y() > 0.5f ) { // FLOAT_00f41674
+                *pOutColor =
+                    Eigen::Vector4f( type.x(), type.x(), type.x(), 1.0f );
+            }
+        }
         return true;
     }
 

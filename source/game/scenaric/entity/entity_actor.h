@@ -12,6 +12,12 @@ public:
     inline void setRefreshAnimation( const bool bState ) {
         bRefreshAnimationThisFrame = bState;
     }
+    inline void setMustProjectOnHMap( const bool bState ) {
+        bMustProjectOnHMap = bState;
+    }
+    inline void setMustProjectOnRoad( const bool bState ) {
+        bMustProjectOnRoad = bState;
+    }
 
 public:
     EntityActor();

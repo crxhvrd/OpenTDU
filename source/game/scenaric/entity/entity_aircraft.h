@@ -34,6 +34,8 @@ public:
     void deinstanciate() override;
     void updateSkinningMatrices() override;
 
+    void setLivery( int32_t liveryIndex );
+
 protected:
     SerializedAircraftMaterial pMaterials[10];
     int32_t NumMaterials;

@@ -17,6 +17,7 @@
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "world/gs_world.h"
+#include "world/gs_world_streaming.h"
 
 GSAircraft *gpAircraft = nullptr; // DAT_010e742c
 
@@ -85,9 +86,9 @@ static float GetAmbianceVolumeFactor() {
                                  : 1.0f;
 }
 
-static Eigen::Vector3f GetListenerAnchor() {
-    if ( gpWorld != nullptr && gpWorld->getStreamPosition() != nullptr ) {
-        return gpWorld->getStreamPosition()->head<3>();
+static Eigen::Vector3f GetWorldShift() {
+    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+        return gpWorldStreaming->getPosition().head<3>();
     }
     return Eigen::Vector3f::Zero();
 }
@@ -309,15 +310,15 @@ void Aircraft::terminateSound() {
     pSoundInstance = nullptr;
 }
 
-void Aircraft::updateSound( bool bAtListener ) {
+void Aircraft::updateSound( bool bCineShifted ) {
     // FUN_00903990
     if ( pSoundInstance == nullptr || pInstance == nullptr ) {
         return;
     }
 
     Eigen::Vector3f position = pInstance->getModelMatrix().row( 3 ).head<3>();
-    if ( bAtListener ) {
-        position = GetListenerAnchor();
+    if ( bCineShifted ) {
+        position += GetWorldShift();
     }
 
     pSoundInstance->setPosition(
@@ -416,24 +417,22 @@ void Aircraft::updateCinematic( AircraftPathFlights &owner,
     if ( gpMngCinematics != nullptr && gpMngCinematics->isValid() &&
          pCinematic != nullptr && !pCinematic->isPlaying() &&
          bCineDriven == 0 && bCineWindowLatched == 0 ) {
-        Matrix4x4f_t cineMatrix = aircraftMatrix;
-        const Eigen::Vector3f anchor = GetListenerAnchor();
-        cineMatrix.row( 3 ) << -anchor.x(), -anchor.y(), -anchor.z(), 1.0f;
-
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: Cinematic interface hand-over
-                                 // (bAvatar/MatTransformOffset/bCineOffset)
+        Matrix4x4f_t transformOffset = aircraftMatrix;
+        transformOffset.row( 3 ).head<3>() -= GetWorldShift();
 
         pCinematic->setGameModeInterface( this );
+        pCinematic->setPlane( static_cast<EntityActor *>( pInstance ) );
+        pCinematic->setTransformOffset( transformOffset );
         bCineDriven = 1;
         pCinematic->start( true );
-        CurrentU = cineStartU;
+        CurrentU = getCurveU( IndiceCineStop );
     }
 
     bCineWindowLatched = 1;
 }
 
 void Aircraft::tick( AircraftPathFlights &owner, float deltaTime ) {
-    // FUN_009044e0 (per aircraft body)
+    // FUN_009044e0
     const AircraftPath &originalPath = owner.getOriginalPath();
     const float originalLength = originalPath.getTotalLength();
     if ( originalLength <= 0.0f ) {
@@ -703,6 +702,13 @@ void AircraftPathFlights::spawnAircrafts( MngActor &mngActor,
 
         Entity *pInstance = mngActor.instanciateActor( pTemplate );
         if ( pInstance != nullptr ) {
+            EntityAircraft *pAircraftInstance =
+                static_cast<EntityAircraft *>( pInstance );
+            const uint32_t numLiveries =
+                static_cast<uint32_t>( pAircraftInstance->getNumMaterials() );
+            pAircraftInstance->setLivery( static_cast<int32_t>(
+                RandomBelow( randomGen, numLiveries + 1 ) ) );
+
             flights.push_back( std::make_unique<Aircraft>() );
             Aircraft &aircraft = *flights.back();
 
@@ -716,8 +722,6 @@ void AircraftPathFlights::spawnAircrafts( MngActor &mngActor,
 
             buildFlightPath( aircraft );
             aircraft.seedSpeed();
-
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: FILESYSTEM
         }
 
         distance += RandomUnit( randomGen ) * spacingRange + minSpacing;
@@ -751,6 +755,10 @@ void AircraftPathFlights::terminate() {
         if ( pCinematic != nullptr &&
              pCinematic->getGameModeInterface() == pAircraft.get() ) {
             pCinematic->setGameModeInterface( nullptr );
+        }
+        if ( pCinematic != nullptr &&
+             pCinematic->getPlane() == pAircraft->getInstance() ) {
+            pCinematic->setPlane( nullptr );
         }
     }
     flights.clear();

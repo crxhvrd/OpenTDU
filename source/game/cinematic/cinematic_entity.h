@@ -20,6 +20,10 @@ public:
 
     virtual bool isValid() const;
 
+    inline void setNeedRegisterEntity( bool bEnabled ) {
+        bNeedRegisterEntity = bEnabled;
+    }
+
 protected:
     std::string cutsceneName;
     uint32_t cutsceneIndex;

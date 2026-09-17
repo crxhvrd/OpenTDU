@@ -10,6 +10,7 @@
 #include "core/hash/crc64.h"
 #include "core/random/bcpl.h"
 #include "filesystem/bank.h"
+#include "game/scenaric/entity/entity_actor.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/entity/entity_pedestrian.h"
 #include "database/gs_database.h"
@@ -1542,6 +1543,17 @@ void *CinResCollection::spawnActorEntity( const char *pName,
         if ( std::strncmp( "TRAFFICCAR", pName, 10 ) == 0 ) {
             OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
             return nullptr;
+        }
+
+        if ( std::strstr( pName, "PLANE" ) != nullptr ) {
+            if ( pPlane == nullptr ) {
+                return nullptr;
+            }
+            pPlane->setNeedRegisterEntity( false );
+            pPlane->setMustProjectOnHMap( true );
+            pPlane->setMustProjectOnRoad( false );
+            outKind = CinematicActor::CAK_Plane;
+            return static_cast<Entity *>( pPlane );
         }
     }
 

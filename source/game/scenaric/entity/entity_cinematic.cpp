@@ -703,7 +703,9 @@ bool EntityCinematic::begin() {
         for ( int32_t i = 0; i < numActors; i++ ) {
             Entity *pTemplate =
                 static_cast<Entity *>( cinematicPlayer.getActorEntity( i ) );
-            if ( pTemplate == nullptr ) {
+            if ( pTemplate == nullptr ||
+                 cinematicPlayer.getActorKind( i ) ==
+                     CinematicActor::CAK_Plane ) {
                 continue;
             }
             if ( Entity::IsAvatarEntityType( pTemplate ) ) {
@@ -828,7 +830,8 @@ void EntityCinematic::end() {
                         gpScenaric->getAvatarManager().releaseAvatar(
                             static_cast<EntityAvatar *>( pActor ) );
                     }
-                } else {
+                } else if ( cinematicPlayer.getActorKind( i ) !=
+                            CinematicActor::CAK_Plane ) {
                     MngActor::Uninstanciate( &sceneActors, pActor );
                 }
                 cinematicPlayer.setActorEntity( i, nullptr );

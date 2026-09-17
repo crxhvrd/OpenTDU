@@ -15,7 +15,8 @@ static void RandomizeAppearance( int32_t *pDescriptor ) {
     pDescriptor[2] = 2; // selection mode = random
     pDescriptor[3] = rand();
     for ( int32_t i = 0; i < 5; i++ ) {
-        pDescriptor[4 + i * 2] = rand();
+        // FUN_00850c80
+        pDescriptor[4 + i * 2] = 2;
         pDescriptor[5 + i * 2] = rand();
     }
     pDescriptor[0] = 2;

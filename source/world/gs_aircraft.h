@@ -97,7 +97,7 @@ public:
     bool executeAction( int32_t event, void *pParameters ) override;
 
 private:
-    void updateSound( bool bAtListener );
+    void updateSound( bool bCineShifted );
     float computeTurnAngle( const Eigen::Vector4f &tangent,
                             float lookAheadU,
                             float divisor ) const;

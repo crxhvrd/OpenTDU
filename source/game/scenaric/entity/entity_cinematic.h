@@ -53,6 +53,13 @@ public:
     inline CinematicPlayer *getGameModeInterface() const {
         return pGMInterface;
     }
+    inline void setTransformOffset( const Matrix4x4f_t &offset ) {
+        cinematicPlayer.setBaseMatrix( offset );
+    }
+    inline void setPlane( EntityActor *pPlane ) {
+        cinematicPlayer.setPlane( pPlane );
+    }
+    inline EntityActor *getPlane() const { return cinematicPlayer.getPlane(); }
     inline bool isLooping() const { return bLoop; }
     inline bool isPlaying() const {
         return ( cinematicFlags & 0x4u ) != 0 && ( cinematicFlags & 0x2u ) == 0;

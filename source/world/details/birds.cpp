@@ -213,7 +213,7 @@ void Birds::updateBirds( float deltaTime ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: REPLAY (will use frame dt in the meantime)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (will use frame dt in the meantime)
     const float scaledDt = deltaTime;
 
     nextSpawnTime -= scaledDt;

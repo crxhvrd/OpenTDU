@@ -39,6 +39,9 @@ public:
     inline const Matrix4x4f_t &getPreviousTransform() const {
         return previousTransformMatrix;
     }
+    inline void setPreviousTransform( const Matrix4x4f_t &transform ) {
+        previousTransformMatrix = transform;
+    }
     inline bool isAreaStreamingEnabled() const { return bAreaStreamingEnabled; }
     inline void setAreaStreamingEnabled( const bool value ) {
         bAreaStreamingEnabled = value;

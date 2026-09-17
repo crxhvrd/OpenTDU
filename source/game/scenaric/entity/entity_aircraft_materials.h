@@ -7,6 +7,9 @@ class Render2DB;
 
 class EntityAircraftMaterials : public Entity {
 public:
+    inline Render2DM *getRender2DM() const { return pRef2DM; }
+
+public:
     EntityAircraftMaterials();
     ~EntityAircraftMaterials();
 

@@ -144,8 +144,7 @@ void GSWeather::tick( float totalTime, float deltaTime ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // bDisplayWeatherInfo → DisplayDebugInfos
-                        // (FUN_007d1c90) not yet ported
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: bDisplayWeatherInfo
 }
 
 void GSWeather::terminate() {

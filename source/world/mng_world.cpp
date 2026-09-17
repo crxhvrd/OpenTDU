@@ -4,6 +4,7 @@
 #include "config/gs_config.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "gs_world.h"
 #include "gs_world_streaming.h"
 #include "streaming_manager.h"
@@ -49,9 +50,18 @@ bool MngWorld::initialize( TestDriveGameInstance * ) {
 
 void MngWorld::pause() {
     // FUN_0070a520
+    Matrix4x4f_t carMatrix = Matrix4x4f_t::Identity();
+
     CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
-    if ( pCarState != nullptr && pCarState->getPhysicsVehicle() != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: Physics
+    PhysicsVehicle *pPhysicsVehicle =
+        ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+    if ( pPhysicsVehicle != nullptr ) {
+        if ( pPhysicsVehicle->isActive() ) {
+            carMatrix = pPhysicsVehicle->getChassisWorldMatrix();
+        }
+        if ( !gpScenaric->isFromDriveIn() ) {
+            gpWorld->setPreviousTransform( carMatrix );
+        }
     }
     gpWorld->getStreamingManager()->pauseSectorActors();
 }

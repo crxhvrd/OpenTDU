@@ -157,7 +157,7 @@ void Papers::updatePapers( float deltaTime ) {
         gpWeather->updateActiveConfig();
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: REPLAY (will use frame dt in the meantime)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (will use frame dt in the meantime)
     const float scaledDt = deltaTime;
 
     const Matrix4x4f_t &camToWorld =

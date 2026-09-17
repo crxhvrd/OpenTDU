@@ -28,6 +28,9 @@ public:
     inline bool isSharedMaterialLoaded() const {
         return SharedMaterial.getHeader() != nullptr;
     }
+    inline Render2DM *getExtraMaterial( int32_t index ) {
+        return &ExtraMaterials[index];
+    }
 
 public:
     AvatarCommonBnk();

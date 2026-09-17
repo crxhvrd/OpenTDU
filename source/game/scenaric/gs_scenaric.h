@@ -207,6 +207,7 @@ public:
     inline float getDemoTimer() const { return demoTimer; }
     inline bool isDemoModeActive() const { return bDemoMode; }
     inline void setDemoModeActive( const bool value ) { bDemoMode = value; }
+    inline bool isFromDriveIn() const { return bIsFromDriveIn; }
     void startDemoMode();
     void delockChallengeRoads( const bool bDelocked );
     void setTraceSize( uint32_t param_1 );
@@ -233,6 +234,7 @@ private:
     uint32_t traceSize;
     uint32_t currentDefVersion;
     int32_t currentSpotIndex; // DAT_01214744
+    bool bIsFromDriveIn;      // DAT_012162c4
     NextIntroInfo nextIntro;
     int32_t extraRewardsCineCount;
 
