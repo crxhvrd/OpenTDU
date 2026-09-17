@@ -5,12 +5,14 @@
 #include "core/maths_helper.h"
 
 #include "particle_file.h"
+#include "particle_sparkles.h"
 #include "render/draw_list.h"
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
+struct Material;
 struct ParticleInstance;
 
 enum class eParticleSimulationType { PST_Default = 0, PST_Sparkle = 1 };
@@ -50,6 +52,7 @@ struct Particle {
     eParticleType Type;
     eParticleSimulationType SimuType;
     DrawList drawList;
+    Material *pMaterial = nullptr;
 
     ParticleInstance *activateParticles( bool bReset );
 };
@@ -64,6 +67,14 @@ struct ParticleInstance {
     float Speed;
     float StopTimer;
     float Alpha;
+
+    std::vector<Spark> Sparks;
+    int32_t NumLiveSparks;
+    float SparkCooldown;
+    Eigen::Vector4f SparkGroundPlane;
+    bool bSparkCollide;
+    float SparkRestitution;
+    float SparkDrag;
     Eigen::Vector4f SparkleVelocity;
 
     std::vector<uint8_t> blob;

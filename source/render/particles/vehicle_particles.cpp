@@ -65,12 +65,6 @@ static void StopParticleInstance( ParticleInstance *&pInstance,
     }
 }
 
-static float GetWheelBurnFraction( const CarState *, uint32_t ) {
-    // FUN_008b7eb0
-    OTDU_UNIMPLEMENTED_ONCE;
-    return 0.0f;
-}
-
 static void ApplySpeedCurve( ParticleInstance *pInstance,
                              float speed,
                              const Eigen::Vector4f *pCurve ) {
@@ -188,7 +182,8 @@ void VehicleParticles::update( VehicleBase *pVehicle ) {
         bool wantBurn = false;
         bool wantSmoke = false;
         if ( bOnRoadMode && !bFrontWheel && !bIsTraffic ) {
-            const float burnFraction = GetWheelBurnFraction( pCarState, w );
+            const float burnFraction =
+                pPhysics->getWheelBurn( static_cast<int32_t>( w ) );
             if ( burnFraction >= kBurnMinFraction ) {
                 wantBurn = true;
             } else {

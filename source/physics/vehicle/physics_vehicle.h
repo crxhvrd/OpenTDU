@@ -256,6 +256,8 @@ public:
     void updateChrono( float dt );
     void updateRevRate( float dt );
     void reportStuckClutch( float dt );
+    void updateTyreHeat( float dt );
+    float getWheelBurn( int32_t index ) const;
     float getChassisSpeed() const;
     Eigen::Vector4f getChassisVelocity() const;
 
@@ -327,6 +329,7 @@ private:
     float wheelGroundGap[PhysicsVehicleState::kMaxWheels] = {};
     float wheelRumbleTimer[PhysicsVehicleState::kMaxWheels] = {};
     float wheelRumbleAmount[PhysicsVehicleState::kMaxWheels] = {};
+    float wheelTyreHeat[PhysicsVehicleState::kMaxWheels] = {};
     Eigen::Vector4f groundAlignNormal =
         Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
     float groundAlignRoll = 0.0f;

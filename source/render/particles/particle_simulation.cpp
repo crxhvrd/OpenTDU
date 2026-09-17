@@ -73,13 +73,28 @@ namespace {
     constexpr float kCurveLutScale = 15.0f;    // DAT_00f41700
     constexpr float kCurveClamp = 0.99000001f; // DAT_00f41a44
 
-    // Billboard depth-sort scratch (a clean back-to-front sort replacing the
-    // original's decompiler-corrupted alloca sort).
-    struct SpriteSortEntry {
-        uint32_t index;
-        float depthSq;
-    };
-    SpriteSortEntry gSpriteSort[0x800];
+    uint32_t gSpriteOrder[0x800];
+
+    uint32_t LerpColorBytes( uint32_t from, uint32_t to, uint32_t t ) {
+        // FUN_0045ad50
+        uint32_t result = 0;
+        for ( uint32_t shift = 0; shift < 32; shift += 8 ) {
+            const uint32_t a = ( from >> shift ) & 0xff;
+            const uint32_t b = ( to >> shift ) & 0xff;
+            result |= ( ( ( a * ( 0xff - t ) + b * t ) >> 8 ) & 0xff ) << shift;
+        }
+        return result;
+    }
+
+    uint32_t ScaleColorBytes( uint32_t color, uint32_t scale ) {
+        // FUN_0045adc0 (corner tint)
+        uint32_t result = 0;
+        for ( uint32_t shift = 0; shift < 32; shift += 8 ) {
+            result |= ( ( ( ( color >> shift ) & 0xff ) * scale ) >> 8 )
+                      << shift;
+        }
+        return result;
+    }
 
     enum eSpriteUVFlags : uint16_t {
         SUV_Enabled = 0x0001, // Without this the raw quad UVs are used
@@ -96,6 +111,81 @@ namespace {
     };
 
     constexpr float kSeedToUnit = 1.0f / 65536.0f; //  DAT_00f41678
+
+    using ParticleSpawnCallback = void ( * )( uint8_t *pDef,
+                                              uint8_t *pAttr,
+                                              uint8_t *pVel,
+                                              uint8_t *pUpdateState,
+                                              uint8_t *pDrawState );
+
+    using ParticleForceCallback = void ( * )( uint8_t *pEmitter,
+                                              uint8_t *pDef,
+                                              uint8_t **ppAttr,
+                                              uint8_t **ppVel,
+                                              uint8_t **ppPos,
+                                              int32_t count );
+
+    template <typename TCallback>
+    TCallback ReadCallback( const uint8_t *pRecord, uint32_t offset ) {
+        const x86Pointer_t *pSlot =
+            reinterpret_cast<const x86Pointer_t *>( pRecord + offset );
+        return reinterpret_cast<TCallback>( static_cast<void *>( *pSlot ) );
+    }
+
+    static Matrix4x4f_t BuildDefinitionTransform( const uint8_t *pDef ) {
+        // FUN_00458a30 (inlined in FUN_0045dec0)
+        Eigen::Vector3f scale( Read<float>( pDef, 0x10 ),
+                               Read<float>( pDef, 0x14 ),
+                               Read<float>( pDef, 0x18 ) );
+        Matrix4x4f_t transform = Matrix4x4f_t::Identity();
+        transform = transform * MakeScaleMatrix( scale );
+        MatrixRotateX( transform, Read<float>( pDef, 0x20 ) );
+        MatrixRotateY( transform, Read<float>( pDef, 0x24 ) );
+        MatrixRotateZ( transform, Read<float>( pDef, 0x28 ) );
+        transform( 3, 0 ) += Read<float>( pDef, 0x30 );
+        transform( 3, 1 ) += Read<float>( pDef, 0x34 );
+        transform( 3, 2 ) += Read<float>( pDef, 0x38 );
+        return transform;
+    }
+
+    int32_t GetGridCellIndex( const uint8_t *pGrid, const float *pPosition ) {
+        // FUN_0045e2f0
+        const float invCellSize = 1.0f / Read<float>( pGrid, 4 );
+        const int32_t size = Read<int32_t>( pGrid, 8 );
+        const int32_t x = static_cast<int32_t>(
+            ( pPosition[0] - Read<float>( pGrid, 0x10 ) ) * invCellSize );
+        const int32_t y = static_cast<int32_t>(
+            ( pPosition[1] - Read<float>( pGrid, 0x14 ) ) * invCellSize );
+        const int32_t z = static_cast<int32_t>(
+            ( pPosition[2] - Read<float>( pGrid, 0x18 ) ) * invCellSize );
+        if ( x < 0 || y < 0 || z < 0 || size <= x || size <= y || size <= z ) {
+            return -1;
+        }
+        return ( x * size + y ) * size + z;
+    }
+
+    float ParticleDistance( const uint8_t *pPositionA,
+                            const uint8_t *pPositionB ) {
+        // FUN_0045e0a0
+        const float dx =
+            Read<float>( pPositionA, 0 ) - Read<float>( pPositionB, 0 );
+        const float dy =
+            Read<float>( pPositionA, 4 ) - Read<float>( pPositionB, 4 );
+        const float dz =
+            Read<float>( pPositionA, 8 ) - Read<float>( pPositionB, 8 );
+        return std::sqrt( dy * dy + dz * dz + dx * dx );
+    }
+
+    void WriteLatticeLink( uint8_t *pLink,
+                           int32_t slot,
+                           uint32_t particleOffset,
+                           float restLength ) {
+        // FUN_0045e100
+        Write<float>( pLink, 0x20 + slot * 4, restLength );
+        Write<uint32_t>( pLink, slot * 4, particleOffset );
+        Write<float>( pLink, 0x40 + slot * 4, restLength );
+        Write<float>( pLink, 0x60 + slot * 4, -1.0f ); // FLOAT_00f41664
+    }
 
     // A 2x3 UV affine {a, b, c, d, tx, ty}; corners are transformed as
     //   u' = a * u + c * v + tx
@@ -280,18 +370,18 @@ namespace {
         return transform;
     }
 
-    void emitParticle( float *pPos, const float *pVel, float dist ) {
+    void emitParticle( float *pSphere, const float *pPoint, float dist ) {
         // FUN_0045c0e0
-        if ( pPos[3] == -1.0f ) { // FLOAT_00f41664: first emission
-            pPos[0] = pVel[0];
-            pPos[1] = pVel[1];
-            pPos[2] = pVel[2];
-            pPos[3] = dist;
+        if ( pSphere[3] == -1.0f ) { // FLOAT_00f41664: first emission
+            pSphere[0] = pPoint[0];
+            pSphere[1] = pPoint[1];
+            pSphere[2] = pPoint[2];
+            pSphere[3] = dist;
             return;
         }
 
-        float d[3] = { pVel[0] - pPos[0], pVel[1] - pPos[1],
-                       pVel[2] - pPos[2] };
+        float d[3] = { pPoint[0] - pSphere[0], pPoint[1] - pSphere[1],
+                       pPoint[2] - pSphere[2] };
         float length = std::sqrt( d[0] * d[0] + d[1] * d[1] + d[2] * d[2] );
         if ( length > kEmitThreshold ) {
             d[0] /= length;
@@ -303,17 +393,17 @@ namespace {
         }
 
         const float reach = length + dist;
-        if ( pPos[3] < reach ) {
+        if ( pSphere[3] < reach ) {
             float behind = length - dist;
-            const float clampToOrigin = -pPos[3];
+            const float clampToOrigin = -pSphere[3];
             if ( clampToOrigin < behind ) {
                 behind = clampToOrigin;
             }
             const float step = ( behind + reach ) * 0.5f;
-            pPos[0] += d[0] * step;
-            pPos[1] += d[1] * step;
-            pPos[2] += d[2] * step;
-            pPos[3] = ( reach - behind ) * 0.5f;
+            pSphere[0] += d[0] * step;
+            pSphere[1] += d[1] * step;
+            pSphere[2] += d[2] * step;
+            pSphere[3] = ( reach - behind ) * 0.5f;
         }
     }
 
@@ -395,6 +485,43 @@ void ParticleFile::reseed( uint32_t seed ) {
             pAttr[0] = 1; // allocation state
             pAttr[3] = 4; // phase: recycle
         }
+    }
+}
+
+uint8_t *ParticleFile::findPrimaryDefinition() {
+    // FUN_0080ca40
+    uint8_t *pDefs = poolBase( prto::kDefBBase );
+    const int32_t count =
+        static_cast<int32_t>( poolCount( prto::kDefBActiveCount ) );
+    for ( int32_t i = 0; i < count && pDefs != nullptr; i++ ) {
+        uint8_t *pDef = pDefs + i * prto::kDefStride;
+        if ( ( ( pDef[0x226] >> 5 ) & 1 ) != 0 ) {
+            pDef[0x224] = 1;
+            Write<float>( pDef, 0x140, 0.15f ); // DAT_00f41af8
+            return pDef;
+        }
+    }
+    return nullptr;
+}
+
+void ParticleFile::applyMaterialDescriptor( bool bHasDescriptor,
+                                            uint8_t alphaReject,
+                                            uint8_t coverageBudget ) {
+    // FUN_0080ca40
+    uint8_t *pRecords = poolBase( prto::kMatBase );
+    const int32_t count =
+        static_cast<int32_t>( poolCount( prto::kMatActiveCount ) );
+    for ( int32_t i = 0; i < count && pRecords != nullptr; i++ ) {
+        uint8_t *pRecord = pRecords + i * prto::kMatStride;
+        if ( !bHasDescriptor ) {
+            pRecord[0xf] = 0;
+            continue;
+        }
+        if ( coverageBudget != 0 ) {
+            pRecord[0xb] |= 0x10;
+            pRecord[0xd] = coverageBudget;
+        }
+        pRecord[0xf] = alphaReject;
     }
 }
 
@@ -678,7 +805,12 @@ void ParticleFile::applyDefinitionForces( uint8_t *pEmitter,
             }
         }
 
-        OTDU_UNIMPLEMENTED; // TODO:
+        if ( ( Read<uint16_t>( pDef, 0x226 ) & 0x200 ) != 0 ) {
+            const ParticleForceCallback pForceCallback =
+                ReadCallback<ParticleForceCallback>( pDef, 0x220 );
+            pForceCallback( pEmitter, pDef, gScratchAttr, gScratchVel,
+                            gScratchPos, scratchCount );
+        }
     }
 }
 
@@ -750,8 +882,8 @@ void ParticleFile::buildGeometry( const Matrix4x4f_t &worldToCam,
                 continue;
             }
             Write<uint32_t>( pEmitter, 0x70, recordOffset );
-            emitDef( pRecord, maxParticles, colorId, worldToCam, projection,
-                     out );
+            emitDef( pEmitter, pRecord, maxParticles, colorId, worldToCam,
+                     projection, out );
         }
     }
 }
@@ -849,7 +981,15 @@ void ParticleFile::spawnParticles( uint8_t *pEmitter,
                                                           invVariance ) );
                     }
 
-                    OTDU_UNIMPLEMENTED; // TODO:
+                    const uint32_t sourceOffset =
+                        Read<uint32_t>( pEmitter, 0x74 );
+                    if ( sourceOffset != 0 && pEmitter[4] == 3 ) {
+                        const uint8_t *pSource = pBlob + sourceOffset;
+                        Write<uint32_t>( pDef, 0x168,
+                                         Read<uint32_t>( pSource, 8 ) );
+                        Write<uint32_t>( pDef, 0x16c,
+                                         Read<uint32_t>( pSource, 0xc ) );
+                    }
 
                     float *pVelocity = reinterpret_cast<float *>( pVel + 0x10 );
                     const int32_t particleIndex = static_cast<int32_t>(
@@ -927,10 +1067,34 @@ void ParticleFile::spawnParticles( uint8_t *pEmitter,
                                   Read<float>( pDef, 0x100 ) * rawSize *
                                       genSize );
 
-                    OTDU_UNIMPLEMENTED; // TODO:
+                    const ParticleSpawnCallback pSpawnCallback =
+                        ReadCallback<ParticleSpawnCallback>( pDef, 0x218 );
+                    if ( pSpawnCallback != nullptr ) {
+                        pSpawnCallback( pDef, pAttr, pVel, pDef + 0x194,
+                                        pDef + 0x1d8 );
+                    }
 
                     Write<float>( pAttr, 0x1c, age );
                     pAttr[3] = 5; // phase: spawn
+
+                    const uint32_t attrOffset =
+                        static_cast<uint32_t>( pAttr - pBlob );
+                    if ( sourceOffset != 0 && pEmitter[4] == 2 ) {
+                        const uint32_t cellsOffset =
+                            Read<uint32_t>( pBlob + sourceOffset, 0x1c );
+                        const int32_t cellIndex =
+                            GetGridCellIndex( pBlob + cellsOffset, pPosition );
+                        if ( cellIndex >= 0 ) {
+                            const uint32_t cellOffset =
+                                cellsOffset + cellIndex * 0x90;
+                            Write<uint32_t>( pAttr, 0x38, cellOffset );
+                            insertParticleInGridCell( pBlob + cellOffset,
+                                                      attrOffset );
+                        }
+                    }
+                    if ( sourceOffset != 0 && pEmitter[4] == 3 ) {
+                        linkLatticeParticle( pBlob + sourceOffset, pAttr );
+                    }
 
                     pAttr[0] = 2; // allocation state: active
                     if ( Read<int32_t>( pEmitter, 0x14 ) != 0 ) {
@@ -1194,17 +1358,17 @@ void ParticleFile::spawnShape( uint8_t *pDef,
                                                      secondary[2], 0.0f ) );
         velocity[3] = 0.0f;
         velocity.normalize();
-    } else if ( velocityMode == 2 ) { // none
-        velocity = Eigen::Vector4f::Zero();
+    } else if ( velocityMode == 2 ) {
+        velocity = kUnitXVector;
     } else {
         velocity = dir;
         applySpread = false;
     }
 
+    const float spreadAngle =
+        sampleRandom( pDef, pDef[0x07], Read<float>( pDef, 0x158 ),
+                      Read<float>( pDef, 0x15c ) );
     if ( applySpread ) {
-        const float spreadAngle =
-            sampleRandom( pDef, pDef[0x07], Read<float>( pDef, 0x158 ),
-                          Read<float>( pDef, 0x15c ) );
         if ( spreadAngle != 0.0f ) {
             const uint32_t u2 = LCGNext( Read<uint32_t>( pDef, 0x21c ) );
             const uint32_t u3 = LCGNext( u2 );
@@ -1251,26 +1415,31 @@ float ParticleFile::sampleRandom( uint8_t *pDef,
         // Uniform in [base - variance, base + variance).
         const uint32_t state = LCGNext( Read<uint32_t>( pDef, 0x21c ) );
         Write<uint32_t>( pDef, 0x21c, state );
-        const float frac =
-            BitsToFloat( ( state & 0x7fffff ) | 0x3f800000 ) - 1.0f;
+        const float frac = RandFloat01( state );
         return ( frac + frac - 1.0f ) * variance + base;
     }
     if ( mode == 2 ) {
         const uint32_t state = LCGNext( Read<uint32_t>( pDef, 0x21c ) );
         Write<uint32_t>( pDef, 0x21c, state );
-        const float frac =
-            BitsToFloat( ( state & 0x7fffff ) | 0x3f800000 ) - 1.0f;
-        const float sample =
-            -0.6931471805599453f *
-            ( frac * 0.9f + 0.10000002f ); // ln2, DAT_00f416a0/afc
-        return sample * variance + base;
+        const float u = RandFloat01( state ) * 0.9f + 0.1f; // DAT_00f416a0 /
+                                                            // DAT_00f41afc
+        return -std::log( u ) * variance + base;
     }
     if ( mode == 3 ) {
-        uint32_t state = LCGNext( LCGNext( Read<uint32_t>( pDef, 0x21c ) ) );
-        Write<uint32_t>( pDef, 0x21c, state );
-        const float frac =
-            BitsToFloat( ( state & 0x7fffff ) | 0x3f800000 ) - 1.0f;
-        return std::cos( frac * 6.2831853f ); // DAT_00f416f8 = 2*pi
+        const uint32_t first = LCGNext( Read<uint32_t>( pDef, 0x21c ) );
+        const uint32_t second = LCGNext( first );
+        Write<uint32_t>( pDef, 0x21c, second );
+        const float radius =
+            std::sqrt( std::log( 1.0f - RandFloat01( first ) ) * kMinusTwo );
+        const float angle = RandFloat01( second ) * kTwoPI;
+        float normal = radius * std::cos( angle ) * 0.15f +
+                       0.5f; // DAT_00f41af8 / FLOAT_00f41674
+        if ( normal < 0.0f ) {
+            normal = 0.0f;
+        } else if ( 1.0f < normal ) {
+            normal = 1.0f;
+        }
+        return ( normal * 2.0f - 1.0f ) * variance + base;
     }
     return 0.0f;
 }
@@ -1308,7 +1477,9 @@ void ParticleFile::integrateEmitter( uint8_t *pEmitter, float deltaTime ) {
                 continue;
             }
             Write<uint32_t>( pEmitter, 0x70, defOffset );
-            // TODO: velocity-aligned orientation (FUN_0045a7b0) when def+8 > 1.
+            if ( 1 < Read<uint32_t>( pDef, 8 ) ) {
+                orientBoundDefinition( pDef );
+            }
             const float interval = Read<float>( pDef, 0x170 );
             Write<int32_t>(
                 pDef, 0x188,
@@ -1391,6 +1562,7 @@ void ParticleFile::integrateEmitter( uint8_t *pEmitter, float deltaTime ) {
         }
     }
 
+    float bounds[4] = { 0.0f, 0.0f, 0.0f, -1.0f }; // FLOAT_00f41664
     if ( pAttrPool != nullptr && pVelPool != nullptr && pPosPool != nullptr ) {
         for ( int32_t i = 0; i < maxParticles; i++ ) {
             uint8_t *pAttr = pAttrPool + i * prto::kAttrStride;
@@ -1410,6 +1582,11 @@ void ParticleFile::integrateEmitter( uint8_t *pEmitter, float deltaTime ) {
                 const float lifetime = Read<float>( pAttr, 0x20 );
                 if ( ( lifetime <= age && age != lifetime ) || age < 0.0f ) {
                     pAttr[3] = 3; // die
+                } else {
+                    emitParticle( bounds, pPosition,
+                                  static_cast<float>( pAttr[8] ) *
+                                      Read<float>( pAttr, 0x24 ) *
+                                      kEmitDistance );
                 }
             } else if ( phase == 3 ) { // dying
                 if ( ( ~( pEmitter[8] >> 1 ) & 1 ) != 0 ) {
@@ -1458,21 +1635,316 @@ void ParticleFile::integrateEmitter( uint8_t *pEmitter, float deltaTime ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // TODO:
+    Write<float>( pEmitter, 0x84, bounds[0] );
+    Write<float>( pEmitter, 0x88, bounds[1] );
+    Write<float>( pEmitter, 0x8c, bounds[2] );
+    Write<float>( pEmitter, 0x58, bounds[3] );
+    Write<uint32_t>( pEmitter, 0x70, 0 );
+
+    const uint32_t linkTableOffset = Read<uint32_t>( pEmitter, 0x3c );
+    const int32_t linkCount = Read<int32_t>( pEmitter, 0x38 );
+    if ( linkTableOffset == 0 ) {
+        return;
+    }
+    int32_t linkIndex = 0;
+    for ( int32_t i = 0; i < linkCount; i++ ) {
+        const uint32_t linkOffset =
+            Read<uint32_t>( pBlob + linkTableOffset, linkIndex * 4 );
+        uint8_t *pLink = pBlob + linkOffset;
+        if ( pLink[2] == 0 ) {
+            continue;
+        }
+        Write<uint32_t>( pEmitter, 0x70, linkOffset );
+        ageLinkedDefinitions( pEmitter, pLink );
+        chainParticles( pLink, 0, maxParticles );
+        linkIndex++;
+    }
 }
 
-void ParticleFile::emitDef( uint8_t *pRecord,
+void ParticleFile::ageLinkedDefinitions( uint8_t *pEmitter, uint8_t *pLink ) {
+    // FUN_0045c250
+    uint32_t boundField = 0;
+    uint32_t ageField = 0;
+    if ( pLink[8] == 1 ) {
+        boundField = 8;
+        ageField = 0x17c;
+    } else if ( pLink[8] == 2 ) {
+        boundField = 0x218;
+        ageField = 0x21c;
+    } else {
+        return;
+    }
+
+    const float maxAge = Read<float>( pLink, 0xc );
+    const float deltaTime = Read<float>( pEmitter, 0x50 );
+    const int32_t count = Read<int32_t>( pLink, 0x10 );
+    const uint8_t *pTable = pBlob + Read<uint32_t>( pLink, 0x14 );
+    for ( int32_t i = 0; i < count; i++ ) {
+        uint8_t *pDef = pBlob + Read<uint32_t>( pTable, i * 4 );
+        const uint32_t boundParticle = Read<uint32_t>( pDef, boundField );
+
+        bool bRelease = false;
+        if ( boundParticle == 1 ) {
+            const float age = Read<float>( pDef, ageField );
+            if ( maxAge < age ) {
+                bRelease = true;
+            } else {
+                Write<float>( pDef, ageField, age + deltaTime );
+            }
+        } else if ( boundParticle != 0 ) {
+            bRelease = pBlob[boundParticle + 3] != 2;
+        }
+
+        if ( bRelease ) {
+            pDef[2] = 0;
+            Write<uint32_t>( pDef, boundField, 0 );
+        }
+    }
+}
+
+void ParticleFile::chainParticles( uint8_t *pLink,
+                                   int32_t start,
+                                   int32_t end ) {
+    // FUN_0045e3d0
+    uint8_t *pAttrPool = poolBase( prto::kAttrBase );
+    for ( int32_t i = start; i < end && pAttrPool != nullptr; i++ ) {
+        uint8_t *pAttr = pAttrPool + i * prto::kAttrStride;
+        const uint8_t phase = pAttr[3];
+        if ( pAttr[0] != 2 || phase == 2 || phase == 4 || pLink[9] != 1 ||
+             phase == 3 ) {
+            continue;
+        }
+        if ( pLink[0xa] != 0 ) {
+            pLink[0xa]--;
+            continue;
+        }
+        pLink[0xa] = pLink[0xb];
+
+        const uint32_t attrOffset = static_cast<uint32_t>( pAttr - pBlob );
+        const int32_t count = Read<int32_t>( pLink, 0x10 );
+        const uint8_t *pTable = pBlob + Read<uint32_t>( pLink, 0x14 );
+        if ( pLink[8] == 1 ) {
+            for ( int32_t j = 0; j < count; j++ ) {
+                uint8_t *pDef = pBlob + Read<uint32_t>( pTable, j * 4 );
+                if ( Read<uint32_t>( pDef, 8 ) != 0 ) {
+                    continue;
+                }
+                Write<uint32_t>( pDef, 8, attrOffset );
+                Write<float>( pDef, 0x17c, 0.0f );
+                pDef[2] = 1;
+                Write<uint32_t>( pDef, 0x18c, 0 );
+                orientBoundDefinition( pDef );
+                if ( pLink[9] == 2 ) {
+                    Write<uint32_t>( pDef, 8, 1 );
+                }
+                break;
+            }
+        } else if ( pLink[8] == 2 ) {
+            for ( int32_t j = 0; j < count; j++ ) {
+                uint8_t *pDef = pBlob + Read<uint32_t>( pTable, j * 4 );
+                if ( Read<uint32_t>( pDef, 0x218 ) != 0 ) {
+                    continue;
+                }
+                Write<uint32_t>( pDef, 0x218, attrOffset );
+                Write<float>( pDef, 0x21c, 0.0f );
+                pDef[2] = 1;
+                attachBoundDefinition( pDef );
+                if ( pLink[9] == 2 ) {
+                    Write<uint32_t>( pDef, 0x218, 1 );
+                }
+                break;
+            }
+        }
+    }
+    pObject[2] = 4;
+}
+
+void ParticleFile::orientBoundDefinition( uint8_t *pDef ) {
+    // FUN_0045a7b0
+    if ( pDef == nullptr ) {
+        return;
+    }
+
+    const uint32_t attrOffset = Read<uint32_t>( pDef, 8 );
+    const int32_t index = Read<int32_t>( pBlob, attrOffset + 4 );
+    const uint8_t *pPosition =
+        poolBase( prto::kPosBase ) + index * prto::kPosStride;
+    std::memcpy( pDef + 0x30, pPosition, 4 * sizeof( float ) );
+
+    const uint8_t alignMode = pDef[5];
+    if ( alignMode != 1 ) {
+        const uint8_t *pVel =
+            poolBase( prto::kVelBase ) + index * prto::kVelStride;
+        const uint8_t *pDirection = nullptr;
+        if ( alignMode == 2 ) {
+            pDirection = pVel + 0x10; // velocity
+        } else if ( alignMode == 3 ) {
+            pDirection = pVel; // acceleration
+        }
+
+        if ( pDirection != nullptr ) {
+            const Eigen::Vector4f direction(
+                Read<float>( pDirection, 0 ), Read<float>( pDirection, 4 ),
+                Read<float>( pDirection, 8 ), Read<float>( pDirection, 0xc ) );
+            if ( kOrientThreshold < std::fabs( direction.x() ) ||
+                 kOrientThreshold < std::fabs( direction.y() ) ||
+                 kOrientThreshold < std::fabs( direction.z() ) ) {
+                float x = 0.0f;
+                float y = 0.0f;
+                float z = 0.0f;
+                ExtractEulerAnglesXYZ( BuildBasisAlongZ( direction ), x, y, z );
+                Write<float>( pDef, 0x20, x );
+                Write<float>( pDef, 0x24, y );
+                Write<float>( pDef, 0x28, z );
+            }
+        }
+    }
+
+    rebuildDefinitionMatrix( pDef );
+}
+
+void ParticleFile::rebuildDefinitionMatrix( uint8_t *pDef ) {
+    // FUN_00458a30
+    if ( pObject == nullptr || pObject[0] == 0 || pDef == nullptr ) {
+        return;
+    }
+    Write<Matrix4x4f_t>( pDef, 0x40, BuildDefinitionTransform( pDef ) );
+}
+
+void ParticleFile::attachBoundDefinition( uint8_t *pDef ) {
+    // FUN_0045e010
+    const uint32_t attrOffset = Read<uint32_t>( pDef, 0x218 );
+    const int32_t index = Read<int32_t>( pBlob, attrOffset + 4 );
+    const uint8_t *pPosition =
+        poolBase( prto::kPosBase ) + index * prto::kPosStride;
+    Write<float>( pDef, 0x30, Read<float>( pPosition, 0 ) );
+    Write<float>( pDef, 0x34, Read<float>( pPosition, 4 ) );
+    Write<float>( pDef, 0x38, Read<float>( pPosition, 8 ) );
+    Write<float>( pDef, 0x3c, 0.0f );
+    rebuildBoundDefinitionMatrices( pDef );
+}
+
+void ParticleFile::rebuildBoundDefinitionMatrices( uint8_t *pDef ) {
+    // FUN_0045dec0
+    if ( pObject == nullptr || pObject[0] == 0 || pDef == nullptr ) {
+        return;
+    }
+
+    Eigen::Vector3f inverseScale( 1.0f / Read<float>( pDef, 0x10 ),
+                                  1.0f / Read<float>( pDef, 0x14 ),
+                                  1.0f / Read<float>( pDef, 0x18 ) );
+    const float rotationX = Read<float>( pDef, 0x20 );
+    const float rotationY = Read<float>( pDef, 0x24 );
+    const float rotationZ = Read<float>( pDef, 0x28 );
+
+    Write<Matrix4x4f_t>( pDef, 0x40, BuildDefinitionTransform( pDef ) );
+
+    Matrix4x4f_t inverse = Matrix4x4f_t::Identity();
+    inverse( 3, 0 ) -= Read<float>( pDef, 0x30 );
+    inverse( 3, 1 ) -= Read<float>( pDef, 0x34 );
+    inverse( 3, 2 ) -= Read<float>( pDef, 0x38 );
+    // The original swaps the X and Z angles when undoing the rotation.
+    MatrixRotateZ( inverse, 0.0f - rotationX );
+    MatrixRotateY( inverse, 0.0f - rotationY );
+    MatrixRotateX( inverse, 0.0f - rotationZ );
+    inverse = inverse * MakeScaleMatrix( inverseScale );
+    Write<Matrix4x4f_t>( pDef, 0x80, inverse );
+}
+
+void ParticleFile::insertParticleInGridCell( uint8_t *pCell,
+                                             uint32_t attrOffset ) {
+    // FUN_0045e3a0
+    const int32_t capacity = Read<int32_t>( pCell, 0 );
+    uint8_t *pTable = pBlob + Read<uint32_t>( pCell, 0x20 );
+    for ( int32_t i = 0; i < capacity; i++ ) {
+        const uint32_t entry = Read<uint32_t>( pTable, i * 4 );
+        if ( entry == attrOffset ) {
+            return;
+        }
+        if ( entry == 0 ) {
+            Write<uint32_t>( pTable, i * 4, attrOffset );
+            return;
+        }
+    }
+}
+
+void ParticleFile::linkLatticeParticle( uint8_t *pSource, uint8_t *pAttr ) {
+    // FUN_0045e100
+    const int32_t width = Read<int32_t>( pSource, 0 );
+    const int32_t height = Read<int32_t>( pSource, 4 );
+    const int32_t column = Read<int32_t>( pSource, 8 );
+    const int32_t row = Read<int32_t>( pSource, 0xc );
+    if ( column == width && row == height ) {
+        return;
+    }
+
+    const uint32_t attrOffset = static_cast<uint32_t>( pAttr - pBlob );
+    uint8_t *pCells = pBlob + Read<uint32_t>( pSource, 0x10 );
+    const int32_t cell = row * width + column;
+    Write<uint32_t>( pCells, cell * 4, attrOffset );
+
+    const uint32_t linkOffset = Read<uint32_t>( pSource, 0x14 ) + cell * 0x80;
+    pAttr[0xb] = static_cast<uint8_t>( row );
+    Write<uint32_t>( pAttr, 0x38, linkOffset );
+    pAttr[0xa] = static_cast<uint8_t>( column );
+
+    const uint8_t *pPosPool = poolBase( prto::kPosBase );
+    const uint8_t *pPosition =
+        pPosPool + Read<int32_t>( pAttr, 4 ) * prto::kPosStride;
+
+    int32_t slot = -1;
+    for ( int32_t dx = -1; dx <= 1; dx++ ) {
+        for ( int32_t dy = -1; dy <= 1; dy++ ) {
+            if ( dx == 0 && dy == 0 ) {
+                continue;
+            }
+            slot++;
+
+            const int32_t neighbourColumn = column + dx;
+            const int32_t neighbourRow = row + dy;
+            if ( neighbourRow < 0 || height <= neighbourRow ||
+                 neighbourColumn < 0 || width <= neighbourColumn ) {
+                continue;
+            }
+            const uint32_t neighbourOffset = Read<uint32_t>(
+                pCells, ( neighbourRow * width + neighbourColumn ) * 4 );
+            if ( neighbourOffset == 0 ) {
+                continue;
+            }
+
+            const uint8_t *pNeighbour = pBlob + neighbourOffset;
+            const float restLength = ParticleDistance(
+                pPosition,
+                pPosPool + Read<int32_t>( pNeighbour, 4 ) * prto::kPosStride );
+            WriteLatticeLink( pBlob + linkOffset, slot, neighbourOffset,
+                              restLength );
+            WriteLatticeLink( pBlob + Read<uint32_t>( pNeighbour, 0x38 ),
+                              7 - slot, attrOffset, restLength );
+        }
+    }
+
+    const int32_t nextColumn = column + 1;
+    Write<int32_t>( pSource, 8, nextColumn );
+    if ( nextColumn == width ) {
+        Write<int32_t>( pSource, 8, 0 );
+        Write<int32_t>( pSource, 0xc, row + 1 );
+    }
+}
+
+void ParticleFile::emitDef( uint8_t *pEmitter,
+                            uint8_t *pRecord,
                             uint32_t maxParticles,
                             uint32_t colorId,
                             const Matrix4x4f_t &worldToCam,
                             const Matrix4x4f_t &projection,
                             DrawList &out ) {
     // FUN_0045adc0
-    if ( pObject == nullptr || Read<float>( pRecord, 0x58 ) == -1.0f ) {
+    if ( pObject == nullptr || Read<float>( pEmitter, 0x58 ) == -1.0f ) {
         return;
     }
 
-    if ( pRecord[0xe] == 2 || gpParticles == nullptr ) {
+    if ( ( pRecord[0xe] != 1 && pRecord[0xe] != 3 ) ||
+         gpParticles == nullptr ) {
         return;
     }
     const uint8_t *pMatChunk = pBlob + 0x10 + Read<uint32_t>( pBlob, 0x18 );
@@ -1510,8 +1982,6 @@ void ParticleFile::emitDef( uint8_t *pRecord,
                                  camToWorld( 0, 2 ) );
     const Eigen::Vector3f up( camToWorld( 1, 0 ), camToWorld( 1, 1 ),
                               camToWorld( 1, 2 ) );
-    const Eigen::Vector3f cameraPos( camToWorld( 3, 0 ), camToWorld( 3, 1 ),
-                                     camToWorld( 3, 2 ) );
 
     uint8_t *pAttrPool = poolBase( prto::kAttrBase );
     uint8_t *pPosPool = poolBase( prto::kPosBase );
@@ -1520,53 +1990,130 @@ void ParticleFile::emitDef( uint8_t *pRecord,
         return;
     }
 
-    // Collect the live particles and sort them back-to-front for alpha
-    // blending.
-    int32_t numSprites = 0;
     const uint32_t spriteCount = maxParticles < 0x800 ? maxParticles : 0x800;
+    const uint8_t recordFlags = pRecord[0xb];
+
+    const bool bCoverageBudget = ( recordFlags & 0x10 ) != 0;
+    const float coverageBudget = static_cast<float>( pRecord[0xd] );
+    float coverage = 0.0f;
+    const Matrix4x4f_t clipTransform =
+        Read<Matrix4x4f_t>( pRecord, 0xc0 ) * worldToCam * projection;
+    const float projectionScale = std::fabs( projection( 0, 0 ) );
     for ( uint32_t i = 0; i < spriteCount; i++ ) {
         uint8_t *pAttr = pAttrPool + i * prto::kAttrStride;
-        if ( pAttr[0] != 2 || pAttr[3] == 3 || pAttr[3] == 4 ) {
-            continue; // not a live particle
+        pAttr[9] = 0;
+        if ( pAttr[3] != 2 ) {
+            continue;
+        }
+        if ( !bCoverageBudget ) {
+            pAttr[9] = 1;
+            continue;
+        }
+        if ( coverage >= coverageBudget ) {
+            continue;
         }
         const float *pPos =
             reinterpret_cast<const float *>( pPosPool + i * prto::kPosStride );
-        const Eigen::Vector3f center( pPos[0], pPos[1], pPos[2] );
-        gSpriteSort[numSprites].index = i;
-        gSpriteSort[numSprites].depthSq = ( center - cameraPos ).squaredNorm();
-        numSprites++;
+        const Eigen::Vector4f clip = TDUMat4x4MulVec(
+            clipTransform, Eigen::Vector4f( pPos[0], pPos[1], pPos[2], 1.0f ) );
+        if ( 0.0f < clip.w() ) {
+            float screenSize =
+                static_cast<float>( pAttr[8] ) * Read<float>( pAttr, 0x24 ) *
+                ( 1.0f / clip.w() ) * projectionScale * kEmitDistance;
+            if ( 1.0f < screenSize ) {
+                screenSize = 1.0f;
+            }
+            coverage += screenSize * screenSize;
+            pAttr[9] = 1;
+        }
     }
-    std::sort( gSpriteSort, gSpriteSort + numSprites,
-               []( const SpriteSortEntry &a, const SpriteSortEntry &b ) {
-                   return a.depthSq > b.depthSq; // farthest first
-               } );
+
+    int32_t numSprites = 0;
+    for ( uint32_t i = 0; i < spriteCount; i++ ) {
+        if ( pAttrPool[i * prto::kAttrStride + 9] != 0 ) {
+            gSpriteOrder[numSprites++] = i;
+        }
+    }
+    if ( ( recordFlags & 0xf ) != 0 ) {
+        if ( ( recordFlags & 3 ) == 0 ) {
+            numSprites = 0;
+        } else {
+            const bool bYoungestFirst = ( recordFlags & 1 ) != 0;
+            std::stable_sort(
+                gSpriteOrder, gSpriteOrder + numSprites,
+                [pAttrPool, bYoungestFirst]( uint32_t a, uint32_t b ) {
+                    const float ageA =
+                        Read<float>( pAttrPool + a * prto::kAttrStride, 0x1c );
+                    const float ageB =
+                        Read<float>( pAttrPool + b * prto::kAttrStride, 0x1c );
+                    return bYoungestFirst ? ageA < ageB : ageB < ageA;
+                } );
+        }
+    }
 
     const float aspect = Read<float>( pRecord, 0x74 );
-    const uint32_t masterAlpha = ( colorId >> 24 ) & 0xff;
     const bool bTransformUVs =
         ( Read<uint16_t>( pRecord, 0x78 ) & SUV_Enabled ) != 0;
+    const uint32_t paletteBlend =
+        static_cast<uint32_t>(
+            static_cast<int64_t>( Read<float>( pRecord, 0xb8 ) * 255.0f ) ) &
+        0xff;
+    const bool bCornerTint = Read<uint32_t>( pRecord, 0xbc ) != 0xffffffff;
 
     out.setIdentityTransform();
     out.setActiveMaterial( pMaterial );
 
     for ( int32_t s = 0; s < numSprites; s++ ) {
-        const uint32_t i = gSpriteSort[s].index;
+        const uint32_t i = gSpriteOrder[s];
         uint8_t *pAttr = pAttrPool + i * prto::kAttrStride;
         const float *pPos =
             reinterpret_cast<const float *>( pPosPool + i * prto::kPosStride );
         const Eigen::Vector3f center( pPos[0], pPos[1], pPos[2] );
+
+        uint32_t color = Read<uint32_t>( pAttr, 0xc );
+        if ( paletteBlend != 0 ) {
+            const uint32_t seed = Read<uint32_t>( pAttr, 0x3c );
+            const uint32_t slot = seed & 7;
+            const uint32_t paletteColor = LerpColorBytes(
+                Read<uint32_t>( pRecord, 0x94 + slot * 4 ),
+                Read<uint32_t>( pRecord, 0x98 + slot * 4 ),
+                static_cast<uint32_t>( static_cast<int32_t>( seed ) >> 3 ) &
+                    0xff );
+            color = LerpColorBytes( color, paletteColor, paletteBlend );
+        }
+
+        uint8_t channels[4];
+        for ( uint32_t c = 0; c < 4; c++ ) {
+            uint32_t value = ( static_cast<uint32_t>( pAttr[0x10 + c] ) *
+                               ( ( color >> ( c * 8 ) ) & 0xff ) ) >>
+                             8;
+            value *= ( colorId >> ( c * 8 ) ) & 0xff;
+            channels[c] =
+                static_cast<uint8_t>( ( value >> 8 ) + ( ( value >> 7 ) & 1 ) );
+        }
+        if ( channels[3] < pRecord[0xf] ) {
+            continue;
+        }
+        const uint32_t spriteColor =
+            static_cast<uint32_t>( channels[0] ) |
+            ( static_cast<uint32_t>( channels[1] ) << 8 ) |
+            ( static_cast<uint32_t>( channels[2] ) << 16 ) |
+            ( static_cast<uint32_t>( channels[3] ) << 24 );
+
+        uint32_t cornerColors[4] = { spriteColor, spriteColor, spriteColor,
+                                     spriteColor };
+        if ( bCornerTint ) {
+            for ( uint32_t c = 0; c < 4; c++ ) {
+                cornerColors[c] =
+                    ScaleColorBytes( spriteColor, pRecord[0xbc + c] );
+            }
+        }
 
         // Billboard size: alpha-seed * size / 255; width scaled by the aspect.
         const float size = static_cast<float>( pAttr[8] ) *
                            Read<float>( pAttr, 0x24 ) / 255.0f;
         const Eigen::Vector3f halfWidth = right * ( aspect * size * 0.5f );
         const Eigen::Vector3f halfHeight = up * ( size * 0.5f );
-
-        // Current colour (+0x10..0x13) with the instance master alpha applied.
-        const uint32_t a =
-            ( static_cast<uint32_t>( pAttr[0x13] ) * masterAlpha ) >> 8;
-        const ColorRGBA color( pAttr[0x10], pAttr[0x11], pAttr[0x12],
-                               static_cast<uint8_t>( a ) );
 
         float texCoords[8] = { 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f };
         if ( bTransformUVs ) {
@@ -1585,27 +2132,27 @@ void ParticleFile::emitDef( uint8_t *pRecord,
         }
 
         if ( out.beginPrimitive( PT_TriangleStrip, 4 ) ) {
-            out.setDiffuse( 0, color );
             const Eigen::Vector3f topLeft = center - halfWidth + halfHeight;
             const Eigen::Vector3f bottomLeft = center - halfWidth - halfHeight;
             const Eigen::Vector3f topRight = center + halfWidth + halfHeight;
             const Eigen::Vector3f bottomRight = center + halfWidth - halfHeight;
+            out.setDiffuse( 0, ColorRGBA( cornerColors[2] ) );
             out.setTexCoords( 0,
                               Eigen::Vector2f( texCoords[0], texCoords[1] ) );
             out.pushVertex( topLeft.x(), topLeft.y(), topLeft.z() );
+            out.setDiffuse( 0, ColorRGBA( cornerColors[0] ) );
             out.setTexCoords( 0,
                               Eigen::Vector2f( texCoords[2], texCoords[3] ) );
             out.pushVertex( bottomLeft.x(), bottomLeft.y(), bottomLeft.z() );
+            out.setDiffuse( 0, ColorRGBA( cornerColors[3] ) );
             out.setTexCoords( 0,
                               Eigen::Vector2f( texCoords[4], texCoords[5] ) );
             out.pushVertex( topRight.x(), topRight.y(), topRight.z() );
+            out.setDiffuse( 0, ColorRGBA( cornerColors[1] ) );
             out.setTexCoords( 0,
                               Eigen::Vector2f( texCoords[6], texCoords[7] ) );
             out.pushVertex( bottomRight.x(), bottomRight.y(), bottomRight.z() );
             out.commitPrimitive();
         }
     }
-
-    (void)worldToCam;
-    (void)projection;
 }

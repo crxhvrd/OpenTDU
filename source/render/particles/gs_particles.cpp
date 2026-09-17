@@ -22,26 +22,28 @@ struct PrtDescriptor {
     const char *pName;
     eParticleType id;
     int32_t instanceCount;
+    uint8_t alphaReject;
+    uint8_t coverageBudget;
 };
 
 // DAT_00f8aea8
 static constexpr const PrtDescriptor kPrtDescriptors[] = {
-    {"PRT_BURN",        eParticleType::PT_Burn,      10},
-    {"PRT_SMOKE",       eParticleType::PT_Smoke,     10},
-    {"PRT_START",       eParticleType::PT_StartLine, 10},
-    {"PRT_DUST",        eParticleType::PT_Dust,      10},
-    {"PRT_GRASS",       eParticleType::PT_Grass,     10},
-    {"PRT_GRAVEL",      eParticleType::PT_Gravel,    10},
-    {"PRT_WOOD",        eParticleType::PT_Wood,      4 },
-    {"PRT_FEUILLE",     eParticleType::PT_Leaf,      4 },
-    {"PRT_FLYING_LEAF", eParticleType::PT_Leaf2,     4 },
-    {"PRT_BUMPER",      eParticleType::PT_CarBody,   4 },
-    {"PRT_GLASS",       eParticleType::PT_Glass,     4 },
-    {"PRT_PLASTIC",     eParticleType::PT_Plastic,   4 },
-    {"PRT_STONE",       eParticleType::PT_Stone,     4 },
-    {"PRT_METAL",       eParticleType::PT_Metal,     4 },
-    {"PRT_FACTORY",     eParticleType::PT_Factory,   8 },
-    {"PRT_OLD",         eParticleType::PT_Old,       4 },
+    {"PRT_BURN",        eParticleType::PT_Burn,      10, 32, 35},
+    {"PRT_SMOKE",       eParticleType::PT_Smoke,     10, 32, 40},
+    {"PRT_START",       eParticleType::PT_StartLine, 10, 0,  0 },
+    {"PRT_DUST",        eParticleType::PT_Dust,      10, 16, 50},
+    {"PRT_GRASS",       eParticleType::PT_Grass,     10, 0,  0 },
+    {"PRT_GRAVEL",      eParticleType::PT_Gravel,    10, 0,  0 },
+    {"PRT_WOOD",        eParticleType::PT_Wood,      4,  0,  0 },
+    {"PRT_FEUILLE",     eParticleType::PT_Leaf,      4,  0,  0 },
+    {"PRT_FLYING_LEAF", eParticleType::PT_Leaf2,     4,  0,  0 },
+    {"PRT_BUMPER",      eParticleType::PT_CarBody,   4,  0,  0 },
+    {"PRT_GLASS",       eParticleType::PT_Glass,     4,  0,  0 },
+    {"PRT_PLASTIC",     eParticleType::PT_Plastic,   4,  0,  0 },
+    {"PRT_STONE",       eParticleType::PT_Stone,     4,  0,  0 },
+    {"PRT_METAL",       eParticleType::PT_Metal,     4,  0,  0 },
+    {"PRT_FACTORY",     eParticleType::PT_Factory,   8,  32, 40},
+    {"PRT_OLD",         eParticleType::PT_Old,       4,  0,  0 },
 };
 
 const PrtDescriptor *FindDescriptor( const char *pName ) {
@@ -89,7 +91,11 @@ bool GSParticles::initialize( TestDriveGameInstance * ) {
 void GSParticles::tick( float, float deltaTime ) {
     // FUN_0080d0e0
     for ( Particle *pParticle : particles ) {
-        simulateParticle( pParticle, deltaTime );
+        if ( pParticle->SimuType == eParticleSimulationType::PST_Sparkle ) {
+            SimulateSparkles( pParticle, deltaTime );
+        } else {
+            simulateParticle( pParticle, deltaTime );
+        }
     }
 }
 
@@ -110,6 +116,7 @@ void GSParticles::terminate() {
         delete pParticle;
     }
     particles.clear();
+    memoryUsed = 0;
 
     for ( int32_t i = 0; i < num2DM; i++ ) {
         collection2D.unregister2DM( &render2DMs[i] );
@@ -199,7 +206,15 @@ void GSParticles::buildRegistry() {
                                 static_cast<uint32_t>( entry.Size ) ) );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: SPARKLES
+    if ( particles.size() < 32 ) {
+        Particle *pSparkles = new Particle();
+        pSparkles->Name = "SPARKLES";
+        pSparkles->Hashcode = GetIdentifier64bit( "SPARKLES" );
+        pSparkles->Type = eParticleType::PT_Sparkle;
+        pSparkles->SimuType = eParticleSimulationType::PST_Sparkle;
+        particles.push_back( pSparkles );
+        InitializeSparkles( pSparkles, memoryUsed, kParticleMemorySize );
+    }
 }
 
 void GSParticles::loadMaterials() {
@@ -288,6 +303,13 @@ Particle *GSParticles::createParticleType( const std::string &name,
     pParticle->SimuType = eParticleSimulationType::PST_Default;
 
     for ( int32_t i = 0; i < instanceCount; i++ ) {
+        if ( i < instanceCount - 1 ) {
+            if ( kParticleMemorySize - memoryUsed < size ) {
+                break;
+            }
+            memoryUsed += size;
+        }
+
         ParticleInstance *pInstance = new ParticleInstance();
         pInstance->pParticleInstanciated = pParticle;
         pInstance->State = eParticleState::PS_Dead;
@@ -308,6 +330,13 @@ Particle *GSParticles::createParticleType( const std::string &name,
             delete pInstance;
             break;
         }
+
+        pInstance->file.reseed( static_cast<uint32_t>( rand() & 0x7fff ) );
+        pInstance->pPrimaryEmitter = pInstance->file.findPrimaryDefinition();
+        pInstance->file.applyMaterialDescriptor(
+            pDescriptor != nullptr,
+            pDescriptor != nullptr ? pDescriptor->alphaReject : 0,
+            pDescriptor != nullptr ? pDescriptor->coverageBudget : 0 );
         pParticle->Instances.push_back( pInstance );
     }
     return pParticle;

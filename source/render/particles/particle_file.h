@@ -94,6 +94,10 @@ public:
                         const Matrix4x4f_t &projection,
                         DrawList &out );
     void reseed( uint32_t seed );
+    uint8_t *findPrimaryDefinition();
+    void applyMaterialDescriptor( bool bHasDescriptor,
+                                  uint8_t alphaReject,
+                                  uint8_t coverageBudget );
 
 private:
     void processEmitter( uint8_t *pEmitter );
@@ -110,7 +114,16 @@ private:
     float
     sampleRandom( uint8_t *pDef, uint8_t mode, float base, float variance );
     void integrateEmitter( uint8_t *pEmitter, float deltaTime );
-    void emitDef( uint8_t *pDef,
+    void ageLinkedDefinitions( uint8_t *pEmitter, uint8_t *pLink );
+    void chainParticles( uint8_t *pLink, int32_t start, int32_t end );
+    void orientBoundDefinition( uint8_t *pDef );
+    void rebuildDefinitionMatrix( uint8_t *pDef );
+    void attachBoundDefinition( uint8_t *pDef );
+    void rebuildBoundDefinitionMatrices( uint8_t *pDef );
+    void insertParticleInGridCell( uint8_t *pCell, uint32_t attrOffset );
+    void linkLatticeParticle( uint8_t *pSource, uint8_t *pAttr );
+    void emitDef( uint8_t *pEmitter,
+                  uint8_t *pDef,
                   uint32_t maxParticles,
                   uint32_t colorId,
                   const Matrix4x4f_t &worldToCam,

@@ -32,6 +32,12 @@ ParticleInstance *Particle::activateParticles( bool bReset ) {
 
 void ParticleInstance::activate( bool bReset ) {
     // FUN_0080c970
+    if ( pParticleInstanciated->SimuType ==
+         eParticleSimulationType::PST_Sparkle ) {
+        ActivateSparkleInstance( this, bReset );
+        return;
+    }
+
     Alpha = 1.0f; // FLOAT_00f4165c
 
     if ( pPrimaryEmitter != nullptr ) {
@@ -61,6 +67,11 @@ void ParticleInstance::activate( bool bReset ) {
 
 void ParticleInstance::stop() {
     // FUN_0080c940
+    if ( pParticleInstanciated->SimuType ==
+         eParticleSimulationType::PST_Sparkle ) {
+        return; // FUN_0080aa40
+    }
+
     uint8_t *pObject = file.getObject();
     if ( pObject != nullptr ) {
         uint8_t *pEmitters = file.arrayBase( prtf::kEmitterBase );

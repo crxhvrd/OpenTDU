@@ -103,7 +103,8 @@ constexpr float kSteerCurveYDefault[PhysicsVehicle::SC_Count][3] = {
     {3.2f, 3.0f, 3.0f}, // SteeringCounterSpeed
 };
 
-// A performance pack lifts lateral friction on both axles; the multiplier is smaller in simu mode.
+// A performance pack lifts lateral friction on both axles; the multiplier is
+// smaller in simu mode.
 constexpr float kPackLatFrictionBoost = 1.05f;     // DAT_00fab5b0
 constexpr float kPackLatFrictionBoostSimu = 1.01f; // DAT_00fab5ac
 constexpr float kSuspLoadCapAWD = 1.5f;
@@ -120,9 +121,9 @@ bool gVehicleStartChronopack =
 
 bool gVehicleESPEnabled = true;
 
-constexpr float kOmegaToRpm = 9.549296f;     // DAT_00f41698 (60 / 2pi)
-constexpr float kRpmToRadPerSec = 0.10472f;  // DAT_00f418ac (2pi / 60)
-constexpr float kKmhToMs = 0.2777778f;       // km/h -> m/s
+constexpr float kOmegaToRpm = 9.549296f;       // DAT_00f41698 (60 / 2pi)
+constexpr float kRpmToRadPerSec = 0.10472f;    // DAT_00f418ac (2pi / 60)
+constexpr float kKmhToMs = 0.2777778f;         // km/h -> m/s
 constexpr float kFinalDriveRedlineFrac = 0.9f; // FLOAT_00f8a26c
 constexpr float kRevRateSmoothing = 0.05f;
 constexpr float kRevLogMinGearTime = 0.15f;
@@ -153,6 +154,13 @@ constexpr float kRumbleSpread = 0.25f;       // DAT_00f416dc
 constexpr float kRumbleAmountMax = 2.0f;     // DAT_00f416b0
 constexpr float kRumbleAccelMin = 0.0f;      // DAT_016a69bc
 constexpr float kRumbleAccelMax = 10.0f;     // DAT_00fab758
+
+constexpr float kTireHeatMinSlip = 3.5f;        // DAT_00f41b4c
+constexpr float kTireHeatRate = 0.2f;           // DAT_00f41730
+constexpr float kTireCoolRate = 0.8f;           // DAT_00f416d0
+constexpr float kTireBurnThreshold = 0.5f;      // DAT_00f41674
+constexpr float kTireHeatMinSpeed = 2.7777779f; // DAT_00f41bf4
+constexpr float kTireHeatMinOmega = 2.0943952f; // DAT_00f42024
 
 static uint32_t gPhysicsRandomSeed = 0; // DAT_010e7480
 
@@ -924,6 +932,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     for ( int i = 0; i < PhysicsVehicleState::kMaxWheels; ++i ) {
         authoredWheelY[i] = 0.0f;
+        wheelTyreHeat[i] = 0.0f;
     }
     bAuthoredWheelYKnown = false;
 
@@ -1207,15 +1216,13 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                                        : ( c.RearLatBrakeFrictionCoefSlow > 0
                                                ? c.RearLatBrakeFrictionCoefSlow
                                                : 1.0f );
-        const float latBrakeCoefFast = bFront
-                                           ? ( c.FrontLatBrakeFrictionCoefFast >
-                                                       0
-                                                   ? c.FrontLatBrakeFrictionCoefFast
-                                                   : 1.0f )
-                                           : ( c.RearLatBrakeFrictionCoefFast >
-                                                       0
-                                                   ? c.RearLatBrakeFrictionCoefFast
-                                                   : 1.0f );
+        const float latBrakeCoefFast =
+            bFront ? ( c.FrontLatBrakeFrictionCoefFast > 0
+                           ? c.FrontLatBrakeFrictionCoefFast
+                           : 1.0f )
+                   : ( c.RearLatBrakeFrictionCoefFast > 0
+                           ? c.RearLatBrakeFrictionCoefFast
+                           : 1.0f );
 
         w.GripLong = frictionCoef * local70 * gripCal * gripPerMille;
         w.GripLat = lateralCoef / gripCal;
@@ -1277,9 +1284,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         const float topSpeedMS =
             ( db.TopSpeedKMH > 0.0f ? db.TopSpeedKMH : 200.0f ) * kKmhToMs *
             pack.TopSpeed;
-        const float rearRadiusM = ( rearRadius > 1.0e-3f )
-                                      ? rearRadius
-                                      : kDefaultWheelRadius;
+        const float rearRadiusM =
+            ( rearRadius > 1.0e-3f ) ? rearRadius : kDefaultWheelRadius;
         gb.FinalDrive =
             ( topGear > 1.0e-4f && topSpeedMS > 1.0f )
                 ? ( redlineOmega * kFinalDriveRedlineFrac * rearRadiusM ) /
@@ -1869,7 +1875,9 @@ float PhysicsVehicle::filterSteering( float rawSteer,
         blend = JPH::Clamp( ( slip - blend ) * t + blend,
                             std::min( blend, slip ), std::max( blend, slip ) );
     }
-    steerSideslipTerm = -blend; // FIXME: Has to be inverted for keyboard input (or else the steering dir never reset somehow).
+    steerSideslipTerm =
+        -blend; // FIXME: Has to be inverted for keyboard input (or else the
+                // steering dir never reset somehow).
     steerHelpState = 0;
 
     const float limit = EvalHelpCurveSqrt(
@@ -2642,8 +2650,40 @@ void PhysicsVehicle::OnStep(
     }
 
     updateChrono( dt );
+    updateTyreHeat( dt );
     updateRevRate( dt );
     reportStuckClutch( dt );
+}
+
+void PhysicsVehicle::updateTyreHeat( float dt ) {
+    // FUN_0083db70
+    for ( int i = 0; i < vehicle.NumWheels; ++i ) {
+        const PhysicsWheelState &w = vehicle.Wheels[i];
+        const float slip = std::fabs( w.NormLongClamped );
+        const bool bRolling = kTireHeatMinSpeed < w.ContactVelLong ||
+                              kTireHeatMinOmega < w.AngularVel;
+
+        float heat;
+        if ( kTireHeatMinSlip < slip && bRolling ) {
+            heat = kTireHeatRate * slip * dt + wheelTyreHeat[i];
+        } else {
+            heat = wheelTyreHeat[i] - kTireCoolRate * dt;
+        }
+        wheelTyreHeat[i] = JPH::Clamp( heat, 0.0f, 1.0f );
+    }
+}
+
+float PhysicsVehicle::getWheelBurn( int32_t index ) const {
+    // FUN_00828850
+    if ( index < 0 || vehicle.NumWheels < index ||
+         PhysicsVehicleState::kMaxWheels <= index ) {
+        return 0.0f;
+    }
+    const float heat = wheelTyreHeat[index];
+    if ( heat <= kTireBurnThreshold ) {
+        return 0.0f;
+    }
+    return ( heat - kTireBurnThreshold ) / ( 1.0f - kTireBurnThreshold );
 }
 
 void PhysicsVehicle::updateRevRate( float dt ) {
@@ -3109,8 +3149,8 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform ) {
 
     JPH::Mat44 world = JPH::Mat44::sIdentity();
     for ( int c = 0; c < 4; ++c ) {
-        world.SetColumn3( c, JPH::Vec3( shifted( c, 0 ), shifted( c, 1 ),
-                                        shifted( c, 2 ) ) );
+        world.SetColumn3(
+            c, JPH::Vec3( shifted( c, 0 ), shifted( c, 1 ), shifted( c, 2 ) ) );
     }
 
     JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();

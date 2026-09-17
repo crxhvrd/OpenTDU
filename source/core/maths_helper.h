@@ -14,14 +14,15 @@ static constexpr float kNegHalfPi = -( kPI / 2.0f );         // DAT_00f41c8c
 static constexpr float kOne = 1.0f;                          // FLOAT_00f4165c
 static constexpr float kMinusOne = -1.0f;                    // FLOAT_00f41664
 static constexpr float kDegToRad =
-    static_cast<float>( EIGEN_PI / 180.0 );   // DAT_00f41864
-static constexpr float kRadToDeg = 57.29578f; // DAT_00f41b0c
-static constexpr float kHalf = 0.5f;          // FLOAT_00f41674
-static constexpr float kTwo = 2.0f;       // DAT_00f416b0
-static constexpr float kThree = 3.0f;     // DAT_00f416b4
-static constexpr float kMinusTwo = -2.0f; // DAT_00f417d0
-static constexpr float kQuaternionEpsilon = 1.0e-4f; // DAT_00f41760
-
+    static_cast<float>( EIGEN_PI / 180.0 );                   // DAT_00f41864
+static constexpr float kRadToDeg = 57.29578f;                 // DAT_00f41b0c
+static constexpr float kHalf = 0.5f;                          // FLOAT_00f41674
+static constexpr float kTwo = 2.0f;                           // DAT_00f416b0
+static constexpr float kThree = 3.0f;                         // DAT_00f416b4
+static constexpr float kMinusTwo = -2.0f;                     // DAT_00f417d0
+static constexpr float kQuaternionEpsilon = 1.0e-4f;          // DAT_00f41760
+constexpr float kOrientThreshold = 0.001f;                    // FLOAT_00f4167c
+const Eigen::Vector4f kUnitXVector( 1.0f, 0.0f, 0.0f, 0.0f ); // DAT_00fac280
 
 struct TDUPlane {
     Eigen::Vector4f Normal = kWorldUpVector;
@@ -513,11 +514,65 @@ inline Matrix4x4f_t &Orthonormalize( Matrix4x4f_t &param_1 ) {
     return param_1;
 }
 
-static inline float Lerp2Clamped( float x, float x0, float x1, float y0, float y1 ) {
+static inline float
+Lerp2Clamped( float x, float x0, float x1, float y0, float y1 ) {
     // FUN_0041f030
     const float span = x1 - x0;
     const float r = ( std::fabs( span ) > 1.0e-6f )
                         ? ( ( x - x0 ) * ( y1 - y0 ) / span + y0 )
                         : y0;
     return Clamp( r, Min( y0, y1 ), Max( y0, y1 ) );
+}
+
+static inline Eigen::Vector4f
+NormalizeVector4( const Eigen::Vector4f &vector ) {
+    // FUN_00404b00
+    return vector / vector.norm();
+}
+
+static inline Eigen::Vector4f CrossVector4( const Eigen::Vector4f &a,
+                                            const Eigen::Vector4f &b ) {
+    // FUN_004021e0
+    return Eigen::Vector4f( a.y() * b.z() - a.z() * b.y(),
+                            a.z() * b.x() - a.x() * b.z(),
+                            a.x() * b.y() - a.y() * b.x(), 0.0f );
+}
+
+static Matrix4x4f_t BuildBasisAlongZ( const Eigen::Vector4f &direction ) {
+    // FUN_0045a8e0
+    const Eigen::Vector4f axisZ = NormalizeVector4( direction );
+    const Eigen::Vector4f axisY =
+        NormalizeVector4( CrossVector4( axisZ, kUnitXVector ) );
+    const Eigen::Vector4f axisX =
+        NormalizeVector4( CrossVector4( axisY, axisZ ) );
+
+    Matrix4x4f_t basis = Matrix4x4f_t::Zero();
+    basis.row( 0 ).head<3>() = axisX.head<3>();
+    basis.row( 1 ).head<3>() = axisY.head<3>();
+    basis.row( 2 ).head<3>() = axisZ.head<3>();
+    return basis;
+}
+
+static void ExtractEulerAnglesXYZ( const Matrix4x4f_t &matrix,
+                                   float &x,
+                                   float &y,
+                                   float &z ) {
+    // FUN_005035a0 ("XYZ")
+    const float cosY = std::sqrt( matrix( 0, 1 ) * matrix( 0, 1 ) +
+                                  matrix( 0, 0 ) * matrix( 0, 0 ) );
+    if ( kOrientThreshold < cosY ) {
+        x = std::atan2( matrix( 1, 2 ), matrix( 2, 2 ) );
+        y = std::atan2( -matrix( 0, 2 ), cosY );
+        z = std::atan2( matrix( 0, 1 ), matrix( 0, 0 ) );
+        return;
+    }
+
+    x = std::atan2( -matrix( 2, 1 ), matrix( 1, 1 ) );
+    y = ( 0.0f - matrix( 0, 2 ) >= 0.0f ) ? kHalfPI : kNegHalfPi;
+    z = 0.0f;
+}
+
+static inline Eigen::Vector4f ToDirection( const Eigen::Vector4f &vector ) {
+    // FUN_00408070
+    return Eigen::Vector4f( vector.x(), vector.y(), vector.z(), 0.0f );
 }

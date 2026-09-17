@@ -41,10 +41,12 @@ public:
 
 private:
     static constexpr int32_t kMaxParticle2D = 64;
+    static constexpr uint32_t kParticleMemorySize = 0x12c000;
 
 private:
     Bank bank;
     std::vector<Particle *> particles;
+    uint32_t memoryUsed = 0;
 
     FileCollection2D collection2D;
     Render2DB render2DBs[kMaxParticle2D];

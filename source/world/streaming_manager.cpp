@@ -326,6 +326,43 @@ bool SampleGroundNormal( Instance *pHeightmapInstance,
     return true;
 }
 
+float SampleHeightmapSurface( const Eigen::Vector4f &position,
+                              Eigen::Vector4f *pOutNormal ) {
+    // FUN_00843dd0
+    constexpr float kNoSurfaceHeight = -100000.0f;    // DAT_00f418fc
+    constexpr float kHeightmapMissHeight = 100000.0f; // DAT_00f418e0
+
+    if ( gpWorld == nullptr ) {
+        return kNoSurfaceHeight;
+    }
+    StreamingManager *pStreaming = gpWorld->getStreamingManager();
+    if ( pStreaming == nullptr ) {
+        return kNoSurfaceHeight;
+    }
+
+    Sector *pSector = pStreaming->sectorManager.getSectorAtPosition( position );
+    if ( pSector == nullptr || pSector->state != 1 ||
+         pSector->geometry.pHeightmapInstance == nullptr ) {
+        return kNoSurfaceHeight;
+    }
+
+    const float height =
+        SampleGroundHeight( pSector->geometry.pHeightmapInstance,
+                            pSector->heightmap, position.x(), position.z() );
+    if ( kHeightmapMissHeight <= height ) {
+        return kNoSurfaceHeight;
+    }
+    if ( pOutNormal != nullptr ) {
+        Eigen::Vector3f normal( 0.0f, 1.0f, 0.0f );
+        SampleGroundNormal( pSector->geometry.pHeightmapInstance,
+                            pSector->heightmap, position.x(), position.z(),
+                            normal );
+        *pOutNormal =
+            Eigen::Vector4f( normal.x(), normal.y(), normal.z(), 0.0f );
+    }
+    return height;
+}
+
 bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
                              const float **ppHeights,
                              int32_t *pStride,

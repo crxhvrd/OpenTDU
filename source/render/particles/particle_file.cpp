@@ -6,6 +6,11 @@
 constexpr uint32_t kPrtMagic = 0x5452502e; // ".PRT"
 constexpr uint32_t kMatMagic = 0x2e54414d; // "MAT."
 
+static inline void SetDefinitionType( uint8_t *pDef, uint8_t type ) {
+    // FUN_00459f70
+    pDef[0xe] = type;
+}
+
 ParticleFile::ParticleFile()
     : pBlob( nullptr ), pObject( nullptr ), blobSize( 0 ) {}
 
@@ -86,7 +91,7 @@ bool ParticleFile::parse( uint8_t *pData, uint32_t size ) {
             Write<uint32_t>( pRec, 0x228, Read<uint32_t>( pRec, 0x178 ) );
             Write<uint8_t>( pRec, 0, 1 );
             Write<uint8_t>( pRec, 2, 1 );
-            OTDU_UNIMPLEMENTED; // TODO:
+            SetDefinitionType( pRec, pRec[0xe] );
             Write<uint8_t>( pRec, 0x1a4, 0xff );
             Write<uint8_t>( pRec, 0x1a5, 0xff );
             Write<uint8_t>( pRec, 0x1a6, 0xff );

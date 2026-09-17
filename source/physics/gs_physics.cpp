@@ -133,15 +133,13 @@ namespace {
         }
 
         void AddHit( const JPH::CollideShapeResult &inResult ) override {
-            const JPH::SubShapeID &subShapeID = bWorldIsBody2
-                                                    ? inResult.mSubShapeID2
-                                                    : inResult.mSubShapeID1;
+            const JPH::SubShapeID &subShapeID =
+                bWorldIsBody2 ? inResult.mSubShapeID2 : inResult.mSubShapeID1;
             const JPH::Shape *pShape = pWorld->GetShape();
             const uint32_t material =
-                ( pShape != nullptr )
-                    ? TDUPhysicsMaterials::codeOf(
-                          pShape->GetMaterial( subShapeID ) )
-                    : TDUMaterialValue::kDefault;
+                ( pShape != nullptr ) ? TDUPhysicsMaterials::codeOf(
+                                            pShape->GetMaterial( subShapeID ) )
+                                      : TDUMaterialValue::kDefault;
             if ( material !=
                  static_cast<uint32_t>( eMaterialType::MT_Asphalt ) ) {
                 forward( inResult );
@@ -168,9 +166,8 @@ namespace {
             }
 
             JPH::CollideShapeResult result = inResult;
-            result.mPenetrationAxis =
-                ( bWorldIsBody2 ? -normal : normal ) *
-                inResult.mPenetrationAxis.Length();
+            result.mPenetrationAxis = ( bWorldIsBody2 ? -normal : normal ) *
+                                      inResult.mPenetrationAxis.Length();
             forward( result );
         }
 
@@ -191,8 +188,8 @@ namespace {
     // (addCollisionListener, FUN_0047b390); everything else keeps Jolt's
     // normals.
     inline bool IsWorldMesh( const JPH::Body &inBody ) {
-        const uint32_t surface =
-            static_cast<uint32_t>( inBody.GetUserData() & TDUSurface::kClassMask );
+        const uint32_t surface = static_cast<uint32_t>(
+            inBody.GetUserData() & TDUSurface::kClassMask );
         return surface == TDUSurface::Paved || surface == TDUSurface::RoadMesh;
     }
 
@@ -332,6 +329,17 @@ namespace {
                                 int32_t( kind ),
                                 (unsigned long long)inBody1.GetUserData(),
                                 (unsigned long long)inBody2.GetUserData() );
+                return;
+            }
+
+            constexpr int32_t kFXAsphalt = 0;
+            constexpr int32_t kFXChassis = 14;
+            constexpr float kChassisMaxSeparation = 0.01f;
+            const bool bAsphaltChassis =
+                ( fxMaterialA == kFXAsphalt && fxMaterialB == kFXChassis ) ||
+                ( fxMaterialA == kFXChassis && fxMaterialB == kFXAsphalt );
+            if ( bAsphaltChassis &&
+                 !( -inManifold.mPenetrationDepth <= kChassisMaxSeparation ) ) {
                 return;
             }
 
@@ -1639,25 +1647,31 @@ GSPhysics::createVehicle( PhysFactory *pFactory,
     } else {
         const auto addBox = [&]( JPH::StaticCompoundShapeSettings &compound,
                                  const JPH::Vec3 &coreHalfExtents,
-                                 const JPH::Vec3 &offset ) {
+                                 const JPH::Vec3 &offset,
+                                 eMaterialType material ) {
             const JPH::Vec3 halfExtents(
                 Max( kConvexRadius, coreHalfExtents.GetX() + kConvexRadius ),
                 Max( kConvexRadius, coreHalfExtents.GetY() + kConvexRadius ),
                 Max( kConvexRadius, coreHalfExtents.GetZ() + kConvexRadius ) );
-            compound.AddShape(
-                offset, JPH::Quat::sIdentity(),
-                new JPH::BoxShapeSettings( halfExtents, kConvexRadius ) );
+            compound.AddShape( offset, JPH::Quat::sIdentity(),
+                               new JPH::BoxShapeSettings(
+                                   halfExtents, kConvexRadius,
+                                   TDUPhysicsMaterials::get(
+                                       static_cast<uint32_t>( material ) ) ) );
         };
 
         JPH::StaticCompoundShapeSettings hull;
         addBox( hull, JPH::Vec3( halfW - 0.05f, halfH - 0.15f, halfL - 0.55f ),
-                JPH::Vec3( 0.0f, 0.10f, 0.0f ) );
+                JPH::Vec3( 0.0f, 0.10f, 0.0f ), eMaterialType::MT_Body );
         addBox( hull, JPH::Vec3( halfW - 0.15f, 0.225f, 0.275f ),
-                JPH::Vec3( 0.0f, 0.375f - halfH, halfL - 0.375f ) );
+                JPH::Vec3( 0.0f, 0.375f - halfH, halfL - 0.375f ),
+                eMaterialType::MT_BumperF );
         addBox( hull, JPH::Vec3( halfW - 0.15f, 0.350f, 0.275f ),
-                JPH::Vec3( 0.0f, 0.500f - halfH, -( halfL - 0.375f ) ) );
+                JPH::Vec3( 0.0f, 0.500f - halfH, -( halfL - 0.375f ) ),
+                eMaterialType::MT_BumperR );
         addBox( hull, JPH::Vec3( halfW * 0.8f - 0.05f, 0.20f, halfL - 0.30f ),
-                JPH::Vec3( 0.0f, 0.25f - halfH, 0.0f ) );
+                JPH::Vec3( 0.0f, 0.25f - halfH, 0.0f ),
+                eMaterialType::MT_Chassis );
         shapeResult = hull.Create();
     }
     if ( !shapeResult.IsValid() ) {
