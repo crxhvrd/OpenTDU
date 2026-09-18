@@ -7,6 +7,8 @@
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/mng_flash_localize.h"
+#include "flash/modal_message_box.h"
+#include "game/gm_base.h"
 #include "game/mng_hud.h"
 #include "gs_timer.h"
 #include "input/gs_device.h"
@@ -37,9 +39,26 @@ static constexpr uint64_t kLODQualityLabels[3] = {
     0x036BA352ull, 0x037AE592ull, 0x03C58322ull }; //  DAT_00f3d098
 
 static constexpr uint64_t kAntiAliasingOffLabel = 0x03A8AC52ull;
+static constexpr uint64_t kUnitSystemMetricLabel = 0x035905B2ull;
+static constexpr uint64_t kUnitSystemLabelStride = 1000000ull;
+
+static constexpr uint64_t GetUnitSystemLabel( const int32_t unitType ) {
+    return kUnitSystemMetricLabel +
+           ( ( unitType != 0 ) ? kUnitSystemLabelStride : 0ull );
+}
 
 static constexpr int32_t kBDDMenus = 0;
 static constexpr int32_t kBDDTutorial = 11;
+
+static constexpr uint64_t kKeepVideoSettingsHashcode =
+    0x38e4a6aull; // "_Do you want to keep these settings ?"
+static constexpr uint64_t kVideoSettingsRevertedHashcode =
+    0x39d8caaull; // "_The previous mode was restored"
+
+static constexpr int32_t kApplyTimeoutInSeconds = 10;
+
+static eDisplayMode GetActiveDisplayMode();
+static void ApplyDisplayMode( const eDisplayMode displayMode );
 
 MngOptions *gpMngOptions = nullptr; // DAT_010e7ffc
 
@@ -62,16 +81,22 @@ MngOptions::MngOptions()
       languageRefreshStep( 0 ),
       lodQuality( 0 ),
       displayMode( eDisplayMode::DM_Windowed ),
+      antiAliasingMode( eAntiAliasingMethod::AAM_Disabled ),
       videoWidth( 0 ),
       videoHeight( 0 ),
       refreshRate( 0 ),
-      antiAliasingMode( eAntiAliasingMethod::AAM_Disabled ),
+      activeAntiAliasingMode( eAntiAliasingMethod::AAM_Disabled ),
+      activeDisplayMode( eDisplayMode::DM_Windowed ),
+      bActiveHDREnabled( false ),
       pAudioOptions( nullptr ),
       field30_0x80c( false ),
       bHDREnabled( false ),
       bHDRSupported( false ) {
     // FUN_006c5f20
     memset( pLocalizedStrings, 0, sizeof( pLocalizedStrings ) );
+
+    videoRevertedCallback.pOwner = this;
+    videoApplyCallback.pOwner = this;
 
     gpMngOptions = this;
 }
@@ -125,6 +150,7 @@ bool MngOptions::initialize( TestDriveGameInstance * ) {
     voicesInputSlider.setAutoVelocity( true );
     voicesInputSlider.setRange( 0.0f, 1.0f );
 
+    terminate();
     pAudioOptions =
         new ( TestDrive::Alloc( sizeof( AudioOptions ) ) ) AudioOptions();
 
@@ -238,13 +264,13 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
                 gpAudio->NbSpeakers = 5;
             }
         }
-        pAudioOptions->applySpeakerMode();
+        pAudioOptions->applyVolumes();
         pAudioOptions->deactivate();
         return true;
     }
 
     case 0x6175696e: // "auin"
-        pAudioOptions->resetActiveControl();
+        pAudioOptions->refreshControls();
         FUN_006c67b0();
         return true;
 
@@ -271,15 +297,14 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         return true;
 
     case 0x63686c61: // "chla" — apply audio language
-        FUN_006c6730( audioLanguage );
-        OTDU_UNIMPLEMENTED; // TODO: persist /:IsSubtitles to the save profile
-                            // (not ported).
+        applyAudioLanguage(
+            eLocale( kTDULanguages[audioLanguage].LocaleIndex ) );
+        gpPlayerData->getLocalPlayerData().bSubtitles =
+            pPlayer->getVariableAsInt( "/:IsSubtitles" ) != 0;
         return true;
 
     case 0x63686f70: // "chop" — commit gameplay options
-        FUN_006c7fb0();
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
-        FUN_006c6db0();
+        commitPlayerOptions();
         return true;
 
     case 0x67616d73: // "gams"
@@ -292,11 +317,11 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         return true;
 
     case 0x656e746f: // "ento"
-        FUN_006c61b0();
+        revertSystemParameters();
         return false;
 
     case 0x6864636c: // "hdcl"
-        FUN_006c6a00();
+        toggleHDR();
         return false;
 
     case 0x6d6f7573: // "mous"
@@ -350,7 +375,7 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         return true;
 
     case 0x6e656c6f: // "nelo"
-        FUN_006c7190();
+        showNextLODQuality();
         return false;
 
     case 0x70726161: // "praa" — previous anti-aliasing
@@ -360,7 +385,7 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
     case 0x6e6f6761: // "noga" — leave the seat-setup view
         if ( seatPositionSlider.hasFocus() || seatHeightSlider.hasFocus() ) {
             if ( cameraBeforeSeatSetup != -1 ) {
-                OTDU_UNIMPLEMENTED; // TODO: CAMERA
+                gpCamera->setTransitionCameraMode( cameraBeforeSeatSetup );
             }
             cameraBeforeSeatSetup = -1;
         }
@@ -436,7 +461,7 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         return true;
 
     case 0x70726c6f: // "prlo"
-        FUN_006c71d0();
+        showPreviousLODQuality();
         return false;
 
     case 0x71756976: // "quiv"
@@ -483,12 +508,17 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         return false;
 
     case 0x75736d65:   // "usme"
-    case 0x7573696d: { // "usim" — toggle unit system
+    case 0x7573696d: { // "usim" — both 4CCs toggle, they are the two arrows of
+                       // the same option row
         unitType = ( unitType != 1 ) ? 1 : 0;
-        const uint64_t labelHash = ( unitType != 0 ) ? 0x368c7f2 : 0x35905b2;
-        const char *pLabel = gpDatabase->getStringByHashcode( 0, labelHash );
-        pPlayer->setVariableValue( "/:UnitSystem", pLabel );
-        pPlayer->setVariableValue( "/:NameTemp", pLabel );
+
+        if ( gpMngFlashLocalize != nullptr ) {
+            const uint64_t labelHash = GetUnitSystemLabel( unitType );
+            gpMngFlashLocalize->setVarLocalized( pPlayer, "/:UnitSystem",
+                                                 labelHash );
+            gpMngFlashLocalize->setVarLocalized( pPlayer, "/:NameTemp",
+                                                 labelHash );
+        }
         return true;
     }
 
@@ -554,7 +584,7 @@ void MngOptions::onClose( ePopupAnswer answer, void *, int32_t param_3 ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FILESYSTEM
 }
 
 void MngOptions::FUN_006c5c10() {
@@ -611,8 +641,11 @@ void MngOptions::FUN_006c6030() {
         gEdRender.flushDrawCommands( false );
     } while ( gEdSys.bWindowActivated == false );
     gEdRender.flushDrawCommands( false );
-    gpRender->resize( videoWidth, videoHeight, refreshRate, antiAliasingMode,
-                      bHDREnabled );
+
+    ApplyDisplayMode( activeDisplayMode );
+
+    gpRender->resize( videoWidth, videoHeight, refreshRate,
+                      activeAntiAliasingMode, bActiveHDREnabled );
 }
 
 void MngOptions::FUN_006c67b0() {
@@ -700,11 +733,12 @@ void MngOptions::retrieveLocalizedStrings() {
 }
 
 void MngOptions::deviceSaveTick() {
-    // FUN_006c98b0
+    // FUN_006c98b0 (inlined at the head of the tick)
     if ( deviceSelected == 0 ) {
         return;
     }
-    OTDU_UNIMPLEMENTED;
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FILESYSTEM
 }
 
 void MngOptions::onLanguageChanged() {
@@ -712,7 +746,8 @@ void MngOptions::onLanguageChanged() {
     if ( languageRefreshStep == 0 ) {
         return;
     }
-    OTDU_UNIMPLEMENTED;
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH
 }
 
 void MngOptions::showPreviousRefreshRate() {
@@ -783,9 +818,9 @@ void MngOptions::FUN_006c7950( bool bUpdateNameTemp ) {
     gpMngFlashLocalize->clearAllSysVar();
 }
 
-void MngOptions::FUN_006c6730( int32_t ) {
+void MngOptions::applyAudioLanguage( const eLocale ) {
     // FUN_006c6730
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH
 }
 
 void MngOptions::FUN_006c7fb0() {
@@ -811,6 +846,81 @@ void MngOptions::FUN_006c7fb0() {
     }
 }
 
+static void SetPadConfig( const uint32_t padConfig ) {
+    // FUN_00898700
+    gpPlayerData->getLocalPlayerData().PadConfig = padConfig;
+
+    MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, 0 );
+    if ( pMovie == nullptr || !pMovie->MovieBank.isLoaded() ) {
+        return;
+    }
+
+    FlashPlayer *pPlayer = pMovie->MovieBank.getFlashPlayer();
+    if ( pPlayer != nullptr ) {
+        pPlayer->setVariableValue( "/:IsAlternateButton",
+                                   int32_t( padConfig == 3u ) );
+    }
+}
+
+void MngOptions::commitPlayerOptions() {
+    // FUN_006c81f0
+    LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
+
+    FUN_006c7fb0();
+
+    localPlayerData.bAuto = ( gearboxMode == 0 );
+    localPlayerData.DrivingHelpLevel = driveAssists;
+
+    localPlayerData.bStakeEnabled =
+        pPlayer->getVariableAsInt( "/:IsStake" ) == 1;
+
+    char stakeValue[32] = {};
+    pPlayer->getVariableAsString( "/:StakeValue", stakeValue );
+    localPlayerData.StakeValue = uint32_t( StringToFloat( stakeValue ) );
+
+    localPlayerData.PadSensitivity = padSensitivitySlider.getValue();
+
+    localPlayerData.bUseWheel = pPlayer->getVariableAsInt( "/:IsWheel" ) == 1;
+    localPlayerData.bInvertMouse =
+        pPlayer->getVariableAsInt( "/:IsMouseInvert" ) == 1;
+    localPlayerData.bAutoClutch =
+        pPlayer->getVariableAsInt( "/:IsAutoClutch" ) == 1;
+    localPlayerData.bHShifterEnabled =
+        pPlayer->getVariableAsInt( "/:IsHShifter" ) == 1;
+    localPlayerData.bTrackIREnabled =
+        pPlayer->getVariableAsInt( "/:IsTrackIR" ) == 1;
+    localPlayerData.bFFBInvert =
+        pPlayer->getVariableAsInt( "/:IsFFBInvert" ) == 1;
+
+    localPlayerData.Linearity = padLinearitySlider.getValue();
+    localPlayerData.QuiverSensitivity = quiverSensitivitySlider.getValue();
+    localPlayerData.BarSensitivity = barSensitivitySlider.getValue();
+    localPlayerData.MouseSensitivity = mouseSensitivitySlider.getValue();
+    localPlayerData.CameraShake = cameraShakeSlider.getValue();
+    localPlayerData.RadialBlurIntensity = radialBlurSlider.getValue();
+    localPlayerData.SeatPositionHeight = seatHeightSlider.getValue();
+    localPlayerData.SeatPositionPosition = seatPositionSlider.getValue();
+
+    gpPlayerData->applyDrivingOptions();
+
+    FUN_006c6db0();
+
+    SetPadConfig( uint32_t( pPlayer->getVariableAsInt( "/:PadConfig" ) ) );
+    if ( gpConfig != nullptr ) {
+        gpConfig->parseDeviceIni();
+    }
+
+    localPlayerData.VoicesVolume = voicesVolumeSlider.getValue();
+    localPlayerData.VoicesThreshold = voicesThresholdSlider.getValue();
+    localPlayerData.VoicesInput = voicesInputSlider.getValue();
+    localPlayerData.bUseLoopBack =
+        pPlayer->getVariableAsInt( "/:IsLoopBack" ) != 0;
+    localPlayerData.bEnablePlayerVoices =
+        pPlayer->getVariableAsInt( "/:IsPlayerVoices" ) != 0;
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+}
+
 void MngOptions::FUN_006c6db0() {
     // FUN_006c6db0
     LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
@@ -822,7 +932,14 @@ void MngOptions::FUN_006c6db0() {
     // FUN_008986b0
     localPlayerData.bHelpSystem =
         pPlayer->getVariableAsInt( "/:DispOp_f_3" ) != 0;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    if ( MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, 0 ) ) {
+        if ( pMovie->MovieBank.isLoaded() ) {
+            if ( FlashPlayer *pInGame = pMovie->MovieBank.getFlashPlayer() ) {
+                pInGame->setVariableValue(
+                    "/:IsHelpSystem", int32_t( localPlayerData.bHelpSystem ) );
+            }
+        }
+    }
 
     localPlayerData.bDisplayPlayerNames =
         pPlayer->getVariableAsInt( "/:DispOp_f_4" ) != 0;
@@ -860,9 +977,9 @@ void MngOptions::flashGPSOption() {
 
     unitType = localPlayerData.UnitSystem;
 
-    const uint64_t labelHash =
-        ( localPlayerData.UnitSystem != US_Metric ) ? 0x368c7f2 : 0x35905b2;
-    gpMngFlashLocalize->setVarLocalized( pPlayer, "/:UnitSystem", labelHash );
+    gpMngFlashLocalize->setVarLocalized(
+        pPlayer, "/:UnitSystem",
+        GetUnitSystemLabel( localPlayerData.UnitSystem ) );
 }
 
 void MngOptions::bindFlashPlayer( FlashPlayer *pFlashPlayer,
@@ -891,7 +1008,7 @@ void MngOptions::bindFlashPlayer( FlashPlayer *pFlashPlayer,
     radialBlurSlider.bind( pPlayer, "/:radial_blur", orientation,
                            gpPlayerData->getRadialBlurIntensity() );
 
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO
+    pAudioOptions->bindFlashPlayer( pPlayer, orientation );
 
     voicesThresholdSlider.bind( pPlayer, "/:voices_treshold", orientation,
                                 gpPlayerData->getVoicesThreshold() );
@@ -979,14 +1096,36 @@ void MngOptions::refreshOptionsScreen() {
                                int32_t( localPlayerData.bSubtitles ) );
 }
 
-void MngOptions::FUN_006c61b0() {
+void MngOptions::revertSystemParameters() {
     // FUN_006c61b0
-    OTDU_UNIMPLEMENTED;
+    FlashPlayer *pGeneral = nullptr;
+    uint32_t validGM = 0u;
+    uint32_t movieIndex = 0u;
+    if ( gpFlash->getFlashMovieIndex( &validGM, &movieIndex, "GENERAL" ) ) {
+        MoviePlayer *pMovie = gpFlash->getMoviePlayer( validGM, movieIndex );
+        if ( pMovie != nullptr && pMovie->MovieBank.isLoaded() ) {
+            pGeneral = pMovie->MovieBank.getFlashPlayer();
+        }
+    }
+
+    if ( pGeneral != nullptr ) {
+        pGeneral->setVariableValue( "/:IsAvertTimeOut", int32_t( 0 ) );
+    }
+
+    if ( gpFlashMessageBox != nullptr ) {
+        gpFlashMessageBox->forceClose();
+    }
+
+    FUN_006c59d0();
+    FUN_006c6030();
+
+    pPlayer->showFrame( "open_system", "/menus/ss_menus/choice", true );
 }
 
-void MngOptions::FUN_006c6a00() {
+void MngOptions::toggleHDR() {
     // FUN_006c6a00
-    OTDU_UNIMPLEMENTED;
+    bHDREnabled = !bHDREnabled;
+    showAntiAliasingMode();
 }
 
 void MngOptions::showPreviousVideoOptions() {
@@ -1004,19 +1143,20 @@ void MngOptions::showPreviousVideoOptions() {
     showAntiAliasingMode();
 }
 
-void MngOptions::FUN_006c7190() {
+void MngOptions::showNextLODQuality() {
     // FUN_006c7190
-    OTDU_UNIMPLEMENTED;
+    lodQuality = ( lodQuality < 2 ) ? lodQuality + 1 : 0;
+
+    showLODQualityLabel();
+    gpRender->setLODQuality( uint32_t( lodQuality ) );
 }
 
-void MngOptions::FUN_006c71d0() {
+void MngOptions::showPreviousLODQuality() {
     // FUN_006c71d0
-    OTDU_UNIMPLEMENTED;
-}
+    lodQuality = ( lodQuality < 1 ) ? 2 : lodQuality - 1;
 
-void MngOptions::FUN_006c7210() {
-    // FUN_006c7210
-    OTDU_UNIMPLEMENTED;
+    showLODQualityLabel();
+    gpRender->setLODQuality( uint32_t( lodQuality ) );
 }
 
 void MngOptions::showLanguageLabel() {
@@ -1033,17 +1173,87 @@ void MngOptions::showLanguageLabel() {
 
 void MngOptions::enterSeatSetupCamera() {
     // FUN_006c81f0
-    OTDU_UNIMPLEMENTED;
+    if ( cameraBeforeSeatSetup != -1 || gpActiveGameMode == nullptr ) {
+        return;
+    }
+
+    const eGameMode activeGameMode = gpActiveGameMode->getCurrentGameMode();
+    if ( activeGameMode != GM_FreeRide && activeGameMode != GM_Mission ) {
+        return;
+    }
+
+    cameraBeforeSeatSetup = gpCamera->getActiveTransitionIndex();
+
+    gpCamera->setTransitionCameraMode(
+        gpCamera->findFirstSeatAdjustableTransitionMode() );
 }
 
 void MngOptions::requestSaveToDevice( bool ) {
     // FUN_006c81f0
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FILESYSTEM
 }
 
-AudioOptions::AudioOptions() {
+// DAT_00f03f30
+static constexpr AudioMixerControlDesc
+    kAudioMixerControls[AudioOptions::kNumMixerControls] = {
+        {"/:vol_Engine",     "/gauge_1/slider/mute", "MixerVehicle"  },
+        {"/:vol_Collisions", "/gauge_2/slider/mute", "MixerCollision"},
+        {"/:vol_GeneralSFX", "/gauge_3/slider/mute", "MixerAmbiance" },
+        {"/:vol_Cinematic",  "/gauge_4/slider/mute", "MixerCinematic"},
+        {"/:vol_Music",      "/gauge_5/slider/mute", "MixerMusic"    },
+        {"/:vol_UI",         "/gauge_6/slider/mute", "MixerUI"       },
+        {"/:vol_Voices",     "/gauge_7/slider/mute", "MixerVoice"    },
+        {"/:vol_VoicesGPS",  "/gauge_8/slider/mute", "MixerGPS"      },
+        {"/:vol_Master",     "/gauge_9/slider/mute", "MixerMaster"   }
+};
+
+// DAT_00f9c208
+static constexpr const char *kMuteGaugeRoot = "menus/ss_menus/choice";
+
+void AudioOptions::MixerControl::showMuteFrame() const {
+    if ( pFlashPlayer == nullptr || pDesc == nullptr ) {
+        return;
+    }
+
+    char gaugePath[64] = {};
+    snprintf( gaugePath, sizeof( gaugePath ), "%s%s", kMuteGaugeRoot,
+              pDesc->pGaugeName );
+
+    pFlashPlayer->showFrame( bMuted ? "off" : "on", gaugePath, false );
+}
+
+void AudioOptions::MixerControl::refreshFromMixer() {
+    // FUN_006c58b0
+    Slider.setValue( pMixer->Volume );
+    bMuted = pMixer->bMuted;
+
+    showMuteFrame();
+}
+
+void AudioOptions::MixerControl::toggleMute() {
+    // FUN_006c5430
+    bMuted = !bMuted;
+
+    showMuteFrame();
+}
+
+AudioOptions::AudioOptions() : bActive( false ) {
     // FUN_006c57e0
-    OTDU_UNIMPLEMENTED;
+    for ( int32_t i = 0; i < kNumMixerControls; i++ ) {
+        Mixer *pMixer =
+            ( gpAudio != nullptr )
+                ? gpAudio->findMixer( kAudioMixerControls[i].pMixerName )
+                : nullptr;
+        if ( pMixer == nullptr ) {
+            continue;
+        }
+
+        controls[i].pMixer = pMixer;
+        controls[i].pDesc = &kAudioMixerControls[i];
+
+        controls[i].Slider.setVerticalDrag( true );
+        controls[i].Slider.setRange( 0.0f, 1.0f );
+    }
 }
 
 AudioOptions::~AudioOptions() {
@@ -1052,29 +1262,81 @@ AudioOptions::~AudioOptions() {
 
 void AudioOptions::tick() {
     // FUN_006c5910
+    if ( !bActive ) {
+        return;
+    }
+
+    for ( MixerControl &control : controls ) {
+        if ( control.isValid() ) {
+            control.Slider.tick( gpTimer->SystemDeltaTime );
+        }
+    }
 }
 
-void AudioOptions::selectVolumeControl( const char * ) {
+void AudioOptions::bindFlashPlayer( FlashPlayer *pFlashPlayer,
+                                    int32_t orientation ) {
+    // FUN_006c56d0
+    for ( MixerControl &control : controls ) {
+        if ( !control.isValid() ) {
+            continue;
+        }
+
+        control.pFlashPlayer = pFlashPlayer;
+        control.Slider.rebind( pFlashPlayer, control.pDesc->pVarName,
+                               orientation );
+    }
+}
+
+void AudioOptions::selectVolumeControl( const char *pVarName ) {
     // FUN_006c5550
-    OTDU_UNIMPLEMENTED;
+    for ( MixerControl &control : controls ) {
+        if ( !control.isValid() ) {
+            continue;
+        }
+
+        control.Slider.setFocusState(
+            strcmp( control.pDesc->pVarName, pVarName ) == 0 );
+    }
 }
 
-void AudioOptions::setMuteGauge( const char * ) {
+void AudioOptions::setMuteGauge( const char *pWhatGauge ) {
     // FUN_006c5610
-    OTDU_UNIMPLEMENTED;
+    for ( MixerControl &control : controls ) {
+        if ( !control.isValid() ) {
+            continue;
+        }
+
+        if ( strcmp( control.pDesc->pGaugeName, pWhatGauge ) == 0 ) {
+            control.toggleMute();
+            return;
+        }
+    }
 }
 
-void AudioOptions::applySpeakerMode() {
+void AudioOptions::applyVolumes() {
     // FUN_006c54e0
-    OTDU_UNIMPLEMENTED;
+    for ( MixerControl &control : controls ) {
+        if ( !control.isValid() ) {
+            continue;
+        }
+
+        control.pMixer->bMuted = control.bMuted;
+        control.pMixer->Volume = control.Slider.getValue();
+    }
 }
 
-void AudioOptions::resetActiveControl() {
+void AudioOptions::refreshControls() {
     // FUN_006c5970
-    OTDU_UNIMPLEMENTED;
+    for ( MixerControl &control : controls ) {
+        if ( control.isValid() ) {
+            control.refreshFromMixer();
+        }
+    }
+
+    bActive = true;
 }
 
-void AudioOptions::deactivate() { OTDU_UNIMPLEMENTED; }
+void AudioOptions::deactivate() { bActive = false; }
 
 static const char *GetDisplayModeLabel( const eDisplayMode displayMode ) {
     switch ( displayMode ) {
@@ -1127,6 +1389,10 @@ void MngOptions::buildVideoModeList() {
                            ? gpRender->getAAMethod()
                            : eAntiAliasingMethod::AAM_Disabled;
     bHDREnabled = ( gpRender != nullptr ) && gpRender->isHDREnabled();
+
+    activeAntiAliasingMode = antiAliasingMode;
+    bActiveHDREnabled = bHDREnabled;
+    activeDisplayMode = GetActiveDisplayMode();
     lodQuality =
         ( gpRender != nullptr ) ? int32_t( gpRender->getLODQuality() ) : 0;
 
@@ -1325,38 +1591,60 @@ void MngOptions::applySystemParameters() {
 
     const bool bUnchanged =
         ( videoWidth == width ) && ( videoHeight == height ) &&
-        ( refreshRate == hz ) && ( GetActiveDisplayMode() == displayMode ) &&
-        ( ( gpRender == nullptr ) ||
-          ( gpRender->getAAMethod() == antiAliasingMode &&
-            gpRender->isHDREnabled() == bool( bHDREnabled ) ) );
+        ( refreshRate == hz ) && ( activeDisplayMode == displayMode ) &&
+        ( activeAntiAliasingMode == antiAliasingMode ) &&
+        ( bActiveHDREnabled == bHDREnabled );
     if ( bUnchanged ) {
         FUN_006c59d0();
         pPlayer->showFrame( "valid_apply", "/menus/ss_menus/choice", true );
         return;
     }
 
-    const eDisplayMode previousDisplayMode = GetActiveDisplayMode();
     ApplyDisplayMode( displayMode );
 
     if ( gpRender != nullptr &&
          gpRender->resize( width, height, hz, antiAliasingMode,
                            bHDREnabled ) ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND (apply confirmation prompt)
+        if ( FlashPlayer *pGeneral = gpFlash->getFlashPlayer( "GENERAL" ) ) {
+            pGeneral->setVariableValue( "/:IsAvertTimeOut", int32_t( 1 ) );
+            pGeneral->setVariableValue( "/:avert_time_out",
+                                        int32_t( kApplyTimeoutInSeconds ) );
+        }
 
-        gpPlayerData->setResolution( int32_t( width ), int32_t( height ) );
-        gpPlayerData->setRefreshRate( int32_t( hz ) );
-        gpPlayerData->setAntiAliasing( antiAliasingMode );
-        gpPlayerData->setHDREnabled( bHDREnabled );
-
-        FUN_006c59d0();
-        pPlayer->showFrame( "valid_apply", "/menus/ss_menus/choice", true );
+        TestDrive::DisplayModalPrompt(
+            true, kKeepVideoSettingsHashcode, 0, nullptr, &videoApplyCallback,
+            this, 0, nullptr, true, false, MPT_Warning, gpFlashMessageBox );
         return;
     }
 
-    ApplyDisplayMode( previousDisplayMode );
+    ApplyDisplayMode( activeDisplayMode );
+
+    if ( gpRender != nullptr &&
+         gpRender->resize( videoWidth, videoHeight, refreshRate,
+                           activeAntiAliasingMode, bActiveHDREnabled ) ) {
+        TestDrive::DisplayModalPrompt( false, kVideoSettingsRevertedHashcode, 0,
+                                       nullptr, &videoRevertedCallback, this, 0,
+                                       nullptr, true, false, MPT_Warning,
+                                       gpFlashMessageBox );
+        return;
+    }
 
     OTDU_LOG_ERROR( "Failed to apply the video settings (%ux%u@%uHz)\n", width,
                     height, hz );
+}
+
+void MngOptions::VideoRevertedCallback::onClose( ePopupAnswer,
+                                                 void *,
+                                                 int32_t ) {
+    // FUN_006c5c10
+    pOwner->FUN_006c5c10();
+}
+
+void MngOptions::VideoApplyCallback::onClose( ePopupAnswer answer,
+                                              void *,
+                                              int32_t ) {
+    // FUN_006c60c0
+    pOwner->FUN_006c60c0( int32_t( answer ) );
 }
 
 void MngOptions::showResolutionLabel() {

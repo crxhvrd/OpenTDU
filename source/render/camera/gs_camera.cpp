@@ -483,8 +483,8 @@ LAB_008e2c4f:
 
     angleX.y() = abs( angleX.x() );
 
-    if ( seatPos.x() <= seatMinPos.y() && seatMinPos.y() != seatPos.y() ) {
-        seatPos.y() = seatMinPos.y();
+    if ( seatPos.x() <= seatMinPos.x() && seatMinPos.x() != seatPos.x() ) {
+        seatPos.x() = seatMinPos.x();
     }
 
     if ( seatPos.y() <= seatMinPos.y() && seatMinPos.y() != seatPos.y() ) {
@@ -676,16 +676,47 @@ CameraGame *GSCamera::findCameraByCurrentTransition() {
     return findCameraWithMode( index, pTarget );
 }
 
+static constexpr uint32_t kSeatAdjustableFlag = 0x40000u;
+
 int32_t GSCamera::findFirstVisibleTransitionMode() {
     // FUN_008e3f00
     for ( uint32_t i = 0; i < numTransition; i++ ) {
         CameraGame *pCamera =
             findCameraWithMode( pTransitionIndices[i], pTarget );
-        if ( ( pCamera != nullptr ) && ( ( pCamera->getFlags() & 0xd0000 ) == 0 ) ) {
+        if ( ( pCamera != nullptr ) &&
+             ( ( pCamera->getFlags() & 0xd0000 ) == 0 ) ) {
             return pTransitionIndices[i];
         }
     }
     return -1;
+}
+
+int32_t GSCamera::findFirstSeatAdjustableTransitionMode() {
+    // FUN_008e3fa0
+    for ( uint32_t i = 0; i < numTransition; i++ ) {
+        CameraGame *pCamera =
+            findCameraWithMode( pTransitionIndices[i], pTarget );
+        if ( ( pCamera != nullptr ) &&
+             ( ( pCamera->getFlags() & kSeatAdjustableFlag ) != 0 ) ) {
+            return pTransitionIndices[i];
+        }
+    }
+    return -1;
+}
+
+void GSCamera::setTransitionCameraMode( const int32_t mode ) {
+    // FUN_008e2030
+    for ( uint32_t i = 0; i < numTransition; i++ ) {
+        if ( pTransitionIndices[i] != mode ) {
+            continue;
+        }
+
+        field83_0x92c = i;
+        nextCameraMode = mode;
+        pNextCamera = nullptr;
+        pTransitionCamera = nullptr;
+        transitionTime = 1.0f;
+    }
 }
 
 CameraMouse *GSCamera::getMouseCamera() {

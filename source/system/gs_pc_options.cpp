@@ -31,6 +31,8 @@ static constexpr uint64_t kClearCurrentGameHashcode = 0x3acf5fa;
 static constexpr uint64_t kReturnToWindowsHashcode = 0x39db3ba;
 static constexpr uint64_t kChangeProfileHashcode = 0x35475ba;
 
+static constexpr TimeOfDay kWeatherResumeInterval = { 0.0f, 30.0f, 0.0f };
+
 static constexpr const char *kNotificationClips[] = {
     "/achievement", "/reward",   "/levelup",    "/pop_news",
     "/subtitle",    "/tutorial", "/jail_popup",
@@ -190,7 +192,7 @@ void GSPCOptions::tick( float totalTime, float deltaTime ) {
             return;
         }
 
-        OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
+        GMLogin::ChangeProfile( activeProfileHashcode );
     }
 }
 
@@ -316,13 +318,16 @@ bool GSPCOptions::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         showOptionsRoot();
         return true;
 
+    case 0x7073656c: // "psel" — a profile line was highlighted
+        selectProfile();
+        return false;
+
     case 0x7064656c:             // "pdel" — delete the selected profile
     case 0x706e6577:             // "pnew"
-    case 0x7073656c:             // "psel"
     case 0x7063616e:             // "pcan"
     case 0x736e6473:             // "snds"
     case 0x77696467:             // "widg"
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
         return false;
 
     default:
@@ -471,11 +476,14 @@ void GSPCOptions::closeMainMenu() {
             return;
         }
         if ( pendingMenuAction == MA_NewGame ) {
-            OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
+            GMLogin::RequestNewGame();
+            switchToLoginGameMode();
+
+            OTDU_UNIMPLEMENTED_ONCE;
             return;
         }
         if ( pendingMenuAction == MA_ChangeProfile ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+            gpPlayerData->requestSave( 1 );
             exitCountdown = 10;
             pendingMenuAction = MA_ChangeProfile;
             return;
@@ -497,8 +505,7 @@ void GSPCOptions::closeMainMenu() {
                 gpTimer->GameSpeed = gpTimer->PreviousGameSpeed;
             }
             if ( gpWeather != nullptr ) {
-                gpWeather->setUpdateTimerEnabled( true );
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: WEATHER
+                gpWeather->setUpdateTimer( true, kWeatherResumeInterval );
             }
         }
 
@@ -557,11 +564,8 @@ void GSPCOptions::onMainMenuSelection( eMainMenuOption selection ) {
     // FUN_007c5650
     switch ( selection ) {
     case MMO_Continue:
-        // TODO: PLAYERSAVE:
-        OTDU_UNIMPLEMENTED;
-
-        if ( gpTestDriveInstance->getActiveGameMode() == GM_Login ) {
-            OTDU_UNIMPLEMENTED_ONCE;
+        if ( gpPlayerData->getSaveLoadState() != 1 &&
+             gpTestDriveInstance->getActiveGameMode() == GM_Login ) {
             onClose( ePopupAnswer::PA_Accept, nullptr, 0 );
             return;
         }
@@ -580,7 +584,9 @@ void GSPCOptions::onMainMenuSelection( eMainMenuOption selection ) {
         return;
 
     case MMO_ChangeProfile:
-        if ( gpTestDriveInstance->getActiveGameMode() == GM_Login ) {
+        if ( gpTestDriveInstance->getActiveGameMode() == GM_Login ||
+             gUserProfileRegister.getActiveProfileHashcode() ==
+                 activeProfileHashcode ) {
             onClose( ePopupAnswer::PA_Accept, nullptr, 2 );
             return;
         }
@@ -646,8 +652,7 @@ void GSPCOptions::handlePendingPopupAnswer() {
     case 2: // change profile
         if ( bAccepted ) {
             settlePoliceFine();
-            OTDU_UNIMPLEMENTED; // TODO: FRONTEND (FUN_007c4a70 — profile
-                                // screen)
+            beginProfileChange();
         }
         break;
 
@@ -798,7 +803,18 @@ int32_t GSPCOptions::refreshProfileList() {
 void GSPCOptions::openNewProfilePopup() {
     // FUN_007c35f0
     if ( profileScreenMode == 2 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+        const LocalPlayerData &localPlayerData =
+            gpPlayerData->getLocalPlayerData();
+
+        strncpy( nickname, localPlayerData.Nickname,
+                 sizeof( localPlayerData.Nickname ) );
+        nickname[sizeof( localPlayerData.Nickname )] = '\0';
+        strncpy( email, localPlayerData.Email,
+                 sizeof( localPlayerData.Email ) );
+        email[sizeof( localPlayerData.Email )] = '\0';
+        strncpy( password, localPlayerData.Password,
+                 sizeof( localPlayerData.Password ) );
+        password[sizeof( localPlayerData.Password )] = '\0';
     }
 
     pFlashPlayer->showFrame( "open", "/profile/new_profile", true );
@@ -847,8 +863,10 @@ void GSPCOptions::closeOptionsMenu() {
     field23_0x35 = true;
     pFlashPlayer->showFrame( "close", "/options_root", true );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND (also closes /profile when the
-                             // profile screen is up)
+    if ( bProfileScreenOpened ) {
+        pFlashPlayer->showFrame( "close", "/profile", true );
+        bProfileScreenOpened = false;
+    }
 
     if ( bSavedMouseEnabled && gpFlash->getMouse() != nullptr ) {
         gpFlash->getMouse()->field12_0x30 = true;
@@ -881,6 +899,65 @@ void GSPCOptions::setNotificationClipsVisible( bool bVisible ) {
             clip.setProperty( eFlashProperty::FP_Visible, bVisible );
         }
     }
+}
+
+void GSPCOptions::selectProfile() {
+    // FUN_007c36f0
+    const int32_t selectedLine =
+        Clamp( pFlashPlayer->getVariableAsInt( "/profile:cur_line" ) - 1, 0,
+               kMaxDisplayedProfiles - 1 );
+
+    const char *pProfileName =
+        gUserProfileRegister.getProfileNameByIndex( selectedLine );
+    const uint64_t profileHashcode =
+        ( pProfileName != nullptr )
+            ? UserProfileRegister::HashProfileName( pProfileName )
+            : 0ull;
+    const uint64_t activeHashcode =
+        gUserProfileRegister.getActiveProfileHashcode();
+
+    if ( profileHashcode == activeHashcode && profileScreenMode == 0 ) {
+        field297_0x188 = false;
+        activeProfileHashcode = activeHashcode;
+        return;
+    }
+
+    activeProfileHashcode = profileHashcode;
+    field297_0x188 = true;
+}
+
+void GSPCOptions::beginProfileChange() {
+    // FUN_007c4a70
+    pendingMenuAction = MA_ChangeProfile;
+
+    static constexpr const char *kClipsHiddenOnProfileChange[] = {
+        "/help", "/profile", "/menus", "/menus/ss_menus/ssm",
+        "/menus/ss_menus/ssm2" };
+
+    for ( const char *pClipName : kClipsHiddenOnProfileChange ) {
+        FlashClip clip;
+        if ( pFlashPlayer->getClipPlayer( pClipName, &clip ) &&
+             clip.pSprite != nullptr ) {
+            clip.setProperty( eFlashProperty::FP_Visible, false );
+        }
+    }
+
+    pFlashPlayer->showFrame( "default", "/profile", false );
+    hideOptionsRoot();
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+
+    field23_0x35 = true;
+    bCloseRequested = true;
+}
+
+void GSPCOptions::switchToLoginGameMode() {
+    if ( gpActiveGameMode != nullptr ) {
+        gpActiveGameMode->requestExit();
+    }
+
+    gpTestDriveInstance->setNextGameMode( GM_Login );
+    gpTestDriveInstance->setGMChangeInProgressFlag();
 }
 
 void GSPCOptions::settlePoliceFine() {

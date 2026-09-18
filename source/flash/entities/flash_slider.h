@@ -11,12 +11,17 @@ public:
     bool isDirty() const { return bDirty; }
     float getMinValue() const { return minMaxValues[0]; }
     float getMaxValue() const { return minMaxValues[1]; }
+    inline void setVerticalDrag( const bool bVertical ) {
+        dragAxis = bVertical ? 1 : 0;
+    }
 
-    inline void rebind( FlashPlayer *pPlayer, const char *pVarName ) {
+    inline void rebind( FlashPlayer *pPlayer,
+                        const char *pVarName,
+                        int32_t orientation = 1 ) {
         // FUN_009b51a0 (inlined)
         pFlashPlayer = pPlayer;
         varName = pVarName;
-        isVertical = 1;
+        isVertical = orientation;
     }
 
 public:
@@ -47,7 +52,7 @@ private:
 
     int32_t index;
     int32_t isVertical;
-    int32_t unknownDword;
+    int32_t dragAxis;
 
     bool bLeftPressed;
     bool bRightPressed;

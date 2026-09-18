@@ -29,7 +29,8 @@ public:
 
     void loadFrontEndSounds();
 
-    bool playFrontEndSound( const char *param_2, int32_t param_3, bool param_4 );
+    bool
+    playFrontEndSound( const char *param_2, int32_t param_3, bool param_4 );
     bool playFrontEndMusic( bool bFromCine );
     bool stopGroup( const char *pGroupName, float fadeTime );
 
@@ -71,6 +72,8 @@ private:
 
 private:
     void *pMemoryPool;
+    AudioClient *pAudioClient = nullptr;
+
     bool bInitialized = false;
     GPSVoice gpsVoice;
     PipelineMono pipeline;

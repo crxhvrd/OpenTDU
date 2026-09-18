@@ -142,6 +142,8 @@ static bool BOOL_010e7d18 = false; // DAT_010e7d18
 
 GMLogin *gpGMLogin = nullptr; // DAT_010e7d14
 
+void GMLogin::RequestNewGame() { BOOL_010e7d18 = true; }
+
 static uint32_t GetTickCountMs() {
     return uint32_t( MonotonicToMs( GetTimeMonotonic() ) );
 }
@@ -696,7 +698,7 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
             return;
 
         case MA_ChangeProfile:
-            changeProfile( gpPCOptions->getActiveProfileHashcode() );
+            ChangeProfile( gpPCOptions->getActiveProfileHashcode() );
             return;
 
         default:
@@ -812,7 +814,7 @@ void GMLogin::startNewGame() {
     menuActionCountdown = 2;
 }
 
-void GMLogin::changeProfile( const uint64_t profileHashcode ) {
+void GMLogin::ChangeProfile( const uint64_t profileHashcode ) {
     // FUN_0074e300
     gpPlayerData->setSaveEnabled( false );
     gSaveStreamRevision = 0;
@@ -820,7 +822,9 @@ void GMLogin::changeProfile( const uint64_t profileHashcode ) {
     gUserProfileRegister.initialize( profileHashcode );
     gUserProfileRegister.updateProfileList( profileHashcode );
 
-    requestExit();
+    if ( gpActiveGameMode != nullptr ) {
+        gpActiveGameMode->requestExit();
+    }
 
     gbScenarioTutorialEnabled = true;
 

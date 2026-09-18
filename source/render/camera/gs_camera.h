@@ -128,6 +128,8 @@ public:
     CameraGame *findCamera( CarState *pState );
     CameraGame *findCameraByCurrentTransition();
     int32_t findFirstVisibleTransitionMode();
+    int32_t findFirstSeatAdjustableTransitionMode();
+    void setTransitionCameraMode( const int32_t mode );
     void restoreDefaultVehicleCamera( CarState *pCar );
     void restoreCamera();
 

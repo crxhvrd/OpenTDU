@@ -54,6 +54,7 @@ void FlashSounds::terminate() {
 
     gpsVoice.terminate();
     pipeline.destroy();
+    pAudioClient = nullptr;
 
     bInitialized = false;
 }
@@ -69,8 +70,17 @@ void FlashSounds::loadFrontEndSounds() {
         return;
     }
 
+    if ( pAudioClient == nullptr ) {
+        pAudioClient = gpAudio->createClient( "ClientMenuSFX" );
+        OTDU_ASSERT( pAudioClient != nullptr );
+    }
+
+    edAudioObject *pPipelineParent = ( pAudioClient != nullptr )
+                                         ? pAudioClient->getRoot()
+                                         : gEdAudio.getOutputModule();
+
     if ( pipeline.getBuffer() == nullptr &&
-         !pipeline.create( gEdAudio.getOutputModule() ) ) {
+         !pipeline.create( pPipelineParent ) ) {
         return;
     }
 
