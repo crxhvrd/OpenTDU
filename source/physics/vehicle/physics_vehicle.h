@@ -274,6 +274,7 @@ public:
 
     float getEngineAngularVelocity() const;
     int32_t getCurrentGear() const;
+    int32_t getReportedGear() const;
 
     float getLateralG() const;
     float getLongitudinalG() const;

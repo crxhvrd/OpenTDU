@@ -155,6 +155,15 @@ struct PhysicsEngineSim {
 struct PhysicsGearboxSim {
     static constexpr int kMaxGears = 11;
 
+    enum eShiftState {
+        SS_Settle = 0,         // post-shift lockout, counts ShiftTimer down
+        SS_InGear = 1,         // in gear, runs the automatic shift evaluation
+        SS_UpshiftStart = 2,   // upshift requested
+        SS_Upshifting = 3,     // upshift in progress (rev match + commit)
+        SS_DownshiftStart = 4, // downshift requested
+        SS_Downshifting = 5,   // downshift in progress (rev match + commit)
+    };
+
     int NumGears = 3; //  DB NumGears + 2
     float Ratios[kMaxGears] =
         {}; // [0]=reverse(-4 car), [1]=neutral(0), [2..]=DB
@@ -162,9 +171,19 @@ struct PhysicsGearboxSim {
     float TransEff = 0.9f;
     int CurrentGear = 1;
 
-    int ShiftState = 1;    // 1 = in gear
+    int ShiftState = SS_InGear;
     int ShiftSubstate = 0; // gear delta +/-
     float ShiftTimer = 0.0f;
+    float ShiftDuration = 0.0f; 
+    float ShiftStartOmega = 0.0f;
+    float ShiftGauge = 10.0f;    
+    float ShiftThrottle = 0.0f;  
+    float ShiftThrottleSaved = 0.0f; 
+    float ShiftHalfTime = 0.0f;      
+    int ReportedGear = 1; 
+    float ShiftCompleted = 0.0f; 
+    bool bWheelLiftPrev = false; 
+    bool bShiftLockout = false;
     float UpshiftThreshold = 1.2f; // DAT_00f41dc4
     float DownshiftFactor = 0.2f;  // DAT_00f41730
     float UpshiftDelay = 0.3f;     // Physics.ini ShiftTime
@@ -183,6 +202,7 @@ struct PhysicsGearboxSim {
         SB_WheelLift,  // a grounded wheel is unloaded (traction gate)
         SB_WheelSlip,  // driven wheels outrunning the road (>= 1.2)
         SB_ClutchOpen, // clutch not locked in 1st/2nd
+        SB_Handbrake,  // handbrake >= 0.25
     };
     int ShiftBlockReason = SB_None;
     float WheelOverRoad = 0.0f;
@@ -217,6 +237,7 @@ struct PhysicsVehicleState {
     static constexpr int kMaxWheels = 4;
 
     int NumWheels = 4;
+    int PowertrainSubsteps = 10;
     PhysicsWheelState Wheels[kMaxWheels];
 
     Eigen::Vector4f GravityBody = Eigen::Vector4f( 0.0f, -1.0f, 0.0f, 0.0f );
@@ -275,7 +296,8 @@ float ThrottlePosForTorque( const PhysicsEngineSim &engine,
 
 float EngineTorqueAt( const PhysicsEngineSim &engine,
                       float omega,
-                      float throttle );
+                      float throttle,
+                      bool bApplyIdleFloor );
 
 void BuildEngineCurves( PhysicsEngineSim &engine,
                         const float *pTorquePairs,
@@ -283,9 +305,14 @@ void BuildEngineCurves( PhysicsEngineSim &engine,
                         float bhp,
                         float packBoost,
                         float frictionCoef );
+void StepGearbox( PhysicsVehicleState &vehicle,
+                  float brake,
+                  float handbrake,
+                  float dt );
 void StepPowertrain( PhysicsVehicleState &vehicle,
                      float throttle,
                      float brake,
+                     float handbrake,
                      float dt );
 void ComputeTireForces( PhysicsWheelState &wheel,
                         const Matrix4x4f_t &vehicleMatrix );

@@ -1301,8 +1301,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     gb.BaseInertia =
         ( db.GearboxIntertia != 0 ? db.GearboxIntertia * 0.01f : 0.25f ) *
         simInertiaScale;
-    gb.TransEff = 0.9f;
+    gb.TransEff = 1.0f;
     gb.CurrentGear = 2; // 1st forward
+    gb.ReportedGear = gb.CurrentGear;
     gb.bAutomatic = true;
     gb.UpshiftBand = gPhysicsConfig.RedlinePurcent > 0.0f
                          ? gPhysicsConfig.RedlinePurcent
@@ -1323,6 +1324,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         bManualBox ? gShiftTimeManual : gShiftTimeSequential;
     gb.UpshiftDelay = pShiftDur[0] > 0.0f ? pShiftDur[0] : 0.30f;
     gb.DownshiftDelay = pShiftDur[1] > 0.0f ? pShiftDur[1] : 0.30f;
+    gb.bShiftLockout = bManualBox;
 
     // Engine: fixed rev references, per-car character from the curve + ratios.
     PhysicsEngineSim &en = vehicle.Engine;
@@ -1417,7 +1419,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                     en.FrictionLoss );
 
     const float peakPowerW =
-        EngineTorqueAt( en, en.PeakPowerOmega, 1.0f ) * en.PeakPowerOmega;
+        EngineTorqueAt( en, en.PeakPowerOmega, 1.0f, false ) *
+        en.PeakPowerOmega;
     const float peakPowerHp = peakPowerW * kWattToMetricHp;
     en.RevLimiterCutTime =
         JPH::Clamp( ( peakPowerHp - kRevLimiterPowerRef ) *
@@ -1751,15 +1754,15 @@ PhysicsVehicle::DrivingGearbox PhysicsVehicle::getDrivingGearbox() const {
     out.bAutomatic = g.bAutomatic;
     out.bEngineFiring = ( vehicle.Engine.State == eEngineState::ES_Running ||
                           vehicle.Engine.State == eEngineState::ES_Stalling );
-    out.bShiftIdle = ( g.ShiftState == 1 && g.ShiftTimer <= 0.0f );
+    out.bShiftIdle = ( g.ShiftState == PhysicsGearboxSim::SS_InGear );
     out.bEngineRunning = ( vehicle.Engine.State == eEngineState::ES_Running );
     out.ShiftDirection = 0;
-    if ( g.ShiftState == 2 ) {
-        if ( g.ShiftSubstate > 0 ) {
-            out.ShiftDirection = 1;
-        } else if ( g.ShiftSubstate < 0 ) {
-            out.ShiftDirection = -1;
-        }
+    if ( g.ShiftState == PhysicsGearboxSim::SS_UpshiftStart ||
+         g.ShiftState == PhysicsGearboxSim::SS_Upshifting ) {
+        out.ShiftDirection = 1;
+    } else if ( g.ShiftState == PhysicsGearboxSim::SS_DownshiftStart ||
+                g.ShiftState == PhysicsGearboxSim::SS_Downshifting ) {
+        out.ShiftDirection = -1;
     }
     return out;
 }
@@ -1770,32 +1773,42 @@ void PhysicsVehicle::setCurrentGear( int32_t gear ) {
         return;
     }
     g.CurrentGear = gear;
+    g.ReportedGear = gear;
 }
 
 void PhysicsVehicle::setAutomaticGearbox( bool bAutomatic ) {
     vehicle.GearBox.bAutomatic = bAutomatic;
 }
 
+
 void PhysicsVehicle::requestUpshift() {
     // FUN_00439de0
     PhysicsGearboxSim &g = vehicle.GearBox;
-    if ( g.ShiftState != 1 || g.ShiftTimer > 0.0f ) {
+    if ( g.ShiftState == PhysicsGearboxSim::SS_InGear ) {
+        g.ShiftState = PhysicsGearboxSim::SS_UpshiftStart;
+        g.ShiftSubstate = 1;
         return;
     }
-    g.ShiftState = 2;
-    g.ShiftSubstate = 1;
-    g.ShiftTimer = g.UpshiftDelay;
+    // A second request during an upshift stacks another gear onto the one
+    // already in flight rather than being dropped.
+    if ( g.ShiftState == PhysicsGearboxSim::SS_Upshifting &&
+         g.CurrentGear + g.ShiftSubstate < g.NumGears - 1 ) {
+        ++g.ShiftSubstate;
+    }
 }
 
 void PhysicsVehicle::requestDownshift() {
     // FUN_00439e30
     PhysicsGearboxSim &g = vehicle.GearBox;
-    if ( g.ShiftState != 1 || g.ShiftTimer > 0.0f ) {
+    if ( g.ShiftState == PhysicsGearboxSim::SS_InGear ) {
+        g.ShiftState = PhysicsGearboxSim::SS_DownshiftStart;
+        g.ShiftSubstate = -1;
         return;
     }
-    g.ShiftState = 2;
-    g.ShiftSubstate = -1;
-    g.ShiftTimer = g.DownshiftDelay;
+    if ( g.ShiftState == PhysicsGearboxSim::SS_Downshifting &&
+         g.CurrentGear + g.ShiftSubstate > 1 ) {
+        --g.ShiftSubstate;
+    }
 }
 
 void PhysicsVehicle::setClutchOverride( float engagement ) {
@@ -2348,7 +2361,8 @@ void PhysicsVehicle::updateGripModulation( float chassisSpeed ) {
     const PhysicsEngineSim &eng = vehicle.Engine;
     const float mass = vehicle.Mass > 0.0f ? vehicle.Mass : 1.0f;
     const float powerMax =
-        EngineTorqueAt( eng, eng.PeakPowerOmega, 1.0f ) * eng.PeakPowerOmega;
+        EngineTorqueAt( eng, eng.PeakPowerOmega, 1.0f, false ) *
+        eng.PeakPowerOmega;
     const float powerToWeight = powerMax / mass;
     const float boostCeil =
         clampSpan( ( kPwrBoostHi - kPwrBoostLo ) *
@@ -2460,7 +2474,7 @@ void PhysicsVehicle::OnStep(
             break;
         }
     }
-    StepPowertrain( vehicle, inputThrottle, inputBrake, dt );
+    StepPowertrain( vehicle, inputThrottle, inputBrake, inputHandbrake, dt );
 
     for ( int i = 0; i < vehicle.NumWheels; ++i ) {
         castWheel( system, chassis, i, dt );
@@ -3254,6 +3268,10 @@ float PhysicsVehicle::getEngineAngularVelocity() const {
 
 int32_t PhysicsVehicle::getCurrentGear() const {
     return vehicle.GearBox.CurrentGear - 1;
+}
+
+int32_t PhysicsVehicle::getReportedGear() const {
+    return vehicle.GearBox.ReportedGear - 1;
 }
 
 float PhysicsVehicle::getLateralG() const {

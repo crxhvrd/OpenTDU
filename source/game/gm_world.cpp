@@ -695,7 +695,9 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     pBody->SteeringRaw = steer;
     pBody->Steering = steer;
 
-    const bool bAutomatic = gearbox.bAutomatic;
+    const bool bAutomatic = pCfg->bUseAutomatic;
+    pPlayerPhysicsVehicle->setAutomaticGearbox( bAutomatic );
+
     {
         PhysicsLock physLock;
         pPlayerPhysicsVehicle->setDrivingInputScripted(
