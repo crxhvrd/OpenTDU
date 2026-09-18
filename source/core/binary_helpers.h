@@ -2,7 +2,7 @@
 
 template <typename T> T Read( const uint8_t *pData, uint32_t offset = 0 ) {
     T value;
-    std::memcpy( &value, pData + offset, sizeof( T ) );
+    std::memcpy( (void *)&value, pData + offset, sizeof( T ) );
     return value;
 }
 
