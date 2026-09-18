@@ -26,32 +26,37 @@ void FrameGraph::initialize( FrameGraphConfig *param_2 ) {
     config = *param_2;
 
     renderNodeAllocator.initialize(
-        AllocateFromRenderPool( param_2->MaxNumObject *
-                                sizeof( RenderObjectBase * ) ),
+        AllocateFromRenderPool(
+            edStdAllocator<RenderObjectBase *>::GetRequiredMemory(
+                param_2->MaxNumObject ) ),
         param_2->MaxNumObject );
     sceneCommandsAllocator.initialize(
-        AllocateFromRenderPool( param_2->MaxNumSceneData *
-                                sizeof( RenderSceneCommands ) ),
+        AllocateFromRenderPool(
+            edStdAllocator<RenderSceneCommands>::GetRequiredMemory(
+                param_2->MaxNumSceneData ) ),
         param_2->MaxNumSceneData );
     drawListAllocator.initialize(
-        AllocateFromRenderPool( param_2->MaxNumDrawList *
-                                sizeof( DrawList * ) ),
+        AllocateFromRenderPool( edStdAllocator<DrawList *>::GetRequiredMemory(
+            param_2->MaxNumDrawList ) ),
         param_2->MaxNumDrawList );
     instanceAllocator.initialize(
-        AllocateFromRenderPool( param_2->MaxNumInstance *
-                                sizeof( Instance * ) ),
+        AllocateFromRenderPool( edStdAllocator<Instance *>::GetRequiredMemory(
+            param_2->MaxNumInstance ) ),
         param_2->MaxNumInstance );
     instanceWithCustomMatAllocator.initialize(
-        AllocateFromRenderPool( param_2->MaxNumInstanceWithCustomMaterial *
-                                sizeof( InstanceWithCustomMaterial ) ),
+        AllocateFromRenderPool(
+            edStdAllocator<InstanceWithCustomMaterial>::GetRequiredMemory(
+                param_2->MaxNumInstanceWithCustomMaterial ) ),
         param_2->MaxNumInstanceWithCustomMaterial );
     instanceArrayAllocator.initialize(
-        AllocateFromRenderPool( param_2->MaxNumInstanceArray *
-                                sizeof( std::vector<Instance *> * ) ),
+        AllocateFromRenderPool(
+            edStdAllocator<std::vector<Instance *> *>::GetRequiredMemory(
+                param_2->MaxNumInstanceArray ) ),
         param_2->MaxNumInstanceArray );
     hiearchyNodeAllocator.initialize(
-        AllocateFromRenderPool( param_2->MaxNumHiearchyNode *
-                                sizeof( HiearchyNode * ) ),
+        AllocateFromRenderPool(
+            edStdAllocator<HiearchyNode *>::GetRequiredMemory(
+                param_2->MaxNumHiearchyNode ) ),
         param_2->MaxNumHiearchyNode );
 
     bRemoveDynamicDrawCmds = true;

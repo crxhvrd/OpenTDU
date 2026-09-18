@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/collection_link.h"
+
 class Instance;
 struct HiearchyNodeEntry;
 
@@ -11,6 +13,7 @@ struct HiearchyNode {
     HiearchyNode *pNext;
     HiearchyNode *pPrevious;
     Matrix4x4f_t TransformMatrix;
+    CollectionLink<HiearchyNode> collectionLink;
 
     void bindInstance( HiearchyNodeEntry *param_2, Instance *param_3 );
     HiearchyNode *findChild( uint64_t param_2 );

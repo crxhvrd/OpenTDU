@@ -287,38 +287,41 @@ int32_t edRender::initialize() {
                 gFrameGraph.initialize( &Config.FrameGraph );
                 if ( DeviceState == 0 ) {
                     g3DDAllocator.initialize(
-                        AllocateFromRenderPool( Config.MaxNum3DD *
-                                                sizeof( Render3DD * ) ),
+                        AllocateFromRenderPool(
+                            edStdAllocator<Render3DD *>::GetRequiredMemory(
+                                Config.MaxNum3DD ) ),
                         Config.MaxNum3DD );
                     g3DGAllocator.initialize(
-                        AllocateFromRenderPool( Config.MaxNum3DG *
-                                                sizeof( Render3DG * ) ),
+                        AllocateFromRenderPool(
+                            edStdAllocator<Render3DG *>::GetRequiredMemory(
+                                Config.MaxNum3DG ) ),
                         Config.MaxNum3DG );
                     gInstanceAllocator.initialize(
                         AllocateFromRenderPool(
-                            Config.MaxNumInstance *
-                            ( sizeof( Instance ) +
-                              sizeof( edStdAllocator<Instance>::Node ) ) ),
+                            edStdAllocator<Instance>::GetRequiredMemory(
+                                Config.MaxNumInstance ) ),
                         Config.MaxNumInstance );
                     gHiearchyNodeAllocator.initialize(
                         AllocateFromRenderPool(
-                            Config.MaxNumHiearchyNode *
-                            ( sizeof( HiearchyNode ) +
-                              sizeof( edStdAllocator<Instance>::Node ) ) ),
+                            edStdAllocator<HiearchyNode>::GetRequiredMemory(
+                                Config.MaxNumHiearchyNode ) ),
                         Config.MaxNumHiearchyNode );
 
                     if ( DeviceState == 0 ) {
                         g2DMAllocator.initialize(
-                            AllocateFromRenderPool( Config.MaxNum2DM *
-                                                    sizeof( Render2DM * ) ),
+                            AllocateFromRenderPool(
+                                edStdAllocator<Render2DM *>::GetRequiredMemory(
+                                    Config.MaxNum2DM ) ),
                             Config.MaxNum2DM );
                         g2DBAllocator.initialize(
-                            AllocateFromRenderPool( Config.MaxNum2DB *
-                                                    sizeof( Render2DB * ) ),
+                            AllocateFromRenderPool(
+                                edStdAllocator<Render2DB *>::GetRequiredMemory(
+                                    Config.MaxNum2DB ) ),
                             Config.MaxNum2DB );
                         gUVAAllocator.initialize(
-                            AllocateFromRenderPool( Config.MaxNumUVA *
-                                                    sizeof( RenderUVA * ) ),
+                            AllocateFromRenderPool(
+                                edStdAllocator<RenderUVA *>::GetRequiredMemory(
+                                    Config.MaxNumUVA ) ),
                             Config.MaxNumUVA );
                     }
                 }
@@ -475,24 +478,15 @@ uint32_t edRender::getRequiredMemRender2D( int32_t param_1,
                                            int32_t param_2,
                                            int32_t param_3 ) {
     // FUN_00506990
-    uint32_t uVar2 = param_1 * 0x14;
-    if ( ( param_1 * 4 & 0xfU ) != 0 ) {
-        uVar2 = ( ( uVar2 >> 4 ) + 1 ) * 0x10;
-    }
-
-    int32_t iVar1;
-    if ( ( param_2 * 4 & 0xfU ) == 0 ) {
-        iVar1 = param_2 * 0x14;
-    } else {
-        iVar1 = ( ( (uint32_t)( param_2 * 0x14 ) >> 4 ) + 1 ) * 0x10;
-    }
-
-    if ( ( param_3 * 4 & 0xfU ) != 0 ) {
-        return ( ( (uint32_t)( param_3 * 0x14 ) >> 4 ) + 1 ) * 0x10 + iVar1 +
-               uVar2;
-    }
-
-    return param_3 * 0x14 + iVar1 + uVar2;
+    return (uint32_t)( Align( edStdAllocator<Render2DM *>::GetRequiredMemory(
+                                  param_1 ),
+                              16 ) +
+                       Align( edStdAllocator<Render2DB *>::GetRequiredMemory(
+                                  param_2 ),
+                              16 ) +
+                       Align( edStdAllocator<RenderUVA *>::GetRequiredMemory(
+                                  param_3 ),
+                              16 ) );
 }
 
 uint32_t edRender::getRequiredMemRender3D( int32_t param_1,
@@ -500,38 +494,46 @@ uint32_t edRender::getRequiredMemRender3D( int32_t param_1,
                                            int32_t param_3,
                                            int32_t param_4 ) {
     // FUN_00506a10
-    uint32_t uVar2 = param_1 * 0x14;
-    if ( ( param_1 * 4 & 0xfU ) != 0 ) {
-        uVar2 = ( ( uVar2 >> 4 ) + 1 ) * 0x10;
-    }
-
-    int32_t iVar1;
-    if ( ( param_2 * 4 & 0xfU ) == 0 ) {
-        iVar1 = param_2 * 0x14;
-    } else {
-        iVar1 = ( ( ( param_2 * 0x14 ) >> 4 ) + 1 ) * 0x10;
-    }
-
-    return param_4 * ( sizeof( HiearchyNode ) +
-                       sizeof( edStdAllocator<HiearchyNode>::Node ) ) +
-           param_3 * ( sizeof( Instance ) +
-                       sizeof( edStdAllocator<Instance>::Node ) ) +
-           iVar1 + uVar2;
+    return (uint32_t)( Align( edStdAllocator<Render3DD *>::GetRequiredMemory(
+                                  param_1 ),
+                              16 ) +
+                       Align( edStdAllocator<Render3DG *>::GetRequiredMemory(
+                                  param_2 ),
+                              16 ) +
+                       Align( edStdAllocator<Instance>::GetRequiredMemory(
+                                  param_3 ),
+                              16 ) +
+                       Align( edStdAllocator<HiearchyNode>::GetRequiredMemory(
+                                  param_4 ),
+                              16 ) );
 }
 
 uint32_t edRender::getRequiredMemSceneRenderer( FrameGraphConfig *param_1 ) {
     // FUN_0050e710
-    uint32_t uVar1 = ( param_1->MaxNumInstanceArray +
-                       param_1->MaxNumInstanceWithCustomMaterial ) *
-                         0x18 +
-                     ( param_1->MaxNumHiearchyNode + param_1->MaxNumInstance +
-                       param_1->MaxNumDrawList + param_1->MaxNumObject ) *
-                         0x14 +
-                     param_1->MaxNumSceneData * 0x110;
-    if ( ( uVar1 & 0xf ) != 0 ) {
-        uVar1 = ( ( uVar1 >> 4 ) + 1 ) * 0x10;
-    }
-    return uVar1;
+    const size_t uVar1 =
+        Align( edStdAllocator<RenderObjectBase *>::GetRequiredMemory(
+                   param_1->MaxNumObject ),
+               16 ) +
+        Align( edStdAllocator<RenderSceneCommands>::GetRequiredMemory(
+                   param_1->MaxNumSceneData ),
+               16 ) +
+        Align( edStdAllocator<DrawList *>::GetRequiredMemory(
+                   param_1->MaxNumDrawList ),
+               16 ) +
+        Align( edStdAllocator<Instance *>::GetRequiredMemory(
+                   param_1->MaxNumInstance ),
+               16 ) +
+        Align( edStdAllocator<InstanceWithCustomMaterial>::GetRequiredMemory(
+                   param_1->MaxNumInstanceWithCustomMaterial ),
+               16 ) +
+        Align( edStdAllocator<std::vector<Instance *> *>::GetRequiredMemory(
+                   param_1->MaxNumInstanceArray ),
+               16 ) +
+        Align( edStdAllocator<HiearchyNode *>::GetRequiredMemory(
+                   param_1->MaxNumHiearchyNode ),
+               16 );
+
+    return (uint32_t)Align( uVar1, 16 );
 }
 
 uint32_t edRender::getRequiredMemRenderBucket( BucketConfiguration *param_1 ) {
@@ -999,6 +1001,15 @@ void UploadConstant( const ConstantMap *pMap,
 }
 
 void *AllocateFromRenderPool( size_t param_1 ) {
+    if ( gRenderAllocator.Usage + param_1 > gRenderAllocator.Capacity ) {
+        OTDU_FATAL_ERROR( "Render pool overflow: %llu + %llu byte(s) exceeds "
+                          "its %llu byte capacity!",
+                          (unsigned long long)gRenderAllocator.Usage,
+                          (unsigned long long)param_1,
+                          (unsigned long long)gRenderAllocator.Capacity );
+        return nullptr;
+    }
+
     void *pvVar1 = gRenderAllocator.pTail;
     gRenderAllocator.Usage = gRenderAllocator.Usage + param_1;
     gRenderAllocator.pTail =

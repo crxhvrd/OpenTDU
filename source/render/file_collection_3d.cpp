@@ -76,14 +76,14 @@ FileCollection3D::instantiate( Render3DD *p3DD,
 HiearchyNode *FileCollection3D::instantiate( Render3DD *p3DD,
                                              HiearchyNodeEntry *pNode ) {
     // FUN_0050aae0
-    HiearchyNode *peVar2 =
-        HiearchyNodes.emplace_back( gHiearchyNodeAllocator.allocate( 1 ) );
+    HiearchyNode *peVar2 = gHiearchyNodeAllocator.allocate( 1 );
+    peVar2->collectionLink.attach( HiearchyNodes, peVar2 );
 
     RenderFile::Section *peVar1 = pNode->pInstance;
     uint64_t uVar3 = p3DD->findInstanceHashcode( peVar1 );
 
-    Instance *this_00 =
-        Instances.emplace_back( gInstanceAllocator.allocate( 1 ) );
+    Instance *this_00 = gInstanceAllocator.allocate( 1 );
+    this_00->collectionLink.attach( Instances, this_00 );
 
     InstanceEntry *pInstanceEntry = (InstanceEntry *)( peVar1 + 1 );
     this_00->initialize( pInstanceEntry, uVar3 );
@@ -95,8 +95,8 @@ HiearchyNode *FileCollection3D::instantiate( Render3DD *p3DD,
 Instance *FileCollection3D::instantiate( InstanceEntry *param_1,
                                          uint64_t param_2 ) {
     // FUN_0050a7f0
-    Instance *this_00 =
-        Instances.emplace_back( gInstanceAllocator.allocate( 1 ) );
+    Instance *this_00 = gInstanceAllocator.allocate( 1 );
+    this_00->collectionLink.attach( Instances, this_00 );
     this_00->initialize( param_1, param_2 );
     return this_00;
 }
@@ -107,13 +107,25 @@ Instance *FileCollection3D::findAndInstantiate( uint64_t param_2 ) {
 
     RenderFile::Section *peVar2 = findInstance( param_2, &p3DD );
     if ( peVar2 != nullptr ) {
-        Instance *this_00 =
-            Instances.emplace_back( gInstanceAllocator.allocate( 1 ) );
+        Instance *this_00 = gInstanceAllocator.allocate( 1 );
+        this_00->collectionLink.attach( Instances, this_00 );
         this_00->initialize( (InstanceEntry *)( peVar2 + 1 ), param_2 );
         return this_00;
     }
 
     return nullptr;
+}
+
+template <typename T>
+static inline void UnlinkFromCollection( std::list<T *> &param_1, T *param_2 ) {
+    if ( param_2->collectionLink.detach( param_1 ) ) {
+        return;
+    }
+
+    OTDU_LOG_ERROR( "Entry %p was uninstantiated from a collection it does not "
+                    "belong to!\n",
+                    (void *)param_2 );
+    param_1.remove( param_2 );
 }
 
 void FileCollection3D::uninstantiate( HiearchyNode *param_1 ) {
@@ -123,12 +135,12 @@ void FileCollection3D::uninstantiate( HiearchyNode *param_1 ) {
         Instance *peVar1 = peVar3->pInstance;
         if ( peVar1 != nullptr ) {
             peVar1->markAsFree();
-            Instances.remove( peVar1 );
+            UnlinkFromCollection( Instances, peVar1 );
             gInstanceAllocator.deallocate( peVar1, 1 );
         }
         HiearchyNode *peVar2 = peVar3->pNext;
         peVar3->clear();
-        HiearchyNodes.remove( peVar3 );
+        UnlinkFromCollection( HiearchyNodes, peVar3 );
         gHiearchyNodeAllocator.deallocate( peVar3, 1 );
         peVar3 = peVar2;
     }
@@ -136,19 +148,19 @@ void FileCollection3D::uninstantiate( HiearchyNode *param_1 ) {
     Instance *peVar1 = param_1->pInstance;
     if ( peVar1 != nullptr ) {
         peVar1->markAsFree();
-        Instances.remove( peVar1 );
+        UnlinkFromCollection( Instances, peVar1 );
         gInstanceAllocator.deallocate( peVar1, 1 );
     }
 
     param_1->clear();
-    HiearchyNodes.remove( param_1 );
+    UnlinkFromCollection( HiearchyNodes, param_1 );
     gHiearchyNodeAllocator.deallocate( param_1, 1 );
 }
 
 void FileCollection3D::uninstantiate( Instance *param_1 ) {
     // FUN_0050a820
     param_1->markAsFree();
-    Instances.remove( param_1 );
+    UnlinkFromCollection( Instances, param_1 );
     gInstanceAllocator.deallocate( param_1, 1 );
 }
 

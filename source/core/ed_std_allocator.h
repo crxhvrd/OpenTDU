@@ -17,65 +17,47 @@ public:
     edStdAllocator() noexcept
         : pPooledMemory( nullptr ),
           pHead( nullptr ),
+          pContentBase( nullptr ),
           pFirstFreeNode( nullptr ),
           Capacity( 0 ),
           Usage( 0 ) {}
 
-    template <class U> edStdAllocator( const edStdAllocator<U> & ) noexcept {}
+    template <class U>
+    edStdAllocator( const edStdAllocator<U> & ) noexcept : edStdAllocator() {}
+
+    static constexpr size_t GetRequiredMemory( size_t param_1 ) {
+        return param_1 * sizeof( Node ) + alignof( T ) - 1 +
+               param_1 * sizeof( T );
+    }
 
     void initialize( void *param_1, size_t param_2 ) {
         pPooledMemory = param_1;
         Capacity = param_2;
-
+        Usage = 0;
         pHead = (Node *)pPooledMemory;
-        pFirstFreeNode = pHead;
+        pFirstFreeNode = nullptr;
+        pContentBase = nullptr;
 
-        if ( 0 < Capacity ) {
-            uint64_t iVar3 = Capacity + -1;
-
-            Usage = 0;
-
-            if ( iVar3 != 0 ) {
-                // NOTE: For some weird reason they add the size of the
-                // allocator to the pooled memory allocation (even though the
-                // allocator is statically allocated). Not sure if this is a
-                // mistake from the dev or some quirk I missed? (Size of a node:
-                // 0x14 Size of allocator: 0x20)
-                //
-                // piVar1 = (int *)((int)gpRenderMemoryPool.pTail + 0x34); //
-                // 005f1a00 (presumably inlined)
-
-                Node *piVar0 = pHead;
-                Node *piVar1 = pHead + 1;
-
-                uintptr_t contentPtr =
-                    (uintptr_t)( (uint8_t *)pHead + sizeof( Node ) * param_2 );
-                contentPtr = Align( contentPtr, alignof( T ) );
-                void *pContent = (void *)contentPtr;
-
-                piVar0->pContent = new ( pContent ) T();
-                piVar0->pNextNode = piVar1;
-                piVar0->pPreviousNode = nullptr;
-                do {
-                    contentPtr = (uintptr_t)pContent;
-                    contentPtr += sizeof( T );
-                    pContent = (void *)contentPtr;
-                    piVar1->pContent = new ( pContent ) T();
-                    piVar1->pPreviousNode = piVar0;
-                    if ( iVar3 > 1 ) {
-                        piVar1->pNextNode = ( piVar1 + 1 );
-                    }
-                    piVar0 = piVar1;
-                    piVar1++;
-                    iVar3--;
-                } while ( iVar3 != 0 );
-            }
+        if ( Capacity == 0 ) {
+            return;
         }
+        uintptr_t contentPtr =
+            (uintptr_t)( (uint8_t *)pHead + sizeof( Node ) * Capacity );
+        pContentBase = (T *)Align( contentPtr, alignof( T ) );
+
+        for ( size_t i = 0; i < Capacity; i++ ) {
+            Node *pNode = pHead + i;
+            pNode->pContent = new ( pContentBase + i ) T();
+            pNode->pNextNode =
+                ( i + 1 < Capacity ) ? ( pHead + i + 1 ) : nullptr;
+            MarkNodeFree( pNode );
+        }
+
+        pFirstFreeNode = pHead;
     }
 
     T *allocate( std::size_t n ) {
         OTDU_ASSERT( n == 1 );
-        OTDU_ASSERT( Usage < Capacity );
 
         Node *peVar1 = pFirstFreeNode;
         if ( peVar1 == nullptr ) {
@@ -94,37 +76,58 @@ public:
     }
 
     void deallocate( T *p, std::size_t n ) {
-        for ( uint64_t i = 0; i < Capacity; i++ ) {
-            Node *pIt = pHead + i;
-            if ( pIt->pContent != p ) {
-                continue;
-            }
-
-            for ( Node *pFree = pFirstFreeNode; pFree != nullptr;
-                  pFree = pFree->pNextNode ) {
-                if ( pFree == pIt ) {
-                    OTDU_LOG_ERROR( "Double free of pooled block %p!\n",
-                                    (void *)p );
-                    OTDU_TRIGGER_BREAKPOINT;
-                    return;
-                }
-            }
-
-            Usage--;
-            pIt->pNextNode = pFirstFreeNode;
-            pFirstFreeNode = pIt;
+        Node *pNode = findNode( p );
+        if ( pNode == nullptr ) {
+            OTDU_LOG_ERROR( "Tried to free %p, which does not belong to this "
+                            "pool!\n",
+                            (void *)p );
+            OTDU_TRIGGER_BREAKPOINT;
             return;
         }
 
-        OTDU_LOG_ERROR( "Tried to free %p, which does not belong to this "
-                        "pool!\n",
-                        (void *)p );
-        OTDU_TRIGGER_BREAKPOINT;
+        if ( IsNodeFree( pNode ) ) {
+            OTDU_LOG_ERROR( "Double free of pooled block %p!\n", (void *)p );
+            OTDU_TRIGGER_BREAKPOINT;
+            return;
+        }
+
+        Usage--;
+        pNode->pNextNode = pFirstFreeNode;
+        MarkNodeFree( pNode );
+        pFirstFreeNode = pNode;
     }
 
     void *pPooledMemory;
     Node *pHead;
+    T *pContentBase;
     Node *pFirstFreeNode;
     uint64_t Capacity;
     uint64_t Usage;
+
+private:
+    static inline void MarkNodeFree( Node *param_1 ) {
+        param_1->pPreviousNode = param_1;
+    }
+
+    static inline bool IsNodeFree( const Node *param_1 ) {
+        return param_1->pPreviousNode == param_1;
+    }
+
+    Node *findNode( const T *param_1 ) const {
+        if ( param_1 == nullptr || pContentBase == nullptr ) {
+            return nullptr;
+        }
+
+        const uintptr_t offset = (uintptr_t)param_1 - (uintptr_t)pContentBase;
+        if ( ( offset % sizeof( T ) ) != 0 ) {
+            return nullptr;
+        }
+
+        const uint64_t index = offset / sizeof( T );
+        if ( index >= Capacity ) {
+            return nullptr;
+        }
+
+        return pHead + index;
+    }
 };

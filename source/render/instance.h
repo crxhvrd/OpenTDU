@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/color.h"
+#include "render/collection_link.h"
 #include "render/setup_node.h"
 #include "3dd.h"
 
@@ -87,6 +88,8 @@ public:
     inline void setHeightmapLODCacheDriven() {
         bHeightmapLODCacheDriven = true;
     }
+
+    CollectionLink<Instance> collectionLink;
 
 public:
     Instance();
