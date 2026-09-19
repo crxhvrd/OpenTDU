@@ -2,12 +2,14 @@
 #include "gs_database.h"
 
 #include "config/gs_config.h"
+#include "debug/mng_debug_hud.h"
 #include "filesystem/bank.h"
 #include "filesystem/gs_file.h"
 #include "filesystem/mod_installer.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/mng_flash_localize.h"
+#include "game/game_cheats.h"
 #include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
@@ -2182,6 +2184,92 @@ bool GSDatabase::isTraffic( DBEntryCarPhysicsData *param_1 ) {
 
     char *pcVar1 = getStringByHashcode( 6, 0x3540681 );
     return ( pcVar1 == param_1->Brand->BrandID.pAsString );
+}
+
+DBEntryCarShop *
+GSDatabase::getCarShopBySpotName( const uint64_t spotHashcode ) {
+    // FUN_009a8950
+    DBEntryCarShop *pCarShop = gameDatabase.DBCarShop;
+    if ( pCarShop == nullptr ) {
+        return nullptr;
+    }
+
+    DBEntryCarShop *pEnd = pCarShop + gameDatabase.pNumItems[8];
+    for ( ; pCarShop < pEnd; pCarShop++ ) {
+        if ( GetIdentifier64bit( pCarShop->SpotName.pAsString ) ==
+             spotHashcode ) {
+            return pCarShop;
+        }
+    }
+
+    return nullptr;
+}
+
+bool GSDatabase::isCarShopSlotAvailable( DBEntryCarShop *pCarShop,
+                                         const int32_t slotIndex ) {
+    // FUN_009ab7c0
+    if ( pCarShop == nullptr || slotIndex < 0 ||
+         slotIndex >= DBEntryCarShop::kNumSlots ) {
+        return false;
+    }
+
+    DBEntryCarPhysicsData *pCar = reinterpret_cast<DBEntryCarPhysicsData *>(
+        pCarShop->Slots[slotIndex].pAsRawPointer );
+    if ( isTraffic( pCar ) ) {
+        return false;
+    }
+
+    if ( pCar == nullptr || ( pCar->BitField & 1 ) == 0 ||
+         pCar->Brand == nullptr || ( pCar->Brand->Flags & 1 ) == 0 ) {
+        return false;
+    }
+
+    const uint32_t slotFlagBit =
+        1u << uint32_t( slotIndex + DBEntryCarShop::kFirstSlotFlagBit );
+    if ( ( pCarShop->Flags & slotFlagBit ) == 0 ) {
+        return false;
+    }
+
+    char bankPath[512];
+    snprintf( bankPath, sizeof( bankPath ), "%sVehicules/%s.bnk",
+              gpConfig->getResRootPath(), pCar->CarResourceFilename.pAsString );
+    return gpFile->fileExists( bankPath );
+}
+
+int32_t GSDatabase::getNumCarsAvailableInShop( DBEntryCarShop *pCarShop ) {
+    // FUN_009ab8a0
+    if ( gpMngDebugHUD != nullptr && gbInstallCheatCars ) {
+        return 8;
+    }
+
+    if ( pCarShop == nullptr ) {
+        return 0;
+    }
+
+    for ( int32_t i = 0; i < kNumCarShopStockEntries; i++ ) {
+        if ( carShopStockCache[i].pCarShop == pCarShop ) {
+            return carShopStockCache[i].NumCarsAvailable;
+        }
+    }
+
+    int32_t numCarsAvailable = 0;
+    for ( int32_t i = 0; i < DBEntryCarShop::kNumSlots; i++ ) {
+        if ( isCarShopSlotAvailable( pCarShop, i ) ) {
+            numCarsAvailable++;
+        }
+    }
+
+    int32_t freeEntry = 0;
+    while ( carShopStockCache[freeEntry].pCarShop != nullptr ) {
+        freeEntry++;
+        if ( freeEntry >= kNumCarShopStockEntries ) {
+            return numCarsAvailable;
+        }
+    }
+
+    carShopStockCache[freeEntry].pCarShop = pCarShop;
+    carShopStockCache[freeEntry].NumCarsAvailable = numCarsAvailable;
+    return numCarsAvailable;
 }
 
 bool GSDatabase::isBike( DBEntryCarPhysicsData *param_1 ) {

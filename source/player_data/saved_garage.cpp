@@ -5,6 +5,25 @@
 #include "core/ed_store.h"
 #include "database/gs_database.h"
 
+int32_t GetHouseNumGarageSlots( const uint64_t houseHashcode ) {
+    // FUN_0088fb00
+    if ( gpDatabase == nullptr ) {
+        return 0;
+    }
+
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const uint32_t numHouses = gameDB.pNumItems[Garage::kHouseDatabaseIndex];
+    for ( uint32_t i = 0; i < numHouses; i++ ) {
+        const DBEntryHouse &houseEntry = gameDB.DBHouse[i];
+        if ( GetIdentifier64bit( houseEntry.SpotName.pAsString ) ==
+             houseHashcode ) {
+            return houseEntry.NumGarageSlot;
+        }
+    }
+
+    return 0;
+}
+
 GarageSlot::GarageSlot() : CarDesc() {
     // FUN_00894fa0
     clear();
@@ -151,6 +170,64 @@ bool Garage::isHouseOwned( const uint64_t houseHashcode ) const {
     }
 
     return false;
+}
+
+void Garage::removeHouse( const uint64_t houseHashcode ) {
+    // FUN_00894cc0
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        GarageSlot &slot = pCars[i];
+        if ( slot.getHouseHashcode() != houseHashcode ) {
+            continue;
+        }
+
+        slot.CarDesc::clear();
+        slot.setHouseHashcode( 0ull );
+        slot.ebayID = 0u;
+    }
+}
+
+bool Garage::addHouse( const uint64_t houseHashcode ) {
+    // FUN_00894d50
+    int32_t numSlotsWanted = -1;
+
+    if ( gpDatabase != nullptr ) {
+        const GameDatabase &gameDB = gpDatabase->getGameDB();
+        const uint32_t numHouses = gameDB.pNumItems[kHouseDatabaseIndex];
+        for ( uint32_t i = 0; i < numHouses; i++ ) {
+            const DBEntryHouse &houseEntry = gameDB.DBHouse[i];
+            if ( GetIdentifier64bit( houseEntry.SpotName.pAsString ) ==
+                 houseHashcode ) {
+                numSlotsWanted = houseEntry.NumGarageSlot;
+                break;
+            }
+        }
+    }
+
+    int32_t numSlotsClaimed = 0;
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        GarageSlot &slot = pCars[i];
+
+        // Already owned: drop every slot it holds and claim them again, so a
+        // house whose slot count grew picks the extra ones up.
+        if ( slot.getHouseHashcode() == houseHashcode ) {
+            removeHouse( houseHashcode );
+            return addHouse( houseHashcode );
+        }
+
+        if ( slot.getHouseHashcode() == 0ull &&
+             numSlotsClaimed < numSlotsWanted ) {
+            slot.setHouseHashcode( houseHashcode );
+            numSlotsClaimed++;
+        }
+    }
+
+    if ( numSlotsClaimed != numSlotsWanted ) {
+        return false;
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+
+    return true;
 }
 
 int32_t Garage::getNumOwnedHouses() const {

@@ -430,7 +430,7 @@ bool GameMode::FUN_0097ed60() {
     bool bVar11 = false;
     while ( true ) {
         if ( !bSaveMessageDisplayed && gpPlayerData->FUN_00897990() &&
-             gpFile->hasTaskPending() ) {
+             gbSaveAllowed ) {
             bSaveMessageDisplayed = gpFlashMessageBox->display(
                 kSavingMessageHashcode, 3.0f, 0, nullptr, nullptr, false );
         }

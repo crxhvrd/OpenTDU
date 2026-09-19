@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "gm_login.h"
 
+#include "game/game_cheats.h"
 #include "game/living/gm_living.h"
 
 #include "database/gs_database.h"
@@ -778,7 +779,12 @@ void GMLogin::startNewGame() {
     }
 
     gpPlayerData->prepareActiveProfile();
+
     gpPlayerData->newGame( false );
+
+    if ( gbNewGameSkipIntro ) {
+        gpTestDriveInstance->setNextGameMode( GM_FreeRide );
+    }
 
     gbScenarioTutorialEnabled = false;
 

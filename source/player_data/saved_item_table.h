@@ -8,6 +8,7 @@ class SavedItemTable : public Notifiable {
 public:
     static constexpr int32_t kNumEntries = 100;
     static constexpr uint16_t kDefaultKind = 1u;
+    static constexpr uint16_t kExtraChallengeGoldFlag = 0x1000u;
 
     // Low byte of an entry
     enum eExtraChallengeState : uint8_t {
@@ -25,6 +26,10 @@ public:
 
     inline uint8_t getExtraChallengeState( const int32_t index ) const {
         return static_cast<uint8_t>( Kinds[index] );
+    }
+
+    inline bool isExtraChallengeGold( const int32_t index ) const {
+        return ( Kinds[index] & kExtraChallengeGoldFlag ) != 0u;
     }
 
 public:

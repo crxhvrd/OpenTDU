@@ -87,3 +87,7 @@ struct AchievementCheck {
 };
 
 AchievementCheck *CreateAchievementCheck( const uint32_t kind );
+
+#ifdef OTDU_USE_IMGUI
+const char *GetAchievementKindName( const uint32_t kind );
+#endif

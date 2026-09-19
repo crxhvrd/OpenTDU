@@ -4,13 +4,17 @@
 #include "achievements_data.h"
 #include "database/gs_database.h"
 #include "driver.h"
+#include "game/scenaric/entity/entity_extra_challenge.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/spots.h"
 #include "gs_playerdata.h"
 #include "player_data_interface.h"
 #include "saved_extra_challenges.h"
 #include "saved_garage.h"
+#include "saved_item_table.h"
 #include "saved_ranking.h"
+#include "saved_road_discovery.h"
 
 static constexpr float kKilometresToMiles = 0.6215040683746338f; // DAT_00f418c0
 
@@ -52,9 +56,55 @@ static int32_t GetChallengeResult( const SpotMap &spot ) {
     return pSave->getRanking()->getChallengeResult( spot.Hashcode );
 }
 
-int32_t AchievementCheck::getProgress( int32_t * ) const {
-    return 0;
+static int32_t CountExtraChallenges( const eEntityType kind,
+                                     int32_t *pOutNumGold ) {
+    // FUN_00804d70
+    int32_t numChallenges = 0;
+    int32_t numGold = 0;
+
+    IPlayerData *pSave = GetLoadedSave();
+    ScenaricBank *pBank = ( gpScenaric != nullptr )
+                              ? gpScenaric->getWorldExtraChallengesBank()
+                              : nullptr;
+    if ( pBank != nullptr && pSave != nullptr ) {
+        const SavedItemTable *pChallengeStates = pSave->getItemTable();
+
+        for ( int32_t i = 0; i < pBank->getEntityCount(); i++ ) {
+            Entity *pEntity = pBank->getEntity( i );
+            if ( pEntity == nullptr ) {
+                continue;
+            }
+
+            const eEntityType type = pEntity->getType();
+            if ( kind != eEntityType::ET_None ) {
+                if ( type != kind ) {
+                    continue;
+                }
+            } else if ( type != eEntityType::ET_SHOG &&
+                        type != eEntityType::ET_HIHI &&
+                        type != eEntityType::ET_TRAN &&
+                        type != eEntityType::ET_CVOY ) {
+                continue;
+            }
+
+            numChallenges++;
+
+            const int32_t index =
+                static_cast<EntityExtraChallenge *>( pEntity )->getIndex();
+            if ( pChallengeStates->isExtraChallengeGold( index ) ) {
+                numGold++;
+            }
+        }
+    }
+
+    if ( pOutNumGold != nullptr ) {
+        *pOutNumGold = numGold;
+    }
+
+    return numChallenges;
 }
+
+int32_t AchievementCheck::getProgress( int32_t * ) const { return 0; }
 
 class AchievementCheckMinClubGoldCup : public AchievementCheck {
 public:
@@ -207,19 +257,17 @@ public:
             *pOutTotal = 0;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (AchievementsData'
-                                 // explored/total road length pair,
-                                 // FUN_0089d2a0 / FUN_0089d240)
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
         return 0;
     }
 
     int32_t getDetailedProgress( int32_t *pOutTotal ) const override {
-        // FUN_0089d300 
+        // FUN_0089d300
         if ( pOutTotal != nullptr ) {
             *pOutTotal = 100;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (same pair as above)
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
         return 0;
     }
 };
@@ -275,7 +323,7 @@ public:
     }
 
 private:
-    int32_t category;  
+    int32_t category;
     int32_t discipline;
 };
 
@@ -287,14 +335,12 @@ public:
     }
 
     int32_t getProgress( int32_t *pOutTotal ) const override {
-        // FUN_0089d450 
+        // FUN_0089d450
         if ( pOutTotal != nullptr ) {
             *pOutTotal = 0;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0089d240 /
-                                 // FUN_0089d2a0, both of which sum the road
-                                 // network through FUN_0088d660)
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
         return 0;
     }
 };
@@ -349,9 +395,7 @@ public:
             *pOutTotal = 0;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_008f5d50 counts the
-                                 // wardrobe entries of one brand for the
-                                 // avatar FUN_008f64b0 resolves)
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
         return 0;
     }
 
@@ -501,7 +545,7 @@ public:
     }
 
     int32_t getProgress( int32_t *pOutTotal ) const override {
-        // FUN_0089be70 
+        // FUN_0089be70
         const AchievementsData *pData = GetAchievements();
         if ( gpDatabase == nullptr || pData == nullptr ) {
             if ( pOutTotal != nullptr ) {
@@ -536,7 +580,7 @@ public:
     }
 
     int32_t getProgress( int32_t * ) const override {
-        // FUN_0089c430 
+        // FUN_0089c430
         IPlayerData *pSave = GetLoadedSave();
         if ( pSave == nullptr ) {
             return 0;
@@ -556,7 +600,7 @@ public:
     }
 
     void onBuilt() override {
-        // FUN_0089bb70 
+        // FUN_0089bb70
         // NOP
     }
 
@@ -571,16 +615,44 @@ public:
     }
 
 private:
+    // FUN_0089d9c0 / FUN_0089da70
     static int32_t countDealers( int32_t *pOutTotal ) {
-        if ( pOutTotal != nullptr ) {
-            *pOutTotal = 0;
+        int32_t numDealers = 0;
+        int32_t numUnlocked = 0;
+
+        IPlayerData *pSave = GetLoadedSave();
+        Spots *pSpots = GetSpotList();
+        if ( pSave != nullptr && pSpots != nullptr && gpDatabase != nullptr ) {
+            const SavedRoadDiscovery *pRoads = pSave->getRoadDiscovery();
+
+            const int32_t numSpots = int32_t( pSpots->getNumWorldSpots() );
+            for ( int32_t i = 0; i < numSpots; i++ ) {
+                const SpotMap &spot = *pSpots->getWorldSpot( i );
+                if ( spot.Type != ST_CarDealer ) {
+                    continue;
+                }
+
+                DBEntryCarShop *pCarShop =
+                    gpDatabase->getCarShopBySpotName( spot.Hashcode );
+                if ( pCarShop == nullptr ||
+                     gpDatabase->getNumCarsAvailableInShop( pCarShop ) <= 0 ) {
+                    continue;
+                }
+
+                numDealers++;
+
+                if ( spot.RoadID == 0u ||
+                     !pRoads->isRoadLocked( spot.RoadID ) ) {
+                    numUnlocked++;
+                }
+            }
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (walk the ST_House spots,
-                                 // resolve each one through FUN_009a8950 /
-                                 // FUN_009ab8a0 and ask the road discovery
-                                 // whether it has been reached, FUN_0040ab10)
-        return 0;
+        if ( pOutTotal != nullptr ) {
+            *pOutTotal = numDealers;
+        }
+
+        return numUnlocked;
     }
 };
 
@@ -628,20 +700,29 @@ public:
 
 private:
     int32_t countExtraChallenges( int32_t &numTotal ) const {
-        numTotal = 0;
+        int32_t numGold = 0;
+        numTotal = CountExtraChallenges( getEntityType(), &numGold );
+        return numGold;
+    }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (GSScenaric+0x1b8f4 holds
-                                 // the extra challenge list FUN_00804ed0 /
-                                 // FUN_00804d70 / FUN_008043f0 /
-                                 // FUN_00804350 walk; the gold flag itself is
-                                 // bit 0x1000 of the matching SavedItemTable
-                                 // key)
-        return 0;
+    eEntityType getEntityType() const {
+        switch ( kind ) {
+        case ECK_Shopping:
+            return eEntityType::ET_SHOG;
+        case ECK_HitchHiker:
+            return eEntityType::ET_HIHI;
+        case ECK_Transport:
+            return eEntityType::ET_TRAN;
+        case ECK_Convoy:
+            return eEntityType::ET_CVOY;
+        default:
+            return eEntityType::ET_None;
+        }
     }
 
 private:
     int32_t unknown0x40 = -1;
-    int32_t kind;             
+    int32_t kind;
 };
 
 class AchievementCheckCarsOwnedAll : public AchievementCheck {
@@ -730,8 +811,8 @@ public:
     }
 
 private:
-    bool bCountOnline;  
-    bool bCountOffline; 
+    bool bCountOnline;
+    bool bCountOffline;
 };
 
 class AchievementCheckMinExtraGoldCup : public AchievementCheck {
@@ -743,14 +824,15 @@ public:
 
     int32_t getProgress( int32_t *pOutTotal ) const override {
         // FUN_0089d570
+        int32_t numGold = 0;
+        const int32_t numTotal =
+            CountExtraChallenges( eEntityType::ET_None, &numGold );
+
         if ( pOutTotal != nullptr ) {
-            *pOutTotal = 0;
+            *pOutTotal = numTotal;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_00804ed0 /
-                                 // FUN_00804d70, see
-                                 // AchievementCheckAllGoldSoloExtra)
-        return 0;
+        return numGold;
     }
 };
 
@@ -853,7 +935,7 @@ public:
     }
 
     int32_t getProgress( int32_t *pOutTotal ) const override {
-        // FUN_0089cea0 
+        // FUN_0089cea0
         if ( gpDatabase == nullptr ) {
             if ( pOutTotal != nullptr ) {
                 *pOutTotal = 0;
@@ -937,7 +1019,7 @@ public:
     }
 
 private:
-    char brandTag[8];  
+    char brandTag[8];
     bool bBike = false;
 };
 
@@ -1043,3 +1125,114 @@ AchievementCheck *CreateAchievementCheck( const uint32_t kind ) {
 
     return nullptr;
 }
+
+#ifdef OTDU_USE_IMGUI
+const char *GetAchievementKindName( const uint32_t kind ) {
+    switch ( kind ) {
+    case AK_CarsOwned:
+        return "CarsOwned";
+    case AK_HousesOwned:
+        return "HousesOwned";
+    case AK_GoldInstantChaAllBots:
+        return "GoldInstantChaAllBots";
+    case AK_AllGoldSoloExtraTransp:
+        return "AllGoldSoloExtraTransp";
+    case AK_MinGoldCup:
+        return "MinGoldCup";
+    case AK_CarsOwnedFerrari:
+        return "CarsOwnedFerrari";
+    case AK_RoadExplored:
+        return "RoadExplored";
+    case AK_UploadCustom:
+        return "UploadCustom";
+    case AK_AllGoldSoloExtraConvoy:
+        return "AllGoldSoloExtraConvoy";
+    case AK_MinSoloGoldCup:
+        return "MinSoloGoldCup";
+    case AK_CarsOwnedLambo:
+        return "CarsOwnedLambo";
+    case AK_AllRoadExplored:
+        return "AllRoadExplored";
+    case AK_MinGoldCustom:
+        return "MinGoldCustom";
+    case AK_GoldPaintDeluxeCha:
+        return "GoldPaintDeluxeCha";
+    case AK_MinMultiGoldCup:
+        return "MinMultiGoldCup";
+    case AK_CarsOwnedMerco:
+        return "CarsOwnedMerco";
+    case AK_MinClubGoldCup:
+        return "MinClubGoldCup";
+    case AK_MinETradeTransaction:
+        return "MinETradeTransaction";
+    case AK_AllCarDealerUnlocked:
+        return "AllCarDealerUnlocked";
+    case AK_MinExtraGoldCup:
+        return "MinExtraGoldCup";
+    case AK_CarsOwnedChevy:
+        return "CarsOwnedChevy";
+    case AK_IsClubMember:
+        return "IsClubMember";
+    case AK_ClothesOwnedBenSherman:
+        return "ClothesOwnedBenSherman";
+    case AK_RoadTraveled:
+        return "RoadTraveled";
+    case AK_AllGoldSolo:
+        return "AllGoldSolo";
+    case AK_CarsOwnedAston:
+        return "CarsOwnedAston";
+    case AK_CarTunedHistory:
+        return "CarTunedHistory";
+    case AK_ClothesOwnedEcko:
+        return "ClothesOwnedEcko";
+    case AK_NovicePts:
+        return "NovicePts";
+    case AK_AllGoldSoloTime:
+        return "AllGoldSoloTime";
+    case AK_CarsOwnedFord:
+        return "CarsOwnedFord";
+    case AK_GoldGeekCha:
+        return "GoldGeekCha";
+    case AK_MinSpecialPhotos:
+        return "MinSpecialPhotos";
+    case AK_ProPts:
+        return "ProPts";
+    case AK_AllGoldSoloRace:
+        return "AllGoldSoloRace";
+    case AK_CarsOwnedAll:
+        return "CarsOwnedAll";
+    case AK_GoldInstantCha:
+        return "GoldInstantCha";
+    case AK_LevelReached:
+        return "LevelReached";
+    case AK_ExpertPts:
+        return "ExpertPts";
+    case AK_AllGoldSoloSpeed:
+        return "AllGoldSoloSpeed";
+    case AK_BikesOwned:
+        return "BikesOwned";
+    case AK_GoldInstantChaOffline:
+        return "GoldInstantChaOffline";
+    case AK_AllGoldSoloExtraShopping:
+        return "AllGoldSoloExtraShopping";
+    case AK_MasterPts:
+        return "MasterPts";
+    case AK_AllGoldSoloExtra:
+        return "AllGoldSoloExtra";
+    case AK_AllHousesOwned:
+        return "AllHousesOwned";
+    case AK_GoldInstantChaOnline:
+        return "GoldInstantChaOnline";
+    case AK_AllGoldSoloExtraHitch:
+        return "AllGoldSoloExtraHitch";
+    case AK_AcePts:
+        return "AcePts";
+    case AK_CarsOwnedPC:
+        return "CarsOwnedPC";
+    case AK_LevelReachedHardcore:
+        return "LevelReachedHardcore";
+    default:
+        return "<unknown>";
+    }
+}
+#endif

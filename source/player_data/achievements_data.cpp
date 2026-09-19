@@ -178,6 +178,9 @@ void AchievementsData::buildCheck( const DBEntryAchievement &entry ) {
     pCheck->RewardData = entry.RewardData;
 
     achievements.push_back( pCheck );
+#ifdef OTDU_USE_IMGUI
+    debugCheckKinds.push_back( uint32_t( kind ) );
+#endif
 
     pCheck->onBuilt();
 }
@@ -188,6 +191,9 @@ void AchievementsData::releaseChecks() {
     }
 
     achievements.clear();
+#ifdef OTDU_USE_IMGUI
+    debugCheckKinds.clear();
+#endif
 }
 
 void AchievementsData::reset() {
@@ -506,9 +512,8 @@ void AchievementsData::grantReward( const AchievementCheck *pCheck ) {
             return;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_00894d50 adds the
-                                 // house to the garage, then the original
-                                 // notifies again with mask 7)
+        pSave->getGarage()->addHouse( houseHashcode );
+        notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
         return;
     }
 
@@ -590,6 +595,51 @@ void AchievementsData::drawDebug() {
     ImGui::SameLine();
     if ( ImGui::Button( "Notify" ) ) {
         notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
+    }
+
+    ImGui::Separator();
+    if ( ImGui::TreeNode( "Checks" ) ) {
+        if ( ImGui::BeginTable( "achievement_checks", 5,
+                                ImGuiTableFlags_Borders |
+                                    ImGuiTableFlags_RowBg |
+                                    ImGuiTableFlags_ScrollY,
+                                ImVec2( 0.0f, 320.0f ) ) ) {
+            ImGui::TableSetupColumn( "Kind" );
+            ImGui::TableSetupColumn( "Progress" );
+            ImGui::TableSetupColumn( "Required" );
+            ImGui::TableSetupColumn( "Points" );
+            ImGui::TableSetupColumn( "State" );
+            ImGui::TableSetupScrollFreeze( 0, 1 );
+            ImGui::TableHeadersRow();
+
+            for ( size_t i = 0u; i < achievements.size(); i++ ) {
+                const AchievementCheck *pCheck = achievements[i];
+                if ( pCheck == nullptr ) {
+                    continue;
+                }
+
+                int32_t progressTotal = 0;
+                const int32_t progress =
+                    pCheck->getDetailedProgress( &progressTotal );
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted( GetAchievementKindName(
+                    i < debugCheckKinds.size() ? debugCheckKinds[i] : 0u ) );
+                ImGui::TableNextColumn();
+                ImGui::Text( "%d / %d", progress, progressTotal );
+                ImGui::TableNextColumn();
+                ImGui::Text( "%u", pCheck->NumItemsReq );
+                ImGui::TableNextColumn();
+                ImGui::Text( "%u", pCheck->NumPoints );
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted( pCheck->bLock ? "locked" : "unlocked" );
+            }
+
+            ImGui::EndTable();
+        }
+
+        ImGui::TreePop();
     }
 
     ImGui::Separator();

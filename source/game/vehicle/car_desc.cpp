@@ -156,6 +156,35 @@ void CarDesc::setArchetype( const uint32_t configID ) {
     notify( 0u );
 }
 
+void CarDesc::setup( const uint32_t configID,
+                     const int32_t paintIndex,
+                     const int32_t rimID,
+                     const int32_t interiorID,
+                     const uint32_t carID ) {
+    // FUN_008913f0
+    if ( isValid() ) {
+        // Only ever fills a free slot.
+        return;
+    }
+
+    this->carID = carID;
+    setCarConfigID( configID );
+    state = eState::CDS_None;
+
+    pConfig = FindCarConfig( int32_t( getCarConfigID() ) );
+
+    setUpgradeRate( 0.0f );
+
+    this->paintIndex = paintIndex;
+    packHashcode = 0xffffffffffffffffull;
+    paintType = ePaintType::PT_Default;
+    this->rimID = rimID;
+    this->interiorID = interiorID;
+    price = 0;
+
+    notify( 0u );
+}
+
 uint32_t CarDesc::getCarConfigID() const {
     return TestDriveTEAReadDword( pCarConfigID );
 }

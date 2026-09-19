@@ -47,12 +47,12 @@ public:
                    : false;
     }
 
-    uint32_t getNumCarsTuned() const;                   
-    uint32_t getNumInstantChallengesWonOnline() const;  
-    uint32_t getNumInstantChallengesWonOffline() const; 
-    uint32_t getNumCustomChallengesUploaded() const;    
-    uint32_t getNumCustomChallengesWon() const;        
-    uint32_t getNumETradeTransactions() const;          
+    uint32_t getNumCarsTuned() const;
+    uint32_t getNumInstantChallengesWonOnline() const;
+    uint32_t getNumInstantChallengesWonOffline() const;
+    uint32_t getNumCustomChallengesUploaded() const;
+    uint32_t getNumCustomChallengesWon() const;
+    uint32_t getNumETradeTransactions() const;
 
 public:
     AchievementsData();
@@ -90,6 +90,9 @@ private:
 
 private:
     std::vector<AchievementCheck *> achievements;
+#ifdef OTDU_USE_IMGUI
+    std::vector<uint32_t> debugCheckKinds;
+#endif
     bool bMustLevelUp;
     // '/:LevelUpText' is LINKED, so the sentence has to outlive the call that
     // builds it.
@@ -100,19 +103,19 @@ private:
     bool bReady;
     uint32_t flagAsync;
     // TEA encrypted, in retail layout order.
-    uint32_t pNumCarsTuned[2];                   
-    uint32_t pNumInstantChallengesWonOnline[2];  
-    uint32_t pNumInstantChallengesWonOffline[2]; 
-    uint32_t pNumCustomChallengesUploaded[2];    
-    uint32_t pNumCustomChallengesWon[2];         
-    uint32_t pNumETradeTransactions[2];          
+    uint32_t pNumCarsTuned[2];
+    uint32_t pNumInstantChallengesWonOnline[2];
+    uint32_t pNumInstantChallengesWonOffline[2];
+    uint32_t pNumCustomChallengesUploaded[2];
+    uint32_t pNumCustomChallengesWon[2];
+    uint32_t pNumETradeTransactions[2];
     int32_t exploredRoadLength;
     int32_t totalRoadLength;
-    bool bAchievementFlags[kNumAchievementFlags];  
+    bool bAchievementFlags[kNumAchievementFlags];
     uint32_t pRewardCarsBought[kNumRewardCars][2]; // TEA encrypted
     bool bDisplayLevelUp;
     bool bQuiet;
-    bool bReward0x5912a0Unlocked; 
-    bool bSimulationModeUnlocked; 
+    bool bReward0x5912a0Unlocked;
+    bool bSimulationModeUnlocked;
     uint32_t pointsNeeded[kNumPlayerLevels];
 };

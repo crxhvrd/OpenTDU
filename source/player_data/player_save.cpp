@@ -4,7 +4,11 @@
 #include "core/ed_store.h"
 #include "core/hash/crc32.h"
 #include "core/time.h"
+#include "database/gs_database.h"
 #include "filesystem/gs_file.h"
+#include "game/game_cheats.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/spots.h"
 #include "gs_playerdata.h"
 #include "online/gs_online.h"
 #include "game/gs_tutorial.h"
@@ -12,8 +16,8 @@
 
 #include "tdu_instance.h"
 
-// Money handed out to a brand new driver.
 static constexpr uint32_t kNewGameMoney = 200000u;
+static constexpr uint32_t kStarterNumCoupons = 200u; // DAT_00f7f578
 
 int32_t gSaveStreamRevision = 0; // DAT_010e7530
 int32_t gSaveStreamTrailer = 0;  // DAT_010e7534
@@ -74,12 +78,158 @@ void PlayerSave::tick( const float deltaTime ) {
                              // timer and drives the profile prompts)
 }
 
+uint32_t PlayerSave::allocateCarUniqueID() {
+    // FUN_00415d20
+    return nextCarUniqueID++;
+}
+
+void PlayerSave::newGameWithCheats() {
+    // FUN_0089a050
+    nextCarUniqueID = 1u;
+
+    uint32_t driverID = 0u;
+    if ( gpPlayerData != nullptr && gpPlayerData->isOnline() ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+    } else {
+        const uint32_t timeMs = uint32_t( MonotonicToMs( GetTimeMonotonic() ) );
+        driverID = ( timeMs * 0x7ff8a3edu + 0x2aa01d31u ) % 1000000u + 1000000u;
+    }
+
+    const uint32_t money =
+        gbScenarioTutorialEnabled ? uint32_t( gDefaultMoney ) : kNewGameMoney;
+    const uint32_t numCoupons =
+        gbScenarioTutorialEnabled ? kStarterNumCoupons : 0u;
+
+    driver.initialize( ( gpOnline != nullptr ) ? gpOnline->getUsername() : "",
+                       driverID, money, numCoupons, 0u, 0u, 0u, 0u );
+
+    installCheatCars();
+
+    if ( !gbScenarioTutorialEnabled ) {
+        if ( garage.isHouseOwned( 0ull ) ) {
+            driver.setCurrentHouse( 0ull );
+        }
+        driver.notify( 1u );
+    }
+
+    garage.refreshNumCars();
+
+    if ( garage.getNumCars() < 1 && gbScenarioTutorialEnabled &&
+         !gDefaultGarageConfig.empty() ) {
+        garage.pCars[0].setup( uint32_t( gDefaultGarageConfig[0] ), -1, -1, -1,
+                               allocateCarUniqueID() );
+        garage.refreshNumCars();
+    }
+
+    garage.notify( 0u );
+
+    if ( gUnlockAllRoads ) {
+        roadDiscovery.unlockAllRoads();
+    }
+}
+
+bool PlayerSave::installCheatCars() {
+    if ( gpDatabase != nullptr && gpScenaric != nullptr ) {
+        const GameDatabase &gameDB = gpDatabase->getGameDB();
+        const uint32_t numHouses =
+            gameDB.pNumItems[Garage::kHouseDatabaseIndex];
+        Spots &spots = gpScenaric->getSpotList();
+        const int32_t numSpots = int32_t( spots.getNumWorldSpots() );
+
+        for ( uint32_t i = 0; i < numHouses; i++ ) {
+            const DBEntryHouse &houseEntry = gameDB.DBHouse[i];
+            const char *pSpotName = houseEntry.SpotName.pAsString;
+            if ( pSpotName == nullptr ) {
+                continue;
+            }
+
+            if ( !gbAllHousesWithDefCar &&
+                 strcmp( pSpotName, gDefaultHouse.c_str() ) != 0 ) {
+                continue;
+            }
+
+            const uint64_t houseHashcode = GetIdentifier64bit( pSpotName );
+            bool bHasSpot = false;
+            for ( int32_t spotIndex = 0; spotIndex < numSpots; spotIndex++ ) {
+                if ( spots.getWorldSpot( spotIndex )->Hashcode ==
+                     houseHashcode ) {
+                    bHasSpot = true;
+                    break;
+                }
+            }
+
+            if ( !bHasSpot ||
+                 ( uint32_t( houseHashcode ) &
+                   uint32_t( houseHashcode >> 32ull ) ) == 0xffffffffu ) {
+                continue;
+            }
+
+            grantStarterHouse( houseHashcode );
+        }
+
+        if ( numSpots == 0 ) {
+            return false;
+        }
+    }
+
+    garage.refreshNumCars();
+    garage.notify( 0u );
+
+    return true;
+}
+
+void PlayerSave::grantStarterHouse( const uint64_t houseHashcode ) {
+    // FUN_0089a050 (inlined)
+    garage.addHouse( houseHashcode );
+    achievements.notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
+
+    if ( !gDefaultGarageConfig.empty() && gDefaultGarageConfig[0] != -1 ) {
+        const int32_t numSlots = GetHouseNumGarageSlots( houseHashcode );
+
+        for ( int32_t slot = 0; slot < int32_t( gDefaultGarageConfig.size() ) &&
+                                gDefaultGarageConfig[slot] != -1;
+              slot++ ) {
+            if ( slot >= numSlots ) {
+                break;
+            }
+
+            const int32_t carConfigID = gDefaultGarageConfig[slot];
+
+            const int32_t paintIndex =
+                ( gpDatabase->getNumColors( carConfigID ) > 0 ) ? 0 : -1;
+            const int32_t rimID =
+                ( gpDatabase->getNumRims( carConfigID ) > 0 ) ? 0 : -1;
+
+            int32_t interiorID = -1;
+            DBEntryCarColor *pColor =
+                gpDatabase->getColorByIndex( carConfigID, paintIndex );
+            if ( pColor != nullptr &&
+                 gpDatabase->getInteriorByIndex( pColor, 0 ) != nullptr ) {
+                interiorID = 0;
+            }
+
+            GarageSlot *pSlot =
+                garage.getCarAtIndex( slot, houseHashcode, true );
+            if ( pSlot != nullptr ) {
+                pSlot->setup( uint32_t( carConfigID ), paintIndex, rimID,
+                              interiorID, allocateCarUniqueID() );
+            }
+        }
+    }
+
+    if ( garage.isHouseOwned( houseHashcode ) ) {
+        driver.setCurrentHouse( houseHashcode );
+    }
+
+    driver.notify( 1u );
+}
+
 void PlayerSave::newGame( const bool bInstallCheats ) {
     // FUN_0089a500
     clear();
 
     if ( bInstallCheats ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0089a050)
+        newGameWithCheats();
         return;
     }
 

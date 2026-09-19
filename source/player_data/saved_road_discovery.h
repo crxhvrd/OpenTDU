@@ -21,6 +21,8 @@ public:
     uint64_t getBlock( const int32_t index ) const;
     void setBlock( const int32_t index, const uint64_t value );
 
+    bool isRoadLocked( const int32_t roadID ) const;
+
 public:
     uint32_t pBlocks[kNumBlocks][2]; // TEA encrypted
 };

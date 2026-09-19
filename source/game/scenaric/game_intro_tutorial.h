@@ -4,11 +4,11 @@ class Spots;
 struct SpotMap;
 
 // TODO: CONVERT TO ENUM
-static constexpr int32_t kTutorialStatePending = 0;    
-static constexpr int32_t kTutorialStateIntro = 2;      
-static constexpr int32_t kTutorialStateAirplane = 3;   
-static constexpr int32_t kTutorialStateCarRental = 4;  
-static constexpr int32_t kTutorialStateFirstDrive = 5; 
+static constexpr int32_t kTutorialStatePending = 0;
+static constexpr int32_t kTutorialStateIntro = 2;
+static constexpr int32_t kTutorialStateAirplane = 3;
+static constexpr int32_t kTutorialStateCarRental = 4;
+static constexpr int32_t kTutorialStateFirstDrive = 5;
 static constexpr int32_t kTutorialStateBuyHouse = 6;
 static constexpr int32_t kTutorialStateHouseBought = 7;
 static constexpr int32_t kTutorialStateBuyCar = 8;
@@ -50,11 +50,12 @@ private:
 
     SpotMap *pSpotIntroRace; //  "RSFE0028"
 
-    SpotMap *pHome;      
-    int32_t carDealer;  
-    int32_t carIDRental; 
+    SpotMap *pHome;
+    int32_t carDealer;
+    int32_t carIDRental;
 
     uint8_t bModalHintVisible : 1;
     uint8_t bMapForIntro : 1;
     uint8_t bMustTeleport : 1;
+    uint8_t bInstallingCheatCars : 1;
 };

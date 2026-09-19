@@ -550,6 +550,10 @@ void TestDriveGameInstance::mainLoop() {
 
             setNextGameMode( GM_Login );
         }
+
+        if ( gpPlayerData != nullptr ) {
+            gpPlayerData->requestSave( 3 );
+        }
     }
 
     OTDU_LOG_DEBUG( "Exit requested\n" );

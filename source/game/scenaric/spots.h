@@ -9,6 +9,7 @@ class EntityCinematic;
 // TODO: INCOMPLETE
 enum eSpotType : uint8_t {
     ST_House = 0,
+    ST_CarDealer = 1,
     ST_Challenge = 7,
     ST_Unknown8 = 8, // gated in simu mode
 

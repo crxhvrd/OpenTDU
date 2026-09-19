@@ -4,6 +4,8 @@
 #include "config/gs_config.h"
 #include "database/gs_database.h"
 #include "flash/gs_flash.h"
+#include "flash/modal_message_box.h"
+#include "game/game_cheats.h"
 #include "game/mng_hud.h"
 #include "input/gs_device.h"
 
@@ -42,6 +44,9 @@ static constexpr int32_t kExpectedSaveVersion = 2;
 char gActiveSaveContextName[128] = {}; // DAT_00f7a038
 
 bool gbSaveAllowed = false; // DAT_0113f408
+
+// 'Saving... Please wait...'
+static constexpr uint64_t kSavingMessageHashcode = 0x37ba8e2ull;
 
 static constexpr uint32_t kSaveScratchBufferSize = 0x80000;
 static constexpr uint32_t kMaxEnumeratedContexts = 4;
@@ -526,11 +531,16 @@ void GSPlayerData::requestSave( const int32_t mode ) {
         return;
     }
 
-    gSavegameManager.requestSave();
+    if ( gpFlashMessageBox != nullptr ) {
+        gpFlashMessageBox->display( kSavingMessageHashcode, 3.0f, 0, nullptr,
+                                    nullptr, false );
+    }
 
     if ( pLoadedSave != nullptr ) {
         pLoadedSave->resetPendingOperations();
     }
+
+    gSavegameManager.requestSave();
 
     pendingSaveRequest = 0;
 }
@@ -821,6 +831,56 @@ void GSPlayerData::drawDebug( float deltaTime ) {
     if ( ImGui::Button( "Save" ) ) {
         gSavegameManager.refreshService();
         gSavegameManager.doSaveBlocking();
+    }
+
+    Garage *pGarage = pLoadedSave->getGarage();
+    ImGui::Text( "Garage: %d car(s), %d house(s) owned", pGarage->getNumCars(),
+                 pGarage->getNumOwnedHouses() );
+    if ( ImGui::TreeNode( "Garage slots" ) ) {
+        if ( ImGui::BeginTable( "garage_slots", 5,
+                                ImGuiTableFlags_Borders |
+                                    ImGuiTableFlags_RowBg |
+                                    ImGuiTableFlags_ScrollY,
+                                ImVec2( 0.0f, 260.0f ) ) ) {
+            ImGui::TableSetupColumn( "Slot" );
+            ImGui::TableSetupColumn( "House" );
+            ImGui::TableSetupColumn( "Car cfg" );
+            ImGui::TableSetupColumn( "Unique id" );
+            ImGui::TableSetupColumn( "Paint/Rim/Int" );
+            ImGui::TableSetupScrollFreeze( 0, 1 );
+            ImGui::TableHeadersRow();
+
+            for ( int32_t i = 0; i < Garage::kNumSavedCarSlots; i++ ) {
+                GarageSlot &slot = pGarage->pCars[i];
+
+                const uint64_t houseHashcode = slot.getHouseHashcode();
+                if ( houseHashcode == 0ull && !slot.isValid() ) {
+                    continue;
+                }
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::Text( "%d", i );
+                ImGui::TableNextColumn();
+                ImGui::Text( "%016llx",
+                             static_cast<unsigned long long>( houseHashcode ) );
+                ImGui::TableNextColumn();
+                if ( slot.isValid() ) {
+                    ImGui::Text( "%u", slot.getCarConfigID() );
+                } else {
+                    ImGui::TextUnformatted( "-" );
+                }
+                ImGui::TableNextColumn();
+                ImGui::Text( "%u", slot.getCarID() );
+                ImGui::TableNextColumn();
+                ImGui::Text( "%d / %d / %d", slot.paintIndex, slot.rimID,
+                             slot.interiorID );
+            }
+
+            ImGui::EndTable();
+        }
+
+        ImGui::TreePop();
     }
 }
 #endif
