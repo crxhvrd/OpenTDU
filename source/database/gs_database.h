@@ -171,7 +171,10 @@ public:
     bool isBike( DBEntryCarPhysicsData *param_1 );
     bool isTraffic( DBEntryCarPhysicsData *param_1 );
 
+    const CarConfig *getCarConfig( int32_t carID ) const;
+
     DBEntryCarShop *getCarShopBySpotName( uint64_t spotHashcode );
+    DBEntryCarShop *getCarShopSellingCar( DBEntryCarPhysicsData *pCarEntry );
     bool isCarShopSlotAvailable( DBEntryCarShop *pCarShop, int32_t slotIndex );
     int32_t getNumCarsAvailableInShop( DBEntryCarShop *pCarShop );
 

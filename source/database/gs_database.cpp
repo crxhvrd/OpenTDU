@@ -2186,6 +2186,44 @@ bool GSDatabase::isTraffic( DBEntryCarPhysicsData *param_1 ) {
     return ( pcVar1 == param_1->Brand->BrandID.pAsString );
 }
 
+const CarConfig *GSDatabase::getCarConfig( const int32_t carID ) const {
+    // FUN_009a92b0
+    for ( const CarConfig &car : cars ) {
+        if ( car.Hash == carID ) {
+            return &car;
+        }
+    }
+
+    return nullptr;
+}
+
+DBEntryCarShop *
+GSDatabase::getCarShopSellingCar( DBEntryCarPhysicsData *pCarEntry ) {
+    // FUN_009a9340
+    if ( pCarEntry == nullptr ) {
+        return nullptr;
+    }
+
+    DBEntryCarShop *pCarShop = gameDatabase.DBCarShop;
+    if ( pCarShop == nullptr ) {
+        return nullptr;
+    }
+
+    DBEntryCarShop *pEnd = pCarShop + gameDatabase.pNumItems[8];
+    for ( ; pCarShop < pEnd; pCarShop++ ) {
+        for ( int32_t i = 0; i < DBEntryCarShop::kNumSlots; i++ ) {
+            const DBEntryCarPhysicsData *pSlotCar =
+                reinterpret_cast<const DBEntryCarPhysicsData *>(
+                    pCarShop->Slots[i].pAsRawPointer );
+            if ( pSlotCar != nullptr && pSlotCar->CarID == pCarEntry->CarID ) {
+                return pCarShop;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 DBEntryCarShop *
 GSDatabase::getCarShopBySpotName( const uint64_t spotHashcode ) {
     // FUN_009a8950

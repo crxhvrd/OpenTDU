@@ -31,6 +31,12 @@ static constexpr uint64_t kCurrentLevelHashcode = 0x3a502d2ull;
 
 // How long a level up / achievement unlock panel stays up.
 static constexpr float kPopupDisplayDuration = 12.0f; // DAT_00f41850
+static constexpr int32_t kBDDMenus = 0;
+static constexpr int32_t kBDDAchievement =
+    int32_t( AchievementsData::kAchievementDatabaseIndex );
+
+static constexpr int32_t kAchievementTitleLength = 0x80;
+static constexpr int32_t kAchievementTextLength = 0x800;
 
 AchievementsData::AchievementsData()
     : achievements(),
@@ -209,7 +215,17 @@ void AchievementsData::reset() {
     TestDriveTEAWriteDword( pNumCustomChallengesWon, 0u );
     TestDriveTEAWriteDword( pNumETradeTransactions, 0u );
 
-    memset( bAchievementFlags, 0, sizeof( bAchievementFlags ) );
+    uint32_t numBots = 0u;
+    if ( gpDatabase != nullptr ) {
+        numBots = gpDatabase->getGameDB().pNumItems[kBotDatabaseIndex];
+        if ( numBots > uint32_t( kNumAchievementFlags ) ) {
+            numBots = uint32_t( kNumAchievementFlags );
+        }
+    }
+
+    memset( bAchievementFlags, 0, numBots );
+    memset( bAchievementFlags + numBots, 1,
+            size_t( kNumAchievementFlags ) - numBots );
 
     for ( int32_t i = 0; i < kNumRewardCars; i++ ) {
         TestDriveTEAWriteDword( pRewardCarsBought[i], 0u );
@@ -225,7 +241,9 @@ void AchievementsData::reset() {
     totalRoadLength = -1;
     flagAsync = kNoPendingAsyncNotification;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    popUp.clear();
+    bReward0x5912a0Unlocked = false;
+    bSimulationModeUnlocked = false;
 }
 
 void AchievementsData::tick() {
@@ -267,10 +285,7 @@ void AchievementsData::tick() {
         bDisplayLevelUp = false;
     }
 
-    (void)bPopupTick;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0089d600 then ticks
-                             // AchievementPopUp - the '/achievement' and
-                             // '/reward' panels - which is not ported)
+    popUp.tick( bPopupTick );
 }
 
 void AchievementsData::displayLevelUp() {
@@ -334,6 +349,74 @@ void AchievementsData::displayLevelUp() {
     }
 
     pPlayer->goToFrameAndPlay( playerLevel, pSpritePath, false );
+}
+
+void AchievementsData::displayAchievementPopUp( AchievementCheck *pCheck ) {
+    // FUN_0089db30
+    if ( gpMngFlashLocalize == nullptr ) {
+        return;
+    }
+
+    int32_t numItemsTotal = 0;
+    const int32_t numItemsDone = pCheck->getProgress( &numItemsTotal );
+
+    gpMngFlashLocalize->setSysVar( "NB_PTS", int32_t( pCheck->NumPoints ) );
+    gpMngFlashLocalize->setSysVar( "NB_DONE", numItemsDone );
+    gpMngFlashLocalize->setSysVar( "NB_TOTAL", numItemsTotal );
+    gpMngFlashLocalize->setSysVar( "NB_REQ", int32_t( pCheck->NumItemsReq ) );
+
+    char pTitle[kAchievementTitleLength] = {};
+    char pText[kAchievementTextLength] = {};
+
+    gpMngFlashLocalize->setDatabaseContext( kBDDAchievement );
+    gpMngFlashLocalize->makeSentenceFromHashcode(
+        pTitle, sizeof( pTitle ), pCheck->TileHashcode, nullptr );
+    gpMngFlashLocalize->makeSentenceFromHashcode(
+        pText, sizeof( pText ), pCheck->TextHashcode, nullptr );
+    gpMngFlashLocalize->setDatabaseContext( kBDDMenus );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+
+    popUp.push( pTitle, pText );
+
+    gpMngFlashLocalize->clearAllSysVar();
+}
+
+void AchievementsData::displayRewardPopUp( const AchievementCheck *pCheck ) {
+    // FUN_0089bf80
+    if ( gpMngFlashLocalize == nullptr ) {
+        return;
+    }
+
+    if ( pCheck->RewardData != 0 && gpDatabase != nullptr ) {
+        DBEntryCarPhysicsData *pCarEntry =
+            gpDatabase->getCarDBEntry( pCheck->RewardData );
+        if ( pCarEntry != nullptr ) {
+            const CarConfig *pCarConfig =
+                gpDatabase->getCarConfig( pCheck->RewardData );
+            if ( pCarConfig != nullptr ) {
+                gpMngFlashLocalize->setSysVar( "CARNAME",
+                                               pCarConfig->FullName.c_str() );
+            }
+
+            DBEntryCarShop *pCarShop =
+                gpDatabase->getCarShopSellingCar( pCarEntry );
+            if ( pCarShop != nullptr ) {
+                gpMngFlashLocalize->setSysVar( "SHOPNAME",
+                                               pCarShop->Label.pAsString );
+            }
+        }
+    }
+
+    char pRewardText[kAchievementTextLength] = {};
+
+    gpMngFlashLocalize->setDatabaseContext( kBDDAchievement );
+    gpMngFlashLocalize->makeSentenceFromHashcode(
+        pRewardText, sizeof( pRewardText ), pCheck->TextHashcode, nullptr );
+    gpMngFlashLocalize->setDatabaseContext( kBDDMenus );
+    gpMngFlashLocalize->clearAllSysVar();
+
+    popUp.pushReward( pRewardText );
 }
 
 void AchievementsData::processAsyncRequest() {
@@ -444,16 +527,14 @@ bool AchievementsData::refreshCheck( AchievementCheck *pCheck,
         grantReward( pCheck );
 
         if ( !bQuietRefresh ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0089bf80 queues
-                                     // the 'reward unlocked' popup)
+            displayRewardPopUp( pCheck );
         }
 
         return false;
     }
 
     if ( !bQuietRefresh ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0089db30 queues the
-                                 // 'achievement unlocked' popup)
+        displayAchievementPopUp( pCheck );
     }
 
     return !pCheck->bLock;
@@ -589,6 +670,29 @@ void AchievementsData::drawDebug() {
     ImGui::SameLine();
     if ( ImGui::Button( "Replay level up" ) ) {
         bMustLevelUp = true;
+    }
+
+    if ( ImGui::Button( "Queue achievement popup" ) ) {
+        for ( AchievementCheck *pCheck : achievements ) {
+            if ( pCheck != nullptr &&
+                 ( pCheck->RewardHashcode == 0xffffffffffffffffull ||
+                   pCheck->RewardHashcode == kRewardNone ) ) {
+                displayAchievementPopUp( pCheck );
+                break;
+            }
+        }
+    }
+
+    ImGui::SameLine();
+    if ( ImGui::Button( "Queue reward popup" ) ) {
+        for ( const AchievementCheck *pCheck : achievements ) {
+            if ( pCheck != nullptr &&
+                 pCheck->RewardHashcode != 0xffffffffffffffffull &&
+                 pCheck->RewardHashcode != kRewardNone ) {
+                displayRewardPopUp( pCheck );
+                break;
+            }
+        }
     }
 
     ImGui::Checkbox( "Force unlock on refresh", &gbForceAchievementUnlock );

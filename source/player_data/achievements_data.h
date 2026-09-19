@@ -1,6 +1,7 @@
 #pragma once
 
 #include "achievement_checks.h"
+#include "achievement_popup.h"
 
 class edStore;
 struct DBEntryAchievement;
@@ -85,6 +86,8 @@ private:
 
     void processAsyncRequest();
     void displayLevelUp();
+    void displayAchievementPopUp( AchievementCheck *pCheck );
+    void displayRewardPopUp( const AchievementCheck *pCheck );
     void deserializeChecks( edStore &stream );
     void serializeChecks( edStore &stream ) const;
 
@@ -93,6 +96,7 @@ private:
 #ifdef OTDU_USE_IMGUI
     std::vector<uint32_t> debugCheckKinds;
 #endif
+    AchievementPopUp popUp;
     bool bMustLevelUp;
     // '/:LevelUpText' is LINKED, so the sentence has to outlive the call that
     // builds it.
