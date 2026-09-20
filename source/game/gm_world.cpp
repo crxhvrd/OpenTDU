@@ -708,11 +708,15 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
                                             pBody->bIgnitionOnce );
 
         if ( !bAutomatic ) {
-            const float clutchEngagement =
-                std::pow( 1.0f - pBody->Clutch, kManualClutchExponent );
-            pPlayerPhysicsVehicle->setClutchOverride( clutchEngagement );
-
-            const bool bClutchOut = clutchEngagement >= kManualClutchEngaged;
+            bool bClutchOut = false;
+            if ( pPlayerPhysicsVehicle->isManualClutchEnabled() ) {
+                const float clutchEngagement =
+                    std::pow( 1.0f - pBody->Clutch, kManualClutchExponent );
+                pPlayerPhysicsVehicle->setClutchOverride( clutchEngagement );
+                bClutchOut = clutchEngagement >= kManualClutchEngaged;
+            } else {
+                pPlayerPhysicsVehicle->setClutchOverride( -1.0f );
+            }
             if ( pBody->bGearUpEdge && !bClutchOut ) {
                 pPlayerPhysicsVehicle->requestUpshift();
             }

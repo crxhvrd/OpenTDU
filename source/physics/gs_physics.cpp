@@ -1679,7 +1679,7 @@ GSPhysics::createVehicle( PhysFactory *pFactory,
     }
     const float gcLengthFrac =
         db.GravityCenterLength > 0 ? db.GravityCenterLength * 0.01f : 0.5f;
-    constexpr float kCGHeightCarCoef = 0.75f; // DAT_00f416a4; bikes get 0.0
+    constexpr float kCGHeightCarCoef = 0.0f;
     const float gcHeightFrac =
         ( db.GravityCenterHeight > 0 ? db.GravityCenterHeight * 0.01f : 0.4f ) *
         kCGHeightCarCoef;
