@@ -3194,16 +3194,130 @@ void PhysicsVehicle::setAuthoredWheelHeights( const float *pAuthoredWheelY,
     bAuthoredWheelYKnown = true;
 }
 
-void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform ) {
+static bool ProbeGroundUnder( const Eigen::Vector4f &point,
+                              Eigen::Vector4f &outPoint,
+                              Eigen::Vector4f &outNormal ) {
+    // FUN_00834410
+    outPoint = point;
+    outNormal = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
+    if ( gpPhysics == nullptr ) {
+        return false;
+    }
+
+    Eigen::Vector4f probe = point;
+    probe.y() += 1.0f; // FLOAT_00f4165c
+
+    float height = kNoSurfaceSentinel;
+    gpPhysics->probeSurface( probe, false, height, outNormal, true );
+    if ( height == kNoSurfaceSentinel ) {
+        outNormal = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
+        return false;
+    }
+
+    const Eigen::Vector4f onSurface( point.x(), height, point.z(), 1.0f );
+    outPoint = point - outNormal * outNormal.dot( point - onSurface );
+    return true;
+}
+
+bool PhysicsVehicle::castToGround( const Matrix4x4f_t &source,
+                                   Matrix4x4f_t &outTransform ) const {
+    // FUN_00839920
+    outTransform = source;
+
+    const uint32_t numWheels = getNumWheels();
+    if ( numWheels < 2 || numWheels > PhysicsVehicleState::kMaxWheels ) {
+        return false;
+    }
+
+    Eigen::Vector4f contact[PhysicsVehicleState::kMaxWheels];
+    Eigen::Vector4f normal[PhysicsVehicleState::kMaxWheels];
+    int32_t numGrounded = 0;
+    for ( uint32_t i = 0; i < numWheels; i++ ) {
+        const Eigen::Vector3f &attach = wheelAttach[i];
+        Eigen::Vector4f anchor( 0.0f, 0.0f, 0.0f, 1.0f );
+        for ( int32_t c = 0; c < 3; c++ ) {
+            anchor[c] = source( 0, c ) * attach.x() +
+                        source( 1, c ) * attach.y() +
+                        source( 2, c ) * attach.z() + source( 3, c );
+        }
+        numGrounded +=
+            ProbeGroundUnder( anchor, contact[i], normal[i] ) ? 1 : 0;
+    }
+
+    if ( numGrounded == 0 ) {
+        return false;
+    }
+
+    Eigen::Vector3f bodyCentre = Eigen::Vector3f::Zero();
+    for ( uint32_t i = 0; i < numWheels; i++ ) {
+        bodyCentre += Eigen::Vector3f( wheelAttach[i].x(),
+                                       wheelAttach[i].y() - suspStaticLength[i],
+                                       wheelAttach[i].z() );
+    }
+    bodyCentre /= static_cast<float>( numWheels );
+
+    Eigen::Vector4f side;
+    Eigen::Vector4f up;
+    Eigen::Vector4f forward;
+    Eigen::Vector4f centre;
+
+    if ( numWheels == 4 ) {
+        Eigen::Vector4f wheel[4];
+        for ( uint32_t i = 0; i < 4; i++ ) {
+            wheel[i] = contact[i] + normal[i] * vehicle.Wheels[i].Radius;
+        }
+
+        const Eigen::Vector4f axis = Normalize3(
+            ( wheel[0] + wheel[1] ) * 0.5f - ( wheel[2] + wheel[3] ) * 0.5f );
+        const Eigen::Vector4f lateral = Normalize3(
+            ( wheel[0] + wheel[2] ) * 0.5f - ( wheel[1] + wheel[3] ) * 0.5f );
+
+        up = Normalize3( Cross3( axis, lateral ) );
+        side = Normalize3( Cross3( up, axis ) );
+        forward = Normalize3( Cross3( side, up ) );
+        centre = ( wheel[0] + wheel[1] + wheel[2] + wheel[3] ) * 0.25f;
+    } else {
+        if ( numGrounded < 2 ) {
+            return true;
+        }
+
+        const Eigen::Vector4f axis = Normalize3( contact[0] - contact[1] );
+        const Eigen::Vector4f lateral = Normalize3( source.row( 0 ) );
+
+        up = Normalize3( Cross3( axis, lateral ) );
+        side = Normalize3( Cross3( up, axis ) );
+        forward = Normalize3( Cross3( side, up ) );
+        centre =
+            ( contact[0] + contact[1] ) * 0.5f + up * vehicle.Wheels[0].Radius;
+    }
+
+    const Eigen::Vector4f origin = centre - side * bodyCentre.x() -
+                                   up * bodyCentre.y() -
+                                   forward * bodyCentre.z();
+
+    outTransform.row( 0 ) = side;
+    outTransform.row( 1 ) = up;
+    outTransform.row( 2 ) = forward;
+    outTransform.row( 3 ) << origin.x(), origin.y(), origin.z(), 1.0f;
+    return true;
+}
+
+void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform,
+                                       bool bCastToGround ) {
     // FUN_0083d880
     if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
         return;
     }
 
+    Matrix4x4f_t placed = transform;
+    if ( bCastToGround ) {
+        castToGround( transform, placed );
+    }
+
     JPH::Mat44 world = JPH::Mat44::sIdentity();
     for ( int c = 0; c < 4; ++c ) {
-        world.SetColumn3( c, JPH::Vec3( transform( c, 0 ), transform( c, 1 ),
-                                        transform( c, 2 ) ) );
+        world.SetColumn3(
+            c, JPH::Vec3( placed( c, 0 ), placed( c, 1 ), placed( c, 2 ) ) );
     }
     const Eigen::Vector4f origin = GSPhysics::GetShiftOrigin();
     world.SetTranslation( world.GetTranslation() -

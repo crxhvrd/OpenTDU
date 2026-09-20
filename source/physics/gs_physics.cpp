@@ -2456,7 +2456,8 @@ int32_t GSPhysics::castCameraSegment( const Eigen::Vector4f &from,
 bool GSPhysics::probeSurface( const Eigen::Vector4f &position,
                               bool bSearchAbove,
                               float &outHeight,
-                              Eigen::Vector4f &outNormal ) {
+                              Eigen::Vector4f &outNormal,
+                              bool bStaticAndRoadOnly ) {
     // FUN_00848cb0
     outHeight = kNoSurfaceSentinel;
     outNormal = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
@@ -2482,9 +2483,16 @@ bool GSPhysics::probeSurface( const Eigen::Vector4f &position,
     settings.mBackFaceModeTriangles = JPH::EBackFaceMode::CollideWithBackFaces;
 
     JPH::AllHitCollisionCollector<JPH::CastRayCollector> collector;
+    const StaticOrRoadLayerFilter staticOrRoad;
+    const JPH::ObjectLayerFilter anyLayer;
+    const JPH::ObjectLayerFilter &layerFilter =
+        bStaticAndRoadOnly
+            ? static_cast<const JPH::ObjectLayerFilter &>( staticOrRoad )
+            : anyLayer;
 
     lockMutex();
-    pPhysicsSystem->GetNarrowPhaseQuery().CastRay( ray, settings, collector );
+    pPhysicsSystem->GetNarrowPhaseQuery().CastRay(
+        ray, settings, collector, JPH::BroadPhaseLayerFilter(), layerFilter );
 
     bool bFound = false;
     float bestY = kNoSurfaceSentinel;

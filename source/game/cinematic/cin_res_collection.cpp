@@ -1701,7 +1701,7 @@ void *CinResCollection::spawnPlayerCar() {
         PhysicsLock lock;
         pPhysicsVehicle->setCinematicMode( true );
         pPhysicsVehicle->setIgnition( false, false );
-        pPhysicsVehicle->resetToTransform( spawn );
+        pPhysicsVehicle->resetToTransform( spawn, true );
     }
 
     gpScenaric->getLocalPlayer().setCarState( &state );

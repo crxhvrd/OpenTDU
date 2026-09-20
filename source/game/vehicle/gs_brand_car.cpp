@@ -6,16 +6,16 @@
 #include "gs_car_state.h"
 #include "vehicle_base.h"
 
+#include "bank_vehicle.h"
+
+#include "database/db_aftermarket_pack.h"
 #include "database/gs_database.h"
 #include "filesystem/gs_file.h"
 #include "game/scenaric/entity/entity_car_player.h"
 #include "physics/gs_physics.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "world/gs_world_streaming.h"
 #include "tdu_instance.h"
-
-// FIXME: Clearance a cast-to-ground placement leaves under the chassis origin,
-// so the body sits on the surface instead of half-buried in it.
-static constexpr float kBrandCarGroundClearance = 0.5f;
 
 GSBrandCar *gpBrandCar = nullptr; // DAT_00fa7130
 
@@ -47,7 +47,10 @@ void GSBrandCar::tick( float, float ) {
     // FUN_008b5640
     for ( BrandCar &car : cars ) {
         if ( car.state == BrandCar::IS_Done ) {
-            car.refreshTransform();
+            if ( car.pCarState != nullptr &&
+                 car.pCarState->getPhysicsVehicle() == nullptr ) {
+                car.refreshTransform();
+            }
             continue;
         }
         if ( car.state != BrandCar::IS_ToDo || car.pResource == nullptr ) {
@@ -145,7 +148,6 @@ bool BrandCar::load( EntityCarPlayer *pSpawnPoint_,
     pResource = pRes;
     pCarState = nullptr;
     spawnMatrix = spawn;
-    bGrounded = false;
     if ( pRes != nullptr ) {
         pSpawnPoint = pSpawnPoint_;
     }
@@ -200,11 +202,41 @@ void BrandCar::instanciate() {
         }
 
         if ( pVehicle != nullptr ) {
+            PhysicsVehicle *pPhysicsVehicle = nullptr;
+            if ( pRes->bUseGamePhysics != 0 && gpPhysics != nullptr ) {
+                DBEntryCarPhysicsData *pPhysEntry = pCarEntry;
+                const DBEntryAftermarketPack *pPack =
+                    gpDatabase->getAftermarketPack( pRes->PackHashcode );
+                if ( carState.carID == 999 ) {
+                    pPhysEntry = gpDatabase->getCarDBEntry( 223 );
+                    pPack = nullptr;
+                } else if ( carState.carID == 666 ) {
+                    pPhysEntry = gpDatabase->getCarDBEntry( 1502 );
+                    pPack = nullptr;
+                }
+
+                BankVehicle *pBank = pRes->Exterior.pBankInstance;
+                PhysFactory *pFactory =
+                    ( pBank != nullptr ) ? pBank->getPhysFactory() : nullptr;
+                const void *pTorqueBinary =
+                    ( pBank != nullptr ) ? pBank->getTorqueBinary() : nullptr;
+                if ( pPhysEntry != nullptr ) {
+                    pPhysicsVehicle = gpPhysics->createVehicle(
+                        pFactory, spawnMatrix, *pPhysEntry, pTorqueBinary,
+                        pPack );
+                }
+            }
+
             carState.pVehicleBase = pVehicle;
-            carState.pPhysicsVehicle = nullptr;
+            carState.pPhysicsVehicle = pPhysicsVehicle;
             carState.bIsIndoor = false;
             carState.pResource = pRes;
             pRes->RefCount++;
+
+            if ( pPhysicsVehicle != nullptr ) {
+                PhysicsLock lock;
+                pPhysicsVehicle->resetToTransform( spawnMatrix, true );
+            }
 
             pSpawned = &carState;
         }
@@ -239,17 +271,6 @@ void BrandCar::instanciate() {
 void BrandCar::refreshTransform() {
     if ( pCarState == nullptr ) {
         return;
-    }
-
-    // FIXME: Placeholder to prevent cars from sinking into the ground (original
-    // placement is unimplemented)
-    if ( !bGrounded && gpPhysics != nullptr ) {
-        const float groundY = gpPhysics->getGroundHeight( spawnMatrix( 3, 0 ),
-                                                          spawnMatrix( 3, 2 ) );
-        if ( groundY > -1.0e30f ) {
-            spawnMatrix( 3, 1 ) = groundY + kBrandCarGroundClearance;
-            bGrounded = true;
-        }
     }
 
     Eigen::Vector4f shift = gpWorldStreaming->isEnabled()

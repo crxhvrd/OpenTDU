@@ -246,7 +246,10 @@ public:
     void requestDownshift();
     void setClutchOverride( float engagement );
 
-    void resetToTransform( const Matrix4x4f_t &transform );
+    bool castToGround( const Matrix4x4f_t &source,
+                       Matrix4x4f_t &outTransform ) const;
+    void resetToTransform( const Matrix4x4f_t &transform,
+                           bool bCastToGround = false );
     void setKeyframed( bool bInKeyframed, bool bForceMatrix );
     void moveKeyframed( const Matrix4x4f_t &worldTransform );
     void updateKeyframedVelocity( float deltaTime );

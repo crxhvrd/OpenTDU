@@ -531,7 +531,7 @@ void GameModeWorld::teleportLocalPlayerCar( const Eigen::Vector3f &worldPos ) {
     if ( pPlayerPhysicsVehicle != nullptr &&
          pPlayerPhysicsVehicle->isActive() && gpPhysics != nullptr ) {
         PhysicsLock lock;
-        pPlayerPhysicsVehicle->resetToTransform( pose );
+        pPlayerPhysicsVehicle->resetToTransform( pose, true );
     }
 
     CarBodyState *pBody = pCar->getBody();

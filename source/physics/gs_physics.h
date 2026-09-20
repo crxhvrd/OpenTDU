@@ -269,7 +269,8 @@ public:
     bool probeSurface( const Eigen::Vector4f &position,
                        bool bSearchAbove,
                        float &outHeight,
-                       Eigen::Vector4f &outNormal );
+                       Eigen::Vector4f &outNormal,
+                       bool bStaticAndRoadOnly = false );
     int32_t gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
                                        const Eigen::Vector4f &bbMax,
                                        Eigen::Vector4f *pOutVerts,

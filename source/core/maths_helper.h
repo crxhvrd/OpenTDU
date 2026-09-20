@@ -602,3 +602,15 @@ static inline Eigen::Vector4f ToDirection( const Eigen::Vector4f &vector ) {
     // FUN_00408070
     return Eigen::Vector4f( vector.x(), vector.y(), vector.z(), 0.0f );
 }
+
+static inline Eigen::Vector4f Cross3( const Eigen::Vector4f &a,
+                                      const Eigen::Vector4f &b ) {
+    return Eigen::Vector4f( a.y() * b.z() - a.z() * b.y(),
+                            a.z() * b.x() - a.x() * b.z(),
+                            a.x() * b.y() - a.y() * b.x(), 0.0f );
+}
+
+static inline Eigen::Vector4f Normalize3( const Eigen::Vector4f &v ) {
+    const float length = v.head<3>().norm();
+    return ( length > 1.0e-6f ) ? Eigen::Vector4f( v / length ) : v;
+}

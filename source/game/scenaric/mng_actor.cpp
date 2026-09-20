@@ -161,7 +161,7 @@ void MngActor::applyPlayerVehicleFrame( const Matrix4x4f_t &frame,
 
     PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
     if ( pVehicle != nullptr ) {
-        pVehicle->resetToTransform( frame );
+        pVehicle->resetToTransform( frame, true );
     }
 }
 

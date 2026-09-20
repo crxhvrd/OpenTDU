@@ -44,8 +44,6 @@ private:
     CarState *pCarState = nullptr;
     VehicleBaseResources *pResource = nullptr;
     Matrix4x4f_t spawnMatrix = Matrix4x4f_t::Identity();
-
-    bool bGrounded = false; // FIXME: Remove once placement is implemented
 };
 
 class GSBrandCar : public GameSystem {
