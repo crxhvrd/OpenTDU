@@ -140,6 +140,7 @@ public:
     int getShiftBlockReason() const { return vehicle.GearBox.ShiftBlockReason; }
     float getWheelOverRoad() const { return vehicle.GearBox.WheelOverRoad; }
     float getEngineRevRate() const { return revRateSmoothed; }
+    float getGearLeverAnticipation() const { return gearLeverAnticipation; }
     int getClutchState() const { return vehicle.Clutch.State; }
     float getClutchTarget() const { return vehicle.Clutch.Target; }
     float getClutchEngagement() const { return vehicle.Clutch.Engagement; }
@@ -269,6 +270,7 @@ public:
     void armChrono();
     void updateChrono( float dt );
     void updateRevRate( float dt );
+    void updateGearLeverAnticipation( float dt );
     void reportStuckClutch( float dt );
     void updateTyreHeat( float dt );
     float getWheelBurn( int32_t index ) const;
@@ -427,6 +429,9 @@ private:
     float rideHeightRear;
 
     Chrono chrono;
+    float gearLeverAnticipation = 0.0f;
+    int32_t gearLeverState = 0;
+    float gearLeverPrevOmega = 0.0f;
 
     float revRateSmoothed = 0.0f;
     float revGearTime = 0.0f;

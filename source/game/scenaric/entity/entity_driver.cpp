@@ -49,7 +49,12 @@ static constexpr int32_t kCameraTypeShowcase = 6;
 static constexpr int32_t kAvatarTypeDriver = 1;
 static constexpr int32_t kStateProcessRun = 0xc0c1;
 
-bool gbDriverBaseAnim = true; // TODO: REMOVE ME
+static constexpr float kRadioAnimTotalTimeInv =
+    0.5875440835952759f;                                 // DAT_00f41fcc
+static constexpr float kAlmostOne = 0.9999899864196777f; // DAT_00f41fd0
+
+bool gbDriverBaseAnim = true;          // TODO: REMOVE ME
+bool gbDriverExtraAnimChannels = true; // Enables radio IK
 
 static const char *kCarIKPointNamesHR[kNumCarIKPoints] = { // DAT_00f8b0c8
     "DvrSeat_HR", "Hand_HR_R", "Hand_HR_L",    "Foot_HR_R",    "Foot_HR_L",
@@ -106,6 +111,20 @@ EntityDriver::EntityDriver()
       PrevRatioGearUp( 0.0f ),
       RatioGearDown( 0.0f ),
       PrevRatioGearDown( 0.0f ),
+      RatioRadioAnim( 0.0f ),
+      PrevRatioRadioAnim( 0.0f ),
+      RadioAnimTotalTimeInv( kRadioAnimTotalTimeInv ),
+      HandOpenRatio{},
+      HandOpenLayerWeight( 0.0f ),
+      GearLeverRatio{},
+      GearLeverLayerWeight( 0.0f ),
+      RadioTurnRatio{},
+      RadioTurnLayerWeight( 0.0f ),
+      GearingHandOpenResponseCurve(),
+      RatioHandOpenResponseCurve(),
+      GearingLayerResponseCurve(),
+      RadioTurnRatioResponseCurve(),
+      RadioTurnWeightResponseCurve(),
       SteerSM( 0.0f ),
       SteerStack{},
       SteerStackIndex( 0 ),
@@ -150,9 +169,33 @@ EntityDriver::EntityDriver()
       bRiderHasFalled( false ),
       pLinkedExternalHelmet( nullptr ) {
     // FUN_007eeac0
-    NumMaxLayers = 5;
+    NumMaxLayers = gbDriverExtraAnimChannels ? 7 : 5;
 
     setSeating( true );
+
+    GearingHandOpenResponseCurve.addPoint( 0.0f, 0.0f );
+    GearingHandOpenResponseCurve.addPoint( 0.2f, kAlmostOne );
+    GearingHandOpenResponseCurve.addPoint( 1.0f, 0.0f );
+
+    const float radioTime = RadioAnimTotalTimeInv;
+    RatioHandOpenResponseCurve.addPoint( 0.0f, 0.0f );
+    RatioHandOpenResponseCurve.addPoint( radioTime * 0.2f, kAlmostOne );
+    RatioHandOpenResponseCurve.addPoint( radioTime * 0.702f, 0.0f );
+    RatioHandOpenResponseCurve.addPoint( radioTime * 1.002f, 0.0f );
+    RatioHandOpenResponseCurve.addPoint( radioTime * 1.502f, kAlmostOne );
+    RatioHandOpenResponseCurve.addPoint( 1.0f, 0.0f );
+
+    GearingLayerResponseCurve.addPoint( 0.2f, 0.0f );
+    GearingLayerResponseCurve.addPoint( 1.0f, kAlmostOne );
+
+    RadioTurnRatioResponseCurve.addPoint( 0.4124559462070465f, 0.0f );
+    RadioTurnRatioResponseCurve.addPoint( 0.5887191295623779f, kAlmostOne );
+
+    RadioTurnWeightResponseCurve.addPoint( radioTime * 0.2f, 0.0f );
+    RadioTurnWeightResponseCurve.addPoint( radioTime * 0.702f, 1.0f );
+    RadioTurnWeightResponseCurve.addPoint( radioTime * 1.002f, 1.0f );
+    RadioTurnWeightResponseCurve.addPoint( radioTime * 1.502f, 0.0f );
+
     OTDU_UNIMPLEMENTED;
 }
 
@@ -889,12 +932,19 @@ void EntityDriver::updateAnimChannels( float deltaTime ) {
     animation.setChannelBlendRatios( 3, &shake, 1 );
     animation.setChannelLayer( 3, AnimChannel::ALM_BindDelta, 1.0f );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC - gear lever / radio hand anims
-    AnimStateBlendEntry handOpen;
-    handOpen.Weight = 1.0f;
-    handOpen.Ratio = 0.0f;
-    animation.setChannelBlendRatios( 4, &handOpen, 1 );
-    animation.setChannelLayer( 4, AnimChannel::ALM_Weighted, 0.0f );
+    animation.setChannelBlendRatios( 4, &HandOpenRatio, 1 );
+    animation.setChannelLayer( 4, AnimChannel::ALM_Weighted,
+                               HandOpenLayerWeight );
+
+    if ( gbDriverExtraAnimChannels ) {
+        animation.setChannelBlendRatios( 5, GearLeverRatio, 5 );
+        animation.setChannelLayer( 5, AnimChannel::ALM_Weighted,
+                                   GearLeverLayerWeight );
+
+        animation.setChannelBlendRatios( 6, &RadioTurnRatio, 1 );
+        animation.setChannelLayer( 6, AnimChannel::ALM_Weighted,
+                                   RadioTurnLayerWeight );
+    }
 }
 
 float EntityDriver::updateSteerValue( float deltaTime ) {
@@ -982,8 +1032,8 @@ void EntityDriver::updateSteeringWheel( float steerNormalised ) {
 
 void EntityDriver::updateBodyPositionFSM( float deltaTime ) {
     // FUN_007f05ce
-    static constexpr float kShiftStartSpeed = 5.0f; // DAT_00f41750
-    static constexpr float kHandBackSpeed = 7.0f;   // DAT_00f41844
+    static constexpr float kReachForLever = 5.0f; // DAT_00f41750
+    static constexpr float kHandBack = 7.0f;      // DAT_00f41844
     static constexpr float kNeutralHoldTime = 1.0f;
 
     // Reset EVERY frame, before the FSM - nothing latches.
@@ -1001,14 +1051,15 @@ void EntityDriver::updateBodyPositionFSM( float deltaTime ) {
         pPhysics->getDrivingGearbox();
     const int32_t shiftState = gearbox.ShiftState;
     const int32_t currentGear = gearbox.Gear;
-    const float speed = pPhysics->getReportedSpeed();
+    const float anticipation = pPhysics->getGearLeverAnticipation();
     const bool bMechanical = ( GearboxType == GBT_Mechanical );
 
     switch ( CurrentBodyPosition ) {
     case DBP_2HandsOnWheel: {
         const bool bStarting =
-            ( shiftState == 1 ) ? ( LastGear != 0 && kShiftStartSpeed > speed )
-                                : ( shiftState == 3 || shiftState == 5 );
+            ( shiftState == 1 )
+                ? ( LastGear != 0 && kReachForLever > anticipation )
+                : ( shiftState == 3 || shiftState == 5 );
         if ( bStarting ) {
             CurrentBodyPosition = DBP_LeverNeutral;
             if ( bMechanical ) {
@@ -1031,7 +1082,7 @@ void EntityDriver::updateBodyPositionFSM( float deltaTime ) {
         if ( bMechanical ) {
             HandsTarget = HT_GearLever;
         }
-        if ( shiftState == 1 && speed > kHandBackSpeed ) {
+        if ( shiftState == 1 && anticipation > kHandBack ) {
             CurrentBodyPosition = DBP_2HandsOnWheel;
         }
         if ( bMechanical ) {
@@ -1055,7 +1106,7 @@ void EntityDriver::updateBodyPositionFSM( float deltaTime ) {
         if ( bMechanical ) {
             HandsTarget = HT_GearLever;
         }
-        if ( shiftState == 1 && speed > kHandBackSpeed &&
+        if ( shiftState == 1 && anticipation > kHandBack &&
              HandsTarget == HT_GearLever &&
              TimeInLeverNeutralPos >= kNeutralHoldTime ) {
             CurrentBodyPosition = DBP_2HandsOnWheel;
@@ -1151,6 +1202,7 @@ void EntityDriver::updateGearRatios( float deltaTime ) {
     static constexpr float kGearIKEpsilon = 1e-5f;  // DAT_00f41710
     static constexpr float kGearIKHold = 0.98f;     // _DAT_00f420bc
     static constexpr float kGearTransition = 0.3f;  // FLOAT_00f416bc
+    static constexpr float kRadioTransition = 0.5f; // FLOAT_00f41674
     static constexpr float kMechanicalGate = 0.99f; // DAT_00f41a44
     static constexpr float kMechanicalRate = 5.0f;  // DAT_00f41750
     static constexpr float kSequentialRate = 2.5f;  // DAT_00f416c0
@@ -1177,6 +1229,58 @@ void EntityDriver::updateGearRatios( float deltaTime ) {
         IKRatioGear = kGearIKHold;
     }
     LastIKRatioGear = IKRatioGear;
+
+    const bool bIsGearIKActive = IKRatioGear > kGearIKEpsilon;
+    bool bIsRadioAnimActive = false;
+
+    if ( !bMustPlayRadioAnim || bIsGearIKActive ) {
+        RatioRadioAnim = 0.0f;
+        PrevRatioRadioAnim = 0.0f;
+        bMustPlayRadioAnim = false;
+    } else {
+        const float radioStep = deltaTime * RadioAnimTotalTimeInv;
+
+        RatioRadioAnim = 1.0f;
+        if ( 1.0f - PrevRatioRadioAnim > radioStep ) {
+            RatioRadioAnim = PrevRatioRadioAnim + radioStep;
+        }
+        if ( RatioRadioAnim - PrevRatioRadioAnim < 0.0f - radioStep ) {
+            RatioRadioAnim = PrevRatioRadioAnim - radioStep;
+        }
+        PrevRatioRadioAnim = RatioRadioAnim;
+
+        HandsTarget = ( RatioRadioAnim <= RadioAnimTotalTimeInv * 0.2f )
+                          ? HT_Wheel
+                          : HT_Radio;
+        HandsTargetTransitionTime = kRadioTransition;
+        bIsRadioAnimActive = true;
+    }
+
+    if ( RatioRadioAnim > 1.0f - RadioAnimTotalTimeInv * 0.7f ) {
+        HandsTarget = HT_Wheel;
+    }
+    if ( std::fabs( RatioRadioAnim - 1.0f ) < kGearIKEpsilon ) {
+        bMustPlayRadioAnim = false;
+        RatioRadioAnim = 0.0f;
+    }
+
+    if ( HandsTarget != PrevHandsTarget ) {
+        IKSteerInterpolator.restart( PrevHandsTarget == HT_Wheel, deltaTime,
+                                     HandsTargetTransitionTime,
+                                     SteerTimeRatio );
+        PrevHandsTarget = HandsTarget;
+    }
+
+    float handOpen = 0.0f;
+    HandOpenLayerWeight = 0.0f;
+    if ( bIsGearIKActive ) {
+        handOpen = GearingHandOpenResponseCurve.evaluate( IKRatioGear );
+        HandOpenLayerWeight = handOpen;
+    } else if ( bIsRadioAnimActive ) {
+        handOpen = RatioHandOpenResponseCurve.evaluate( RatioRadioAnim );
+    }
+    HandOpenRatio.Ratio = handOpen;
+    HandOpenRatio.Weight = 1.0f;
 
     if ( GearboxType == GBT_Mechanical ) {
         const bool bOddGear =
@@ -1216,14 +1320,38 @@ void EntityDriver::updateGearRatios( float deltaTime ) {
             updateGearLeverNode( ( 1.0f - RatioGearUp ) * GearLeverAngleUp +
                                  GearLeverAngleDown * RatioGearUp );
         }
-        (void)bOddGear; // selects pGearLeverRatio[3] vs [4], channel 5 only
+        float leverUpWeight = bOddGear ? 1.0f : 0.0f;
+        float leverDownWeight = bOddGear ? 0.0f : 1.0f;
+        if ( IKRatioGear > kMechanicalGate ) {
+            if ( CurrentBodyPosition == DBP_LeverUp ) {
+                leverUpWeight = 1.0f;
+                leverDownWeight = 0.0f;
+            } else if ( CurrentBodyPosition == DBP_LeverDown ) {
+                leverUpWeight = 0.0f;
+                leverDownWeight = 1.0f;
+            }
+        }
+
+        GearLeverRatio[0] = {};
+        GearLeverRatio[1] = {};
+        GearLeverRatio[2] = {};
+        GearLeverRatio[3].Weight = leverUpWeight * IKRatioGear;
+        GearLeverRatio[3].Ratio = RatioGearUp;
+        GearLeverRatio[4].Weight = leverDownWeight * IKRatioGear;
+        GearLeverRatio[4].Ratio = RatioGearDown;
+        GearLeverLayerWeight =
+            GearingLayerResponseCurve.evaluate( IKRatioGear );
     } else if ( GearboxType == GBT_Sequential ) {
         RatioGearUp = 0.0f;
         RatioGearDown = 0.0f;
+        float seqUpWeight = 0.0f;
+        float seqDownWeight = 0.0f;
         if ( bMustPlayGearUpAnim ) {
             RatioGearUp = 1.0f;
+            seqUpWeight = 1.0f;
         } else if ( bMustPlayGearDownAnim ) {
             RatioGearDown = 1.0f;
+            seqDownWeight = 1.0f;
         }
 
         const float rate = deltaTime * kSequentialRate;
@@ -1250,17 +1378,24 @@ void EntityDriver::updateGearRatios( float deltaTime ) {
             bMustPlayGearDownAnim = false;
             PrevRatioGearDown = 0.0f;
         }
+
+        GearLeverRatio[0] = {};
+        GearLeverRatio[1].Weight = seqUpWeight;
+        GearLeverRatio[1].Ratio = RatioGearUp;
+        GearLeverRatio[2].Weight = seqDownWeight;
+        GearLeverRatio[2].Ratio = RatioGearDown;
+        GearLeverRatio[3] = {};
+        GearLeverRatio[4] = {};
+        GearLeverLayerWeight = 1.0f;
+    } else if ( GearboxType == GBT_Auto ) {
+        GearLeverLayerWeight = 0.0f;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC/ANIM - pGearLeverRatio
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC - radio hand animation
-
-    if ( HandsTarget != PrevHandsTarget ) {
-        IKSteerInterpolator.restart( PrevHandsTarget == HT_Wheel, deltaTime,
-                                     HandsTargetTransitionTime,
-                                     SteerTimeRatio );
-        PrevHandsTarget = HandsTarget;
-    }
+    RadioTurnRatio.Weight = 1.0f;
+    RadioTurnRatio.Ratio =
+        RadioTurnRatioResponseCurve.evaluate( RatioRadioAnim );
+    RadioTurnLayerWeight =
+        RadioTurnWeightResponseCurve.evaluate( RatioRadioAnim );
 }
 
 void EntityDriver::updateStandDriveRatio( float deltaTime ) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/response_curve.h"
 #include "entity_avatar.h"
 #include "game/scenaric/ik_offset_db.h"
 #include "game/vehicle/vehicle_base.h"
@@ -161,6 +162,20 @@ protected:
     float PrevRatioGearUp;
     float RatioGearDown;
     float PrevRatioGearDown;
+    float RatioRadioAnim;
+    float PrevRatioRadioAnim;
+    float RadioAnimTotalTimeInv;
+    AnimStateBlendEntry HandOpenRatio;
+    float HandOpenLayerWeight;
+    AnimStateBlendEntry GearLeverRatio[5];
+    float GearLeverLayerWeight;
+    AnimStateBlendEntry RadioTurnRatio;
+    float RadioTurnLayerWeight;
+    ResponseCurve<3> GearingHandOpenResponseCurve;
+    ResponseCurve<6> RatioHandOpenResponseCurve;
+    ResponseCurve<2> GearingLayerResponseCurve;
+    ResponseCurve<2> RadioTurnRatioResponseCurve;
+    ResponseCurve<4> RadioTurnWeightResponseCurve;
     TimeRatio SteerTimeRatio;
     IKInterpolator IKSteerInterpolator;
 

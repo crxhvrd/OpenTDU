@@ -2686,6 +2686,7 @@ void PhysicsVehicle::OnStep(
     updateChrono( dt );
     updateTyreHeat( dt );
     updateRevRate( dt );
+    updateGearLeverAnticipation( dt );
     reportStuckClutch( dt );
 }
 
@@ -2718,6 +2719,109 @@ float PhysicsVehicle::getWheelBurn( int32_t index ) const {
         return 0.0f;
     }
     return ( heat - kTireBurnThreshold ) / ( 1.0f - kTireBurnThreshold );
+}
+
+void PhysicsVehicle::updateGearLeverAnticipation( float dt ) {
+    // FUN_0083db70
+    static constexpr float kThrottleGate = 0.1f;      // DAT_00f41668
+    static constexpr float kOnWheel = 10.0f;          // DAT_00f4166c
+    static constexpr float kQuarterTurn = 1.5707964f; // DAT_00f418a8
+    static constexpr float kBandFirstGear = 0.3f;     // DAT_00f416bc
+    static constexpr float kBandPerGear = 0.075f;     // DAT_00f42128
+    static constexpr float kSecondGearBand = 1.0f;    // DAT_00f8a280
+    static constexpr float kRateGate = 1.0f;          // FLOAT_00f4165c
+
+    if ( dt <= 0.0f ) {
+        return;
+    }
+
+    const PhysicsEngineSim &e = vehicle.Engine;
+    const PhysicsGearboxSim &g = vehicle.GearBox;
+
+    const float omega = e.Omega;
+    const float rate = ( omega - gearLeverPrevOmega ) / dt;
+    gearLeverPrevOmega = omega;
+
+    const int32_t gear = g.CurrentGear;
+    const float band = JPH::Clamp(
+        kBandFirstGear - static_cast<float>( gear - 2 ) * kBandPerGear,
+        kBandPerGear, kBandFirstGear );
+    const float margin = band * e.OmegaMax;
+    const bool bInGear = ( g.ShiftState == PhysicsGearboxSim::SS_InGear );
+
+    switch ( gearLeverState ) {
+    case 0:
+        gearLeverAnticipation = kOnWheel;
+        gearLeverState = ( gear >= 2 ) ? 1 : 0;
+        break;
+
+    case 1: {
+        if ( e.Throttle <= kThrottleGate ) {
+            gearLeverState = 2;
+            break;
+        }
+        if ( !bInGear ) {
+            gearLeverState = 3;
+            break;
+        }
+        if ( rate <= kRateGate ) {
+            break;
+        }
+        if ( gear >= g.NumGears - 1 ) {
+            gearLeverAnticipation = kOnWheel;
+            break;
+        }
+        const float shiftPoint = ( 1.0f - g.UpshiftBand ) * e.PeakPowerOmega +
+                                 g.UpshiftBand * e.OmegaMax;
+        const float shiftStart = shiftPoint - margin;
+        gearLeverAnticipation =
+            JPH::Clamp( kOnWheel + ( omega - shiftStart ) * kQuarterTurn /
+                                       ( shiftPoint - shiftStart ),
+                        0.0f, kOnWheel );
+        break;
+    }
+
+    case 2: {
+        if ( e.Throttle > kThrottleGate ) {
+            gearLeverState = 1;
+        }
+        if ( gear <= 2 ) {
+            gearLeverState = 0;
+            break;
+        }
+        if ( rate == 0.0f ) {
+            gearLeverState = 0;
+            break;
+        }
+        if ( !bInGear ) {
+            gearLeverState = 3;
+            break;
+        }
+        float postShiftOmega;
+        if ( gear == 3 ) {
+            postShiftOmega = kSecondGearBand * e.OmegaMax;
+        } else {
+            postShiftOmega = ( g.Ratios[gear] / g.Ratios[gear - 1] ) *
+                             ( e.PeakTorqueOmega + e.OmegaMax ) * 0.5f;
+        }
+        const float target = postShiftOmega + margin;
+        gearLeverAnticipation =
+            JPH::Clamp( kOnWheel + ( omega - target ) * kQuarterTurn /
+                                       ( postShiftOmega - target ),
+                        0.0f, kOnWheel );
+        break;
+    }
+
+    case 3:
+        gearLeverAnticipation = 0.0f;
+        if ( bInGear ) {
+            gearLeverState = 0;
+        }
+        break;
+
+    default:
+        break;
+    }
 }
 
 void PhysicsVehicle::updateRevRate( float dt ) {
