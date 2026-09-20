@@ -16,7 +16,9 @@ GSTimer::GSTimer()
       PreviousGameSpeed( 1.0f ),
       GameTotalTime( 0.0f ),
       PrevGameTime( 0.0f ),
-      GameDeltaTime( 0.0f ) {
+      GameDeltaTime( 0.0f ),
+      DeltaTime( 0.0f ),
+      SystemLastTime( 0.0f ) {
     // FUN_009ddde0
     OTDU_ASSERT( gpTimer == nullptr );
     gpTimer = this;
