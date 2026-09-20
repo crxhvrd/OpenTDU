@@ -66,7 +66,6 @@ static constexpr float kDiffRatioInf = 1.08e19f; // FLOAT_00f41898 (ratio ~inf)
 static constexpr float kClutchThrottleArm = 0.05f;  // DAT_00f41778
 static constexpr float kClutchThrottleDrop = 0.1f;  // FLOAT_00f41668
 static constexpr float kThousandRpmRad = 104.72f;   // FLOAT_00f41894 (1000rpm)
-static constexpr float kClutchDecel = -26.19f;      // clutch decel threshold
 static constexpr float kFreeRollBrakeTorque = 0.1f; // FLOAT_00f41668
 static constexpr float kFreeRollDriveTorque = 1.0f; // FLOAT_00f4165c
 
@@ -125,7 +124,7 @@ static void StepClutch( PhysicsClutchSim &c,
                 std::max( launchRPM - kThousandRpmRad, idle );
 
             const bool condA =
-                ( launchFloor < omega && kClutchDecel <= dOmega ) ||
+                ( launchFloor < omega && c.DecelThreshold < dOmega ) ||
                 ( launchRPM < omega );
             if ( condA ) {
                 if ( dOmega <= decelRef && omega <= e.PeakPowerOmega ) {

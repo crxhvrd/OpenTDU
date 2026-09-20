@@ -146,6 +146,7 @@ public:
         return vehicle.Clutch.LockThreshold;
     }
     float getEngineAngAccel() const { return vehicle.Engine.AngAccel; }
+    bool isManualClutchEnabled() const { return bManualClutch; }
     float getUpshiftRpm() const {
         const PhysicsGearboxSim &g = vehicle.GearBox;
         return ( ( 1.0f - g.UpshiftBand ) * vehicle.Engine.PeakPowerOmega +

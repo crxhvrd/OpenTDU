@@ -532,7 +532,7 @@ void TestDriveGameInstance::mainLoop() {
             TestDrive::FreeAligned( pGameModeAlloc );
             GMVideoBumper::ClearActiveBumper();
 
-            GMVideoBumper::SetActiveBumper( "bumper_EDEN_TDU.bik" );
+            GMVideoBumper::SetActiveBumper( "Bumper_EDEN_TDU.bik" );
             GMVideoBumper::SetNextGameMode( GM_Login );
             GMVideoBumper::SetSkippable();
 
@@ -596,7 +596,7 @@ bool TestDriveGameInstance::initialize() {
         TestDrive::FreeAligned( pGVar3 );
         GMVideoBumper::ClearActiveBumper();
 
-        GMVideoBumper::SetActiveBumper( "bumper_EDEN_TDU.bik" );
+        GMVideoBumper::SetActiveBumper( "Bumper_EDEN_TDU.bik" );
         GMVideoBumper::SetNextGameMode( GM_Login );
         GMVideoBumper::SetSkippable();
 

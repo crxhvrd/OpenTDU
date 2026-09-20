@@ -213,14 +213,15 @@ struct PhysicsClutchSim {
     float Target = 0.0f;          // target engagement
     int State = 0;                // 0=disengaged 1=armed 2=launch 3=locked
     float Timer = 0.0f;           // state-2 timer
-    float LaunchIdleMult = 1.15f; // DAT_00f416a8
+    float EngageRate = 10.0f;    
+    float DisengageRate = 10.0f; 
+    float LaunchIdleMult = 1.0f; 
     float LaunchPeakPowerMult =
-        0.75f; // x peak-power omega, NOT redline (DAT_00f416a4)
-    float LockThreshold = 0.9f;     // DAT_00f416a0
-    float EngageThrottleHi = 10.0f; // engage-rate at 0 throttle
-    float EngageThrottleLo = 1.0f;  // engage-rate at full throttle
-    float EngageRate = 3.0f;        // actual-engagement slew up
-    float DisengageRate = 3.0f;     // actual-engagement slew down
+        0.5f;
+    float LockThreshold = 0.5f;     
+    float DecelThreshold = -52.35988f; 
+    float EngageThrottleHi = 5.0f;   
+    float EngageThrottleLo = 5.0f;  
     float OverrideEngagement = -1.0f;
 };
 

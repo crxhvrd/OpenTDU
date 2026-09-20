@@ -2152,6 +2152,7 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
                            std::max( std::fabs( vLong ), kSlipDenom );
 
     w.ContactNormal = ToVec4( normal );
+    w.SuspAxis = w.ContactNormal;
     w.ContactLongAxis = ToVec4( longAxis );
     w.ContactLatAxis = ToVec4( latAxis );
     w.ForwardDir = w.ContactNormal * longSlip;
