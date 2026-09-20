@@ -968,6 +968,14 @@ void GSCamera::tickActiveCamera( float param_2 ) {
     }
 }
 
+void GSCamera::onWorldOriginStepped() {
+    if ( pActiveVehicleCamera != nullptr ) {
+        pActiveVehicleCamera->rebaseToStreamOrigin();
+    }
+    defaultCamera.rebaseToStreamOrigin();
+    activeCamera.rebaseToStreamOrigin();
+}
+
 void GSCamera::bindToRender() {
     // FUN_008e3b10
     float fVar1 = (float)gWindowWidth;

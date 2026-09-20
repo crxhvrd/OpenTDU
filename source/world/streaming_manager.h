@@ -82,6 +82,7 @@ public:
                                    const GridPos2D &areaCell ) const;
 
     void debugRecenter( const Eigen::Vector4f &worldPos );
+    void onWorldOriginStepped( const Eigen::Vector4f &newOrigin );
     void requestDebugJump( const Eigen::Vector4f &worldPos );
 
     void refreshSectorSpots();

@@ -1085,7 +1085,7 @@ bool TestDriveGameInstance::pushResourceToStream( StreamedResource *param_2 ) {
     // FUN_009b4490
     ScopedMutexLock lock( &stackFileMutex );
     if ( pendingStreamedResources.size() + 1 < 0x40 ) {
-        pendingStreamedResources.push_front( param_2 );
+        pendingStreamedResources.push_back( param_2 );
         bPendingInstantiation = true;
         return true;
     }

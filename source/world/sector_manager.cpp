@@ -1566,7 +1566,7 @@ bool Sector::onWorldStreamed( Eigen::Vector4f *param_1,
     geometry.rebaseObjectNodes( *param_3 );
     geometry.rebaseDetail2Materials( *param_3 );
     bool bImpostorShifted = true;
-    geometry.rebaseImpostors( *param_3 );
+    geometry.shiftImpostors( *param_1, *param_3 );
 
     return bGeometryShifted && bImpostorShifted;
 }

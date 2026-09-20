@@ -154,6 +154,30 @@ void SectorGeometry::rebaseImpostors( const Eigen::Vector4f &streamOrigin ) {
     }
 }
 
+void SectorGeometry::shiftImpostors( const Eigen::Vector4f &offset,
+                                     const Eigen::Vector4f &streamOrigin ) {
+    // FUN_006fed80
+    const float uvOriginX = impostorUVAbsOrigin.x() - streamOrigin.x();
+    const float uvOriginZ = impostorUVAbsOrigin.z() - streamOrigin.z();
+    for ( ImpostorGrid &grid : impostorGrids ) {
+        for ( MassInstanceImpostor &mi : grid.instances ) {
+            if ( mi.pInstance != nullptr ) {
+                Matrix4x4f_t m = mi.pInstance->getModelMatrix();
+                m( 3, 0 ) -= offset.x();
+                m( 3, 2 ) -= offset.z();
+                mi.pInstance->setModelMatrix( m );
+            }
+            mi.SpherePos.x() = mi.SphereAbsPos.x() - streamOrigin.x();
+            mi.SpherePos.y() = mi.SphereAbsPos.y() - streamOrigin.y();
+            mi.SpherePos.z() = mi.SphereAbsPos.z() - streamOrigin.z();
+        }
+
+        for ( Material *pMaterial : grid.uvOriginMaterials ) {
+            WriteImpostorUVOrigin( pMaterial, uvOriginX, uvOriginZ, false );
+        }
+    }
+}
+
 void SectorGeometry::WriteImpostorUVOrigin( Material *pMaterial,
                                             float originX,
                                             float originZ,

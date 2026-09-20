@@ -2422,6 +2422,16 @@ void StreamingManager::centerUpdate( Eigen::Vector4f *pStreamPosition ) {
     spotStream.updateCenter( *pStreamPosition );
 }
 
+void StreamingManager::onWorldOriginStepped(
+    const Eigen::Vector4f &newOrigin ) {
+    for ( Area &area : areaGrid.areas ) {
+        if ( area.state == 1 ) {
+            area.geometry.rebaseHeightmapInstance( newOrigin );
+        }
+    }
+    level.getHeightmapGeometry().rebaseHeightmapInstance( newOrigin );
+}
+
 void StreamingManager::requestDebugJump( const Eigen::Vector4f &worldPos ) {
     debugJumpPos = worldPos;
     bDebugJumpPending = true;

@@ -147,6 +147,7 @@ public:
     void bindToRender();
 
     void applyCinematicOverride( CameraGame &camera );
+    void onWorldOriginStepped();
     void setCinematicCameraOverride( const Eigen::Vector3f &position,
                                      const Eigen::Vector3f &up,
                                      const Eigen::Vector3f &target,

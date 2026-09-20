@@ -109,6 +109,8 @@ public:
     void rebaseRenderInstances( const Eigen::Vector4f &streamOrigin );
     void rebaseHeightmapInstance( const Eigen::Vector4f &streamOrigin );
     void rebaseImpostors( const Eigen::Vector4f &streamOrigin );
+    void shiftImpostors( const Eigen::Vector4f &offset,
+                         const Eigen::Vector4f &streamOrigin );
     static void WriteImpostorUVOrigin( Material *pMaterial,
                                        float originX,
                                        float originZ,

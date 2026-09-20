@@ -150,6 +150,11 @@ void CameraGame::setTarget( const Eigen::Vector4f &param_1 ) {
     worldTarget.w() = 1.0f;
 }
 
+void CameraGame::rebaseToStreamOrigin() {
+    setPosition( worldPosition );
+    setTarget( worldTarget );
+}
+
 void CameraGame::setTargetOffseted( const Eigen::Vector4f &param_1 ) {
     // FUN_008e1300
     worldTargetWithUnknownOffset = param_1;

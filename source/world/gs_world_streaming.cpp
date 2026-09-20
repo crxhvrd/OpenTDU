@@ -2,6 +2,10 @@
 #include "gs_world_streaming.h"
 
 #include "physics/gs_physics.h"
+#include "render/camera/gs_camera.h"
+#include "render/camera/camera_game.h"
+#include "world/gs_world.h"
+#include "world/streaming_manager.h"
 
 #include "tdu_instance.h"
 
@@ -136,6 +140,13 @@ void GSWorldStreaming::updateStreaming() {
 
         prevPosition = position;
         bHasJustFinishedStreaming = true;
+
+        if ( gpCamera != nullptr ) {
+            gpCamera->onWorldOriginStepped();
+        }
+        if ( gpWorld != nullptr && gpWorld->getStreamingManager() != nullptr ) {
+            gpWorld->getStreamingManager()->onWorldOriginStepped( position );
+        }
     }
 }
 
