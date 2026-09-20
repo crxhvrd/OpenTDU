@@ -51,6 +51,9 @@ public:
     inline CarState *getBoundCarState() const { return pTarget; }
 
     inline CameraGame *getActiveCamera() { return pActiveVehicleCamera; }
+    inline CameraVehicle *getActiveVehicleCamera() {
+        return pActiveVehicleCamera;
+    }
     inline CameraGame *getDefaultCamera() { return &defaultCamera; }
     inline CameraGame *getRenderCamera() { return &activeCamera; }
     inline Frustum &getNearFrustum() { return frustumNear; }

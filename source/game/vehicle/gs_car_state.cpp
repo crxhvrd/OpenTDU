@@ -278,7 +278,15 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             worldMatrix( 3, 2 ) += streamShift.z();
             body.WorldMatrix = worldMatrix;
 
-            body.SpeedInKmh = pPhysicsVehicle->getChassisSpeed();
+            body.SpeedInKmh = pPhysicsVehicle->getReportedSpeed();
+
+            const float publishedSteer = -pPhysicsVehicle->getFilteredSteer();
+            body.SteeringRaw = publishedSteer;
+
+            const float leanScale = std::min(
+                std::max( 1.0f - std::fabs( body.BikeLeanLateral ), 0.0f ),
+                1.0f );
+            body.Steering = leanScale * publishedSteer;
             body.Omega = pPhysicsVehicle->getEngineAngularVelocity();
             body.Gears = pPhysicsVehicle->getCurrentGear();
             body.GearState = pPhysicsVehicle->getCurrentGear() + 1;

@@ -9,6 +9,7 @@
 #include "render/instance.h"
 #include "render/animation/skeleton.h"
 #include "render/animation/clip.h"
+#include "render/animation/anim_state.h"
 #include "render/animation/animation.h"
 #include "filesystem/gs_file.h"
 #include "physics/gs_physics.h"
@@ -324,6 +325,22 @@ void ScenaricBank::constructResourceLists() {
                        fileRefs[FR_XSB].pHashcodes, listsSkeleton );
     buildResourceList( bank, fileRefs[FR_Anm].pStructs,
                        fileRefs[FR_Anm].pHashcodes, listsClip );
+    buildResourceList( bank, fileRefs[FR_Bas].pStructs,
+                       fileRefs[FR_Bas].pHashcodes, listsAnimState );
+
+    for ( auto &animState : listsAnimState ) {
+        animState.object->resolveReferences(
+            []( void *pUserData, uint32_t id,
+                uint32_t hash ) -> ClipInstance * {
+                if ( id == 0 && hash == 0 ) {
+                    return nullptr;
+                }
+                const uint64_t key =
+                    ( static_cast<uint64_t>( hash ) << 32 ) | id;
+                return static_cast<ScenaricBank *>( pUserData )->getClip( key );
+            },
+            this );
+    }
 
     // UVA tracks additionally need the blob length.
     const uint32_t *pUvaStructs = fileRefs[FR_Uva].pStructs;
@@ -371,6 +388,7 @@ void ScenaricBank::releaseResourceLists() {
     listsUVA.clear();
     listsSkeleton.clear();
     listsClip.clear();
+    listsAnimState.clear();
 }
 
 void *ScenaricBank::getCinData( uint64_t hashcode, int32_t *pOutSize ) {
@@ -433,6 +451,10 @@ SkeletonInstance *ScenaricBank::getSkeleton( uint64_t hashcode ) {
 
 ClipInstance *ScenaricBank::getClip( uint64_t hashcode ) {
     return findResource( listsClip, hashcode );
+}
+
+AnimStateInstance *ScenaricBank::getAnimState( uint64_t hashcode ) {
+    return findResource( listsAnimState, hashcode );
 }
 
 namespace {

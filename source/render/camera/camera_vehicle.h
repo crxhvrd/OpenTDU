@@ -117,6 +117,7 @@ public:
         return shakeMagnitude.w();
     }
     inline const float &getShakePeriodYSlow() const { return shakePeriod.z(); }
+    inline uint8_t getWheelOffset() const { return wheelOffset; }
 
 public:
     CameraVehicle( int32_t param_2 );

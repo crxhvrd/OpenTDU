@@ -16,6 +16,7 @@ class MngActor;
 class PhysFactory;
 class SkeletonInstance;
 class ClipInstance;
+class AnimStateInstance;
 class Sector;
 struct SpotSector;
 
@@ -115,6 +116,7 @@ public:
     Render2DB *getRender2DB( uint64_t hashcode );
     SkeletonInstance *getSkeleton( uint64_t hashcode );
     ClipInstance *getClip( uint64_t hashcode );
+    AnimStateInstance *getAnimState( uint64_t hashcode );
 
     ClipInstance *debugScoreClipsForSkeleton( SkeletonInstance *pSkel,
                                               int *pBestMatches );
@@ -191,6 +193,7 @@ protected:
     std::vector<BankRenderResource<RenderUVA>> listsUVA;
     std::vector<BankRenderResource<SkeletonInstance>> listsSkeleton;
     std::vector<BankRenderResource<ClipInstance>> listsClip;
+    std::vector<BankRenderResource<AnimStateInstance>> listsAnimState;
     std::vector<HiearchyNode *> sceneryNodes;
 
     uint32_t bankVersion = 0;

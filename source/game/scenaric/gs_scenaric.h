@@ -187,10 +187,12 @@ public:
     Render2DB *findRender2DB( uint64_t hashcode );
     SkeletonInstance *findSkeleton( uint64_t hashcode );
     ClipInstance *findClip( uint64_t hashcode );
+    AnimStateInstance *findAnimState( uint64_t hashcode );
 
     SkeletonInstance *resolveSkeleton( ScenaricBank *pBank,
                                        void *pRefSkeleton );
     ClipInstance *resolveClip( ScenaricBank *pBank, void *pRefAnm );
+    AnimStateInstance *resolveAnimState( ScenaricBank *pBank, void *pRefBas );
 
     void initWoosh();
     void terminateWoosh();
@@ -228,8 +230,8 @@ private:
     std::string defaultIGE;
 
     Eigen::Vector4f startPosition;
-    bool bDemoMode;      
-    float demoTimer;     
+    bool bDemoMode;
+    float demoTimer;
     uint32_t demoTimeEnd;
     uint32_t traceSize;
     uint32_t currentDefVersion;

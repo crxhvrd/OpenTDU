@@ -2,6 +2,7 @@
 
 #include "entity_actor.h"
 #include "game/avatar/avatar_clothes.h"
+#include "render/animation/skeleton.h"
 
 class GSAvatar;
 class EntityDriver;
@@ -103,6 +104,8 @@ protected:
     int32_t CineAvatarMode;
     int32_t InstanceRefCount;
     int32_t HeadBoneIndex;
+    void *pUseSkeleton;
+    SkeletonInstance avatarSkeleton;
     uint32_t HelmetLinkBoneHC;
     bool bNeedToRefreshFace;
     bool bForceShowHelmet;

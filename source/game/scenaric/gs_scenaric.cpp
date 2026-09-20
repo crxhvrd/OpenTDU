@@ -975,6 +975,47 @@ ClipInstance *GSScenaric::findClip( uint64_t hashcode ) {
                                         } );
 }
 
+AnimStateInstance *GSScenaric::findAnimState( uint64_t hashcode ) {
+    if ( hashcode == 0 ) {
+        return nullptr;
+    }
+    for ( ScenaricBank *pBank : registeredBanks ) {
+        if ( pBank == nullptr ) {
+            continue;
+        }
+        if ( AnimStateInstance *pResult = pBank->getAnimState( hashcode ) ) {
+            return pResult;
+        }
+    }
+    return FindInUnregisteredWorldBank(
+        getWorldScenaricBank(), "animState", hashcode,
+        [hashcode]( ScenaricBank *pBank ) {
+            return pBank->getAnimState( hashcode );
+        } );
+}
+
+AnimStateInstance *GSScenaric::resolveAnimState( ScenaricBank *pBank,
+                                                 void *pRefBas ) {
+    // FUN_007da8a0
+    if ( pRefBas == nullptr ) {
+        return nullptr;
+    }
+    const uint32_t *pRef = static_cast<const uint32_t *>( pRefBas );
+    const uint32_t id = pRef[0];
+    const uint32_t hash = pRef[1];
+    if ( id == 0 && hash == 0 ) {
+        return nullptr;
+    }
+    const uint64_t key = ( static_cast<uint64_t>( hash ) << 32 ) | id;
+
+    AnimStateInstance *pResult =
+        pBank != nullptr ? pBank->getAnimState( key ) : nullptr;
+    if ( pResult == nullptr ) {
+        pResult = findAnimState( key );
+    }
+    return pResult;
+}
+
 ClipInstance *GSScenaric::resolveClip( ScenaricBank *pBank, void *pRefAnm ) {
     // FUN_007da8a0
     if ( pRefAnm == nullptr ) {

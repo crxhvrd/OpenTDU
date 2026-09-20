@@ -1184,6 +1184,13 @@ HiearchyNode *VehicleCar::setupNode( const char *pName,
     return peVar5;
 }
 
+void VehicleCar::setSeatBeltVisible( int32_t seat, bool bVisible ) {
+    if ( seat < 0 || seat >= kMaxNumBelts ) {
+        return;
+    }
+    bSeatBeltVisible[seat] = bVisible;
+}
+
 void VehicleCar::instantiateSeatBelt() {
     // FUN_008c4ab0
     HiearchyNode *pBeltNode = displayInstances[0x18].pNode;

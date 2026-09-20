@@ -80,6 +80,7 @@ public:
         bool bShiftIdle;     // gearbox will take a shift request right now
         bool bEngineRunning; // engine in the running state (orig state 2)
         int32_t ShiftDirection;
+        int32_t ShiftState;
     };
 
     struct DrivingOptions {
@@ -208,6 +209,7 @@ public:
     const Chrono &getChrono() const { return chrono; }
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
     float getLateralSpeed() const { return vehicle.LateralSpeed; }
+    inline float getFilteredSteer() const { return filteredSteer; }
 
 public:
     PhysicsVehicle();
@@ -271,6 +273,7 @@ public:
     void updateTyreHeat( float dt );
     float getWheelBurn( int32_t index ) const;
     float getChassisSpeed() const;
+    float getReportedSpeed() const;
     Eigen::Vector4f getChassisVelocity() const;
 
     float getEngineAngularVelocity() const;

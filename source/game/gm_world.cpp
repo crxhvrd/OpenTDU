@@ -579,8 +579,6 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         // No device configuration (or a 0 dt)
         pBody->Throttle = 0.0f;
         pBody->Brake = 0.0f;
-        pBody->SteeringRaw = 0.0f;
-        pBody->Steering = 0.0f;
         PhysicsLock physLock;
         pPlayerPhysicsVehicle->setInput( 0.0f, 0.0f, 0.0f );
         return;
@@ -692,8 +690,6 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
 
     pBody->Throttle = throttle;
     pBody->Brake = brake;
-    pBody->SteeringRaw = steer;
-    pBody->Steering = steer;
 
     const bool bAutomatic = pCfg->bUseAutomatic;
     pPlayerPhysicsVehicle->setAutomaticGearbox( bAutomatic );

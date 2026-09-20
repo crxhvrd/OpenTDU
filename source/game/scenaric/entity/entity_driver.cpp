@@ -13,8 +13,12 @@
 #include "game/vehicle/bank_vehicle.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
+#include "game/vehicle/vehicle_car.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "game/vehicle/vehicle_controller.h"
 #include "game/vehicle/vehicle_resource.h"
+#include "render/animation/anim_state.h"
+#include "render/animation/clip.h"
 #include "render/hiearchy_node.h"
 #include "render/instance.h"
 #include "render/camera/camera_game.h"
@@ -44,6 +48,8 @@ static constexpr uint32_t kShowFlagShowHead = 1u << 2;
 static constexpr int32_t kCameraTypeShowcase = 6;
 static constexpr int32_t kAvatarTypeDriver = 1;
 static constexpr int32_t kStateProcessRun = 0xc0c1;
+
+bool gbDriverBaseAnim = true; // TODO: REMOVE ME
 
 static const char *kCarIKPointNamesHR[kNumCarIKPoints] = { // DAT_00f8b0c8
     "DvrSeat_HR", "Hand_HR_R", "Hand_HR_L",    "Foot_HR_R",    "Foot_HR_L",
@@ -80,8 +86,30 @@ static void AccumulateNodeWorldMatrix( const HiearchyNode *pNode,
 EntityDriver::EntityDriver()
     : EntityAvatar(),
       CarStateEventListener(),
+      AnimRide{},
       NumAnimRide( 0 ),
+      AnimDrive{},
       NumAnimDrive( 0 ),
+      AnimFalls{},
+      StandDriveRatio{},
+      LastStandDriveWeight( 1.0f ),
+      KeepAccelRatio( 0.0f ),
+      CurrentBodyPosition( DBP_2HandsOnWheel ),
+      HandsTarget( HT_Wheel ),
+      PrevHandsTarget( HT_Wheel ),
+      HandsTargetTransitionTime( 0.3f ),
+      LastGear( 0 ),
+      TimeInLeverNeutralPos( 0.0f ),
+      IKRatioGear( 0.0f ),
+      LastIKRatioGear( 0.0f ),
+      RatioGearUp( 0.0f ),
+      PrevRatioGearUp( 0.0f ),
+      RatioGearDown( 0.0f ),
+      PrevRatioGearDown( 0.0f ),
+      SteerSM( 0.0f ),
+      SteerStack{},
+      SteerStackIndex( 0 ),
+      LastWheelRatio( 0.0f ),
       CarIKPoints{},
       pCarHandSize( nullptr ),
       pCarSeatHeight( nullptr ),
@@ -116,10 +144,14 @@ EntityDriver::EntityDriver()
       bMustPlayAnims( true ),
       bMustPlayRadioAnim( false ),
       bIsAccelerationAnimPlayed( false ),
+      bMustPlayGearUpAnim( false ),
+      bMustPlayGearDownAnim( false ),
       bMustRecalculateDriverSeatPos( true ),
       bRiderHasFalled( false ),
       pLinkedExternalHelmet( nullptr ) {
     // FUN_007eeac0
+    NumMaxLayers = 5;
+
     setSeating( true );
     OTDU_UNIMPLEMENTED;
 }
@@ -149,7 +181,8 @@ void EntityDriver::deserialize( BinaryReader *param_2 ) {
         scratch.deserialize( param_2 );
         scratch.deserialize( param_2 );
     } else {
-        NumAnimRide = SkipBytecodeAnimCarTable( param_2 );
+        NumAnimRide =
+            DecodeBytecodeAnimCarTable( param_2, AnimRide, kNumDriverAnims );
     }
 
     if ( version < 0x17 ) {
@@ -157,7 +190,8 @@ void EntityDriver::deserialize( BinaryReader *param_2 ) {
         scratch.deserialize( param_2 );
         scratch.deserialize( param_2 );
     } else {
-        SkipBytecodeAnimCarTable( param_2 );
+        NumAnimDrive = static_cast<int32_t>(
+            DecodeBytecodeAnimCarTable( param_2, AnimDrive, kNumDriverAnims ) );
     }
 
     if ( version < 0x19 ) {
@@ -165,9 +199,61 @@ void EntityDriver::deserialize( BinaryReader *param_2 ) {
     }
 
     if ( version > 0x1e ) {
-        for ( int32_t i = 0; i < 7; ++i ) {
-            AnimRide[i].deserialize( param_2 );
+        for ( int32_t i = 0; i < kNumDriverAnims; ++i ) {
+            AnimFalls[i].deserialize( param_2 );
         }
+    }
+}
+
+void EntityDriver::loadResources( ScenaricBank *param_2 ) {
+    // FUN_007f2250
+    EntityActor::loadResources( param_2 );
+
+    const auto resolve = [param_2]( RenderAnm &anim ) {
+        if ( anim.File != 0 ) {
+            anim.pAnimState =
+                gpScenaric->resolveAnimState( param_2, anim.pRefBas );
+            anim.pClip = gpScenaric->resolveClip( param_2, anim.pRefBas );
+        }
+    };
+
+    const int32_t numRide =
+        std::min( static_cast<int32_t>( NumAnimRide ), kNumDriverAnims );
+    for ( int32_t i = 0; i < numRide; ++i ) {
+        resolve( AnimRide[i] );
+    }
+
+    const int32_t numDrive = std::min( NumAnimDrive, kNumDriverAnims );
+    for ( int32_t i = 0; i < numDrive; ++i ) {
+        resolve( AnimDrive[i] );
+    }
+
+    // The original unrolls this loop, one inlined resolve per slot.
+    for ( int32_t i = 0; i < kNumDriverAnims; ++i ) {
+        resolve( AnimFalls[i] );
+    }
+}
+
+void EntityDriver::instanciate( MngActor *pMngActor, Entity *param_1 ) {
+    // FUN_007efc80
+    EntityAvatar::instanciate( pMngActor, param_1 );
+
+    EntityDriver *pInstance = static_cast<EntityDriver *>( param_1 );
+
+    pInstance->NumAnimRide = NumAnimRide;
+
+    const int32_t numCopied = std::min( NumAnimDrive, kNumDriverAnims );
+    for ( int32_t i = 0; i < numCopied; ++i ) {
+        pInstance->AnimRide[i] = AnimRide[i];
+    }
+
+    pInstance->NumAnimDrive = NumAnimDrive;
+    for ( int32_t i = 0; i < numCopied; ++i ) {
+        pInstance->AnimDrive[i] = AnimDrive[i];
+    }
+
+    for ( int32_t i = 0; i < kNumDriverAnims; ++i ) {
+        pInstance->AnimFalls[i] = AnimFalls[i];
     }
 }
 
@@ -299,7 +385,27 @@ void EntityDriver::setGearLever( HiearchyNode *pNode ) {
     GearLeverInit = pNode->TransformMatrix;
     GearLeverAngleUp = 0.0f;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+    static constexpr float kLeverAngleNumerator = 0.1f; // FLOAT_00f41668
+    static constexpr float kLeverAngleClamp = -0.3f;    // DAT_00f41a34
+
+    Matrix4x4f_t gearWorld = Matrix4x4f_t::Identity();
+    const SCIKPoint &gearPoint = CarIKPoints[kCarIKPointGearLever];
+    AccumulateNodeWorldMatrix( gearPoint.pNode, gearWorld );
+
+    Eigen::Vector3f gearPosition( gearWorld( 3, 0 ), gearWorld( 3, 1 ),
+                                  gearWorld( 3, 2 ) );
+    if ( gearPoint.pOffset != nullptr ) {
+        gearPosition = TDUMat4x4MulVec(
+            gearWorld, Eigen::Vector3f( gearPoint.pOffset->Offset.x(),
+                                        gearPoint.pOffset->Offset.y(),
+                                        gearPoint.pOffset->Offset.z() ) );
+    }
+
+    const Eigen::Vector3f leverPosition(
+        GearLeverInit( 3, 0 ), GearLeverInit( 3, 1 ), GearLeverInit( 3, 2 ) );
+    const float distance = ( leverPosition - gearPosition ).norm();
+    GearLeverAngleDown = std::max(
+        kLeverAngleClamp, -std::atan( kLeverAngleNumerator / distance ) );
 }
 
 void EntityDriver::updateSeatTransform() {
@@ -349,8 +455,10 @@ void EntityDriver::updateSeatTransform() {
     AccumulateNodeWorldMatrix( driverSeat.pNode, seatMatrix );
 
     if ( driverSeat.pOffset != nullptr && ( bIsUsedIK || !bIsFreeMovement ) ) {
-        const Eigen::Vector4f offsetPosition =
-            TDUMat4x4MulVec( seatMatrix, driverSeat.pOffset->Offset );
+        const Eigen::Vector3f offsetPosition = TDUMat4x4MulVec(
+            seatMatrix, Eigen::Vector3f( driverSeat.pOffset->Offset.x(),
+                                         driverSeat.pOffset->Offset.y(),
+                                         driverSeat.pOffset->Offset.z() ) );
         seatMatrix( 3, 0 ) = offsetPosition.x();
         seatMatrix( 3, 1 ) = offsetPosition.y();
         seatMatrix( 3, 2 ) = offsetPosition.z();
@@ -380,7 +488,8 @@ void EntityDriver::setCarState( CarState *pNewCarState ) {
         VehicleBase *pDisplay = pCarState->getVehicleInstance();
         if ( pDisplay != nullptr &&
              pDisplay->getType() == VehicleBase::eType::VBT_Car ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: VEHICLE - DisplayVehicle +0x2b78
+            static_cast<VehicleCar *>( pDisplay )
+                ->setSeatBeltVisible( 0, true );
         }
     }
 
@@ -517,7 +626,8 @@ void EntityDriver::setCarState( CarState *pNewCarState ) {
             setSteer( findNode( "Steer_HR", "Steer_LR" ) );
             setGearLever( findNode( "Gear", nullptr ) );
 
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: VEHICLE
+            static_cast<VehicleCar *>( pDisplay )
+                ->setSeatBeltVisible( 0, !bIsSeating );
         }
     }
 
@@ -669,7 +779,692 @@ void EntityDriver::tick( PlayerGameMech *pGameMech,
         pPooledAvatarEntry->CarBelt.setLowResVisible( bIsSeating );
     }
 
+    if ( gbDriverBaseAnim ) {
+        updateStandDriveRatio( deltaTime );
+        updateBodyPositionFSM( deltaTime );
+        updateGearRatios( deltaTime );
+        updateAnimChannels( deltaTime );
+        updateIKTargets();
+    }
+
     EntityAvatar::tick( pGameMech, deltaTime, totalTime );
+
+    applyDriveBaseAnim();
+}
+
+void EntityDriver::playDriveState( int32_t slot ) {
+    RenderAnm &anim = AnimDrive[slot];
+
+    if ( anim.pAnimState == nullptr && anim.pRefBas != nullptr &&
+         gpScenaric != nullptr ) {
+        anim.pAnimState = gpScenaric->resolveAnimState( nullptr, anim.pRefBas );
+    }
+
+    const AnimStateInstance *pState = anim.pAnimState;
+    if ( anim.File == 0 || pState == nullptr ) {
+        return;
+    }
+
+    std::vector<AnimStateBlendEntry> blendSet;
+    const int32_t numBlendClips = pState->getNumBlendClips();
+    for ( int32_t i = 0; i < numBlendClips; i++ ) {
+        AnimStateBlendEntry entry;
+        if ( pState->getBlendEntry( i, entry ) && entry.pClip != nullptr ) {
+            blendSet.push_back( entry );
+        }
+    }
+    if ( blendSet.empty() ) {
+        return;
+    }
+
+    animation.playChannel( static_cast<int32_t>( pState->getMatchID() ),
+                           anim.ID, blendSet.data(),
+                           static_cast<int32_t>( blendSet.size() ) );
+}
+
+void EntityDriver::applyDriveBaseAnim() {
+    // FUN_007efef0
+    if ( !gbDriverBaseAnim || !bMustPlayAnims || bIsFreeMovement ||
+         !animation.isValid() ) {
+        return;
+    }
+
+    static constexpr int32_t kPlayOrder[kNumDriverAnims] = { 0, 1, 3, 2,
+                                                             4, 5, 6 };
+    for ( int32_t i = 0; i < kNumDriverAnims; i++ ) {
+        playDriveState( kPlayOrder[i] );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC/ANIM - EXPRESSIONS curve channel
+
+    bMustPlayAnims = false;
+
+    buildIKChains();
+}
+
+void EntityDriver::updateAnimChannels( float deltaTime ) {
+    static constexpr float kSlewUp = 2.5f;    // DAT_00f416c0
+    static constexpr float kSlewDown = -2.5f; // DAT_00f41dd8
+    static constexpr float kToNormalised =
+        0.49999749660491943f;                              // _DAT_00f420c0
+    static constexpr float kHandSizeRatio = 0.9999899864f; // DAT_00f41fd0
+
+    if ( pCarState == nullptr || !animation.isValid() ) {
+        return;
+    }
+
+    const float slewUp = deltaTime * kSlewUp;
+    const float slewDown = deltaTime * kSlewDown;
+    float accel = pCarState->getBody()->AccelDiff.z();
+    if ( accel - KeepAccelRatio > slewUp ) {
+        accel = KeepAccelRatio + slewUp;
+    }
+    if ( slewDown > accel - KeepAccelRatio ) {
+        accel = KeepAccelRatio - slewUp;
+    }
+    accel = std::min( std::max( accel, -1.0f ), 1.0f );
+    KeepAccelRatio = accel;
+
+    AnimStateBlendEntry frontBack;
+    frontBack.Weight = 1.0f;
+    frontBack.Ratio = ( accel + 1.0f ) * kToNormalised;
+    animation.setChannelBlendRatios( 1, &frontBack, 1 );
+    animation.setChannelLayer( 1, AnimChannel::ALM_Weighted,
+                               bIsAccelerationAnimPlayed ? 1.0f : 0.0f );
+
+    AnimStateBlendEntry handSize;
+    handSize.Weight = 1.0f;
+    handSize.Ratio = kHandSizeRatio;
+    animation.setChannelBlendRatios( 2, &handSize, 1 );
+
+    float handSizeWeight = 0.0f;
+    if ( pCarHandSize != nullptr ) {
+        handSizeWeight = std::min( std::max( *pCarHandSize, 0.0f ), 1.0f );
+    }
+    animation.setChannelLayer( 2, AnimChannel::ALM_BindDelta, handSizeWeight );
+
+    AnimStateBlendEntry shake;
+    shake.Weight = 1.0f;
+    shake.Ratio = kAnimRatioFollowCurve;
+    animation.setChannelBlendRatios( 3, &shake, 1 );
+    animation.setChannelLayer( 3, AnimChannel::ALM_BindDelta, 1.0f );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC - gear lever / radio hand anims
+    AnimStateBlendEntry handOpen;
+    handOpen.Weight = 1.0f;
+    handOpen.Ratio = 0.0f;
+    animation.setChannelBlendRatios( 4, &handOpen, 1 );
+    animation.setChannelLayer( 4, AnimChannel::ALM_Weighted, 0.0f );
+}
+
+float EntityDriver::updateSteerValue( float deltaTime ) {
+    static constexpr float kSteerStackScale = 0.25f;      // DAT_00f416dc
+    static constexpr float kSteerSmoothRate = 0.3f;       // FLOAT_00f416bc
+    static constexpr float kSteerSmoothMaxStep = 0.05f;   // DAT_00f41778
+    static constexpr float kSteerSmoothGain = 19.999998f; // _DAT_00f41bec
+
+    SteerTimeRatio.CurrentTime += deltaTime;
+
+    if ( pCarState == nullptr ) {
+        return 0.0f;
+    }
+
+    const float wheelSteer = pCarState->getBody()->Steering;
+
+    SteerSM = ( SteerSM - SteerStack[SteerStackIndex] ) + wheelSteer;
+    SteerStack[SteerStackIndex] = wheelSteer;
+    SteerStackIndex++;
+    if ( SteerStackIndex > 3 ) {
+        SteerStackIndex = 0;
+    }
+
+    const CarState::eOwner owner = pCarState->getOwner();
+    if ( owner == CarState::eOwner::CSO_Bot ||
+         owner == CarState::eOwner::CSO_Traffic ) {
+        return SteerSM * kSteerStackScale;
+    }
+
+    const bool bHasSteeringAid = false;
+    if ( bHasSteeringAid ) {
+        if ( deltaTime * kSteerSmoothRate < kSteerSmoothMaxStep ) {
+            LastWheelRatio += ( wheelSteer - LastWheelRatio ) * deltaTime *
+                              kSteerSmoothRate * kSteerSmoothGain;
+        }
+        return LastWheelRatio;
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS - ElectronicParam[12] steer aid
+
+    return wheelSteer;
+}
+
+void EntityDriver::updateSteeringWheel( float steerNormalised ) {
+    // FUN_007ee970
+    static constexpr float kSteerColumnRake = 0.26f;
+    static constexpr float kSteerWheelRange = 2.29999995f;     // _DAT_00f41fb4
+    static constexpr float kSteerWheelHalfRange = 1.14999998f; // DAT_00f416a8
+    static constexpr float kWheelOffsetScale =
+        0.0007874015718698502f;                     // DAT_00f41758
+    static constexpr float kWheelOffsetBias = 0.1f; // FLOAT_00f41668
+
+    if ( pSteer == nullptr ) {
+        return;
+    }
+
+    Matrix4x4f_t steerMatrix = MakeRotationMatX( kSteerColumnRake );
+    steerMatrix( 3, 0 ) = SteerInit( 3, 0 );
+    steerMatrix( 3, 1 ) = SteerInit( 3, 1 );
+    steerMatrix( 3, 2 ) = SteerInit( 3, 2 );
+
+    const float lockAngle =
+        -( steerNormalised * kSteerWheelRange - kSteerWheelHalfRange );
+    const Matrix4x4f_t lockRotation = MakeRotationMatZ( lockAngle );
+    steerMatrix = ( lockRotation * steerMatrix ).eval();
+
+    CameraVehicle *pCamera =
+        ( gpCamera != nullptr ) ? gpCamera->getActiveVehicleCamera() : nullptr;
+    if ( pCamera != nullptr &&
+         ( pCamera->getFlags() & kShowFlagViewCockpit ) != 0 ) {
+        steerMatrix( 3, 1 ) += static_cast<float>( pCamera->getWheelOffset() ) *
+                                   kWheelOffsetScale -
+                               kWheelOffsetBias;
+    }
+
+    pSteer->TransformMatrix = steerMatrix;
+    if ( pSteer->pParent == nullptr ) {
+        pSteer->pInstance->setModelMatrix( pSteer->TransformMatrix );
+    } else {
+        Matrix4x4f_t worldMatrix = pSteer->TransformMatrix *
+                                   pSteer->pParent->pInstance->getModelMatrix();
+        pSteer->pInstance->setModelMatrix( worldMatrix );
+    }
+    pSteer->propagateTransformMatricesNoScale();
+}
+
+void EntityDriver::updateBodyPositionFSM( float deltaTime ) {
+    // FUN_007f05ce
+    static constexpr float kShiftStartSpeed = 5.0f; // DAT_00f41750
+    static constexpr float kHandBackSpeed = 7.0f;   // DAT_00f41844
+    static constexpr float kNeutralHoldTime = 1.0f;
+
+    // Reset EVERY frame, before the FSM - nothing latches.
+    HandsTarget = HT_Wheel;
+
+    if ( pCarState == nullptr ) {
+        return;
+    }
+    PhysicsVehicle *pPhysics = pCarState->getPhysicsVehicle();
+    if ( pPhysics == nullptr || bIsFreeMovement ) {
+        return;
+    }
+
+    const PhysicsVehicle::DrivingGearbox gearbox =
+        pPhysics->getDrivingGearbox();
+    const int32_t shiftState = gearbox.ShiftState;
+    const int32_t currentGear = gearbox.Gear;
+    const float speed = pPhysics->getReportedSpeed();
+    const bool bMechanical = ( GearboxType == GBT_Mechanical );
+
+    switch ( CurrentBodyPosition ) {
+    case DBP_2HandsOnWheel: {
+        const bool bStarting =
+            ( shiftState == 1 ) ? ( LastGear != 0 && kShiftStartSpeed > speed )
+                                : ( shiftState == 3 || shiftState == 5 );
+        if ( bStarting ) {
+            CurrentBodyPosition = DBP_LeverNeutral;
+            if ( bMechanical ) {
+                HandsTarget = HT_GearLever;
+            }
+            TimeInLeverNeutralPos = 0.0f;
+        }
+
+        LastGear = currentGear; // unconditional
+
+        const bool bDown =
+            ( ( static_cast<uint8_t>( LastGear - 1 ) & 1 ) == 0 ) ||
+            currentGear == 1 || currentGear == 0;
+        updateGearLeverNode( bDown ? GearLeverAngleDown : GearLeverAngleUp );
+        break;
+    }
+
+    case DBP_LeverUp:
+    case DBP_LeverDown: {
+        if ( bMechanical ) {
+            HandsTarget = HT_GearLever;
+        }
+        if ( shiftState == 1 && speed > kHandBackSpeed ) {
+            CurrentBodyPosition = DBP_2HandsOnWheel;
+        }
+        if ( bMechanical ) {
+            if ( LastGear != currentGear ) {
+                CurrentBodyPosition = static_cast<eDriverBodyPosition>(
+                    1000 | ( static_cast<uint8_t>(
+                                 ~( static_cast<uint8_t>( LastGear ) - 1 ) ) &
+                             1 ) );
+                LastGear = currentGear;
+            }
+        } else if ( shiftState == 5 ) {
+            CurrentBodyPosition = DBP_LeverDown;
+        } else if ( shiftState == 3 ) {
+            CurrentBodyPosition = DBP_LeverUp;
+        }
+        break;
+    }
+
+    case DBP_LeverNeutral: {
+        TimeInLeverNeutralPos += deltaTime;
+        if ( bMechanical ) {
+            HandsTarget = HT_GearLever;
+        }
+        if ( shiftState == 1 && speed > kHandBackSpeed &&
+             HandsTarget == HT_GearLever &&
+             TimeInLeverNeutralPos >= kNeutralHoldTime ) {
+            CurrentBodyPosition = DBP_2HandsOnWheel;
+        }
+        if ( bMechanical ) {
+            if ( shiftState == 3 || shiftState == 5 ) {
+                CurrentBodyPosition = static_cast<eDriverBodyPosition>(
+                    1000 | ( static_cast<uint8_t>(
+                                 ~( static_cast<uint8_t>( LastGear ) - 1 ) ) &
+                             1 ) );
+            }
+        } else if ( shiftState == 3 ) {
+            CurrentBodyPosition = DBP_LeverUp;
+            bMustPlayGearUpAnim = true;
+        } else if ( shiftState == 5 ) {
+            CurrentBodyPosition = DBP_LeverDown;
+            bMustPlayGearDownAnim = true;
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+void IKInterpolator::restart( bool bHorizontalFirst,
+                              float deltaTime,
+                              float duration,
+                              TimeRatio &timeRatio ) {
+    // FUN_00424ff0
+    bHorizontalTransitionFirst = bHorizontalFirst;
+    timeRatio.CurrentTime = deltaTime;
+    timeRatio.TimeEndInv = 1.0f / duration;
+    LastTarget = CurrentTarget;
+}
+
+const Eigen::Vector4f &IKInterpolator::evaluate( const Eigen::Vector4f &target,
+                                                 const TimeRatio &timeRatio ) {
+    // FUN_00425030
+    const float t = timeRatio.TimeEndInv * timeRatio.CurrentTime;
+
+    if ( !( t < 1.0f ) ) {
+        CurrentTarget = target;
+        return CurrentTarget;
+    }
+
+    Eigen::Vector4f corner;
+    if ( bHorizontalTransitionFirst ) {
+        corner =
+            Eigen::Vector4f( target.x(), LastTarget.y(),
+                             LastTarget.z() + TransitionZOffset, target.w() );
+    } else {
+        corner =
+            Eigen::Vector4f( LastTarget.x(), target.y(),
+                             target.z() + TransitionZOffset, LastTarget.w() );
+    }
+
+    const Eigen::Vector4f control1 =
+        LastTarget + ( corner - LastTarget ) * TangentLength;
+    const Eigen::Vector4f control2 =
+        target + ( corner - target ) * TangentLength;
+
+    const float u = 1.0f - t;
+    const float k = t * 3.0f * u;
+    CurrentTarget = LastTarget * ( u * u * u ) + control1 * ( k * u ) +
+                    control2 * ( k * t ) + target * ( t * t * t );
+    return CurrentTarget;
+}
+
+void EntityDriver::updateGearLeverNode( float angle ) {
+    // FUN_007ee8c0
+    if ( pGearLever == nullptr || GearboxType != GBT_Mechanical ) {
+        return;
+    }
+
+    const Matrix4x4f_t rotation = MakeRotationMatX( angle );
+    pGearLever->TransformMatrix = ( rotation * GearLeverInit ).eval();
+
+    if ( pGearLever->pParent == nullptr ) {
+        pGearLever->pInstance->setModelMatrix( pGearLever->TransformMatrix );
+    } else {
+        Matrix4x4f_t worldMatrix =
+            pGearLever->TransformMatrix *
+            pGearLever->pParent->pInstance->getModelMatrix();
+        pGearLever->pInstance->setModelMatrix( worldMatrix );
+    }
+    pGearLever->propagateTransformMatricesNoScale();
+}
+
+void EntityDriver::updateGearRatios( float deltaTime ) {
+    // FUN_007f07f8
+    static constexpr float kGearIKEpsilon = 1e-5f;  // DAT_00f41710
+    static constexpr float kGearIKHold = 0.98f;     // _DAT_00f420bc
+    static constexpr float kGearTransition = 0.3f;  // FLOAT_00f416bc
+    static constexpr float kMechanicalGate = 0.99f; // DAT_00f41a44
+    static constexpr float kMechanicalRate = 5.0f;  // DAT_00f41750
+    static constexpr float kSequentialRate = 2.5f;  // DAT_00f416c0
+
+    if ( HandsTarget == HT_GearLever && PrevHandsTarget != HT_GearLever ) {
+        HandsTargetTransitionTime = kGearTransition;
+    }
+
+    const float ratio01 = std::min(
+        SteerTimeRatio.TimeEndInv * SteerTimeRatio.CurrentTime, 1.0f );
+
+    const float target = ( HandsTarget == HT_GearLever ) ? 1.0f : 0.0f;
+    const float step = ( 1.0f / HandsTargetTransitionTime ) * deltaTime;
+
+    IKRatioGear = target;
+    if ( target - LastIKRatioGear > step ) {
+        IKRatioGear = LastIKRatioGear + step;
+    }
+    if ( 0.0f - step > IKRatioGear - LastIKRatioGear ) {
+        IKRatioGear = LastIKRatioGear - step;
+    }
+    if ( HandsTarget == HT_GearLever && IKRatioGear > kGearIKHold &&
+         ratio01 < 1.0f ) {
+        IKRatioGear = kGearIKHold;
+    }
+    LastIKRatioGear = IKRatioGear;
+
+    if ( GearboxType == GBT_Mechanical ) {
+        const bool bOddGear =
+            ( ( static_cast<uint8_t>( LastGear ) - 1 ) & 1 ) == 0;
+
+        RatioGearUp = 0.0f;
+        RatioGearDown = 0.0f;
+        if ( IKRatioGear > kMechanicalGate ) {
+            if ( CurrentBodyPosition == DBP_LeverUp ) {
+                RatioGearUp = 1.0f;
+            } else if ( CurrentBodyPosition == DBP_LeverDown ) {
+                RatioGearDown = 1.0f;
+            }
+        }
+
+        const float rate = deltaTime * kMechanicalRate;
+        if ( RatioGearUp - PrevRatioGearUp > rate ) {
+            RatioGearUp = PrevRatioGearUp + rate;
+        }
+        if ( -rate > RatioGearUp - PrevRatioGearUp ) {
+            RatioGearUp = PrevRatioGearUp - rate;
+        }
+        PrevRatioGearUp = RatioGearUp;
+
+        if ( RatioGearDown - PrevRatioGearDown > rate ) {
+            RatioGearDown = PrevRatioGearDown + rate;
+        }
+        if ( -rate > RatioGearDown - PrevRatioGearDown ) {
+            RatioGearDown = PrevRatioGearDown - rate;
+        }
+        PrevRatioGearDown = RatioGearDown;
+
+        if ( CurrentBodyPosition == DBP_LeverDown ) {
+            updateGearLeverNode( ( 1.0f - RatioGearDown ) * GearLeverAngleDown +
+                                 GearLeverAngleUp * RatioGearDown );
+        } else if ( CurrentBodyPosition == DBP_LeverUp ) {
+            updateGearLeverNode( ( 1.0f - RatioGearUp ) * GearLeverAngleUp +
+                                 GearLeverAngleDown * RatioGearUp );
+        }
+        (void)bOddGear; // selects pGearLeverRatio[3] vs [4], channel 5 only
+    } else if ( GearboxType == GBT_Sequential ) {
+        RatioGearUp = 0.0f;
+        RatioGearDown = 0.0f;
+        if ( bMustPlayGearUpAnim ) {
+            RatioGearUp = 1.0f;
+        } else if ( bMustPlayGearDownAnim ) {
+            RatioGearDown = 1.0f;
+        }
+
+        const float rate = deltaTime * kSequentialRate;
+        if ( RatioGearUp - PrevRatioGearUp > rate ) {
+            RatioGearUp = PrevRatioGearUp + rate;
+        }
+        if ( -rate > RatioGearUp - PrevRatioGearUp ) {
+            RatioGearUp = PrevRatioGearUp - rate;
+        }
+        if ( RatioGearDown - PrevRatioGearDown > rate ) {
+            RatioGearDown = PrevRatioGearDown + rate;
+        }
+        if ( -rate > RatioGearDown - PrevRatioGearDown ) {
+            RatioGearDown = PrevRatioGearDown - rate;
+        }
+        PrevRatioGearUp = RatioGearUp;
+        PrevRatioGearDown = RatioGearDown;
+
+        if ( RatioGearUp == 1.0f ) {
+            bMustPlayGearUpAnim = false;
+            PrevRatioGearUp = 0.0f;
+        }
+        if ( RatioGearDown == 1.0f ) {
+            bMustPlayGearDownAnim = false;
+            PrevRatioGearDown = 0.0f;
+        }
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC/ANIM - pGearLeverRatio
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC - radio hand animation
+
+    if ( HandsTarget != PrevHandsTarget ) {
+        IKSteerInterpolator.restart( PrevHandsTarget == HT_Wheel, deltaTime,
+                                     HandsTargetTransitionTime,
+                                     SteerTimeRatio );
+        PrevHandsTarget = HandsTarget;
+    }
+}
+
+void EntityDriver::updateStandDriveRatio( float deltaTime ) {
+    // FUN_007f046f
+    static constexpr float kStandDriveSpeedThreshold = 4.0f;  // DAT_00f418d4
+    static constexpr float kStandDriveSteerDeadZone = 0.001f; // FLOAT_00f4167c
+    static constexpr float kStandDriveSlewUp = 2.5f;          // DAT_00f416c0
+    static constexpr float kStandDriveSlewDown = -2.5f;       // _DAT_00f41dd8
+    static constexpr float kSteerToNormalised =
+        0.49999749660491943f; // _DAT_00f420c0
+
+    if ( pCarState == nullptr ) {
+        return;
+    }
+
+    const float steer = updateSteerValue( deltaTime );
+    const float steerNormalised = ( steer + 1.0f ) * kSteerToNormalised;
+
+    updateSteeringWheel( steerNormalised );
+
+    float weight = 1.0f;
+    if ( pCarState->getBody()->SpeedInKmh >= kStandDriveSpeedThreshold ||
+         std::fabs( steer ) >= kStandDriveSteerDeadZone ) {
+        weight = 0.0f;
+    }
+
+    const float slewUp = deltaTime * kStandDriveSlewUp;
+    if ( slewUp < weight - LastStandDriveWeight ) {
+        weight = LastStandDriveWeight + slewUp;
+    }
+    const float slewDown = deltaTime * kStandDriveSlewDown;
+    if ( weight - LastStandDriveWeight < slewDown ) {
+        weight = LastStandDriveWeight - slewUp;
+    }
+
+    LastStandDriveWeight = weight;
+    StandDriveRatio[0].Weight = weight;
+    StandDriveRatio[0].Ratio = kAnimRatioFollowCurve;
+    StandDriveRatio[1].Weight = 1.0f - weight;
+    StandDriveRatio[1].Ratio = steerNormalised;
+
+    animation.setBlendRatios( StandDriveRatio, 2 );
+}
+
+void EntityDriver::buildIKChains() {
+    static constexpr uint32_t kLeftArmNodes[3] = { 0x74d3d78d, 0xd94546d3,
+                                                   0xd8d4c694 };
+    static constexpr uint32_t kRightArmNodes[3] = { 0xd5d9aac6, 0x4748f02b,
+                                                    0xd6c8b12a };
+    static constexpr uint32_t kLeftLegNodes[3] = { 0xd9b2d508, 0x74cdca98,
+                                                   0xe8d5d492 };
+    static constexpr uint32_t kRightLegNodes[3] = { 0xb4d7252b, 0xcfccb5c6,
+                                                    0xd7d6af3a };
+
+    for ( int32_t i = 0; i < 3; i++ ) {
+        IKLeftHand.NodesID[i] = kLeftArmNodes[i];
+        IKRightHand.NodesID[i] = kRightArmNodes[i];
+        IKLeftFoot.NodesID[i] = kLeftLegNodes[i];
+        IKRightFoot.NodesID[i] = kRightLegNodes[i];
+    }
+
+    IKBack.NodesID[0] = 0x6e6970b8; // "Spine", node 14
+    IKBack.NodesID[1] = 0x6e69a1b8; // "Spine1", node 15
+
+    IKLeftShoulderBelt1.NodeID = 0xe8d2fbbe;  // node 72
+    IKLeftShoulderBelt2.NodeID = 0xe8d2fcbe;  // node 73
+    IKRightShoulderBelt1.NodeID = 0xd4fddb3a; // node 74
+    IKRightShoulderBelt2.NodeID = 0xd4fedb3a; // node 75
+    IKRightHipsBelt.NodeID = 0xd9d0ce95;      // node 76
+    IKLeftHipsBelt.NodeID = 0xd93741e5;       // node 77
+
+    ExpressionList.clear();
+    ExpressionList.append( &IKBack );
+    ExpressionList.append( &IKRightHand );
+    ExpressionList.append( &IKLeftHand );
+    ExpressionList.append( &IKRightFoot );
+    ExpressionList.append( &IKLeftFoot );
+    ExpressionList.append( &IKRightShoulderBelt1 );
+    ExpressionList.append( &IKRightShoulderBelt2 );
+    ExpressionList.append( &IKLeftShoulderBelt1 );
+    ExpressionList.append( &IKLeftShoulderBelt2 );
+    ExpressionList.append( &IKRightHipsBelt );
+    ExpressionList.append( &IKLeftHipsBelt );
+    animation.setExpressionList( &ExpressionList );
+}
+
+void EntityDriver::updateIKTargets() {
+    // FUN_007ee050
+    if ( !bIsUsedIK ) {
+        IKLeftHand.changeDamping( 0.0f, 0.0f );
+        IKRightHand.changeDamping( 0.0f, 0.0f );
+        IKLeftFoot.changeDamping( 0.0f, 0.0f );
+        IKRightFoot.changeDamping( 0.0f, 0.0f );
+        IKBack.changeDamping( 0.0f, 0.0f );
+        return;
+    }
+
+    const Eigen::Vector3f driverOrigin = VTranslation.head<3>();
+
+    const auto resolvePoint = [&]( const SCIKPoint &point ) -> Eigen::Vector3f {
+        Matrix4x4f_t nodeWorld = Matrix4x4f_t::Identity();
+        AccumulateNodeWorldMatrix( point.pNode, nodeWorld );
+
+        Eigen::Vector3f position( nodeWorld( 3, 0 ), nodeWorld( 3, 1 ),
+                                  nodeWorld( 3, 2 ) );
+        if ( point.pOffset != nullptr ) {
+            position = TDUMat4x4MulVec(
+                nodeWorld, Eigen::Vector3f( point.pOffset->Offset.x(),
+                                            point.pOffset->Offset.y(),
+                                            point.pOffset->Offset.z() ) );
+        }
+        return position - driverOrigin;
+    };
+
+    const auto pushTarget = [&]( const SCIKPoint &point,
+                                 AnimExpression &expression,
+                                 AnimTargetParams &target ) {
+        if ( point.pNode == nullptr ) {
+            expression.changeDamping( 0.0f, 0.0f );
+            return;
+        }
+        target.setTarget( resolvePoint( point ), 0.0f );
+        expression.changeDamping( 1.0f, 0.0f );
+    };
+
+    const auto pushRightHand = [&]( const SCIKPoint &point ) {
+        if ( point.pNode == nullptr ) {
+            IKRightHand.changeDamping( 0.0f, 0.0f );
+            return;
+        }
+        const Eigen::Vector3f raw = resolvePoint( point );
+        const Eigen::Vector4f smoothed = IKSteerInterpolator.evaluate(
+            Eigen::Vector4f( raw.x(), raw.y(), raw.z(), 0.0f ),
+            SteerTimeRatio );
+        IKRightHand.TargetParams.setTarget( smoothed.head<3>(), 0.0f );
+        IKRightHand.changeDamping( 1.0f, 0.0f );
+    };
+
+    pushTarget( CarIKPoints[kCarIKPointHandLeft], IKLeftHand,
+                IKLeftHand.TargetParams );
+
+    switch ( HandsTarget ) {
+    case HT_Wheel:
+        pushRightHand( CarIKPoints[kCarIKPointHandRight] );
+        break;
+    case HT_GearLever:
+        pushRightHand( CarIKPoints[kCarIKPointGearLever] );
+        break;
+    case HT_Radio:
+        pushRightHand( CarIKPoints[kCarIKPointRadio] );
+        break;
+    default:
+        IKRightHand.changeDamping( 0.0f, 0.0f );
+        break;
+    }
+    pushTarget( CarIKPoints[kCarIKPointFootRight], IKRightFoot,
+                IKRightFoot.TargetParams );
+    pushTarget( CarIKPoints[kCarIKPointFootLeft], IKLeftFoot,
+                IKLeftFoot.TargetParams );
+    pushTarget( CarIKPoints[kCarIKPointBackLeft], IKBack, IKBack.TargetParams );
+
+    updateBeltTargets();
+}
+
+void EntityDriver::updateBeltTargets() {
+    // FUN_007ee050 (inlined)
+    AnimLinkParams *pBelts[6] = { &IKRightShoulderBelt1, &IKRightShoulderBelt2,
+                                  &IKLeftShoulderBelt1,  &IKLeftShoulderBelt2,
+                                  &IKRightHipsBelt,      &IKLeftHipsBelt };
+    static constexpr int32_t kBeltPoints[6] = {
+        kCarIKPointRightShoulderBelt1, kCarIKPointRightShoulderBelt2,
+        kCarIKPointLeftShoulderBelt1,  kCarIKPointLeftShoulderBelt2,
+        kCarIKPointRightHipsBelt,      kCarIKPointLeftHipsBelt };
+
+    if ( !bIsUsedIK && !bIsSeating ) {
+        for ( AnimLinkParams *pBelt : pBelts ) {
+            pBelt->changeDamping( 0.0f, 0.0f );
+        }
+        return;
+    }
+
+    if ( pSeatModel == nullptr ) {
+        return;
+    }
+
+    Matrix4x4f_t seatWorld = Matrix4x4f_t::Identity();
+    AccumulateNodeWorldMatrix( pSeatModel, seatWorld );
+
+    const Eigen::Vector3f driverOrigin = VTranslation.head<3>();
+
+    for ( int32_t i = 0; i < 6; i++ ) {
+        const SCIKOffset *pOffset = CarIKPoints[kBeltPoints[i]].pOffset;
+        if ( pOffset == nullptr ) {
+            continue;
+        }
+
+        const Eigen::Vector3f anchor = TDUMat4x4MulVec(
+            seatWorld,
+            Eigen::Vector3f( pOffset->Offset.x(), pOffset->Offset.y(),
+                             pOffset->Offset.z() ) );
+
+        pBelts[i]->TargetParams.setTarget( anchor - driverOrigin, 0.0f );
+        pBelts[i]->changeDamping( 1.0f, 0.0f );
+    }
 }
 
 bool EntityDriver::draw( RenderScene *pScene ) {
@@ -707,6 +1502,45 @@ bool EntityDriver::draw( RenderScene *pScene ) {
 
     EntityAvatar::draw( pScene );
     return true;
+}
+
+int32_t EntityDriver::getRenderSceneID() {
+    // FUN_007ec180
+    CameraGame *pCamera =
+        ( gpCamera != nullptr ) ? gpCamera->getActiveCamera() : nullptr;
+    if ( pCamera == nullptr ) {
+        return EntityAvatar::getRenderSceneID();
+    }
+
+    eRenderPass renderPass = eRenderPass::RP_Invalid;
+    const bool bIsPlayerDriver = ( avatarType == kAvatarTypeDriver );
+
+    if ( !bIsPlayerDriver ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_WORLD
+        renderPass = eRenderPass::RP_NearOpaque;
+    }
+
+    const uint32_t showFlags = pCamera->getFlags();
+    const bool bInGarage =
+        ( gpTestDriveInstance != nullptr &&
+          gpTestDriveInstance->getActiveGameMode() == GM_Garage );
+    if ( ( showFlags & ( kShowFlagViewCockpit | kShowFlagViewHood ) ) != 0 &&
+         bIsPlayerDriver && !bInGarage ) {
+        renderPass = eRenderPass::RP_Cockpit;
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO - forced cockpit scene
+
+    if ( renderPass == eRenderPass::RP_Invalid ) {
+        return EntityAvatar::getRenderSceneID();
+    }
+
+    if ( AlphaSceneSlot != -1 && gpMngCarAlpha != nullptr ) {
+        renderPass = gpMngCarAlpha->bindAndGetRenderPassForAlpha(
+            renderPass, static_cast<uint32_t>( AlphaSceneSlot ) );
+    }
+
+    return renderPass;
 }
 
 void EntityDriver::setHeadVisible( bool bVisible ) {

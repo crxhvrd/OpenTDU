@@ -462,6 +462,32 @@ inline Eigen::Quaternionf SlerpNoFlip( const Eigen::Quaternionf &q0,
                                a * q0.z() + b * q1.z() );
 }
 
+inline Eigen::Quaternionf QuaternionSlerpShortest(
+    const Eigen::Quaternionf &from, const Eigen::Quaternionf &to, float frac ) {
+    // FUN_00502100
+    float dot = from.x() * to.x() + from.y() * to.y() + from.z() * to.z() +
+                from.w() * to.w();
+
+    Eigen::Quaternionf target = to;
+    if ( dot < 0.0f ) {
+        target = Eigen::Quaternionf( -to.w(), -to.x(), -to.y(), -to.z() );
+        dot = -dot;
+    }
+
+    dot = std::max( -1.0f, std::min( 1.0f, dot ) );
+    const float theta = acosf( dot );
+    const float s = sinf( theta );
+    if ( s < kQuaternionEpsilon ) {
+        return target;
+    }
+
+    const float a = sinf( ( 1.0f - frac ) * theta ) / s;
+    const float b = sinf( frac * theta ) / s;
+    return Eigen::Quaternionf(
+        a * from.w() + b * target.w(), a * from.x() + b * target.x(),
+        a * from.y() + b * target.y(), a * from.z() + b * target.z() );
+}
+
 inline Eigen::Vector4f QuaternionLog( const Eigen::Quaternionf &param_2 ) {
     // FUN_00502260
     if ( fabsf( param_2.w() ) < kOne ) {

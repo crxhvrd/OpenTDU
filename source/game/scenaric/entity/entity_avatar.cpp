@@ -40,6 +40,8 @@ EntityAvatar::EntityAvatar()
       CineAvatarMode( 0 ),
       InstanceRefCount( 1 ),
       HeadBoneIndex( 0 ),
+      pUseSkeleton( nullptr ),
+      avatarSkeleton(),
       HelmetLinkBoneHC( kHeadBoneHashcode ),
       bNeedToRefreshFace( false ),
       bForceShowHelmet( false ),
@@ -111,23 +113,43 @@ void EntityAvatar::tick( PlayerGameMech *pGameMech,
 
     if ( RenderLOD != 0 ) {
         if ( pPooledAvatarEntry != nullptr ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — skeleton/resource/
-                                     // attachment sync
+            void *pEntrySkeleton = pPooledAvatarEntry->pSkeleton;
+            if ( pEntrySkeleton != nullptr && pUseSkeleton != pEntrySkeleton ) {
+                onSkeletonChange( pEntrySkeleton );
+            }
+
+            if ( bIsToUpdate != pPooledAvatarEntry->bUpdatable ) {
+                onResourceChange();
+                bIsToUpdate = pPooledAvatarEntry->bUpdatable;
+            }
+
+            if ( pBehavior != nullptr ) {
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+            }
+
+            if ( bNeedToRefreshFace ) {
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — face morph
+            }
         }
 
         EntityActor::tick( pGameMech, deltaTime, totalTime );
 
-        if ( pPooledAvatarEntry != nullptr && gpAvatar != nullptr ) {
-            pPooledAvatarEntry->setBones(
-                gpAvatar->getIdentityBonePalette( 0 ) );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — edAnm bone palette
+        if ( pPooledAvatarEntry != nullptr ) {
+            Matrix4x4f_t *pPalette =
+                animation.isValid() ? animation.getPalette() : nullptr;
+            if ( pPalette != nullptr ) {
+                pPooledAvatarEntry->setBones( pPalette );
+            } else if ( gpAvatar != nullptr ) {
+                // REMOVEME: use APose for now
+                pPooledAvatarEntry->setBones(
+                    gpAvatar->getIdentityBonePalette( 0 ) );
+            }
         }
 
         unknownActorFunc();
 
-        if ( pPooledAvatarEntry != nullptr ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — head update + shadow
-                                     // caster
+        if ( animation.isValid() && pPooledAvatarEntry != nullptr ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — head bone update
         }
     }
 
@@ -387,14 +409,30 @@ int32_t EntityAvatar::chooseLODLevel() {
 
 void EntityAvatar::onSkeletonChange( void *pSkeleton ) {
     // FUN_007f7c80
-    HelmetLinkBoneHC = kHeadBoneHashcode;
-    HeadBoneIndex = 0;
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
+    animation.terminate();
+
+    if ( pPooledAvatarEntry != nullptr &&
+         pPooledAvatarEntry->pAnimBuffer != nullptr &&
+         avatarSkeleton.wrapBlob( pSkeleton ) ) {
+        animation.initialize( &avatarSkeleton, nullptr );
+        animation.setNumChannels( NumMaxLayers );
+    }
+
+    if ( pBehavior != nullptr ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — behavior skeleton notify
+    }
+
+    pUseSkeleton = pSkeleton;
+
+    if ( animation.isValid() ) {
+        HelmetLinkBoneHC = kHeadBoneHashcode;
+        HeadBoneIndex = avatarSkeleton.findNode( kHeadBoneHashcode );
+    }
 }
 
 void EntityAvatar::onResourceChange() {
     // FUN_007f8190
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
     bNeedToRefreshFace = true;
 }
 

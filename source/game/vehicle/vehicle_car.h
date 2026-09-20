@@ -79,6 +79,9 @@ private:
                         const EigenTransform &transformB,
                         const float T );
 
+public:
+    void setSeatBeltVisible( int32_t seat, bool bVisible );
+
 private:
     static constexpr int32_t kMaxNumBelts = 2;
     static constexpr int32_t kMaxNumWindows = 2; // Num animated windows

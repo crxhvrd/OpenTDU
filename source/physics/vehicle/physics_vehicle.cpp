@@ -1755,6 +1755,7 @@ PhysicsVehicle::DrivingGearbox PhysicsVehicle::getDrivingGearbox() const {
     out.bEngineFiring = ( vehicle.Engine.State == eEngineState::ES_Running ||
                           vehicle.Engine.State == eEngineState::ES_Stalling );
     out.bShiftIdle = ( g.ShiftState == PhysicsGearboxSim::SS_InGear );
+    out.ShiftState = g.ShiftState;
     out.bEngineRunning = ( vehicle.Engine.State == eEngineState::ES_Running );
     out.ShiftDirection = 0;
     if ( g.ShiftState == PhysicsGearboxSim::SS_UpshiftStart ||
@@ -1779,7 +1780,6 @@ void PhysicsVehicle::setCurrentGear( int32_t gear ) {
 void PhysicsVehicle::setAutomaticGearbox( bool bAutomatic ) {
     vehicle.GearBox.bAutomatic = bAutomatic;
 }
-
 
 void PhysicsVehicle::requestUpshift() {
     // FUN_00439de0
@@ -3252,6 +3252,27 @@ float PhysicsVehicle::getChassisSpeed() const {
     const JPH::Vec3 v = pPhysicsSystem->GetBodyInterface().GetLinearVelocity(
         pChassisBody->GetID() );
     return JPH::Vec3( v.GetX(), 0.0f, v.GetZ() ).Length();
+}
+
+float PhysicsVehicle::getReportedSpeed() const {
+    // FUN_0083bbd0
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return 0.0f;
+    }
+
+    const JPH::Vec3 v = pPhysicsSystem->GetBodyInterface().GetLinearVelocity(
+        pChassisBody->GetID() );
+    const float chassisSpeed = v.Length();
+
+    if ( vehicle.NumWheels <= 0 ) {
+        return chassisSpeed;
+    }
+
+    const PhysicsWheelState &wheel = vehicle.Wheels[0];
+    const float wheelSurfaceSpeed =
+        std::fabs( wheel.AngularVel * wheel.Radius );
+
+    return std::min( chassisSpeed, wheelSurfaceSpeed );
 }
 
 Eigen::Vector4f PhysicsVehicle::getChassisVelocity() const {

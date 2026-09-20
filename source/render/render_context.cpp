@@ -1732,7 +1732,7 @@ void RenderContext::submitDrawListToBucket( DrawList *param_2 ) {
         }
 
         SetupGraph *peVar4 = param_2->getSetupAtIndex( iVar6 );
-        if ( ( ( ~( peVar7->FXFlags >> 3 ) & 1 ) != 0 ) &&
+        if ( ( peVar7->FXFlags & kMaterialFXHidden ) == 0 &&
              pActiveScene->FUN_00508930( peVar7 ) ) {
             const Matrix4x4f_t &modelMatrix =
                 param_2->getMatrixAtIndex( iVar6 );
@@ -1791,7 +1791,7 @@ void RenderContext::submitHeightmap( Heightmap *param_1, Instance *param_2 ) {
             }
         }
 
-        if ( ~( peVar7->FXFlags >> 3 & 1 ) != 0 &&
+        if ( ( peVar7->FXFlags & kMaterialFXHidden ) == 0 &&
              pActiveScene->FUN_00508930( peVar7 ) ) {
             AddPrimToBucket( peVar7, param_2, pPrimitive, 1u,
                              param_1->BoundingSphere, param_2->getLODs() );
@@ -1827,7 +1827,7 @@ void RenderContext::submitObject( RenderObject *param_1, Instance *param_2 ) {
                     }
                 }
 
-                if ( ~( peVar7->FXFlags >> 3 & 1 ) != 0 &&
+                if ( ( peVar7->FXFlags & kMaterialFXHidden ) == 0 &&
                      pActiveScene->FUN_00508930( peVar7 ) ) {
                     AddPrimToBucket( peVar7, param_2, pPrimitive, 0u,
                                      param_1->BoundingSphere, nullptr );
@@ -1854,7 +1854,7 @@ void RenderContext::submitInstanceWithCustomMaterial(
             for ( uint32_t i = 0; i < param_2->NumPrimitives; i++ ) {
                 Primitive *pPrimitive = (Primitive *)( peVar4Bytes + 0x10 );
 
-                if ( ~( peVar2->FXFlags >> 3 & 1 ) != 0 &&
+                if ( ( peVar2->FXFlags & kMaterialFXHidden ) == 0 &&
                      pActiveScene->FUN_00508930( peVar2 ) ) {
                     AddPrimToBucket( peVar2, peVar1, pPrimitive, 0u,
                                      param_2->BoundingSphere, nullptr );
