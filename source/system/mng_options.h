@@ -26,18 +26,47 @@ struct VideoResolutionOption {
     std::vector<uint32_t> RefreshRates;
 };
 
+struct AudioMixerControlDesc {
+    const char *pVarName;   // e.g. "/:vol_Engine"
+    const char *pGaugeName; // e.g. "/gauge_1/slider/mute"
+    const char *pMixerName; // e.g. "MixerVehicle"
+};
+
 class AudioOptions {
+public:
+    static constexpr int32_t kNumMixerControls = 9;
+
 public:
     AudioOptions();
     ~AudioOptions();
 
     void tick();
+    void bindFlashPlayer( FlashPlayer *pFlashPlayer, int32_t orientation );
 
     void selectVolumeControl( const char *pVarName );
     void setMuteGauge( const char *pWhatGauge );
-    void applySpeakerMode();
-    void resetActiveControl();
+    void applyVolumes();
+    void refreshControls();
     void deactivate();
+
+private:
+    struct MixerControl {
+        FlashSlider Slider;
+        struct Mixer *pMixer = nullptr;
+        const AudioMixerControlDesc *pDesc = nullptr;
+        FlashPlayer *pFlashPlayer = nullptr;
+        bool bMuted = false;
+
+        inline bool isValid() const { return pMixer != nullptr; }
+
+        void refreshFromMixer();
+        void toggleMute();
+        void showMuteFrame() const;
+    };
+
+private:
+    MixerControl controls[kNumMixerControls];
+    bool bActive;
 };
 
 class MngOptions : public Manager, public PopupCallback, public FlashEntity {
@@ -73,6 +102,18 @@ private:
     static constexpr size_t kNumLocalizedStrings = 9;
     static constexpr size_t kLocalizedStringLength = 0x40;
 
+    class VideoRevertedCallback : public PopupCallback {
+    public:
+        MngOptions *pOwner = nullptr;
+        void onClose( ePopupAnswer answer, void *, int32_t ) override;
+    };
+
+    class VideoApplyCallback : public PopupCallback {
+    public:
+        MngOptions *pOwner = nullptr;
+        void onClose( ePopupAnswer answer, void *, int32_t ) override;
+    };
+
 private:
     FlashSlider padSensitivitySlider;
     FlashSlider padLinearitySlider;
@@ -107,11 +148,17 @@ private:
     int32_t languageRefreshStep;
     int32_t lodQuality;
     eDisplayMode displayMode;
+    eAntiAliasingMethod antiAliasingMode;
     uint32_t videoWidth;
     uint32_t videoHeight;
     uint32_t refreshRate;
-    eAntiAliasingMethod antiAliasingMode;
+    eAntiAliasingMethod activeAntiAliasingMode;
+    eDisplayMode activeDisplayMode;
+    bool bActiveHDREnabled;
     AudioOptions *pAudioOptions;
+
+    VideoRevertedCallback videoRevertedCallback;
+    VideoApplyCallback videoApplyCallback;
 
     char pLocalizedStrings[kNumLocalizedStrings][kLocalizedStringLength];
     bool field30_0x80c;
@@ -146,16 +193,16 @@ private:
     void showPreviousDisplayMode();
     void FUN_006c7b80();
     void FUN_006c7950( bool param_1 );
-    void FUN_006c6730( int32_t param_1 );
+    void applyAudioLanguage( const eLocale locale );
     void FUN_006c7fb0();
     void FUN_006c6db0();
+    void commitPlayerOptions();
     void flashGPSOption();
-    void FUN_006c61b0();
-    void FUN_006c6a00();
+    void revertSystemParameters();
+    void toggleHDR();
 
-    void FUN_006c7190();
-    void FUN_006c71d0();
-    void FUN_006c7210();
+    void showNextLODQuality();
+    void showPreviousLODQuality();
     void showLanguageLabel();
     void enterSeatSetupCamera();
     void requestSaveToDevice( bool bOverwrite );

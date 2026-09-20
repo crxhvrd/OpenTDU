@@ -195,6 +195,7 @@ public:
     void parseRadioIni();
     void parseWeatherAndFXInis();
     void parseLeaderboardIni();
+    void parseDeviceIni();
 
     bool onConfigurationChanged() override;
 
@@ -256,8 +257,8 @@ private:
     bool parseIniFile( const char *pPath );
 
     void parseAudioIni();
-    void parseDeviceIni();
-    void applyDefaultPadMapping(); // TODO: REMOVEME: Remove once PCOptions control mapping lands
+    void applyDefaultPadMapping(); // TODO: REMOVEME: Remove once PCOptions
+                                   // control mapping lands
 
     bool loadIniFromBootData( const char *pIniPath,
                               char **ppOutIni,

@@ -50,6 +50,14 @@ public:
     void terminate() override;
     void tick( const float deltaTime ) override;
     void newGame( const bool bInstallCheats ) override;
+    void newGameWithCheats();
+    bool installCheatCars();
+    uint32_t allocateCarUniqueID();
+
+private:
+    void grantStarterHouse( const uint64_t houseHashcode );
+
+public:
     void clear() override;
     void setCurrentCar( const uint16_t index );
 
@@ -57,20 +65,20 @@ public:
     void serialize( edStore &stream );
 
 private:
-    Driver driver;                       
-    SavedCarReserve carReserve;          
-    Garage garage;                        
-    SavedRanking ranking;                 
-    SavedMailbox mailbox;                
-    SavedNewsList newsList;              
-    uint32_t nextCarUniqueID;             
-    SavedItemTable itemTable;            
-    SavedAvatar avatar;                   
-    SavedRoadDiscovery roadDiscovery;   
-    SavedStringTable stringTable;         
-    AchievementsData achievements;       
-    SavedExtraChallenges extraChallenges; 
-    int32_t numPendingOperations;        
-    bool bInitialized;                  
-    int32_t saveIndex;                   
+    Driver driver;
+    SavedCarReserve carReserve;
+    Garage garage;
+    SavedRanking ranking;
+    SavedMailbox mailbox;
+    SavedNewsList newsList;
+    uint32_t nextCarUniqueID;
+    SavedItemTable itemTable;
+    SavedAvatar avatar;
+    SavedRoadDiscovery roadDiscovery;
+    SavedStringTable stringTable;
+    AchievementsData achievements;
+    SavedExtraChallenges extraChallenges;
+    int32_t numPendingOperations;
+    bool bInitialized;
+    int32_t saveIndex;
 };

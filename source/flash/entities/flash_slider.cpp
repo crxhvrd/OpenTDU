@@ -32,6 +32,9 @@ static constexpr FlashMessage kArrowDown( "arwd" );
 static constexpr FlashMessage kArrowUp( "arwu" );
 static constexpr FlashMessage kPrga( "prga" );
 
+static constexpr const char *kSliderSFXName = "ig_move:grpShift";
+static constexpr const char *kSliderSFXGroup = "grpShift";
+
 FlashSlider::FlashSlider()
     : velocity( 1.0f ),
       value( 0.0f ),
@@ -40,7 +43,7 @@ FlashSlider::FlashSlider()
       varName( "" ),
       index( 0 ),
       isVertical( 0 ),
-      unknownDword( 0 ),
+      dragAxis( 0 ),
       bLeftPressed( false ),
       bRightPressed( false ),
       bHasFocus( false ),
@@ -76,7 +79,7 @@ FlashSlider::~FlashSlider() {
     }
 
     if ( bSFXPlaying != false ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO
+        gpFlash->getFlashSound()->stopGroup( kSliderSFXGroup, 0.0f );
         bSFXPlaying = false;
     }
 }
@@ -86,7 +89,7 @@ void FlashSlider::setFocusState( bool param_2 ) {
     bHasFocus = param_2;
     bDoNotRepeat = false;
     if ( bSFXPlaying ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO:
+        gpFlash->getFlashSound()->stopGroup( kSliderSFXGroup, 0.0f );
         bSFXPlaying = false;
     }
 }
@@ -136,7 +139,6 @@ void FlashSlider::setValue( float param_1 ) {
                     bDoNotRepeat = false;
                     bDirty = true;
                 } else if ( bDoNotRepeat == false ) {
-                    OTDU_UNIMPLEMENTED; // TODO: AUDIO
                     stopSFXValueChanged();
                     bDoNotRepeat = true;
                 }
@@ -153,13 +155,12 @@ void FlashSlider::tick( float param_1 ) {
     bDirty = false;
     if ( bHasFocus != false ) {
         gpDevice->retrieveFlashNavKeyStates( &bLeftPressed, &bRightPressed,
-                                             true, unknownDword == 0,
-                                             isVertical );
+                                             true, dragAxis == 0, isVertical );
 
         bool bVar1 = false;
         bool bVar2 = false;
         const MouseState &mouseState = gpDevice->getMouseState();
-        if ( unknownDword == 0 ) {
+        if ( dragAxis == 0 ) {
             if ( ( mouseState.pChannelWheelDown == nullptr ) ||
                  ( bVar2 = true,
                    ( mouseState.pChannelWheelDown->Flags & 0x80 ) == 0 ) ) {
@@ -228,7 +229,7 @@ void FlashSlider::tick( float param_1 ) {
             field20_0x6b = false;
         }
         if ( ( bDirty == false ) && ( bSFXPlaying != false ) ) {
-            OTDU_UNIMPLEMENTED; // TODO: AUDIO
+            gpFlash->getFlashSound()->stopGroup( kSliderSFXGroup, 0.0f );
             bSFXPlaying = false;
         }
     }
@@ -240,7 +241,7 @@ void FlashSlider::disable() {
     bDoNotRepeat = false;
 
     if ( bSFXPlaying ) {
-        OTDU_UNIMPLEMENTED; // TODO:AUDIO ("grpShift")
+        gpFlash->getFlashSound()->stopGroup( kSliderSFXGroup, 0.0f );
         bSFXPlaying = false;
     }
 }
@@ -335,11 +336,11 @@ void FlashSlider::FUN_0071baf0() {
                                                FStack_50 );
 
                 float fVar2 = 0.0f;
-                if ( unknownDword == 0 ) {
+                if ( dragAxis == 0 ) {
                     fVar2 =
                         ( gEdFlash.Input.MouseCoordinates[0] - FStack_50.X ) /
                         FStack_50.Width;
-                } else if ( unknownDword == 1 ) {
+                } else if ( dragAxis == 1 ) {
                     fVar2 = 1.0f - ( gEdFlash.Input.MouseCoordinates[1] -
                                      FStack_50.Y ) /
                                        FStack_50.Height;
@@ -356,7 +357,7 @@ void FlashSlider::FUN_0071baf0() {
 void FlashSlider::playSFXValueChanged() {
     // FUN_0071b920
     if ( !bSFXPlaying ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO
+        gpFlash->getFlashSound()->playFrontEndSound( kSliderSFXName, 1, false );
         bSFXPlaying = true;
     }
 }
@@ -364,7 +365,7 @@ void FlashSlider::playSFXValueChanged() {
 void FlashSlider::stopSFXValueChanged() {
     // FUN_0071b890
     if ( bSFXPlaying ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO
+        gpFlash->getFlashSound()->stopGroup( kSliderSFXGroup, 0.0f );
         bSFXPlaying = false;
     }
 }

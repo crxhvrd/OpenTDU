@@ -71,6 +71,11 @@ public:
     void deserialize( edStore &stream );
     void serialize( edStore &stream ) const;
     void setArchetype( const uint32_t configID );
+    void setup( const uint32_t configID,
+                const int32_t paintIndex,
+                const int32_t rimID,
+                const int32_t interiorID,
+                const uint32_t carID );
 
     uint32_t getCarConfigID() const;
     void setCarConfigID( const uint32_t configID );

@@ -5,6 +5,8 @@
 
 class edStore;
 
+int32_t GetHouseNumGarageSlots( const uint64_t houseHashcode );
+
 // One slot of the player garage (a car + where it is parked)
 class GarageSlot : public CarDesc {
 public:
@@ -48,6 +50,9 @@ public:
 
     bool isHouseOwned( const uint64_t houseHashcode ) const;
     int32_t getNumOwnedHouses() const;
+
+    bool addHouse( const uint64_t houseHashcode );
+    void removeHouse( const uint64_t houseHashcode );
 
 public:
     int16_t numCars = 0;

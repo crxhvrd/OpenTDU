@@ -171,6 +171,10 @@ public:
     bool isBike( DBEntryCarPhysicsData *param_1 );
     bool isTraffic( DBEntryCarPhysicsData *param_1 );
 
+    DBEntryCarShop *getCarShopBySpotName( uint64_t spotHashcode );
+    bool isCarShopSlotAvailable( DBEntryCarShop *pCarShop, int32_t slotIndex );
+    int32_t getNumCarsAvailableInShop( DBEntryCarShop *pCarShop );
+
     int32_t getNumRims( int32_t carID );
     int32_t getNumColors( int32_t carID );
     DBEntryCarColor *getColorByIndex( int32_t carID, int32_t param_3 );
@@ -178,6 +182,13 @@ public:
                                       int32_t param_3 );
     DBEntryInterior *getInteriorByIndex( DBEntryCarColor *param_2,
                                          int32_t param_3 );
+
+private:
+    struct CarShopStockEntry {
+        DBEntryCarShop *pCarShop;
+        int32_t NumCarsAvailable;
+    };
+    static constexpr int32_t kNumCarShopStockEntries = 0x78;
 
 private:
     CommonDB engineDatabase;
@@ -193,6 +204,7 @@ private:
     std::vector<char> injectedDbText;
     std::vector<char> injectedDbList;
     std::vector<void *> retiredAllocations;
+    CarShopStockEntry carShopStockCache[kNumCarShopStockEntries];
 
     std::vector<CarConfig> cars;
     char pActiveLanguage[3];

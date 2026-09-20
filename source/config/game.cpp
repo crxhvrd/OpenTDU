@@ -400,7 +400,10 @@ void GSConfig::registerGameCommands() {
     registerCommand( "DEFAULTHOUSE", [&]( const char *pArg ) {
         // FUN_009845d0
         OTDU_ASSERT( pArg != nullptr );
-        gDefaultHouse = pArg;
+
+        std::string argStr( pArg );
+        size_t it = 0;
+        gDefaultHouse = ParseString( argStr, it );
     } );
 
     registerCommand( "DEFAULTMONEY", [&]( const char *pArg ) {
@@ -410,7 +413,8 @@ void GSConfig::registerGameCommands() {
 
     registerCommand( "ALLHOUSESWITHDEFCARS", [&]( const char *pArg ) {
         // FUN_009845a0
-        gbAllHousesWithDefCar = kDevCheatsEnabled;
+        gbAllHousesWithDefCar =
+            kDevCheatsEnabled && ( strcmp( pArg, "TRUE" ) == 0 );
     } );
 
     registerCommand( "SERVER", [&]( const char *pArg ) {

@@ -44,13 +44,15 @@ public:
     using GameMode::onMessage;
     bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer );
 
+    static void RequestNewGame();
+    static void ChangeProfile( const uint64_t profileHashcode );
+
 private:
     bool isMenuClipVisible();
     static bool HasInputActivity();
 
     void resumeSavedGame();
     void startNewGame();
-    void changeProfile( const uint64_t profileHashcode );
 
 private:
     MngFade fade;

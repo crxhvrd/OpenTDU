@@ -100,6 +100,9 @@ private:
     void handlePendingPopupAnswer();
     void settlePoliceFine();
     void gatherProfileEntries();
+    void selectProfile();
+    void switchToLoginGameMode();
+    void beginProfileChange();
 
 private:
     MngOptions mngOptions;

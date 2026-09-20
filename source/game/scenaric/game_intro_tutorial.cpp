@@ -1,12 +1,15 @@
 #include "shared.h"
 #include "game_intro_tutorial.h"
 
+#include "game/game_cheats.h"
 #include "game/gm_base.h"
 #include "game/gs_tutorial.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_save.h"
+#include "player_data/saved_garage.h"
 #include "player_data/player_data_interface.h"
 
 #include "tdu_instance.h"
@@ -24,7 +27,8 @@ GameIntroTutorial::GameIntroTutorial()
       carIDRental( 0 ),
       bModalHintVisible( false ),
       bMapForIntro( true ),
-      bMustTeleport( false ) {}
+      bMustTeleport( false ),
+      bInstallingCheatCars( false ) {}
 
 GameIntroTutorial::~GameIntroTutorial() {}
 
@@ -57,6 +61,14 @@ void GameIntroTutorial::reset() {
 
 void GameIntroTutorial::tick() {
     // FUN_007fcaf0
+    if ( bInstallingCheatCars ) {
+        IPlayerData *pSave = gpPlayerData->getLoadedSave();
+        if ( pSave != nullptr &&
+             static_cast<PlayerSave *>( pSave )->installCheatCars() ) {
+            bInstallingCheatCars = false;
+        }
+    }
+
     if ( tutorialStep != kTutorialStatePending ) {
         if ( tutorialStep == kTutorialStateFirstDrive && bMustTeleport ) {
             OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (tutorial teleport)
@@ -126,6 +138,18 @@ void GameIntroTutorial::beginStep( const int32_t step, const int32_t ) {
     // FUN_007fc1b0
     switch ( step ) {
     case kTutorialStateIntro:
+        if ( gbNewGameSkipIntro ) {
+            IPlayerData *pLoadedSave = gpPlayerData->getLoadedSave();
+            if ( pLoadedSave != nullptr &&
+                 pLoadedSave->getGarage()->getNumOwnedHouses() == 0 ) {
+                bInstallingCheatCars = !static_cast<PlayerSave *>( pLoadedSave )
+                                            ->installCheatCars();
+            }
+
+            setStep( kTutorialStateRunning );
+            return;
+        }
+
         gpActiveGameMode->requestExit();
         gpTestDriveInstance->setNextGameMode( GM_Intro );
         return;

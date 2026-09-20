@@ -3,13 +3,12 @@
 // TODO: Temporary header; will move those
 // globals to the right place later
 
-
 // Enables cheats:
 // -UNLOCKALLROADS
 // -DELOCKCHALLENGESROADS
 // -ALLHOUSESWITHDEFCARS
 // -DEFAULTMONEY
-// 
+//
 // Off in non devbuilds to match what the original binary did.
 #ifdef OTDU_DEVBUILD
 static constexpr bool kDevCheatsEnabled = true;
@@ -17,12 +16,12 @@ static constexpr bool kDevCheatsEnabled = true;
 static constexpr bool kDevCheatsEnabled = false;
 #endif
 
-static bool gbAllHousesWithDefCar = false;      // DAT_010e7538
-static int32_t gDefaultMoney = 100000000;       // DAT_00f7f574
-static std::string gDefaultHouse = "EPH_L3A_F"; // DAT_00f7f528
-static std::vector<int32_t> gDefaultGarageConfig = {
-    0x75, 0x3f4, 0xe6, 0x6b, 0x72, 0xca, 0x70, -1 }; // DAT_00f7f548
-
-static bool gbGMEDesigner = false;       // DAT_010e7ce0
-static bool gbICESolo = false;           // DAT_010e7c31
-static bool gbAllChallengesSolo = false; // DAT_010e7c32
+extern bool gbAllHousesWithDefCar;
+extern int32_t gDefaultMoney;
+extern std::string gDefaultHouse;
+extern std::vector<int32_t> gDefaultGarageConfig;
+extern bool gbInstallCheatCars;
+extern bool gbNewGameSkipIntro;
+extern bool gbGMEDesigner;
+extern bool gbICESolo;
+extern bool gbAllChallengesSolo;

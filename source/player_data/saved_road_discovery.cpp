@@ -50,3 +50,10 @@ uint64_t SavedRoadDiscovery::getBlock( const int32_t index ) const {
 void SavedRoadDiscovery::setBlock( const int32_t index, const uint64_t value ) {
     TestDriveTEAWriteQword( pBlocks[index], value );
 }
+
+bool SavedRoadDiscovery::isRoadLocked( const int32_t roadID ) const {
+    // FUN_0040ab10
+    const int32_t blockIndex = roadID / 64;
+    const int32_t bitIndex = roadID % 64;
+    return ( getBlock( blockIndex ) & ( 1ull << bitIndex ) ) == 0ull;
+}
