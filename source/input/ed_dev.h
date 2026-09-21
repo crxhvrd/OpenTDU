@@ -9,6 +9,7 @@ class DeviceMouse;
 class DeviceKeyboard;
 class DeviceJoystick;
 enum class eDeviceType : uint32_t;
+enum class eDeviceSpecialization : uint32_t;
 
 struct InputActionBinding {
     const char *pName;
@@ -133,6 +134,9 @@ public:
 
     int32_t getDeviceID( const std::string &param_1, const int32_t param_2 );
     Device *getDevice( eDeviceType param_1, int32_t param_2 );
+    Device *getDevice( eDeviceType param_1,
+                       eDeviceSpecialization param_2,
+                       int32_t param_3 );
 
     void tick( float param_1 );
 

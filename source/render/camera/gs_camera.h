@@ -51,6 +51,7 @@ public:
     inline CarState *getBoundCarState() const { return pTarget; }
 
     inline CameraGame *getActiveCamera() { return pActiveVehicleCamera; }
+    inline CameraGame *getPreviousCamera() { return pPrevCamera; }
     inline CameraVehicle *getActiveVehicleCamera() {
         return pActiveVehicleCamera;
     }

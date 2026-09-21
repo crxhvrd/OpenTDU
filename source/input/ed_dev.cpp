@@ -278,6 +278,34 @@ Device *edDev::getDevice( eDeviceType param_1, int32_t param_2 ) {
     return nullptr;
 }
 
+Device *edDev::getDevice( eDeviceType param_1,
+                          eDeviceSpecialization param_2,
+                          int32_t param_3 ) {
+    // FUN_00433f40
+    int32_t matchIndex = 0;
+    for ( uint32_t i = 0; i < NumDevices; i++ ) {
+        if ( ppDevices[i] == nullptr ) {
+            continue;
+        }
+
+        if ( param_1 != ppDevices[i]->getType() ) {
+            continue;
+        }
+
+        if ( param_2 != ppDevices[i]->getSpecialization() ) {
+            continue;
+        }
+
+        if ( matchIndex == param_3 ) {
+            return ppDevices[i];
+        }
+
+        matchIndex++;
+    }
+
+    return nullptr;
+}
+
 void edDev::tick( float param_1 ) {
     // FUN_00433d50
     for ( uint32_t i = 0; i < NumDevices; i++ ) {

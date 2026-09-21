@@ -130,6 +130,10 @@ class Device {
 public:
     inline const char *getName() const { return pName; }
     inline eDeviceType getType() { return deviceType; }
+    inline eDeviceSpecialization getSpecialization() const {
+        return specializedType;
+    }
+    inline bool isEnabled() const { return ( flags & 1 ) != 0; }
     inline uint32_t getNumAxis() { return numChannelAxis; }
     inline uint32_t getNumChannels() { return channelCount; }
     inline InputChannel *getChannels() const { return pChannels; }
