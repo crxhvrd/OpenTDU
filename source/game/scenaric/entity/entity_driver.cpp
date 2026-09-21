@@ -53,9 +53,6 @@ static constexpr float kRadioAnimTotalTimeInv =
     0.5875440835952759f;                                 // DAT_00f41fcc
 static constexpr float kAlmostOne = 0.9999899864196777f; // DAT_00f41fd0
 
-bool gbDriverBaseAnim = true;          // TODO: REMOVE ME
-bool gbDriverExtraAnimChannels = true; // Enables radio IK
-
 static const char *kCarIKPointNamesHR[kNumCarIKPoints] = { // DAT_00f8b0c8
     "DvrSeat_HR", "Hand_HR_R", "Hand_HR_L",    "Foot_HR_R",    "Foot_HR_L",
     "Radio_HR",   "Back_HR_L", "Gear_HR",      "HBK_HR",       "Wcd_HR",
@@ -169,7 +166,7 @@ EntityDriver::EntityDriver()
       bRiderHasFalled( false ),
       pLinkedExternalHelmet( nullptr ) {
     // FUN_007eeac0
-    NumMaxLayers = gbDriverExtraAnimChannels ? 7 : 5;
+    NumMaxLayers = kAnimChannelPoolSize;
 
     setSeating( true );
 
@@ -822,13 +819,11 @@ void EntityDriver::tick( PlayerGameMech *pGameMech,
         pPooledAvatarEntry->CarBelt.setLowResVisible( bIsSeating );
     }
 
-    if ( gbDriverBaseAnim ) {
-        updateStandDriveRatio( deltaTime );
-        updateBodyPositionFSM( deltaTime );
-        updateGearRatios( deltaTime );
-        updateAnimChannels( deltaTime );
-        updateIKTargets();
-    }
+    updateStandDriveRatio( deltaTime );
+    updateBodyPositionFSM( deltaTime );
+    updateGearRatios( deltaTime );
+    updateAnimChannels( deltaTime );
+    updateIKTargets();
 
     EntityAvatar::tick( pGameMech, deltaTime, totalTime );
 
@@ -866,9 +861,9 @@ void EntityDriver::playDriveState( int32_t slot ) {
 }
 
 void EntityDriver::applyDriveBaseAnim() {
+
     // FUN_007efef0
-    if ( !gbDriverBaseAnim || !bMustPlayAnims || bIsFreeMovement ||
-         !animation.isValid() ) {
+    if ( !bMustPlayAnims || bIsFreeMovement || !animation.isValid() ) {
         return;
     }
 
@@ -936,15 +931,13 @@ void EntityDriver::updateAnimChannels( float deltaTime ) {
     animation.setChannelLayer( 4, AnimChannel::ALM_Weighted,
                                HandOpenLayerWeight );
 
-    if ( gbDriverExtraAnimChannels ) {
-        animation.setChannelBlendRatios( 5, GearLeverRatio, 5 );
-        animation.setChannelLayer( 5, AnimChannel::ALM_Weighted,
-                                   GearLeverLayerWeight );
+    animation.setChannelBlendRatios( 5, GearLeverRatio, 5 );
+    animation.setChannelLayer( 5, AnimChannel::ALM_Weighted,
+                               GearLeverLayerWeight );
 
-        animation.setChannelBlendRatios( 6, &RadioTurnRatio, 1 );
-        animation.setChannelLayer( 6, AnimChannel::ALM_Weighted,
-                                   RadioTurnLayerWeight );
-    }
+    animation.setChannelBlendRatios( 6, &RadioTurnRatio, 1 );
+    animation.setChannelLayer( 6, AnimChannel::ALM_Weighted,
+                               RadioTurnLayerWeight );
 }
 
 float EntityDriver::updateSteerValue( float deltaTime ) {
@@ -1442,13 +1435,13 @@ void EntityDriver::updateStandDriveRatio( float deltaTime ) {
 
 void EntityDriver::buildIKChains() {
     static constexpr uint32_t kLeftArmNodes[3] = { 0x74d3d78d, 0xd94546d3,
-                                                   0xd8d4c694 };
+                                                   0x0f4112f6 };
     static constexpr uint32_t kRightArmNodes[3] = { 0xd5d9aac6, 0x4748f02b,
-                                                    0xd6c8b12a };
+                                                    0x3428fa75 };
     static constexpr uint32_t kLeftLegNodes[3] = { 0xd9b2d508, 0x74cdca98,
-                                                   0xe8d5d492 };
+                                                   0x1f4220f4 };
     static constexpr uint32_t kRightLegNodes[3] = { 0xb4d7252b, 0xcfccb5c6,
-                                                    0xd7d6af3a };
+                                                    0x3536f885 };
 
     for ( int32_t i = 0; i < 3; i++ ) {
         IKLeftHand.NodesID[i] = kLeftArmNodes[i];
@@ -1458,7 +1451,7 @@ void EntityDriver::buildIKChains() {
     }
 
     IKBack.NodesID[0] = 0x6e6970b8; // "Spine", node 14
-    IKBack.NodesID[1] = 0x6e69a1b8; // "Spine1", node 15
+    IKBack.NodesID[1] = 0x42caaeaa; // Spine2 effector marker, node 17
 
     IKLeftShoulderBelt1.NodeID = 0xe8d2fbbe;  // node 72
     IKLeftShoulderBelt2.NodeID = 0xe8d2fcbe;  // node 73

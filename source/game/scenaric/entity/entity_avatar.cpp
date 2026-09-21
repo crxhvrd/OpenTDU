@@ -415,7 +415,7 @@ void EntityAvatar::onSkeletonChange( void *pSkeleton ) {
          pPooledAvatarEntry->pAnimBuffer != nullptr &&
          avatarSkeleton.wrapBlob( pSkeleton ) ) {
         animation.initialize( &avatarSkeleton, nullptr );
-        animation.setNumChannels( NumMaxLayers );
+        animation.setNumChannels( kAnimChannelPoolSize );
     }
 
     if ( pBehavior != nullptr ) {

@@ -21,6 +21,7 @@ static constexpr float kAnimWeightFull = 1.0f;         // FLOAT_00f4165c
 static constexpr float kAnimWeightEpsilon = 1e-4f;     // DAT_00f41760
 static constexpr float kAnimBlendShareEpsilon = 0.01f; // DAT_00f416d4
 static constexpr float kAnimRatioFollowCurve = 2.0f;   // FLOAT_00f416b0
+static constexpr int32_t kAnimChannelPoolSize = 10;
 
 class AnimPoseBuffer {
 public:

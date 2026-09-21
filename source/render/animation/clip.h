@@ -28,7 +28,9 @@ public:
             if ( magic == kChunkData ) {
                 pHeader = reinterpret_cast<const AnmHeader *>( payload );
                 pHdr = payload;
-            } else if ( magic != kChunkAnm ) {
+                break;
+            }
+            if ( magic != kChunkAnm ) {
                 break; // EOF! or an unexpected tag terminates the walk.
             }
             p = payload + size;
