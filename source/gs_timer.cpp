@@ -2,11 +2,33 @@
 #include "gs_timer.h"
 
 #include "config/gs_config.h"
+#include "core/arg_parser.h"
 #include "core/time.h"
 #include "system/ed_sys.h"
 
 GSTimer *gpTimer = nullptr;       // DAT_00fa3f90
 static uint32_t DAT_016a2c18 = 0; // DAT_016a2c18
+
+static int32_t gMaxFrameRate = 0;
+static CmdLineArg CmdLineArgMaxFrameRate( "maxfps", []( const char *pArg ) {
+    gMaxFrameRate = atoi( pArg );
+    OTDU_LOG_INFO( "Framerate cap set to %d FPS\n", gMaxFrameRate );
+} );
+
+static void WaitForFrameRateCap() {
+    static uint64_t sLastFrameNS = 0;
+
+    if ( gMaxFrameRate > 0 && sLastFrameNS != 0 ) {
+        const uint64_t frameNS =
+            SDL_NS_PER_SECOND / static_cast<uint64_t>( gMaxFrameRate );
+        const uint64_t elapsedNS = SDL_GetTicksNS() - sLastFrameNS;
+        if ( elapsedNS < frameNS ) {
+            SDL_DelayPrecise( frameNS - elapsedNS );
+        }
+    }
+
+    sLastFrameNS = SDL_GetTicksNS();
+}
 
 GSTimer::GSTimer()
     : GameSystem(),
@@ -31,6 +53,8 @@ GSTimer::~GSTimer() {
 
 void GSTimer::tick( float totalTime, float deltaTime ) {
     // FUN_00982ac0
+    WaitForFrameRateCap();
+
     if ( ( gpConfig->TimerPriority & 1 ) == 0 ) {
         // NOTE: The original code is WinAPI-based (using high perf counter).
         // For portability-sake, this code abstracts monotonic time retrieval
@@ -85,6 +109,7 @@ void GSTimer::terminate() {
 #ifdef OTDU_USE_IMGUI
 void GSTimer::drawDebug( float deltaTime ) {
     ImGui::DragFloat( "GameSpeed", &GameSpeed, 0.1f, 0.0f, 8.0f );
+    ImGui::SliderInt( "Max frame rate (0 = uncapped)", &gMaxFrameRate, 0, 240 );
     ImGui::Spacing();
     ImGui::Text( "DeltaTime (Game/System): %.2fms / %.2fms",
                  GameDeltaTime * 1000.0f, SystemDeltaTime * 1000.0f );

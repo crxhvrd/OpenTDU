@@ -1046,18 +1046,21 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
         const float stepDt =
             1.0f / static_cast<float>( gPhysicsThreadFrequency );
 
-        int32_t numSteps = static_cast<int32_t>( deltaTime / stepDt );
-        if ( numSteps >= kMaxPhysicsSubSteps + 1 ) {
+        int32_t numSteps = static_cast<int32_t>( ceilf( deltaTime / stepDt ) );
+        float subStepDt = stepDt;
+        if ( numSteps > kMaxPhysicsSubSteps ) {
             numSteps = kMaxPhysicsSubSteps;
+        } else if ( numSteps > 0 ) {
+            subStepDt = deltaTime / static_cast<float>( numSteps );
         }
 
-        if ( numSteps == 0 ) {
+        if ( numSteps <= 0 ) {
             physicsStep( deltaTime, totalTime );
-        } else if ( numSteps > 0 ) {
+        } else {
             float accTime = totalTime;
             for ( int32_t i = 0; i < numSteps; i++ ) {
-                physicsStep( stepDt, accTime );
-                accTime += stepDt;
+                physicsStep( subStepDt, accTime );
+                accTime += subStepDt;
             }
         }
     }
