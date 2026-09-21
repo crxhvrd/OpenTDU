@@ -142,3 +142,5 @@ protected:
 
 extern GameModeScene *gpActiveGMScene;
 extern uint32_t gCurrentFPS;
+
+void SetHUDMoviesPaused( bool bPaused );

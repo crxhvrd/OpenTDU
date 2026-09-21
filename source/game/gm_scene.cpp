@@ -449,23 +449,27 @@ bool GameModeScene::updatePostFX() {
     return true;
 }
 
+void SetHUDMoviesPaused( bool bPaused ) {
+    if ( gpFlash == nullptr ) {
+        return;
+    }
+
+    const int32_t numMovies = gpFlash->getNumMovies( 1 );
+    for ( int32_t i = 0; i < numMovies; i++ ) {
+        MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, i );
+        if ( pMovie == nullptr ) {
+            continue;
+        }
+        pMovie->IsMoviePaused = bPaused ? ( pMovie->IsMoviePaused | 2 )
+                                        : ( pMovie->IsMoviePaused & ~2 );
+    }
+}
+
 namespace {
     EntityCinematic *FindCinematic( ScenaricBank *pBank, const char *pName ) {
         // FUN_007dac10
         return static_cast<EntityCinematic *>(
             pBank->findEntity( eEntityType::ET_CINE, pName ) );
-    }
-
-    void SetHUDMoviesPaused( bool bPaused ) {
-        const int32_t numMovies = gpFlash->getNumMovies( 1 );
-        for ( int32_t i = 0; i < numMovies; i++ ) {
-            MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, i );
-            if ( pMovie == nullptr ) {
-                continue;
-            }
-            pMovie->IsMoviePaused = bPaused ? ( pMovie->IsMoviePaused | 2 )
-                                            : ( pMovie->IsMoviePaused & ~2 );
-        }
     }
 
     void SetReflectionSceneEnabled( bool bEnabled ) {

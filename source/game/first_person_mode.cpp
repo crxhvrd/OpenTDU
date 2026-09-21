@@ -3,7 +3,7 @@
 
 #include "flash/flash_mouse.h"
 #include "flash/gs_flash.h"
-#include "flash/movie_player.h"
+#include "game/gm_scene.h"
 #include "game/scene_interior.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "input/ed_dev.h"
@@ -36,26 +36,6 @@ static constexpr int32_t kMobilitySteps = 10;
 static constexpr float kMobilityTestSpeed = 2.4f;
 static constexpr float kOpenSpaceGoodEnough = 1.2f;
 
-static constexpr int32_t kGameModeMovieLevel = 1;
-static constexpr int32_t kMoviePausedBit = 2;
-
-static void SetGameModeMoviesHidden( bool bHidden ) {
-    if ( gpFlash == nullptr ) {
-        return;
-    }
-
-    const int32_t numMovies = gpFlash->getNumMovies( kGameModeMovieLevel );
-    for ( int32_t i = 0; i < numMovies; i++ ) {
-        MoviePlayer *pMovie = gpFlash->getMoviePlayer( kGameModeMovieLevel, i );
-        if ( pMovie == nullptr ) {
-            continue;
-        }
-        pMovie->IsMoviePaused =
-            bHidden ? ( pMovie->IsMoviePaused | kMoviePausedBit )
-                    : ( pMovie->IsMoviePaused & ~kMoviePausedBit );
-    }
-}
-
 FirstPersonMode::FirstPersonMode()
     : pCamera( nullptr ),
       pCharacter( nullptr ),
@@ -70,7 +50,6 @@ FirstPersonMode::FirstPersonMode()
       hullNumTriangles( 0 ),
       pSpawnSource( "<none>" ),
       bActive( false ),
-      bToggleKeyDown( false ),
       bSavedFlashCursorVisible( false ) {}
 
 FirstPersonMode::~FirstPersonMode() {
@@ -331,7 +310,7 @@ void FirstPersonMode::enter( SceneInterior *pScene,
     pPreviousCamera = pBoundCamera;
     gpCamera->bindCamera( pCamera, nullptr, 0.0f );
 
-    SetGameModeMoviesHidden( true );
+    SetHUDMoviesPaused( true );
     gEdSys.setRelativeMouseMode( true );
 
     // Hide flash mouse
@@ -354,7 +333,7 @@ void FirstPersonMode::leave() {
     bActive = false;
 
     gEdSys.setRelativeMouseMode( false );
-    SetGameModeMoviesHidden( false );
+    SetHUDMoviesPaused( false );
 
     if ( gpFlash != nullptr && gpFlash->getMouse() != nullptr ) {
         gpFlash->getMouse()->field12_0x30 = bSavedFlashCursorVisible;
@@ -389,22 +368,15 @@ void FirstPersonMode::leave() {
 void FirstPersonMode::tick( SceneInterior *pScene,
                             EntityCinematic *pLoopCine ) {
     Device *pKeyboard = gEdDev.getDevice( eDeviceType::DT_Keyboard, 0 );
-
-    bool bToggleDown = false;
-    if ( pKeyboard != nullptr ) {
-        const int32_t index = pKeyboard->getChannelIndex( kToggleChannel );
-        if ( index >= 0 ) {
-            bToggleDown = ( pKeyboard->getChannels()[index].Flags & 0x10 ) != 0;
-        }
-    }
-
-    const bool bTogglePressed = bToggleDown && !bToggleKeyDown;
-    bToggleKeyDown = bToggleDown;
+    const bool bTogglePressed =
+        pKeyboard != nullptr &&
+        IsChannelJustPressed( pKeyboard->getChannel( kToggleChannel ) );
 
     const bool bInputCaptured = IsFirstPersonInputCaptured();
     if ( bActive ) {
         gEdSys.setRelativeMouseMode( !bInputCaptured );
         if ( !bInputCaptured ) {
+            pCamera->updateLook();
             pointer.draw();
         }
     }

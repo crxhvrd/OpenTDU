@@ -11,8 +11,8 @@ public:
     static constexpr int32_t kCameraType = 0x100;
 
 public:
+    void initialize() override;
     bool tick( float deltaTime, bool param_1, bool param_2 ) override;
-    void destroy() override;
 
     inline void setCharacter( PhysicsCharacter *pCharacter ) {
         pCharacterController = pCharacter;
@@ -30,6 +30,7 @@ public:
     virtual ~CameraFirstPerson();
 
     void setViewDirection( const Eigen::Vector3f &direction );
+    void updateLook();
 
 private:
     Eigen::Vector3f getForwardVector() const;

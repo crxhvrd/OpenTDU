@@ -55,6 +55,5 @@ private:
     const char *pSpawnSource;
 
     bool bActive;
-    bool bToggleKeyDown;
     bool bSavedFlashCursorVisible;
 };

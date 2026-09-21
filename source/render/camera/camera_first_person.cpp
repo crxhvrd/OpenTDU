@@ -2,6 +2,7 @@
 #include "camera_first_person.h"
 
 #include "config/gs_config.h"
+#include "core/maths_helper.h"
 #include "gs_timer.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
@@ -21,8 +22,10 @@ static constexpr float kEyeHeight = 1.65f;
 
 static constexpr float kMaxPitch = 1.5533431f; // 89 degrees
 
+static constexpr float kFieldOfView = 60.0f; // degrees
+static constexpr float kNearPlane = 0.1f;
+
 static constexpr float kFallResetDepth = 25.0f;
-static constexpr float kMaxDeltaTime = 0.1f;
 
 bool IsFirstPersonInputCaptured() {
     if ( gpActiveGameMode != nullptr ) {
@@ -87,44 +90,42 @@ void CameraFirstPerson::setViewDirection( const Eigen::Vector3f &direction ) {
                                  : 0.0f;
 }
 
-void CameraFirstPerson::destroy() {
-    // NOP
+void CameraFirstPerson::initialize() {
+    CameraGame::initialize();
+
+    nearPlane = kNearPlane;
+    interiorNearPlane = kNearPlane;
+    interiorFarPlane = farPlane;
+
+    setFOV( kFieldOfView * kDegToRad );
 }
 
-bool CameraFirstPerson::tick( float /*deltaTime*/,
-                              bool /*param_1*/,
-                              bool /*param_2*/ ) {
-    const float dt = ( gpTimer != nullptr ) ? Clamp( gpTimer->SystemDeltaTime,
-                                                     0.0f, kMaxDeltaTime )
-                                            : ( 1.0f / 60.0f );
+void CameraFirstPerson::updateLook() {
+    Device *pMouse = gEdDev.getDevice( eDeviceType::DT_Mouse, 0 );
+    if ( pMouse == nullptr ) {
+        return;
+    }
 
+    const float mouseX = pMouse->getChannelValue( "LEFT" ); // +X = moving right
+    const float mouseY = pMouse->getChannelValue( "UP" );   // +Y = moving up
+
+    const float invert =
+        ( gpConfig != nullptr && gpConfig->bInvertMouse ) ? -1.0f : 1.0f;
+
+    PhysicsLock lock;
+    yaw = WrapAngle( yaw + mouseX * lookSensitivity );
+    pitch = Clamp( pitch + mouseY * lookSensitivity * invert, -kMaxPitch,
+                   kMaxPitch );
+}
+
+bool CameraFirstPerson::tick( float deltaTime, bool param_1, bool param_2 ) {
     const bool bInputCaptured = IsFirstPersonInputCaptured();
 
-    Device *pMouse = gEdDev.getDevice( eDeviceType::DT_Mouse, 0 );
     Device *pKeyboard = gEdDev.getDevice( eDeviceType::DT_Keyboard, 0 );
 
     float forwardInput = 0.0f;
     float strafeInput = 0.0f;
     bool bRunning = false;
-
-    if ( !bInputCaptured && pMouse != nullptr ) {
-        const float mouseX =
-            pMouse->getChannelValue( "LEFT" ); // +X = moving right
-        const float mouseY = pMouse->getChannelValue( "UP" ); // +Y = moving up
-
-        const float invert =
-            ( gpConfig != nullptr && gpConfig->bInvertMouse ) ? -1.0f : 1.0f;
-
-        yaw += mouseX * lookSensitivity;
-        pitch = Clamp( pitch + mouseY * lookSensitivity * invert, -kMaxPitch,
-                       kMaxPitch );
-
-        if ( yaw > (float)EIGEN_PI ) {
-            yaw -= 2.0f * (float)EIGEN_PI;
-        } else if ( yaw < -(float)EIGEN_PI ) {
-            yaw += 2.0f * (float)EIGEN_PI;
-        }
-    }
 
     if ( !bInputCaptured && pKeyboard != nullptr ) {
         if ( pKeyboard->getChannelValueBinary( "W" ) ||
@@ -169,7 +170,7 @@ bool CameraFirstPerson::tick( float /*deltaTime*/,
     if ( !bNoClip && pCharacterController != nullptr && gpPhysics != nullptr ) {
         if ( !bInputCaptured ) {
             gpPhysics->updateCharacter( pCharacterController, desiredVelocity,
-                                        dt );
+                                        deltaTime );
         }
 
         // Cheap way to prevent OOB/falling under the map
@@ -185,7 +186,7 @@ bool CameraFirstPerson::tick( float /*deltaTime*/,
         eyePosition = feet;
     } else if ( !bInputCaptured ) {
         eyePosition = worldPosition;
-        eyePosition.head<3>() += desiredVelocity * dt;
+        eyePosition.head<3>() += desiredVelocity * deltaTime;
         eyePosition.y() -= eyeHeight;
     } else {
         eyePosition = worldPosition;
@@ -195,24 +196,11 @@ bool CameraFirstPerson::tick( float /*deltaTime*/,
     eyePosition.y() += eyeHeight;
     eyePosition.w() = 1.0f;
 
-    const Eigen::Vector3f forward = getForwardVector();
     Eigen::Vector4f target = eyePosition;
-    target.head<3>() += forward;
+    target.head<3>() += getForwardVector();
 
     setPosition( eyePosition );
     setTarget( target );
-    setUp( Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f ) );
-    setFOV( 90.0f );
 
-    gpCamera->setNearPlane( 0.1f );
-    gpCamera->setFarPlane( 40000.0f );
-    gpCamera->setEnableDepthAware( true );
-    gpCamera->setInteriorNearPlane( 0.1f );
-    gpCamera->setInteriorFarPlane( 40000.0f );
-    gpCamera->setEnableDepthAwareInterior( true );
-
-    updateMatrix( eyePosition.head<3>(), Eigen::Vector3f( 0.0f, 1.0f, 0.0f ),
-                  target.head<3>() );
-
-    return true;
+    return CameraGame::tick( deltaTime, param_1, param_2 );
 }
