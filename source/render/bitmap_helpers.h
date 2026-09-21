@@ -19,6 +19,11 @@ bool DecompressJPEG( const void *pContent,
                      uint32_t dstWidth,
                      uint32_t dstHeight );
 
+bool ExtractJPEGComment( const void *pContent,
+                         uint32_t contentSize,
+                         char *pOutComment,
+                         size_t outCommentSize );
+
 // Box-filtered downscale / nearest upscale between two 32bpp BGRA surfaces.
 void ResampleBGRA( const uint8_t *pSrc,
                    uint32_t srcWidth,

@@ -79,6 +79,7 @@ public:
 
     uint32_t getCarConfigID() const;
     void setCarConfigID( const uint32_t configID );
+    void setConfigFromID( const uint32_t configID );
 
     float getUpgradeRate() const;
     void setUpgradeRate( const float upgradeRate );

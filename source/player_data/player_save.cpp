@@ -72,6 +72,7 @@ void PlayerSave::terminate() {
 void PlayerSave::tick( const float deltaTime ) {
     // FUN_0089a5b0
     achievements.tick();
+    extraChallenges.tickStatisticsScreen();
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original also ticks the
                              // driver, restocks the classic car stock on a

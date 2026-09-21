@@ -5,6 +5,7 @@
 #include "gs_flash.h"
 #include "tdu_instance.h"
 
+#include "core/locale.h"
 #include "database/gs_database.h"
 #include "player_data/achievements_data.h"
 #include "player_data/driver.h"
@@ -28,23 +29,6 @@ static constexpr int32_t kNumPlayerLevelNames =
 
 // Completion percentage is the achieved points over the 1000pts Ace requires
 static constexpr float kPointsToCompletionRatio = 0.001f; // FLOAT_00f4167c
-
-static inline int32_t GetUTF8CodepointLength( const uint8_t byte ) {
-    if ( ( byte & 0x80u ) == 0 ) {
-        return 1;
-    }
-    if ( ( byte & 0xe0u ) == 0xc0u ) {
-        return 2;
-    }
-    if ( ( byte & 0xf0u ) == 0xe0u ) {
-        return 3;
-    }
-    return 1;
-}
-
-static inline int32_t GetUTF8CodepointLength( const char *pStr ) {
-    return GetUTF8CodepointLength( (uint8_t)*pStr );
-}
 
 static inline bool IsMarkerAt( const char *pStr ) {
     // FUN_00451aa0 (inlined)

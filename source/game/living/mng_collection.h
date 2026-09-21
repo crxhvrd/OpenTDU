@@ -13,6 +13,7 @@ class GMLiving;
 class MngCollection;
 struct Material;
 class TestDriveGameInstance;
+class SavedExtraChallenges;
 
 extern MngCollection *gpMngCollection; // DAT_010e7d10
 
@@ -53,6 +54,7 @@ private:
 
 private:
     FlashPlayer *getFlashPlayer() const;
+    SavedExtraChallenges *getStatistics() const;
 
     void openAlbum();
     void closeAlbum();

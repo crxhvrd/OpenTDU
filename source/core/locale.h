@@ -213,3 +213,17 @@ static eLocale GetLocaleFromSystem() {
     return L_Unknown;
 }
 #endif
+
+static inline int32_t GetUTF8CodepointLength( const char *pStr ) {
+    const uint8_t byte = (uint8_t)*pStr;
+    if ( ( byte & 0x80u ) == 0 ) {
+        return 1;
+    }
+    if ( ( byte & 0xe0u ) == 0xc0u ) {
+        return 2;
+    }
+    if ( ( byte & 0xf0u ) == 0xe0u ) {
+        return 3;
+    }
+    return 1;
+}

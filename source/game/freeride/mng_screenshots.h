@@ -42,9 +42,14 @@ public:
                const char *pMetaInfos,
                uint32_t width = kUseBitmapSize,
                uint32_t height = kUseBitmapSize );
-    Material *loadFromMemory( const void *pContent, uint32_t contentSize );
+    Material *loadFromMemory( const void *pContent,
+                              uint32_t contentSize,
+                              char *pOutMetaInfos = nullptr,
+                              size_t metaInfosSize = 0 );
     Material *loadFromFile( const char *pFilepath,
-                            const char *pContextName = nullptr );
+                            const char *pContextName = nullptr,
+                            char *pOutMetaInfos = nullptr,
+                            size_t metaInfosSize = 0 );
     void instanciate() override;
 
 private:

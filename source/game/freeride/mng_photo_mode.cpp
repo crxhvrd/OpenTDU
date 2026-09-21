@@ -14,6 +14,7 @@
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "world/mng_sector_name.h"
+#include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
 #include "gs_timer.h"
 #include "core/maths_helper.h"
@@ -23,6 +24,7 @@
 #include "render/draw_list.h"
 #include "render/gs_render.h"
 #include "render/postfx/gs_postfx.h"
+#include "core/locale.h"
 
 static constexpr uint64_t kSavePopupHashcode = 0x37ba8e2ull;
 static constexpr float kSavePopupDuration = 4.0f;
@@ -41,6 +43,119 @@ static constexpr uint32_t kShowcaseCollisionFlags = 0x547;
 static constexpr float kFallbackBackOffset = -0.1f;  // FLOAT_00f4188c
 static constexpr float kFallbackHeight = 1.0f;       // DAT_00fabf38
 static constexpr float kPhotoCameraNearPlane = 0.1f; // FLOAT_00f41668
+
+void ReplacePhotoMetaChars( char *pDest,
+                            size_t destSize,
+                            const char *pSrc,
+                            const char *const *pSearch,
+                            const char *const *pReplace ) {
+    // FUN_006ccde0
+    if ( pDest == nullptr || destSize == 0 ) {
+        return;
+    }
+
+    char *pOut = pDest;
+    size_t remaining = destSize - 1;
+
+    if ( pSrc != nullptr ) {
+        while ( *pSrc != '\0' ) {
+            const int32_t codepointLength = GetUTF8CodepointLength( pSrc );
+
+            bool bReplaced = false;
+            for ( int32_t entry = 0; entry < 2; entry++ ) {
+                if ( strncmp( pSrc, pSearch[entry], (size_t)codepointLength ) !=
+                     0 ) {
+                    continue;
+                }
+
+                const size_t replaceLength = strlen( pReplace[entry] );
+                if ( remaining < replaceLength ) {
+                    *pOut = '\0';
+                    return;
+                }
+
+                strcpy( pOut, pReplace[entry] );
+                bReplaced = true;
+                break;
+            }
+
+            if ( !bReplaced ) {
+                if ( remaining < (size_t)codepointLength ) {
+                    *pOut = '\0';
+                    return;
+                }
+                strncpy( pOut, pSrc, (size_t)codepointLength );
+            }
+
+            pSrc += codepointLength;
+
+            const int32_t writtenLength = GetUTF8CodepointLength( pOut );
+            pOut += writtenLength;
+            remaining -= (size_t)writtenLength;
+        }
+    }
+
+    *pOut = '\0';
+}
+
+static bool ParsePhotoMetaField( char *pOutCaption,
+                                 CarDesc *pCar,
+                                 int32_t *pOutFormat,
+                                 char *pField ) {
+    // FUN_006cd800
+    if ( pCar == nullptr ) {
+        return false;
+    }
+
+    *pOutFormat = -1;
+
+    // Split "<key>:<value>"
+    size_t separator = 0;
+    while ( pField[separator] != ':' && pField[separator] != '\0' ) {
+        separator++;
+    }
+
+    char *pValue = pField + separator + 1;
+    pField[separator] = '\0';
+
+    if ( strncmp( pField, "N", 1 ) == 0 ) {
+        if ( pOutCaption != nullptr ) {
+            strcpy( pOutCaption, pValue );
+        }
+        return true;
+    }
+
+    if ( strncmp( pField, "ID", 2 ) == 0 ) {
+        pCar->setConfigFromID( (uint32_t)atoi( pValue ) );
+        return true;
+    }
+
+    if ( strncmp( pField, "FMT", 3 ) == 0 ) {
+        *pOutFormat = atoi( pValue );
+    }
+
+    return true;
+}
+
+bool ParsePhotoMetaInfos( char *pMetaInfos,
+                          char *pOutCaption,
+                          CarDesc *pCar,
+                          int32_t *pOutFormat ) {
+    // FUN_006cd8d0
+    if ( pCar == nullptr ) {
+        return false;
+    }
+
+    char *pField = strtok( pMetaInfos, kPhotoMetaFieldSeparators );
+    while ( pField != nullptr ) {
+        if ( !ParsePhotoMetaField( pOutCaption, pCar, pOutFormat, pField ) ) {
+            return false;
+        }
+        pField = strtok( nullptr, kPhotoMetaFieldSeparators );
+    }
+
+    return true;
+}
 
 MngPhotoMode *gpMngPhotoMode = nullptr; // DAT_010e7fec
 
@@ -343,13 +458,17 @@ void MngPhotoMode::saveShot() {
     bFXWasOn = true;
 
     // Metadata format "(N:<caption>)(ID:<car>)
-    // (FMT:<widescreen>)".
-    char metaInfos[512] = {};
+    char metaInfos[kMaxPhotoMetaInfosLength] = {};
     CarState *pCarState =
         ( gpCamera != nullptr ) ? gpCamera->getBoundCarState() : nullptr;
     if ( pCarState != nullptr ) {
+        char escapedCaption[kMaxEscapedCaptionLength] = {};
+        ReplacePhotoMetaChars( escapedCaption, sizeof( escapedCaption ),
+                               caption, kPhotoMetaDelimiters,
+                               kPhotoMetaEscapes );
+
         snprintf( metaInfos, sizeof( metaInfos ), "(N:%s)(ID:%d)(FMT:%d)",
-                  caption, pCarState->getCarID(),
+                  escapedCaption, pCarState->getCarID(),
                   ( gpConfig != nullptr ) ? gpConfig->b169Ratio : 0 );
     }
 

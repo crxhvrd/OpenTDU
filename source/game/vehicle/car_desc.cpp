@@ -193,6 +193,13 @@ void CarDesc::setCarConfigID( const uint32_t configID ) {
     TestDriveTEAWriteDword( pCarConfigID, configID );
 }
 
+void CarDesc::setConfigFromID( const uint32_t configID ) {
+    // FUN_008914f0
+    setCarConfigID( configID );
+
+    pConfig = FindCarConfig( int32_t( getCarConfigID() ) );
+}
+
 float CarDesc::getUpgradeRate() const {
     return TestDriveTEAReadFloat( pUpgradeRate );
 }

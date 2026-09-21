@@ -10,6 +10,25 @@ class FlashPlayer;
 class CameraGame;
 class CarState;
 
+static constexpr const char *kPhotoMetaDelimiters[2] = { "(",
+                                                         ")" }; // DAT_00f34574
+static constexpr const char *kPhotoMetaEscapes[2] = {
+    "\xc2\xb2", "\xc2\xb5" }; // DAT_00f34570
+static constexpr const char *kPhotoMetaFieldSeparators = "()";
+
+static constexpr size_t kMaxPhotoMetaInfosLength = 512;
+static constexpr size_t kMaxEscapedCaptionLength = 0x80;
+
+void ReplacePhotoMetaChars( char *pDest,
+                            size_t destSize,
+                            const char *pSrc,
+                            const char *const *pSearch,
+                            const char *const *pReplace );
+bool ParsePhotoMetaInfos( char *pMetaInfos,
+                          char *pOutCaption,
+                          class CarDesc *pCar,
+                          int32_t *pOutFormat );
+
 class MngPhotoMode : public Manager {
 public:
     const char *getName() const override {

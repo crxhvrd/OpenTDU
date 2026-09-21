@@ -245,8 +245,9 @@ void MngScreenshots::instanciate() {
     void *pThumbnailContent = nullptr;
     uint32_t thumbnailSize = 0;
     if ( bSuccess && !bNeedRescale ) {
-        bSuccess = encodeShot( kThumbnailWidth, kThumbnailHeight, nullptr,
-                               &pThumbnailContent, &thumbnailSize );
+        bSuccess =
+            encodeShot( kThumbnailWidth, kThumbnailHeight, pMetaInfosToSave,
+                        &pThumbnailContent, &thumbnailSize );
     }
 
     if ( bSuccess ) {
@@ -282,8 +283,15 @@ void MngScreenshots::instanciate() {
 }
 
 Material *MngScreenshots::loadFromMemory( const void *pContent,
-                                          uint32_t contentSize ) {
+                                          uint32_t contentSize,
+                                          char *pOutMetaInfos,
+                                          size_t metaInfosSize ) {
     // FUN_006ce2b0
+    if ( pOutMetaInfos != nullptr && metaInfosSize > 0 ) {
+        ExtractJPEGComment( pContent, contentSize, pOutMetaInfos,
+                            metaInfosSize );
+    }
+
     if ( Format != VF_SRGB_R8G8B8A8 ) {
         Texture *pTexture = getBitmap();
         if ( pTexture == nullptr ) {
@@ -319,7 +327,9 @@ Material *MngScreenshots::loadFromMemory( const void *pContent,
 }
 
 Material *MngScreenshots::loadFromFile( const char *pFilepath,
-                                        const char *pContextName ) {
+                                        const char *pContextName,
+                                        char *pOutMetaInfos,
+                                        size_t metaInfosSize ) {
     // FUN_006cedb0
     const bool bFromContext =
         ( pContextName != nullptr ) && ( pContextName[0] != '\0' );
@@ -328,10 +338,9 @@ Material *MngScreenshots::loadFromFile( const char *pFilepath,
     uint32_t contentSize = 0;
 
     const bool bLoaded =
-        bFromContext
-            ? gpFile->loadFileFromContext( pContextName, pFilepath, &pContent,
-                                           &contentSize )
-            : gpFile->loadFile( pFilepath, &pContent, &contentSize );
+        bFromContext ? gpFile->loadFileFromContext( pContextName, pFilepath,
+                                                    &pContent, &contentSize )
+                     : gpFile->loadFile( pFilepath, &pContent, &contentSize );
 
     if ( !bLoaded ) {
         if ( pContent != nullptr ) {
@@ -340,7 +349,8 @@ Material *MngScreenshots::loadFromFile( const char *pFilepath,
         return nullptr;
     }
 
-    Material *pMaterial = loadFromMemory( pContent, contentSize );
+    Material *pMaterial =
+        loadFromMemory( pContent, contentSize, pOutMetaInfos, metaInfosSize );
 
     if ( pContent != nullptr ) {
         TestDrive::Free( pContent );

@@ -30,6 +30,8 @@ static constexpr uint32_t kBytesPerTexel = 4;
 static constexpr uint8_t kJPEGMarkerPrefix = 0xff;
 static constexpr uint8_t kJPEGMarkerSOI = 0xd8;
 static constexpr uint8_t kJPEGMarkerCOM = 0xfe;
+static constexpr uint8_t kJPEGMarkerSOS = 0xda;
+static constexpr uint8_t kJPEGMarkerEOI = 0xd9;
 
 static void WriteToVector( void *pContext, void *pData, int32_t size ) {
     std::vector<uint8_t> *pStream = (std::vector<uint8_t> *)pContext;
@@ -185,6 +187,65 @@ bool CompressToJPEG( const uint8_t *pSrcBGRA,
     *ppOutContent = pContent;
     *pOutContentSize = (uint32_t)stream.size();
     return true;
+}
+
+bool ExtractJPEGComment( const void *pContent,
+                         uint32_t contentSize,
+                         char *pOutComment,
+                         size_t outCommentSize ) {
+    if ( pOutComment == nullptr || outCommentSize == 0 ) {
+        return false;
+    }
+
+    pOutComment[0] = '\0';
+
+    if ( pContent == nullptr || contentSize < 4 ) {
+        return false;
+    }
+
+    const uint8_t *pBytes = (const uint8_t *)pContent;
+    if ( pBytes[0] != kJPEGMarkerPrefix || pBytes[1] != kJPEGMarkerSOI ) {
+        return false;
+    }
+
+    uint32_t offset = 2;
+    while ( offset + 4 <= contentSize ) {
+        if ( pBytes[offset] != kJPEGMarkerPrefix ) {
+            return false;
+        }
+
+        const uint8_t marker = pBytes[offset + 1];
+        if ( marker == kJPEGMarkerSOS || marker == kJPEGMarkerEOI ) {
+            return false;
+        }
+
+        const uint32_t segmentLength = ( (uint32_t)pBytes[offset + 2] << 8 ) |
+                                       (uint32_t)pBytes[offset + 3];
+        if ( segmentLength < 2 || offset + 2 + segmentLength > contentSize ) {
+            return false;
+        }
+
+        if ( marker == kJPEGMarkerCOM ) {
+            const uint8_t *pPayload = pBytes + offset + 4;
+            const uint32_t payloadSize = segmentLength - 2;
+
+            uint32_t length = 0;
+            while ( length < payloadSize && pPayload[length] != '\0' ) {
+                length++;
+            }
+            if ( length >= outCommentSize ) {
+                length = uint32_t( outCommentSize - 1 );
+            }
+
+            std::memcpy( pOutComment, pPayload, length );
+            pOutComment[length] = '\0';
+            return true;
+        }
+
+        offset += 2 + segmentLength;
+    }
+
+    return false;
 }
 
 bool DecompressJPEG( const void *pContent,

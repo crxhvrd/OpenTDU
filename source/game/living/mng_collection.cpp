@@ -7,9 +7,12 @@
 #include "flash/flash_callbacks_register.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/implementation/flash_sprite.h"
+#include "game/freeride/mng_photo_mode.h"
 #include "game/mng_hud.h"
+#include "game/vehicle/car_desc.h"
 #include "gm_living.h"
 #include "player_data/achievements_data.h"
+#include "player_data/saved_extra_challenges.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "render/gs_render.h"
@@ -36,6 +39,12 @@ MngCollection::~MngCollection() {
 
 FlashPlayer *MngCollection::getFlashPlayer() const {
     return ( pOwner != nullptr ) ? pOwner->getFlashPlayer() : nullptr;
+}
+
+SavedExtraChallenges *MngCollection::getStatistics() const {
+    IPlayerData *pSave =
+        ( gpPlayerData != nullptr ) ? gpPlayerData->getLoadedSave() : nullptr;
+    return ( pSave != nullptr ) ? pSave->getExtraChallenges() : nullptr;
 }
 
 bool MngCollection::initialize( TestDriveGameInstance * ) {
@@ -182,8 +191,10 @@ void MngCollection::loadAlbumSlot( const int32_t slot, const int32_t page ) {
     char thumbnailName[sizeof( filename ) + 8];
     snprintf( thumbnailName, sizeof( thumbnailName ), "%s.small", filename );
 
-    albumSlot.pMaterial =
-        albumSlot.Shot.loadFromFile( thumbnailName, "CURRENT" );
+    char metaInfos[kMaxPhotoMetaInfosLength] = {};
+
+    albumSlot.pMaterial = albumSlot.Shot.loadFromFile(
+        thumbnailName, "CURRENT", metaInfos, sizeof( metaInfos ) );
 
     OTDU_LOG_DEBUG( "Photo album: slot %d <- '%s' (%s)\n", slot, thumbnailName,
                     ( albumSlot.pMaterial != nullptr ) ? "loaded" : "FAILED" );
@@ -192,9 +203,16 @@ void MngCollection::loadAlbumSlot( const int32_t slot, const int32_t page ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: MNGPHOTOMODE (photo caption metadata)
+    CarDesc shotCar;
+    int32_t shotFormat = -1;
 
-    albumSlot.Title[0] = '\0';
+    char caption[kMaxPhotoMetaInfosLength] = {};
+    if ( !ParsePhotoMetaInfos( metaInfos, caption, &shotCar, &shotFormat ) ) {
+        return;
+    }
+
+    ReplacePhotoMetaChars( albumSlot.Title, sizeof( albumSlot.Title ), caption,
+                           kPhotoMetaEscapes, kPhotoMetaDelimiters );
 
     FlashPlayer *pPlayer = getFlashPlayer();
     if ( pPlayer != nullptr ) {
@@ -446,10 +464,27 @@ bool MngCollection::onMessage( FlashMessage *pMessage ) {
         return true;
 
     case FlashMessage( "stin" ): // the statistics screen opened
+        if ( SavedExtraChallenges *pStats = getStatistics() ) {
+            pStats->openStatisticsScreen( getFlashPlayer() );
+        }
+        return true;
+
     case FlashMessage( "stou" ): // ... and closed
+        if ( SavedExtraChallenges *pStats = getStatistics() ) {
+            pStats->closeStatisticsScreen();
+        }
+        return true;
+
     case FlashMessage( "nest" ): // next statistics category
+        if ( SavedExtraChallenges *pStats = getStatistics() ) {
+            pStats->nextStatisticsCategory();
+        }
+        return true;
+
     case FlashMessage( "prst" ): // previous statistics category
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLIVING (statistics screen)
+        if ( SavedExtraChallenges *pStats = getStatistics() ) {
+            pStats->previousStatisticsCategory();
+        }
         return true;
 
     case FlashMessage( "upph" ): // upload the selected photo
