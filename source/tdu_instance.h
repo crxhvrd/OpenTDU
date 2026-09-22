@@ -110,6 +110,10 @@ public:
     bool pushResourceToStream( StreamedResource *param_2 );
     bool popResourceFromStream( StreamedResource *param_2 );
 
+#ifdef OTDU_USE_IMGUI
+    void drawDebugMenu( float deltaTime );
+#endif
+
 private:
     std::vector<GameSystem *> registeredServices;
     std::vector<GameSystem *> servicesInitOrder;
@@ -145,14 +149,14 @@ private:
 
     uint32_t gameInitStep;
 
+#ifdef OTDU_USE_IMGUI
+    char pServiceLookTextBuffer[256];
+#endif
+
 private:
     bool initialize();
     bool initializeBaseServices();
     bool initializeGameServices();
-
-#ifdef OTDU_USE_IMGUI
-    void drawDebugMenu( float deltaTime );
-#endif
 
     template <typename TGS> bool registerService( TGS *pSystem = nullptr );
     void reorderService( GameSystem *pService, GameSystem *pTickBefore );

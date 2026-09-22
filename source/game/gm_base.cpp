@@ -169,12 +169,10 @@ void GameMode::mainLoop( TestDriveGameInstance *param_1 ) {
     if ( gpMngChat != nullptr ) {
         gpMngChat->addLine( "Work In Progress Build", TestDrive::GetVersion(),
                             0 );
-        gpMngChat->addLine( "https://tinyurl.com/3dvdz34u", "Report bugs", 1 );
-        gpMngChat->addLine( "https://tinyurl.com/bdey23xf",
-                            "Suggestions/ideas/feedback", 1 );
 #ifdef OTDU_DEVBUILD
-        gpMngChat->addLine( "(F1) Debug Menu / (F2) Freeze Time",
-                            "Devbuild shortcuts", 2 );
+        gpMngChat->addLine(
+            "(F1) Debug Menu / (F2) Freeze Time / (F3) GM Debug Menu",
+            "Devbuild shortcuts", 2 );
 #endif
     }
 

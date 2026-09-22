@@ -9,6 +9,7 @@
 #include "render/material.h"
 #include "render/gs_render.h"
 #include "render/draw_list.h"
+#include "render/text_renderer.h"
 
 #include "gs_timer.h"
 
@@ -42,7 +43,6 @@ GSImgui::GSImgui()
       pDrawList( new DrawList() ),
       setupUsageIndex( 0 ),
       bVisible( false ),
-      bFocusHasChanged( false ),
       bOverlayRequested( false ) {
     OTDU_ASSERT( gpImgui == nullptr );
     gpImgui = this;
@@ -91,24 +91,7 @@ bool GSImgui::initialize( TestDriveGameInstance * ) {
     return true;
 }
 
-void GSImgui::tick( float totalTime, float deltaTime ) {
-    const bool *pKeyStates = SDL_GetKeyboardState( nullptr );
-
-    const bool bF2Down =
-        ( pKeyStates != nullptr ) && pKeyStates[SDL_SCANCODE_F2];
-    if ( bF2Down && !bPauseTriggered ) {
-        bGamePaused = !bGamePaused;
-        gpTimer->GameSpeed = bGamePaused ? 0.0f : 1.0f;
-    }
-    bPauseTriggered = bF2Down;
-
-    const bool bF1Down =
-        ( pKeyStates != nullptr ) && pKeyStates[SDL_SCANCODE_F1];
-    if ( bF1Down && !bFocusHasChanged ) {
-        bVisible = !bVisible;
-    }
-    bFocusHasChanged = bF1Down;
-}
+void GSImgui::tick( float totalTime, float deltaTime ) {}
 
 void GSImgui::draw( float deltaTime ) {
     // Render only if the menu or at least one overlay is visible

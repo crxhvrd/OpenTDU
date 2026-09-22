@@ -17,7 +17,7 @@ public:
 
     bool initialize();
     void pushCommand( int32_t x, int32_t y, const char *pText );
-    void setColor( ColorRGBA &param_1 );
+    void setColor( const ColorRGBA &param_1 );
 
     void submitCommands();
     bool loadFont();

@@ -18,6 +18,7 @@ public:
     const char *getName() const override { return "Service : imgui"; }
     inline bool hasFocus() const { return bVisible; }
     inline void requestOverlayFrame() { bOverlayRequested = true; }
+    inline void setFocus( const bool bState ) { bVisible = bState; }
 
 public:
     GSImgui();
@@ -62,10 +63,7 @@ private:
     uint32_t debugViewIndex = 0;
 
     bool bVisible;
-    bool bFocusHasChanged;
     bool bOverlayRequested;
-    bool bGamePaused = false;
-    bool bPauseTriggered = false;
 
 private:
     void processDrawData( ImDrawData *pDrawData );

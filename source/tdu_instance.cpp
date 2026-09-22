@@ -409,6 +409,10 @@ TestDriveGameInstance::TestDriveGameInstance( const char **argv,
 
     mainLoopInfos.CoreIndex = 0;
     gpTestDriveInstance = this;
+
+#ifdef OTDU_USE_IMGUI
+    memset( pServiceLookTextBuffer, 0, sizeof( pServiceLookTextBuffer ) );
+#endif
 }
 
 TestDriveGameInstance::~TestDriveGameInstance() {
@@ -800,6 +804,7 @@ bool TestDriveGameInstance::initializeGameServices() {
 }
 
 void TestDriveGameInstance::drawDebugMenu( float deltaTime ) {
+    // TODO: MOVE TO GSDebug
     // Add available overlays draw calls prior to the main debug menu one.
     MngEnvMap::DrawEnvMapDebugOverlay();
 
@@ -833,28 +838,41 @@ void TestDriveGameInstance::drawDebugMenu( float deltaTime ) {
                      kGameModeNames[previousGameMode] );
         ImGui::Text( "Wished GameMode: %s", kGameModeNames[wishedGameMode] );
 
-        if ( ImGui::CollapsingHeader( "Game Mode" ) ) {
-            if ( gpActiveGameMode != nullptr ) {
-                gpActiveGameMode->drawDebug( deltaTime );
-            }
-        }
-
         if ( ImGui::CollapsingHeader( "Game Services" ) ) {
-            for ( GameSystem *pService : registeredServices ) {
-                if ( !pService->hasDebugMenu() ) {
-                    continue;
-                }
+            ImGui::InputText( "Find by name", pServiceLookTextBuffer,
+                              sizeof( pServiceLookTextBuffer ) );
 
-                ImGui::SeparatorText( pService->getName() );
-                pService->drawDebug( deltaTime );
+            static bool gbDidServicesWarmup = false;
+            if ( !gbDidServicesWarmup ) {
+                // Single frame warmup to propagate service debug draw flag
+                // (needs debug draw refactor to avoid this crap)
+                for ( GameSystem *pService : registeredServices ) {
+                    if ( !pService->hasDebugMenu() ) {
+                        continue;
+                    }
+
+                    pService->drawDebug( deltaTime );
+                }
+                gbDidServicesWarmup = true;
+            } else {
+                for ( GameSystem *pService : registeredServices ) {
+                    if ( !pService->hasDebugMenu() ) {
+                        continue;
+                    }
+
+                    if ( *pServiceLookTextBuffer != '\0' ) {
+                        if ( strstr( pService->getName(),
+                                     pServiceLookTextBuffer ) == nullptr ) {
+                            continue;
+                        }
+                    }
+
+                    if ( ImGui::CollapsingHeader( pService->getName() ) ) {
+                        pService->drawDebug( deltaTime );
+                    }
+                }
             }
         }
-
-#ifdef OTDU_USE_IMGUI
-        if ( ImGui::CollapsingHeader( "Entity Debug" ) ) {
-            TestDrive::DrawEntityDebugPanel();
-        }
-#endif
     }
     ImGui::End();
 }
@@ -989,9 +1007,6 @@ void TestDriveGameInstance::drawServices( float deltaTime ) {
     if ( DAT_010e7245 ) {
         OTDU_UNIMPLEMENTED;
     } else {
-#ifdef OTDU_USE_IMGUI
-        drawDebugMenu( deltaTime );
-#endif
         for ( GameSystem *pService : registeredServices ) {
             if ( !pService->isPaused() ) {
                 pService->draw( deltaTime );

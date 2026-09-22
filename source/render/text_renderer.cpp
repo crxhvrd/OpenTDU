@@ -251,7 +251,7 @@ void TextRenderer::pushCommand( int32_t x, int32_t y, const char *pText ) {
     }
 }
 
-void TextRenderer::setColor( ColorRGBA &param_1 ) {
+void TextRenderer::setColor( const ColorRGBA &param_1 ) {
     // FUN_00507020
     activeColor = param_1;
 }
