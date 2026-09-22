@@ -76,6 +76,7 @@ public:
     uint32_t getCurveMode() const;
     int32_t getNumBlendClips() const;
     bool getBlendEntry( int32_t index, AnimStateBlendEntry &out ) const;
+    void getBlendSet( std::vector<AnimStateBlendEntry> &outEntries ) const;
 
 private:
     const uint32_t *getTrailer() const;

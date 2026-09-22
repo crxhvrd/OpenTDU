@@ -5,6 +5,7 @@
 #include "audio/implementation/ed_audio_sample.h"
 #include "core/time.h"
 #include "filesystem/binary.h"
+#include "game/cinematic/cin_res_collection.h"
 #include "game/game_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
@@ -84,7 +85,12 @@ bool EntitySoundEmitter::onMessage( FlashMessage *pMessage ) {
 void EntitySoundEmitter::initializeForCinematicKeyframed( void *param_2,
                                                           void *param_3 ) {
     // FUN_007dfaf0
-    OTDU_UNIMPLEMENTED; // TODO: CINEMATIC
+    const CinActorState *pState = static_cast<const CinActorState *>( param_2 );
+    const CinResCollection *pInterface =
+        static_cast<const CinResCollection *>( param_3 );
+
+    Matrix4x4f_t transform = pInterface->buildActorMatrix( *pState );
+    setTransform( transform, true );
 }
 
 void EntitySoundEmitter::initialize() {

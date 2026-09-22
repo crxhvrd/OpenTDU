@@ -704,18 +704,55 @@ void EntityDriver::setSeating( bool bState ) {
     }
 
     if ( !bState ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+        resetAnimationChannels();
     }
 
     if ( pCarState != nullptr ) {
         VehicleBase *pDisplay = pCarState->getVehicleInstance();
         if ( pDisplay != nullptr &&
              pDisplay->getType() == VehicleBase::eType::VBT_Car ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: VEHICLE
+            static_cast<VehicleCar *>( pDisplay )
+                ->setSeatBeltVisible( 0, !bIsSeating );
         }
     }
 
     bMustPlayAnims = true;
+}
+
+void EntityDriver::resetAnimationChannels() {
+    // FUN_007ebe50
+    for ( int32_t i = 0; i < animation.getNumChannels(); i++ ) {
+        animation.resetChannel( i );
+    }
+}
+
+void EntityDriver::leaveSeatForCinematic() {
+    // FUN_007f7b60 (inlined)
+    setSeating( false );
+
+    bIsFreeMovement = true;
+    resetAnimationChannels();
+    bMustPlayAnims = true;
+    bMustRecalculateDriverSeatPos = true;
+
+    bIsUsedIK = false;
+    resetAnimationChannels();
+    bMustPlayAnims = true;
+    bMustRecalculateDriverSeatPos = true;
+}
+
+void EntityDriver::returnToSeatAfterCinematic() {
+    // FUN_007e5f70 (inlined)
+    setSeating( true );
+    bIsFreeMovement = false;
+    bIsUsedIK = true;
+    bMustPlayAnims = true;
+    bMustRecalculateDriverSeatPos = true;
+
+    if ( DriveType == RT_Bike && pPooledAvatarEntry != nullptr ) {
+        pPooledAvatarEntry->Slots[AC_Helmet].setLowResVisible(
+            pLinkedExternalHelmet == nullptr );
+    }
 }
 
 void EntityDriver::tick( PlayerGameMech *pGameMech,
@@ -844,13 +881,12 @@ void EntityDriver::playDriveState( int32_t slot ) {
     }
 
     std::vector<AnimStateBlendEntry> blendSet;
-    const int32_t numBlendClips = pState->getNumBlendClips();
-    for ( int32_t i = 0; i < numBlendClips; i++ ) {
-        AnimStateBlendEntry entry;
-        if ( pState->getBlendEntry( i, entry ) && entry.pClip != nullptr ) {
-            blendSet.push_back( entry );
-        }
-    }
+    pState->getBlendSet( blendSet );
+    blendSet.erase( std::remove_if( blendSet.begin(), blendSet.end(),
+                                    []( const AnimStateBlendEntry &entry ) {
+                                        return entry.pClip == nullptr;
+                                    } ),
+                    blendSet.end() );
     if ( blendSet.empty() ) {
         return;
     }

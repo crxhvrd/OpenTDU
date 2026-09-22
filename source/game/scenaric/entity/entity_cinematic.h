@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -7,6 +8,8 @@
 #include "game/cinematic/cin_res_collection.h"
 #include "game/cinematic/cinematic_music_emitter.h"
 #include "game/gm_base.h"
+
+class AnimStateInstance;
 
 class CinematicPlayer;
 
@@ -28,6 +31,7 @@ public:
     inline void setLoop( bool bEnabled ) { bLoop = bEnabled; }
     inline void setStartTime( float time ) { StartTime = time; }
     inline void setBank( ScenaricBank *pBank ) { pSCBank = pBank; }
+    inline ScenaricBank *getBank() const { return pSCBank; }
     inline void setCutsceneName( const char *pName ) { cutsceneName = pName; }
     inline bool hasFocus() const {
         return ( cinematicPlaybackFlags & 0x10u ) == 0;
@@ -56,6 +60,9 @@ public:
     inline void setTransformOffset( const Matrix4x4f_t &offset ) {
         cinematicPlayer.setBaseMatrix( offset );
     }
+    inline void setLifeSetCinematic( bool bEnabled ) {
+        cinematicPlayer.setLifeSetCinematic( bEnabled );
+    }
     inline void setPlane( EntityActor *pPlane ) {
         cinematicPlayer.setPlane( pPlane );
     }
@@ -73,6 +80,15 @@ public:
     inline float getDuration() const { return CineTotalTime; }
     const CinResCollection::CameraView &getCameraView() const {
         return cinematicPlayer.getCameraView();
+    }
+    inline AnimStateInstance *getClip( int32_t row, int32_t column ) const {
+        // FUN_007e78e0 (inlined)
+        if ( column < 0 || pClipRows[row] == nullptr ||
+             clipCells.size() < static_cast<size_t>( kNumClipRows ) *
+                                    static_cast<size_t>( numClipColumns ) ) {
+            return nullptr;
+        }
+        return clipCells[row * numClipColumns + column];
     }
 
 public:
@@ -103,6 +119,8 @@ public:
     void seek( float time );
     void setPlaybackAnchor( const Eigen::Vector3f &pos );
 
+    int32_t findClipColumn( uint64_t hashcode ) const;
+
 private:
     bool begin();
     bool prepareResources();
@@ -112,6 +130,7 @@ private:
     void releaseMusicEmitter();
     void publishCameraView();
     bool calculateSpotMatrix( struct SpotMap *pSpot, Matrix4x4f_t &outMatrix );
+    void resolveClipTable();
 
 private:
     uint32_t cinematicFlags;
@@ -138,6 +157,12 @@ private:
     const void *pSceneRefs; // the (numRefs - 1) .sce blobs
 
     ScenaricBank *pSCBank;
+    static constexpr int32_t kNumClipRows = 3;
+    std::array<const uint64_t *, kNumClipRows> pClipRows;
+    int32_t numClipVariants;
+    int32_t numClipColumns;
+    std::vector<AnimStateInstance *> clipCells;
+
     std::unique_ptr<CinematicMusicEmitter> pMusicEmitter;
     CinematicPlayer *pGMInterface;
     CinResCollection cinematicPlayer;

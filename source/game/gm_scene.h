@@ -41,6 +41,10 @@ public:
         // FUN_00630320
         return false;
     }
+    virtual bool isDrawnInFakeDOF() {
+        // FUN_00630320
+        return false;
+    }
 
     inline MngActor &getActorManager() { return mngActor; }
     inline void setWeatherDesc( const char *pDesc ) {

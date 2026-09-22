@@ -1,10 +1,12 @@
 #include "shared.h"
 #include "base_entity.h"
 
+#include "game/cinematic/cin_res_collection.h"
 #include "game/game_mechanism.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "filesystem/binary.h"
+#include "physics/gs_physics.h"
 #include "render/particles/gs_particles.h"
 #include "world/gs_world_streaming.h"
 #include "world/mng_zone.h"
@@ -282,7 +284,7 @@ void Entity::checkValidity() {
     // FUN_007e0ee0
     int32_t iVar1 = getEntityIndex();
     if ( iVar1 == 1 ) {
-        bInitialized = ( (int8_t)flags & 1 );
+        bVisibleBefore = ( (int8_t)flags & 1 );
     }
 }
 
@@ -296,12 +298,31 @@ bool Entity::IsAvatarEntityType( const Entity *pEntity ) {
 
 void Entity::initializeForCinematic( void *param_2, void *param_3 ) {
     // FUN_007faec0
-    OTDU_UNIMPLEMENTED; // TODO: CINEMATIC
+    CinResCollection *pInterface = static_cast<CinResCollection *>( param_3 );
+    if ( ( flags & 8 ) != 0 ) {
+        return;
+    }
+
+    flags |= 8;
+    checkValidity();
+
+    if ( !pInterface->isLifeSetCinematic() && !IsAvatarEntityType( this ) ) {
+        pInterface->checkForRegisterActor( this );
+    }
 }
 
 void Entity::initializeForCinematicKeyframed( void *param_2, void *param_3 ) {
     // FUN_007fb590
-    OTDU_UNIMPLEMENTED; // TODO: CINEMATIC + PHYSICS
+    const CinActorState *pState = static_cast<const CinActorState *>( param_2 );
+    const CinResCollection *pInterface =
+        static_cast<const CinResCollection *>( param_3 );
+
+    flags = pState->bVisible ? ( flags | 1u ) : ( flags & ~1u );
+
+    Matrix4x4f_t transform = pInterface->buildActorMatrix( *pState );
+
+    PhysicsLock lock;
+    propagateTransform( transform, false );
 }
 
 void Entity::reset() {

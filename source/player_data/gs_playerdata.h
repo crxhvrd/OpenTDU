@@ -11,6 +11,7 @@
 class PlayerSave;
 class IPlayerData;
 class CarDesc;
+struct AvatarConfiguration;
 
 static constexpr const char *kPlayerSaveContextName =
     "playersave"; // DAT_00f7a038
@@ -171,5 +172,6 @@ extern float gSeatPosition[2];
 extern GSPlayerData *gpPlayerData;
 
 namespace TestDrive {
+    const AvatarConfiguration *GetSavedAvatarConfiguration();
     void RebakePlayerAvatar();
 } // namespace TestDrive

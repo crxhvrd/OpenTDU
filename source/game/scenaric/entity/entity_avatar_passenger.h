@@ -11,6 +11,7 @@ public:
 
     void loadResources( ScenaricBank *param_2 ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
+    void initializeForCinematic( void *param_2, void *param_3 ) override;
 
 protected:
     void deserializeAnims( BinaryReader *pReader, uint32_t minVersion );

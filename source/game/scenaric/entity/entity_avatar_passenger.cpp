@@ -58,3 +58,14 @@ void EntityAvatarPassenger::deserializeAnims( BinaryReader *pReader,
         AnimPeepin.deserialize( pReader );
     }
 }
+
+void EntityAvatarPassenger::initializeForCinematic( void *param_2,
+                                                    void *param_3 ) {
+    // FUN_007f4670
+    if ( CineAvatarMode == 0 ) {
+        OTDU_UNIMPLEMENTED; // TODO: AVATAR (restore the LOD distances, reset
+                            // the channels, show BELT_R)
+    }
+
+    EntityAvatar::initializeForCinematic( param_2, param_3 );
+}

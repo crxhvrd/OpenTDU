@@ -85,6 +85,7 @@ public:
 
     inline CarState *getCarState() const { return pCarState; }
     inline bool isSeating() const { return bIsSeating; }
+    inline bool isFreeMovement() const { return bIsFreeMovement; }
     inline eRideType getDriveType() const { return DriveType; }
 
 public:
@@ -107,8 +108,11 @@ public:
 
     void setCarState( CarState *pNewCarState );
     void setSeating( bool bState );
+    void leaveSeatForCinematic();
+    void returnToSeatAfterCinematic();
 
 private:
+    void resetAnimationChannels();
     void buildCarIKPoints();
     void buildBikeIKPoints();
     void setSeatModel( HiearchyNode *pNode );

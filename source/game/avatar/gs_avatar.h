@@ -34,6 +34,11 @@ public:
     inline Matrix4x4f_t *getIdentityBonePalette( int32_t index ) {
         return pBones[index];
     }
+    inline class EntityAnmSet *getFaceModifSet() const { return pFaceModifSet; }
+    inline const Eigen::Vector2f &getFaceRange( int32_t gender,
+                                                int32_t index ) const {
+        return pFaceRange[gender][index];
+    }
 
 public:
     GSAvatar();
@@ -77,6 +82,7 @@ public:
     bool installBelt( const char *pBeltType,
                       class EntityDriver *pDriver,
                       eAvatarBeltSeat seat );
+    AvatarClothePart *findClotheByID( uint16_t id );
 
 private:
     AvatarBeltPart *findBelt( eAvatarClotheSize size,
@@ -84,7 +90,6 @@ private:
                               eAvatarBeltType beltType,
                               eAvatarBeltSeat seat );
 
-    AvatarClothePart *findClotheByID( uint16_t id );
     AvatarClothePart *findDefaultPartByID( uint16_t id );
     void readAvatarConfig( const EntityAvatar *pAvatar,
                            AvatarConfiguration &outConfig );
@@ -122,7 +127,7 @@ private:
     AvatarConfiguration pDefaultConfig[kNumGenders];
     int32_t maxClotheID;
 
-    uint32_t faceParameterCount;
+    class EntityAnmSet *pFaceModifSet;
     ScenaricBank faceParametersBank;
     Eigen::Vector2f pFaceRange[2][kNumFaceParams];
 

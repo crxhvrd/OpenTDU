@@ -5,7 +5,7 @@ CinematicEntity::CinematicEntity()
     : cutsceneName( "" ),
       cutsceneIndex( 0 ),
       pParticleInstance( nullptr ),
-      bInitialized( false ),
+      bVisibleBefore( false ),
       bHighPriorityInit( true ),
       bNeedRegisterEntity( true ) {}
 

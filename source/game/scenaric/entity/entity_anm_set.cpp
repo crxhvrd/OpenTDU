@@ -22,6 +22,10 @@ void EntityAnmSet::loadResources( ScenaricBank *param_2 ) {
     for ( RenderAnm &anim : animations ) {
         if ( anim.File != 0 ) {
             anim.pClip = gpScenaric->resolveClip( param_2, anim.pRefBas );
+            if ( anim.pClip == nullptr ) {
+                anim.pAnimState =
+                    gpScenaric->resolveAnimState( param_2, anim.pRefBas );
+            }
         }
     }
 }

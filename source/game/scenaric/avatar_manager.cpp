@@ -2,6 +2,7 @@
 #include "avatar_manager.h"
 
 #include "game/avatar/gs_avatar.h"
+#include "player_data/gs_playerdata.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/entity/entity_factory.h"
@@ -185,8 +186,7 @@ EntityAvatar *AvatarManager::createAvatar( const AvatarConfiguration *pConfig,
 
     const AvatarConfiguration *pEffectiveConfig = pConfig;
     if ( type == 1 ) {
-        pEffectiveConfig = &gpAvatar->getDefaultConfiguration( 0 );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA
+        pEffectiveConfig = TestDrive::GetSavedAvatarConfiguration();
     }
 
     pAvatar->installConfiguration( pEffectiveConfig, clotheSet, bAsync,
@@ -205,6 +205,16 @@ void AvatarManager::releaseAvatar( EntityAvatar *pAvatar ) {
             return;
         }
     }
+}
+
+int32_t AvatarManager::getReferenceCount( const EntityAvatar *pAvatar ) const {
+    // FUN_007f5780
+    for ( const PlayerAvatar &slot : playerAvatars ) {
+        if ( slot.pAvatar == pAvatar ) {
+            return static_cast<int32_t>( slot.ReferenceCount );
+        }
+    }
+    return 0;
 }
 
 EntityAvatar *AvatarManager::getDriverAvatar() {

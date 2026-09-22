@@ -52,7 +52,7 @@ struct AnimChannel {
     enum eState : int32_t {
         ACS_Free = 0,
         ACS_Playing = 1,
-        ACS_Stopping = 2,
+        ACS_Transition = 2,
     };
     enum eLayerMode : int32_t {
         ALM_Direct = 0,
@@ -70,6 +70,11 @@ struct AnimChannel {
     std::vector<AnimStateBlendEntry> BlendSet;
     float Progress = 0.0f;
     float Duration = 0.0f;
+    std::vector<AnimStateBlendEntry> BlendSetB;
+    float ProgressB = 0.0f;
+    float DurationB = 0.0f;
+    float TransitionTime = 0.0f;
+    float TransitionLength = 1.0f;
 };
 
 class Animation {
@@ -100,6 +105,9 @@ public:
     inline void setExpressionList( AnimExpressionList *pList ) {
         pExpressionList = pList;
     }
+    inline void setFacePose( const AnimPoseBuffer *pPose ) {
+        pFacePose = pPose;
+    }
 
 public:
     Animation();
@@ -116,11 +124,22 @@ public:
                       const AnimStateBlendEntry *pEntries,
                       int32_t count );
     void stopChannel( int32_t matchID );
+    void resetChannel( int32_t index );
     void setChannelLayer( int32_t matchID, int32_t layerMode, float weight );
     void setChannelBlendRatios( int32_t matchID,
                                 const AnimStateBlendEntry *pEntries,
                                 int32_t count );
     AnimChannel *getChannel( int32_t matchID );
+    void playStatesAtTime( const AnimStateInstance *pStateA,
+                           float timeA,
+                           const AnimStateInstance *pStateB,
+                           float timeB,
+                           float ratio );
+    void seekChannel( int32_t matchID, float time, bool bNormalised );
+    void
+    sampleClip( ClipInstance *pClipToSample, AnimPoseBuffer &dst, float time );
+    void
+    blendPose( const AnimPoseBuffer &src, float weight, AnimPoseBuffer &dst );
 
     Matrix4x4f_t getNodeWorldMatrix( int32_t stopNode, int32_t node ) const;
 
@@ -140,8 +159,11 @@ private:
     AnimPoseBuffer pose;
     AnimPoseBuffer scratch;
     AnimPoseBuffer layerBuffer;
+    AnimPoseBuffer transitionFrom;
+    AnimPoseBuffer transitionTo;
     AnimPoseBuffer *pAccumulator = nullptr;
     AnimExpressionList *pExpressionList = nullptr;
+    const AnimPoseBuffer *pFacePose = nullptr;
     std::vector<Matrix4x4f_t> palette;
 
 private:
@@ -149,8 +171,14 @@ private:
     void evaluate( float deltaTime );
     void refreshBlendDuration( AnimChannel &channel );
     void evaluateChannel( const AnimChannel &channel, AnimPoseBuffer &dst );
-    void
-    sampleClip( ClipInstance *pClipToSample, AnimPoseBuffer &dst, float time );
+    void evaluateBlendSet( const std::vector<AnimStateBlendEntry> &blendSet,
+                           float progress,
+                           AnimPoseBuffer &dst );
+    void evaluateTransition( const AnimChannel &channel, AnimPoseBuffer &dst );
+    void blendPoses( const AnimPoseBuffer &from,
+                     const AnimPoseBuffer &to,
+                     float ratio,
+                     AnimPoseBuffer &dst );
     void accumulateClip( const AnimStateBlendEntry &entry, float progress );
     void accumulatePose( const AnimPoseBuffer &src, float weight );
     void mergeLayer( int32_t layerMode, float weight );

@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "entity_micro.h"
 
+#include "game/cinematic/cin_res_collection.h"
 #include "game/game_mechanism.h"
 #include "filesystem/binary.h"
 
@@ -50,6 +51,19 @@ void EntityMicro::deserialize( BinaryReader *param_2 ) {
     // FUN_007e0550
     Entity::deserialize( param_2 );
     Flags = 0;
+}
+
+void EntityMicro::initializeForCinematicKeyframed( void *param_2,
+                                                   void *param_3 ) {
+    // FUN_007e0290
+    const CinActorState *pState = static_cast<const CinActorState *>( param_2 );
+    const CinResCollection *pInterface =
+        static_cast<const CinResCollection *>( param_3 );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+
+    Matrix4x4f_t transform = pInterface->buildActorMatrix( *pState );
+    setTransform( transform, true );
 }
 
 void EntityMicro::setTransform( Matrix4x4f_t &transformMatrix, bool param_1 ) {

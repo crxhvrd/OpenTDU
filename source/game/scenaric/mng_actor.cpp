@@ -15,7 +15,7 @@
 #include "physics/vehicle/physics_vehicle.h"
 
 static inline bool IsGameModeRequestingDOFPass() {
-    return gpActiveGMScene != nullptr && false;
+    return gpActiveGMScene != nullptr && gpActiveGMScene->isDrawnInFakeDOF();
 }
 
 MngActor::MngActor()

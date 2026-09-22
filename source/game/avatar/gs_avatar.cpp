@@ -198,7 +198,7 @@ GSAvatar::GSAvatar()
       pBeltDB( nullptr ),
       pEyeDB( nullptr ),
       maxClotheID( 0 ),
-      faceParameterCount( 0 ) {
+      pFaceModifSet( nullptr ) {
     // FUN_008f6f00
     for ( int32_t i = 0; i < kNumIdentityBones; i++ ) {
         pBones[0][i] = Matrix4x4f_t::Identity();
@@ -248,7 +248,11 @@ bool GSAvatar::initialize( TestDriveGameInstance * ) {
     GSScenaric::LoadScenaricBank( "scenarics/Avatars", "facemodifset",
                                   &faceParametersBank );
 
-    faceParameterCount = faceParametersBank.getEntityCount();
+    // FUN_008f7d10
+    if ( faceParametersBank.getEntityCount() != 0 ) {
+        pFaceModifSet =
+            static_cast<EntityAnmSet *>( faceParametersBank.getEntity( 0 ) );
+    }
 
     bankManager.initialize();
 
@@ -733,7 +737,7 @@ void GSAvatar::bakeAvatar( EntityAvatar *pAvatar,
         pAvatar->FaceParams[i] = static_cast<int32_t>( faceParam );
     }
 
-    pAvatar->bIsToUpdate = true;
+    pAvatar->bNeedToRefreshFace = true;
 
     bool bMotoHelmet = IsHelmetClotheID( pConfig->ClotheID[0][AC_Top] ) ||
                        IsHelmetClotheID( pConfig->ClotheID[0][AC_Bottom] );

@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "cin_res_collection.h"
 
+#include "tdu_instance.h"
+
 #include "game/cinematic/cinematic_music_emitter.h"
 
 #include <algorithm>
@@ -31,7 +33,9 @@
 #include "player_data/driver.h"
 #include "player_data/saved_garage.h"
 #include "render/mng_env_map.h"
+#include "render/3dd.h"
 #include "render/animation/clip.h"
+#include "render/instance.h"
 #include "render/camera/gs_camera.h"
 #include "render/camera/camera_cinematic.h"
 #include "game/scenaric/entity/entity_cinematic.h"
@@ -45,6 +49,8 @@ static constexpr int32_t kDefaultBikeDBID = 666;
 static constexpr int32_t kCinematicCameraMode = 0xa; // DAT_00f143b4
 
 static constexpr float kCinematicReferenceAspectRatio = 1.7777778f;
+static constexpr float kSkinnedPropCullRadius = 100.0f; // DAT_00f41708
+
 static float gCinematicShakePreviousTime = 0.0f; // DAT_016a6a14
 
 static void StepCameraShakeAngle( float &angle,
@@ -185,6 +191,66 @@ const float *TrackKeyframeBase( const uint16_t *pTrack ) {
         u16Offset = static_cast<int32_t>( n ) + 4;
     }
     return reinterpret_cast<const float *>( pTrack + u16Offset );
+}
+
+struct CinAnimClipKey {
+    int32_t Ref;
+    float Start[3];
+    float End[3];
+    float Length[3];
+};
+OTDU_SIZE_MUST_MATCH( CinAnimClipKey, 0x28 );
+
+static bool DecodeAnimClipKey( const uint16_t *pTrack,
+                               float time,
+                               int32_t &outRefA,
+                               float &outTimeA,
+                               bool &bOutBlending,
+                               int32_t &outRefB,
+                               float &outTimeB,
+                               float &outRatio ) {
+    // FUN_0067baf0
+    int32_t lower = 0;
+    int32_t upper = 0;
+    FindKeyframe( pTrack, time, &lower, &upper );
+
+    const float *pKeyTimes = reinterpret_cast<const float *>( pTrack + 2 );
+    const float elapsed = time - pKeyTimes[lower];
+    if ( elapsed < 0.0f ) {
+        return false;
+    }
+
+    const CinAnimClipKey *pKeys =
+        reinterpret_cast<const CinAnimClipKey *>( TrackKeyframeBase( pTrack ) );
+    const CinAnimClipKey &key = pKeys[lower];
+
+    if ( elapsed < key.Length[0] && lower != 0 ) {
+        const CinAnimClipKey &previous = pKeys[lower - 1];
+        const float ratio =
+            ( key.Length[0] > 0.0f ) ? elapsed / key.Length[0] : 0.0f;
+        outTimeA =
+            ratio * previous.End[2] + ( 1.0f - ratio ) * previous.Start[2];
+        outRefA = previous.Ref;
+        outTimeB = ratio * key.End[0] + ( 1.0f - ratio ) * key.Start[0];
+        outRefB = key.Ref;
+        bOutBlending = true;
+        outRatio = ratio;
+        return true;
+    }
+
+    float ratio = 0.0f;
+    if ( key.Length[1] > 0.0f ) {
+        ratio = ( elapsed - key.Length[0] ) / key.Length[1];
+        if ( ratio >= 1.0f ) {
+            return false;
+        }
+    }
+
+    outTimeA = ratio * key.End[1] + ( 1.0f - ratio ) * key.Start[1];
+    bOutBlending = false;
+    outRatio = 0.0f;
+    outRefA = key.Ref;
+    return true;
 }
 
 Eigen::Vector3f InterpolateVec3Track( const uint16_t *pTrack, float time ) {
@@ -458,8 +524,7 @@ void CinResCollection::processCinematicMessages( const uint16_t *pTrack,
     }
 
     const void *pKeyframeEntry = pValues + lower * 2;
-    if ( std::find( firedMessages.begin(), firedMessages.end(),
-                    pKeyframeEntry ) != firedMessages.end() ) {
+    if ( isMessageFired( pKeyframeEntry ) ) {
         return;
     }
 
@@ -475,9 +540,7 @@ void CinResCollection::processCinematicMessages( const uint16_t *pTrack,
         return;
     }
 
-    if ( firedMessages.size() < kMaxFiredMessages ) {
-        firedMessages.push_back( pKeyframeEntry );
-    }
+    recordFiredMessage( pMsg, pKeyframeEntry );
 
     const uint32_t tag4 =
         ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[0] ) ) << 24 ) |
@@ -485,8 +548,8 @@ void CinResCollection::processCinematicMessages( const uint16_t *pTrack,
         ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[2] ) ) << 8 ) |
         static_cast<uint32_t>( static_cast<uint8_t>( pMsg[3] ) );
 
-    OTDU_LOG_DEBUG( "Cinematic '%s' message '%s' at %.2fs (%.2fs)\n",
-                    debugName, pMsg, time, duration );
+    OTDU_LOG_DEBUG( "Cinematic '%s' message '%s' at %.2fs (%.2fs)\n", debugName,
+                    pMsg, time, duration );
 
     processMusicMessage( tag4 );
 }
@@ -620,6 +683,8 @@ void CinResCollection::tickController( const uint8_t *pController,
     const int32_t numMedia = *reinterpret_cast<const int32_t *>(
         pSceneData + kCinSceneMediaCountOffset );
 
+    onShotEvaluated( lower, kf, frac );
+
     CinSourceContext ctx;
     ctx.pPlayer = this;
     ctx.pSceneData = pSceneData;
@@ -680,6 +745,7 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
     Eigen::Vector3f scale( 1.0f, 1.0f, 1.0f );
     bool bVisible = true;
     bool bHasTransformTrack = false;
+    CinActorState state;
 
     const uint8_t *pProp = pEntry + propOffset;
     for ( int32_t i = 0; i < numProps; i++ ) {
@@ -717,8 +783,11 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
             bVisible = pBytes[lower] != 0;
             break;
         }
-        case 0x73d8ccaeu: // message keys (timed clip / event triggers)
-            processActorMessages( pCtx, pTrack, time );
+        case 0x73d8ccaeu: // message keys
+            collectActorMessages( pCtx, pTrack, time, state );
+            break;
+        case 0xdcd2e210u: // anim clip keys
+            collectActorClips( pCtx, pTrack, time, state );
             break;
         default:
             OTDU_UNIMPLEMENTED; // TODO: FX keys
@@ -739,14 +808,16 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
             position.x(), position.y(), position.z(), heading.x(), heading.y(),
             heading.z(), heading.w(), scale.x(), scale.y(), scale.z() );
 
-    applyActorTransform( pActor, position, heading, scale, bHasTransformTrack );
+    state.Position = position;
+    state.Heading = heading;
+    state.bVisible = bVisible;
+    dispatchActor( pActor, state, scale, bHasTransformTrack );
 }
 
-void CinResCollection::applyActorTransform( const CinematicActor *pActor,
-                                            const Eigen::Vector3f &position,
-                                            const Eigen::Quaternionf &heading,
-                                            const Eigen::Vector3f &scale,
-                                            bool bHasTransformTrack ) {
+void CinResCollection::dispatchActor( const CinematicActor *pActor,
+                                      CinActorState &state,
+                                      const Eigen::Vector3f &scale,
+                                      bool bHasTransformTrack ) {
     // FUN_007e3e30
     if ( pActor == nullptr ) {
         return;
@@ -756,17 +827,50 @@ void CinResCollection::applyActorTransform( const CinematicActor *pActor,
         return;
     }
 
-    Matrix4x4f_t transform = BuildRotationMatrix( heading );
+    if ( pActor->Kind == CinematicActor::CAK_Entity ) {
+        Entity *pEntity = static_cast<Entity *>( pActor->pEntity );
+
+        if ( bFirstShotPending ) {
+            pEntity->initializeForCinematic( &state, this );
+        }
+
+        for ( int32_t i = 0; i < state.NumMessages; i++ ) {
+            const CinActorMessage &message = state.Messages[i];
+            if ( isMessageFired( message.pKey ) ) {
+                continue;
+            }
+
+            FlashMessage *pMessage = reinterpret_cast<FlashMessage *>(
+                const_cast<char *>( message.pString ) );
+            if ( pEntity->onMessage( pMessage ) ) {
+                recordFiredMessage( message.pString, message.pKey );
+                OTDU_LOG_DEBUG(
+                    "Cinematic '%s' actor '%s' consumed message '%s'\n",
+                    debugName, pActor->Name, message.pString );
+            }
+        }
+
+        pEntity->initializeForCinematicKeyframed( &state, this );
+
+        const Eigen::Vector4f worldPos = pEntity->getModelMatrix().row( 3 );
+        return;
+    }
+
+    Matrix4x4f_t transform = BuildRotationMatrix( state.Heading );
     transform.row( 0 ) *= scale.x();
     transform.row( 1 ) *= scale.y();
     transform.row( 2 ) *= scale.z();
-    transform.row( 3 ) =
-        Eigen::Vector4f( position.x(), position.y(), position.z(), 1.0f );
+    transform.row( 3 ) = Eigen::Vector4f(
+        state.Position.x(), state.Position.y(), state.Position.z(), 1.0f );
     if ( bHasBaseMatrix ) {
         transform = transform * baseMatrix;
     }
 
     if ( pActor->Kind == CinematicActor::CAK_PlayerCar ) {
+        if ( state.NumMessages > 0 ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (the PLAYER_CAR media's
+                                     // GesCineMsg: doors, windows, avm*)
+        }
         if ( bHasTransformTrack ) {
             applyPlayerCarTransform( transform );
         }
@@ -783,11 +887,99 @@ void CinResCollection::applyActorTransform( const CinematicActor *pActor,
             worldPos.x(), worldPos.y(), worldPos.z() );
 }
 
-void CinResCollection::processActorMessages( const CinMediaContext *pCtx,
+Matrix4x4f_t
+CinResCollection::buildActorMatrix( const CinActorState &state ) const {
+    // FUN_007fb590 (inlined)
+    Matrix4x4f_t transform = BuildRotationMatrix( state.Heading );
+    transform.row( 3 ) = Eigen::Vector4f(
+        state.Position.x(), state.Position.y(), state.Position.z(), 1.0f );
+
+    if ( bHasBaseMatrix ) {
+        return transform * baseMatrix;
+    }
+
+    const Eigen::Vector4f shift = gpWorldStreaming->isEnabled()
+                                      ? gpWorldStreaming->getPosition()
+                                      : Eigen::Vector4f::Zero();
+    transform( 3, 0 ) -= shift.x();
+    transform( 3, 1 ) -= shift.y();
+    transform( 3, 2 ) -= shift.z();
+    return transform;
+}
+
+void CinResCollection::checkForRegisterActor( Entity *pEntity ) {
+    // FUN_007e3fd0
+    ScenaricBank *pSCBank = ( pOwner != nullptr ) ? pOwner->getBank() : nullptr;
+    if ( pSCBank == nullptr || !pEntity->needRegisterEntity() ||
+         pSCBank->getMngActor() != nullptr || gpActiveGMScene == nullptr ) {
+        return;
+    }
+
+    // FUN_007e3f70
+    gpActiveGMScene->getActorManager().registerActor( pEntity );
+}
+
+void CinResCollection::checkForUnregisterActor( Entity *pEntity ) {
+    // FUN_007e3fa0
+    ScenaricBank *pSCBank = ( pOwner != nullptr ) ? pOwner->getBank() : nullptr;
+    if ( pSCBank == nullptr || !pEntity->needRegisterEntity() ||
+         pSCBank->getMngActor() != nullptr || gpActiveGMScene == nullptr ) {
+        return;
+    }
+
+    // FUN_007e3f50
+    gpActiveGMScene->getActorManager().removeActorFromList( pEntity );
+}
+
+void CinResCollection::animActor( EntityActor *pActor,
+                                  const CinActorState *pState ) {
+    // FUN_007e49e0
+    if ( pOwner == nullptr ) {
+        return;
+    }
+
+    AnimStateInstance *pClipA = nullptr;
+    if ( pState->ClipRefA != -1 && pState->ClipColumnA != -1 ) {
+        for ( int32_t row = pActor->getClipRow(); row >= 0 && pClipA == nullptr;
+              row-- ) {
+            pClipA = pOwner->getClip( row, pState->ClipColumnA );
+        }
+    }
+
+    AnimStateInstance *pClipB = nullptr;
+    if ( pState->ClipRefB != -1 && pState->ClipColumnB != -1 ) {
+        for ( int32_t row = pActor->getClipRow(); row >= 0 && pClipB == nullptr;
+              row-- ) {
+            pClipB = pOwner->getClip( row, pState->ClipColumnB );
+        }
+    }
+
+    if ( pClipA == nullptr ) {
+        return;
+    }
+
+    Animation *pAnimation = static_cast<Animation *>( pActor->getAnimation() );
+    if ( pAnimation == nullptr || !pAnimation->isValid() ) {
+        return;
+    }
+
+    // FUN_00401330
+    if ( pClipB != nullptr ) {
+        pAnimation->playStatesAtTime( pClipA, pState->TimeA, pClipB,
+                                      pState->TimeB, pState->Ratio );
+    } else {
+        pAnimation->playStatesAtTime( pClipA, pState->TimeA, nullptr, 0.0f,
+                                      0.0f );
+    }
+}
+
+void CinResCollection::collectActorMessages( const CinMediaContext *pCtx,
                                              const uint16_t *pTrack,
-                                             float time ) {
+                                             float time,
+                                             CinActorState &state ) {
     // FUN_0067c4a0
-    if ( pCtx->pSource == nullptr || pCtx->pSource->pSceneRefs == nullptr ) {
+    if ( pCtx->pSource == nullptr || pCtx->pSource->pSceneRefs == nullptr ||
+         state.NumMessages >= CinActorState::kMaxMessages ) {
         return;
     }
 
@@ -797,60 +989,155 @@ void CinResCollection::processActorMessages( const CinMediaContext *pCtx,
 
     const float *pKeyTimes = reinterpret_cast<const float *>( pTrack + 2 );
     const float elapsed = time - pKeyTimes[lower];
-    if ( elapsed < 0.0f ) {
-        return;
-    }
 
-    const float *pValues = TrackKeyframeBase( pTrack ); // after the keytimes
+    const float *pValues = TrackKeyframeBase( pTrack );
     const int32_t refIdx =
         reinterpret_cast<const int32_t *>( pValues )[lower * 2];
     const float duration = pValues[lower * 2 + 1];
-    if ( refIdx < 0 || !( elapsed < duration || duration < 1e-4f ) ) {
+    if ( elapsed < 0.0f || !( elapsed < duration || duration < 0.0f ) ||
+         refIdx < 0 ) {
         return;
     }
 
-    const uint8_t *pDesc = static_cast<const uint8_t *>(
-        pCtx->pSource->pSceneRefs[refIdx].pDescriptor );
-    if ( pDesc == nullptr ) {
+    const CinRefSlot &ref = pCtx->pSource->pSceneRefs[refIdx];
+    const uint8_t *pDesc = static_cast<const uint8_t *>( ref.pDescriptor );
+    if ( pDesc == nullptr || pDesc[0] != 0x0b ) {
         return;
     }
 
-    const uint8_t flags = pDesc[1];
-    const char *pMsg =
-        reinterpret_cast<const char *>( pDesc + ( ( flags & 1 ) ? 0xc : 4 ) );
+    CinActorMessage &message = state.Messages[state.NumMessages++];
+    message.pRef = ref.pHandle;
+    message.pKey = pValues + lower * 2;
+    message.pString = reinterpret_cast<const char *>(
+        pDesc + ( ( pDesc[1] & 1 ) ? 0xc : 4 ) );
+    message.Length = static_cast<int32_t>( std::strlen( message.pString ) );
+    message.Duration = duration;
+    message.Elapsed = elapsed;
+}
 
-    const void *pKeyframeEntry = pValues + lower * 2;
-    const bool bAlreadyFired =
-        std::find( firedMessages.begin(), firedMessages.end(),
-                   pKeyframeEntry ) != firedMessages.end();
+void CinResCollection::collectActorClips( const CinMediaContext *pCtx,
+                                          const uint16_t *pTrack,
+                                          float time,
+                                          CinActorState &state ) {
+    // FUN_0067c4a0
+    int32_t refA = -1;
+    int32_t refB = -1;
+    float timeA = 0.0f;
+    float timeB = 0.0f;
+    float ratio = 0.0f;
+    bool bBlending = false;
+    if ( !DecodeAnimClipKey( pTrack, time, refA, timeA, bBlending, refB, timeB,
+                             ratio ) ) {
+        return;
+    }
 
-    if ( !bAlreadyFired && pMsg[0] != '\0' ) {
-        if ( firedMessages.size() < kMaxFiredMessages ) {
-            firedMessages.push_back( pKeyframeEntry );
+    const CinRefSlot *pSceneRefs =
+        ( pCtx->pSource != nullptr ) ? pCtx->pSource->pSceneRefs : nullptr;
+
+    if ( refA != -1 && pSceneRefs != nullptr ) {
+        state.ClipColumnA = static_cast<int32_t>(
+            reinterpret_cast<intptr_t>( pSceneRefs[refA].pHandle ) );
+    }
+    state.ClipRefA = refA;
+    state.TimeA = timeA;
+
+    if ( !bBlending ) {
+        return;
+    }
+
+    if ( refB != -1 && pSceneRefs != nullptr ) {
+        state.ClipColumnB = static_cast<int32_t>(
+            reinterpret_cast<intptr_t>( pSceneRefs[refB].pHandle ) );
+    }
+    state.ClipRefB = refB;
+    state.TimeB = timeB;
+    state.Ratio = ratio;
+}
+
+bool CinResCollection::isMessageFired( const void *pKey ) const {
+    // FUN_007e7860
+    for ( const FiredMessage &fired : firedMessages ) {
+        if ( fired.pKey == pKey ) {
+            return true;
         }
-        const CinematicActor *pActor =
-            static_cast<const CinematicActor *>( *pCtx->pHandleSlot );
+    }
+    return false;
+}
 
-        const uint32_t tag4 =
-            ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[0] ) ) << 24 ) |
-            ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[1] ) ) << 16 ) |
-            ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[2] ) ) << 8 ) |
-            static_cast<uint32_t>( static_cast<uint8_t>( pMsg[3] ) );
-        const uint64_t nameHash = TestDriveCRC64( pMsg );
-        ClipInstance *pClip =
-            gpScenaric != nullptr ? gpScenaric->findClip( nameHash ) : nullptr;
+void CinResCollection::recordFiredMessage( const char *pMessage,
+                                           const void *pKey ) {
+    if ( firedMessages.size() >= kMaxFiredMessages ) {
+        return;
+    }
 
-        OTDU_LOG_ALWAYS(
-            "[CINMSG] cine='%s' t=%.2f actor='%s' refType=0x%x msg='%s' "
-            "dur=%.2f tag4=0x%08x hash=0x%llx clip=%p\n",
-            debugName, time, pActor != nullptr ? pActor->Name : "?", pDesc[0],
-            pMsg,
-            duration, tag4, static_cast<unsigned long long>( nameHash ),
-            (void *)pClip );
+    const uint32_t tag =
+        ( static_cast<uint32_t>( static_cast<uint8_t>( pMessage[0] ) ) << 24 ) |
+        ( static_cast<uint32_t>( static_cast<uint8_t>( pMessage[1] ) ) << 16 ) |
+        ( static_cast<uint32_t>( static_cast<uint8_t>( pMessage[2] ) ) << 8 ) |
+        static_cast<uint32_t>( static_cast<uint8_t>( pMessage[3] ) );
+    firedMessages.push_back( { tag, pKey } );
+}
 
-        if ( !processMusicMessage( tag4 ) ) {
-            playClipOnActorEntity( pActor, pClip );
+void CinResCollection::removeFiredMessages( uint32_t tag ) {
+    // FUN_007e77c0
+    for ( size_t i = 0; i < firedMessages.size(); ) {
+        if ( firedMessages[i].Tag == tag ) {
+            firedMessages[i] = firedMessages.back();
+            firedMessages.pop_back();
+        } else {
+            i++;
         }
+    }
+}
+
+void CinResCollection::onShotEvaluated( int32_t shotIndex,
+                                        const float *pShotKey,
+                                        float shotTime ) {
+    // FUN_007e12c0
+    static constexpr uint32_t kCineAvatarModeMessages[] = {
+        0x61766d31, // "avm1"
+        0x61766d32, // "avm2"
+        0x61766d33, // "avm3"
+        0x61766d34, // "avm4"
+    };
+
+    if ( bFirstShotConsumed ) {
+        bFirstShotPending = false;
+        bFirstShotConsumed = false;
+    }
+    if ( bFirstShotPending ) {
+        bFirstShotConsumed = true;
+    }
+
+    const float duration = pShotKey[0];
+    const float fadeInDuration = pShotKey[6];
+    const float fadeOutDuration = pShotKey[11];
+
+    if ( shotIndex != currentShot ) {
+        currentShot = shotIndex;
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+
+        if ( pOwner != nullptr ) {
+            for ( const uint32_t tag : kCineAvatarModeMessages ) {
+                removeFiredMessages( tag );
+            }
+            if ( gpTestDriveInstance != nullptr &&
+                 gpTestDriveInstance->getActiveGameMode() == GM_Intro ) {
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO (gpGMIntro also
+                                         // purges the cl/op door and window
+                                         // messages)
+            }
+        }
+
+        if ( fadeInDuration > 0.0f ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (shot fade-in through
+                                     // MngFade)
+        }
+    }
+
+    if ( duration - fadeOutDuration < shotTime && fadeOutDuration > 0.0f ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (shot fade-out through
+                                 // MngFade)
     }
 }
 
@@ -866,33 +1153,21 @@ bool CinResCollection::processMusicMessage( uint32_t tag4 ) {
     }
 
     switch ( tag4 ) {
-    case kMessagePlay:     
+    case kMessagePlay:
     case kMessagePlayOnce:
         pMusicEmitter->play( false, 0.0f );
         return true;
 
-    case kMessagePlayLoop: 
+    case kMessagePlayLoop:
         pMusicEmitter->play( true, 0.0f );
         return true;
 
-    case kMessageStop: 
+    case kMessageStop:
         pMusicEmitter->stop( 0.0f );
         return true;
 
     default:
         return false;
-    }
-}
-
-void CinResCollection::playClipOnActorEntity( const CinematicActor *pActor,
-                                              ClipInstance *pClip ) {
-    // FUN_007e3e30
-    if ( pActor == nullptr || pActor->pEntity == nullptr || pClip == nullptr ) {
-        return;
-    }
-    Entity *pEntity = static_cast<Entity *>( pActor->pEntity );
-    if ( pEntity->getType() == eEntityType::ET_PTDR ) {
-        static_cast<EntityPedestrian *>( pEntity )->playAnimationClip( pClip );
     }
 }
 
@@ -1040,7 +1315,7 @@ void CinResCollection::applyCameraTransform( const CinMediaContext *pCtx,
         }
 
         if ( ( worldTarget - worldPos ).squaredNorm() < 1.0e-6f ) {
-            return; 
+            return;
         }
 
         Eigen::Vector3f worldUp = up;
@@ -1048,8 +1323,8 @@ void CinResCollection::applyCameraTransform( const CinMediaContext *pCtx,
             worldUp = Eigen::Vector3f( 0.0f, 1.0f, 0.0f );
         } else if ( bTargetRelative || posRef >= 0 ) {
             const Matrix4x4f_t &m = ( posRef >= 0 ) ? refMatrix : targetMatrix;
-            worldUp = ( m.topLeftCorner<3, 3>().transpose() * worldUp )
-                          .normalized();
+            worldUp =
+                ( m.topLeftCorner<3, 3>().transpose() * worldUp ).normalized();
         }
 
         cameraView.Position = worldPos;
@@ -1072,8 +1347,7 @@ void CinResCollection::applyCameraTransform( const CinMediaContext *pCtx,
         Eigen::Vector4f( position.x(), position.y(), position.z(), 1.0f );
     if ( bHasBaseMatrix ) {
         rotation = rotation * baseMatrix;
-    } else if ( gpWorldStreaming != nullptr &&
-                gpWorldStreaming->isEnabled() ) {
+    } else if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
         const Eigen::Vector4f &shift = gpWorldStreaming->getPosition();
         rotation.row( 3 ).head<3>() -= shift.head<3>();
     }
@@ -1115,6 +1389,11 @@ bool CinResCollection::createInterface( const void *pBankData,
         return false;
     }
     pBank = pSourceBank;
+
+    // FUN_007e0eb0
+    bFirstShotPending = true;
+    bFirstShotConsumed = false;
+
     if ( !load( pBankData, size, pBufferIn ) ) {
         return false;
     }
@@ -1182,16 +1461,19 @@ void *CinResCollection::buildRefMedia( const uint8_t *pRefEntry ) {
     switch ( refType ) {
     case 0x02: {
         // FUN_007e7cc0
-        if ( !bHasId ) {
+        if ( !bHasId || pOwner == nullptr ) {
             return nullptr;
         }
-        const uint32_t low = *reinterpret_cast<const uint32_t *>( pRefEntry + 4 );
+        const uint32_t low =
+            *reinterpret_cast<const uint32_t *>( pRefEntry + 4 );
         const uint32_t high =
             *reinterpret_cast<const uint32_t *>( pRefEntry + 8 );
-        (void)low;
-        (void)high;
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCCinematic id table 
-        return nullptr;
+        const uint64_t key = ( static_cast<uint64_t>( high ) << 32 ) | low;
+        if ( key == 0 ) {
+            return nullptr;
+        }
+        return reinterpret_cast<void *>(
+            static_cast<intptr_t>( pOwner->findClipColumn( key ) ) );
     }
     case 0x0c: {
         char scratch[200] = {};
@@ -1423,7 +1705,7 @@ void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
     const uint32_t hashLow = *reinterpret_cast<const uint32_t *>( pRaw + 0x34 );
     const uint32_t hashHigh =
         *reinterpret_cast<const uint32_t *>( pRaw + 0x38 );
-    const uint64_t key = ( static_cast<uint64_t>( hashLow ) << 32 ) | hashHigh;
+    const uint64_t key = ( static_cast<uint64_t>( hashHigh ) << 32 ) | hashLow;
 
     CinematicActor::eKind kind = CinematicActor::CAK_Entity;
     void *pEntity = findActorByHashcode( key );
@@ -1431,7 +1713,57 @@ void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
         pEntity = spawnActorEntity( pName, key, kind );
     }
 
-    return registerActor( pName, pMedia, pEntity, kind );
+    int32_t avatarRefCount = 0;
+    if ( pEntity != nullptr && kind == CinematicActor::CAK_Entity ) {
+        Entity *pSpawned = static_cast<Entity *>( pEntity );
+        applySpawnTail( pSpawned );
+        if ( Entity::IsAvatarEntityType( pSpawned ) && gpScenaric != nullptr ) {
+            // FUN_007f5780
+            avatarRefCount = gpScenaric->getAvatarManager().getReferenceCount(
+                static_cast<EntityAvatar *>( pSpawned ) );
+        }
+    }
+
+    CinematicActor *pActor = registerActor( pName, pMedia, pEntity, kind );
+    if ( pActor != nullptr ) {
+        pActor->AvatarRefCount = avatarRefCount;
+    }
+    return pActor;
+}
+
+static void SetSkinnedPropCullRadius( EntityActor *pActor ) {
+    // FUN_007e6cb0 (inlined)
+    const SerializedSkinnedModel *pModel =
+        static_cast<const SerializedSkinnedModel *>(
+            pActor->getGeometryData() );
+    if ( pModel == nullptr || pModel->pInstance == nullptr ) {
+        return;
+    }
+
+    const InstanceLOD &lod = pModel->pInstance->getLOD( 0 );
+    if ( lod.pHashcode == nullptr || lod.pHashcode->pEntry == nullptr ||
+         !pActor->hasSkeleton() ) {
+        return;
+    }
+
+    RenderFile::Section *pSection = lod.pHashcode->pEntry;
+    RenderObject *pObject =
+        (RenderObject *)( (uint8_t *)pSection + sizeof( *pSection ) );
+    pObject->BoundingSphere.w() = kSkinnedPropCullRadius;
+}
+
+void CinResCollection::applySpawnTail( Entity *pEntity ) {
+    // FUN_007e6cb0
+    if ( pEntity->getType() == eEntityType::ET__ACT ) {
+        EntityActor *pActor = static_cast<EntityActor *>( pEntity );
+        pActor->setMustProjectOnHMap( false );
+        pActor->relight();
+        SetSkinnedPropCullRadius( pActor );
+    }
+
+    if ( Entity::IsAvatarEntityType( pEntity ) ) {
+        static_cast<EntityAvatar *>( pEntity )->relight();
+    }
 }
 
 CinematicActor *CinResCollection::findActor( const char *pName ) {
@@ -1461,17 +1793,21 @@ CinematicActor *CinResCollection::registerActor( const char *pName,
     actor.pSceneData = pSceneData;
     actor.pEntity = pEntity;
     actor.Kind = kind;
+    actor.bInstanced = false;
+    actor.AvatarRefCount = 0;
     numActors++;
     return &actor;
 }
 
 void *CinResCollection::findActorByHashcode( uint64_t key ) {
     // FUN_007e5360
-    if ( key == 0 || gpScenaric == nullptr ) {
+    ScenaricBank *pSCBank = ( pOwner != nullptr ) ? pOwner->getBank() : nullptr;
+    if ( pSCBank == nullptr || key == 0 ) {
         return nullptr;
     }
 
-    Entity *pEntity = gpScenaric->getSCVolume( key );
+    // FUN_00425c10
+    Entity *pEntity = pSCBank->getEntityByHashcode( key );
     if ( pEntity == nullptr ) {
         return nullptr;
     }
@@ -1509,12 +1845,29 @@ void *CinResCollection::spawnActorEntity( const char *pName,
         if ( std::strncmp( pName, "Enfant", 6 ) == 0 ) {
             return spawnPedestrian( 0 );
         }
-        if ( std::strncmp( pName, "Avatar", 6 ) == 0 ) {
+        if ( std::strcmp( pName, "Avatar" ) == 0 ) {
             return spawnAvatar( eEntityType::ET_AVPL, ~0ull, pName );
+        }
+        if ( std::strstr( pName, "Avatar_" ) != nullptr ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_007e3d60)
+            return nullptr;
         }
         if ( std::strncmp( pName, "Hostess", 7 ) == 0 ||
              std::strstr( pName, "PoliceWoman" ) != nullptr ) {
             return spawnAvatar( eEntityType::ET_AVAT, hashcode, pName );
+        }
+        if ( std::strstr( pName, "AvatarM_" ) != nullptr ||
+             std::strstr( pName, "AvatarF_" ) != nullptr ) {
+            if ( std::strstr( pName, "_Intro" ) != nullptr &&
+                 gpTestDriveInstance != nullptr &&
+                 gpTestDriveInstance->getActiveGameMode() == GM_Intro ) {
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO (FUN_0076b410)
+                return nullptr;
+            }
+
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (FUN_008f5f90)
+            return spawnNamedAvatar( nullptr, GetIdentifier64bit( pName ),
+                                     false );
         }
         if ( std::strncmp( pName, "Seller", 6 ) == 0 ) {
             return spawnAvatar( eEntityType::ET_AVAT, hashcode, pName );
@@ -1783,6 +2136,32 @@ static void ReadAvatarConfigFromPNJ( AvatarConfiguration &outConfig,
     outConfig = gpAvatar->getDefaultConfiguration( 0 );
 }
 
+void *CinResCollection::spawnNamedAvatar( const AvatarConfiguration *pConfig,
+                                          uint64_t hashcode,
+                                          bool bBikeClothes ) {
+    // FUN_007e5280
+    if ( gpScenaric == nullptr || gpAvatar == nullptr ) {
+        return nullptr;
+    }
+
+    AvatarConfiguration hostessConfig;
+    if ( pConfig == nullptr ) {
+        ReadAvatarConfigFromPNJ( hostessConfig, "hostess" );
+        pConfig = &hostessConfig;
+    }
+
+    EntityAvatar *pAvatar =
+        gpScenaric->getAvatarManager().allocateAvatar( hashcode, 0 );
+    if ( pAvatar != nullptr ) {
+        pAvatar->installConfiguration( pConfig, bBikeClothes ? 1 : 0,
+                                       bAsyncActorLoad, false );
+        if ( pAvatar->getType() == eEntityType::ET_AVPL ) {
+            pAvatar->resetCineAvatarMode();
+        }
+    }
+    return pAvatar;
+}
+
 void *CinResCollection::spawnAvatar( eEntityType type,
                                      uint64_t hashcode,
                                      const char *pName ) {
@@ -1794,11 +2173,30 @@ void *CinResCollection::spawnAvatar( eEntityType type,
     AvatarManager &avatarManager = gpScenaric->getAvatarManager();
 
     if ( type == eEntityType::ET_AVPL ) {
-        EntityAvatar *pAvatar =
-            avatarManager.createAvatar( nullptr, 0, false, ~0ull, false, 1 );
+        // FUN_007e54f0
+        bPlayerAvatarSpawned = true;
+
+        int32_t clotheSet = 0;
+        GarageSlot *pSlot = GetCurrentGarageSlot();
+        if ( pSlot != nullptr && pSlot->isValid() &&
+             gpActiveGMScene != nullptr &&
+             !gpActiveGMScene->isStaticFrontEndScene() &&
+             gpDatabase != nullptr ) {
+            DBEntryCarPhysicsData *pCarData = gpDatabase->getCarDBEntry(
+                static_cast<int32_t>( pSlot->getCarConfigID() ) );
+            if ( pCarData != nullptr && gpDatabase->isBike( pCarData ) ) {
+                clotheSet = 1;
+            }
+        }
+
+        EntityAvatar *pAvatar = avatarManager.allocateAvatar( ~0ull, 1 );
         if ( pAvatar != nullptr ) {
+            pAvatar->installConfiguration(
+                TestDrive::GetSavedAvatarConfiguration(), clotheSet,
+                bAsyncActorLoad, false );
             pAvatar->addInstanceReference();
         }
+        pPlayerAvatar = pAvatar;
 
         return pAvatar;
     }

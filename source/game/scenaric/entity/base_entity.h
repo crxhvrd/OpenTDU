@@ -109,6 +109,11 @@ public:
     inline void setTileVisible( bool b ) {
         flags = b ? ( flags | 4u ) : ( flags & ~4u );
     }
+    inline void releaseFromCinematic() {
+        // FUN_007e5f70 (inlined)
+        flags &= ~8u;
+        flags = bVisibleBefore ? ( flags | 1u ) : ( flags & ~1u );
+    }
 
     inline void bindDebugDescriptor( EntityDesc *pNewDesc,
                                      const char *pNewName ) {

@@ -35,6 +35,10 @@ public:
 
     bool onMessage( FlashMessage *pMessage ) override;
     bool executeAction( int32_t param_2, void *param_3 ) override;
+    bool isDrawnInFakeDOF() override {
+        // FUN_0042cf80
+        return sceneLiving.getContent()->isDrawnInDOFPass();
+    }
 
 #ifdef OTDU_USE_IMGUI
     void drawDebug( float deltaTime ) override;

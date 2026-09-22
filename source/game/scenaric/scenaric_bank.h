@@ -52,6 +52,8 @@ public:
     inline eBankState getState() const { return state; }
     inline BankInstance &getBank() { return bank; }
     inline void setMngActor( MngActor *pTarget ) { pMngActor = pTarget; }
+    inline MngActor *getMngActor() const { return pMngActor; }
+    inline uint32_t getBankVersion() const { return bankVersion; }
     inline void setSpotBank( bool param_1 ) { bIsSpotBank = param_1; }
     inline void bindSpot( SpotSector *pNewSpotSector, Sector *pNewSector ) {
         pSpotSector = pNewSpotSector;

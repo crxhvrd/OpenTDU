@@ -190,6 +190,7 @@ Animation::Animation() {}
 void Animation::initialize( SkeletonInstance *pSkel, ClipInstance *pClipIn ) {
     // FUN_009b3d50
     pSkeleton = pSkel;
+    pFacePose = nullptr;
     setClip( pClipIn );
     if ( pSkeleton == nullptr ) {
         numNodes = 0;
@@ -258,6 +259,17 @@ void Animation::stopChannel( int32_t matchID ) {
     }
 }
 
+void Animation::resetChannel( int32_t index ) {
+    // FUN_00677490
+    AnimChannel &channel = channels[index];
+    channel.LayerMode = AnimChannel::ALM_Direct;
+    channel.LayerWeight = kAnimWeightFull;
+    channel.State = AnimChannel::ACS_Free;
+    channel.ClipID = ~0u;
+    channel.TransitionTime = 0.0f;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ANIM
+}
+
 void Animation::setChannelLayer( int32_t matchID,
                                  int32_t layerMode,
                                  float weight ) {
@@ -305,21 +317,88 @@ void Animation::setBlendRatios( const AnimStateBlendEntry *pEntries,
     setChannelBlendRatios( 0, pEntries, count );
 }
 
-void Animation::refreshBlendDuration( AnimChannel &channel ) {
+static float
+ComputeBlendDuration( const std::vector<AnimStateBlendEntry> &blendSet ) {
     // FUN_0067a8c0
-    channel.Duration = 0.0f;
-    for ( const AnimStateBlendEntry &entry : channel.BlendSet ) {
+    float duration = 0.0f;
+    for ( const AnimStateBlendEntry &entry : blendSet ) {
         if ( entry.pClip == nullptr ) {
             continue;
         }
-        channel.Duration +=
-            entry.Weight * entry.pClip->getTotalDurationLooped();
+        duration += entry.Weight * entry.pClip->getTotalDurationLooped();
     }
+    return duration;
+}
+
+void Animation::refreshBlendDuration( AnimChannel &channel ) {
+    // FUN_0067a8c0
+    channel.Duration = ComputeBlendDuration( channel.BlendSet );
+}
+
+void Animation::playStatesAtTime( const AnimStateInstance *pStateA,
+                                  float timeA,
+                                  const AnimStateInstance *pStateB,
+                                  float timeB,
+                                  float ratio ) {
+    // FUN_00401330
+    AnimChannel *pChannel = getChannel( 0 );
+    if ( pChannel == nullptr || pStateA == nullptr ) {
+        return;
+    }
+
+    resetChannel( static_cast<int32_t>( pChannel - channels.data() ) );
+
+    // FUN_00677e60
+    pStateA->getBlendSet( pChannel->BlendSet );
+    refreshBlendDuration( *pChannel );
+    pChannel->Progress =
+        ( pChannel->Duration > 0.0f ) ? timeA / pChannel->Duration : 0.0f;
+    pChannel->State = AnimChannel::ACS_Playing;
+
+    if ( pStateB == nullptr ) {
+        return;
+    }
+
+    pStateB->getBlendSet( pChannel->BlendSetB );
+    pChannel->DurationB = ComputeBlendDuration( pChannel->BlendSetB );
+    pChannel->ProgressB =
+        ( pChannel->DurationB > 0.0f ) ? timeB / pChannel->DurationB : 0.0f;
+    pChannel->TransitionTime = ratio;
+    pChannel->TransitionLength = 1.0f;
+    pChannel->State = AnimChannel::ACS_Transition;
+}
+
+void Animation::seekChannel( int32_t matchID, float time, bool bNormalised ) {
+    // FUN_00401680
+    AnimChannel *pChannel = getChannel( matchID );
+    if ( pChannel == nullptr ) {
+        return;
+    }
+
+    if ( pChannel->State == AnimChannel::ACS_Transition ) {
+        if ( bNormalised ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: ANIM (seek a transition)
+        }
+        return;
+    }
+
+    if ( pChannel->State != AnimChannel::ACS_Playing ||
+         pChannel->Duration <= 0.0f ) {
+        return;
+    }
+
+    float seekTime = std::max( time, 0.0f );
+    if ( bNormalised ) {
+        seekTime *= pChannel->Duration;
+    }
+    pChannel->Progress =
+        std::fmod( seekTime, pChannel->Duration ) / pChannel->Duration;
 }
 
 void Animation::terminate() {
     // FUN_007fa7f0 (inlined)
     pSkeleton = nullptr;
+    pFacePose = nullptr;
     channels.clear();
     channels.shrink_to_fit();
     numNodes = 0;
@@ -337,6 +416,13 @@ void Animation::update( float deltaTime ) {
         return;
     }
     for ( AnimChannel &channel : channels ) {
+        if ( channel.State == AnimChannel::ACS_Transition ) {
+            channel.TransitionTime += deltaTime;
+            if ( channel.TransitionTime >= channel.TransitionLength ) {
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: ANIM
+            }
+            continue;
+        }
         if ( channel.State != AnimChannel::ACS_Playing ||
              channel.Duration <= 0.0f ) {
             continue;
@@ -354,24 +440,35 @@ void Animation::evaluate( float deltaTime ) {
     pose.resetFromBindPose( pSkeleton );
 
     for ( const AnimChannel &channel : channels ) {
-        if ( channel.State != AnimChannel::ACS_Playing ||
+        if ( channel.State == AnimChannel::ACS_Free ||
              channel.BlendSet.empty() ) {
             continue;
         }
 
-        if ( channel.LayerMode == AnimChannel::ALM_Direct ) {
-            evaluateChannel( channel, pose );
-            continue;
+        const bool bDirect = channel.LayerMode == AnimChannel::ALM_Direct;
+        AnimPoseBuffer &target = bDirect ? pose : layerBuffer;
+        if ( !bDirect ) {
+            layerBuffer.seedFromParent( pose, numNodes );
         }
 
-        layerBuffer.seedFromParent( pose, numNodes );
-        evaluateChannel( channel, layerBuffer );
+        if ( channel.State == AnimChannel::ACS_Transition ) {
+            evaluateTransition( channel, target );
+        } else {
+            evaluateChannel( channel, target );
+        }
 
-        mergeLayer( channel.LayerMode, channel.LayerWeight );
+        if ( !bDirect ) {
+            mergeLayer( channel.LayerMode, channel.LayerWeight );
+        }
     }
 
     if ( pExpressionList != nullptr ) {
         pExpressionList->timeslice( *this, deltaTime );
+    }
+
+    // FUN_004012a0 @ 0x004012ec
+    if ( pFacePose != nullptr ) {
+        blendPose( *pFacePose, kAnimWeightFull );
     }
 
     buildBoneMatrices();
@@ -379,14 +476,61 @@ void Animation::evaluate( float deltaTime ) {
 
 void Animation::evaluateChannel( const AnimChannel &channel,
                                  AnimPoseBuffer &dst ) {
+    evaluateBlendSet( channel.BlendSet, channel.Progress, dst );
+}
+
+void Animation::evaluateBlendSet(
+    const std::vector<AnimStateBlendEntry> &blendSet,
+    float progress,
+    AnimPoseBuffer &dst ) {
     AnimPoseBuffer *pPrevTarget = pAccumulator;
     pAccumulator = &dst;
 
-    for ( const AnimStateBlendEntry &entry : channel.BlendSet ) {
-        accumulateClip( entry, channel.Progress );
+    for ( const AnimStateBlendEntry &entry : blendSet ) {
+        accumulateClip( entry, progress );
     }
 
     pAccumulator = pPrevTarget;
+}
+
+void Animation::evaluateTransition( const AnimChannel &channel,
+                                    AnimPoseBuffer &dst ) {
+    // FUN_00677840
+    transitionFrom.seedFromParent( dst, numNodes );
+    transitionTo.seedFromParent( dst, numNodes );
+
+    evaluateBlendSet( channel.BlendSet, channel.Progress, transitionFrom );
+    evaluateBlendSet( channel.BlendSetB, channel.ProgressB, transitionTo );
+
+    const float ratio = ( channel.TransitionLength > 0.0f )
+                            ? channel.TransitionTime / channel.TransitionLength
+                            : kAnimWeightFull;
+    blendPoses( transitionFrom, transitionTo,
+                std::min( std::max( ratio, 0.0f ), kAnimWeightFull ), dst );
+}
+
+void Animation::blendPoses( const AnimPoseBuffer &from,
+                            const AnimPoseBuffer &to,
+                            float ratio,
+                            AnimPoseBuffer &dst ) {
+    // FUN_00676740
+    const float inverse = 1.0f - ratio;
+
+    for ( int32_t node = -1; node < numNodes; node++ ) {
+        if ( from.getWeight( node ) == kAnimNodeUntouched &&
+             to.getWeight( node ) == kAnimNodeUntouched ) {
+            continue;
+        }
+
+        const AnimationTransform &a = from.at( node );
+        const AnimationTransform &b = to.at( node );
+        AnimationTransform &out = dst.at( node );
+
+        out.Rotation = QuaternionSlerpShortest( a.Rotation, b.Rotation, ratio );
+        out.Translation = a.Translation * inverse + b.Translation * ratio;
+        out.Scale = a.Scale * inverse + b.Scale * ratio;
+        dst.setWeight( node, kAnimWeightFull );
+    }
 }
 
 void Animation::accumulateClip( const AnimStateBlendEntry &entry,
@@ -571,6 +715,12 @@ void Animation::sampleClip( ClipInstance *pClipToSample,
 }
 
 void Animation::blendPose( const AnimPoseBuffer &src, float weight ) {
+    blendPose( src, weight, pose );
+}
+
+void Animation::blendPose( const AnimPoseBuffer &src,
+                           float weight,
+                           AnimPoseBuffer &dst ) {
     // FUN_00676840
     for ( int32_t node = 0; node < numNodes; node++ ) {
         if ( src.getWeight( node ) == kAnimNodeUntouched ) {
@@ -593,11 +743,11 @@ void Animation::blendPose( const AnimPoseBuffer &src, float weight ) {
             deltaScale *= weight;
         }
 
-        AnimationTransform &dst = pose.at( node );
-        dst.Rotation = dst.Rotation * deltaRot;
-        dst.Translation += deltaTranslation;
-        dst.Scale += deltaScale;
-        pose.setWeight( node, kAnimWeightFull );
+        AnimationTransform &out = dst.at( node );
+        out.Rotation = out.Rotation * deltaRot;
+        out.Translation += deltaTranslation;
+        out.Scale += deltaScale;
+        dst.setWeight( node, kAnimWeightFull );
     }
 }
 

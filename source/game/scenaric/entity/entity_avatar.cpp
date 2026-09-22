@@ -2,15 +2,27 @@
 #include "entity_avatar.h"
 
 #include "core/maths_helper.h"
+#include "game/cinematic/cin_res_collection.h"
+#include "game/cinematic/mng_cinematics.h"
 #include "game/game_mechanism.h"
+#include "game/scenaric/entity/entity_cinematic.h"
+#include "game/scenaric/entity/entity_anm_set.h"
+#include "game/scenaric/entity/entity_driver.h"
+#include "game/vehicle/car_state.h"
 #include "game/avatar/gs_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/mng_car_alpha.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/weather/gs_weather.h"
+#include "tdu_instance.h"
+#include "game/gm_scene.h"
 #include "render/gs_render.h"
+#include "render/postfx/gs_postfx.h"
 #include "render/mng_reflection.h"
+#include "render/mng_shadow.h"
+#include "render/animation/clip.h"
+#include "world/mng_world.h"
 #include "render/camera/gs_camera.h"
 #include "render/camera/camera_game.h"
 
@@ -70,14 +82,127 @@ bool EntityAvatar::onMessage( FlashMessage *pMessage ) {
 
 void EntityAvatar::initializeForCinematic( void *param_2, void *param_3 ) {
     // FUN_007f7b60
-    OTDU_UNIMPLEMENTED; // TODO: CINEMATIC
+    Entity::initializeForCinematic( param_2, param_3 );
+
+    if ( CineAvatarMode != 0 ) {
+        return;
+    }
+
+    EntityDriver *pDriver = getDriver();
+    if ( pDriver != nullptr ) {
+        pDriver->leaveSeatForCinematic();
+    }
+
+    if ( pBehavior != nullptr ) {
+        OTDU_UNIMPLEMENTED; // TODO: AVATAR
+    }
 }
 
 void EntityAvatar::initializeForCinematicKeyframed( void *param_2,
                                                     void *param_3 ) {
     // FUN_007f8450
     Entity::initializeForCinematicKeyframed( param_2, param_3 );
-    OTDU_UNIMPLEMENTED; // TODO: CINEMATIC — apply keyframed avatar transform
+
+    const CinActorState *pState = static_cast<const CinActorState *>( param_2 );
+    CinResCollection *pInterface = static_cast<CinResCollection *>( param_3 );
+    EntityCinematic *pCinematic = pInterface->getOwner();
+
+    EntityDriver *pDriver = getDriver();
+    const CarState *pLocalCar = ( gpScenaric != nullptr )
+                                    ? gpScenaric->getLocalPlayer().getCarState()
+                                    : nullptr;
+
+    Matrix4x4f_t transform = Matrix4x4f_t::Identity();
+    if ( pDriver == nullptr || pDriver->getCarState() != pLocalCar ||
+         !pDriver->isSeating() ) {
+        transform = pInterface->buildActorMatrix( *pState );
+        propagateTransform( transform, false );
+    }
+
+    if ( bMustProjectOnHMap ) {
+        ProjectActorOnGround( this, true, true );
+    }
+
+    if ( pDriver == nullptr || pDriver->isFreeMovement() ) {
+        pInterface->animActor( this, pState );
+    } else {
+        Animation *pDriverAnimation =
+            static_cast<Animation *>( pDriver->getAnimation() );
+        if ( pDriverAnimation->isValid() && pCinematic != nullptr ) {
+            pDriverAnimation->seekChannel( 0, pCinematic->getTime(), false );
+        }
+    }
+
+    if ( avatarType != 1 ) {
+        return;
+    }
+
+    const Eigen::Vector4f shift = gpWorldStreaming->isEnabled()
+                                      ? gpWorldStreaming->getPosition()
+                                      : Eigen::Vector4f::Zero();
+
+    if ( pCinematic != nullptr && pCinematic->hasFocus() &&
+         pInterface->canActorsDriveStreaming() && gpMngWorld != nullptr &&
+         gpMngWorld->getDisableStreamingOnCar() &&
+         gpMngWorld->isStreamEnabled() && !pInterface->isStreamTarget() &&
+         gpWorld != nullptr ) {
+        Eigen::Vector4f streamPosition = transform.row( 3 ).transpose();
+        streamPosition.head<3>() += shift.head<3>();
+        gpWorld->setStreamingPosition( &streamPosition );
+    }
+
+    if ( gpMngShadow != nullptr && pCinematic != nullptr &&
+         pCinematic->hasFocus() ) {
+        if ( pDriver != nullptr && pDriver->isSeating() ) {
+            pInterface->setAvatarShadowTarget( false );
+            return;
+        }
+
+        Eigen::Vector4f shadowTarget = modelMatrix.row( 3 ).transpose();
+        if ( bShifted ) {
+            shadowTarget.head<3>() += shift.head<3>();
+        }
+        gpMngShadow->setTarget( &shadowTarget );
+        pInterface->setAvatarShadowTarget( true );
+    }
+}
+
+void EntityAvatar::endCinematic( bool bStillReferenced ) {
+    // FUN_007e5f70 (inlined)
+    pCineInterface = nullptr;
+
+    EntityDriver *pDriver = getDriver();
+    if ( avatarType == 1 ) {
+        if ( pDriver != nullptr ) {
+            pDriver->returnToSeatAfterCinematic();
+        }
+
+        if ( bStillReferenced ) {
+            flags |= 8;
+        } else {
+            if ( animation.getNumChannels() > 0 ) {
+                animation.resetChannel( 0 );
+            }
+            CineAvatarMode = 0;
+        }
+        removeInstanceReference();
+    } else {
+        if ( pDriver != nullptr && pDriver->getCarState() != nullptr ) {
+            pDriver->getCarState()->unloadDriver();
+        }
+        if ( gpActiveGMScene != nullptr ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+        }
+    }
+
+    if ( unknownAvatarFunc2() != 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (FUN_00805620 passenger unload)
+    }
+
+    bMustProjectOnHMap = false;
+    if ( animation.getNumChannels() > 0 ) {
+        animation.resetChannel( 0 );
+    }
 }
 
 bool EntityAvatar::isValid() const {
@@ -128,7 +253,7 @@ void EntityAvatar::tick( PlayerGameMech *pGameMech,
             }
 
             if ( bNeedToRefreshFace ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — face morph
+                refreshFace();
             }
         }
 
@@ -305,8 +430,23 @@ void EntityAvatar::installConfiguration( const AvatarConfiguration *pConfig,
 
 void EntityAvatar::relight() {
     // FUN_007f83b0
-    LightingMode = 0;
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
+    ClipRow = 0;
+    if ( pPooledAvatarEntry == nullptr || gpAvatar == nullptr ) {
+        return;
+    }
+
+    const int32_t clotheSet = pPooledAvatarEntry->ActiveClotheSet;
+    if ( clotheSet != kNoClotheSet ) {
+        const AvatarClothePart *pShoes = gpAvatar->findClotheByID(
+            pPooledAvatarEntry->pClothesHC[clotheSet][AC_Shoes] );
+        if ( pShoes != nullptr && pShoes->Size == ACS_Large ) {
+            ClipRow = 2;
+            return;
+        }
+    }
+
+    const AvatarDBEntry *pBody = pPooledAvatarEntry->Body.getAvatarPart();
+    ClipRow = ( pBody != nullptr && pBody->Gender == 1 ) ? 1 : 0;
 }
 
 void EntityAvatar::unknownActorFunc() {
@@ -331,11 +471,26 @@ int32_t EntityAvatar::getRenderSceneID() {
     // FUN_007f7570
     eRenderPass renderPass = eRenderPass::RP_Near;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    PostFXStep *pRadialBlur =
+        ( gpPostFX != nullptr )
+            ? gpPostFX->getEffect<ePostFXStep::PFXS_RadialBlur>()
+            : nullptr;
+    if ( pRadialBlur != nullptr && pRadialBlur->getInput()->isEnabled() ) {
+        renderPass = eRenderPass::RP_CarPlayer;
+    }
+
+    if ( gpTestDriveInstance != nullptr &&
+         gpTestDriveInstance->getActiveGameMode() == GM_Intro ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO
+    }
 
     if ( AlphaSceneSlot != -1 && gpMngCarAlpha != nullptr ) {
         renderPass = gpMngCarAlpha->bindAndGetRenderPassForAlpha(
             renderPass, static_cast<uint32_t>( AlphaSceneSlot ) );
+    }
+
+    if ( gpActiveGMScene != nullptr && gpActiveGMScene->isDrawnInFakeDOF() ) {
+        return eRenderPass::RP_FakeDOF;
     }
 
     return renderPass;
@@ -428,6 +583,65 @@ void EntityAvatar::onSkeletonChange( void *pSkeleton ) {
         HelmetLinkBoneHC = kHeadBoneHashcode;
         HeadBoneIndex = avatarSkeleton.findNode( kHeadBoneHashcode );
     }
+}
+
+void EntityAvatar::refreshFace() {
+    // FUN_007f7dd0
+    static constexpr uint32_t kFaceMorphMale = 0x14;
+    static constexpr uint32_t kFaceMorphFemale = 0x15;
+    static constexpr float kFaceParamScale = 0.0625f; // DAT_00f41acc
+
+    const AvatarDBEntry *pBody = pPooledAvatarEntry->Body.getAvatarPart();
+    const int32_t gender = ( pBody != nullptr ) ? pBody->Gender : -1;
+
+    RenderAnm *pFaceMorph = nullptr;
+    EntityAnmSet *pFaceModifSet = gpAvatar->getFaceModifSet();
+    if ( pFaceModifSet != nullptr && gender == 0 ) {
+        pFaceMorph = pFaceModifSet->findAnimation( kFaceMorphMale );
+    } else if ( pFaceModifSet != nullptr && gender == 1 ) {
+        pFaceMorph = pFaceModifSet->findAnimation( kFaceMorphFemale );
+    }
+
+    if ( pFaceMorph == nullptr || pFaceMorph->pAnimState == nullptr ||
+         !animation.isValid() ) {
+        animation.setFacePose( nullptr );
+        bNeedToRefreshFace = false;
+        return;
+    }
+
+    const SkeletonInstance *pSkeleton = animation.getSkeleton();
+    facePose.resetFromBindPose( pSkeleton );
+
+    AnimPoseBuffer scratch;
+    const int32_t numParams =
+        std::min( pFaceMorph->pAnimState->getNumBlendClips(), kNumFaceParams );
+    for ( int32_t i = 0; i < numParams; i++ ) {
+        scratch.resetFromBindPose( pSkeleton );
+
+        AnimStateBlendEntry entry;
+        if ( !pFaceMorph->pAnimState->getBlendEntry( i, entry ) ||
+             entry.pClip == nullptr ) {
+            continue;
+        }
+
+        const Eigen::Vector2f &range = gpAvatar->getFaceRange( gender, i );
+        const float param =
+            static_cast<float>( static_cast<uint32_t>( FaceParams[i] ) ) *
+            kFaceParamScale;
+        const float ratio = range.x() + ( range.y() - range.x() ) * param;
+
+        const float duration = entry.pClip->getTotalDuration();
+        float time = duration * ratio;
+        if ( !( time >= 0.0f && time < duration ) ) {
+            time = duration;
+        }
+
+        animation.sampleClip( entry.pClip, scratch, time );
+        animation.blendPose( scratch, kAnimWeightFull, facePose );
+    }
+
+    animation.setFacePose( &facePose );
+    bNeedToRefreshFace = false;
 }
 
 void EntityAvatar::onResourceChange() {

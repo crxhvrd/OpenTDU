@@ -8,14 +8,16 @@
 class BankInstance;
 class ClipInstance;
 class CameraCinematic;
+class Entity;
 class EntityActor;
+class EntityAvatar;
 class EntityCinematic;
 
 struct CinematicActor {
     enum eKind : int32_t {
         CAK_Entity = 0,    // pEntity is an Entity* (scene actor / ped / avatar)
         CAK_PlayerCar = 1, // the local player car; pEntity stays null
-        CAK_Plane = 2, // pEntity is the live GSAircraft instance (Interface
+        CAK_Plane = 2,     // pEntity is the live GSAircraft instance (Interface
                        // pPlane); owned by GSAircraft, never cloned or freed
     };
 
@@ -23,18 +25,46 @@ struct CinematicActor {
     void *pEntity; // the bound EntityActor / avatar (null until spawned)
     const void *pSceneData; // this actor's CinScene media descriptor
     eKind Kind = CAK_Entity;
+    bool bInstanced = false;
+    int32_t AvatarRefCount = 0;
+};
+
+struct CinActorMessage {
+    void *pRef;          // the scene ref's runtime handle
+    const void *pKey;    // {refIdx, duration} key pair
+    const char *pString; // msg
+    int32_t Length;
+    float Duration;
+    float Elapsed;
+};
+
+struct CinActorState {
+    static constexpr int32_t kMaxMessages = 15;
+
+    Eigen::Vector3f Position = Eigen::Vector3f::Zero();
+    Eigen::Quaternionf Heading = Eigen::Quaternionf::Identity();
+    bool bVisible = true;
+    int32_t ClipRefA = -1;
+    int32_t ClipColumnA = -1;
+    float TimeA = 0.0f;
+    float Ratio = 0.0f;
+    int32_t ClipRefB = -1;
+    int32_t ClipColumnB = -1;
+    float TimeB = 0.0f;
+    std::array<CinActorMessage, kMaxMessages> Messages{};
+    int32_t NumMessages = 0;
 };
 
 class CinResCollection {
 public:
     struct CameraShakeState {
-        bool bEnabled = false;     
-        float Amplitude = 0.002f;  // DAT_00f41754
-        float Speed = 0.2f;        // FLOAT_00f41730
-        float TargetAngleX = 0.0f; 
-        float TargetAngleY = 0.0f; 
-        float AngleX = 0.0f;       
-        float AngleY = 0.0f;      
+        bool bEnabled = false;
+        float Amplitude = 0.002f; // DAT_00f41754
+        float Speed = 0.2f;       // FLOAT_00f41730
+        float TargetAngleX = 0.0f;
+        float TargetAngleY = 0.0f;
+        float AngleX = 0.0f;
+        float AngleY = 0.0f;
     };
 
     struct CameraView {
@@ -69,6 +99,29 @@ public:
         baseMatrix = Matrix4x4f_t::Identity();
         bHasBaseMatrix = false;
     }
+    inline bool hasBaseMatrix() const { return bHasBaseMatrix; }
+    inline const Matrix4x4f_t &getBaseMatrix() const { return baseMatrix; }
+    inline bool isLifeSetCinematic() const { return bIsLifeSetCinematic; }
+    inline EntityCinematic *getOwner() const { return pOwner; }
+    inline bool canActorsDriveStreaming() const {
+        return bActorsDriveStreaming;
+    }
+    inline bool isStreamTarget() const { return bStreamTarget; }
+    inline void setAvatarShadowTarget( bool bEnabled ) {
+        bAvatarShadowTarget = bEnabled;
+    }
+    inline void clearPlayerAvatar() {
+        bPlayerAvatarSpawned = false;
+        pPlayerAvatar = nullptr;
+    }
+    inline int32_t getActorAvatarRefCount( int32_t index ) const {
+        return ( index >= 0 && index < numActors )
+                   ? actors[index].AvatarRefCount
+                   : 0;
+    }
+    inline void setLifeSetCinematic( bool bEnabled ) {
+        bIsLifeSetCinematic = bEnabled;
+    }
     inline void setPlane( EntityActor *pActor ) { pPlane = pActor; }
     inline EntityActor *getPlane() const { return pPlane; }
     inline void *getActorEntity( int32_t index ) const {
@@ -78,6 +131,17 @@ public:
     inline CinematicActor::eKind getActorKind( int32_t index ) const {
         return ( index >= 0 && index < numActors ) ? actors[index].Kind
                                                    : CinematicActor::CAK_Entity;
+    }
+    inline const char *getActorName( int32_t index ) const {
+        return ( index >= 0 && index < numActors ) ? actors[index].Name : "";
+    }
+    inline bool isActorInstanced( int32_t index ) const {
+        return index >= 0 && index < numActors && actors[index].bInstanced;
+    }
+    inline void setActorInstanced( int32_t index, bool bInstanced ) {
+        if ( index >= 0 && index < numActors ) {
+            actors[index].bInstanced = bInstanced;
+        }
     }
     inline void setMusicEmitter( class CinematicMusicEmitter *pEmitter ) {
         pMusicEmitter = pEmitter;
@@ -91,6 +155,7 @@ public:
             actors[index].pEntity = pEntity;
         }
     }
+    inline void clearFiredMessages() { firedMessages.clear(); }
 
     inline static bool bQuiet = false; // TODO: REMOVE ME: Verbose debug flag
 
@@ -109,6 +174,11 @@ public:
 
     bool load( const void *pData, uint32_t size, void *pBuffer );
     bool initialize();
+
+    Matrix4x4f_t buildActorMatrix( const CinActorState &state ) const;
+    void checkForRegisterActor( Entity *pEntity );
+    void checkForUnregisterActor( Entity *pEntity );
+    void animActor( EntityActor *pActor, const CinActorState *pState );
 
     void tick( float time, float deltaTime );
 
@@ -142,18 +212,25 @@ private:
 
     bool processMusicMessage( uint32_t tag4 );
     void processCinematicMessages( const uint16_t *pTrack, float time );
-    void processActorMessages( const CinMediaContext *pCtx,
+    void collectActorClips( const CinMediaContext *pCtx,
+                            const uint16_t *pTrack,
+                            float time,
+                            CinActorState &state );
+    void collectActorMessages( const CinMediaContext *pCtx,
                                const uint16_t *pTrack,
-                               float time );
+                               float time,
+                               CinActorState &state );
+    void
+    onShotEvaluated( int32_t shotIndex, const float *pShotKey, float shotTime );
+    bool isMessageFired( const void *pKey ) const;
+    void recordFiredMessage( const char *pMessage, const void *pKey );
+    void removeFiredMessages( uint32_t tag );
 
-    void playClipOnActorEntity( const CinematicActor *pActor,
-                                ClipInstance *pClip );
-
-    void applyActorTransform( const CinematicActor *pActor,
-                              const Eigen::Vector3f &position,
-                              const Eigen::Quaternionf &heading,
-                              const Eigen::Vector3f &scale,
-                              bool bHasTransformTrack );
+    void dispatchActor( const CinematicActor *pActor,
+                        CinActorState &state,
+                        const Eigen::Vector3f &scale,
+                        bool bHasTransformTrack );
+    void applySpawnTail( Entity *pEntity );
     void applyPlayerCarTransform( const Matrix4x4f_t &transform );
     void applyCameraTransform( const CinMediaContext *pCtx,
                                int32_t transformType,
@@ -196,12 +273,20 @@ private:
                             CinematicActor::eKind &outKind );
     void *spawnPedestrian( int32_t gender );
     void *spawnAvatar( eEntityType type, uint64_t hashcode, const char *pName );
+    void *spawnNamedAvatar( const struct AvatarConfiguration *pConfig,
+                            uint64_t hashcode,
+                            bool bBikeClothes );
     void *findSceneActorByName( const char *pName );
     void *spawnPlayerCar();
 
 private:
     static constexpr int32_t kMaxActors = 128;
-    static constexpr size_t kMaxFiredMessages = 64;
+    static constexpr size_t kMaxFiredMessages = 0x20;
+
+    struct FiredMessage {
+        uint32_t Tag;
+        const void *pKey;
+    };
 
 private:
     const CinematicHeader *pCinematicData = nullptr;
@@ -216,8 +301,18 @@ private:
     CameraView cameraView{};
     Matrix4x4f_t baseMatrix = Matrix4x4f_t::Identity();
     bool bHasBaseMatrix = false;
+    bool bIsLifeSetCinematic = false;
+    bool bStreamTarget = false;
+    bool bPlayerAvatarSpawned = false;
+    EntityAvatar *pPlayerAvatar = nullptr;
+    bool bActorsDriveStreaming = true;
+    bool bAsyncActorLoad = false;
+    bool bAvatarShadowTarget = false;
     EntityActor *pPlane = nullptr;
-    std::vector<const void *> firedMessages;
+    std::vector<FiredMessage> firedMessages;
+    bool bFirstShotPending = true;
+    bool bFirstShotConsumed = false;
+    int32_t currentShot = -1;
     class CinematicMusicEmitter *pMusicEmitter = nullptr;
     EntityCinematic *pOwner = nullptr;
     CameraCinematic *pCinematicCamera = nullptr;

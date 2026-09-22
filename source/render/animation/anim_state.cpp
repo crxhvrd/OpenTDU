@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "anim_state.h"
 
+#include "animation.h"
 #include "clip.h"
 
 bool AnimStateInstance::initialize( void *pData ) {
@@ -175,4 +176,29 @@ bool AnimStateInstance::getBlendEntry( int32_t index,
     out.Weight = pRatios[index * 2];
     out.Ratio = pRatios[index * 2 + 1];
     return true;
+}
+
+void AnimStateInstance::getBlendSet(
+    std::vector<AnimStateBlendEntry> &outEntries ) const {
+    outEntries.clear();
+    if ( getTrailer() == nullptr ) {
+        return;
+    }
+
+    if ( getCurveMode() == kCurveModePlay ) {
+        AnimStateBlendEntry entry;
+        entry.pClip = getClipAtOffset( getTrailerOffset() + kTrailerClipCount );
+        entry.Weight = kAnimWeightFull;
+        entry.Ratio = kAnimRatioFollowCurve;
+        outEntries.push_back( entry );
+        return;
+    }
+
+    const int32_t numClips = getNumBlendClips();
+    for ( int32_t i = 0; i < numClips; i++ ) {
+        AnimStateBlendEntry entry;
+        if ( getBlendEntry( i, entry ) ) {
+            outEntries.push_back( entry );
+        }
+    }
 }

@@ -2,6 +2,8 @@
 #include "entity_actor.h"
 
 #include "core/maths_helper.h"
+#include "game/cinematic/cin_res_collection.h"
+#include "game/cinematic/mng_cinematics.h"
 #include "game/game_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
@@ -82,7 +84,7 @@ EntityActor::EntityActor()
       Skeleton(),
       animation(),
       NumMaxLayers( 1 ),
-      LightingMode( 0 ),
+      ClipRow( 0 ),
       bLightingValid( false ),
       bMustProjectOnHMap( false ),
       bMustProjectOnRoad( true ) {
@@ -119,10 +121,11 @@ void EntityActor::initializeForCinematicKeyframed( void *param_2,
     Entity::initializeForCinematicKeyframed( param_2, param_3 );
 
     if ( bMustProjectOnHMap ) {
-        OTDU_UNIMPLEMENTED; // TODO: CINEMATIC
+        ProjectActorOnGround( this, true, bMustProjectOnRoad );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: CINEMATIC
+    static_cast<CinResCollection *>( param_3 )->animActor(
+        this, static_cast<const CinActorState *>( param_2 ) );
 }
 
 void EntityActor::initialize() {
@@ -301,9 +304,12 @@ void EntityActor::instanciate( MngActor *pMngActor, Entity *param_1 ) {
 
     pTarget->Skeleton.pInstance = Skeleton.pInstance;
     pTarget->Skeleton.File = Skeleton.File;
+    pTarget->Skeleton.pSkeleton = Skeleton.pSkeleton;
     pTarget->AnimStand.ID = AnimStand.ID;
     pTarget->AnimStand.File = AnimStand.File;
     pTarget->AnimStand.pRefBas = AnimStand.pRefBas;
+    pTarget->AnimStand.pClip = AnimStand.pClip;
+    pTarget->AnimStand.pAnimState = AnimStand.pAnimState;
 }
 
 bool EntityActor::refreshModelFromTemplate() {
@@ -416,7 +422,7 @@ void EntityActor::relight() {
             : nullptr;
     if ( pDriverAvatar != nullptr ) {
         pDriverAvatar->relight();
-        LightingMode = pDriverAvatar->LightingMode;
+        ClipRow = pDriverAvatar->ClipRow;
     }
 }
 

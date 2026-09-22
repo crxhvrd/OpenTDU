@@ -26,6 +26,7 @@ public:
                                 const bool bCritical,
                                 const int32_t type );
     void releaseAvatar( EntityAvatar *pAvatar );
+    int32_t getReferenceCount( const EntityAvatar *pAvatar ) const;
 
     EntityAvatar *getDriverAvatar();
 

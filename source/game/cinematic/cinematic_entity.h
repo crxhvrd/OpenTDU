@@ -20,6 +20,8 @@ public:
 
     virtual bool isValid() const;
 
+    inline bool wasVisibleBefore() const { return bVisibleBefore; }
+    inline bool needRegisterEntity() const { return bNeedRegisterEntity; }
     inline void setNeedRegisterEntity( bool bEnabled ) {
         bNeedRegisterEntity = bEnabled;
     }
@@ -29,7 +31,7 @@ protected:
     uint32_t cutsceneIndex;
     ParticleInstance *pParticleInstance;
 
-    uint8_t bInitialized : 1;
+    uint8_t bVisibleBefore : 1;
     uint8_t bHighPriorityInit : 1;
     uint8_t bNeedRegisterEntity : 1;
 };

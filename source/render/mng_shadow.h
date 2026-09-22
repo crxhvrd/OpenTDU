@@ -101,6 +101,15 @@ public:
     inline float getFalloff() const { return falloff; }
     inline float getHotspot() const { return field_0x4494; }
     inline float getShadowMultiplier() const { return shadowMultiplier; }
+    inline void setTarget( const Eigen::Vector4f *pTarget ) {
+        // FUN_00424630
+        if ( pTarget == nullptr ) {
+            bForceTarget = false;
+            return;
+        }
+        shadowTarget = pTarget->head<3>();
+        bForceTarget = true;
+    }
 
 public:
     MngShadow();

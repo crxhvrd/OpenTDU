@@ -229,6 +229,7 @@ bool EntityLifeSet::startPlayingLifeCinematic( LifeCinematic *pLifeCinematic,
     pCinematic->setPlaybackAnchor(
         Eigen::Vector3f( anchorX, anchorY, anchorZ ) );
     pCinematic->setLoop( true );
+    pCinematic->setLifeSetCinematic( true );
     if ( pLifeCinematic->bRandomTimeStart ) {
         pCinematic->setStartTime(
             RandomUnit( gpScenaric->getRandomGenerator() ) );

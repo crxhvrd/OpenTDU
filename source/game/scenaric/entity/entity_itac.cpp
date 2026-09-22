@@ -21,7 +21,7 @@ static constexpr float kItacScalar0 = 0.7f; // DAT_00f41828
 static constexpr float kItacScalar2 = 1.0f; // FLOAT_00f4165c
 
 static inline bool IsGameModeRequestingDOFPass() {
-    return gpActiveGMScene != nullptr && false;
+    return gpActiveGMScene != nullptr && gpActiveGMScene->isDrawnInFakeDOF();
 }
 
 static inline bool IsIntroCockpitSequenceRunning() {

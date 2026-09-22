@@ -18,6 +18,8 @@ public:
     inline void setMustProjectOnRoad( const bool bState ) {
         bMustProjectOnRoad = bState;
     }
+    inline bool hasSkeleton() const { return Skeleton.File != 0; }
+    inline int32_t getClipRow() const { return ClipRow; }
 
 public:
     EntityActor();
@@ -71,7 +73,7 @@ protected:
     RenderBas Skeleton;
     Animation animation;
     int32_t NumMaxLayers;
-    int32_t LightingMode;
+    int32_t ClipRow; // cinematic clip row: 0 man, 1 woman, 2 woman in heels
     bool bLightingValid;
     bool bMustProjectOnHMap;
     bool bMustProjectOnRoad;

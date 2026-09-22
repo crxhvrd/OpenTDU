@@ -17,6 +17,7 @@ public:
 
 public:
     inline int32_t getAvatarType() const { return avatarType; }
+    inline void resetCineAvatarMode() { CineAvatarMode = 0; }
     inline PooledAvatarEntry *getPooledEntry() const {
         return pPooledAvatarEntry;
     }
@@ -75,10 +76,12 @@ public:
                                int32_t clotheSet,
                                bool bAsync,
                                bool bCritical );
+    void endCinematic( bool bStillReferenced );
 
 private:
     void onCarAlphaTerm();
     void freeAlphaSlot();
+    void refreshFace();
 
 protected:
     // 'Head' bone name hashcode
@@ -106,6 +109,7 @@ protected:
     int32_t HeadBoneIndex;
     void *pUseSkeleton;
     SkeletonInstance avatarSkeleton;
+    AnimPoseBuffer facePose; // +0x200
     uint32_t HelmetLinkBoneHC;
     bool bNeedToRefreshFace;
     bool bForceShowHelmet;

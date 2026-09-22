@@ -77,24 +77,6 @@ namespace {
             }
         }
     }
-
-    void PlayBestAmbientClip( Entity *pEntity, ScenaricBank *pBank ) {
-        if ( pEntity == nullptr || pBank == nullptr ||
-             pEntity->getType() != eEntityType::ET_PTDR ) {
-            return;
-        }
-        EntityPedestrian *pPed = static_cast<EntityPedestrian *>( pEntity );
-        void *pSkeletonBlob = pPed->debugGetCharSkeleton();
-        if ( pSkeletonBlob == nullptr ) {
-            return;
-        }
-        SkeletonInstance skeleton;
-        skeleton.wrapBlob( pSkeletonBlob );
-        ClipInstance *pClip = pBank->debugPickCalmestClip( &skeleton, 0.3f );
-        if ( pClip != nullptr ) {
-            pPed->playAnimationClip( pClip );
-        }
-    }
 } // namespace
 
 EntityCinematic::EntityCinematic()
@@ -120,6 +102,10 @@ EntityCinematic::EntityCinematic()
       pCinRef( nullptr ),
       pSceneRefs( nullptr ),
       pSCBank( nullptr ),
+      pClipRows{},
+      numClipVariants( 0 ),
+      numClipColumns( 0 ),
+      clipCells(),
       pMusicEmitter( nullptr ),
       pGMInterface( nullptr ),
       pSpotWorld( nullptr ),
@@ -187,6 +173,11 @@ void EntityCinematic::initialize() {
     const uint32_t bufferSize = ExtractBufferSize( pCinData, cinDataSize );
     if ( bufferSize != 0 ) {
         cinematicBuffer.assign( bufferSize, 0 );
+    }
+
+    if ( pStreamCenterRef != nullptr &&
+         *reinterpret_cast<const uint64_t *>( pStreamCenterRef ) != 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
     }
 
     bResourcesPrepared = false;
@@ -425,6 +416,8 @@ void EntityCinematic::tick( PlayerGameMech *pGameMech,
                 stop( true );
                 return;
             }
+            // FUN_007e9720
+            cinematicPlayer.clearFiredMessages();
             Time = 0.0f;
         }
     }
@@ -506,8 +499,30 @@ void EntityCinematic::deserialize( BinaryReader *pReader ) {
     }
 
     if ( version >= 0x20 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (the trailing per-actor
-                                 // override list)
+        numClipColumns = static_cast<int32_t>( ReadStreamU32( pReader ) );
+        if ( numClipColumns != 0 ) {
+            pClipRows[0] =
+                reinterpret_cast<const uint64_t *>( pReader->pCursor );
+            pReader->pCursor += numClipColumns * sizeof( uint64_t );
+        }
+
+        numClipVariants = static_cast<int32_t>( ReadStreamU32( pReader ) );
+        for ( int32_t i = 0; i < numClipVariants; i++ ) {
+            const char *pVariant = ReadStreamString( pReader );
+            pReader->pCursor += sizeof( uint32_t );
+
+            int32_t row = -1;
+            if ( std::strcmp( pVariant, "w" ) == 0 ) {
+                row = 1;
+            } else if ( std::strcmp( pVariant, "whh" ) == 0 ) {
+                row = 2;
+            }
+            if ( row > 0 && numClipColumns != 0 ) {
+                pClipRows[row] =
+                    reinterpret_cast<const uint64_t *>( pReader->pCursor );
+            }
+            pReader->pCursor += numClipColumns * sizeof( uint64_t );
+        }
     }
 
     cutsceneName = name;
@@ -515,6 +530,7 @@ void EntityCinematic::deserialize( BinaryReader *pReader ) {
 
 void EntityCinematic::reset() {
     // FUN_007e9720
+    cinematicPlayer.clearFiredMessages();
     bPaused = false;
     if ( ( cinematicFlags & 0x4u ) != 0 ) {
         Time = 0.0f;
@@ -542,8 +558,40 @@ void EntityCinematic::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     pInstance->bSkipped = bSkipped;
     pInstance->bStopWhenSkipped = bStopWhenSkipped;
     pInstance->playbackSpeed = playbackSpeed;
+    pInstance->numClipColumns = numClipColumns;
+    pInstance->numClipVariants = numClipVariants;
+    pInstance->pClipRows = pClipRows;
 
     OTDU_UNIMPLEMENTED;
+}
+
+int32_t EntityCinematic::findClipColumn( uint64_t hashcode ) const {
+    // FUN_007e7cc0
+    if ( pSCBank == nullptr || pSCBank->getBankVersion() < 0x20 ||
+         numClipColumns <= 0 || pClipRows[0] == nullptr ) {
+        return -1;
+    }
+
+    for ( int32_t i = 0; i < numClipColumns; i++ ) {
+        if ( pClipRows[0][i] == hashcode ) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void EntityCinematic::resolveClipTable() {
+    // FUN_007e7f50
+    for ( int32_t row = 0; row < kNumClipRows; row++ ) {
+        for ( int32_t column = 0; column < numClipColumns; column++ ) {
+            AnimStateInstance *pClip = nullptr;
+            if ( pClipRows[row] != nullptr && pClipRows[row][column] != 0 &&
+                 pSCBank != nullptr ) {
+                pClip = pSCBank->getAnimState( pClipRows[row][column] );
+            }
+            clipCells[row * numClipColumns + column] = pClip;
+        }
+    }
 }
 
 void EntityCinematic::start( bool bBeginNow ) {
@@ -670,6 +718,13 @@ bool EntityCinematic::launchCineAtFrame( SpotMap *pSpot,
 
 bool EntityCinematic::begin() {
     // FUN_007e8f90
+    if ( clipCells.empty() ) {
+        clipCells.assign( static_cast<size_t>( kNumClipRows ) *
+                              static_cast<size_t>( numClipColumns ),
+                          nullptr );
+        resolveClipTable();
+    }
+
     if ( pCinData == nullptr || cinematicBuffer.empty() ||
          pSCBank == nullptr ) {
         OTDU_LOG_WARN( "Cinematic '%s': no playable data (cin=%p size=%u "
@@ -699,17 +754,18 @@ bool EntityCinematic::begin() {
     CinResCollection::bQuiet = true;
 
     if ( gpActiveGMScene != nullptr ) {
+        const bool bLifeSet = cinematicPlayer.isLifeSetCinematic();
         const int32_t numActors = cinematicPlayer.getActorCount();
         for ( int32_t i = 0; i < numActors; i++ ) {
             Entity *pTemplate =
                 static_cast<Entity *>( cinematicPlayer.getActorEntity( i ) );
-            if ( pTemplate == nullptr ||
-                 cinematicPlayer.getActorKind( i ) ==
-                     CinematicActor::CAK_Plane ) {
+            if ( pTemplate == nullptr || cinematicPlayer.getActorKind( i ) !=
+                                             CinematicActor::CAK_Entity ) {
                 continue;
             }
-            if ( Entity::IsAvatarEntityType( pTemplate ) ) {
-                gpActiveGMScene->getActorManager().registerActor( pTemplate );
+            if ( !bLifeSet || Entity::IsAvatarEntityType( pTemplate ) ||
+                 StringNCmpI( "Ventilo", cinematicPlayer.getActorName( i ),
+                              7 ) == 0 ) {
                 continue;
             }
             Entity *pInstance =
@@ -717,7 +773,7 @@ bool EntityCinematic::begin() {
                     pTemplate );
             if ( pInstance != nullptr ) {
                 cinematicPlayer.setActorEntity( i, pInstance );
-                PlayBestAmbientClip( pInstance, pSCBank );
+                cinematicPlayer.setActorInstanced( i, true );
             } else {
                 cinematicPlayer.setActorEntity( i, nullptr );
             }
@@ -818,26 +874,51 @@ void EntityCinematic::end() {
     }
 
     if ( gpActiveGMScene != nullptr ) {
+        // FUN_007e5f70
         MngActor &sceneActors = gpActiveGMScene->getActorManager();
+        const bool bLifeSet = cinematicPlayer.isLifeSetCinematic();
         const int32_t count = cinematicPlayer.getActorCount();
         for ( int32_t i = 0; i < count; i++ ) {
             Entity *pActor =
                 static_cast<Entity *>( cinematicPlayer.getActorEntity( i ) );
             if ( pActor != nullptr ) {
-                if ( Entity::IsAvatarEntityType( pActor ) ) {
-                    sceneActors.removeActorFromList( pActor );
-                    if ( gpScenaric != nullptr ) {
-                        gpScenaric->getAvatarManager().releaseAvatar(
-                            static_cast<EntityAvatar *>( pActor ) );
-                    }
-                } else if ( cinematicPlayer.getActorKind( i ) !=
-                            CinematicActor::CAK_Plane ) {
+                if ( cinematicPlayer.isActorInstanced( i ) ) {
                     MngActor::Uninstanciate( &sceneActors, pActor );
+                } else if ( cinematicPlayer.getActorKind( i ) ==
+                                CinematicActor::CAK_Entity &&
+                            pActor->getEntityIndex() == 1 ) {
+                    pActor->releaseFromCinematic();
+                    if ( !bLifeSet ) {
+                        cinematicPlayer.checkForUnregisterActor( pActor );
+                    }
+
+                    if ( Entity::IsAvatarEntityType( pActor ) &&
+                         gpScenaric != nullptr ) {
+                        AvatarManager &avatarManager =
+                            gpScenaric->getAvatarManager();
+                        EntityAvatar *pAvatar =
+                            static_cast<EntityAvatar *>( pActor );
+                        if ( bLifeSet ) {
+                            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+                        } else {
+                            const bool bStillReferenced =
+                                avatarManager.getReferenceCount( pAvatar ) >
+                                cinematicPlayer.getActorAvatarRefCount( i );
+                            pAvatar->endCinematic( bStillReferenced );
+                            if ( pAvatar->getAvatarType() == 1 ) {
+                                cinematicPlayer.clearPlayerAvatar();
+                            }
+                        }
+                        avatarManager.releaseAvatar( pAvatar );
+                    }
                 }
                 cinematicPlayer.setActorEntity( i, nullptr );
+                cinematicPlayer.setActorInstanced( i, false );
             }
         }
     }
+    clipCells.clear();
+
     cinematicFlags = ( cinematicFlags & 0xfffffff8u ) | 0x10u;
     Time = 0.0f;
     bStopGuard = false;

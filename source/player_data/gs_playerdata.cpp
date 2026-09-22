@@ -153,7 +153,7 @@ static bool FindProfileSaveContext( uint64_t profileHashcode,
 }
 
 namespace TestDrive {
-    static const AvatarConfiguration *GetSavedAvatarConfiguration() {
+    const AvatarConfiguration *GetSavedAvatarConfiguration() {
         const AvatarConfiguration *pConfig =
             &gpAvatar->getDefaultConfiguration( 0 );
 
