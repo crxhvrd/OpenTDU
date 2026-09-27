@@ -1183,7 +1183,7 @@ void CinResCollection::onShotEvaluated( int32_t shotIndex,
 
     if ( shotIndex != currentShot ) {
         currentShot = shotIndex;
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+        bPlayerCarTeleport = true;
 
         if ( pOwner != nullptr ) {
             for ( const uint32_t tag : kCineAvatarModeMessages ) {
@@ -2442,12 +2442,13 @@ bool CinResCollection::onPlayerCarMessage( const char *pMessage ) {
     if ( message == FlashMessage( "ctia" ) ) {
         if ( pVehicle != nullptr ) {
             SetPlayerCarCinematicMode( false );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI / CINEMATIC
+            bPlayerCarTeleport = true;
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
         }
         return true;
     }
     if ( message == FlashMessage( "rspo" ) ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+        bPlayerCarTeleport = true;
         return true;
     }
 
@@ -2562,8 +2563,10 @@ void CinResCollection::applyPlayerCarTransform(
         PhysicsLock lock;
         if ( !pVehicle->isKeyframed() ) {
             pVehicle->setKeyframed( true, true );
+            bPlayerCarTeleport = true;
         }
-        pVehicle->moveKeyframed( world );
+        pVehicle->moveKeyframed( world, lastDeltaTime, bPlayerCarTeleport );
+        bPlayerCarTeleport = false;
     }
 }
 

@@ -104,7 +104,7 @@ bool MngCinematics::initialize( TestDriveGameInstance * ) {
     return true;
 }
 
-void MngCinematics::tick( float deltaTime, float totalTime ) {
+void MngCinematics::tickCinematics( float deltaTime, float totalTime ) {
     // FUN_006de720
     PlayerConfiguration *pPlayerConfig =
         ( gpConfig != nullptr ) ? gpConfig->pPlayerConfig : nullptr;

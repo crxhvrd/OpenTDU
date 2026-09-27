@@ -18,6 +18,7 @@ public:
     ~GSCinematics();
 
     bool initialize( TestDriveGameInstance * ) override;
+    void tick( float totalTime, float deltaTime ) override;
     void terminate() override;
     PipelineStereo *getMusicPipeline() const;
     ClientConfig *getMusicClientConfig() const;
@@ -28,7 +29,11 @@ public:
 
 private:
     AudioClient *pMusicClient;
-    bool bInitialized;   
+
+    int32_t field_0x138;
+    int32_t field_0x13c;
+
+    bool bInitialized;
 };
 
 extern GSCinematics *gpCinematics;

@@ -328,6 +328,7 @@ private:
     ZConfig zConfigVeryNear{ 0.01f, -1.0f };
     bool bVeryFarScene = false;
     bool bMustCloseWindowsAndDoors = false;
+    bool bPlayerCarTeleport = true;
     int32_t numAvatars = 0;
     int32_t numHostesses = 0;
     Entity *pCurrentMicro = nullptr;

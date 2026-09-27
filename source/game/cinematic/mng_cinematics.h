@@ -28,7 +28,7 @@ public:
     ~MngCinematics();
 
     bool initialize( TestDriveGameInstance *pInstance ) override;
-    void tick( float deltaTime, float totalTime ) override;
+    void tickCinematics( float deltaTime, float totalTime );
     void pause() override;
 
     void addPlayingCinematic( EntityCinematic *pCinematic );

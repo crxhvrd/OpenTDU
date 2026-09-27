@@ -2433,6 +2433,11 @@ void PhysicsVehicle::OnStep(
         return;
     }
 
+    if ( bKeyframed ) {
+        updateKeyframedWheels( dt );
+        return;
+    }
+
     {
         const JPH::Vec3 v = chassis.GetLinearVelocity();
         arbitrateAutomaticGearbox(
@@ -3004,8 +3009,6 @@ void PhysicsVehicle::tick( float deltaTime ) {
         return;
     }
 
-    updateKeyframedVelocity( deltaTime );
-
     const int32_t requestedLevel =
         ( gVehicleDrivingHelpOverride >= 0 )
             ? gVehicleDrivingHelpOverride
@@ -3361,27 +3364,55 @@ void PhysicsVehicle::setKeyframed( bool bInKeyframed, bool bForceMatrix ) {
     }
 }
 
-void PhysicsVehicle::updateKeyframedVelocity( float deltaTime ) {
-    if ( !bKeyframed || pPhysicsSystem == nullptr || pChassisBody == nullptr ||
-         deltaTime <= 0.0f ) {
+void PhysicsVehicle::updateKeyframedWheels( float deltaTime ) {
+    // FUN_0083ff50
+    if ( pChassisBody == nullptr ) {
         return;
     }
 
-    const Eigen::Vector3f position( keyframeMatrix( 3, 0 ),
-                                    keyframeMatrix( 3, 1 ),
-                                    keyframeMatrix( 3, 2 ) );
-    if ( bKeyframedVelocityPrimed ) {
-        const Eigen::Vector3f velocity =
-            ( position - prevKeyframePosition ) / deltaTime;
-        pPhysicsSystem->GetBodyInterface().SetLinearVelocity(
-            pChassisBody->GetID(),
-            JPH::Vec3( velocity.x(), velocity.y(), velocity.z() ) );
+    const JPH::RMat44 world = pChassisBody->GetWorldTransform();
+    const JPH::Vec3 forward = world.GetColumn3( 2 );
+    const float forwardSpeed = forward.Dot( JPH::Vec3(
+        keyframeVelocity.x(), keyframeVelocity.y(), keyframeVelocity.z() ) );
+
+    // TODO: Implement HMap raycast test logic
+    if ( pPhysicsSystem != nullptr ) {
+        for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+            castWheel( *pPhysicsSystem, *pChassisBody, i, deltaTime );
+            prevSuspLength[i] = suspStaticLength[i];
+        }
     }
-    prevKeyframePosition = position;
-    bKeyframedVelocityPrimed = true;
+
+    static constexpr float kKeyframedEngineStartSpeed = 0.25f;
+    if ( std::fabs( forwardSpeed ) > kKeyframedEngineStartSpeed &&
+         ( vehicle.Engine.State == eEngineState::ES_Off ||
+           vehicle.Engine.State == eEngineState::ES_Crank ) ) {
+        vehicle.Engine.State = eEngineState::ES_Running;
+    }
+
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        PhysicsWheelState &wheel = vehicle.Wheels[i];
+        wheel.AngularVel =
+            ( wheel.Radius > 0.0f ) ? forwardSpeed / wheel.Radius : 0.0f;
+        wheel.SpinAngle += wheel.AngularVel * deltaTime;
+        wheel.ContactVelLong = forwardSpeed;
+        wheel.ContactVelLat = 0.0f;
+        wheel.NormLongClamped = 0.0f;
+        wheel.NormLatClamped = 0.0f;
+        wheel.NormLong = 0.0f;
+        wheel.NormLat = 0.0f;
+        wheel.bTireSlipping = false;
+        wheel.BrakeTorqueOut = 0.0f;
+        wheel.EspTorqueOut = 0.0f;
+        wheel.DriveTorque = 0.0f;
+        wheel.BrakeTorque = 0.0f;
+    }
 }
 
-void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform ) {
+void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
+                                    float deltaTime,
+                                    bool bTeleport ) {
+    // FUN_0083ff50
     if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
         return;
     }
@@ -3401,6 +3432,16 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform ) {
     keyframeMatrix = shifted;
     bForceKeyframeMatrix = bKeyframed;
 
+    const Eigen::Vector3f position( shifted( 3, 0 ), shifted( 3, 1 ),
+                                    shifted( 3, 2 ) );
+    if ( bTeleport || !bKeyframedVelocityPrimed || deltaTime <= 0.0f ) {
+        keyframeVelocity = Eigen::Vector3f::Zero();
+    } else {
+        keyframeVelocity = ( position - prevKeyframePosition ) / deltaTime;
+    }
+    prevKeyframePosition = position;
+    bKeyframedVelocityPrimed = true;
+
     JPH::Mat44 world = JPH::Mat44::sIdentity();
     for ( int c = 0; c < 4; ++c ) {
         world.SetColumn3(
@@ -3412,7 +3453,10 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform ) {
     bi.SetPositionAndRotation( id, world.GetTranslation(),
                                world.GetQuaternion().Normalized(),
                                JPH::EActivation::Activate );
-    bi.SetLinearAndAngularVelocity( id, JPH::Vec3::sZero(),
+    bi.SetLinearAndAngularVelocity( id,
+                                    JPH::Vec3( keyframeVelocity.x(),
+                                               keyframeVelocity.y(),
+                                               keyframeVelocity.z() ),
                                     JPH::Vec3::sZero() );
 
     publishStepPose();

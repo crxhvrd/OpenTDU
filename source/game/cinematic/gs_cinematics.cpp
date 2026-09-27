@@ -8,11 +8,26 @@
 GSCinematics *gpCinematics = nullptr;
 
 GSCinematics::GSCinematics()
-    : GameSystem(), pMusicClient( nullptr ), bInitialized( false ) {
+    : GameSystem(),
+      pMusicClient( nullptr ),
+      field_0x138( 0 ),
+      field_0x13c( 0 ),
+      bInitialized( false ) {
     gpCinematics = this;
 }
 
 GSCinematics::~GSCinematics() {}
+
+void GSCinematics::tick( float totalTime, float deltaTime ) {
+    // FUN_009afe30
+    if ( gpMngCinematics != nullptr ) {
+        gpMngCinematics->tickCinematics( deltaTime, totalTime );
+    }
+
+    if ( field_0x138 >= 10 ) {
+        field_0x13c = field_0x138;
+    }
+}
 
 bool GSCinematics::isCinematicPlaying( eCinematicType type,
                                        bool bRequireAudio,
@@ -28,6 +43,7 @@ bool GSCinematics::isCinematicPlaying( eCinematicType type,
 bool GSCinematics::initialize( TestDriveGameInstance * ) {
     // FUN_009afde0
     bInitialized = true;
+    field_0x138 = 0;
 
     for ( EntitySoundDensity::DensitySlot &slot : EntitySoundDensity::Slots ) {
         slot = EntitySoundDensity::DensitySlot();
@@ -38,7 +54,8 @@ bool GSCinematics::initialize( TestDriveGameInstance * ) {
     }
 
     if ( pMusicClient == nullptr ) {
-        OTDU_LOG_WARN( "No 'ClientCinematicMusic' audio client, cinematic music will stay silent\n" );
+        OTDU_LOG_WARN( "No 'ClientCinematicMusic' audio client, cinematic "
+                       "music will stay silent\n" );
     }
 
     return true;
