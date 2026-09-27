@@ -754,6 +754,7 @@ PhysicsVehicle::PhysicsVehicle()
       autoGearboxBrake( 0.0f ),
       bDrivingInputScripted( false ),
       bCinematicMode( false ),
+      bInputControllerAttached( true ),
       bPausePhysics( false ),
       bKeyframed( false ),
       bForceKeyframeMatrix( false ),
@@ -947,6 +948,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     resetAutomaticGearbox();
     bDrivingInputScripted = false;
     bCinematicMode = false;
+    bInputControllerAttached = true;
     bPausePhysics = false;
     bKeyframed = false;
     bForceKeyframeMatrix = false;

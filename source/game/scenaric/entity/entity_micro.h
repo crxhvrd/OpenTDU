@@ -7,6 +7,9 @@ public:
     const char *GetName() override { return "Actor"; /* FUN_00423f40 */ }
 
 public:
+    inline bool isCurrentMicro() const { return bIsCurrentMicro; }
+
+public:
     EntityMicro();
     ~EntityMicro();
 
@@ -25,6 +28,9 @@ public:
     void reset() override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
 
+private:
+    void updateListener();
+
 protected:
-    uint8_t Flags;
+    bool bIsCurrentMicro;
 };

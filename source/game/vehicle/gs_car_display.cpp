@@ -310,6 +310,25 @@ void GSCarDisplay::tick( float totalTime, float deltaTime ) {
     }
 }
 
+void GSCarDisplay::stopVehicleParticles( bool bImmediate ) {
+    // FUN_008b40e0
+    for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+        if ( cars[i].isInitialized() ) {
+            cars[i].particles.setState( bImmediate );
+        }
+    }
+    for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+        if ( bikes[i].isInitialized() ) {
+            bikes[i].particles.setState( bImmediate );
+        }
+    }
+    for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+        if ( trafficVehicles[i].isInitialized() ) {
+            trafficVehicles[i].particles.setState( bImmediate );
+        }
+    }
+}
+
 void GSCarDisplay::reset() {
     // FUN_008b40c0
     if ( !BOOL_010e74f4 ) {

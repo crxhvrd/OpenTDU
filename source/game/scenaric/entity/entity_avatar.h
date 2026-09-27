@@ -18,6 +18,8 @@ public:
 public:
     inline int32_t getAvatarType() const { return avatarType; }
     inline void resetCineAvatarMode() { CineAvatarMode = 0; }
+    inline int32_t getCineAvatarMode() const { return CineAvatarMode; }
+    inline void setCineAvatarMode( int32_t mode ) { CineAvatarMode = mode; }
     inline PooledAvatarEntry *getPooledEntry() const {
         return pPooledAvatarEntry;
     }
@@ -76,7 +78,9 @@ public:
                                int32_t clotheSet,
                                bool bAsync,
                                bool bCritical );
-    void endCinematic( bool bStillReferenced );
+    void endCinematic( bool bStillReferenced,
+                       class EntityCinematic *pLifeCinematic );
+    void endLifeSetCinematic();
 
 private:
     void onCarAlphaTerm();

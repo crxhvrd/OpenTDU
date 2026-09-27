@@ -34,7 +34,9 @@ public:
     void destroy() override;
 
     bool onMessage( FlashMessage *pMessage ) override;
-    bool executeAction( int32_t param_2, void *param_3 ) override;
+    bool executeAction( int32_t param_2,
+                        void *param_3,
+                        void *pData = nullptr ) override;
     bool isDrawnInFakeDOF() override {
         // FUN_0042cf80
         return sceneLiving.getContent()->isDrawnInDOFPass();

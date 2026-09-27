@@ -31,6 +31,8 @@ public:
     void addLifeSet( EntityLifeSet *pLifeSet );
     uint32_t updateStreaming( uint32_t requested );
     void unbindActiveLifeSet();
+    EntityCinematic *findActorCinematic( uint64_t hashcode ) const;
+    void addActorCinematic( uint64_t hashcode, EntityCinematic *pCinematic );
 
 private:
     static constexpr int32_t kMaxLifeSets = 64;

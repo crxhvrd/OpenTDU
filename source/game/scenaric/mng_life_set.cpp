@@ -58,6 +58,27 @@ MngLifeSet::~MngLifeSet() {
     gpMngLifeSet = nullptr;
 }
 
+EntityCinematic *MngLifeSet::findActorCinematic( uint64_t hashcode ) const {
+    // FUN_006cefc0
+    for ( uint32_t i = 0; i < numActorInCinematics; i++ ) {
+        if ( actorsInCinematics[i].Hashcode == hashcode ) {
+            return actorsInCinematics[i].pCinematic;
+        }
+    }
+    return nullptr;
+}
+
+void MngLifeSet::addActorCinematic( uint64_t hashcode,
+                                    EntityCinematic *pCinematic ) {
+    // FUN_006cf010
+    if ( numActorInCinematics >= kMaxActorsInCinematics ) {
+        return;
+    }
+    actorsInCinematics[numActorInCinematics].Hashcode = hashcode;
+    actorsInCinematics[numActorInCinematics].pCinematic = pCinematic;
+    numActorInCinematics++;
+}
+
 void MngLifeSet::tick( float totalTime, float deltaTime ) {
     // FUN_006cf5b0
     mngActor.tick( totalTime, deltaTime );

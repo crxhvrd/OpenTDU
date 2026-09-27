@@ -94,7 +94,9 @@ public:
     void tick( AircraftPathFlights &owner, float deltaTime );
     void terminateSound();
 
-    bool executeAction( int32_t event, void *pParameters ) override;
+    bool executeAction( int32_t event,
+                        void *pParameters,
+                        void *pData = nullptr ) override;
 
 private:
     void updateSound( bool bCineShifted );

@@ -96,6 +96,7 @@ public:
     }
     inline bool isShifted() const { return bShifted != 0; }
     inline const std::string &getInstanceName() const { return name; }
+    inline const EntityDesc *getDesc() const { return pDesc; }
     inline Entity *getParent() const { return pParent; }
     inline GameMechanism *getMechanism() const { return pMechanism; }
     inline Spot *getSpot() const { return pSpot; }

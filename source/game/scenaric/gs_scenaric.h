@@ -50,7 +50,8 @@ struct NextIntroInfo {
 
 class CinematicPlayer {
 public:
-    virtual bool executeAction( int32_t param_2, void *param_3 );
+    virtual bool
+    executeAction( int32_t param_2, void *param_3, void *pData = nullptr );
 };
 
 static constexpr int32_t kNumICEChallengers = 16;

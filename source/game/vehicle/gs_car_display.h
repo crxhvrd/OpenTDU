@@ -52,6 +52,7 @@ public:
                            StreamedInBankVehicle *pOutEntry );
     void releaseEntry( StreamedInBankVehicle *pEntry );
     void releaseVehicle( CarState *pVehicle );
+    void stopVehicleParticles( bool bImmediate );
 
     static void SetRealTimeEnvMappedCar( VehicleBase *pCar );
 

@@ -43,11 +43,17 @@ public:
     void focusOn( VehicleBase *pVehicleBase );
     void moveDoor( bool bLeft, bool bOpening, bool bApply, float duration );
     void resetShowcase();
+    void closeDoorsAndWindows();
+    void setVehicle( VehicleBase *pVehicleBase );
+    bool isBikeCategory() const;
+
+    inline bool hasWindows() const { return bHasWindows; }
+    inline DoorState &getRightDoor() { return RightDoor; }
+    inline WindowState &getLeftWindow() { return LeftWindow; }
+    inline WindowState &getRightWindow() { return RightWindow; }
 
 private:
-    void setVehicle( VehicleBase *pVehicleBase );
     void updateVehicleSpecs();
-    bool isBikeCategory() const;
 
 private:
     VehicleBase *pVehicle;

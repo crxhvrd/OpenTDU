@@ -150,6 +150,11 @@ uint32_t AnimStateInstance::getCurveMode() const {
     return pTrailer != nullptr ? pTrailer[kTrailerCurveMode / 4] : 0;
 }
 
+uint32_t AnimStateInstance::getTrailerFlags() const {
+    const uint32_t *pTrailer = getTrailer();
+    return pTrailer != nullptr ? pTrailer[kTrailerFlags / 4] : 0;
+}
+
 int32_t AnimStateInstance::getNumBlendClips() const {
     const uint32_t *pTrailer = getTrailer();
     if ( pTrailer == nullptr ) {

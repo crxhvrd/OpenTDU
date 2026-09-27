@@ -82,7 +82,9 @@ bool IsWooshImpostor( uint64_t instanceHashcode, int32_t gridIndex ) {
     return false;
 }
 
-bool CinematicPlayer::executeAction( int32_t param_2, void *param_3 ) {
+bool CinematicPlayer::executeAction( int32_t param_2,
+                                     void *param_3,
+                                     void * /*pData*/ ) {
     return false;
 }
 

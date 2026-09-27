@@ -27,7 +27,7 @@
 #include "render/camera/camera_game.h"
 
 // Binds the playing cinematic interface onto the avatar.
-static constexpr FlashMessage kAvatarOverlap = FlashMessage( 0x706c766f );
+static constexpr FlashMessage kAvatarPlayVoice = FlashMessage( "plvo" );
 
 float gAvatarLODDistances[3] = { 150.0f, 10.0f, 0.0f }; // DAT_010d6f54
 
@@ -72,8 +72,8 @@ EntityAvatar::~EntityAvatar() {
 
 bool EntityAvatar::onMessage( FlashMessage *pMessage ) {
     // FUN_007f8130
-    if ( *pMessage == kAvatarOverlap ) {
-        OTDU_UNIMPLEMENTED; // TODO: CINEMATIC
+    if ( *pMessage == kAvatarPlayVoice ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
         return true;
     }
 
@@ -167,7 +167,8 @@ void EntityAvatar::initializeForCinematicKeyframed( void *param_2,
     }
 }
 
-void EntityAvatar::endCinematic( bool bStillReferenced ) {
+void EntityAvatar::endCinematic( bool bStillReferenced,
+                                 EntityCinematic *pLifeCinematic ) {
     // FUN_007e5f70 (inlined)
     pCineInterface = nullptr;
 
@@ -190,8 +191,8 @@ void EntityAvatar::endCinematic( bool bStillReferenced ) {
         if ( pDriver != nullptr && pDriver->getCarState() != nullptr ) {
             pDriver->getCarState()->unloadDriver();
         }
-        if ( gpActiveGMScene != nullptr ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+        if ( pLifeCinematic != nullptr ) {
+            pLifeCinematic->start( true );
         }
     }
 
@@ -203,6 +204,23 @@ void EntityAvatar::endCinematic( bool bStillReferenced ) {
     if ( animation.getNumChannels() > 0 ) {
         animation.resetChannel( 0 );
     }
+}
+
+void EntityAvatar::endLifeSetCinematic() {
+    // FUN_007e5f70 (inlined, life-set branch)
+    if ( avatarType != 1 ) {
+        return;
+    }
+
+    EntityDriver *pDriver = getDriver();
+    if ( pDriver != nullptr ) {
+        pDriver->returnToSeatAfterCinematic();
+    }
+    removeInstanceReference();
+    if ( unknownAvatarFunc2() != 0 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    }
+    CineAvatarMode = 0;
 }
 
 bool EntityAvatar::isValid() const {

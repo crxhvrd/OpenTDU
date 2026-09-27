@@ -64,6 +64,10 @@ public:
     inline VehicleBase *getShowcaseFocusedVehicle() {
         return showcaseCarControl.getFocusedVehicle();
     }
+    inline MngShowCaseCarControl &getShowcaseCarControl() {
+        return showcaseCarControl;
+    }
+    inline MngLifeSet &getLifeSetManager() { return mngLifeSet; }
 
 public:
     GameModeScene();
@@ -84,7 +88,9 @@ public:
         return true;
     }
 
-    bool executeAction( int32_t param_2, void *param_3 ) override;
+    bool executeAction( int32_t param_2,
+                        void *param_3,
+                        void *pData = nullptr ) override;
     virtual void installCinematics( SpotMap *pSpot, ScenaricBank *pBank );
 
 protected:

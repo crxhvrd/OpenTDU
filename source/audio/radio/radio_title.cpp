@@ -22,10 +22,6 @@ static constexpr uint32_t kDefaultVisibleChars = 0xc;
 static constexpr const char *kLogoClipPath = "/HUD/radio/radio_lure";
 static constexpr const char *kScrollSeparator = " --- ";
 
-static FlashPlayer *GetHudFlashPlayer() {
-    return ( gpMngHud != nullptr ) ? gpMngHud->getHudPlayer() : nullptr;
-}
-
 RadioTitle::RadioTitle()
     : LogoName{},
       bInitialized( false ),

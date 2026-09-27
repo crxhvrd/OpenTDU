@@ -285,7 +285,9 @@ void Aircraft::spawn( Entity *pAircraftInstance,
     updateSound( false );
 }
 
-bool Aircraft::executeAction( int32_t event, void *pParameters ) {
+bool Aircraft::executeAction( int32_t event,
+                              void *pParameters,
+                              void * /*pData*/ ) {
     // FUN_00903010
     (void)pParameters;
     if ( event == CE_Ended ) {

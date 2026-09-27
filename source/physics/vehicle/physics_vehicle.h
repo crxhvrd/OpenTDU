@@ -176,6 +176,10 @@ public:
     }
     void setCinematicMode( bool bCinematic ) { bCinematicMode = bCinematic; }
     bool isInCinematicMode() const { return bCinematicMode; }
+    void setInputControllerAttached( bool bAttached ) {
+        bInputControllerAttached = bAttached;
+    }
+    bool isInputControllerAttached() const { return bInputControllerAttached; }
     bool isKeyframed() const { return bKeyframed; }
     void setPhysicsPaused( bool bPaused ) { bPausePhysics = bPaused; }
     bool isPhysicsPaused() const { return bPausePhysics; }
@@ -386,6 +390,7 @@ private:
     float autoGearboxBrake;
     bool bDrivingInputScripted;
     bool bCinematicMode;
+    bool bInputControllerAttached;
     bool bPausePhysics;
     bool bKeyframed;
     bool bForceKeyframeMatrix;

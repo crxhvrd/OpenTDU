@@ -714,7 +714,9 @@ void GameModeScene::notifyCinematicEndFade( EntityCinematic *pCine ) {
     }
 }
 
-bool GameModeScene::executeAction( int32_t param_2, void *param_3 ) {
+bool GameModeScene::executeAction( int32_t param_2,
+                                   void *param_3,
+                                   void * /*pData*/ ) {
     // FUN_007bd850
     EntityCinematic *pCine = static_cast<EntityCinematic *>( param_3 );
 

@@ -37,6 +37,7 @@ public:
     ParticleInstance *activateParticles( uint64_t hashcode, bool bReset );
 
     void stopAllParticleSystems();
+    void resetInstancesInState( eParticleState state );
     Material *resolveParticleMaterial( uint64_t hashcode );
 
 private:

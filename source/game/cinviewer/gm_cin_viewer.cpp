@@ -437,7 +437,9 @@ bool GMCinViewer::onMessage( FlashMessage *pMessage ) {
     }
 }
 
-bool GMCinViewer::executeAction( int32_t param_2, void *param_3 ) {
+bool GMCinViewer::executeAction( int32_t param_2,
+                                 void *param_3,
+                                 void * /*pData*/ ) {
     // FUN_007b3380
     FlashPlayer *pViewer = gpFlash->getFlashPlayer( "VIEWER" );
 

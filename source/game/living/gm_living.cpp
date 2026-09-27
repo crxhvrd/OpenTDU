@@ -450,7 +450,7 @@ void GMLiving::destroy() {
     GameModeWorldBase::destroy();
 }
 
-bool GMLiving::executeAction( int32_t param_2, void *param_3 ) {
+bool GMLiving::executeAction( int32_t param_2, void *param_3, void *pData ) {
     // FUN_0076ab80
     if ( param_2 == CE_Stopping && pCinematicIntroE != nullptr &&
          pCinematicIntroE == param_3 ) {
@@ -461,7 +461,7 @@ bool GMLiving::executeAction( int32_t param_2, void *param_3 ) {
         }
     }
 
-    return GameModeScene::executeAction( param_2, param_3 );
+    return GameModeScene::executeAction( param_2, param_3, pData );
 }
 
 bool GMLiving::onMessage( FlashMessage *pMessage ) {

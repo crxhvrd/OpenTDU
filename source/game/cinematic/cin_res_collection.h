@@ -27,6 +27,7 @@ struct CinematicActor {
     eKind Kind = CAK_Entity;
     bool bInstanced = false;
     int32_t AvatarRefCount = 0;
+    uint64_t Hashcode = 0;
 };
 
 struct CinActorMessage {
@@ -107,12 +108,18 @@ public:
         return bActorsDriveStreaming;
     }
     inline bool isStreamTarget() const { return bStreamTarget; }
+    inline void setStreamTarget( bool bEnabled ) { bStreamTarget = bEnabled; }
+    inline Entity *getCurrentMicro() const { return pCurrentMicro; }
+    inline void setCurrentMicro( Entity *pMicro ) { pCurrentMicro = pMicro; }
     inline void setAvatarShadowTarget( bool bEnabled ) {
         bAvatarShadowTarget = bEnabled;
     }
     inline void clearPlayerAvatar() {
         bPlayerAvatarSpawned = false;
         pPlayerAvatar = nullptr;
+    }
+    inline uint64_t getActorHashcode( int32_t index ) const {
+        return ( index >= 0 && index < numActors ) ? actors[index].Hashcode : 0;
     }
     inline int32_t getActorAvatarRefCount( int32_t index ) const {
         return ( index >= 0 && index < numActors )
@@ -210,8 +217,11 @@ private:
     Eigen::Vector3f tickCameraShake( CameraCinematic *pCamera,
                                      float deltaTime );
 
-    bool processMusicMessage( uint32_t tag4 );
+    bool onCinematicMessage( const void *pKey, const char *pMessage );
     void processCinematicMessages( const uint16_t *pTrack, float time );
+    void initializePlayerCarForCinematic();
+    Entity *findMicroByName( const char *pName ) const;
+    bool onPlayerCarMessage( const char *pMessage );
     void collectActorClips( const CinMediaContext *pCtx,
                             const uint16_t *pTrack,
                             float time,
@@ -278,6 +288,8 @@ private:
                             bool bBikeClothes );
     void *findSceneActorByName( const char *pName );
     void *spawnPlayerCar();
+    void *spawnPnjAvatar( const char *pPnjName, uint64_t hashcode );
+    void registerLifeSetActor( uint64_t hashcode );
 
 private:
     static constexpr int32_t kMaxActors = 128;
@@ -302,7 +314,23 @@ private:
     Matrix4x4f_t baseMatrix = Matrix4x4f_t::Identity();
     bool bHasBaseMatrix = false;
     bool bIsLifeSetCinematic = false;
+    struct ZConfig {
+        float Near;
+        float Far;
+    };
+    void applyZConfig( const ZConfig &config );
+
     bool bStreamTarget = false;
+    ZConfig zConfigNear{ 0.1f, -1.0f };
+    ZConfig zConfigFar{ -1.0f, -1.0f };
+    ZConfig zConfigDefault{ -1.0f, -1.0f };
+    ZConfig zConfigVeryFar{ -1.0f, -1.0f };
+    ZConfig zConfigVeryNear{ 0.01f, -1.0f };
+    bool bVeryFarScene = false;
+    bool bMustCloseWindowsAndDoors = false;
+    int32_t numAvatars = 0;
+    int32_t numHostesses = 0;
+    Entity *pCurrentMicro = nullptr;
     bool bPlayerAvatarSpawned = false;
     EntityAvatar *pPlayerAvatar = nullptr;
     bool bActorsDriveStreaming = true;
@@ -313,6 +341,8 @@ private:
     bool bFirstShotPending = true;
     bool bFirstShotConsumed = false;
     int32_t currentShot = -1;
+    bool bFadeOutNotDone = false;
+    float lastDeltaTime = 0.0f;
     class CinematicMusicEmitter *pMusicEmitter = nullptr;
     EntityCinematic *pOwner = nullptr;
     CameraCinematic *pCinematicCamera = nullptr;

@@ -755,6 +755,114 @@ void EntityDriver::returnToSeatAfterCinematic() {
     }
 }
 
+bool EntityDriver::onMessage( FlashMessage *pMessage ) {
+    // FUN_007ef8e0
+    if ( EntityAvatar::onMessage( pMessage ) ) {
+        return true;
+    }
+
+    const bool bCarInstalled =
+        gpScenaric != nullptr &&
+        gpScenaric->getLocalPlayer().getCarState() != nullptr;
+
+    if ( *pMessage == FlashMessage( "avm4" ) ) {
+        if ( bCarInstalled ) {
+            placeInLocalPlayerCar();
+        }
+        if ( getCineAvatarMode() != 4 ) {
+            setSeating( true );
+            bIsFreeMovement = false;
+            bIsUsedIK = true;
+            requestSeatRefresh();
+        }
+        setCineAvatarMode( 4 );
+        return true;
+    }
+
+    if ( *pMessage == FlashMessage( "avm1" ) ) {
+        leaveSeatForCinematic();
+        setCineAvatarMode( 1 );
+        return true;
+    }
+
+    if ( *pMessage == FlashMessage( "avm2" ) ) {
+        if ( bCarInstalled ) {
+            placeInLocalPlayerCar();
+        }
+        setSeating( true );
+        bIsFreeMovement = true;
+        resetAnimationChannels();
+        requestSeatRefresh();
+        bIsUsedIK = false;
+        resetAnimationChannels();
+        requestSeatRefresh();
+        setCineAvatarMode( 2 );
+        return true;
+    }
+
+    if ( *pMessage == FlashMessage( "avm3" ) ) {
+        if ( bCarInstalled ) {
+            placeInLocalPlayerCar();
+        }
+        setSeating( true );
+        bIsUsedIK = true;
+        requestSeatRefresh();
+        if ( DriveType == RT_Bike ) {
+            requestSeatRefresh();
+            bIsFreeMovement = false;
+            setCineAvatarMode( 4 );
+            return true;
+        }
+        bIsFreeMovement = true;
+        resetAnimationChannels();
+        requestSeatRefresh();
+        setCineAvatarMode( 3 );
+        return true;
+    }
+
+    if ( *pMessage == FlashMessage( "heof" ) ) {
+        if ( DriveType == RT_Bike && pPooledAvatarEntry != nullptr ) {
+            pPooledAvatarEntry->Slots[AC_Helmet].setLowResVisible( false );
+        }
+        return true;
+    }
+
+    if ( *pMessage == FlashMessage( "heon" ) ) {
+        if ( DriveType == RT_Bike && pPooledAvatarEntry != nullptr ) {
+            pPooledAvatarEntry->Slots[AC_Helmet].setLowResVisible(
+                pLinkedExternalHelmet == nullptr );
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool EntityDriver::placeInLocalPlayerCar() {
+    // FUN_007e4e60
+    CarState *pLocalCar = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pLocalCar == nullptr ) {
+        return false;
+    }
+
+    if ( pLocalCar->getDriver() != nullptr ) {
+        if ( pLocalCar->getDriver() == this ) {
+            return true;
+        }
+        pLocalCar->unloadDriver();
+        if ( unknownAvatarFunc2() != 0 ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+        }
+    }
+
+    if ( pLocalCar->getDriver() == nullptr ) {
+        return gpScenaric->placeDriver( pLocalCar, this );
+    }
+    return false;
+}
+
 void EntityDriver::tick( PlayerGameMech *pGameMech,
                          float deltaTime,
                          float totalTime ) {

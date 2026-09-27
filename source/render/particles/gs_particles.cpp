@@ -159,6 +159,17 @@ void GSParticles::stopAllParticleSystems() {
     }
 }
 
+void GSParticles::resetInstancesInState( eParticleState state ) {
+    // FUN_0080d2c0
+    for ( Particle *pParticle : particles ) {
+        for ( ParticleInstance *pInstance : pParticle->Instances ) {
+            if ( pInstance->State == state ) {
+                pInstance->State = eParticleState::PS_Dead;
+            }
+        }
+    }
+}
+
 Particle *GSParticles::findByID( eParticleType id ) {
     for ( Particle *pParticle : particles ) {
         if ( pParticle->Type == id ) {

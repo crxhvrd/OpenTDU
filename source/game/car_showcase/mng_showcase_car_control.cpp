@@ -355,6 +355,36 @@ void MngShowCaseCarControl::focusOn( VehicleBase *pVehicleBase ) {
     }
 }
 
+void MngShowCaseCarControl::closeDoorsAndWindows() {
+    // FUN_007706b0
+    if ( pCar == nullptr ) {
+        return;
+    }
+
+    moveDoor( true, false, true, 0.0f );
+    if ( !isBikeCategory() ) {
+        RightDoor.bIsOpening = false;
+        RightDoor.ElapsedTime = 1.0f;
+        RightDoor.MoveDuration = 1.0f;
+    }
+
+    if ( bHasWindows ) {
+        LeftWindow = WindowState();
+        RightWindow = WindowState();
+    }
+
+    if ( pCar->getCarState() == nullptr ) {
+        return;
+    }
+
+    pCar->setLeftDoorOpen( 0.0f, true );
+    pCar->setRightDoorOpen( 0.0f, true );
+    if ( pCar->getType() == VehicleBase::eType::VBT_Car ) {
+        pCar->setWindowOpenLeft( 0.0f );
+        pCar->setWindowOpenRight( 0.0f );
+    }
+}
+
 void MngShowCaseCarControl::resetShowcase() {
     // FUN_007707b0
     if ( pCar == nullptr ) {

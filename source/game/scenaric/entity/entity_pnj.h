@@ -12,6 +12,8 @@ public:
 
     void deserialize( BinaryReader *param_2 ) override;
 
+    inline const char *getPnjName() const { return pName; }
+
 protected:
     const char *pName;
 };

@@ -110,6 +110,8 @@ public:
     void drawDebug( float deltaTime ) override;
 #endif
 
+    void stopAllEffects();
+
     static int32_t RemapMaterial( int32_t materialType );
 
 private:
@@ -147,7 +149,6 @@ private:
 private:
     void loadConfig();
     void releaseConfig();
-    void stopAllEffects();
 
     const SFXChunkHeader *
     getBinomial( int32_t fxMaterialA, int32_t fxMaterialB, int32_t kind ) const;

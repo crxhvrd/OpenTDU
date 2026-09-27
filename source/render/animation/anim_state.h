@@ -74,6 +74,7 @@ public:
     ClipInstance *getFirstClip() const;
     uint32_t getTrailerOffset() const;
     uint32_t getCurveMode() const;
+    uint32_t getTrailerFlags() const;
     int32_t getNumBlendClips() const;
     bool getBlendEntry( int32_t index, AnimStateBlendEntry &out ) const;
     void getBlendSet( std::vector<AnimStateBlendEntry> &outEntries ) const;

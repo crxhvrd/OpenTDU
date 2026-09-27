@@ -35,6 +35,12 @@ public:
     inline void setFarPlane( const float value ) { farPlane = value; }
     inline float getInteriorNearPlane() const { return interiorNearPlane; }
     inline float getInteriorFarPlane() const { return interiorFarPlane; }
+    inline void setInteriorNearPlane( const float value ) {
+        interiorNearPlane = value;
+    }
+    inline void setInteriorFarPlane( const float value ) {
+        interiorFarPlane = value;
+    }
     inline Eigen::Vector3f getVelocity() { return velocity.head<3>(); }
     inline void setVelocity( const Eigen::Vector4f &value ) {
         velocity = value;

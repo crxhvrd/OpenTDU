@@ -12,6 +12,7 @@
 #include "core/hash/crc64.h"
 #include "core/random/bcpl.h"
 #include "filesystem/bank.h"
+#include "flash/mng_fade.h"
 #include "game/scenaric/entity/entity_actor.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/entity/entity_pedestrian.h"
@@ -40,6 +41,17 @@
 #include "render/camera/camera_cinematic.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "world/gs_world_streaming.h"
+#include "world/mng_world.h"
+#include "game/car_showcase/mng_showcase_car_control.h"
+#include "audio/gs_audio.h"
+#include "render/postfx/gs_postfx.h"
+#include "render/postfx/effects/postfx_radial_blur.h"
+#include "render/gs_render.h"
+#include "render/mng_shadow.h"
+#include "game/scenaric/entity/entity_driver.h"
+#include "flash/entities/flash_entity.h"
+#include "game/scenaric/entity/entity_pnj.h"
+#include "game/scenaric/mng_life_set.h"
 
 // TDU_PNJ row index in the game database
 static constexpr int32_t kPNJDatabaseIndex = 0x10;
@@ -74,6 +86,9 @@ static void StepCameraShakeAngle( float &angle,
     }
 }
 
+static constexpr float kDefaultRadialBlurIntensity = 20.0f; // DAT_00f03ee0
+static constexpr int32_t kMaxCinematicAvatars = 8;
+
 static void SetPlayerCarCinematicMode( bool bCinematic ) {
     if ( gpScenaric == nullptr ) {
         return;
@@ -102,6 +117,11 @@ static void SetPlayerCarCinematicMode( bool bCinematic ) {
     } else {
         pVehicle->setKeyframed( false, false );
     }
+}
+
+static bool IsLocalPlayerCarInstalled() {
+    return gpScenaric != nullptr &&
+           gpScenaric->getLocalPlayer().getCarState() != nullptr;
 }
 
 static GarageSlot *GetCurrentGarageSlot() {
@@ -311,6 +331,10 @@ void CinResCollection::releasePlayerCarActors() {
 }
 
 void CinResCollection::reset() {
+    // FUN_007e23c0
+    numAvatars = 0;
+    numHostesses = 0;
+
     releasePlayerCarActors();
     releaseCinematicCamera();
     pCinematicData = nullptr;
@@ -523,11 +547,6 @@ void CinResCollection::processCinematicMessages( const uint16_t *pTrack,
         return;
     }
 
-    const void *pKeyframeEntry = pValues + lower * 2;
-    if ( isMessageFired( pKeyframeEntry ) ) {
-        return;
-    }
-
     const uint8_t *pDesc =
         static_cast<const uint8_t *>( pRefTable[refIdx].pDescriptor );
     if ( pDesc == nullptr || pDesc[0] != 0x0b ) {
@@ -540,18 +559,7 @@ void CinResCollection::processCinematicMessages( const uint16_t *pTrack,
         return;
     }
 
-    recordFiredMessage( pMsg, pKeyframeEntry );
-
-    const uint32_t tag4 =
-        ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[0] ) ) << 24 ) |
-        ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[1] ) ) << 16 ) |
-        ( static_cast<uint32_t>( static_cast<uint8_t>( pMsg[2] ) ) << 8 ) |
-        static_cast<uint32_t>( static_cast<uint8_t>( pMsg[3] ) );
-
-    OTDU_LOG_DEBUG( "Cinematic '%s' message '%s' at %.2fs (%.2fs)\n", debugName,
-                    pMsg, time, duration );
-
-    processMusicMessage( tag4 );
+    onCinematicMessage( pValues + lower * 2, pMsg );
 }
 
 uint32_t ExtractBufferSize( const void *pData, uint32_t size ) {
@@ -579,7 +587,10 @@ uint32_t ExtractBufferSize( const void *pData, uint32_t size ) {
     return 0;
 }
 
-void CinResCollection::tick( float time, float /*deltaTime*/ ) {
+void CinResCollection::tick( float time, float deltaTime ) {
+    // FUN_00425d80
+    lastDeltaTime = deltaTime;
+
     // FUN_0067b560
     if ( pCinematicData == nullptr ) {
         return;
@@ -856,6 +867,20 @@ void CinResCollection::dispatchActor( const CinematicActor *pActor,
         return;
     }
 
+    if ( pActor->Kind == CinematicActor::CAK_PlayerCar ) {
+        if ( bFirstShotPending ) {
+            initializePlayerCarForCinematic();
+        }
+
+        for ( int32_t i = 0; i < state.NumMessages; i++ ) {
+            const CinActorMessage &message = state.Messages[i];
+            if ( !isMessageFired( message.pKey ) &&
+                 onPlayerCarMessage( message.pString ) ) {
+                recordFiredMessage( message.pString, message.pKey );
+            }
+        }
+    }
+
     Matrix4x4f_t transform = BuildRotationMatrix( state.Heading );
     transform.row( 0 ) *= scale.x();
     transform.row( 1 ) *= scale.y();
@@ -867,12 +892,33 @@ void CinResCollection::dispatchActor( const CinematicActor *pActor,
     }
 
     if ( pActor->Kind == CinematicActor::CAK_PlayerCar ) {
-        if ( state.NumMessages > 0 ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (the PLAYER_CAR media's
-                                     // GesCineMsg: doors, windows, avm*)
-        }
         if ( bHasTransformTrack ) {
             applyPlayerCarTransform( transform );
+        }
+
+        // FUN_007e5610
+        const CarState *pLocalCar =
+            ( gpScenaric != nullptr )
+                ? gpScenaric->getLocalPlayer().getCarState()
+                : nullptr;
+        const PhysicsVehicle *pLocalVehicle =
+            ( pLocalCar != nullptr ) ? pLocalCar->getPhysicsVehicle() : nullptr;
+        if ( pLocalVehicle != nullptr && pLocalVehicle->isInCinematicMode() &&
+             gpMngShadow != nullptr && !bAvatarShadowTarget &&
+             pOwner != nullptr && pOwner->hasFocus() ) {
+            Eigen::Vector4f shadowTarget = transform.row( 3 ).transpose();
+            if ( gpWorldStreaming != nullptr &&
+                 gpWorldStreaming->isEnabled() ) {
+                shadowTarget.head<3>() +=
+                    gpWorldStreaming->getPosition().head<3>();
+            }
+            gpMngShadow->setTarget( &shadowTarget );
+        }
+
+        if ( gpMngWorld != nullptr && gpMngWorld->isStreamEnabled() &&
+             !bStreamTarget && pOwner != nullptr && pOwner->hasFocus() &&
+             bActorsDriveStreaming ) {
+            gpMngWorld->setDisableStreamingOnCar( false );
         }
         return;
     }
@@ -1090,6 +1136,14 @@ void CinResCollection::removeFiredMessages( uint32_t tag ) {
     }
 }
 
+static void SetFadeColor( const float *pRGB ) {
+    static constexpr float kFloatToByte = 255.0f; // DAT_00f41688
+    gpMngFade->setTransitionColorRGB(
+        static_cast<uint8_t>( FloatToInt( pRGB[0] * kFloatToByte ) ),
+        static_cast<uint8_t>( FloatToInt( pRGB[1] * kFloatToByte ) ),
+        static_cast<uint8_t>( FloatToInt( pRGB[2] * kFloatToByte ) ) );
+}
+
 void CinResCollection::onShotEvaluated( int32_t shotIndex,
                                         const float *pShotKey,
                                         float shotTime ) {
@@ -1099,6 +1153,20 @@ void CinResCollection::onShotEvaluated( int32_t shotIndex,
         0x61766d32, // "avm2"
         0x61766d33, // "avm3"
         0x61766d34, // "avm4"
+    };
+    static constexpr uint32_t kIntroCarMessages[] = {
+        0x636c646c, // "cldl"
+        0x636c6472, // "cldr"
+        0x636c6461, // "clda"
+        0x6f70646c, // "opdl"
+        0x6f706472, // "opdr"
+        0x6f706461, // "opda"
+        0x6f707772, // "opwr"
+        0x6f70776c, // "opwl"
+        0x6f707761, // "opwa"
+        0x636c7772, // "clwr"
+        0x636c776c, // "clwl"
+        0x636c7761, // "clwa"
     };
 
     if ( bFirstShotConsumed ) {
@@ -1123,52 +1191,227 @@ void CinResCollection::onShotEvaluated( int32_t shotIndex,
             }
             if ( gpTestDriveInstance != nullptr &&
                  gpTestDriveInstance->getActiveGameMode() == GM_Intro ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO (gpGMIntro also
-                                         // purges the cl/op door and window
-                                         // messages)
+                for ( const uint32_t tag : kIntroCarMessages ) {
+                    removeFiredMessages( tag );
+                }
             }
         }
 
-        if ( fadeInDuration > 0.0f ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (shot fade-in through
-                                     // MngFade)
+        if ( fadeInDuration > 0.0f && gpMngFade != nullptr ) {
+            const uint32_t fadeFlags = gpMngFade->getTransitionFlags();
+            SetFadeColor( &pShotKey[7] );
+            gpMngFade->restartTransition( ( fadeFlags & ~8u ) | 5u,
+                                          fadeInDuration );
         }
+        bFadeOutNotDone = true;
     }
 
-    if ( duration - fadeOutDuration < shotTime && fadeOutDuration > 0.0f ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (shot fade-out through
-                                 // MngFade)
+    const float fadeOutStart = duration - fadeOutDuration;
+    if ( fadeOutStart < shotTime && fadeOutDuration > 0.0f &&
+         gpMngFade != nullptr ) {
+        const float remaining = fadeOutDuration - ( shotTime - fadeOutStart );
+        const uint32_t fadeFlags = gpMngFade->getTransitionFlags();
+        if ( ( fadeFlags & 1u ) == 0 && remaining > 0.0f ) {
+            SetFadeColor( &pShotKey[12] );
+            gpMngFade->restartTransition( ( fadeFlags & ~0xcu ) | 1u,
+                                          lastDeltaTime + remaining );
+            bFadeOutNotDone = false;
+        }
     }
 }
 
-bool CinResCollection::processMusicMessage( uint32_t tag4 ) {
-    // FUN_007e1dc0 (inlined)
-    static constexpr uint32_t kMessagePlay = 0x706c6179;     // "play"
-    static constexpr uint32_t kMessagePlayLoop = 0x706c6c6f; // "pllo"
-    static constexpr uint32_t kMessagePlayOnce = 0x706c6f6e; // "plon"
-    static constexpr uint32_t kMessageStop = 0x73746f70;     // "stop"
+bool CinResCollection::onCinematicMessage( const void *pKey,
+                                           const char *pMessage ) {
+    // FUN_007e1dc0
+    EntityDriver *pDriver =
+        ( pPlayerAvatar != nullptr ) ? pPlayerAvatar->getDriver() : nullptr;
+    const FlashMessage message( pMessage );
+    bool bConsumed = true;
 
-    if ( pMusicEmitter == nullptr ) {
-        return false;
+    if ( message == FlashMessage( "pllo" ) ) {
+        if ( !isMessageFired( pKey ) && pMusicEmitter != nullptr ) {
+            pMusicEmitter->play( true, 0.0f );
+        }
+    } else if ( message == FlashMessage( "play" ) ||
+                message == FlashMessage( "plon" ) ) {
+        if ( !isMessageFired( pKey ) && pMusicEmitter != nullptr ) {
+            pMusicEmitter->play( false, 0.0f );
+        }
+    } else if ( message == FlashMessage( "stop" ) ) {
+        if ( !isMessageFired( pKey ) && pMusicEmitter != nullptr ) {
+            pMusicEmitter->stop( 0.0f );
+        }
+    } else if ( message == FlashMessage( "avm1" ) ) {
+        if ( pDriver != nullptr ) {
+            pDriver->leaveSeatForCinematic();
+            pDriver->setCineAvatarMode( 1 );
+        }
+    } else if ( message == FlashMessage( "avm2" ) ) {
+        if ( pDriver != nullptr ) {
+            if ( IsLocalPlayerCarInstalled() ) {
+                pDriver->placeInLocalPlayerCar();
+            }
+            pDriver->setSeating( true );
+            pDriver->setFreeMovement( true );
+            pDriver->resetAnimationChannels();
+            pDriver->requestSeatRefresh();
+            pDriver->setUsedIK( false );
+            pDriver->resetAnimationChannels();
+            pDriver->requestSeatRefresh();
+            pDriver->setCineAvatarMode( 2 );
+        }
+    } else if ( message == FlashMessage( "avm3" ) ) {
+        if ( pDriver != nullptr ) {
+            if ( IsLocalPlayerCarInstalled() ) {
+                pDriver->placeInLocalPlayerCar();
+            }
+            pDriver->setSeating( true );
+            pDriver->setFreeMovement( true );
+            pDriver->resetAnimationChannels();
+            pDriver->setUsedIK( true );
+            pDriver->requestSeatRefresh();
+            pDriver->setCineAvatarMode( 3 );
+        }
+    } else if ( message == FlashMessage( "avm4" ) ) {
+        if ( pDriver != nullptr ) {
+            if ( IsLocalPlayerCarInstalled() ) {
+                pDriver->placeInLocalPlayerCar();
+            }
+            pDriver->setSeating( true );
+            pDriver->setFreeMovement( false );
+            pDriver->setUsedIK( true );
+            pDriver->requestSeatRefresh();
+            pDriver->setCineAvatarMode( 4 );
+        }
+    } else if ( message == FlashMessage( "321g" ) ) {
+        if ( !isMessageFired( pKey ) ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: HUD ("/3_2_1_go" countdown clip)
+        }
+    } else if ( message == FlashMessage( "chmi" ) ) {
+        pCurrentMicro = findMicroByName( pMessage + 5 );
+        if ( gpAudio != nullptr ) {
+            gpAudio->setListenerSyncedToCamera( pCurrentMicro == nullptr );
+        }
+    } else if ( message == FlashMessage( "dof1" ) ) {
+        float focale = 0.0f;
+        float postRamp = 0.0f;
+        float preRamp = 0.0f;
+        sscanf( pMessage + 5, "%f:%f:%f", &focale, &postRamp, &preRamp );
+        CameraGame *pCamera = ( gpCamera != nullptr )
+                                  ? gpCamera->findCameraWithMode(
+                                        0, gpCamera->getBoundCarState() )
+                                  : nullptr;
+        if ( pCamera != nullptr ) {
+            float *pFocale = pCamera->getFocaleInfosRW();
+            pFocale[0] = focale;
+            pFocale[1] = preRamp;
+            pFocale[2] = postRamp;
+        }
+    } else if ( message == FlashMessage( "rbof" ) ) {
+        if ( !isMessageFired( pKey ) && gpCamera != nullptr ) {
+            gpCamera->setUseBlur( false );
+        }
+    } else if ( message == FlashMessage( "rbon" ) ) {
+        if ( !isMessageFired( pKey ) ) {
+            float intensity = kDefaultRadialBlurIntensity;
+            sscanf( pMessage + 5, "%f", &intensity );
+            if ( gpCamera != nullptr ) {
+                gpCamera->setUseBlur( true );
+            }
+            PostFXStep *pStep =
+                ( gpPostFX != nullptr )
+                    ? gpPostFX->getEffect<ePostFXStep::PFXS_RadialBlur>()
+                    : nullptr;
+            if ( pStep != nullptr &&
+                 static_cast<PostFXStepRadialBlur *>( pStep )->pNode !=
+                     nullptr ) {
+                static_cast<PostFXStepRadialBlur *>( pStep )
+                    ->pNode->setIntensity( intensity );
+            }
+        }
+    } else if ( message == FlashMessage( "plvo" ) ) {
+        if ( !isMessageFired( pKey ) ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (voice emitters,
+                                     // FUN_007debc0)
+        }
+    } else if ( message == FlashMessage( "zcne" ) ) {
+        applyZConfig( zConfigNear );
+    } else if ( message == FlashMessage( "zcde" ) ) {
+        applyZConfig( zConfigDefault );
+    } else if ( message == FlashMessage( "zcfa" ) ) {
+        applyZConfig( zConfigFar );
+    } else if ( message == FlashMessage( "zcvn" ) ) {
+        applyZConfig( zConfigVeryNear );
+    } else if ( message == FlashMessage( "lafe" ) ) {
+    } else {
+        bConsumed = false;
+        CinematicPlayer *pGMInterface =
+            ( pOwner != nullptr ) ? pOwner->getGameModeInterface() : nullptr;
+        if ( pGMInterface != nullptr && !isMessageFired( pKey ) ) {
+            bConsumed = pGMInterface->executeAction(
+                CE_FlashMessage, pOwner, const_cast<char *>( pMessage ) );
+        }
     }
 
-    switch ( tag4 ) {
-    case kMessagePlay:
-    case kMessagePlayOnce:
-        pMusicEmitter->play( false, 0.0f );
-        return true;
-
-    case kMessagePlayLoop:
-        pMusicEmitter->play( true, 0.0f );
-        return true;
-
-    case kMessageStop:
-        pMusicEmitter->stop( 0.0f );
-        return true;
-
-    default:
-        return false;
+    if ( !isMessageFired( pKey ) && bConsumed ) {
+        recordFiredMessage( pMessage, pKey );
     }
+    return bConsumed;
+}
+
+Entity *CinResCollection::findMicroByName( const char *pName ) const {
+    // FUN_007e1a60
+    ScenaricBank *pSCBank = ( pOwner != nullptr ) ? pOwner->getBank() : nullptr;
+    if ( pSCBank == nullptr ) {
+        return nullptr;
+    }
+
+    for ( int32_t i = 0; i < pSCBank->getEntityCount(); i++ ) {
+        Entity *pEntity = pSCBank->getEntity( i );
+        if ( pEntity != nullptr && pEntity->getType() == eEntityType::ET_MICR &&
+             pEntity->getInstanceName() == pName ) {
+            return pEntity;
+        }
+    }
+    return nullptr;
+}
+
+void CinResCollection::applyZConfig( const ZConfig &config ) {
+    // FUN_007e1190
+    const float nearPlane =
+        ( config.Near < 0.0f ) ? gpRender->getDefaultNearPlane() : config.Near;
+    const float farPlane =
+        ( config.Far < 0.0f ) ? gpRender->getDefaultFarPlane() : config.Far;
+
+    if ( pCinematicCamera == nullptr || gpCamera == nullptr ) {
+        return;
+    }
+
+    if ( !bVeryFarScene ) {
+        pCinematicCamera->setInteriorNearPlane(
+            gpRender->getDefaultInteriorNearPlane() );
+        pCinematicCamera->setInteriorFarPlane(
+            gpRender->getDefaultInteriorFarPlane() );
+        pCinematicCamera->setNearPlane( nearPlane );
+        pCinematicCamera->setFarPlane( farPlane );
+    } else {
+        pCinematicCamera->setInteriorNearPlane( nearPlane );
+        pCinematicCamera->setInteriorFarPlane( farPlane );
+        pCinematicCamera->setNearPlane( ( zConfigVeryFar.Near >= 0.0f )
+                                            ? zConfigVeryFar.Near
+                                            : gpRender->getDefaultNearPlane() );
+        pCinematicCamera->setFarPlane( ( zConfigVeryFar.Far >= 0.0f )
+                                           ? zConfigVeryFar.Far
+                                           : gpRender->getDefaultFarPlane() );
+    }
+
+    gpCamera->setFarPlane( pCinematicCamera->getFarPlane() );
+    gpCamera->setNearPlane( pCinematicCamera->getNearPlane() );
+    gpCamera->setEnableDepthAware( true );
+    gpCamera->setInteriorFarPlane( pCinematicCamera->getInteriorFarPlane() );
+    gpCamera->setInteriorNearPlane( pCinematicCamera->getInteriorNearPlane() );
+    gpCamera->setEnableDepthAwareInterior( true );
+    pCinematicCamera->setKeepGlobalPlanes( true );
 }
 
 void CinResCollection::tickCameraMedia( const CinMediaContext *pCtx,
@@ -1393,6 +1636,7 @@ bool CinResCollection::createInterface( const void *pBankData,
     // FUN_007e0eb0
     bFirstShotPending = true;
     bFirstShotConsumed = false;
+    bAvatarShadowTarget = false;
 
     if ( !load( pBankData, size, pBufferIn ) ) {
         return false;
@@ -1474,6 +1718,20 @@ void *CinResCollection::buildRefMedia( const uint8_t *pRefEntry ) {
         }
         return reinterpret_cast<void *>(
             static_cast<intptr_t>( pOwner->findClipColumn( key ) ) );
+    }
+    case 0x0b: {
+        const FlashMessage message( pPayload );
+        if ( message == FlashMessage( "opwr" ) ||
+             message == FlashMessage( "opwa" ) ||
+             message == FlashMessage( "opwl" ) ) {
+            if ( gpActiveGMScene != nullptr ) {
+                bMustCloseWindowsAndDoors = true;
+            }
+        } else if ( message == FlashMessage( "plvo" ) ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (voice emitters,
+                                     // FUN_007dee40)
+        }
+        return nullptr;
     }
     case 0x0c: {
         char scratch[200] = {};
@@ -1724,9 +1982,16 @@ void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
         }
     }
 
+    if ( bIsLifeSetCinematic && pEntity != nullptr &&
+         kind == CinematicActor::CAK_Entity &&
+         Entity::IsAvatarEntityType( static_cast<Entity *>( pEntity ) ) ) {
+        registerLifeSetActor( key );
+    }
+
     CinematicActor *pActor = registerActor( pName, pMedia, pEntity, kind );
     if ( pActor != nullptr ) {
         pActor->AvatarRefCount = avatarRefCount;
+        pActor->Hashcode = key;
     }
     return pActor;
 }
@@ -1815,12 +2080,22 @@ void *CinResCollection::findActorByHashcode( uint64_t key ) {
     const eEntityType type = pEntity->getType();
 
     if ( type == eEntityType::ET_AVPL ) {
-        OTDU_UNIMPLEMENTED;
+        EntityDriver *pDriver = static_cast<EntityDriver *>( pEntity );
+        pDriver->leaveSeatForCinematic();
+        numAvatars++;
+
+        EntityCinematic *pLifeCinematic =
+            ( gpActiveGMScene != nullptr )
+                ? gpActiveGMScene->getLifeSetManager().findActorCinematic( key )
+                : nullptr;
+        if ( pLifeCinematic != nullptr ) {
+            pLifeCinematic->stop( true );
+        }
         return pEntity;
     }
     if ( type == eEntityType::ET_CPNJ ) {
-        OTDU_UNIMPLEMENTED;
-        return pEntity;
+        return spawnPnjAvatar(
+            static_cast<EntityPnj *>( pEntity )->getPnjName(), key );
     }
     if ( type == eEntityType::ET_POCA ) {
         return nullptr;
@@ -1887,8 +2162,6 @@ void *CinResCollection::spawnActorEntity( const char *pName,
             void *pCar = spawnPlayerCar();
             if ( pCar != nullptr ) {
                 outKind = CinematicActor::CAK_PlayerCar;
-                // FUN_007e4b90
-                SetPlayerCarCinematicMode( true );
             }
             return nullptr;
         }
@@ -2077,6 +2350,196 @@ void *CinResCollection::spawnPlayerCar() {
     return &state;
 }
 
+static void SnapCinematicWindow( WindowState &window, bool bOpening ) {
+    window.ElapsedTime = 1.0f;
+    window.MoveDuration = 1.0f;
+    window.bIsOpening = bOpening;
+    window.bPaused = false;
+}
+
+static void MoveCinematicWindow( WindowState &window,
+                                 bool bOpening,
+                                 bool bIntro,
+                                 float duration ) {
+    if ( duration == 0.0f ) {
+        SnapCinematicWindow( window, bOpening );
+        return;
+    }
+
+    float elapsed = 0.0f;
+    if ( bIntro ) {
+        const float scaled =
+            ( window.ElapsedTime * duration ) / window.MoveDuration;
+        elapsed =
+            ( window.bIsOpening == bOpening ) ? scaled : duration - scaled;
+    }
+    window.ElapsedTime = elapsed;
+    window.MoveDuration = duration;
+    window.bIsOpening = bOpening;
+    window.bPaused = false;
+}
+
+static void SnapCinematicRightDoor( MngShowCaseCarControl &control,
+                                    bool bOpening ) {
+    if ( control.isBikeCategory() ) {
+        return;
+    }
+    DoorState &door = control.getRightDoor();
+    door.bIsOpening = bOpening;
+    door.ElapsedTime = 1.0f;
+    door.MoveDuration = 1.0f;
+}
+
+void CinResCollection::initializePlayerCarForCinematic() {
+    // FUN_007e4b90
+    CarState *pCarState = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pCarState == nullptr || pCarState->getPhysicsVehicle() == nullptr ) {
+        return;
+    }
+
+    SetPlayerCarCinematicMode( true );
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+    pCarState->getBody()->WorldMatrix( 3, 3 ) = 1.0f;
+
+    if ( gpActiveGMScene == nullptr ) {
+        return;
+    }
+
+    MngShowCaseCarControl &control = gpActiveGMScene->getShowcaseCarControl();
+    control.setVehicle( pCarState->getVehicleInstance() );
+    if ( !bMustCloseWindowsAndDoors ) {
+        control.resetShowcase();
+    } else {
+        control.closeDoorsAndWindows();
+    }
+}
+
+bool CinResCollection::onPlayerCarMessage( const char *pMessage ) {
+    // FUN_007e26a0
+    CarState *pCarState = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pCarState == nullptr ) {
+        return false;
+    }
+    PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
+
+    const FlashMessage message( pMessage );
+    if ( message == FlashMessage( "moof" ) ||
+         message == FlashMessage( "moon" ) ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+        return true;
+    }
+    if ( message == FlashMessage( "ctci" ) ) {
+        if ( pVehicle != nullptr ) {
+            SetPlayerCarCinematicMode( true );
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI / PHYSICS
+        }
+        return true;
+    }
+    if ( message == FlashMessage( "ctia" ) ) {
+        if ( pVehicle != nullptr ) {
+            SetPlayerCarCinematicMode( false );
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI / CINEMATIC
+        }
+        return true;
+    }
+    if ( message == FlashMessage( "rspo" ) ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+        return true;
+    }
+
+    DBEntryCarPhysicsData *pCarData =
+        ( gpDatabase != nullptr )
+            ? gpDatabase->getCarDBEntry( pCarState->getCarID() )
+            : nullptr;
+    if ( pCarData != nullptr && gpDatabase->isBike( pCarData ) ) {
+        return false;
+    }
+    if ( gpActiveGMScene == nullptr ) {
+        return false;
+    }
+
+    const bool bIntro = gpTestDriveInstance != nullptr &&
+                        gpTestDriveInstance->getActiveGameMode() == GM_Intro;
+    if ( bIntro ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMINTRO
+    }
+    MngShowCaseCarControl &control = gpActiveGMScene->getShowcaseCarControl();
+
+    float duration = 0.0f;
+    sscanf( pMessage + 5, "%f", &duration );
+
+    const bool bOpenLeftDoor = message == FlashMessage( "opdl" );
+    const bool bOpenRightDoor = message == FlashMessage( "opdr" );
+    const bool bOpenDoors = message == FlashMessage( "opda" );
+    const bool bCloseLeftDoor = message == FlashMessage( "cldl" );
+    const bool bCloseRightDoor = message == FlashMessage( "cldr" );
+    const bool bCloseDoors = message == FlashMessage( "clda" );
+
+    if ( bOpenDoors || bOpenLeftDoor || bOpenRightDoor || bCloseDoors ||
+         bCloseLeftDoor || bCloseRightDoor ) {
+        const bool bOpening = bOpenDoors || bOpenLeftDoor || bOpenRightDoor;
+        const bool bLeft = !( bOpenRightDoor || bCloseRightDoor );
+        const bool bRight = !( bOpenLeftDoor || bCloseLeftDoor );
+
+        if ( !bIntro ) {
+            if ( bLeft ) {
+                control.moveDoor( true, !bOpening, false, 0.0f );
+            }
+            if ( bRight ) {
+                SnapCinematicRightDoor( control, !bOpening );
+            }
+        }
+        if ( bLeft ) {
+            control.moveDoor( true, bOpening, bIntro, duration );
+        }
+        if ( bRight ) {
+            control.moveDoor( false, bOpening, bIntro, duration );
+        }
+        return true;
+    }
+
+    const bool bOpenLeftWindow = message == FlashMessage( "opwl" );
+    const bool bOpenRightWindow = message == FlashMessage( "opwr" );
+    const bool bOpenWindows = message == FlashMessage( "opwa" );
+    const bool bCloseLeftWindow = message == FlashMessage( "clwl" );
+    const bool bCloseRightWindow = message == FlashMessage( "clwr" );
+    const bool bCloseWindows = message == FlashMessage( "clwa" );
+
+    if ( !( bOpenWindows || bOpenLeftWindow || bOpenRightWindow ||
+            bCloseWindows || bCloseLeftWindow || bCloseRightWindow ) ) {
+        return false;
+    }
+
+    const bool bOpening = bOpenWindows || bOpenLeftWindow || bOpenRightWindow;
+    const bool bLeft = !( bOpenRightWindow || bCloseRightWindow );
+    const bool bRight = !( bOpenLeftWindow || bCloseLeftWindow );
+    if ( !control.hasWindows() ) {
+        return true;
+    }
+
+    if ( !bIntro ) {
+        if ( bLeft ) {
+            SnapCinematicWindow( control.getLeftWindow(), !bOpening );
+        }
+        if ( bRight ) {
+            SnapCinematicWindow( control.getRightWindow(), !bOpening );
+        }
+    }
+    if ( bLeft ) {
+        MoveCinematicWindow( control.getLeftWindow(), bOpening, bIntro,
+                             duration );
+    }
+    if ( bRight ) {
+        MoveCinematicWindow( control.getRightWindow(), bOpening, bIntro,
+                             duration );
+    }
+    return true;
+}
+
 void CinResCollection::applyPlayerCarTransform(
     const Matrix4x4f_t &transform ) {
     CarState *pCarState = ( gpScenaric != nullptr )
@@ -2158,8 +2621,55 @@ void *CinResCollection::spawnNamedAvatar( const AvatarConfiguration *pConfig,
         if ( pAvatar->getType() == eEntityType::ET_AVPL ) {
             pAvatar->resetCineAvatarMode();
         }
+        numAvatars++;
     }
     return pAvatar;
+}
+
+void *CinResCollection::spawnPnjAvatar( const char *pPnjName,
+                                        uint64_t hashcode ) {
+    // FUN_007e5160
+    if ( gpScenaric == nullptr || gpAvatar == nullptr ) {
+        return nullptr;
+    }
+
+    AvatarConfiguration config;
+    ReadAvatarConfigFromPNJ( config, pPnjName );
+
+    EntityAvatar *pAvatar = nullptr;
+    if ( numAvatars < kMaxCinematicAvatars ) {
+        pAvatar = gpScenaric->getAvatarManager().allocateAvatar( hashcode, 0 );
+        if ( pAvatar != nullptr ) {
+            pAvatar->installConfiguration( &config, 0, bAsyncActorLoad, false );
+            numHostesses++;
+            numAvatars++;
+        }
+    }
+
+    EntityCinematic *pLifeCinematic =
+        ( gpActiveGMScene != nullptr )
+            ? gpActiveGMScene->getLifeSetManager().findActorCinematic(
+                  hashcode )
+            : nullptr;
+    if ( pLifeCinematic != nullptr ) {
+        pLifeCinematic->stop( true );
+    }
+
+    if ( pAvatar != nullptr && pAvatar->getType() == eEntityType::ET_AVPL ) {
+        pAvatar->resetCineAvatarMode();
+    }
+    return pAvatar;
+}
+
+void CinResCollection::registerLifeSetActor( uint64_t hashcode ) {
+    // FUN_007e3de0
+    if ( gpActiveGMScene == nullptr ) {
+        return;
+    }
+    MngLifeSet &lifeSet = gpActiveGMScene->getLifeSetManager();
+    if ( lifeSet.findActorCinematic( hashcode ) == nullptr ) {
+        lifeSet.addActorCinematic( hashcode, pOwner );
+    }
 }
 
 void *CinResCollection::spawnAvatar( eEntityType type,

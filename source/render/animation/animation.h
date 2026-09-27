@@ -135,7 +135,7 @@ public:
                            const AnimStateInstance *pStateB,
                            float timeB,
                            float ratio );
-    void seekChannel( int32_t matchID, float time, bool bNormalised );
+    void seekChannel( int32_t matchID, float time, bool bResolveTransition );
     void
     sampleClip( ClipInstance *pClipToSample, AnimPoseBuffer &dst, float time );
     void

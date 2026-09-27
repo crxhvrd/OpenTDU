@@ -557,7 +557,9 @@ void GMFreeride::onResourceStreamed() {
     mngPhotoMode.setFlashPlayer( pPlayer );
 }
 
-bool GMFreeride::executeAction( int32_t param_2, void * /*param_3*/ ) {
+bool GMFreeride::executeAction( int32_t param_2,
+                                void * /*param_3*/,
+                                void * /*pData*/ ) {
     // FUN_00794ff0
     if ( param_2 != CE_Ended ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC / MngFade / PHYSICS /

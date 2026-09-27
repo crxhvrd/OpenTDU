@@ -7,6 +7,7 @@
 #include "filesystem/bank.h"
 #include "filesystem/binary.h"
 #include "audio/gs_audio.h"
+#include "audio/radio/gs_radio.h"
 #include "audio/vehicle/gs_vehicle_sound.h"
 #include "game/game_mechanism.h"
 #include "game/gm_scene.h"
@@ -24,6 +25,17 @@
 #include "render/camera/gs_camera.h"
 #include "render/camera/camera_cinematic.h"
 #include "render/gs_render.h"
+#include "render/mng_shadow.h"
+#include "render/particles/gs_particles.h"
+#include "config/gs_config.h"
+#include "flash/gs_flash.h"
+#include "flash/implementation/flash_player.h"
+#include "game/vehicle/car_state.h"
+#include "game/vehicle/gs_car_display.h"
+#include "physics/gs_physicsfx.h"
+#include "physics/vehicle/physics_vehicle.h"
+#include "world/gs_world.h"
+#include "world/mng_world.h"
 #include "tdu_instance.h"
 
 static constexpr float kMillisecondsToSeconds = 0.001f; // FLOAT_00f4167c
@@ -77,6 +89,28 @@ namespace {
             }
         }
     }
+
+    uint8_t *MutableRef( const void *pRef ) {
+        return const_cast<uint8_t *>( static_cast<const uint8_t *>( pRef ) );
+    }
+
+    PhysicsVehicle *GetLocalPlayerPhysicsVehicle() {
+        CarState *pCarState = ( gpScenaric != nullptr )
+                                  ? gpScenaric->getLocalPlayer().getCarState()
+                                  : nullptr;
+        return ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle()
+                                        : nullptr;
+    }
+
+    bool IsHUDGameMode() {
+        if ( gpTestDriveInstance == nullptr ) {
+            return false;
+        }
+        const eGameMode activeGameMode =
+            gpTestDriveInstance->getActiveGameMode();
+        return activeGameMode == GM_FreeRide || activeGameMode == GM_Mission ||
+               activeGameMode == GM_TestCar;
+    }
 } // namespace
 
 EntityCinematic::EntityCinematic()
@@ -125,6 +159,10 @@ EntityCinematic::EntityCinematic()
       bApplyCineMix( true ),
       bRestoreCineMix( true ),
       savedMutedVehicleCategories( 0 ),
+      bDetachPlayerCarInput( true ),
+      bPlayerCarInputWasAttached( false ),
+      bDisableStreamingOnCarBefore( false ),
+      pStreamCenterBefore( nullptr ),
       bStopGuard( false ),
       bStackActive( false ),
       bCameraHandedOver( false ),
@@ -175,9 +213,17 @@ void EntityCinematic::initialize() {
         cinematicBuffer.assign( bufferSize, 0 );
     }
 
-    if ( pStreamCenterRef != nullptr &&
-         *reinterpret_cast<const uint64_t *>( pStreamCenterRef ) != 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+    const Entity *pStreamCenter =
+        ( pStreamCenterRef != nullptr )
+            ? *reinterpret_cast<Entity *const *>( pStreamCenterRef )
+            : nullptr;
+    if ( pStreamCenter != nullptr && pStreamCenter->getDesc() != nullptr &&
+         gpWorld != nullptr ) {
+        const SerializedTransform &desc = pStreamCenter->getDesc()->Transform;
+        Eigen::Vector4f streamCenter( desc.PositionX, desc.PositionY,
+                                      desc.PositionZ, 1.0f );
+        cinematicPlayer.setStreamTarget( true );
+        gpWorld->setStreamingPosition( &streamCenter );
     }
 
     bResourcesPrepared = false;
@@ -206,6 +252,19 @@ void EntityCinematic::applyForegroundCine() {
             gpVehicleSound->setMutedCategoryMask( 0x1eu );
         }
 
+        if ( ( cinematicPlaybackFlags & 0x400u ) != 0 && gpRadio != nullptr ) {
+            gpRadio->onForegroundCinematicBegin();
+        }
+
+        ClientConfig *pMusicConfig = ( gpCinematics != nullptr )
+                                         ? gpCinematics->getMusicClientConfig()
+                                         : nullptr;
+        if ( ( cinematicPlaybackFlags & 0x200u ) != 0 &&
+             pMusicConfig != nullptr ) {
+            pMusicConfig->bAffectedByMusic = false;
+            pMusicConfig->bMuted = false;
+        }
+
         Mixer *pMixer = ( gpAudio != nullptr )
                             ? gpAudio->findMixer( "MixerCinematic" )
                             : nullptr;
@@ -215,6 +274,43 @@ void EntityCinematic::applyForegroundCine() {
     }
 
     ShowSpots( false );
+
+    if ( gpConfig != nullptr && !gpConfig->b169Ratio && gpFlash != nullptr ) {
+        FlashPlayer *pGeneralPlayer = gpFlash->getFlashPlayer( "GENERAL" );
+        if ( pGeneralPlayer != nullptr ) {
+            pGeneralPlayer->showFrame( "on", "/black_stripes", false );
+        }
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+
+    PhysicsVehicle *pLocalVehicle = GetLocalPlayerPhysicsVehicle();
+    if ( pLocalVehicle != nullptr && bDetachPlayerCarInput ) {
+        bPlayerCarInputWasAttached = pLocalVehicle->isInputControllerAttached();
+        pLocalVehicle->setInputControllerAttached( false );
+    }
+
+    if ( gpMngWorld != nullptr ) {
+        const CarState *pLocalCar =
+            ( gpScenaric != nullptr )
+                ? gpScenaric->getLocalPlayer().getCarState()
+                : nullptr;
+        if ( pLocalCar == nullptr ||
+             pLocalCar->getBody()->BackOnTrackState == 0 ) {
+            bDisableStreamingOnCarBefore =
+                gpMngWorld->getDisableStreamingOnCar();
+        } else {
+            bDisableStreamingOnCarBefore = false;
+        }
+        gpMngWorld->setDisableStreamingOnCar( true );
+        if ( bDisableStreamingOnCarBefore && gpWorld != nullptr ) {
+            pStreamCenterBefore = gpWorld->getStreamingPositionPtr();
+        }
+    }
+
+    if ( IsHUDGameMode() ) {
+        SetHUDMoviesPaused( ( cinematicPlaybackFlags & 0x20u ) == 0 );
+    }
 
     float shotNearPlane = gpRender->getDefaultNearPlane();
     if ( cinematicZNear != kCinematicPlaneUnset ) {
@@ -241,17 +337,70 @@ void EntityCinematic::applyForegroundCine() {
         gpCamera->setEnableDepthAwareInterior( true );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: the rest of FUN_007e89d0
+    if ( gpCarDisplay != nullptr ) {
+        gpCarDisplay->stopVehicleParticles( true );
+    }
+    if ( gpParticles != nullptr ) {
+        gpParticles->resetInstancesInState( eParticleState::PS_Killed );
+    }
+    if ( gpPhysicsFX != nullptr ) {
+        gpPhysicsFX->stopAllEffects();
+    }
 }
 
 void EntityCinematic::restoreForegroundCine() {
     // FUN_007e8650
+    PhysicsVehicle *pLocalVehicle = GetLocalPlayerPhysicsVehicle();
+    if ( pLocalVehicle != nullptr && bDetachPlayerCarInput &&
+         bPlayerCarInputWasAttached ) {
+        pLocalVehicle->setInputControllerAttached( true );
+        bPlayerCarInputWasAttached = false;
+    }
+
+    if ( gpConfig != nullptr && !gpConfig->b169Ratio && gpFlash != nullptr ) {
+        FlashPlayer *pGeneralPlayer = gpFlash->getFlashPlayer( "GENERAL" );
+        if ( pGeneralPlayer != nullptr ) {
+            pGeneralPlayer->showFrame( "off", "/black_stripes", false );
+        }
+    }
+
+    if ( gpMngWorld != nullptr ) {
+        gpMngWorld->setDisableStreamingOnCar( bDisableStreamingOnCarBefore );
+        if ( bDisableStreamingOnCarBefore && pStreamCenterBefore != nullptr &&
+             gpWorld != nullptr ) {
+            gpWorld->setStreamingPosition( pStreamCenterBefore );
+        }
+    }
+
+    if ( gpActiveGameMode != nullptr && !gpActiveGameMode->hasRequestedExit() &&
+         IsHUDGameMode() ) {
+        SetHUDMoviesPaused( false );
+    }
+
     ShowSpots( true );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+
+    if ( gpMngShadow != nullptr ) {
+        gpMngShadow->setTarget( nullptr );
+    }
 
     if ( !bLoop && gpAudio != nullptr ) {
         Mixer *pMixer = gpAudio->findMixer( "MixerCinematic" );
         if ( pMixer != nullptr ) {
             pMixer->bEnabled = false;
+        }
+
+        ClientConfig *pMusicConfig = ( gpCinematics != nullptr )
+                                         ? gpCinematics->getMusicClientConfig()
+                                         : nullptr;
+        if ( ( cinematicPlaybackFlags & 0x200u ) != 0 &&
+             pMusicConfig != nullptr ) {
+            pMusicConfig->bAffectedByMusic = true;
+        }
+
+        if ( ( cinematicPlaybackFlags & 0x400u ) != 0 && gpRadio != nullptr ) {
+            gpRadio->onForegroundCinematicEnd();
         }
 
         if ( ( cinematicPlaybackFlags & 0x100u ) != 0 &&
@@ -263,8 +412,6 @@ void EntityCinematic::restoreForegroundCine() {
             gpAudio->requestMixStateResync();
         }
     }
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: the rest of FUN_007e8650
 }
 
 void EntityCinematic::ShowSpots( bool bShow ) {
@@ -305,6 +452,14 @@ void EntityCinematic::loadResources( ScenaricBank *param_2 ) {
     resolveSoundReference();
     pSCBank = param_2;
 
+    ResolveEntityRef( MutableRef( pCameraRef ), param_2 );
+    if ( pStreamCenterRef != nullptr ) {
+        ResolveEntityRef( MutableRef( pStreamCenterRef ), param_2 );
+    }
+    if ( pMicroRef != nullptr ) {
+        ResolveEntityRef( MutableRef( pMicroRef ), param_2 );
+    }
+
     uint8_t *pLeftRef = const_cast<uint8_t *>(
         static_cast<const uint8_t *>( pSoundEmitter1Ref ) );
     uint8_t *pRightRef = const_cast<uint8_t *>(
@@ -324,7 +479,10 @@ void EntityCinematic::loadResources( ScenaricBank *param_2 ) {
                                              : "unresolved sound emitters" );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (camera/micro/stream refs)
+    // FUN_007e9cc0
+    ResolveVolumeBlock( MutableRef( pZoneRef ), param_2 );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
 
     bStopWhenSkipped = true;
 }
@@ -795,6 +953,14 @@ bool EntityCinematic::begin() {
         applyForegroundCine();
     }
 
+    if ( pMicroRef != nullptr ) {
+        Entity *pMicro = *reinterpret_cast<Entity *const *>( pMicroRef );
+        if ( gpAudio != nullptr ) {
+            gpAudio->setListenerSyncedToCamera( pMicro == nullptr );
+        }
+        cinematicPlayer.setCurrentMicro( pMicro );
+    }
+
     CineTotalTime = cinematicPlayer.getTotalTime();
     Time = StartTime;
     cinematicFlags = ( cinematicFlags & 0xfffffffcu ) | 4u;
@@ -868,6 +1034,13 @@ void EntityCinematic::end() {
         restoreForegroundCine();
     }
 
+    if ( bWasRunning ) {
+        cinematicPlayer.setCurrentMicro( nullptr );
+        if ( gpAudio != nullptr ) {
+            gpAudio->setListenerSyncedToCamera( true );
+        }
+    }
+
     if ( pMusicEmitter != nullptr ) {
         pMusicEmitter->uninstallSoundBanks();
         releaseMusicEmitter();
@@ -898,18 +1071,31 @@ void EntityCinematic::end() {
                             gpScenaric->getAvatarManager();
                         EntityAvatar *pAvatar =
                             static_cast<EntityAvatar *>( pActor );
+                        EntityCinematic *pLifeCinematic =
+                            gpActiveGMScene->getLifeSetManager()
+                                .findActorCinematic(
+                                    cinematicPlayer.getActorHashcode( i ) );
                         if ( bLifeSet ) {
-                            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+                            if ( pLifeCinematic == nullptr ) {
+                                OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+                            } else {
+                                pAvatar->endLifeSetCinematic();
+                                if ( pAvatar->getAvatarType() == 1 ) {
+                                    cinematicPlayer.clearPlayerAvatar();
+                                }
+                                avatarManager.releaseAvatar( pAvatar );
+                            }
                         } else {
                             const bool bStillReferenced =
                                 avatarManager.getReferenceCount( pAvatar ) >
                                 cinematicPlayer.getActorAvatarRefCount( i );
-                            pAvatar->endCinematic( bStillReferenced );
+                            pAvatar->endCinematic( bStillReferenced,
+                                                   pLifeCinematic );
                             if ( pAvatar->getAvatarType() == 1 ) {
                                 cinematicPlayer.clearPlayerAvatar();
                             }
+                            avatarManager.releaseAvatar( pAvatar );
                         }
-                        avatarManager.releaseAvatar( pAvatar );
                     }
                 }
                 cinematicPlayer.setActorEntity( i, nullptr );

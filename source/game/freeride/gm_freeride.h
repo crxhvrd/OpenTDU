@@ -36,7 +36,9 @@ public:
 
     void onResourceStreamed() override;
     bool onMessage( FlashMessage *pMessage ) override;
-    bool executeAction( int32_t param_2, void *param_3 ) override;
+    bool executeAction( int32_t param_2,
+                        void *param_3,
+                        void *pData = nullptr ) override;
 
     void onPauseMenuRequested( bool bOpened ) override;
     void onMenuPauseExit( bool bRestoreState ) override;

@@ -81,6 +81,9 @@ public:
     void setPlayerPosition( const Eigen::Vector4f *pPosition );
     void setStreamingPosition( Eigen::Vector4f *pPosition );
     void setStreamingPositionPtr( Eigen::Vector4f *pPosition );
+    inline Eigen::Vector4f *getStreamingPositionPtr() const {
+        return pStreamPosition;
+    }
 
     bool computeGroundColor( Eigen::Vector4f *pOutColor,
                              const Eigen::Vector4f *pWorldPos,

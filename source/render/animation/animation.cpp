@@ -266,8 +266,11 @@ void Animation::resetChannel( int32_t index ) {
     channel.LayerWeight = kAnimWeightFull;
     channel.State = AnimChannel::ACS_Free;
     channel.ClipID = ~0u;
+    channel.BlendSetB.clear();
+    channel.ProgressB = 0.0f;
+    channel.DurationB = 0.0f;
     channel.TransitionTime = 0.0f;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ANIM
+    channel.TransitionLength = 1.0f;
 }
 
 void Animation::setChannelLayer( int32_t matchID,
@@ -318,16 +321,37 @@ void Animation::setBlendRatios( const AnimStateBlendEntry *pEntries,
 }
 
 static float
-ComputeBlendDuration( const std::vector<AnimStateBlendEntry> &blendSet ) {
+ComputeBlendDuration( const std::vector<AnimStateBlendEntry> &blendSet,
+                      bool bLooped = true ) {
     // FUN_0067a8c0
-    float duration = 0.0f;
+    float weightedDuration = 0.0f;
+    float totalWeight = 0.0f;
     for ( const AnimStateBlendEntry &entry : blendSet ) {
         if ( entry.pClip == nullptr ) {
             continue;
         }
-        duration += entry.Weight * entry.pClip->getTotalDurationLooped();
+        const float clipDuration = bLooped
+                                       ? entry.pClip->getTotalDurationLooped()
+                                       : entry.pClip->getTotalDuration();
+        weightedDuration += entry.Weight * clipDuration;
+        totalWeight += entry.Weight;
     }
-    return duration;
+    if ( totalWeight <= 0.0f ) {
+        return 0.0f;
+    }
+    return weightedDuration / totalWeight;
+}
+
+static void CompleteTransition( AnimChannel &channel, float time ) {
+    // FUN_006774c0
+    channel.BlendSet = std::move( channel.BlendSetB );
+    channel.Duration = channel.DurationB;
+    channel.Progress =
+        ( channel.Duration > 0.0f ) ? time / channel.Duration : 0.0f;
+    channel.BlendSetB.clear();
+    channel.ProgressB = 0.0f;
+    channel.DurationB = 0.0f;
+    channel.State = AnimChannel::ACS_Playing;
 }
 
 void Animation::refreshBlendDuration( AnimChannel &channel ) {
@@ -360,7 +384,8 @@ void Animation::playStatesAtTime( const AnimStateInstance *pStateA,
     }
 
     pStateB->getBlendSet( pChannel->BlendSetB );
-    pChannel->DurationB = ComputeBlendDuration( pChannel->BlendSetB );
+    pChannel->DurationB = ComputeBlendDuration(
+        pChannel->BlendSetB, ( pStateB->getTrailerFlags() & 1u ) != 0 );
     pChannel->ProgressB =
         ( pChannel->DurationB > 0.0f ) ? timeB / pChannel->DurationB : 0.0f;
     pChannel->TransitionTime = ratio;
@@ -368,18 +393,23 @@ void Animation::playStatesAtTime( const AnimStateInstance *pStateA,
     pChannel->State = AnimChannel::ACS_Transition;
 }
 
-void Animation::seekChannel( int32_t matchID, float time, bool bNormalised ) {
-    // FUN_00401680
+void Animation::seekChannel( int32_t matchID,
+                             float time,
+                             bool bResolveTransition ) {
+    // FUN_009b3c30 / FUN_00401680
     AnimChannel *pChannel = getChannel( matchID );
     if ( pChannel == nullptr ) {
         return;
     }
 
-    if ( pChannel->State == AnimChannel::ACS_Transition ) {
-        if ( bNormalised ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: ANIM (seek a transition)
+    if ( pChannel->State == AnimChannel::ACS_Transition &&
+         bResolveTransition ) {
+        if ( time < 0.0f ) {
+            pChannel->TransitionLength = 1.0f;
+            pChannel->TransitionTime = time + 1.0f;
+            return;
         }
-        return;
+        CompleteTransition( *pChannel, 0.0f );
     }
 
     if ( pChannel->State != AnimChannel::ACS_Playing ||
@@ -387,10 +417,7 @@ void Animation::seekChannel( int32_t matchID, float time, bool bNormalised ) {
         return;
     }
 
-    float seekTime = std::max( time, 0.0f );
-    if ( bNormalised ) {
-        seekTime *= pChannel->Duration;
-    }
+    const float seekTime = std::max( time, 0.0f );
     pChannel->Progress =
         std::fmod( seekTime, pChannel->Duration ) / pChannel->Duration;
 }
@@ -419,7 +446,8 @@ void Animation::update( float deltaTime ) {
         if ( channel.State == AnimChannel::ACS_Transition ) {
             channel.TransitionTime += deltaTime;
             if ( channel.TransitionTime >= channel.TransitionLength ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: ANIM
+                CompleteTransition( channel,
+                                    channel.ProgressB * channel.DurationB );
             }
             continue;
         }

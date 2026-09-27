@@ -86,12 +86,19 @@ public:
     inline CarState *getCarState() const { return pCarState; }
     inline bool isSeating() const { return bIsSeating; }
     inline bool isFreeMovement() const { return bIsFreeMovement; }
+    inline void setFreeMovement( bool bEnabled ) { bIsFreeMovement = bEnabled; }
+    inline void setUsedIK( bool bEnabled ) { bIsUsedIK = bEnabled; }
+    inline void requestSeatRefresh() {
+        bMustPlayAnims = true;
+        bMustRecalculateDriverSeatPos = true;
+    }
     inline eRideType getDriveType() const { return DriveType; }
 
 public:
     EntityDriver();
     ~EntityDriver();
 
+    bool onMessage( FlashMessage *pMessage ) override;
     void tick( PlayerGameMech *pGameMech,
                float deltaTime,
                float totalTime ) override;
@@ -110,9 +117,10 @@ public:
     void setSeating( bool bState );
     void leaveSeatForCinematic();
     void returnToSeatAfterCinematic();
+    bool placeInLocalPlayerCar();
+    void resetAnimationChannels();
 
 private:
-    void resetAnimationChannels();
     void buildCarIKPoints();
     void buildBikeIKPoints();
     void setSeatModel( HiearchyNode *pNode );

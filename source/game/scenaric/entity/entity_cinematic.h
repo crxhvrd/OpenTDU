@@ -20,6 +20,7 @@ enum eCinematicEvent : int32_t {
     CE_Started = 5,
     CE_StartEndFade = 6,
     CE_Finished = 7,
+    CE_FlashMessage = 8,
     CE_Begun = 10,
 };
 
@@ -186,6 +187,10 @@ private:
     bool bApplyCineMix;
     bool bRestoreCineMix;
     uint32_t savedMutedVehicleCategories;
+    bool bDetachPlayerCarInput;
+    bool bPlayerCarInputWasAttached;
+    bool bDisableStreamingOnCarBefore;
+    Eigen::Vector4f *pStreamCenterBefore;
     bool bStopGuard;
     bool bStackActive;
     bool bCameraHandedOver;
