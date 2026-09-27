@@ -134,6 +134,8 @@ public:
 
     void addSource( AudioStereoSource *pSource );
     void removeSource( AudioStereoSource *pSource );
+    void addStereoEntry( edAudioObject *pEntry );
+    void removeStereoEntry( edAudioObject *pEntry );
 
 private:
     edAudioBuffer *pLeftBuffer;
@@ -250,8 +252,10 @@ public:
     inline bool isListenerSyncedToCamera() const {
         return bListenerSyncToCamera;
     }
+    inline void setListenerSyncedToCamera( bool bSynced ) {
+        bListenerSyncToCamera = bSynced;
+    }
     inline uint32_t getMixState() const { return MixState; }
-    inline void setMusicMuted( bool bMuted ) { bMusicMuted = bMuted; }
     inline void requestMixStateResync() { bMixStateTransitionSync = true; }
     inline edAudioReverb *getAmbianceReverbModule() const {
         return pAmbianceReverbModule;
@@ -267,6 +271,10 @@ public:
     bool initialize( TestDriveGameInstance * ) override;
     void tick( float totalTime, float deltaTime ) override;
     void syncListenerToActiveCamera();
+    void setListener( const Eigen::Vector4f &position,
+                      const Eigen::Vector4f &speed,
+                      const Eigen::Vector4f &front,
+                      const Eigen::Vector4f &top );
     void terminate() override;
 
 #ifdef OTDU_USE_IMGUI
@@ -301,8 +309,7 @@ private:
     int32_t GameMode = -1;
     uint32_t MixState = 0;
     bool bMixStateTransitionSync = false;
-    bool bMusicMuted = false;
-    bool bMusicMuteApplied = false;
+    bool bRadioOnAir = false;
 
     edAudioReverb *pAmbianceReverbModule = nullptr;
     edAudioReverb *pVehicleReverbModule = nullptr;

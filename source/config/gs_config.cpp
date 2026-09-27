@@ -111,6 +111,7 @@ GSConfig::GSConfig()
     gpConfig = this;
 
     memset( pDefaultCarConfig, 0, sizeof( pDefaultCarConfig ) );
+    memset( pVFSRoot, 0, sizeof( pVFSRoot ) );
 
     systemPCIniPath.resize( OTDU_MAX_PATH );
     radioIniPath.resize( OTDU_MAX_PATH );
@@ -539,6 +540,20 @@ void GSConfig::parseRadioIni() {
 
     ParseArgValueFromCmdLine( "radio", radioIniPath.data(), OTDU_MAX_PATH );
     parseIniFile( radioIniPath.c_str() );
+}
+
+const char *GSConfig::retrieveVFSRoot() {
+    // FUN_00989040
+    if ( pVFSRoot[0] == '\0' ) {
+        strncpy( pVFSRoot, getResRootPath(), sizeof( pVFSRoot ) );
+
+        int32_t index = static_cast<int32_t>( strlen( pVFSRoot ) ) - 2;
+        while ( index > 0 && pVFSRoot[index] != '/' ) {
+            index--;
+            pVFSRoot[index + 1] = '\0';
+        }
+    }
+    return pVFSRoot;
 }
 
 void GSConfig::parseWeatherAndFXInis() {

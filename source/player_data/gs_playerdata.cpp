@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "gs_playerdata.h"
 
+#include "audio/radio/gs_radio.h"
 #include "config/gs_config.h"
 #include "database/gs_database.h"
 #include "flash/gs_flash.h"
@@ -739,11 +740,16 @@ int32_t GSPlayerData::writeCommonDT( void *pExternalBuffer,
 
     pPlayerData->serialize( saveStream );
 
-    OTDU_UNIMPLEMENTED_ONCE;           // TODO: AUDIO/RADIO (FUN_009b2260)
-    saveStream.writeInteger( 0 );      // master volume
-    saveStream.writeInteger( 0 );      // number of mixer groups
-    saveStream.writeULongLong( 0ull ); // current radio station hashcode
-    saveStream.writeFloat( 0.0f );
+    OTDU_UNIMPLEMENTED_ONCE;      // TODO: AUDIO (FUN_009b2260)
+    saveStream.writeInteger( 0 ); // master volume
+    saveStream.writeInteger( 0 ); // number of mixer groups
+
+    if ( gpRadio != nullptr ) {
+        gpRadio->saveSettings( saveStream );
+    } else {
+        saveStream.writeULongLong( 0ull );
+        saveStream.writeFloat( 0.0f );
+    }
 
     return int32_t( saveStream.getWrittenSize() );
 }

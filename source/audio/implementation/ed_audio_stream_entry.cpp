@@ -610,5 +610,9 @@ void edAudioStreamEntry::loopRewind() {
 
 void edAudioStreamEntry::onEndOfStream() {
     // FUN_006146b0
-    stopInternal();
+    notifyListeners( &edAudioStreamEntryListener::onPipeEntryEnded );
+
+    if ( !bResetRamp && LoopCount != -1 && LoopsDone == LoopCount ) {
+        stopInternal();
+    }
 }

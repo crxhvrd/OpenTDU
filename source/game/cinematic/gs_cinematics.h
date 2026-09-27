@@ -3,6 +3,7 @@
 #include "game/gs_base.h"
 
 class AudioClient;
+struct ClientConfig;
 class PipelineStereo;
 
 enum eCinematicType : int32_t; // mng_cinematics.h
@@ -19,6 +20,7 @@ public:
     bool initialize( TestDriveGameInstance * ) override;
     void terminate() override;
     PipelineStereo *getMusicPipeline() const;
+    ClientConfig *getMusicClientConfig() const;
 
     bool isCinematicPlaying( eCinematicType type,
                              bool bRequireAudio,

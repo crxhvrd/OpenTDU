@@ -31,6 +31,7 @@ class MngInGameMenu : public Manager {
 public:
     inline int32_t getWindowsDirection() const { return WindowsDirection; }
     inline eInGameMenuState getState() const { return StateMenu; }
+    inline eInGameMenu getOpenedMenu() const { return OpenedMenu; }
 
 public:
     MngInGameMenu();
@@ -46,6 +47,9 @@ public:
     }
 
     void refreshDrivingHelpLabel();
+    bool canOpenMenu();
+    bool changeMenu( eInGameMenu menu );
+    void updateMenuTimeout();
 
 private:
     FlashPlayer *pFlashVariable;
@@ -72,13 +76,10 @@ private:
 
 private:
     void updateInput();
-    bool canOpenMenu();
     bool canOpenMap();
-    bool changeMenu( eInGameMenu menu );
     void close();
     void toggleWindows( bool bPlayAnim );
     void changeDrivingMode( bool bNext, bool bPlayAnim );
-    void updateMenuTimeout();
     void refreshHasWindows();
     void resetSpeedChrono( bool bArm );
 };

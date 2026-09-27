@@ -27,6 +27,7 @@ public:
     void serialize();
     std::string getProfileName( uint64_t hashcode ) const;
     const char *getProfileNameByIndex( const int32_t profileIndex ) const;
+    std::string getProfileFolderPath() const;
     int32_t getProfileIndex( uint64_t hashcode ) const;
 
     bool registerProfile( const char *pProfileName );

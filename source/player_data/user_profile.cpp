@@ -4,6 +4,8 @@
 #include "core/hash/crc32.h"
 #include "filesystem/gs_file.h"
 
+#include <filesystem>
+
 UserProfileRegister gUserProfileRegister = {};
 
 UserProfileRegister::UserProfileRegister()
@@ -127,6 +129,15 @@ UserProfileRegister::getProfileNameByIndex( const int32_t profileIndex ) const {
     }
 
     return profileNames[profileIndex].c_str();
+}
+
+std::string UserProfileRegister::getProfileFolderPath() const {
+    // FUN_0060a1e0
+    const std::filesystem::path folderPath =
+        std::filesystem::path(
+            gpFile->getSaveLocation( eContextSource::CS_Savegame ) ) /
+        activeProfileName;
+    return folderPath.string();
 }
 
 int32_t UserProfileRegister::getProfileIndex( uint64_t hashcode ) const {

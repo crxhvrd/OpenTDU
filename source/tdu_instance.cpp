@@ -47,7 +47,7 @@
 #include "physics/gs_physics.h"
 #include "physics/gs_physicsfx.h"
 #include "player_data/gs_playerdata.h"
-#include "player_data/gs_radio.h"
+#include "audio/radio/gs_radio_pc.h"
 #include "render/camera/gs_camera.h"
 #include "render/gs_noise.h"
 #include "render/gs_render.h"
@@ -792,7 +792,7 @@ bool TestDriveGameInstance::initializeGameServices() {
     OTDU_INIT_SERVICE( registerService<GSMngResources>() );
     OTDU_INIT_SERVICE( registerService<GSKeyboardPC>( gpKeyboardPC ) );
     OTDU_INIT_SERVICE( registerService<GSDirtyDisk>() );
-    OTDU_INIT_SERVICE( registerService<GSRadio>() );
+    OTDU_INIT_SERVICE( registerService<GSRadioPC>() );
 
     gpConfig->parseRadioIni();
     gpConfig->parseLeaderboardIni();
@@ -861,8 +861,14 @@ void TestDriveGameInstance::drawDebugMenu( float deltaTime ) {
                     }
 
                     if ( *pServiceLookTextBuffer != '\0' ) {
-                        if ( strstr( pService->getName(),
-                                     pServiceLookTextBuffer ) == nullptr ) {
+                        std::string serviceNameLowerCase = pService->getName();
+                        std::transform( serviceNameLowerCase.begin(),
+                                        serviceNameLowerCase.end(),
+                                        serviceNameLowerCase.begin(), tolower );
+
+                        if ( serviceNameLowerCase.find(
+                                 pServiceLookTextBuffer ) ==
+                             std::string::npos ) {
                             continue;
                         }
                     }

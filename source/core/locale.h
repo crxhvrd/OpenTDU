@@ -227,3 +227,35 @@ static inline int32_t GetUTF8CodepointLength( const char *pStr ) {
     }
     return 1;
 }
+
+static int32_t ToUTF8( int32_t maxChars,
+                       char *pDest,
+                       const char *pSource,
+                       const int32_t destSize ) {
+    // FUN_00451c90
+    if ( destSize < 1 ) {
+        return 0;
+    }
+    if ( maxChars == -1 ) {
+        maxChars = INT32_MAX;
+    }
+
+    uint8_t *pOut = reinterpret_cast<uint8_t *>( pDest );
+    const uint8_t *pIn = reinterpret_cast<const uint8_t *>( pSource );
+    for ( int32_t count = 0; *pIn != 0 && count < maxChars; count++ ) {
+        uint8_t character = *pIn;
+        if ( ( character & 0x80 ) != 0 ) {
+            *pOut++ = ( ( character >> 6 ) & 3 ) | 0xc0;
+            character = ( character & 0x3f ) | 0x80;
+        }
+        *pOut++ = character;
+        pIn++;
+    }
+
+    if ( maxChars == INT32_MAX ||
+         pIn - reinterpret_cast<const uint8_t *>( pSource ) < maxChars ) {
+        *pOut++ = 0;
+    }
+
+    return static_cast<int32_t>( pOut - reinterpret_cast<uint8_t *>( pDest ) );
+}

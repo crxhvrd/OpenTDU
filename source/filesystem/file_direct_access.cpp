@@ -536,6 +536,21 @@ bool FileDirectAccess::openFile( const char *pFilename,
     return Stream.is_open() && Stream.good();
 }
 
+bool FileDirectAccess::fileExists( const char *pFilename ) {
+    // FUN_00607b80
+    if ( bNeedName ) {
+        OTDU_UNIMPLEMENTED; // TODO: FILESYSTEM (VFS filename resolution)
+        return false;
+    }
+
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    std::wstring fullPath = bIsOpen ? FolderName : std::wstring();
+    fullPath += converter.from_bytes( pFilename );
+
+    std::error_code errorCode;
+    return std::filesystem::exists( fullPath, errorCode );
+}
+
 uint32_t FileDirectAccess::getFileSize() {
     // FUN_00607b60
     if ( !Stream.is_open() ) {
@@ -558,6 +573,18 @@ uint32_t FileDirectAccess::writeToFile( const void *pSource,
 
     StreamWrite.write( (const char *)pSource, size );
     return StreamWrite.good() ? size : 0u;
+}
+
+bool FileDirectAccess::seek( const int32_t offset, const bool bFromEnd ) {
+    // FUN_00607af0
+    if ( !Stream.is_open() ) {
+        return false;
+    }
+
+    Stream.clear();
+    Stream.seekg( bFromEnd ? -offset : offset,
+                  bFromEnd ? std::ios::end : std::ios::beg );
+    return Stream.good();
 }
 
 uint32_t FileDirectAccess::readFromFile( void *pDest, const uint32_t size ) {

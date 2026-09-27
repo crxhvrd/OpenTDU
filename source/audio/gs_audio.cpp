@@ -8,6 +8,7 @@
 #include "implementation/ed_audio_object.h"
 #include "implementation/ed_audio_reverb.h"
 
+#include "audio/radio/gs_radio.h"
 #include "game/gm_base.h"
 #include "game/cinematic/gs_cinematics.h"
 #include "game/cinematic/mng_cinematics.h"
@@ -700,6 +701,24 @@ void PipelineStereo::removeSource( AudioStereoSource *pSource ) {
     pRightBuffer->unlinkEntry( &pSource->getRightChannel() );
 }
 
+void PipelineStereo::addStereoEntry( edAudioObject *pEntry ) {
+    // FUN_00403f20
+    if ( pEntry == nullptr || pBuffer == nullptr ) {
+        return;
+    }
+
+    pBuffer->addNewEntry( pEntry );
+}
+
+void PipelineStereo::removeStereoEntry( edAudioObject *pEntry ) {
+    // FUN_00403f70
+    if ( pEntry == nullptr || pBuffer == nullptr ) {
+        return;
+    }
+
+    pBuffer->unlinkEntry( pEntry );
+}
+
 Mixer *GSAudio::findMixer( const char *pName ) {
     // FUN_009b1860
     if ( strcmp( pName, kOutputMixerName ) == 0 ) {
@@ -748,6 +767,21 @@ void GSAudio::syncListenerToActiveCamera() {
     listener.Speed = pCamera->getVelocity();
 }
 
+void GSAudio::setListener( const Eigen::Vector4f &position,
+                           const Eigen::Vector4f &speed,
+                           const Eigen::Vector4f &front,
+                           const Eigen::Vector4f &top ) {
+    // FUN_009b1d80
+    edAudioListener &listener = gEdAudio.getListener();
+    ScopedMutexLock lock( &GetAudioGraphMutex() );
+
+    listener.Position = position.head<3>();
+    listener.Front = front.head<3>();
+    listener.Top = top.head<3>();
+    listener.LeftToRight = listener.Front.cross( listener.Top );
+    listener.Speed = speed.head<3>();
+}
+
 void GSAudio::tick( float totalTime, float deltaTime ) {
     // FUN_009b25a0
     if ( gpActiveGameMode != nullptr &&
@@ -788,11 +822,12 @@ void GSAudio::tick( float totalTime, float deltaTime ) {
 
     updateClientPriorities();
 
-    if ( bMusicMuted != bMusicMuteApplied ) {
-        bMusicMuteApplied = bMusicMuted;
+    const bool bRadioIsOnAir = gpRadio != nullptr && gpRadio->isOnAir();
+    if ( bRadioIsOnAir != bRadioOnAir ) {
+        bRadioOnAir = bRadioIsOnAir;
         for ( ClientConfig &config : ClientConfigPool ) {
             if ( config.bAffectedByMusic ) {
-                config.bMuted = bMusicMuted;
+                config.bMuted = bRadioOnAir;
             }
         }
     }
@@ -850,11 +885,7 @@ void GSAudio::drawDebug( float ) {
         ImGui::TextUnformatted( "(transition pending)" );
     }
 
-    bool bMusic = bMusicMuted;
-    if ( ImGui::Checkbox( "Music muted (the global the tick mirrors)",
-                          &bMusic ) ) {
-        setMusicMuted( bMusic );
-    }
+    ImGui::Text( "bRadioActive: %i", bRadioOnAir );
 
     ImGui::SeparatorText( "Reverbs" );
     for ( edAudioReverb *pReverb : pReverbPool ) {

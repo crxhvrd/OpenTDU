@@ -50,6 +50,13 @@ void GSCinematics::terminate() {
     bInitialized = false;
 }
 
+ClientConfig *GSCinematics::getMusicClientConfig() const {
+    if ( pMusicClient == nullptr || gpAudio == nullptr ) {
+        return nullptr;
+    }
+    return gpAudio->getClientConfig( pMusicClient->getConfig()->pName );
+}
+
 PipelineStereo *GSCinematics::getMusicPipeline() const {
     return ( pMusicClient != nullptr ) ? pMusicClient->getStereoPipeline()
                                        : nullptr;

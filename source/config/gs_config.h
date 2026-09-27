@@ -136,6 +136,7 @@ public:
 
     char pResPath[128];
     char pDVDPath[128];
+    char pVFSRoot[128];
 
     char pLevelName[32];
     int32_t StartAreaRow;
@@ -193,6 +194,7 @@ public:
 
     void parseIniFiles();
     void parseRadioIni();
+    const char *retrieveVFSRoot();
     void parseWeatherAndFXInis();
     void parseLeaderboardIni();
     void parseDeviceIni();
@@ -266,3 +268,7 @@ private:
 };
 
 extern GSConfig *gpConfig;
+
+static inline PlayerConfiguration *GetPlayerConfig() {
+    return ( gpConfig != nullptr ) ? gpConfig->pPlayerConfig : nullptr;
+}

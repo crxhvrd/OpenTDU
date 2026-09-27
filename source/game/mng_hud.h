@@ -413,3 +413,7 @@ extern MngHud *gpMngHud;
 extern bool gEnableMinimapDensity;
 extern bool gEnableMinimapAI;
 extern bool gEnableMinimapNetPlayers;
+
+static FlashPlayer *GetHudFlashPlayer() {
+    return ( gpMngHud != nullptr ) ? gpMngHud->getHudPlayer() : nullptr;
+}

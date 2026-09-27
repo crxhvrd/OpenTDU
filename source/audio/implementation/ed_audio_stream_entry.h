@@ -47,6 +47,7 @@ public:
     }
     virtual void onPipeEntryPaused( edAudioStreamEntry * ) { /* FUN_004019c0 */
     }
+    virtual void onPipeEntryEnded( edAudioStreamEntry * ) { /* FUN_0042e240 */ }
 };
 
 class edAudioStreamReader {
