@@ -18,6 +18,8 @@
 #include "world/weather/gs_weather.h"
 #include "render/camera/gs_camera.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_save.h"
+#include "player_data/achievement_checks.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "physics/gs_physics.h"
@@ -1232,6 +1234,55 @@ void GameModeWorld::updatePauseMenuTrigger() {
     }
 
     onPauseMenuRequested( true );
+}
+
+void GameModeWorld::updateOdometerAutosave() {
+    // FUN_007be750
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr ) {
+        return;
+    }
+
+    const int32_t odometerKms = pLocalCar->getBody()->OdometerKms;
+    if ( static_cast<float>( odometerKms ) <
+         static_cast<float>( lastOdometerKms ) + 1.0f ) {
+        return;
+    }
+
+    gpPlayerData->requestSave( 2 );
+
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    if ( gpTestDriveInstance->getActiveGameMode() == GM_Mission &&
+         pAchievements->getField516_0x204() && pAchievements->isReady() ) {
+        pAchievements->setCurrentGameMode(
+            gpTestDriveInstance->getActiveGameMode() );
+    }
+    pAchievements->notify( ACF_Road, false );
+
+    lastOdometerKms = odometerKms;
+}
+
+void GameModeWorld::updateOdometer() {
+    // FUN_007be1f0
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr ) {
+        return;
+    }
+
+    const float distance = pLocalCar->getBody()->Distance;
+    const float deltaKms = ( distance - lastDistance ) * 0.001f;
+
+    gpPlayerData->getLoadedSave()->getDriver()->addOdometerKms( deltaKms );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ACHIEVEMENTS
+
+    CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+    if ( pCurrentCar != nullptr ) {
+        pCurrentCar->odometerKms += deltaKms;
+    }
+
+    lastDistance = distance;
 }
 
 void GameModeWorld::updatePauseFade() {

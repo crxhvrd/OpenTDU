@@ -219,3 +219,8 @@ float Driver::getOdometerKms() const {
 void Driver::setOdometerKms( const float value ) {
     TestDriveTEAWriteFloat( pOdometerKms, value );
 }
+
+void Driver::addOdometerKms( const float kms ) {
+    // FUN_0042b7d0
+    setOdometerKms( getOdometerKms() + kms );
+}

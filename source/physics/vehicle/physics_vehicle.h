@@ -212,6 +212,9 @@ public:
         return -wheelAttach[i].y() + suspRestLength[i];
     }
     const Chrono &getChrono() const { return chrono; }
+    float getOdometerDistance() const { return odometerDistance; }
+    int32_t getOdometerKms() const { return odometerKms; }
+    int32_t getOdometerTenMeters() const { return odometerTenMeters; }
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
     float getLateralSpeed() const { return vehicle.LateralSpeed; }
     inline float getFilteredSteer() const { return filteredSteer; }
@@ -280,6 +283,7 @@ public:
 
     void armChrono();
     void updateChrono( float dt );
+    void updateOdometer( float dt );
     void updateRevRate( float dt );
     void updateGearLeverAnticipation( float dt );
     void reportStuckClutch( float dt );
@@ -444,6 +448,9 @@ private:
     float rideHeightRear;
 
     Chrono chrono;
+    float odometerDistance = 0.0f; // in metres
+    int32_t odometerKms = 0;
+    int32_t odometerTenMeters = 0;
     float gearLeverAnticipation = 0.0f;
     int32_t gearLeverState = 0;
     float gearLeverPrevOmega = 0.0f;

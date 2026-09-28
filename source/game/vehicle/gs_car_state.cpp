@@ -290,6 +290,9 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             body.Omega = pPhysicsVehicle->getEngineAngularVelocity();
             body.Gears = pPhysicsVehicle->getCurrentGear();
             body.GearState = pPhysicsVehicle->getCurrentGear() + 1;
+            body.OdometerKms = pPhysicsVehicle->getOdometerKms();
+            body.OdometerTenMeters = pPhysicsVehicle->getOdometerTenMeters();
+            body.Distance = pPhysicsVehicle->getOdometerDistance();
             body.Torque = pPhysicsVehicle->getEngineTorqueOut();
             body.MaxOmega = pPhysicsVehicle->getEngineOmegaMax();
 

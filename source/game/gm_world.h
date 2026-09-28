@@ -110,6 +110,8 @@ protected:
     void destroyGameMech();
     void updatePauseMenuTrigger();
     void updatePauseFade();
+    void updateOdometerAutosave();
+    void updateOdometer();
     void installLocalPlayerCar();
     void installLocalPlayerCar( int32_t carID,
                                 const Matrix4x4f_t *pSpawnOverride,

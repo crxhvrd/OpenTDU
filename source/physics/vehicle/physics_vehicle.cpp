@@ -2705,6 +2705,7 @@ void PhysicsVehicle::OnStep(
     }
 
     updateChrono( dt );
+    updateOdometer( dt );
     updateTyreHeat( dt );
     updateRevRate( dt );
     updateGearLeverAnticipation( dt );
@@ -2929,6 +2930,19 @@ void PhysicsVehicle::reportStuckClutch( float dt ) {
 void PhysicsVehicle::armChrono() {
     chrono = Chrono();
     chrono.State = 2; // "First you must stop the vehicle"
+}
+
+void PhysicsVehicle::updateOdometer( float dt ) {
+    // FUN_0083db70
+    const float speed = ( pChassisBody != nullptr )
+                            ? pChassisBody->GetLinearVelocity().Length()
+                            : 0.0f;
+    odometerDistance += speed * dt;
+
+    odometerKms = static_cast<int32_t>( odometerDistance * 0.001f );
+    odometerTenMeters = static_cast<int32_t>(
+        ( odometerDistance - static_cast<float>( odometerKms ) * 1000.0f ) *
+        0.1f );
 }
 
 void PhysicsVehicle::updateChrono( float dt ) {

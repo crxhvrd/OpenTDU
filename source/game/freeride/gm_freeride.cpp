@@ -246,6 +246,9 @@ void GMFreeride::tick( float deltaTime, float totalTime ) {
     OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (pending spot warp / spot cine
                              // launch) / CAMERA (map return) / MngFade
 
+    updateOdometerAutosave();
+    updateOdometer();
+
     if ( !gpScenaric->getIntroTutorial().isActive() ) {
         updateNearestExtraChallenge();
     }

@@ -49,6 +49,7 @@ public:
 
     float getOdometerKms() const;
     void setOdometerKms( const float value );
+    void addOdometerKms( const float kms );
 
 public:
     uint32_t ID = 0xffffffffu;
