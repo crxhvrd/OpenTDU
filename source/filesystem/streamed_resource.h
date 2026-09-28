@@ -16,6 +16,9 @@ public:
     }
 
     inline void markAsInstanciated() { bWaitingForInstanciation = false; }
+    inline bool isWaitingForInstanciation() const {
+        return bWaitingForInstanciation;
+    }
 
 protected:
     uint8_t bWaitingForInstanciation : 1;

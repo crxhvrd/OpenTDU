@@ -233,7 +233,9 @@ public:
                  const DBEntryCarPhysicsData &db,
                  const void *pTorqueBinary = nullptr,
                  bool bFactoryShape = false,
-                 const DBEntryAftermarketPack *pPack = nullptr );
+                 const DBEntryAftermarketPack *pPack = nullptr,
+                 bool bIsAIDriven = false,
+                 bool bIsNetworkDriven = false );
     void destroy();
 
     void setInput( float throttle, float brake, float steer );
@@ -391,6 +393,8 @@ private:
     float autoGearboxThrottle;
     float autoGearboxBrake;
     bool bDrivingInputScripted;
+    bool bIsAI;
+    bool bIsNetwork;
     bool bCinematicMode;
     bool bInputControllerAttached;
     bool bPausePhysics;

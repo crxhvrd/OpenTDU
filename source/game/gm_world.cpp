@@ -339,7 +339,19 @@ bool gRequestedPlayerTeleport = false;
 Eigen::Vector3f gRequestedPlayerTeleportPos = Eigen::Vector3f::Zero();
 
 void GameModeWorld::installLocalPlayerCar() {
-    installLocalPlayerCar( kDefaultPlayerCarID, nullptr );
+    // FUN_007bf280 (inlined)
+    const CarDesc *pCurrentCar =
+        ( gpPlayerData != nullptr ) ? gpPlayerData->getCurrentCar() : nullptr;
+    if ( pCurrentCar == nullptr ) {
+        // Safe fallback if GMFreeride is requested without a valid profile
+        // (ideally we should use DEFAULTGARAGECONFIG instead of
+        // kDefaultPlayerCarID)
+        installLocalPlayerCar( kDefaultPlayerCarID, nullptr );
+        return;
+    }
+
+    installLocalPlayerCar( int32_t( pCurrentCar->getCarConfigID() ), nullptr,
+                           pCurrentCar->rimID );
 }
 
 void GameModeWorld::installLocalPlayerCar( int32_t carID,
@@ -469,7 +481,7 @@ void GameModeWorld::installLocalPlayerCar( int32_t carID,
             gpPhysics->destroyVehicle( state.pPhysicsVehicle );
             pPlayerPhysicsVehicle = gpPhysics->createVehicle(
                 pFactory, spawn, *pDB, pTorqueBin, pPack );
-            state.pPhysicsVehicle = pPlayerPhysicsVehicle;
+            state.setPhysicsVehicle( pPlayerPhysicsVehicle );
         }
     }
 

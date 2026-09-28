@@ -507,7 +507,7 @@ bool GMCarShowcase::loadCar() {
     state.field_0x39d8 = nullptr;
     state.field_0x39cc = nullptr;
     state.bIsIndoor = false;
-    state.pPhysicsVehicle = local_c4;
+    state.setPhysicsVehicle( local_c4 );
     state.pVehicleSound = local_cc;
     state.pResource = pCarState;
     pCarState->RefCount++;

@@ -7,6 +7,10 @@ public:
     const char *GetName() override { return "Camera"; /* FUN_00412180 */ }
 
 public:
+    inline float getFOV() const { return FOV; }
+    inline float getRatio() const { return Ratio; }
+
+public:
     EntityCamera();
     ~EntityCamera();
 

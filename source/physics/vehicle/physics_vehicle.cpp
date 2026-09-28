@@ -36,6 +36,7 @@ static constexpr float kBrakeCurveK = 50.0f;
 static constexpr float kPedalGain = 0.7f;                // DAT_00fab730
 static constexpr float kAutoGbxPedal = 0.1f;             // DAT_00fab720
 static constexpr float kAutoGbxInput = 0.1f;             // FLOAT_00f41668
+static constexpr float kIgnitionThrottleThreshold = 0.1f; // FLOAT_00f41668
 static constexpr float kAutoGbxPedalIdle = 0.01f;        // DAT_00f416d4
 static constexpr float kAutoGbxHoldBrake = 0.5f;         // FLOAT_00f41674
 static constexpr float kAutoGbxMovingSpeed = 0.2777778f; // DAT_00f41868, 1km/h
@@ -753,6 +754,8 @@ PhysicsVehicle::PhysicsVehicle()
       autoGearboxThrottle( 0.0f ),
       autoGearboxBrake( 0.0f ),
       bDrivingInputScripted( false ),
+      bIsAI( false ),
+      bIsNetwork( false ),
       bCinematicMode( false ),
       bInputControllerAttached( true ),
       bPausePhysics( false ),
@@ -909,10 +912,15 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                              const DBEntryCarPhysicsData &db,
                              const void *pTorqueBinary,
                              bool bFactoryShape,
-                             const DBEntryAftermarketPack *pPack ) {
+                             const DBEntryAftermarketPack *pPack,
+                             bool bIsAIDriven,
+                             bool bIsNetworkDriven ) {
     if ( pSystem == nullptr || pChassis == nullptr ) {
         return false;
     }
+
+    bIsAI = bIsAIDriven;
+    bIsNetwork = bIsNetworkDriven;
 
     const PerfPackCoefs pack = BuildPerfPackCoefs( pPack );
     if ( pack.bInstalled ) {
@@ -1342,7 +1350,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     en.State = eEngineState::ES_Off;
     en.IgnTimer = 0.0f;
     en.bIgnitionOnce = false;
-    en.IgnitionOn = true; // key on: auto-start + auto-restart on stall
+    en.IgnitionOn = false;
     en.Throttle = 0.0f;
     en.bApplyIdleThrottleFloor = false;
     en.CrankDuration =
@@ -1532,6 +1540,12 @@ static float PedalResponseCurve( float x, float k ) {
 void PhysicsVehicle::arbitrateAutomaticGearbox( float deltaTime,
                                                 float chassisSpeed ) {
     // FUN_0041a210
+    if ( bIsAI || bIsNetwork ) {
+        PhysicsEngineSim &engine = vehicle.Engine;
+        engine.IgnitionOn = kIgnitionThrottleThreshold < rawInputThrottle;
+        engine.bIgnitionOnce = false;
+    }
+
     if ( bDrivingInputScripted ) {
         setClutchOverride( -1.0f );
         resetAutomaticGearbox();

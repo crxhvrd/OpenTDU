@@ -21,6 +21,13 @@ public:
                   float newDuration,
                   const Matrix4x4f_t *pOffsetMatrix,
                   bool bStartAtEnd );
+    void stopPath();
+    void blendTo( const Matrix4x4f_t &from,
+                  const Matrix4x4f_t &to,
+                  float newDuration,
+                  const Matrix4x4f_t *pOffsetMatrix );
+
+    inline void setTime( const float value ) { time = value; }
 
 private:
     static constexpr float kDefaultReferenceAspect = 1.7777778f;

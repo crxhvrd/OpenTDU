@@ -67,6 +67,11 @@ void CameraPath::setStaticView( const Eigen::Vector4f &position,
     upVector = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
 }
 
+void CameraPath::stopPath() {
+    ScopedMutexLock lock( &mutex );
+    bHasPath = false;
+}
+
 void CameraPath::setPath( Path *pNewPath,
                           bool bInvert,
                           float newDuration,
@@ -153,6 +158,65 @@ void CameraPath::setPath( Path *pNewPath,
 
     splinePosition.compute();
     splineRotation.compute();
+
+    bHasPath = true;
+}
+
+void CameraPath::blendTo( const Matrix4x4f_t &from,
+                          const Matrix4x4f_t &to,
+                          float newDuration,
+                          const Matrix4x4f_t *pOffsetMatrix ) {
+    // FUN_008d7950
+    ScopedMutexLock lock( &mutex );
+
+    time = 0.0f;
+    bHasPath = false;
+    pPath = nullptr;
+    bInverted = false;
+    bPaused = false;
+    bT2Quaternion = false;
+    duration = newDuration;
+
+    const Eigen::Quaternionf fromRotation(
+        Eigen::Matrix3f( from.topLeftCorner<3, 3>() ) );
+    const Eigen::Quaternionf toRotation(
+        Eigen::Matrix3f( to.topLeftCorner<3, 3>() ) );
+
+    splinePosition.NumKeys = 2;
+    splinePosition.pKeys[0].Position = 0.0f;
+    splinePosition.pKeys[0].Vec4 = from.row( 3 ).transpose();
+    splinePosition.pKeys[0].T = 0.0f;
+    splinePosition.pKeys[0].C = 0.0f;
+    splinePosition.pKeys[0].B = 0.0f;
+    splinePosition.pKeys[1].Position = kOne;
+    splinePosition.pKeys[1].Vec4 = to.row( 3 ).transpose();
+    splinePosition.pKeys[1].T = kOne;
+    splinePosition.pKeys[1].C = 0.0f;
+    splinePosition.pKeys[1].B = 0.0f;
+
+    splineRotation.NumKeys = 2;
+    splineRotation.pKeys[0].Position = 0.0f;
+    splineRotation.pKeys[0].Quat = fromRotation;
+    splineRotation.pKeys[0].T = 0.0f;
+    splineRotation.pKeys[0].C = 0.0f;
+    splineRotation.pKeys[0].B = 0.0f;
+    splineRotation.pKeys[1].Position = kOne;
+    splineRotation.pKeys[1].Quat = toRotation;
+    splineRotation.pKeys[1].T = kOne;
+    splineRotation.pKeys[1].C = 0.0f;
+    splineRotation.pKeys[1].B = 0.0f;
+
+    splinePosition.compute();
+    splineRotation.compute();
+
+    if ( pOffsetMatrix == nullptr ) {
+        bOffset = false;
+        offset = Matrix4x4f_t::Identity();
+    } else {
+        offset = *pOffsetMatrix;
+        coordChange = *pOffsetMatrix;
+        bOffset = true;
+    }
 
     bHasPath = true;
 }

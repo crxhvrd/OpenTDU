@@ -29,6 +29,7 @@ public:
     inline void setCanMoveCamera( const bool value ) { bCanMoveCamera = value; }
     inline bool canMoveCamera() const { return bCanMoveCamera; }
     inline void setInputEnabled( const bool value ) { bInputEnabled = value; }
+    inline void setFloorHeight( const float value ) { floorHeight = value; }
 
 public:
     CameraShowcase();

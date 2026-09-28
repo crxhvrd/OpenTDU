@@ -4,6 +4,9 @@
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
 #include "database/gs_database.h"
+#include "driver.h"
+#include "gs_playerdata.h"
+#include "player_data_interface.h"
 
 int32_t GetHouseNumGarageSlots( const uint64_t houseHashcode ) {
     // FUN_0088fb00
@@ -159,6 +162,101 @@ GarageSlot *Garage::getCarAtIndex( int32_t index,
     }
 
     return &pCars[0];
+}
+
+int32_t Garage::getNumCarsInHouse( const uint64_t houseHashcode ) {
+    // FUN_00891020
+    if ( houseHashcode == 0ull ) {
+        return numCars;
+    }
+
+    int32_t numHouseCars = 0;
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        if ( pCars[i].isValid() &&
+             pCars[i].getHouseHashcode() == houseHashcode ) {
+            numHouseCars++;
+        }
+    }
+
+    return numHouseCars;
+}
+
+GarageSlot *Garage::getHouseCarAtIndex( const int32_t index ) {
+    // FUN_00892d70
+    Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+    const GarageSlot &currentCar = pCars[pDriver->CurrentCar];
+    if ( index == 0 ) {
+        return &pCars[pDriver->CurrentCar];
+    }
+
+    const uint64_t houseHashcode = pDriver->getCurrentHouse();
+    if ( currentCar.getHouseHashcode() != houseHashcode ) {
+        return getCarAtIndex( index - 1, houseHashcode, false );
+    }
+
+    const int32_t numHouseCars = getNumCarsInHouse( houseHashcode );
+    for ( int32_t i = 0; i < numHouseCars; i++ ) {
+        const GarageSlot *pCar = getCarAtIndex( i, houseHashcode, false );
+        if ( pCar->getCarID() == currentCar.getCarID() ) {
+            break;
+        }
+
+        if ( i == index - 1 ) {
+            return getCarAtIndex( index - 1, houseHashcode, false );
+        }
+    }
+
+    return getCarAtIndex( index, houseHashcode, false );
+}
+
+int32_t Garage::getNumHouseCars() {
+    // FUN_00892f50
+    Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+    const uint64_t houseHashcode = pDriver->getCurrentHouse();
+    const int32_t numHouseCars = getNumCarsInHouse( houseHashcode );
+
+    if ( pCars[pDriver->CurrentCar].getHouseHashcode() == houseHashcode ) {
+        return numHouseCars;
+    }
+
+    return numHouseCars + 1;
+}
+
+int32_t Garage::getHouseCarIndex( const CarDesc *pCar ) {
+    // FUN_00894c80
+    const int32_t numHouseCars = getNumHouseCars();
+    for ( int32_t i = 0; i < numHouseCars; i++ ) {
+        if ( getHouseCarAtIndex( i )->getCarID() == pCar->getCarID() ) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+int32_t Garage::getSlotIndex( const CarDesc *pCar ) const {
+    // FUN_0088fa00
+    for ( int32_t i = 0; i <= kNumSavedCarSlots; i++ ) {
+        if ( pCars[i].getCarID() == pCar->getCarID() ) {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
+uint64_t Garage::getCarHouseHashcode( const CarDesc *pCar ) const {
+    // FUN_00890e20
+    // NOTE: the original pcode counts the other valid cars parked in that house
+    // but never returns the result.
+    uint64_t houseHashcode = 0ull;
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        if ( pCars[i].getCarID() == pCar->getCarID() ) {
+            houseHashcode = pCars[i].getHouseHashcode();
+        }
+    }
+
+    return houseHashcode;
 }
 
 bool Garage::isHouseOwned( const uint64_t houseHashcode ) const {

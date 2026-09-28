@@ -2314,7 +2314,7 @@ void *CinResCollection::spawnPlayerCar() {
         }
     }
 
-    state.pPhysicsVehicle = pPhysicsVehicle;
+    state.setPhysicsVehicle( pPhysicsVehicle );
     state.bIsIndoor = false;
     state.pVehicleBase = pController;
     state.pResource = pRes;

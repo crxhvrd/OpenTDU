@@ -43,6 +43,24 @@ void FlashCallbacksRegister::remove( const char *param_1 ) {
     numCallbacks = writeIndex;
 }
 
+void FlashCallbacksRegister::remove( Callback_t pCallback,
+                                     const char *pClipName ) {
+    // FUN_0099cb60
+    for ( uint32_t i = 0; i < numCallbacks; i++ ) {
+        if ( pCallbacks[i].pCallback != pCallback ||
+             strcmp( pCallbacks[i].pClipName, pClipName ) != 0 ) {
+            continue;
+        }
+
+        for ( uint32_t j = i + 1; j < numCallbacks; j++ ) {
+            pCallbacks[j - 1] = pCallbacks[j];
+        }
+        numCallbacks--;
+        pCallbacks[numCallbacks] = CallbackEntry{};
+        return;
+    }
+}
+
 void FlashCallbacksRegister::removeAllSynonyms( Callback_t param_1 ) {
     // FUN_0099cac0
     uint32_t writeIndex = 0;

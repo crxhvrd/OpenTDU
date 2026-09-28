@@ -483,7 +483,10 @@ bool GMLiving::onMessage( FlashMessage *pMessage ) {
     }
 
     case FlashMessage( "gain" ): // the garage door
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMGarage
+        transitionFlags &= ~0x20u;
+        requestExit();
+        gpTestDriveInstance->setNextGameMode( GM_Garage );
+        pFlashPlayer->stopClip( "/" );
         return true;
 
     case FlashMessage( "avin" ): // the wardrobe door

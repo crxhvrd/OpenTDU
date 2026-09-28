@@ -5,13 +5,19 @@
 #include "world/gs_world_streaming.h"
 
 class Bank;
+class CameraPath;
 class Entity;
+class EntityShopData;
+class Path;
+class Render2DB;
 struct HiearchyNode;
 struct SpotMap;
 struct SpotSector;
 
 // Scene for game modes using interior banks (e.g. GMLiving, GMGarage, GMHome,
 // GMShop, GMDressing, ...)
+class PhysicsVehicle;
+
 class SceneInterior : public StreamingCallback {
 public:
     enum eState : int32_t {
@@ -28,6 +34,10 @@ public:
     inline SpotMap *getSourceSpot() const { return pSpot; }
     inline HiearchyNode *getRootNode() const { return pRootNode; }
     inline ScenaricBank &getBank() { return bank; }
+    inline EntityShopData *getShopData() const {
+        return reinterpret_cast<EntityShopData *>( pShopData );
+    }
+    inline CameraPath *getInteriorCamera() const { return pInteriorCamera; }
     inline void setDrawInDOFPass( const bool value ) { bDrawInDOFPass = value; }
     inline bool isDrawnInDOFPass() const { return bDrawInDOFPass; }
     inline void setModeActive( const bool value ) {
@@ -53,6 +63,17 @@ public:
     void draw();
 
     Eigen::Vector4f getWorldPosition() const;
+    Matrix4x4f_t getInteriorTransform() const;
+    Render2DB *getBankBitmap( const uint64_t hashcode );
+
+    void focusCamera( const int32_t positionIndex );
+    void moveCameraTo( const int32_t positionIndex );
+    void startCameraPath( Path *pPath, const bool bInvert, const bool bStartAtEnd );
+    void setupShowcaseCamera( const int32_t positionIndex,
+                              PhysicsVehicle *pPhysicsVehicle,
+                              const Matrix4x4f_t &carBoundingBox,
+                              const bool bNoBlend );
+    void restoreInteriorCamera();
 
 private:
     void instanciate();
@@ -64,6 +85,7 @@ private:
     ScenaricBank bank;
 
     Entity *pShopData; // ET_SHDA
+    CameraPath *pInteriorCamera;
     eState state;
     bool bEntered;
     Bank *pInteriorBank;
@@ -77,6 +99,11 @@ private:
     bool bModeActive;
     eGameMode placementGameMode;
     int32_t spotSectorWaitTicks;
+
+    bool bShowcaseCamera;
+    Eigen::Vector4f showcaseTarget;
+    float showcaseMaxDistance;
+    Matrix4x4f_t showcaseCarBoundingBox;
 };
 
 bool BuildInteriorBankPath( eGameMode gameMode, char *pOutPath );

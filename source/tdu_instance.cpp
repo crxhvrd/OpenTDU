@@ -46,7 +46,10 @@
 #include "online/gs_online.h"
 #include "physics/gs_physics.h"
 #include "physics/gs_physicsfx.h"
+#include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/user_profile.h"
 #include "audio/radio/gs_radio_pc.h"
 #include "render/camera/gs_camera.h"
 #include "render/gs_noise.h"
@@ -76,6 +79,7 @@
 #include "game/cinviewer/gm_cin_viewer.h"
 #include "game/boat_tour/gm_boat_tour.h"
 #include "game/login/gm_login.h"
+#include "game/garage/gm_garage.h"
 #include "game/living/gm_living.h"
 #include "game/scene_interior.h"
 
@@ -152,6 +156,56 @@ static CmdLineArg CmdLineArgGameMode( "gm", []( const char *pArg ) {
     OTDU_LOG_INFO( "GameMode override (from command line) => '%s'\n",
                    kGameModeNames[gGameModeOverride] );
 } );
+
+// Loads a profile save at boot (the GMLogin 'Continue' path) so '-gm N' can
+// start straight into a mode that needs a real playersave (e.g. GM_Garage).
+static char gProfileOverride[64] = {};
+static CmdLineArg CmdLineArgProfile( "profile", []( const char *pArg ) {
+    strncpy( gProfileOverride, pArg, sizeof( gProfileOverride ) - 1 );
+    gProfileOverride[sizeof( gProfileOverride ) - 1] = '\0';
+
+    OTDU_LOG_INFO( "Profile override (from command line) => '%s'\n",
+                   gProfileOverride );
+} );
+
+static void LoadProfileOverride() {
+    const uint64_t profileHashcode =
+        UserProfileRegister::HashProfileName( gProfileOverride );
+    if ( gUserProfileRegister.getProfileIndex( profileHashcode ) < 0 ) {
+        OTDU_LOG_WARN( "Profile '%s' does not exist; available profiles:\n",
+                       gProfileOverride );
+        for ( int32_t i = 0; i < gUserProfileRegister.getNumProfiles(); i++ ) {
+            OTDU_LOG_WARN( "  '%s'\n",
+                           gUserProfileRegister.getProfileNameByIndex( i ) );
+        }
+        return;
+    }
+
+    gpPlayerData->resetPlayerData( true, true );
+    gpPlayerData->setSaveEnabled( true );
+    gUserProfileRegister.initialize( profileHashcode );
+
+    gbSaveAllowed = true;
+    if ( !gpPlayerData->loadActiveProfileSave() ) {
+        OTDU_LOG_WARN( "Profile '%s' has no readable save\n",
+                       gProfileOverride );
+        return;
+    }
+
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    if ( !pAchievements->isReady() ) {
+        pAchievements->setReady( true );
+        pAchievements->notify( ACF_Challenge | ACF_Road | ACF_Collection,
+                               false );
+    }
+
+    if ( gpPlayerData->getLoadedSave()->getAvatar() != nullptr ) {
+        TestDrive::RebakePlayerAvatar();
+    }
+
+    OTDU_LOG_INFO( "Loaded profile '%s'\n", gProfileOverride );
+}
 
 // Path to TestDriveUnlimited.exe, used for the in-process one-shot asset
 // extraction (default: 'TestDriveUnlimited.exe' in the working directory).
@@ -452,6 +506,10 @@ void TestDriveGameInstance::mainLoop() {
         EnableWorldSpotStreaming();
     }
 
+    if ( gProfileOverride[0] != '\0' ) {
+        LoadProfileOverride();
+    }
+
     if ( gGameModeOverride != GM_Invalid ) {
         setNextGameMode( gGameModeOverride );
     }
@@ -497,6 +555,11 @@ void TestDriveGameInstance::mainLoop() {
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMBoatTour ),
                                                       alignof( GMBoatTour ) );
             pGVar6 = new ( pGameModeAlloc ) GMBoatTour();
+            break;
+        case GM_Garage:
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMGarage ),
+                                                      alignof( GMGarage ) );
+            pGVar6 = new ( pGameModeAlloc ) GMGarage();
             break;
         case GM_Living:
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLiving ),

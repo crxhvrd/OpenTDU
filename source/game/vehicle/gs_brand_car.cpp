@@ -223,12 +223,12 @@ void BrandCar::instanciate() {
                 if ( pPhysEntry != nullptr ) {
                     pPhysicsVehicle = gpPhysics->createVehicle(
                         pFactory, spawnMatrix, *pPhysEntry, pTorqueBinary,
-                        pPack );
+                        pPack, true, false );
                 }
             }
 
             carState.pVehicleBase = pVehicle;
-            carState.pPhysicsVehicle = pPhysicsVehicle;
+            carState.setPhysicsVehicle( pPhysicsVehicle );
             carState.bIsIndoor = false;
             carState.pResource = pRes;
             pRes->RefCount++;

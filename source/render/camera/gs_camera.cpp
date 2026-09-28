@@ -691,6 +691,19 @@ int32_t GSCamera::findFirstVisibleTransitionMode() {
     return -1;
 }
 
+int32_t GSCamera::findFirstHoodTransitionMode() {
+    // FUN_008e3f50
+    for ( uint32_t i = 0; i < numTransition; i++ ) {
+        CameraGame *pCamera =
+            findCameraWithMode( pTransitionIndices[i], pTarget );
+        if ( ( pCamera != nullptr ) &&
+             ( ( pCamera->getFlags() >> 0x13 & 1 ) != 0 ) ) {
+            return pTransitionIndices[i];
+        }
+    }
+    return -1;
+}
+
 int32_t GSCamera::findFirstSeatAdjustableTransitionMode() {
     // FUN_008e3fa0
     for ( uint32_t i = 0; i < numTransition; i++ ) {

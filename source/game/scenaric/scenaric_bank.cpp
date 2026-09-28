@@ -445,6 +445,16 @@ Render2DB *ScenaricBank::getRender2DB( uint64_t hashcode ) {
     return findResource( lists2DB, hashcode );
 }
 
+Render2DB *ScenaricBank::getRender2DBByBitmapHashcode( uint64_t hashcode ) {
+    for ( auto &entry : lists2DB ) {
+        if ( entry.object->getBitmapSection() != nullptr &&
+             entry.object->getBitmapHashcode() == hashcode ) {
+            return entry.object.get();
+        }
+    }
+    return nullptr;
+}
+
 SkeletonInstance *ScenaricBank::getSkeleton( uint64_t hashcode ) {
     return findResource( listsSkeleton, hashcode );
 }

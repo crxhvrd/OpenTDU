@@ -51,6 +51,7 @@ struct VehicleBaseResources {
                eVehicleResourceType param_6 );
 
     void unload();
+    bool isLoaded();
 
     Bank PhysicsBank;
 
@@ -150,6 +151,10 @@ public:
     }
 
     inline const CarState *getCarState() const { return pCarState; }
+    bool isInteriorLoading() const;
+    bool isInteriorLoaded() const;
+    bool unloadInterior();
+    bool loadInterior();
     inline bool areShadowsEnabled() const { return !bDisableShadow; }
     inline bool shouldDraw() const { return bShouldDraw; }
     inline HiearchyNode *getParentNode() const { return pParentNode; }
@@ -160,6 +165,11 @@ public:
         return vehicleWheelLowResInstances[param_2];
     }
     inline float getAlpha() const { return alpha; }
+    inline void setAlpha( const float value ) { alpha = value; }
+    inline bool hasInteriorInstance() const {
+        // FUN_00424fa0
+        return interiorResource.pRender3DD != nullptr;
+    }
     inline void setShadowsDisabled( const bool param_1 ) {
         bDisableShadow = param_1;
     }
@@ -232,6 +242,7 @@ public:
                            const ColorRGBA *pSecondColor2 );
 
     virtual void applyLOD() = 0;
+    virtual void uninstantiateInterior() {}
 
     void setCurrentLuminosity( const float param_1 );
     HiearchyNode *getShadowDummyNode();

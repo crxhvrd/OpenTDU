@@ -630,6 +630,16 @@ void GSPlayerData::setCurrentCar( const CarDesc *pCar ) {
     pLoadedSave->setCurrentCar( uint16_t( slotIndex ) );
 }
 
+void GSPlayerData::selectCurrentCar( const CarDesc *pCar ) {
+    // FUN_00897940
+    if ( pCar->state == CarDesc::eState::CDS_PutOnEbay ) {
+        return;
+    }
+
+    Garage *pGarage = pLoadedSave->getGarage();
+    pLoadedSave->setCurrentCar( uint16_t( pGarage->getSlotIndex( pCar ) ) );
+}
+
 void GSPlayerData::setDefaultLanguage( const char *pDefaultLanguage,
                                        bool bForceInit ) {
     // FUN_008989b0

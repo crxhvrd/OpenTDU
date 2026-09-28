@@ -1323,11 +1323,20 @@ void LogoResources::loadContent() {
         Material *pMaterial = render2DM.getMaterialAtIndex( i );
         if ( pMaterial != nullptr ) {
             pMaterial->OT = 0x2a;
-            pMaterial->StencilEnable = '\x01';
+            pMaterial->DepthTest = 1;
             pMaterial->DepthWrite = 2;
             pMaterial->AlphaTest = CF_Never;
         }
     }
+}
+
+Material *LogoResources::getMaterial( const char *pName ) {
+    // FUN_0042e8b0
+    if ( !MngResources::isLoaded() ) {
+        return nullptr;
+    }
+
+    return render2DM.getMaterial( pName );
 }
 
 void LogoResources::FUN_0089feb0() {

@@ -10,6 +10,7 @@
 #include "database/gs_database.h"
 #include "game/avatar/avatar_clothes.h"
 #include "game/scenaric/entity/entity_driver.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/weather/gs_weather.h"
@@ -63,6 +64,14 @@ int32_t CarState::getType() {
 Matrix4x4f_t &CarState::getWorldMatrix() {
     // FUN_008ae5b0
     return body.WorldMatrix;
+}
+
+void CarState::setPhysicsVehicle( PhysicsVehicle *pVehicle ) {
+    // FUN_0084a5d0 (inlined)
+    pPhysicsVehicle = pVehicle;
+    if ( pVehicle != nullptr ) {
+        numWheels = pVehicle->getNumWheels();
+    }
 }
 
 void CarState::reset() {

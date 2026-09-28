@@ -309,6 +309,8 @@ public:
 
     void loadContent() override;
 
+    Material *getMaterial( const char *pName );
+
 private:
     FileCollection2D collection2D;
     void *pRender2DM;
@@ -443,6 +445,7 @@ public:
     inline CubemapResources &getCubemapResources() { return cubemap; }
     inline TerrainResources &getTerrainResources() { return terrain; }
     inline FontResources &getFontResources() { return font; }
+    inline LogoResources &getLogoResources() { return logo; }
 
 public:
     GSMngResources();

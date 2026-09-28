@@ -10,10 +10,6 @@ struct DoorState {
     float ElapsedTime = 1.0f;
     float MoveDuration = 1.0f;
     bool bIsOpening = false;
-
-    inline float getAngle() const {
-        return bIsOpening ? ElapsedTime : ( MoveDuration - ElapsedTime );
-    }
 };
 
 struct WindowState {
@@ -46,8 +42,12 @@ public:
     void closeDoorsAndWindows();
     void setVehicle( VehicleBase *pVehicleBase );
     bool isBikeCategory() const;
+    void closeShowcase();
+    void enterCar();
+    void leaveCar();
 
     inline bool hasWindows() const { return bHasWindows; }
+    inline void setEnabled( const bool bValue ) { bEnabled = bValue; }
     inline DoorState &getRightDoor() { return RightDoor; }
     inline WindowState &getLeftWindow() { return LeftWindow; }
     inline WindowState &getRightWindow() { return RightWindow; }

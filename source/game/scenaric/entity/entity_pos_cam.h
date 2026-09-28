@@ -2,9 +2,27 @@
 
 #include "base_entity.h"
 
+class Path;
+
 class EntityPosCam : public Entity {
 public:
     const char *GetName() override { return "PosCam"; /* FUN_004258c0 */ }
+
+public:
+    inline Entity *getCamera() const {
+        return ( pEntityRefs[0] != nullptr )
+                   ? *reinterpret_cast<Entity **>( pEntityRefs[0] )
+                   : nullptr;
+    }
+    inline Path *getPath() const {
+        return ( pPathRef != nullptr ) ? *reinterpret_cast<Path **>( pPathRef )
+                                       : nullptr;
+    }
+    inline Entity *getZoneVolume() const {
+        return ( pZoneVolumeRef != nullptr )
+                   ? *reinterpret_cast<Entity **>( pZoneVolumeRef )
+                   : nullptr;
+    }
 
 public:
     EntityPosCam();

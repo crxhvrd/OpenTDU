@@ -6,6 +6,7 @@
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
 #include "game/vehicle/vehicle_car.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "input/input_device.h"
 #include "render/camera/gs_camera.h"
 
@@ -26,6 +27,8 @@ static constexpr uint64_t kBikeCategoryHashcode = 0x35da5b5;
 static constexpr uint64_t kConvertibleBodyHashcodeA = 0x56760d;
 static constexpr uint64_t kConvertibleBodyHashcodeB = 0x57fcad;
 static constexpr uint64_t kNoWindowsTypeHashcode = 0x4a1475b;
+
+static constexpr float kCloseShowcaseDuration = 2.0f; // DAT_00f416b0
 
 static float EaseDoorPosition( float progress, bool bOpening ) {
     // FUN_0076fc80
@@ -55,6 +58,28 @@ static float UneaseDoorProgress( float position, bool bOpening ) {
         return position * 0.5f;
     }
     return ( position - ( 1.0f / 9.0f ) ) * ( 9.0f / 8.0f );
+}
+
+static float GetDoorAngle( const DoorState &door,
+                           const bool bLeft,
+                           const DBEntryCarPhysicsData *pDB ) {
+    // FUN_0076fb70
+    const float progress =
+        Min( door.ElapsedTime, door.MoveDuration ) / door.MoveDuration;
+
+    float aperture;
+    if ( !door.bIsOpening ) {
+        const float remaining = 1.0f - progress;
+        aperture = ( remaining < 0.1f )
+                       ? remaining * 2.0f
+                       : remaining * ( 8.0f / 9.0f ) + ( 1.0f / 9.0f );
+    } else {
+        aperture = ( progress < 0.1f )
+                       ? progress * 0.5f
+                       : progress * ( 19.0f / 18.0f ) - ( 1.0f / 18.0f );
+    }
+
+    return bLeft ? -pDB->DoorMaxAngle * aperture : pDB->DoorMaxAngle * aperture;
 }
 
 static inline void
@@ -205,8 +230,8 @@ void MngShowCaseCarControl::tick( float deltaTime, float ) {
         }
     }
 
-    const float leftDoorAngle = LeftDoor.getAngle();
-    const float rightDoorAngle = RightDoor.getAngle();
+    const float leftDoorAngle = GetDoorAngle( LeftDoor, true, pDB );
+    const float rightDoorAngle = GetDoorAngle( RightDoor, false, pDB );
 
     if ( bCustomDoors ) {
         const float maxAngle =
@@ -432,4 +457,52 @@ void MngShowCaseCarControl::resetShowcase() {
         pCar->setWindowOpenLeft( windowValue );
         pCar->setWindowOpenRight( windowValue );
     }
+}
+
+void MngShowCaseCarControl::closeShowcase() {
+    // FUN_00770110
+    moveDoor( true, false, true, kCloseShowcaseDuration );
+    if ( !isBikeCategory() ) {
+        moveDoor( false, false, true, kCloseShowcaseDuration );
+    }
+
+    if ( bHasWindows ) {
+        MoveWindow( LeftWindow, bIsConvertible, kCloseShowcaseDuration );
+        MoveWindow( RightWindow, bIsConvertible, kCloseShowcaseDuration );
+    }
+}
+
+void MngShowCaseCarControl::enterCar() {
+    // FUN_0076fab0
+    if ( bInVehicle ) {
+        return;
+    }
+    bInVehicle = true;
+
+    if ( pVehicle == nullptr ) {
+        return;
+    }
+
+    PhysicsVehicle *pPhysicsVehicle =
+        const_cast<CarState *>( pVehicle->getCarState() )->getPhysicsVehicle();
+
+    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+
+    pPhysicsVehicle->setDrivingMode( PhysicsVehicle::DM_Parked );
+}
+
+void MngShowCaseCarControl::leaveCar() {
+    // FUN_0076fa60
+    bInVehicle = false;
+
+    if ( pVehicle == nullptr ) {
+        return;
+    }
+
+    PhysicsVehicle *pPhysicsVehicle =
+        const_cast<CarState *>( pVehicle->getCarState() )->getPhysicsVehicle();
+
+    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+
+    pPhysicsVehicle->setDrivingMode( PhysicsVehicle::DM_Player );
 }

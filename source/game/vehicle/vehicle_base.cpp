@@ -11,6 +11,8 @@
 #include "gs_timer.h"
 #include "render/camera/gs_camera.h"
 #include "gs_car_display.h"
+#include "tdu_instance.h"
+#include "bank_vehicle.h"
 
 #include "render/material.h"
 #include "render/2dm.h"
@@ -2966,6 +2968,115 @@ inline void ReleaseVehicleBank( StreamedInBankVehicle &bank ) {
         bank.pBankInstance = nullptr;
         bank.pBankData = nullptr;
     }
+}
+
+static inline bool IsVehicleBankReady( const StreamedInBankVehicle &bank ) {
+    return bank.pBankInstance->getState() == BankVehicle::eState::BVS_Ready;
+}
+
+bool VehicleBaseResources::isLoaded() {
+    // FUN_008ac4c0
+    if ( bIsLoading && Exterior.pBankInstance != nullptr &&
+         IsVehicleBankReady( Exterior ) &&
+         ( Interior.pBankInstance == nullptr ||
+           IsVehicleBankReady( Interior ) ) &&
+         ( FrontRims.pBankInstance == nullptr ||
+           ( IsVehicleBankReady( FrontRims ) &&
+             IsVehicleBankReady( RearRims ) ) ) ) {
+        bIsLoading = false;
+        bInitialized = true;
+    }
+
+    return bInitialized;
+}
+
+bool VehicleBase::isInteriorLoading() const {
+    // FUN_008b5b80
+    BankVehicle *pBank = pInteriorBank->pBankInstance;
+    return pBank != nullptr &&
+           pBank->getState() == BankVehicle::eState::BVS_Loading;
+}
+
+bool VehicleBase::isInteriorLoaded() const {
+    // FUN_008b5f40
+    BankVehicle *pBank = pInteriorBank->pBankInstance;
+    return pBank != nullptr &&
+           pBank->getState() == BankVehicle::eState::BVS_Ready;
+}
+
+bool VehicleBase::unloadInterior() {
+    // FUN_008b7530
+    BankVehicle *pBank = pInteriorBank->pBankInstance;
+    if ( pBank != nullptr ) {
+        if ( pBank->getState() == BankVehicle::eState::BVS_Loading ) {
+            return false;
+        }
+
+        if ( pBank->getState() != BankVehicle::eState::BVS_Ready &&
+             pBank->isWaitingForInstanciation() ) {
+            gpTestDriveInstance->flushPendingFileInstanciation( false );
+        }
+
+        uninstantiateInterior();
+
+        if ( interiorResource.pRender3DD != nullptr &&
+             interiorResource.pResourceBank != nullptr ) {
+            interiorResource.release( false );
+        }
+        interiorResource.pResourceBank = nullptr;
+        interiorResource.pRender2DM = nullptr;
+        interiorResource.pRender3DD = nullptr;
+
+        pInteriorBank->pBankInstance->unload();
+        gpCarDisplay->releaseEntry( pInteriorBank );
+        pInteriorBank->pBankInstance = nullptr;
+        pInteriorBank->pBankData = nullptr;
+    }
+
+    applyLOD();
+    return true;
+}
+
+bool VehicleBase::loadInterior() {
+    // FUN_008b7b70
+    static constexpr int32_t kFirstBikeCarID = 1500;
+    static constexpr int32_t kLastBikeCarID = 1998;
+
+    if ( interiorResource.pResourceBank != nullptr &&
+         interiorResource.pResourceBank->getState() ==
+             BankVehicle::eState::BVS_Ready ) {
+        return false;
+    }
+
+    const bool bAcquired = gpCarDisplay->allocateFromPool(
+        eVehicleResourceType::VRT_Interior, pInteriorBank );
+
+    const int32_t carID = pCarState->getCarID();
+    const CarConfig *pConfig = nullptr;
+    for ( const CarConfig &entry : gpDatabase->getCarList() ) {
+        if ( entry.Hash == carID ) {
+            pConfig = &entry;
+            break;
+        }
+    }
+
+    if ( !bAcquired || pConfig == nullptr ) {
+        return false;
+    }
+
+    std::string bankName = pConfig->BankGeometryName + "_I";
+    const bool bIsBike = carID >= kFirstBikeCarID && carID <= kLastBikeCarID;
+    pInteriorBank->pBankInstance->validateResourcePath( bIsBike, false,
+                                                        bankName, 0x633333 );
+    if ( pInteriorBank->pBankInstance->loadToPooledMemory(
+             true, pInteriorBank->pBankData, 0x633333, bankName.c_str() ) ) {
+        return true;
+    }
+
+    gpCarDisplay->releaseEntry( pInteriorBank );
+    pInteriorBank->pBankInstance = nullptr;
+    pInteriorBank->pBankData = nullptr;
+    return false;
 }
 
 void VehicleBaseResources::unload() {

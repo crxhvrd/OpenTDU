@@ -222,6 +222,7 @@ public:
     inline uint32_t getNumWheels() const { return numWheels; }
     inline const WheelState &getWheel( uint32_t i ) const { return wheels[i]; }
     inline PhysicsVehicle *getPhysicsVehicle() const { return pPhysicsVehicle; }
+    void setPhysicsVehicle( PhysicsVehicle *pVehicle );
 
     inline eOwner getOwner() const { return owner; }
     inline eSimulationType getSimulationType() const { return simulationType; }
@@ -283,6 +284,7 @@ private:
     friend class GameModeWorld; // installs the local-player car on reset
     friend class CinResCollection; // spawns the PLAYER_CAR cinematic actor
     friend class BrandCar;      // installs the spot showcase ("brand") cars
+    friend class SceneCarPark;  // installs the interior parked cars
     friend class GSScenaric;    // GSScenaric::placeDriver seats pDriver
     friend class GSCarState; // TODO: Remove once visibility for bInstanceAlive
                              // is fixed

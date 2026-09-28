@@ -1615,7 +1615,9 @@ GSPhysics::createVehicle( PhysFactory *pFactory,
                           const Matrix4x4f_t &worldTransform,
                           const DBEntryCarPhysicsData &db,
                           const void *pTorqueBinary,
-                          const DBEntryAftermarketPack *pPack ) {
+                          const DBEntryAftermarketPack *pPack,
+                          const bool bIsAI,
+                          const bool bIsNetwork ) {
     // FUN_0082fc80
     if ( pPhysicsSystem == nullptr ) {
         return nullptr;
@@ -1760,7 +1762,7 @@ GSPhysics::createVehicle( PhysFactory *pFactory,
         }
         if ( pCar == nullptr ||
              !pCar->create( pPhysicsSystem, pChassis, db, pTorqueBinary,
-                            bHasFactoryShape, pPack ) ) {
+                            bHasFactoryShape, pPack, bIsAI, bIsNetwork ) ) {
             bodyInterface.RemoveBody( pChassis->GetID() );
             bodyInterface.DestroyBody( pChassis->GetID() );
             pCar = nullptr;

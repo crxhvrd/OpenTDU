@@ -3,12 +3,19 @@
 
 #include "tdu_instance.h"
 
+#include "core/maths_helper.h"
+
 #include "audio/vehicle/gs_vehicle_sound.h"
 #include "game/gm_scene.h"
+#include "game/scenaric/bank_scene_arrays.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
+#include "game/scenaric/entity/entity_camera.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/entity/entity_music_desc.h"
+#include "game/scenaric/entity/entity_pos_cam.h"
+#include "game/scenaric/entity/entity_shop_data.h"
+#include "game/scenaric/entity/entity_volume.h"
 #include "game/scenaric/entity/entity_weather_desc.h"
 #include "world/weather/gs_weather.h"
 #include "game/scenaric/mng_actor.h"
@@ -22,6 +29,7 @@
 #include "render/camera/gs_camera.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/camera_path.h"
+#include "render/camera/camera_showcase.h"
 #include "render/camera/camera_mouse.h"
 #include "world/gs_world.h"
 #include "world/mng_ocean.h"
@@ -41,12 +49,15 @@ static constexpr float kUndergroundInteriorDepth = 50.0f; // DAT_00f41848
 static constexpr float kInteriorFovVsLodFactor = 0.5f;    // FLOAT_00f41674
 // Path Camera Index
 static constexpr int32_t kInteriorCameraMode = 7;
+static constexpr float kInteriorCameraNearPlane = 0.3f;   // FLOAT_00f416bc
+static constexpr float kInteriorCameraFarPlane = 5000.0f; // FLOAT_00f41b54
 static constexpr int32_t kMaxSpotSectorWaitTicks = 600;
 
 SceneInterior::SceneInterior()
     : pRootNode( nullptr ),
       bank(),
       pShopData( nullptr ),
+      pInteriorCamera( nullptr ),
       state( SIS_Idle ),
       bEntered( false ),
       pInteriorBank( nullptr ),
@@ -58,7 +69,11 @@ SceneInterior::SceneInterior()
       bDrawInDOFPass( false ),
       bModeActive( false ),
       placementGameMode( GM_Invalid ),
-      spotSectorWaitTicks( 0 ) {
+      spotSectorWaitTicks( 0 ),
+      bShowcaseCamera( false ),
+      showcaseTarget( Eigen::Vector4f::Zero() ),
+      showcaseMaxDistance( 0.0f ),
+      showcaseCarBoundingBox( Matrix4x4f_t::Identity() ) {
     // FUN_00774930
     if ( gpCamera != nullptr ) {
         gpCamera->setInteriorView( true );
@@ -107,6 +122,150 @@ Eigen::Vector4f SceneInterior::getWorldPosition() const {
 
     return Eigen::Vector4f( pSpot->X, pSpot->Y - kUndergroundInteriorDepth,
                             pSpot->Z, 1.0f );
+}
+
+static inline Eigen::Vector4f GetStreamOrigin() {
+    return gpWorldStreaming->isEnabled() ? gpWorldStreaming->getPosition()
+                                         : Eigen::Vector4f::Zero();
+}
+
+Matrix4x4f_t SceneInterior::getInteriorTransform() const {
+    // FUN_00774810
+    Matrix4x4f_t transform = Matrix4x4f_t::Identity();
+    if ( pSpotSector != nullptr && getPlacementGameMode() != GM_Dressing ) {
+        transform = BuildSpotSectorRotation( pSpotSector );
+    }
+
+    const Eigen::Vector4f interiorPosition = getWorldPosition();
+    transform( 3, 0 ) += interiorPosition.x();
+    transform( 3, 1 ) += interiorPosition.y();
+    transform( 3, 2 ) += interiorPosition.z();
+    transform( 3, 3 ) = 1.0f;
+    return transform;
+}
+
+Render2DB *SceneInterior::getBankBitmap( const uint64_t hashcode ) {
+    // FUN_007745f0
+    return bank.getRender2DBByBitmapHashcode( hashcode );
+}
+
+static Eigen::Vector4f GetLastPathKeyValue( const void *pKeyArray ) {
+    const int32_t numKeys = *reinterpret_cast<const int32_t *>( pKeyArray );
+    const float *pValue = reinterpret_cast<const float *>(
+        static_cast<const uint8_t *>( pKeyArray ) + 4 + ( numKeys - 1 ) * 0x20 +
+        4 );
+    return Eigen::Vector4f( pValue[0], pValue[1], pValue[2], pValue[3] );
+}
+
+void SceneInterior::focusCamera( const int32_t positionIndex ) {
+    // FUN_00774a00
+    EntityShopData *pShop = getShopData();
+    if ( pShop == nullptr || positionIndex >= pShop->getNumPositions() ) {
+        return;
+    }
+
+    EntityPosCam *pPosition =
+        static_cast<EntityPosCam *>( pShop->getPosition( positionIndex ) );
+    if ( pPosition == nullptr ) {
+        return;
+    }
+
+    EntityCamera *pCameraEntity =
+        static_cast<EntityCamera *>( pPosition->getCamera() );
+    if ( pCameraEntity == nullptr ) {
+        return;
+    }
+
+    Matrix4x4f_t cameraMatrix = pCameraEntity->getModelMatrix();
+    const Eigen::Vector4f streamOrigin = GetStreamOrigin();
+    cameraMatrix( 3, 0 ) -= streamOrigin.x();
+    cameraMatrix( 3, 1 ) -= streamOrigin.y();
+    cameraMatrix( 3, 2 ) -= streamOrigin.z();
+    cameraMatrix( 3, 3 ) = 1.0f;
+
+    const Eigen::Vector4f position = TDUMat4x4MulVec(
+        cameraMatrix, Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f ) );
+    const Eigen::Vector4f target = TDUMat4x4MulVec(
+        cameraMatrix, Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 1.0f ) );
+    const Eigen::Vector4f up = TDUMat4x4MulVec(
+        cameraMatrix, Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f ) );
+
+    CameraPath *pCamera = (CameraPath *)gpCamera->findCameraWithMode(
+        kInteriorCameraMode, gpCamera->getBoundCarState() );
+    pCamera->setPositionOffseted( position );
+    pCamera->setTargetOffseted( target );
+    pCamera->setUp( up );
+    pCamera->setFOVAndAspectRatio( pCameraEntity->getRatio(),
+                                   pCameraEntity->getFOV() );
+    pCamera->updateMatrix( position.head<3>(), up.head<3>(), target.head<3>() );
+    pCamera->stopPath();
+
+    gpCamera->setCameraMode( kInteriorCameraMode, nullptr, 1.0f );
+}
+
+void SceneInterior::moveCameraTo( const int32_t positionIndex ) {
+    // FUN_00775190
+    static constexpr float kMoveDuration = 1.0f; // FLOAT_00f4165c
+
+    EntityShopData *pShop = getShopData();
+    if ( pShop == nullptr || positionIndex >= pShop->getNumPositions() ) {
+        return;
+    }
+
+    EntityPosCam *pPosition =
+        static_cast<EntityPosCam *>( pShop->getPosition( positionIndex ) );
+
+    Matrix4x4f_t target = Matrix4x4f_t::Identity();
+    Entity *pCameraEntity = pPosition->getCamera();
+    if ( pCameraEntity == nullptr ) {
+        const Path *pPath = pPosition->getPath();
+        if ( pPath == nullptr ) {
+            return;
+        }
+
+        const Eigen::Vector4f position = GetLastPathKeyValue( pPath->pArray0 );
+        const Eigen::Vector4f rotation = GetLastPathKeyValue( pPath->pArray1 );
+
+        const Matrix4x4f_t rotationMatrix =
+            BuildRotationMatrix( Eigen::Quaternionf(
+                rotation.w(), rotation.x(), rotation.y(), rotation.z() ) );
+        target.row( 0 ) = rotationMatrix.row( 0 );
+        target.row( 1 ) = -rotationMatrix.row( 2 );
+        target.row( 2 ) = rotationMatrix.row( 1 );
+        target.row( 3 ) = position.transpose();
+    } else {
+        target = pCameraEntity->getModelMatrix();
+        target.row( 0 ) *= -1.0f;
+        target.row( 2 ) *= -1.0f;
+    }
+
+    const Eigen::Vector4f shiftOrigin = GetStreamOrigin();
+    Matrix4x4f_t offset = Matrix4x4f_t::Identity();
+    offset( 3, 0 ) = -shiftOrigin.x();
+    offset( 3, 1 ) = -shiftOrigin.y();
+    offset( 3, 2 ) = -shiftOrigin.z();
+    offset( 3, 3 ) = 1.0f - shiftOrigin.w();
+
+    pInteriorCamera->blendTo( pInteriorCamera->getCamToWorld(), target,
+                              kMoveDuration, &offset );
+}
+
+void SceneInterior::startCameraPath( Path *pPath,
+                                     const bool bInvert,
+                                     const bool bStartAtEnd ) {
+    // FUN_00775480
+    if ( pPath == nullptr || gpCamera == nullptr ) {
+        return;
+    }
+
+    Matrix4x4f_t offset = getInteriorTransform();
+    const Eigen::Vector4f streamOrigin = GetStreamOrigin();
+    offset( 3, 0 ) -= streamOrigin.x();
+    offset( 3, 1 ) -= streamOrigin.y();
+    offset( 3, 2 ) -= streamOrigin.z();
+    offset( 3, 3 ) -= streamOrigin.w();
+
+    pInteriorCamera->setPath( pPath, bInvert, -1.0f, &offset, bStartAtEnd );
 }
 
 bool SceneInterior::waitForSpotSector() {
@@ -258,10 +417,10 @@ void SceneInterior::instanciate() {
                               ? &gpActiveGMScene->getActorManager()
                               : nullptr;
 
+    gpScenaric->registerBank( &bank );
     bank.load( pInteriorBank->getBankFile(), 0, 0, pMngActor,
                /*bNoCopy=*/true );
     bank.forceLoad();
-    gpScenaric->registerBank( &bank );
 
     bank.instanciateSceneries();
 
@@ -308,18 +467,24 @@ void SceneInterior::instanciate() {
 
     pShopData = bank.getFirst( eEntityType::ET_SHDA );
     if ( pShopData != nullptr && gpCamera != nullptr ) {
-        CameraPath *pInteriorCamera =
-            (CameraPath *)gpCamera->findCameraWithMode(
-                kInteriorCameraMode, gpCamera->getBoundCarState() );
+        pInteriorCamera = (CameraPath *)gpCamera->findCameraWithMode(
+            kInteriorCameraMode, gpCamera->getBoundCarState() );
         if ( pInteriorCamera != nullptr ) {
             pInteriorCamera->setStaticView(
                 interiorPosition,
                 interiorPosition + Eigen::Vector4f( 1.0f, 0.0f, 0.0f, 0.0f ) );
 
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (the reference aspect and
-                                     // FOV the ET_SHDA entity carries)
+            if ( !bReentry ) {
+                EntityCamera *pShopCamera =
+                    static_cast<EntityCamera *>( getShopData()->getCamera() );
+                pInteriorCamera->setFOVAndAspectRatio( pShopCamera->getRatio(),
+                                                       pShopCamera->getFOV() );
 
-            gpCamera->setCameraMode( kInteriorCameraMode, nullptr, 0.0f );
+                gpCamera->setNextCamera( pInteriorCamera, nullptr, 0.0f );
+
+                pInteriorCamera->setNearPlane( kInteriorCameraNearPlane );
+                pInteriorCamera->setFarPlane( kInteriorCameraFarPlane );
+            }
         }
     }
 
@@ -508,4 +673,97 @@ void SceneInterior::leave() {
     pShopData = nullptr;
     bEntered = false;
     state = SIS_Idle;
+}
+
+void SceneInterior::setupShowcaseCamera( const int32_t positionIndex,
+                                         PhysicsVehicle *pPhysicsVehicle,
+                                         const Matrix4x4f_t &carBoundingBox,
+                                         const bool bNoBlend ) {
+    // FUN_00774c60
+    static constexpr int32_t kShowcaseCameraMode = 6;
+    static constexpr float kDefaultMaxDistance = 10.0f;    // FLOAT_00f4166c
+    static constexpr float kMaxTargetDrift = 2.0f;         // DAT_00f416b0
+    static constexpr float kMinDistanceMargin = 0.18f;     // DAT_00f41ba0
+    static constexpr float kShowcaseTransitionTime = 1.0f; // FLOAT_00f4165c
+    static constexpr uint32_t kShowcaseCollisionFlags = 0xba;
+
+    bShowcaseCamera = true;
+
+    EntityShopData *pShop = getShopData();
+    EntityPosCam *pPosition =
+        ( pShop != nullptr && positionIndex < pShop->getNumPositions() )
+            ? static_cast<EntityPosCam *>( pShop->getPosition( positionIndex ) )
+            : nullptr;
+
+    showcaseCarBoundingBox = carBoundingBox;
+
+    const Eigen::Vector4f carCenter = carBoundingBox.row( 3 ).transpose();
+    if ( pPosition == nullptr ) {
+        showcaseTarget = carCenter;
+        showcaseMaxDistance = kDefaultMaxDistance;
+    } else {
+        EntityVolume *pVolume =
+            static_cast<EntityVolume *>( pPosition->getZoneVolume() );
+        const Matrix4x4f_t volumeMatrix =
+            ( pVolume != nullptr && pVolume->getVolumeType() == VT_Sphere )
+                ? pVolume->getModelMatrix()
+                : Matrix4x4f_t::Identity();
+
+        showcaseTarget = volumeMatrix.row( 3 ).transpose();
+        const float radiusX = volumeMatrix.row( 0 ).norm();
+        const float radiusY = volumeMatrix.row( 1 ).norm();
+        const float radiusZ = volumeMatrix.row( 2 ).norm();
+        showcaseMaxDistance = Max( Max( radiusX, radiusY ), radiusZ );
+    }
+
+    if ( ( showcaseTarget - carCenter ).norm() > kMaxTargetDrift ) {
+        showcaseTarget = carCenter;
+    }
+
+    const Eigen::Vector4f halfDiagonal =
+        Eigen::Vector4f( 0.5f, 0.5f, 0.5f, 0.0f ).transpose() * carBoundingBox;
+    const float frameDistance =
+        ( showcaseTarget - carCenter ).norm() + halfDiagonal.norm();
+    if ( frameDistance > showcaseMaxDistance ) {
+        showcaseMaxDistance = frameDistance;
+    }
+
+    CameraShowcase *pCamera =
+        static_cast<CameraShowcase *>( gpCamera->findCameraWithMode(
+            kShowcaseCameraMode, gpCamera->getBoundCarState() ) );
+    pCamera->setFOVAndAspectRatio( pInteriorCamera->getAspectRatio(),
+                                   pInteriorCamera->getFOV() );
+    pCamera->lookAt( &showcaseTarget );
+    pCamera->setTargetCar( nullptr, pPhysicsVehicle );
+    pCamera->setOffset( Eigen::Vector4f::Zero() );
+
+    const float minDistance = frameDistance + kMinDistanceMargin;
+    pCamera->setDistanceRange( Min( minDistance, showcaseMaxDistance ),
+                               showcaseMaxDistance );
+    pCamera->placeAt( *pInteriorCamera->getWorldPositionRW(), true );
+    pCamera->setAllowRoll( false );
+    pCamera->setCanMoveCamera( false );
+    pCamera->setCollisionFlags( kShowcaseCollisionFlags );
+
+    Instance *pReflection =
+        pRootNode->findInstance( GetIdentifier64bit( "D_REFLECT" ) );
+    pCamera->setFloorHeight( ( pReflection != nullptr )
+                                 ? pReflection->getModelMatrix()( 3, 1 )
+                                 : -FLT_MAX );
+
+    OTDU_UNIMPLEMENTED; // TODO: CameraTransition support
+    (void)bNoBlend;
+    gpCamera->setCameraMode( kShowcaseCameraMode, nullptr,
+                             kShowcaseTransitionTime );
+}
+
+void SceneInterior::restoreInteriorCamera() {
+    // FUN_00774660
+    static constexpr int32_t kInteriorCameraMode = 7;
+
+    bShowcaseCamera = false;
+    if ( pInteriorCamera != nullptr ) {
+        pInteriorCamera->setTime( 1.0f );
+    }
+    gpCamera->setCameraMode( kInteriorCameraMode, nullptr, 0.0f );
 }

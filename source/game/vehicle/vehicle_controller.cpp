@@ -16,6 +16,7 @@
 #include "render/2dm.h"
 
 #include "render/camera/gs_camera.h"
+#include "game/gm_scene.h"
 #include "render/postfx/gs_postfx.h"
 
 // DAT_010c49f8
@@ -364,13 +365,11 @@ void VehicleController::reset() {
 eRenderPass VehicleController::getRenderPass() {
     // FUN_008b6e90
     CameraGame *pCVar1 = gpCamera->getActiveCamera();
-    eRenderPass GVar11 = eRenderPass::RP_Invalid;
     eRenderPass GVar12 = eRenderPass::RP_Near;
     bool bVar7 = false;
     bool bVar6 = false;
     CameraGame *pCVar9 = pCVar1;
 
-    CarState *pCVar5 = nullptr;
     if ( pCVar1->getType() == 3 ) {
         CameraVehicle *pVehCam = static_cast<CameraVehicle *>( pCVar1 );
         const uint8_t periodYSlowByte0 = *reinterpret_cast<const uint8_t *>(
@@ -434,19 +433,13 @@ eRenderPass VehicleController::getRenderPass() {
     }
 
 LAB_008b702a:
-    if ( ( (
-             /*( ( gpActiveGMWorld == (GMWorld *)0x0 ) ||
-               ( cVar8 = ( **(code **)( ( gpActiveGMWorld->super ).lpVtbl +
-                                        0x20 ) )(),
-                 cVar8 == '\0' ) ) ||*/  // TODO: GM_WORLD
-             ( pCVar5 = pCarState,
-               pCVar5 == nullptr ) ) ||
-           ( ( pCVar5->isInShowcaseMode() == false ||
-               ( GVar12 == eRenderPass::RP_Cockpit ) ) ) ) ||
-         ( GVar11 = eRenderPass::RP_FakeDOF, GVar12 == eRenderPass::RP_CarPlayer ) ) {
-        GVar11 = GVar12;
+    if ( gpActiveGMScene == nullptr || !gpActiveGMScene->isDrawnInFakeDOF() ||
+         pCarState == nullptr || !pCarState->isInShowcaseMode() ||
+         GVar12 == eRenderPass::RP_Cockpit ||
+         GVar12 == eRenderPass::RP_CarPlayer ) {
+        return GVar12;
     }
-    return GVar11;
+    return eRenderPass::RP_FakeDOF;
 }
 
 eRenderPass VehicleController::getRenderPassWithAlpha() {

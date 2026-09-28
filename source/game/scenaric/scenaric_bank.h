@@ -116,6 +116,7 @@ public:
     Render3DG *getRender3DG( uint64_t hashcode );
     Render2DM *getRender2DM( uint64_t hashcode );
     Render2DB *getRender2DB( uint64_t hashcode );
+    Render2DB *getRender2DBByBitmapHashcode( uint64_t hashcode );
     SkeletonInstance *getSkeleton( uint64_t hashcode );
     ClipInstance *getClip( uint64_t hashcode );
     AnimStateInstance *getAnimState( uint64_t hashcode );

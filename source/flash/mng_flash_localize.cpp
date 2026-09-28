@@ -55,7 +55,7 @@ static inline const char *SkipToNextMarker( const char *pStr ) {
 
 MngFlashLocalize::MngFlashLocalize() : Manager(), dbContext( 0x0 ) {
     // FUN_007173a0
-    reset();
+    clear();
 
     if ( gpMngFlashLocalize == nullptr ) {
         gpMngFlashLocalize = this;
@@ -74,7 +74,7 @@ bool MngFlashLocalize::initialize( TestDriveGameInstance * ) {
     return true;
 }
 
-void MngFlashLocalize::reset() {
+void MngFlashLocalize::clear() {
     // FUN_00716f00
     for ( int32_t i = 0; i < kNumLocalizedStrings; i++ ) {
         localizedStrings[i].pFlashVarName[0] = '\0';

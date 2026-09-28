@@ -128,7 +128,7 @@ struct PhysicsEngineSim {
 
     eEngineState State = eEngineState::ES_Off;
     float IgnTimer = 0.0f;  // starter timer
-    bool IgnitionOn = true; // starter held?
+    bool IgnitionOn = false; // starter held?
     bool bIgnitionOnce = false;
     float CrankDuration = 0.5f; // s
 

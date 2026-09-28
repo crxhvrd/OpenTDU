@@ -37,7 +37,7 @@ public:
     virtual void setupWheels() = 0;
 
     virtual void uninstantiateWheels() = 0;
-    virtual void uninstantiateInterior() = 0;
+    void uninstantiateInterior() override = 0;
 
     virtual HiearchyNode *getInstantiatedInteriorNode() = 0;
 

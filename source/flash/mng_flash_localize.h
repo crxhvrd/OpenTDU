@@ -38,7 +38,6 @@ public:
     ~MngFlashLocalize();
 
     virtual bool initialize( TestDriveGameInstance * ) override;
-    void reset() override;
 
     static void OnFlashInstall();
 
@@ -52,6 +51,7 @@ public:
                           const char *pVarName,
                           uint64_t hashcode );
 
+    void clear();
     void clearAllSysVar();
     void setSysVar( const char *pName, const char *pValue );
     void setSysVar( const char *pName, const int32_t value );

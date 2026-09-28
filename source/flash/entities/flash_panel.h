@@ -2,6 +2,7 @@
 
 #include "core/notifier.h"
 
+class CarDesc;
 class FlashPlayer;
 
 class FlashPanel : public Notifier {
@@ -54,4 +55,24 @@ public:
 
 private:
     char pCarName[64];
+};
+
+// Car specs sheet (odometer, upgrade pack, brand logo, ...) for garage and
+// dealership
+class FlashPanelCarSpecs : public FlashPanel {
+public:
+    inline CarDesc *getCar() const { return pCar; }
+
+public:
+    FlashPanelCarSpecs();
+    ~FlashPanelCarSpecs();
+
+    void tick() override;
+    void watch( CarDesc *pNewCar );
+    void refresh( CarDesc *pDisplayedCar, const bool bUpgrade );
+
+private:
+    CarDesc *pCar;
+    void *pUpgradeEntry;
+    bool bPictureInstalled;
 };

@@ -48,6 +48,13 @@ public:
                                const uint64_t houseHashcode,
                                const bool bIncludeInvalid );
 
+    int32_t getNumCarsInHouse( const uint64_t houseHashcode );
+    GarageSlot *getHouseCarAtIndex( const int32_t index );
+    int32_t getNumHouseCars();
+    int32_t getHouseCarIndex( const CarDesc *pCar );
+    int32_t getSlotIndex( const CarDesc *pCar ) const;
+    uint64_t getCarHouseHashcode( const CarDesc *pCar ) const;
+
     bool isHouseOwned( const uint64_t houseHashcode ) const;
     int32_t getNumOwnedHouses() const;
 
