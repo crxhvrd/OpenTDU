@@ -124,7 +124,7 @@ void GMCinViewer::reset() {
 
     positionAtSpot( selectedBankName.c_str() );
 
-    gpCamera->setCameraMode( 10, nullptr, 0.0f );
+    gpCamera->setCameraMode( 10, 0, 0.0f );
 
     FlashPlayer *pViewer = gpFlash->getFlashPlayer( "VIEWER" );
     if ( pViewer != nullptr ) {

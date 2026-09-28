@@ -200,7 +200,7 @@ void SceneInterior::focusCamera( const int32_t positionIndex ) {
     pCamera->updateMatrix( position.head<3>(), up.head<3>(), target.head<3>() );
     pCamera->stopPath();
 
-    gpCamera->setCameraMode( kInteriorCameraMode, nullptr, 1.0f );
+    gpCamera->setCameraMode( kInteriorCameraMode, 0, 1.0f );
 }
 
 void SceneInterior::moveCameraTo( const int32_t positionIndex ) {
@@ -480,7 +480,7 @@ void SceneInterior::instanciate() {
                 pInteriorCamera->setFOVAndAspectRatio( pShopCamera->getRatio(),
                                                        pShopCamera->getFOV() );
 
-                gpCamera->setNextCamera( pInteriorCamera, nullptr, 0.0f );
+                gpCamera->setNextCamera( pInteriorCamera, 0, 0.0f );
 
                 pInteriorCamera->setNearPlane( kInteriorCameraNearPlane );
                 pInteriorCamera->setFarPlane( kInteriorCameraFarPlane );
@@ -501,7 +501,7 @@ void SceneInterior::instanciate() {
         if ( pFreeCamera != nullptr ) {
             pFreeCamera->setFollowPlayer( false );
             pFreeCamera->initialize();
-            gpCamera->setCameraMode( 1, nullptr, 0.0f );
+            gpCamera->setCameraMode( 1, 0, 0.0f );
 
             OTDU_LOG_WARN( "Interior scene has neither a camera entity nor a "
                            "loop cinematic: falling back to freecam\n" );
@@ -751,9 +751,8 @@ void SceneInterior::setupShowcaseCamera( const int32_t positionIndex,
                                  ? pReflection->getModelMatrix()( 3, 1 )
                                  : -FLT_MAX );
 
-    OTDU_UNIMPLEMENTED; // TODO: CameraTransition support
-    (void)bNoBlend;
-    gpCamera->setCameraMode( kShowcaseCameraMode, nullptr,
+    gpCamera->setCameraMode( kShowcaseCameraMode,
+                             bNoBlend ? CTT_Default : CTT_Lerp,
                              kShowcaseTransitionTime );
 }
 
@@ -765,5 +764,5 @@ void SceneInterior::restoreInteriorCamera() {
     if ( pInteriorCamera != nullptr ) {
         pInteriorCamera->setTime( 1.0f );
     }
-    gpCamera->setCameraMode( kInteriorCameraMode, nullptr, 0.0f );
+    gpCamera->setCameraMode( kInteriorCameraMode, 0, 0.0f );
 }

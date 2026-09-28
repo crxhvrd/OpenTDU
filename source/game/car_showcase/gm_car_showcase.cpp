@@ -125,7 +125,7 @@ void GMCarShowcase::reset() {
         }
     }
 
-    gpCamera->setCameraMode( 6, nullptr, 1.0f );
+    gpCamera->setCameraMode( 6, 0, 1.0f );
     CameraShowcase *pBVar5 = (CameraShowcase *)gpCamera->findCameraWithMode(
         6, gpCamera->getBoundCarState() );
     pBVar5->lookAt( &DAT_00fac350 );

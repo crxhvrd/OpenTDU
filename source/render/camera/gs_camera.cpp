@@ -116,7 +116,7 @@ GSCamera::GSCamera()
       pPrevCamera( nullptr ),
       pNextCamera( nullptr ),
       pActiveVehicleCamera( nullptr ),
-      pTransitionCamera( nullptr ),
+      transitionType( 0 ),
       transitionTime( 0.0f ),
       transition(),
       pTarget( nullptr ),
@@ -187,7 +187,7 @@ bool GSCamera::initialize( TestDriveGameInstance * ) {
 
     if ( 0 < numCameraRegistered ) {
         currentCameraIndex = 0;
-        findAndSetCameraMode( *pTransitionIndices, nullptr, 1.0f );
+        findAndSetCameraMode( *pTransitionIndices, 0, 1.0f );
     }
 
     pNextCamera = nullptr;
@@ -549,7 +549,7 @@ void GSCamera::reset() {
     // FUN_008e4cb0
     if ( 0 < numCameraRegistered ) {
         field82_0x928 = 0;
-        findAndSetCameraMode( *pTransitionIndices, nullptr, 1.0f );
+        findAndSetCameraMode( *pTransitionIndices, 0, 1.0f );
     }
     pNextCamera = nullptr;
     bLookingBack = false;
@@ -598,10 +598,10 @@ void GSCamera::setSeatPosition( float seatHeight, float seatPosition ) {
 }
 
 void GSCamera::setCameraMode( const int32_t mode,
-                              CameraGame *pCamera,
+                              const int32_t transition,
                               const float time ) {
     nextCameraMode = mode;
-    pTransitionCamera = pCamera;
+    transitionType = transition;
     transitionTime = time;
     pNextCamera = nullptr;
 }
@@ -659,7 +659,7 @@ CameraGame *GSCamera::findCameraWithMode( const int32_t param_3,
 }
 
 void GSCamera::findAndSetCameraMode( int param_1,
-                                     CameraGame *param_2,
+                                     int32_t param_2,
                                      float param_3 ) {
     // FUN_008e41e0
     CameraGame *pBVar1 = findCameraWithMode( param_1, pTarget );
@@ -727,7 +727,7 @@ void GSCamera::setTransitionCameraMode( const int32_t mode ) {
         field83_0x92c = i;
         nextCameraMode = mode;
         pNextCamera = nullptr;
-        pTransitionCamera = nullptr;
+        transitionType = 0;
         transitionTime = 1.0f;
     }
 }
@@ -760,7 +760,7 @@ CameraGame *GSCamera::findCamera( CarState *pState ) {
 void GSCamera::restoreDefaultVehicleCamera( CarState *pCar ) {
     CameraGame *pChase = findCamera( pCar );
     if ( pChase != nullptr ) {
-        setCameraMode( pChase->getType(), nullptr, 0.0f );
+        setCameraMode( pChase->getType(), 0, 0.0f );
     }
 }
 
@@ -770,7 +770,7 @@ void GSCamera::restoreCamera() {
         nextCameraMode = pTransitionIndices[field83_0x92c];
     }
     pNextCamera = nullptr;
-    pTransitionCamera = nullptr;
+    transitionType = 0;
     transitionTime = 1.0f;
     bLookingBack = false;
     if ( pActiveVehicleCamera != nullptr &&
@@ -780,7 +780,7 @@ void GSCamera::restoreCamera() {
 }
 
 void GSCamera::bindCamera( CameraGame *param_1,
-                           CameraGame *param_2,
+                           int32_t param_2,
                            float param_3 ) {
     // FUN_008e4120
     CameraGame *pBVar1 = pActiveVehicleCamera;
@@ -874,16 +874,15 @@ void GSCamera::tickActiveCamera( float param_2 ) {
                          ( uVar1 >> 0x11 & 1 ) == 0 ) ) &&
                      ( ( uVar1 >> 0x12 & 1 ) != 0 ) ) {
                     DAT_00fab2ac = 1;
-                    findAndSetCameraMode( pTransitionIndices[2], nullptr,
+                    findAndSetCameraMode( pTransitionIndices[2], 0,
                                           1.0f );
                 }
                 if ( ( -1 < DAT_00fab2ac ) && ( pCVar4 == local_4 ) ) {
-                    findAndSetCameraMode( pTransitionIndices[DAT_00fab2ac],
-                                          nullptr, 1.0f );
+                    findAndSetCameraMode( pTransitionIndices[DAT_00fab2ac], 0, 1.0f );
                     DAT_00fab2ac = -1;
                 }
             }
-            findAndSetCameraMode( pActiveVehicleCamera->getType(), nullptr,
+            findAndSetCameraMode( pActiveVehicleCamera->getType(), 0,
                                   1.0f );
         }
     }
@@ -895,7 +894,7 @@ void GSCamera::tickActiveCamera( float param_2 ) {
                      ( ( uVar1 >> 0x12 & 1 ) == 0 ) ) &&
                    ( pTarget != nullptr ) ) &&
                  ( pBVar3 = findCamera( pTarget ), pBVar3 != nullptr ) ) {
-                bindCamera( pBVar3, nullptr, 1.0f );
+                bindCamera( pBVar3, 0, 1.0f );
             }
             bChangeCamTrigger = false;
         }
@@ -909,7 +908,7 @@ void GSCamera::tickActiveCamera( float param_2 ) {
                 if ( gpMngHud != nullptr ) {
                     gpMngHud->FUN_006e6a00( pTarget );
                 }
-                FUN_008e4840( nullptr, 1.0f );
+                FUN_008e4840( 0, 1.0f );
 
                 if ( ( pActiveVehicleCamera->getFlags() >> 0x11 & 1 ) == 0 ) {
                     pActiveVehicleCamera->resetTransform();
@@ -928,7 +927,7 @@ void GSCamera::tickActiveCamera( float param_2 ) {
                        pActiveVehicleCamera->getBackivewType(), pTarget ),
                    pBVar3 != nullptr ) ) {
                 pBVar3->initialize();
-                bindCamera( pBVar3, nullptr, 1.0f );
+                bindCamera( pBVar3, 0, 1.0f );
                 pActiveVehicleCamera->tick( param_2, true, true );
                 bFinishedCamTransition = true;
                 bLookingBack = true;
@@ -940,7 +939,7 @@ void GSCamera::tickActiveCamera( float param_2 ) {
                  ( pBVar3 = findCameraWithMode(
                        pActiveVehicleCamera->getBackivewType(), pTarget ),
                    pBVar3 != nullptr ) ) {
-                bindCamera( pBVar3, nullptr, 1.0f );
+                bindCamera( pBVar3, 0, 1.0f );
                 pActiveVehicleCamera->tick( param_2, true, true );
                 bFinishedCamTransition = true;
                 bLookingBack = false;
@@ -960,10 +959,10 @@ void GSCamera::tickActiveCamera( float param_2 ) {
         activeModeOverride = -1;
         activeModeVehicleOverride = -1;
         if ( pNextCamera == nullptr ) {
-            findAndSetCameraMode( nextCameraMode, pTransitionCamera,
+            findAndSetCameraMode( nextCameraMode, transitionType,
                                   transitionTime );
         } else {
-            bindCamera( pNextCamera, pTransitionCamera, transitionTime );
+            bindCamera( pNextCamera, transitionType, transitionTime );
 
             pActiveVehicleCamera->tick( 0.016666668f, true, true );
         }
@@ -1114,7 +1113,7 @@ void GSCamera::drawDebug( float deltaTime ) {
             ImGui::Text( "view-cycle slot %u / %d  (mode %d)", field83_0x92c,
                          numTransition, pTransitionIndices[field83_0x92c] );
             if ( ImGui::Button( "Cycle camera view (next)" ) ) {
-                FUN_008e4840( nullptr, 1.0f );
+                FUN_008e4840( 0, 1.0f );
             }
         }
 
@@ -1212,7 +1211,7 @@ void GSCamera::toggleFreeCam() {
             pFlyCam->setFollowPlayer( false );
 
             spPreFlyCamera = (CameraGame *)pActiveVehicleCamera;
-            bindCamera( pFlyCam, nullptr, 0.0f );
+            bindCamera( pFlyCam, 0, 0.0f );
 
             if ( gpWorld != nullptr ) {
                 spPreFlyStreamPos = gpWorld->getStreamPosition();
@@ -1227,7 +1226,7 @@ void GSCamera::toggleFreeCam() {
                 }
             }
         } else if ( spPreFlyCamera != nullptr ) {
-            bindCamera( spPreFlyCamera, nullptr, 0.0f );
+            bindCamera( spPreFlyCamera, 0, 0.0f );
             spPreFlyCamera = nullptr;
 
             // Hand the stream center back to whatever drove it before.
@@ -1355,7 +1354,7 @@ void GSCamera::loadCameraDB( uint8_t *param_1 ) {
     }
 }
 
-void GSCamera::FUN_008e4840( CameraGame *param_1, float param_2 ) {
+void GSCamera::FUN_008e4840( int32_t param_1, float param_2 ) {
     // FUN_008e4840
     uint32_t iVar1 = field83_0x92c + 1;
     field83_0x92c = iVar1;

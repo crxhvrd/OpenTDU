@@ -308,7 +308,7 @@ void FirstPersonMode::enter( SceneInterior *pScene,
     pCamera->setPosition( eyePosition );
 
     pPreviousCamera = pBoundCamera;
-    gpCamera->bindCamera( pCamera, nullptr, 0.0f );
+    gpCamera->bindCamera( pCamera, 0, 0.0f );
 
     SetHUDMoviesPaused( true );
     gEdSys.setRelativeMouseMode( true );
@@ -340,7 +340,7 @@ void FirstPersonMode::leave() {
     }
 
     if ( gpCamera != nullptr && pPreviousCamera != nullptr ) {
-        gpCamera->bindCamera( pPreviousCamera, nullptr, 0.0f );
+        gpCamera->bindCamera( pPreviousCamera, 0, 0.0f );
     }
     pPreviousCamera = nullptr;
 

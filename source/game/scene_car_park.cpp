@@ -857,7 +857,7 @@ void SceneCarPark::enterCar( const int32_t index ) {
         return;
     }
 
-    gpCamera->setNextCamera( pCamera, nullptr, kEnterCarTransitionTime );
+    gpCamera->setNextCamera( pCamera, 0, kEnterCarTransitionTime );
     if ( bIsBike ) {
         return;
     }

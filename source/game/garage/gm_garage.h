@@ -6,6 +6,7 @@
 #include "game/mng_logo_display.h"
 #include "game/vehicle/mng_car_alpha.h"
 #include "render/mng_reflection.h"
+#include "game/first_person_mode.h"
 
 #include "flash_list_garage.h"
 #include "scene_garage.h"

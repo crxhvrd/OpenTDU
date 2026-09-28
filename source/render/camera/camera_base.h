@@ -48,6 +48,8 @@ public:
     void setCamToWorld( const Matrix4x4f_t &matrix );
 
 protected:
+    friend class CameraTransition;
+
     float fov;
     float invAspectRatio;
     float aspectRatio;

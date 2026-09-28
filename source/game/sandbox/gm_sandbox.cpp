@@ -92,7 +92,7 @@ void GMSandbox::reset() {
                              Eigen::Vector3f( 0.0f, 1.0f, 0.0f ),
                              pCamChase->getTarget() );
 
-    gpCamera->setCameraMode( 0, nullptr, 1.0f );
+    gpCamera->setCameraMode( 0, 0, 1.0f );
     gpWorld->setStreamingPositionPtr( pCamChase->getWorldPositionRW() );
 
     bWorldViewerPending = gbEnableWorldViewer;

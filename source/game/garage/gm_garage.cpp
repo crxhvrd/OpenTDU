@@ -148,7 +148,7 @@ void GMGarage::reset() {
                                              "Test Drive Unlimited" );
 
     sceneGarage.setupCamera();
-    gpCamera->setCameraMode( 7, nullptr, 0.0f );
+    gpCamera->setCameraMode( 7, 0, 0.0f );
 
     CameraGame *pShowcaseCamera =
         gpCamera->findCameraWithMode( 6, gpCamera->getBoundCarState() );

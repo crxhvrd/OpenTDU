@@ -2,6 +2,7 @@
 
 #include "filesystem/binary.h"
 
+struct TCBKeyPos;
 struct HiearchyNode;
 class ScenaricBank;
 class AudioDispatcherPlaybackSoundInstance;
@@ -25,6 +26,17 @@ class SceneryBinArray : public BinaryArray {
 protected:
     void *deserializeElement( BinaryReader &reader, void *pContext ) override;
 };
+
+inline int32_t GetPathKeyCount( const void *pArray ) {
+    return pArray == nullptr ? 0 : *reinterpret_cast<const int32_t *>( pArray );
+}
+
+inline const TCBKeyPos *GetPathKeys( const void *pArray ) {
+    return pArray == nullptr
+               ? nullptr
+               : reinterpret_cast<const TCBKeyPos *>(
+                     reinterpret_cast<const int32_t *>( pArray ) + 1 );
+}
 
 class Path {
 public:

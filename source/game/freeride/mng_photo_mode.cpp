@@ -164,7 +164,7 @@ void SetupShowcaseCameraOnCar( Matrix4x4f_t &carTransform,
                                const bool bEnableTranslation,
                                const float maxDistance,
                                const bool bForcePlacement,
-                               CameraGame *pTransitionCamera,
+                               const int32_t transition,
                                const float transitionTime,
                                const bool bFrameOnBounds,
                                CarState *pCarState ) {
@@ -253,7 +253,7 @@ void SetupShowcaseCameraOnCar( Matrix4x4f_t &carTransform,
     pCamera->setFarPlane( gpRender->getDefaultFarPlane() );
     pCamera->setNearPlane( kPhotoCameraNearPlane );
 
-    gpCamera->setCameraMode( kPhotoCameraMode, pTransitionCamera,
+    gpCamera->setCameraMode( kPhotoCameraMode, transition,
                              transitionTime );
 }
 
@@ -331,7 +331,7 @@ void MngPhotoMode::enterPhotoMode() {
     }
 
     SetupShowcaseCameraOnCar( carTransform, true, true, kPhotoCameraMaxDistance,
-                              false, nullptr, kPhotoCameraTransitionTime, false,
+                              false, 0, kPhotoCameraTransitionTime, false,
                               ( gpScenaric != nullptr )
                                   ? gpScenaric->getLocalPlayer().getCarState()
                                   : nullptr );
@@ -489,7 +489,7 @@ void MngPhotoMode::showLiveView() {
 
 void MngPhotoMode::cancelShot() {
     if ( gpCamera != nullptr ) {
-        gpCamera->findAndSetCameraMode( kPhotoCameraMode, nullptr, 1.0f );
+        gpCamera->findAndSetCameraMode( kPhotoCameraMode, 0, 1.0f );
     }
 
     gFlashCallbacksRegister.removeAllSynonyms(

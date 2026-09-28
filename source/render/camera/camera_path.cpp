@@ -5,26 +5,6 @@
 #include "game/scenaric/bank_scene_arrays.h"
 #include "gs_camera.h"
 
-// A path key, as stored in the scenary bank (8 dwords per key).
-struct PathKey {
-    float Position;
-    float Value[4];
-    float T;
-    float C;
-    float B;
-};
-OTDU_SIZE_MUST_MATCH( PathKey, 32 );
-
-static int32_t GetPathKeyCount( const void *pArray ) {
-    return pArray == nullptr ? 0 : *reinterpret_cast<const int32_t *>( pArray );
-}
-
-static const PathKey *GetPathKeys( const void *pArray ) {
-    return pArray == nullptr
-               ? nullptr
-               : reinterpret_cast<const PathKey *>(
-                     reinterpret_cast<const int32_t *>( pArray ) + 1 );
-}
 
 CameraPath::CameraPath()
     : CameraGame(),
@@ -117,18 +97,18 @@ void CameraPath::setPath( Path *pNewPath,
 
     // Position keys.
     const int32_t numPositionKeys = GetPathKeyCount( pNewPath->pArray0 );
-    const PathKey *pPositionKeys = GetPathKeys( pNewPath->pArray0 );
+    const TCBKeyPos *pPositionKeys = GetPathKeys( pNewPath->pArray0 );
 
     splinePosition.NumKeys = numPositionKeys;
     OTDU_ASSERT( numPositionKeys <= splinePosition.MaxNumKeys );
 
     for ( int32_t i = 0; i < numPositionKeys; i++ ) {
-        const PathKey &srcKey = pPositionKeys[i];
+        const TCBKeyPos &srcKey = pPositionKeys[i];
         if ( i < splinePosition.NumKeys ) {
             TCBKeyPos &dstKey = splinePosition.pKeys[i];
             dstKey.Position = srcKey.Position / duration;
-            dstKey.Vec4 = Eigen::Vector4f( srcKey.Value[0], srcKey.Value[1],
-                                           srcKey.Value[2], srcKey.Value[3] );
+            dstKey.Vec4 = Eigen::Vector4f( srcKey.Vec4[0], srcKey.Vec4[1],
+                                           srcKey.Vec4[2], srcKey.Vec4[3] );
             dstKey.T = srcKey.T;
             dstKey.C = srcKey.C;
             dstKey.B = srcKey.B;
@@ -137,19 +117,19 @@ void CameraPath::setPath( Path *pNewPath,
 
     // Rotation keys.
     const int32_t numRotationKeys = GetPathKeyCount( pNewPath->pArray1 );
-    const PathKey *pRotationKeys = GetPathKeys( pNewPath->pArray1 );
+    const TCBKeyPos *pRotationKeys = GetPathKeys( pNewPath->pArray1 );
 
     splineRotation.NumKeys = numRotationKeys;
     OTDU_ASSERT( numRotationKeys <= splineRotation.MaxNumKeys );
 
     for ( int32_t i = 0; i < numRotationKeys; i++ ) {
-        const PathKey &srcKey = pRotationKeys[i];
+        const TCBKeyPos &srcKey = pRotationKeys[i];
         if ( i < splineRotation.NumKeys ) {
             TCBKeyQuat &dstKey = splineRotation.pKeys[i];
             dstKey.Position = srcKey.Position / duration;
             dstKey.Quat =
-                Eigen::Quaternionf( srcKey.Value[3], srcKey.Value[0],
-                                    srcKey.Value[1], srcKey.Value[2] );
+                Eigen::Quaternionf( srcKey.Vec4[3], srcKey.Vec4[0],
+                                    srcKey.Vec4[1], srcKey.Vec4[2] );
             dstKey.T = srcKey.T;
             dstKey.C = srcKey.C;
             dstKey.B = srcKey.B;

@@ -79,6 +79,7 @@ protected:
 
 private:
     friend class GSCamera;
+    friend class CameraTransition;
 
 protected:
     std::string name;

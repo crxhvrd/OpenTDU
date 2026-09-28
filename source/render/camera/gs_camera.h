@@ -88,10 +88,10 @@ public:
     }
 
     inline void setNextCamera( CameraGame *pCamera,
-                               CameraGame *pTransition,
+                               const int32_t transition,
                                const float time ) {
         nextCameraMode = -1;
-        pTransitionCamera = pTransition;
+        transitionType = transition;
         transitionTime = time;
         pNextCamera = pCamera;
     }
@@ -130,7 +130,7 @@ public:
     void setSeatPosition( float seatHeight, float seatPosition );
 
     void setCameraMode( const int32_t mode,
-                        CameraGame *pCamera,
+                        const int32_t transition,
                         const float transitionTime );
 
     CameraGame *findCameraWithMode( const int32_t mode,
@@ -147,8 +147,8 @@ public:
     CameraMouse *getMouseCamera();
 
     void
-    findAndSetCameraMode( int param_1, CameraGame *param_2, float param_3 );
-    void bindCamera( CameraGame *param_1, CameraGame *param_2, float param_3 );
+    findAndSetCameraMode( int param_1, int32_t transition, float param_3 );
+    void bindCamera( CameraGame *param_1, int32_t transition, float param_3 );
 
     void tickActiveCamera( float param_2 );
     bool updateActiveCamera( float deltaTime, float accTime );
@@ -173,6 +173,8 @@ public:
 #endif
 
 private:
+    friend class CameraTransition;
+
     float nearPlane;
     float farPlane;
 
@@ -227,7 +229,7 @@ private:
     CameraGame *pPrevCamera;
     CameraGame *pNextCamera;
     CameraVehicle *pActiveVehicleCamera;
-    CameraGame *pTransitionCamera;
+    int32_t transitionType;
     float transitionTime;
 
     CameraTransition transition;
@@ -281,7 +283,7 @@ private:
     bool registerCamera( const char *pName, const int32_t type );
 
     void loadCameraDB( uint8_t *param_1 );
-    void FUN_008e4840( CameraGame *param_1, float param_2 );
+    void FUN_008e4840( int32_t transition, float param_2 );
     bool FUN_008e1e80( bool param_1, bool param_3 );
     void editActiveCamera();
     void updateCameraInput( struct DeviceAction *peVar5,

@@ -196,7 +196,7 @@ void GMBoatTour::reset() {
     pCamera->setInvertMouse( true );
     pCamera->setBlockPosition( true );
 
-    gpCamera->setCameraMode( kTourCameraMode, nullptr, kCameraTransitionTime );
+    gpCamera->setCameraMode( kTourCameraMode, 0, kCameraTransitionTime );
     gpWorld->setStreamingPositionPtr( pCamera->getRootPositionRW() );
 
     pTour = nullptr;

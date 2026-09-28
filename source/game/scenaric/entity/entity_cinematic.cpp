@@ -947,7 +947,7 @@ bool EntityCinematic::begin() {
             cinematicPlayer.getCinematicCamera();
         if ( pCinematicCamera != nullptr && !bDontSwitchCamera &&
              gpCamera != nullptr ) {
-            gpCamera->setNextCamera( pCinematicCamera, nullptr, 0.0f );
+            gpCamera->setNextCamera( pCinematicCamera, 0, 0.0f );
         }
 
         applyForegroundCine();
