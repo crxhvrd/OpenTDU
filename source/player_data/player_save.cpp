@@ -37,6 +37,7 @@ PlayerSave::PlayerSave()
       stringTable(),
       achievements(),
       extraChallenges(),
+      extraChallengesNotifier( &extraChallenges ),
       numPendingOperations( 0 ),
       bInitialized( false ),
       saveIndex( -1 ) {
@@ -51,6 +52,7 @@ PlayerSave::~PlayerSave() {}
 void PlayerSave::initialize() {
     // FUN_0089ae80
     achievements.build();
+    driver.subscribe( &extraChallengesNotifier );
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
 
@@ -65,6 +67,8 @@ void PlayerSave::terminate() {
         numPendingOperations = 0;
         OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (flush the pending save)
     }
+
+    driver.unsubscribe( &extraChallengesNotifier );
 
     bInitialized = false;
 }

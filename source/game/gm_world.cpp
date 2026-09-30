@@ -1275,7 +1275,8 @@ void GameModeWorld::updateOdometer() {
 
     gpPlayerData->getLoadedSave()->getDriver()->addOdometerKms( deltaKms );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ACHIEVEMENTS
+    gpPlayerData->getLoadedSave()->getExtraChallenges()->addDistanceDriven(
+        deltaKms );
 
     CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
     if ( pCurrentCar != nullptr ) {

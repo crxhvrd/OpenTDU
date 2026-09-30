@@ -78,6 +78,7 @@ private:
     SavedStringTable stringTable;
     AchievementsData achievements;
     SavedExtraChallenges extraChallenges;
+    SavedExtraChallengesNotifier extraChallengesNotifier;
     int32_t numPendingOperations;
     bool bInitialized;
     int32_t saveIndex;

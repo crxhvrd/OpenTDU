@@ -1,7 +1,21 @@
 #pragma once
 
+#include "core/notifier.h"
+
 class edStore;
 class FlashPlayer;
+
+class SavedExtraChallenges;
+
+class SavedExtraChallengesNotifier : public Notifier {
+public:
+    SavedExtraChallengesNotifier( SavedExtraChallenges *pOwner );
+
+    void onUpdate( uint32_t param ) override;
+
+private:
+    SavedExtraChallenges *pExtraChallenges;
+};
 
 class SavedExtraChallenges {
 public:
@@ -21,11 +35,17 @@ public:
     static constexpr int32_t kNumStatisticsCategories = 12;
     static constexpr int32_t kStatisticsColumnSize = 0x7800;
 
+    enum eVehicleType : int32_t {
+        VT_Unknown = 0,
+        VT_Bike = 1,
+        VT_Car = 2,
+    };
+
 public:
     // /!\ DO NOT REORDER (order must match the serialized blob on disk)
     int32_t PlayerLevel = 0;
-    int32_t Field_0xf02c = 0;
-    int32_t Field_0xf030 = 0;
+    float freerideDistanceKms = 0.0f;
+    eVehicleType currentVehicleType = VT_Unknown;
     int32_t Padding_0xf034 = 0;
 
     int32_t Counters[kNumCounters] = {};
@@ -60,6 +80,8 @@ public:
     ~SavedExtraChallenges();
 
     void clear();
+    void resetVehicleType();
+    void addDistanceDriven( const float kms );
     void deserialize( edStore &stream );
     void serialize( edStore &stream ) const;
 
@@ -77,6 +99,9 @@ private:
     int32_t readCounter( const int32_t index ) const;
     void writeCounter( const int32_t index, const int32_t value );
     uint32_t readTailDword( const int32_t *pBlock, const bool bHighHalf ) const;
+    void writeTailDword( int32_t *pBlock,
+                         const bool bHighHalf,
+                         const uint32_t value );
     int32_t readFlag( const int32_t index ) const;
     float sumCounterRun( const int32_t firstOffset,
                          const int32_t endOffset ) const;

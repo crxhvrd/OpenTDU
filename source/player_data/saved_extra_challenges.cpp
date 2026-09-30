@@ -7,6 +7,8 @@
 #include "database/gs_database.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/mng_flash_localize.h"
+#include "game/gm_base.h"
+#include "game/vehicle/car_desc.h"
 #include "gs_playerdata.h"
 #include "achievements_data.h"
 #include "driver.h"
@@ -41,8 +43,8 @@ void SavedExtraChallenges::clear() {
     Field_0xf1a4 = 0.0f;
 
     PlayerLevel = 0;
-    Field_0xf02c = 0;
-    Field_0xf030 = 0;
+    freerideDistanceKms = 0.0f;
+    currentVehicleType = VT_Unknown;
 
     memset( Flags, 0, sizeof( Flags ) );
     memset( BestLow, 0, sizeof( BestLow ) );
@@ -222,6 +224,72 @@ uint32_t SavedExtraChallenges::readTailDword( const int32_t *pBlock,
     uint32_t pPlainText[2] = {};
     TestDriveTEADecrypt( pPlainText, (const uint32_t *)pBlock );
     return pPlainText[bHighHalf ? 1 : 0];
+}
+
+void SavedExtraChallenges::writeTailDword( int32_t *pBlock,
+                                           const bool bHighHalf,
+                                           const uint32_t value ) {
+    uint32_t pPlainText[2] = {};
+    TestDriveTEADecrypt( pPlainText, (const uint32_t *)pBlock );
+    pPlainText[bHighHalf ? 1 : 0] = value;
+    TestDriveTEAEncrypt( (uint32_t *)pBlock, pPlainText );
+}
+
+static uint32_t FloatAsDword( const float value ) {
+    uint32_t asDword = 0u;
+    memcpy( &asDword, &value, sizeof( uint32_t ) );
+    return asDword;
+}
+
+SavedExtraChallengesNotifier::SavedExtraChallengesNotifier(
+    SavedExtraChallenges *pOwner )
+    : Notifier(), pExtraChallenges( pOwner ) {}
+
+void SavedExtraChallengesNotifier::onUpdate( uint32_t /*param*/ ) {
+    // FUN_00887b20
+    pExtraChallenges->resetVehicleType();
+}
+
+void SavedExtraChallenges::resetVehicleType() {
+    currentVehicleType = VT_Unknown;
+}
+
+void SavedExtraChallenges::addDistanceDriven( const float kms ) {
+    // FUN_0088a4b0
+    int32_t *pLongestDriveBlock = (int32_t *)&Field_0xf190;
+    if ( gpActiveGameMode->getCurrentGameMode() == GM_FreeRide ) {
+        freerideDistanceKms += kms;
+        const float longestDriveKms =
+            DwordAsFloat( readTailDword( pLongestDriveBlock, false ) );
+        if ( freerideDistanceKms > longestDriveKms ) {
+            writeTailDword( pLongestDriveBlock, false,
+                            FloatAsDword( freerideDistanceKms ) );
+        }
+    } else {
+        freerideDistanceKms = 0.0f;
+    }
+
+    int32_t *pDistanceBlock = (int32_t *)&Field_0xf1a0;
+    switch ( currentVehicleType ) {
+    case VT_Unknown: {
+        CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+        if ( pCurrentCar != nullptr && pCurrentCar->isValid() ) {
+            DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry(
+                int32_t( pCurrentCar->getCarConfigID() ) );
+            currentVehicleType =
+                gpDatabase->isBike( pCarEntry ) ? VT_Bike : VT_Car;
+        }
+        break;
+    }
+    case VT_Bike:
+    case VT_Car: {
+        const bool bBike = currentVehicleType == VT_Bike;
+        const float distanceKms =
+            DwordAsFloat( readTailDword( pDistanceBlock, bBike ) ) + kms;
+        writeTailDword( pDistanceBlock, bBike, FloatAsDword( distanceKms ) );
+        break;
+    }
+    }
 }
 
 double SavedExtraChallenges::readScore( const int32_t index ) const {

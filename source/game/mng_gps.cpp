@@ -14,7 +14,7 @@
 
 static constexpr float kMetersToHectometers = 0.01f; // DAT_00f416d4
 static constexpr float kHectometersToKm = 0.1f;      // FLOAT_00f41668
-static constexpr float kKmToMiles = 0.62137f;        // DAT_00f418c0
+static constexpr float kKmToMiles = 0.621504f;       // DAT_00f418c0
 
 MngGPS::MngGPS() : Manager(), mutex( "MngGPS" ) {
     // FUN_006c2280

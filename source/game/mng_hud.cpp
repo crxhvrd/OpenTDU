@@ -20,6 +20,7 @@
 #include "player_data/driver.h"
 #include "player_data/player_save.h"
 #include "player_data/gs_playerdata.h"
+#include "game/vehicle/car_desc.h"
 #include "render/2db.h"
 #include "render/draw_list.h"
 #include "render/gs_render.h"
@@ -40,7 +41,7 @@
 MngHud *gpMngHud = nullptr; // DAT_010e7fbc
 
 static constexpr float kMeterSecToKmh = 3.6f;    // DAT_00f41768
-static constexpr float kKmToMiles = 0.62137f;    // DAT_00f418c0
+static constexpr float kKmToMiles = 0.621504f;   // DAT_00f418c0
 static constexpr float kRadSecToRpm = 9.549296f; // DAT_00f41698 (60 / 2pi)
 static constexpr float kCarNameDuration = 2.0f;  // DAT_00f416b0
 
@@ -1577,12 +1578,16 @@ void MngHud::tick( float deltaTime, float totalTime ) {
     }
     speedDigits.update( displaySpeed );
 
-    const float odometerKms =
-        gpPlayerData->getLoadedSave()->getDriver()->getOdometerKms();
-    odometer.update( static_cast<int32_t>( odometerKms ) );
+    CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+    float odometerValue =
+        ( pCurrentCar != nullptr ) ? pCurrentCar->odometerKms : 0.0f;
+    if ( gpPlayerData->isUsingImperialUnits() ) {
+        odometerValue *= kKmToMiles;
+    }
+    odometer.update( static_cast<int32_t>( odometerValue ) );
     odometerDecimal.update( static_cast<int32_t>(
-        ( odometerKms -
-          static_cast<float>( static_cast<int32_t>( odometerKms ) ) ) *
+        ( odometerValue -
+          static_cast<float>( static_cast<int32_t>( odometerValue ) ) ) *
         10.0f ) );
 
     extNeedle.update( rpm );
