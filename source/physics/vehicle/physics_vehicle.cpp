@@ -763,7 +763,6 @@ PhysicsVehicle::PhysicsVehicle()
       bForceKeyframeMatrix( false ),
       keyframeMatrix( Matrix4x4f_t::Identity() ),
       prevKeyframePosition( Eigen::Vector3f::Zero() ),
-      bKeyframedVelocityPrimed( false ),
       filteredSteer( 0.0f ),
       steerCommand( 0.0f ),
       steerCurveScale( 1.0f ),
@@ -962,7 +961,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     bForceKeyframeMatrix = false;
     keyframeMatrix = Matrix4x4f_t::Identity();
     prevKeyframePosition = Eigen::Vector3f::Zero();
-    bKeyframedVelocityPrimed = false;
+    keyframeVelocity = Eigen::Vector3f::Zero();
+    prevKeyframeForward = Eigen::Vector3f::UnitZ();
+    keyframeSteer = 0.0f;
     rawInputThrottle = 0.0f;
     rawInputBrake = 0.0f;
 
@@ -3380,7 +3381,6 @@ void PhysicsVehicle::setKeyframed( bool bInKeyframed, bool bForceMatrix ) {
                                        : JPH::EMotionType::Dynamic,
                           JPH::EActivation::Activate );
         bKeyframed = bInKeyframed;
-        bKeyframedVelocityPrimed = false;
         OTDU_LOG_DEBUG( "Vehicle body is now %s\n",
                         bInKeyframed ? "KEYFRAMED (cinematic owns the pose)"
                                      : "dynamic again" );
@@ -3393,15 +3393,9 @@ void PhysicsVehicle::setKeyframed( bool bInKeyframed, bool bForceMatrix ) {
 }
 
 void PhysicsVehicle::updateKeyframedWheels( float deltaTime ) {
-    // FUN_0083ff50
     if ( pChassisBody == nullptr ) {
         return;
     }
-
-    const JPH::RMat44 world = pChassisBody->GetWorldTransform();
-    const JPH::Vec3 forward = world.GetColumn3( 2 );
-    const float forwardSpeed = forward.Dot( JPH::Vec3(
-        keyframeVelocity.x(), keyframeVelocity.y(), keyframeVelocity.z() ) );
 
     // TODO: Implement HMap raycast test logic
     if ( pPhysicsSystem != nullptr ) {
@@ -3411,20 +3405,9 @@ void PhysicsVehicle::updateKeyframedWheels( float deltaTime ) {
         }
     }
 
-    static constexpr float kKeyframedEngineStartSpeed = 0.25f;
-    if ( std::fabs( forwardSpeed ) > kKeyframedEngineStartSpeed &&
-         ( vehicle.Engine.State == eEngineState::ES_Off ||
-           vehicle.Engine.State == eEngineState::ES_Crank ) ) {
-        vehicle.Engine.State = eEngineState::ES_Running;
-    }
-
     for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
         PhysicsWheelState &wheel = vehicle.Wheels[i];
-        wheel.AngularVel =
-            ( wheel.Radius > 0.0f ) ? forwardSpeed / wheel.Radius : 0.0f;
         wheel.SpinAngle += wheel.AngularVel * deltaTime;
-        wheel.ContactVelLong = forwardSpeed;
-        wheel.ContactVelLat = 0.0f;
         wheel.NormLongClamped = 0.0f;
         wheel.NormLatClamped = 0.0f;
         wheel.NormLong = 0.0f;
@@ -3433,8 +3416,79 @@ void PhysicsVehicle::updateKeyframedWheels( float deltaTime ) {
         wheel.BrakeTorqueOut = 0.0f;
         wheel.EspTorqueOut = 0.0f;
         wheel.DriveTorque = 0.0f;
-        wheel.BrakeTorque = 0.0f;
     }
+}
+
+void PhysicsVehicle::setVelocity( const Eigen::Vector3f &linearVelocity,
+                                  bool bSyncPowertrain,
+                                  int32_t preferredGear ) {
+    // FUN_0082dd60
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return;
+    }
+
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    bi.SetLinearVelocity( pChassisBody->GetID(),
+                          JPH::Vec3( linearVelocity.x(), linearVelocity.y(),
+                                     linearVelocity.z() ) );
+
+    const Matrix4x4f_t chassis = getChassisShiftedMatrix();
+    const Eigen::Vector3f right = chassis.row( 0 ).head<3>().transpose();
+    const Eigen::Vector3f forward = chassis.row( 2 ).head<3>().transpose();
+    const float forwardSpeed = linearVelocity.dot( forward );
+
+    float wheelOmega = 0.0f;
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        PhysicsWheelState &wheel = vehicle.Wheels[i];
+        wheelOmega = forwardSpeed / wheel.Radius;
+        wheel.AngularVel = wheelOmega;
+        wheel.ContactVelLong = forwardSpeed;
+        wheel.ContactVelLat = linearVelocity.dot( right );
+    }
+
+    if ( !bSyncPowertrain ) {
+        return;
+    }
+
+    PhysicsEngineSim &engine = vehicle.Engine;
+    PhysicsGearboxSim &gearbox = vehicle.GearBox;
+    PhysicsClutchSim &clutch = vehicle.Clutch;
+
+    static constexpr float kGearSelectRedlineRatio = 0.75f; // DAT_00f416a4
+
+    int32_t gear = 2;
+    float omega = 0.0f;
+    for ( ; gear < gearbox.NumGears; gear++ ) {
+        omega = gearbox.Ratios[gear] * gearbox.FinalDrive * wheelOmega;
+        if ( omega < engine.OmegaMax * kGearSelectRedlineRatio ||
+             gear == preferredGear ) {
+            clutch.State = 3;
+            clutch.Engagement = 1.0f;
+            clutch.Target = 1.0f;
+            break;
+        }
+    }
+    if ( gear >= gearbox.NumGears ) {
+        gear = gearbox.NumGears - 1;
+    }
+
+    if ( omega < engine.OmegaIdle ) {
+        if ( preferredGear < 0 ) {
+            gear = 1;
+        }
+        omega = engine.OmegaIdle;
+        clutch.State = 0;
+        clutch.Engagement = 0.0f;
+        clutch.Target = 0.0f;
+    }
+
+    gearbox.CurrentGear = gear;
+    gearbox.ReportedGear = gear;
+    engine.Omega = omega;
+    vehicle.ReflectedWheelSpeed = omega;
+    gearbox.ShiftState = PhysicsGearboxSim::SS_Settle;
+    gearbox.ShiftTimer = 1.0f;
+    autoGearboxState = AGS_Forward;
 }
 
 void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
@@ -3445,30 +3499,103 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
         return;
     }
 
-    const float lift = bodyHeight * 0.5f;
-    Matrix4x4f_t chassis = worldTransform;
-    for ( int c = 0; c < 3; ++c ) {
-        chassis( 3, c ) += worldTransform( 1, c ) * lift;
+    static constexpr float kYawRateToSteer = 2.0f;     // _DAT_00fab564
+    static constexpr float kSteerFilterRate = 0.05f;   // _DAT_00f42170
+    static constexpr float kSteerSlewPerSecond = 2.0f; // DAT_00fab560
+    static constexpr float kReverseSpeed = -0.01f;     // DAT_00f41f60
+    static constexpr float kStoppedSpeed = 0.001f;     // FLOAT_00f4167c
+    static constexpr float kEngineStartSpeed = 0.25f;  // DAT_00f416dc
+
+    const Eigen::Vector3f position = worldTransform.row( 3 ).head<3>();
+    const Eigen::Vector3f forward = worldTransform.row( 2 ).head<3>();
+
+    if ( bTeleport ) {
+        prevKeyframePosition = position;
     }
 
-    Matrix4x4f_t shifted = chassis;
+    const Eigen::Vector3f velocity =
+        ( deltaTime > 0.0f )
+            ? Eigen::Vector3f( ( position - prevKeyframePosition ) / deltaTime )
+            : Eigen::Vector3f::Zero();
+    if ( bTeleport ) {
+        prevKeyframeForward = forward;
+        keyframeSteer = 0.0f;
+    }
+
+    float yawRate = 0.0f;
+    if ( deltaTime > 0.0f ) {
+        yawRate = ( prevKeyframeForward.cross( forward ).y() / deltaTime ) *
+                  kYawRateToSteer;
+    }
+    if ( vehicle.GearBox.CurrentGear == 0 ) {
+        yawRate = -yawRate;
+    }
+    yawRate = Clamp( yawRate, -1.0f, 1.0f );
+
+    const float maxSlew = kSteerSlewPerSecond * deltaTime;
+    float steer =
+        ( yawRate - keyframeSteer ) * kSteerFilterRate + keyframeSteer;
+    if ( steer - keyframeSteer > maxSlew ) {
+        steer = keyframeSteer + maxSlew;
+    }
+    if ( steer - keyframeSteer < -maxSlew ) {
+        steer = keyframeSteer - maxSlew;
+    }
+    steer = Clamp( steer, -1.0f, 1.0f );
+
+    prevKeyframeForward = forward;
+    prevKeyframePosition = position;
+    keyframeVelocity = velocity;
+    keyframeSteer = steer;
+    steerCommand = steer;
+    if ( bIsBike ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: bike lean angles (+0xe68..+0xe80)
+    }
+
+    const float forwardSpeed = keyframeVelocity.dot( forward );
+    int32_t preferredGear = ( forwardSpeed < kReverseSpeed ) ? 0 : 2;
+    if ( keyframeVelocity.norm() < kStoppedSpeed ) {
+        keyframeVelocity = Eigen::Vector3f::Zero();
+        preferredGear = 1;
+    }
+    setVelocity( keyframeVelocity, true, preferredGear );
+    if ( forwardSpeed < kReverseSpeed ) {
+        vehicle.GearBox.CurrentGear = 0;
+        vehicle.GearBox.ReportedGear = 0;
+    }
+
+    PhysicsEngineSim &engine = vehicle.Engine;
+    if ( engine.State == eEngineState::ES_Off ) {
+        if ( forwardSpeed > kEngineStartSpeed ) {
+            engine.State = eEngineState::ES_Running;
+        } else {
+            engine.Omega = 0.0f;
+        }
+    }
+    if ( engine.State == eEngineState::ES_Crank ) {
+        if ( forwardSpeed > kEngineStartSpeed ) {
+            engine.State = eEngineState::ES_Running;
+        }
+        engine.Omega = 0.0f;
+        rawInputThrottle = 1.0f;
+    }
+    vehicle.GearBox.ShiftState = PhysicsGearboxSim::SS_Settle;
+
+    // FUN_0083d950
+    Matrix4x4f_t chassis = worldTransform;
+    castToGround( worldTransform, chassis );
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        prevSuspLength[i] = suspStaticLength[i];
+    }
+
     const Eigen::Vector4f origin = GSPhysics::GetShiftOrigin();
+    Matrix4x4f_t shifted = chassis;
     shifted( 3, 0 ) -= origin.x();
     shifted( 3, 1 ) -= origin.y();
     shifted( 3, 2 ) -= origin.z();
 
     keyframeMatrix = shifted;
     bForceKeyframeMatrix = bKeyframed;
-
-    const Eigen::Vector3f position( shifted( 3, 0 ), shifted( 3, 1 ),
-                                    shifted( 3, 2 ) );
-    if ( bTeleport || !bKeyframedVelocityPrimed || deltaTime <= 0.0f ) {
-        keyframeVelocity = Eigen::Vector3f::Zero();
-    } else {
-        keyframeVelocity = ( position - prevKeyframePosition ) / deltaTime;
-    }
-    prevKeyframePosition = position;
-    bKeyframedVelocityPrimed = true;
 
     JPH::Mat44 world = JPH::Mat44::sIdentity();
     for ( int c = 0; c < 4; ++c ) {
@@ -3481,11 +3608,7 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
     bi.SetPositionAndRotation( id, world.GetTranslation(),
                                world.GetQuaternion().Normalized(),
                                JPH::EActivation::Activate );
-    bi.SetLinearAndAngularVelocity( id,
-                                    JPH::Vec3( keyframeVelocity.x(),
-                                               keyframeVelocity.y(),
-                                               keyframeVelocity.z() ),
-                                    JPH::Vec3::sZero() );
+    bi.SetAngularVelocity( id, JPH::Vec3::sZero() );
 
     publishStepPose();
 }

@@ -263,6 +263,9 @@ public:
     void moveKeyframed( const Matrix4x4f_t &worldTransform,
                         float deltaTime,
                         bool bTeleport );
+    void setVelocity( const Eigen::Vector3f &linearVelocity,
+                      bool bSyncPowertrain,
+                      int32_t preferredGear );
     void updateKeyframedWheels( float deltaTime );
 
     void OnStep( const JPH::PhysicsStepListenerContext &inContext ) override;
@@ -405,9 +408,10 @@ private:
     bool bKeyframed;
     bool bForceKeyframeMatrix;
     Matrix4x4f_t keyframeMatrix;
-    Eigen::Vector3f prevKeyframePosition;
-    bool bKeyframedVelocityPrimed;
+    Eigen::Vector3f prevKeyframePosition; // absolute world space
     Eigen::Vector3f keyframeVelocity = Eigen::Vector3f::Zero();
+    Eigen::Vector3f prevKeyframeForward = Eigen::Vector3f::UnitZ();
+    float keyframeSteer = 0.0f;
     float filteredSteer;
     float steerCommand; // shaped, speed-scaled steer (drives the wheel angle)
 
