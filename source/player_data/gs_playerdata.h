@@ -115,6 +115,10 @@ public:
     void newGame( const bool bInstallCheats );
     void setCurrentCar( const CarDesc *pCar );
     void selectCurrentCar( const CarDesc *pCar );
+    void swapCars( const int32_t indexA,
+                   const uint64_t houseHashcodeA,
+                   const int32_t indexB,
+                   const uint64_t houseHashcodeB );
     CarDesc *getCurrentCar();
     int32_t getSaveLoadState() const;
     bool loadActiveProfileSave();

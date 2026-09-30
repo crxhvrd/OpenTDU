@@ -59,6 +59,10 @@ private:
 
 public:
     void clear() override;
+    void swapCars( const int32_t indexA,
+                   const uint64_t houseHashcodeA,
+                   const int32_t indexB,
+                   const uint64_t houseHashcodeB ) override;
     void setCurrentCar( const uint16_t index );
 
     bool deserialize( const void *pSaveData, const uint32_t saveDataSize );

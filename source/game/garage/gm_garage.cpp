@@ -346,7 +346,7 @@ bool GMGarage::leave( const eExitAction action ) {
     const GarageSlot &rentalSlot = pGarage->pCars[Garage::kNumSavedCarSlots];
     if ( rentalSlot.state == CarDesc::eState::CDS_Rental ) {
         if ( car.state != CarDesc::eState::CDS_Rental ) {
-            OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
+            pGarage->endRental();
             gpPlayerData->selectCurrentCar( &car );
         }
 
@@ -354,9 +354,13 @@ bool GMGarage::leave( const eExitAction action ) {
         return true;
     }
 
-    const uint64_t selectedCarHouse = pGarage->getCarHouseHashcode( &car );
-    const uint64_t currentCarHouse = pGarage->getCarHouseHashcode(
-        &pGarage->pCars[GetDriver()->CurrentCar] );
+    uint64_t selectedCarHouse = 0ull;
+    const int32_t selectedCarIndex =
+        pGarage->getCarHouseIndex( &car, selectedCarHouse );
+
+    uint64_t currentCarHouse = 0ull;
+    const int32_t currentCarIndex = pGarage->getCarHouseIndex(
+        &pGarage->pCars[GetDriver()->CurrentCar], currentCarHouse );
 
     if ( currentCarHouse == GetDriver()->getCurrentHouse() ) {
         gpPlayerData->selectCurrentCar( &car );
@@ -364,9 +368,8 @@ bool GMGarage::leave( const eExitAction action ) {
         return true;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
-    (void)selectedCarHouse;
-
+    gpPlayerData->swapCars( currentCarIndex, currentCarHouse, selectedCarIndex,
+                            selectedCarHouse );
     exit();
     return false;
 }
@@ -390,8 +393,13 @@ void GMGarage::swapCars() {
     Garage *pGarage = GetGarage();
     GarageSlot *pSourceCar = &pGarage->pCars[sortSourceSlot];
     GarageSlot *pTargetCar = &pGarage->pCars[targetSlot];
-    const uint64_t sourceHouse = pGarage->getCarHouseHashcode( pSourceCar );
-    const uint64_t targetHouse = pGarage->getCarHouseHashcode( pTargetCar );
+    uint64_t sourceHouse = 0ull;
+    const int32_t sourceHouseIndex =
+        pGarage->getCarHouseIndex( pSourceCar, sourceHouse );
+
+    uint64_t targetHouse = 0ull;
+    const int32_t targetHouseIndex =
+        pGarage->getCarHouseIndex( pTargetCar, targetHouse );
 
     int32_t sourceIndex = -1;
     int32_t targetIndex = -1;
@@ -403,8 +411,8 @@ void GMGarage::swapCars() {
     }
 
     carSpecs.detach();
-
-    OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
+    gpPlayerData->swapCars( sourceHouseIndex, sourceHouse, targetHouseIndex,
+                            targetHouse );
 
     watchCar( carList.getSelectedSlot() );
 

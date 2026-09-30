@@ -26,7 +26,44 @@ CarDesc::CarDesc() : Notifiable() {
     clear();
 }
 
+CarDesc::CarDesc( const CarDesc &other ) : Notifiable( other ) {
+    // FUN_00415f40
+    copyFields( other );
+}
+
 CarDesc::~CarDesc() {}
+
+CarDesc &CarDesc::operator=( const CarDesc &other ) {
+    // FUN_00893860
+    if ( this != &other ) {
+        Notifiable::operator=( other );
+        copyFields( other );
+    }
+
+    return *this;
+}
+
+void CarDesc::copyFields( const CarDesc &other ) {
+    pCarConfigID[0] = other.pCarConfigID[0];
+    pCarConfigID[1] = other.pCarConfigID[1];
+    carID = other.carID;
+    state = other.state;
+    pConfig = other.pConfig;
+    pUpgradeRate[0] = other.pUpgradeRate[0];
+    pUpgradeRate[1] = other.pUpgradeRate[1];
+    paintType = other.paintType;
+    paintIndex = other.paintIndex;
+    deluxeMainColor = other.deluxeMainColor;
+    deluxeSecondColor = other.deluxeSecondColor;
+    deluxeLogoColor = other.deluxeLogoColor;
+    deluxeSecondColor2 = other.deluxeSecondColor2;
+    rimID = other.rimID;
+    interiorID = other.interiorID;
+    price = other.price;
+    odometerKms = other.odometerKms;
+    playTime = other.playTime;
+    packHashcode = other.packHashcode;
+}
 
 void CarDesc::clear() {
     // FUN_00891900

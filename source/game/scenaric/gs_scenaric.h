@@ -93,6 +93,7 @@ public:
     }
     inline RandomGen &getRandomGenerator() { return randomGenerator; }
     inline float getTimeLeftForRental() const { return rentalTimer; }
+    inline void setTimeLeftForRental( const float time ) { rentalTimer = time; }
     inline Eigen::Vector4f getDefaultStartPosition() const {
         // HACK: REMOVE ME: VEHICLE PHYSICS TEST
         if ( startPosition.head<3>().squaredNorm() < 1.0f ) {

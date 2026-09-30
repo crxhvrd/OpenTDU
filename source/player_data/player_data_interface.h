@@ -35,6 +35,11 @@ public:
     virtual AchievementsData *getAchievements() = 0;        
     virtual SavedExtraChallenges *getExtraChallenges() = 0; 
 
+    virtual void swapCars( const int32_t indexA,
+                           const uint64_t houseHashcodeA,
+                           const int32_t indexB,
+                           const uint64_t houseHashcodeB ) = 0;
+
     virtual void clear() = 0;
     virtual bool isReady() const = 0;
 };

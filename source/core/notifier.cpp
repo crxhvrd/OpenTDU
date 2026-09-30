@@ -3,7 +3,30 @@
 
 Notifiable::Notifiable() {}
 
+Notifiable::Notifiable( const Notifiable &other ) {
+    // FUN_008972f0
+    copyNotifiers( other );
+}
+
 Notifiable::~Notifiable() { removeAll(); }
+
+Notifiable &Notifiable::operator=( const Notifiable &other ) {
+    if ( this != &other ) {
+        removeAll();
+        copyNotifiers( other );
+    }
+
+    return *this;
+}
+
+void Notifiable::copyNotifiers( const Notifiable &other ) {
+    // FUN_008972a0
+    for ( Notifier *pNotifier : other.notifiers ) {
+        notifiers.push_back( pNotifier );
+        pNotifier->increaseReferenceCount();
+        pNotifier->addNotifiable( this );
+    }
+}
 
 void Notifiable::subscribe( Notifier *pNotifier ) {
     // FUN_00897360

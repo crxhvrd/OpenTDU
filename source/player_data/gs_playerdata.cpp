@@ -640,6 +640,14 @@ void GSPlayerData::selectCurrentCar( const CarDesc *pCar ) {
     pLoadedSave->setCurrentCar( uint16_t( pGarage->getSlotIndex( pCar ) ) );
 }
 
+void GSPlayerData::swapCars( const int32_t indexA,
+                             const uint64_t houseHashcodeA,
+                             const int32_t indexB,
+                             const uint64_t houseHashcodeB ) {
+    // FUN_008975d0
+    pLoadedSave2->swapCars( indexA, houseHashcodeA, indexB, houseHashcodeB );
+}
+
 void GSPlayerData::setDefaultLanguage( const char *pDefaultLanguage,
                                        bool bForceInit ) {
     // FUN_008989b0

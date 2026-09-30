@@ -5,7 +5,10 @@ class Notifier;
 class Notifiable {
 public:
     Notifiable();
+    Notifiable( const Notifiable &other );
     virtual ~Notifiable();
+
+    Notifiable &operator=( const Notifiable &other );
 
     void subscribe( Notifier *pNotifier );
     void unsubscribe( Notifier *pNotifier );
@@ -16,6 +19,9 @@ public:
 
 protected:
     std::vector<Notifier *> notifiers;
+
+private:
+    void copyNotifiers( const Notifiable &other );
 };
 
 class Notifier {

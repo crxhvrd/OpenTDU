@@ -85,7 +85,7 @@ struct PhysicsWheelState {
     float AngularVel = 0.0f; // wheel angular velocity omega
     float SpinAngle = 0.0f;
     float DriveTorque = 0.0f; // applied drive/brake torque from the diff
-    float BrakeTorque = 0.0f; // brake torque command
+    float BrakeTorque = 0.0f; // brake torque capacity (set once at setup)
     float AngAccel = 0.0f;    // wheel angular acceleration
     float ReactionScale = 1.0f;
     float ReactionSlipCoef = 0.0f;

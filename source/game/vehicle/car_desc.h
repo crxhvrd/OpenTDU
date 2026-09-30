@@ -65,7 +65,10 @@ public:
 
 public:
     CarDesc();
+    CarDesc( const CarDesc &other );
     ~CarDesc();
+
+    CarDesc &operator=( const CarDesc &other );
 
     void clear();
     void deserialize( edStore &stream );
@@ -85,6 +88,9 @@ public:
     void setUpgradeRate( const float upgradeRate );
 
     int32_t getPackLevel( int32_t *pOutMaxLevel = nullptr ) const;
+
+private:
+    void copyFields( const CarDesc &other );
 
 public:
     uint32_t pCarConfigID[2] = {}; // TEA Encrypted

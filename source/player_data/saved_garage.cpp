@@ -5,6 +5,7 @@
 #include "core/ed_store.h"
 #include "database/gs_database.h"
 #include "driver.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "gs_playerdata.h"
 #include "player_data_interface.h"
 
@@ -245,18 +246,31 @@ int32_t Garage::getSlotIndex( const CarDesc *pCar ) const {
     return 0;
 }
 
-uint64_t Garage::getCarHouseHashcode( const CarDesc *pCar ) const {
+int32_t Garage::getCarHouseIndex( const CarDesc *pCar,
+                                  uint64_t &houseHashcode ) {
     // FUN_00890e20
-    // NOTE: the original pcode counts the other valid cars parked in that house
-    // but never returns the result.
-    uint64_t houseHashcode = 0ull;
     for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
         if ( pCars[i].getCarID() == pCar->getCarID() ) {
             houseHashcode = pCars[i].getHouseHashcode();
         }
     }
 
-    return houseHashcode;
+    int32_t index = 0;
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        GarageSlot &car = pCars[i];
+        if ( car.getHouseHashcode() != houseHashcode ) {
+            continue;
+        }
+
+        if ( car.getCarID() == pCar->getCarID() ) {
+            return index;
+        }
+        if ( car.isValid() ) {
+            index++;
+        }
+    }
+
+    return 0;
 }
 
 bool Garage::isHouseOwned( const uint64_t houseHashcode ) const {
@@ -282,6 +296,42 @@ void Garage::removeHouse( const uint64_t houseHashcode ) {
         slot.setHouseHashcode( 0ull );
         slot.ebayID = 0u;
     }
+}
+
+void Garage::endRental() {
+    // FUN_00894890
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+
+    GarageSlot &rentalSlot = pCars[kNumSavedCarSlots];
+    rentalSlot.CarDesc::clear();
+    rentalSlot.setHouseHashcode( 0ull );
+    rentalSlot.ebayID = 0u;
+
+    Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+    pDriver->CurrentCar = uint16_t( currentCar );
+    pDriver->notify( 0u );
+
+    GarageSlot &car = pCars[pDriver->CurrentCar];
+    if ( !car.isValid() || car.state == CarDesc::eState::CDS_PutOnEbay ) {
+        int32_t index = 0;
+        for ( int32_t i = 0; i < numCars; i++ ) {
+            GarageSlot *pCandidate = getCarAtIndex( i, 0ull, false );
+            if ( pCandidate->isValid() &&
+                 pCandidate->state != CarDesc::eState::CDS_PutOnEbay ) {
+                index = i;
+                break;
+            }
+        }
+
+        GarageSlot *pNewCurrentCar = getCarAtIndex( index, 0ull, false );
+        if ( pNewCurrentCar->isValid() ) {
+            pDriver->CurrentCar = uint16_t( getSlotIndex( pNewCurrentCar ) );
+            pDriver->notify( 0u );
+        }
+    }
+
+    gpScenaric->setTimeLeftForRental( -1.0f );
+    notify( 0u );
 }
 
 bool Garage::addHouse( const uint64_t houseHashcode ) {

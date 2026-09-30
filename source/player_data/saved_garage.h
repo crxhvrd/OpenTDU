@@ -53,13 +53,15 @@ public:
     int32_t getNumHouseCars();
     int32_t getHouseCarIndex( const CarDesc *pCar );
     int32_t getSlotIndex( const CarDesc *pCar ) const;
-    uint64_t getCarHouseHashcode( const CarDesc *pCar ) const;
+    int32_t getCarHouseIndex( const CarDesc *pCar, uint64_t &houseHashcode );
 
     bool isHouseOwned( const uint64_t houseHashcode ) const;
     int32_t getNumOwnedHouses() const;
 
     bool addHouse( const uint64_t houseHashcode );
     void removeHouse( const uint64_t houseHashcode );
+
+    void endRental();
 
 public:
     int16_t numCars = 0;
