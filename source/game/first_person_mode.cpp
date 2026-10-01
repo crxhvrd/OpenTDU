@@ -43,6 +43,7 @@ FirstPersonMode::FirstPersonMode()
       pLoopCinematic( nullptr ),
       pCollisionKey( nullptr ),
       pCollisionBody( nullptr ),
+      extraCollisionBodies(),
       pointer(),
       spawnPosition( 0.0f, 0.0f, 0.0f, 1.0f ),
       hullMin( 0.0f, 0.0f, 0.0f, 1.0f ),
@@ -240,6 +241,8 @@ void FirstPersonMode::enter( SceneInterior *pScene,
                                                  kCapsuleCylinderHeight );
         gpPhysics->setCharacterCollisionRestriction( pCharacter,
                                                      pCollisionBody );
+        gpPhysics->setCharacterExtraCollisionBodies( pCharacter,
+                                                     extraCollisionBodies );
     }
 
     for ( int32_t i = 0; i < numCandidates && pCharacter != nullptr; i++ ) {
@@ -323,6 +326,19 @@ void FirstPersonMode::enter( SceneInterior *pScene,
     pointer.initialize();
 
     bActive = true;
+}
+
+void FirstPersonMode::setExtraCollisionBodies(
+    const std::vector<const JPH::Body *> &bodies ) {
+    if ( bodies == extraCollisionBodies ) {
+        return;
+    }
+
+    extraCollisionBodies = bodies;
+    if ( pCharacter != nullptr && gpPhysics != nullptr ) {
+        gpPhysics->setCharacterExtraCollisionBodies( pCharacter,
+                                                     extraCollisionBodies );
+    }
 }
 
 void FirstPersonMode::leave() {

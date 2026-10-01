@@ -68,23 +68,33 @@ public:
     JPH::Ref<JPH::CharacterVirtual> pCharacter;
     // Invalid = collide with everything (the default).
     JPH::BodyID RestrictToBody;
+    // Only honoured while RestrictToBody is valid.
+    std::vector<JPH::BodyID> ExtraBodies;
 };
 
-class SingleBodyFilter final : public JPH::BodyFilter {
+class AllowListBodyFilter final : public JPH::BodyFilter {
 public:
-    explicit SingleBodyFilter( const JPH::BodyID &bodyID )
-        : allowed( bodyID ) {}
+    explicit AllowListBodyFilter( const PhysicsCharacter &character )
+        : character( character ) {}
 
     bool ShouldCollide( const JPH::BodyID &inBodyID ) const override {
-        return inBodyID == allowed;
+        if ( inBodyID == character.RestrictToBody ) {
+            return true;
+        }
+        for ( const JPH::BodyID &extraBody : character.ExtraBodies ) {
+            if ( inBodyID == extraBody ) {
+                return true;
+            }
+        }
+        return false;
     }
 
     bool ShouldCollideLocked( const JPH::Body &inBody ) const override {
-        return inBody.GetID() == allowed;
+        return ShouldCollide( inBody.GetID() );
     }
 
 private:
-    JPH::BodyID allowed;
+    const PhysicsCharacter &character;
 };
 
 static constexpr float kMaxCharacterFallSpeed = 15.0f;
@@ -2228,6 +2238,22 @@ void GSPhysics::setCharacterCollisionRestriction(
         ( pOnlyBody != nullptr ) ? pOnlyBody->GetID() : JPH::BodyID();
 }
 
+void GSPhysics::setCharacterExtraCollisionBodies(
+    CharacterController_t pCharacter,
+    const std::vector<const JPH::Body *> &bodies ) {
+    if ( pCharacter == nullptr ) {
+        return;
+    }
+
+    PhysicsLock lock;
+    pCharacter->ExtraBodies.clear();
+    for ( const JPH::Body *pBody : bodies ) {
+        if ( pBody != nullptr ) {
+            pCharacter->ExtraBodies.push_back( pBody->GetID() );
+        }
+    }
+}
+
 void GSPhysics::destroyCharacter( CharacterController_t pCharacter ) {
     if ( pCharacter == nullptr ) {
         return;
@@ -2273,7 +2299,7 @@ void GSPhysics::updateCharacter( CharacterController_t pCharacter,
 
     pCV->SetLinearVelocity( newVelocity );
 
-    const SingleBodyFilter restrictFilter( pCharacter->RestrictToBody );
+    const AllowListBodyFilter restrictFilter( *pCharacter );
     const JPH::BodyFilter defaultFilter;
     const JPH::BodyFilter &bodyFilter =
         pCharacter->RestrictToBody.IsInvalid()
@@ -2317,7 +2343,7 @@ void GSPhysics::setCharacterPosition( CharacterController_t pCharacter,
         worldPosition.z() - origin.z() ) );
     pCharacter->pCharacter->SetLinearVelocity( JPH::Vec3::sZero() );
 
-    const SingleBodyFilter restrictFilter( pCharacter->RestrictToBody );
+    const AllowListBodyFilter restrictFilter( *pCharacter );
     const JPH::BodyFilter defaultFilter;
     const JPH::BodyFilter &bodyFilter =
         pCharacter->RestrictToBody.IsInvalid()

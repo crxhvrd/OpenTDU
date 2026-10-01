@@ -51,6 +51,8 @@ public:
     }
     void pause() override {
         // FUN_00790660
+        firstPerson.leave();
+
         GameModeScene::pause();
     }
     void destroy() override;
@@ -73,6 +75,8 @@ private:
     GMGarageNotifier garageNotifier;
     FlashPlayer *pFlashPlayer;
     SceneGarage sceneGarage;
+    FirstPersonMode firstPerson;
+    std::vector<const JPH::Body *> parkedCarBodies;
     FlashListGarage carList;
     int32_t sortSourceSlot;
     FlashPanelCarSpecs carSpecs;

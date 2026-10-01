@@ -14,6 +14,7 @@
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_base.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
@@ -41,6 +42,25 @@ static inline Driver *GetDriver() {
     return gpPlayerData->getLoadedSave()->getDriver();
 }
 
+static void GatherParkedCarBodies( SceneCarPark &carPark,
+                                   std::vector<const JPH::Body *> &bodies ) {
+    bodies.clear();
+    for ( int32_t i = 0; i < carPark.getNumEntries(); i++ ) {
+        if ( carPark.getEntry( i ).PlacementState !=
+             SceneCarPark::CPPS_Placed ) {
+            continue;
+        }
+
+        CarState *pCarState = carPark.getCarState( i );
+        PhysicsVehicle *pPhysicsVehicle =
+            ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+        if ( pPhysicsVehicle != nullptr &&
+             pPhysicsVehicle->getChassisBody() != nullptr ) {
+            bodies.push_back( pPhysicsVehicle->getChassisBody() );
+        }
+    }
+}
+
 GMGarageNotifier::GMGarageNotifier( GMGarage *pOwner )
     : Notifier(), pGMGarage( pOwner ) {}
 
@@ -59,6 +79,8 @@ GMGarage::GMGarage()
       garageNotifier( this ),
       pFlashPlayer( nullptr ),
       sceneGarage(),
+      firstPerson(),
+      parkedCarBodies(),
       carList( this ),
       sortSourceSlot( -1 ),
       carSpecs(),
@@ -222,10 +244,16 @@ void GMGarage::tick( float deltaTime, float totalTime ) {
             sceneGarage.getCarPark().openInnerView( selectedCar );
         }
     }
+
+    GatherParkedCarBodies( sceneGarage.getCarPark(), parkedCarBodies );
+    firstPerson.setExtraCollisionBodies( parkedCarBodies );
+    firstPerson.tick( &sceneGarage, pCinematicLoop );
 }
 
 void GMGarage::destroy() {
     // FUN_00790a40
+    firstPerson.leave();
+
     VehicleBase::bApplyWheelAttenuation = true;
 
     if ( gpMngWorld != nullptr ) {

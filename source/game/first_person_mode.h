@@ -33,6 +33,8 @@ public:
     void enter( SceneInterior *pScene, EntityCinematic *pLoopCinematic );
     void leave();
 
+    void setExtraCollisionBodies( const std::vector<const JPH::Body *> &bodies );
+
 private:
     bool installCollision( SceneInterior *pScene );
     float measureOpenSpace( const Eigen::Vector4f &from );
@@ -45,6 +47,7 @@ private:
     EntityCinematic *pLoopCinematic;
     const void *pCollisionKey;
     RigidBody_t pCollisionBody;
+    std::vector<const JPH::Body *> extraCollisionBodies;
 
     FirstPersonPointer pointer;
 

@@ -255,6 +255,9 @@ public:
     void destroyCharacter( CharacterController_t pCharacter );
     void setCharacterCollisionRestriction( CharacterController_t pCharacter,
                                            RigidBody_t pOnlyBody );
+    void setCharacterExtraCollisionBodies(
+        CharacterController_t pCharacter,
+        const std::vector<const JPH::Body *> &bodies );
     void updateCharacter( CharacterController_t pCharacter,
                           const Eigen::Vector3f &desiredVelocity,
                           float deltaTime );
