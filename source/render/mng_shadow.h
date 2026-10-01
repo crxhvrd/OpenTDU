@@ -126,6 +126,7 @@ public:
     void addCockpitShadowCaster( CarState *param_2 );
     void addCockpitShadowCaster( HiearchyNode *param_2 );
     void addShadowReceiver( HiearchyNode *pNode, bool bExclude );
+    void setDisableVehicleShadows( const bool bDisable );
 
     void expandCasterBoundingBox( const Eigen::Vector4f &param_2 );
     void expandCockpitCasterBoundingBox( const Eigen::Vector4f &param_2 );

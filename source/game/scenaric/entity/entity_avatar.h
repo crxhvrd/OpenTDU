@@ -30,6 +30,7 @@ public:
         }
     }
     inline int32_t getInstanceRefCount() const { return InstanceRefCount; }
+    inline void setAlpha( const float value ) { Alpha = value; }
     inline void setInstanceRefCount( const int32_t value ) {
         InstanceRefCount = value;
     }

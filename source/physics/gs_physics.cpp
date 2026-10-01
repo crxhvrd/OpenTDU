@@ -1995,6 +1995,23 @@ void GSPhysics::addInfinitePlane( float planeHeight ) {
     unlockMutex();
 }
 
+void GSPhysics::removeInfinitePlane() {
+    // FUN_00841b60
+    if ( pPhysicsSystem == nullptr ||
+         infinitePlaneBodyID == JPH::BodyID::cInvalidBodyID ) {
+        return;
+    }
+
+    lockMutex();
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    const JPH::BodyID planeID( infinitePlaneBodyID );
+    bodyInterface.RemoveBody( planeID );
+    bodyInterface.DestroyBody( planeID );
+    unlockMutex();
+
+    infinitePlaneBodyID = JPH::BodyID::cInvalidBodyID;
+}
+
 void GSPhysics::removeAndDestroyFactory( PhysFactory *param_2 ) {
     // FUN_008427b0
     if ( param_2 == nullptr ) {
@@ -2362,9 +2379,12 @@ void GSPhysics::moveSphereBody( RigidBody_t body,
 }
 
 int32_t
-GSPhysics::queryCameraCollisions( const Eigen::Vector4f &center,
-                                  float radius,
-                                  std::vector<CameraCollisionHit> &hits ) {
+GSPhysics::queryPhantomOverlaps( RigidBody_t phantom,
+                                 const Eigen::Vector4f &center,
+                                 float radius,
+                                 std::vector<CameraPhantomOverlap> &overlaps ) {
+    // FUN_00842bd0
+    overlaps.clear();
     if ( pPhysicsSystem == nullptr )
         return 0;
 
@@ -2376,28 +2396,52 @@ GSPhysics::queryCameraCollisions( const Eigen::Vector4f &center,
     JPH::RVec3 joltCenter( center.x() - origin.x(), center.y() - origin.y(),
                            center.z() - origin.z() );
 
+    JPH::BodyID phantomID =
+        ( phantom != nullptr ) ? phantom->GetID() : JPH::BodyID();
+    JPH::IgnoreSingleBodyFilter bodyFilter( phantomID );
+
     lockMutex();
     pPhysicsSystem->GetNarrowPhaseQuery().CollideShape(
         sphere, JPH::Vec3::sReplicate( 1.0f ),
         JPH::RMat44::sTranslation( joltCenter ), settings, JPH::RVec3::sZero(),
-        collector );
+        collector, {}, {}, bodyFilter );
+
+    overlaps.reserve( collector.mHits.size() );
+    for ( const JPH::CollideShapeResult &hit : collector.mHits ) {
+        JPH::BodyLockRead lock( pPhysicsSystem->GetBodyLockInterfaceNoLock(),
+                                hit.mBodyID2 );
+        if ( !lock.Succeeded() ) {
+            continue;
+        }
+
+        const JPH::Body &body = lock.GetBody();
+        const JPH::Shape *pShape = body.GetShape();
+        if ( pShape->GetSubType() == JPH::EShapeSubType::RotatedTranslated ) {
+            pShape = static_cast<const JPH::RotatedTranslatedShape *>( pShape )
+                         ->GetInnerShape();
+        }
+
+        CameraPhantomOverlap overlap;
+        if ( pShape->GetSubType() == JPH::EShapeSubType::Sphere ) {
+            overlap.Shape = eCameraOverlapShape::Sphere;
+            overlap.Radius =
+                static_cast<const JPH::SphereShape *>( pShape )->GetRadius();
+        } else if ( pShape->GetSubType() == JPH::EShapeSubType::Capsule ) {
+            overlap.Shape = eCameraOverlapShape::Capsule;
+            overlap.Radius =
+                static_cast<const JPH::CapsuleShape *>( pShape )->GetRadius();
+        }
+
+        const JPH::RVec3 bodyCenter = body.GetWorldSpaceBounds().GetCenter();
+        overlap.Center = Eigen::Vector4f(
+            static_cast<float>( bodyCenter.GetX() ) + origin.x(),
+            static_cast<float>( bodyCenter.GetY() ) + origin.y(),
+            static_cast<float>( bodyCenter.GetZ() ) + origin.z(), 1.0f );
+        overlaps.push_back( overlap );
+    }
     unlockMutex();
 
-    hits.reserve( collector.mHits.size() );
-    for ( const JPH::CollideShapeResult &h : collector.mHits ) {
-        CameraCollisionHit result;
-        JPH::Vec3 axis = ( -h.mPenetrationAxis ).Normalized();
-        result.exitNormal =
-            Eigen::Vector4f( axis.GetX(), axis.GetY(), axis.GetZ(), 0.0f );
-        result.contactPoint =
-            Eigen::Vector4f( h.mContactPointOn2.GetX() + origin.x(),
-                             h.mContactPointOn2.GetY() + origin.y(),
-                             h.mContactPointOn2.GetZ() + origin.z(), 1.0f );
-        result.penetrationDepth = h.mPenetrationDepth;
-        hits.push_back( result );
-    }
-
-    return static_cast<int32_t>( hits.size() );
+    return static_cast<int32_t>( overlaps.size() );
 }
 
 int32_t GSPhysics::castCameraSegment( const Eigen::Vector4f &from,

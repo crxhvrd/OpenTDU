@@ -35,6 +35,7 @@
 #include "world/mng_ocean.h"
 #include "world/streaming_manager.h"
 #include "config/gs_config.h"
+#include "physics/gs_physics.h"
 
 bool gbSceneInteriorLeaving = false; // BOOL_00f7cfc8
 
@@ -642,7 +643,9 @@ void SceneInterior::leave() {
         gpRender->setFovVsLodFactor( 1.0f );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS (remove the interior floor plane)
+    if ( gpPhysics != nullptr ) {
+        gpPhysics->removeInfinitePlane();
+    }
 
     if ( gpMngReflection != nullptr && pRootNode != nullptr ) {
         gpMngReflection->removeNode( pRootNode );

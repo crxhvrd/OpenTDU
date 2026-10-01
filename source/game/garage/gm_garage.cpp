@@ -99,7 +99,7 @@ void GMGarage::initialize() {
 
     mngShadow.setCastersEnabled( true );
     mngShadow.setReceiversEnabled( true );
-    OTDU_UNIMPLEMENTED; // TODO: SHADOW
+    mngShadow.setDisableVehicleShadows( true );
 
     VehicleBase::bApplyWheelAttenuation = false;
     gpMngMusic->setPlayFlags( 1 );

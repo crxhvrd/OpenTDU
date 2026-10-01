@@ -3,6 +3,7 @@
 
 #include "car_state.h"
 #include "mng_car_alpha.h"
+#include "game/scenaric/entity/entity_driver.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "world/weather/gs_weather.h"
 #include "world/gs_world_streaming.h"
@@ -1413,7 +1414,26 @@ void VehicleBase::addLightSetupForNode( HiearchyNode *param_2 ) {
 
 void VehicleBase::onAlphaChange() {
     // FUN_008bad70
-    OTDU_UNIMPLEMENTED;
+    if ( pCarState != nullptr ) {
+        EntityDriver *pDriver = pCarState->getDriver();
+        if ( pDriver != nullptr ) {
+            pDriver->setAlpha( 1.0f );
+        }
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: passenger alpha
+    }
+
+    alphaInstances.clear();
+    bAlphaCacheInUse = false;
+
+    if ( alphaSlotIndex != -1 ) {
+        registerCarAlphaInstances( alphaSlotIndex, false );
+        if ( gpMngCarAlpha != nullptr ) {
+            gpMngCarAlpha->freeElement( alphaSlotIndex );
+        }
+        alphaSlotIndex = -1;
+    }
+
+    alpha = 1.0f;
 }
 
 void VehicleBase::updateLights() {

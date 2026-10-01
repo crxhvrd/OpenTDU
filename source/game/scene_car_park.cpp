@@ -168,7 +168,7 @@ void SceneCarPark::setEnabled( const bool bEnable ) {
     bEnabled = bEnable;
     for ( int32_t i = 0; i < numEntries; i++ ) {
         if ( pCarStates[i] != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: CAR PARK
+            pCarStates[i]->getVehicleInstance()->setShouldDraw( bEnabled );
         }
     }
 }
@@ -201,7 +201,19 @@ void SceneCarPark::pushConfig( const int32_t configID ) {
 
     int32_t rimID = -1;
     if ( configID != -1 ) {
-        OTDU_UNIMPLEMENTED; // TODO: CAR PARK
+        const int32_t numRims = gpDatabase->getNumRims( configID );
+        for ( int32_t i = 0; i < numRims; i++ ) {
+            const DBEntryRim *pRim = gpDatabase->getRim( configID, i );
+            const DBEntryCarPhysicsData *pCarEntry =
+                gpDatabase->getCarDBEntry( configID );
+            const DBEntryRim *pDefaultRim = static_cast<const DBEntryRim *>(
+                pCarEntry->DefaultRims.pAsRawPointer );
+            if ( strcmp( pDefaultRim->RimName.pAsString,
+                         pRim->RimName.pAsString ) == 0 ) {
+                rimID = i;
+                break;
+            }
+        }
     }
 
     Entry entry;
@@ -566,7 +578,7 @@ void SceneCarPark::instantiateCar( const int32_t index, Entry &entry ) {
         pVehicle->setRealTimeEnvMap( pEnvMapFront, false, pEnvMapBack );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: CAR PARK
+    pVehicle->setDrawReflections( true );
 }
 
 bool SceneCarPark::applyPaint( const int32_t index ) {

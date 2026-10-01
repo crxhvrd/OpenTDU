@@ -3397,6 +3397,12 @@ void PhysicsVehicle::updateKeyframedWheels( float deltaTime ) {
         return;
     }
 
+    PhysicsEngineSim &engine = vehicle.Engine;
+    if ( engine.State == eEngineState::ES_Off ) {
+        engine.Omega = 0.0f;
+        engine.TorqueOut = 0.0f;
+    }
+
     // TODO: Implement HMap raycast test logic
     if ( pPhysicsSystem != nullptr ) {
         for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {

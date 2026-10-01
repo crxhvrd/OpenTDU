@@ -166,6 +166,10 @@ public:
     }
     inline float getAlpha() const { return alpha; }
     inline void setAlpha( const float value ) { alpha = value; }
+    inline void setShouldDraw( const bool bDraw ) { bShouldDraw = bDraw; }
+    inline void setDrawReflections( const bool bDraw ) {
+        bDrawReflections = bDraw;
+    }
     inline bool hasInteriorInstance() const {
         // FUN_00424fa0
         return interiorResource.pRender3DD != nullptr;

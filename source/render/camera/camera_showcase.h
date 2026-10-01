@@ -81,6 +81,8 @@ private:
     void FUN_008d7fb0();
     void updateOrbitFromPosition( const Eigen::Vector4f &worldPosition,
                                   bool bWriteToPreviousSlots );
+    bool pushOutOfOverlap( Eigen::Vector4f &position,
+                           const CameraPhantomOverlap &overlap );
     float sweepCameraSegment( Eigen::Vector4f &out,
                               const Eigen::Vector4f &from,
                               const Eigen::Vector4f &to );

@@ -440,18 +440,18 @@ bool CameraShowcase::FUN_008d90e0( Eigen::Vector4f *param_2,
 
         if ( ( ( flagsShowcase >> 5 ) & 1 ) != 0 &&
              pPhysicsBoundingSphere != nullptr ) {
-            // FUN_008d8cb0 - secondary penetration correction
-            // After the primary pull-back, push the camera out of any remaining
-            // geometry overlap using the first contact with positive depth.
+            if ( pTarget == nullptr ) {
+                return false;
+            }
+
             gpPhysics->moveSphereBody( pPhysicsBoundingSphere, *param_2 );
 
-            std::vector<CameraCollisionHit> hits;
-            gpPhysics->queryCameraCollisions( *param_2, 1.0f, hits );
+            std::vector<CameraPhantomOverlap> overlaps;
+            gpPhysics->queryPhantomOverlaps( pPhysicsBoundingSphere, *param_2,
+                                             1.0f, overlaps );
 
-            for ( const CameraCollisionHit &hit : hits ) {
-                if ( hit.penetrationDepth > 0.0f ) {
-                    *param_2 += hit.exitNormal * hit.penetrationDepth;
-                    param_2->w() = 1.0f;
+            for ( const CameraPhantomOverlap &overlap : overlaps ) {
+                if ( pushOutOfOverlap( *param_2, overlap ) ) {
                     break;
                 }
             }
@@ -466,6 +466,28 @@ bool CameraShowcase::FUN_008d90e0( Eigen::Vector4f *param_2,
         }
     }
 
+    return true;
+}
+
+bool CameraShowcase::pushOutOfOverlap( Eigen::Vector4f &position,
+                                       const CameraPhantomOverlap &overlap ) {
+    // FUN_008d8cb0
+    if ( overlap.Shape == eCameraOverlapShape::Other ) {
+        return false;
+    }
+
+    Eigen::Vector4f center = overlap.Center;
+    if ( overlap.Shape == eCameraOverlapShape::Capsule ) {
+        center.y() = position.y();
+    }
+
+    const Eigen::Vector4f toCamera = position - center;
+    const float distance = toCamera.norm();
+    if ( distance >= overlap.Radius || distance == 0.0f ) {
+        return false;
+    }
+
+    position = center + toCamera * ( overlap.Radius / distance );
     return true;
 }
 

@@ -62,10 +62,18 @@ namespace TDUSurface {
     }
 } // namespace TDUSurface
 
-struct CameraCollisionHit {
-    Eigen::Vector4f contactPoint; // World-space contact point on the geometry
-    Eigen::Vector4f exitNormal; // normalize(-mPenetrationAxis): push sphere OUT
-    float penetrationDepth;
+// Havok shape type of a collidable overlapping a camera phantom; only the
+// shapes the camera code reacts to are distinguished.
+enum class eCameraOverlapShape : int32_t {
+    Other = 0,
+    Sphere = 4,
+    Capsule = 8,
+};
+
+struct CameraPhantomOverlap {
+    eCameraOverlapShape Shape = eCameraOverlapShape::Other;
+    Eigen::Vector4f Center; // World space
+    float Radius = 0.0f;
 };
 
 // One hit from GSPhysics::castCameraSegment, in absolute world space.
@@ -148,6 +156,7 @@ public:
 
     PhysFactory *createFromBinary( void *param_3, int32_t param_2 );
     void addInfinitePlane( float planeHeight );
+    void removeInfinitePlane();
     void removeAndDestroyFactory( PhysFactory *param_2 );
     RigidBody_t addHeightfield( const void *pKey,
                                 const float *pHeights,
@@ -261,9 +270,10 @@ public:
 
     void moveSphereBody( RigidBody_t body, const Eigen::Vector4f &position );
 
-    int32_t queryCameraCollisions( const Eigen::Vector4f &center,
-                                   float radius,
-                                   std::vector<CameraCollisionHit> &hits );
+    int32_t queryPhantomOverlaps( RigidBody_t phantom,
+                                  const Eigen::Vector4f &center,
+                                  float radius,
+                                  std::vector<CameraPhantomOverlap> &overlaps );
     float getGroundHeight( float x, float z );
     int32_t castCameraSegment( const Eigen::Vector4f &from,
                                const Eigen::Vector4f &to,

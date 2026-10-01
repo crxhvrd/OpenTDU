@@ -313,6 +313,25 @@ bool MngShadow::initialize( TestDriveGameInstance * ) {
     return bVar1;
 }
 
+void MngShadow::setDisableVehicleShadows( const bool bDisable ) {
+    // FUN_006f3e60
+    bDisableVehicleShadows = bDisable;
+    if ( !bLoadedBankResources ) {
+        return;
+    }
+
+    const uint16_t ot = bDisable ? 0x27 : 0x14;
+    if ( pMaterialReceiver != nullptr ) {
+        pMaterialReceiver->OT = ot;
+    }
+    if ( pMaterialReceiverRoad != nullptr ) {
+        pMaterialReceiverRoad->OT = ot;
+    }
+    if ( pMaterialReceiverSkinned != nullptr ) {
+        pMaterialReceiverSkinned->OT = ot;
+    }
+}
+
 void MngShadow::tick( float, float ) {
     // FUN_006f7f90
     if ( !bLoadedBankResources ) {
