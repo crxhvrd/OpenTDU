@@ -50,7 +50,7 @@ public:
     void *getElectrical2DBStream() const {
         return level.getElectrical2DBStream();
     }
-    void *getSectorNameStream() const { return pSectorNameStream; }
+    void *getSectorNameStream() const { return level.getSectorNameStream(); }
 
     bool isFirstInitDone() const { return bFirstInitDone; }
 
@@ -132,8 +132,6 @@ private:
     Eigen::Vector4f debugJumpPos = Eigen::Vector4f::Zero();
 
     Level level;
-
-    void *pSectorNameStream = nullptr;
 
     HiearchyNode *pStreamingRenderLayer = nullptr;
 

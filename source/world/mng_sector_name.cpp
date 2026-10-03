@@ -4,12 +4,27 @@
 #include "world/gs_world.h"
 #include "world/streaming_manager.h"
 #include "world/sector_manager.h"
+#include "world/gs_mng_resources.h"
+
+#include "flash/mng_fade.h"
+#include "render/gs_render.h"
+#include "render/mng_font_players.h"
 
 MngSectorName *gpMngSectorName = nullptr; // DAT_010e8000
+
+static const char *pDefaultSectorName = "Ohau"; // DAT_00f9c20c
 
 static bool gbSectorTablesUpgraded = false; // BOOL_010e8004
 static const char **gpSectorNameTable = nullptr;
 static const uint32_t **gpSectorAreaTable = nullptr;
+
+static constexpr float kFadeInDelay = 0.5f;         // FLOAT_00f41674
+static constexpr float kFadeRate = 2.0f;            // DAT_00f416b0
+static constexpr float kMaxAlpha = 255.0f;          // DAT_00f41688
+static constexpr float kFadeOutDuration = 3.0f;     // DAT_00f416b4
+static constexpr float kHoldDuration = 1.5f;        // DAT_00f416b8
+static constexpr float kNameRightEdge = 0.9453125f; // DAT_00f41b40
+static constexpr float kNameTop = 0.16145833f;      // DAT_00f41b44
 
 MngSectorName::MngSectorName()
     : Manager(),
@@ -108,8 +123,6 @@ void MngSectorName::reset() {
 const char *
 MngSectorName::getSectorName( const Eigen::Vector4f &worldPosition ) const {
     // FUN_006c4c00
-    static const char *pDefaultSectorName = "Ohau"; // DAT_00f9c20c
-
     if ( pAreas == nullptr || pSectors == nullptr ) {
         return pDefaultSectorName;
     }
@@ -118,7 +131,13 @@ MngSectorName::getSectorName( const Eigen::Vector4f &worldPosition ) const {
     GridPos2D areaCell;
     gpWorld->getStreamingManager()->sectorManager.computeCell(
         worldPosition, sectorCell, areaCell );
+    return getSectorNameAtCell( areaCell, sectorCell );
+}
 
+const char *
+MngSectorName::getSectorNameAtCell( const GridPos2D &areaCell,
+                                    const GridPos2D &sectorCell ) const {
+    // FUN_006c46a0
     const uint32_t sectorNameIndex =
         pAreas[numAreaCols * areaCell.posY + areaCell.posX]
               [numSectorColRow * sectorCell.posY + sectorCell.posX];
@@ -126,4 +145,112 @@ MngSectorName::getSectorName( const Eigen::Vector4f &worldPosition ) const {
         return pSectors[sectorNameIndex];
     }
     return pDefaultSectorName;
+}
+
+void MngSectorName::drawNames( float deltaTime ) {
+    // FUN_006c4ac0
+    if ( !bEnabled ) {
+        return;
+    }
+
+    StreamingManager *pStreaming = gpWorld->getStreamingManager();
+    const Area *pArea = pStreaming->areaGrid.pCurrentArea;
+    const Sector *pSector = pStreaming->sectorManager.pCurrentSector;
+    if ( pArea == nullptr || pSector == nullptr || pSectors == nullptr ) {
+        return;
+    }
+
+    const char *pSectorName =
+        getSectorNameAtCell( pArea->coords, pSector->installedSector );
+    if ( pSectorName != pCurrentSector && state == SNS_Inactive &&
+         gpMngFade != nullptr &&
+         ( gpMngFade->getTransitionFlags() & 1 ) == 0 ) {
+        pCurrentSector = pSectorName;
+        if ( pSectorName == nullptr ) {
+            displayName[0] = '\0';
+        } else {
+            displayName[0] = '<';
+            strncpy( &displayName[1], pSectorName, sizeof( displayName ) - 2 );
+        }
+        fadeTime = startTime + deltaTime + kFadeInDelay;
+        state = SNS_FadeIn;
+        startTime = 0.0f;
+    }
+
+    switch ( state ) {
+    case SNS_FadeIn:
+        tickFadeIn( deltaTime );
+        break;
+    case SNS_FadeOut:
+        tickFadeOut( deltaTime );
+        break;
+    case SNS_WaitFadeOut:
+        tickWaitFadeOut( deltaTime );
+        break;
+    default:
+        break;
+    }
+}
+
+void MngSectorName::drawDisplayName( uint8_t alpha ) {
+    gpMngResources->getFontResources().selectFont( "TDU_BIG" );
+
+    const float y = (float)gpRender->getHeight() * kNameTop;
+    const float x = (float)gpRender->getWidth() * kNameRightEdge -
+                    gpMngFontPlayers->getTextWidth( 1.0f, displayName );
+    gpMngFontPlayers->drawText( x, y, 1.0f, 0xff, 0xff, 0xff, alpha, "%s",
+                                displayName );
+}
+
+void MngSectorName::tickFadeIn( float deltaTime ) {
+    // FUN_006c49d0
+    fadeTime -= deltaTime;
+    if ( gpMngFontPlayers != nullptr && pCurrentSector != nullptr ) {
+        int32_t alpha =
+            0xff - static_cast<int32_t>( fadeTime * kFadeRate * kMaxAlpha );
+        if ( alpha > 0xff ) {
+            alpha = 0xff;
+        }
+        if ( alpha > 0 ) {
+            drawDisplayName( static_cast<uint8_t>( alpha ) );
+        }
+    }
+
+    if ( fadeTime <= 0.0f ) {
+        fadeTime = kHoldDuration;
+        state = SNS_WaitFadeOut;
+    }
+}
+
+void MngSectorName::tickFadeOut( float deltaTime ) {
+    // FUN_006c4820
+    fadeTime -= deltaTime;
+    if ( fadeTime <= 0.0f ) {
+        fadeTime = 0.0f;
+        state = SNS_Inactive;
+    }
+
+    if ( gpMngFontPlayers != nullptr && pCurrentSector != nullptr ) {
+        int32_t alpha =
+            static_cast<int32_t>( fadeTime * kFadeRate * kMaxAlpha );
+        if ( alpha > 0xff ) {
+            alpha = 0xff;
+        }
+        if ( alpha > 0 ) {
+            drawDisplayName( static_cast<uint8_t>( alpha ) );
+        }
+    }
+}
+
+void MngSectorName::tickWaitFadeOut( float deltaTime ) {
+    // FUN_006c4910
+    fadeTime -= deltaTime;
+    if ( fadeTime <= 0.0f ) {
+        fadeTime = kFadeOutDuration;
+        state = SNS_FadeOut;
+    }
+
+    if ( gpMngFontPlayers != nullptr && pCurrentSector != nullptr ) {
+        drawDisplayName( 0xff );
+    }
 }

@@ -154,6 +154,9 @@ void Level::installRenderContent() {
     pElectrical2DBStream =
         commonWorldBank.getFirstEntry( static_cast<eAssetGroup>( 0x13 ),
                                        static_cast<eAssetType>( 0 ), nullptr );
+    pSectorNameStream =
+        levelBank.getFirstEntry( static_cast<eAssetGroup>( 4 ),
+                                 static_cast<eAssetType>( 0x1a ), nullptr );
 }
 
 void Level::instanciateHeightmap() {
@@ -173,6 +176,7 @@ void Level::unload() {
     pPanelLayoutStream = nullptr;
     pElectricalLayoutStream = nullptr;
     pElectrical2DBStream = nullptr;
+    pSectorNameStream = nullptr;
 
     if ( gpScenaric != nullptr ) {
         gpScenaric->getSpotList().resetWorldSpots();

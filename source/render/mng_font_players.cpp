@@ -15,6 +15,9 @@
 #include "core/maths_helper.h"
 #include "player_data/gs_playerdata.h"
 #include "world/gs_mng_resources.h"
+#include "world/mng_sector_name.h"
+
+#include "gs_timer.h"
 
 MngFontPlayers *gpMngFontPlayers = nullptr; // DAT_010e7ff4
 
@@ -117,7 +120,11 @@ void MngFontPlayers::draw() {
             drawBotNames();
         }
 
-        OTDU_UNIMPLEMENTED; // TODO: WORLD
+        if ( gpMngSectorName != nullptr ) {
+            gpMngSectorName->drawNames( gpTimer->SystemDeltaTime );
+        }
+
+        OTDU_UNIMPLEMENTED; // TODO: GM_DEMO
     }
 
     if ( pDrawList->getNumPrimitives() != 0 ) {

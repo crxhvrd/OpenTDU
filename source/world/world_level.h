@@ -57,6 +57,7 @@ public:
     void *getPanelLayoutStream() const { return pPanelLayoutStream; }
     void *getElectricalLayoutStream() const { return pElectricalLayoutStream; }
     void *getElectrical2DBStream() const { return pElectrical2DBStream; }
+    void *getSectorNameStream() const { return pSectorNameStream; }
 
     FileCollection2D &getGroundBitmapCollection2D() {
         return renderSets[1].collection2D;
@@ -80,6 +81,7 @@ public:
 
     void *pElectricalLayoutStream = nullptr;
     void *pElectrical2DBStream = nullptr;
+    void *pSectorNameStream = nullptr;
 
 private:
     void installRenderContent();

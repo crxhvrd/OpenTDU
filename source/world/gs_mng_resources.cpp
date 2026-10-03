@@ -1204,6 +1204,19 @@ bool FontResources::loadResources() {
     return true;
 }
 
+void FontResources::selectFont( const char *pFontName ) {
+    // FUN_0089f720
+    if ( pFontName != nullptr ) {
+        for ( uint32_t i = 0; i < numFonts; i++ ) {
+            if ( StringCmpI( pFonts[i].pName, pFontName ) == 0 ) {
+                pActiveFont = &pFonts[i];
+                return;
+            }
+        }
+    }
+    pActiveFont = pDefaultFont;
+}
+
 void FontResources::unloadResources() {
     // FUN_0089ffb0
     if ( pRender2DM != nullptr ) {

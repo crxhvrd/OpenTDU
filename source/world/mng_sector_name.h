@@ -2,6 +2,8 @@
 
 #include "game/mng_base.h"
 
+struct GridPos2D;
+
 class MngSectorName : public Manager {
 public:
     MngSectorName();
@@ -10,6 +12,7 @@ public:
     bool initialize( TestDriveGameInstance * ) override;
     void reset() override;
     const char *getSectorName( const Eigen::Vector4f &worldPosition ) const;
+    void drawNames( float deltaTime );
 
 public:
     bool bEnabled; // (toggled externally, e.g. by photo mode)
@@ -21,6 +24,14 @@ private:
         SNS_FadeOut = 2,
         SNS_WaitFadeOut = 3,
     };
+
+private:
+    const char *getSectorNameAtCell( const GridPos2D &areaCell,
+                                     const GridPos2D &sectorCell ) const;
+    void drawDisplayName( uint8_t alpha );
+    void tickFadeIn( float deltaTime );
+    void tickFadeOut( float deltaTime );
+    void tickWaitFadeOut( float deltaTime );
 
 private:
     uint32_t numSectors;

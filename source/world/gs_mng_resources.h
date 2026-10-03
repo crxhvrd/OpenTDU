@@ -288,6 +288,8 @@ public:
     bool loadResources() override;
     void unloadResources() override;
 
+    void selectFont( const char *pFontName );
+
 private:
     Font *pFonts;
     uint32_t numFonts;
