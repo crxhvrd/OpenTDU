@@ -461,7 +461,7 @@ PostFXNodeGlow::PostFXNodeGlow() : PostFXNodeBlur() {
 
 PostFXNodeGlow::~PostFXNodeGlow() {
     // FUN_0050d860
-    TestDrive::Free( pPostFX );
+    destroyEffect();
 }
 
 uint32_t PostFXNodeGlow::getType() const {

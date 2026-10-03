@@ -22,7 +22,7 @@ PostFXNodeCubemapToSphere::PostFXNodeCubemapToSphere()
 }
 
 PostFXNodeCubemapToSphere::~PostFXNodeCubemapToSphere() {
-    TestDrive::Free( pPostFX );
+    destroyEffect();
 }
 
 uint32_t PostFXNodeCubemapToSphere::getType() const { return 0x14; }

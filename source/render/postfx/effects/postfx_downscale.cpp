@@ -79,7 +79,7 @@ PostFXNodeDownscale::PostFXNodeDownscale() : PostFXNode( 1, 1 ) {
         PostFXDownscale( this );
 }
 
-PostFXNodeDownscale::~PostFXNodeDownscale() { TestDrive::Free( pPostFX ); }
+PostFXNodeDownscale::~PostFXNodeDownscale() { destroyEffect(); }
 
 uint32_t PostFXNodeDownscale::getType() const { return 0x1b; }
 
@@ -167,7 +167,7 @@ PostFXNodeUpscale::PostFXNodeUpscale() : PostFXNode( 1, 1 ) {
 
 PostFXNodeUpscale::~PostFXNodeUpscale() {
     // FUN_0050dc70
-    TestDrive::Free( pPostFX );
+    destroyEffect();
 }
 
 uint32_t PostFXNodeUpscale::getType() const {

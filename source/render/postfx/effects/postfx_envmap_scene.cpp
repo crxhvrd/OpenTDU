@@ -19,7 +19,7 @@ PostFXNodeEnvMapScene::PostFXNodeEnvMapScene()
         PostFXEnvMapScene( this );
 }
 
-PostFXNodeEnvMapScene::~PostFXNodeEnvMapScene() { TestDrive::Free( pPostFX ); }
+PostFXNodeEnvMapScene::~PostFXNodeEnvMapScene() { destroyEffect(); }
 
 uint32_t PostFXNodeEnvMapScene::getType() const { return 0x13; }
 

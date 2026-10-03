@@ -225,7 +225,6 @@ public:
     void updateFovVsLOD( float param_2 );
 
     bool notifyConfigListeners( RenderConfigurationChangeListener *param_1 );
-    bool notifyAllConfigListeners();
 
 private:
     static constexpr int32_t kNumSunRT = 8;

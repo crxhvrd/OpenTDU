@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vehicle_base.h"
+#include "render/mng_env_map.h"
 #include "render/setup_node.h"
 
 // DAT_00f149ac
@@ -9,13 +10,6 @@ static constexpr const char *kCarInteriorCustomColor0Prefix = "C1_";
 static constexpr const char *kCarInteriorCustomColor1Prefix = "C2_";
 static constexpr const char *kCarInteriorCustomColor0LowRes = "C1_LR";
 static constexpr const char *kCarInteriorCustomColor1LowRes = "C2_LR";
-
-// TODO: Move to MngEnvmap
-struct EnvmapUnknown {
-    void *pEntry = nullptr;
-    EnvmapUnknown *pNext = nullptr;
-};
-extern EnvmapUnknown *PTR_00fa9c0c;
 
 class VehicleController : public VehicleBase {
 public:
@@ -49,6 +43,7 @@ public:
 
     virtual void unstream() override;
     virtual void reset() override;
+    void popLights() override;
     virtual eRenderPass getRenderPass() override;
     virtual eRenderPass getRenderPassWithAlpha() override;
 
@@ -95,7 +90,12 @@ protected:
     Material *pMaterialInteriorColor0LR;
     Material *pMaterialInteriorColor1LR;
 
-    EnvmapUnknown field_0x27b0; // Envmap linked list node (embedded)
+    struct EnvMapListener : public EnvmapUnknown {
+        VehicleController *pOwner = nullptr;
+
+        bool onEnvMapChanged( int32_t param_1 ) override;
+    };
+    EnvMapListener field_0x27b0; // Envmap linked list node (embedded)
 
 protected:
     bool instantiateInteriorGauges( uint32_t nodeIndex );

@@ -190,6 +190,10 @@ void edSys::resizeGameWindow( const uint32_t width,
     SDL_SetWindowFullscreen( pWindow, !bWindowed );
 
     if ( bWindowed ) {
+        // SDL ignores size requests on a maximized window
+        if ( SDL_GetWindowFlags( pWindow ) & SDL_WINDOW_MAXIMIZED ) {
+            SDL_RestoreWindow( pWindow );
+        }
         SDL_SetWindowSize( pWindow, width, height );
         centerWindow();
     } else {
@@ -215,6 +219,19 @@ void edSys::resizeGameWindow( const uint32_t width,
             OTDU_UNIMPLEMENTED;
             break;
         };
+    }
+
+    SDL_SyncWindow( pWindow );
+
+    int32_t pixelWidth = 0;
+    int32_t pixelHeight = 0;
+    SDL_GetWindowSizeInPixels( pWindow, &pixelWidth, &pixelHeight );
+    if ( pixelWidth > 0 && pixelHeight > 0 &&
+         ( uint32_t( pixelWidth ) != width ||
+           uint32_t( pixelHeight ) != height ) ) {
+        gWindowWidth = static_cast<uint32_t>( pixelWidth );
+        gWindowHeight = static_cast<uint32_t>( pixelHeight );
+        gWindowSizeDirty = true;
     }
 #endif
 }

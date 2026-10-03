@@ -70,8 +70,9 @@ private:
     uint32_t numRadialBlurBitmap;
     uint32_t numFreeRTs;
     int32_t field1552_0xb24;
-    std::list<PooledPostFXRT *> pFreeList;
+    std::list<PooledPostFXRT *> pActiveRTs;
     std::array<PooledPostFXRT, kNumPooledRT> renderTargetsPool;
+    std::array<PooledPostFXRT *, kNumPooledRT> pFreeRTs;
     std::array<PostFXStep *, ePostFXStep::PFXS_Count> effects;
     std::array<int32_t, ePostFXStep::PFXS_Count> layers;
 

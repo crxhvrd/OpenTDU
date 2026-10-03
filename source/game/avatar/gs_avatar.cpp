@@ -260,7 +260,7 @@ bool GSAvatar::initialize( TestDriveGameInstance * ) {
 
     buildLowResBonePalettes();
 
-    gpRender->registerConfigListener( this );
+    RegisterEnvMapListener( this );
 
     return true;
 }
@@ -279,7 +279,7 @@ void GSAvatar::draw( float deltaTime ) {
 
 void GSAvatar::terminate() {
     // FUN_008f7950
-    gpRender->unregisterConfigListener( this );
+    UnregisterEnvMapListener( this );
 
     pool.terminate();
     bankManager.terminate();
@@ -308,8 +308,12 @@ void GSAvatar::terminate() {
     }
 }
 
-bool GSAvatar::onConfigurationChanged() {
+bool GSAvatar::onEnvMapChanged( int32_t param_1 ) {
     // FUN_008f62f0
+    if ( param_1 != 1 ) {
+        return true;
+    }
+
     for ( int32_t i = 0; i < AvatarPool::kNumInstances; i++ ) {
         PooledAvatarEntry &instance = pool.getInstance( i );
         if ( instance.bUsed ) {

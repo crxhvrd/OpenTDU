@@ -28,7 +28,7 @@ PostFXNodeTexSample::PostFXNodeTexSample()
         PostFXTexSample( this );
 }
 
-PostFXNodeTexSample::~PostFXNodeTexSample() { TestDrive::Free( pPostFX ); }
+PostFXNodeTexSample::~PostFXNodeTexSample() { destroyEffect(); }
 
 uint32_t PostFXNodeTexSample::getType() const { return 0x0; }
 

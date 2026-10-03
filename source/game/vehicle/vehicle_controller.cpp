@@ -67,8 +67,6 @@ static void ModulateMaterialColors( Material *pSource,
     pDest->EmissiveColor = pSource->EmissiveColor.cwiseProduct( tint );
 }
 
-EnvmapUnknown *PTR_00fa9c0c = nullptr; // DAT_00fa9c0c
-
 VehicleController ::VehicleController()
     : VehicleBase(),
       pCastInteriorNode( nullptr ),
@@ -87,6 +85,7 @@ VehicleController ::VehicleController()
       pMaterialInteriorColor0LR( nullptr ),
       pMaterialInteriorColor1LR( nullptr ) {
     // FUN_008b6cc0
+    field_0x27b0.pOwner = this;
     shaderSetup.setFlags( 0x103 );
 
     static constexpr uint64_t kShaderHashcodes[kNumShaderParams] = {
@@ -597,18 +596,21 @@ void VehicleController::applyPaintConfig() {
 }
 
 void VehicleController::registerEnvmapUnknown() {
-    EnvmapUnknown *puVar1 = &field_0x27b0;
-    EnvmapUnknown *peVar2 = nullptr;
-    EnvmapUnknown *peVar3 = PTR_00fa9c0c;
-    do {
-        peVar2 = peVar3;
-        if ( peVar2 == nullptr ) {
-            PTR_00fa9c0c = puVar1;
-            return;
-        }
-        peVar3 = peVar2->pNext;
-    } while ( peVar2->pNext != nullptr );
-    peVar2->pNext = puVar1;
+    RegisterEnvMapListener( &field_0x27b0 );
+}
+
+void VehicleController::popLights() {
+    // FUN_008b5f60
+    UnregisterEnvMapListener( &field_0x27b0 );
+    VehicleBase::popLights();
+}
+
+bool VehicleController::EnvMapListener::onEnvMapChanged( int32_t param_1 ) {
+    // FUN_008b6710
+    if ( param_1 == 1 && pOwner->bIsRealTimeEnvMap ) {
+        pOwner->setRealTimeEnvMap( nullptr, true, nullptr );
+    }
+    return true;
 }
 
 void VehicleController::updateGauges() {

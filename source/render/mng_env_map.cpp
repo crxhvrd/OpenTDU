@@ -32,6 +32,44 @@
 #ifdef OTDU_USE_IMGUI
 #include "debug/gs_imgui.h"
 #include "imgui.h"
+
+EnvmapUnknown *PTR_00fa9c0c = nullptr; // DAT_00fa9c0c
+
+void RegisterEnvMapListener( EnvmapUnknown *pListener ) {
+    EnvmapUnknown *peVar2 = nullptr;
+    EnvmapUnknown *peVar3 = PTR_00fa9c0c;
+    do {
+        peVar2 = peVar3;
+        if ( peVar2 == nullptr ) {
+            PTR_00fa9c0c = pListener;
+            return;
+        }
+        // NOTE: Not in the original code; a listener registered twice (e.g.
+        // a vehicle slot initialized again) would otherwise link to itself.
+        if ( peVar2 == pListener ) {
+            return;
+        }
+        peVar3 = peVar2->pNext;
+    } while ( peVar2->pNext != nullptr );
+    peVar2->pNext = pListener;
+}
+
+void UnregisterEnvMapListener( EnvmapUnknown *pListener ) {
+    EnvmapUnknown *pPrevious = nullptr;
+    for ( EnvmapUnknown *pIt = PTR_00fa9c0c; pIt != nullptr;
+          pIt = pIt->pNext ) {
+        if ( pIt == pListener ) {
+            if ( pPrevious != nullptr ) {
+                pPrevious->pNext = pIt->pNext;
+            } else {
+                PTR_00fa9c0c = pIt->pNext;
+            }
+            pIt->pNext = nullptr;
+            return;
+        }
+        pPrevious = pIt;
+    }
+}
 #endif
 
 MngEnvMap *gpMngEnvMap = nullptr;
@@ -435,7 +473,16 @@ void MngEnvMap::pause() {
 bool MngEnvMap::onCubemapResourcesChanged() {
     // FUN_006f1100
     bindRenderTargets();
-    return gpRender->notifyAllConfigListeners();
+
+    static constexpr int32_t kEnvMapChanged = 1; // DAT_00fa9c08
+    for ( EnvmapUnknown *pIt = PTR_00fa9c0c; pIt != nullptr;
+          pIt = pIt->pNext ) {
+        if ( !pIt->onEnvMapChanged( kEnvMapChanged ) ) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool MngEnvMap::createMaterials() {

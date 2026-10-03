@@ -12,6 +12,16 @@ class PostFXNodeEnvMapScene;
 class Sector;
 class VehicleBase;
 
+struct EnvmapUnknown {
+    virtual bool onEnvMapChanged( int32_t param_1 ) = 0;
+
+    EnvmapUnknown *pNext = nullptr;
+};
+extern EnvmapUnknown *PTR_00fa9c0c;
+
+void RegisterEnvMapListener( EnvmapUnknown *pListener );
+void UnregisterEnvMapListener( EnvmapUnknown *pListener );
+
 class MngEnvMap : public Manager {
 public:
     enum eView : int32_t {

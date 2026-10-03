@@ -680,6 +680,34 @@ void MngOcean::releaseResources() {
     scnReflNear.destroy();
 }
 
+bool MngOcean::onOceanResourcesChanged( int32_t param_1 ) {
+    // FUN_006e10e0
+    if ( param_1 != 2 ) {
+        return true;
+    }
+
+    WaterResources &waterResources = gpMngResources->getWaterResources();
+    RenderFile::Section *pReflectionSection =
+        waterResources.getReflection2DB().getBitmapSection();
+
+    MaterialShaderParameterArray *pOceanParams =
+        (MaterialShaderParameterArray *)pOceanMaterial->getParameterByIndex(
+            0 );
+    pOceanParams->getLayer( 0 )->pLayerTextures[0].pTextureSection =
+        pReflectionSection;
+
+    Material *pRiverMaterial =
+        waterResources.getRiver2DM().getMaterialAtIndex( 0 );
+    MaterialShaderParameterArray *pRiverParams =
+        (MaterialShaderParameterArray *)pRiverMaterial->getParameterByIndex(
+            0 );
+    pRiverParams->getLayer( 0 )->pLayerTextures[3].pTextureSection =
+        pReflectionSection;
+
+    rtArrayRefl.pAttachments[0] = waterResources.getReflectionRT();
+    return true;
+}
+
 bool MngOcean::setupRiverMaterial() {
     // FUN_006e1a40
     WaterResources &waterResources = gpMngResources->getWaterResources();

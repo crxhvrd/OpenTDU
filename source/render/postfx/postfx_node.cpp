@@ -21,6 +21,15 @@ PostFXNode::PostFXNode( uint32_t param_2, uint32_t param_3 )
 
 PostFXNode::~PostFXNode() {}
 
+void PostFXNode::destroyEffect() {
+    // FUN_0050d3f0
+    if ( pPostFX != nullptr ) {
+        pPostFX->~PostFX();
+        TestDrive::Free( pPostFX );
+        pPostFX = nullptr;
+    }
+}
+
 uint32_t PostFXNode::getNumOutput() { return numOutput; }
 
 RenderTarget *PostFXNode::getOuput( uint32_t param_2 ) {

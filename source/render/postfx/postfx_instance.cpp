@@ -18,7 +18,11 @@ PostFX::PostFX( PostFXNode *param_1 )
     gPostFXStack.registerEffect( this );
 }
 
-PostFX::~PostFX() { releaseResources(); }
+PostFX::~PostFX() {
+    // FUN_005fc690
+    gPostFXStack.unregisterEffect( this );
+    releaseResources();
+}
 
 bool PostFX::initialize() {
     // FUN_005f71e0

@@ -83,7 +83,7 @@ PostFXNodeLuminanceFilter::PostFXNodeLuminanceFilter()
 
 PostFXNodeLuminanceFilter::~PostFXNodeLuminanceFilter() {
     // FUN_0050d620
-    TestDrive::Free( pPostFX );
+    destroyEffect();
 }
 
 uint32_t PostFXNodeLuminanceFilter::getType() const {

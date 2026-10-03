@@ -198,7 +198,7 @@ public:
     virtual void tick( float, float ) = 0;
     virtual void draw();
     virtual void unstream();
-    void popLights();
+    virtual void popLights();
 
     Instance *getInstanceByIndex( const uint32_t param_2 );
     HiearchyNode *getNodeByIndex( const uint32_t param_2 );

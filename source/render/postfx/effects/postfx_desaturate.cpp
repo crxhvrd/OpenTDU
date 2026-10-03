@@ -30,7 +30,7 @@ PostFXNodeDesaturate::PostFXNodeDesaturate()
 
 PostFXNodeDesaturate::~PostFXNodeDesaturate() {
     // FUN_0050daf0
-    TestDrive::Free( pPostFX );
+    destroyEffect();
 }
 
 uint32_t PostFXNodeDesaturate::getType() const {

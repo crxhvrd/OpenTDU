@@ -9,7 +9,7 @@ class RenderTarget;
 class PostFX {
 public:
     PostFX( PostFXNode *param_1 );
-    ~PostFX();
+    virtual ~PostFX();
 
     virtual bool initialize();
     virtual void releaseResources();

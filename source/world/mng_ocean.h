@@ -78,6 +78,7 @@ public:
     void draw() override;
     void terminate() override;
     void setupSectorWaterMaterials( Render2DM *pRender2DM, bool bApplyStencil );
+    bool onOceanResourcesChanged( int32_t param_1 );
 
 private:
     static constexpr int32_t kOceanGridSize = 0x20;

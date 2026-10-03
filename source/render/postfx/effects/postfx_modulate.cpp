@@ -94,7 +94,7 @@ PostFXNodeModulate::PostFXNodeModulate() : PostFXNode( 2, 1 ) {
 
 PostFXNodeModulate::~PostFXNodeModulate() {
     // FUN_0050d6a0
-    TestDrive::Free( pPostFX );
+    destroyEffect();
 }
 
 uint32_t PostFXNodeModulate::getType() const {

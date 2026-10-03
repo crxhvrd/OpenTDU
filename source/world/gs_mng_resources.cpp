@@ -13,6 +13,7 @@
 #include "core/ed_store.h"
 #include "render/postfx/effects/postfx_texture_sample.h"
 #include "render/postfx/effects/postfx_blur.h"
+#include "world/mng_ocean.h"
 
 static constexpr const char *kFontDescriptorMagic =
     "IFontDesc1.1";                                              // DAT_00f15e78
@@ -688,7 +689,12 @@ bool WaterResources::onConfigurationChanged() {
         releaseOceanResources();
         allocateOceanResources(); // NOTE: Omitted return value check (since the
                                   // func always returns true)
-        gpRender->notifyConfigListeners( this ); // TODO: Most likely incorrect
+        static constexpr int32_t kOceanResourcesChanged = 2;
+        for ( MngOcean *pUser : oceanUsers ) {
+            if ( !pUser->onOceanResourcesChanged( kOceanResourcesChanged ) ) {
+                return false;
+            }
+        }
     }
 
     return true;

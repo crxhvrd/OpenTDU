@@ -244,7 +244,7 @@ PostFXNodeLightStreak::PostFXNodeLightStreak()
 
 PostFXNodeLightStreak::~PostFXNodeLightStreak() {
     // FUN_0050db30
-    TestDrive::Free( pPostFX );
+    destroyEffect();
 }
 
 uint32_t PostFXNodeLightStreak::getType() const {

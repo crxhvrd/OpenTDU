@@ -134,6 +134,10 @@ GSPostFX::GSPostFX()
     effects.fill( nullptr );
     layers.fill( -1 );
 
+    for ( uint32_t i = 0; i < kNumPooledRT; i++ ) {
+        pFreeRTs[i] = &renderTargetsPool[kNumPooledRT - 1 - i];
+    }
+
     gpPostFX = this;
 }
 
@@ -274,54 +278,43 @@ PooledPostFXRT *GSPostFX::allocatePooledRT( const uint32_t param_2,
     uint64_t uVar13 = GetIdentifier64bit( param_9 );
 
     PooledPostFXRT *pGVar12 = nullptr;
-    PooledPostFXRT *pGVar11 = nullptr;
-
-    bool bVar4 = false;
 
     // Check for existing entries in the pool that can be aliased and have a
     // matching hashcode
-    for ( PooledPostFXRT *pEntry : pFreeList ) {
-        if ( pEntry->RenderTarget.pRenderTarget == nullptr ) {
+    for ( PooledPostFXRT *pEntry : pActiveRTs ) {
+        if ( !pEntry->bIsAliasable ) {
             continue;
         }
 
-        if ( pEntry->bIsAliasable ) {
-            bool bMatch =
-                pEntry->RenderTarget.pRenderTarget->getWidth() == param_3 &&
-                pEntry->RenderTarget.pRenderTarget->getHeight() == param_4 &&
-                pEntry->RenderTarget.pRenderTarget->getFormat() == param_5 &&
-                pEntry->RenderTarget.pRenderTarget->getAntiAliasingMethod() ==
-                    param_6;
+        RenderTarget *pRT = pEntry->RenderTarget.pRenderTarget;
+        bool bMatch = pRT->getWidth() == param_2 &&
+                      pRT->getHeight() == param_3 &&
+                      pRT->getFormat() == param_5 &&
+                      pRT->getAntiAliasingMethod() == param_6;
+        if ( !bMatch ) {
+            continue;
+        }
 
-            if ( bMatch ) {
-                // Check if bitmap hashcode must match?
-                if ( param_11 == false ) {
-                    pGVar11 = pEntry;
-                    Texture *peVar2 =
-                        pEntry->RenderTarget.Render2DB.getFirstBitmap();
-
-                    if ( peVar2->Hashcode == uVar13 ) {
-                        bVar4 = true;
-                        pGVar12 = pGVar11;
-                    }
-                } else {
-                    pGVar11 = pEntry;
-                    bVar4 = true;
-                    pGVar12 = pGVar11;
-                }
-            }
-
-            if ( bVar4 ) {
-                break;
+        if ( param_11 == false ) {
+            Texture *peVar2 = pEntry->RenderTarget.Render2DB.getFirstBitmap();
+            if ( peVar2->Hashcode != uVar13 ) {
+                continue;
             }
         }
+
+        pGVar12 = pEntry;
+        break;
     }
 
-    if ( !bVar4 ) {
+    if ( pGVar12 == nullptr ) {
         // No match found; grab and init new entry from pool
         // LAB_00809929
-        numFreeRTs--;
-        pGVar12 = &renderTargetsPool[numFreeRTs];
+        if ( numFreeRTs == 0 ) {
+            OTDU_LOG_ERROR( "Pooled rendertarget pool exhausted!\n" );
+            return nullptr;
+        }
+
+        pGVar12 = pFreeRTs[--numFreeRTs];
         pGVar12->RenderTarget = RuntimeRender2DBWithRT();
         pGVar12->NumReferences = 0;
         pGVar12->bIsAliasable = true;
@@ -332,19 +325,19 @@ PooledPostFXRT *GSPostFX::allocatePooledRT( const uint32_t param_2,
             gFrameGraph.pushClearCommand( pGVar12->RenderTarget.pRenderTarget,
                                           kDefaultClearColor );
         }
-    } else {
-        pFreeList.remove( pGVar11 );
-    }
 
-    if ( pGVar12->RenderTarget.pRenderTarget == nullptr ) {
-        numFreeRTs++;
-        OTDU_LOG_ERROR( "Pooled rendertarget creation failure!\n" );
-        return nullptr;
+        if ( pGVar12->RenderTarget.pRenderTarget == nullptr ) {
+            pGVar12->RenderTarget.destroy();
+            pFreeRTs[numFreeRTs++] = pGVar12;
+            OTDU_LOG_ERROR( "Pooled rendertarget creation failure!\n" );
+            return nullptr;
+        }
     }
 
     pGVar12->NumReferences++;
     if ( pGVar12->NumReferences == 1 ) {
         pGVar12->bIsAliasable = param_12;
+        pActiveRTs.push_back( pGVar12 );
     }
 
     return pGVar12;
@@ -358,11 +351,8 @@ void GSPostFX::releasePooledRT( PooledPostFXRT *param_1 ) {
     param_1->NumReferences--;
     if ( param_1->NumReferences == 0 ) {
         param_1->RenderTarget.destroy();
-        pFreeList.push_back( param_1 );
-
-        // TODO: Original code removes entry from the main pool (can't do this,
-        // as the main pool is a static array). We might want to switch to a
-        // linkedlist to emulate what they were doing.
+        pFreeRTs[numFreeRTs++] = param_1;
+        pActiveRTs.remove( param_1 );
     }
 }
 

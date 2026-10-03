@@ -16,6 +16,7 @@ public:
     bool initialize();
 
     void registerEffect( PostFX *param_2 );
+    void unregisterEffect( PostFX *param_2 );
     bool releaseResources();
 
     void beginPass();

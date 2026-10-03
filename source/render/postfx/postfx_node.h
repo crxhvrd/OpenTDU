@@ -44,6 +44,9 @@ public:
     PostFX *getEffect();
 
 protected:
+    void destroyEffect();
+
+protected:
     PostFX *pPostFX;
 
     std::array<Link, kMaxNumLink> outputs;

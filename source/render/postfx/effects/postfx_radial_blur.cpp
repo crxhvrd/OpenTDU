@@ -27,7 +27,7 @@ PostFXNodeRadialBlur::PostFXNodeRadialBlur()
 
 PostFXNodeRadialBlur::~PostFXNodeRadialBlur() {
     // FUN_0050d8e0
-    TestDrive::Free( pPostFX );
+    destroyEffect();
 }
 
 uint32_t PostFXNodeRadialBlur::getType() const {

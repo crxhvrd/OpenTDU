@@ -87,6 +87,6 @@ PostFXNodeBlit::PostFXNodeBlit()
         new ( TestDrive::Alloc( sizeof( PostFXBlit ) ) ) PostFXBlit( this );
 }
 
-PostFXNodeBlit::~PostFXNodeBlit() { TestDrive::Free( pPostFX ); }
+PostFXNodeBlit::~PostFXNodeBlit() { destroyEffect(); }
 
 uint32_t PostFXNodeBlit::getType() const { return 0x18; }

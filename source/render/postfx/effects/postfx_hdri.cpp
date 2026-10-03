@@ -59,7 +59,7 @@ PostFXNodeHDR::PostFXNodeHDR()
 
 PostFXNodeHDR::~PostFXNodeHDR() {
     // FUN_0050dd30
-    TestDrive::Free( pPostFX );
+    destroyEffect();
 }
 
 uint32_t PostFXNodeHDR::getType() const {
@@ -373,7 +373,7 @@ bool PostFXStepHDRI::initialize() {
         pTonemapDownscaleRTs[i] = gpPostFX->allocatePooledRT(
             width, height, 1, eViewFormat::VF_R32F,
             eAntiAliasingMethod::AAM_Disabled, 0, 0,
-            "FXHDRI_TMapTmp" /* DAT_00f3ca50 */, 0 );
+            "FXHDRI_TMapTmp" /* DAT_00f3ca50 */, 0, false, false );
         if ( pTonemapDownscaleRTs[i] == nullptr ) {
             return false;
         }
@@ -619,7 +619,7 @@ bool PostFXStepHDRI::allocateTonemapRenderTargets() {
     // FUN_006d64d0
     pLastFrameLuminosityRT = gpPostFX->allocatePooledRT(
         1, 1, 1, eViewFormat::VF_R32F, eAntiAliasingMethod::AAM_Disabled, 0, 0,
-        "FXHDRI_OldLum" /* DAT_00f3ca40 */, 0 );
+        "FXHDRI_OldLum" /* DAT_00f3ca40 */, 0, false, false );
     if ( pLastFrameLuminosityRT == nullptr ) {
         return false;
     }
@@ -627,7 +627,7 @@ bool PostFXStepHDRI::allocateTonemapRenderTargets() {
     // TODO: I guess this is the avg luminosity for the current frame?
     pTonemapRT = gpPostFX->allocatePooledRT(
         1, 1, 1, eViewFormat::VF_R32F, eAntiAliasingMethod::AAM_Disabled, 0, 0,
-        "FXHDRI_TMap" /* DAT_00f3ca34 */, 0 );
+        "FXHDRI_TMap" /* DAT_00f3ca34 */, 0, false, false );
     if ( pTonemapRT == nullptr ) {
         return false;
     }

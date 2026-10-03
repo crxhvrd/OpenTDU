@@ -5,6 +5,7 @@
 #include "game/gs_base.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "render/gs_render_helper.h"
+#include "render/mng_env_map.h"
 #include "filesystem/bank.h"
 #include "avatar_bnk.h"
 #include "avatar_configuration.h"
@@ -14,7 +15,7 @@
 class EntityAvatar;
 struct DBEntryPNJ;
 
-class GSAvatar : public GameSystem, public RenderConfigurationChangeListener {
+class GSAvatar : public GameSystem, public EnvmapUnknown {
 public:
     static constexpr int32_t kNumIdentityBones = 256;
 
@@ -49,7 +50,7 @@ public:
     void draw( float deltaTime ) override;
     void terminate() override;
 
-    bool onConfigurationChanged() override;
+    bool onEnvMapChanged( int32_t param_1 ) override;
 
     void setEnvMap( const bool bRealTime, Render2DB *p2DB );
 

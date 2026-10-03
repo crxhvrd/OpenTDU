@@ -48,15 +48,35 @@ bool PostFXStack::initialize() {
 }
 
 void PostFXStack::registerEffect( PostFX *param_2 ) {
+    auto it = std::find( effects.begin(), effects.end(), nullptr );
+    if ( it != effects.end() ) {
+        *it = param_2;
+        return;
+    }
+
     OTDU_ASSERT( effects.size() < kMaxNumPostFX );
     effects.push_back( param_2 );
+}
+
+void PostFXStack::unregisterEffect( PostFX *param_2 ) {
+    // FUN_005f5c90
+    if ( param_2 == nullptr ) {
+        return;
+    }
+
+    auto it = std::find( effects.begin(), effects.end(), param_2 );
+    if ( it != effects.end() ) {
+        *it = nullptr;
+    }
 }
 
 bool PostFXStack::releaseResources() {
     // FUN_005f5760 (inlined)
     // FUN_005f5d60
     for ( PostFX *pEffect : effects ) {
-        pEffect->releaseResources();
+        if ( pEffect != nullptr ) {
+            pEffect->releaseResources();
+        }
     }
 
     return true;

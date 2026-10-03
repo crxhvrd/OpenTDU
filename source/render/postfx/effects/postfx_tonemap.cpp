@@ -300,7 +300,7 @@ PostFXNodeTonemap::PostFXNodeTonemap()
 
 PostFXNodeTonemap::~PostFXNodeTonemap() {
     // FUN_0050dcf0
-    TestDrive::Free( pPostFX );
+    destroyEffect();
 }
 
 uint32_t PostFXNodeTonemap::getType() const {

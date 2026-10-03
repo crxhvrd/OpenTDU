@@ -177,6 +177,7 @@ public:
 
     bool resize( uint32_t width, uint32_t height );
     void waitForIdle();
+    void flushAndWaitForIdle();
 
     GPUBackbuffer *getBackbuffer();
     FormatCapabilities getFormatCapabilities( eViewFormat format );

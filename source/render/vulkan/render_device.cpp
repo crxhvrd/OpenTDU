@@ -1089,12 +1089,26 @@ void RenderDevice::destroyBuffer( GPUBuffer *pBuffer ) {
 }
 
 bool RenderDevice::resize( uint32_t width, uint32_t height ) {
-    bNeedRecreateSwapchain =
-        ( backbuffer.Width != width || backbuffer.Height != height );
+    if ( backbuffer.Width == width && backbuffer.Height == height ) {
+        return true;
+    }
+
+    if ( bRecordingCommands ) {
+        bNeedRecreateSwapchain = true;
+    } else {
+        recreateSwapchain();
+    }
     return true;
 }
 
 void RenderDevice::waitForIdle() { vkDeviceWaitIdle( device ); }
+
+void RenderDevice::flushAndWaitForIdle() {
+    if ( bRecordingCommands ) {
+        present();
+    }
+    waitForIdle();
+}
 
 void RenderDevice::destroyVertexLayout( GPUVertexLayout *pVertexLayout ) {
     pVertexLayout->Semantics.clear();

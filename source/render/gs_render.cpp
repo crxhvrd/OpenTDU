@@ -1885,7 +1885,7 @@ bool GSRender::linkPostFXNodes() {
 bool GSRender::notifyConfigListeners(
     RenderConfigurationChangeListener *param_1 ) {
     // FUN_00993b30
-    RenderConfigurationChangeListener *puVar1 = param_1->pNextListener;
+    RenderConfigurationChangeListener *puVar1 = param_1;
     bool cVar1 = true;
     do {
         if ( puVar1 == nullptr ) {
@@ -1898,17 +1898,3 @@ bool GSRender::notifyConfigListeners(
     return false;
 }
 
-bool GSRender::notifyAllConfigListeners() {
-    // FUN_006f1100
-    RenderConfigurationChangeListener *pIt = pListeners;
-    bool cVar1 = true;
-    while ( pIt != nullptr ) {
-        cVar1 = pIt->onConfigurationChanged();
-        if ( !cVar1 ) {
-            return false;
-        }
-        pIt = pIt->pNextListener;
-    }
-
-    return cVar1;
-}
