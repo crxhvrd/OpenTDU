@@ -3357,12 +3357,64 @@ bool PhysicsVehicle::castToGround( const Matrix4x4f_t &source,
     return true;
 }
 
+void PhysicsVehicle::resetSimulationState() {
+    // FUN_00439a10
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        PhysicsWheelState &wheel = vehicle.Wheels[i];
+        wheel.bGroundContact = false;
+        wheel.AngularVel = 0.0f;
+        wheel.AngAccel = 0.0f;
+        wheel.DriveTorque = 0.0f;
+        wheel.NetTorque = 0.0f;
+        wheel.BrakeCmdTorque = 0.0f;
+        wheel.HandbrakeCmdTorque = 0.0f;
+        wheel.BrakeTorqueOut = 0.0f;
+        wheel.EspTorqueOut = 0.0f;
+        wheel.EspState = 0;
+        wheel.SuspTotalForce = 0.0f;
+        wheel.AntiRollForce = 0.0f;
+        wheel.NormalLoad = 0.0f;
+        wheel.SuspForce.setZero();
+        wheel.TireForceLong = 0.0f;
+        wheel.TireForceLat = 0.0f;
+        wheel.DragLong = 0.0f;
+        wheel.DragLat = 0.0f;
+        wheel.ContactVelLong = 0.0f;
+        wheel.ContactVelLat = 0.0f;
+        wheel.bTireSlipping = false;
+        wheel.NormLong = 0.0f;
+        wheel.NormLat = 0.0f;
+        wheel.NormLongClamped = 0.0f;
+        wheel.NormLatClamped = 0.0f;
+        wheel.WorldForceLong.setZero();
+        wheel.WorldForceLat.setZero();
+        prevSuspLength[i] = suspStaticLength[i];
+    }
+
+    PhysicsEngineSim &engine = vehicle.Engine;
+    engine.State = eEngineState::ES_Off;
+    engine.IgnitionOn = false;
+    engine.bIgnitionOnce = false;
+    engine.IgnTimer = engine.RevLimiterCutTime;
+    engine.Throttle = 0.0f;
+    engine.TorqueOut = 0.0f;
+    engine.SmoothedTorque = 0.0f;
+    engine.AngAccel = 0.0f;
+
+    vehicle.GearBox.CurrentGear = 1;
+    vehicle.GearBox.ReportedGear = 1;
+    vehicle.Clutch.OverrideEngagement = -1.0f;
+}
+
 void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform,
                                        bool bCastToGround ) {
     // FUN_0083d880
     if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
         return;
     }
+
+    // FUN_0083d220
+    resetSimulationState();
 
     Matrix4x4f_t placed = transform;
     if ( bCastToGround ) {
@@ -3385,6 +3437,11 @@ void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform,
                                JPH::EActivation::Activate );
     bi.SetLinearAndAngularVelocity( id, JPH::Vec3::sZero(),
                                     JPH::Vec3::sZero() );
+
+    setVelocity( Eigen::Vector3f::Zero(), true, -1 );
+    vehicle.GearBox.CurrentGear = 1;
+    resetAutomaticGearbox();
+    OTDU_UNIMPLEMENTED; // TODO: Handbrake hold for manual gearbox
 
     publishStepPose();
 }

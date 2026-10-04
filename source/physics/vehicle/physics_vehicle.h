@@ -282,6 +282,7 @@ public:
                       bool bSyncPowertrain,
                       int32_t preferredGear );
     void updateKeyframedWheels( float deltaTime );
+    void resetSimulationState();
 
     void OnStep( const JPH::PhysicsStepListenerContext &inContext ) override;
 

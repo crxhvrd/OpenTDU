@@ -304,8 +304,6 @@ void SceneCarPark::releaseAll() {
     tail = 0;
     bLoaded = false;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
-
     pEnvMapFront = nullptr;
     pEnvMapBack = nullptr;
 
@@ -469,7 +467,7 @@ void SceneCarPark::commit() {
             {
                 PhysicsLock lock;
                 pPhysicsVehicle->resetToTransform( entry.Transform, true );
-                pPhysicsVehicle->setDrivingMode( PhysicsVehicle::DM_Parked );
+                pPhysicsVehicle->setPhysicsPaused( false );
             }
             pPhysicsVehicle->setKeyframed( true, true );
         }
@@ -576,8 +574,6 @@ void SceneCarPark::instantiateCar( const int32_t index, Entry &entry ) {
 
     carState.bIsIndoor = ( gpActiveGMScene != nullptr ) &&
                          gpActiveGMScene->isStaticFrontEndScene();
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
 
     if ( pVehicle == nullptr ) {
         return;
@@ -737,11 +733,8 @@ void SceneCarPark::tick( const float deltaTime ) {
             {
                 PhysicsLock lock;
                 pPhysicsVehicle->resetToTransform( entry.Transform, true );
-                pPhysicsVehicle->setDrivingMode( PhysicsVehicle::DM_Parked );
+                pPhysicsVehicle->setPhysicsPaused( false );
             }
-
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
-
             pPhysicsVehicle->setKeyframed( true, true );
 
             entry.PlacementState = CPPS_Placed;
