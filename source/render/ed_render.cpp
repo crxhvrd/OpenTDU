@@ -978,6 +978,7 @@ bool edRender::applyVideoSettingsChange( const int32_t width,
                                          const eVSyncMode vsync,
                                          const eAntiAliasingMethod method ) {
     // FUN_00509fd0
+    pRenderDevice->setVSyncEnabled( vsync != eVSyncMode::VSM_Immediate );
     pRenderDevice->flushAndWaitForIdle();
     releaseRendererResources();
     bool bVar1 = pRenderDevice->resize( width, height );

@@ -10,10 +10,21 @@ GSTimer *gpTimer = nullptr;       // DAT_00fa3f90
 static uint32_t DAT_016a2c18 = 0; // DAT_016a2c18
 
 static int32_t gMaxFrameRate = 0;
+static bool gbMaxFrameRateForced = false;
 static CmdLineArg CmdLineArgMaxFrameRate( "maxfps", []( const char *pArg ) {
     gMaxFrameRate = atoi( pArg );
+    gbMaxFrameRateForced = true;
     OTDU_LOG_INFO( "Framerate cap set to %d FPS\n", gMaxFrameRate );
 } );
+
+int32_t GetMaxFrameRate() { return gMaxFrameRate; }
+
+bool IsMaxFrameRateForced() { return gbMaxFrameRateForced; }
+
+void SetMaxFrameRate( int32_t maxFrameRate ) {
+    gMaxFrameRate = std::max( maxFrameRate, 0 );
+    gbMaxFrameRateForced = false;
+}
 
 static void WaitForFrameRateCap() {
     static uint64_t sLastFrameNS = 0;

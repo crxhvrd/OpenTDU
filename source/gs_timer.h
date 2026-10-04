@@ -33,3 +33,7 @@ public:
 };
 
 extern GSTimer *gpTimer;
+
+int32_t GetMaxFrameRate();
+bool IsMaxFrameRateForced();
+void SetMaxFrameRate( int32_t maxFrameRate );

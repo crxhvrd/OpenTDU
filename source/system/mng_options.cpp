@@ -6,6 +6,8 @@
 #include "database/gs_database.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/implementation/ed_flash.h"
+#include "flash/implementation/flash_resource.h"
 #include "flash/mng_flash_localize.h"
 #include "flash/modal_message_box.h"
 #include "game/gm_base.h"
@@ -13,9 +15,11 @@
 #include "gs_timer.h"
 #include "input/gs_device.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/opentdu_settings.h"
 #include "render/camera/gs_camera.h"
 #include "render/ed_render.h"
 #include "render/gs_render.h"
+#include "render/mng_env_map.h"
 #include "system/ed_sys.h"
 
 #include "tdu_instance.h"
@@ -57,8 +61,67 @@ static constexpr uint64_t kVideoSettingsRevertedHashcode =
 
 static constexpr int32_t kApplyTimeoutInSeconds = 10;
 
-static eDisplayMode GetActiveDisplayMode();
-static void ApplyDisplayMode( const eDisplayMode displayMode );
+static void PatchVideoPageUpNavigation( FlashPlayer *pPlayer );
+static void ApplyVSync( const bool bEnabled );
+
+// OpenTDU Advanced Video Settings
+enum eExtraVideoRow : int32_t {
+    EVR_DisplayMode = 0,
+    EVR_FrameRateCap = 1,
+    EVR_Reflections = 2,
+    EVR_VSync = 3,
+
+    EVR_Count
+};
+
+struct ExtraVideoRowDesc {
+    const char *pLabel;
+    const char *pPreviousMessage;
+    const char *pNextMessage;
+    bool bCheckbox;
+};
+
+static constexpr ExtraVideoRowDesc kExtraVideoRows[EVR_Count] = {
+    {"DISPLAY MODE", "prdm",  "nedm",  false},
+    {"FRAME RATE",   "prfc",  "nefc",  false},
+    {"REFLECTIONS",  "prdr",  "nedr",  false},
+    {"VSYNC",        nullptr, nullptr, true },
+};
+static constexpr int32_t kFrameRateCaps[] = { 0, 30, 60, 120, 144, 240 };
+
+static constexpr const char *kVideoMenuPath = "/menus/ss_menus/choice";
+static constexpr int32_t kNumRetailVideoRows = 6;
+static constexpr int32_t kResolutionRow = 1;
+static constexpr int32_t kRefreshRateRow = 2;
+static constexpr int32_t kAntiAliasingRow = 3;
+static constexpr int32_t kHDRRow = 4;
+static constexpr int32_t kGammaRow = 5;
+static constexpr int32_t kNumExtraVideoRows = EVR_Count;
+
+static constexpr uint16_t kVideoPanelDepths[] = { 0, 1, 2, 4, 5, 7, 8, 10 };
+static_assert( std::size( kVideoPanelDepths ) ==
+               MngOptions::kNumVideoPanelPieces );
+static constexpr uint16_t kVideoPanelTitleDepth = 11;
+// Stage centre (12800) minus the choice clip origin (1470 + 1312)
+static constexpr float kStageCenterX = 10018.0f;
+static constexpr float kVideoRowCenterX = 5018.0f;
+static constexpr float kVideoPanelTitleOffsetX = 711.0f;
+static constexpr float kVideoRowSpacing = 1363.0f;
+
+struct CheckboxRowChild {
+    uint16_t Depth;
+    float MinX;
+    float MaxX;
+};
+static constexpr CheckboxRowChild kCheckboxRowUnmirroredChildren[] = {
+    {9,  723.0f, 5628.0f}, // sm_name (label)
+    {14, -83.0f, 187.0f }, // checkbox
+};
+
+static constexpr uint16_t kFirstExtraPanelDepth = 17;
+static constexpr uint16_t kExtraPanelTitleDepth =
+    kFirstExtraPanelDepth + uint16_t( std::size( kVideoPanelDepths ) );
+static constexpr uint16_t kFirstExtraRowDepth = 1125;
 
 MngOptions *gpMngOptions = nullptr; // DAT_010e7ffc
 
@@ -88,6 +151,15 @@ MngOptions::MngOptions()
       activeAntiAliasingMode( eAntiAliasingMethod::AAM_Disabled ),
       activeDisplayMode( eDisplayMode::DM_Windowed ),
       bActiveHDREnabled( false ),
+      extraVideoRowsState( eExtraVideoRowsState::EVRS_Closed ),
+      bExtraVideoPanelFocused( false ),
+      hoveredExtraVideoRow( -1 ),
+      bExtraVideoMouseDown( false ),
+      focusedVideoRow( -1 ),
+      bVSyncEnabled( false ),
+      bActiveVSyncEnabled( false ),
+      bVideoPanelPieceTinted(),
+      videoPanelPieceTints(),
       pAudioOptions( nullptr ),
       field30_0x80c( false ),
       bHDREnabled( false ),
@@ -212,6 +284,8 @@ void MngOptions::tick( float, float ) {
     }
 
     onLanguageChanged();
+
+    updateExtraVideoRows();
 }
 
 void MngOptions::terminate() {
@@ -238,7 +312,11 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
 
     switch ( tag ) {
     case 0x70726672: // "prfr" — previous refresh rate
-        showPreviousRefreshRate();
+        if ( !isVideoModeLocked() ) {
+            showPreviousRefreshRate();
+        } else {
+            showRefreshRateLabel( false );
+        }
         return false;
 
     case 0x6d757465: { // "mute"
@@ -330,11 +408,19 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         return true;
 
     case 0x6e657273: // "ners" — next resolution
-        showVideoOptions();
+        if ( !isVideoModeLocked() ) {
+            showVideoOptions();
+        } else {
+            showResolutionLabel();
+        }
         return false;
 
     case 0x6e656672: // "nefr" — next refresh rate
-        showRefreshRate();
+        if ( !isVideoModeLocked() ) {
+            showRefreshRate();
+        } else {
+            showRefreshRateLabel( false );
+        }
         return false;
 
     case 0x6e656161: // "neaa" — next anti-aliasing mode
@@ -364,6 +450,15 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
 
     case 0x6e65646d: // "nedm" — next display mode
         showNextDisplayMode();
+        return false;
+
+    case 0x6e656663: // "nefc" — next frame rate cap
+        showNextFrameRateCap( 1 );
+        return false;
+
+    case 0x6e656472: // "nedr" — next reflection quality
+    case 0x70726472: // "prdr" — previous reflection quality
+        toggleDenseReflections();
         return false;
 
     case 0x6e656c67: // "nelg" — next language
@@ -440,7 +535,11 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         return true;
 
     case 0x70727273: // "prrs" — previous resolution
-        showPreviousVideoOptions();
+        if ( !isVideoModeLocked() ) {
+            showPreviousVideoOptions();
+        } else {
+            showResolutionLabel();
+        }
         return false;
 
     case 0x70726765: // "prge" — previous gearbox mode
@@ -450,6 +549,10 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
 
     case 0x7072646d: // "prdm" — previous display mode
         showPreviousDisplayMode();
+        return false;
+
+    case 0x70726663: // "prfc" — previous frame rate cap
+        showNextFrameRateCap( -1 );
         return false;
 
     case 0x70726c67: // "prlg" — previous language
@@ -497,6 +600,7 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
 
     case 0x7379696e: // "syin" — enter the video settings screen
         buildVideoModeList();
+        extraVideoRowsState = eExtraVideoRowsState::EVRS_Opening;
         return false;
 
     case 0x73746465: // "stde" — save to device
@@ -626,6 +730,7 @@ void MngOptions::FUN_006c60c0( int32_t param_1 ) {
         gpPlayerData->setAntiAliasing( gpRender->getAAMethod() );
         gpPlayerData->setHDREnabled( gpRender->isHDREnabled() );
         gpPlayerData->setRefreshRate( gPickedRefreshRate );
+        OpenTDUSettings::Save();
 
         pPlayer->showFrame( "valid_apply", "/menus/ss_menus/choice", true );
     } else {
@@ -643,6 +748,7 @@ void MngOptions::FUN_006c6030() {
     gEdRender.flushDrawCommands( false );
 
     ApplyDisplayMode( activeDisplayMode );
+    ApplyVSync( bActiveVSyncEnabled );
 
     gpRender->resize( videoWidth, videoHeight, refreshRate,
                       activeAntiAliasingMode, bActiveHDREnabled );
@@ -986,6 +1092,8 @@ void MngOptions::bindFlashPlayer( FlashPlayer *pFlashPlayer,
                                   int32_t orientation ) {
     // FUN_006c6ac0
     pPlayer = pFlashPlayer;
+
+    PatchVideoPageUpNavigation( pPlayer );
 
     padSensitivitySlider.bind( pPlayer, "/:PadSensitivity", orientation,
                                gpPlayerData->getPadSensitivity() );
@@ -1341,16 +1449,48 @@ void AudioOptions::deactivate() { bActive = false; }
 static const char *GetDisplayModeLabel( const eDisplayMode displayMode ) {
     switch ( displayMode ) {
     case eDisplayMode::DM_Fullscreen:
-        return "Fullscreen";
+        return "FULLSCREEN";
     case eDisplayMode::DM_Borderless:
-        return "Borderless";
+        return "BORDERLESS";
     case eDisplayMode::DM_Windowed:
     default:
-        return "Windowed";
+        return "WINDOWED";
     }
 }
 
-static eDisplayMode GetActiveDisplayMode() {
+static void PatchVideoPageUpNavigation( FlashPlayer *pPlayer ) {
+    static constexpr uint8_t kSignature[] = {
+        0x96, 0x00, 0x09, 0x00, 0x00, 'n',  'u',  'm',  '_',  's',
+        's',  'm',  0x00, 0x00, 0x1c, 0x00, 0x96, 0x00, 0x0d, 0x00,
+        0x00, 'n',  'b',  '_',  's',  's',  'm',  's',  '_',  'm',
+        'a',  'x',  0x00, 0x00, 0x1c, 0x00, 0x96, 0x00, 0x03, 0x00,
+        0x00, '1',  0x00, 0x00, 0x0b, 0x00, 0x0e, 0x00 };
+    static constexpr size_t kConstantOffset = 41;
+
+    if ( pPlayer == nullptr || pPlayer->getBoundFlashResource() == nullptr ) {
+        return;
+    }
+
+    FlashResourceHeader *pHeader =
+        pPlayer->getBoundFlashResource()->getHeader();
+    if ( pHeader == nullptr ) {
+        return;
+    }
+
+    uint8_t *pBegin = (uint8_t *)pHeader;
+    uint8_t *pEnd = pBegin + pHeader->FileSize;
+    uint8_t *pMatch = std::search( pBegin, pEnd, std::begin( kSignature ),
+                                   std::end( kSignature ) );
+    if ( pMatch == pEnd ) {
+        OTDU_LOG_WARN( "Video page navigation signature not found; the extra "
+                       "rows will break up navigation\n" );
+        return;
+    }
+
+    pMatch[kConstantOffset] = uint8_t( '1' + kNumExtraVideoRows );
+}
+
+eDisplayMode GetActiveDisplayMode() {
     if ( gpConfig == nullptr || gpConfig->bWindowed ) {
         return eDisplayMode::DM_Windowed;
     }
@@ -1360,7 +1500,17 @@ static eDisplayMode GetActiveDisplayMode() {
                : eDisplayMode::DM_Borderless;
 }
 
-static void ApplyDisplayMode( const eDisplayMode displayMode ) {
+static void ApplyVSync( const bool bEnabled ) {
+    if ( gpRender == nullptr || gpConfig == nullptr ) {
+        return;
+    }
+
+    gpRender->setVSyncMode( bEnabled
+                                ? eVSyncMode( Clamp( gpConfig->NbVBL, 1, 4 ) )
+                                : eVSyncMode::VSM_Immediate );
+}
+
+void ApplyDisplayMode( const eDisplayMode displayMode ) {
     if ( gpConfig == nullptr ) {
         return;
     }
@@ -1393,6 +1543,9 @@ void MngOptions::buildVideoModeList() {
     activeAntiAliasingMode = antiAliasingMode;
     bActiveHDREnabled = bHDREnabled;
     activeDisplayMode = GetActiveDisplayMode();
+    bActiveVSyncEnabled = ( gpRender != nullptr ) &&
+                          gpRender->getVSyncMode() != eVSyncMode::VSM_Immediate;
+    bVSyncEnabled = bActiveVSyncEnabled;
     lodQuality =
         ( gpRender != nullptr ) ? int32_t( gpRender->getLODQuality() ) : 0;
 
@@ -1487,29 +1640,540 @@ void MngOptions::buildVideoModeList() {
     showLODQualityLabel();
 
     displayMode = GetActiveDisplayMode();
-    showDisplayModeLabel();
 }
 
-void MngOptions::showDisplayModeLabel() {
+static bool CloneExtraVideoPanel( FlashPlayer *pPlayer ) {
+    for ( size_t i = 0; i < std::size( kVideoPanelDepths ); i++ ) {
+        FlashCloneDesc panel;
+        panel.SourceDepth = kVideoPanelDepths[i];
+        panel.Depth = uint16_t( kFirstExtraPanelDepth + i );
+        panel.Mirror = eFlashCloneMirror::FCM_Geometry;
+        panel.MirrorAxisX = kStageCenterX;
+        if ( !pPlayer->cloneObject( kVideoMenuPath, panel ) ) {
+            return false;
+        }
+    }
+
+    FlashCloneDesc title;
+    title.SourceDepth = kVideoPanelTitleDepth;
+    title.Depth = kExtraPanelTitleDepth;
+    title.Mirror = eFlashCloneMirror::FCM_Position;
+    title.MirrorAxisX = kStageCenterX;
+    title.OffsetX = kVideoPanelTitleOffsetX;
+    pPlayer->cloneObject( kVideoMenuPath, title );
+
+    for ( int32_t i = 0; i < kNumExtraVideoRows; i++ ) {
+        char cloneName[8];
+        snprintf( cloneName, sizeof( cloneName ), "sur%d",
+                  kNumRetailVideoRows + 1 + i );
+
+        FlashCloneDesc row;
+        row.pCloneName = cloneName;
+        row.Depth = uint16_t( kFirstExtraRowDepth + i );
+        row.MirrorAxisX = kStageCenterX;
+        if ( kExtraVideoRows[i].bCheckbox ) {
+            row.pSourceName = "sur4";
+            row.Mirror = eFlashCloneMirror::FCM_Geometry;
+        } else {
+            row.pSourceName = "sur1";
+            row.Mirror = eFlashCloneMirror::FCM_Position;
+            row.OffsetX = -2.0f * kVideoRowCenterX;
+            row.OffsetY = float( i ) * kVideoRowSpacing;
+        }
+        if ( !pPlayer->cloneObject( kVideoMenuPath, row ) ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static void RemoveExtraVideoPanel( FlashPlayer *pPlayer ) {
+    for ( int32_t i = 0; i < kNumExtraVideoRows; i++ ) {
+        pPlayer->removeObject( kVideoMenuPath,
+                               uint16_t( kFirstExtraRowDepth + i ) );
+    }
+    pPlayer->removeObject( kVideoMenuPath, kExtraPanelTitleDepth );
+    for ( size_t i = 0; i < std::size( kVideoPanelDepths ); i++ ) {
+        pPlayer->removeObject( kVideoMenuPath,
+                               uint16_t( kFirstExtraPanelDepth + i ) );
+    }
+}
+
+static int32_t GetFrameRateCapIndex() {
+    const int32_t maxFrameRate = GetMaxFrameRate();
+    for ( int32_t i = 0; i < int32_t( std::size( kFrameRateCaps ) ); i++ ) {
+        if ( kFrameRateCaps[i] == maxFrameRate ) {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
+void MngOptions::updateExtraVideoRows() {
+    if ( pPlayer == nullptr ||
+         extraVideoRowsState == eExtraVideoRowsState::EVRS_Closed ) {
+        return;
+    }
+
+    char path[64];
+    snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath,
+              kNumRetailVideoRows );
+    const bool bLastRetailRowExists = pPlayer->spriteExists( path );
+
+    if ( extraVideoRowsState == eExtraVideoRowsState::EVRS_Open &&
+         !bLastRetailRowExists ) {
+        RemoveExtraVideoPanel( pPlayer );
+        hoveredExtraVideoRow = -1;
+        focusedVideoRow = -1;
+        bExtraVideoPanelFocused = false;
+        showExtraVideoPanelFocus();
+        extraVideoRowsState = eExtraVideoRowsState::EVRS_Closed;
+        return;
+    }
+
+    if ( extraVideoRowsState == eExtraVideoRowsState::EVRS_Open ) {
+        updateCheckboxRowsOrientation();
+        updateExtraVideoRowsHover();
+
+        snprintf( path, sizeof( path ), "%s:num_ssm", kVideoMenuPath );
+        const int32_t focusedRow = pPlayer->getVariableAsInt( path );
+        if ( focusedRow != focusedVideoRow ) {
+            const int32_t previousRow = focusedVideoRow;
+            focusedVideoRow = focusedRow;
+            highlightCheckboxRow( focusedRow );
+            if ( isVideoModeLocked() ) {
+                skipLockedVideoRow( focusedRow, previousRow );
+                showVideoModeRowsLock();
+            }
+        }
+
+        const bool bFocused = focusedRow > kNumRetailVideoRows;
+        if ( bFocused != bExtraVideoPanelFocused ) {
+            bExtraVideoPanelFocused = bFocused;
+            showExtraVideoPanelFocus();
+        }
+    }
+
+    snprintf( path, sizeof( path ), "%s:nb_ssms_max", kVideoMenuPath );
+    if ( bLastRetailRowExists &&
+         pPlayer->getVariableAsInt( path ) == kNumRetailVideoRows ) {
+        setupExtraVideoRows();
+        extraVideoRowsState = eExtraVideoRowsState::EVRS_Open;
+    }
+}
+
+void MngOptions::setupExtraVideoRows() {
+    char path[64];
+    snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath,
+              kNumRetailVideoRows + 1 );
+    if ( !pPlayer->spriteExists( path ) ) {
+        for ( int32_t i = 0; i < kNumVideoPanelPieces; i++ ) {
+            bVideoPanelPieceTinted[i] = pPlayer->getObjectColorTransform(
+                kVideoMenuPath, kVideoPanelDepths[i],
+                &videoPanelPieceTints[i] );
+        }
+
+        if ( !CloneExtraVideoPanel( pPlayer ) ) {
+            OTDU_LOG_WARN( "Failed to append the extra rows to the video "
+                           "settings page\n" );
+            RemoveExtraVideoPanel( pPlayer );
+            return;
+        }
+    }
+
+    bExtraVideoPanelFocused = false;
+    showExtraVideoPanelFocus();
+
+    for ( int32_t i = 0; i < kNumExtraVideoRows; i++ ) {
+        const ExtraVideoRowDesc &desc = kExtraVideoRows[i];
+        const int32_t rowIndex = kNumRetailVideoRows + 1 + i;
+
+        snprintf( path, sizeof( path ), "/:System_m_%d", rowIndex );
+        pPlayer->setVariableValueNonLinked( path, desc.pLabel );
+        snprintf( path, sizeof( path ), "/:System_help%d", rowIndex );
+        pPlayer->setVariableValueNonLinked( path, "apply" );
+
+        if ( desc.bCheckbox ) {
+            snprintf( path, sizeof( path ), "/:System_help%d", rowIndex );
+            pPlayer->setVariableValueNonLinked( path, "apply_checkbox" );
+            snprintf( path, sizeof( path ), "%s/sur%d:s_name", kVideoMenuPath,
+                      rowIndex );
+            pPlayer->setVariableValueNonLinked( path, desc.pLabel );
+
+            snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath,
+                      rowIndex );
+            pPlayer->showFrame( bVSyncEnabled ? "set_on" : "off_lock", path,
+                                false );
+            continue;
+        }
+
+        snprintf( path, sizeof( path ), "%s/sur%d:param_name", kVideoMenuPath,
+                  rowIndex );
+        pPlayer->setVariableValueNonLinked( path, desc.pLabel );
+        snprintf( path, sizeof( path ), "%s/sur%d:msg1", kVideoMenuPath,
+                  rowIndex );
+        pPlayer->setVariableValueNonLinked( path, desc.pPreviousMessage );
+        snprintf( path, sizeof( path ), "%s/sur%d:msg2", kVideoMenuPath,
+                  rowIndex );
+        pPlayer->setVariableValueNonLinked( path, desc.pNextMessage );
+
+        showExtraVideoRowValue( i, false );
+
+        snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath, rowIndex );
+        pPlayer->showFrame( "set", path, false );
+    }
+
+    snprintf( path, sizeof( path ), "%s:nb_ssms_max", kVideoMenuPath );
+    pPlayer->setVariableValue( path, kNumRetailVideoRows + kNumExtraVideoRows );
+
+    showVideoModeRowsLock();
+}
+
+void MngOptions::updateExtraVideoRowsHover() {
+    int32_t hoveredRow = -1;
+    for ( int32_t i = 0; i < kNumExtraVideoRows; i++ ) {
+        const int32_t rowIndex = kNumRetailVideoRows + 1 + i;
+        if ( isMouseOverVideoRow( rowIndex ) ) {
+            hoveredRow = rowIndex;
+            break;
+        }
+    }
+
+    const bool bMouseDown = gEdFlash.Input.bMouseButton0Down;
+    const bool bClicked = bMouseDown && !bExtraVideoMouseDown;
+    bExtraVideoMouseDown = bMouseDown;
+    if ( bClicked && hoveredRow > 0 &&
+         kExtraVideoRows[hoveredRow - kNumRetailVideoRows - 1].bCheckbox ) {
+        toggleVSyncCheckbox( hoveredRow );
+    }
+
+    if ( hoveredRow == hoveredExtraVideoRow ) {
+        return;
+    }
+
+    hoveredExtraVideoRow = hoveredRow;
+    if ( hoveredRow < 0 ) {
+        return;
+    }
+
+    char path[64];
+    snprintf( path, sizeof( path ), "%s:num_ssm", kVideoMenuPath );
+    if ( pPlayer->getVariableAsInt( path ) != hoveredRow ) {
+        selectVideoRow( hoveredRow, true );
+    }
+}
+
+bool MngOptions::isMouseOverVideoRow( const int32_t rowIndex ) {
+    char path[64];
+    snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath, rowIndex );
+
+    FlashClip clip;
+    if ( !pPlayer->getClipPlayer( path, &clip ) ) {
+        return false;
+    }
+
+    const float mouseX = gEdFlash.Input.MouseCoordinates[0];
+    const float mouseY = gEdFlash.Input.MouseCoordinates[1];
+
+    FlashRECT viewport;
+    clip.getPropertyViewport( eFlashProperty::FP_Viewport, viewport );
+    return viewport.X <= mouseX && mouseX <= viewport.X + viewport.Width &&
+           viewport.Y <= mouseY && mouseY <= viewport.Y + viewport.Height;
+}
+
+bool MngOptions::isVideoRowSelectable( const int32_t rowIndex ) {
+    switch ( rowIndex ) {
+    case kResolutionRow:
+    case kRefreshRateRow:
+        return !isVideoModeLocked();
+    case kAntiAliasingRow:
+        return pPlayer->getVariableAsInt( "/:IsAAAvailable" ) == 1;
+    case kHDRRow:
+        return pPlayer->getVariableAsInt( "/:IsHDRAvailable" ) == 1;
+    default:
+        return true;
+    }
+}
+
+void MngOptions::skipLockedVideoRow( const int32_t focusedRow,
+                                     const int32_t previousRow ) {
+    if ( isVideoRowSelectable( focusedRow ) ) {
+        return;
+    }
+
+    if ( previousRow >= 1 && isVideoRowSelectable( previousRow ) &&
+         isMouseOverVideoRow( focusedRow ) ) {
+        selectVideoRow( previousRow, false );
+        return;
+    }
+
+    char path[64];
+    snprintf( path, sizeof( path ), "%s:nb_ssms_max", kVideoMenuPath );
+    const int32_t numRows = pPlayer->getVariableAsInt( path );
+    if ( numRows < 1 ) {
+        return;
+    }
+
+    const bool bDown = ( previousRow < 1 ) ||
+                       ( focusedRow == previousRow + 1 ) ||
+                       ( previousRow == numRows && focusedRow == 1 );
+
+    int32_t rowIndex = focusedRow;
+    for ( int32_t i = 0; i < numRows; i++ ) {
+        rowIndex = bDown ? ( rowIndex % numRows ) + 1
+                         : ( ( rowIndex + numRows - 2 ) % numRows ) + 1;
+        if ( isVideoRowSelectable( rowIndex ) ) {
+            selectVideoRow( rowIndex, false );
+            return;
+        }
+    }
+}
+
+void MngOptions::selectVideoRow( const int32_t rowIndex,
+                                 const bool bPlaySound ) {
+    char path[64];
+
+    disableAllSliders();
+    if ( bPlaySound ) {
+        gpFlash->getFlashSound()->playFrontEndSound( "move", 0, false );
+    }
+
+    snprintf( path, sizeof( path ), "%s/contlum:opened", kVideoMenuPath );
+    if ( pPlayer->getVariableAsInt( path ) != 0 ) {
+        snprintf( path, sizeof( path ), "%s/contlum", kVideoMenuPath );
+        pPlayer->showFrame( "out", path, true );
+    }
+
+    snprintf( path, sizeof( path ), "%s:nb_ssms_max", kVideoMenuPath );
+    const int32_t numRows = pPlayer->getVariableAsInt( path );
+    for ( int32_t i = 1; i <= numRows; i++ ) {
+        snprintf( path, sizeof( path ), "%s/sur%d:display", kVideoMenuPath, i );
+        const bool bDisplayed = pPlayer->getVariableAsInt( path ) == 1;
+
+        snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath, i );
+        pPlayer->showFrame( bDisplayed ? "off" : "off_lock", path, false );
+        snprintf( path, sizeof( path ), "%s/sur%d/title", kVideoMenuPath, i );
+        pPlayer->showFrame( "default", path, false );
+        snprintf( path, sizeof( path ), "%s/sur%d/cart", kVideoMenuPath, i );
+        pPlayer->showFrame( "default", path, false );
+    }
+
+    snprintf( path, sizeof( path ), "%s:num_ssm", kVideoMenuPath );
+    pPlayer->setVariableValue( path, rowIndex );
+
+    char displayPath[64];
+    snprintf( displayPath, sizeof( displayPath ), "%s/sur%d:display",
+              kVideoMenuPath, rowIndex );
+    const bool bDisplayed = pPlayer->getVariableAsInt( displayPath ) == 1;
+
+    const int32_t extraRow = rowIndex - kNumRetailVideoRows - 1;
+    snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath, rowIndex );
+    if ( rowIndex == kHDRRow ||
+         ( extraRow >= 0 && kExtraVideoRows[extraRow].bCheckbox ) ) {
+        pPlayer->showFrame( bDisplayed ? "change" : "change_lock", path, true );
+    } else {
+        if ( rowIndex == kGammaRow ) {
+            snprintf( path, sizeof( path ), "%s/contlum", kVideoMenuPath );
+            pPlayer->showFrame( "in", path, true );
+            snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath,
+                      rowIndex );
+        }
+        pPlayer->showFrame( bDisplayed ? "in2" : "lock", path, true );
+    }
+    focusedVideoRow = rowIndex;
+
+    char help[64] = {};
+    snprintf( path, sizeof( path ), "/:System_help%d", rowIndex );
+    if ( pPlayer->getVariableAsString( path, help ) ) {
+        pPlayer->setVariableValueNonLinked( "/:WhatHelp", help );
+        pPlayer->showFrame( help, "/help", true );
+    }
+}
+
+void MngOptions::updateCheckboxRowsOrientation() {
+    for ( int32_t i = 0; i < kNumExtraVideoRows; i++ ) {
+        if ( !kExtraVideoRows[i].bCheckbox ) {
+            continue;
+        }
+
+        char rowPath[64];
+        snprintf( rowPath, sizeof( rowPath ), "%s/sur%d", kVideoMenuPath,
+                  kNumRetailVideoRows + 1 + i );
+        for ( const CheckboxRowChild &child : kCheckboxRowUnmirroredChildren ) {
+            float matrix[6];
+            if ( !pPlayer->getObjectMatrix( rowPath, child.Depth, matrix ) ||
+                 matrix[0] < 0.0f ) {
+                continue;
+            }
+
+            matrix[4] += matrix[0] * ( child.MinX + child.MaxX );
+            matrix[0] = -matrix[0];
+            pPlayer->setObjectMatrix( rowPath, child.Depth, matrix );
+        }
+    }
+}
+
+void MngOptions::highlightCheckboxRow( const int32_t rowIndex ) {
+    const int32_t row = rowIndex - kNumRetailVideoRows - 1;
+    if ( row < 0 || row >= kNumExtraVideoRows ||
+         !kExtraVideoRows[row].bCheckbox ) {
+        return;
+    }
+
+    char path[64];
+    snprintf( path, sizeof( path ), "%s/sur%d:display", kVideoMenuPath,
+              rowIndex );
+    const bool bChecked = pPlayer->getVariableAsInt( path ) == 1;
+
+    snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath, rowIndex );
+    pPlayer->showFrame( bChecked ? "change" : "change_lock", path, true );
+}
+
+void MngOptions::toggleVSyncCheckbox( const int32_t rowIndex ) {
+    char path[64];
+    snprintf( path, sizeof( path ), "%s/sur%d:display", kVideoMenuPath,
+              rowIndex );
+    const bool bChecked = pPlayer->getVariableAsInt( path ) == 1;
+
+    snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath, rowIndex );
+    pPlayer->showFrame( bChecked ? "disable" : "enable", path, true );
+
+    bVSyncEnabled = !bChecked;
+}
+
+bool MngOptions::onVideoPageInvalidAction() {
+    if ( pPlayer == nullptr ||
+         extraVideoRowsState != eExtraVideoRowsState::EVRS_Open ) {
+        return false;
+    }
+
+    char path[64];
+    snprintf( path, sizeof( path ), "%s:num_ssm", kVideoMenuPath );
+    const int32_t rowIndex = pPlayer->getVariableAsInt( path );
+    const int32_t row = rowIndex - kNumRetailVideoRows - 1;
+    if ( row < 0 || row >= kNumExtraVideoRows ||
+         !kExtraVideoRows[row].bCheckbox ) {
+        return false;
+    }
+
+    toggleVSyncCheckbox( rowIndex );
+    return true;
+}
+
+bool MngOptions::isVideoModeLocked() const {
+    return displayMode == eDisplayMode::DM_Borderless;
+}
+
+void MngOptions::showVideoModeRowsLock() {
+    static constexpr int32_t kVideoModeRows[] = { kResolutionRow,
+                                                  kRefreshRateRow };
+
+    if ( pPlayer == nullptr ||
+         extraVideoRowsState == eExtraVideoRowsState::EVRS_Closed ) {
+        return;
+    }
+
+    char path[64];
+    snprintf( path, sizeof( path ), "%s:num_ssm", kVideoMenuPath );
+    const int32_t focusedRow = pPlayer->getVariableAsInt( path );
+
+    const bool bLocked = isVideoModeLocked();
+    for ( const int32_t rowIndex : kVideoModeRows ) {
+        snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath, rowIndex );
+        if ( !bLocked || rowIndex != focusedRow ) {
+            pPlayer->showFrame( bLocked ? "lock" : "set", path, false );
+        }
+        pPlayer->setClipProperty( path, eFlashProperty::FP_Alpha,
+                                  bLocked ? 20.0f : 100.0f );
+    }
+}
+
+void MngOptions::showExtraVideoPanelFocus() {
+    const CXForm untinted = {};
+    for ( int32_t i = 0; i < kNumVideoPanelPieces; i++ ) {
+        if ( !bVideoPanelPieceTinted[i] ) {
+            continue;
+        }
+
+        const CXForm &tinted = videoPanelPieceTints[i];
+        pPlayer->setObjectColorTransform( kVideoMenuPath, kVideoPanelDepths[i],
+                                          bExtraVideoPanelFocused ? untinted
+                                                                  : tinted );
+        pPlayer->setObjectColorTransform(
+            kVideoMenuPath, uint16_t( kFirstExtraPanelDepth + i ),
+            bExtraVideoPanelFocused ? tinted : untinted );
+    }
+}
+
+void MngOptions::showExtraVideoRowValue( const int32_t row,
+                                         const bool bHighlighted ) {
     if ( pPlayer == nullptr ) {
         return;
     }
 
-    pPlayer->setVariableValueNonLinked( "/:display_mode",
-                                        GetDisplayModeLabel( displayMode ) );
+    char label[32] = {};
+    switch ( row ) {
+    case EVR_DisplayMode:
+        strncpy( label, GetDisplayModeLabel( displayMode ),
+                 sizeof( label ) - 1 );
+        break;
+    case EVR_FrameRateCap: {
+        const int32_t maxFrameRate = GetMaxFrameRate();
+        if ( maxFrameRate == 0 ) {
+            strncpy( label, "UNLIMITED", sizeof( label ) - 1 );
+        } else {
+            snprintf( label, sizeof( label ), "%d FPS", maxFrameRate );
+        }
+        break;
+    }
+    case EVR_Reflections:
+        strncpy( label, gbDebugEnvMapDenseReflection ? "HIGH" : "DEFAULT",
+                 sizeof( label ) - 1 );
+        break;
+    default:
+        return;
+    }
+
+    char path[64];
+    snprintf( path, sizeof( path ), "%s/sur%d:param", kVideoMenuPath,
+              kNumRetailVideoRows + 1 + row );
+    pPlayer->setVariableValueNonLinked( path, label );
+    if ( bHighlighted ) {
+        pPlayer->setVariableValueNonLinked( "/:NameTemp", label );
+    }
+}
+
+void MngOptions::showNextFrameRateCap( const int32_t direction ) {
+    const int32_t numCaps = int32_t( std::size( kFrameRateCaps ) );
+    const int32_t index =
+        ( GetFrameRateCapIndex() + direction + numCaps ) % numCaps;
+
+    SetMaxFrameRate( kFrameRateCaps[index] );
+    showExtraVideoRowValue( EVR_FrameRateCap, true );
+    OpenTDUSettings::Save();
+}
+
+void MngOptions::toggleDenseReflections() {
+    gbDebugEnvMapDenseReflection = !gbDebugEnvMapDenseReflection;
+    showExtraVideoRowValue( EVR_Reflections, true );
+    OpenTDUSettings::Save();
 }
 
 void MngOptions::showNextDisplayMode() {
     displayMode = eDisplayMode( ( int32_t( displayMode ) + 1 ) %
                                 int32_t( eDisplayMode::DM_Count ) );
-    showDisplayModeLabel();
+    showExtraVideoRowValue( EVR_DisplayMode, true );
+    showVideoModeRowsLock();
 }
 
 void MngOptions::showPreviousDisplayMode() {
     const int32_t numModes = int32_t( eDisplayMode::DM_Count );
     displayMode =
         eDisplayMode( ( int32_t( displayMode ) + numModes - 1 ) % numModes );
-    showDisplayModeLabel();
+    showExtraVideoRowValue( EVR_DisplayMode, true );
+    showVideoModeRowsLock();
 }
 
 void MngOptions::showVideoOptions() {
@@ -1593,7 +2257,8 @@ void MngOptions::applySystemParameters() {
         ( videoWidth == width ) && ( videoHeight == height ) &&
         ( refreshRate == hz ) && ( activeDisplayMode == displayMode ) &&
         ( activeAntiAliasingMode == antiAliasingMode ) &&
-        ( bActiveHDREnabled == bHDREnabled );
+        ( bActiveHDREnabled == bHDREnabled ) &&
+        ( bActiveVSyncEnabled == bVSyncEnabled );
     if ( bUnchanged ) {
         FUN_006c59d0();
         pPlayer->showFrame( "valid_apply", "/menus/ss_menus/choice", true );
@@ -1601,6 +2266,7 @@ void MngOptions::applySystemParameters() {
     }
 
     ApplyDisplayMode( displayMode );
+    ApplyVSync( bVSyncEnabled );
 
     if ( gpRender != nullptr &&
          gpRender->resize( width, height, hz, antiAliasingMode,
@@ -1618,6 +2284,7 @@ void MngOptions::applySystemParameters() {
     }
 
     ApplyDisplayMode( activeDisplayMode );
+    ApplyVSync( bActiveVSyncEnabled );
 
     if ( gpRender != nullptr &&
          gpRender->resize( videoWidth, videoHeight, refreshRate,

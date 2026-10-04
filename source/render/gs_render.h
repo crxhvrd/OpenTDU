@@ -159,6 +159,8 @@ public:
     inline eAntiAliasingMethod getAAMethod() const { return activeAA; }
 
     inline bool isHDREnabled() const { return bHDREnabled; }
+    inline void setVSyncMode( const eVSyncMode mode ) { vsyncMode = mode; }
+    inline eVSyncMode getVSyncMode() const { return vsyncMode; }
 
     inline bool wasHDRToggled() const { return bHDREnabled != bWasHDREnabled; }
 
@@ -204,6 +206,8 @@ public:
     void registerConfigListener( RenderConfigurationChangeListener *callback );
     void
     unregisterConfigListener( RenderConfigurationChangeListener *callback );
+    void registerLODListener( RenderConfigurationChangeListener *callback );
+    void unregisterLODListener( RenderConfigurationChangeListener *callback );
 
     void registerDeviceResetListener( RenderDeviceResetListener *callback );
     void unregisterDeviceResetListener( RenderDeviceResetListener *callback );
@@ -234,6 +238,7 @@ private:
     std::vector<RenderPass> renderPasses;
 
     eAntiAliasingMethod activeAA;
+    eVSyncMode vsyncMode;
     uint32_t activeLODQuality;
 
     Viewport defaultViewport;
@@ -472,9 +477,16 @@ private:
     Camera *pActiveCamera;
 
     RenderConfigurationChangeListener *pListeners;
+    RenderConfigurationChangeListener *pLODListeners;
 
     int32_t deviceResetReason;
     RenderDeviceResetListener *pDeviceResetListeners;
+
+private:
+    static void AppendListener( RenderConfigurationChangeListener *&pHead,
+                                RenderConfigurationChangeListener *callback );
+    static void RemoveListener( RenderConfigurationChangeListener *&pHead,
+                                RenderConfigurationChangeListener *callback );
 
 private:
     bool allocateDeviceResources();

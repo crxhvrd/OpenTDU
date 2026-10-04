@@ -5,6 +5,30 @@ struct edFlashConfig;
 struct FlashClip;
 class FlashSprite;
 struct edFlashInput;
+struct CXForm;
+enum class eFlashProperty;
+
+enum class eFlashCloneMirror : int32_t {
+    FCM_None = 0,
+    // Mirror the translation only (e.g. text must stay readable)
+    FCM_Position = 1,
+    // Mirror the translation and flip the geometry horizontally
+    FCM_Geometry = 2,
+};
+
+struct FlashCloneDesc {
+    // When null, the source is looked up by SourceDepth instead
+    const char *pSourceName = nullptr;
+    uint16_t SourceDepth = 0;
+    const char *pCloneName = "";
+    uint16_t Depth = 0;
+    eFlashCloneMirror Mirror = eFlashCloneMirror::FCM_None;
+    // In the parent's space (twips)
+    float MirrorAxisX = 0.0f;
+    // Applied after mirroring (twips)
+    float OffsetX = 0.0f;
+    float OffsetY = 0.0f;
+};
 
 class FlashPlayer {
 public:
@@ -45,6 +69,24 @@ public:
     bool FUN_00441200( const char *param_2 );
 
     void releaseTextInputFocus();
+
+    bool cloneObject( const char *pParentPath, const FlashCloneDesc &desc );
+    void removeObject( const char *pParentPath, uint16_t depth );
+    bool getObjectColorTransform( const char *pParentPath,
+                                  uint16_t depth,
+                                  CXForm *pColorTransform );
+    void setObjectColorTransform( const char *pParentPath,
+                                  uint16_t depth,
+                                  const CXForm &colorTransform );
+    void setClipProperty( const char *pClipPath,
+                          const eFlashProperty property,
+                          const float value );
+    bool getObjectMatrix( const char *pParentPath,
+                          uint16_t depth,
+                          float pMatrix[6] );
+    void setObjectMatrix( const char *pParentPath,
+                          uint16_t depth,
+                          const float pMatrix[6] );
 
 private:
     FlashResource *pFlashResource;

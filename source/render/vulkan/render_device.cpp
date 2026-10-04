@@ -324,6 +324,7 @@ RenderDevice::RenderDevice()
       bPendingTexelsUpload( false ),
       bPendingMipGen( false ),
       bNeedRecreateSwapchain( false ),
+      bVSyncEnabled( false ),
       activeClearColor( gColorBlackNoAlpha ),
       activeRenderRegion{ { 0, 0 }, { 0, 0 } },
       boundPSO( VK_NULL_HANDLE ),
@@ -1099,6 +1100,15 @@ bool RenderDevice::resize( uint32_t width, uint32_t height ) {
         recreateSwapchain();
     }
     return true;
+}
+
+void RenderDevice::setVSyncEnabled( const bool bEnabled ) {
+    if ( bVSyncEnabled == bEnabled ) {
+        return;
+    }
+
+    bVSyncEnabled = bEnabled;
+    bNeedRecreateSwapchain = true;
 }
 
 void RenderDevice::waitForIdle() { vkDeviceWaitIdle( device ); }
@@ -3050,19 +3060,22 @@ bool RenderDevice::createSwapchain() {
     OTDU_ASSERT_FATAL( pickedFormatIndex !=
                        std::numeric_limits<uint32_t>::max() );
 
-    // Select Present Mode
-    bool bSupportMailboxPresent = false;
-    for ( VkPresentModeKHR presentMode : presentModes ) {
-        if ( presentMode == VK_PRESENT_MODE_MAILBOX_KHR ) {
-            bSupportMailboxPresent = true;
-            break;
+    // Select Present Mode (FIFO is the only mode the spec guarantees)
+    auto isPresentModeSupported = [&]( const VkPresentModeKHR mode ) {
+        return std::find( presentModes.begin(), presentModes.end(), mode ) !=
+               presentModes.end();
+    };
+
+    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    if ( !bVSyncEnabled ) {
+        if ( isPresentModeSupported( VK_PRESENT_MODE_MAILBOX_KHR ) ) {
+            presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+        } else if ( isPresentModeSupported( VK_PRESENT_MODE_IMMEDIATE_KHR ) ) {
+            presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
         }
     }
 
     VkSurfaceFormatKHR swapchainFormat = formats[pickedFormatIndex];
-    VkPresentModeKHR presentMode = ( bSupportMailboxPresent )
-                                       ? VK_PRESENT_MODE_MAILBOX_KHR
-                                       : VK_PRESENT_MODE_FIFO_KHR;
     VkExtent2D swapchainDimension = capabilities.currentExtent;
 
     uint32_t imageCount = PendingFrameCount;

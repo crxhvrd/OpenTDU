@@ -7,6 +7,7 @@
 
 #include "flash/entities/flash_entity.h"
 #include "flash/entities/flash_slider.h"
+#include "flash/implementation/flash_transform.h"
 
 class FlashPlayer;
 
@@ -18,6 +19,17 @@ enum class eDisplayMode : int32_t {
     DM_Borderless = 2,
 
     DM_Count
+};
+
+eDisplayMode GetActiveDisplayMode();
+void ApplyDisplayMode( const eDisplayMode displayMode );
+
+// Port-specific rows appended to the retail video page
+enum class eExtraVideoRowsState : int32_t {
+    EVRS_Closed = 0,
+    // "syin" received; waiting for the page setup script to run
+    EVRS_Opening = 1,
+    EVRS_Open = 2,
 };
 
 struct VideoResolutionOption {
@@ -71,6 +83,9 @@ private:
 
 class MngOptions : public Manager, public PopupCallback, public FlashEntity {
 public:
+    static constexpr int32_t kNumVideoPanelPieces = 8;
+
+public:
     const char *getName() const override { /* FUN_00431fd0 */
         return "Options";
     }
@@ -83,6 +98,7 @@ public:
     virtual void tick( float, float ) override;
     virtual void terminate() override;
 
+    bool onVideoPageInvalidAction();
     bool onMessage( FlashMessage *pMessage,
                     class FlashPlayer *pPlayer ) override;
     void
@@ -155,6 +171,15 @@ private:
     eAntiAliasingMethod activeAntiAliasingMode;
     eDisplayMode activeDisplayMode;
     bool bActiveHDREnabled;
+    eExtraVideoRowsState extraVideoRowsState;
+    bool bExtraVideoPanelFocused;
+    int32_t hoveredExtraVideoRow;
+    bool bExtraVideoMouseDown;
+    int32_t focusedVideoRow;
+    bool bVSyncEnabled;
+    bool bActiveVSyncEnabled;
+    bool bVideoPanelPieceTinted[kNumVideoPanelPieces];
+    CXForm videoPanelPieceTints[kNumVideoPanelPieces];
     AudioOptions *pAudioOptions;
 
     VideoRevertedCallback videoRevertedCallback;
@@ -188,7 +213,23 @@ private:
     const char *getAntiAliasingLabel() const;
     void showLODQualityLabel();
 
-    void showDisplayModeLabel();
+    void updateExtraVideoRows();
+    void setupExtraVideoRows();
+    void showExtraVideoRowValue( const int32_t row, const bool bHighlighted );
+    void showNextFrameRateCap( const int32_t direction );
+    void toggleDenseReflections();
+    void showExtraVideoPanelFocus();
+    void updateExtraVideoRowsHover();
+    bool isMouseOverVideoRow( const int32_t rowIndex );
+    bool isVideoRowSelectable( const int32_t rowIndex );
+    void skipLockedVideoRow( const int32_t focusedRow,
+                             const int32_t previousRow );
+    void selectVideoRow( const int32_t rowIndex, const bool bPlaySound );
+    void updateCheckboxRowsOrientation();
+    void highlightCheckboxRow( const int32_t rowIndex );
+    bool isVideoModeLocked() const;
+    void showVideoModeRowsLock();
+    void toggleVSyncCheckbox( const int32_t rowIndex );
     void showNextDisplayMode();
     void showPreviousDisplayMode();
     void FUN_006c7b80();

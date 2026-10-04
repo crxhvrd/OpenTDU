@@ -28,6 +28,7 @@
 #include "player_data/driver.h"
 #include "player_data/player_save.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/opentdu_settings.h"
 #include "player_data/save_game_manager.h"
 #include "player_data/user_profile.h"
 #include "render/ed_render.h"
@@ -548,6 +549,7 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         gbSaveAllowed = true;
         gpPlayerData->loadActiveProfileSave();
 
+        OpenTDUSettings::Load();
         ApplySavedVideoSettings();
 
         AchievementsData *pAchievements =

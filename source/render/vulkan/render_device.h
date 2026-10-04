@@ -176,6 +176,7 @@ public:
     void destroyVertexLayout( GPUVertexLayout *pVertexLayout );
 
     bool resize( uint32_t width, uint32_t height );
+    void setVSyncEnabled( const bool bEnabled );
     void waitForIdle();
     void flushAndWaitForIdle();
 
@@ -430,6 +431,7 @@ private:
     uint8_t bPendingTexelsUpload : 1;
     uint8_t bPendingMipGen : 1;
     uint8_t bNeedRecreateSwapchain : 1;
+    uint8_t bVSyncEnabled : 1;
 
     VkPipelineCache psoCache;
 

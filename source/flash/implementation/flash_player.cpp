@@ -3,6 +3,7 @@
 
 #include "flash/gs_flash.h"
 #include "flash_resource.h"
+#include "flash_tags.h"
 
 #include "core/time.h"
 
@@ -101,7 +102,7 @@ void FlashPlayer::setVariableValueNonLinked( const char *param_1,
 }
 
 void FlashPlayer::setVariableValueWritableLinked( const char *param_1,
-                                                 char *param_2 ) {
+                                                  char *param_2 ) {
     // FUN_00440d00
     ScopedMutexLock lock = gpFlash->scopedLock();
 
@@ -109,7 +110,7 @@ void FlashPlayer::setVariableValueWritableLinked( const char *param_1,
     gpActiveFlashResource = pFlashResource;
     gpPreviousActiveFlashResource = gpActiveFlashResource;
     gpActiveFlashResource->getRoot()->setVariableWritableLinked( param_1,
-                                                                param_2 );
+                                                                 param_2 );
     gpPreviousActiveFlashResource = pFVar1;
     gpActiveFlashResource = pFVar1;
 }
@@ -357,4 +358,247 @@ void FlashPlayer::releaseTextInputFocus() {
     gpActiveFlashResource->getFlashUnknown()->FUN_0044ab50();
     gpPreviousActiveFlashResource = pFVar1;
     gpActiveFlashResource = pFVar1;
+}
+
+class ScopedFlashParentClip {
+public:
+    ScopedFlashParentClip( FlashResource *pResource, const char *pParentPath )
+        : pPreviousResource( gpActiveFlashResource ),
+          activeClip( pResource->getActiveClip() ),
+          pPreviousSprite( activeClip.pSprite ),
+          pParent( nullptr ) {
+        gpActiveFlashResource = pResource;
+        gpPreviousActiveFlashResource = pResource;
+
+        activeClip.pSprite = pResource->getRoot();
+        if ( activeClip.retrieveSpriteFromPath( pParentPath, nullptr,
+                                                nullptr ) ) {
+            pParent = activeClip.pSprite;
+        }
+    }
+
+    ~ScopedFlashParentClip() {
+        activeClip.pSprite = pPreviousSprite;
+        gpPreviousActiveFlashResource = pPreviousResource;
+        gpActiveFlashResource = pPreviousResource;
+    }
+
+    FlashSprite *getParent() const { return pParent; }
+
+    FlashDisplayListEntry *findEntry( const uint16_t depth ) const {
+        if ( pParent == nullptr ) {
+            return nullptr;
+        }
+
+        FlashDisplayListEntry *pEntry =
+            pParent->getDisplayList()->getFirstEntry();
+        while ( pEntry != nullptr && pEntry->ObjectIndex != depth ) {
+            pEntry = pEntry->pNext;
+        }
+        return pEntry;
+    }
+
+private:
+    FlashResource *pPreviousResource;
+    FlashClip &activeClip;
+    FlashSprite *pPreviousSprite;
+    FlashSprite *pParent;
+};
+
+// Same layout as a PlaceObject2 with character, full matrix, color transform,
+// ratio and name.
+struct FlashClonePlaceObject : public FlashTagPlaceObject2Data {
+    float Scale[2];
+    float Rotate[2];
+    float Translate[2];
+    CXForm ColorTransform;
+    uint16_t Ratio;
+    char pName[32];
+};
+OTDU_SIZE_MUST_MATCH( FlashClonePlaceObject, 0x5c );
+
+// Same layout as a PlaceObject2 moving an existing object, with a color
+// transform only.
+struct FlashColorPlaceObject : public FlashTag {
+    uint16_t Index;
+    uint16_t Flags;
+    CXForm ColorTransform;
+};
+OTDU_SIZE_MUST_MATCH( FlashColorPlaceObject, 0x1c );
+
+// Same layout as a PlaceObject2 moving an existing object, with a full matrix
+// only.
+struct FlashMatrixPlaceObject : public FlashTag {
+    uint16_t Index;
+    uint16_t Flags;
+    float Matrix[6];
+};
+OTDU_SIZE_MUST_MATCH( FlashMatrixPlaceObject, 0x24 );
+
+static constexpr uint16_t kPlaceObject2TagId = 0x1a;
+
+bool FlashPlayer::cloneObject( const char *pParentPath,
+                               const FlashCloneDesc &desc ) {
+    static constexpr uint16_t kCloneFlags =
+        0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0080 | 0x0100 | 0x0200;
+
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    ScopedFlashParentClip parentClip( pFlashResource, pParentPath );
+    FlashSprite *pParent = parentClip.getParent();
+    if ( pParent == nullptr ) {
+        return false;
+    }
+
+    FlashDisplayListEntry *pSource = pParent->getDisplayList()->getFirstEntry();
+    while ( pSource != nullptr ) {
+        const bool bMatch =
+            ( desc.pSourceName != nullptr )
+                ? strcmp( pSource->pName, desc.pSourceName ) == 0
+                : pSource->ObjectIndex == desc.SourceDepth;
+        if ( bMatch ) {
+            break;
+        }
+        pSource = pSource->pNext;
+    }
+
+    if ( pSource == nullptr ) {
+        return false;
+    }
+
+    const float *pMatrix = pSource->InstanceTransform.ScalarsFloat;
+
+    FlashClonePlaceObject clone = {};
+    clone.TagId = kPlaceObject2TagId;
+    clone.TagSize = sizeof( FlashClonePlaceObject );
+    clone.Index = desc.Depth;
+    clone.Flags = kCloneFlags;
+    clone.Unknown = uint16_t( pSource->Index );
+    clone.Scale[0] = pMatrix[0];
+    clone.Scale[1] = pMatrix[1];
+    clone.Rotate[0] = pMatrix[2];
+    clone.Rotate[1] = pMatrix[3];
+    clone.Translate[0] = pMatrix[4];
+    clone.Translate[1] = pMatrix[5];
+    if ( ( pSource->InstanceTransform.Flags & 1 ) != 0 ) {
+        clone.ColorTransform = pSource->InstanceTransform.Transform;
+    }
+    clone.Ratio = uint16_t( pSource->UnknownDword );
+    strncpy( clone.pName, desc.pCloneName, sizeof( clone.pName ) - 1 );
+
+    if ( desc.Mirror != eFlashCloneMirror::FCM_None ) {
+        clone.Translate[0] = 2.0f * desc.MirrorAxisX - pMatrix[4];
+    }
+    if ( desc.Mirror == eFlashCloneMirror::FCM_Geometry ) {
+        clone.Scale[0] = -pMatrix[0];
+        clone.Rotate[1] = -pMatrix[3];
+    }
+    clone.Translate[0] += desc.OffsetX;
+    clone.Translate[1] += desc.OffsetY;
+
+    if ( pParent->getDisplayList()->enqueuePlaceObjectTag( &clone ) ) {
+        pParent->increaseNumObjects();
+    }
+
+    return true;
+}
+
+void FlashPlayer::removeObject( const char *pParentPath, uint16_t depth ) {
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    ScopedFlashParentClip parentClip( pFlashResource, pParentPath );
+    if ( parentClip.findEntry( depth ) == nullptr ) {
+        return;
+    }
+
+    FlashSprite *pParent = parentClip.getParent();
+    pParent->getDisplayList()->enqueueRemoveObjectTag( depth, pFlashResource );
+    pParent->decreaseNumObjects();
+}
+
+bool FlashPlayer::getObjectColorTransform( const char *pParentPath,
+                                           uint16_t depth,
+                                           CXForm *pColorTransform ) {
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    ScopedFlashParentClip parentClip( pFlashResource, pParentPath );
+    const FlashDisplayListEntry *pEntry = parentClip.findEntry( depth );
+    if ( pEntry == nullptr || ( pEntry->InstanceTransform.Flags & 1 ) == 0 ) {
+        return false;
+    }
+
+    *pColorTransform = pEntry->InstanceTransform.Transform;
+    return true;
+}
+
+void FlashPlayer::setObjectColorTransform( const char *pParentPath,
+                                           uint16_t depth,
+                                           const CXForm &colorTransform ) {
+    static constexpr uint16_t kMoveColorFlags = 0x0001 | 0x0008;
+
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    ScopedFlashParentClip parentClip( pFlashResource, pParentPath );
+    if ( parentClip.findEntry( depth ) == nullptr ) {
+        return;
+    }
+
+    FlashColorPlaceObject move = {};
+    move.TagId = kPlaceObject2TagId;
+    move.TagSize = sizeof( FlashColorPlaceObject );
+    move.Index = depth;
+    move.Flags = kMoveColorFlags;
+    move.ColorTransform = colorTransform;
+
+    parentClip.getParent()->getDisplayList()->enqueuePlaceObjectTag(
+        (FlashTagPlaceObject2Data *)&move );
+}
+
+bool FlashPlayer::getObjectMatrix( const char *pParentPath,
+                                   uint16_t depth,
+                                   float pMatrix[6] ) {
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    ScopedFlashParentClip parentClip( pFlashResource, pParentPath );
+    const FlashDisplayListEntry *pEntry = parentClip.findEntry( depth );
+    if ( pEntry == nullptr ) {
+        return false;
+    }
+
+    memcpy( pMatrix, pEntry->InstanceTransform.ScalarsFloat,
+            sizeof( float ) * 6 );
+    return true;
+}
+
+void FlashPlayer::setObjectMatrix( const char *pParentPath,
+                                   uint16_t depth,
+                                   const float pMatrix[6] ) {
+    static constexpr uint16_t kMoveMatrixFlags =
+        0x0001 | 0x0004 | 0x0080 | 0x0100 | 0x0200;
+
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    ScopedFlashParentClip parentClip( pFlashResource, pParentPath );
+    if ( parentClip.findEntry( depth ) == nullptr ) {
+        return;
+    }
+
+    FlashMatrixPlaceObject move = {};
+    move.TagId = kPlaceObject2TagId;
+    move.TagSize = sizeof( FlashMatrixPlaceObject );
+    move.Index = depth;
+    move.Flags = kMoveMatrixFlags;
+    memcpy( move.Matrix, pMatrix, sizeof( move.Matrix ) );
+
+    parentClip.getParent()->getDisplayList()->enqueuePlaceObjectTag(
+        (FlashTagPlaceObject2Data *)&move );
+}
+
+void FlashPlayer::setClipProperty( const char *pClipPath,
+                                   const eFlashProperty property,
+                                   const float value ) {
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    ScopedFlashParentClip targetClip( pFlashResource, pClipPath );
+    if ( targetClip.getParent() == nullptr ) {
+        return;
+    }
+
+    FlashClip clip;
+    clip.pSprite = targetClip.getParent();
+    clip.pParent = pFlashResource;
+    clip.setProperty( property, value );
 }

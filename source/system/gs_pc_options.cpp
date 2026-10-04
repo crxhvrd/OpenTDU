@@ -269,6 +269,11 @@ bool GSPCOptions::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         return FlashSlider::OnMessage( pMessage + 1 );
 
     case 0x736e6470: // "sndp"
+        if ( gpMngOptions != nullptr &&
+             strcmp( pMessage[1].pAsChar, "wrong" ) == 0 &&
+             gpMngOptions->onVideoPageInvalidAction() ) {
+            return true;
+        }
         return gpFlash->getFlashSound()->playFrontEndSound( pMessage[1].pAsChar,
                                                             0, false );
 

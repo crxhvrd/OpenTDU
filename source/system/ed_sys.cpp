@@ -44,7 +44,9 @@ edSys::edSys()
       ,
       state( 0 ),
       bCreateWindow( true ),
-      bWindowActivated( true ) {
+      bWindowActivated( true ),
+      appliedFullscreenMode( -1 ),
+      bAppliedWindowed( false ) {
     // FUN_00432f30
 }
 
@@ -179,17 +181,28 @@ void edSys::pollEvents() {
 #endif
 }
 
+bool edSys::isWindowStateApplied( const eFullscreenMode fullscreenMode,
+                                  const bool bWindowed ) const {
+    if ( appliedFullscreenMode < 0 || bAppliedWindowed != bWindowed ) {
+        return false;
+    }
+
+    return bWindowed || appliedFullscreenMode == int32_t( fullscreenMode );
+}
+
 void edSys::resizeGameWindow( const uint32_t width,
                               const uint32_t height,
                               const eFullscreenMode fullscreenMode,
                               const bool bWindowed ) {
     gWindowWidth = width;
     gWindowHeight = height;
+    appliedFullscreenMode = int32_t( fullscreenMode );
+    bAppliedWindowed = bWindowed;
 
 #if defined( OTDU_USE_SDL )
-    SDL_SetWindowFullscreen( pWindow, !bWindowed );
-
     if ( bWindowed ) {
+        SDL_SetWindowFullscreen( pWindow, false );
+
         // SDL ignores size requests on a maximized window
         if ( SDL_GetWindowFlags( pWindow ) & SDL_WINDOW_MAXIMIZED ) {
             SDL_RestoreWindow( pWindow );
@@ -205,20 +218,27 @@ void edSys::resizeGameWindow( const uint32_t width,
             bool bFoundDisplayMode = SDL_GetClosestFullscreenDisplayMode(
                 mainDisplay, width, height,
                 static_cast<float>( gPickedRefreshRate ), true, &displayMode );
-            OTDU_ASSERT( bFoundDisplayMode );
+            if ( !bFoundDisplayMode ) {
+                OTDU_LOG_WARN( "No fullscreen mode matches %ux%u; using "
+                               "borderless fullscreen instead\n",
+                               width, height );
+                SDL_SetWindowFullscreenMode( pWindow, nullptr );
+                break;
+            }
 
             SDL_SetWindowFullscreenMode( pWindow, &displayMode );
             break;
         }
         case eFullscreenMode::FM_Auto:
         case eFullscreenMode::FM_Desktop:
-            SDL_SetWindowFullscreenMode(
-                pWindow, SDL_GetWindowFullscreenMode( pWindow ) );
+            // NULL = borderless desktop fullscreen
+            SDL_SetWindowFullscreenMode( pWindow, nullptr );
             break;
         default:
             OTDU_UNIMPLEMENTED;
             break;
         };
+        SDL_SetWindowFullscreen( pWindow, true );
     }
 
     SDL_SyncWindow( pWindow );

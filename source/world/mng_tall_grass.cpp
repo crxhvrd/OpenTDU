@@ -628,13 +628,13 @@ bool MngTallGrass::initialize( TestDriveGameInstance * ) {
                                       gGrassNumElementFar, quality );
     }
 
-    gpRender->registerConfigListener( this );
+    gpRender->registerLODListener( this );
     return true;
 }
 
 void MngTallGrass::terminate() {
     // FUN_006fa580
-    gpRender->unregisterConfigListener( this );
+    gpRender->unregisterLODListener( this );
     releaseResources();
 
     for ( uint32_t i = 0; i < kNumInstancesPerGrid; i++ ) {

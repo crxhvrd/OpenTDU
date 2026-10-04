@@ -32,6 +32,8 @@ public:
                            const uint32_t height,
                            const eFullscreenMode fullscreenMode,
                            const bool bWindowed );
+    bool isWindowStateApplied( const eFullscreenMode fullscreenMode,
+                               const bool bWindowed ) const;
     void showCursor( bool param_1 );
     void setRelativeMouseMode( bool bEnabled );
 
@@ -53,6 +55,10 @@ public:
     uint32_t state;
     uint8_t bCreateWindow : 1;
     uint8_t bWindowActivated : 1;
+
+private:
+    int32_t appliedFullscreenMode;
+    bool bAppliedWindowed;
 
 private:
     void centerWindow();

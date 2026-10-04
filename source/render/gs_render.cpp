@@ -70,6 +70,7 @@ static void FUN_00994850() {
 GSRender::GSRender()
     : GameSystem(),
       activeAA( eAntiAliasingMethod::AAM_Disabled ),
+      vsyncMode( eVSyncMode::VSM_Immediate ),
       activeLODQuality( 2u ),
       defaultViewport(),
       clearColorViewport(),
@@ -246,6 +247,7 @@ GSRender::GSRender()
       pActiveScene( nullptr ),
       pActiveCamera( nullptr ),
       pListeners( nullptr ),
+      pLODListeners( nullptr ),
       deviceResetReason( 0 ),
       pDeviceResetListeners( nullptr ) {
     // FUN_00996f80
@@ -296,6 +298,11 @@ bool GSRender::initialize( TestDriveGameInstance *param_2 ) {
 
     int32_t edRenderInit = gEdRender.initialize();
     if ( edRenderInit == 0 ) {
+        if ( ( gpConfig->TimerPriority & eTimerPriority::SyncToVBL ) != 0 ) {
+            vsyncMode = eVSyncMode( Clamp( gpConfig->NbVBL, 1, 4 ) );
+            gEdRender.pRenderDevice->setVSyncEnabled( true );
+        }
+
         if ( gpConfig->bWindowed ||
              gpConfig->FullscreenMode == eFullscreenMode::FM_Desktop ) {
             renderWidth = gpConfig->WindowWidth;
@@ -411,6 +418,7 @@ void GSRender::terminate() {
 }
 
 void GSRender::setLODQuality( const uint32_t qualityIndex ) {
+    // FUN_00993b50
     if ( qualityIndex < 0 || 2 < qualityIndex ) {
         return;
     }
@@ -436,7 +444,7 @@ void GSRender::setLODQuality( const uint32_t qualityIndex ) {
 
     gpPlayerData->setLODQuality( activeLODQuality );
     if ( bDirtyLODQuality ) {
-        notifyConfigListeners( pListeners );
+        notifyConfigListeners( pLODListeners );
     }
 }
 
@@ -503,31 +511,30 @@ void GSRender::releaseStencilBits( uint32_t mask ) {
                  ~( 1 << ( (uint8_t)mask + 4U & 0x1f ) );
 }
 
-void GSRender::registerConfigListener(
-    RenderConfigurationChangeListener *callback ) {
-    if ( pListeners == nullptr ) {
-        pListeners = callback;
-        callback->pNextListener = nullptr;
-    } else {
-        RenderConfigurationChangeListener *pListener = pListeners;
-        while ( pListener->pNextListener != nullptr ) {
-            pListener = pListener->pNextListener;
-        }
-
-        pListener->pNextListener = callback;
-        callback->pNextListener = nullptr;
+void GSRender::AppendListener( RenderConfigurationChangeListener *&pHead,
+                               RenderConfigurationChangeListener *callback ) {
+    callback->pNextListener = nullptr;
+    if ( pHead == nullptr ) {
+        pHead = callback;
+        return;
     }
+
+    RenderConfigurationChangeListener *pListener = pHead;
+    while ( pListener->pNextListener != nullptr ) {
+        pListener = pListener->pNextListener;
+    }
+    pListener->pNextListener = callback;
 }
 
-void GSRender::unregisterConfigListener(
-    RenderConfigurationChangeListener *callback ) {
+void GSRender::RemoveListener( RenderConfigurationChangeListener *&pHead,
+                               RenderConfigurationChangeListener *callback ) {
     RenderConfigurationChangeListener *pPrev = nullptr;
 
-    for ( RenderConfigurationChangeListener *pIt = pListeners; pIt != nullptr;
+    for ( RenderConfigurationChangeListener *pIt = pHead; pIt != nullptr;
           pIt = pIt->pNextListener ) {
         if ( pIt == callback ) {
             if ( pPrev == nullptr ) {
-                pListeners = pIt->pNextListener;
+                pHead = pIt->pNextListener;
             } else {
                 pPrev->pNextListener = pIt->pNextListener;
             }
@@ -535,6 +542,26 @@ void GSRender::unregisterConfigListener(
         }
         pPrev = pIt;
     }
+}
+
+void GSRender::registerConfigListener(
+    RenderConfigurationChangeListener *callback ) {
+    AppendListener( pListeners, callback );
+}
+
+void GSRender::unregisterConfigListener(
+    RenderConfigurationChangeListener *callback ) {
+    RemoveListener( pListeners, callback );
+}
+
+void GSRender::registerLODListener(
+    RenderConfigurationChangeListener *callback ) {
+    AppendListener( pLODListeners, callback );
+}
+
+void GSRender::unregisterLODListener(
+    RenderConfigurationChangeListener *callback ) {
+    RemoveListener( pLODListeners, callback );
 }
 
 void GSRender::registerDeviceResetListener(
@@ -612,7 +639,10 @@ bool GSRender::resize( uint32_t width,
 
     const bool bDisplayModeChanged =
         ( gWindowWidth != width ) || ( gWindowHeight != height ) ||
-        ( uint32_t( gPickedRefreshRate ) != refreshRate );
+        ( uint32_t( gPickedRefreshRate ) != refreshRate ) ||
+        ( gpConfig != nullptr &&
+          !gEdSys.isWindowStateApplied( gpConfig->FullscreenMode,
+                                        bool( gpConfig->bWindowed ) ) );
 
     gWindowWidth = width;
     gWindowHeight = height;
@@ -623,8 +653,8 @@ bool GSRender::resize( uint32_t width,
                                  gpConfig->bWindowed );
     }
 
-    cVar1 = gEdRender.applyVideoSettingsChange(
-        gWindowWidth, gWindowHeight, eVSyncMode::VSM_Immediate, activeAA );
+    cVar1 = gEdRender.applyVideoSettingsChange( gWindowWidth, gWindowHeight,
+                                                vsyncMode, activeAA );
     if ( cVar1 ) {
         gFrameGraph.dropClearCommands();
 
@@ -1897,4 +1927,3 @@ bool GSRender::notifyConfigListeners(
 
     return false;
 }
-
