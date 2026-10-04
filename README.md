@@ -9,7 +9,7 @@ The goal of this project is to create a new client fixing various issues encount
 
 **This project is not a replacement for the game (you still need to own a legal copy); and does not provide any game assets!**
 
-<img src="/screenshots/carshowcase_exige.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/worldviewer_3.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/gmeter.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/login.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/cinviewer.jpg" alt="Alt Text" width="256" height="144"> <img src="/screenshots/boattour.jpg" alt="Alt Text" width="256" height="144"> 
+<img src="/screenshots/carshowcase_exige.jpg" alt="GMCarShowcase" width="256" height="144"> <img src="/screenshots/worldviewer_3.jpg" alt="GMSandbox" width="256" height="144"> <img src="/screenshots/freeride.jpg" alt="GMFreeride" width="256" height="144"> <img src="/screenshots/login.jpg" alt="GMLogin" width="256" height="144"> <img src="/screenshots/cinviewer.jpg" alt="GMCinViewer" width="256" height="144"> <img src="/screenshots/boattour.jpg" alt="GMBoatTour" width="256" height="144"> <img src="/screenshots/living.jpg" alt="GMLiving" width="256" height="144"> <img src="/screenshots/garage.jpg" alt="GMGarage" width="256" height="144"> <img src="/screenshots/cockpit.jpg" alt="GMFreeride (cockpit)" width="256" height="144"> 
 
 Regular updates/screenshots can be found in this [thread](https://github.com/opentestdriveunlimited/OpenTestDriveUnlimited/discussions/175).
 
@@ -47,6 +47,13 @@ Copy the opentdu binary and EURO folder content (**must be merged with your orig
 | -break_on_assert_failure | Trigger debug breakpoint on assert failure |
 | -disable_assert | Disable assert log/debug break |
 | -norunlock | Disable single game instance run lock |
+| -profile (name) | Launch game with a specific profile (must match savegame name) |
+| -silent | Disable logging (stdout, outpudebug and file) | 
+| -log (path) | Redirect game logs to a specific file (default: ./opentdu.log) |
+| -nolog | Disable logging to file (note: does not disable stdout/outputdebug) |
+| -logtransient | Write transient log to file |
+| -verbose | Enable verbose (aka Debug) logging. Adds significant runtime overhead |
+| -maxfps (fps) | Set framecap (0: unlimited) (default: 0) |
 
 ## Debug Menu
 Debug Menu can be toggled with the *F1* key.
@@ -65,3 +72,4 @@ Progress is tracked on a game mode basis:
 | Garage|**In Progress**|
 | Dressing|**In Progress**|
 | FreeRide|**In Progress**|
+| Jail|**In Progress**|
