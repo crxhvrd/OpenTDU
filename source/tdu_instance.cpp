@@ -697,7 +697,16 @@ bool TestDriveGameInstance::initialize() {
         return false;
     }
 
+    resetServices();
+
     return true;
+}
+
+void TestDriveGameInstance::resetServices() {
+    // FUN_009b45d0
+    for ( GameSystem *pService : registeredServices ) {
+        pService->reset();
+    }
 }
 
 // clang-format off

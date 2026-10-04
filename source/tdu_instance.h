@@ -157,6 +157,7 @@ private:
     bool initialize();
     bool initializeBaseServices();
     bool initializeGameServices();
+    void resetServices();
 
     template <typename TGS> bool registerService( TGS *pSystem = nullptr );
     void reorderService( GameSystem *pService, GameSystem *pTickBefore );
