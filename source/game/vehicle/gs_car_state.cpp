@@ -300,7 +300,9 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 pPhysicsVehicle->getDrivingGearbox();
             const bool bStopLampsArmed =
                 !gearbox.bAutomatic ||
-                pPhysicsVehicle->getAutoReverseState() != 0;
+                ( pPhysicsVehicle->getAutoReverseState() != 0 &&
+                  pPhysicsVehicle->getDrivingMode() ==
+                      PhysicsVehicle::DM_Player );
             body.bIsBraking =
                 bStopLampsArmed && pPhysicsVehicle->getInputBrake() > 0.1f;
             body.bIsReversing = pPhysicsVehicle->getCurrentGear() < 0;

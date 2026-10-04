@@ -33,15 +33,15 @@ static constexpr float kPedalCurveC2 = 0.5f;        // FLOAT_00f41674
 static constexpr float kPedalCurveC3 = 1.0f / 3.0f; // DAT_00f41764
 static constexpr float kThrottleCurveK = 0.0f;      // DAT_00f8a22c
 static constexpr float kBrakeCurveK = 50.0f;
-static constexpr float kPedalGain = 0.7f;                // DAT_00fab730
-static constexpr float kAutoGbxPedal = 0.1f;             // DAT_00fab720
-static constexpr float kAutoGbxInput = 0.1f;             // FLOAT_00f41668
+static constexpr float kPedalGain = 0.7f;                 // DAT_00fab730
+static constexpr float kAutoGbxPedal = 0.1f;              // DAT_00fab720
+static constexpr float kAutoGbxInput = 0.1f;              // FLOAT_00f41668
 static constexpr float kIgnitionThrottleThreshold = 0.1f; // FLOAT_00f41668
-static constexpr float kAutoGbxPedalIdle = 0.01f;        // DAT_00f416d4
-static constexpr float kAutoGbxHoldBrake = 0.5f;         // FLOAT_00f41674
-static constexpr float kAutoGbxMovingSpeed = 0.2777778f; // DAT_00f41868, 1km/h
-static constexpr float kAutoGbxMoveOffThrottle = 0.2f;   // DAT_00f41730
-static constexpr float kAutoGbxReverseExitSpeed = 2.0f;  // DAT_00f416b0
+static constexpr float kAutoGbxPedalIdle = 0.01f;         // DAT_00f416d4
+static constexpr float kAutoGbxHoldBrake = 0.5f;          // FLOAT_00f41674
+static constexpr float kAutoGbxMovingSpeed = 0.2777778f;  // DAT_00f41868, 1km/h
+static constexpr float kAutoGbxMoveOffThrottle = 0.2f;    // DAT_00f41730
+static constexpr float kAutoGbxReverseExitSpeed = 2.0f;   // DAT_00f416b0
 
 int32_t gVehicleDrivingHelpOverride = -1;
 int32_t gVehicleSteerControlOverride = -1;
@@ -937,6 +937,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     pPhysicsSystem = pSystem;
     pChassisBody = pChassis;
     drivingMode = DM_Player;
+    pDrivingControl = nullptr;
+    bBackView = false;
     prevInputThrottle = 0.0f;
     prevInputBrake = 0.0f;
     prevInputSteer = 0.0f;
@@ -1728,27 +1730,28 @@ void PhysicsVehicle::applyDrivingMode() {
     // FUN_0083db70
     switch ( drivingMode ) {
     case DM_HoldBrake:
-        inputThrottle = 0.0f;
-        inputBrake = 0.5f; // DAT_00f41674
+        rawInputThrottle = 0.0f;
+        rawInputBrake = 0.5f; // DAT_00f41674
         inputSteer = 0.0f;
+        inputHandbrake = 0.0f;
         break;
 
     case DM_Parked:
-        inputBrake = 1.0f; // FLOAT_00f4165c
+        rawInputBrake = 1.0f; // FLOAT_00f4165c
         inputSteer = 0.0f;
-        setClutchOverride( 0.0f );
+        inputHandbrake = 0.0f;
         break;
 
     case DM_SlowDown:
-        inputThrottle = 0.0f;
-        inputBrake = 0.65f; // DAT_00f41b6c
+        rawInputThrottle = 0.0f;
+        rawInputBrake = 0.65f; // DAT_00f41b6c
         inputSteer = 0.0f;
-        setClutchOverride( 0.0f );
+        inputHandbrake = 0.0f;
         break;
 
     case DM_RepeatLast:
-        inputThrottle = prevInputThrottle;
-        inputBrake = prevInputBrake;
+        rawInputThrottle = prevInputThrottle;
+        rawInputBrake = prevInputBrake;
         inputSteer = prevInputSteer;
         break;
 
@@ -1756,9 +1759,15 @@ void PhysicsVehicle::applyDrivingMode() {
         break;
     }
 
-    prevInputThrottle = inputThrottle;
-    prevInputBrake = inputBrake;
+    prevInputThrottle = rawInputThrottle;
+    prevInputBrake = rawInputBrake;
     prevInputSteer = inputSteer;
+}
+
+void PhysicsVehicle::applyDrivingModeClutch() {
+    if ( drivingMode == DM_Parked || drivingMode == DM_SlowDown ) {
+        setClutchOverride( 0.0f );
+    }
 }
 
 PhysicsVehicle::DrivingGearbox PhysicsVehicle::getDrivingGearbox() const {
@@ -2448,17 +2457,29 @@ void PhysicsVehicle::OnStep(
         return;
     }
 
+    if ( pDrivingControl != nullptr ) {
+        pDrivingControl->forwardInput( *this, dt );
+    }
+
     if ( bKeyframed ) {
+        if ( drivingMode == DM_Parked ) {
+            applyDrivingMode();
+            arbitrateAutomaticGearbox( dt, 0.0f );
+            applyDrivingModeClutch();
+            StepPowertrain( vehicle, inputThrottle, inputBrake, inputHandbrake,
+                            dt );
+        }
         updateKeyframedWheels( dt );
         return;
     }
 
+    applyDrivingMode();
     {
         const JPH::Vec3 v = chassis.GetLinearVelocity();
         arbitrateAutomaticGearbox(
             dt, JPH::Vec3( v.GetX(), 0.0f, v.GetZ() ).Length() );
     }
-    applyDrivingMode();
+    applyDrivingModeClutch();
 
     const JPH::RMat44 world = chassis.GetWorldTransform();
 

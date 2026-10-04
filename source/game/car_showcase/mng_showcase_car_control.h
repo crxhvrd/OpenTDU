@@ -1,10 +1,10 @@
 #pragma once
 
 #include "game/mng_base.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 class VehicleBase;
 class VehicleCar;
-class PhysicsVehicleSnapshot;
 
 struct DoorState {
     float ElapsedTime = 1.0f;
@@ -22,6 +22,19 @@ struct WindowState {
         const float progress = ElapsedTime / MoveDuration;
         return bIsOpening ? progress : ( 1.0f - progress );
     }
+};
+
+// Driving input while seated in a showcase car
+class ShowCasePhysControl : public PhysicsDrivingControl {
+public:
+    void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) override;
+
+public:
+    bool bRev = false;      // 'star' / 'stao'
+    bool bHonk = false;     // 'honk' / 'hoof'
+    bool bBackView = false; // 'bcvi' / 'ftvi'
+
+    bool bHonking = false;
 };
 
 // Photo mode camera logic (has nothing to do with GMCarShowcase somehow)
@@ -48,6 +61,7 @@ public:
 
     inline bool hasWindows() const { return bHasWindows; }
     inline void setEnabled( const bool bValue ) { bEnabled = bValue; }
+    inline ShowCasePhysControl &getPhysicsControl() { return physicsControl; }
     inline DoorState &getRightDoor() { return RightDoor; }
     inline WindowState &getLeftWindow() { return LeftWindow; }
     inline WindowState &getRightWindow() { return RightWindow; }
@@ -73,7 +87,7 @@ private:
     WindowState LeftWindow;
     WindowState RightWindow;
 
-    bool bMainControl;
-    PhysicsVehicleSnapshot *pSavedPhysics;
+    ShowCasePhysControl physicsControl;
+    PhysicsDrivingControl *pSavedControl;
     void *pBankBuffer;
 };

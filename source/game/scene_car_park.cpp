@@ -29,6 +29,22 @@ static constexpr float kSteerColumnRake = 0.26f;
 static constexpr float kWheelOffsetScale = 0.0007874016f; // DAT_00f41758
 static constexpr float kWheelOffsetBias = 0.1f;           // FLOAT_00f41668
 
+// Driving input of every parked car (DAT_00fa9540)
+class ParkedPhysControl : public PhysicsDrivingControl {
+public:
+    void forwardInput( PhysicsVehicle &vehicle, float ) override {
+        // FUN_00828240
+        vehicle.setInput( 0.0f, 0.0f, 0.0f );
+        vehicle.setHandbrake( 1.0f );
+        vehicle.setDrivingMode( PhysicsVehicle::DM_Parked );
+        vehicle.setCurrentGear( 1 );
+        vehicle.setBackView( false );
+        gpConfig->pPlayerConfig->bCarReset = false;
+    }
+};
+
+static ParkedPhysControl gParkedPhysControl;
+
 static void SetInnerViewLocked( const bool bLocked ) {
     MoviePlayer *pMoviePlayer = gpFlash->getMoviePlayer( 1, 0 );
     if ( pMoviePlayer == nullptr || !pMoviePlayer->MovieBank.isLoaded() ||
@@ -268,7 +284,12 @@ void SceneCarPark::releaseAll() {
 
     for ( int32_t i = 0; i < numEntries; i++ ) {
         if ( pCarStates[i] != nullptr ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+            PhysicsVehicle *pPhysicsVehicle =
+                pCarStates[i]->getPhysicsVehicle();
+            if ( pPhysicsVehicle != nullptr ) {
+                PhysicsLock lock;
+                pPhysicsVehicle->setDrivingControl( pSavedControls[i] );
+            }
             gpCarState->releaseCarState( pCarStates[i], false );
             pCarStates[i] = nullptr;
         }
@@ -547,7 +568,11 @@ void SceneCarPark::instantiateCar( const int32_t index, Entry &entry ) {
     pCarStates[index] = &carState;
     fadeIn[index] = 0.0f;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+    if ( pPhysicsVehicle != nullptr ) {
+        PhysicsLock lock;
+        pSavedControls[index] = pPhysicsVehicle->getDrivingControl();
+        pPhysicsVehicle->setDrivingControl( &gParkedPhysControl );
+    }
 
     carState.bIsIndoor = ( gpActiveGMScene != nullptr ) &&
                          gpActiveGMScene->isStaticFrontEndScene();

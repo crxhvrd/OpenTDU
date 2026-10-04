@@ -15,6 +15,13 @@ namespace JPH {
 
 struct DBEntryCarPhysicsData;
 struct DBEntryAftermarketPack;
+class PhysicsVehicle;
+
+class PhysicsDrivingControl {
+public:
+    virtual ~PhysicsDrivingControl() = default;
+    virtual void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) = 0;
+};
 
 class PhysicsVehicle final : public JPH::PhysicsStepListener {
 public:
@@ -166,6 +173,7 @@ public:
         return vehicle.Engine.SmoothedTorque;
     }
     eEngineState getEngineState() const { return vehicle.Engine.State; }
+    void setEngineState( eEngineState state ) { vehicle.Engine.State = state; }
     float getVehicleMass() const { return vehicle.Mass; }
     float getInputBrake() const { return inputBrake; }
     float getInputThrottle() const { return inputThrottle; }
@@ -189,6 +197,12 @@ public:
     const JPH::Body *getChassisBody() const { return pChassisBody; }
     bool isSimulated() const { return bRegistered; }
     void setDrivingMode( uint8_t mode ) { drivingMode = mode; }
+    void setDrivingControl( PhysicsDrivingControl *pControl ) {
+        pDrivingControl = pControl;
+    }
+    PhysicsDrivingControl *getDrivingControl() const { return pDrivingControl; }
+    void setBackView( bool bValue ) { bBackView = bValue; }
+    bool isBackViewRequested() const { return bBackView; }
     uint8_t getDrivingMode() const { return drivingMode; }
     int32_t getElectronicIndex() const { return vehicle.ElectronicIndex; }
     bool areElectronicsEnabled() const { return vehicle.bElectronicsEnabled; }
@@ -245,6 +259,7 @@ public:
     void setHandbrake( float handbrake );
     void setIgnition( bool bKeyOn, bool bCutEdge );
     void applyDrivingMode();
+    void applyDrivingModeClutch();
     void tick( float deltaTime );
     void setDrivingHelpLevel( int32_t level );
 
@@ -393,6 +408,8 @@ private:
     float inputSteer;
     float inputHandbrake;
     uint8_t drivingMode;
+    PhysicsDrivingControl *pDrivingControl = nullptr;
+    bool bBackView = false; // Driving.BackView (+0xe25)
     float prevInputThrottle;
     float prevInputBrake;
     float prevInputSteer;

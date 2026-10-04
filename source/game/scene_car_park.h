@@ -5,6 +5,7 @@
 
 class CarDesc;
 class CarState;
+class PhysicsDrivingControl;
 class Render2DB;
 class VehicleBase;
 struct VehicleBaseResources;
@@ -93,6 +94,7 @@ private:
     CarState *pCarStates[kMaxNumCars];
     VehicleBaseResources *pResources[kMaxNumCars];
     float fadeIn[kMaxNumCars];
+    PhysicsDrivingControl *pSavedControls[kMaxNumCars] = {};
 
     bool bEnabled;
     bool bLoaded;

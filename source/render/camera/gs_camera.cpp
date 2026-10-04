@@ -414,9 +414,13 @@ LAB_008e2c4f:
         }
 
         DeviceAction *pBackView = pPVar7->pCarBackview;
-        const bool bBackViewPressed = ( pBackView != nullptr ) &&
-                                      ( pBackView->NumAddedChannels != 0 ) &&
-                                      ( ( pBackView->Flags & 1 ) != 0 );
+        const PhysicsVehicle *pTargetVehicle =
+            ( pTarget != nullptr ) ? pTarget->getPhysicsVehicle() : nullptr;
+        const bool bBackViewPressed = ( ( pBackView != nullptr ) &&
+                                        ( pBackView->NumAddedChannels != 0 ) &&
+                                        ( ( pBackView->Flags & 1 ) != 0 ) ) ||
+                                      ( pTargetVehicle != nullptr &&
+                                        pTargetVehicle->isBackViewRequested() );
         peVar5 = pPVar7->pCarHeadLeft;
         DeviceAction *peVar6 = pPVar7->pCarHeadRight;
         const bool bHeadLookBack =
@@ -874,16 +878,15 @@ void GSCamera::tickActiveCamera( float param_2 ) {
                          ( uVar1 >> 0x11 & 1 ) == 0 ) ) &&
                      ( ( uVar1 >> 0x12 & 1 ) != 0 ) ) {
                     DAT_00fab2ac = 1;
-                    findAndSetCameraMode( pTransitionIndices[2], 0,
-                                          1.0f );
+                    findAndSetCameraMode( pTransitionIndices[2], 0, 1.0f );
                 }
                 if ( ( -1 < DAT_00fab2ac ) && ( pCVar4 == local_4 ) ) {
-                    findAndSetCameraMode( pTransitionIndices[DAT_00fab2ac], 0, 1.0f );
+                    findAndSetCameraMode( pTransitionIndices[DAT_00fab2ac], 0,
+                                          1.0f );
                     DAT_00fab2ac = -1;
                 }
             }
-            findAndSetCameraMode( pActiveVehicleCamera->getType(), 0,
-                                  1.0f );
+            findAndSetCameraMode( pActiveVehicleCamera->getType(), 0, 1.0f );
         }
     }
     if ( ( nextCameraMode < 0 ) && ( pNextCamera == nullptr ) ) {

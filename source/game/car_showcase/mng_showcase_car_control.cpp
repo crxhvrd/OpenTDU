@@ -8,6 +8,7 @@
 #include "game/vehicle/vehicle_car.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "input/input_device.h"
+#include "physics/gs_physics.h"
 #include "render/camera/gs_camera.h"
 
 MngShowCaseCarControl gDbgMngShowCaseCarControl = {}; // DAT_016a8f80
@@ -97,6 +98,22 @@ MoveWindow( WindowState &window, bool bOpening, float duration ) {
     window.bPaused = false;
 }
 
+void ShowCasePhysControl::forwardInput( PhysicsVehicle &vehicle, float ) {
+    // FUN_00770030
+    PlayerConfiguration *pCfg = gpConfig->pPlayerConfig;
+
+    const float minAccel = bRev ? 1.0f : 0.0f;
+    vehicle.setInput( Max( ReadActionAxis( pCfg->pCarAccel ), minAccel ), 0.0f,
+                      0.0f );
+    vehicle.setHandbrake( 1.0f );
+    vehicle.setDrivingMode( PhysicsVehicle::DM_Parked );
+    vehicle.setCurrentGear( 1 );
+    pCfg->bCarReset = false;
+
+    bHonking = IsActionDown( pCfg->pCarHorn ) || bHonk;
+    vehicle.setBackView( IsActionDown( pCfg->pCarBackview ) || bBackView );
+}
+
 MngShowCaseCarControl::MngShowCaseCarControl()
     : Manager(),
       pVehicle( nullptr ),
@@ -108,7 +125,7 @@ MngShowCaseCarControl::MngShowCaseCarControl()
       bIsConvertible( false ),
       TimePressUp( 0.0f ),
       TimePressDown( 0.0f ),
-      pSavedPhysics( nullptr ),
+      pSavedControl( nullptr ),
       pBankBuffer( nullptr ) {
     // FUN_0076ff40
     moveDoor( true, false, true, 0.0f );
@@ -150,6 +167,12 @@ void MngShowCaseCarControl::tick( float deltaTime, float ) {
     if ( pState == nullptr || pCar == nullptr ) {
         return;
     }
+
+    if ( bInVehicle ) {
+        const_cast<CarState *>( pState )->getBody()->bHonking =
+            physicsControl.bHonking;
+    }
+
     DBEntryCarPhysicsData *pDB =
         gpDatabase->getCarDBEntry( pState->getCarID() );
     if ( pDB == nullptr ) {
@@ -486,8 +509,9 @@ void MngShowCaseCarControl::enterCar() {
     PhysicsVehicle *pPhysicsVehicle =
         const_cast<CarState *>( pVehicle->getCarState() )->getPhysicsVehicle();
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
-
+    PhysicsLock lock;
+    pSavedControl = pPhysicsVehicle->getDrivingControl();
+    pPhysicsVehicle->setDrivingControl( &physicsControl );
     pPhysicsVehicle->setDrivingMode( PhysicsVehicle::DM_Parked );
 }
 
@@ -499,10 +523,14 @@ void MngShowCaseCarControl::leaveCar() {
         return;
     }
 
-    PhysicsVehicle *pPhysicsVehicle =
-        const_cast<CarState *>( pVehicle->getCarState() )->getPhysicsVehicle();
+    CarState *pCarState = const_cast<CarState *>( pVehicle->getCarState() );
+    PhysicsVehicle *pPhysicsVehicle = pCarState->getPhysicsVehicle();
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
-
+    PhysicsLock lock;
+    physicsControl.bHonking = false;
+    pCarState->getBody()->bHonking = false;
+    pPhysicsVehicle->setBackView( false );
+    pPhysicsVehicle->setDrivingControl( pSavedControl );
     pPhysicsVehicle->setDrivingMode( PhysicsVehicle::DM_Player );
+    pPhysicsVehicle->setEngineState( eEngineState::ES_Off );
 }

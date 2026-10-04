@@ -12,6 +12,10 @@
 #include "system/mng_options.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "flash/mng_flash_counter.h"
+#include "game/car_showcase/mng_showcase_car_control.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_garage.h"
 
 static constexpr FlashMessage kGoMap = 0x616d6f67u;            // goma
 static constexpr FlashMessage kGoFreeride = 0x72666f67u;       // gofr
@@ -41,6 +45,10 @@ static constexpr FlashMessage kSounds = 0x73646e73u;    // snds
 static constexpr FlashMessage kWidget = 0x67646977u;    // widg
 
 // TODO: Move to right cpp
+static ShowCasePhysControl &GetShowcasePhysControl() {
+    return gpActiveGMScene->getShowcaseCarControl().getPhysicsControl();
+}
+
 static bool FUN_007181c0() {
     // FUN_007181c0
     OTDU_UNIMPLEMENTED;
@@ -276,12 +284,16 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     }
 
     case kBCVI: {
-        OTDU_UNIMPLEMENTED;
+        if ( gpActiveGMScene != nullptr ) {
+            GetShowcasePhysControl().bBackView = true;
+        }
         return true;
     }
 
     case kFTVI: {
-        OTDU_UNIMPLEMENTED;
+        if ( gpActiveGMScene != nullptr ) {
+            GetShowcasePhysControl().bBackView = false;
+        }
         return true;
     }
 
@@ -316,22 +328,16 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     }
 
     case kHonkOn: {
-        if ( gpActiveGameMode == nullptr ) {
-            return true;
+        if ( gpActiveGMScene != nullptr ) {
+            GetShowcasePhysControl().bHonk = true;
         }
-
-        OTDU_UNIMPLEMENTED;
-
         return true;
     }
 
     case kHonkOff: {
-        if ( gpActiveGameMode == nullptr ) {
-            return true;
+        if ( gpActiveGMScene != nullptr ) {
+            GetShowcasePhysControl().bHonk = false;
         }
-
-        OTDU_UNIMPLEMENTED;
-
         return true;
     }
 
@@ -358,17 +364,23 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     }
 
     case kStar: {
-        OTDU_UNIMPLEMENTED;
+        if ( gpActiveGMScene != nullptr ) {
+            GetShowcasePhysControl().bRev = true;
+        }
         return true;
     }
 
     case kStao: {
-        OTDU_UNIMPLEMENTED;
+        if ( gpActiveGMScene != nullptr ) {
+            GetShowcasePhysControl().bRev = false;
+        }
         return true;
     }
 
     case kStre: {
-        OTDU_UNIMPLEMENTED;
+        if ( gpTestDriveInstance->getActiveGameMode() != GM_FreeRide ) {
+            gpPlayerData->getLoadedSave()->getGarage()->endRental();
+        }
         return true;
     }
 
