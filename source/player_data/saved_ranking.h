@@ -3,6 +3,7 @@
 #include "core/notifier.h"
 
 class edStore;
+class SavedStringTable;
 
 struct RankingEntry {
     uint64_t Hashcode = 0ull;
@@ -34,9 +35,11 @@ public:
     const RankingEntry *findEntry( const uint64_t hashcode ) const;
 
     int32_t getChallengeResult( const uint64_t hashcode ) const;
+    void upgradeFromVersion1( SavedStringTable *pStringTable );
 
 public:
     RankingEntry Entries[kNumEntries];
     uint32_t NumPlayerIDs = 0u;
+    uint32_t RankCheckCounter = 0u;
     uint32_t PlayerIDs[kMaxPlayerIDs]; 
 };

@@ -37,12 +37,43 @@ void SavedStringTable::serialize( edStore &stream ) const {
     }
 }
 
-const char *SavedStringTable::findValue( const char *pKey ) const {
-    for ( const Entry &entry : Entries ) {
-        if ( entry.Key[0] != '\0' && strcmp( entry.Key, pKey ) == 0 ) {
-            return entry.Value;
+SavedStringTable::Entry *SavedStringTable::findEntry( const char *pKey ) {
+    // FUN_0088e870
+    for ( Entry &entry : Entries ) {
+        if ( entry.Key[0] != '\0' &&
+             StringNCmpI( entry.Key, pKey, kEntryLength ) == 0 ) {
+            return &entry;
         }
     }
 
     return nullptr;
+}
+
+const char *SavedStringTable::findValue( const char *pKey ) const {
+    const Entry *pEntry = const_cast<SavedStringTable *>( this )->findEntry( pKey );
+    return ( pEntry != nullptr ) ? pEntry->Value : nullptr;
+}
+
+bool SavedStringTable::setValue( const char *pKey, const char *pValue ) {
+    // FUN_0088f8d0
+    Entry *pEntry = findEntry( pKey );
+    if ( pEntry == nullptr ) {
+        for ( Entry &entry : Entries ) {
+            if ( entry.Key[0] == '\0' ) {
+                pEntry = &entry;
+                break;
+            }
+        }
+
+        if ( pEntry == nullptr ) {
+            return false;
+        }
+
+        memset( pEntry->Key, 0, sizeof( pEntry->Key ) );
+        strncpy( pEntry->Key, pKey, kEntryLength );
+    }
+
+    memset( pEntry->Value, 0, sizeof( pEntry->Value ) );
+    strncpy( pEntry->Value, pValue, kEntryLength );
+    return true;
 }

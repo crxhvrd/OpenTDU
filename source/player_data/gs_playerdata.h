@@ -160,6 +160,8 @@ private:
 
     std::vector<uint8_t> saveScratchBuffer;
 
+    bool bGarageHasMissingCars;
+
     int32_t saveLoadState;
     int32_t pendingSaveRequest;
     int32_t saveVersion;
@@ -170,6 +172,7 @@ private:
 
 private:
     void updateUnitSystem();
+    void upgradeSave();
 };
 
 extern float gSeatPosition[2];

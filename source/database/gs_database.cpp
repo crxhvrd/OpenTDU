@@ -1929,6 +1929,16 @@ DBEntryCarPhysicsData *GSDatabase::getCarDBEntry( int32_t carID ) {
     return nullptr;
 }
 
+bool GSDatabase::carBankExists(
+    const DBEntryCarPhysicsData *pCarEntry ) const {
+    // FUN_009ab530
+    char bankPath[512];
+    snprintf( bankPath, sizeof( bankPath ), "%sVehicules/%s.bnk",
+              gpConfig->getResRootPath(),
+              pCarEntry->CarResourceFilename.pAsString );
+    return gpFile->fileExists( bankPath );
+}
+
 int32_t GSDatabase::getRimID( int32_t carID, DBEntryRim *rimRef ) {
     // FUN_009aa550
     DBEntryCarPhysicsData *pDVar3 = getCarDBEntry( carID );

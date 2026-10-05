@@ -62,6 +62,7 @@ public:
     void removeHouse( const uint64_t houseHashcode );
 
     void endRental();
+    bool validateCars();
 
 public:
     int16_t numCars = 0;

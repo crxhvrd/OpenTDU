@@ -180,15 +180,6 @@ static inline bool IsCarEntryValid( const DBEntryCarPhysicsData *pEntry ) {
            ( pEntry->Brand->Flags & 1 ) != 0;
 }
 
-static bool CarBankExists( const DBEntryCarPhysicsData *pEntry ) {
-    // FUN_009ab530
-    char bankPath[512];
-    snprintf( bankPath, sizeof( bankPath ), "%sVehicules/%s.bnk",
-              gpConfig->getResRootPath(),
-              pEntry->CarResourceFilename.pAsString );
-    return gpFile->fileExists( bankPath );
-}
-
 static inline bool HasWindows( const DBEntryCarPhysicsData *pEntry ) {
     // FUN_0042ce80
     return gpDatabase->getGameDB().Databases[1].getHashcodeForPointer(
@@ -214,7 +205,7 @@ void FlashPanelCarSpecs::refresh( CarDesc *pDisplayedCar,
 
     DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry( configID );
     const bool bValid = pCarEntry != nullptr && IsCarEntryValid( pCarEntry ) &&
-                        CarBankExists( pCarEntry );
+                        gpDatabase->carBankExists( pCarEntry );
     if ( !bValid ) {
         if ( pUpgradeEntry != nullptr ) {
             OTDU_UNIMPLEMENTED; // TODO: ONLINE (marketplace entry fallback)

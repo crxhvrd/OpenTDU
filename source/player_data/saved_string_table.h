@@ -21,6 +21,10 @@ public:
     void serialize( edStore &stream ) const;
 
     const char *findValue( const char *pKey ) const;
+    bool setValue( const char *pKey, const char *pValue );
+
+private:
+    Entry *findEntry( const char *pKey );
 
 public:
     Entry Entries[kNumEntries];

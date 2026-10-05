@@ -3,6 +3,7 @@
 
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
+#include "saved_string_table.h"
 
 void RankingEntry::clear() {
     // FUN_00415ea0 
@@ -116,4 +117,19 @@ int32_t SavedRanking::getChallengeResult( const uint64_t hashcode ) const {
     }
 
     return int32_t( TestDriveTEAReadDword( pEntry->pBlock0 ) );
+}
+
+void SavedRanking::upgradeFromVersion1( SavedStringTable *pStringTable ) {
+    // FUN_00890120
+    static constexpr uint64_t kUnusedEntryHashcode = 0xffffffffull;
+
+    for ( RankingEntry &entry : Entries ) {
+        if ( entry.getHashcode() != kUnusedEntryHashcode ) {
+            // FUN_0088eec0
+            TestDriveTEAWriteQword( entry.pBlock1, 0xffffffff00000000ull );
+        }
+    }
+
+    pStringTable->setValue( "RnkChkC", "0" );
+    RankCheckCounter = 0u;
 }

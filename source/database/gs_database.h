@@ -158,6 +158,7 @@ public:
                           int32_t *pOutIndex = nullptr ) const;
 
     DBEntryCarPhysicsData *getCarDBEntry( int32_t carID );
+    bool carBankExists( const DBEntryCarPhysicsData *pCarEntry ) const;
     int32_t getRimID( int32_t carID, DBEntryRim *rimRef );
     int32_t getRimID( DBEntryCarPhysicsData *param_3, DBEntryRim *rimRef );
     DBEntryRim *getRim( int32_t carID, int32_t rimID );

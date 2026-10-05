@@ -398,3 +398,26 @@ int32_t Garage::getNumOwnedHouses() const {
 
     return numOwnedHouses;
 }
+
+bool Garage::validateCars() {
+    // FUN_00895510
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        GarageSlot &slot = pCars[i];
+        if ( !slot.isValid() ) {
+            continue;
+        }
+
+        if ( slot.getCarID() == 0xffffffffu ) {
+            slot.clear();
+            continue;
+        }
+
+        DBEntryCarPhysicsData *pCarEntry =
+            gpDatabase->getCarDBEntry( int32_t( slot.getCarConfigID() ) );
+        if ( pCarEntry == nullptr || !gpDatabase->carBankExists( pCarEntry ) ) {
+            return false;
+        }
+    }
+
+    return true;
+}

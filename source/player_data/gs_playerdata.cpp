@@ -203,6 +203,7 @@ GSPlayerData::GSPlayerData()
       pLoadedSave2( nullptr ),
       localPlayerData(),
       saveScratchBuffer(),
+      bGarageHasMissingCars( false ),
       saveLoadState( SLS_None ),
       pendingSaveRequest( 0 ),
       saveVersion( 0 ),
@@ -346,8 +347,11 @@ bool GSPlayerData::loadActiveProfileSave() {
         return false;
     }
 
+    bGarageHasMissingCars = false;
+
     char pContextName[128] = {};
     if ( !FindProfileSaveContext( 0ull, pContextName ) ) {
+        gUserProfileRegister.setUnknownDword( 0u );
         saveLoadState = SLS_NoSave;
         return false;
     }
@@ -386,13 +390,42 @@ bool GSPlayerData::loadActiveProfileSave() {
     } else {
         saveLoadState = SLS_Loaded;
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (GSFile::InitMapFiles and
-                                 // the garage/current car fixup)
+        gpFile->initCarPacks( true );
+
+        if ( !pLoadedSave2->getGarage()->validateCars() ) {
+            bGarageHasMissingCars = true;
+        }
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (save version check/upgrade)
+    gSavegameManager.setUnknownBool2( true );
+    if ( !bDeserialized ) {
+        return false;
+    }
 
-    return bDeserialized;
+    static constexpr int32_t kSaveVersion = 2;
+
+    SavedStringTable *pStringTable = pLoadedSave2->getStringTable();
+    const char *pVersion = pStringTable->findValue( "Version" );
+    const int32_t version = ( pVersion != nullptr ) ? atoi( pVersion ) : 1;
+    if ( version != kSaveVersion ) {
+        saveVersion = version;
+        upgradeSave();
+    }
+
+    char pVersionString[16];
+    snprintf( pVersionString, sizeof( pVersionString ), "%d", kSaveVersion );
+    pStringTable->setValue( "Version", pVersionString );
+    saveVersion = kSaveVersion;
+
+    return true;
+}
+
+void GSPlayerData::upgradeSave() {
+    // FUN_00897a00
+    if ( saveVersion == 1 ) {
+        pLoadedSave2->getRanking()->upgradeFromVersion1(
+            pLoadedSave2->getStringTable() );
+    }
 }
 
 bool GSPlayerData::loadCommonDT( const void *pSaveBuffer,
@@ -814,8 +847,9 @@ bool GSPlayerData::FUN_00897990() {
 
 bool GSPlayerData::isRentingCar() {
     // FUN_00416230
-    OTDU_UNIMPLEMENTED;
-    return false;
+    const Garage *pGarage = pLoadedSave2->getGarage();
+    return pGarage->pCars[Garage::kNumSavedCarSlots].state ==
+           CarDesc::eState::CDS_Rental;
 }
 
 #ifdef OTDU_USE_IMGUI

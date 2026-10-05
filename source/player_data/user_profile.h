@@ -34,6 +34,9 @@ public:
     bool updateProfileList( const uint64_t hashcode );
 
     void FUN_0060a160();
+    inline void setUnknownDword( const uint32_t value ) { // FUN_004adc30
+        unknownDword = value;
+    }
     uint32_t FUN_00419de0() const;
 
 private:
