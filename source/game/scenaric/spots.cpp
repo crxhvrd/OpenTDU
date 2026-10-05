@@ -14,6 +14,10 @@
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_spot_mesh.h"
+#include "game/game_cheats.h"
+#include "game/game_mechanism_player.h"
+#include "database/gs_database.h"
+#include "debug/mng_debug_hud.h"
 
 #include "config/gs_config.h"
 #include "filesystem/gs_file.h"
@@ -22,6 +26,8 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/achievements_data.h"
+#include "player_data/saved_garage.h"
+#include "player_data/saved_ranking.h"
 
 #include <algorithm>
 #include <cstring>
@@ -32,7 +38,13 @@ constexpr uint32_t kSpotArrayMagic = 0x41545053; // "SPTA"
 constexpr uint32_t kSpotHeaderSize = 0x20;
 constexpr uint32_t kSpotSubHeaderSize = 0x10;
 
-bool gbParseLogChallengesInfos = false; // DAT_010e7f50
+bool gbParseLogChallengesInfos = false;          // DAT_010e7f50
+uint8_t gMapActiveFilterMode = 1;                // DAT_00fa98c8
+uint32_t gMapChallengeFilterMask = 0xffffffffu;  // DAT_00fa98cc
+uint32_t gMapServiceFilterMask = 0xffffffffu;    // DAT_00fa98d0
+uint32_t gMapUnknown0xCFilterMask = 0xffffffffu; // DAT_00fa98d4
+uint32_t gMapUnknown10FilterMask = 0xffffffffu;  // DAT_00fa98d8
+uint8_t gMinimapFilterMode = 1;                  // DAT_00f96bc0
 
 bool ParseSpotCellCoords( const std::string &filename, int32_t outCoords[4] ) {
     const size_t slash = filename.find_last_of( "/\\" );
@@ -172,7 +184,6 @@ EntityCinematic *FindStreamedSpotCinematic( const SpotSector *pSpotSector,
         *ppOutBank = pBank;
     }
 
-    // SCBank::FindCinematicByName (FUN_007dac10).
     return static_cast<EntityCinematic *>(
         pBank->findEntity( eEntityType::ET_CINE, pName ) );
 }
@@ -209,6 +220,397 @@ bool IsSpotAvailableInCurrentMode( const SpotMap *pSpot ) {
                  subType == 8 ) {
                 return false;
             }
+        }
+    }
+
+    return true;
+}
+
+bool IsSpotHidden( const uint64_t spotHashcode ) {
+    // FUN_00747850
+    if ( std::find( gRemovedSpots.begin(), gRemovedSpots.end(),
+                    spotHashcode ) != gRemovedSpots.end() ) {
+        return true;
+    }
+
+    const SpotMap *pSpot = gpScenaric->getSpotList().getSpotMap( spotHashcode );
+    if ( pSpot == nullptr ) {
+        return false;
+    }
+
+    switch ( pSpot->Type ) {
+    case ST_CarDealer:
+    case ST_BikeDealer:
+        if ( gpMngDebugHUD == nullptr || !gbInstallCheatCars ) {
+            DBEntryCarShop *pCarShop =
+                gpDatabase->getCarShopBySpotName( pSpot->Hashcode );
+            if ( pCarShop == nullptr ||
+                 gpDatabase->getNumCarsAvailableInShop( pCarShop ) == 0 ) {
+                return true;
+            }
+        }
+        break;
+    case ST_Club:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        return true;
+    case ST_DriveIn:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        return true;
+    case ST_Challenge: {
+        static constexpr const char *kHiddenChallenges[] = {
+            "RMFE0076", "TSFE0049", "RSFE0044",
+            "TSFE0050", "RMFE0077", "RSFE0043",
+        }; // PTR_s_RMFE0076_00f8b3f8
+        for ( const char *pChallenge : kHiddenChallenges ) {
+            if ( GetIdentifier64bit( pChallenge ) == spotHashcode ) {
+                return true;
+            }
+        }
+
+        if ( GetSpotGameModeID( pSpot ) == 0xc0c2 ) {
+            const int32_t gameMode = gpActiveGameMode->getCurrentGameMode();
+            if ( gameMode != GM_Club && gameMode != GM_Lobby ) {
+                return true;
+            }
+        }
+
+        if ( pSpot->MinLevelRequired != 0 ) {
+            const AchievementsData *pAchievements =
+                gpPlayerData->getLoadedSave()->getAchievements();
+            if ( pAchievements->getPlayerLevel() + 1 <
+                 int32_t( pSpot->MinLevelRequired ) ) {
+                return true;
+            }
+        }
+    } break;
+    case ST_Unknown8:
+        if ( pSpot->SubType == 0 ) {
+            return true;
+        }
+        break;
+    default:
+        break;
+    }
+
+    return false;
+}
+
+uint32_t GetCarGroupIconFlag( const DBEntryCarPhysicsData *pCar ) {
+    // FUN_007d6ab0
+    const uint64_t carGroupHashcode =
+        gpDatabase->getGameDB().Databases[1].getHashcodeForPointer(
+            pCar->CarGroup.pAsRawPointer );
+    switch ( carGroupHashcode ) {
+    case 0x467a0e8:
+        return 0x1000;
+    case 0x476e328:
+        return 0x2000;
+    case 0x4862568:
+        return 0x4000;
+    case 0x49567a8:
+        return 0x8000;
+    case 0x4a4a9e8:
+        return 0x10000;
+    case 0x4b3ec28:
+        return 0x20000;
+    case 0x4c32e68:
+        return 0x40000;
+    case 0x493e108:
+        return 0x80000;
+    case 0x4a32348:
+        return 0x100000;
+    default:
+        return 0u;
+    }
+}
+
+static DBEntryBrand *FindBrandByHashcode( const uint64_t hashcode ) {
+    // FUN_009a8a90
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    for ( uint32_t i = 0; i < gameDB.pNumItems[6]; i++ ) {
+        if ( gameDB.DBBrand[i].Hashcode == hashcode ) {
+            return &gameDB.DBBrand[i];
+        }
+    }
+    return nullptr;
+}
+
+static bool BrandHasCarOfCategory( const DBEntryBrand *pBrand,
+                                   const bool bBike ) {
+    // FUN_009aa800 (bBike) / FUN_009aa770 (!bBike)
+    if ( pBrand == nullptr ) {
+        return false;
+    }
+
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const char *pBikeCategory = gpDatabase->getStringByHashcode( 1, 0x35da5b5 );
+    for ( uint32_t i = 0; i < gameDB.pNumItems[1]; i++ ) {
+        const DBEntryCarPhysicsData &car = gameDB.DBCarData[i];
+        if ( car.Brand->BrandID.pAsString != pBrand->BrandID.pAsString ) {
+            continue;
+        }
+        if ( ( pBikeCategory == car.Category.pAsString ) == bBike ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static inline bool IsSpotHashcode( const SpotMap *pSpot, const char *pName ) {
+    return memcmp( &pSpot->Hashcode, pName, sizeof( uint64_t ) ) == 0;
+}
+
+void GetSpotIconInfo( const SpotMap *pSpot, SpotIconInfo &outInfo ) {
+    // FUN_007d72a0
+    outInfo.Unknown0x10 = 0u;
+    outInfo.Unknown0xC = 0u;
+    outInfo.ChallengeFlags = 0u;
+    outInfo.SpotFlags = 0u;
+
+    switch ( pSpot->Type ) {
+    case ST_House: {
+        outInfo.Kind = 2;
+        const Garage *pGarage = gpPlayerData->getLoadedSave()->getGarage();
+        outInfo.SpotFlags = pGarage->isHouseOwned( pSpot->Hashcode ) ? 1u : 2u;
+        return;
+    }
+    case ST_CarDealer:
+        outInfo.Kind = 2;
+        outInfo.SpotFlags = 8u;
+        return;
+    case ST_BikeDealer:
+        outInfo.Kind = 2;
+        outInfo.SpotFlags = 0x10u;
+        return;
+    case ST_Goodies:
+        outInfo.Kind = 2;
+        outInfo.SpotFlags = 0x100u;
+        return;
+    case ST_Club:
+        outInfo.Kind = 2;
+        outInfo.SpotFlags = 0x400u;
+        return;
+    case ST_DriveIn:
+        outInfo.Kind = 2;
+        outInfo.SpotFlags = 0x200u;
+        return;
+    case ST_Challenge:
+        break;
+    case ST_Unknown8:
+        outInfo.Kind = 2;
+        switch ( pSpot->SubType ) {
+        case 0:
+            outInfo.SpotFlags = 0x40u;
+            break;
+        case 1:
+        case 9:
+            outInfo.SpotFlags = 0x20u;
+            break;
+        case 4:
+            outInfo.SpotFlags = 4u;
+            break;
+        default:
+            outInfo.SpotFlags = 0x800u;
+            break;
+        }
+        return;
+    default:
+        outInfo.Kind = 2;
+        outInfo.SpotFlags = 0x80u;
+        return;
+    }
+
+    outInfo.Kind = 1;
+    if ( !IsSpotHashcode( pSpot, "HACK_HVK" ) ) {
+        if ( IsSpotHashcode( pSpot, "HACK_DRV" ) ) {
+            outInfo.ChallengeFlags = 4u;
+        } else {
+            switch ( GetSpotChallengeKind( pSpot ) ) {
+            case 1:
+                outInfo.ChallengeFlags = 2u;
+                break;
+            case 3:
+                outInfo.ChallengeFlags = 8u;
+                break;
+            default:
+                outInfo.ChallengeFlags = 1u;
+                break;
+            }
+        }
+    }
+
+    switch ( GetSpotGameModeID( pSpot ) ) {
+    case 0xc0c1:
+        outInfo.ChallengeFlags |= 0x400u;
+        break;
+    case 0xc0c2:
+        outInfo.ChallengeFlags |= 0x800u;
+        break;
+    default: {
+        outInfo.ChallengeFlags |= 0x200u;
+        const SavedRanking *pRanking =
+            gpPlayerData->getLoadedSave()->getRanking();
+        outInfo.ChallengeFlags |=
+            ( pRanking->getChallengeResult( pSpot->Hashcode ) == 1 ) ? 0x20u
+                                                                     : 0x40u;
+    } break;
+    }
+
+    const bool bAllowsCars = pSpot->VehicleType == 0 || pSpot->VehicleType == 1;
+    const bool bAllowsBikes =
+        pSpot->VehicleType == 0 || pSpot->VehicleType == 2;
+
+    switch ( pSpot->VehicleRestriction ) {
+    case 0:
+        outInfo.ChallengeFlags |= 0x100u;
+        if ( bAllowsCars ) {
+            outInfo.ChallengeFlags |= 0x7f000u;
+        }
+        if ( bAllowsBikes ) {
+            outInfo.ChallengeFlags |= 0x180000u;
+        }
+        break;
+    case 1: {
+        const DBEntryBrand *pBrand = FindBrandByHashcode( pSpot->VehicleBrand );
+        if ( pBrand == nullptr ) {
+            break;
+        }
+
+        const GameDatabase &gameDB = gpDatabase->getGameDB();
+        for ( uint32_t i = 0; i < gameDB.pNumItems[1]; i++ ) {
+            const DBEntryCarPhysicsData &car = gameDB.DBCarData[i];
+            if ( car.Brand->BrandID.pAsString == pBrand->BrandID.pAsString ) {
+                outInfo.ChallengeFlags |= GetCarGroupIconFlag( &car );
+            }
+        }
+        if ( BrandHasCarOfCategory( pBrand, true ) ) {
+            outInfo.ChallengeFlags |= 0x100u;
+        }
+        if ( BrandHasCarOfCategory( pBrand, false ) ) {
+            outInfo.ChallengeFlags |= 0x80u;
+        }
+    } break;
+    case 2: {
+        DBEntryCarPhysicsData *pCar =
+            gpDatabase->getCarDBEntry( int32_t( pSpot->VehicleModel ) );
+        if ( pCar == nullptr ) {
+            break;
+        }
+        outInfo.ChallengeFlags |= gpDatabase->isBike( pCar ) ? 0x100u : 0x80u;
+        outInfo.ChallengeFlags |= GetCarGroupIconFlag( pCar );
+    } break;
+    case 3:
+        if ( bAllowsCars ) {
+            outInfo.ChallengeFlags |= 0x80u;
+            outInfo.ChallengeFlags |= ( pSpot->VehicleCategory <= 6 )
+                                          ? 0x1000u << pSpot->VehicleCategory
+                                          : 0x1ff000u;
+        }
+        if ( bAllowsBikes ) {
+            const uint32_t flags = outInfo.ChallengeFlags;
+            outInfo.ChallengeFlags = flags | 0x100u;
+            if ( pSpot->VehicleCategory == 0 ) {
+                outInfo.ChallengeFlags = flags | 0x80100u;
+            } else if ( pSpot->VehicleCategory == 1 ) {
+                outInfo.ChallengeFlags = flags | 0x100100u;
+            } else if ( pSpot->VehicleType == 2 ) {
+                outInfo.ChallengeFlags = flags | 0x1ff100u;
+            }
+        }
+        break;
+    case 4:
+        if ( bAllowsCars ) {
+            outInfo.ChallengeFlags |= 0x80u;
+            const int32_t lastCategory =
+                Min( int32_t( pSpot->VehicleCategoryMax ), 6 );
+            for ( int32_t category = pSpot->VehicleCategoryMin;
+                  category <= lastCategory; category++ ) {
+                outInfo.ChallengeFlags |= 0x1000u << category;
+            }
+        }
+        if ( bAllowsBikes ) {
+            outInfo.ChallengeFlags |= 0x100u;
+            const int32_t lastCategory =
+                ( pSpot->VehicleCategoryMax != 0 ) ? 1 : 0;
+            for ( int32_t category = pSpot->VehicleCategoryMin;
+                  category <= lastCategory; category++ ) {
+                outInfo.ChallengeFlags |= 0x80000u << category;
+            }
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+bool IsSpotIconVisible( const SpotIconInfo &info, const bool bMinimap ) {
+    // FUN_00742ee0
+    uint8_t filterMode = gMapActiveFilterMode;
+    if ( ( filterMode & 0x10 ) != 0 ) {
+        if ( !bMinimap ) {
+            return false;
+        }
+        filterMode = gMinimapFilterMode;
+    }
+
+    uint32_t flags = 0u;
+    uint32_t filterMask = gMapServiceFilterMask;
+    uint32_t groupMasks[4] = {};
+    int32_t numGroups = 0;
+
+    if ( ( filterMode & 1 ) != 0 ) {
+        flags = info.ChallengeFlags;
+        const bool bSolo = ( flags & 0x200u ) != 0;
+        numGroups = 4;
+        groupMasks[0] = 0xe00u;
+        groupMasks[1] = 0x1fu;
+        groupMasks[2] =
+            ( bSolo || ( gMapChallengeFilterMask & 0x60u ) != 0x60u ) ? 0x60u
+                                                                      : 0u;
+        groupMasks[3] = 0x1ff000u;
+        if ( !gpPlayerData->isOnline() && !bSolo ) {
+            return false;
+        }
+        filterMask = gMapChallengeFilterMask;
+        if ( gbSimuModeEnabled && bSolo ) {
+            return false;
+        }
+    } else if ( ( filterMode & 2 ) != 0 ) {
+        flags = info.SpotFlags;
+        numGroups = 1;
+        groupMasks[0] = 0xffffffffu;
+        if ( ( flags & 0x200u ) != 0 ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+            return false;
+        }
+        if ( ( flags & 0x400u ) != 0 ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+            return false;
+        }
+    } else if ( ( filterMode & 4 ) != 0 ) {
+        if ( ( info.Kind & filterMode ) != info.Kind ) {
+            return false;
+        }
+        return ( info.Unknown0xC & gMapUnknown0xCFilterMask ) != 0u;
+    } else if ( ( filterMode & 8 ) != 0 ) {
+        flags = info.Unknown0x10;
+        filterMask = gMapUnknown10FilterMask;
+    } else {
+        return false;
+    }
+
+    if ( ( info.Kind & filterMode ) != info.Kind ) {
+        return false;
+    }
+
+    for ( int32_t i = 0; i < numGroups; i++ ) {
+        const uint32_t groupMask = groupMasks[i];
+        if ( ( flags & groupMask & filterMask ) != 0u ) {
+            continue;
+        }
+        if ( ( groupMask & filterMask ) != 0u ||
+             groupMask != ( groupMask & flags ) ) {
+            return false;
         }
     }
 

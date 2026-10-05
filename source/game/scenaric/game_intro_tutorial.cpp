@@ -51,6 +51,24 @@ bool GameIntroTutorial::isActive() const {
     return tutorialStep != 0xd && tutorialStep != 0x0;
 }
 
+bool GameIntroTutorial::hidesSpot( const SpotMap *pSpot ) const {
+    // FUN_007fb9c0
+    switch ( tutorialStep ) {
+    case kTutorialStateFirstDrive:
+        return pSpot != pRealEstate;
+    case kTutorialStateHouseBought:
+    case kTutorialStateBuyCar:
+        return pSpot != pSpotECD12E && pSpot != pSpotECD8F &&
+               pSpot != pSpotECD12B;
+    case kTutorialStateCarBought:
+        return pSpot != pSpotIntroRace;
+    case kTutorialStateHome:
+        return pSpot != pHome;
+    default:
+        return false;
+    }
+}
+
 void GameIntroTutorial::reset() {
     pHome = nullptr;
     carDealer = 0;

@@ -2,9 +2,13 @@
 #include "entity_extra_challenge.h"
 
 #include "entity_volume.h"
+#include "entity_hitch_hiker.h"
+#include "entity_shopping_girl.h"
+#include "entity_transporter.h"
 #include "game/game_mechanism.h"
 #include "game/game_mechanism_player.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/spots.h"
 #include "game/scenaric/local_player.h"
 #include "game/vehicle/car_state.h"
 #include "game/avatar/gs_avatar.h"
@@ -108,6 +112,79 @@ bool EntityExtraChallenge::isAvailable() const {
         gpPlayerData->getLoadedSave()->getItemTable();
     return !gbSimuModeEnabled && pChallengeStates->getExtraChallengeState(
                                      Index ) != SavedItemTable::ECS_Done;
+}
+
+void EntityExtraChallenge::getIconInfo( SpotIconInfo &outInfo ) const {
+    // FUN_007dc6d0
+    outInfo.Kind = 1;
+    outInfo.ChallengeFlags = 0x390u;
+
+    const SavedItemTable *pChallengeStates =
+        gpPlayerData->getLoadedSave()->getItemTable();
+    outInfo.ChallengeFlags |=
+        pChallengeStates->isExtraChallengeGold( Index ) ? 0x20u : 0x40u;
+
+    uint32_t conditionType = 0u;
+    uint32_t conditionValue = 0xffffffffu;
+    switch ( getType() ) {
+    case eEntityType::ET_SHOG: {
+        const EntityShoppingGirl *pShoppingGirl =
+            static_cast<const EntityShoppingGirl *>( this );
+        conditionType = pShoppingGirl->getConditionType();
+        conditionValue = pShoppingGirl->getConditionValue();
+    } break;
+    case eEntityType::ET_HIHI: {
+        const EntityHitchHiker *pHitchHiker =
+            static_cast<const EntityHitchHiker *>( this );
+        conditionType = pHitchHiker->getConditionType();
+        conditionValue = pHitchHiker->getConditionValue();
+    } break;
+    case eEntityType::ET_TRAN: {
+        const EntityTransporter *pTransporter =
+            static_cast<const EntityTransporter *>( this );
+        conditionType = pTransporter->getConditionType();
+        conditionValue = pTransporter->getConditionValue();
+    } break;
+    case eEntityType::ET_CVOY:
+        outInfo.ChallengeFlags |= 0x1ff000u;
+        break;
+    default:
+        break;
+    }
+
+    outInfo.SpotFlags = 0u;
+    outInfo.Unknown0xC = 0u;
+    outInfo.Unknown0x10 = 0u;
+
+    switch ( conditionType ) {
+    case 1: {
+        // Vehicle class index
+        static constexpr uint32_t kClassFlags[9] = {
+            0x1000u,  0x2000u,  0x4000u,  0x8000u,   0x10000u,
+            0x20000u, 0x40000u, 0x80000u, 0x100000u,
+        };
+        outInfo.ChallengeFlags |=
+            ( conditionValue < 9 ) ? kClassFlags[conditionValue] : 0x7f000u;
+    } break;
+    case 3: {
+        // Vehicle model ID
+        DBEntryCarPhysicsData *pCar =
+            gpDatabase->getCarDBEntry( int32_t( conditionValue ) );
+        if ( pCar == nullptr ) {
+            break;
+        }
+        const uint32_t classFlag = GetCarGroupIconFlag( pCar );
+        outInfo.ChallengeFlags |= ( classFlag != 0u ) ? classFlag : 0x7f000u;
+    } break;
+    default:
+        outInfo.ChallengeFlags |= 0x7f000u;
+        break;
+    }
+}
+
+void EntityExtraChallenge::computeRoadLocation() {
+    // FUN_007dda00
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
 }
 
 void EntityExtraChallenge::deserialize( BinaryReader *param_2 ) {

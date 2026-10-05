@@ -175,6 +175,8 @@ public:
     inline ExtraChallengeCineBank &getExtraChallengesCineBank() {
         return extraChallengesCineBank;
     }
+    inline int32_t getNumExtraChallenges() const { return numExtraChallenges; }
+    Entity *findExtraChallenge( int32_t index );
     inline ScenaricBank *getWorldExtraChallengesBank() {
         return &worldExtraChallengesBank;
     }
@@ -240,7 +242,7 @@ private:
     int32_t currentSpotIndex; // DAT_01214744
     bool bIsFromDriveIn;      // DAT_012162c4
     NextIntroInfo nextIntro;
-    int32_t extraRewardsCineCount;
+    int32_t numExtraChallenges;
 
     float rentalTimer;
     uint64_t objectiveSpotHashcode;

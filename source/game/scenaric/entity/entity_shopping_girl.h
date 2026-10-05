@@ -14,6 +14,10 @@ public:
     void deserialize( BinaryReader *param_2 ) override;
     const char *getChallengeName() const override { return pGirlName; }
 
+public:
+    inline uint32_t getConditionType() const { return ConditionType; }
+    inline uint32_t getConditionValue() const { return Condition.Value; }
+
 protected:
     const char *pGirlName;
     uint32_t Reward;

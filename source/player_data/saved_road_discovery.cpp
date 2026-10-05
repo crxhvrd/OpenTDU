@@ -3,6 +3,9 @@
 
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
+#include "player_data/achievements_data.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
 
 bool gUnlockAllRoads = false; // DAT_010e7539
 
@@ -51,9 +54,52 @@ void SavedRoadDiscovery::setBlock( const int32_t index, const uint64_t value ) {
     TestDriveTEAWriteQword( pBlocks[index], value );
 }
 
-bool SavedRoadDiscovery::isRoadLocked( const int32_t roadID ) const {
+bool SavedRoadDiscovery::isRoadLocked( const int32_t roadID,
+                                       const int32_t segment ) const {
     // FUN_0040ab10
-    const int32_t blockIndex = roadID / 64;
-    const int32_t bitIndex = roadID % 64;
+    const int32_t blockIndex = roadID + segment / 64;
+    if ( blockIndex < 0 || blockIndex >= kNumBlocks ) {
+        return true;
+    }
+
+    const int32_t bitIndex = segment % 64;
     return ( getBlock( blockIndex ) & ( 1ull << bitIndex ) ) == 0ull;
+}
+
+static int32_t GetRoadZone( const uint32_t roadID ) {
+    // FUN_0092ded0
+    switch ( roadID ) {
+    case 0x42c:
+    case 0x455:
+        return 1; // Oahu Raceway
+    case 0x4a7:
+    case 0x4a8:
+    case 0x4a9:
+    case 0x4aa:
+        return 2; // Ford Island
+    default:
+        return 0;
+    }
+}
+
+bool IsRoadAvailable( const uint32_t roadID ) {
+    // FUN_0088d4b0
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+    const bool bIsRoadInTable = false;
+    if ( roadID == 0u || !bIsRoadInTable ) {
+        return false;
+    }
+
+    const AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    switch ( GetRoadZone( roadID ) ) {
+    case 0:
+        return true;
+    case 1:
+        return pAchievements->isSimulationModeUnlocked();
+    case 2:
+        return pAchievements->isReward0x5912a0Unlocked();
+    default:
+        return false;
+    }
 }

@@ -99,7 +99,7 @@ GSScenaric::GSScenaric()
       currentDefVersion( 0 ),
       currentSpotIndex( -1 ),
       bIsFromDriveIn( false ),
-      extraRewardsCineCount( 0 ),
+      numExtraChallenges( 0 ),
       rentalTimer( -1.0f ),
       objectiveSpotHashcode( 0 ),
       bDelockChallengesRoad( true ),
@@ -142,7 +142,7 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
 
     extraChallengesCineBank.load( ExtraChallengeCineBank::ECBM_Intro );
 
-    extraRewardsCineCount = 0;
+    numExtraChallenges = 0;
     for ( int32_t i = 0; i < worldExtraChallengesBank.getEntityCount(); i++ ) {
         Entity *pEntity = worldExtraChallengesBank.getEntity( i );
         if ( pEntity == nullptr ) {
@@ -153,8 +153,8 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
         if ( type == eEntityType::ET_SHOG || type == eEntityType::ET_HIHI ||
              type == eEntityType::ET_TRAN || type == eEntityType::ET_CVOY ) {
             static_cast<EntityExtraChallenge *>( pEntity )->setIndex(
-                extraRewardsCineCount );
-            extraRewardsCineCount++;
+                numExtraChallenges );
+            numExtraChallenges++;
         }
     }
 
@@ -565,6 +565,23 @@ void GSScenaric::reset() {
 }
 
 GameIntroTutorial &GSScenaric::getIntroTutorial() { return introTutorial; }
+
+Entity *GSScenaric::findExtraChallenge( int32_t index ) {
+    // FUN_008044b0
+    for ( int32_t i = 0; i < worldExtraChallengesBank.getEntityCount(); i++ ) {
+        Entity *pEntity = worldExtraChallengesBank.getEntity( i );
+        const eEntityType type = pEntity->getType();
+        if ( type != eEntityType::ET_SHOG && type != eEntityType::ET_HIHI &&
+             type != eEntityType::ET_TRAN && type != eEntityType::ET_CVOY ) {
+            continue;
+        }
+        if ( index == 0 ) {
+            return pEntity;
+        }
+        index--;
+    }
+    return nullptr;
+}
 
 void GSScenaric::clearObjectives() {
     // FUN_0074ecc0 (inlined)

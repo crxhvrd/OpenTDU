@@ -5,11 +5,17 @@ class Bank;
 class ScenaricBank;
 class Entity;
 class EntityCinematic;
+struct DBEntryCarPhysicsData;
 
 // TODO: INCOMPLETE
 enum eSpotType : uint8_t {
     ST_House = 0,
     ST_CarDealer = 1,
+    ST_BikeDealer = 2,
+    ST_Goodies = 3,
+    ST_AfterMarket = 4,
+    ST_Club = 5,
+    ST_DriveIn = 6,
     ST_Challenge = 7,
     ST_Unknown8 = 8, // gated in simu mode
 
@@ -28,26 +34,46 @@ struct SpotMap {
     uint8_t MinLevelRequired;
     uint8_t bLocked;
     uint16_t RoadID;
-    uint8_t EntityID;
+    uint8_t RoadSegment;
     uint8_t VehicleType;
     uint32_t VehicleModel;
     uint64_t VehicleBrand;
-    uint8_t VehicleTune;
+    uint8_t VehicleRestriction; // 0 none, 1 brand, 2 model, 3 class, 4 range
     uint8_t VehicleCategory;
-    uint8_t VehicleCategoryMin;
     uint8_t VehicleCategoryMax;
+    uint8_t VehicleCategoryMin;
     uint32_t __PADDING__[3];
 };
 OTDU_SIZE_MUST_MATCH( SpotMap, 64 );
 
+struct SpotIconInfo {
+    uint8_t Kind = 0; // 1 = challenge, 2 = spot
+    uint32_t ChallengeFlags = 0u;
+    uint32_t SpotFlags = 0u;
+    uint32_t Unknown0xC = 0u;
+    uint32_t Unknown0x10 = 0u;
+};
+
+extern uint8_t gMapActiveFilterMode;
+extern uint32_t gMapChallengeFilterMask;
+extern uint32_t gMapServiceFilterMask;
+extern uint32_t gMapUnknown0xCFilterMask;
+extern uint32_t gMapUnknown10FilterMask;
+extern uint8_t gMinimapFilterMode;
+
 bool IsSpotAvailableInCurrentMode( const SpotMap *pSpot );
+bool IsSpotHidden( uint64_t spotHashcode );
+uint32_t GetCarGroupIconFlag( const DBEntryCarPhysicsData *pCar );
+void GetSpotIconInfo( const SpotMap *pSpot, SpotIconInfo &outInfo );
+bool IsSpotIconVisible( const SpotIconInfo &info, bool bMinimap );
 void GetChallengeCarAvailability( const SpotMap *pSpot,
                                   bool *pOutLevelTooLow,
                                   bool *pOutHasEligibleCar );
 ScenaricBank *FindStreamedSpotBank( const struct SpotSector *pSpotSector );
-EntityCinematic *FindStreamedSpotCinematic( const struct SpotSector *pSpotSector,
-                                            const char *pName,
-                                            ScenaricBank **ppOutBank = nullptr );
+EntityCinematic *
+FindStreamedSpotCinematic( const struct SpotSector *pSpotSector,
+                           const char *pName,
+                           ScenaricBank **ppOutBank = nullptr );
 Matrix4x4f_t BuildSpotSectorRotation( const struct SpotSector *pSector );
 
 struct SpotSector {

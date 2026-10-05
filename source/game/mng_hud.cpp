@@ -14,11 +14,17 @@
 #include "flash/implementation/flash_sprite.h"
 #include "flash/implementation/flash_tags.h"
 #include "game/game_cheats.h"
+#include "game/game_mechanism_player.h"
+#include "game/mng_logo_display.h"
+#include "game/scenaric/spots.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/entity/entity_extra_challenge.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
 #include "player_data/driver.h"
 #include "player_data/player_save.h"
+#include "player_data/saved_item_table.h"
+#include "player_data/saved_road_discovery.h"
 #include "player_data/gs_playerdata.h"
 #include "game/vehicle/car_desc.h"
 #include "render/2db.h"
@@ -348,6 +354,11 @@ void HudMessageLog::scroll() {
     pLines[NumLines - 1] = pBuffer + strlen( pBuffer );
 }
 
+static constexpr float kSpotIconScale = 0.00125f;     // DAT_00f41d78
+static constexpr float kSpotIconHalfWidth = 22.5f;    // DAT_00f41988
+static constexpr float kSpotIconHalfHeight = 29.925f; // DAT_00f42154
+static constexpr float kSpotIconAlpha = 191.0f;       // DAT_00f41838
+
 static constexpr float kMapModeHalfExtent[] = { 0.0f, 16384.0f, 3072.0f,
                                                 800.0f }; // DAT_00f41d74
 static constexpr float kHudMapTexelSize = 1.0f / 256.0f;  // DAT_00f41da8
@@ -513,7 +524,7 @@ void HudMinimap::initialize() {
     ViewportV = 1.0f;
     bInstalled = true;
 
-    OTDU_UNIMPLEMENTED; // TODO: FUN_006ebd80
+    buildSpotIcons();
 }
 
 void HudMinimap::terminate() {
@@ -557,6 +568,8 @@ void HudMinimap::terminate() {
         pMapRender2DMs[chunkIndex] = nullptr;
         pMapMaterials[chunkIndex] = nullptr;
     }
+    SpotIcons.clear();
+    VisibleSpotIcons.clear();
 }
 
 bool HudMinimap::updateLure() {
@@ -862,6 +875,186 @@ void HudMinimap::drawTrace() {
     drawList.commitPrimitive();
 }
 
+void HudMinimap::buildSpotIcons() {
+    // FUN_006ebd80
+    Spots &spotList = gpScenaric->getSpotList();
+    const int32_t numWorldSpots = int32_t( spotList.getNumWorldSpots() );
+    const int32_t numExtraChallenges = gpScenaric->getNumExtraChallenges();
+
+    NumSpotIcons = numWorldSpots + numExtraChallenges;
+    SpotIcons.assign( size_t( NumSpotIcons ), MinimapSpotIcon() );
+    VisibleSpotIcons.clear();
+    VisibleSpotIcons.reserve( size_t( NumSpotIcons ) );
+
+    const GameIntroTutorial &tutorial = gpScenaric->getIntroTutorial();
+
+    int32_t numSpotsKept = 0;
+    for ( int32_t i = 0; i < numWorldSpots; i++ ) {
+        const SpotMap *pSpot = spotList.getWorldSpot( i );
+        if ( IsSpotHidden( pSpot->Hashcode ) || tutorial.hidesSpot( pSpot ) ) {
+            NumSpotIcons--;
+            continue;
+        }
+
+        MinimapSpotIcon &icon = SpotIcons[numSpotsKept];
+        icon.Position = Eigen::Vector4f( pSpot->X, pSpot->Y, pSpot->Z, 1.0f );
+        icon.Index = i;
+        icon.Unknown0x30 = -1;
+        icon.pSpot = pSpot;
+        GetSpotIconInfo( pSpot, icon.Info );
+        numSpotsKept++;
+    }
+
+    const SavedItemTable *pChallengeStates =
+        gpPlayerData->getLoadedSave()->getItemTable();
+    for ( int32_t i = 0; i < numExtraChallenges; i++ ) {
+        EntityExtraChallenge *pChallenge = static_cast<EntityExtraChallenge *>(
+            gpScenaric->findExtraChallenge( i ) );
+        if ( pChallengeStates->getExtraChallengeState(
+                 pChallenge->getIndex() ) != SavedItemTable::ECS_Available ||
+             !pChallenge->isAvailable() || tutorial.isActive() ) {
+            NumSpotIcons--;
+            continue;
+        }
+
+        MinimapSpotIcon &icon = SpotIcons[numSpotsKept + i];
+        icon.Position = pChallenge->getModelMatrix().row( 3 );
+        icon.Index = numSpotsKept + i;
+        icon.Unknown0x30 = -1;
+        icon.pEntity = pChallenge;
+        pChallenge->getIconInfo( icon.Info );
+    }
+}
+
+void HudMinimap::drawSpotIcons() {
+    // FUN_006eae90
+    if ( ( MapMode == 0 && RotationBlend >= 1.0f ) ||
+         gpMngLogoDisplay == nullptr ) {
+        return;
+    }
+
+    drawList.setActiveTransformMatrix( WorldToMap );
+
+    float fromHalfExtentX = 0.0f;
+    float fromHalfExtentY = 0.0f;
+    float toHalfExtentX = 0.0f;
+    float toHalfExtentY = 0.0f;
+    GetMapModeHalfExtent( MapModeTarget, fromHalfExtentX, fromHalfExtentY );
+    GetMapModeHalfExtent( MapMode, toHalfExtentX, toHalfExtentY );
+
+    const float fromHalfWidth =
+        fromHalfExtentX * kSpotIconScale * kSpotIconHalfWidth;
+    const float halfWidth =
+        ( toHalfExtentX * kSpotIconScale * kSpotIconHalfWidth -
+          fromHalfWidth ) *
+            RotationBlend +
+        fromHalfWidth;
+    const float fromHalfHeight =
+        fromHalfExtentY * kSpotIconScale * kSpotIconHalfHeight;
+    const float halfHeight =
+        ( toHalfExtentY * kSpotIconScale * kSpotIconHalfHeight -
+          fromHalfHeight ) *
+            RotationBlend +
+        fromHalfHeight;
+
+    float alpha = kSpotIconAlpha;
+    if ( MapModeTarget == 0 && MapMode == 1 && RotationBlend < 1.0f ) {
+        alpha = RotationBlend * kSpotIconAlpha;
+    } else if ( MapMode == 0 && MapModeTarget == 3 && RotationBlend < 1.0f ) {
+        alpha = ( 1.0f - RotationBlend ) * kSpotIconAlpha;
+    }
+    drawList.setDiffuse(
+        0, ColorRGBA( ( uint32_t( uint8_t( uint32_t( alpha ) ) ) << 24 ) |
+                      0xffffffu ) );
+
+    const SavedRoadDiscovery *pRoads =
+        gpPlayerData->getLoadedSave()->getRoadDiscovery();
+
+    VisibleSpotIcons.clear();
+    for ( int32_t i = 0; i < NumSpotIcons; i++ ) {
+        MinimapSpotIcon &icon = SpotIcons[i];
+        const bool bHasSource =
+            icon.pSpot != nullptr || icon.pEntity != nullptr;
+
+        int32_t roadID = 0;
+        int32_t roadSegment = 0;
+        if ( bHasSource ) {
+            if ( !icon.isExtraChallenge() ) {
+                roadID = icon.pSpot->RoadID;
+                roadSegment = icon.pSpot->RoadSegment;
+            } else {
+                EntityExtraChallenge *pChallenge =
+                    static_cast<EntityExtraChallenge *>( icon.pEntity );
+                if ( pChallenge->getRoadID() == -1 ) {
+                    pChallenge->computeRoadLocation();
+                }
+                roadID = pChallenge->getRoadID();
+                if ( pChallenge->getRoadSegment() == -1 ) {
+                    pChallenge->computeRoadLocation();
+                }
+                roadSegment = pChallenge->getRoadSegment();
+            }
+        }
+
+        const float deltaX = icon.Position.x() - ViewCenter.x();
+        const float deltaZ = icon.Position.z() - ViewCenter.y();
+        if ( ViewRadiusSq < deltaX * deltaX + deltaZ * deltaZ ) {
+            continue;
+        }
+        if ( !IsSpotIconVisible( icon.Info, true ) ) {
+            continue;
+        }
+        if ( bHasSource && ( pRoads->isRoadLocked( roadID, roadSegment ) ||
+                             !IsRoadAvailable( uint32_t( roadID ) ) ) ) {
+            continue;
+        }
+
+        VisibleSpotIcons.push_back( &icon );
+    }
+
+    LogoResources &logoResources = gpMngResources->getLogoResources();
+    if ( !logoResources.MngResources::isLoaded() ) {
+        return;
+    }
+
+    Material *pLodAtlas = logoResources.getMaterial( "icons_map_lod" );
+    if ( pLodAtlas == nullptr || VisibleSpotIcons.empty() ) {
+        return;
+    }
+
+    drawList.setActiveMaterial( pLodAtlas );
+    if ( !drawList.beginPrimitive( PT_TriangleStrip,
+                                   int32_t( VisibleSpotIcons.size() ) * 4 ) ) {
+        return;
+    }
+
+    float u0 = 0.0f;
+    float u1 = 0.0f;
+    float v0 = 0.0f;
+    float v1 = 0.0f;
+    for ( size_t i = 0; i < VisibleSpotIcons.size(); i++ ) {
+        const MinimapSpotIcon *pIcon = VisibleSpotIcons[i];
+        MngLogoDisplay::GetSpotIconUVs( pIcon, 3, u0, u1, v0, v1 );
+
+        const float x = pIcon->Position.x();
+        const float z = pIcon->Position.z();
+        drawList.setTexCoords( 0, Eigen::Vector2f( u0, v0 ) );
+        drawList.pushVertex( x - halfWidth, z - halfHeight, 0.0f );
+        drawList.setTexCoords( 0, Eigen::Vector2f( u0, v1 ) );
+        drawList.pushVertex( x - halfWidth, z + halfHeight, 0.0f );
+        drawList.setTexCoords( 0, Eigen::Vector2f( u1, v0 ) );
+        drawList.pushVertex( x + halfWidth, z - halfHeight, 0.0f );
+        drawList.setTexCoords( 0, Eigen::Vector2f( u1, v1 ) );
+        drawList.pushVertex( x + halfWidth, z + halfHeight, 0.0f );
+
+        if ( i + 1 < VisibleSpotIcons.size() ) {
+            drawList.breakPrimitive();
+        }
+    }
+
+    drawList.commitPrimitive();
+}
+
 void HudMinimap::buildMapDrawList() {
     // FUN_006eb3d0
     if ( !bInstalled ) {
@@ -985,7 +1178,7 @@ void HudMinimap::buildMapDrawList() {
 
     if ( gpTestDriveInstance != nullptr &&
          gpTestDriveInstance->getActiveGameMode() == GM_FreeRide ) {
-        OTDU_UNIMPLEMENTED;
+        drawSpotIcons();
     }
 }
 
@@ -1159,8 +1352,27 @@ void HudMinimap::tick( float deltaTime ) {
                                     CursorScaleY * cursorV );
         }
 
-        LogoTimer += deltaTime;
-        OTDU_UNIMPLEMENTED;
+        const SpotMap *pSpot =
+            ( pGameMech != nullptr && pGameMech->getMechType() == 4 )
+                ? pGameMech->getCurrentSpot()
+                : nullptr;
+        if ( pSpot == nullptr ||
+             ( pSpot->Type != ST_CarDealer && pSpot->Type != ST_BikeDealer ) ) {
+            if ( gpMngLogoDisplay != nullptr ) {
+                gpMngLogoDisplay->clearLogo( pPlayer, nullptr );
+            }
+        } else {
+            const float previousLogoTimer = LogoTimer;
+            LogoTimer += deltaTime;
+            bLogoTick = int32_t( previousLogoTimer ) != int32_t( LogoTimer );
+
+            DBEntryBrand *pBrand = MngLogoDisplay::PickCarShopBrand(
+                pCarShopBrands, pSpot->Hashcode, LogoTimer );
+            if ( pBrand != nullptr && gpMngLogoDisplay != nullptr ) {
+                gpMngLogoDisplay->setLogo( pPlayer, pBrand->BrandID.pAsString,
+                                           nullptr );
+            }
+        }
     }
 
     if ( !bGpsTextureBound ) {

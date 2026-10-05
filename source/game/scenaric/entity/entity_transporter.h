@@ -14,6 +14,10 @@ public:
     void deserialize( BinaryReader *param_2 ) override;
     Eigen::Vector4f getSpotMeshPosition() const override;
 
+public:
+    inline uint32_t getConditionType() const { return ConditionType; }
+    inline uint32_t getConditionValue() const { return Condition.Value; }
+
 private:
     static constexpr float kSpotMeshForwardOffset = 2.0f; // DAT_00f416b0
 

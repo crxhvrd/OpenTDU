@@ -26,6 +26,7 @@ public:
     inline bool isModalHintVisible() const { return bModalHintVisible; }
 
     bool isActive() const;
+    bool hidesSpot( const SpotMap *pSpot ) const;
     void reset();
     void tick();
 

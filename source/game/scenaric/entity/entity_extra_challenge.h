@@ -4,6 +4,7 @@
 #include "game/avatar/avatar_configuration.h"
 
 struct BinaryReader;
+struct SpotIconInfo;
 class EntityVolume;
 
 // Base class for freeride challenges.
@@ -33,9 +34,13 @@ public:
     }
 
     bool isAvailable() const;
+    void getIconInfo( SpotIconInfo &outInfo ) const;
+    void computeRoadLocation();
 
     inline int32_t getIndex() const { return Index; }
     inline void setIndex( int32_t index ) { Index = index; }
+    inline int32_t getRoadID() const { return RoadID; }
+    inline int32_t getRoadSegment() const { return RoadEntityID; }
     inline const Matrix4x4f_t &getGoodiesMatrix() const {
         return GoodiesMatrix;
     }

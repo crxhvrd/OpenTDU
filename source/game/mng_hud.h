@@ -11,6 +11,7 @@
 #include "flash/bank/flash_bank_resources.h" // FlashMaterial (needle scratch)
 #include "game/mng_base.h"
 #include "game/mng_gps.h"
+#include "game/scenaric/spots.h"
 #include "render/2dm.h"
 #include "render/draw_list.h"
 
@@ -20,6 +21,9 @@ class PlayerGameMech;
 class Render2DB;
 class FlashResource;
 struct FlashRECT;
+struct DBEntryBrand;
+struct SpotMap;
+class Entity;
 
 struct HudGaugeFace {
     float X = 0.0f;      // left
@@ -102,6 +106,20 @@ struct HudMessageLog {
     void scroll();
 };
 
+struct MinimapSpotIcon {
+    Eigen::Vector4f Position = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 0.0f );
+    SpotIconInfo Info;
+    int32_t Index = 0;
+    int32_t Unknown0x30 = 0;
+    const SpotMap *pSpot = nullptr;
+    Entity *pEntity = nullptr;
+    DBEntryBrand *pBrand = nullptr;
+
+    inline bool isExtraChallenge() const {
+        return ( Info.ChallengeFlags & 0x10u ) != 0u;
+    }
+};
+
 class HudMinimap {
 public:
     static constexpr int32_t kNumMapChunks = 5;
@@ -146,6 +164,10 @@ public:
     float ViewRadiusSq = 0.0f;
     Eigen::Vector4f ViewCenter = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
     MapViewRect BlendedUV;
+    DBEntryBrand *pCarShopBrands[16] = {};
+    std::vector<MinimapSpotIcon> SpotIcons;
+    int32_t NumSpotIcons = 0;
+    std::vector<MinimapSpotIcon *> VisibleSpotIcons;
     float LogoTimer = 0.0f;
     bool bLogoTick = false;
 
@@ -193,6 +215,8 @@ private:
     void bindGpsTextureToPlayerCar();
     void appendTracePoint();
     void drawTrace();
+    void buildSpotIcons();
+    void drawSpotIcons();
     void buildMapDrawList();
     void updateViewTransform( float &cursorU, float &cursorV );
     void buildViewMatrix( Matrix4x4f_t &out, bool bWorldSpace );

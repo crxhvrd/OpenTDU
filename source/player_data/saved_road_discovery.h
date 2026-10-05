@@ -4,6 +4,8 @@ class edStore;
 
 extern bool gUnlockAllRoads;
 
+bool IsRoadAvailable( uint32_t roadID );
+
 class SavedRoadDiscovery {
 public:
     static constexpr int32_t kNumBlocks = 0xa28;
@@ -21,7 +23,7 @@ public:
     uint64_t getBlock( const int32_t index ) const;
     void setBlock( const int32_t index, const uint64_t value );
 
-    bool isRoadLocked( const int32_t roadID ) const;
+    bool isRoadLocked( const int32_t roadID, const int32_t segment ) const;
 
 public:
     uint32_t pBlocks[kNumBlocks][2]; // TEA encrypted

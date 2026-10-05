@@ -642,7 +642,7 @@ private:
                 numDealers++;
 
                 if ( spot.RoadID == 0u ||
-                     !pRoads->isRoadLocked( spot.RoadID ) ) {
+                     !pRoads->isRoadLocked( spot.RoadID, spot.RoadSegment ) ) {
                     numUnlocked++;
                 }
             }
