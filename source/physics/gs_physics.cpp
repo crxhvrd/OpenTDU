@@ -1620,14 +1620,13 @@ PhysFactory *GSPhysics::createFromBinary( void *param_3, int32_t param_2 ) {
     return pFactory;
 }
 
-PhysicsVehicle *
-GSPhysics::createVehicle( PhysFactory *pFactory,
-                          const Matrix4x4f_t &worldTransform,
-                          const DBEntryCarPhysicsData &db,
-                          const void *pTorqueBinary,
-                          const DBEntryAftermarketPack *pPack,
-                          const bool bIsAI,
-                          const bool bIsNetwork ) {
+PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
+                                          const Matrix4x4f_t &worldTransform,
+                                          const DBEntryCarPhysicsData &db,
+                                          const void *pTorqueBinary,
+                                          const DBEntryAftermarketPack *pPack,
+                                          const bool bIsAI,
+                                          const bool bIsNetwork ) {
     // FUN_0082fc80
     if ( pPhysicsSystem == nullptr ) {
         return nullptr;
@@ -4065,6 +4064,8 @@ void GSPhysics::initializeJolt() {
     Eigen::Vector4f origin = Eigen::Vector4f::Zero();
     worldRefBody = createSphere( 2, origin, 0.5f, 1.0f, 1.0f, false );
 
+    broadPhaseOrigin = Eigen::Vector4f::Zero();
+
     bJoltInit = true;
     unlockMutex();
 }
@@ -4075,8 +4076,8 @@ void GSPhysics::setWorldOrigin( const Eigen::Vector4f *pPosition ) {
         return;
     }
 
-    (void)pPosition;
-    OTDU_UNIMPLEMENTED; // Havok broadphase shift
+    const Eigen::Vector4f shiftDistance = *pPosition - broadPhaseOrigin;
+    broadPhaseOrigin += shiftDistance;
 }
 
 Eigen::Vector4f GSPhysics::GetShiftOrigin() {

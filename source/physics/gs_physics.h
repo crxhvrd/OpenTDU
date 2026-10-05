@@ -354,6 +354,7 @@ private:
     PhysicsSHKRoad *pRoadsEnd;
 
     void *field27335_0x8670;
+    Eigen::Vector4f broadPhaseOrigin = Eigen::Vector4f::Zero();
 
     uint32_t field_0x31a0[2];
     uint32_t field_0x4dc0[2];
