@@ -9,6 +9,7 @@
 #include "implementation/ed_audio_reverb.h"
 
 #include "audio/radio/gs_radio.h"
+#include "core/ed_store.h"
 #include "game/gm_base.h"
 #include "game/cinematic/gs_cinematics.h"
 #include "game/cinematic/mng_cinematics.h"
@@ -1051,6 +1052,33 @@ void GSAudio::addMixer( ParsedAudioMixer &mixer ) {
     newMixer.Volume = mixer.Volume;
     newMixer.bEnabled = mixer.bEnabled;
     newMixer.bMuted = mixer.bMuted;
+}
+
+void GSAudio::restoreMixerSettings( edStore &store ) {
+    // FUN_009b21d0
+    NbSpeakers = int32_t( store.readUInteger() );
+
+    const int32_t numMixers = store.readInteger();
+    for ( int32_t i = 0; i < numMixers; i++ ) {
+        if ( i >= int32_t( MixerPool.size() ) ) {
+            continue;
+        }
+
+        Mixer &mixer = MixerPool[i];
+        mixer.Volume = store.readFloat();
+        mixer.bMuted = store.readInteger() != 0;
+    }
+}
+
+void GSAudio::saveMixerSettings( edStore &store ) {
+    // FUN_009b2260
+    store.writeInteger( NbSpeakers );
+    store.writeInteger( kMaxMixers );
+
+    for ( const Mixer &mixer : MixerPool ) {
+        store.writeFloat( mixer.Volume );
+        store.writeInteger( int32_t( mixer.bMuted ) );
+    }
 }
 
 void GSAudio::addReverb( ParsedAudioReverb &reverb ) {

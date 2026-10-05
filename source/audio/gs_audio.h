@@ -13,6 +13,7 @@ class edAudioCluster;
 class edAudioObject;
 class edAudioReverb;
 class edAudioSample;
+class edStore;
 class edAudioSpatializer;
 class AudioClient;
 
@@ -282,6 +283,8 @@ public:
 #endif
 
     void addMixer( ParsedAudioMixer &mixer );
+    void restoreMixerSettings( edStore &store );
+    void saveMixerSettings( edStore &store );
     void addReverb( ParsedAudioReverb &reverb );
     edAudioReverb *findReverbModule( const char *pName );
     void setAmbianceReverbModule( const char *pName );

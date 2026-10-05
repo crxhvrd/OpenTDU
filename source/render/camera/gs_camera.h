@@ -117,6 +117,15 @@ public:
                    : -1;
     }
 
+    inline void setActiveTransitionIndex( const int32_t transitionIndex ) {
+        // FUN_008e1a30
+        for ( uint32_t i = 0; i < numTransition; i++ ) {
+            if ( pTransitionIndices[i] == transitionIndex ) {
+                field83_0x92c = i;
+            }
+        }
+    }
+
 public:
     GSCamera();
     ~GSCamera();

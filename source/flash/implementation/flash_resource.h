@@ -122,6 +122,9 @@ public:
     inline bool isInitialized() const { return flashConfig.bLoaded; }
     inline void setDrawMode( int32_t mode ) { flashConfig.bWireframe = mode; }
     inline const edFlashConfig &getFlashConfig() const { return flashConfig; }
+    inline void setUnknownFlag2( const bool bValue ) {
+        flashConfig.bUnknown2 = bValue;
+    }
 
 public:
     FlashRenderer( edFlashConfig *param_1 );

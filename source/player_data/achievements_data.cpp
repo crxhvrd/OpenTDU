@@ -123,7 +123,14 @@ void AchievementsData::build() {
                     pointsNeeded[1], pointsNeeded[2], pointsNeeded[3],
                     pointsNeeded[4] );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0089c0e0)
+    if ( gpPlayerData != nullptr ) {
+        gpPlayerData->setHasHardcoreMode( true );
+        if ( gpPlayerData->getLoadedSave() != nullptr ) {
+            gpPlayerData->getLoadedSave()
+                ->getAchievements()
+                ->applyHardcoreLevelTexts();
+        }
+    }
 
     if ( bReady ) {
         return;
@@ -136,6 +143,45 @@ void AchievementsData::build() {
     }
 
     notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
+}
+
+void AchievementsData::applyHardcoreLevelTexts() {
+    // FUN_0089c0e0
+    static constexpr uint64_t kPlaceholderTextHashcode = 0x88588ull;
+
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const DBEntryList &kindList = gameDB.Databases[kAchievementDatabaseIndex];
+    const uint32_t numEntries = gameDB.pNumItems[kAchievementDatabaseIndex];
+
+    const DBEntryAchievement *pEntry = nullptr;
+    for ( uint32_t i = 0u; i < numEntries; i++ ) {
+        if ( kindList.getHashcodeForString(
+                 gameDB.DBAchivement[i].Kind.pAsString ) ==
+             AK_LevelReachedHardcore ) {
+            pEntry = &gameDB.DBAchivement[i];
+            break;
+        }
+    }
+
+    if ( pEntry == nullptr ) {
+        return;
+    }
+
+    for ( AchievementCheck *pCheck : achievements ) {
+        if ( pCheck->TextHashcode != kPlaceholderTextHashcode ) {
+            continue;
+        }
+
+        pCheck->NumItemsReq = uint32_t( pEntry->NumItemsReq );
+        pCheck->NumPoints = uint32_t( pEntry->NumPoints );
+        pCheck->TileHashcode =
+            kindList.getHashcodeForString( pEntry->Tile.pAsString );
+        pCheck->TextHashcode =
+            kindList.getHashcodeForString( pEntry->Text.pAsString );
+        pCheck->RewardHashcode =
+            kindList.getHashcodeForString( pEntry->Reward.pAsString );
+        pCheck->RewardData = pEntry->RewardData;
+    }
 }
 
 void AchievementsData::buildCheck( const DBEntryAchievement &entry ) {

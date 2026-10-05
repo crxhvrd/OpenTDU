@@ -2708,6 +2708,34 @@ bool FlashClip::getProperty( eFlashProperty param_2 ) {
     return bResult;
 }
 
+int32_t FlashClip::getFrameProperty( const eFlashProperty property ) {
+    // FUN_004412f0
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    FlashResource *pFVar1 = gpActiveFlashResource;
+
+    // FUN_00449400
+    int32_t value = 0;
+    switch ( property ) {
+    case eFlashProperty::FP_CurrentFrame: {
+        FlashDisplayList *pDisplayList = pSprite->getDisplayList();
+        value = pDisplayList->getCurrentFrameIndex();
+        if ( pDisplayList->getPlayState() == eFlashPlayState::FPS_Play ) {
+            value--;
+        }
+        break;
+    }
+    case eFlashProperty::FP_TotalFrames:
+    case eFlashProperty::FP_FramesLoaded:
+        value = *(uint16_t *)( (uint8_t *)pSprite->getTagsArray() + 0xc );
+        break;
+    default:
+        break;
+    }
+
+    gpPreviousActiveFlashResource = pFVar1;
+    return value;
+}
+
 void FlashClip::getPropertyViewport( const eFlashProperty param_3,
                                      FlashRECT &param_2 ) {
     // FUN_00441380

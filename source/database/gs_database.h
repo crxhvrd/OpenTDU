@@ -144,6 +144,8 @@ public:
     char *getStringByHashcode( const uint32_t dbIndex,
                                const uint64_t hashcode );
     void releaseDatabases( const bool bRetainBuffers = false );
+    bool switchLocale( const eLocale locale );
+    inline eLocale getActiveLocale() const { return activeLocale; }
     void republishFrontEndStrings();
 
     int32_t setFlashLocalization( int32_t param_2,

@@ -8,13 +8,16 @@
 #include "flash/implementation/flash_player.h"
 #include "flash/implementation/ed_flash.h"
 #include "flash/implementation/flash_resource.h"
+#include "flash/mng_fade.h"
 #include "flash/mng_flash_localize.h"
 #include "flash/modal_message_box.h"
 #include "game/gm_base.h"
 #include "game/mng_hud.h"
 #include "gs_timer.h"
 #include "input/gs_device.h"
+#include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
 #include "player_data/opentdu_settings.h"
 #include "render/camera/gs_camera.h"
 #include "render/ed_render.h"
@@ -283,7 +286,7 @@ void MngOptions::tick( float, float ) {
         voicesInputSlider.tick( deltaTime );
     }
 
-    onLanguageChanged();
+    onLanguageChanged( false );
 
     updateExtraVideoRows();
 }
@@ -375,7 +378,7 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
         return true;
 
     case 0x63686c61: // "chla" — apply audio language
-        applyAudioLanguage(
+        startLanguageChange(
             eLocale( kTDULanguages[audioLanguage].LocaleIndex ) );
         gpPlayerData->getLocalPlayerData().bSubtitles =
             pPlayer->getVariableAsInt( "/:IsSubtitles" ) != 0;
@@ -847,13 +850,164 @@ void MngOptions::deviceSaveTick() {
     OTDU_UNIMPLEMENTED_ONCE; // TODO: FILESYSTEM
 }
 
-void MngOptions::onLanguageChanged() {
-    // FUN_006c9390
-    if ( languageRefreshStep == 0 ) {
+static void SetMoviesFlag( const int32_t level,
+                           const uint32_t mask,
+                           const bool bPausedFlags,
+                           const bool bSet ) {
+    const int32_t numMovies = gpFlash->getNumMovies( level );
+    for ( int32_t i = 0; i < numMovies; i++ ) {
+        MoviePlayer *pMovie = gpFlash->getMoviePlayer( level, i );
+        if ( pMovie == nullptr ) {
+            continue;
+        }
+
+        uint32_t &flags =
+            bPausedFlags ? reinterpret_cast<uint32_t &>( pMovie->IsMoviePaused )
+                         : pMovie->Flags;
+        flags = bSet ? ( flags | mask ) : ( flags & ~mask );
+    }
+}
+
+void MngOptions::setLocale( const char *pLocale, const bool bSynchronous ) {
+    // FUN_006c97e0
+    if ( !bSynchronous ) {
+        startLanguageChange( TestDrive::StringToLocale( pLocale ) );
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH
+    languageRefreshStep = 1;
+    activeLocale = TestDrive::StringToLocale( pLocale );
+    SetMoviesFlag( 1, 0x100, false, true );
+
+    do {
+        onLanguageChanged( bSynchronous );
+    } while ( languageRefreshStep != 0 );
+}
+
+void MngOptions::onLanguageChanged( const bool bSkipFade ) {
+    // FUN_006c9390
+    MngFade *pFade = gpMngFade;
+
+    switch ( languageRefreshStep ) {
+    case 1: {
+        if ( pFade != nullptr && ( pFade->getTransitionFlags() & 1 ) != 0 ) {
+            return;
+        }
+
+        const int32_t fontIndex = GSFlash::GetUnicodeFontIndex( activeLocale );
+        const int32_t currentLocale = gpFlash->getUnicodeFontLocale();
+        const int32_t currentFontIndex =
+            ( currentLocale < 0 )
+                ? -1
+                : GSFlash::GetUnicodeFontIndex( currentLocale );
+        if ( fontIndex == -1 || currentFontIndex == fontIndex ) {
+            gpFlash->setUnicodeFontLocale( activeLocale );
+            languageRefreshStep = 5;
+        } else {
+            languageRefreshStep = 2;
+        }
+
+        if ( pFade != nullptr && !bSkipFade ) {
+            pFade->setTransitionFlags( pFade->getTransitionFlags() | 8 );
+        }
+
+        SetMoviesFlag( 0, 0x100, true, true );
+        SetMoviesFlag( 1, 0x100, true, true );
+        break;
+    }
+    case 2:
+        languageRefreshStep = 3;
+        gpFlash->releaseUnicodeFont();
+        break;
+    case 3:
+        languageRefreshStep = 4;
+        break;
+    case 4:
+        languageRefreshStep = 5;
+        gpFlash->setUnicodeFontLocale( activeLocale );
+        break;
+    case 5: {
+        languageRefreshStep = 6;
+
+        char pLocale[16] = {};
+        TestDrive::LocaleToString( activeLocale, pLocale );
+        gpPlayerData->setDefaultLanguage( pLocale, false );
+        gpDatabase->switchLocale( activeLocale );
+
+        gpPlayerData->setHasHardcoreMode( true );
+        if ( gpPlayerData->getLoadedSave() != nullptr ) {
+            gpPlayerData->getLoadedSave()
+                ->getAchievements()
+                ->applyHardcoreLevelTexts();
+        }
+
+        FlashPlayer *pMainPlayer = gpFlash->getLoadedFlashPlayer( 1, 0 );
+        if ( pMainPlayer != nullptr ) {
+            gpDatabase->setFlashLocalization( 0, 0u, pMainPlayer );
+        }
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH
+
+        retrieveLocalizedStrings();
+        refreshOptionsScreen();
+
+        FlashPlayer *pGeneralPlayer = gpFlash->getFlashPlayer( "GENERAL" );
+        const char *pLoadingMessage =
+            gpDatabase->getStringByHashcode( 0, 0x36c66a2 );
+        if ( pGeneralPlayer != nullptr && pLoadingMessage != nullptr ) {
+            pGeneralPlayer->setVariableValue( "/:msg", pLoadingMessage );
+        }
+
+        if ( gpTestDriveInstance != nullptr &&
+             gpTestDriveInstance->getActiveGameMode() != GM_Login ) {
+            gpPlayerData->requestSave( 1 );
+            gpPlayerData->notify( 0 );
+        }
+
+        activeLocale = eLocale::L_Unknown;
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        break;
+    }
+    case 6: {
+        languageRefreshStep = 7;
+        if ( pFade != nullptr && !bSkipFade ) {
+            pFade->restartTransition( ( pFade->getTransitionFlags() & ~8u ) | 5,
+                                      pFade->getTransitionDuration() );
+        }
+
+        SetMoviesFlag( 0, 0x100, true, false );
+        SetMoviesFlag( 1, 0x100, true, false );
+
+        if ( pPlayer == nullptr ) {
+            break;
+        }
+
+        FlashClip choiceClip;
+        if ( !pPlayer->getClipPlayer( "/menus/ss_menus/choice",
+                                      &choiceClip ) ) {
+            languageRefreshStep = 6;
+            break;
+        }
+
+        const int32_t currentFrame =
+            choiceClip.getFrameProperty( eFlashProperty::FP_CurrentFrame );
+        pPlayer->setVariableValue( "/:NoRedirection",
+                                   int32_t( currentFrame <= 1 ) );
+        choiceClip.goToLabelAndPlay( "param_end", true );
+        break;
+    }
+    case 7:
+        if ( pFade != nullptr && ( pFade->getTransitionFlags() & 1 ) != 0 ) {
+            return;
+        }
+
+        languageRefreshStep = 0;
+        SetMoviesFlag( 1, 0x100, false, false );
+        break;
+    default:
+        break;
+    }
 }
 
 void MngOptions::showPreviousRefreshRate() {
@@ -924,9 +1078,16 @@ void MngOptions::FUN_006c7950( bool bUpdateNameTemp ) {
     gpMngFlashLocalize->clearAllSysVar();
 }
 
-void MngOptions::applyAudioLanguage( const eLocale ) {
+void MngOptions::startLanguageChange( const eLocale locale ) {
     // FUN_006c6730
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH
+    activeLocale = locale;
+    languageRefreshStep = 1;
+    SetMoviesFlag( 1, 0x100, false, true );
+
+    if ( gpMngFade != nullptr ) {
+        gpMngFade->restartTransition(
+            ( gpMngFade->getTransitionFlags() & ~0xeu ) | 1, 0.5f );
+    }
 }
 
 void MngOptions::FUN_006c7fb0() {

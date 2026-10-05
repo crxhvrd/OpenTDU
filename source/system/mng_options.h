@@ -105,6 +105,7 @@ public:
     onClose( ePopupAnswer answer, void *param_2, int32_t param_3 ) override;
     void bindFlashPlayer( FlashPlayer *pFlashPlayer, int32_t orientation );
     void refreshOptionsScreen();
+    void setLocale( const char *pLocale, const bool bSynchronous );
 
     void FUN_006c5c10();
     void FUN_006c59d0();
@@ -194,7 +195,7 @@ private:
     void retrieveLocalizedStrings();
     void disableAllSliders();
     void deviceSaveTick();
-    void onLanguageChanged();
+    void onLanguageChanged( const bool bSkipFade );
 
     void buildVideoModeList();
     void showVideoOptions();
@@ -234,7 +235,7 @@ private:
     void showPreviousDisplayMode();
     void FUN_006c7b80();
     void FUN_006c7950( bool param_1 );
-    void applyAudioLanguage( const eLocale locale );
+    void startLanguageChange( const eLocale locale );
     void FUN_006c7fb0();
     void FUN_006c6db0();
     void commitPlayerOptions();

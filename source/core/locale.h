@@ -116,6 +116,18 @@ namespace TestDrive {
         return eLocale( 0 );
     }
 
+    inline void LocaleToString( const eLocale locale, char *pOutLocale ) {
+        // FUN_009a95d0
+        static constexpr const char *kLocaleCodes[] = {
+            "us", "fr", "it", "ge", "sp", "ja", "ko", "ch", "ru", "po" };
+
+        const uint32_t index = uint32_t( locale );
+        const char *pCode = ( index < 10u ) ? kLocaleCodes[index] : "us";
+        pOutLocale[0] = pCode[0];
+        pOutLocale[1] = pCode[1];
+        pOutLocale[2] = '\0';
+    }
+
     // Index into kTDULanguages for the given language code (0 when unknown).
     inline int32_t LanguageToAudioLanguageIndex( const char *pLocale ) {
         const eLocale locale = StringToLocale( pLocale );

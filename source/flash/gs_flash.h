@@ -91,6 +91,12 @@ public:
 
     int32_t getNumMovies( const int32_t param_1 );
     MoviePlayer *getMoviePlayer( int32_t levelIndex, int32_t movieIndex );
+    static int32_t GetUnicodeFontIndex( const int32_t locale );
+    FlashPlayer *getLoadedFlashPlayer( const int32_t levelIndex,
+                                       const int32_t movieIndex );
+    int32_t getUnicodeFontLocale() const;
+    void setUnicodeFontLocale( const int32_t locale );
+    void releaseUnicodeFont();
     int32_t
     forEachLoadedPlayer( const std::function<void( FlashPlayer * )> &callback );
 

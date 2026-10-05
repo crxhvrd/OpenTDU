@@ -75,6 +75,11 @@ public:
         localPlayerData.DrivingHelpLevel = level;
     }
 
+    inline bool hasHardcoreMode() const { return bHasHardcoreMode; }
+    inline void setHasHardcoreMode( const bool bValue ) {
+        bHasHardcoreMode = bValue;
+    }
+
     inline LocalPlayerData &getLocalPlayerData() { return localPlayerData; }
     inline const LocalPlayerData &getLocalPlayerData() const {
         return localPlayerData;
@@ -148,6 +153,7 @@ private:
     uint8_t bTutorialCompleted : 1;
     uint8_t bIsOnline : 1;
     uint8_t bSaveEnabled : 1;
+    uint8_t bHasHardcoreMode : 1;
     uint8_t field526864_0x967e5 : 1;
 
     float LastArrestedTime;

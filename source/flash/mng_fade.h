@@ -25,6 +25,7 @@ public:
         transitionColor.G = g;
         transitionColor.B = b;
     }
+    inline float getTransitionDuration() const { return transitionDuration; }
     inline void setRenderLogo( const bool bEnabled ) { bRenderLogo = bEnabled; }
     inline void restartTransition( const uint32_t newFlags,
                                    const float durationInSeconds ) {

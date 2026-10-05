@@ -84,7 +84,7 @@ bool GSDatabase::reloadDatabases( const char *pLanguage,
     pActiveLanguage[0] = pLanguage[0];
     pActiveLanguage[1] = pLanguage[1];
     pActiveLanguage[2] = '\0';
-    activeLocale = PlayerDataLanguage( pActiveLanguage );
+    activeLocale = TestDrive::StringToLocale( pLanguage );
     OTDU_LOG_DEBUG( "Active language : '%s'\n", pActiveLanguage );
 
     const char *pResourcePath = gpConfig->getResRootPath();
@@ -194,6 +194,19 @@ void GSDatabase::releaseDatabases( const bool bRetainBuffers ) {
                        "the front end still points into them\n",
                        retiredAllocations.size() );
     }
+}
+
+bool GSDatabase::switchLocale( const eLocale locale ) {
+    // FUN_009ae240
+    if ( activeLocale == locale ) {
+        return true;
+    }
+
+    char pLocale[32] = {};
+    TestDrive::LocaleToString( locale, pLocale );
+
+    releaseDatabases( true );
+    return reloadDatabases( pLocale, true );
 }
 
 void GSDatabase::republishFrontEndStrings() {
@@ -1929,8 +1942,7 @@ DBEntryCarPhysicsData *GSDatabase::getCarDBEntry( int32_t carID ) {
     return nullptr;
 }
 
-bool GSDatabase::carBankExists(
-    const DBEntryCarPhysicsData *pCarEntry ) const {
+bool GSDatabase::carBankExists( const DBEntryCarPhysicsData *pCarEntry ) const {
     // FUN_009ab530
     char bankPath[512];
     snprintf( bankPath, sizeof( bankPath ), "%sVehicules/%s.bnk",

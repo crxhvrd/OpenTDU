@@ -498,6 +498,121 @@ bool GSFlash::getFlashMovieIndex( uint32_t *pOutIsValidGameMode,
     return false;
 }
 
+int32_t GSFlash::GetUnicodeFontIndex( const int32_t locale ) {
+    // FUN_0099a050
+    switch ( locale ) {
+    case 5:
+        return 0;
+    case 6:
+        return 1;
+    case 7:
+        return 2;
+    case 8:
+    case 9:
+        return 3;
+    default:
+        return -1;
+    }
+}
+
+FlashPlayer *GSFlash::getLoadedFlashPlayer( const int32_t levelIndex,
+                                            const int32_t movieIndex ) {
+    // FUN_0099a920
+    MoviePlayer *pMoviePlayer = getMoviePlayer( levelIndex, movieIndex );
+    if ( pMoviePlayer == nullptr || !pMoviePlayer->MovieBank.isLoaded() ) {
+        return nullptr;
+    }
+
+    return pMoviePlayer->MovieBank.getFlashPlayer();
+}
+
+int32_t GSFlash::getUnicodeFontLocale() const {
+    // FUN_0099a0a0
+    switch ( unicodeFontID ) {
+    case 0:
+        return 5;
+    case 1:
+        return 6;
+    case 2:
+        return 7;
+    case 3:
+        return 8;
+    default:
+        return -1;
+    }
+}
+
+void GSFlash::setUnicodeFontLocale( const int32_t locale ) {
+    // FUN_0099c4b0
+    const int32_t fontIndex = GetUnicodeFontIndex( locale );
+
+    gEdFlash.Config.bUnknown2 = ( fontIndex == 3 );
+    for ( MoviePlayer &player : moviePlayers ) {
+        if ( player.MovieBank.isInUse() && player.MovieBank.isLoaded() &&
+             player.MovieBank.getFlashPlayer() != nullptr &&
+             player.MovieBank.getFlashPlayer()->getBoundFlashResource() !=
+                 nullptr ) {
+            player.MovieBank.getFlashPlayer()
+                ->getBoundFlashResource()
+                ->setUnknownFlag2( gEdFlash.Config.bUnknown2 );
+        }
+    }
+
+    if ( fontIndex == unicodeFontID || fontIndex < 0 ||
+         fontIndex >= kNumFontBanks ) {
+        return;
+    }
+
+    unicodeFontID = fontIndex;
+    fontResources.destroy();
+    updateUnicodeFontBank();
+    fontResources.initialize( false );
+
+    for ( MoviePlayer &player : moviePlayers ) {
+        if ( !player.MovieBank.isInUse() ) {
+            continue;
+        }
+
+        FlashPlayer *pPlayer = player.MovieBank.getFlashPlayer();
+        FlashResource *pResource =
+            ( pPlayer != nullptr ) ? pPlayer->getBoundFlashResource() : nullptr;
+        if ( pResource == nullptr ) {
+            continue;
+        }
+
+        if ( !fontResources.isLoaded() ) {
+            ScopedMutexLock lock = scopedLock();
+            pResource->setFontResource( nullptr, nullptr );
+            continue;
+        }
+
+        FlashMaterial *pMaterials = ( 0 < fontResources.getNumMaterials() )
+                                        ? fontResources.getMaterials()
+                                        : nullptr;
+        void *pFontData = fontResources.getFileInBank( 0 );
+
+        ScopedMutexLock lock = scopedLock();
+        pResource->setFontResource( pFontData, pMaterials );
+    }
+}
+
+void GSFlash::releaseUnicodeFont() {
+    // FUN_0099b140
+    unicodeFontID = -1;
+    fontResources.destroy();
+
+    for ( MoviePlayer &player : moviePlayers ) {
+        FlashPlayer *pPlayer = player.MovieBank.getFlashPlayer();
+        if ( !player.MovieBank.isInUse() || pPlayer == nullptr ||
+             pPlayer->getBoundFlashResource() == nullptr ) {
+            continue;
+        }
+
+        ScopedMutexLock lock = scopedLock();
+        pPlayer->getBoundFlashResource()->setFontResource( nullptr, nullptr );
+    }
+}
+
 int32_t GSFlash::getNumMovies( const int32_t param_1 ) {
     int32_t numPlayers = 0;
 

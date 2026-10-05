@@ -72,6 +72,7 @@ public:
     void drawDebug();
 #endif
 
+    void applyHardcoreLevelTexts();
     bool isRewardLocked( const uint64_t rewardHashcode ) const;
     uint32_t getAchievedPoints() const;
     int32_t getPlayerLevel() const;

@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "gs_playerdata.h"
 
+#include "audio/gs_audio.h"
 #include "audio/radio/gs_radio.h"
 #include "config/gs_config.h"
 #include "database/gs_database.h"
@@ -30,6 +31,7 @@
 #include "render/camera/gs_camera.h"
 #include "render/gs_render.h"
 #include "save_game_manager.h"
+#include "system/mng_options.h"
 #include "user_profile.h"
 
 #include "tdu_instance.h"
@@ -196,6 +198,7 @@ GSPlayerData::GSPlayerData()
       bTutorialCompleted( false ),
       bIsOnline( false ),
       bSaveEnabled( true ),
+      bHasHardcoreMode( false ),
       field526864_0x967e5( false ),
       LastArrestedTime( -1.0f ),
       OffenceRepetitionFactor( 1u ),
@@ -460,7 +463,15 @@ bool GSPlayerData::loadCommonDT( const void *pSaveBuffer,
 
     localPlayerData.loadFromStream( saveStream );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (locale switch, camera mode)
+    if ( gpMngOptions != nullptr &&
+         TestDrive::StringToLocale( localPlayerData.Language ) !=
+             gpDatabase->getActiveLocale() ) {
+        gpMngOptions->setLocale( localPlayerData.Language, true );
+    }
+
+    if ( gpCamera != nullptr ) {
+        gpCamera->setActiveTransitionIndex( localPlayerData.field36_0x64 );
+    }
 
     PlayerConfiguration *pPlayerConfig = GetPlayerConfig();
     if ( pPlayerConfig != nullptr ) {
@@ -471,7 +482,12 @@ bool GSPlayerData::loadCommonDT( const void *pSaveBuffer,
         }
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (audio and radio settings)
+    if ( gpAudio != nullptr ) {
+        gpAudio->restoreMixerSettings( saveStream );
+    }
+    if ( gpRadio != nullptr ) {
+        gpRadio->restoreSettings( saveStream );
+    }
 
     if ( gpRender != nullptr ) {
         gpRender->setGamma( localPlayerData.Gamma );
@@ -807,9 +823,12 @@ int32_t GSPlayerData::writeCommonDT( void *pExternalBuffer,
 
     pPlayerData->serialize( saveStream );
 
-    OTDU_UNIMPLEMENTED_ONCE;      // TODO: AUDIO (FUN_009b2260)
-    saveStream.writeInteger( 0 ); // master volume
-    saveStream.writeInteger( 0 ); // number of mixer groups
+    if ( gpAudio != nullptr ) {
+        gpAudio->saveMixerSettings( saveStream );
+    } else {
+        saveStream.writeInteger( 0 );
+        saveStream.writeInteger( 0 );
+    }
 
     if ( gpRadio != nullptr ) {
         gpRadio->saveSettings( saveStream );
