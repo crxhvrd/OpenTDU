@@ -217,8 +217,9 @@ void GSConfig::registerDeviceCommands() {
 
         uint8_t cVar3 = actionChannelName[0];
         FUN_008963e0( unk2.c_str(), deviceName.c_str(),
-                      bAllDevice - 1U & deviceIndex, uVar6, bVar15,
-                      (int8_t)iVar11, cVar3 + -0x41, actionName.c_str() );
+                      uint8_t( ( bAllDevice - 1U ) & deviceIndex ), uVar6 != 0,
+                      bVar15, int8_t( iVar11 ), uint8_t( cVar3 - 0x41 ),
+                      actionName.c_str() );
     } );
 
     registerCommand( "ADDACTIONAND", [&]( const char *pArg ) {

@@ -43,6 +43,7 @@ GSPCOptions::GSPCOptions()
       FlashEntity(),
       PopupCallback(),
       mngOptions(),
+      keymapList(),
       pFlashPlayer( nullptr ),
       nickname{},
       email{},
@@ -101,8 +102,9 @@ void GSPCOptions::tick( float totalTime, float deltaTime ) {
         pInputActions =
             ( gpConfig != nullptr ) ? gpConfig->pPlayerConfig : nullptr;
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH (FUN_007c6260 — key-mapping
-                                 // widget binding, not ported)
+        keymapList.bind( pFlashPlayer,
+                         &gpPlayerData->getLocalPlayerData().InputBindings,
+                         pInputActions );
 
         mngOptions.bindFlashPlayer( pFlashPlayer, 0 );
         mngOptions.refreshOptionsScreen();
@@ -166,7 +168,7 @@ void GSPCOptions::tick( float totalTime, float deltaTime ) {
     }
 
     if ( bMainMenuOpened ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH
+        keymapList.tick( gpTimer->SystemDeltaTime, gpTimer->SystemTotalTime );
     }
 
     if ( gSavegameManager.isDwordDiffFromPendingSaveCount() ) {
@@ -331,8 +333,13 @@ bool GSPCOptions::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     case 0x706e6577:             // "pnew"
     case 0x7063616e:             // "pcan"
     case 0x736e6473:             // "snds"
-    case 0x77696467:             // "widg"
         OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+        return false;
+
+    case 0x77696467: // "widg"
+        if ( pMessage[1] == FlashMessage( "kmap" ) ) {
+            return keymapList.onMessage( pMessage + 2, pPlayer );
+        }
         return false;
 
     default:

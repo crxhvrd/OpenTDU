@@ -217,7 +217,10 @@ GSPlayerData::GSPlayerData()
 
         localPlayerData.clear();
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: INPUT (FUN_00896bd0)
+        PlayerConfiguration *pPlayerConfig = GetPlayerConfig();
+        if ( pPlayerConfig != nullptr ) {
+            localPlayerData.InputBindings.applyToActions( *pPlayerConfig );
+        }
 
         LastArrestedTime = -1.0f;
         OffenceRepetitionFactor = 1u;
@@ -309,7 +312,10 @@ void GSPlayerData::resetPlayerData( const bool bApplyDefaults,
     if ( bClear ) {
         localPlayerData.clear();
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: INPUT (FUN_00896bd0)
+        PlayerConfiguration *pPlayerConfig = GetPlayerConfig();
+        if ( pPlayerConfig != nullptr ) {
+            localPlayerData.InputBindings.applyToActions( *pPlayerConfig );
+        }
     }
 
     LastArrestedTime = -1.0f;
@@ -454,8 +460,18 @@ bool GSPlayerData::loadCommonDT( const void *pSaveBuffer,
 
     localPlayerData.loadFromStream( saveStream );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (locale switch, camera mode,
-                             // input bindings, audio and radio settings)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (locale switch, camera mode)
+
+    PlayerConfiguration *pPlayerConfig = GetPlayerConfig();
+    if ( pPlayerConfig != nullptr ) {
+        if ( localPlayerData.InputBindings.NumEntries == 0 ) {
+            localPlayerData.InputBindings.resetToDefaults();
+        } else {
+            localPlayerData.InputBindings.applyToActions( *pPlayerConfig );
+        }
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (audio and radio settings)
 
     if ( gpRender != nullptr ) {
         gpRender->setGamma( localPlayerData.Gamma );

@@ -54,8 +54,7 @@ bool IsRemappableAction( const char *pActionName ) {
 static uint64_t GetActionID( const char *param_1 ) {
     // FUN_009855a0
     for ( int32_t i = 0; i < kNumInputActionBindings; i++ ) {
-        if ( strncmp( kInputActionBindings[i].pName, param_1,
-                      strlen( kInputActionBindings[i].pName ) ) == 0 ) {
+        if ( strcmp( kInputActionBindings[i].pName, param_1 ) == 0 ) {
             return kInputActionBindings[i].Hashcode;
         }
     }
@@ -260,6 +259,21 @@ int32_t edDev::getDeviceID( const std::string &param_1,
     return -1;
 }
 
+Device *edDev::getDeviceByGUID( const edGUID &guid ) {
+    // FUN_0097fca0
+    for ( uint32_t i = 0; i < NumDevices; i++ ) {
+        Device *pDevice = ppDevices[i];
+        const edGUID deviceGUID = ( pDevice != nullptr )
+                                      ? pDevice->getInstanceGUID()
+                                      : kGUIDJoystick;
+        if ( deviceGUID == guid ) {
+            return pDevice;
+        }
+    }
+
+    return nullptr;
+}
+
 Device *edDev::getDevice( eDeviceType param_1, int32_t param_2 ) {
     // FUN_00433df0
     int32_t typeIndex = 0;
@@ -379,14 +393,14 @@ bool edDev::releaseDevices() {
     return true;
 }
 
-void FUN_008963e0( const char *param_1,
-                   const char *param_2,
-                   bool param_3,
-                   bool param_4,
-                   bool param_5,
-                   bool param_6,
-                   uint8_t param_7,
-                   const char *param_8 ) {
+void FUN_008963e0( const char *pChannelName,
+                   const char *pDeviceName,
+                   uint8_t deviceIndex,
+                   bool bInverted,
+                   bool bCombination,
+                   int8_t category,
+                   uint8_t exclusionGroup,
+                   const char *pActionName ) {
     // FUN_008963e0
     if ( gNumPCOptionMapping >= 0x100 ) {
         return;
@@ -394,18 +408,18 @@ void FUN_008963e0( const char *param_1,
 
     PCOptionMapping &entry = gPCOptionMapping[gNumPCOptionMapping];
     gNumPCOptionMapping++;
-    strncpy( entry.pActionName, param_8, 0x20 );
-    strncpy( entry.pCurrentChannel, param_1, 0x20 );
-    strncpy( entry.pCurrentDevice, param_2, 0x20 );
+    strncpy( entry.pActionName, pActionName, 0x20 );
+    strncpy( entry.pCurrentChannel, pChannelName, 0x20 );
+    strncpy( entry.pCurrentDevice, pDeviceName, 0x20 );
 
-    entry.DeviceIndex = uint8_t( param_3 );
-    entry.Unknown1 = param_4;
-    entry.Unknown2 = param_5;
-    entry.Category = int8_t( param_6 );
+    entry.DeviceIndex = deviceIndex;
+    entry.Unknown1 = bInverted;
+    entry.Unknown2 = bCombination;
+    entry.Category = category;
 
-    entry.Unknown4 = param_7;
+    entry.Unknown4 = exclusionGroup;
 
-    entry.ActionID = GetActionID( param_8 );
+    entry.ActionID = GetActionID( pActionName );
 }
 
 void InitializeDeviceMapping() {

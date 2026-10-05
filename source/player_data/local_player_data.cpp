@@ -43,7 +43,7 @@ void LocalPlayerData::clear() {
     memset( Email, 0, sizeof( Email ) );
     memset( Password, 0, sizeof( Password ) );
 
-    InputBindings.clear();
+    InputBindings.resetToDefaults();
 
     bOnlineOps[0] = true; // TODO: ONLINE (gLobbyNetworkService._56248_4_ == 0)
     bOnlineOps[1] = true;

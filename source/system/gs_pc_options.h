@@ -4,6 +4,7 @@
 #include "flash/entities/flash_entity.h"
 #include "game/gs_base.h"
 
+#include "flash_list_keymap.h"
 #include "mng_options.h"
 
 class FlashPlayer;
@@ -106,6 +107,7 @@ private:
 
 private:
     MngOptions mngOptions;
+    FlashListKeymap keymapList;
 
     FlashPlayer *pFlashPlayer;
 

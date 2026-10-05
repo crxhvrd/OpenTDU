@@ -213,6 +213,19 @@ int32_t Device::getChannelIndexFromAscii( uint8_t param_1 ) {
     return -1;
 }
 
+edGUID Device::getInstanceGUID() const {
+    // FUN_00435a30
+    return kGUIDJoystick;
+}
+
+void Device::getChannelDisplayName( const InputChannel &channel,
+                                    char *pOutName,
+                                    const size_t outNameLength ) const {
+    // FUN_004359e0
+    strncpy( pOutName, channel.pName, outNameLength - 1 );
+    pOutName[outNameLength - 1] = '\0';
+}
+
 void Device::setName( const char *param_2 ) {
     // FUN_00435070
     size_t inputLen = strlen( param_2 );

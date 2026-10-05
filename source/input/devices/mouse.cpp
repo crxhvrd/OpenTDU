@@ -149,3 +149,34 @@ bool DeviceMouse::tick() {
 
     return true;
 }
+
+edGUID DeviceMouse::getInstanceGUID() const {
+    // FUN_00435a30
+    return kGUIDSysMouse;
+}
+
+void DeviceMouse::getChannelDisplayName( const InputChannel &channel,
+                                         char *pOutName,
+                                         const size_t outNameLength ) const {
+    // FUN_00436f80
+    // DirectInput mouse object names
+    static constexpr const char *kChannelDisplayNames[] = {
+        "Button 0", // OTDU_MOUSE_LEFT
+        "Button 1", // OTDU_MOUSE_RIGHT
+        "Button 2", // OTDU_MOUSE_MIDDLE
+        "Wheel",    // OTDU_MOUSE_SCROLL_UP
+        "Wheel",    // OTDU_MOUSE_SCROLL_DOWN
+        "X Axis",   // OTDU_MOUSE_MOUSE_X
+        "Y Axis",   // OTDU_MOUSE_MOUSE_Y
+    };
+
+    const ptrdiff_t channelIndex = &channel - pChannels;
+    if ( channelIndex < 0 ||
+         channelIndex >= ptrdiff_t( std::size( kChannelDisplayNames ) ) ) {
+        Device::getChannelDisplayName( channel, pOutName, outNameLength );
+        return;
+    }
+
+    strncpy( pOutName, kChannelDisplayNames[channelIndex], outNameLength - 1 );
+    pOutName[outNameLength - 1] = '\0';
+}

@@ -1,7 +1,10 @@
 #pragma once
 
+#include "input/input_device.h"
+
 class edStore;
 struct PCOptionMapping;
+struct PlayerConfiguration;
 
 // One input binding saved to 'commondt.sav'
 struct SavedInputBinding {
@@ -12,19 +15,23 @@ struct SavedInputBinding {
     char ActionName[kActionNameLength] = {};
     char ChannelName[kChannelNameLength] = {};
     char DisplayName[kDisplayNameLength] = {};
-    uint32_t DeviceGUIDData1 = 0u; // DInput device GUID (not mapped to SDL yet)
-    uint16_t DeviceGUIDData2 = 0u;
-    uint16_t DeviceGUIDData3 = 0u;
-    uint8_t DeviceGUIDData4[8] = {};
-    uint8_t ChannelIndex = 0u;
-    uint8_t ChannelKind = 0u;
-    uint8_t DeviceIndex = 0u;
-    bool bFlag0 = false;
-    bool bFlag1 = false;
+    edGUID DeviceGUID = {};
+    uint8_t DeviceType = 0u;    // eDeviceType
+    uint8_t DeviceSubType = 0u; // eDeviceSpecialization
+    uint8_t DeviceIndex = 0u;   // among the devices of the same type/subtype
+    bool bInverted = false;
+    bool bCombination = false;
 
     void clear();
     void deserialize( edStore &stream );
     void serialize( edStore &stream );
+
+    InputChannel *resolveChannel() const;
+    bool isBoundTo( const InputChannel &channel ) const;
+    void setChannel( const InputChannel *pChannel,
+                     const bool bInvertedChannel,
+                     const bool bCombinationChannel );
+    void updateDisplayName();
 };
 
 struct SavedInputBindings {
@@ -42,4 +49,6 @@ struct SavedInputBindings {
     SavedInputBinding *find( const char *pActionName );
     void addFromLiveMapping( const PCOptionMapping &liveMapping );
     void updateCategoryCounts();
+    void resetToDefaults();
+    void applyToActions( PlayerConfiguration &playerConfig );
 };

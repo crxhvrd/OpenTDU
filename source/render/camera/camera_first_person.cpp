@@ -128,7 +128,7 @@ bool CameraFirstPerson::tick( float deltaTime, bool param_1, bool param_2 ) {
     bool bRunning = false;
 
     if ( !bInputCaptured && pKeyboard != nullptr ) {
-        if ( pKeyboard->getChannelValueBinary( "W" ) ||
+        if ( pKeyboard->getChannelValueBinary( "Z" ) ||
              pKeyboard->getChannelValueBinary( "UP" ) ) {
             forwardInput += 1.0f;
         }
@@ -140,7 +140,7 @@ bool CameraFirstPerson::tick( float deltaTime, bool param_1, bool param_2 ) {
              pKeyboard->getChannelValueBinary( "RIGHT" ) ) {
             strafeInput += 1.0f;
         }
-        if ( pKeyboard->getChannelValueBinary( "A" ) ||
+        if ( pKeyboard->getChannelValueBinary( "Q" ) ||
              pKeyboard->getChannelValueBinary( "LEFT" ) ) {
             strafeInput -= 1.0f;
         }

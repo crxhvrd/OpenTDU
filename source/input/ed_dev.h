@@ -3,6 +3,7 @@
 #include "core/ed_base.h"
 
 struct DeviceAction;
+struct edGUID;
 
 class Device;
 class DeviceMouse;
@@ -134,6 +135,7 @@ public:
 
     int32_t getDeviceID( const std::string &param_1, const int32_t param_2 );
     Device *getDevice( eDeviceType param_1, int32_t param_2 );
+    Device *getDeviceByGUID( const edGUID &guid );
     Device *getDevice( eDeviceType param_1,
                        eDeviceSpecialization param_2,
                        int32_t param_3 );
@@ -176,13 +178,13 @@ extern int32_t gActionExclusions[32];
 extern edDev gEdDev;
 extern edDev *gpEdDev;
 
-void FUN_008963e0( const char *param_1,
-                   const char *param_2,
-                   bool param_3,
-                   bool param_4,
-                   bool param_5,
-                   bool param_6,
-                   uint8_t param_7,
-                   const char *param_8 );
+void FUN_008963e0( const char *pChannelName,
+                   const char *pDeviceName,
+                   uint8_t deviceIndex,
+                   bool bInverted,
+                   bool bCombination,
+                   int8_t category,
+                   uint8_t exclusionGroup,
+                   const char *pActionName );
 
 void InitializeDeviceMapping();

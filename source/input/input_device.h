@@ -31,6 +31,39 @@ enum class eInputChannelType : int32_t {
     ICT_Keyboard = 2
 };
 
+// Mirrors the DirectInput GUID layout (savegames store it verbatim)
+struct edGUID {
+    uint32_t Data1 = 0u;
+    uint16_t Data2 = 0u;
+    uint16_t Data3 = 0u;
+    uint8_t Data4[8] = {};
+
+    bool operator==( const edGUID &other ) const {
+        return memcmp( this, &other, sizeof( edGUID ) ) == 0;
+    }
+};
+OTDU_SIZE_MUST_MATCH( edGUID, 0x10 );
+
+static constexpr edGUID kGUIDSysMouse = {
+    0x6f1d2b60,
+    0xd5a0,
+    0x11cf,
+    { 0xbf, 0xc7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00 }
+};
+static constexpr edGUID kGUIDSysKeyboard = {
+    0x6f1d2b61,
+    0xd5a0,
+    0x11cf,
+    { 0xbf, 0xc7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00 }
+};
+static constexpr edGUID kGUIDJoystick = {
+    // DAT_009f02b0
+    0xa36d02f3,
+    0xc9f3,
+    0x11cf,
+    { 0xbf, 0xc7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00 }
+};
+
 struct InputChannel {
     int32_t Unknown = 0;
     int32_t Index = 0;
@@ -129,7 +162,7 @@ static float ApplyInputDeadZone( float value, float deadZone ) {
 class Device {
 public:
     inline const char *getName() const { return pName; }
-    inline eDeviceType getType() { return deviceType; }
+    inline eDeviceType getType() const { return deviceType; }
     inline eDeviceSpecialization getSpecialization() const {
         return specializedType;
     }
@@ -156,6 +189,11 @@ public:
     virtual bool FUN_0042df00() = 0;
 
     virtual bool tick() = 0;
+
+    virtual edGUID getInstanceGUID() const;
+    virtual void getChannelDisplayName( const InputChannel &channel,
+                                        char *pOutName,
+                                        const size_t outNameLength ) const;
 
     void setName( const char *param_2 );
     InputChannel *allocateChannels( int32_t param_1 );

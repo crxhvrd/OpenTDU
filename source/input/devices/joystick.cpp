@@ -1,10 +1,10 @@
-#include "input/input_device.h"
 #include "shared.h"
 #include "joystick.h"
 
 #include <SDL3/SDL.h>
 
-// DInput8 to SDL3 helpers (would be nice to make those constants instead of macros...)
+// DInput8 to SDL3 helpers (would be nice to make those constants instead of
+// macros...)
 #define OTDU_CHANNEL_KIND_MASK 0x3u
 #define OTDU_CHANNEL_KIND_BUTTON 0x0u
 #define OTDU_CHANNEL_KIND_AXIS 0x1u
@@ -185,7 +185,7 @@ bool DeviceJoystick::initialize( SDL_JoystickID param_1 ) {
 }
 
 bool DeviceJoystick::createChannels() {
-    // FUN_004354f0 + FUN_004368b0 
+    // FUN_004354f0 + FUN_004368b0
     const bool bUseGamepadLayout = pGamepad != nullptr;
 
     const JoystickAxisChannel *pAxes =
@@ -213,7 +213,7 @@ bool DeviceJoystick::createChannels() {
 
     numChannelButtons = uint32_t( numButtons + numHats * kNumPOVDirections );
     numChannelAxis = uint32_t( numAxisChannels );
-    OTDU_UNIMPLEMENTED_ONCE;  // TODO: FFB
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FFB
     unknown = 0;
     channelCount = numChannelButtons + numChannelAxis;
 
@@ -225,7 +225,8 @@ bool DeviceJoystick::createChannels() {
 
     for ( int32_t i = 0; i < numButtons; i++ ) {
         InputChannel &channel = pChannels[cursor++];
-        channel.Unknown = 0;;
+        channel.Unknown = 0;
+        ;
         channel.Index = bUseGamepadLayout ? int32_t( kGamepadButtons[i] ) : i;
         channel.Flags = OTDU_CHANNEL_KIND_BUTTON;
         snprintf( channel.pName, sizeof( channel.pName ), "BUTTON_%d", i );
@@ -235,7 +236,8 @@ bool DeviceJoystick::createChannels() {
         for ( int32_t direction = 0; direction < kNumPOVDirections;
               direction++ ) {
             InputChannel &channel = pChannels[cursor++];
-            channel.Unknown = 0;;
+            channel.Unknown = 0;
+            ;
             channel.Index = hat;
             channel.Flags = uint16_t(
                 OTDU_CHANNEL_KIND_POV |
@@ -248,7 +250,8 @@ bool DeviceJoystick::createChannels() {
     auto addAxisChannel = [&]( const int32_t axis, const char *pChannelName,
                                const uint32_t direction ) {
         InputChannel &channel = pChannels[cursor++];
-        channel.Unknown = 1;;
+        channel.Unknown = 1;
+        ;
         channel.Index = axis;
         channel.Flags = uint16_t( OTDU_CHANNEL_KIND_AXIS | direction );
         strncpy( channel.pName, pChannelName, sizeof( channel.pName ) - 1 );
@@ -390,4 +393,35 @@ bool DeviceJoystick::tick() {
     }
 
     return true;
+}
+
+edGUID DeviceJoystick::getInstanceGUID() const {
+    // FUN_00435a30
+    const SDL_GUID sdlGUID = SDL_GetJoystickGUIDForID( joystickID );
+
+    static constexpr SDL_GUID kNullSDLGUID = {};
+    if ( memcmp( &sdlGUID, &kNullSDLGUID, sizeof( SDL_GUID ) ) == 0 ) {
+        return kGUIDJoystick;
+    }
+
+    static_assert( sizeof( SDL_GUID ) == sizeof( edGUID ) );
+    edGUID guid;
+    memcpy( &guid, &sdlGUID, sizeof( edGUID ) );
+    return guid;
+}
+
+void DeviceJoystick::getChannelDisplayName( const InputChannel &channel,
+                                            char *pOutName,
+                                            const size_t outNameLength ) const {
+    // FUN_00436890
+    if ( ( channel.Flags & OTDU_CHANNEL_KIND_MASK ) ==
+             OTDU_CHANNEL_KIND_BUTTON &&
+         channel.Unknown == 0 ) {
+        const ptrdiff_t buttonIndex = &channel - pChannels;
+        snprintf( pOutName, outNameLength, "Button %d",
+                  int32_t( buttonIndex ) );
+        return;
+    }
+
+    Device::getChannelDisplayName( channel, pOutName, outNameLength );
 }
