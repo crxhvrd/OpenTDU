@@ -72,6 +72,7 @@ public:
     ~PlayerGameMech();
 
     bool onMessage( Entity *pSender, int32_t eventCode, void *pParam );
+    bool enterCurrentActivity();
 
     const char *getDisplayTypeName() const;
     const char *getDisplayName() const;

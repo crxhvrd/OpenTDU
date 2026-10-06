@@ -118,6 +118,11 @@ void MngChat::pause() {
                                             " " );
     }
 
+    closeInputPopupIfOpen();
+}
+
+void MngChat::closeInputPopupIfOpen() {
+    // FUN_006b2720 (inlined)
     if ( field700_0x331 != false ) {
         closeInputPopup();
         field700_0x331 = false;

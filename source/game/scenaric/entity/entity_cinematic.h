@@ -68,6 +68,13 @@ public:
         cinematicPlayer.setPlane( pPlane );
     }
     inline EntityActor *getPlane() const { return cinematicPlayer.getPlane(); }
+    inline void setAsyncActorLoad( bool bEnabled ) {
+        cinematicPlayer.setAsyncActorLoad( bEnabled );
+    }
+    inline void setRestoreCineMix( bool bEnabled ) {
+        bRestoreCineMix = bEnabled;
+    }
+    inline struct SpotMap *getSpotWorld() const { return pSpotWorld; }
     inline bool isLooping() const { return bLoop; }
     inline bool isPlaying() const {
         return ( cinematicFlags & 0x4u ) != 0 && ( cinematicFlags & 0x2u ) == 0;

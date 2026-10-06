@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "game_mechanism_player.h"
 
+#include "game/freeride/gm_freeride.h"
 #include "game/scenaric/entity/base_entity.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/entity/entity_spot_mesh.h"
@@ -275,4 +276,23 @@ const char *PlayerGameMech::getDisplayName() const {
         return gpSpotDisplayNames[spotDisplayNameIndex];
     }
     return gpSpotDisplayNames[0];
+}
+
+bool PlayerGameMech::enterCurrentActivity() {
+    // FUN_007381c0
+    if ( pCurrentSpot != nullptr ) {
+        if ( pOwner != nullptr && pOwner->getGameMechType() == 4 ) {
+            static_cast<GMFreeride *>( pOwner )->enterSpot( pCurrentSpot );
+        }
+        return true;
+    }
+
+    if ( pCurrentExtraChallenge != nullptr ) {
+        if ( pOwner != nullptr && pOwner->getGameMechType() == 4 ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+        }
+        return true;
+    }
+
+    return false;
 }

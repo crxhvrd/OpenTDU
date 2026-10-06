@@ -75,6 +75,7 @@ FindStreamedSpotCinematic( const struct SpotSector *pSpotSector,
                            const char *pName,
                            ScenaricBank **ppOutBank = nullptr );
 Matrix4x4f_t BuildSpotSectorRotation( const struct SpotSector *pSector );
+bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide );
 
 struct SpotSector {
     uint64_t Hashcode; //  ASCII spot id (e.g. "RSFE0022")

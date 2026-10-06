@@ -43,6 +43,8 @@ public:
     void onPauseMenuRequested( bool bOpened ) override;
     void onMenuPauseExit( bool bRestoreState ) override;
 
+    bool enterSpot( struct SpotMap *pSpot );
+
 #ifdef OTDU_USE_IMGUI
     void drawDebug( float deltaTime ) override;
 #endif
@@ -63,6 +65,11 @@ private:
     Entity *spawnExtraChallengeMarker( const int32_t subType );
     void releaseExtraChallengeProp();
     void resolveNextIntroCine( const struct SpotSector *pSector );
+
+    bool requestEnterActivity();
+    void enterCurrentActivity();
+    void acquireSpotIntroCine( struct SpotMap *pSpot );
+    static void OnSpotIntroFadeOut( void *pData, void *pSource );
 
     void populateEnterSpotPrompt( class FlashPlayer *pPlayer );
     void refreshChallengeLockState( class FlashPlayer *pPlayer );
@@ -97,4 +104,6 @@ private:
     ExtraChallengeProp extraChallengeProp;
     EntityExtraChallenge *pNearestExtraChallenge;
     Entity *pExtraChallengeMarker;
+    struct SpotMap *pPendingSpot;
+    uint32_t activityReentryTick;
 };

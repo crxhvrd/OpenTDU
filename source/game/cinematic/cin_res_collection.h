@@ -130,6 +130,9 @@ public:
         bIsLifeSetCinematic = bEnabled;
     }
     inline void setPlane( EntityActor *pActor ) { pPlane = pActor; }
+    inline void setAsyncActorLoad( bool bEnabled ) {
+        bAsyncActorLoad = bEnabled;
+    }
     inline EntityActor *getPlane() const { return pPlane; }
     inline void *getActorEntity( int32_t index ) const {
         return ( index >= 0 && index < numActors ) ? actors[index].pEntity

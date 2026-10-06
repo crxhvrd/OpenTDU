@@ -4,6 +4,10 @@
 #include "gs_timer.h"
 #include "tdu_instance.h"
 
+#include "config/gs_config.h"
+#include "core/time.h"
+#include "input/input_device.h"
+
 #include "database/gs_database.h"
 #include "game/game_mechanism_player.h"
 #include "game/gs_tutorial.h"
@@ -39,6 +43,13 @@ static constexpr uint64_t kRewardCarPaintDeluxe = 0x5da680ull;
 
 static constexpr uint32_t kAchievementDBIndex = 0xfu;
 
+static constexpr float kSpotIntroFadeDuration = 0.5f;   // FLOAT_00f41674
+static constexpr float kSpotIntroFadeInDuration = 0.2f; // DAT_00f41730
+
+static uint32_t GetTickCountMs() {
+    return uint32_t( MonotonicToMs( GetTimeMonotonic() ) );
+}
+
 GMFreeride::GMFreeride()
     : GameModeWorld( 6 ),
       mngBookmark(),
@@ -65,7 +76,9 @@ GMFreeride::GMFreeride()
       extraChallengeKind( -1 ),
       extraChallengeProp{ nullptr },
       pNearestExtraChallenge( nullptr ),
-      pExtraChallengeMarker( nullptr ) {
+      pExtraChallengeMarker( nullptr ),
+      pPendingSpot( nullptr ),
+      activityReentryTick( 0u ) {
     // FUN_00793880
     if ( gpMngMapScreenshot == nullptr ) {
         gpMngMapScreenshot = &mngMapScreenshot;
@@ -561,21 +574,48 @@ void GMFreeride::onResourceStreamed() {
 }
 
 bool GMFreeride::executeAction( int32_t param_2,
-                                void * /*param_3*/,
+                                void *param_3,
                                 void * /*pData*/ ) {
     // FUN_00794ff0
+    if ( param_2 == CE_Started ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (extra challenge cine)
+        if ( pIntroCine != nullptr && pIntroCine == param_3 &&
+             !nextIntro.bIsActive ) {
+            gpMngFade->setRenderLogo( false );
+            gpMngFade->startTransition(
+                ( gpMngFade->getTransitionFlags() & ~0xau ) | 5u,
+                kSpotIntroFadeInDuration );
+        }
+        return true;
+    }
+
+    if ( param_2 == CE_StartEndFade ) {
+        if ( pIntroCine != nullptr && pIntroCine == param_3 &&
+             !nextIntro.bIsActive ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+
+            SpotMap *pSpot = pIntroCine->getSpotWorld();
+            gpScenaric->setCurrentSpotIndex(
+                gpScenaric->getSpotList().getSpotMapIndex( pSpot->Hashcode ) );
+            transitionFlags |= 0x20;
+
+            bIntroLevelLaunched = LaunchSpotLevel( pSpot, false );
+            pIntroCine->setRestoreCineMix( !bIntroLevelLaunched );
+            return true;
+        }
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (extra challenge cine)
+        return true;
+    }
+
     if ( param_2 != CE_Ended ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC / MngFade / PHYSICS /
-                                 // DATABASE (CE_Started, CE_StartEndFade and
-                                 // the flash-message case)
+                                 // DATABASE
         return false;
     }
 
     if ( nextIntro.bIsActive ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL (FUN_007fcd40 — advance the
-                                 // scenario tutorial past
-                                 // STS_AirplaneCinematic, or relaunch the
-                                 // current state's dialog)
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
         nextIntro.bIsActive = false;
         bIntroLevelLaunched = false;
         bIntroCineDone = true;
@@ -584,8 +624,7 @@ bool GMFreeride::executeAction( int32_t param_2,
 
     if ( !bIntroLevelLaunched ) {
         gpCamera->restoreCamera();
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI (wake the bot/cop pools and
-                                 // unpause the traffic)
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
     }
 
     pIntroCine = nullptr;
@@ -797,6 +836,130 @@ void GMFreeride::releaseExtraChallengeProp() {
     extraChallengeKind = -1;
 }
 
+bool GMFreeride::requestEnterActivity() {
+    // FUN_00796ef0
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar != nullptr && pLocalCar->getPoliceState().isArrested() ) {
+        return true;
+    }
+
+    enterCurrentActivity();
+
+    if ( gpMngChat != nullptr ) {
+        gpMngChat->closeInputPopupIfOpen();
+    }
+    return true;
+}
+
+void GMFreeride::enterCurrentActivity() {
+    // FUN_00796e10
+    if ( pGameMech->enterCurrentActivity() ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+    }
+}
+
+bool GMFreeride::enterSpot( SpotMap *pSpot ) {
+    // FUN_00796120
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+    pPendingSpot = pSpot;
+
+    const ScenaricBank::eBankState bankState = spotBank.getState();
+    if ( bankState != ScenaricBank::BBS_Unused &&
+         bankState != ScenaricBank::BBS_LoadFailed ) {
+        gpScenaric->unloadBank( &spotBank );
+    }
+
+    if ( pIntroCine == nullptr ) {
+        acquireSpotIntroCine( pSpot );
+    }
+
+    if ( pIntroCine == nullptr || pSpot == nullptr ) {
+        gpScenaric->setCurrentSpotIndex(
+            gpScenaric->getSpotList().getSpotMapIndex( pSpot->Hashcode ) );
+        transitionFlags |= 0x20;
+        LaunchSpotLevel( pSpot, false );
+        return true;
+    }
+
+    pIntroCine->setGameModeInterface( this );
+    pIntroCine->setAsyncActorLoad( true );
+    pSavedVehicleCamera = gpCamera->getActiveCamera();
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+
+    PlayerConfiguration *pPlayerCfg =
+        ( gpConfig != nullptr ) ? gpConfig->pPlayerConfig : nullptr;
+    if ( pPlayerCfg != nullptr ) {
+        ClearActionFlags( pPlayerCfg->pMenuPause );
+        ClearActionFlags( pPlayerCfg->pMenuValidate );
+    }
+
+    if ( ( gpMngFade->getTransitionFlags() & 1u ) == 0 ) {
+        gpMngFade->startTransition(
+            ( gpMngFade->getTransitionFlags() & ~0xeu ) | 1u,
+            kSpotIntroFadeDuration, &GMFreeride::OnSpotIntroFadeOut, nullptr,
+            this );
+    }
+    return true;
+}
+
+void GMFreeride::acquireSpotIntroCine( SpotMap *pSpot ) {
+    // FUN_007930e0
+    if ( pIntroCine != nullptr || pSpot == nullptr || nextIntro.bIsActive ) {
+        return;
+    }
+
+    const SpotSector *pSector =
+        gpScenaric->getSpotList().getSpotSector( pSpot->Hashcode );
+    if ( pSector == nullptr || pSpot->Type == ST_Challenge ||
+         ( pSpot->Type == ST_Unknown8 && pSpot->SubType == 0 ) ) {
+        return;
+    }
+
+    if ( pSpot->Type == ST_House &&
+         !gpPlayerData->getLoadedSave()->getGarage()->isHouseOwned(
+             pSpot->Hashcode ) ) {
+        return;
+    }
+
+    ScenaricBank *pBank = nullptr;
+    pIntroCine = FindStreamedSpotCinematic( pSector, "C_INTRO_E_1", &pBank );
+    if ( pIntroCine == nullptr ) {
+        pIntroCine = FindStreamedSpotCinematic( pSector, "C_INTRO_E", &pBank );
+    }
+    if ( pIntroCine == nullptr ) {
+        pIntroCine = FindStreamedSpotCinematic( pSector, "c_intro_e", &pBank );
+    }
+    if ( pIntroCine == nullptr ) {
+        return;
+    }
+
+    pIntroCine->setGameModeInterface( this );
+    pIntroCine->setStopWhenSkipped( false );
+
+    if ( pBank != nullptr && pBank->getMngActor() != nullptr ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+    }
+}
+
+void GMFreeride::OnSpotIntroFadeOut( void *pData, void * /*pSource*/ ) {
+    // FUN_00795a70
+    GMFreeride *pFreeride = static_cast<GMFreeride *>( pData );
+    if ( pFreeride->pIntroCine == nullptr ||
+         pFreeride->pPendingSpot == nullptr ) {
+        return;
+    }
+
+    gpMngFade->setTransitionFlags( gpMngFade->getTransitionFlags() | 8u );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE / GSAI
+
+    pFreeride->pIntroCine->launchSpotCine( pFreeride->pPendingSpot, 0.0f );
+    pFreeride->pPendingSpot = nullptr;
+}
+
 bool GMFreeride::onMessage( FlashMessage *pMessage ) {
     // FUN_00796f40
     if ( GameModeWorld::onMessage( pMessage ) ||
@@ -816,13 +979,21 @@ bool GMFreeride::onMessage( FlashMessage *pMessage ) {
     case FlashMessage( "icbo" ):
     case FlashMessage( "noic" ):
         return mngFRMeetingIC.onMessage( pMessage );
+    case FlashMessage( "gosp" ):
+    case FlashMessage( "goid" ):
+    case FlashMessage( "goch" ):
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA
+        if ( GetTickCountMs() < activityReentryTick ) {
+            return true;
+        }
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+        return requestEnterActivity();
     default:
         break;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: the "gogp"/"goho"/"home"/"gosh"/"gosp"/"goid"/
-                        // "goch"/"acex"/"acti"/"caex"/"info"/"noch"/"ssmn"
-                        // handlers (spot entry + extra challenges)
+    OTDU_UNIMPLEMENTED; // TODO:  "gogp"/"goho"/"home"/"gosh"/"acex"/"acti"/
+                        // "caex"/"info"/"noch"/"ssmn" handlers
 
     return false;
 }

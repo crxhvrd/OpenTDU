@@ -222,6 +222,9 @@ void EntityAvatar::endLifeSetCinematic() {
     if ( unknownAvatarFunc2() != 0 ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
     }
+    if ( animation.getNumChannels() > 0 ) {
+        animation.resetChannel( 0 );
+    }
     CineAvatarMode = 0;
 }
 

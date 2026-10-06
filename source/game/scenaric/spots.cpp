@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "spots.h"
 
+#include "tdu_instance.h"
+
 #include "filesystem/bank.h"
 #include "world/gs_world.h"
 #include "world/mng_world.h"
@@ -638,6 +640,108 @@ void GetChallengeCarAvailability( const SpotMap *pSpot,
     }
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA
+}
+
+static bool IsSpotID( const SpotMap *pSpot, const char *pID ) {
+    return std::memcmp( &pSpot->Hashcode, pID, sizeof( pSpot->Hashcode ) ) == 0;
+}
+
+static void LaunchHardcodedMission( const char *pMissionName ) {
+    // FUN_007d8050 (inlined)
+    (void)pMissionName;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+    gpTestDriveInstance->setNextGameMode( GM_Mission );
+}
+
+bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
+    // FUN_007d8050
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+
+    const eGameMode previousGM = gpTestDriveInstance->getActiveGameMode();
+    bool bJoiningLobby = false;
+    if ( previousGM == GM_FreeRide ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
+    }
+
+    switch ( pSpot->Type ) {
+    case ST_House: {
+        Garage *pGarage = gpPlayerData->getLoadedSave()->getGarage();
+        const bool bOwned = pGarage->isHouseOwned( pSpot->Hashcode );
+        gpTestDriveInstance->setNextGameMode( bOwned ? GM_Living : GM_Estates );
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL (FUN_007fbe80)
+        break;
+    }
+    case ST_CarDealer:
+    case ST_BikeDealer:
+        gpTestDriveInstance->setNextGameMode( GM_Shop );
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
+        break;
+    case ST_Goodies:
+        gpTestDriveInstance->setNextGameMode( GM_Goodies );
+        break;
+    case ST_AfterMarket:
+        gpTestDriveInstance->setNextGameMode( GM_Shop );
+        break;
+    case ST_Club:
+        gpTestDriveInstance->setNextGameMode( GM_Club );
+        break;
+    case ST_DriveIn:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+        gpTestDriveInstance->setNextGameMode( GM_DriveIn );
+        break;
+    case ST_Challenge:
+        if ( IsSpotID( pSpot, "HACK_HVK" ) ) {
+            LaunchHardcodedMission( "Test_Havock" );
+        } else if ( IsSpotID( pSpot, "HACK_WKS" ) ) {
+            LaunchHardcodedMission( "walkstreet" );
+        } else if ( IsSpotID( pSpot, "HACK_DRV" ) ) {
+            LaunchHardcodedMission( "drive001" );
+        } else if ( IsSpotID( pSpot, "LED_STRP" ) ) {
+            gpTestDriveInstance->setNextGameMode( GM_FreeRide );
+        } else {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC / ONLINE
+            if ( gpActiveGameMode->getCurrentGameMode() != GM_Lobby ||
+                 bJoiningLobby ) {
+                gpTestDriveInstance->setNextGameMode( GM_Lobby );
+            } else {
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
+                gpTestDriveInstance->setNextGameMode( GM_Mission );
+            }
+        }
+        break;
+    case ST_Unknown8:
+        switch ( pSpot->SubType ) {
+        case 0:
+            if ( !bAllowFreeRide ) {
+                return false;
+            }
+            gpTestDriveInstance->setNextGameMode( GM_FreeRide );
+            break;
+        case 1:
+        case 2:
+        case 3:
+        case 9:
+            gpTestDriveInstance->setNextGameMode( GM_Shop );
+            break;
+        case 4:
+            gpTestDriveInstance->setNextGameMode( GM_Estates );
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL (FUN_007fba70)
+            break;
+        default:
+            return false;
+        }
+        break;
+    default:
+        return false;
+    }
+
+    if ( previousGM != gpTestDriveInstance->getActiveGameMode() ||
+         bJoiningLobby ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+        gpActiveGameMode->requestExit();
+    }
+
+    return true;
 }
 
 bool Spots::isSpotValid( const SpotMap *pSpot ) const {

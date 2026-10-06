@@ -65,6 +65,7 @@ public:
     inline bool isPauseMenuActive() const { return bPauseMenuActive; }
     virtual bool usesFrontEndDirections() const { return false; }
     inline PlayerGameMech *getGameMech() const { return pGameMech; }
+    inline int32_t getGameMechType() const { return gameMechType; }
 
 public:
     // gameModeFlags:

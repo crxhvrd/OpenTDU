@@ -46,6 +46,7 @@ public:
     addLine( const char *pText, const char *pAuthor, const int32_t colorIndex );
 
     static void FlashClose();
+    void closeInputPopupIfOpen();
 
 private:
     TestDriveMutex mutex;

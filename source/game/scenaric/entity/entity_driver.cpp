@@ -34,6 +34,8 @@ static constexpr uint64_t kGearboxMechanicalHashcode = 0x8c05b;
 static constexpr int32_t kDefaultBikeDBID = 0x29a;
 static constexpr int32_t kDefaultCarDBID = 999;
 
+static constexpr int32_t kExpressionsMatchID = 7;
+
 static constexpr float kSeatedCarLODDistances[3] = { 20.0f, 10.0f,
                                                      0.0f }; // DAT_00f8b2a0
 static constexpr float kSeatedBikeLODDistances[3] = { 150.0f, 15.0f,
@@ -1621,7 +1623,7 @@ void EntityDriver::buildIKChains() {
     ExpressionList.append( &IKLeftShoulderBelt2 );
     ExpressionList.append( &IKRightHipsBelt );
     ExpressionList.append( &IKLeftHipsBelt );
-    animation.setExpressionList( &ExpressionList );
+    animation.setExpressionList( &ExpressionList, kExpressionsMatchID );
 }
 
 void EntityDriver::updateIKTargets() {
