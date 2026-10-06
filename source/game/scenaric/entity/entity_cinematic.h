@@ -115,6 +115,7 @@ public:
 
     bool launchSpotCine( struct SpotMap *pSpot, float startTime );
     bool launchCineAtFrame( struct SpotMap *pSpot, const Matrix4x4f_t &frame );
+    bool calculateSpotMatrix( struct SpotMap *pSpot, Matrix4x4f_t &outMatrix );
     void installMusicBanks();
     bool createTDUInterface();
     void seek( float time );
@@ -130,7 +131,6 @@ private:
     void end();
     void releaseMusicEmitter();
     void publishCameraView();
-    bool calculateSpotMatrix( struct SpotMap *pSpot, Matrix4x4f_t &outMatrix );
     void resolveClipTable();
 
 private:

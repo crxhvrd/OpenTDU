@@ -490,7 +490,9 @@ bool GMLiving::onMessage( FlashMessage *pMessage ) {
         return true;
 
     case FlashMessage( "avin" ): // the wardrobe door
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMDressing
+        requestExit();
+        gpTestDriveInstance->setNextGameMode( GM_Dressing );
+        pFlashPlayer->stopClip( "/" );
         return true;
 
     case FlashMessage( "liou" ): // back out to the house exterior

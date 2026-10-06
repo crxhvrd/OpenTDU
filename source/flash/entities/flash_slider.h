@@ -11,6 +11,12 @@ public:
     bool isDirty() const { return bDirty; }
     float getMinValue() const { return minMaxValues[0]; }
     float getMaxValue() const { return minMaxValues[1]; }
+    bool isLeftPressed() const { return bLeftPressed; }
+    bool isRightPressed() const { return bRightPressed; }
+    int32_t getIndex() const { return index; }
+    inline void setIndex( const int32_t value ) { index = value; }
+    inline void setVelocity( const float value ) { velocity = value; }
+    inline void setMaxValue( const float value ) { minMaxValues[1] = value; }
     inline void setVerticalDrag( const bool bVertical ) {
         dragAxis = bVertical ? 1 : 0;
     }

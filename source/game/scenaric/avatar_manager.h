@@ -31,6 +31,9 @@ public:
     EntityAvatar *getDriverAvatar();
 
     inline bool getUnknownBoolean() const { return bUnknownBoolean; }
+    inline void setFullUpdate( const bool bEnabled ) {
+        bIsFullUpdate = bEnabled;
+    }
 
 private:
     static constexpr int32_t kMaxAvatars = 9;

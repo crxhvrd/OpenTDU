@@ -153,4 +153,6 @@ protected:
 extern GameModeScene *gpActiveGMScene;
 extern uint32_t gCurrentFPS;
 
+void SampleFrameRate();
+
 void SetHUDMoviesPaused( bool bPaused );

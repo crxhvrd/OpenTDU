@@ -21,13 +21,16 @@ public:
                     const ColorRGBA &color,
                     int32_t number );
 
-private:
+public:
     struct DrawCommand {
         Eigen::Vector3f Position;
         uint32_t Size;
         ColorRGBA Color;
         int32_t Number;
     };
+
+private:
+    static constexpr size_t kMaxNumbers = 16;
 
 private:
     class DrawList *pDrawList;

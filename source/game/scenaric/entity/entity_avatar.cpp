@@ -9,6 +9,7 @@
 #include "game/scenaric/entity/entity_anm_set.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "game/vehicle/car_state.h"
+#include "game/avatar/avatar_layer.h"
 #include "game/avatar/gs_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/mng_car_alpha.h"
@@ -38,10 +39,10 @@ EntityAvatar::EntityAvatar()
       pLightingAttenuation( gAvatarOutCarLightFactor ),
       currentEnvFactor( 1.0f ),
       currentEnvFactorBackFace( 0.0f ),
-      pSerializedData( nullptr ),
+      ShadowIntensity( 1.0f ),
       pPooledAvatarEntry( nullptr ),
       FaceParams{},
-      pBehavior( nullptr ),
+      pLayers( nullptr ),
       pVoiceEmitter( nullptr ),
       pCineInterface( nullptr ),
       Alpha( 1.0f ),
@@ -59,7 +60,7 @@ EntityAvatar::EntityAvatar()
       bForceShowHelmet( false ),
       bLastShowHead( true ),
       bIsToUpdate( false ),
-      bLowResShadow( false ) {
+      bLowResShadow( true ) {
     // FUN_007f8240
     gAvatarLODDistances[0] = LODDistances[0];
     gAvatarLODDistances[1] = LODDistances[1];
@@ -93,8 +94,9 @@ void EntityAvatar::initializeForCinematic( void *param_2, void *param_3 ) {
         pDriver->leaveSeatForCinematic();
     }
 
-    if ( pBehavior != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AVATAR
+    for ( AvatarLayer *pLayer = pLayers; pLayer != nullptr;
+          pLayer = pLayer->getNext() ) {
+        pLayer->onResourceChange();
     }
 }
 
@@ -266,8 +268,11 @@ void EntityAvatar::tick( PlayerGameMech *pGameMech,
                 bIsToUpdate = pPooledAvatarEntry->bUpdatable;
             }
 
-            if ( pBehavior != nullptr ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+            for ( AvatarLayer *pLayer = pLayers; pLayer != nullptr;
+                  pLayer = pLayer->getNext() ) {
+                if ( pLayer->isEnabled() ) {
+                    pLayer->tick( deltaTime, totalTime );
+                }
             }
 
             if ( bNeedToRefreshFace ) {
@@ -293,6 +298,16 @@ void EntityAvatar::tick( PlayerGameMech *pGameMech,
 
         if ( animation.isValid() && pPooledAvatarEntry != nullptr ) {
             OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — head bone update
+        }
+
+        for ( AvatarLayer *pLayer = pLayers; pLayer != nullptr;
+              pLayer = pLayer->getNext() ) {
+            pLayer->onPoseComputed();
+        }
+
+        if ( isShadowCaster() ) {
+            pPooledAvatarEntry->addShadowCasters( bLowResShadow,
+                                                  ShadowIntensity );
         }
     }
 
@@ -331,7 +346,7 @@ bool EntityAvatar::draw( RenderScene *pScene ) {
             currentEnvFactor, 0.0f, currentEnvFactorBackFace, 0.0f );
     }
 
-    if ( bLowResShadow ) {
+    if ( bForceShowHelmet ) {
         AvatarClothe &helmet = pPooledAvatarEntry->Slots[AC_Helmet];
         if ( helmet.pLowRes != nullptr &&
              helmet.pHierarchyNodeLowRes != nullptr && !helmet.bVisible ) {
@@ -591,8 +606,9 @@ void EntityAvatar::onSkeletonChange( void *pSkeleton ) {
         animation.setNumChannels( kAnimChannelPoolSize );
     }
 
-    if ( pBehavior != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — behavior skeleton notify
+    for ( AvatarLayer *pLayer = pLayers; pLayer != nullptr;
+          pLayer = pLayer->getNext() ) {
+        pLayer->onSkeletonChange();
     }
 
     pUseSkeleton = pSkeleton;
@@ -602,6 +618,8 @@ void EntityAvatar::onSkeletonChange( void *pSkeleton ) {
         HeadBoneIndex = avatarSkeleton.findNode( kHeadBoneHashcode );
     }
 }
+
+bool gbDisableFaceMorph = false;
 
 void EntityAvatar::refreshFace() {
     // FUN_007f7dd0
@@ -621,7 +639,7 @@ void EntityAvatar::refreshFace() {
     }
 
     if ( pFaceMorph == nullptr || pFaceMorph->pAnimState == nullptr ||
-         !animation.isValid() ) {
+         !animation.isValid() || gbDisableFaceMorph ) {
         animation.setFacePose( nullptr );
         bNeedToRefreshFace = false;
         return;
@@ -664,8 +682,56 @@ void EntityAvatar::refreshFace() {
 
 void EntityAvatar::onResourceChange() {
     // FUN_007f8190
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    for ( AvatarLayer *pLayer = pLayers; pLayer != nullptr;
+          pLayer = pLayer->getNext() ) {
+        pLayer->onResourceChange();
+    }
+    freeAlphaSlot();
     bNeedToRefreshFace = true;
+}
+
+void EntityAvatar::addLayer( AvatarLayer *pLayer ) {
+    // FUN_007f7330
+    if ( pLayers == nullptr ) {
+        pLayers = pLayer;
+    } else {
+        AvatarLayer *pTail = pLayers;
+        while ( pTail->getNext() != nullptr ) {
+            pTail = pTail->getNext();
+        }
+        pTail->setNext( pLayer );
+    }
+    pLayer->attach( this );
+}
+
+void EntityAvatar::removeLayer( AvatarLayer *pLayer ) {
+    // FUN_007f72f0
+    if ( pLayers == pLayer ) {
+        pLayers = pLayer->getNext();
+        pLayer->setNext( nullptr );
+    } else {
+        for ( AvatarLayer *pIt = pLayers; pIt != nullptr;
+              pIt = pIt->getNext() ) {
+            if ( pIt->getNext() == pLayer ) {
+                pIt->setNext( pLayer->getNext() );
+                pLayer->setNext( nullptr );
+            }
+        }
+    }
+    pLayer->detach();
+}
+
+void EntityAvatar::setSkin( AvatarSkinPart *pSkin ) {
+    // FUN_007f81e0
+    PooledAvatarEntry *pRsc = pPooledAvatarEntry;
+    pRsc->pSkinResource = nullptr;
+    pRsc->pSkinTint = nullptr;
+    pRsc->pSkinResource = pSkin;
+    if ( pSkin != nullptr &&
+         gpAvatar->getBnkManager().getCommonBodies().isInstallOK() ) {
+        pRsc->pSkinTint = pSkin->Tint;
+    }
+    pRsc->tickBodyMaterials();
 }
 
 void EntityAvatar::relightFromWeather( DirectionalLight *pLight ) {

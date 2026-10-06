@@ -49,7 +49,8 @@ public:
                           const char *pArg1 = nullptr );
     void setVarLocalized( FlashPlayer *pPlayer,
                           const char *pVarName,
-                          uint64_t hashcode );
+                          uint64_t hashcode,
+                          const char *pArg1 = nullptr );
 
     void clear();
     void clearAllSysVar();

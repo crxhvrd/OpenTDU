@@ -8,6 +8,9 @@
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_avatar.h"
 #include "render/animation/animation.h"
 #include "render/animation/skeleton.h"
 #include "render/gs_render.h"
@@ -247,6 +250,7 @@ bool GSAvatar::initialize( TestDriveGameInstance * ) {
 
     GSScenaric::LoadScenaricBank( "scenarics/Avatars", "facemodifset",
                                   &faceParametersBank );
+    faceParametersBank.activate( nullptr );
 
     // FUN_008f7d10
     if ( faceParametersBank.getEntityCount() != 0 ) {
@@ -334,6 +338,16 @@ void GSAvatar::setEnvMap( const bool bRealTime, Render2DB *p2DB ) {
     }
 }
 
+void GSAvatar::savePlayerAvatarConfiguration( const EntityAvatar *pAvatar ) {
+    // FUN_008f62c0
+    IPlayerData *pLoadedSave = gpPlayerData->getLoadedSave();
+    if ( pLoadedSave == nullptr || pAvatar == nullptr ) {
+        return;
+    }
+
+    readAvatarConfig( pAvatar, pLoadedSave->getAvatar()->Config );
+}
+
 void GSAvatar::readAvatarConfig( const EntityAvatar *pAvatar,
                                  AvatarConfiguration &outConfig ) {
     // FUN_007f76d0
@@ -389,6 +403,27 @@ bool GSAvatar::loadFaceModifSet( AvatarConfiguration &outConfig,
     }
 
     return ReadAvatarConfigFromBankEntry( outConfig, pnjBank, entryIndex );
+}
+
+int32_t GSAvatar::getNumPNJConfigurations() {
+    return pnjBank.isLoaded() ? pnjBank.getNumElements() : 0;
+}
+
+bool GSAvatar::getPNJConfiguration( const int32_t index,
+                                    std::string &outName,
+                                    AvatarConfiguration &outConfig ) {
+    if ( !pnjBank.isLoaded() ) {
+        return false;
+    }
+
+    ParsedBankEntry entry;
+    entry.bResolveFilename = true;
+    if ( pnjBank.getEntry( index, entry ) != 0 ) {
+        return false;
+    }
+
+    outName = entry.Filename;
+    return ReadAvatarConfigFromBankEntry( outConfig, pnjBank, index );
 }
 
 bool GSAvatar::applyPNJConfiguration( AvatarConfiguration &outConfig,
@@ -591,15 +626,7 @@ void GSAvatar::installSkinResource( EntityAvatar *pAvatar,
         return;
     }
 
-    PooledAvatarEntry *pRsc = pAvatar->pPooledAvatarEntry;
-    pRsc->pSkinTint = nullptr;
-    pRsc->pSkinResource = pSkin;
-
-    if ( gpAvatar->getBnkManager().getCommonBodies().isInstallOK() ) {
-        pRsc->pSkinTint = pSkin->Tint;
-    }
-
-    pRsc->tickBodyMaterials();
+    pAvatar->setSkin( pSkin );
 }
 
 void GSAvatar::installEyeResource( EntityAvatar *pAvatar,

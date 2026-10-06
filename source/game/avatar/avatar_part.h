@@ -73,6 +73,12 @@ struct AvatarClothePart : public AvatarDBEntry {
     bool isCommonPart() const override { /* FUN_008edd80 */
         return bIsBodyPart != 0;
     }
+
+    const char *getDisplayName() const;
+    const char *getBrandName() const;
+    bool isOwned() const;
+    bool isColorOwned( uint8_t colorIndex ) const;
+    int32_t getNumColors() const;
 };
 
 // The hardcoded default-parts entries carry their asset names inline
@@ -178,6 +184,7 @@ public:
     virtual bool isAtEnd() { return CurIndex < 0 || CurIndex > LastMatchIndex; }
     virtual void advance() { ++CurIndex; }
 
+    inline void rewind() { CurIndex = FirstMatchIndex; }
     inline bool hasRange() const {
         return FirstMatchIndex != -1 && LastMatchIndex != -1;
     }
@@ -198,6 +205,10 @@ public:
     bool findById( uint16_t id );
 
 protected:
+    void seekNextMatch();
+    void seekPreviousMatch();
+
+protected:
     int32_t CurIndex = 0;
     AvatarPartDB *pDB = nullptr;
     int32_t FirstMatchIndex = -1;
@@ -210,4 +221,83 @@ public:
         : AvatarPartCursor( pTargetDB ) {}
 
     bool matchesCategory( const AvatarDBEntry * ) override { return true; }
+};
+
+class AvatarClotheCursor : public AvatarPartCursor {
+public:
+    static constexpr int32_t kAnyClotheSet = 2;
+
+public:
+    AvatarClotheCursor( AvatarPartDB *pTargetDB,
+                        int32_t gender,
+                        eAvatarCustomizable category,
+                        int32_t clotheSet );
+
+    bool matchesCategory( const AvatarDBEntry *pPart ) override;
+    bool isAtEnd() override;
+
+    virtual void next();
+    virtual void previous();
+
+    bool seekTo( uint16_t id );
+
+protected:
+    int32_t Gender;
+    eAvatarCustomizable Category;
+    int32_t ClotheSet;
+};
+
+class AvatarWrappingClotheCursor : public AvatarClotheCursor {
+public:
+    using AvatarClotheCursor::AvatarClotheCursor;
+
+    bool isAtEnd() override { /* FUN_008ed980 */ return false; }
+    void next() override;
+    void previous() override;
+};
+
+class AvatarGenderCursor : public AvatarPartCursor {
+public:
+    AvatarGenderCursor( AvatarPartDB *pTargetDB, int32_t gender );
+
+    bool matchesCategory( const AvatarDBEntry *pPart ) override;
+    bool isAtEnd() override;
+
+    virtual void next();
+    virtual void previous();
+
+    bool seekTo( uint16_t id );
+
+protected:
+    int32_t Gender;
+};
+
+class AvatarWrappingGenderCursor : public AvatarGenderCursor {
+public:
+    using AvatarGenderCursor::AvatarGenderCursor;
+
+    bool isAtEnd() override { /* FUN_00630320 */ return false; }
+    void next() override;
+    void previous() override;
+};
+
+class AvatarOwnedClotheCursor : public AvatarClotheCursor {
+public:
+    using AvatarClotheCursor::AvatarClotheCursor;
+
+    bool matchesCategory( const AvatarDBEntry *pPart ) override;
+};
+
+class AvatarBrandClotheCursor : public AvatarClotheCursor {
+public:
+    AvatarBrandClotheCursor( AvatarPartDB *pTargetDB,
+                             int32_t gender,
+                             eAvatarCustomizable category,
+                             int32_t clotheSet,
+                             const char *pBrandName );
+
+    bool matchesCategory( const AvatarDBEntry *pPart ) override;
+
+private:
+    const char *pBrand;
 };

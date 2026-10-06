@@ -88,6 +88,7 @@ public:
     inline bool isFreeMovement() const { return bIsFreeMovement; }
     inline void setFreeMovement( bool bEnabled ) { bIsFreeMovement = bEnabled; }
     inline void setUsedIK( bool bEnabled ) { bIsUsedIK = bEnabled; }
+    inline bool isUsedIK() const { return bIsUsedIK; }
     inline void requestSeatRefresh() {
         bMustPlayAnims = true;
         bMustRecalculateDriverSeatPos = true;

@@ -516,8 +516,9 @@ void MngFlashLocalize::setVarLocalized( FlashPlayer *pPlayer,
 
 void MngFlashLocalize::setVarLocalized( FlashPlayer *pPlayer,
                                         const char *pVarName,
-                                        uint64_t hashcode ) {
+                                        uint64_t hashcode,
+                                        const char *pArg1 ) {
     // FUN_00718120
     char *pcVar1 = gpDatabase->getStringByHashcode( dbContext, hashcode );
-    setVarLocalized( pPlayer, pcVar1, pVarName );
+    setVarLocalized( pPlayer, pcVar1, pVarName, pArg1 );
 }

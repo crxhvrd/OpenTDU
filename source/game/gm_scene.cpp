@@ -49,6 +49,17 @@ uint32_t gCurrentFPS = 0;
 // Dirty disk watchdog
 uint32_t gFreezeWatchdogCounter = 0; // DAT_016a6a4c
 
+void SampleFrameRate() {
+    const float nowSeconds =
+        ( gpTimer != nullptr ) ? gpTimer->SystemTotalTime : 0.0f;
+    gFrameAccumulator++;
+    if ( gNextFPSSampleTime < nowSeconds ) {
+        gNextFPSSampleTime = nowSeconds + 1.0f;
+        gCurrentFPS = gFrameAccumulator;
+        gFrameAccumulator = 0;
+    }
+}
+
 void EnableDetail( const uint32_t detailHash ) {
     TDUDetail *pDetail = gpDetails->getDetailByHash( detailHash );
     if ( pDetail != nullptr ) {
@@ -255,17 +266,7 @@ void GameModeScene::tick( float /*deltaTime*/, float /*totalTime*/ ) {
 
     updatePostFX();
 
-    // Once-per-second FPS sampling. The original measures wall-clock since app
-    // start via QueryPerformanceCounter; here we use the system clock the timer
-    // service already maintains.
-    const float nowSeconds =
-        ( gpTimer != nullptr ) ? gpTimer->SystemTotalTime : 0.0f;
-    gFrameAccumulator++;
-    if ( gNextFPSSampleTime < nowSeconds ) {
-        gNextFPSSampleTime = nowSeconds + 1.0f;
-        gCurrentFPS = gFrameAccumulator;
-        gFrameAccumulator = 0;
-    }
+    SampleFrameRate();
 
     // Freeze watchdog — after 60 frames the scene flags a game-freeze check.
     gFreezeWatchdogCounter++;

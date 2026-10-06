@@ -99,6 +99,15 @@ bool IsHelmetClotheID( uint16_t id ) {
     return id == 0x38f || id == 0x1f1 || id == 0x395 || id == 0x394;
 }
 
+bool AvatarConfiguration::hasMotoGears() const {
+    // FUN_008fef70
+    if ( IsHelmetClotheID( ClotheID[0][AC_Top] ) ||
+         IsHelmetClotheID( ClotheID[0][AC_Bottom] ) ) {
+        return true;
+    }
+    return bHashMotoGearsOnBike != 0;
+}
+
 AvatarConfiguration::AvatarConfiguration()
     : StyleID( 0 ),
       BodyID( 0 ),

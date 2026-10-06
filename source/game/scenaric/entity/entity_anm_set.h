@@ -22,6 +22,9 @@ public:
     void deinstanciate() override;
 
     RenderAnm *findAnimation( uint32_t animID );
+    inline int32_t getNumAnimations() const {
+        return static_cast<int32_t>( animations.size() );
+    }
 
 protected:
     std::vector<RenderAnm> animations;

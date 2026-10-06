@@ -9,6 +9,7 @@
 #include "render/hiearchy_node.h"
 #include "render/mng_env_map.h"
 #include "render/render_context.h"
+#include "render/mng_shadow.h"
 #include "render/render_scene.h"
 #include "world/gs_mng_resources.h"
 
@@ -2171,6 +2172,33 @@ void PooledAvatarEntry::draw( RenderScene *pScene ) {
     }
     Body.draw( pScene, gColorWhite );
     CarBelt.draw( pScene, gColorWhite );
+}
+
+void PooledAvatarEntry::addShadowCasters( const bool bLowRes,
+                                          const float intensity ) {
+    // FUN_008f0000
+    if ( gpMngShadow == nullptr || !gShowAvatar ) {
+        return;
+    }
+
+    const auto addCaster = [intensity]( const RenderAvatarBase &part ) {
+        if ( part.pHierarchyNode != nullptr ) {
+            gpMngShadow->addShadowCaster( part.pHierarchyNode->pInstance,
+                                          intensity );
+        }
+    };
+
+    if ( bLowRes ) {
+        addCaster( Impostor );
+        return;
+    }
+
+    for ( int32_t i = 0; i < AC_Count; i++ ) {
+        if ( i != AC_Helmet || ActiveClotheSet != 0 ) {
+            addCaster( Slots[i] );
+        }
+    }
+    addCaster( Body );
 }
 
 void PooledAvatarEntry::drawLowRes( RenderScene *pScene ) {

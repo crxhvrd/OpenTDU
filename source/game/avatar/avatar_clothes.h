@@ -288,6 +288,7 @@ struct PooledAvatarEntry : public RenderDeviceResetListener {
 
     void draw( RenderScene *pScene );
     void drawLowRes( RenderScene *pScene );
+    void addShadowCasters( bool bLowRes, float intensity );
     void applyLightingAttenuation( const AvatarLightAttenuation &attenuation );
     eAvatarLoadingState getStrictLoadingState() const;
 

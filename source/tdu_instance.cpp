@@ -73,6 +73,8 @@
 #include "player_data/save_game_manager.h"
 
 #include "game/car_showcase/gm_car_showcase.h"
+#include "game/avatar_showcase/gm_avatar_showcase.h"
+#include "game/dressing/gm_dressing.h"
 #include "game/video_bumper/gm_video_bumper.h"
 #include "game/freeride/gm_freeride.h"
 #include "game/sandbox/gm_sandbox.h"
@@ -525,6 +527,16 @@ void TestDriveGameInstance::mainLoop() {
             pGameModeAlloc = TestDrive::AllocAligned(
                 sizeof( GMCarShowcase ), alignof( GMCarShowcase ) );
             pGVar6 = new ( pGameModeAlloc ) GMCarShowcase();
+            break;
+        case GM_AvatarShowcase:
+            pGameModeAlloc = TestDrive::AllocAligned(
+                sizeof( GMAvatarShowcase ), alignof( GMAvatarShowcase ) );
+            pGVar6 = new ( pGameModeAlloc ) GMAvatarShowcase();
+            break;
+        case GM_Dressing:
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMDressing ),
+                                                      alignof( GMDressing ) );
+            pGVar6 = new ( pGameModeAlloc ) GMDressing();
             break;
         case GM_Login:
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLogin ),

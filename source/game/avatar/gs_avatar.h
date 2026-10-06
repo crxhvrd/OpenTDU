@@ -31,6 +31,12 @@ public:
     }
 
     inline AvatarBnkManager &getBnkManager() { return bankManager; }
+    inline AvatarPartDB *getClothesDB() const { return pClothesDB; }
+    inline AvatarPartDB *getSkinDB() const { return pSkinDB; }
+    inline AvatarPartDB *getEyeDB() const { return pEyeDB; }
+    inline int32_t getNumStyles() {
+        return styleBank.isLoaded() ? styleBank.getNumElements() : 0;
+    }
     inline AvatarPool &getPool() { return pool; }
     inline Matrix4x4f_t *getIdentityBonePalette( int32_t index ) {
         return pBones[index];
@@ -72,10 +78,14 @@ private:
                                const AvatarConfiguration *pConfig );
     void installBodyResource( EntityAvatar *pAvatar,
                               const AvatarConfiguration *pConfig );
+
+public:
     void installSkinResource( EntityAvatar *pAvatar,
                               const AvatarConfiguration *pConfig );
     void installEyeResource( EntityAvatar *pAvatar,
                              const AvatarConfiguration *pConfig );
+
+private:
     void installBodySkin( EntityAvatar *pAvatar,
                           const AvatarConfiguration *pConfig );
 
@@ -84,6 +94,13 @@ public:
                       class EntityDriver *pDriver,
                       eAvatarBeltSeat seat );
     AvatarClothePart *findClotheByID( uint16_t id );
+    void savePlayerAvatarConfiguration( const EntityAvatar *pAvatar );
+    int32_t getNumPNJConfigurations();
+    bool getPNJConfiguration( int32_t index,
+                              std::string &outName,
+                              AvatarConfiguration &outConfig );
+    void readAvatarConfig( const EntityAvatar *pAvatar,
+                           AvatarConfiguration &outConfig );
 
 private:
     AvatarBeltPart *findBelt( eAvatarClotheSize size,
@@ -92,8 +109,6 @@ private:
                               eAvatarBeltSeat seat );
 
     AvatarClothePart *findDefaultPartByID( uint16_t id );
-    void readAvatarConfig( const EntityAvatar *pAvatar,
-                           AvatarConfiguration &outConfig );
     bool loadFaceModifSet( AvatarConfiguration &outConfig,
                            const char *pFileConfigName );
 

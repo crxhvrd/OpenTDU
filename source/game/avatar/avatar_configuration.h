@@ -41,6 +41,7 @@ struct AvatarConfiguration {
     void serializePacked( edStore &store ) const;
 
     void syncSharedSlots();
+    bool hasMotoGears() const;
 
 private:
     void deserializeClothes( edStore &store );

@@ -4,10 +4,12 @@
 #include "game/avatar/avatar_clothes.h"
 #include "render/animation/skeleton.h"
 
+class AvatarLayer;
 class GSAvatar;
 class EntityDriver;
 
 extern float gAvatarLODDistances[3];
+extern bool gbDisableFaceMorph;
 
 class EntityAvatar : public EntityActor {
     friend class GSAvatar;
@@ -33,6 +35,20 @@ public:
     inline void setAlpha( const float value ) { Alpha = value; }
     inline void setInstanceRefCount( const int32_t value ) {
         InstanceRefCount = value;
+    }
+    inline void setForceShowHelmet( const bool bEnabled ) {
+        bForceShowHelmet = bEnabled;
+    }
+    inline void setLowResShadow( const bool bEnabled ) {
+        bLowResShadow = bEnabled;
+    }
+    inline void requestFaceRefresh() { bNeedToRefreshFace = true; }
+    inline int32_t getFaceParam( const int32_t index ) const {
+        return FaceParams[index];
+    }
+    inline void setFaceParam( const int32_t index, const uint32_t value ) {
+        FaceParams[index] = static_cast<int32_t>( std::min( value, 15u ) );
+        bNeedToRefreshFace = true;
     }
 
 public:
@@ -82,6 +98,9 @@ public:
     void endCinematic( bool bStillReferenced,
                        class EntityCinematic *pLifeCinematic );
     void endLifeSetCinematic();
+    void addLayer( AvatarLayer *pLayer );
+    void removeLayer( AvatarLayer *pLayer );
+    void setSkin( struct AvatarSkinPart *pSkin );
 
 private:
     void onCarAlphaTerm();
@@ -98,10 +117,10 @@ protected:
     const float *pLightingAttenuation;
     float currentEnvFactor;
     float currentEnvFactorBackFace;
-    void *pSerializedData;
+    float ShadowIntensity;
     PooledAvatarEntry *pPooledAvatarEntry;
     int32_t FaceParams[kNumFaceParams];
-    void *pBehavior;
+    AvatarLayer *pLayers;
     void *pVoiceEmitter;
     void *pCineInterface;
     float Alpha;

@@ -964,15 +964,20 @@ void EntityDriver::tick( PlayerGameMech *pGameMech,
         pPooledAvatarEntry->CarBelt.setLowResVisible( bIsSeating );
     }
 
-    updateStandDriveRatio( deltaTime );
-    updateBodyPositionFSM( deltaTime );
-    updateGearRatios( deltaTime );
-    updateAnimChannels( deltaTime );
-    updateIKTargets();
+    const bool bHasCar = pCarState != nullptr;
+    if ( bHasCar ) {
+        updateStandDriveRatio( deltaTime );
+        updateBodyPositionFSM( deltaTime );
+        updateGearRatios( deltaTime );
+        updateAnimChannels( deltaTime );
+        updateIKTargets();
+    }
 
     EntityAvatar::tick( pGameMech, deltaTime, totalTime );
 
-    applyDriveBaseAnim();
+    if ( bHasCar ) {
+        applyDriveBaseAnim();
+    }
 }
 
 void EntityDriver::playDriveState( int32_t slot ) {
