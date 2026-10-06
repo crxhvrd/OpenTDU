@@ -2662,8 +2662,7 @@ int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
     for ( const JPH::BodyID id : bodyIDs ) {
         const uint32_t surf = static_cast<uint32_t>( bi.GetUserData( id ) &
                                                      TDUSurface::kClassMask );
-        if ( surf != TDUSurface::Paved && surf != TDUSurface::RoadMesh &&
-             surf != TDUSurface::RoadGround ) {
+        if ( surf != TDUSurface::Paved && surf != TDUSurface::RoadMesh ) {
             continue;
         }
         JPH::RefConst<JPH::Shape> shape = bi.GetShape( id );
