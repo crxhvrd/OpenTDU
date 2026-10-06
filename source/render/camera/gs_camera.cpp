@@ -845,7 +845,13 @@ bool GSCamera::updateActiveCamera( float deltaTime, float accTime ) {
             Eigen::Vector4f( delta.x(), delta.y(), delta.z(), 0.0f ) );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE;
+    if ( ( ( pActiveVehicleCamera->getFlags() >> 0x11 ) & 1 ) == 0 &&
+         pTargetPhysEntity != nullptr && pTargetPhysEntity->isActive() ) {
+        pActiveVehicleCamera->setVelocity(
+            pTargetPhysEntity->getChassisVelocity() );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: reset velocity on cam jump
 
     return true;
 }
