@@ -222,7 +222,8 @@ void GSCamera::tick( float totalTime, float deltaTime ) {
         if ( bUseBlur == false ) {
             if ( ( pActiveVehicleCamera->getFlags() >> 0x11 & 1 ) == 0 ) {
                 if ( gpPostFX->shouldUpdateEffects() ||
-                     ( bVar8 = ( pActiveVehicleCamera->getFlags() >> 16 ),
+                     ( bVar8 =
+                           ( pActiveVehicleCamera->getVehicleFlags() >> 16 ),
                        gpPostFX->getEffect<ePostFXStep::PFXS_RadialBlur>() ==
                            nullptr ) )
                     goto LAB_008e2c4f;
