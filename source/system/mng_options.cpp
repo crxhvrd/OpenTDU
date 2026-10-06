@@ -946,7 +946,7 @@ void MngOptions::onLanguageChanged( const bool bSkipFade ) {
             gpDatabase->setFlashLocalization( 0, 0u, pMainPlayer );
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH
+        gpFlash->setLocalizedStrings();
 
         retrieveLocalizedStrings();
         refreshOptionsScreen();

@@ -142,7 +142,11 @@ bool GSDatabase::reloadDatabases( const char *pLanguage,
     engineDatabase.bInitialized = true;
 
     if ( gpPlayerData != nullptr && gpPlayerData->getLoadedSave() != nullptr ) {
-        gpPlayerData->getLoadedSave()->getAchievements()->build();
+        AchievementsData *pAchievements =
+            gpPlayerData->getLoadedSave()->getAchievements();
+        if ( pAchievements->getNumAchievements() == 0 ) {
+            pAchievements->build();
+        }
     }
 
     return true;
