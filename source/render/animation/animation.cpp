@@ -266,11 +266,17 @@ void Animation::resetChannel( int32_t index ) {
     channel.LayerWeight = kAnimWeightFull;
     channel.State = AnimChannel::ACS_Free;
     channel.ClipID = ~0u;
+    channel.BlendSet.clear();
     channel.BlendSetB.clear();
     channel.ProgressB = 0.0f;
     channel.DurationB = 0.0f;
     channel.TransitionTime = 0.0f;
     channel.TransitionLength = 1.0f;
+
+    if ( channel.MatchID == expressionMatchID ) {
+        pExpressionList = nullptr;
+        expressionMatchID = -1;
+    }
 }
 
 void Animation::setChannelLayer( int32_t matchID,

@@ -102,8 +102,10 @@ public:
     }
     inline SkeletonInstance *getSkeleton() const { return pSkeleton; }
 
-    inline void setExpressionList( AnimExpressionList *pList ) {
+    inline void setExpressionList( AnimExpressionList *pList,
+                                   int32_t matchID ) {
         pExpressionList = pList;
+        expressionMatchID = matchID;
     }
     inline void setFacePose( const AnimPoseBuffer *pPose ) {
         pFacePose = pPose;
@@ -163,6 +165,7 @@ private:
     AnimPoseBuffer transitionTo;
     AnimPoseBuffer *pAccumulator = nullptr;
     AnimExpressionList *pExpressionList = nullptr;
+    int32_t expressionMatchID = -1;
     const AnimPoseBuffer *pFacePose = nullptr;
     std::vector<Matrix4x4f_t> palette;
 
