@@ -125,7 +125,7 @@ void MngFade::tick( float deltaTime, float ) {
         fVar7 = -1.0f;
     }
 
-    if ( bVar2 ) {
+    if ( bVar2 || ( flags >> 3 & 1 ) != 0 ) {
         encodeTransitionDrawList( alpha, fVar7 );
     }
 

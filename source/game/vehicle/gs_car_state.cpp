@@ -199,7 +199,9 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
     if ( gpMngWorld != nullptr && gpWorld != nullptr &&
          gpScenaric != nullptr ) {
         CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
-        if ( pLocalCar == nullptr || pLocalCar->getResource() == nullptr ||
+        PhysicsVehicle *pLocalVehicle =
+            ( pLocalCar != nullptr ) ? pLocalCar->getPhysicsVehicle() : nullptr;
+        if ( pLocalVehicle == nullptr ||
              gpMngWorld->getDisableStreamingOnCar() ) {
             if ( !gpMngWorld->getDisableStreamingOnCamera() &&
                  gpCamera != nullptr ) {
@@ -208,9 +210,17 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 Eigen::Vector4f center( c.x(), c.y(), c.z(), 1.0f );
                 gpWorld->setStreamingPosition( &center );
             }
-        } else {
-            Eigen::Vector4f carWorldPos =
-                pLocalCar->getBody()->WorldMatrix.row( 3 );
+        } else if ( pLocalVehicle->isActive() ) {
+            Eigen::Vector4f carWorldPos = Eigen::Vector4f::Zero();
+            {
+                PhysicsLock physLock;
+                carWorldPos =
+                    pLocalVehicle->getPhysicsMatrix().row( 3 ).transpose();
+            }
+            if ( gpWorldStreaming != nullptr &&
+                 gpWorldStreaming->isEnabled() ) {
+                carWorldPos += gpWorldStreaming->getPosition();
+            }
             gpWorld->setStreamingPosition( &carWorldPos );
         }
     }

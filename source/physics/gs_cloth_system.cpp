@@ -577,8 +577,10 @@ void ClothInstance::buildGeometry( DrawList &drawList ) {
         renderOrigin.z() -= shift.z();
     }
 
+    // FUN_00504500
     Matrix4x4f_t transform = Matrix4x4f_t::Identity();
-    transform.row( 3 ) = renderOrigin;
+    transform.row( 3 ) << renderOrigin.x(), renderOrigin.y(), renderOrigin.z(),
+        1.0f;
 
     const Eigen::Vector4f boundsCenter( BoundsCenter.x(), BoundsCenter.y(),
                                         BoundsCenter.z(), 1.0f );

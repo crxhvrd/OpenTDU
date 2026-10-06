@@ -33,6 +33,49 @@ bool GSWorld::isWorldLoaded() const {
     return pStreamingManager != nullptr && pStreamingManager->isFirstInitDone();
 }
 
+static bool IsSectorPhysicsInstalled( const Sector &sector ) {
+    // FUN_00705870
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+    return true;
+}
+
+static inline bool IsSectorReady( const Sector &sector ) {
+    return sector.state == 3 || ( sector.bank.isLoaded() && sector.state == 1 &&
+                                  IsSectorPhysicsInstalled( sector ) );
+}
+
+bool GSWorld::isStreamedAround( const Eigen::Vector4f *pPosition,
+                                const bool bCheckCurrentArea,
+                                const bool bCheckNeighbourSectors ) const {
+    // FUN_007cb770
+    if ( pStreamingManager == nullptr ) {
+        return false;
+    }
+
+    SectorManager &sectorManager = pStreamingManager->sectorManager;
+    const Sector *pSector = sectorManager.getSectorAtPosition( *pPosition );
+    const bool bSectorReady = pSector != nullptr && IsSectorReady( *pSector );
+
+    bool bAreaReady = true;
+    if ( bCheckCurrentArea ) {
+        const Area *pArea = pStreamingManager->areaGrid.pCurrentArea;
+        bAreaReady =
+            pArea != nullptr && pArea->bank.isLoaded() && pArea->state == 1;
+    }
+
+    bool bNeighboursReady = true;
+    if ( bCheckNeighbourSectors ) {
+        for ( const Sector &sector : sectorManager.sectors ) {
+            if ( &sector != pSector && !IsSectorReady( sector ) ) {
+                bNeighboursReady = false;
+                break;
+            }
+        }
+    }
+
+    return bSectorReady && bAreaReady && bNeighboursReady;
+}
+
 bool GSWorld::initialize( TestDriveGameInstance *param_1 ) {
     // FUN_007cc150
     pGameInstance = param_1;

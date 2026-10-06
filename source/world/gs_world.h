@@ -57,6 +57,9 @@ public:
     ~GSWorld();
 
     bool isWorldLoaded() const;
+    bool isStreamedAround( const Eigen::Vector4f *pPosition,
+                           bool bCheckCurrentArea,
+                           bool bCheckNeighbourSectors ) const;
     bool initialize( TestDriveGameInstance *pGameInstance ) override;
     void tick( float totalTime, float deltaTime ) override;
     void terminate() override;

@@ -681,6 +681,9 @@ void GSScenaric::loadPacks() {
     LoadScenaricBank( "scenarics/Missions/packs", "worldactors",
                       &worldActorsBank );
     LoadScenaricBank( "scenarics/Packs", "worldlifeset", &worldLifeSetBank );
+
+    worldActorsBank.activate( nullptr );
+    worldLifeSetBank.activate( nullptr );
 }
 
 void GSScenaric::unloadPacks() {
