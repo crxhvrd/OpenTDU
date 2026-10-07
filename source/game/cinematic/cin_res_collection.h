@@ -28,6 +28,8 @@ struct CinematicActor {
     bool bInstanced = false;
     int32_t AvatarRefCount = 0;
     uint64_t Hashcode = 0;
+    Matrix4x4f_t TrackMatrix = Matrix4x4f_t::Identity();
+    Matrix4x4f_t DisplayMatrix = Matrix4x4f_t::Identity();
 };
 
 struct CinActorMessage {
@@ -191,6 +193,7 @@ public:
     void animActor( EntityActor *pActor, const CinActorState *pState );
 
     void tick( float time, float deltaTime );
+    void resolveRefCamera();
 
 private:
     struct CinRefSlot {
@@ -239,7 +242,7 @@ private:
     void recordFiredMessage( const char *pMessage, const void *pKey );
     void removeFiredMessages( uint32_t tag );
 
-    void dispatchActor( const CinematicActor *pActor,
+    void dispatchActor( CinematicActor *pActor,
                         CinActorState &state,
                         const Eigen::Vector3f &scale,
                         bool bHasTransformTrack );
@@ -255,9 +258,23 @@ private:
                                int32_t posRef,
                                int32_t targetRef,
                                float time );
-    bool resolveRefMatrix( const CinMediaContext *pCtx,
-                           int32_t refIdx,
-                           Matrix4x4f_t &outMatrix ) const;
+    static const char *GetActorRefString( const CinMediaContext *pCtx,
+                                          int32_t refIdx,
+                                          CinematicActor *&pOutActor );
+    bool resolveRefPoint( const CinMediaContext *pCtx,
+                          int32_t refIdx,
+                          const Eigen::Vector3f &spec,
+                          Eigen::Vector4f &outPoint,
+                          bool &bOutHasRef,
+                          const CinematicActor *&pOutDeferredActor ) const;
+    bool resolveActorRefPoint( const CinematicActor *pActor,
+                               const char *pRefString,
+                               const Eigen::Vector3f &spec,
+                               Eigen::Vector4f &outPoint,
+                               bool &bOutDeferred ) const;
+    void resolveDeferredRefPoint( const CinematicActor *pActor,
+                                  const Eigen::Vector4f &spec,
+                                  Eigen::Vector4f &inOutPoint ) const;
     void applyViewToCinematicCamera( CameraCinematic *pCamera,
                                      float time,
                                      bool bApplyShake );
@@ -351,6 +368,18 @@ private:
     EntityCinematic *pOwner = nullptr;
     CameraCinematic *pCinematicCamera = nullptr;
     CameraShakeState cameraShake{};
+
+    bool bRefCameraArmed = false;
+    bool bRefCameraHasPositionRef = false;
+    bool bRefCameraHasTargetRef = false;
+    float refCameraFov = 0.0f;
+    Eigen::Vector4f refCameraUp = Eigen::Vector4f::Zero();
+    Eigen::Vector4f refCameraTarget = Eigen::Vector4f::Zero();
+    Eigen::Vector4f refCameraPosition = Eigen::Vector4f::Zero();
+    Eigen::Vector4f refCameraPositionSpec = Eigen::Vector4f::Zero();
+    Eigen::Vector4f refCameraTargetSpec = Eigen::Vector4f::Zero();
+    const CinematicActor *pRefCameraPositionActor = nullptr;
+    const CinematicActor *pRefCameraTargetActor = nullptr;
 
 public:
     char debugName[64] = {}; // the owning cinematic's name, for logs

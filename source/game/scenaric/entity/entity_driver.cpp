@@ -72,21 +72,6 @@ static const char *kCarIKPointNamesLR[kNumCarIKPoints] = { // DAT_00f8b138
 static const char *kBikeIKPointNames[kNumBikeIKPoints] = { // DAT_00f8b1a4
     "DvrSeat_HR", "Hand_R", "Hand_L", "Foot_R", "Foot_L" };
 
-static void AccumulateNodeWorldMatrix( const HiearchyNode *pNode,
-                                       Matrix4x4f_t &inOutMatrix ) {
-    // FUN_008046a0
-    if ( pNode == nullptr || pNode->pParent == nullptr ) {
-        return;
-    }
-
-    inOutMatrix = pNode->TransformMatrix;
-
-    for ( const HiearchyNode *pParent = pNode->pParent;
-          pParent->pParent != nullptr; pParent = pParent->pParent ) {
-        inOutMatrix = inOutMatrix * pParent->TransformMatrix;
-    }
-}
-
 EntityDriver::EntityDriver()
     : EntityAvatar(),
       CarStateEventListener(),

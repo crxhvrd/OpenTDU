@@ -37,6 +37,7 @@
 #include "render/3dd.h"
 #include "render/animation/clip.h"
 #include "render/instance.h"
+#include "render/hiearchy_node.h"
 #include "render/camera/gs_camera.h"
 #include "render/camera/camera_cinematic.h"
 #include "game/scenaric/entity/entity_cinematic.h"
@@ -808,8 +809,8 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
         pProp += advance;
     }
 
-    const CinematicActor *pActor =
-        static_cast<const CinematicActor *>( *pCtx->pHandleSlot );
+    CinematicActor *pActor =
+        static_cast<CinematicActor *>( *pCtx->pHandleSlot );
     if ( !bQuiet )
         OTDU_LOG_ALWAYS(
             "[CINACT] t=%.3f '%s' entity=%p vis=%d pos=(%.2f,%.2f,%.2f) "
@@ -825,7 +826,7 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
     dispatchActor( pActor, state, scale, bHasTransformTrack );
 }
 
-void CinResCollection::dispatchActor( const CinematicActor *pActor,
+void CinResCollection::dispatchActor( CinematicActor *pActor,
                                       CinActorState &state,
                                       const Eigen::Vector3f &scale,
                                       bool bHasTransformTrack ) {
@@ -872,6 +873,10 @@ void CinResCollection::dispatchActor( const CinematicActor *pActor,
             initializePlayerCarForCinematic();
         }
 
+        pActor->TrackMatrix = BuildRotationMatrix( state.Heading );
+        pActor->TrackMatrix.row( 3 ) = Eigen::Vector4f(
+            state.Position.x(), state.Position.y(), state.Position.z(), 1.0f );
+
         for ( int32_t i = 0; i < state.NumMessages; i++ ) {
             const CinActorMessage &message = state.Messages[i];
             if ( !isMessageFired( message.pKey ) &&
@@ -894,6 +899,18 @@ void CinResCollection::dispatchActor( const CinematicActor *pActor,
     if ( pActor->Kind == CinematicActor::CAK_PlayerCar ) {
         if ( bHasTransformTrack ) {
             applyPlayerCarTransform( transform );
+        }
+
+        CarState *pPlayerCar = ( gpScenaric != nullptr )
+                                   ? gpScenaric->getLocalPlayer().getCarState()
+                                   : nullptr;
+        PhysicsVehicle *pPlayerVehicle = ( pPlayerCar != nullptr )
+                                             ? pPlayerCar->getPhysicsVehicle()
+                                             : nullptr;
+        if ( pPlayerVehicle != nullptr ) {
+            PhysicsLock lock;
+            pActor->DisplayMatrix = pPlayerVehicle->computeDisplayMatrix(
+                pPlayerVehicle->getPhysicsMatrix() );
         }
 
         // FUN_007e5610
@@ -1485,39 +1502,243 @@ void CinResCollection::tickCameraMedia( const CinMediaContext *pCtx,
                           up, posRef, targetRef, time );
 }
 
-bool CinResCollection::resolveRefMatrix( const CinMediaContext *pCtx,
-                                         int32_t refIdx,
-                                         Matrix4x4f_t &outMatrix ) const {
+const char *CinResCollection::GetActorRefString( const CinMediaContext *pCtx,
+                                                 int32_t refIdx,
+                                                 CinematicActor *&pOutActor ) {
+    pOutActor = nullptr;
     if ( pCtx == nullptr || pCtx->pSource == nullptr ||
          pCtx->pSource->pSceneRefs == nullptr || refIdx < 0 ) {
-        return false;
+        return nullptr;
     }
 
     const CinRefSlot &slot = pCtx->pSource->pSceneRefs[refIdx];
     const uint8_t *pDesc = static_cast<const uint8_t *>( slot.pDescriptor );
-    if ( pDesc == nullptr || pDesc[0] != 0x0c || slot.pHandle == nullptr ) {
+    if ( pDesc == nullptr || pDesc[0] != 0x0c ) {
+        return nullptr;
+    }
+
+    pOutActor = static_cast<CinematicActor *>( slot.pHandle );
+    const bool bHasId = ( pDesc[1] & 1 ) != 0;
+    return reinterpret_cast<const char *>( pDesc + ( bHasId ? 0xc : 4 ) );
+}
+
+static const Eigen::Vector4f *FindCarRefOffset( const char *pName,
+                                                int32_t carID ) {
+    // FUN_007fce50
+    static constexpr const char *kCarRefOffsetNames[kNumPassengerIKOffsets] = {
+        // PTR_DAT_00f8b1b8
+        "Body_HR",    "Fork_FL",    "Fork_FR",  "Fork_RL", "Fork_RR", "Plate",
+        "DvrSeat_HR", "PsgSeat_HR", "Steer_HR", "Door_R",  "Door_L" };
+
+    if ( gpScenaric == nullptr ) {
+        return nullptr;
+    }
+
+    SCIKOffsetDB &ikOffsetDB = gpScenaric->getIKOffsetDB();
+    SCIKOffset *pOffsets = nullptr;
+    if ( SCIKBikeOffsets *pBike = ikOffsetDB.findBikeOffsets( carID, true ) ) {
+        pOffsets = pBike->PassengerOffsets;
+    } else if ( SCIKCarOffsets *pCar =
+                    ikOffsetDB.findCarOffsets( carID, true ) ) {
+        pOffsets = pCar->PassengerOffsets;
+    }
+    if ( pOffsets == nullptr ) {
+        return nullptr;
+    }
+
+    for ( int32_t i = 0; i < kNumPassengerIKOffsets; i++ ) {
+        if ( std::strcmp( kCarRefOffsetNames[i], pName ) == 0 ) {
+            return &pOffsets[i].Offset;
+        }
+    }
+    return nullptr;
+}
+
+static bool FindCarRefNodePoint( const char *pName,
+                                 Eigen::Vector4f &outPoint ) {
+    // FUN_007e35a0
+    CarState *pCarState = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pCarState == nullptr ) {
         return false;
     }
 
-    const CinematicActor *pActor =
-        static_cast<const CinematicActor *>( slot.pHandle );
-    if ( pActor->Kind == CinematicActor::CAK_PlayerCar ) {
-        CarState *pCarState = ( gpScenaric != nullptr )
-                                  ? gpScenaric->getLocalPlayer().getCarState()
-                                  : nullptr;
-        if ( pCarState == nullptr ) {
+    const uint64_t hashcode = GetIdentifier64bit( pName );
+    HiearchyNode *pNode = nullptr;
+
+    DBEntryCarPhysicsData *pCarData =
+        ( gpDatabase != nullptr )
+            ? gpDatabase->getCarDBEntry( pCarState->getCarID() )
+            : nullptr;
+    if ( pCarData != nullptr && gpDatabase->isBike( pCarData ) ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+    } else {
+        VehicleBase *pDisplay = pCarState->getVehicleInstance();
+        if ( pDisplay != nullptr &&
+             ( pDisplay->getType() == VehicleBase::eType::VBT_Car ||
+               pDisplay->getType() == VehicleBase::eType::VBT_Bike ) ) {
+            HiearchyNode *pHighResRoot =
+                static_cast<VehicleController *>( pDisplay )
+                    ->getInstantiatedInteriorNode();
+            HiearchyNode *pLowResRoot = pDisplay->shouldUnstream()
+                                            ? nullptr
+                                            : pDisplay->getNodeByIndex( 0 );
+            if ( pHighResRoot != nullptr ) {
+                pNode = pHighResRoot->findChild( hashcode );
+            }
+            if ( pNode == nullptr && pLowResRoot != nullptr ) {
+                pNode = pLowResRoot->findChild( hashcode );
+            }
+        }
+    }
+
+    const Eigen::Vector4f *pOffset =
+        FindCarRefOffset( pName, pCarState->getCarID() );
+    if ( pNode == nullptr ) {
+        return false;
+    }
+
+    Matrix4x4f_t nodeMatrix = Matrix4x4f_t::Identity();
+    const int32_t depth = AccumulateNodeWorldMatrix( pNode, nodeMatrix );
+    outPoint = nodeMatrix.row( 3 ).transpose();
+    if ( pOffset != nullptr ) {
+        outPoint += *pOffset;
+    }
+    return depth != 0;
+}
+
+bool CinResCollection::resolveActorRefPoint( const CinematicActor *pActor,
+                                             const char *pRefString,
+                                             const Eigen::Vector3f &spec,
+                                             Eigen::Vector4f &outPoint,
+                                             bool &bOutDeferred ) const {
+    // FUN_007e3830
+    bOutDeferred = false;
+    if ( pActor == nullptr ) {
+        return false;
+    }
+
+    char scratch[0x200] = {};
+    strncpy( scratch, pRefString, sizeof( scratch ) - 1 );
+    char *pSeparator = std::strrchr( scratch, ':' );
+    if ( pSeparator == nullptr ) {
+        return false;
+    }
+    *pSeparator = '\0';
+    pSeparator = std::strrchr( scratch, ':' );
+    if ( pSeparator == nullptr ) {
+        return false;
+    }
+    const char *pName = pSeparator + 1;
+
+    // FUN_007e3790
+    Eigen::Vector4f refPoint = Eigen::Vector4f::Zero();
+    switch ( pActor->Kind ) {
+    case CinematicActor::CAK_PlayerCar:
+        bOutDeferred = true;
+        if ( !FindCarRefNodePoint( pName, refPoint ) ) {
             return false;
         }
-        outMatrix = pCarState->getBody()->OffsetedWorldMatrix;
+        break;
+    case CinematicActor::CAK_Entity: {
+        const Entity *pEntity = static_cast<const Entity *>( pActor->pEntity );
+        if ( pEntity == nullptr ) {
+            return false;
+        }
+        refPoint = pEntity->getModelMatrix().row( 3 ).transpose();
+        break;
+    }
+    default:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (plane ref)
+        return false;
+    }
+
+    outPoint = refPoint;
+    if ( bOutDeferred ) {
+        outPoint.w() = 0.0f;
         return true;
     }
 
-    Entity *pEntity = static_cast<Entity *>( pActor->pEntity );
-    if ( pEntity == nullptr ) {
-        return false;
+    Eigen::Vector3f offset = spec;
+    if ( bHasBaseMatrix ) {
+        offset = baseMatrix.topLeftCorner<3, 3>().transpose() * spec;
     }
-    outMatrix = pEntity->getModelMatrix();
+    outPoint.head<3>() += offset;
+    outPoint.w() = 1.0f;
     return true;
+}
+
+bool CinResCollection::resolveRefPoint(
+    const CinMediaContext *pCtx,
+    int32_t refIdx,
+    const Eigen::Vector3f &spec,
+    Eigen::Vector4f &outPoint,
+    bool &bOutHasRef,
+    const CinematicActor *&pOutDeferredActor ) const {
+    // FUN_007e3960
+    pOutDeferredActor = nullptr;
+
+    CinematicActor *pActor = nullptr;
+    const char *pRefString = GetActorRefString( pCtx, refIdx, pActor );
+    if ( pRefString == nullptr ) {
+        bOutHasRef = false;
+        outPoint = Eigen::Vector4f( spec.x(), spec.y(), spec.z(), 1.0f );
+        if ( bHasBaseMatrix ) {
+            outPoint = TDUMat4x4MulVec( baseMatrix, outPoint );
+        }
+        outPoint.w() = 1.0f;
+        return true;
+    }
+
+    bool bDeferred = false;
+    const bool bResolved =
+        resolveActorRefPoint( pActor, pRefString, spec, outPoint, bDeferred );
+    bOutHasRef = true;
+    if ( bResolved && bDeferred ) {
+        pOutDeferredActor = pActor;
+    }
+    return bResolved;
+}
+
+void CinResCollection::resolveDeferredRefPoint(
+    const CinematicActor *pActor,
+    const Eigen::Vector4f &spec,
+    Eigen::Vector4f &inOutPoint ) const {
+    const Matrix4x4f_t inverseTrack = pActor->TrackMatrix.inverse();
+    inOutPoint += TDUMat4x4MulVec( inverseTrack, spec );
+    inOutPoint.w() = 1.0f;
+    inOutPoint = TDUMat4x4MulVec( pActor->DisplayMatrix, inOutPoint );
+}
+
+void CinResCollection::resolveRefCamera() {
+    // FUN_007e3370
+    if ( !bRefCameraArmed ) {
+        return;
+    }
+
+    if ( bRefCameraHasPositionRef && pRefCameraPositionActor != nullptr ) {
+        resolveDeferredRefPoint( pRefCameraPositionActor, refCameraPositionSpec,
+                                 refCameraPosition );
+        pRefCameraPositionActor = nullptr;
+        bRefCameraHasPositionRef = false;
+    }
+    if ( bRefCameraHasTargetRef && pRefCameraTargetActor != nullptr ) {
+        resolveDeferredRefPoint( pRefCameraTargetActor, refCameraTargetSpec,
+                                 refCameraTarget );
+        pRefCameraTargetActor = nullptr;
+        bRefCameraHasTargetRef = false;
+    }
+
+    // FUN_007e3290
+    cameraView.Position = refCameraPosition.head<3>();
+    cameraView.Target = refCameraTarget.head<3>();
+    cameraView.Up = refCameraUp.head<3>();
+    cameraView.Fov = refCameraFov;
+    cameraView.bValid = true;
+    applyViewToCinematicCamera( pCinematicCamera, 0.0f, false );
+
+    bRefCameraArmed = false;
 }
 
 void CinResCollection::applyCameraTransform( const CinMediaContext *pCtx,
@@ -1538,45 +1759,26 @@ void CinResCollection::applyCameraTransform( const CinMediaContext *pCtx,
             : nullptr;
 
     if ( transformType == 2 ) {
-        Matrix4x4f_t refMatrix = Matrix4x4f_t::Identity();
-
-        Eigen::Vector3f worldPos = position;
-        if ( resolveRefMatrix( pCtx, posRef, refMatrix ) ) {
-            worldPos = TDUMat4x4MulVec( refMatrix, position );
-        } else if ( bHasBaseMatrix ) {
-            worldPos = TDUMat4x4MulVec( baseMatrix, position );
+        bRefCameraArmed = true;
+        refCameraPositionSpec =
+            Eigen::Vector4f( position.x(), position.y(), position.z(), 0.0f );
+        refCameraTargetSpec =
+            Eigen::Vector4f( target.x(), target.y(), target.z(), 0.0f );
+        pRefCameraPositionActor = nullptr;
+        pRefCameraTargetActor = nullptr;
+        resolveRefPoint( pCtx, posRef, position, refCameraPosition,
+                         bRefCameraHasPositionRef, pRefCameraPositionActor );
+        resolveRefPoint( pCtx, targetRef, target, refCameraTarget,
+                         bRefCameraHasTargetRef, pRefCameraTargetActor );
+        if ( bHasBaseMatrix ) {
+            const Eigen::Vector3f baseUp =
+                baseMatrix.topLeftCorner<3, 3>().transpose() * up;
+            refCameraUp =
+                Eigen::Vector4f( baseUp.x(), baseUp.y(), baseUp.z(), 0.0f );
+        } else {
+            refCameraUp = Eigen::Vector4f( up.x(), up.y(), up.z(), 0.0f );
         }
-
-        Eigen::Vector3f worldTarget = target;
-        Matrix4x4f_t targetMatrix = Matrix4x4f_t::Identity();
-        const bool bTargetRelative =
-            resolveRefMatrix( pCtx, targetRef, targetMatrix );
-        if ( bTargetRelative ) {
-            worldTarget = TDUMat4x4MulVec( targetMatrix, target );
-        } else if ( bHasBaseMatrix ) {
-            worldTarget = TDUMat4x4MulVec( baseMatrix, target );
-        }
-
-        if ( ( worldTarget - worldPos ).squaredNorm() < 1.0e-6f ) {
-            return;
-        }
-
-        Eigen::Vector3f worldUp = up;
-        if ( worldUp.squaredNorm() < 1.0e-6f ) {
-            worldUp = Eigen::Vector3f( 0.0f, 1.0f, 0.0f );
-        } else if ( bTargetRelative || posRef >= 0 ) {
-            const Matrix4x4f_t &m = ( posRef >= 0 ) ? refMatrix : targetMatrix;
-            worldUp =
-                ( m.topLeftCorner<3, 3>().transpose() * worldUp ).normalized();
-        }
-
-        cameraView.Position = worldPos;
-        cameraView.Target = worldTarget;
-        cameraView.Up = worldUp;
-        cameraView.Fov = fov;
-        cameraView.bValid = true;
-
-        applyViewToCinematicCamera( pCamera, time, false );
+        refCameraFov = fov;
         return;
     }
 
@@ -2400,7 +2602,10 @@ void CinResCollection::initializePlayerCarForCinematic() {
     }
 
     SetPlayerCarCinematicMode( true );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+    {
+        PhysicsLock lock;
+        pCarState->getPhysicsVehicle()->resetSimulationState();
+    }
     pCarState->getBody()->WorldMatrix( 3, 3 ) = 1.0f;
 
     if ( gpActiveGMScene == nullptr ) {

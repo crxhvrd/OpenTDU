@@ -559,6 +559,7 @@ void EntityCinematic::tick( PlayerGameMech *pGameMech,
         const bool reachedEnd = duration < Time;
         if ( !reachedEnd ) {
             cinematicPlayer.tick( Time, deltaTime );
+            cinematicPlayer.resolveRefCamera();
             publishCameraView();
         }
         if ( pGMInterface != nullptr &&
@@ -1104,6 +1105,10 @@ void EntityCinematic::end() {
         }
     }
     clipCells.clear();
+
+    if ( cinematicPlayer.isCreated() ) {
+        cinematicPlayer.reset();
+    }
 
     cinematicFlags = ( cinematicFlags & 0xfffffff8u ) | 0x10u;
     Time = 0.0f;

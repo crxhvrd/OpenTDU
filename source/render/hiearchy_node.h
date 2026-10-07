@@ -28,6 +28,28 @@ struct HiearchyNode {
     void clear();
 };
 
+inline int32_t AccumulateNodeWorldMatrix( const HiearchyNode *pNode,
+                                          Matrix4x4f_t &inOutMatrix ) {
+    // FUN_008046a0
+    if ( pNode == nullptr ) {
+        return 0;
+    }
+
+    int32_t depth = 1;
+    if ( pNode->pParent == nullptr ) {
+        return depth;
+    }
+
+    inOutMatrix = pNode->TransformMatrix;
+
+    for ( const HiearchyNode *pParent = pNode->pParent;
+          pParent->pParent != nullptr; pParent = pParent->pParent ) {
+        depth++;
+        inOutMatrix = inOutMatrix * pParent->TransformMatrix;
+    }
+    return depth;
+}
+
 struct HiearchyNodeInstance {
     Matrix4x4f_t InstanceMatrix;
     HiearchyNode *pNode;

@@ -2470,6 +2470,7 @@ void PhysicsVehicle::OnStep(
                             dt );
         }
         updateKeyframedWheels( dt );
+        updateTyreHeat( dt );
         return;
     }
 
@@ -3631,7 +3632,8 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
     prevKeyframePosition = position;
     keyframeVelocity = velocity;
     keyframeSteer = steer;
-    steerCommand = steer;
+    filteredSteer = -steer;
+    steerCommand = -steer;
     if ( bIsBike ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: bike lean angles (+0xe68..+0xe80)
     }
