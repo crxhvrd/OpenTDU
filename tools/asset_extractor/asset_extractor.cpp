@@ -8,6 +8,8 @@
 #include "render/shaders/shader_binary_cache.h"
 #include "render/shaders/shader_table_master.h"
 
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -56,6 +58,292 @@ namespace {
             return bForceExtraction || bForceShaderExtraction;
         }
     };
+
+    constexpr uint32_t kTangentReflectionPS[] = { 0x00d95b18, 0x00d95f48 };
+    constexpr uint32_t kTangentReflectionVS[] = { 0x00d95758, 0x00d96c78,
+                                                  0x00d97080, 0x00d97488 };
+    constexpr uint32_t kTangentBasisRegister = 5;
+
+    constexpr uint32_t kDxsoOpAdd = 0x02;
+    constexpr uint32_t kDxsoOpMad = 0x04;
+    constexpr uint32_t kDxsoOpMul = 0x05;
+    constexpr uint32_t kDxsoOpDp3 = 0x08;
+    constexpr uint32_t kDxsoOpMov = 0x01;
+    constexpr uint32_t kDxsoOpDcl = 0x1f;
+    constexpr uint32_t kDxsoOpComment = 0xfffe;
+    constexpr uint32_t kDxsoOpEnd = 0xffff;
+
+    constexpr uint32_t kDxsoRegTemp = 0;
+    constexpr uint32_t kDxsoRegConst = 2;
+    constexpr uint32_t kDxsoRegTexture = 3;
+    constexpr uint32_t kDxsoRegTexCoordOut = 6;
+
+    constexpr uint32_t kDxsoMaxTempPS20 = 12;
+    constexpr uint32_t kDxsoMaskXYZ = 0x7;
+
+    inline uint32_t DxsoInstruction( uint32_t opcode, uint32_t numParams ) {
+        return opcode | ( numParams << 24 );
+    }
+
+    inline uint32_t DxsoRegType( uint32_t token ) {
+        return ( ( token >> 28 ) & 0x7 ) | ( ( token >> 8 ) & 0x18 );
+    }
+
+    inline uint32_t DxsoRegNumber( uint32_t token ) { return token & 0x7ff; }
+
+    inline uint32_t DxsoWriteMask( uint32_t token ) {
+        return ( token >> 16 ) & 0xf;
+    }
+
+    inline uint32_t DxsoRegTypeBits( uint32_t type ) {
+        return ( ( type & 0x7 ) << 28 ) | ( ( type & 0x18 ) << 8 );
+    }
+
+    inline uint32_t DxsoDst( uint32_t type, uint32_t number, uint32_t mask ) {
+        return 0x80000000 | DxsoRegTypeBits( type ) | ( mask << 16 ) | number;
+    }
+
+    inline uint32_t DxsoSrc( uint32_t type, uint32_t number ) {
+        return 0x80000000 | DxsoRegTypeBits( type ) | ( 0xe4 << 16 ) | number;
+    }
+
+    // Broadcasts one component of a (possibly swizzled) source operand.
+    inline uint32_t DxsoReplicate( uint32_t src, uint32_t component ) {
+        uint32_t swizzle = ( src >> 16 ) & 0xff;
+        uint32_t channel = ( swizzle >> ( component * 2 ) ) & 0x3;
+        return ( src & ~0x00ff0000u ) | ( ( channel * 0x55 ) << 16 );
+    }
+
+    // fn( offset, opcode, numParams ) for every instruction token (SM2+).
+    template <typename Fn>
+    void DxsoForEachInstruction( const std::vector<uint32_t> &tokens, Fn fn ) {
+        size_t offset = 1;
+        while ( offset < tokens.size() ) {
+            uint32_t token = tokens[offset];
+            uint32_t opcode = token & 0xffff;
+            if ( opcode == kDxsoOpEnd ) {
+                return;
+            }
+            if ( opcode == kDxsoOpComment ) {
+                offset += 1 + ( ( token >> 16 ) & 0x7fff );
+                continue;
+            }
+
+            uint32_t numParams = ( token >> 24 ) & 0xf;
+            if ( offset + numParams >= tokens.size() ) {
+                return;
+            }
+            fn( offset, opcode, numParams );
+            offset += 1 + numParams;
+        }
+    }
+
+    // After each dp3 writing the tangent-space view vector (c119 - v0), copy
+    // the basis vector it projected onto to oT5 (T) / oT6 (TxN) / oT7 (N).
+    bool PatchTangentReflectionVS( std::vector<uint32_t> &tokens ) {
+        uint32_t viewTemp = UINT32_MAX;
+        std::array<size_t, 3> insertOffsets = {};
+        std::array<uint32_t, 3> basisSources = {};
+        uint32_t foundComponents = 0;
+        bool bBasisRegisterUsed = false;
+
+        DxsoForEachInstruction(
+            tokens, [&]( size_t offset, uint32_t opcode, uint32_t numParams ) {
+                if ( opcode == kDxsoOpDcl || numParams == 0 ) {
+                    return;
+                }
+
+                uint32_t dst = tokens[offset + 1];
+                if ( DxsoRegType( dst ) == kDxsoRegTexCoordOut &&
+                     DxsoRegNumber( dst ) >= kTangentBasisRegister ) {
+                    bBasisRegisterUsed = true;
+                }
+
+                if ( opcode == kDxsoOpAdd && numParams == 3 &&
+                     DxsoRegType( dst ) == kDxsoRegTemp ) {
+                    for ( uint32_t i = 2; i <= numParams; i++ ) {
+                        uint32_t src = tokens[offset + i];
+                        if ( DxsoRegType( src ) == kDxsoRegConst &&
+                             DxsoRegNumber( src ) == 119 ) {
+                            viewTemp = DxsoRegNumber( dst );
+                        }
+                    }
+                }
+
+                if ( opcode == kDxsoOpDp3 &&
+                     DxsoRegType( dst ) == kDxsoRegTexCoordOut ) {
+                    uint32_t src0 = tokens[offset + 2];
+                    if ( DxsoRegType( src0 ) != kDxsoRegTemp ||
+                         DxsoRegNumber( src0 ) != viewTemp ) {
+                        return;
+                    }
+
+                    uint32_t mask = DxsoWriteMask( dst );
+                    uint32_t component = ( mask == 0x1 )   ? 0
+                                         : ( mask == 0x2 ) ? 1
+                                         : ( mask == 0x4 ) ? 2
+                                                           : 3;
+                    if ( component < 3 ) {
+                        insertOffsets[component] = offset + 1 + numParams;
+                        basisSources[component] = tokens[offset + 3];
+                        foundComponents |= 1 << component;
+                    }
+                }
+            } );
+
+        if ( foundComponents != 0x7 || bBasisRegisterUsed ) {
+            return false;
+        }
+
+        // Insert from the back so the recorded offsets stay valid.
+        std::array<uint32_t, 3> order = { 0, 1, 2 };
+        std::sort( order.begin(), order.end(), [&]( uint32_t a, uint32_t b ) {
+            return insertOffsets[a] > insertOffsets[b];
+        } );
+        for ( uint32_t component : order ) {
+            const uint32_t mov[3] = {
+                DxsoInstruction( kDxsoOpMov, 2 ),
+                DxsoDst( kDxsoRegTexCoordOut, kTangentBasisRegister + component,
+                         kDxsoMaskXYZ ),
+                basisSources[component] };
+            tokens.insert( tokens.begin() + insertOffsets[component],
+                           std::begin( mov ), std::end( mov ) );
+        }
+        return true;
+    }
+
+    // Rebuild the object-space reflection (R.x * T + R.y * TxN + R.z * N) from
+    // t5-t7 and feed it to the three dp3 against c8-c10.
+    bool PatchTangentReflectionPS( std::vector<uint32_t> &tokens ) {
+        size_t dclEndOffset = 0;
+        size_t firstDp3Offset = SIZE_MAX;
+        std::array<size_t, 3> dp3Offsets = {};
+        uint32_t reflectionSource = 0;
+        uint32_t foundRows = 0;
+        uint32_t maxTemp = 0;
+        bool bBasisRegisterUsed = false;
+        bool bMismatchingSource = false;
+
+        DxsoForEachInstruction(
+            tokens, [&]( size_t offset, uint32_t opcode, uint32_t numParams ) {
+                if ( opcode == kDxsoOpDcl ) {
+                    dclEndOffset = offset + 1 + numParams;
+                    uint32_t dst = tokens[offset + 2];
+                    if ( DxsoRegType( dst ) == kDxsoRegTexture &&
+                         DxsoRegNumber( dst ) >= kTangentBasisRegister ) {
+                        bBasisRegisterUsed = true;
+                    }
+                    return;
+                }
+
+                for ( uint32_t i = 1; i <= numParams; i++ ) {
+                    uint32_t param = tokens[offset + i];
+                    if ( DxsoRegType( param ) == kDxsoRegTemp ) {
+                        maxTemp = std::max( maxTemp, DxsoRegNumber( param ) );
+                    }
+                }
+
+                if ( opcode != kDxsoOpDp3 ) {
+                    return;
+                }
+
+                uint32_t src1 = tokens[offset + 3];
+                uint32_t row = DxsoRegNumber( src1 ) - 8;
+                if ( DxsoRegType( src1 ) != kDxsoRegConst || row > 2 ) {
+                    return;
+                }
+
+                uint32_t src0 = tokens[offset + 2];
+                if ( foundRows != 0 && src0 != reflectionSource ) {
+                    bMismatchingSource = true;
+                }
+                reflectionSource = src0;
+                dp3Offsets[row] = offset;
+                foundRows |= 1 << row;
+                firstDp3Offset = std::min( firstDp3Offset, offset );
+            } );
+
+        uint32_t freeTemp = maxTemp + 1;
+        if ( foundRows != 0x7 || bBasisRegisterUsed || bMismatchingSource ||
+             freeTemp >= kDxsoMaxTempPS20 ) {
+            return false;
+        }
+
+        for ( size_t dp3Offset : dp3Offsets ) {
+            tokens[dp3Offset + 2] = DxsoSrc( kDxsoRegTemp, freeTemp );
+        }
+
+        const uint32_t rebuild[] = {
+            DxsoInstruction( kDxsoOpMul, 3 ),
+            DxsoDst( kDxsoRegTemp, freeTemp, kDxsoMaskXYZ ),
+            DxsoSrc( kDxsoRegTexture, kTangentBasisRegister ),
+            DxsoReplicate( reflectionSource, 0 ),
+            DxsoInstruction( kDxsoOpMad, 4 ),
+            DxsoDst( kDxsoRegTemp, freeTemp, kDxsoMaskXYZ ),
+            DxsoSrc( kDxsoRegTexture, kTangentBasisRegister + 1 ),
+            DxsoReplicate( reflectionSource, 1 ),
+            DxsoSrc( kDxsoRegTemp, freeTemp ),
+            DxsoInstruction( kDxsoOpMad, 4 ),
+            DxsoDst( kDxsoRegTemp, freeTemp, kDxsoMaskXYZ ),
+            DxsoSrc( kDxsoRegTexture, kTangentBasisRegister + 2 ),
+            DxsoReplicate( reflectionSource, 2 ),
+            DxsoSrc( kDxsoRegTemp, freeTemp ) };
+        tokens.insert( tokens.begin() + firstDp3Offset, std::begin( rebuild ),
+                       std::end( rebuild ) );
+
+        for ( uint32_t i = 0; i < 3; i++ ) {
+            const uint32_t dcl[3] = {
+                DxsoInstruction( kDxsoOpDcl, 2 ), 0x80000000,
+                DxsoDst( kDxsoRegTexture, kTangentBasisRegister + i,
+                         kDxsoMaskXYZ ) };
+            tokens.insert( tokens.begin() + dclEndOffset + i * 3,
+                           std::begin( dcl ), std::end( dcl ) );
+        }
+        return true;
+    }
+
+    template <size_t N>
+    bool IsOffsetInList( const uint32_t ( &list )[N], uint64_t offset ) {
+        return std::find( std::begin( list ), std::end( list ), offset ) !=
+               std::end( list );
+    }
+
+    void PatchRetailShaderBytecode( const ShaderTableEntry &entry,
+                                    std::vector<int8_t> &bytecode ) {
+        bool bPatchVS =
+            entry.ShaderStage == eShaderType::ST_Vertex &&
+            IsOffsetInList( kTangentReflectionVS, entry.OffsetInExecutable );
+        bool bPatchPS =
+            entry.ShaderStage == eShaderType::ST_Pixel &&
+            IsOffsetInList( kTangentReflectionPS, entry.OffsetInExecutable );
+        if ( !bPatchVS && !bPatchPS ) {
+            return;
+        }
+
+        // The extracted stream stops on the first 0xffff word, so the end
+        // token may be truncated; keep the trailing bytes untouched.
+        size_t numTokens = bytecode.size() / sizeof( uint32_t );
+        std::vector<uint32_t> tokens( numTokens );
+        memcpy( tokens.data(), bytecode.data(),
+                numTokens * sizeof( uint32_t ) );
+        std::vector<int8_t> tail(
+            bytecode.begin() + numTokens * sizeof( uint32_t ), bytecode.end() );
+
+        bool bPatched = bPatchVS ? PatchTangentReflectionVS( tokens )
+                                 : PatchTangentReflectionPS( tokens );
+        if ( !bPatched ) {
+            OTDU_LOG_WARN( "Failed to patch tangent space reflection in shader "
+                           "%llx (offset %llx); keeping retail bytecode\n",
+                           (unsigned long long)entry.Hashcode,
+                           (unsigned long long)entry.OffsetInExecutable );
+            return;
+        }
+
+        bytecode.resize( tokens.size() * sizeof( uint32_t ) );
+        memcpy( bytecode.data(), tokens.data(),
+                tokens.size() * sizeof( uint32_t ) );
+        bytecode.insert( bytecode.end(), tail.begin(), tail.end() );
+    }
 
     // Unpack .ini (in place).
     void UnpackIniFromMemory( int8_t *pBuffer,
@@ -362,6 +650,8 @@ namespace AssetExtractor {
                     OTDU_FATAL_ERROR( "Invalid magic found (shader table entry "
                                       "might be invalid)\n" );
                 }
+
+                PatchRetailShaderBytecode( entry, shaderBytecode );
             }
 
             ShaderTableHeaderEntry headerEntry;
