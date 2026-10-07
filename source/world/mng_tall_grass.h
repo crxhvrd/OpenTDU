@@ -92,6 +92,8 @@ public:
 
     bool onConfigurationChanged() override;
 
+    void uninstallSector( Sector *pSector );
+
 private:
     bool createResources();
     void releaseResources();

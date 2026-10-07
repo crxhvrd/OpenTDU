@@ -14,6 +14,7 @@
 #include "world/streaming_manager.h"
 #include "mng_electrical_network.h"
 #include "mng_ocean.h"
+#include "mng_tall_grass.h"
 #include "world/details/particles.h"
 #include "world/details/road_patch.h"
 #include "world/pst.h"
@@ -1469,6 +1470,10 @@ Sector::~Sector() {
 
 void Sector::reset() {
     // FUN_00705cb0
+    if ( gpMngTallGrass != nullptr ) {
+        gpMngTallGrass->uninstallSector( this );
+    }
+
     if ( gpAmbiance != nullptr ) {
         gpAmbiance->unregisterSectorEmitters( this );
     }

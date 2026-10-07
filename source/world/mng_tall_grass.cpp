@@ -662,6 +662,20 @@ void MngTallGrass::reset() {
     windPhase = 0.0f;
 }
 
+void MngTallGrass::uninstallSector( Sector *pSector ) {
+    // FUN_006fa640
+    for ( uint32_t i = 0; i < kNumInstancesPerGrid; i++ ) {
+        TallGrassInstance *pInstances[3] = {
+            pInstancesUltraNear[i], pInstancesNear[i], pInstancesFar[i] };
+        for ( TallGrassInstance *pInstance : pInstances ) {
+            if ( pInstance != nullptr && pInstance->pSector != nullptr &&
+                 pInstance->pSector == pSector ) {
+                pInstance->cancelPendingInstanciation();
+            }
+        }
+    }
+}
+
 void MngTallGrass::tick( float deltaTime, float ) {
     // FUN_006fa870
     if ( !gbGrassEnabled || gpCamera->getActiveCamera() == nullptr ) {
