@@ -7,6 +7,7 @@ static constexpr uint32_t kMaxContentDescSize = 0x8000;
 static constexpr uint32_t kMaxFoundCars = 0x180;
 static constexpr uint32_t kMaxInstalledContent = 0x7f;
 static constexpr uint32_t kMaxContentDescriptionLength = 0x100;
+static constexpr const char *kContentDescFilename = "contentdesc.xml";
 
 struct FoundCar {
     uint32_t DatabaseID = 0;
@@ -33,9 +34,17 @@ struct InstalledContent {
     uint32_t ActionMask = 0;
 };
 
+struct ModDBStringTranslation {
+    char Language[3] = {};
+    std::string Value;
+};
+
 struct ModDBString {
     uint64_t Hashcode = 0;
-    std::string Value;
+    std::string Value; // used when no translation matches the language
+    std::vector<ModDBStringTranslation> Translations;
+
+    const std::string &resolve( const char *pLanguage ) const;
 };
 
 struct ModDBInjection {
@@ -43,6 +52,9 @@ struct ModDBInjection {
     std::string Table;
     std::vector<std::string> Rows;
     std::vector<ModDBString> Strings;
+    uint8_t bMandatory : 1;
+
+    ModDBInjection() : bMandatory( false ) {}
 };
 
 class ModInstaller {
@@ -60,6 +72,7 @@ public:
     ~ModInstaller();
 
     void reset();
+    void markInjectionsMandatory( const std::wstring &packName );
 
     static bool HasContentDesc( const EnumerateContextItem &item );
 
@@ -95,6 +108,7 @@ private:
                         const char *pTable,
                         const char *pHashcode,
                         const char *pValue );
+    void readDBStringTranslations( ModDBString &string );
     ModDBInjection &getInjectionSlot( const EnumerateContextItem &item,
                                       const char *pTable );
 

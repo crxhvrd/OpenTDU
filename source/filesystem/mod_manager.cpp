@@ -3,6 +3,7 @@
 
 #include "file_map.h"
 #include "gs_file.h"
+#include "mod_installer.h"
 
 static ModManager gModManager = {};
 ModManager *gpModManager = &gModManager;
@@ -12,6 +13,15 @@ static constexpr const char *kModsStateFilename = "Mods/mods.ini";
 static constexpr const char *kPackMapFilename = "CarPack.map";
 static constexpr const char *kPackBigFilename = "CarPack.big";
 static constexpr const char *kPackSidecarFilename = "files.txt";
+
+struct BuiltInPackDesc {
+    const char *pId;
+    const char *pPath;
+};
+
+static constexpr BuiltInPackDesc kBuiltInPacks[] = {
+    { "OpenTDU Localization", "EURO/BNK/OpenTDU/Localization" },
+};
 
 ModManager::ModManager() : bPendingChanges( false ) {}
 
@@ -38,7 +48,8 @@ bool ModManager::isEnabled( const char *pId ) const {
 
 void ModManager::setEnabled( const char *pId, const bool bEnabled ) {
     ModPack *pPack = findPack( pId );
-    if ( pPack == nullptr || pPack->bEnabled == bEnabled ) {
+    if ( pPack == nullptr || pPack->bMandatory ||
+         pPack->bEnabled == bEnabled ) {
         return;
     }
 
@@ -91,7 +102,8 @@ void ModManager::loadEnabledState() {
                     ? ""
                     : value.substr( valueStart );
 
-        if ( StringCmpI( key.c_str(), "Enabled" ) == 0 ) {
+        if ( StringCmpI( key.c_str(), "Enabled" ) == 0 &&
+             !pCurrentPack->bMandatory ) {
             pCurrentPack->bEnabled = ( atoi( value.c_str() ) != 0 );
         }
     }
@@ -103,6 +115,10 @@ bool ModManager::save() {
         "; A pack that is not listed here is off until you turn it on.\n";
 
     for ( const ModPack &pack : packs ) {
+        if ( pack.bMandatory ) {
+            continue;
+        }
+
         content += "\n[";
         content += pack.Id;
         content += "]\nEnabled = ";
@@ -190,7 +206,7 @@ void ModManager::detectConflicts() {
 
     for ( size_t i = 0; i < packs.size(); i++ ) {
         ModPack &pack = packs[i];
-        if ( !pack.bEnabled || pack.bIncomplete ) {
+        if ( !pack.bEnabled || pack.bIncomplete || pack.bDescriptorOnly ) {
             continue;
         }
 
@@ -249,6 +265,25 @@ void ModManager::detectConflicts() {
                       "the file with CRC %08X", crc );
         }
 
+        numCollisions++;
+
+        if ( left.bMandatory || right.bMandatory ) {
+            ModPack &loser = left.bMandatory ? right : left;
+            const ModPack &winner = left.bMandatory ? left : right;
+            if ( !loser.bMandatory ) {
+                if ( !loser.bConflicting ) {
+                    OTDU_LOG_ERROR( "Mod '%s' replaces %s, which the built-in "
+                                    "pack '%s' owns; it will not be mounted\n",
+                                    loser.Id.c_str(), pDescription,
+                                    winner.Id.c_str() );
+                }
+                loser.bConflicting = true;
+                loser.Status = "it replaces file(s) owned by the built-in '" +
+                               winner.Id + "'";
+                continue;
+            }
+        }
+
         if ( !left.bConflicting || !right.bConflicting ) {
             OTDU_LOG_ERROR(
                 "Mods '%s' and '%s' both replace %s; neither will be mounted "
@@ -260,7 +295,6 @@ void ModManager::detectConflicts() {
         right.bConflicting = true;
         left.Status = "it replaces the same file(s) as '" + right.Id + "'";
         right.Status = "it replaces the same file(s) as '" + left.Id + "'";
-        numCollisions++;
     }
 
     if ( numCollisions != 0 ) {
@@ -269,60 +303,93 @@ void ModManager::detectConflicts() {
     }
 }
 
+static void DetectPackContent( ModPack &pack ) {
+    std::error_code errorCode;
+    const std::filesystem::path packPath( pack.Path );
+
+    const bool bHasMap = std::filesystem::is_regular_file(
+        packPath / kPackMapFilename, errorCode );
+    const bool bHasBig = std::filesystem::is_regular_file(
+        packPath / kPackBigFilename, errorCode );
+
+    if ( !bHasMap && !bHasBig &&
+         std::filesystem::is_regular_file( packPath / kContentDescFilename,
+                                           errorCode ) ) {
+        pack.bDescriptorOnly = true;
+        return;
+    }
+
+    if ( !bHasMap || !bHasBig ) {
+        pack.bIncomplete = true;
+        pack.IncompleteReason = "it has no ";
+        pack.IncompleteReason += bHasMap ? kPackBigFilename : kPackMapFilename;
+    }
+}
+
+void ModManager::addBuiltInPacks() {
+    std::error_code errorCode;
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+
+    std::vector<ModPack> builtInPacks;
+    for ( const BuiltInPackDesc &desc : kBuiltInPacks ) {
+        if ( !std::filesystem::is_directory( desc.pPath, errorCode ) ) {
+            OTDU_LOG_WARN( "Built-in pack '%s' is missing ('%s')\n", desc.pId,
+                           desc.pPath );
+            continue;
+        }
+
+        ModPack pack;
+        pack.Id = desc.pId;
+        pack.Path = desc.pPath;
+        pack.DisplayName = converter.from_bytes( pack.Id );
+        pack.bEnabled = true;
+        pack.bMandatory = true;
+        DetectPackContent( pack );
+        builtInPacks.push_back( pack );
+    }
+
+    packs.insert( packs.begin(), builtInPacks.begin(), builtInPacks.end() );
+}
+
 void ModManager::refresh() {
     std::vector<std::pair<std::string, bool>> previousState;
     for ( const ModPack &pack : packs ) {
-        previousState.push_back( { pack.Id, (bool)pack.bEnabled } );
+        if ( !pack.bMandatory ) {
+            previousState.push_back( { pack.Id, (bool)pack.bEnabled } );
+        }
     }
 
     packs.clear();
 
     std::error_code errorCode;
     const std::filesystem::path modsFolder( kModsFolderPath );
-    if ( !std::filesystem::is_directory( modsFolder, errorCode ) ) {
-        return;
-    }
+    if ( std::filesystem::is_directory( modsFolder, errorCode ) ) {
+        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
 
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+        for ( const auto &entry :
+              std::filesystem::directory_iterator( modsFolder, errorCode ) ) {
+            if ( !entry.is_directory() ) {
+                continue;
+            }
 
-    for ( const auto &entry :
-          std::filesystem::directory_iterator( modsFolder, errorCode ) ) {
-        if ( !entry.is_directory() ) {
-            continue;
-        }
-
-        ModPack pack;
-        pack.Id = entry.path().filename().string();
-        pack.Path = entry.path().string();
-        pack.DisplayName = converter.from_bytes( pack.Id );
-
-        const char *pMissing = nullptr;
-        if ( !std::filesystem::is_regular_file( entry.path() / kPackMapFilename,
-                                                errorCode ) ) {
-            pMissing = kPackMapFilename;
-        } else if ( !std::filesystem::is_regular_file(
-                        entry.path() / kPackBigFilename, errorCode ) ) {
-            pMissing = kPackBigFilename;
-        }
-
-        if ( pMissing != nullptr ) {
-            pack.bIncomplete = true;
-            pack.IncompleteReason = "it has no ";
-            pack.IncompleteReason += pMissing;
+            ModPack pack;
+            pack.Id = entry.path().filename().string();
+            pack.Path = entry.path().string();
+            pack.DisplayName = converter.from_bytes( pack.Id );
+            DetectPackContent( pack );
             packs.push_back( pack );
-            continue;
         }
 
-        packs.push_back( pack );
+        std::sort(
+            packs.begin(), packs.end(),
+            []( const ModPack &a, const ModPack &b ) { return a.Id < b.Id; } );
     }
 
-    std::sort(
-        packs.begin(), packs.end(),
-        []( const ModPack &a, const ModPack &b ) { return a.Id < b.Id; } );
+    addBuiltInPacks();
 
     for ( const auto &state : previousState ) {
         ModPack *pPack = findPack( state.first.c_str() );
-        if ( pPack != nullptr ) {
+        if ( pPack != nullptr && !pPack->bMandatory ) {
             pPack->bEnabled = state.second;
         }
     }

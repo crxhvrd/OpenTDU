@@ -334,6 +334,22 @@ bool XMLReader::findElem( const char *pName ) {
     return false;
 }
 
+bool XMLReader::findNextElem() {
+    if ( nodes.empty() ) {
+        return false;
+    }
+
+    const int32_t candidate = ( currentIndex == kInvalidIndex )
+                                  ? nodes[parentIndex].FirstChild
+                                  : nodes[currentIndex].NextSibling;
+    if ( candidate == kInvalidIndex ) {
+        return false;
+    }
+
+    currentIndex = candidate;
+    return true;
+}
+
 bool XMLReader::intoElem() {
     if ( currentNode() == nullptr ) {
         return false;

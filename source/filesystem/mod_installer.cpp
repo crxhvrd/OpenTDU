@@ -7,7 +7,24 @@
 static ModInstaller gModInstaller = {};
 ModInstaller *gpModInstaller = &gModInstaller; // DAT_0147aef0
 
-static constexpr const char *kContentDescFilename = "contentdesc.xml";
+const std::string &ModDBString::resolve( const char *pLanguage ) const {
+    const ModDBStringTranslation *pFallback = nullptr;
+    for ( const ModDBStringTranslation &translation : Translations ) {
+        if ( pLanguage != nullptr &&
+             StringNCmpI( translation.Language, pLanguage, 2 ) == 0 ) {
+            return translation.Value;
+        }
+        if ( StringNCmpI( translation.Language, "us", 2 ) == 0 ) {
+            pFallback = &translation;
+        }
+    }
+
+    return ( pFallback != nullptr ) ? pFallback->Value : Value;
+}
+
+static bool IsValidDBStringValue( const std::string &value ) {
+    return value.find_first_of( "{}\r\n" ) == std::string::npos;
+}
 
 ModInstaller::ModInstaller() : contentDescSize( 0 ) { pDescription[0] = '\0'; }
 
@@ -24,6 +41,14 @@ void ModInstaller::reset() {
     contentDescBuffer.clear();
     contentDescSize = 0;
     pDescription[0] = '\0';
+}
+
+void ModInstaller::markInjectionsMandatory( const std::wstring &packName ) {
+    for ( ModDBInjection &injection : dbInjections ) {
+        if ( injection.PackName == packName ) {
+            injection.bMandatory = true;
+        }
+    }
 }
 
 static void GetActiveLanguage( char *pOutLanguage, const size_t size ) {
@@ -180,20 +205,46 @@ void ModInstaller::onAddDBRow( const EnumerateContextItem &item,
     getInjectionSlot( item, pTable ).Rows.push_back( pRow );
 }
 
+void ModInstaller::readDBStringTranslations( ModDBString &string ) {
+    while ( reader.findNextElem() ) {
+        const char *pLanguage = reader.getElemName();
+        const char *pValue = reader.getData();
+        if ( pLanguage == nullptr || strlen( pLanguage ) != 2 ) {
+            OTDU_LOG_WARN( "ADDDBSTRING %llu: <%s> is not a language code\n",
+                           string.Hashcode,
+                           ( pLanguage != nullptr ) ? pLanguage : "" );
+            continue;
+        }
+
+        ModDBStringTranslation translation;
+        translation.Language[0] = (char)tolower( pLanguage[0] );
+        translation.Language[1] = (char)tolower( pLanguage[1] );
+        translation.Value = ( pValue != nullptr ) ? pValue : "";
+
+        if ( !IsValidDBStringValue( translation.Value ) ) {
+            OTDU_LOG_ERROR( "ADDDBSTRING %llu <%s> contains a brace or a "
+                            "newline\n",
+                            string.Hashcode, translation.Language );
+            continue;
+        }
+
+        string.Translations.push_back( translation );
+    }
+}
+
 void ModInstaller::onAddDBString( const EnumerateContextItem &item,
                                   const char *pTable,
                                   const char *pHashcode,
                                   const char *pValue ) {
     if ( pTable == nullptr || *pTable == '\0' || pHashcode == nullptr ||
-         *pHashcode == '\0' || pValue == nullptr ) {
-        OTDU_LOG_WARN(
-            "ADDDBSTRING needs table and id attributes and a body\n" );
+         *pHashcode == '\0' ) {
+        OTDU_LOG_WARN( "ADDDBSTRING needs table and id attributes\n" );
         return;
     }
 
     ModDBString string;
     string.Hashcode = strtoull( pHashcode, nullptr, 10 );
-    string.Value = pValue;
+    string.Value = ( pValue != nullptr ) ? pValue : "";
 
     if ( string.Hashcode == 0 ) {
         OTDU_LOG_ERROR( "ADDDBSTRING id '%s' is not a valid hashcode\n",
@@ -201,14 +252,28 @@ void ModInstaller::onAddDBString( const EnumerateContextItem &item,
         return;
     }
 
-    if ( string.Value.find_first_of( "{}\r\n" ) != std::string::npos ) {
+    if ( !IsValidDBStringValue( string.Value ) ) {
         OTDU_LOG_ERROR( "ADDDBSTRING %llu contains a brace or a newline\n",
                         string.Hashcode );
         return;
     }
 
-    OTDU_LOG_INFO( "OnAddDBString(table=%s,id=%llu,value=%.64s)\n", pTable,
-                   string.Hashcode, string.Value.c_str() );
+    readDBStringTranslations( string );
+
+    if ( string.Value.empty() ) {
+        if ( string.Translations.empty() ) {
+            OTDU_LOG_WARN( "ADDDBSTRING %llu has neither a body nor a "
+                           "translation\n",
+                           string.Hashcode );
+            return;
+        }
+        string.Value = string.resolve( "us" );
+    }
+
+    OTDU_LOG_INFO( "OnAddDBString(table=%s,id=%llu,value=%.64s,"
+                   "translations=%zu)\n",
+                   pTable, string.Hashcode, string.Value.c_str(),
+                   string.Translations.size() );
     getInjectionSlot( item, pTable ).Strings.push_back( string );
 }
 

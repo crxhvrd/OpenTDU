@@ -1369,6 +1369,56 @@ void GSDatabase::releaseDatabase( const uint32_t index,
     gameDatabase.pNumItems[index] = 0;
 }
 
+static void AppendUTF8AsUTF16LE( const std::string &utf8,
+                                 std::vector<char> &outBuffer ) {
+    auto pushCodeUnit = [&outBuffer]( const uint32_t codeUnit ) {
+        outBuffer.push_back( (char)( codeUnit & 0xff ) );
+        outBuffer.push_back( (char)( ( codeUnit >> 8 ) & 0xff ) );
+    };
+
+    size_t i = 0;
+    while ( i < utf8.size() ) {
+        const uint8_t lead = (uint8_t)utf8[i];
+
+        uint32_t numContinuations = 0;
+        uint32_t codepoint = lead;
+        if ( lead >= 0xf0 && lead < 0xf8 ) {
+            numContinuations = 3;
+            codepoint = lead & 0x07;
+        } else if ( lead >= 0xe0 ) {
+            numContinuations = ( lead < 0xf0 ) ? 2 : 0;
+            codepoint = lead & 0x0f;
+        } else if ( lead >= 0xc0 ) {
+            numContinuations = 1;
+            codepoint = lead & 0x1f;
+        }
+
+        bool bValid = ( lead < 0x80 ) || ( numContinuations != 0 &&
+                                           i + numContinuations < utf8.size() );
+        for ( uint32_t c = 1; bValid && c <= numContinuations; c++ ) {
+            const uint8_t continuation = (uint8_t)utf8[i + c];
+            bValid = ( continuation & 0xc0 ) == 0x80;
+            codepoint = ( codepoint << 6 ) | ( continuation & 0x3f );
+        }
+
+        if ( !bValid ) {
+            pushCodeUnit( '?' );
+            i++;
+            continue;
+        }
+
+        if ( codepoint >= 0x10000 ) {
+            codepoint -= 0x10000;
+            pushCodeUnit( 0xd800 + ( codepoint >> 10 ) );
+            pushCodeUnit( 0xdc00 + ( codepoint & 0x3ff ) );
+        } else {
+            pushCodeUnit( codepoint );
+        }
+
+        i += 1 + numContinuations;
+    }
+}
+
 uint32_t GSDatabase::buildInjectedBuffers(
     const uint32_t index,
     const std::vector<const ModDBInjection *> &injections ) {
@@ -1434,17 +1484,25 @@ uint32_t GSDatabase::buildInjectedBuffers(
         for ( const ModDBInjection *pInjection : injections ) {
             for ( const ModDBString &string : pInjection->Strings ) {
                 std::string record = "\r\n{";
-                record += string.Value;
+                record += string.resolve( pActiveLanguage );
                 record += "} ";
                 record += std::to_string( string.Hashcode );
 
-                for ( const char c : record ) {
-                    injectedDbList.push_back( c );
-                    if ( bUTF16 ) {
-                        injectedDbList.push_back( '\0' );
-                    }
+                if ( bUTF16 ) {
+                    AppendUTF8AsUTF16LE( record, injectedDbList );
+                } else {
+                    injectedDbList.insert( injectedDbList.end(), record.begin(),
+                                           record.end() );
                 }
             }
+        }
+
+        const std::string terminator( "\r\n\0", 3 );
+        if ( bUTF16 ) {
+            AppendUTF8AsUTF16LE( terminator, injectedDbList );
+        } else {
+            injectedDbList.insert( injectedDbList.end(), terminator.begin(),
+                                   terminator.end() );
         }
 
         localizedDbInstallRequests[index].pBuffer = injectedDbList.data();
@@ -1473,15 +1531,23 @@ bool GSDatabase::loadDatabaseWithInjections( const char *pName,
                                              const uint32_t stride,
                                              char **pDatabaseItems ) {
     std::vector<const ModDBInjection *> candidates;
-    if ( gpModInstaller != nullptr && !bModDatabaseInjectionDisabled ) {
+    if ( gpModInstaller != nullptr ) {
         for ( const ModDBInjection &injection :
               gpModInstaller->getDatabaseInjections() ) {
+            if ( bModDatabaseInjectionDisabled && !injection.bMandatory ) {
+                continue;
+            }
             if ( StringCmpI( injection.Table.c_str(), pName ) == 0 &&
                  ( !injection.Rows.empty() || !injection.Strings.empty() ) ) {
                 candidates.push_back( &injection );
             }
         }
     }
+
+    std::stable_partition( candidates.begin(), candidates.end(),
+                           []( const ModDBInjection *pInjection ) {
+                               return pInjection->bMandatory;
+                           } );
 
     std::vector<const ModDBInjection *> accepted;
     if ( !tryLoadDatabase( pName, index, stride, pDatabaseItems, accepted ) ) {
@@ -1533,9 +1599,11 @@ bool GSDatabase::loadDatabaseWithInjections( const char *pName,
                         { string.Hashcode, pInjection->PackName } );
                 }
                 bLastAttemptAccepted = true;
-                OTDU_LOG_INFO( "  -'%S' added %zu row(s) to %s\n",
+                OTDU_LOG_INFO( "  -'%S' added %zu row(s) and %zu string(s) "
+                               "to %s\n",
                                pInjection->PackName.c_str(),
-                               pInjection->Rows.size(), pName );
+                               pInjection->Rows.size(),
+                               pInjection->Strings.size(), pName );
                 continue;
             }
 

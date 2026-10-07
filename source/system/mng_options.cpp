@@ -4,6 +4,7 @@
 #include "audio/gs_audio.h"
 #include "core/format.h"
 #include "database/gs_database.h"
+#include "database/port_strings.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/implementation/ed_flash.h"
@@ -78,17 +79,17 @@ enum eExtraVideoRow : int32_t {
 };
 
 struct ExtraVideoRowDesc {
-    const char *pLabel;
+    ePortString Label;
     const char *pPreviousMessage;
     const char *pNextMessage;
     bool bCheckbox;
 };
 
 static constexpr ExtraVideoRowDesc kExtraVideoRows[EVR_Count] = {
-    {"DISPLAY MODE", "prdm",  "nedm",  false},
-    {"FRAME RATE",   "prfc",  "nefc",  false},
-    {"REFLECTIONS",  "prdr",  "nedr",  false},
-    {"VSYNC",        nullptr, nullptr, true },
+    {PS_DisplayMode, "prdm",  "nedm",  false},
+    {PS_FrameRate,   "prfc",  "nefc",  false},
+    {PS_Reflections, "prdr",  "nedr",  false},
+    {PS_VSync,       nullptr, nullptr, true },
 };
 static constexpr int32_t kFrameRateCaps[] = { 0, 30, 60, 120, 144, 240 };
 
@@ -1610,12 +1611,12 @@ void AudioOptions::deactivate() { bActive = false; }
 static const char *GetDisplayModeLabel( const eDisplayMode displayMode ) {
     switch ( displayMode ) {
     case eDisplayMode::DM_Fullscreen:
-        return "FULLSCREEN";
+        return GetPortString( PS_FullScreen );
     case eDisplayMode::DM_Borderless:
-        return "BORDERLESS";
+        return GetPortString( PS_Borderless );
     case eDisplayMode::DM_Windowed:
     default:
-        return "WINDOWED";
+        return GetPortString( PS_Windowed );
     }
 }
 
@@ -1950,9 +1951,10 @@ void MngOptions::setupExtraVideoRows() {
     for ( int32_t i = 0; i < kNumExtraVideoRows; i++ ) {
         const ExtraVideoRowDesc &desc = kExtraVideoRows[i];
         const int32_t rowIndex = kNumRetailVideoRows + 1 + i;
+        const char *pLabel = GetPortString( desc.Label );
 
         snprintf( path, sizeof( path ), "/:System_m_%d", rowIndex );
-        pPlayer->setVariableValueNonLinked( path, desc.pLabel );
+        pPlayer->setVariableValueNonLinked( path, pLabel );
         snprintf( path, sizeof( path ), "/:System_help%d", rowIndex );
         pPlayer->setVariableValueNonLinked( path, "apply" );
 
@@ -1961,7 +1963,7 @@ void MngOptions::setupExtraVideoRows() {
             pPlayer->setVariableValueNonLinked( path, "apply_checkbox" );
             snprintf( path, sizeof( path ), "%s/sur%d:s_name", kVideoMenuPath,
                       rowIndex );
-            pPlayer->setVariableValueNonLinked( path, desc.pLabel );
+            pPlayer->setVariableValueNonLinked( path, pLabel );
 
             snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath,
                       rowIndex );
@@ -1972,7 +1974,7 @@ void MngOptions::setupExtraVideoRows() {
 
         snprintf( path, sizeof( path ), "%s/sur%d:param_name", kVideoMenuPath,
                   rowIndex );
-        pPlayer->setVariableValueNonLinked( path, desc.pLabel );
+        pPlayer->setVariableValueNonLinked( path, pLabel );
         snprintf( path, sizeof( path ), "%s/sur%d:msg1", kVideoMenuPath,
                   rowIndex );
         pPlayer->setVariableValueNonLinked( path, desc.pPreviousMessage );
@@ -2283,14 +2285,17 @@ void MngOptions::showExtraVideoRowValue( const int32_t row,
     case EVR_FrameRateCap: {
         const int32_t maxFrameRate = GetMaxFrameRate();
         if ( maxFrameRate == 0 ) {
-            strncpy( label, "UNLIMITED", sizeof( label ) - 1 );
+            strncpy( label, GetPortString( PS_Unlimited ),
+                     sizeof( label ) - 1 );
         } else {
             snprintf( label, sizeof( label ), "%d FPS", maxFrameRate );
         }
         break;
     }
     case EVR_Reflections:
-        strncpy( label, gbDebugEnvMapDenseReflection ? "HIGH" : "DEFAULT",
+        strncpy( label,
+                 GetPortString( gbDebugEnvMapDenseReflection ? PS_High
+                                                             : PS_Default ),
                  sizeof( label ) - 1 );
         break;
     default:

@@ -12,6 +12,8 @@ struct ModPack {
     uint8_t bConflicting : 1; // claims a file another enabled pack claims
     uint8_t bMounted : 1;
     uint8_t bIncomplete : 1; // missing a half, so it can never be mounted
+    uint8_t bMandatory : 1;  // built into the port; always on, never saved
+    uint8_t bDescriptorOnly : 1; // contentdesc.xml without a .map/.big
 
     std::string IncompleteReason;
     std::string Status;
@@ -20,7 +22,9 @@ struct ModPack {
         : bEnabled( false ),
           bConflicting( false ),
           bMounted( false ),
-          bIncomplete( false ) {}
+          bIncomplete( false ),
+          bMandatory( false ),
+          bDescriptorOnly( false ) {}
 };
 
 class ModManager {
@@ -46,6 +50,7 @@ public:
     ModPack *findPack( const char *pId );
 
 private:
+    void addBuiltInPacks();
     void loadEnabledState();
     void detectConflicts();
 

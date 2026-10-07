@@ -61,9 +61,11 @@ namespace TestDrive {
 
                 ImGui::TableNextColumn();
                 bool bEnabled = pack.bEnabled;
+                ImGui::BeginDisabled( pack.bMandatory );
                 if ( ImGui::Checkbox( "##enabled", &bEnabled ) ) {
                     gpModManager->setEnabled( pack.Id.c_str(), bEnabled );
                 }
+                ImGui::EndDisabled();
 
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted( pack.Id.c_str() );
@@ -83,6 +85,10 @@ namespace TestDrive {
                          ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNone ) ) {
                         ImGui::SetTooltip( "%s", pack.Status.c_str() );
                     }
+                } else if ( pack.bDescriptorOnly && pack.bEnabled ) {
+                    ImGui::TextColored( ImVec4( 0.4f, 1.0f, 0.4f, 1.0f ),
+                                        pack.bMandatory ? "built-in"
+                                                        : "descriptor only" );
                 } else if ( pack.bMounted ) {
                     ImGui::TextColored( ImVec4( 0.4f, 1.0f, 0.4f, 1.0f ),
                                         "mounted on map %d",

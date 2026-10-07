@@ -290,6 +290,7 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/game/tutorial_hint.cpp"
                     "${OTDU_SRC_FOLDER}/input/gs_device.cpp"
                     "${OTDU_SRC_FOLDER}/database/gs_database.cpp"
+                    "${OTDU_SRC_FOLDER}/database/port_strings.cpp"
                     "${OTDU_SRC_FOLDER}/system/gs_system.cpp"
                     "${OTDU_SRC_FOLDER}/system/gs_keyboard_pc.cpp"
                     "${OTDU_SRC_FOLDER}/system/gs_pc_options.cpp"
@@ -798,6 +799,7 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/database/db_subtitle.h"
                     "${OTDU_SRC_FOLDER}/database/db_tutorial.h"
                     "${OTDU_SRC_FOLDER}/database/gs_database.h"
+                    "${OTDU_SRC_FOLDER}/database/port_strings.h"
                     "${OTDU_SRC_FOLDER}/system/gs_system.h"
                     "${OTDU_SRC_FOLDER}/system/gs_keyboard_pc.h"
                     "${OTDU_SRC_FOLDER}/system/gs_pc_options.h"
@@ -1098,6 +1100,15 @@ add_custom_command(
             "${OTDU_RSC_FOLDER}/boattour.bnk"
             "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/boattour.bnk"
     COMMENT "Copying BOPA boattour bank..."
+)
+
+add_custom_command(
+    TARGET opentdu
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${OTDU_RSC_FOLDER}/localization"
+            "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/Localization"
+    COMMENT "Copying OpenTDU localization pack..."
 )
 
 add_custom_command(

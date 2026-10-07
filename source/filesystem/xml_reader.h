@@ -8,6 +8,7 @@ public:
     bool parse( const char *pContent, const size_t contentLength );
     void resetPos();
     bool findElem( const char *pName );
+    bool findNextElem();
     bool intoElem();
     bool outOfElem();
     const char *getElemName() const;

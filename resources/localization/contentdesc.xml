@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    One child element per language (us fr it ge sp ja ko ch ru po), UTF-8.
+    NOTE: a language without an entry falls back to <us>
+-->
+<CONTENTDESC>
+    <ACTION name="DESC">
+        <us>OpenTDU Localization</us>
+    </ACTION>
+
+    <!-- Video page -->
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000001">
+        <us>DISPLAY MODE</us>
+        <fr>MODE D'AFFICHAGE</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000002">
+        <us>FRAME RATE</us>
+        <fr>IMAGES PAR SECONDE</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000003">
+        <us>REFLECTIONS</us>
+        <fr>REFLETS</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000004">
+        <us>VSYNC</us>
+        <fr>SYNCHRO VERTICALE</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000005">
+        <us>BORDERLESS</us>
+        <fr>FENÊTRÉ SANS BORDURE</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000006">
+        <us>WINDOWED</us>
+        <fr>FENÊTRÉ</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000007">
+        <us>UNLIMITED</us>
+        <fr>ILLIMITÉ</fr>
+    </ACTION>
+
+    <!-- Mod manager -->
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000100">
+        <us>'./Mods' folder is empty!</us>
+        <fr>Le dossier './Mods' est vide !</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000101">
+        <us>Enabled</us>
+        <fr>Activé</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000102">
+        <us>Disabled</us>
+        <fr>Désactivé</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000103">
+        <us>Built-in (always on)</us>
+        <fr>Intégré (toujours actif)</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000104">
+        <us>Files</us>
+        <fr>Fichiers</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000105">
+        <us>Mounted on map</us>
+        <fr>Monté sur l'emplacement</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000106">
+        <us>row(s)</us>
+        <fr>ligne(s)</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000107">
+        <us>string(s)</us>
+        <fr>texte(s)</fr>
+    </ACTION>
+</CONTENTDESC>

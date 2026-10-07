@@ -642,9 +642,10 @@ void GSFile::initCarPacks( bool bApplyContent ) {
 
     uint32_t numMounted = 0u;
     for ( ModPack &pack : packs ) {
-        OTDU_LOG_INFO( "  -Found Pack: Name:%S  Enabled:%d Conflicting:%d\n",
+        OTDU_LOG_INFO( "  -Found Pack: Name:%S  Enabled:%d Conflicting:%d "
+                       "Mandatory:%d\n",
                        pack.DisplayName.c_str(), pack.bEnabled,
-                       pack.bConflicting );
+                       pack.bConflicting, pack.bMandatory );
 
         if ( !pack.bEnabled || pack.bConflicting ) {
             OTDU_LOG_INFO( "  -Skipping '%S': %s\n", pack.DisplayName.c_str(),
@@ -653,7 +654,8 @@ void GSFile::initCarPacks( bool bApplyContent ) {
             continue;
         }
 
-        if ( numMounted >= kMaxFilemapCount - kFirstPackFilemapIndex ) {
+        if ( !pack.bDescriptorOnly &&
+             numMounted >= kMaxFilemapCount - kFirstPackFilemapIndex ) {
             pack.Status = "there are no filemap slots left";
             OTDU_LOG_WARN( "  -Skipping '%S': %s\n", pack.DisplayName.c_str(),
                            pack.Status.c_str() );
@@ -681,6 +683,17 @@ void GSFile::initCarPacks( bool bApplyContent ) {
                                 pack.DisplayName.c_str(), pack.Status.c_str() );
                 continue;
             }
+
+            if ( pack.bMandatory ) {
+                gpModInstaller->markInjectionsMandatory( pack.DisplayName );
+            }
+        }
+
+        if ( pack.bDescriptorOnly ) {
+            pack.Status.clear();
+            OTDU_LOG_INFO( "  -Loaded '%S' (content descriptor only)\n",
+                           pack.DisplayName.c_str() );
+            continue;
         }
 
         const std::filesystem::path packPath( pack.Path );

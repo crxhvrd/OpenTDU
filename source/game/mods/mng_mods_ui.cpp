@@ -3,6 +3,7 @@
 
 #include "core/arg_parser.h"
 #include "database/gs_database.h"
+#include "database/port_strings.h"
 #include "filesystem/gs_file.h"
 #include "filesystem/mod_installer.h"
 #include "filesystem/mod_manager.h"
@@ -1478,7 +1479,7 @@ void MngModsUI::rebuildPackRows() {
 
     if ( gpModManager->getPacks().empty() ) {
         ModsListRow row;
-        row.Name = "'./Mods' folder is empty!";
+        row.Name = GetPortString( PS_ModsFolderEmpty );
         row.State = FlashList::eLineState::FLLS_Normal;
         packRows.push_back( row );
         return;
@@ -1524,17 +1525,22 @@ void MngModsUI::rebuildDetailRows() {
         detailRows.push_back( row );
     };
 
-    addRow( pack.bEnabled ? "State: on" : "State: off",
+    const ePortString stateLabel = pack.bMandatory ? PS_ModBuiltIn
+                                   : pack.bEnabled ? PS_ModEnabled
+                                                   : PS_ModDisabled;
+    addRow( GetPortString( stateLabel ),
             pack.bEnabled ? FlashList::eLineState::FLLS_Green
                           : FlashList::eLineState::FLLS_Disabled );
 
     if ( pack.NumEntries != 0u ) {
-        addRow( "Files: " + std::to_string( pack.NumEntries ),
+        addRow( std::string( GetPortString( PS_ModFiles ) ) + ": " +
+                    std::to_string( pack.NumEntries ),
                 FlashList::eLineState::FLLS_Normal );
     }
 
     if ( pack.bMounted ) {
-        addRow( "Mounted on map " + std::to_string( pack.FilemapIndex ),
+        addRow( std::string( GetPortString( PS_ModMountedOnMap ) ) + " " +
+                    std::to_string( pack.FilemapIndex ),
                 FlashList::eLineState::FLLS_Normal );
     }
 
@@ -1551,9 +1557,18 @@ void MngModsUI::rebuildDetailRows() {
                 continue;
             }
 
-            addRow( injection.Table + ": +" +
-                        std::to_string( injection.Rows.size() ) + " row(s)",
-                    FlashList::eLineState::FLLS_Normal );
+            if ( !injection.Rows.empty() ) {
+                addRow( injection.Table + ": +" +
+                            std::to_string( injection.Rows.size() ) + " " +
+                            GetPortString( PS_ModRows ),
+                        FlashList::eLineState::FLLS_Normal );
+            }
+            if ( !injection.Strings.empty() ) {
+                addRow( injection.Table + ": +" +
+                            std::to_string( injection.Strings.size() ) + " " +
+                            GetPortString( PS_ModStrings ),
+                        FlashList::eLineState::FLLS_Normal );
+            }
         }
     }
 }
