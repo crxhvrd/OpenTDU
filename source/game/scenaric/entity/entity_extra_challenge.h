@@ -6,9 +6,16 @@
 struct BinaryReader;
 struct SpotIconInfo;
 class EntityVolume;
+class FlashPlayer;
 
 // Base class for freeride challenges.
 class EntityExtraChallenge : public Entity {
+public:
+    union ChallengeCondition {
+        uint32_t Value;
+        const char *pValue;
+    };
+
 public:
     const char *GetName() override {
         return "ExtraChallenge"; /* FUN_00427b10 */
@@ -34,6 +41,14 @@ public:
     }
 
     bool isAvailable() const;
+    Eigen::Vector4f getGoalPosition() const;
+    void buildVehicleRestrictionText( uint32_t conditionType,
+                                      const ChallengeCondition &condition,
+                                      char *pOutText,
+                                      size_t maxLength,
+                                      bool bShowGroup ) const;
+    bool isCarAllowed( uint32_t conditionType,
+                       const ChallengeCondition &condition ) const;
     void getIconInfo( SpotIconInfo &outInfo ) const;
     void computeRoadLocation();
 
@@ -45,15 +60,14 @@ public:
         return GoodiesMatrix;
     }
 
+public:
+    static void SetGroupRestrictionVars( FlashPlayer *pPlayer,
+                                         uint32_t conditionType,
+                                         const ChallengeCondition &condition );
+
 protected:
     void readAvatarConfigFromPNJ( BinaryReader *pReader,
                                   AvatarConfiguration &outConfig );
-
-protected:
-    union ChallengeCondition {
-        uint32_t Value;
-        const char *pValue;
-    };
 
 protected:
     int32_t Index;

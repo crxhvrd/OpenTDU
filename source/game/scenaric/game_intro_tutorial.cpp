@@ -4,15 +4,22 @@
 #include "game/game_cheats.h"
 #include "game/gm_base.h"
 #include "game/gs_tutorial.h"
+#include "game/map/gm_map.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_save.h"
+#include "player_data/saved_road_discovery.h"
 #include "player_data/saved_garage.h"
 #include "player_data/player_data_interface.h"
 
 #include "tdu_instance.h"
+
+static const Eigen::Vector4f kTutorialDefaultMapFocus( 48389.043f,
+                                                       20.90166f,
+                                                       48200.7f,
+                                                       1.0f ); // DAT_00f421cc
 
 GameIntroTutorial::GameIntroTutorial()
     : tutorialStep( 0 ),
@@ -201,6 +208,37 @@ void GameIntroTutorial::endStep( const int32_t step ) {
     default:
         return;
     }
+}
+
+void GameIntroTutorial::computeMapFocus( GMMap *pMap,
+                                         Eigen::Vector4f *pOutFocus,
+                                         const bool bSelectSpot ) {
+    // FUN_007fc010
+    if ( pOutFocus == nullptr || pMap == nullptr || !isActive() ||
+         tutorialStep != kTutorialStateHouseBought ) {
+        return;
+    }
+
+    SpotMap *dealers[3] = { pSpotECD12E, pSpotECD8F, pSpotECD12B };
+    for ( SpotMap *pDealer : dealers ) {
+        DiscoverSpotRoad( pDealer );
+    }
+
+    Spots &spotList = gpScenaric->getSpotList();
+    for ( SpotMap *pDealer : dealers ) {
+        if ( carDealer != spotList.getSpotMapIndex( pDealer->Hashcode ) ) {
+            continue;
+        }
+
+        if ( bSelectSpot ) {
+            pMap->getMngSpots().selectSpotRecord( pDealer );
+        }
+        *pOutFocus =
+            Eigen::Vector4f( pDealer->X, pDealer->Y, pDealer->Z, 1.0f );
+        return;
+    }
+
+    *pOutFocus = kTutorialDefaultMapFocus;
 }
 
 void GameIntroTutorial::FUN_007fbd80( bool param_2 ) {

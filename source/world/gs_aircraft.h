@@ -151,6 +151,8 @@ public:
 public:
     void initialize( EntityAircraftPath *pEntity );
     void spawnAircrafts( MngActor &mngActor, AudioClient *pAudioClient );
+    void setMapViewLOD( bool bMapView );
+    void setMapViewMaterials( bool bMapView );
     void tick( float deltaTime );
     void terminate();
 
@@ -188,6 +190,8 @@ public:
     void terminate() override;
 
     void spawnAircrafts();
+    void setMapViewLOD( bool bMapView );
+    void setMapViewMaterials( bool bMapView );
 
     Entity *pickAircraftModel( int32_t groupIndex );
     uint32_t getNumAircrafts() const;

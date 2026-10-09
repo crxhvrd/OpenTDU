@@ -801,7 +801,8 @@ void SectorBank::instanciate() {
 
                 SetupTerrainMaterial(
                     geometry.render2DM.getMaterialAtIndex( 0 ),
-                    pOwner->heightmap, [&]( uint64_t hashcode ) -> Render2DB * {
+                    pOwner->heightmap, eTerrainTier::TT_Sector,
+                    [&]( uint64_t hashcode ) -> Render2DB * {
                         for ( uint32_t b = 0; b < geometry.num2DB; b++ ) {
                             if ( geometry.set2DB[b]
                                      .Resource.getBitmapHashcode() ==

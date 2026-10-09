@@ -102,6 +102,9 @@ public:
         return startPosition;
     }
     inline LocalPlayer &getLocalPlayer() { return localPlayer; }
+    inline void setObjectiveSpotHashcode( const uint64_t hashcode ) {
+        objectiveSpotHashcode = hashcode;
+    }
     inline ObjectiveMarker &getObjective( const int32_t index ) {
         return objectives[index];
     }
@@ -214,6 +217,8 @@ public:
     inline bool isDemoModeActive() const { return bDemoMode; }
     inline void setDemoModeActive( const bool value ) { bDemoMode = value; }
     inline bool isFromDriveIn() const { return bIsFromDriveIn; }
+    inline bool wasMapExited() const { return bWasMapExited; }
+    inline void setWasMapExited( const bool value ) { bWasMapExited = value; }
     void startDemoMode();
     void delockChallengeRoads( const bool bDelocked );
     void setTraceSize( uint32_t param_1 );
@@ -239,6 +244,7 @@ private:
     uint32_t demoTimeEnd;
     uint32_t traceSize;
     uint32_t currentDefVersion;
+    bool bWasMapExited;       // DAT_01214740
     int32_t currentSpotIndex; // DAT_01214744
     bool bIsFromDriveIn;      // DAT_012162c4
     NextIntroInfo nextIntro;

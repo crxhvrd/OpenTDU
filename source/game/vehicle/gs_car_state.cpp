@@ -10,6 +10,7 @@
 #include "world/gs_world_streaming.h"
 #include "world/sector_manager.h"
 #include "world/streaming_manager.h"
+#include "game/map/mng_map_viewer.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
 #include "game/scenaric/entity/entity_driver.h"
@@ -223,6 +224,12 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             }
             gpWorld->setStreamingPosition( &carWorldPos );
         }
+    }
+
+    if ( gpMngMapViewer != nullptr &&
+         gpMngMapViewer->getState() != MngMapViewer::MS_Idle ) {
+        Eigen::Vector4f mapStreamPosition = gpMngMapViewer->getStreamFocus();
+        gpWorld->setStreamingPosition( &mapStreamPosition );
     }
 
     Eigen::Vector4f streamShift = Eigen::Vector4f::Zero();

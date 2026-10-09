@@ -225,7 +225,7 @@ DBEntryBrand *MngLogoDisplay::PickCarShopBrand( DBEntryBrand **ppBrands,
     return ppBrands[index];
 }
 
-static Material *GetIconAtlasMaterial( const int32_t atlas ) {
+Material *MngLogoDisplay::GetIconAtlasMaterial( const int32_t atlas ) {
     // FUN_007159a0
     LogoResources &logoResources = gpMngResources->getLogoResources();
     if ( !logoResources.MngResources::isLoaded() ) {
@@ -245,18 +245,18 @@ static Material *GetIconAtlasMaterial( const int32_t atlas ) {
     }
 }
 
-static Material *GetIconAtlasUVs( const int32_t atlas,
-                                  const int32_t iconIndex,
-                                  float &u0,
-                                  float &u1,
-                                  float &v0,
-                                  float &v1 ) {
+Material *MngLogoDisplay::GetIconAtlasUVs( const int32_t atlas,
+                                           const int32_t iconIndex,
+                                           float &u0,
+                                           float &u1,
+                                           float &v0,
+                                           float &v1 ) {
     // FUN_00715a00
     if ( !gpMngResources->getLogoResources().MngResources::isLoaded() ) {
         return nullptr;
     }
 
-    Material *pAtlas = GetIconAtlasMaterial( atlas );
+    Material *pAtlas = MngLogoDisplay::GetIconAtlasMaterial( atlas );
     float cellWidth = 0.0f;
     float cellHeight = 0.0f;
     switch ( atlas ) {
@@ -312,9 +312,10 @@ static Material *GetSpotIconAtlasUVs( const int32_t spotIcon,
     // FUN_00715bb0
     switch ( iconSize ) {
     case 1:
-        return GetIconAtlasUVs( 1, spotIcon + 0x40, u0, u1, v0, v1 );
+        return MngLogoDisplay::GetIconAtlasUVs( 1, spotIcon + 0x40, u0, u1, v0,
+                                                v1 );
     case 2:
-        return GetIconAtlasUVs( 2, spotIcon, u0, u1, v0, v1 );
+        return MngLogoDisplay::GetIconAtlasUVs( 2, spotIcon, u0, u1, v0, v1 );
     case 3: {
         // Spot icon -> LOD icon
         static constexpr int32_t kLodIcons[36] = {
@@ -326,7 +327,8 @@ static Material *GetSpotIconAtlasUVs( const int32_t spotIcon,
         if ( spotIcon < 0 || spotIcon >= 36 || kLodIcons[spotIcon] == -1 ) {
             return nullptr;
         }
-        return GetIconAtlasUVs( 3, kLodIcons[spotIcon], u0, u1, v0, v1 );
+        return MngLogoDisplay::GetIconAtlasUVs( 3, kLodIcons[spotIcon], u0, u1,
+                                                v0, v1 );
     }
     default:
         return nullptr;
@@ -343,11 +345,11 @@ static inline Material *GetSizedIconAtlasUVs( const int32_t iconSize,
                                               float &v1 ) {
     switch ( iconSize ) {
     case 1:
-        return GetIconAtlasUVs( 1, icon1, u0, u1, v0, v1 );
+        return MngLogoDisplay::GetIconAtlasUVs( 1, icon1, u0, u1, v0, v1 );
     case 2:
-        return GetIconAtlasUVs( 2, icon2, u0, u1, v0, v1 );
+        return MngLogoDisplay::GetIconAtlasUVs( 2, icon2, u0, u1, v0, v1 );
     case 3:
-        return GetIconAtlasUVs( 3, icon3, u0, u1, v0, v1 );
+        return MngLogoDisplay::GetIconAtlasUVs( 3, icon3, u0, u1, v0, v1 );
     default:
         return nullptr;
     }
@@ -437,16 +439,16 @@ Material *MngLogoDisplay::GetSpotIconUVs( const MinimapSpotIcon *pIcon,
     case ST_CarDealer:
         if ( bBrandLogo ) {
             // FUN_00715d80
-            return GetIconAtlasUVs( iconSize, pIcon->pBrand->LogoGlobalID, u0,
-                                    u1, v0, v1 );
+            return MngLogoDisplay::GetIconAtlasUVs(
+                iconSize, pIcon->pBrand->LogoGlobalID, u0, u1, v0, v1 );
         }
         spotIcon = 1;
         break;
     case ST_BikeDealer:
         if ( bBrandLogo ) {
             // FUN_00715d80
-            return GetIconAtlasUVs( iconSize, pIcon->pBrand->LogoGlobalID, u0,
-                                    u1, v0, v1 );
+            return MngLogoDisplay::GetIconAtlasUVs(
+                iconSize, pIcon->pBrand->LogoGlobalID, u0, u1, v0, v1 );
         }
         spotIcon = 0;
         break;

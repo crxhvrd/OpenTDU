@@ -55,7 +55,6 @@ static constexpr float kGPSNearPlaneRatio = 0.01f;      // DAT_00f416d4
 static constexpr float kGPSFarPlaneRatio = 4.0f;        // DAT_00f418d4
 static constexpr float kGPSCellSize = 768.0f;           // DAT_00f416e4
 static constexpr int32_t kGPSCellSizeInt = 0x300;
-static constexpr float kGPSQuaternionEpsilon = 1e-6f; // DAT_00f41888
 
 static constexpr const char *kGPSZoomNames[CameraGPS::GZL_Count] = {
     "Fixed View",  // DAT_00f145c8

@@ -6,6 +6,7 @@ class Frustum {
 public:
     inline Camera *getBoundCamera() const { return pCamera; }
     inline const Eigen::Vector4f &getZLimits() const { return zLimits; }
+    inline const Eigen::Vector4f &getZProjection() const { return zProjection; }
 
 public:
     Frustum();

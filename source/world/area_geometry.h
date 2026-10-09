@@ -139,4 +139,6 @@ Material *InstallHeightmapEnvMaterial( Instance *pInstance,
 void SetupTerrainMaterial(
     Material *pTerrainMat,
     SectorHeightmap &heightmap,
+    eTerrainTier tier,
     const std::function<Render2DB *( uint64_t hashcode )> &resolveBitmap );
+void RefreshTerrainMaterialAlphaTest( Material *pTerrainMat );

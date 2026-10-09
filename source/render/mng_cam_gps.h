@@ -8,6 +8,8 @@
 #include "world/mng_ocean.h"
 
 class DrawList;
+struct HDRIConfig;
+class WeatherConfig;
 struct Material;
 
 class MngCamGPS : public Manager {
@@ -15,6 +17,16 @@ public:
     const char *getName() const override {
         // FUN_00432640
         return "MngCamGPS";
+    }
+
+    inline void setUpdateStreaming( const bool bEnabled ) {
+        bUpdateStreaming = bEnabled;
+    }
+    inline void setForceStreaming( const bool bEnabled ) {
+        bForceStreaming = bEnabled;
+    }
+    inline void setForceStreamingFlush( const bool bEnabled ) {
+        bForceStreamingFlush = bEnabled;
     }
 
 public:
@@ -42,11 +54,11 @@ private:
     Material *pMatSpaceBackground = nullptr;
     Render2DM dmSpaceBackground;
     void *p2DMSpaceBackgroundData = nullptr;
-    Eigen::Vector4f *pStaticParamsSpaceBackground = nullptr;
+    float *pStaticParamsSpaceBackground = nullptr;
 
-    Material *pMaterialOceanReflection = nullptr;
-    Render2DM dmOceanReflection;
-    void *p2DMBufferOceanReflection = nullptr;
+    Material *pMatFadeMap = nullptr;
+    Render2DM dmFadeMap;
+    void *p2DMFadeMapData = nullptr;
 
     float noiseWindStart = 0.0f;
     float noiseWindSize = 0.05f;
@@ -58,15 +70,23 @@ private:
     bool bForceDraw = false;
     bool bForceStreamingFlush = false;
     bool bFirstFrameInGPS = true;
-    uint8_t oceanTransitionLatch = 0;
+    bool bClipPlanesLatched = false;
     float earthFadeNearDist = 0.0f;
     float earthFadeFarDist = 0.0f;
 
 private:
+    static void OnWeatherConfigUpdate( WeatherConfig *pConfig );
+    static void OnHDRConfigUpdate( HDRIConfig *pConfig );
+
     bool allocateResources();
     void releaseResources();
-    void toggleGPSClipPlanes( bool bEnable, bool bResetOTMask );
-    void updateCameraForCapture( float progress );
+    void toggleGPSClipPlanes( bool bGPSRendering, bool bClipPlanes );
+    void updateCameraForCapture();
+    void updateSpaceViewRotation( float deltaTime );
+    void updateRadialBlur();
+    void updateHeightmapLOD();
+    void updateBackground();
+    void updateOcean();
 };
 
 extern MngCamGPS *gpMngCamGPS;

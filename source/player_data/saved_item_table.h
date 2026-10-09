@@ -9,6 +9,7 @@ public:
     static constexpr int32_t kNumEntries = 100;
     static constexpr uint16_t kDefaultKind = 1u;
     static constexpr uint16_t kExtraChallengeGoldFlag = 0x1000u;
+    static constexpr uint16_t kExtraChallengePerfectFlag = 0x2000u;
 
     // Low byte of an entry
     enum eExtraChallengeState : uint8_t {
@@ -30,6 +31,9 @@ public:
 
     inline bool isExtraChallengeGold( const int32_t index ) const {
         return ( Kinds[index] & kExtraChallengeGoldFlag ) != 0u;
+    }
+    inline bool isExtraChallengePerfect( const int32_t index ) const {
+        return ( Kinds[index] & kExtraChallengePerfectFlag ) != 0u;
     }
 
 public:

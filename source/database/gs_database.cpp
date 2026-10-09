@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "gs_database.h"
 
+#include "game/scenaric/spots.h"
+
 #include "config/gs_config.h"
 #include "debug/mng_debug_hud.h"
 #include "filesystem/bank.h"
@@ -2366,6 +2368,88 @@ bool GSDatabase::isCarShopSlotAvailable( DBEntryCarShop *pCarShop,
     snprintf( bankPath, sizeof( bankPath ), "%sVehicules/%s.bnk",
               gpConfig->getResRootPath(), pCar->CarResourceFilename.pAsString );
     return gpFile->fileExists( bankPath );
+}
+
+static constexpr uint32_t kCarPackDatabaseIndex = 0xd;
+
+int32_t GSDatabase::getNumShopCarPacks( const DBEntryCarShop *pCarShop ) {
+    // FUN_009aaf40
+    int32_t numPacks = 0;
+    for ( uint32_t i = 0; i < gameDatabase.pNumItems[kCarPackDatabaseIndex];
+          i++ ) {
+        DBEntryCarPack *pCarPack = &gameDatabase.DBCarPack[i];
+        if ( pCarPack->CarName == pCarShop->Label.Hashcode &&
+             isCarPackAvailable( pCarPack ) ) {
+            numPacks++;
+        }
+    }
+    return numPacks;
+}
+
+DBEntryCarPack *GSDatabase::getShopCarPack( const DBEntryCarShop *pCarShop,
+                                            const int32_t index ) {
+    // FUN_009aaeb0
+    int32_t packIndex = 0;
+    for ( uint32_t i = 0; i < gameDatabase.pNumItems[kCarPackDatabaseIndex];
+          i++ ) {
+        DBEntryCarPack *pCarPack = &gameDatabase.DBCarPack[i];
+        if ( pCarPack->CarName != pCarShop->Label.Hashcode ||
+             !isCarPackAvailable( pCarPack ) ) {
+            continue;
+        }
+        if ( packIndex == index ) {
+            return pCarPack;
+        }
+        packIndex++;
+    }
+    return nullptr;
+}
+
+static bool IsCarInPack( const DBEntryCarPack *pCarPack, const int32_t carID ) {
+    const uint64_t cars[] = {
+        pCarPack->CarHashcode, pCarPack->Upgrades[0].CarHashcode,
+        pCarPack->Upgrades[1].CarHashcode, pCarPack->Upgrades[2].CarHashcode };
+    for ( const uint64_t car : cars ) {
+        const DBEntryCarPhysicsData *pCar =
+            reinterpret_cast<const DBEntryCarPhysicsData *>( car );
+        if ( pCar->CarID == carID ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool GSDatabase::isCarTunable( const int32_t carID ) {
+    // FUN_009aad60
+    for ( uint32_t i = 0; i < gameDatabase.pNumItems[kCarPackDatabaseIndex];
+          i++ ) {
+        DBEntryCarPack *pCarPack = &gameDatabase.DBCarPack[i];
+        if ( isCarPackAvailable( pCarPack ) &&
+             IsCarInPack( pCarPack, carID ) ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool GSDatabase::isCarTunableInShop( const SpotMap *pSpot,
+                                     const int32_t carID ) {
+    // FUN_009ab280
+    if ( pSpot == nullptr ) {
+        return false;
+    }
+    DBEntryCarShop *pCarShop = getCarShopBySpotName( pSpot->Hashcode );
+    if ( pCarShop == nullptr ) {
+        return false;
+    }
+
+    const int32_t numPacks = getNumShopCarPacks( pCarShop );
+    for ( int32_t i = 0; i < numPacks; i++ ) {
+        if ( IsCarInPack( getShopCarPack( pCarShop, i ), carID ) ) {
+            return true;
+        }
+    }
+    return false;
 }
 
 int32_t GSDatabase::getNumCarsAvailableInShop( DBEntryCarShop *pCarShop ) {

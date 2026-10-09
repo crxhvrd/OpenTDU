@@ -45,6 +45,8 @@ public:
 
 static ParkedPhysControl gParkedPhysControl;
 
+PhysicsDrivingControl *GetParkedPhysControl() { return &gParkedPhysControl; }
+
 static void SetInnerViewLocked( const bool bLocked ) {
     MoviePlayer *pMoviePlayer = gpFlash->getMoviePlayer( 1, 0 );
     if ( pMoviePlayer == nullptr || !pMoviePlayer->MovieBank.isLoaded() ||

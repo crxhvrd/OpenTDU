@@ -405,6 +405,9 @@ int32_t edRender::flushDrawCommands( bool param_1 ) {
             gWindowSizeDirty = false;
             if ( gpRender != nullptr ) {
                 gpRender->resizeToWindow( gWindowWidth, gWindowHeight );
+                if ( param_1 && pFrameGraph->isRemovingDynamicDrawCommands() ) {
+                    pFrameGraph->removeDynamicDrawCommands();
+                }
                 return 0;
             }
         }

@@ -5,6 +5,7 @@ class Bank;
 class ScenaricBank;
 class Entity;
 class EntityCinematic;
+class FlashPlayer;
 struct DBEntryCarPhysicsData;
 
 // TODO: INCOMPLETE
@@ -57,15 +58,51 @@ struct SpotIconInfo {
 extern uint8_t gMapActiveFilterMode;
 extern uint32_t gMapChallengeFilterMask;
 extern uint32_t gMapServiceFilterMask;
-extern uint32_t gMapUnknown0xCFilterMask;
-extern uint32_t gMapUnknown10FilterMask;
+extern uint32_t gMapPlayerFilterMask;
+extern uint32_t gMapBookmarkFilterMask;
 extern uint8_t gMinimapFilterMode;
+
+inline uint32_t GetMapFilterMask( const uint8_t mode ) {
+    // FUN_00742380
+    if ( ( mode & 1 ) != 0 ) {
+        return gMapChallengeFilterMask;
+    }
+    if ( ( mode & 2 ) != 0 ) {
+        return gMapServiceFilterMask;
+    }
+    if ( ( mode & 4 ) != 0 ) {
+        return gMapPlayerFilterMask;
+    }
+    return ( ( mode & 8 ) != 0 ) ? gMapBookmarkFilterMask : 0u;
+}
+
+inline void SetMapFilterMask( const uint8_t mode, const uint32_t mask ) {
+    // FUN_007423b0
+    if ( ( mode & 1 ) != 0 ) {
+        gMapChallengeFilterMask = mask;
+    } else if ( ( mode & 2 ) != 0 ) {
+        gMapServiceFilterMask = mask;
+    } else if ( ( mode & 4 ) != 0 ) {
+        gMapPlayerFilterMask = mask;
+    } else if ( ( mode & 8 ) != 0 ) {
+        gMapBookmarkFilterMask = mask;
+    }
+}
+
+inline uint8_t GetEffectiveMapFilterMode() {
+    // FUN_007423e0
+    return ( ( gMapActiveFilterMode & 0x10 ) != 0 ) ? gMinimapFilterMode
+                                                    : gMapActiveFilterMode;
+}
 
 bool IsSpotAvailableInCurrentMode( const SpotMap *pSpot );
 bool IsSpotHidden( uint64_t spotHashcode );
 uint32_t GetCarGroupIconFlag( const DBEntryCarPhysicsData *pCar );
 void GetSpotIconInfo( const SpotMap *pSpot, SpotIconInfo &outInfo );
 bool IsSpotIconVisible( const SpotIconInfo &info, bool bMinimap );
+void SetSpotLockedTextFromReward( FlashPlayer *pPlayer,
+                                  uint64_t rewardHashcode );
+bool IsSpotRewardLocked( uint64_t rewardHashcode );
 void GetChallengeCarAvailability( const SpotMap *pSpot,
                                   bool *pOutLevelTooLow,
                                   bool *pOutHasEligibleCar );

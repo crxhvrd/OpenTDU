@@ -16,6 +16,14 @@ public:
     using UpdateConfigCallback = void ( * )( WeatherConfig * );
     using UpdateHDRConfigCallback = void ( * )( HDRIConfig * );
 
+    inline void setUpdateConfigCallback( UpdateConfigCallback pCallback ) {
+        pUpdateConfigCallback = pCallback;
+    }
+    inline void
+    setUpdateHDRConfigCallback( UpdateHDRConfigCallback pCallback ) {
+        pUpdateHDRConfigCallback = pCallback;
+    }
+
 public:
     const char *getName() const override { return "GSWeather"; }
     inline bool isConfigDirty() const { return bDirtyConfig; }

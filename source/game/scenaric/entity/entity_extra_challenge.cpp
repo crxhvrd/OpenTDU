@@ -13,6 +13,9 @@
 #include "game/vehicle/car_state.h"
 #include "game/avatar/gs_avatar.h"
 #include "database/gs_database.h"
+#include "flash/mng_flash_localize.h"
+#include "flash/implementation/flash_player.h"
+#include "game/vehicle/car_desc.h"
 #include "filesystem/binary.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/gs_playerdata.h"
@@ -103,6 +106,171 @@ void EntityExtraChallenge::tick( PlayerGameMech *pGameMech,
     if ( bInZone ) {
         pGameMech->onMessage( this, PlayerGameMech::ME_SpotLeft, this );
         bInZone = false;
+    }
+}
+
+Eigen::Vector4f EntityExtraChallenge::getGoalPosition() const {
+    // FUN_00427b50
+    return Eigen::Vector4f( pGoalMatrix->PositionX, pGoalMatrix->PositionY,
+                            pGoalMatrix->PositionZ, 1.0f );
+}
+
+void EntityExtraChallenge::buildVehicleRestrictionText(
+    const uint32_t conditionType,
+    const ChallengeCondition &condition,
+    char *pOutText,
+    const size_t maxLength,
+    const bool bShowGroup ) const {
+    // FUN_007dc9c0
+    static constexpr uint64_t kNoRestrictionHashcode = 0x580fef;
+    static constexpr uint64_t kConvoyRestrictionHashcode = 0x38ff432;
+    static constexpr uint64_t kGroupRestrictionHashcode = 0x3b44512;
+
+    pOutText[0] = '\0';
+    switch ( conditionType ) {
+    case 0: {
+        const uint64_t hashcode = ( getType() == eEntityType::ET_CVOY )
+                                      ? kConvoyRestrictionHashcode
+                                      : kNoRestrictionHashcode;
+        const char *pText = gpDatabase->getStringByHashcode( 0, hashcode );
+        if ( pText != nullptr ) {
+            strncpy( pOutText, pText, maxLength );
+        } else {
+            strncpy( pOutText, "TEXT NOT FOUND IN BDD OR INVALID!!!",
+                     maxLength );
+        }
+    } break;
+    case 1: {
+        if ( !bShowGroup ) {
+            break;
+        }
+        char groupLetter[4];
+        snprintf( groupLetter, sizeof( groupLetter ), "%c",
+                  'A' + condition.Value );
+        gpMngFlashLocalize->setSysVar( "GROUP", groupLetter );
+        gpMngFlashLocalize->makeSentenceFromHashcode(
+            pOutText, maxLength, kGroupRestrictionHashcode );
+        gpMngFlashLocalize->clearAllSysVar();
+    } break;
+    case 2: {
+        const GameDatabase &gameDB = gpDatabase->getGameDB();
+        for ( uint32_t i = 0; i < gameDB.pNumItems[6]; i++ ) {
+            const DBEntryBrand &brand = gameDB.DBBrand[i];
+            if ( strcmp( condition.pValue, brand.BrandID.pAsString ) != 0 ) {
+                continue;
+            }
+            if ( brand.BrandNameID.Hashcode != 0 ) {
+                strncpy( pOutText, brand.BrandNameID.pAsString, maxLength );
+            } else {
+                strncpy( pOutText, "No brank mark, BUG!!!!", maxLength );
+            }
+            break;
+        }
+    } break;
+    case 3: {
+        DBEntryCarPhysicsData *pCar =
+            gpDatabase->getCarDBEntry( condition.Value );
+        if ( pCar != nullptr ) {
+            strncpy( pOutText, GetFullCarName( pCar ).c_str(), maxLength );
+        }
+    } break;
+    default:
+        break;
+    }
+    pOutText[maxLength - 1] = '\0';
+}
+
+void EntityExtraChallenge::SetGroupRestrictionVars(
+    FlashPlayer *pPlayer,
+    const uint32_t conditionType,
+    const ChallengeCondition &condition ) {
+    // FUN_007dd750
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    switch ( conditionType ) {
+    case 0:
+    case 2:
+    case 3:
+        pPlayer->setVariableValueNonLinked( "/:GroupRestriction01", "empty" );
+        pPlayer->setVariableValueNonLinked( "/:GroupRestriction02", "empty" );
+        break;
+    case 1: {
+        pPlayer->setVariableValueNonLinked( "/:GroupRestriction02", "empty" );
+        char groupLetter[4];
+        snprintf( groupLetter, sizeof( groupLetter ), "%c",
+                  'A' + condition.Value );
+        pPlayer->setVariableValueNonLinked( "/:GroupRestriction01",
+                                            groupLetter );
+    } break;
+    default:
+        break;
+    }
+}
+
+bool EntityExtraChallenge::isCarAllowed(
+    const uint32_t conditionType, const ChallengeCondition &condition ) const {
+    // FUN_007dcfe0
+    // DAT_00f941d8
+    static constexpr uint64_t kCarGroupHashcodes[] = {
+        0x467a0e8, 0x476e328, 0x4862568, 0x49567a8,
+        0x4a4a9e8, 0x4b3ec28, 0x4c32e68 };
+
+    const CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+    switch ( conditionType ) {
+    case 0: {
+        if ( getType() == eEntityType::ET_CVOY ) {
+            return true;
+        }
+        CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+        if ( pCarState == nullptr ) {
+            return true;
+        }
+        bool bRejected = gpDatabase->isBike(
+            gpDatabase->getCarDBEntry( pCarState->getCarID() ) );
+        if ( !bRejected && pCurrentCar != nullptr ) {
+            const DBEntryCarPhysicsData *pCar =
+                gpDatabase->getCarDBEntry( pCurrentCar->getCarConfigID() );
+            if ( pCar != nullptr ) {
+                const char *pNumSeats = pCar->NumSeats.pAsString;
+                if ( pNumSeats[0] == '1' || pNumSeats[0] == '3' ) {
+                    bRejected = true;
+                }
+            }
+        }
+        return !bRejected;
+    }
+    case 1: {
+        if ( pCurrentCar == nullptr ) {
+            return true;
+        }
+        const DBEntryCarPhysicsData *pCar =
+            gpDatabase->getCarDBEntry( pCurrentCar->getCarConfigID() );
+        if ( pCar == nullptr ) {
+            return true;
+        }
+        const uint64_t groupHashcode =
+            gpDatabase->getGameDB().Databases[1].getHashcodeForPointer(
+                pCar->CarGroup.pAsRawPointer );
+        for ( uint32_t i = 0; i < sizeof( kCarGroupHashcodes ) /
+                                      sizeof( kCarGroupHashcodes[0] );
+              i++ ) {
+            if ( groupHashcode == kCarGroupHashcodes[i] ) {
+                return i == condition.Value;
+            }
+        }
+        return false;
+    }
+    case 2:
+        return pCurrentCar != nullptr && pCurrentCar->getConfig() != nullptr &&
+               StringCmpI( pCurrentCar->getConfig()->Name.c_str(),
+                           condition.pValue ) == 0;
+    case 3:
+        return pCurrentCar != nullptr &&
+               pCurrentCar->getCarConfigID() == condition.Value;
+    default:
+        return true;
     }
 }
 

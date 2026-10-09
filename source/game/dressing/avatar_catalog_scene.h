@@ -6,6 +6,8 @@
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scene_interior.h"
 
+const char *GetBrandVariableName( const char *pBrandName );
+
 class AvatarClotheCursor;
 class AvatarPartDB;
 class CameraGame;

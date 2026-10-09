@@ -301,6 +301,7 @@ int32_t HeightmapPatchFrustumClass( const Heightmap *pHeightmap,
                                     Camera *pCamera,
                                     Frustum *pFrustum );
 
+extern bool gbHeightmapRefineUnderwaterTiles;
 extern bool gbDebugWireframeHmap;
 extern bool gbDebugHmapDisableFootprintCull;
 extern bool gbDebugHmapDisableStitchMask;

@@ -208,6 +208,10 @@ private:
 
 class EarthResources : public MngResources {
 public:
+    inline HiearchyNode *getIslandNode() const { return pIslandNode; }
+    inline HiearchyNode *getEarthNode() const { return pEarthNode; }
+
+public:
     EarthResources();
     ~EarthResources();
 
@@ -448,6 +452,7 @@ public:
     inline TerrainResources &getTerrainResources() { return terrain; }
     inline FontResources &getFontResources() { return font; }
     inline LogoResources &getLogoResources() { return logo; }
+    inline EarthResources &getEarthResources() { return earth; }
 
 public:
     GSMngResources();

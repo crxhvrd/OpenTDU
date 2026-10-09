@@ -24,7 +24,7 @@
 #include "scenaric/scenaric_bank.h"
 #include "world/mng_panel.h"
 
-class PhysVehicleSerialized;
+class PhysicsDrivingControl;
 class EntityCinematic;
 
 // Game Mode running with an active scene (not part of the world).
@@ -81,6 +81,8 @@ public:
 
     void onResourceStreamed() override;
     bool isStaticFrontEndScene() const;
+    void parkLocalPlayerCar();
+    void restoreLocalPlayerCarControl();
 
     bool onConfigurationChanged() override {
         // FUN_007bc910
@@ -136,7 +138,7 @@ protected:
     EntityCinematic *pCinematicIntroI;
     EntityCinematic *pCinematicLoop;
     SpotMap *pCurrentSpotWorld;
-    PhysVehicleSerialized *pSavedPhysicsControl;
+    PhysicsDrivingControl *pSavedPhysicsControl;
 
     uint8_t bWeatherSet : 1;
     uint8_t bWithWorld : 1;

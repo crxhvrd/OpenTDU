@@ -12,11 +12,14 @@ public:
 
     void loadResources( ScenaricBank *param_2 ) override;
     void deserialize( BinaryReader *param_2 ) override;
-    const char *getChallengeName() const override { return pGirlName; }
+    const char *getChallengeName() const override {
+        return pGirlName; /* FUN_00427b90 */
+    }
 
 public:
     inline uint32_t getConditionType() const { return ConditionType; }
     inline uint32_t getConditionValue() const { return Condition.Value; }
+    inline const ChallengeCondition &getCondition() const { return Condition; }
 
 protected:
     const char *pGirlName;

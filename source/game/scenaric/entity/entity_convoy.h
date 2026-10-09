@@ -11,6 +11,11 @@ public:
     ~EntityConvoy();
 
     void deserialize( BinaryReader *param_2 ) override;
+    const char *getChallengeName() const override {
+        return pMapName; /* FUN_00427b90 */
+    }
+
+    inline uint32_t getReward() const { return Reward; }
 
 protected:
     const char *pMapName;

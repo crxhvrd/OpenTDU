@@ -484,6 +484,9 @@ void GameModeWorld::installLocalPlayerCar( int32_t carID,
             pPlayerPhysicsVehicle = gpPhysics->createVehicle(
                 pFactory, spawn, *pDB, pTorqueBin, pPack );
             state.setPhysicsVehicle( pPlayerPhysicsVehicle );
+            if ( pPlayerPhysicsVehicle != nullptr ) {
+                pPlayerPhysicsVehicle->setDrivingControl( gpPhysics );
+            }
         }
     }
 

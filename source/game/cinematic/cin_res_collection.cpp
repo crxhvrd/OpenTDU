@@ -2530,6 +2530,7 @@ void *CinResCollection::spawnPlayerCar() {
         pPhysicsVehicle->setCinematicMode( true );
         pPhysicsVehicle->setIgnition( false, false );
         pPhysicsVehicle->resetToTransform( spawn, true );
+        pPhysicsVehicle->setDrivingControl( gpPhysics );
     }
 
     gpScenaric->getLocalPlayer().setCarState( &state );

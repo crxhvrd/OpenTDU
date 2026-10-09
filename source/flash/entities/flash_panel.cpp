@@ -174,12 +174,6 @@ static inline const char *GetUnit( const uint64_t hashcode ) {
     return gpDatabase->getStringByHashcode( 0, hashcode );
 }
 
-static inline bool IsCarEntryValid( const DBEntryCarPhysicsData *pEntry ) {
-    // FUN_009a8a60
-    return ( pEntry->BitField & 1 ) != 0 && pEntry->Brand != nullptr &&
-           ( pEntry->Brand->Flags & 1 ) != 0;
-}
-
 static inline bool HasWindows( const DBEntryCarPhysicsData *pEntry ) {
     // FUN_0042ce80
     return gpDatabase->getGameDB().Databases[1].getHashcodeForPointer(

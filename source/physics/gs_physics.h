@@ -10,6 +10,7 @@
 #include "road_phantom_manager.h"
 
 #include "world/gs_world_streaming.h"
+#include "vehicle/physics_vehicle.h"
 
 #include <utility>
 #include <vector>
@@ -39,13 +40,13 @@ using CharacterController_t = PhysicsCharacter *;
 
 namespace TDUSurface {
     enum Class : uint32_t {
-        None = 0, // nothing under the wheel
+        None = 0,       // nothing under the wheel
         RoadGround = 1, // SR20 .rd
-        Paved = 2,    // .shk world MESH (FUN_00844f00) + AddInfinitePlane
-        RoadMesh = 3, // -R.shk road MESH (FUN_00845380)
-        Terrain = 4,  // heightfield — never tagged; the only off-road surface
-        Generic = 7,  // .shk/-R.shk NON-mesh (posts, boxes) + placed props
-        Vehicle = 9,  // car chassis (FUN_0082fc80)
+        Paved = 2,      // .shk world MESH (FUN_00844f00) + AddInfinitePlane
+        RoadMesh = 3,   // -R.shk road MESH (FUN_00845380)
+        Terrain = 4,    // heightfield — never tagged; the only off-road surface
+        Generic = 7,    // .shk/-R.shk NON-mesh (posts, boxes) + placed props
+        Vehicle = 9,    // car chassis (FUN_0082fc80)
     };
 
     // Mask applied to a body's Jolt UserData to recover the phys-type byte.
@@ -107,12 +108,14 @@ enum ePhysicsThreadMode : int32_t {
 };
 extern ePhysicsThreadMode gPhysicsThreadPriority;
 extern int32_t gPhysicsThreadFrequency;
+extern float gPhysicsRefreshRate;
 
 static constexpr float kNoSurfaceSentinel = -100000.0f; // DAT_00f418fc
 
 class GSPhysics : public GameSystem,
                   public Bank,
-                  public PhysicsStreamingCallback {
+                  public PhysicsStreamingCallback,
+                  public PhysicsDrivingControl {
 public:
     const char *getName() const override { return "Service : Physics"; }
 
@@ -168,6 +171,8 @@ public:
                                 int32_t numTileX = 0,
                                 int32_t numTileZ = 0 );
     void removeHeightfield( const void *pKey );
+    void refreshHeightmapCollision();
+    void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) override;
 
     void addSectorCollision( const void *pKey,
                              void *pBlob,
@@ -278,6 +283,9 @@ public:
                                   float radius,
                                   std::vector<CameraPhantomOverlap> &overlaps );
     float getGroundHeight( float x, float z );
+    float castWorldRay( const Eigen::Vector4f &origin,
+                        const Eigen::Vector4f &direction,
+                        float length );
     int32_t castCameraSegment( const Eigen::Vector4f &from,
                                const Eigen::Vector4f &to,
                                std::vector<CameraSegmentHit> &hits );

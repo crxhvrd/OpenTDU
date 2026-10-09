@@ -35,12 +35,23 @@ bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
                              int32_t *pNumTileX = nullptr,
                              int32_t *pNumTileZ = nullptr );
 
+int32_t GetLevelHeightmapTrianglesInBBox( const Eigen::Vector4f &bboxMin,
+                                          const Eigen::Vector4f &bboxMax,
+                                          Eigen::Vector4f *pOutVertices,
+                                          int32_t maxVertices,
+                                          bool bSkipFlatTiles );
+
 class StreamingManager {
 public:
     void setActiveRenderLayers( uint8_t value ) { activeRenderLayers = value; }
     void setForceStreamUpdate( bool value ) { bForceStreamUpdate = value; }
 
     Level &getLevel() { return level; }
+
+    // Heightmap LOD layers: 1 = sectors, 2 = areas, 4 = level.
+    void resetHeightmapLODCoefs( uint32_t layerMask );
+    void setUnderwaterTilesRefined( bool bRefined );
+    void scaleHeightmapLODCoefs( uint32_t layerMask, float scale );
 
     void *getPanelSymbolStream() const { return level.getPanelSymbolStream(); }
     void *getPanelLayoutStream() const { return level.getPanelLayoutStream(); }
@@ -132,8 +143,6 @@ private:
     Eigen::Vector4f debugJumpPos = Eigen::Vector4f::Zero();
 
     Level level;
-
-    HiearchyNode *pStreamingRenderLayer = nullptr;
 
 private:
     void centerUpdate( Eigen::Vector4f *pStreamPosition );

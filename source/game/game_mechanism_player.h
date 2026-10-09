@@ -101,4 +101,6 @@ void GetExtraChallengeDisplayIndices( const Entity *pEntity,
                                       int32_t *pOutTypeIndex,
                                       int32_t *pOutNameIndex );
 int32_t GetSpotChallengeKind( const SpotMap *pSpot );
+const char *GetSpotDisplayTypeName( int32_t index );
+const char *GetSpotDisplayName( int32_t index );
 int32_t GetSpotGameModeID( const SpotMap *pSpot );

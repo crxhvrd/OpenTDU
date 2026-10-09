@@ -423,6 +423,165 @@ bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
     return true;
 }
 
+static constexpr uint8_t kHeightmapTileFlat = 0xfe;
+static constexpr int32_t kHeightmapNumRealTileX = 18;
+
+struct HeightmapTriangleQuery {
+    const Heightmap *pHmap = nullptr;
+    const float *pHeights = nullptr;
+    const uint8_t *pLODValue = nullptr;
+    int32_t stride = 0;
+
+    bool isTileFlat( int32_t gridX, int32_t gridZ ) const {
+        if ( pLODValue == nullptr ) {
+            return false;
+        }
+        const int32_t tile =
+            ( gridZ / (int32_t)pHmap->NumTileZ + 1 ) * kHeightmapNumRealTileX +
+            gridX / (int32_t)pHmap->NumTileX + 1;
+        return pLODValue[tile] == kHeightmapTileFlat;
+    }
+
+    float sampleHeight( int32_t gridX, int32_t gridZ ) const {
+        // FUN_0050ee90
+        if ( isTileFlat( gridX, gridZ ) ) {
+            return -100000.0f; // DAT_00f418dc
+        }
+        return pHeights[gridZ * stride + gridX];
+    }
+};
+
+static int32_t GetHeightmapTrianglesInBBox( Instance *pHeightmapInstance,
+                                            Eigen::Vector4f *pOutVertices,
+                                            int32_t maxVertices,
+                                            const Eigen::Vector4f &bboxMin,
+                                            const Eigen::Vector4f &bboxMax,
+                                            bool bSkipFlatTiles ) {
+    // FUN_0050f7f0
+    const float *pHeights = nullptr;
+    int32_t stride = 0;
+    float quadSize = 0.0f;
+    if ( !GetHeightmapSampleGrid( pHeightmapInstance, &pHeights, &stride,
+                                  &quadSize ) ) {
+        return 0;
+    }
+
+    InstanceLOD &lod = pHeightmapInstance->getLOD( 0 );
+    HeightmapTriangleQuery query;
+    query.pHmap = (const Heightmap *)( (uint8_t *)lod.pHashcode->pEntry +
+                                       sizeof( RenderFile::Section ) );
+    query.pHeights = pHeights;
+    query.pLODValue = pHeightmapInstance->getHeightmapLODCache();
+    query.stride = stride;
+
+    const Matrix4x4f_t &model = pHeightmapInstance->getModelMatrix();
+    const float originX = model( 3, 0 );
+    const float originZ = model( 3, 2 );
+
+    // GetMinMaxIndixInBBox (FUN_0050f730) + FUN_0050fea0
+    const int32_t gridW =
+        (int32_t)query.pHmap->NumTileX * (int32_t)query.pHmap->NumTiles;
+    const int32_t gridH =
+        (int32_t)query.pHmap->NumTileZ * (int32_t)query.pHmap->NumTiles;
+    int32_t minX = (int32_t)( ( bboxMin.x() - originX ) / quadSize );
+    int32_t minZ = (int32_t)( ( bboxMin.z() - originZ ) / quadSize );
+    int32_t maxX = (int32_t)( ( bboxMax.x() - originX ) / quadSize );
+    int32_t maxZ = (int32_t)( ( bboxMax.z() - originZ ) / quadSize );
+    if ( ( minX < 0 && maxX < 0 ) || ( minX > gridW && maxX > gridW ) ) {
+        return 0;
+    }
+    if ( ( minZ < 0 && maxZ < 0 ) || ( minZ > gridH && maxZ > gridH ) ) {
+        return 0;
+    }
+    minX = std::max( minX, 0 );
+    minZ = std::max( minZ, 0 );
+    maxX = std::min( maxX, gridW - 1 );
+    maxZ = std::min( maxZ, gridH - 1 );
+
+    int32_t numVertices = 0;
+    for ( int32_t gridZ = minZ; gridZ <= maxZ; gridZ++ ) {
+        for ( int32_t gridX = minX; gridX <= maxX; gridX++ ) {
+            if ( bSkipFlatTiles && query.isTileFlat( gridX, gridZ ) ) {
+                continue;
+            }
+
+            const float x0 = (float)gridX * quadSize + originX;
+            const float x1 = (float)( gridX + 1 ) * quadSize + originX;
+            const float z0 = (float)gridZ * quadSize + originZ;
+            const float z1 = (float)( gridZ + 1 ) * quadSize + originZ;
+            const Eigen::Vector4f a( x0, query.sampleHeight( gridX, gridZ ), z0,
+                                     1.0f );
+            const Eigen::Vector4f b( x0, query.sampleHeight( gridX, gridZ + 1 ),
+                                     z1, 1.0f );
+            const Eigen::Vector4f c( x1, query.sampleHeight( gridX + 1, gridZ ),
+                                     z0, 1.0f );
+            const Eigen::Vector4f d(
+                x1, query.sampleHeight( gridX + 1, gridZ + 1 ), z1, 1.0f );
+
+            const int32_t modZ = gridZ % 16;
+            const int32_t modX = gridX % 16;
+            const bool bTileBorder =
+                modZ == 0 || modZ == 0xf || modX == 0 || modX == 0xf;
+            const bool bFlipDiagonal =
+                bTileBorder && ( ( modZ + modX ) % 2 ) != 0;
+
+            const Eigen::Vector4f *quad[6];
+            if ( bFlipDiagonal ) {
+                quad[0] = &b;
+                quad[1] = &d;
+                quad[2] = &a;
+                quad[3] = &a;
+                quad[4] = &d;
+                quad[5] = &c;
+            } else {
+                quad[0] = &a;
+                quad[1] = &b;
+                quad[2] = &c;
+                quad[3] = &c;
+                quad[4] = &b;
+                quad[5] = &d;
+            }
+
+            for ( int32_t i = 0; i < 6; i++ ) {
+                pOutVertices[numVertices + i] = *quad[i];
+                if ( maxVertices <= numVertices + i + 1 ) {
+                    return numVertices;
+                }
+            }
+            numVertices += 6;
+        }
+    }
+    return numVertices;
+}
+
+int32_t GetLevelHeightmapTrianglesInBBox( const Eigen::Vector4f &bboxMin,
+                                          const Eigen::Vector4f &bboxMax,
+                                          Eigen::Vector4f *pOutVertices,
+                                          int32_t maxVertices,
+                                          bool bSkipFlatTiles ) {
+    // FUN_00702210
+    if ( gpWorld == nullptr || gpWorld->getStreamingManager() == nullptr ) {
+        return 0;
+    }
+
+    Eigen::Vector4f shift = Eigen::Vector4f::Zero();
+    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+        shift = gpWorldStreaming->getPosition();
+    }
+
+    Instance *pInstance = gpWorld->getStreamingManager()
+                              ->getLevel()
+                              .getHeightmapGeometry()
+                              .pHeightmapInstance;
+    const int32_t numVertices = GetHeightmapTrianglesInBBox(
+        pInstance, pOutVertices, maxVertices, bboxMin - shift, bboxMax - shift,
+        bSkipFlatTiles );
+    for ( int32_t i = 0; i < maxVertices; i++ ) {
+        pOutVertices[i] += shift;
+    }
+    return numVertices;
+}
+
 struct SectorShiftRow {
     eCardinalDirection trailing[3];
     eCardinalDirection leading[3];
@@ -905,6 +1064,10 @@ void StreamingManager::submitSector( Sector &sector ) {
     submitDynamicProps( sector, pScene );
 
     sector.geometry.mngActor.draw();
+
+    if ( sector.geometry.pHeightmapInstance != nullptr ) {
+        pScene->enqueueDynamicInstance( sector.geometry.pHeightmapInstance );
+    }
 }
 
 static void BuildHeightmapCoarseVisibility( const uint8_t *pLODGrid,
@@ -971,8 +1134,6 @@ void StreamingManager::submitSectorHeightmap( Sector &sector ) {
                                     sector.geometry.heightmapCoarseVis.data() );
     sector.geometry.bHeightmapVisible =
         sector.geometry.heightmapCoarseVis[kHeightmapNumCoarseCell - 1] != 0;
-
-    pScene->enqueueDynamicInstance( sector.geometry.pHeightmapInstance );
 }
 
 static bool ImpostorCellVisible( const SectorGeometry &geometry,
@@ -996,6 +1157,10 @@ void StreamingManager::submitArea( Area &area, uint32_t &numSubInstances ) {
         gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
     if ( pScene == nullptr ) {
         return;
+    }
+
+    if ( area.geometry.pHeightmapInstance != nullptr ) {
+        pScene->enqueueDynamicInstance( area.geometry.pHeightmapInstance );
     }
 
     const Eigen::Vector4f streamOrigin = gpWorldStreaming->isEnabled()
@@ -1030,6 +1195,8 @@ void StreamingManager::submitAreaHeightmap( Area &area ) {
     if ( area.geometry.pHeightmapInstance == nullptr ) {
         return;
     }
+    RefreshTerrainMaterialAlphaTest(
+        area.geometry.render2DM.getMaterialAtIndex( 0 ) );
 
     RenderScene *pScene =
         gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
@@ -1042,7 +1209,6 @@ void StreamingManager::submitAreaHeightmap( Area &area ) {
                                              : Eigen::Vector4f::Zero();
     area.geometry.rebaseHeightmapInstance( streamOrigin );
     UpdateHeightmapLODCache( area.geometry.pHeightmapInstance, pScene );
-    pScene->enqueueDynamicInstance( area.geometry.pHeightmapInstance );
 }
 
 void StreamingManager::submitAreaHeightmaps() {
@@ -1060,6 +1226,8 @@ void StreamingManager::submitLevelHeightmap() {
     if ( geometry.pHeightmapInstance == nullptr ) {
         return;
     }
+    RefreshTerrainMaterialAlphaTest(
+        geometry.render2DM.getMaterialAtIndex( 0 ) );
 
     RenderScene *pScene =
         gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
@@ -1072,7 +1240,6 @@ void StreamingManager::submitLevelHeightmap() {
                                              : Eigen::Vector4f::Zero();
     geometry.rebaseHeightmapInstance( streamOrigin );
     UpdateHeightmapLODCache( geometry.pHeightmapInstance, pScene );
-    pScene->enqueueDynamicInstance( geometry.pHeightmapInstance );
 }
 
 template <typename GeometryT>
@@ -1118,7 +1285,8 @@ void StreamingManager::resetHeightmapTileMasks() {
 
 void StreamingManager::updateHeightmapExclusionMasks() {
     // FUN_009b9140
-    if ( areaGrid.pCurrentArea != nullptr && areaGrid.bActiveAreasSet ) {
+    // FUN_00708360
+    if ( areaGrid.pCurrentArea != nullptr && sectorManager.bNeedStreamUpdate ) {
         const int32_t tilesPerSectorX =
             kHeightmapNumTile / (int32_t)sectorManager.numSectors;
         const int32_t tilesPerSectorZ =
@@ -1181,7 +1349,8 @@ void StreamingManager::updateHeightmapExclusionMasks() {
     }
 
     AreaGeometry &levelGeometry = level.getHeightmapGeometry();
-    if ( levelGeometry.pHeightmapInstance != nullptr ) {
+    if ( levelGeometry.pHeightmapInstance != nullptr &&
+         areaGrid.bNeedStreamUpdate ) {
         for ( int32_t row = 0; row < kHeightmapNumTile; row++ ) {
             for ( int32_t col = 0; col < kHeightmapNumTile; col++ ) {
                 if ( col >= (int32_t)areaGrid.numAreas ||
@@ -2777,12 +2946,13 @@ void StreamingManager::render() {
     }
 
     if ( activeRenderLayers != 0 ) {
-        if ( pStreamingRenderLayer != nullptr ) {
-            RenderScene *pScene =
-                gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
-            if ( pScene != nullptr ) {
-                pScene->enqueueDynamicHiearchy( pStreamingRenderLayer );
-            }
+        // FUN_007099c0
+        Instance *pLevelInstance =
+            level.getHeightmapGeometry().pHeightmapInstance;
+        RenderScene *pScene =
+            gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
+        if ( pLevelInstance != nullptr && pScene != nullptr ) {
+            pScene->enqueueDynamicInstance( pLevelInstance );
         }
     }
 }
@@ -3099,4 +3269,80 @@ void StreamingManager::computeCellWorldPosition(
         worldX += kCellSize / 2; // 0x180
     }
     outPosition.x() = (float)worldX;
+}
+
+template <typename TGeometry>
+static void SetHeightmapLODCoef( TGeometry &geometry, const float coef ) {
+    if ( geometry.pHeightmapInstance == nullptr ) {
+        return;
+    }
+
+    geometry.pHeightmapInstance->setHeightmapLODCoef( coef );
+    for ( Instance *pEnvInstance : geometry.heightmapEnvInstances ) {
+        if ( pEnvInstance != nullptr ) {
+            pEnvInstance->setHeightmapLODCoef( coef );
+        }
+    }
+}
+
+template <typename TGeometry>
+static void ScaleHeightmapLODCoef( TGeometry &geometry, const float scale ) {
+    if ( geometry.pHeightmapInstance == nullptr ) {
+        return;
+    }
+
+    SetHeightmapLODCoef(
+        geometry, geometry.pHeightmapInstance->getHeightmapLODCoef() * scale );
+}
+
+void StreamingManager::setUnderwaterTilesRefined( const bool bRefined ) {
+    // FUN_009b8ce0
+    gbHeightmapRefineUnderwaterTiles = bRefined;
+}
+
+void StreamingManager::resetHeightmapLODCoefs( const uint32_t layerMask ) {
+    // FUN_009b8c30
+    if ( ( layerMask & 1 ) != 0 ) {
+        for ( Sector &sector : sectorManager.sectors ) {
+            if ( sector.state == 1 ) {
+                SetHeightmapLODCoef( sector.geometry, 6.0e-6f );
+            }
+        }
+    }
+
+    if ( ( layerMask & 2 ) != 0 ) {
+        for ( Area &area : areaGrid.areas ) {
+            if ( area.state == 1 ) {
+                SetHeightmapLODCoef( area.geometry, 6.0e-6f );
+            }
+        }
+    }
+
+    if ( ( layerMask & 4 ) != 0 ) {
+        SetHeightmapLODCoef( level.getHeightmapGeometry(), 1.0e-6f );
+    }
+}
+
+void StreamingManager::scaleHeightmapLODCoefs( const uint32_t layerMask,
+                                               const float scale ) {
+    // FUN_009b8b50
+    if ( ( layerMask & 1 ) != 0 ) {
+        for ( Sector &sector : sectorManager.sectors ) {
+            if ( sector.state == 1 ) {
+                ScaleHeightmapLODCoef( sector.geometry, scale );
+            }
+        }
+    }
+
+    if ( ( layerMask & 2 ) != 0 ) {
+        for ( Area &area : areaGrid.areas ) {
+            if ( area.state == 1 ) {
+                ScaleHeightmapLODCoef( area.geometry, scale );
+            }
+        }
+    }
+
+    if ( ( layerMask & 4 ) != 0 ) {
+        ScaleHeightmapLODCoef( level.getHeightmapGeometry(), scale );
+    }
 }

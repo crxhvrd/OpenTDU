@@ -30,3 +30,9 @@ bool MngFlashGM::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     }
     return MngFlash::onMessage( pMessage, pPlayer );
 }
+
+void MngFlashGM::requestGPSTransition() {
+    // FUN_007bbf40
+    bTransitionToGPS = true;
+    gpCamera->setCameraMode( 3, 1, 2.0f );
+}

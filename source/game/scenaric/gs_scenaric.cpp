@@ -97,6 +97,7 @@ GSScenaric::GSScenaric()
       demoTimeEnd( 0u ),
       traceSize( 300 ),
       currentDefVersion( 0 ),
+      bWasMapExited( false ),
       currentSpotIndex( -1 ),
       bIsFromDriveIn( false ),
       numExtraChallenges( 0 ),

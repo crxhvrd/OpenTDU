@@ -2669,6 +2669,51 @@ void FlashClip::setProperty( eFlashProperty param_3, bool param_2 ) {
     gpPreviousActiveFlashResource = pFVar1;
 }
 
+float FlashSprite::getPropertyFloat( const eFlashProperty property ) {
+    // FUN_00449460
+    const float *pScalars = instanceTransform.ScalarsFloat;
+    switch ( property ) {
+    case eFlashProperty::FP_X:
+        return pScalars[4] * 0.05f;
+    case eFlashProperty::FP_Y:
+        return pScalars[5] * 0.05f;
+    case eFlashProperty::FP_ScaleX:
+        return sqrtf( pScalars[2] * pScalars[2] + pScalars[0] * pScalars[0] ) *
+               100.0f;
+    case eFlashProperty::FP_ScaleY:
+        return sqrtf( pScalars[3] * pScalars[3] + pScalars[1] * pScalars[1] ) *
+               100.0f;
+    case eFlashProperty::FP_Alpha:
+        return float( int32_t( instanceTransform.Transform.MulTerm[3] ) *
+                      100 ) *
+               ( 1.0f / 256.0f );
+    case eFlashProperty::FP_ScreenX:
+    case eFlashProperty::FP_ScreenY: {
+        float x = 0.0f;
+        float y = 0.0f;
+        for ( FlashRenderResource *pNode = this; pNode->pChild != nullptr;
+              pNode = pNode->pChild ) {
+            const float *pNodeScalars = pNode->instanceTransform.ScalarsFloat;
+            const float nodeX =
+                pNodeScalars[0] * x + pNodeScalars[3] * y + pNodeScalars[4];
+            y = pNodeScalars[1] * y + pNodeScalars[2] * x + pNodeScalars[5];
+            x = nodeX;
+        }
+
+        const FlashRenderer::State *pState = gpActiveFlashResource->getState();
+        if ( property == eFlashProperty::FP_ScreenX ) {
+            return x * gpActiveFlashResource->getScreenRatio().x() +
+                   pState->Viewport.X;
+        }
+        return y * gpActiveFlashResource->getScreenRatio().y() +
+               pState->Viewport.Y;
+    }
+    default:
+        OTDU_UNIMPLEMENTED;
+        return 0.0f;
+    }
+}
+
 void FlashClip::setProperty( eFlashProperty param_3, float param_2 ) {
     // FUN_00441410
     ScopedMutexLock lock = gpFlash->scopedLock();
@@ -2706,6 +2751,18 @@ bool FlashClip::getProperty( eFlashProperty param_2 ) {
 
     gpPreviousActiveFlashResource = pFVar1;
     return bResult;
+}
+
+float FlashClip::getPropertyFloat( const eFlashProperty property ) {
+    // FUN_00441330
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    FlashResource *pFVar1 = gpActiveFlashResource;
+    gpActiveFlashResource = pParent;
+    gpPreviousActiveFlashResource = gpActiveFlashResource;
+    const float value = pSprite->getPropertyFloat( property );
+    gpPreviousActiveFlashResource = pFVar1;
+    gpActiveFlashResource = pFVar1;
+    return value;
 }
 
 int32_t FlashClip::getFrameProperty( const eFlashProperty property ) {

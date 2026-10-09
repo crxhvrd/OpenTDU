@@ -44,6 +44,13 @@ public:
                                            uint64_t spotHashcode,
                                            float cycleTimer );
 
+    static Material *GetIconAtlasMaterial( int32_t atlas );
+    static Material *GetIconAtlasUVs( int32_t atlas,
+                                      int32_t iconIndex,
+                                      float &u0,
+                                      float &u1,
+                                      float &v0,
+                                      float &v1 );
     static Material *GetSpotIconUVs( const MinimapSpotIcon *pIcon,
                                      int32_t iconSize,
                                      float &u0,

@@ -44,7 +44,7 @@ bool AvatarCatalogScene::IsPlaceholderMesh( const char *pMeshName ) {
     return false;
 }
 
-static const char *GetBrandVariableName( const char *pBrandName ) {
+const char *GetBrandVariableName( const char *pBrandName ) {
     // FUN_008f3240
     static constexpr const char *kBrands[][2] = {
         {"ECKO",       "Brand00"},

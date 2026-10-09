@@ -15,11 +15,21 @@
 #include "world/mng_sector_name.h"
 #include "flash/mng_flash.h"
 #include "game/freeride/mng_photo_mode.h"
+#include "render/camera/gs_camera.h"
+#include "physics/vehicle/physics_vehicle.h"
+#include "game/vehicle/car_state.h"
+#include "game/scenaric/local_player.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "render/camera/camera_base.h"
 #include "filesystem/gs_file.h"
 
 MngBookmark *gpMngBookmark = nullptr;          // DAT_010e7f60
 int32_t gAutosaveBookmarkLength = 0xffffffff;  // DAT_00f998f8
 static bool gBookmarkSaveQueryPending = false; // DAT_010e7f64
+
+static constexpr const char *kBookmarkContext = "bookmark";
+static constexpr int32_t kBookmarkPhotoCameraMode = 6;
+static constexpr const wchar_t *kBookmarkContextDisplay = L"Bookmarks";
 
 MngBookmark::MngBookmark()
     : Manager(),
@@ -195,7 +205,7 @@ bool MngBookmark::onMessage( FlashMessage *pMessage ) {
 void MngBookmark::openBookmarkScreen() {
     // FUN_0070cad0
     pNewBookmark = nullptr;
-    loadBookmarkPositions();
+    LoadBookmarkPositions( numBookmarks, arrayBookmarks );
     state = 1;
 
     if ( pMngFlash != nullptr ) {
@@ -251,7 +261,8 @@ void MngBookmark::saveNewBookmark() {
     numBookmarks++;
     pNewBookmark = nullptr;
 
-    OTDU_UNIMPLEMENTED; // TODO: FILE (FUN_0070b1f0 + FUN_0070b110)
+    SaveBookmarkPos( numBookmarks, arrayBookmarks );
+    saveBookmarkPicture( numBookmarks - 1 );
 
     pPlayer->setVariableValueNonLinked(
         "/:IsFull", ( numBookmarks < kMaxNumBookmarks ) ? "0" : "1" );
@@ -260,13 +271,56 @@ void MngBookmark::saveNewBookmark() {
 
 void MngBookmark::createBookmarkAtPlayer() {
     // FUN_0070c280
-    OTDU_UNIMPLEMENTED; // TODO: AI (road map lookup) / SCENARIC (local player)
+    if ( numBookmarks > kMaxNumBookmarks - 1 ) {
+        numBookmarks = kMaxNumBookmarks - 1;
+    }
+    pNewBookmark = &arrayBookmarks[numBookmarks];
+
+    Matrix4x4f_t frame = Matrix4x4f_t::Identity();
+    CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+    PhysicsVehicle *pPhysicsVehicle =
+        ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+    if ( pPhysicsVehicle != nullptr ) {
+        frame = pPhysicsVehicle->getChassisWorldMatrix();
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+
+    pNewBookmark->Position = frame.block<1, 3>( 3, 0 ).transpose();
+    pNewBookmark->Orientation = frame.block<1, 3>( 2, 0 ).transpose();
+
+    int32_t pictureID = 0;
+    for ( int32_t i = 0; i < numBookmarks; i++ ) {
+        if ( pictureID <= arrayBookmarks[i].PictureID ) {
+            pictureID = arrayBookmarks[i].PictureID + 1;
+        }
+    }
+    pNewBookmark->PictureID = pictureID;
+
+    if ( gpMngSectorName != nullptr && pPlayer != nullptr ) {
+        const Eigen::Vector4f position( pNewBookmark->Position.x(),
+                                        pNewBookmark->Position.y(),
+                                        pNewBookmark->Position.z(), 1.0f );
+        const char *pSectorName = gpMngSectorName->getSectorName( position );
+        if ( pSectorName == nullptr ) {
+            pSectorName = " ";
+        }
+        strncpy( currentName, pSectorName, 0x3f );
+        for ( char *pChar = currentName; *pChar != '\0'; pChar++ ) {
+            if ( *pChar == '\'' ) {
+                *pChar = ' ';
+            }
+        }
+        pPlayer->setVariableValueWritableLinked( "/:TxtInput", currentName );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
 }
 
-bool MngBookmark::loadBookmarkPositions() {
+bool MngBookmark::LoadBookmarkPositions(
+    int32_t &outNumBookmarks, Bookmark ( &outBookmarks )[kMaxNumBookmarks] ) {
     // FUN_0070c5f0
-    numBookmarks = 0;
-    memset( arrayBookmarks, 0, sizeof( arrayBookmarks ) );
+    outNumBookmarks = 0;
+    memset( outBookmarks, 0, sizeof( outBookmarks ) );
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: FILE (savegame context probe)
 
@@ -297,22 +351,22 @@ bool MngBookmark::loadBookmarkPositions() {
         version = 10;
     }
 
-    numBookmarks = 0;
+    outNumBookmarks = 0;
     pLine = strtok( nullptr, "\n\r" );
     if ( pLine == nullptr ) {
         return true;
     }
 
-    while ( numBookmarks != kMaxNumBookmarks ) {
-        Bookmark &bookmark = arrayBookmarks[numBookmarks];
+    while ( outNumBookmarks != kMaxNumBookmarks ) {
+        Bookmark &bookmark = outBookmarks[outNumBookmarks];
         memset( (void *)&bookmark, 0, sizeof( Bookmark ) );
 
         const char *pNameStart = strchr( pLine, '"' );
         const char *pNameEnd = strrchr( pLine, '"' );
         if ( pNameStart == nullptr || pNameEnd == nullptr ||
              pNameStart == pNameEnd ) {
-            numBookmarks = 0;
-            memset( arrayBookmarks, 0, sizeof( arrayBookmarks ) );
+            outNumBookmarks = 0;
+            memset( outBookmarks, 0, sizeof( outBookmarks ) );
             return false;
         }
 
@@ -330,8 +384,8 @@ bool MngBookmark::loadBookmarkPositions() {
                 &bookmark.Position.z(), &bookmark.Orientation.x(),
                 &bookmark.Orientation.y(), &bookmark.Orientation.z() );
             if ( numRead != 7 ) {
-                numBookmarks = 0;
-                memset( arrayBookmarks, 0, sizeof( arrayBookmarks ) );
+                outNumBookmarks = 0;
+                memset( outBookmarks, 0, sizeof( outBookmarks ) );
                 return false;
             }
             OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (legacy BO10)
@@ -343,19 +397,59 @@ bool MngBookmark::loadBookmarkPositions() {
                         &bookmark.Orientation.x(), &bookmark.Orientation.y(),
                         &bookmark.Orientation.z(), &bookmark.DynaMapID );
             if ( numRead != 8 ) {
-                numBookmarks = 0;
-                memset( arrayBookmarks, 0, sizeof( arrayBookmarks ) );
+                outNumBookmarks = 0;
+                memset( outBookmarks, 0, sizeof( outBookmarks ) );
                 return false;
             }
         }
 
-        numBookmarks++;
+        outNumBookmarks++;
         pLine = strtok( nullptr, "\n\r" );
         if ( pLine == nullptr ) {
             return true;
         }
     }
     return true;
+}
+
+bool MngBookmark::SaveBookmarkPos( const int32_t numBookmarks,
+                                   const Bookmark *pBookmarks ) {
+    // FUN_0070b1f0
+    const size_t contentCapacity = size_t( numBookmarks ) * 0x83 + 0x1a;
+    char *pContent =
+        static_cast<char *>( TestDrive::AllocAligned( contentCapacity ) );
+    if ( pContent == nullptr ) {
+        return false;
+    }
+
+    char *pCursor =
+        pContent + sprintf( pContent, "bookmarks version %s\r\n\r\n", "BO11" );
+    for ( int32_t i = 0; i < numBookmarks; i++ ) {
+        const Bookmark &bookmark = pBookmarks[i];
+        pCursor += sprintf(
+            pCursor, "\"%s\" %3d %.2f %.2f %.2f %.3f %.3f %.3f %10d\r\n",
+            bookmark.pName, bookmark.PictureID, bookmark.Position.x(),
+            bookmark.Position.y(), bookmark.Position.z(),
+            bookmark.Orientation.x(), bookmark.Orientation.y(),
+            bookmark.Orientation.z(), bookmark.DynaMapID );
+    }
+    pCursor += sprintf( pCursor, "'" );
+
+    gpFile->pushSaveRequest( kBookmarkContext, "bookmark.txt",
+                             kBookmarkContextDisplay, pContent,
+                             uint32_t( pCursor - pContent ), true );
+    gpFile->setSaveQueueDelayed( true );
+    return true;
+}
+
+void MngBookmark::saveBookmarkPicture( const int32_t bookmarkIndex ) {
+    // FUN_0070b110
+    char fileName[512];
+    snprintf( fileName, sizeof( fileName ), "%d.jpg",
+              arrayBookmarks[bookmarkIndex].PictureID );
+    messageBoxState = 1;
+    gpMngPhotoMode->getScreenshots().save( fileName, kBookmarkContext,
+                                           kBookmarkContextDisplay, "" );
 }
 
 void MngBookmark::onDelete( const int32_t bookmarkIndex ) {
@@ -367,7 +461,7 @@ void MngBookmark::onDelete( const int32_t bookmarkIndex ) {
     char fileName[512];
     snprintf( fileName, sizeof( fileName ), "%d.jpg",
               arrayBookmarks[bookmarkIndex].PictureID );
-    OTDU_UNIMPLEMENTED; // TODO: FILE (delete file)
+    gpFile->deleteFile( kBookmarkContext, fileName, kBookmarkContextDisplay );
 
     int32_t slotToClear = bookmarkIndex + 1;
     for ( int32_t i = bookmarkIndex; slotToClear < numBookmarks;
@@ -387,8 +481,7 @@ void MngBookmark::onDelete( const int32_t bookmarkIndex ) {
     numBookmarks--;
     list.reset();
 
-    OTDU_UNIMPLEMENTED; // TODO: FILE (bookmark array serialization /
-                        // FUN_0070b1f0)
+    SaveBookmarkPos( numBookmarks, arrayBookmarks );
 
     pPlayer->setVariableValueNonLinked(
         "/:IsFull", ( numBookmarks < kMaxNumBookmarks ) ? "0" : "1" );
@@ -399,7 +492,7 @@ void MngBookmark::onDelete( const int32_t bookmarkIndex ) {
                                     false );
     }
 
-    gpFile->forceSaveQueueFlush();
+    gpFile->setSaveQueueDelayed( false );
 }
 
 void MngBookmark::OnGotoFadeCompleted( void *pData, void *pSource ) {
@@ -580,10 +673,26 @@ void MngBookmark::updateSaveQuery() {
 
 void MngBookmark::updateMessageBoxState() {
     // FUN_0070ce30
-    if ( messageBoxState == 0 ) {
-        return;
+    if ( messageBoxState == 1 ) {
+        if ( !gpFile->hasPendingFileToSave() ) {
+            gpFlashMessageBox->FUN_0099fbe0();
+            messageBoxState = 2;
+        }
+    } else if ( messageBoxState == 2 &&
+                gpFlashMessageBox->getNumOpenMsgBox() == 0 &&
+                !gpFlashMessageBox->getUnknownFlag() ) {
+        if ( pPlayer != nullptr ) {
+            pPlayer->showFrame( "close_photo", "/menus/frame_bm", true );
+            pPlayer->setVariableValue( "/menus/frame_bm/:bookmark_ok", 1 );
+        }
+
+        CameraGame *pPhotoCamera = gpCamera->findCameraWithMode(
+            kBookmarkPhotoCameraMode, gpCamera->getBoundCarState() );
+        if ( pPhotoCamera != nullptr ) {
+            pPhotoCamera->setfield_0x26c( true );
+        }
+        messageBoxState = 0;
     }
-    OTDU_UNIMPLEMENTED; // TODO: FLASH
 }
 
 Material *MngBookmark::loadBookmarkPicture( const char *pFileName ) {

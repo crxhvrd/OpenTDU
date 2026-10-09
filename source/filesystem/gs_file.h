@@ -35,25 +35,41 @@ struct AsyncFileOpen {
     AsyncFileOpen();
 };
 
-struct FileToSave {
-    std::string Filename;
-    void *pContent;
-    uint32_t ContentSize;
-    uint8_t bOwnContentBuffer : 1;
-
-    FileToSave()
-        : pContent( nullptr ), ContentSize( 0 ), bOwnContentBuffer( false ) {}
+enum eSaveQueueError : int32_t {
+    SQE_None = 0,
+    SQE_Success = 1,
+    SQE_NotEnoughSpace = 2,
+    SQE_CorruptedFile = 3,
+    SQE_NotEnoughSpaceAcknowledged = 4,
+    SQE_NoProfile = 5,
+    SQE_Blocked = 6,
+    SQE_WriteFailed = 7,
 };
 
 struct SaveQueue {
-    std::string ContextName;
-    std::wstring DisplayName;
-    std::queue<FileToSave> FilesToSave;
+    static constexpr int32_t kNumFiles = 10;
+
+    struct FileToSave {
+        char pFilename[32];
+        void *pContent;
+        uint32_t ContentSize;
+        bool bReleaseContent;
+    };
+
+    char pContextName[32];
+    wchar_t pDisplayName[32];
+    FileToSave pFilesToSave[kNumFiles];
+    eSaveQueueError LastError;
+    char pLastCorruptContext[128];
     TestDriveMutex *pMutex;
-    uint8_t bPauseFlush : 1;
+    bool bErrorDisplayed;
+    bool bDelay;
 
     SaveQueue();
     ~SaveQueue();
+
+    void clear();
+    uint32_t getNumPendingFiles() const;
 };
 
 struct WorkerThreadContext {
@@ -88,9 +104,11 @@ public:
     inline bool hasTaskPending() const { return bTaskInProgress; }
     inline bool isFilemapActive() const { return bFilemapActive; }
     inline bool hasPendingFileToSave() const {
-        return !saveQueue.FilesToSave.empty();
+        return saveQueue.getNumPendingFiles() != 0;
     }
-    inline void forceSaveQueueFlush() { saveQueue.bPauseFlush = false; }
+    inline void setSaveQueueDelayed( const bool bDelayed ) {
+        saveQueue.bDelay = bDelayed;
+    }
 
 public:
     GSFile();
@@ -148,11 +166,15 @@ public:
                           const void *pContent,
                           uint32_t contentSize );
 
-    bool saveFileInContext( const char *pContextName,
-                            const char *pFilename,
-                            const wchar_t *pDisplayName,
-                            const void *pContent,
-                            uint32_t contentSize );
+    bool deleteFile( const char *pContextName,
+                     const char *pFilename,
+                     const wchar_t *pDisplayName );
+    bool pushSaveRequest( const char *pContextName,
+                          const char *pFilename,
+                          const wchar_t *pDisplayName,
+                          void *pContent,
+                          uint32_t contentSize,
+                          bool bReleaseContent );
 
     bool loadFileFromContext( const char *pContextName,
                               const char *pFilename,
@@ -205,9 +227,19 @@ private:
     uint8_t bTaskInProgress : 1;
     uint8_t bIsCurrentContextReady : 1;
     uint8_t bDeletingInProgress : 1;
+    uint8_t bSaveDeviceError : 1;
 
 private:
     bool retrieveSaveFolder();
+    bool writeFileInContext( const char *pContextName,
+                             const char *pFilename,
+                             const void *pContent,
+                             uint32_t contentSize );
+    void tickSaveQueue();
+    void displaySaveQueuePrompt( bool bHasCancel,
+                                 uint64_t messageHashcode,
+                                 int32_t messageDatabaseIndex,
+                                 int32_t promptCode );
     bool findFileOutsideFilemap( const char *pFilename,
                                  uint32_t *pOutFilesize );
     bool resolveFileInFilemaps( const char *pFilename,

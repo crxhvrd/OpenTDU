@@ -30,6 +30,7 @@
 #include "player_data/achievements_data.h"
 #include "player_data/saved_garage.h"
 #include "player_data/saved_ranking.h"
+#include "flash/mng_flash_localize.h"
 
 #include <algorithm>
 #include <cstring>
@@ -40,13 +41,13 @@ constexpr uint32_t kSpotArrayMagic = 0x41545053; // "SPTA"
 constexpr uint32_t kSpotHeaderSize = 0x20;
 constexpr uint32_t kSpotSubHeaderSize = 0x10;
 
-bool gbParseLogChallengesInfos = false;          // DAT_010e7f50
-uint8_t gMapActiveFilterMode = 1;                // DAT_00fa98c8
-uint32_t gMapChallengeFilterMask = 0xffffffffu;  // DAT_00fa98cc
-uint32_t gMapServiceFilterMask = 0xffffffffu;    // DAT_00fa98d0
-uint32_t gMapUnknown0xCFilterMask = 0xffffffffu; // DAT_00fa98d4
-uint32_t gMapUnknown10FilterMask = 0xffffffffu;  // DAT_00fa98d8
-uint8_t gMinimapFilterMode = 1;                  // DAT_00f96bc0
+bool gbParseLogChallengesInfos = false;         // DAT_010e7f50
+uint8_t gMapActiveFilterMode = 1;               // DAT_00fa98c8
+uint32_t gMapChallengeFilterMask = 0xffffffffu; // DAT_00fa98cc
+uint32_t gMapServiceFilterMask = 0xffffffffu;   // DAT_00fa98d0
+uint32_t gMapPlayerFilterMask = 0xffffffffu;    // DAT_00fa98d4
+uint32_t gMapBookmarkFilterMask = 0xffffffffu;  // DAT_00fa98d8
+uint8_t gMinimapFilterMode = 1;                 // DAT_00f96bc0
 
 bool ParseSpotCellCoords( const std::string &filename, int32_t outCoords[4] ) {
     const size_t slash = filename.find_last_of( "/\\" );
@@ -593,10 +594,10 @@ bool IsSpotIconVisible( const SpotIconInfo &info, const bool bMinimap ) {
         if ( ( info.Kind & filterMode ) != info.Kind ) {
             return false;
         }
-        return ( info.Unknown0xC & gMapUnknown0xCFilterMask ) != 0u;
+        return ( info.Unknown0xC & gMapPlayerFilterMask ) != 0u;
     } else if ( ( filterMode & 8 ) != 0 ) {
         flags = info.Unknown0x10;
-        filterMask = gMapUnknown10FilterMask;
+        filterMask = gMapBookmarkFilterMask;
     } else {
         return false;
     }
@@ -1034,4 +1035,46 @@ void Spots::removeSectorSpots( void *pBlob ) {
             break;
         }
     }
+}
+
+static constexpr uint32_t kSpotAchievementDBIndex = 0xfu;
+
+void SetSpotLockedTextFromReward( FlashPlayer *pPlayer,
+                                  const uint64_t rewardHashcode ) {
+    // FUN_00793b50 (inlined)
+    if ( gpDatabase == nullptr || gpMngFlashLocalize == nullptr ) {
+        return;
+    }
+
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const DBEntryAchievement *pEntries = gameDB.DBAchivement;
+    if ( pEntries == nullptr ) {
+        return;
+    }
+
+    const DBEntryList &achievementDB =
+        gameDB.Databases[kSpotAchievementDBIndex];
+    const uint32_t numEntries = gameDB.pNumItems[kSpotAchievementDBIndex];
+    for ( uint32_t i = 0u; i < numEntries; i++ ) {
+        if ( achievementDB.getHashcodeForPointer(
+                 pEntries[i].Reward.pAsRawPointer ) != rewardHashcode ) {
+            continue;
+        }
+
+        gpMngFlashLocalize->setVarLocalized(
+            pPlayer, pEntries[i].FailedExplanation.pAsString,
+            "/:SpotLockedtext" );
+    }
+}
+
+bool IsSpotRewardLocked( const uint64_t rewardHashcode ) {
+    // FUN_00793b50 (inlined)
+    if ( gpPlayerData == nullptr || gpPlayerData->getLoadedSave() == nullptr ) {
+        return false;
+    }
+
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    return pAchievements != nullptr &&
+           pAchievements->isRewardLocked( rewardHashcode );
 }

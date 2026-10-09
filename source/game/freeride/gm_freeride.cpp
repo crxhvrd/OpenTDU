@@ -28,6 +28,11 @@
 #include "flash/implementation/flash_player.h"
 #include "flash/implementation/flash_sprite.h"
 #include "flash/mng_flash_localize.h"
+#include "flash/gs_flash.h"
+#include "flash/movie_player.h"
+#include "render/camera/camera_gps.h"
+#include "render/gs_render.h"
+#include "world/streaming_manager.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_garage.h"
@@ -37,6 +42,9 @@
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "physics/vehicle/physics_vehicle.h"
+
+static bool gbGPSFlyUpDone = false;     // DAT_010e7c90
+static int32_t gGPSFlyUpTargetMode = 0; // DAT_010dfe00
 
 static constexpr uint64_t kRewardBikeDealership = 0x5f2d20ull;
 static constexpr uint64_t kRewardCarPaintDeluxe = 0x5da680ull;
@@ -71,6 +79,7 @@ GMFreeride::GMFreeride()
       pSavedVehicleCamera( nullptr ),
       bIntroLevelLaunched( false ),
       bIntroCineDone( false ),
+      bReturningFromMap( false ),
       pExtraChallenges{},
       numExtraChallenges( 0 ),
       extraChallengeKind( -1 ),
@@ -178,6 +187,21 @@ void GMFreeride::resolveNextIntroCine( const SpotSector *pSector ) {
     gpWorld->setAreaStreamingEnabled( false );
 }
 
+static void SetHudMoviesPaused( const bool bPaused ) {
+    const int32_t numMovies = gpFlash->getNumMovies( 1 );
+    for ( int32_t i = 0; i < numMovies; i++ ) {
+        MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, i );
+        if ( pMovie == nullptr ) {
+            continue;
+        }
+        if ( bPaused ) {
+            pMovie->IsMoviePaused |= 2;
+        } else {
+            pMovie->IsMoviePaused &= ~2;
+        }
+    }
+}
+
 void GMFreeride::reset() {
     // FUN_00796830
     OTDU_UNIMPLEMENTED; // TODO: ONLINE (P2P free-ride manager) / GSAI (cop and
@@ -207,12 +231,87 @@ void GMFreeride::reset() {
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC/TUTORIAL
     gatherExtraChallenges();
 
-    OTDU_UNIMPLEMENTED; // TODO: CAMERA (map-exit hand-over) / PHYSICS
-                        // (postponed pause) / WORLD (sector draw toggle)
+    if ( gpTestDriveInstance->getPreviousGameMode() == GM_Map ) {
+        startMapFlyDown();
+    } else {
+        StreamingManager *pStreaming = gpWorld->getStreamingManager();
+        pStreaming->sectorManager.bDrawSector = false;
+        pStreaming->sectorManager.bNeedStreamUpdate = true;
+        pStreaming->areaGrid.bNeedStreamUpdate = true;
+        pStreaming->areaGrid.bDrawArea = false;
+        pStreaming->setActiveRenderLayers( 1 );
+    }
+}
+
+void GMFreeride::startMapFlyDown() {
+    // FUN_00796830 (inlined)
+    gpCamera->setMouseCam( false );
+    gpCamera->setUseBlur( true );
+    SetHudMoviesPaused( true );
+    OTDU_UNIMPLEMENTED; // FUN_00792c90
+
+    Viewport *pBackViewport = gpRender->getRenderPass<RP_Back>().pViewport;
+    pBackViewport->ClearColor.R = 0x22;
+    pBackViewport->ClearColor.G = 0x20;
+    pBackViewport->ClearColor.B = 0x32;
+    pBackViewport->ClearColor.A = 0xff;
+
+    Eigen::Vector4f focus =
+        gpWorld->getPreviousTransform().row( 3 ).transpose();
+    CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+    PhysicsVehicle *pPhysicsVehicle =
+        ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+    if ( pPhysicsVehicle != nullptr ) {
+        focus = pPhysicsVehicle->getChassisWorldMatrix().row( 3 ).transpose();
+    }
+
+    CameraGPS *pCameraGPS = static_cast<CameraGPS *>(
+        gpCamera->findCameraWithMode( 3, gpCamera->getBoundCarState() ) );
+    pCameraGPS->setFocus( focus );
+
+    gpCamera->setBoundCarState( pCarState );
+    if ( pCarState != nullptr ) {
+        gpCamera->setTargetPhysEntity( pPhysicsVehicle );
+    }
+    OTDU_UNIMPLEMENTED; // TODO: FUN_0099d230
+
+    CameraGame *pActiveCamera = gpCamera->getActiveCamera();
+    if ( pActiveCamera == nullptr || pActiveCamera->getType() != 3 ) {
+        return;
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: FUN_007bdd10
+
+    CameraGame *pVehicleCamera = gpCamera->findCameraByCurrentTransition();
+    OTDU_UNIMPLEMENTED; // TODO: CAMERA
+
+    pVehicleCamera->tick( std::numeric_limits<float>::denorm_min(), false,
+                          true );
+
+    if ( pCameraGPS != nullptr ) {
+        const Eigen::Vector3f target = pVehicleCamera->getTarget();
+        const Eigen::Vector3f up = pVehicleCamera->getUp();
+        pCameraGPS->setFixedPose(
+            *pVehicleCamera->getWorldPositionRW(),
+            Eigen::Vector4f( target.x(), target.y(), target.z(), 1.0f ),
+            Eigen::Vector4f( up.x(), up.y(), up.z(), 0.0f ),
+            pVehicleCamera->getNearPlane(), pVehicleCamera->getFarPlane(),
+            pVehicleCamera->getFOV(), pVehicleCamera->getAspectRatio() );
+        pCameraGPS->requestZoom(
+            pCameraGPS->getZoom(), CameraGPS::GZL_Fixed,
+            &GMFreeride::OnGPSFlyUpEnd, this,
+            reinterpret_cast<void *>( static_cast<intptr_t>( GM_FreeRide ) ) );
+        gpCamera->setCameraMode( 3, 0, 1.0f );
+    }
+
+    bReturningFromMap = true;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
 }
 
 void GMFreeride::tick( float deltaTime, float totalTime ) {
     // FUN_00796260
+    updateGPSFlyUp();
+
     if ( pIntroCine == nullptr ) {
         if ( nextIntro.bIsActive && nextIntro.NextGameMode == GM_FreeRide &&
              nextIntro.pSpot != nullptr ) {
@@ -267,6 +366,64 @@ void GMFreeride::tick( float deltaTime, float totalTime ) {
     }
 }
 
+void GMFreeride::OnGPSFlyUpEnd( void * /*pUnused*/, void *pTargetGameMode ) {
+    // FUN_00792c40
+    gGPSFlyUpTargetMode =
+        static_cast<int32_t>( reinterpret_cast<intptr_t>( pTargetGameMode ) );
+    gbGPSFlyUpDone = true;
+}
+
+void GMFreeride::updateGPSFlyUp() {
+    // FUN_00796260 (inlined)
+    if ( !gbGPSFlyUpDone ) {
+        return;
+    }
+
+    gbGPSFlyUpDone = false;
+    const eGameMode targetGameMode =
+        static_cast<eGameMode>( gGPSFlyUpTargetMode );
+    gGPSFlyUpTargetMode = 0;
+
+    if ( targetGameMode == GM_FreeRide ) {
+        OTDU_UNIMPLEMENTED; // TODO: GAME
+        gpCamera->setMouseCam( true );
+        gpCamera->setUseBlur( false );
+        SetHudMoviesPaused( false );
+
+        Viewport *pBackViewport = gpRender->getRenderPass<RP_Back>().pViewport;
+        pBackViewport->ClearColor.R = 0x22;
+        pBackViewport->ClearColor.G = 0x20;
+        pBackViewport->ClearColor.B = 0x32;
+        pBackViewport->ClearColor.A = 0xff;
+
+        gpCamera->setNextCamera( gpCamera->findCameraByCurrentTransition(), 0,
+                                 1.0f );
+
+        StreamingManager *pStreaming = gpWorld->getStreamingManager();
+        pStreaming->sectorManager.bDrawSector = false;
+        pStreaming->sectorManager.bNeedStreamUpdate = true;
+        pStreaming->areaGrid.bNeedStreamUpdate = true;
+        pStreaming->areaGrid.bDrawArea = false;
+        pStreaming->setActiveRenderLayers( 1 );
+        pStreaming->sectorManager.bStreamSector = true;
+        gpWorldStreaming->updateStreaming();
+        pStreaming->areaGrid.bStreamArea = true;
+
+        bReturningFromMap = false;
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+        return;
+    }
+
+    if ( gpActiveGMScene != nullptr ) {
+        gpActiveGMScene->restoreLocalPlayerCarControl();
+    }
+    OTDU_UNIMPLEMENTED; // TODO: FUN_00793570/CAMERA
+
+    requestExit();
+    setTransitionFlags( 0 );
+    gpTestDriveInstance->setNextGameMode( targetGameMode );
+}
+
 void GMFreeride::draw( float /*deltaTime*/, float /*totalTime*/ ) {
     // FUN_007941f0
     if ( gpMngCinematics != nullptr &&
@@ -312,45 +469,6 @@ void GMFreeride::draw( float /*deltaTime*/, float /*totalTime*/ ) {
 
     pPlayer->showFrame( "on", "/HUD/enter", true );
     bEnterSpotClipVisible = true;
-}
-
-static void SetSpotLockedTextFromReward( FlashPlayer *pPlayer,
-                                         const uint64_t rewardHashcode ) {
-    // FUN_00793b50 (inlined)
-    if ( gpDatabase == nullptr || gpMngFlashLocalize == nullptr ) {
-        return;
-    }
-
-    const GameDatabase &gameDB = gpDatabase->getGameDB();
-    const DBEntryAchievement *pEntries = gameDB.DBAchivement;
-    if ( pEntries == nullptr ) {
-        return;
-    }
-
-    const DBEntryList &achievementDB = gameDB.Databases[kAchievementDBIndex];
-    const uint32_t numEntries = gameDB.pNumItems[kAchievementDBIndex];
-    for ( uint32_t i = 0u; i < numEntries; i++ ) {
-        if ( achievementDB.getHashcodeForPointer(
-                 pEntries[i].Reward.pAsRawPointer ) != rewardHashcode ) {
-            continue;
-        }
-
-        gpMngFlashLocalize->setVarLocalized(
-            pPlayer, pEntries[i].FailedExplanation.pAsString,
-            "/:SpotLockedtext" );
-    }
-}
-
-static bool IsSpotRewardLocked( const uint64_t rewardHashcode ) {
-    // FUN_00793b50 (inlined)
-    if ( gpPlayerData == nullptr || gpPlayerData->getLoadedSave() == nullptr ) {
-        return false;
-    }
-
-    AchievementsData *pAchievements =
-        gpPlayerData->getLoadedSave()->getAchievements();
-    return pAchievements != nullptr &&
-           pAchievements->isRewardLocked( rewardHashcode );
 }
 
 void GMFreeride::populateEnterSpotPrompt( FlashPlayer *pPlayer ) {
@@ -979,6 +1097,9 @@ bool GMFreeride::onMessage( FlashMessage *pMessage ) {
     case FlashMessage( "icbo" ):
     case FlashMessage( "noic" ):
         return mngFRMeetingIC.onMessage( pMessage );
+    case FlashMessage( "gogp" ):
+        mngFlash.requestGPSTransition();
+        return true;
     case FlashMessage( "gosp" ):
     case FlashMessage( "goid" ):
     case FlashMessage( "goch" ):
@@ -992,7 +1113,7 @@ bool GMFreeride::onMessage( FlashMessage *pMessage ) {
         break;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO:  "gogp"/"goho"/"home"/"gosh"/"acex"/"acti"/
+    OTDU_UNIMPLEMENTED; // TODO:  "goho"/"home"/"gosh"/"acex"/"acti"/
                         // "caex"/"info"/"noch"/"ssmn" handlers
 
     return false;

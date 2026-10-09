@@ -255,19 +255,22 @@ void MngScreenshots::instanciate() {
             bSuccess =
                 GSFile::SaveFile( pFilenameToSave, pContent, contentSize );
         } else {
-            bSuccess = gpFile->saveFileInContext(
-                pContextToSave, pFilenameToSave, pContextDisplayToSave,
-                pContent, contentSize );
+            bSuccess = gpFile->pushSaveRequest( pContextToSave, pFilenameToSave,
+                                                pContextDisplayToSave, pContent,
+                                                contentSize, true );
+            pContent = nullptr;
 
             if ( bSuccess && pThumbnailContent != nullptr ) {
                 char pThumbnailName[kMaxStringLength + 8];
                 snprintf( pThumbnailName, sizeof( pThumbnailName ), "%s.small",
                           pFilenameToSave );
 
-                bSuccess = gpFile->saveFileInContext(
+                bSuccess = gpFile->pushSaveRequest(
                     pContextToSave, pThumbnailName, pContextDisplayToSave,
-                    pThumbnailContent, thumbnailSize );
+                    pThumbnailContent, thumbnailSize, true );
+                pThumbnailContent = nullptr;
             }
+            gpFile->setSaveQueueDelayed( false );
         }
     }
 

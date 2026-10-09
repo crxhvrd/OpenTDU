@@ -29,6 +29,18 @@ static constexpr const char *kModsFolderPath = "Mods";
 static constexpr const char *kPackMapFilename = "CarPack.map";
 static constexpr const char *kPackBigFilename = "CarPack.big";
 
+static constexpr const wchar_t *kSaveQueueNoName = L"NO NAME";
+static constexpr uint32_t kSaveDeviceFreeSpace = 0xffffffffu; // FUN_00608570
+static constexpr uint64_t kSaveQueueNoProfileHashcode = 0x33d6b4a;
+static constexpr uint64_t kSaveQueueNotEnoughSpaceHashcode = 0x236d9b92;
+static constexpr uint64_t kSaveQueueCorruptedFileHashcode = 0x55aff4;
+static constexpr uint64_t kSaveQueueWriteFailedHashcode = 0x24063212;
+static constexpr int32_t kSaveQueuePromptWriteFailed = 0;
+static constexpr int32_t kSaveQueuePromptCorruptedFile = 1;
+static constexpr int32_t kSaveQueuePromptNotEnoughSpace = 2;
+static constexpr int32_t kSaveQueuePromptNoProfile = 4;
+static constexpr int32_t kSaveQueuePromptDeviceError = 5;
+
 static TestDriveThread::ThreadReturnType_t ThreadRoutine( void *in_param_1 ) {
     WorkerThreadContext *param_1 = (WorkerThreadContext *)in_param_1;
 
@@ -96,7 +108,8 @@ GSFile::GSFile()
       bFilemapActive( false ),
       bTaskInProgress( false ),
       bIsCurrentContextReady( false ),
-      bDeletingInProgress( false ) {
+      bDeletingInProgress( false ),
+      bSaveDeviceError( false ) {
     gpFile = this;
 
     filemaps.resize( kMaxFilemapCount );
@@ -163,6 +176,7 @@ void GSFile::tick( float totalTime, float deltaTime ) {
     if ( gpTestDriveInstance != nullptr ) {
         gpTestDriveInstance->updateFileInstanciation();
     }
+    tickSaveQueue();
 }
 
 void GSFile::terminate() { pFilemapMutex->terminate(); }
@@ -891,30 +905,65 @@ bool GSFile::SaveFile( const char *pFilename,
     return bSuccess;
 }
 
-bool GSFile::saveFileInContext( const char *pContextName,
-                                const char *pFilename,
-                                const wchar_t *pDisplayName,
-                                const void *pContent,
-                                uint32_t contentSize ) {
+bool GSFile::pushSaveRequest( const char *pContextName,
+                              const char *pFilename,
+                              const wchar_t *pDisplayName,
+                              void *pContent,
+                              uint32_t contentSize,
+                              const bool bReleaseContent ) {
     // FUN_009a26d0
-    if ( pFilename == nullptr || pContent == nullptr ) {
+    auto releaseContent = [&]() {
+        if ( bReleaseContent && pContent != nullptr ) {
+            TestDrive::FreeAligned( pContent );
+        }
+    };
+    auto rejectQuery = [&]() {
+        saveQueue.pContextName[0] = '\0';
+        wcscpy( saveQueue.pDisplayName, kSaveQueueNoName );
+        releaseContent();
         return false;
+    };
+
+    ScopedMutexLock lock( saveQueue.pMutex );
+    if ( strcmp( pContextName, saveQueue.pContextName ) != 0 &&
+         saveQueue.pContextName[0] != '\0' ) {
+        return rejectQuery();
     }
 
-    {
-        ScopedMutexLock lock( saveQueue.pMutex );
-        if ( pContextName != nullptr ) {
-            saveQueue.ContextName = pContextName;
-        }
-        if ( pDisplayName != nullptr ) {
-            saveQueue.DisplayName = pDisplayName;
+    strcpy( saveQueue.pContextName, pContextName );
+    wcscpy( saveQueue.pDisplayName, pDisplayName );
+    for ( const SaveQueue::FileToSave &file : saveQueue.pFilesToSave ) {
+        if ( file.pContent == nullptr &&
+             strcmp( file.pFilename, pFilename ) == 0 ) {
+            return rejectQuery();
         }
     }
 
-    if ( pContextName == nullptr || pContextName[0] == '\0' ) {
-        std::filesystem::path filePath( getSaveFolder() );
-        filePath /= pFilename;
-        return SaveFile( filePath.string().c_str(), pContent, contentSize );
+    saveQueue.LastError = SQE_None;
+    saveQueue.pLastCorruptContext[0] = '\0';
+    for ( SaveQueue::FileToSave &file : saveQueue.pFilesToSave ) {
+        if ( file.pContent == nullptr ) {
+            file.pContent = pContent;
+            file.ContentSize = contentSize;
+            strcpy( file.pFilename, pFilename );
+            file.bReleaseContent = bReleaseContent;
+            return true;
+        }
+    }
+
+    releaseContent();
+    return false;
+}
+
+bool GSFile::deleteFile( const char *pContextName,
+                         const char *pFilename,
+                         const wchar_t * /*pDisplayName*/ ) {
+    // FUN_009a3490
+    if ( strcmp( pContextName, "CURRENT" ) == 0 ) {
+        if ( !bIsCurrentContextReady ) {
+            return false;
+        }
+        return currentContextDirectAccess.deleteFileInContext( pFilename );
     }
 
     FileDirectAccess fileAccess;
@@ -925,15 +974,182 @@ bool GSFile::saveFileInContext( const char *pContextName,
         return false;
     }
 
-    bool bSuccess = false;
+    const bool bDeleted = fileAccess.deleteFileInContext( pFilename );
+    fileAccess.reset();
+    return bDeleted;
+}
+
+bool GSFile::writeFileInContext( const char *pContextName,
+                                 const char *pFilename,
+                                 const void *pContent,
+                                 uint32_t contentSize ) {
+    // FUN_009a3870
+    if ( strcmp( pContextName, "CURRENT" ) == 0 ) {
+        if ( !bIsCurrentContextReady ||
+             !currentContextDirectAccess.openFile( pFilename, false, true ) ) {
+            return false;
+        }
+        const bool bWritten = currentContextDirectAccess.writeToFile(
+                                  pContent, contentSize ) == contentSize;
+        currentContextDirectAccess.close();
+        return bWritten;
+    }
+
+    FileDirectAccess fileAccess;
+    fileAccess.bNeedName = false;
+    if ( !fileAccess.openContext(
+             gUserProfileRegister.getActiveProfileHashcode(), pContextName,
+             eContextSource::CS_Savegame ) ) {
+        return false;
+    }
+
+    bool bWritten = false;
     if ( fileAccess.openFile( pFilename, false, true ) ) {
-        bSuccess =
+        bWritten =
             fileAccess.writeToFile( pContent, contentSize ) == contentSize;
         fileAccess.close();
     }
 
     fileAccess.reset();
-    return bSuccess;
+    return bWritten;
+}
+
+static void OnSaveQueuePromptAnswer( ePopupAnswer answer,
+                                     void *pUserData,
+                                     int32_t promptCode ) {
+    // FUN_009a4510
+    if ( pUserData == nullptr ) {
+        return;
+    }
+
+    // FUN_009a4490
+    SaveQueue *pQueue = static_cast<SaveQueue *>( pUserData );
+    ScopedMutexLock lock( pQueue->pMutex );
+    pQueue->bErrorDisplayed = false;
+    if ( promptCode == kSaveQueuePromptCorruptedFile ) {
+        if ( answer == ePopupAnswer::PA_Accept ) {
+            pQueue->LastError = SQE_None;
+        } else if ( answer == ePopupAnswer::PA_Cancel ) {
+            pQueue->clear();
+        }
+        pQueue->pLastCorruptContext[0] = '\0';
+    } else if ( promptCode == kSaveQueuePromptDeviceError ) {
+        pQueue->LastError = SQE_None;
+    }
+}
+
+void GSFile::displaySaveQueuePrompt( const bool bHasCancel,
+                                     const uint64_t messageHashcode,
+                                     const int32_t messageDatabaseIndex,
+                                     const int32_t promptCode ) {
+    TestDrive::DisplayModalPrompt(
+        bHasCancel, messageHashcode, messageDatabaseIndex,
+        &OnSaveQueuePromptAnswer, nullptr, &saveQueue, promptCode, nullptr,
+        true, false, MPT_Warning, gpFlashMessageBox );
+}
+
+void GSFile::tickSaveQueue() {
+    // FUN_009a5090
+    ScopedMutexLock lock( saveQueue.pMutex );
+    if ( bSaveDeviceError ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: device error prompt
+        return;
+    }
+
+    if ( saveQueue.getNumPendingFiles() == 0 || saveQueue.bDelay ) {
+        return;
+    }
+
+    if ( saveQueue.LastError == SQE_CorruptedFile ||
+         saveQueue.LastError == SQE_Blocked ) {
+        return;
+    }
+
+    uint32_t totalSize = 0;
+    for ( const SaveQueue::FileToSave &file : saveQueue.pFilesToSave ) {
+        if ( file.pContent != nullptr ) {
+            totalSize += file.ContentSize;
+        }
+    }
+    if ( totalSize == 0 ) {
+        return;
+    }
+
+    if ( kSaveDeviceFreeSpace < totalSize ) {
+        if ( saveQueue.bErrorDisplayed ) {
+            return;
+        }
+
+        if ( gUserProfileRegister.getActiveProfileHashcode() == 0 ) {
+            saveQueue.LastError = SQE_NoProfile;
+            saveQueue.pLastCorruptContext[0] = '\0';
+            displaySaveQueuePrompt( false, kSaveQueueNoProfileHashcode, 0,
+                                    kSaveQueuePromptNoProfile );
+        } else {
+            saveQueue.LastError = SQE_NotEnoughSpace;
+            saveQueue.pLastCorruptContext[0] = '\0';
+            displaySaveQueuePrompt( false, kSaveQueueNotEnoughSpaceHashcode, 0,
+                                    kSaveQueuePromptNotEnoughSpace );
+        }
+        saveQueue.bErrorDisplayed = true;
+        saveQueue.clear();
+    } else {
+        const bool bContextOpened = openContextAsCurrent(
+            saveQueue.pContextName, saveQueue.pDisplayName, true );
+        for ( SaveQueue::FileToSave &file : saveQueue.pFilesToSave ) {
+            if ( file.pContent == nullptr ) {
+                continue;
+            }
+
+            const bool bWritten =
+                bContextOpened &&
+                writeFileInContext( "CURRENT", file.pFilename, file.pContent,
+                                    file.ContentSize );
+            if ( !bWritten && !saveQueue.bErrorDisplayed ) {
+                saveQueue.LastError = SQE_WriteFailed;
+                saveQueue.pLastCorruptContext[0] = '\0';
+                saveQueue.bErrorDisplayed = true;
+                if ( ensureContext( saveQueue.pContextName,
+                                    saveQueue.pDisplayName ) == CST_Error ) {
+                    strcpy( saveQueue.pLastCorruptContext,
+                            saveQueue.pContextName );
+                    saveQueue.LastError = SQE_CorruptedFile;
+                    displaySaveQueuePrompt(
+                        true, kSaveQueueCorruptedFileHashcode, 0xb,
+                        kSaveQueuePromptCorruptedFile );
+                } else {
+                    displaySaveQueuePrompt( false,
+                                            kSaveQueueWriteFailedHashcode, 0,
+                                            kSaveQueuePromptWriteFailed );
+                }
+            }
+
+            if ( saveQueue.LastError != SQE_CorruptedFile ) {
+                if ( file.bReleaseContent ) {
+                    TestDrive::FreeAligned( file.pContent );
+                }
+                file.pContent = nullptr;
+                file.ContentSize = 0;
+                file.pFilename[0] = '\0';
+                file.bReleaseContent = false;
+            }
+
+            if ( !saveQueue.bErrorDisplayed ) {
+                saveQueue.pLastCorruptContext[0] = '\0';
+                saveQueue.LastError = SQE_Success;
+            }
+        }
+
+        if ( bContextOpened ) {
+            closeCurrentContext();
+        }
+        if ( saveQueue.LastError == SQE_CorruptedFile ) {
+            return;
+        }
+    }
+
+    saveQueue.pContextName[0] = '\0';
+    wcscpy( saveQueue.pDisplayName, kSaveQueueNoName );
 }
 
 bool GSFile::openContextAsCurrent( const char *pContextName,
@@ -1261,11 +1477,46 @@ AsyncFileOpen::AsyncFileOpen()
       pFilemap( nullptr ) {}
 
 SaveQueue::SaveQueue()
-    : DisplayName( L"NO NAME" ),
+    : pContextName(),
+      pFilesToSave(),
+      LastError( SQE_None ),
+      pLastCorruptContext(),
       pMutex( new TestDriveMutex() ),
-      bPauseFlush( false ) {}
+      bErrorDisplayed( false ),
+      bDelay( false ) {
+    wcscpy( pDisplayName, kSaveQueueNoName );
+}
 
-SaveQueue::~SaveQueue() { delete pMutex; }
+SaveQueue::~SaveQueue() {
+    clear();
+    delete pMutex;
+}
+
+void SaveQueue::clear() {
+    // FUN_009a2670
+    for ( FileToSave &file : pFilesToSave ) {
+        if ( file.pContent == nullptr ) {
+            continue;
+        }
+        if ( file.bReleaseContent ) {
+            TestDrive::FreeAligned( file.pContent );
+        }
+        file.pContent = nullptr;
+        file.ContentSize = 0;
+        file.pFilename[0] = '\0';
+        file.bReleaseContent = false;
+    }
+}
+
+uint32_t SaveQueue::getNumPendingFiles() const {
+    uint32_t numPending = 0;
+    for ( const FileToSave &file : pFilesToSave ) {
+        if ( file.pContent != nullptr ) {
+            numPending++;
+        }
+    }
+    return numPending;
+}
 
 bool FUN_009a6d50( Bank *param_1,
                    FileHandle *param_2,

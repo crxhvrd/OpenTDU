@@ -45,9 +45,14 @@ public:
 
     bool enterSpot( struct SpotMap *pSpot );
 
+    static void OnGPSFlyUpEnd( void *pUnused, void *pTargetGameMode );
+
 #ifdef OTDU_USE_IMGUI
     void drawDebug( float deltaTime ) override;
 #endif
+
+private:
+    void updateGPSFlyUp();
 
 private:
     static constexpr int32_t kMaxNumExtraChallenges = 100;
@@ -69,6 +74,7 @@ private:
     bool requestEnterActivity();
     void enterCurrentActivity();
     void acquireSpotIntroCine( struct SpotMap *pSpot );
+    void startMapFlyDown();
     static void OnSpotIntroFadeOut( void *pData, void *pSource );
 
     void populateEnterSpotPrompt( class FlashPlayer *pPlayer );
@@ -97,6 +103,7 @@ private:
     CameraGame *pSavedVehicleCamera;
     bool bIntroLevelLaunched;
     bool bIntroCineDone;
+    bool bReturningFromMap;
 
     Entity *pExtraChallenges[kMaxNumExtraChallenges];
     int32_t numExtraChallenges;

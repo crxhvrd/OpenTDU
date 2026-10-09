@@ -59,6 +59,10 @@ public:
         return frustumTestForSprite != 0;
     }
     inline bool isForceTopImpostor() const { return bForceTopImpostor; }
+    inline void setForceTopView( const bool bForce ) {
+        bForceTopIndex = bForce;
+        bForceTopImpostor = bForce;
+    }
 
 public:
     MngImpostor();
@@ -185,4 +189,5 @@ private:
 };
 
 extern MngImpostor *gpMngImpostor;
+extern float gHideDistanceForUnitBSphere;
 extern MngImpostorSimple *gpMngImpostorSimple;

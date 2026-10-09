@@ -164,6 +164,9 @@ public:
 
     inline bool wasHDRToggled() const { return bHDREnabled != bWasHDREnabled; }
 
+    inline Eigen::Vector4f &getShaderUniformWrite( const int32_t index ) {
+        return shaderUniforms[index];
+    }
     inline void setShaderUniform( int32_t index, Eigen::Vector4f &uniform ) {
         OTDU_ASSERT( index < 8 && index >= 0 );
         shaderUniforms[index] = uniform;

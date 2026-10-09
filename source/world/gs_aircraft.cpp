@@ -18,6 +18,13 @@
 #include "game/scenaric/entity/entity_factory.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
+#include "render/instance.h"
+#include "render/material.h"
+#include "render/serialized_skinned_model.h"
+
+static constexpr uint16_t kAircraftMapViewOT = 0x26;
+static constexpr uint16_t kAircraftDefaultOT = 0x8;
+static constexpr uint64_t kAircraftMapViewMaterialHashcode = 0x183157b81c6cff57;
 
 GSAircraft *gpAircraft = nullptr; // DAT_010e742c
 
@@ -800,6 +807,71 @@ bool GSAircraft::initialize( TestDriveGameInstance *param_2 ) {
     mngActor.reset();
 
     return true;
+}
+
+static Instance *GetAircraftInstance( Entity *pAircraft ) {
+    if ( pAircraft == nullptr ) {
+        return nullptr;
+    }
+    SerializedSkinnedModel *pModel =
+        static_cast<SerializedSkinnedModel *>( pAircraft->getGeometryData() );
+    return ( pModel != nullptr ) ? pModel->pInstance : nullptr;
+}
+
+void AircraftPathFlights::setMapViewLOD( const bool bMapView ) {
+    // FUN_00903760
+    for ( const std::unique_ptr<Aircraft> &pFlight : flights ) {
+        Instance *pInstance = GetAircraftInstance( pFlight->getInstance() );
+        if ( pInstance == nullptr || pInstance->getNumLODs() < 2 ) {
+            continue;
+        }
+
+        if ( bMapView ) {
+            pInstance->getFlagsWrite() &= ~2u;
+            pInstance->setActiveLODIndex( 1 );
+        } else {
+            pInstance->getFlagsWrite() |= 2u;
+        }
+    }
+}
+
+void AircraftPathFlights::setMapViewMaterials( const bool bMapView ) {
+    // FUN_00903870
+    const uint16_t ot = bMapView ? kAircraftMapViewOT : kAircraftDefaultOT;
+    for ( const std::unique_ptr<Aircraft> &pFlight : flights ) {
+        Instance *pInstance = GetAircraftInstance( pFlight->getInstance() );
+        if ( pInstance == nullptr ) {
+            continue;
+        }
+
+        RenderFile::Section *pBankMat = pInstance->getMaterialBank();
+        const uint32_t numMaterials =
+            ( pBankMat != nullptr ) ? ( pBankMat->DataSize - 0x10 ) / 0x10 : 0;
+        for ( uint32_t i = 0; i < numMaterials; i++ ) {
+            Material *pMaterial = pInstance->getMaterial( i );
+            if ( pMaterial == nullptr || pMaterial->NumParams == 0 ) {
+                continue;
+            }
+            if ( pMaterial->getParameterByIndex( 0 )->Hashcode ==
+                 kAircraftMapViewMaterialHashcode ) {
+                pMaterial->OT = ot;
+            }
+        }
+    }
+}
+
+void GSAircraft::setMapViewLOD( const bool bMapView ) {
+    // FUN_00903050
+    for ( const std::unique_ptr<AircraftPathFlights> &pPath : originalPaths ) {
+        pPath->setMapViewLOD( bMapView );
+    }
+}
+
+void GSAircraft::setMapViewMaterials( const bool bMapView ) {
+    // FUN_009030d0
+    for ( const std::unique_ptr<AircraftPathFlights> &pPath : originalPaths ) {
+        pPath->setMapViewMaterials( bMapView );
+    }
 }
 
 void GSAircraft::spawnAircrafts() {

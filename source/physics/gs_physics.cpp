@@ -414,7 +414,7 @@ int32_t INT_00f87ff4 = 0x500000; // DAT_00f87ff4
 int32_t INT_00f87ff8 = 0x1;      // INT_00f87ff8
 bool BOOL_010e7644 = false;      // DAT_010e7644
 
-static float gPhysicsRefreshRate = 0.0f;                   // DAT_0168d6b4
+float gPhysicsRefreshRate = 0.0f;                          // DAT_0168d6b4
 static float gPhysicsStepPeriod = 0.0f;                    // DAT_0168d6b8
 static bool gbPhysicsUseMeasuredDelta = true;              // DAT_00f8a2e8
 static std::atomic<bool> gbPhysicsTickInProgress{ false }; // DAT_010e7a58+0x1b0
@@ -2625,6 +2625,43 @@ float GSPhysics::getGroundHeight( float x, float z ) {
     return kTop - kLength * hit.mFraction;
 }
 
+void GSPhysics::forwardInput( PhysicsVehicle &vehicle, float /*deltaTime*/ ) {
+    // FUN_00849380
+    if ( vehicle.isInCinematicMode() ) {
+        return;
+    }
+
+    vehicle.setDrivingMode( PhysicsVehicle::DM_Player );
+}
+
+float GSPhysics::castWorldRay( const Eigen::Vector4f &origin,
+                               const Eigen::Vector4f &direction,
+                               const float length ) {
+    // FUN_00849300
+    static constexpr float kNoRayHit = -99999.99f; // DAT_00f418fc
+    if ( pPhysicsSystem == nullptr ) {
+        return kNoRayHit;
+    }
+
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+    const Eigen::Vector4f ray = direction * length;
+    JPH::RRayCast joltRay( JPH::RVec3( origin.x() - shiftOrigin.x(),
+                                       origin.y() - shiftOrigin.y(),
+                                       origin.z() - shiftOrigin.z() ),
+                           JPH::Vec3( ray.x(), ray.y(), ray.z() ) );
+    JPH::RayCastResult hit;
+
+    lockMutex();
+    const bool bHit = pPhysicsSystem->GetNarrowPhaseQuery().CastRay(
+        joltRay, hit, JPH::BroadPhaseLayerFilter(), StaticOrRoadLayerFilter() );
+    unlockMutex();
+
+    if ( !bHit ) {
+        return kNoRayHit;
+    }
+    return hit.mFraction * length;
+}
+
 int32_t GSPhysics::gatherRoadShadowTriangles( const Eigen::Vector4f &bbMin,
                                               const Eigen::Vector4f &bbMax,
                                               Eigen::Vector4f *pOutVerts,
@@ -2967,6 +3004,11 @@ RigidBody_t GSPhysics::addHeightfield( const void *pKey,
     unlockMutex();
 
     return pBody;
+}
+
+void GSPhysics::refreshHeightmapCollision() {
+    // FUN_00844e60
+    // NOP (for Jolt)
 }
 
 void GSPhysics::removeHeightfield( const void *pKey ) {

@@ -33,12 +33,12 @@ class MngBookmark : public Manager,
                     public StreamedResource,
                     public StreamingCallback {
 public:
-    static constexpr FlashMessage kCloseScreen = 0x756f6f62u; // boou
-    static constexpr FlashMessage kSaveBookmark = 0x61736f62u; // bosa
-    static constexpr FlashMessage kHidePicture = 0x6f626968u; // hibo
-    static constexpr FlashMessage kNewBookmark = 0x6277656eu; // newb
+    static constexpr FlashMessage kCloseScreen = 0x756f6f62u;    // boou
+    static constexpr FlashMessage kSaveBookmark = 0x61736f62u;   // bosa
+    static constexpr FlashMessage kHidePicture = 0x6f626968u;    // hibo
+    static constexpr FlashMessage kNewBookmark = 0x6277656eu;    // newb
     static constexpr FlashMessage kGrabScreenshot = 0x6f626661u; // afbo
-    static constexpr FlashMessage kOpenScreen = 0x6e696f62u; // boin
+    static constexpr FlashMessage kOpenScreen = 0x6e696f62u;     // boin
     static constexpr FlashMessage kCreateBookmark = 0x616e6f62u; // bona
 
 public:
@@ -81,8 +81,14 @@ public:
     void goTo( const int32_t bookmarkIndex );
     void onSelectionChanged( const int32_t bookmarkIndex );
 
-private:
+public:
     static constexpr int32_t kMaxNumBookmarks = 64;
+
+    static bool
+    LoadBookmarkPositions( int32_t &outNumBookmarks,
+                           Bookmark ( &outBookmarks )[kMaxNumBookmarks] );
+    static bool SaveBookmarkPos( int32_t numBookmarks,
+                                 const Bookmark *pBookmarks );
 
 private:
     eBookmarkPicState bookmarkPicState;
@@ -130,7 +136,7 @@ private:
     void grabBookmarkScreenshot();
     void saveNewBookmark();
     void createBookmarkAtPlayer();
-    bool loadBookmarkPositions();
+    void saveBookmarkPicture( int32_t bookmarkIndex );
     void computePictureLayout();
 
     static void OnGotoFadeCompleted( void *pData, void *pSource );

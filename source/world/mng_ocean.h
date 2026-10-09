@@ -68,6 +68,11 @@ public:
     inline void setOceanVisible( const bool bVisible ) {
         oceanVisible = bVisible;
     }
+    inline const OceanSetup *getCurrentSetup() const { return pCurrentSetup; }
+    inline void setCurrentSetup( OceanSetup *pSetup ) {
+        pCurrentSetup = pSetup;
+    }
+    inline RenderScene &getReflection2DScene() { return sceneRefl2D; }
 
 public:
     MngOcean();

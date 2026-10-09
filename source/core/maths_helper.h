@@ -23,6 +23,7 @@ static constexpr float kMinusTwo = -2.0f;                     // DAT_00f417d0
 static constexpr float kQuaternionEpsilon = 1.0e-4f;          // DAT_00f41760
 constexpr float kOrientThreshold = 0.001f;                    // FLOAT_00f4167c
 const Eigen::Vector4f kUnitXVector( 1.0f, 0.0f, 0.0f, 0.0f ); // DAT_00fac280
+static constexpr float kGPSQuaternionEpsilon = 1e-6f;         // DAT_00f41888
 
 struct TDUPlane {
     Eigen::Vector4f Normal = kWorldUpVector;

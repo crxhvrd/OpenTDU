@@ -319,20 +319,38 @@ void AreaBank::instanciate() {
     markAsInstanciated();
 }
 
+static uint8_t gTerrainAlphaRef = 0xb4; // BYTE_00f99c9c
+
+void RefreshTerrainMaterialAlphaTest( Material *pTerrainMat ) {
+    // FUN_00703390 (head)
+    if ( pTerrainMat == nullptr ) {
+        return;
+    }
+
+    pTerrainMat->AlphaRef = gTerrainAlphaRef;
+    pTerrainMat->AlphaTest = ( pTerrainMat->AlphaRef == 0 )
+                                 ? (eComparisonFunction)1
+                                 : (eComparisonFunction)0;
+    pTerrainMat->OT = pTerrainMat->getOTNumber();
+}
+
 void SetupTerrainMaterial(
     Material *pTerrainMat,
     SectorHeightmap &heightmap,
+    eTerrainTier tier,
     const std::function<Render2DB *( uint64_t hashcode )> &resolveBitmap ) {
     // FUN_00703ab0.
     if ( pTerrainMat == nullptr ) {
         return;
     }
 
-    pTerrainMat->AlphaRef = 0xb4; // BYTE_00f99c9c
+    pTerrainMat->AlphaRef = gTerrainAlphaRef;
     pTerrainMat->SrcBlend = eBlendMode::BM_One;
     pTerrainMat->DstBlend = eBlendMode::BM_Zero;
     pTerrainMat->BlendOP = eBlendOP::BO_Disabled;
-    pTerrainMat->AlphaTest = eComparisonFunction::CF_Less;
+    pTerrainMat->AlphaTest = ( tier == eTerrainTier::TT_Sector )
+                                 ? (eComparisonFunction)1
+                                 : (eComparisonFunction)0;
     pTerrainMat->OT = pTerrainMat->getOTNumber();
 
     MaterialParameter *pParam = pTerrainMat->getParameterByIndex( 0 );
@@ -620,7 +638,7 @@ void InstanciateTerrainGeometry( Bank &bank,
             }
 
             SetupTerrainMaterial(
-                geometry.render2DM.getMaterialAtIndex( 0 ), heightmap,
+                geometry.render2DM.getMaterialAtIndex( 0 ), heightmap, tier,
                 [&]( uint64_t hashcode ) -> Render2DB * {
                     for ( uint32_t b = 0; b < geometry.num2DB; b++ ) {
                         if ( geometry.set2DB[b].Resource.getBitmapHashcode() ==

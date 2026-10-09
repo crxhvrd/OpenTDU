@@ -30,6 +30,14 @@ static const char *gpSpotDisplayNames[PlayerGameMech::SDN_Count] = {
     "carPaint_d",
 };
 
+const char *GetSpotDisplayTypeName( const int32_t index ) {
+    return gpSpotDisplayTypeNames[index];
+}
+
+const char *GetSpotDisplayName( const int32_t index ) {
+    return gpSpotDisplayNames[index];
+}
+
 int32_t GetSpotChallengeKind( const SpotMap *pSpot ) {
     // FUN_007d69b0
     if ( pSpot == nullptr || pSpot->Type != ST_Challenge ) {

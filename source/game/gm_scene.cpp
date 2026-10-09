@@ -27,6 +27,8 @@
 #include "config/gs_config.h"
 #include "database/gs_database.h"
 #include "game/vehicle/car_state.h"
+#include "game/scene_car_park.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "game/vehicle/vehicle_base.h"
 #include "game/scenaric/local_player.h"
 #include "input/input_device.h"
@@ -819,4 +821,31 @@ void GameModeScene::updateWeather() {
 void GameModeScene::toggleHDRRadialBlur() {
     // FUN_007bc030
     ToggleHDRAndRadialBlur();
+}
+
+void GameModeScene::parkLocalPlayerCar() {
+    // FUN_007bbe70
+    CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+    PhysicsVehicle *pPhysicsVehicle =
+        ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+    if ( pPhysicsVehicle == nullptr ) {
+        pSavedPhysicsControl = nullptr;
+        return;
+    }
+
+    pSavedPhysicsControl = pPhysicsVehicle->getDrivingControl();
+    pPhysicsVehicle->setDrivingControl( GetParkedPhysControl() );
+}
+
+void GameModeScene::restoreLocalPlayerCarControl() {
+    // FUN_007bbe30
+    CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+    PhysicsVehicle *pPhysicsVehicle =
+        ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+    if ( pPhysicsVehicle == nullptr || pSavedPhysicsControl == nullptr ) {
+        pSavedPhysicsControl = nullptr;
+        return;
+    }
+
+    pPhysicsVehicle->setDrivingControl( pSavedPhysicsControl );
 }

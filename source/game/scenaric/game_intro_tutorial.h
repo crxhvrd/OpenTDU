@@ -2,6 +2,7 @@
 
 class Spots;
 struct SpotMap;
+class GMMap;
 
 // TODO: CONVERT TO ENUM
 static constexpr int32_t kTutorialStatePending = 0;
@@ -31,6 +32,9 @@ public:
     void tick();
 
     void FUN_007fbd80( bool param_2 );
+    void computeMapFocus( GMMap *pMap,
+                          Eigen::Vector4f *pOutFocus,
+                          const bool bSelectSpot );
 
 private:
     void setStep( const int32_t step );

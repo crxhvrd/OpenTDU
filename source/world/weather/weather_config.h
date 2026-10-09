@@ -19,6 +19,10 @@ public:
     Eigen::Vector4f getGlobalAmbientColor() const;
     Eigen::Vector4f getTerrainUniformParams() const;
     Eigen::Vector3f getSunDirection() const;
+    inline float getFogMax() const { return fogMaxIntensity; }
+    inline const Eigen::Vector4f &getHeightmapColor() const {
+        return terrainColor;
+    }
 
     float getWindSpeed() const;
     float getTreeWindSpeed( float param_2, Eigen::Vector4f &param_3 ) const;

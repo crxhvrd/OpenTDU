@@ -129,21 +129,21 @@ void MngFade::tick( float deltaTime, float ) {
         encodeTransitionDrawList( alpha, fVar7 );
     }
 
-    if ( pDrawListLogo != nullptr && bRenderLogo ) {
+    if ( pDrawListLogo != nullptr ) {
         pDrawListLogo->reset();
-        encodeLogoDrawList();
-
-        if ( !bWaitForPopup ) {
-            FlashPlayer *pPlayer = gpFlash->getFlashPlayer( "GENERAL" );
-            OTDU_ASSERT( pPlayer );
-
-            if ( gpActiveGameMode != nullptr && !gbLoadingInProgress ) {
-                bWaitForPopup = gpFlashMessageBox->display(
-                    0x36c66a2, 4.0f, 0, nullptr, nullptr, false );
-            }
+        if ( bRenderLogo ) {
+            encodeLogoDrawList();
         }
+    }
 
-        if ( !bRenderLogo && !gbLoadingInProgress ) {
+    if ( bRenderLogo ) {
+        if ( !bWaitForPopup &&
+             gpFlash->getFlashPlayer( "GENERAL" ) != nullptr &&
+             gpActiveGameMode != nullptr && !gbLoadingInProgress ) {
+            bWaitForPopup = gpFlashMessageBox->display(
+                0x36c66a2, 4.0f, 0, nullptr, nullptr, false );
+        }
+        if ( !gbLoadingInProgress ) {
             return;
         }
     }

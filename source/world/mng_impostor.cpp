@@ -19,6 +19,7 @@
 #include <Eigen/EulerAngles>
 
 MngImpostor *gpMngImpostor = nullptr;             // DAT_010e7f58
+float gHideDistanceForUnitBSphere = 100.0f;       // DAT_00f998d4
 MngImpostorSimple *gpMngImpostorSimple = nullptr; // DAT_010e7f5c
 
 static constexpr float kSpriteAtlasFrameWidth = 0.0625f; // DAT_00f41acc (1/16)

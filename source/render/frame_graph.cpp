@@ -161,12 +161,14 @@ void FrameGraph::submitDrawCommands( bool param_2 ) {
     }
 
     if ( bRemoveDynamicDrawCmds ) {
-        for ( RenderObjectBase *pNode : renderNodes ) {
-            uint32_t puVar2 = pNode->getObjectType();
-            if ( puVar2 == 0 ) {
-                RenderScene *peVar1 = (RenderScene *)pNode;
-                peVar1->removeDynamicDrawCommands();
-            }
+        removeDynamicDrawCommands();
+    }
+}
+
+void FrameGraph::removeDynamicDrawCommands() {
+    for ( RenderObjectBase *pNode : renderNodes ) {
+        if ( pNode->getObjectType() == 0 ) {
+            static_cast<RenderScene *>( pNode )->removeDynamicDrawCommands();
         }
     }
 }

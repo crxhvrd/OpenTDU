@@ -33,6 +33,10 @@ public:
     void removeObject( RenderObjectBase *pObject );
 
     void submitDrawCommands( bool param_2 );
+    void removeDynamicDrawCommands();
+    inline bool isRemovingDynamicDrawCommands() const {
+        return bRemoveDynamicDrawCmds;
+    }
 
     void pushClearCommand( RenderTarget *param_2,
                            const ColorRGBA param_3,

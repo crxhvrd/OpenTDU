@@ -27,6 +27,8 @@ enum class eFlashProperty {
     FP_HighQuality = 0x10,
     FP_FocusRect = 0x11,
     FP_SoundBufTime = 0x12,
+    FP_ScreenX = 0x32,
+    FP_ScreenY = 0x33,
     FP_Viewport = 0x35,
     FP_BoundingBox = 0x39,
 };
@@ -80,6 +82,7 @@ public:
 
     void setProperty( eFlashProperty param_3, float param_2 );
     void setProperty( eFlashProperty param_3, bool param_2 );
+    float getPropertyFloat( const eFlashProperty property );
 
     void updateTransform();
     void advanceToNextTag();
@@ -125,6 +128,7 @@ struct FlashClip {
     void setProperty( eFlashProperty param_3, float param_2 );
 
     bool getProperty( eFlashProperty param_2 );
+    float getPropertyFloat( const eFlashProperty property );
     int32_t getFrameProperty( const eFlashProperty property );
 
     void getPropertyViewport( const eFlashProperty param_3,

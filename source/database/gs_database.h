@@ -36,6 +36,7 @@ static constexpr int32_t kNumDatabases = 18;
 static constexpr int32_t kNumCommonStrings = 6;
 
 class FlashPlayer;
+struct SpotMap;
 
 struct DBEntry {
     uint64_t Hashcode;
@@ -177,6 +178,11 @@ public:
     const CarConfig *getCarConfig( int32_t carID ) const;
 
     DBEntryCarShop *getCarShopBySpotName( uint64_t spotHashcode );
+    int32_t getNumShopCarPacks( const DBEntryCarShop *pCarShop );
+    DBEntryCarPack *getShopCarPack( const DBEntryCarShop *pCarShop,
+                                    int32_t index );
+    bool isCarTunable( int32_t carID );
+    bool isCarTunableInShop( const SpotMap *pSpot, int32_t carID );
     DBEntryCarShop *getCarShopSellingCar( DBEntryCarPhysicsData *pCarEntry );
     bool isCarShopSlotAvailable( DBEntryCarShop *pCarShop, int32_t slotIndex );
     int32_t getNumCarsAvailableInShop( DBEntryCarShop *pCarShop );
@@ -252,3 +258,11 @@ private:
 };
 
 extern GSDatabase *gpDatabase;
+
+std::string GetFullCarName( DBEntryCarPhysicsData *param_1 );
+
+static inline bool IsCarEntryValid( const DBEntryCarPhysicsData *pEntry ) {
+    // FUN_009a8a60
+    return ( pEntry->BitField & 1 ) != 0 && pEntry->Brand != nullptr &&
+           ( pEntry->Brand->Flags & 1 ) != 0;
+}

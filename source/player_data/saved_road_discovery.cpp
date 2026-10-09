@@ -3,6 +3,8 @@
 
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
+#include "game/scenaric/spots.h"
+#include "player_data/achievement_checks.h"
 #include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
@@ -64,6 +66,40 @@ bool SavedRoadDiscovery::isRoadLocked( const int32_t roadID,
 
     const int32_t bitIndex = segment % 64;
     return ( getBlock( blockIndex ) & ( 1ull << bitIndex ) ) == 0ull;
+}
+
+void SavedRoadDiscovery::unlockRoad( const int32_t roadID,
+                                     const int32_t segment ) {
+    // FUN_0088d430
+    const int32_t blockIndex = roadID + segment / 64;
+    const int32_t bitIndex = segment % 64;
+    setBlock( blockIndex, getBlock( blockIndex ) | ( 1ull << bitIndex ) );
+}
+
+void DiscoverSpotRoad( const SpotMap *pSpot ) {
+    // FUN_0088e320
+    if ( pSpot == nullptr ) {
+        return;
+    }
+
+    int32_t roadID = pSpot->RoadID;
+    int32_t segment = pSpot->RoadSegment;
+    if ( pSpot->Type == 8 && pSpot->SubType >= 5 && pSpot->SubType <= 8 ) {
+        OTDU_UNIMPLEMENTED; // TODO: AI
+        return;
+    }
+    if ( roadID == -1 || segment == -1 ) {
+        return;
+    }
+
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    SavedRoadDiscovery *pRoads = pSave->getRoadDiscovery();
+    const bool bWasLocked = pRoads->isRoadLocked( roadID, segment );
+    pRoads->unlockRoad( roadID, segment );
+    if ( bWasLocked ) {
+        pSave->getAchievements()->notify(
+            ACF_Challenge | ACF_Road | ACF_Collection, false );
+    }
 }
 
 static int32_t GetRoadZone( const uint32_t roadID ) {

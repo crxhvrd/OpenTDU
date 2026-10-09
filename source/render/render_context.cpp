@@ -94,6 +94,7 @@ static constexpr int32_t kNumTile = 16;        // NumTileX (256 grid cells / 16)
 constexpr int32_t kNumRealTile = kNumTile + 2; // NumRealTileX (1-tile border)
 constexpr int32_t kCellsPerTile = 16;
 
+bool gbHeightmapRefineUnderwaterTiles = false; // DAT_010e7f90
 bool gbDebugWireframeHmap = false;
 bool gbDebugHmapDisableFootprintCull = false; // skip FUN_007022f0 iVar5==2 cull
 bool gbDebugHmapDisableStitchMask = false; // skip area/sector seam-stitch mask
@@ -1028,7 +1029,8 @@ HeightmapTileLOD( const float *pErrorsTile, float distSq, float coefLODTile ) {
     float error0 = pErrorsTile[0];
     if ( pErrorsTile[4] < kHeightmapSeaLevel &&
          error0 < kHeightmapFlatThreshold ) {
-        error0 = kHeightmapSeaLevel;
+        error0 = gbHeightmapRefineUnderwaterTiles ? kHeightmapFlatThreshold
+                                                  : kHeightmapSeaLevel;
     }
     if ( error0 < 0.0f ) {
         return 0xfe;

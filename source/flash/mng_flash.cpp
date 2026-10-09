@@ -16,6 +16,17 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_garage.h"
+#include "game/freeride/gm_freeride.h"
+#include "game/gm_world.h"
+#include "game/vehicle/car_state.h"
+#include "physics/vehicle/physics_vehicle.h"
+#include "render/camera/camera_gps.h"
+#include "render/gs_render.h"
+#include "render/mng_cam_gps.h"
+#include "render/render_scene.h"
+#include "world/gs_world.h"
+#include "flash/movie_player.h"
+#include "flash/audio/flash_sounds.h"
 
 static constexpr FlashMessage kGoMap = 0x616d6f67u;            // goma
 static constexpr FlashMessage kGoFreeride = 0x72666f67u;       // gofr
@@ -63,21 +74,102 @@ static bool FUN_00914df0() {
 }
 
 // TODO: Move to right cpp
-static void TransitionFromFreerideToMap( int32_t param_1 ) {
+static void PauseFrontEndMovie( const char *pMovieName ) {
+    uint32_t levelIndex = 0;
+    uint32_t movieIndex = 0;
+    if ( !gpFlash->getFlashMovieIndex( &levelIndex, &movieIndex,
+                                       pMovieName ) ) {
+        return;
+    }
+
+    MoviePlayer *pMovie = gpFlash->getMoviePlayer( levelIndex, movieIndex );
+    if ( pMovie != nullptr ) {
+        pMovie->IsMoviePaused |= 2;
+    }
+}
+
+// TODO: Move to right cpp
+static void TransitionFromFreerideToMap( int32_t targetGameMode ) {
     // FUN_007183f0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (GPS fly-in) / HUD / PHYSICS
-
-    if ( gpActiveGMScene == nullptr ) {
+    const NextIntroInfo &nextIntro = gpScenaric->getNextIntro();
+    if ( gpTestDriveInstance->getActiveGameMode() == nextIntro.NextGameMode &&
+         nextIntro.bIsActive ) {
         return;
     }
-    MngFlashGM &flashGM = gpActiveGMScene->getFlashManager();
-    if ( flashGM.isTransitioningToGPS() ) {
-        return;
-    }
-    flashGM.requestGPSTransition();
 
-    if ( gpFlash != nullptr && gpFlash->getFlashSound() != nullptr ) {
-        gpFlash->getFlashSound()->playFrontEndSound( "ent_map", 0, false );
+    if ( gpActiveGMScene != nullptr ) {
+        OTDU_UNIMPLEMENTED; // TODO: GMFREERIDE
+        gpActiveGMScene->parkLocalPlayerCar();
+    }
+
+    gpCamera->setUseBlur( true );
+    PauseFrontEndMovie( "HUD" );
+    PauseFrontEndMovie( "GAUGES" );
+
+    Viewport *pBackViewport = gpRender->getRenderPass<RP_Back>().pViewport;
+    pBackViewport->ClearColor.R = 0x22;
+    pBackViewport->ClearColor.G = 0x20;
+    pBackViewport->ClearColor.B = 0x32;
+    pBackViewport->ClearColor.A = 0xff;
+
+    Eigen::Vector4f focus =
+        gpWorld->getPreviousTransform().row( 3 ).transpose();
+    CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+    PhysicsVehicle *pPhysicsVehicle =
+        ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+    if ( pPhysicsVehicle != nullptr ) {
+        focus = pPhysicsVehicle->getChassisWorldMatrix().row( 3 ).transpose();
+        OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    }
+
+    CameraGPS *pCameraGPS = static_cast<CameraGPS *>(
+        gpCamera->findCameraWithMode( 3, gpCamera->getBoundCarState() ) );
+    pCameraGPS->setFocus( focus );
+
+    if ( gpActiveGM != nullptr ) {
+        OTDU_UNIMPLEMENTED; // TODO: FUN_007bdd10
+    }
+
+    CameraGame *pActiveCamera = gpCamera->getActiveCamera();
+    const Eigen::Vector4f &zProjection = gpRender->getRenderPass<RP_Near>()
+                                             .pScene->getFrustumWrite()
+                                             .getZProjection();
+    const Eigen::Vector3f target = pActiveCamera->getTarget();
+    const Eigen::Vector3f up = pActiveCamera->getUp();
+    pCameraGPS->setFixedPose(
+        *pActiveCamera->getWorldPositionRW(),
+        Eigen::Vector4f( target.x(), target.y(), target.z(), 1.0f ),
+        Eigen::Vector4f( up.x(), up.y(), up.z(), 0.0f ), zProjection.x(),
+        zProjection.y(), pActiveCamera->getFOV(),
+        pActiveCamera->getAspectRatio() );
+
+    int32_t zoom = pCameraGPS->getZoom();
+    if ( zoom == CameraGPS::GZL_Fixed ) {
+        zoom = pCameraGPS->getPreviousZoom();
+    }
+    if ( zoom == CameraGPS::GZL_Space ) {
+        zoom = CameraGPS::GZL_Island;
+    } else if ( zoom == CameraGPS::GZL_Fixed ) {
+        zoom = CameraGPS::GZL_Medium;
+    }
+    if ( targetGameMode == GM_InstantChallenge ) {
+        zoom = CameraGPS::GZL_Close;
+    }
+    pCameraGPS->startZoom( CameraGPS::GZL_Fixed, zoom );
+    pCameraGPS->setTransitionEndCallback(
+        &GMFreeride::OnGPSFlyUpEnd, nullptr,
+        reinterpret_cast<void *>( static_cast<intptr_t>( targetGameMode ) ) );
+
+    gpCamera->setCameraMode( 3, 0, 1.0f );
+    if ( gpMngCamGPS != nullptr ) {
+        gpMngCamGPS->setUpdateStreaming( true );
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: BIKES
+
+    gpFlash->getFlashSound()->playFrontEndSound( "ent_map", 0, false );
+    if ( gpMngChat != nullptr ) {
+        gpMngChat->closeInputPopupIfOpen();
     }
 }
 

@@ -125,3 +125,5 @@ private:
     bool isAnyInnerViewUnloading() const;
     void releaseResource( const int32_t index );
 };
+
+PhysicsDrivingControl *GetParkedPhysControl();

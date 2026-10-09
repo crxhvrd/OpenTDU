@@ -18,6 +18,12 @@ class MngBackground : public Manager,
                       public WorldListener,
                       public StreamingCallback {
 public:
+    inline HiearchyNode *getDomeNode() const { return pHiearchyNodeDome; }
+    inline void setCloudsGlobalFade( const float fade ) {
+        cloudsGlobalFade = fade;
+    }
+
+public:
     const char *getName() const override {
         return "BackGround"; /* FUN_00432200 */
     }

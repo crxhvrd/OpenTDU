@@ -66,6 +66,7 @@ public:
                  int32_t carID,
                  const Matrix4x4f_t &spawn );
     void removeCar( EntityCarPlayer *pSpawnPoint );
+    inline void setSuspended( const bool bState ) { bSuspended = bState; }
 
 private:
     std::array<BrandCar, kMaxNumBrandCar> cars;
