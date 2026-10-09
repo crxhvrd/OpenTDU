@@ -48,6 +48,7 @@ Copy the opentdu binary and EURO folder content (**must be merged with your orig
 | -disable_assert | Disable assert log/debug break |
 | -norunlock | Disable single game instance run lock |
 | -profile (name) | Launch game with a specific profile (must match savegame name) |
+| -car (id) | Override the local player car in world game modes (e.g. freeride) with a car database ID |
 | -silent | Disable logging (stdout, outpudebug and file) | 
 | -log (path) | Redirect game logs to a specific file (default: ./opentdu.log) |
 | -nolog | Disable logging to file (note: does not disable stdout/outputdebug) |
