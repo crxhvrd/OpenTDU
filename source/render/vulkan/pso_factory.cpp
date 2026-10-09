@@ -305,7 +305,15 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
     VertexShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
     VertexShader.module = pGraphicsShaderStages[0]->ShaderModule;
     VertexShader.pName = "main";
-    VertexShader.pSpecializationInfo = nullptr; // &spinf;
+    vsSpecData[0] = 1u;
+    vsSpecData[1] = VSClipPlaneCount << 21;
+    vsSpecEntries[0] = { 12, 0, sizeof( uint32_t ) };
+    vsSpecEntries[1] = { 5, sizeof( uint32_t ), sizeof( uint32_t ) };
+    vsSpecInfo.mapEntryCount = 2;
+    vsSpecInfo.pMapEntries = vsSpecEntries;
+    vsSpecInfo.dataSize = sizeof( vsSpecData );
+    vsSpecInfo.pData = vsSpecData;
+    VertexShader.pSpecializationInfo = &vsSpecInfo;
     graphicsShaderStages.push_back( VertexShader );
 
     if ( bIsStageBound[1] ) {
@@ -324,6 +332,8 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
     uint64_t psoHashcode = CalculatePSOHashcode(
         psoInfos, pVertexLayout->InputBindings, inputAttribs, psoLayoutHashcode,
         renderPassHashcode );
+    psoHashcode = CombineCityHash64(
+        psoHashcode, (const char *)&VSClipPlaneCount, sizeof( uint32_t ) );
 
     auto cacheIt = cache.find( psoHashcode );
     if ( cacheIt != cache.end() ) {
@@ -402,6 +412,8 @@ void PSOFactory::setShader( eShaderType stage, GPUShader *pShader ) {
 }
 
 void PSOFactory::reset() {
+    VSClipPlaneCount = 0;
+
     RasterState = {};
     RasterState.pNext = nullptr;
     RasterState.sType =

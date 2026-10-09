@@ -47,6 +47,7 @@ struct PSOFactory {
 
     uint64_t psoLayoutHashcode;
     uint64_t renderPassHashcode;
+    uint32_t VSClipPlaneCount;
 
     VkPipelineLayout PipelineLayout;
 
@@ -64,6 +65,10 @@ struct PSOFactory {
     void reset();
 
 private:
+    uint32_t vsSpecData[2];
+    VkSpecializationMapEntry vsSpecEntries[2];
+    VkSpecializationInfo vsSpecInfo;
+
     std::unordered_map<uint64_t, CachedPSO> cache;
     CachedPSO *latestPSO; // Latest PSO created or found in the cache
 

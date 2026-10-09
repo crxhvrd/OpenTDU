@@ -1675,8 +1675,10 @@ void RenderDevice::setColorWriteChannels( bool bWriteRed,
 }
 
 void RenderDevice::setClipPlaneEnabled( uint32_t param_1 ) {
+    const uint32_t clipPlaneCount = resourceBinder.setClipPlaneMask( param_1 );
     psoFactory.RasterState.depthClampEnable = param_1 != 0;
-    resourceBinder.setShaderSpecBits( 5, 21, 3, param_1 );
+    resourceBinder.setShaderSpecBits( 5, 21, 3, clipPlaneCount );
+    psoFactory.VSClipPlaneCount = clipPlaneCount;
     psoFactory.bDirty = true;
 }
 

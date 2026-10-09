@@ -60,6 +60,7 @@ struct ResourceBinder {
                             const uint32_t offset,
                             const uint32_t numVectors );
     void setClipPlane( int32_t param_1, float *param_2 );
+    uint32_t setClipPlaneMask( uint32_t mask );
     void bindTexture( Texture *pTexture,
                       const uint32_t frameIndex,
                       const uint32_t index );

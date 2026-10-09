@@ -307,6 +307,23 @@ void ResourceBinder::setClipPlane( int32_t param_1, float *param_2 ) {
     dirtyStates |= eDirtyStates::DS_VSClipPlanes;
 }
 
+uint32_t ResourceBinder::setClipPlaneMask( const uint32_t mask ) {
+    uint32_t count = 0;
+    for ( uint32_t i = 0; i < 6; i++ ) {
+        if ( ( mask & ( 1u << i ) ) != 0 ) {
+            count = i + 1;
+        }
+    }
+    for ( uint32_t i = 0; i < count; i++ ) {
+        if ( ( mask & ( 1u << i ) ) == 0 ) {
+            memset( clipPlanes[i], 0, sizeof( clipPlanes[i] ) );
+        }
+    }
+
+    dirtyStates |= eDirtyStates::DS_VSClipPlanes;
+    return count;
+}
+
 void ResourceBinder::bindTexture( Texture *pTexture,
                                   const uint32_t frameIndex,
                                   const uint32_t index ) {
