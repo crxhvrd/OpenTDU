@@ -550,6 +550,15 @@ Lerp2Clamped( float x, float x0, float x1, float y0, float y1 ) {
     return Clamp( r, Min( y0, y1 ), Max( y0, y1 ) );
 }
 
+static inline float
+CosineEaseLerp( const float t, const float from, const float to ) {
+    // FUN_004125a0
+    const float p = powf( 1.0f - t, 4.0f );
+    const float ease =
+        1.0f - ( cosf( ( 1.0f - p ) * kPI + p * kTwoPI ) + 1.0f ) * 0.5f;
+    return ( 1.0f - ease ) * from + ease * to;
+}
+
 static inline Eigen::Vector4f
 NormalizeVector4( const Eigen::Vector4f &vector ) {
     // FUN_00404b00
@@ -613,4 +622,22 @@ static inline Eigen::Vector4f Cross3( const Eigen::Vector4f &a,
 static inline Eigen::Vector4f Normalize3( const Eigen::Vector4f &v ) {
     const float length = v.head<3>().norm();
     return ( length > 1.0e-6f ) ? Eigen::Vector4f( v / length ) : v;
+}
+
+static inline float Length3( const Eigen::Vector4f &vector ) {
+    return vector.head<3>().norm();
+}
+
+static Eigen::Quaternionf MakeAxisAngleQuaternion( const Eigen::Vector4f &axis,
+                                                   const float angle ) {
+    // FUN_00501d50
+    const float axisLength = Length3( axis );
+    if ( axisLength < kGPSQuaternionEpsilon ) {
+        return Eigen::Quaternionf::Identity();
+    }
+
+    const float halfAngle = angle * 0.5f;
+    const Eigen::Vector3f v =
+        axis.head<3>() * ( sinf( halfAngle ) / axisLength );
+    return Eigen::Quaternionf( cosf( halfAngle ), v.x(), v.y(), v.z() );
 }

@@ -1648,7 +1648,7 @@ void GSRender::setupRenderPasses() {
         RenderPass{&sceneBack2D,                       &camera2D,            &viewportNear,
                    &mainRTwMFramebuffer,                                                                                            &lightsBack,      0x20, 0, "BACK2D",
                    nullptr,                                                                                                                                                                                      false, true },
-        RenderPass{&scenePreNear,                      &camera2D,            &clearColorStencilViewport,
+        RenderPass{&scenePreNear,                      &cameraMain,            &clearColorStencilViewport,
                    &mainRTwMFramebuffer,                                                                                            &lightsDefault,   0x20, 0, "PRE_NEAR",
                    &sceneNear,                                                                                                                                                                                   true,  false},
         RenderPass{&sceneClearDepth,                   &cameraMain,          &clearDepthViewport,
