@@ -2,6 +2,8 @@
 
 #include "game/gm_scene.h"
 
+#include "ai/ai_road_query.h"
+
 #include "world/mng_sector_name.h"
 #include "world/mng_world.h"
 #include "world/mng_impostor.h"
@@ -11,6 +13,7 @@
 #include "render/mng_cam_gps.h"
 #include "render/mng_font_players.h"
 #include "mng_map_viewer.h"
+#include "mng_trac_road.h"
 #include "game/scenaric/mng_spots.h"
 
 class CameraGame;
@@ -67,7 +70,9 @@ private:
     void leaveFreeMode( MapSpotRecord *pSelectedRecord );
     bool isSpaceViewActive() const;
     void placeLocalPlayerCar( const Eigen::Vector4f &position,
-                              Matrix4x4f_t *pOutTransform );
+                              Matrix4x4f_t *pOutTransform,
+                              const eRoadSnapMode mode,
+                              const bool bShoulder );
     void goToFreeRide();
     void moveFocusTo( const Eigen::Vector4f &target );
     void goToSelectedSpot();
@@ -86,7 +91,6 @@ private:
     void updateTargetMarker();
 
 private:
-    // MngTracRoadMap mngTracRoadMap;
     MngFontPlayers mngFontPlayers;
     MngSpots mngSpots;
     MngWorld mngWorld;
@@ -95,6 +99,7 @@ private:
     MngImpostorSimple mngImpostorSimple;
     MngOcean mngOcean;
     MngLogoDisplay mngLogoDisplay;
+    MngTracRoadMap mngTracRoadMap;
     MngCamGPS mngCamGPS;
     MngSectorName mngSectorName;
     MngMapViewer mngMapViewer;

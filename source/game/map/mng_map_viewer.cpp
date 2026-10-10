@@ -406,6 +406,12 @@ MngMapViewer::MngMapViewer()
     gpMngMapViewer = this;
 }
 
+MngMapViewer::~MngMapViewer() {
+    // FUN_009bfae0 (inlined)
+    gpMngMapViewer = nullptr;
+    gpMapView = nullptr;
+}
+
 void MngMapViewer::tick( float deltaTime, float /*totalTime*/ ) {
     // FUN_006bd5f0
     CameraGame *pActiveCamera = gpCamera->getActiveCamera();

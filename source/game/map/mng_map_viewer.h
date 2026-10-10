@@ -76,6 +76,7 @@ public:
 
 public:
     MngMapViewer();
+    ~MngMapViewer();
 
     void tick( float deltaTime, float totalTime ) override;
     void pause() override;

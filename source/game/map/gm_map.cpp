@@ -1,6 +1,9 @@
 #include "shared.h"
 #include "gm_map.h"
 
+#include "ai/ai_pool.h"
+#include "ai/gs_ai.h"
+
 #include "tdu_instance.h"
 #include "imgui.h"
 #include "core/maths_helper.h"
@@ -409,6 +412,7 @@ GMMap::GMMap()
       mngImpostorSimple(),
       mngOcean(),
       mngLogoDisplay(),
+      mngTracRoadMap(),
       mngCamGPS(),
       mngSectorName(),
       mngMapViewer(),
@@ -437,7 +441,7 @@ GMMap::GMMap()
     registerManager( &mngImpostorSimple );
     registerManager( &mngOcean );
     registerManager( &mngLogoDisplay );
-    OTDU_UNIMPLEMENTED; // TODO: MngTracRoadMap (FUN_00783a10)
+    registerManager( &mngTracRoadMap );
     registerManager( &mngCamGPS );
     registerManager( &mngSectorName );
     registerManager( &mngMapViewer );
@@ -446,6 +450,7 @@ GMMap::GMMap()
     gpGMMap = this;
     mngMapViewer.setState( MngMapViewer::MS_Active );
     mngSpots.setOwner( this );
+    mngTracRoadMap.setOwner( &mngSpots );
 
     mngFlash.setWantsAsyncInstall( true );
     gpCamera->setUseBlur( true );
@@ -453,12 +458,12 @@ GMMap::GMMap()
     numTicksPerTransition = 0;
 
     gpBrandCar->setSuspended( true );
-    OTDU_UNIMPLEMENTED; // TODO: GSAI
+    gpAI->getAIPool()->setField0xC( true );
 }
 
 GMMap::~GMMap() {
     // FUN_009bfae0
-    OTDU_UNIMPLEMENTED; // TODO: GSAI
+    gpAI->getAIPool()->setField0xC( false );
     gpBrandCar->setSuspended( false );
 
     gpGMMap = nullptr;
@@ -737,7 +742,15 @@ void GMMap::destroy() {
     // FUN_009c2f20
     GameModeScene::destroy();
 
-    OTDU_UNIMPLEMENTED; // TODO: AI
+    AiPool *pAIPool = gpAI->getAIPool();
+    if ( gpTestDriveInstance->getActiveGameMode() != GM_FreeRide ) {
+        gpAI->setDisableBots( true );
+        gpAI->setBotsActive( false );
+        pAIPool->removeBots();
+    }
+    gpAI->setDisableCops( true );
+    gpAI->setCopsActive( false );
+    pAIPool->removeCops();
 
     if ( pCameraGPS != nullptr ) {
         pCameraGPS->setPoseCallback( nullptr, nullptr );
@@ -986,19 +999,11 @@ void GMMap::moveFocusTo( const Eigen::Vector4f &target ) {
     mngMapViewer.setFocus( target );
 }
 
-static Eigen::Vector4f ProjectOnRoad( const Eigen::Vector4f &position ) {
-    // FUN_0078d720
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
-    return position;
-}
-
-static Matrix4x4f_t ComputeRoadApproachFrame( const Eigen::Vector4f &position,
-                                              const float distance ) {
-    // FUN_0078d8d0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
-    Matrix4x4f_t frame = Matrix4x4f_t::Identity();
-    frame.row( 3 ) = ProjectOnRoad( position ).transpose();
-    return frame;
+static Eigen::Vector4f
+ProjectPositionOnRoad( const Eigen::Vector4f &position ) {
+    AiRoadLocation location;
+    ProjectOnRoad( position, nullptr, nullptr, false, &location );
+    return location.Frame.row( 3 ).transpose();
 }
 
 void GMMap::startSpotExit( const SpotMap *pSpot ) {
@@ -1026,7 +1031,7 @@ void GMMap::goToSelectedSpot() {
         goToFreeRide();
         return;
     }
-    moveFocusTo( ProjectOnRoad( pSelectedRecord->Position ) );
+    moveFocusTo( ProjectPositionOnRoad( pSelectedRecord->Position ) );
 }
 
 void GMMap::goToSpot() {
@@ -1047,24 +1052,25 @@ void GMMap::goToSpot() {
         exitState = 5;
         target = pSelectedRecord->Position;
     } else {
-        target = ComputeRoadApproachFrame( pSelectedRecord->Position,
-                                           kSpotApproachDistance )
-                     .row( 3 )
-                     .transpose();
+        Matrix4x4f_t approachFrame;
+        ComputeRoadApproachFrame( pSelectedRecord->Position, approachFrame,
+                                  kSpotApproachDistance );
+        target = approachFrame.row( 3 ).transpose();
     }
     moveFocusTo( target );
     gpMapView->bEnabled = false;
 }
 
-static int32_t SnapToRoadFrame( const Eigen::Vector4f &position,
-                                Matrix4x4f_t &outFrame ) {
-    // FUN_009c0970
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+static int32_t SnapToMapRoadFrame( const Eigen::Vector4f &position,
+                                   Matrix4x4f_t &outFrame,
+                                   const eRoadSnapMode mode,
+                                   const bool bShoulder ) {
+    if ( !gbMapDebugTeleportAnywhere ) {
+        return SnapToRoadFrame( position, outFrame, mode, bShoulder, false );
+    }
+
     outFrame = Matrix4x4f_t::Identity();
     outFrame.row( 3 ) = position.transpose();
-    if ( !gbMapDebugTeleportAnywhere ) {
-        return 0;
-    }
 
     // NOTE: Only used by free teleport (ie Debug only)
     const float groundHeight =
@@ -1120,10 +1126,12 @@ void GMMap::confirmTeleport() {
 }
 
 void GMMap::placeLocalPlayerCar( const Eigen::Vector4f &position,
-                                 Matrix4x4f_t *pOutTransform ) {
+                                 Matrix4x4f_t *pOutTransform,
+                                 const eRoadSnapMode mode,
+                                 const bool bShoulder ) {
     // FUN_009c11d0
     Matrix4x4f_t transform;
-    SnapToRoadFrame( position, transform );
+    SnapToMapRoadFrame( position, transform, mode, bShoulder );
     if ( pOutTransform != nullptr ) {
         *pOutTransform = transform;
     }
@@ -1319,12 +1327,13 @@ void GMMap::updateExit() {
                 return;
             }
             const Eigen::Vector4f position =
-                ProjectOnRoad( pSelectedRecord->Position );
+                ProjectPositionOnRoad( pSelectedRecord->Position );
             if ( gpMapView->isMoving() ||
                  !gpWorld->isStreamedAround( &position, true, true ) ) {
                 break;
             }
-            placeLocalPlayerCar( position, nullptr );
+            placeLocalPlayerCar( position, nullptr,
+                                 eRoadSnapMode::RSM_ProjectOnly, false );
             gpTestDriveInstance->setNextGameMode( GM_FreeRide );
             requestExit();
             break;
@@ -1336,7 +1345,8 @@ void GMMap::updateExit() {
              !gpWorld->isStreamedAround( &position, true, true ) ) {
             break;
         }
-        placeLocalPlayerCar( position, nullptr );
+        placeLocalPlayerCar( position, nullptr,
+                             eRoadSnapMode::RSM_KeepAwayFromEnds, false );
         gpScenaric->setCurrentSpotIndex(
             gpScenaric->getSpotList().getSpotMapIndex(
                 pTargetSpot->Hashcode ) );
@@ -1350,14 +1360,16 @@ void GMMap::updateExit() {
             goToFreeRide();
             break;
         }
-        const Matrix4x4f_t frame = ComputeRoadApproachFrame(
-            pSelectedRecord->Position, kSpotApproachDistance );
+        Matrix4x4f_t frame;
+        ComputeRoadApproachFrame( pSelectedRecord->Position, frame,
+                                  kSpotApproachDistance );
         const Eigen::Vector4f position = frame.row( 3 ).transpose();
         if ( gpMapView->isMoving() ||
              !gpWorld->isStreamedAround( &position, true, true ) ) {
             break;
         }
-        placeLocalPlayerCar( pSelectedRecord->Position, nullptr );
+        placeLocalPlayerCar( pSelectedRecord->Position, nullptr,
+                             eRoadSnapMode::RSM_BackOff, false );
         gpWorld->setPreviousTransform( frame );
         gpTestDriveInstance->setNextGameMode( GM_FreeRide );
         requestExit();
@@ -1425,7 +1437,8 @@ void GMMap::updateExit() {
         }
 
         Matrix4x4f_t carTransform;
-        placeLocalPlayerCar( focus, &carTransform );
+        placeLocalPlayerCar( focus, &carTransform,
+                             eRoadSnapMode::RSM_KeepAwayFromEnds, true );
         gpWorld->setPreviousTransform( carTransform );
         gpTestDriveInstance->setNextGameMode( GM_FreeRide );
         requestExit();
@@ -1486,7 +1499,8 @@ int32_t GMMap::computeCursorWorldFrame( Matrix4x4f_t &outFrame ) const {
     Eigen::Vector4f cursorPosition;
     ScreenToWorldGround( Eigen::Vector2f( cursorX, 1.0f - cursorY ),
                          cursorPosition );
-    return SnapToRoadFrame( cursorPosition, outFrame );
+    return SnapToMapRoadFrame( cursorPosition, outFrame,
+                               eRoadSnapMode::RSM_ProjectOnly, false );
 }
 
 void GMMap::updateCursor( const float deltaTime ) {
