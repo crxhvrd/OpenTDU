@@ -8,6 +8,8 @@
 #include "game/gm_scene.h"
 #include "game/mng_music.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "render/camera/camera_gps.h"
+#include "render/camera/gs_camera.h"
 #include "tdu_instance.h"
 
 FlashSounds::FlashSounds() : Bank(), pMemoryPool( nullptr ) {
@@ -246,9 +248,18 @@ const char *FlashSounds::ResolveGameModeMusicKey() {
     }
 
     switch ( gpTestDriveInstance->getActiveGameMode() ) {
-    case GM_Map:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (the "CREDITS" variant)
+    case GM_Map: {
+        // The space view plays the credits music.
+        static constexpr int32_t kGPSCameraMode = 3;
+        const CameraGPS *pCameraGPS =
+            static_cast<const CameraGPS *>( gpCamera->findCameraWithMode(
+                kGPSCameraMode, gpCamera->getBoundCarState() ) );
+        if ( pCameraGPS != nullptr &&
+             pCameraGPS->getZoom() == CameraGPS::GZL_Space ) {
+            return "CREDITS";
+        }
         return "MAP";
+    }
 
     case GM_Home:
         return "HOME";
