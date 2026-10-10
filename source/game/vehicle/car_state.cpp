@@ -6,6 +6,8 @@
 
 #include "gs_car_display.h"
 #include "gs_car_state.h"
+#include "game/game_object.h"
+#include "physics/gs_physics.h"
 #include "vehicle_car.h"
 #include "database/gs_database.h"
 #include "game/avatar/avatar_clothes.h"
@@ -71,6 +73,9 @@ void CarState::setPhysicsVehicle( PhysicsVehicle *pVehicle ) {
     pPhysicsVehicle = pVehicle;
     if ( pVehicle != nullptr ) {
         numWheels = pVehicle->getNumWheels();
+        gGameObjectDico.registerObject( this );
+        gpPhysics->setVehicleOwner( pVehicle,
+                                    static_cast<GameObject *>( this ) );
     }
 }
 

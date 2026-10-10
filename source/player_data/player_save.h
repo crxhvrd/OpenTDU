@@ -41,6 +41,7 @@ public:
         return numPendingOperations == 0 && bInitialized;
     }
     inline void resetPendingOperations() { numPendingOperations = 0; }
+    inline bool hasValidGarage() const { return nextCarUniqueID != 0; }
 
 public:
     PlayerSave();

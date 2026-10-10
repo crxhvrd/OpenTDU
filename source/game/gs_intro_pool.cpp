@@ -1,6 +1,9 @@
 #include "shared.h"
 #include "gs_intro_pool.h"
 
+#include "ai/ai_pool.h"
+#include "ai/gs_ai.h"
+
 #include "game/vehicle/gs_car_display.h"
 #include "world/gs_world.h"
 #include "world/spot_stream.h"
@@ -44,7 +47,7 @@ void EnableWorldSpotStreaming() {
         gpCarDisplay->freeResources();
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+    gpAI->getAIPool()->setField0xC( false );
 
     if ( gpWorld == nullptr || gpWorld->getStreamingManager() == nullptr ) {
         return;

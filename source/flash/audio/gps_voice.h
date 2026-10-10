@@ -12,6 +12,7 @@ public:
     bool initialize();
     void initializeFromDatabase();
     void terminate();
+    bool play( const int32_t index );
 
 private:
     enum class eAudioState {

@@ -444,7 +444,8 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         }
 
         if ( bNeedDatabaseInit ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
+            gpScenaric->getIntroTutorial().sendFlashVariables( pPlayer );
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: GSTutorial
             bNeedDatabaseInit = false;
         }
         return true;

@@ -3,6 +3,7 @@
 class Spots;
 struct SpotMap;
 class GMMap;
+class FlashPlayer;
 
 // TODO: CONVERT TO ENUM
 static constexpr int32_t kTutorialStatePending = 0;
@@ -35,6 +36,7 @@ public:
     void computeMapFocus( GMMap *pMap,
                           Eigen::Vector4f *pOutFocus,
                           const bool bSelectSpot );
+    void sendFlashVariables( FlashPlayer *pPlayer );
 
 private:
     void setStep( const int32_t step );

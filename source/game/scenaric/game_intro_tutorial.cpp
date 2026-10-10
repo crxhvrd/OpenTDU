@@ -7,6 +7,7 @@
 #include "game/map/gm_map.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
+#include "flash/implementation/flash_player.h"
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_save.h"
@@ -207,6 +208,25 @@ void GameIntroTutorial::endStep( const int32_t step ) {
 
     default:
         return;
+    }
+}
+
+void GameIntroTutorial::sendFlashVariables( FlashPlayer *pPlayer ) {
+    // FUN_007fc920
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    const bool bNoTutorial = tutorialStep == kTutorialStatePending ||
+                             tutorialStep == kTutorialStateRunning;
+    pPlayer->setVariableValue( "/:IsTutorial", bNoTutorial ? "0" : "1" );
+    pPlayer->setVariableValue( "/:IsMapForTuto", bNoTutorial ? "1" : "0" );
+    pPlayer->setVariableValue(
+        "/:IsMapQuit", ( tutorialStep != kTutorialStateHouseBought ) ? 1 : 0 );
+    if ( tutorialStep != kTutorialStateFirstDrive &&
+         tutorialStep != kTutorialStateCarBought &&
+         tutorialStep != kTutorialStateCarRental ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_007fc7f0 (current step dialog)
     }
 }
 

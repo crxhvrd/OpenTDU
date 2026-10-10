@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "mng_actor.h"
 
+#include "ai/ai_road_query.h"
 #include "bank_scene_arrays.h"
 #include "entity/base_entity.h"
 #include "entity/entity_factory.h"
@@ -133,16 +134,15 @@ Matrix4x4f_t MngActor::placePlayerVehicle( const int32_t spawnMode,
         }
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI (AiRoadMap snap for the spawn frame)
+    SnapToRoadFrame( fallbackPosition, frame,
+                     eRoadSnapMode::RSM_KeepAwayFromEnds, true, true );
     OTDU_LOG_WARN( "Player spawn: no '%s' marker for spot 0x%016llx (bank %s) "
-                   "- dropping the car at %.1f %.1f %.1f\n",
+                   "- snapped the car to the road at %.1f %.1f %.1f\n",
                    kPlayerParkingName, (unsigned long long)pSpot->Hashcode,
                    ( pSector != nullptr && FindStreamedSpotBank( pSector ) )
                        ? "streamed"
                        : "NOT streamed",
-                   fallbackPosition.x(), fallbackPosition.y(),
-                   fallbackPosition.z() );
-    frame.row( 3 ) = fallbackPosition;
+                   frame( 3, 0 ), frame( 3, 1 ), frame( 3, 2 ) );
     applyPlayerVehicleFrame( frame, bApply );
     return frame;
 }

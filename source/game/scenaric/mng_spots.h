@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/mng_base.h"
+#include "ai/ai_road_query.h"
 #include "game/bookmark/mng_bookmark.h"
 #include "flash/implementation/flash_resource.h"
 #include "render/2dm.h"
@@ -88,6 +89,15 @@ public:
     inline bool areMapRectsLatched() const { return bMapRectsLatched; }
     inline const FlashRECT &getFreeModeRect() const { return freeModeRect; }
     inline MapSpotRecord *getSelectedRecord() const { return pSelectedRecord; }
+    inline AiRoadLocation *getRouteWaypoint( const int32_t index ) const {
+        return &pRouteWaypoints[index];
+    }
+    inline bool isChallengeInfoRequested() const {
+        return bChallengeInfoRequested;
+    }
+    inline bool isChallengeInfoFromCache() const {
+        return bChallengeInfoFromCache;
+    }
     inline const SpotMap *getSelectedSpot() const {
         // FUN_00742600
         return ( pSelectedRecord != nullptr ) ? pSelectedRecord->pSpot
@@ -207,6 +217,7 @@ private:
     bool bInfoCartFlag1;
 
     const SpotMap *pChallengeInfoSpot;
+    AiRoadLocation *pRouteWaypoints;
     int32_t numBookmarks;
     Bookmark bookmarks[MngBookmark::kMaxNumBookmarks];
 

@@ -51,6 +51,10 @@ public:
                        const ChallengeCondition &condition ) const;
     void getIconInfo( SpotIconInfo &outInfo ) const;
     void computeRoadLocation();
+    void computeRoadRoute( Matrix4x4f_t &outStartFrame,
+                           Matrix4x4f_t &outEndFrame,
+                           Matrix4x4f_t &outStartFrameCopy,
+                           float *pOutDistance );
 
     inline int32_t getIndex() const { return Index; }
     inline void setIndex( int32_t index ) { Index = index; }

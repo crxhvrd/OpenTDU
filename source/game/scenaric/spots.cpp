@@ -3,6 +3,8 @@
 
 #include "tdu_instance.h"
 
+#include "ai/ai_road_query.h"
+
 #include "filesystem/bank.h"
 #include "world/gs_world.h"
 #include "world/mng_world.h"
@@ -654,6 +656,8 @@ static void LaunchHardcodedMission( const char *pMissionName ) {
     gpTestDriveInstance->setNextGameMode( GM_Mission );
 }
 
+static constexpr float kSpotApproachDistance = 10.0f;
+
 bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
     // FUN_007d8050
     OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
@@ -738,7 +742,11 @@ bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
 
     if ( previousGM != gpTestDriveInstance->getActiveGameMode() ||
          bJoiningLobby ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+        Matrix4x4f_t approachFrame;
+        ComputeRoadApproachFrame(
+            Eigen::Vector4f( pSpot->X, pSpot->Y, pSpot->Z, 1.0f ),
+            approachFrame, kSpotApproachDistance );
+        gpWorld->setPreviousTransform( approachFrame );
         gpActiveGameMode->requestExit();
     }
 

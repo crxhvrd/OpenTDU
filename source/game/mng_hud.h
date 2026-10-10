@@ -215,6 +215,7 @@ private:
     void bindGpsTextureToPlayerCar();
     void appendTracePoint();
     void drawTrace();
+    void drawRoadNetwork();
     void buildSpotIcons();
     void drawSpotIcons();
     void buildMapDrawList();

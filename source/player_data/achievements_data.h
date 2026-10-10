@@ -54,6 +54,8 @@ public:
     uint32_t getNumCustomChallengesUploaded() const;
     uint32_t getNumCustomChallengesWon() const;
     uint32_t getNumETradeTransactions() const;
+    int32_t getTotalRoadLength();
+    int32_t getExploredRoadLength();
 
 public:
     AchievementsData();

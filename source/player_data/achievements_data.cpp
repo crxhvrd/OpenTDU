@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "achievements_data.h"
 
+#include "ai/gs_ai.h"
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
 #include "database/gs_database.h"
@@ -15,6 +16,7 @@
 #include "player_data_interface.h"
 #include "saved_extra_challenges.h"
 #include "saved_garage.h"
+#include "saved_road_discovery.h"
 #include "tdu_instance.h"
 
 static bool gbForceAchievementUnlock = false; // DAT_016a2d2f
@@ -31,6 +33,8 @@ static constexpr uint64_t kCurrentLevelHashcode = 0x3a502d2ull;
 
 // How long a level up / achievement unlock panel stays up.
 static constexpr float kPopupDisplayDuration = 12.0f; // DAT_00f41850
+static constexpr float kMetresToKilometres = 0.001f;  // DAT_00f4167c
+static constexpr float kKilometresToMiles = 0.6215040683746338f; // DAT_00f418c0
 static constexpr int32_t kBDDMenus = 0;
 static constexpr int32_t kBDDAchievement =
     int32_t( AchievementsData::kAchievementDatabaseIndex );
@@ -94,6 +98,26 @@ uint32_t AchievementsData::getNumCustomChallengesWon() const {
 
 uint32_t AchievementsData::getNumETradeTransactions() const {
     return TestDriveTEAReadDword( pNumETradeTransactions );
+}
+
+int32_t AchievementsData::getTotalRoadLength() {
+    // FUN_0089d240
+    if ( totalRoadLength < 0 && gpAI != nullptr ) {
+        const float length = GetRoadNetworkLength( &gpAI->getRoadMap(), true );
+        totalRoadLength = static_cast<int32_t>( length * kMetresToKilometres *
+                                                kKilometresToMiles );
+    }
+    return totalRoadLength;
+}
+
+int32_t AchievementsData::getExploredRoadLength() {
+    // FUN_0089d2a0
+    if ( exploredRoadLength < 0 && gpAI != nullptr ) {
+        const float length = GetRoadNetworkLength( &gpAI->getRoadMap(), false );
+        exploredRoadLength = static_cast<int32_t>(
+            length * kMetresToKilometres * kKilometresToMiles );
+    }
+    return exploredRoadLength;
 }
 
 AchievementsData::~AchievementsData() { releaseChecks(); }

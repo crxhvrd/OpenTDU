@@ -33,6 +33,9 @@ class GSCarState : public GameSystem {
 public:
     const char *getName() const override { return "CAR_STATE"; }
     inline CarState *getCarStates() { return carStates.data(); }
+    inline bool isCarStateUsed( const int32_t carInstanceID ) const {
+        return ( ( bUsedSlot >> carInstanceID ) & 1u ) != 0u;
+    }
 
 public:
     GSCarState();

@@ -70,3 +70,7 @@ static inline int32_t FloatToInt( float value ) {
     // FUN_00674eb4
     return (int32_t)value;
 }
+
+static float UIntToFloat( const int32_t value ) {
+    return static_cast<float>( static_cast<uint32_t>( value ) );
+}

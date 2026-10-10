@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "achievement_checks.h"
 
+#include "core/binary_helpers.h"
+
 #include "achievements_data.h"
 #include "database/gs_database.h"
 #include "driver.h"
@@ -17,6 +19,9 @@
 #include "saved_road_discovery.h"
 
 static constexpr float kKilometresToMiles = 0.6215040683746338f; // DAT_00f418c0
+static constexpr float kAllRoadsExploredRatio = 0.99f;           // DAT_00f41a44
+static constexpr double kAllRoadsExploredPercentScale =
+    1.0101009607315063; // DAT_00f41f18
 
 static constexpr int32_t kChallengeCategorySolo = 0xc0c0;
 static constexpr int32_t kChallengeCategoryAny = 0xc0c3;
@@ -253,11 +258,18 @@ public:
 
     int32_t getProgress( int32_t *pOutTotal ) const override {
         // FUN_0089d3a0
+        AchievementsData *pAchievements = GetAchievements();
         if ( pOutTotal != nullptr ) {
-            *pOutTotal = 0;
+            *pOutTotal = pAchievements->getTotalRoadLength();
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+        const float ratio =
+            UIntToFloat( pAchievements->getExploredRoadLength() ) /
+            UIntToFloat( pAchievements->getTotalRoadLength() );
+        if ( ratio > kAllRoadsExploredRatio ) {
+            GetLoadedSave()->getRoadDiscovery()->unlockAllRoads();
+            return 1;
+        }
         return 0;
     }
 
@@ -267,8 +279,14 @@ public:
             *pOutTotal = 100;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
-        return 0;
+        AchievementsData *pAchievements = GetAchievements();
+        const float explored =
+            UIntToFloat( pAchievements->getExploredRoadLength() ) * 100.0f;
+        const float percent =
+            explored / UIntToFloat( pAchievements->getTotalRoadLength() );
+        const uint32_t progress = static_cast<uint32_t>( static_cast<int64_t>(
+            std::floor( percent * kAllRoadsExploredPercentScale ) ) );
+        return static_cast<int32_t>( std::min( progress, 100u ) );
     }
 };
 
@@ -337,11 +355,10 @@ public:
     int32_t getProgress( int32_t *pOutTotal ) const override {
         // FUN_0089d450
         if ( pOutTotal != nullptr ) {
-            *pOutTotal = 0;
+            *pOutTotal = GetAchievements()->getTotalRoadLength();
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
-        return 0;
+        return GetAchievements()->getExploredRoadLength();
     }
 };
 

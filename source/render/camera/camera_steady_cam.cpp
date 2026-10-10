@@ -1,6 +1,9 @@
 #include "shared.h"
 #include "camera_steady_cam.h"
 
+#include "ai/ai_pool.h"
+#include "ai/gs_ai.h"
+
 #include "config/gs_config.h"
 #include "core/maths_helper.h"
 #include "flash/gs_flash.h"
@@ -326,7 +329,7 @@ void CameraSteadyCam::initialize() {
         pMoviePlayer->IsMoviePaused |= kMoviePauseBit;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AI (culling config flag at +0x1c0)
+    gpAI->setCullFromCamera( true );
 
     angleX = worldToCam.row( 1 )[2] * kAngleXFromMatrix;
     angleY = atan2f( worldToCam.row( 2 )[0], worldToCam.row( 2 )[2] );
@@ -734,7 +737,7 @@ void CameraSteadyCam::destroy() {
         pMoviePlayer->IsMoviePaused &= ~kMoviePauseBit;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AI (culling config flag at +0x1c0)
+    gpAI->setCullFromCamera( false );
 
     gEdSys.setRelativeMouseMode( false );
 }

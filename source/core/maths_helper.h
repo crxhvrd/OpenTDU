@@ -642,3 +642,8 @@ static Eigen::Quaternionf MakeAxisAngleQuaternion( const Eigen::Vector4f &axis,
         axis.head<3>() * ( sinf( halfAngle ) / axisLength );
     return Eigen::Quaternionf( cosf( halfAngle ), v.x(), v.y(), v.z() );
 }
+
+static float LengthSq4( const Eigen::Vector4f &vector ) {
+    // FUN_00406390
+    return vector.squaredNorm();
+}

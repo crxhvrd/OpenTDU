@@ -103,7 +103,6 @@ private:
     CameraGame *pSavedVehicleCamera;
     bool bIntroLevelLaunched;
     bool bIntroCineDone;
-    bool bReturningFromMap;
 
     Entity *pExtraChallenges[kMaxNumExtraChallenges];
     int32_t numExtraChallenges;

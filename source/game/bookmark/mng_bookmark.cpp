@@ -22,6 +22,11 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "render/camera/camera_base.h"
 #include "filesystem/gs_file.h"
+#include "ai/ai_road_query.h"
+#include "ai/ai_road_shape.h"
+#include "ai/gs_ai.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
 
 MngBookmark *gpMngBookmark = nullptr;          // DAT_010e7f60
 int32_t gAutosaveBookmarkLength = 0xffffffff;  // DAT_00f998f8
@@ -29,6 +34,19 @@ static bool gBookmarkSaveQueryPending = false; // DAT_010e7f64
 
 static constexpr const char *kBookmarkContext = "bookmark";
 static constexpr int32_t kBookmarkPhotoCameraMode = 6;
+
+static int32_t ComputeBookmarkDynaMapID( const Matrix4x4f_t &frame ) {
+    // FUN_0070c280 (inlined)
+    if ( gpAI == nullptr || !gpAI->isRoadMapLoaded() ) {
+        return 0;
+    }
+
+    AiRoadMap::Road *pRoad =
+        gpAI->getRoadMap().findNearestRoadExhaustive( frame, true );
+    AiRoadIt it;
+    ProjectOnRoadShape( frame, it, nullptr, false, pRoad->getShape() );
+    return static_cast<int32_t>( it.getEntity()->DynaMapID );
+}
 static constexpr const wchar_t *kBookmarkContextDisplay = L"Bookmarks";
 
 MngBookmark::MngBookmark()
@@ -283,7 +301,22 @@ void MngBookmark::createBookmarkAtPlayer() {
     if ( pPhysicsVehicle != nullptr ) {
         frame = pPhysicsVehicle->getChassisWorldMatrix();
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: spot detection volume (FUN_006deb80)
+
+    const bool bSnapToRoad = false;
+    if ( bSnapToRoad && gpAI != nullptr && gpAI->isRoadMapLoaded() ) {
+        const Eigen::Vector4f position = frame.row( 3 ).transpose();
+        AiRoadIt it;
+        if ( FindNearestDiscoveredRoadEntity(
+                 gpPlayerData->getLoadedSave()->getRoadDiscovery(), position,
+                 it ) ) {
+            Matrix4x4f_t roadFrame;
+            ComputeRoadFrameFromIt( it, position, roadFrame,
+                                    eRoadSnapMode::RSM_KeepAwayFromEnds, true );
+            frame = roadFrame;
+        }
+    }
 
     pNewBookmark->Position = frame.block<1, 3>( 3, 0 ).transpose();
     pNewBookmark->Orientation = frame.block<1, 3>( 2, 0 ).transpose();
@@ -313,7 +346,7 @@ void MngBookmark::createBookmarkAtPlayer() {
         pPlayer->setVariableValueWritableLinked( "/:TxtInput", currentName );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+    pNewBookmark->DynaMapID = ComputeBookmarkDynaMapID( frame );
 }
 
 bool MngBookmark::LoadBookmarkPositions(
@@ -388,7 +421,11 @@ bool MngBookmark::LoadBookmarkPositions(
                 memset( outBookmarks, 0, sizeof( outBookmarks ) );
                 return false;
             }
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (legacy BO10)
+            Matrix4x4f_t frame = Matrix4x4f_t::Identity();
+            frame.row( 3 ) =
+                Eigen::Vector4f( bookmark.Position.x(), bookmark.Position.y(),
+                                 bookmark.Position.z(), 1.0f );
+            bookmark.DynaMapID = ComputeBookmarkDynaMapID( frame );
         } else {
             const int32_t numRead =
                 sscanf( pNameEnd + 1, "%d %f %f %f %f %f %f %d",

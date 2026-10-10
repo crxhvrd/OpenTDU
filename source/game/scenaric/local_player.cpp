@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "local_player.h"
 
+#include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_base.h"
 
@@ -41,6 +42,8 @@ void LocalPlayer::setCarState( CarState *pNewCarState ) {
 void LocalPlayer::onEvent( class CarState *param_1,
                            float param_2,
                            void *param_3 ) {
-    // FUN_007ebc90
-    // NOP
+    // FUN_00803900
+    if ( gpCarState->isCarStateUsed( param_1->getCarInstanceID() ) ) {
+        lastPosition = param_1->getWorldPosition();
+    }
 }

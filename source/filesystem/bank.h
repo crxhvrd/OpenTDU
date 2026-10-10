@@ -8,12 +8,13 @@ enum eAssetGroup : int32_t {
     AG_CarFX = 2,
     AG_WorldFX = 3,
     AG_PostFX = 3,
-    AG_FrontEnd = 3,  // EURO/BNK/FrontEnd
-    AG_Vehicle = 9,   // EURO/BNK/Vehicules
-    AG_Physics = 0xb, // EURO/BNK/Physics
-    AG_Common = 0xe,  // */common_*.bnk
-    AG_FX = 0xf,      // EURO/BNK/FX
-    AG_Panel = 0x12,  // in-world text-sign (panel) symbol + layout streams
+    AG_FrontEnd = 3,    // EURO/BNK/FrontEnd
+    AG_Vehicle = 9,     // EURO/BNK/Vehicules
+    AG_Physics = 0xb,   // EURO/BNK/Physics
+    AG_AIRoadMap = 0xc, // Level/<name>/<name>.bnk (AiRoadMap + road details)
+    AG_Common = 0xe,    // */common_*.bnk
+    AG_FX = 0xf,        // EURO/BNK/FX
+    AG_Panel = 0x12,    // in-world text-sign (panel) symbol + layout streams
     AG_Detail =
         0x14, // EURO/BNK/Details (TDUDetail banks: RoadPatch, Birds, ...)
 };

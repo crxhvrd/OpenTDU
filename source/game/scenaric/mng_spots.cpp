@@ -500,6 +500,7 @@ MngSpots::MngSpots()
       bInfoCartFlag0( false ),
       bInfoCartFlag1( false ),
       pChallengeInfoSpot( nullptr ),
+      pRouteWaypoints( nullptr ),
       numBookmarks( 0 ),
       bookmarks(),
       records(),
@@ -546,7 +547,8 @@ MngSpots::~MngSpots() {
 
 bool MngSpots::initialize( TestDriveGameInstance * ) {
     // FUN_0074cdb0
-    OTDU_UNIMPLEMENTED; // TODO: Bookmark scratch array
+    pRouteWaypoints = new AiRoadLocation[MngTracRoad::kMaxNumLegs];
+    pChallengeInfoSpot = nullptr;
     buildRecords();
     OTDU_UNIMPLEMENTED; // TODO: SpotsScr.bnk icon bank (FUN_0074b6e0),
                         // MngScreenshots photo, picture bank buffers
@@ -646,6 +648,8 @@ void MngSpots::pause() {
 
 void MngSpots::terminate() {
     // FUN_00745f90
+    delete[] pRouteWaypoints;
+    pRouteWaypoints = nullptr;
     OTDU_UNIMPLEMENTED; // TODO: pictures, banks, MngScreenshots
     releaseSpotMaterial();
     onlineRecords.clear();
@@ -1752,8 +1756,12 @@ void MngSpots::refreshExtraChallengePanel( EntityExtraChallenge *pChallenge ) {
         pItemTable->isExtraChallengeGold( pChallenge->getIndex() ) ? 1 : 0 );
     pMapPlayer->setVariableValueNonLinked( "/:BestScore", "" );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+    Matrix4x4f_t startFrame;
+    Matrix4x4f_t endFrame;
+    Matrix4x4f_t startFrameCopy;
     float distance = 0.0f;
+    pChallenge->computeRoadRoute( startFrame, endFrame, startFrameCopy,
+                                  &distance );
     const char *pUnit = "km";
     if ( gpPlayerData->isUsingImperialUnits() ) {
         distance *= kKilometersToMiles;
@@ -1766,8 +1774,16 @@ void MngSpots::refreshExtraChallengePanel( EntityExtraChallenge *pChallenge ) {
               pUnit );
     pMapPlayer->setVariableValueNonLinked( "/:Distance", distanceText );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: MngTracRoadMap
-    pChallengeInfoSpot = nullptr;
+    if ( gpMngTracRoad != nullptr ) {
+        gpMngTracRoad->setNumWaypoints( 2 );
+        ProjectOnRoad( pChallenge->getModelMatrix().row( 3 ).transpose(),
+                       nullptr, nullptr, false,
+                       gpMngTracRoad->getWaypoint( 0 ) );
+        ProjectOnRoad( pChallenge->getGoalPosition(), nullptr, nullptr, false,
+                       gpMngTracRoad->getWaypoint( 1 ) );
+        gpMngTracRoad->solveLegs( false );
+        pChallengeInfoSpot = nullptr;
+    }
     pMapPlayer->setVariableValue( "/:IsChaLocked", 0 );
 }
 

@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "saved_road_discovery.h"
 
+#include "ai/gs_ai.h"
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
 #include "game/scenaric/spots.h"
@@ -120,9 +121,7 @@ static int32_t GetRoadZone( const uint32_t roadID ) {
 
 bool IsRoadAvailable( const uint32_t roadID ) {
     // FUN_0088d4b0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
-    const bool bIsRoadInTable = false;
-    if ( roadID == 0u || !bIsRoadInTable ) {
+    if ( gpAI == nullptr || gpAI->getRoadMap().getRoad( roadID ) == nullptr ) {
         return false;
     }
 
@@ -138,4 +137,38 @@ bool IsRoadAvailable( const uint32_t roadID ) {
     default:
         return false;
     }
+}
+
+float GetRoadNetworkLength( const AiRoadMap *pRoadMap,
+                            const bool bIncludeLockedRoads ) {
+    // FUN_0088d660
+    float length = 0.0f;
+    if ( pRoadMap == nullptr ) {
+        return length;
+    }
+
+    for ( int32_t i = 0; i < pRoadMap->getNumRoads(); i++ ) {
+        const AiRoadMap::Road &road = pRoadMap->getRoads()[i];
+        const AiRoadMap::RoadDetail *pDetail = road.pDetail;
+        if ( pDetail == nullptr ) {
+            continue;
+        }
+
+        for ( int32_t j = 0; j < pDetail->NumEntities; j++ ) {
+            if ( !bIncludeLockedRoads ) {
+                const SavedRoadDiscovery *pDiscovery =
+                    gpPlayerData->getLoadedSave()->getRoadDiscovery();
+                if ( pDiscovery->isRoadLocked( road.ID, j ) ) {
+                    continue;
+                }
+            }
+
+            const AiRoadMap::Entity *pEntity = pDetail->pEntities[j];
+            if ( pEntity != nullptr ) {
+                length += static_cast<float>( pEntity->Length );
+            }
+        }
+    }
+
+    return length;
 }

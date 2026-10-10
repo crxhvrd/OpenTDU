@@ -881,7 +881,7 @@ bool TestDriveGameInstance::initializeGameServices() {
     OTDU_INIT_SERVICE( registerService<GSScenaric>( gpScenaric ) );
     OTDU_INIT_SERVICE( registerService<GSAircraft>() );
     OTDU_INIT_SERVICE( registerService<GSBoat>() );
-    OTDU_INIT_SERVICE( registerService<GSAI>() );
+    OTDU_INIT_SERVICE( registerService<GSAI>( &gGSAI ) );
     OTDU_INIT_SERVICE( registerService<GSOnline>( gpOnline ) );
     OTDU_INIT_SERVICE( registerService<GSTutorial>() );
     OTDU_INIT_SERVICE( registerService<GSBrandCar>() );

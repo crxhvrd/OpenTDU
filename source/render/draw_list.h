@@ -73,6 +73,9 @@ public:
     void pushVertex( float x, float y, float z );
     void breakPrimitive();
     int32_t commitPrimitive();
+    int32_t allocatePrimitive( ePrimitiveType type,
+                               uint32_t numVertex,
+                               uint32_t numIndices );
 
     // Add raw primitive to this draw list.
     // NOTE: This function sets VB/IB only (it is up to the caller to set the

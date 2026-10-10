@@ -223,13 +223,12 @@ public:
     void delockChallengeRoads( const bool bDelocked );
     void setTraceSize( uint32_t param_1 );
     void setDefaultIGE( const char *param_1 );
+    void pushObjectivesToCompass( MngHud *pHud );
 
 private:
     static constexpr int32_t kMaxNumWoosh = 64;
 
 private:
-    void pushObjectivesToCompass( MngHud *pHud );
-
     GameIntroTutorial introTutorial;
     LocalPlayer localPlayer;
     AvatarManager avatarManager;

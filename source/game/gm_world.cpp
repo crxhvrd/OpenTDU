@@ -1,6 +1,9 @@
 #include "shared.h"
 #include "gm_world.h"
 
+#include "ai/ai_pool.h"
+#include "ai/gs_ai.h"
+
 #include "tdu_instance.h"
 
 #include <cmath>
@@ -169,7 +172,14 @@ void GameModeWorldBase::initialize() {
     // FUN_009d9130
     GameModeScene::initialize();
 
-    OTDU_UNIMPLEMENTED; // TODO: AI
+    AiPool *pAIPool = gpAI->getAIPool();
+    pAIPool->setField0xC( false );
+    pAIPool->setField0x7C( true );
+    pAIPool->setField0x85( true );
+    gpAI->setDisableCops( true );
+    gpAI->setPauseTraffic( false );
+    gpAI->setCopsActive( false );
+    pAIPool->removeCops();
 
     cinematicTimer = 0.0f; // field48_0xfdc8
 }
@@ -446,10 +456,6 @@ void GameModeWorld::installLocalPlayerCar( int32_t carID,
         }
         spawn = ( gpWorld != nullptr ) ? gpWorld->getPreviousTransform()
                                        : Matrix4x4f_t::Identity();
-        // HACK: Shift from default spawn pos to prevent spawn inside the hmap
-        // (seems ok in Havok; not with Jolt).
-        spawn( 3, 0 ) -= 15.0f;
-        spawn( 3, 2 ) -= 15.0f;
 
         if ( gpWorld != nullptr ) {
             Eigen::Vector4f center( spawn( 3, 0 ), 0.0f, spawn( 3, 2 ), 0.0f );

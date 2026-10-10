@@ -79,7 +79,6 @@ GMFreeride::GMFreeride()
       pSavedVehicleCamera( nullptr ),
       bIntroLevelLaunched( false ),
       bIntroCineDone( false ),
-      bReturningFromMap( false ),
       pExtraChallenges{},
       numExtraChallenges( 0 ),
       extraChallengeKind( -1 ),
@@ -229,6 +228,10 @@ void GMFreeride::reset() {
     mngActor.placePlayerVehicle( spawnMode, true );
 
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC/TUTORIAL
+
+    if ( gpMngHud != nullptr ) {
+        gpScenaric->pushObjectivesToCompass( gpMngHud );
+    }
     gatherExtraChallenges();
 
     if ( gpTestDriveInstance->getPreviousGameMode() == GM_Map ) {
@@ -304,7 +307,7 @@ void GMFreeride::startMapFlyDown() {
         gpCamera->setCameraMode( 3, 0, 1.0f );
     }
 
-    bReturningFromMap = true;
+    mngCamGPS.setUpdateStreaming( true );
     OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
 }
 
@@ -409,7 +412,7 @@ void GMFreeride::updateGPSFlyUp() {
         gpWorldStreaming->updateStreaming();
         pStreaming->areaGrid.bStreamArea = true;
 
-        bReturningFromMap = false;
+        mngCamGPS.setUpdateStreaming( false );
         OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
         return;
     }

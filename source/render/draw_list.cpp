@@ -454,6 +454,21 @@ int32_t DrawList::commitPrimitive() {
     return numPrimitives - 1;
 }
 
+int32_t DrawList::allocatePrimitive( ePrimitiveType type,
+                                     uint32_t numVertex,
+                                     uint32_t numIndices ) {
+    // FUN_00508040
+    if ( !initializePrimitive( type, numVertex, numIndices ) ) {
+        return -1;
+    }
+    activePrimitive.pPrimitive->NumVertex = numVertex;
+    activePrimitive.pPrimitive->NumIndex = numIndices;
+    numVertices += activePrimitive.pPrimitive->NumVertex;
+    numIndex += activePrimitive.pPrimitive->NumIndex;
+    numPrimitives++;
+    return numPrimitives - 1;
+}
+
 Primitive *DrawList::pushPrimitive( Material *pMaterial, SetupGraph *pGraph ) {
     if ( maxNumPrimitives <= numPrimitives ) {
         return nullptr;

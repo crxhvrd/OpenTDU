@@ -21,6 +21,7 @@
 #include "game/scenaric/entity/entity_extra_challenge.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
+#include "ai/gs_ai.h"
 #include "player_data/driver.h"
 #include "player_data/player_save.h"
 #include "player_data/saved_item_table.h"
@@ -875,6 +876,131 @@ void HudMinimap::drawTrace() {
     drawList.commitPrimitive();
 }
 
+void HudMinimap::drawRoadNetwork() {
+    // FUN_006e5580
+    static constexpr int32_t kMaxRoadClusters = 6;
+    static constexpr uint32_t kRoadColorAvailable = 0x00c8ffu;
+    static constexpr uint32_t kRoadColorLocked = 0x00647fu;
+
+    const AiRoadMap &roadMap = gpAI->getRoadMap();
+    if ( roadMap.getEntityArray() == nullptr ) {
+        return;
+    }
+
+    AiRoadMap::EntityCluster *pClusters[kMaxRoadClusters];
+    const Eigen::Vector4f boundsMin( ViewXMin, 0.0f, ViewYMin, 0.0f );
+    const Eigen::Vector4f boundsMax( ViewXMax, 0.0f, ViewYMax, 0.0f );
+    const int32_t numClusters = roadMap.getEntityArray()->gatherClusters(
+        pClusters, kMaxRoadClusters, boundsMin, boundsMax );
+    if ( numClusters == 0 ) {
+        return;
+    }
+
+    auto isFirstEntity = []( const AiRoadMap::Road *pRoad,
+                             const uint32_t entityIndex ) {
+        return entityIndex == 0 && pRoad->pJunctionBegin != nullptr;
+    };
+    auto isLastEntity = []( const AiRoadMap::Road *pRoad,
+                            const uint32_t entityIndex ) {
+        return pRoad->pJunctionEnd != nullptr &&
+               entityIndex ==
+                   static_cast<uint32_t>( pRoad->pDetail->NumEntities - 1 );
+    };
+
+    int32_t numVertices = 0;
+    for ( int32_t c = 0; c < numClusters; c++ ) {
+        const AiRoadMap::EntityCluster *pCluster = pClusters[c];
+        for ( uint32_t r = 0; r < pCluster->NumEntities; r++ ) {
+            const AiRoadMap::EntityRef &ref = pCluster->Refs[r];
+            const AiRoadMap::Entity *pEntity =
+                ref.pRoad->pDetail->pEntities[ref.EntityIndex];
+            const int32_t numCurves = pEntity->getNumCurves();
+            if ( numCurves <= 0 ) {
+                continue;
+            }
+            numVertices += numCurves * 2 + 3;
+            numVertices += isFirstEntity( ref.pRoad, ref.EntityIndex ) ? 1 : 0;
+            numVertices += isLastEntity( ref.pRoad, ref.EntityIndex ) ? 1 : 0;
+        }
+    }
+
+    drawList.setActiveTransformMatrix( WorldToMap );
+    drawList.setActiveMaterial( nullptr );
+    if ( !drawList.beginPrimitive( PT_LineStrip, numVertices ) ) {
+        return;
+    }
+
+    uint32_t alpha = 0xff;
+    if ( RotationBlend < 1.0f ) {
+        if ( MapMode == 3 ) {
+            alpha = static_cast<uint8_t>(
+                static_cast<int32_t>( RotationBlend * 255.0f ) );
+        } else if ( MapModeTarget == 3 ) {
+            alpha = static_cast<uint8_t>(
+                static_cast<int32_t>( ( 1.0f - RotationBlend ) * 255.0f ) );
+        }
+    }
+
+    auto emit = [this]( const float x, const float y, const uint32_t color ) {
+        drawList.setDiffuse( 0, ColorRGBA( color ) );
+        drawList.pushVertex( x, y, 0.0f );
+    };
+
+    const SavedRoadDiscovery *pDiscovery =
+        gpPlayerData->getLoadedSave()->getRoadDiscovery();
+    for ( int32_t c = 0; c < numClusters; c++ ) {
+        const AiRoadMap::EntityCluster *pCluster = pClusters[c];
+        for ( uint32_t r = 0; r < pCluster->NumEntities; r++ ) {
+            const AiRoadMap::EntityRef &ref = pCluster->Refs[r];
+            const AiRoadMap::Road *pRoad = ref.pRoad;
+            const AiRoadMap::Entity *pEntity =
+                pRoad->pDetail->pEntities[ref.EntityIndex];
+            const int32_t numCurves = pEntity->getNumCurves();
+            if ( numCurves <= 0 ) {
+                continue;
+            }
+
+            const bool bAvailable =
+                !pDiscovery->isRoadLocked(
+                    static_cast<int32_t>( pRoad->ID ),
+                    static_cast<int32_t>( ref.EntityIndex ) ) &&
+                IsRoadAvailable( pRoad->ID );
+            const uint32_t color =
+                ( alpha << 24 ) |
+                ( bAvailable ? kRoadColorAvailable : kRoadColorLocked );
+
+            Eigen::Vector4f point = pEntity->FirstCV1.toVector4();
+            if ( isFirstEntity( pRoad, ref.EntityIndex ) ) {
+                const AiRoadMap::Vertex &junction =
+                    pRoad->pJunctionBegin->Position;
+                emit( junction.X, junction.Z, 0u );
+                emit( junction.X, junction.Z, color );
+            } else {
+                emit( point.x(), point.z(), 0u );
+            }
+            emit( point.x(), point.z(), color );
+
+            for ( int32_t i = 0; i < numCurves; i++ ) {
+                const Eigen::Vector4f middle =
+                    pEntity->computeCurveMidpoint( i );
+                emit( middle.x(), middle.z(), color );
+                point = pEntity->Curves[i].CV4.toVector4();
+                emit( point.x(), point.z(), color );
+            }
+
+            if ( isLastEntity( pRoad, ref.EntityIndex ) ) {
+                const AiRoadMap::Vertex &junction =
+                    pRoad->pJunctionEnd->Position;
+                emit( junction.X, junction.Z, color );
+                emit( junction.X, junction.Z, 0u );
+            } else {
+                emit( point.x(), point.z(), 0u );
+            }
+        }
+    }
+    drawList.commitPrimitive();
+}
+
 void HudMinimap::buildSpotIcons() {
     // FUN_006ebd80
     Spots &spotList = gpScenaric->getSpotList();
@@ -1165,13 +1291,13 @@ void HudMinimap::buildMapDrawList() {
     }
 
     if ( MapMode == 3 ) {
-        OTDU_UNIMPLEMENTED; // TODO: ROAD NETWORK
+        drawRoadNetwork();
     }
 
     drawTrace();
 
     if ( pGps != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: GPS
+        pGps->drawRoute( WorldToMap, drawList );
     }
 
     OTDU_UNIMPLEMENTED; // TODO: AI/ONLINE
@@ -1320,9 +1446,12 @@ void HudMinimap::tick( float deltaTime ) {
                 continue;
             }
 
+            gpScenaric->getObjective( 1 ).Type = "";
+            gpScenaric->setObjectiveSpotHashcode( 0 );
             marker.Type = "";
-
-            OTDU_UNIMPLEMENTED; // TODO: SCENARIC
+            if ( gpMngGPS != nullptr ) {
+                gpMngGPS->announceArrival();
+            }
         }
     }
 

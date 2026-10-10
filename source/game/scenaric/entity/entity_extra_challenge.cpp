@@ -5,6 +5,8 @@
 #include "entity_hitch_hiker.h"
 #include "entity_shopping_girl.h"
 #include "entity_transporter.h"
+#include "ai/ai_path.h"
+#include "ai/ai_road_query.h"
 #include "game/game_mechanism.h"
 #include "game/game_mechanism_player.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -352,7 +354,42 @@ void EntityExtraChallenge::getIconInfo( SpotIconInfo &outInfo ) const {
 
 void EntityExtraChallenge::computeRoadLocation() {
     // FUN_007dda00
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+    AiRoadLocation location;
+    ProjectOnRoad( getModelMatrix().row( 3 ).transpose(), nullptr, nullptr,
+                   false, &location );
+    if ( location.It.pRoad != nullptr ) {
+        RoadID = static_cast<int32_t>( location.It.pRoad->ID );
+    }
+    RoadEntityID = location.It.IndEntity;
+}
+
+void EntityExtraChallenge::computeRoadRoute( Matrix4x4f_t &outStartFrame,
+                                             Matrix4x4f_t &outEndFrame,
+                                             Matrix4x4f_t &outStartFrameCopy,
+                                             float *pOutDistance ) {
+    // FUN_007ddae0
+    AiPath path;
+    AiRoadLocation startLocation;
+    ProjectOnRoad( getModelMatrix().row( 3 ).transpose(), nullptr, nullptr,
+                   false, &startLocation );
+    startLocation.It.T = startLocation.T;
+
+    AiRoadLocation goalLocation;
+    ProjectOnRoad( getGoalPosition(), nullptr, nullptr, false, &goalLocation );
+    goalLocation.It.T = goalLocation.T;
+
+    path.setStart( startLocation.It, 0 );
+    path.setEnd( goalLocation.It );
+    path.setIgnoreOneWay( false );
+    path.solve( false );
+
+    outStartFrame = path.getStartFrame();
+    outEndFrame = path.getEndFrame();
+    if ( pOutDistance != nullptr ) {
+        *pOutDistance = static_cast<float>( path.getTotalDistance() );
+    }
+    outStartFrameCopy = outStartFrame;
+    path.clear();
 }
 
 void EntityExtraChallenge::deserialize( BinaryReader *param_2 ) {

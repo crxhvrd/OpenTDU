@@ -1,6 +1,9 @@
 #include "shared.h"
 #include "gm_scene.h"
 
+#include "ai/ai_pool.h"
+#include "ai/gs_ai.h"
+
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "world/gs_world.h"
@@ -197,7 +200,7 @@ void GameModeScene::initialize() {
     }
 
     if ( !bWithWorld ) {
-        OTDU_UNIMPLEMENTED; // TODO: AI
+        gpAI->setTrafficCategories( false, 0u );
     }
 
     cinematicTimer = 0.0f; // field48_0xfdc8
