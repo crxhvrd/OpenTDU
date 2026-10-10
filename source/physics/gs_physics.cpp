@@ -3,6 +3,8 @@
 
 #include "config/gs_config.h"
 #include "gs_physicsfx.h"
+#include "game/game_object.h"
+#include "game/vehicle/gs_car_state.h"
 #include "vehicle/physics_vehicle.h"
 #include "world_collisions.h"
 #include "physics_layers.h"
@@ -121,6 +123,13 @@ namespace {
         }
     };
 
+    class NonSensorLayerFilter : public JPH::ObjectLayerFilter {
+    public:
+        bool ShouldCollide( JPH::ObjectLayer inLayer ) const override {
+            return inLayer != TDUPhysLayers::SENSOR;
+        }
+    };
+
     class AsphaltNormalCollector final : public JPH::CollideShapeCollector {
     public:
         AsphaltNormalCollector( JPH::CollideShapeCollector &inChained,
@@ -235,6 +244,9 @@ namespace {
             JPH::RVec3Arg,
             const JPH::CollideShapeResult &inCollisionResult ) override {
             // FUN_00833BA0
+            if ( inBody1.IsSensor() || inBody2.IsSensor() ) {
+                return JPH::ValidateResult::AcceptContact;
+            }
             const bool bVehicle1 = IsVehicle( inBody1 );
             if ( bVehicle1 == IsVehicle( inBody2 ) ) {
                 return JPH::ValidateResult::AcceptContact;
@@ -259,7 +271,19 @@ namespace {
                              const JPH::Body &inBody2,
                              const JPH::ContactManifold &inManifold,
                              JPH::ContactSettings & ) override {
+            if ( inBody1.IsSensor() || inBody2.IsSensor() ) {
+                onSensorContactAdded( inBody1, inBody2 );
+                return;
+            }
             emit( inBody1, inBody2, inManifold, PFXEK_Impact );
+        }
+
+        void OnContactRemoved( const JPH::SubShapeIDPair &inPair ) override {
+            RoadPhantomManager &phantoms = gpPhysics->getRoadPhantomManager();
+            phantoms.onOverlapRemoved( inPair.GetBody1ID(),
+                                       inPair.GetBody2ID() );
+            phantoms.onOverlapRemoved( inPair.GetBody2ID(),
+                                       inPair.GetBody1ID() );
         }
 
         void OnContactPersisted( const JPH::Body &inBody1,
@@ -268,10 +292,34 @@ namespace {
                                  JPH::ContactSettings & ) override {
             // A contact that survives across steps is a scrape/slide, which is
             // what the original's looping kind describes.
+            if ( inBody1.IsSensor() || inBody2.IsSensor() ) {
+                return;
+            }
             emit( inBody1, inBody2, inManifold, PFXEK_Slide );
         }
 
     private:
+        static void onSensorContactAdded( const JPH::Body &inBody1,
+                                          const JPH::Body &inBody2 ) {
+            // FUN_0081a0f0
+            const bool bPhantom1 =
+                ( inBody1.GetUserData() & TDUSurface::kClassMask ) ==
+                TDUSurface::RoadPhantom;
+            const JPH::Body &phantom = bPhantom1 ? inBody1 : inBody2;
+            const JPH::Body &other = bPhantom1 ? inBody2 : inBody1;
+            if ( ( phantom.GetUserData() & TDUSurface::kClassMask ) !=
+                     TDUSurface::RoadPhantom ||
+                 other.IsStatic() || !IsVehicle( other ) ) {
+                return;
+            }
+            void *pOwner = reinterpret_cast<void *>( other.GetUserData() >>
+                                                     TDUSurface::kOwnerShift );
+            if ( pOwner != nullptr ) {
+                gpPhysics->getRoadPhantomManager().onOverlapAdded(
+                    phantom.GetID(), other.GetID(), pOwner );
+            }
+        }
+
         static bool IsVehicle( const JPH::Body &body ) {
             return ( body.GetUserData() & TDUSurface::kClassMask ) ==
                    TDUSurface::Vehicle;
@@ -1145,7 +1193,7 @@ static uint32_t CollisionBodyColor( JPH::EShapeSubType subType,
     if ( layer == TDUPhysLayers::MOVING || layer == TDUPhysLayers::VEHICLE ) {
         return PackDebugColor( 255, 140, 0 ).Color; // props / car: orange
     }
-    switch ( userData ) {
+    switch ( userData & TDUSurface::kClassMask ) {
     case TDUSurface::RoadMesh:
     case TDUSurface::RoadGround:
         return PackDebugColor( 60, 120, 255 ).Color; // road mesh: blue
@@ -1789,11 +1837,34 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     return pCar;
 }
 
+void GSPhysics::setVehicleOwner( PhysicsVehicle *pVehicle, void *pOwner ) {
+    // FUN_0041f340
+    if ( pPhysicsSystem == nullptr || pVehicle == nullptr ||
+         !pVehicle->isActive() ) {
+        return;
+    }
+    lockMutex();
+    pPhysicsSystem->GetBodyInterface().SetUserData(
+        pVehicle->getChassisBody()->GetID(),
+        ( reinterpret_cast<uint64_t>( pOwner ) << TDUSurface::kOwnerShift ) |
+            TDUSurface::Vehicle );
+    unlockMutex();
+}
+
 void GSPhysics::destroyVehicle( PhysicsVehicle *pVehicle ) {
     if ( pVehicle == nullptr || !pVehicle->isActive() ) {
         return;
     }
     lockMutex();
+    // FUN_00843800
+    if ( gpCarState != nullptr ) {
+        CarState *pCarStates = gpCarState->getCarStates();
+        for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+            if ( pCarStates[i].getPhysicsVehicle() == pVehicle ) {
+                gGameObjectDico.unregisterObject( &pCarStates[i] );
+            }
+        }
+    }
     pVehicle->destroy();
     unlockMutex();
 }
@@ -2429,7 +2500,7 @@ GSPhysics::queryPhantomOverlaps( RigidBody_t phantom,
     pPhysicsSystem->GetNarrowPhaseQuery().CollideShape(
         sphere, JPH::Vec3::sReplicate( 1.0f ),
         JPH::RMat44::sTranslation( joltCenter ), settings, JPH::RVec3::sZero(),
-        collector, {}, {}, bodyFilter );
+        collector, {}, NonSensorLayerFilter(), bodyFilter );
 
     overlaps.reserve( collector.mHits.size() );
     for ( const JPH::CollideShapeResult &hit : collector.mHits ) {
@@ -2495,7 +2566,9 @@ int32_t GSPhysics::castCameraSegment( const Eigen::Vector4f &from,
     JPH::AllHitCollisionCollector<JPH::CastRayCollector> collector;
 
     lockMutex();
-    pPhysicsSystem->GetNarrowPhaseQuery().CastRay( ray, settings, collector );
+    pPhysicsSystem->GetNarrowPhaseQuery().CastRay( ray, settings, collector,
+                                                   JPH::BroadPhaseLayerFilter(),
+                                                   NonSensorLayerFilter() );
 
     hits.reserve( collector.mHits.size() );
     for ( const JPH::RayCastResult &result : collector.mHits ) {
@@ -2558,7 +2631,7 @@ bool GSPhysics::probeSurface( const Eigen::Vector4f &position,
 
     JPH::AllHitCollisionCollector<JPH::CastRayCollector> collector;
     const StaticOrRoadLayerFilter staticOrRoad;
-    const JPH::ObjectLayerFilter anyLayer;
+    const NonSensorLayerFilter anyLayer;
     const JPH::ObjectLayerFilter &layerFilter =
         bStaticAndRoadOnly
             ? static_cast<const JPH::ObjectLayerFilter &>( staticOrRoad )
@@ -3171,6 +3244,11 @@ void GSPhysics::removeSectorCollision( const void *pKey ) {
     // A sector may own more than one collision slot (its .shk world blob and
     // its -R.shk road blob are both keyed by the Sector), so tear down every
     // match.
+    lockMutex();
+    // FUN_00842290
+    roadPhantomManager.removeSectorRoadPhantoms( pPhysicsSystem, pKey );
+    unlockMutex();
+
     for ( PhysicsSHK *it = pSectorsBegin; it != pSectorsEnd; ++it ) {
         if ( it->pKey != pKey )
             continue;
@@ -3330,6 +3408,15 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
         return JPH::Vec3( readF( p ), readF( p + 4 ), readF( p + 8 ) );
     };
 
+    struct RoadPhantomRecord {
+        Eigen::Vector3f BoundsMin;
+        Eigen::Vector3f BoundsMax;
+        int32_t RoadID;
+        int32_t EntityIndex;
+        int32_t CurveIndex;
+    };
+    std::vector<RoadPhantomRecord> phantomRecords;
+
     JPH::TriangleList triangles;
     JPH::Vec3 originRef = JPH::Vec3::sZero(); // rebase for float precision
     bool bHaveOrigin = false;
@@ -3406,6 +3493,22 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
                 pushTri( a, c, d );
             }
         }
+        // FUN_00820cd0
+        static constexpr float kRoadPhantomMargin = 5.0f;
+        RoadPhantomRecord phantom;
+        phantom.BoundsMin =
+            Eigen::Vector3f( readF( rec + 0xb0 ), readF( rec + 0xb4 ),
+                             readF( rec + 0xb8 ) ) -
+            Eigen::Vector3f::Constant( kRoadPhantomMargin );
+        phantom.BoundsMax =
+            Eigen::Vector3f( readF( rec + 0xc0 ), readF( rec + 0xc4 ),
+                             readF( rec + 0xc8 ) ) +
+            Eigen::Vector3f::Constant( kRoadPhantomMargin );
+        phantom.RoadID = rec[0xd0] | ( rec[0xd1] << 8 );
+        phantom.CurveIndex = rec[0xd2];
+        phantom.EntityIndex = rec[0xd3];
+        phantomRecords.push_back( phantom );
+
         recordCount++;
         off = ( footer + 4u + 0xfu ) & ~0xfu;
     }
@@ -3458,6 +3561,15 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
         PhysicsSectorObj &obj = pSlot->pObjects[pSlot->NumObjects++];
         obj.pRigidBody = pBody;
         obj.pShape = meshResult.Get();
+    }
+
+    // FUN_00820b00 + FUN_00819ec0
+    const Eigen::Vector3f shift = shiftOrigin.head<3>();
+    for ( const RoadPhantomRecord &phantom : phantomRecords ) {
+        roadPhantomManager.createRoadPhantom(
+            pPhysicsSystem, pKey, phantom.BoundsMin - shift,
+            phantom.BoundsMax - shift, phantom.RoadID, phantom.EntityIndex,
+            phantom.CurveIndex );
     }
     unlockMutex();
 

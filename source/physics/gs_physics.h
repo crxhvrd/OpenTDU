@@ -47,10 +47,12 @@ namespace TDUSurface {
         Terrain = 4,    // heightfield — never tagged; the only off-road surface
         Generic = 7,    // .shk/-R.shk NON-mesh (posts, boxes) + placed props
         Vehicle = 9,    // car chassis (FUN_0082fc80)
+        RoadPhantom = 0x10, // SR20 record sensor (FUN_00819ec0)
     };
 
     // Mask applied to a body's Jolt UserData to recover the phys-type byte.
     constexpr uint64_t kClassMask = 0xFF;
+    constexpr uint32_t kOwnerShift = 8;
 
     inline bool isOnRoad( uint32_t physType ) {
         // FUN_0083bbd0
@@ -239,6 +241,7 @@ public:
                    const bool bIsAI = false,
                    const bool bIsNetwork = false );
     void destroyVehicle( PhysicsVehicle *pVehicle );
+    void setVehicleOwner( PhysicsVehicle *pVehicle, void *pOwner );
 
     RigidBody_t createSphere( uint32_t collisionGroup,
                               const Eigen::Vector4f &worldPosition,
