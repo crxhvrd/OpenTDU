@@ -3,6 +3,7 @@
 
 #include <string>
 
+#include "ai/gs_ai.h"
 #include "config/gs_config.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "physics/gs_physics.h"
@@ -143,6 +144,10 @@ void Level::installRenderContent() {
 
     renderSets[1].build( commonWorldBank );
     renderSets[0].build( commonWorldBank );
+
+    if ( gpAI != nullptr ) {
+        gpAI->loadRoadMap( levelBank );
+    }
 
     pPanelSymbolStream = commonWorldBank.getFirstEntry(
         AG_Panel, static_cast<eAssetType>( 0 ), nullptr );
