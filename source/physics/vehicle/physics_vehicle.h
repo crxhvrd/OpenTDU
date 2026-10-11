@@ -98,6 +98,7 @@ public:
         float Sensitivity = 1.0f;
         float Linearity = 0.0f;
         float RumbleMax = 0.0f;
+        int32_t DrivingHelpLevel = 0;
     };
 
     enum eDrivingMode : uint8_t {
@@ -191,6 +192,10 @@ public:
     bool isKeyframed() const { return bKeyframed; }
     void setPhysicsPaused( bool bPaused ) { bPausePhysics = bPaused; }
     bool isPhysicsPaused() const { return bPausePhysics; }
+    bool isVirtual() const { return bVirtual; }
+    bool isVirtualGrounded() const { return bVirtualGrounded; }
+    float getVirtualSpeed() const { return virtualSpeed; }
+    void setVirtualSpeed( float speed ) { virtualSpeed = speed; }
     void resetAutomaticGearbox();
     void applyDrivingOptions( const DrivingOptions &options );
     bool isActive() const { return pChassisBody != nullptr; }
@@ -232,6 +237,7 @@ public:
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
     float getLateralSpeed() const { return vehicle.LateralSpeed; }
     inline float getFilteredSteer() const { return filteredSteer; }
+    inline float getSteerDeadZone() const { return steerDeadZone; }
 
 public:
     PhysicsVehicle();
@@ -259,16 +265,23 @@ public:
     void setHandbrake( float handbrake );
     void setIgnition( bool bKeyOn, bool bCutEdge );
     void applyDrivingMode();
-    void applyDrivingModeClutch();
+    void declutchForDrivingMode();
     void tick( float deltaTime );
     void setDrivingHelpLevel( int32_t level );
+    void initializeElectronics();
 
     DrivingGearbox getDrivingGearbox() const;
     void setCurrentGear( int32_t gear );
     void setAutomaticGearbox( bool bAutomatic );
     void requestUpshift();
     void requestDownshift();
-    void setClutchOverride( float engagement );
+    void setClutchInput( float clutch ) { clutchPedal = clutch; }
+    void setGearRequests( bool bUp, bool bDown, int32_t select ) {
+        bGearUpRequest = bUp;
+        bGearDownRequest = bDown;
+        gearSelectRequest = select;
+    }
+    bool isMechanicalGearbox() const { return bMechanicalGearbox; }
 
     bool castToGround( const Matrix4x4f_t &source,
                        Matrix4x4f_t &outTransform ) const;
@@ -283,6 +296,9 @@ public:
                       int32_t preferredGear );
     void updateKeyframedWheels( float deltaTime );
     void resetSimulationState();
+    void setVirtual( bool bInVirtual );
+    void setPostponedMatrix( const Matrix4x4f_t &worldTransform );
+    float computeGroundToOriginOffset() const;
 
     void OnStep( const JPH::PhysicsStepListenerContext &inContext ) override;
 
@@ -299,6 +315,7 @@ public:
 
     uint32_t getNumWheels() const;
     WheelReadout getWheelReadout( uint32_t index ) const;
+    float computeWheelSteerAngle( const PhysicsWheelState &w ) const;
 
     void armChrono();
     void updateChrono( float dt );
@@ -334,6 +351,19 @@ private:
                     const JPH::Body &chassis,
                     int wheelIndex,
                     float deltaTime );
+    bool applyWheelContact( const JPH::Body &chassis,
+                            int wheelIndex,
+                            float deltaTime,
+                            const JPH::RVec3 &attachW,
+                            const JPH::RVec3 &hitPosition,
+                            const JPH::Vec3 &hitNormal,
+                            float hitDist,
+                            uint32_t surface,
+                            uint32_t material );
+    void setVirtualWheelContact( const JPH::Body &chassis,
+                                 int wheelIndex,
+                                 float deltaTime );
+    void stepVirtual( float deltaTime );
 
     float filterSteering( float rawTarget,
                           const JPH::Body &chassis,
@@ -377,6 +407,8 @@ private:
     float wheelBase = 2.5f; // axle-to-axle distance, m (speed-sensitive steer)
     float prevSuspLength[PhysicsVehicleState::kMaxWheels]; // last step's length
                                                            // (damper velocity)
+    float prevGroundHeight[PhysicsVehicleState::kMaxWheels] =
+        {}; // last step's probed ground height (slew limit)
     float wheelWidth[PhysicsVehicleState::kMaxWheels] = {};
     float wheelGroundGap[PhysicsVehicleState::kMaxWheels] = {};
     float wheelRumbleTimer[PhysicsVehicleState::kMaxWheels] = {};
@@ -410,19 +442,29 @@ private:
     float inputHandbrake;
     uint8_t drivingMode;
     PhysicsDrivingControl *pDrivingControl = nullptr;
-    bool bBackView = false; // Driving.BackView (+0xe25)
+    bool bBackView = false;
     float prevInputThrottle;
     float prevInputBrake;
     float prevInputSteer;
     int32_t autoGearboxState;
     float autoGearboxThrottle;
     float autoGearboxBrake;
+    float clutchPedal = 0.0f;
+    bool bGearUpRequest = false;
+    bool bGearDownRequest = false;
+    int32_t gearSelectRequest = 1;
+    bool bGearSelectBlocked = false;
+    bool bMechanicalGearbox = false;
+    bool bAutoReverseAllowed = true;
     bool bDrivingInputScripted;
     bool bIsAI;
     bool bIsNetwork;
     bool bCinematicMode;
     bool bInputControllerAttached;
     bool bPausePhysics;
+    bool bVirtual;
+    bool bVirtualGrounded;
+    float virtualSpeed;
     bool bKeyframed;
     bool bForceKeyframeMatrix;
     Matrix4x4f_t keyframeMatrix;
@@ -468,6 +510,8 @@ private:
     float bodyHeight;
     float rideHeightFront;
     float rideHeightRear;
+    float rideHeightMax[2] = {}; // m, front/rear
+    float steerSharpness = 1.0f;
 
     Chrono chrono;
     float odometerDistance = 0.0f; // in metres

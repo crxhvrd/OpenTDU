@@ -1,6 +1,11 @@
 #include "shared.h"
 #include "gs_car_state.h"
 
+#include "ai/ai_pool.h"
+#include "ai/ai_road_shape.h"
+#include "ai/ai_vehicle.h"
+#include "ai/gs_ai.h"
+
 #include "gs_car_display.h"
 
 #include "render/camera/gs_camera.h"
@@ -155,6 +160,31 @@ namespace {
                                                    : height;
     }
 
+    bool isOnTunnelRoad( const CarState &carState ) {
+        // FUN_008afa40
+        const ObjectWorldLocation &location = carState.getWorldLocation();
+        if ( location.LocationType != ObjectWorldLocation::OWL_Road ) {
+            return false;
+        }
+
+        AiRoadMap::Road *pRoad =
+            gpAI->getRoadMap().getRoad( location.LocationRoad.RoadID );
+        if ( pRoad == nullptr ) {
+            return false;
+        }
+        AiRoadShape *pShape = pRoad->getShape();
+        if ( pShape == nullptr ) {
+            return false;
+        }
+
+        AiRoadIt it;
+        pShape->computeIt( location.LocationRoad.FractionMin, it );
+        if ( it.pRoad == nullptr ) {
+            return false;
+        }
+        return it.getEntity()->pProfile->isTunnel();
+    }
+
     void publishWheelAudioTelemetry( WheelState &wheel ) {
         // FUN_0083bbd0
         const float rollSpeed = std::fabs( wheel.Omega * wheel.WheelRadius );
@@ -295,9 +325,15 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             worldMatrix( 3, 2 ) += streamShift.z();
             body.WorldMatrix = worldMatrix;
 
+            body.bIsInTunnel =
+                carState.getSimulationType() ==
+                    CarState::eSimulationType::CSST_Local &&
+                carState.getOwner() == CarState::eOwner::CSO_LocalPlayer &&
+                isOnTunnelRoad( carState );
+
             body.SpeedInKmh = pPhysicsVehicle->getReportedSpeed();
 
-            const float publishedSteer = -pPhysicsVehicle->getFilteredSteer();
+            const float publishedSteer = pPhysicsVehicle->getFilteredSteer();
             body.SteeringRaw = publishedSteer;
 
             const float leanScale = std::min(
@@ -606,6 +642,16 @@ CarState &GSCarState::grabNextFreeCarState() {
     return carStates[0];
 }
 
+CarState &GSCarState::grabCarState( const uint32_t slot ) {
+    // FUN_0091d0f0 (inlined)
+    OTDU_ASSERT( slot < kMaxNumVehicles );
+    bUsedSlot |= ( 1u << slot );
+    if ( slot + 1 > numCarStates ) {
+        numCarStates = slot + 1;
+    }
+    return carStates[slot];
+}
+
 void GSCarState::registerCallback( CarState *param_2,
                                    CarStateEventListener *pListener,
                                    void *pData ) {
@@ -707,12 +753,14 @@ void GSCarState::releaseCarState( CarState *param_2, bool param_3 ) {
     }
 
     if ( param_2->field_0x39cc != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AI
+        gpAI->getAIPool()->removeVehicle(
+            static_cast<AiVehicle *>( param_2->field_0x39cc ),
+            "CarState uninstanciation", false );
         param_2->field_0x39cc = nullptr;
     }
 
     if ( param_2->pPhysicsVehicle != nullptr ) {
-        param_2->pPhysicsVehicle->destroy();
+        gpPhysics->destroyVehicle( param_2->pPhysicsVehicle );
         param_2->pPhysicsVehicle = nullptr;
     }
 

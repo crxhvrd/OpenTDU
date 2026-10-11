@@ -12,9 +12,12 @@ struct PointerSet {
 };
 
 template <typename T> struct ResourcePool {
-    std::array<T *, kMaxNumVehicles> pUsed;   // in-use item pointers (indices 0..NumUsed-1)
-    std::array<T *, kMaxNumVehicles> pFree;   // free stack, top at [kMaxNumVehicles-1-NumUsed]
-    std::array<bool, kMaxNumVehicles> pbUsed; // per-element used flag indexed by element position
+    std::array<T *, kMaxNumVehicles>
+        pUsed; // in-use item pointers (indices 0..NumUsed-1)
+    std::array<T *, kMaxNumVehicles>
+        pFree; // free stack, top at [kMaxNumVehicles-1-NumUsed]
+    std::array<bool, kMaxNumVehicles>
+        pbUsed; // per-element used flag indexed by element position
     uint32_t NumUsed;
     std::array<T, kMaxNumVehicles> Elements;
 
@@ -49,6 +52,7 @@ public:
 
     VehicleBaseResources *grabFreeResourceEntry();
     CarState &grabNextFreeCarState();
+    CarState &grabCarState( const uint32_t slot );
     void registerCallback( CarState *param_2,
                            CarStateEventListener *pListener,
                            void *pData );

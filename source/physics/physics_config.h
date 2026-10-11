@@ -70,9 +70,8 @@ struct PhysicsConfig {
     float ActiveABSSpeed[5];
     float ActiveABSValue[5];
 
-    float ElectronicPowerCoef;
-    float ElectronicPowerCoef3;
-    float ElectronicPowerCoef2[4];
+    float ElectronicPowerCoefX[3]; // engine peak torque (N.m)
+    float ElectronicPowerCoefY[3];
 
     char ElectronicParams[32];
     char ElectronicParamsValueName[9][32];

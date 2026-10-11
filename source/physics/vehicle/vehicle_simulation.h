@@ -29,6 +29,7 @@ struct PhysicsWheelState {
     int32_t AxleIndex = 0;         // 0 = front, 1 = rear
     bool bDriven = false;          // driven wheel
     bool bSteered = false;         // steered / handbrake wheel
+    bool bFreeRoll = true;         // +0x1f4, cleared by the virtual step
 
     bool bGroundContact = false; // has a valid ground contact this step
     Eigen::Vector4f WheelLinVel =
@@ -127,7 +128,7 @@ struct PhysicsEngineSim {
     };
 
     eEngineState State = eEngineState::ES_Off;
-    float IgnTimer = 0.0f;  // starter timer
+    float IgnTimer = 0.0f;   // starter timer
     bool IgnitionOn = false; // starter held?
     bool bIgnitionOnce = false;
     float CrankDuration = 0.5f; // s
@@ -143,13 +144,15 @@ struct PhysicsEngineSim {
     float ThrottleIdle = 0.0f;
     bool bApplyIdleThrottleFloor = false;
     float Throttle = 0.0f;
-    float Omega = 84.0f; // current engine speed (rad/s)
+    float Omega = 84.0f;     // current engine speed (rad/s)
+    float OmegaPrev = 84.0f; // omega after the last integration
     float TorqueOut = 0.0f;
     float SmoothedTorque = 0.0f;
     float PeakTorqueOmega = 0.0f; // omega at peak torque
     float PeakPowerOmega = 0.0f;  // omega at peak power
     float AngAccel = 0.0f;        // dOmega/dt (rad/s^2), 1-step lag
     float RevLimiterCutTime = 0.25f;
+    float PeakTorque = 0.0f; // peak of the power-scaled curve
 };
 
 struct PhysicsGearboxSim {
@@ -174,15 +177,15 @@ struct PhysicsGearboxSim {
     int ShiftState = SS_InGear;
     int ShiftSubstate = 0; // gear delta +/-
     float ShiftTimer = 0.0f;
-    float ShiftDuration = 0.0f; 
+    float ShiftDuration = 0.0f;
     float ShiftStartOmega = 0.0f;
-    float ShiftGauge = 10.0f;    
-    float ShiftThrottle = 0.0f;  
-    float ShiftThrottleSaved = 0.0f; 
-    float ShiftHalfTime = 0.0f;      
-    int ReportedGear = 1; 
-    float ShiftCompleted = 0.0f; 
-    bool bWheelLiftPrev = false; 
+    float ShiftGauge = 10.0f;
+    float ShiftThrottle = 0.0f;
+    float ShiftThrottleSaved = 0.0f;
+    float ShiftHalfTime = 0.0f;
+    int ReportedGear = 1;
+    float ShiftCompleted = 0.0f;
+    bool bWheelLiftPrev = false;
     bool bShiftLockout = false;
     float UpshiftThreshold = 1.2f; // DAT_00f41dc4
     float DownshiftFactor = 0.2f;  // DAT_00f41730
@@ -209,20 +212,20 @@ struct PhysicsGearboxSim {
 };
 
 struct PhysicsClutchSim {
-    float Engagement = 0.0f;      // actual engagement, driveline multiplier
-    float Target = 0.0f;          // target engagement
-    int State = 0;                // 0=disengaged 1=armed 2=launch 3=locked
-    float Timer = 0.0f;           // state-2 timer
-    float EngageRate = 10.0f;    
-    float DisengageRate = 10.0f; 
-    float LaunchIdleMult = 1.0f; 
-    float LaunchPeakPowerMult =
-        0.5f;
-    float LockThreshold = 0.5f;     
-    float DecelThreshold = -52.35988f; 
-    float EngageThrottleHi = 5.0f;   
-    float EngageThrottleLo = 5.0f;  
-    float OverrideEngagement = -1.0f;
+    float Engagement = 0.0f; // actual engagement, driveline multiplier
+    float Target = 0.0f;     // target engagement
+    int State = 0;           // 0=disengaged 1=armed 2=launch 3=locked
+    float Timer = 0.0f;      // state-2 timer
+    float EngageRate = 10.0f;
+    float DisengageRate = 10.0f;
+    float LaunchIdleMult = 1.0f;
+    float LaunchPeakPowerMult = 0.5f;
+    float LockThreshold = 0.5f;
+    float DecelThreshold = -52.35988f;
+    float EngageThrottleHi = 5.0f;
+    float EngageThrottleLo = 5.0f;
+    bool bEnabled = true;        // gates the state machine
+    bool bManualControl = false; // clutch worked by hand
 };
 
 struct PhysicsDifferentialSim {
@@ -272,23 +275,34 @@ struct PhysicsVehicleState {
     float DiffInputTorque = 0.0f; // T_in fed to the driven diff node
 
     float BrakeTorque = 0.0f;
-    float Mass = 1200.0f; // total vehicle mass (kg)
-    int32_t ElectronicIndex = -1;
+    float Mass = 1200.0f;         // total vehicle mass (kg)
+    int32_t ElectronicIndex = -1; // driving help level
+    int32_t ElectronicMode = 1;   // 0 off, 1 player, 2 AI, 3 bypass
     bool bElectronicsEnabled = false;
+    float ElectronicValues[9] = {}; // per vehicle ElectronicParamsValue
+    float ElectronicScale = 0.0f;   //  value[level] x engine power coef
 
     bool bEdcEnabled = true;
 
     float AbsMagFront = 1.0f;
     float AbsMagRear = 1.0f;
-    bool bAbsEnabled = true; // rebuilt every frame
+    bool bAbsEnabled = true;
 
     float EspMagFront = 1.0f;
     float EspMagRear = 1.0f;
-    float EspMagFiltered = 1.0f;  // the committed value, smoothed 20/s
-    bool bEspIntervening = false; // latches "already intervening"
-    bool bEspEnabled = false;     // rebuilt every frame
-    float EspGripDiff = 0.0f;     // DAT_010d6f0c, the signed axle imbalance
-    float EspThreshold = 0.0f;    // the curve value it is tested against
+    float EspMagFiltered = 1.0f;  //  smoothed 20/s
+    bool bEspIntervening = false; // latched trigger
+    bool bEspEnabled = false;
+    float EspGripDiff = 0.0f;  // DAT_010d6f0c, the signed axle imbalance
+    float EspThreshold = 0.0f; // the curve value it is tested against
+
+    int32_t LaunchState = 0;
+    float LaunchStartMag = 0.0f;
+    float LaunchTimer = 0.0f;
+
+    bool bThrottleFloored = true;
+    bool bBrakeFloored = true;
+    float HandbrakeAbsInput = 0.0f;
 };
 
 float ThrottlePosForTorque( const PhysicsEngineSim &engine,
@@ -310,6 +324,17 @@ void StepGearbox( PhysicsVehicleState &vehicle,
                   float brake,
                   float handbrake,
                   float dt );
+struct VehicleSolveInput {
+    float Throttle = 0.0f;
+    float Brake = 0.0f;
+    float Handbrake = 0.0f;
+    bool bEspEnabled = true;
+};
+
+void StepVehicleSolve( PhysicsVehicleState &vehicle,
+                       const Matrix4x4f_t &vehicleMatrix,
+                       const VehicleSolveInput &input,
+                       float dt );
 void StepPowertrain( PhysicsVehicleState &vehicle,
                      float throttle,
                      float brake,
@@ -322,3 +347,16 @@ float ComputeWheelReactionTorque( const PhysicsWheelState &wheel,
                                   float deltaTime,
                                   float *pOutLongForce = nullptr );
 void IntegrateWheel( PhysicsWheelState &wheel, float deltaTime );
+
+struct ElectronicsInput {
+    float Speed; // |chassis linear velocity|
+    float Throttle;
+    float FilteredSteer;
+    float DeltaTime;
+    bool bSimuMode;
+    bool bBike;
+};
+
+float EvalHelpCurve( const float *pX, const float *pY, float x, float yScale );
+void StepElectronics( PhysicsVehicleState &vehicle,
+                      const ElectronicsInput &input );

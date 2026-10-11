@@ -11,6 +11,7 @@
 #include "physics_material.h"
 #include "game/material_types.h"
 #include "havok/havok_container.h"
+#include "havok/havok_heightfield_agent.h"
 #include "havok/havok_packfile.h"
 #include "havok/havok_to_jolt.h"
 #include "database/gs_database.h"
@@ -126,7 +127,8 @@ namespace {
     class NonSensorLayerFilter : public JPH::ObjectLayerFilter {
     public:
         bool ShouldCollide( JPH::ObjectLayer inLayer ) const override {
-            return inLayer != TDUPhysLayers::SENSOR;
+            return inLayer != TDUPhysLayers::SENSOR &&
+                   inLayer != TDUPhysLayers::ROAD_GROUND;
         }
     };
 
@@ -235,6 +237,29 @@ namespace {
             inCenterOfMassTransform2, ioSettings, collector, inShapeFilter );
     }
 
+    float CombineFriction( const JPH::Body &inBody1,
+                           const JPH::SubShapeID &,
+                           const JPH::Body &inBody2,
+                           const JPH::SubShapeID & ) {
+        // FUN_0048d730
+        const float combined =
+            std::sqrt( inBody1.GetFriction() * inBody2.GetFriction() );
+        const int32_t fixed = static_cast<int32_t>(
+            std::nearbyint( combined * 256.0f ) ); // FLOAT_00f419c0
+        return static_cast<float>( static_cast<uint16_t>( fixed ) ) / 256.0f;
+    }
+
+    float CombineRestitution( const JPH::Body &inBody1,
+                              const JPH::SubShapeID &,
+                              const JPH::Body &inBody2,
+                              const JPH::SubShapeID & ) {
+        const float combined =
+            std::sqrt( inBody1.GetRestitution() * inBody2.GetRestitution() );
+        const int32_t fixed = static_cast<int32_t>(
+            std::nearbyint( combined * 128.0f ) ); // FLOAT_00f4176c
+        return static_cast<float>( static_cast<uint8_t>( fixed ) ) / 128.0f;
+    }
+
     // Equivalent of hkCollisionListener used by the original game.
     class PhysicsFXContactListener : public JPH::ContactListener {
     public:
@@ -261,8 +286,17 @@ namespace {
             }
             const uint32_t material = TDUPhysicsMaterials::codeOf(
                 pShape->GetMaterial( subShapeID ) );
-            return ( material ==
-                     static_cast<uint32_t>( eMaterialType::MT_SP1 ) )
+            if ( material == static_cast<uint32_t>( eMaterialType::MT_SP1 ) ) {
+                return JPH::ValidateResult::RejectContact;
+            }
+
+            const JPH::Body &vehicle = bVehicle1 ? inBody1 : inBody2;
+            const JPH::Vec3 towardVehicle =
+                bVehicle1 ? -inCollisionResult.mPenetrationAxis
+                          : inCollisionResult.mPenetrationAxis;
+            return IsRoadContactIgnored(
+                       vehicle, world,
+                       towardVehicle.NormalizedOr( JPH::Vec3::sZero() ) )
                        ? JPH::ValidateResult::RejectContact
                        : JPH::ValidateResult::AcceptContact;
         }
@@ -323,6 +357,45 @@ namespace {
         static bool IsVehicle( const JPH::Body &body ) {
             return ( body.GetUserData() & TDUSurface::kClassMask ) ==
                    TDUSurface::Vehicle;
+        }
+
+        static const CarState *FindCarState( const JPH::Body &chassis ) {
+            // FUN_00841dc0
+            if ( gpCarState == nullptr ) {
+                return nullptr;
+            }
+            const CarState *pCarStates = gpCarState->getCarStates();
+            for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+                const PhysicsVehicle *pVehicle =
+                    pCarStates[i].getPhysicsVehicle();
+                if ( gpCarState->isCarStateUsed( i ) && pVehicle != nullptr &&
+                     pVehicle->getChassisBody() == &chassis ) {
+                    return &pCarStates[i];
+                }
+            }
+            return nullptr;
+        }
+
+        static bool IsRoadContactIgnored( const JPH::Body &vehicle,
+                                          const JPH::Body &world,
+                                          const JPH::Vec3 &normal ) {
+            // FUN_0082f030
+            if ( ( world.GetUserData() & TDUSurface::kClassMask ) !=
+                 TDUSurface::RoadMesh ) {
+                return false;
+            }
+            if ( normal.GetY() < 0.0f ||
+                 normal.GetY() < 0.75f ) { // DAT_00f416a4
+                return false;
+            }
+            const CarState *pCarState = FindCarState( vehicle );
+            if ( pCarState != nullptr &&
+                 pCarState->getBody()->NumWheelsOnRoad ==
+                     static_cast<int32_t>(
+                         pCarState->getPhysicsVehicle()->getNumWheels() ) ) {
+                return false;
+            }
+            return true;
         }
 
         static int32_t ResolveMaterial( const JPH::Body &body,
@@ -1741,16 +1814,17 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     }
     const float gcLengthFrac =
         db.GravityCenterLength > 0 ? db.GravityCenterLength * 0.01f : 0.5f;
-    constexpr float kCGHeightCarCoef = 0.0f;
+    constexpr float kCGHeightCarCoef = 0.75f; // DAT_00f416a4
     const float gcHeightFrac =
-        ( db.GravityCenterHeight > 0 ? db.GravityCenterHeight * 0.01f : 0.4f ) *
-        kCGHeightCarCoef;
+        static_cast<float>( db.GravityCenterHeight ) * 0.01f * kCGHeightCarCoef;
     const float bodyLengthM = ( db.Length > 0 ? db.Length : 4000 ) * 0.001f;
     const float comOffsetY = -( 1.0f - gcHeightFrac ) * bodyHeightM * 0.5f;
     const float comOffsetZ = ( gcLengthFrac - 0.5f ) * bodyLengthM;
 
-    JPH::OffsetCenterOfMassShapeSettings comShapeSettings(
-        JPH::Vec3( 0.0f, comOffsetY, comOffsetZ ), shapeResult.Get() );
+    const JPH::Vec3 comOffset = JPH::Vec3( 0.0f, comOffsetY, comOffsetZ ) -
+                                shapeResult.Get()->GetCenterOfMass();
+    JPH::OffsetCenterOfMassShapeSettings comShapeSettings( comOffset,
+                                                           shapeResult.Get() );
     JPH::ShapeSettings::ShapeResult comResult = comShapeSettings.Create();
     if ( !comResult.IsValid() ) {
         return nullptr;
@@ -1782,8 +1856,7 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         packCoefs.Weight;
     settings.mMassPropertiesOverride.mMass = chassisMass;
 
-    const JPH::Vec3 h( halfW + kConvexRadius,
-                       Max( 0.10f, halfH - 0.15f ) + kConvexRadius,
+    const JPH::Vec3 h( halfW + kConvexRadius, halfH + kConvexRadius,
                        halfL + kConvexRadius );
     const float k = chassisMass / 3.0f;
     JPH::MassProperties mp;
@@ -1799,9 +1872,13 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         JPH::EOverrideMassProperties::MassAndInertiaProvided;
 
     settings.mEnhancedInternalEdgeRemoval = true;
-    settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
+    settings.mMotionQuality = JPH::EMotionQuality::Discrete;
     settings.mLinearDamping = 0.0f;
-    settings.mAngularDamping = 0.05f;
+    settings.mAngularDamping = 1.0f; // FLOAT_00f4165c
+    settings.mFriction = 1.0f;
+    settings.mRestitution = 0.25f;
+    settings.mMaxLinearVelocity = 138.888885f; // DAT_00f41ee8
+    settings.mMaxAngularVelocity = 12.566371f; // DAT_00f41eec
     settings.mUserData = TDUSurface::Vehicle;
 
     JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
@@ -2228,7 +2305,7 @@ RigidBody_t GSPhysics::addStaticMesh( const void *pKey,
         shapeResult.Get(), JPH::RVec3::sZero(), JPH::Quat::sIdentity(),
         JPH::EMotionType::Static, TDUPhysLayers::NON_MOVING );
     settings.mUserData = surfaceClass;
-    settings.mFriction = TDUSurface::friction( surfaceClass );
+    settings.mFriction = 1.0f; // FLOAT_00f4165c
 
     PhysicsLock lock;
 
@@ -3053,8 +3130,7 @@ RigidBody_t GSPhysics::addHeightfield( const void *pKey,
         return nullptr;
     }
 
-    // Static ground body: friction 1.0 (FLOAT_00f4165c), non-moving layer, as
-    // in the original heightfield/infinite-plane material.
+    // FUN_00848b50 @0x00848bd5: friction 0.5 (FLOAT_00f41674), restitution 0
     const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
     JPH::BodyCreationSettings bodySettings(
         shapeResult.Get(),
@@ -3063,7 +3139,7 @@ RigidBody_t GSPhysics::addHeightfield( const void *pKey,
         JPH::Quat::sIdentity(), JPH::EMotionType::Static,
         TDUPhysLayers::NON_MOVING );
     bodySettings.mUserData = TDUSurface::Terrain;
-    bodySettings.mFriction = TDUSurface::friction( TDUSurface::Terrain );
+    bodySettings.mFriction = 0.5f;
 
     lockMutex();
     JPH::Body *pBody =
@@ -3186,7 +3262,8 @@ void GSPhysics::addSectorCollision( const void *pKey,
                                             JPH::EMotionType::Static,
                                             TDUPhysLayers::NON_MOVING );
         settings.mUserData = physType;
-        settings.mFriction = TDUSurface::friction( physType );
+        settings.mFriction = body.Friction;
+        settings.mRestitution = body.Restitution;
 
         JPH::Body *pBody = bodyInterface.CreateBody( settings );
         if ( pBody != nullptr ) {
@@ -3247,6 +3324,11 @@ void GSPhysics::removeSectorCollision( const void *pKey ) {
     lockMutex();
     // FUN_00842290
     roadPhantomManager.removeSectorRoadPhantoms( pPhysicsSystem, pKey );
+    roadCurves.erase( std::remove_if( roadCurves.begin(), roadCurves.end(),
+                                      [pKey]( const PhysicsRoadCurve &curve ) {
+                                          return curve.pKey == pKey;
+                                      } ),
+                      roadCurves.end() );
     unlockMutex();
 
     for ( PhysicsSHK *it = pSectorsBegin; it != pSectorsEnd; ++it ) {
@@ -3361,7 +3443,8 @@ GSPhysics::installStaticCollision( void *pBlob,
                                             JPH::EMotionType::Static,
                                             TDUPhysLayers::NON_MOVING );
         settings.mUserData = physType;
-        settings.mFriction = TDUSurface::friction( physType );
+        settings.mFriction = body.Friction;
+        settings.mRestitution = body.Restitution;
 
         JPH::Body *pBody = bodyInterface.CreateBody( settings );
         if ( pBody != nullptr ) {
@@ -3416,6 +3499,7 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
         int32_t CurveIndex;
     };
     std::vector<RoadPhantomRecord> phantomRecords;
+    std::vector<PhysicsRoadCurve> curveRecords;
 
     JPH::TriangleList triangles;
     JPH::Vec3 originRef = JPH::Vec3::sZero(); // rebase for float precision
@@ -3509,6 +3593,20 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
         phantom.EntityIndex = rec[0xd3];
         phantomRecords.push_back( phantom );
 
+        PhysicsRoadCurve curve;
+        curve.pKey = pKey;
+        const JPH::Vec3 controlPoints[4] = { P0, P1, P2, P3 };
+        for ( int32_t i = 0; i < 4; i++ ) {
+            curve.ControlPoints[i] = Eigen::Vector4f(
+                controlPoints[i].GetX(), controlPoints[i].GetY(),
+                controlPoints[i].GetZ(), 1.0f );
+        }
+        curve.bCubic = ( readU( rec + 0xc ) != 0u );
+        curve.RoadID = static_cast<uint16_t>( phantom.RoadID );
+        curve.CurveIndex = rec[0xd2];
+        curve.EntityIndex = rec[0xd3];
+        curveRecords.push_back( curve );
+
         recordCount++;
         off = ( footer + 4u + 0xfu ) & ~0xfu;
     }
@@ -3550,9 +3648,10 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
         meshResult.Get(),
         JPH::RVec3( originRef - JPH::Vec3( shiftOrigin.x(), shiftOrigin.y(),
                                            shiftOrigin.z() ) ),
-        JPH::Quat::sIdentity(), JPH::EMotionType::Static, TDUPhysLayers::ROAD );
+        JPH::Quat::sIdentity(), JPH::EMotionType::Static,
+        TDUPhysLayers::ROAD_GROUND );
     settings.mUserData = TDUSurface::RoadGround;
-    settings.mFriction = TDUSurface::friction( TDUSurface::RoadGround );
+    settings.mFriction = 1.0f; // FUN_00848530 (FLOAT_00f4165c)
     JPH::Body *pBody = ( pSlot->NumObjects < pSlot->MaxNumObjects )
                            ? bodyInterface.CreateBody( settings )
                            : nullptr;
@@ -3571,6 +3670,8 @@ void GSPhysics::addSectorRoadGround( const void *pKey,
             phantom.BoundsMax - shift, phantom.RoadID, phantom.EntityIndex,
             phantom.CurveIndex );
     }
+    roadCurves.insert( roadCurves.end(), curveRecords.begin(),
+                       curveRecords.end() );
     unlockMutex();
 
     OTDU_LOG_DEBUG( "SR20 road ground: %d records, %u triangles\n", recordCount,
@@ -3934,7 +4035,8 @@ void GSPhysics::placeProp(
                 pFilter, groupID,
                 static_cast<uint32_t>( i % kMaxPropMembers ) );
             settings.mUserData = TDUSurface::Generic;
-            settings.mFriction = TDUSurface::friction( TDUSurface::Generic );
+            settings.mFriction = m->Friction;
+            settings.mRestitution = m->Restitution;
 
             JPH::Body *pBody = bodyInterface.CreateBody( settings );
             if ( pBody != nullptr ) {
@@ -4030,7 +4132,8 @@ void GSPhysics::placeProp(
                 placedM.GetQuaternion().Normalized(), JPH::EMotionType::Static,
                 TDUPhysLayers::NON_MOVING );
             settings.mUserData = TDUSurface::Generic;
-            settings.mFriction = TDUSurface::friction( TDUSurface::Generic );
+            settings.mFriction = m->Friction;
+            settings.mRestitution = m->Restitution;
 
             JPH::Body *pBody = bodyInterface.CreateBody( settings );
             if ( pBody != nullptr ) {
@@ -4195,6 +4298,7 @@ void GSPhysics::initializeJolt() {
 
     JPH::Factory::sInstance = new JPH::Factory();
     JPH::RegisterTypes();
+    HavokHeightFieldAgent::Register();
 
     pPhysicsSystem = new JPH::PhysicsSystem();
     pPhysicsSystem->Init( 65536, 0, 65536, 20480, *pBpLayerInterface,
@@ -4211,6 +4315,8 @@ void GSPhysics::initializeJolt() {
     pContactListener = new PhysicsFXContactListener();
     pPhysicsSystem->SetContactListener( pContactListener );
     pPhysicsSystem->SetSimCollideBodyVsBody( &TDUSimCollideBodyVsBody );
+    pPhysicsSystem->SetCombineFriction( &CombineFriction );
+    pPhysicsSystem->SetCombineRestitution( &CombineRestitution );
 
     // Create world-reference body (equivalent of the Havok sphere at origin
     // stored in DAT_010e749c; used as a stable anchor in the physics world).

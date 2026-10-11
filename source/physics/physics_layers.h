@@ -8,32 +8,31 @@
 // (FUN_00841270)
 namespace TDUPhysLayers {
     static constexpr JPH::ObjectLayer NON_MOVING =
-        0; // Static: terrain (incl. SR20-graded road), buildings/objects (.shk)
+        0; // Static: terrain, buildings/objects (.shk)
     static constexpr JPH::ObjectLayer MOVING =
         1; // Dynamic: props, debris, query proxies
     static constexpr JPH::ObjectLayer SENSOR = 2; // Triggers: road phantoms
     static constexpr JPH::ObjectLayer ROAD =
         3; // Drivable road/sidewalk/curb mesh (-R.shk)
     static constexpr JPH::ObjectLayer VEHICLE = 4; // Player/AI car chassis body
-    static constexpr JPH::ObjectLayer WHEEL =
-        5; // Vehicle wheel cast (collision tester)
+    static constexpr JPH::ObjectLayer ROAD_GROUND = 5;
     static constexpr JPH::ObjectLayer NUM_LAYERS = 6;
 
     inline constexpr bool ShouldCollide( JPH::ObjectLayer a,
                                          JPH::ObjectLayer b ) {
         constexpr bool kMatrix[NUM_LAYERS][NUM_LAYERS] = {
-            //          NM     MV     SN     RD     VH     WH
-            /* NM */ {false, true,  false, false, true,  true },
+            //          NM     MV     SN     RD     VH     RG
+            /* NM */ {false, true,  false, false, true,  false},
             /* MV */
             {true,  true,  true,  true,  true,  false},
             /* SN */
             {false, true,  false, false, true,  false},
             /* RD */
-            {false, true,  false, false, false, true },
+            {false, true,  false, false, true,  false},
             /* VH */
-            {true,  true,  true,  false, true,  false},
-            /* WH */
-            {true,  false, false, true,  false, false},
+            {true,  true,  true,  true,  true,  false},
+            /* RG */
+            {false, false, false, false, false, false},
         };
         return kMatrix[a][b];
     }
@@ -44,10 +43,10 @@ namespace TDUPhysLayers {
         switch ( inLayer ) {
         case NON_MOVING:
         case ROAD:
+        case ROAD_GROUND:
             return 0; // BP NON_MOVING
         case MOVING:
         case VEHICLE:
-        case WHEEL:
             return 1; // BP MOVING
         case SENSOR:
             return 2; // BP SENSOR

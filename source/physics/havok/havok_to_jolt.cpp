@@ -827,6 +827,13 @@ void HavokToJolt::buildBodies( const HavokPackfile &pf,
         // body's shape fails to build).
         body.RegistryIndex = readRegistryIndexProperty( pf, bodyOffset );
 
+        if ( static_cast<uint32_t>( bodyOffset ) + 0x64 <= dataSize ) {
+            const float *pMaterial =
+                reinterpret_cast<const float *>( pData + bodyOffset + 0x5c );
+            body.Friction = pMaterial[0];
+            body.Restitution = pMaterial[1];
+        }
+
         outBodies.push_back( body );
     }
 }

@@ -224,6 +224,9 @@ public:
     inline const WheelState &getWheel( uint32_t i ) const { return wheels[i]; }
     inline PhysicsVehicle *getPhysicsVehicle() const { return pPhysicsVehicle; }
     inline void *getAIController() const { return field_0x39cc; }
+    inline void setAIController( void *pController ) {
+        field_0x39cc = pController;
+    }
     void setPhysicsVehicle( PhysicsVehicle *pVehicle );
 
     inline eOwner getOwner() const { return owner; }
@@ -293,6 +296,8 @@ private:
     friend class VehicleCar;
     friend class VehicleBike;
     friend class VehicleTraffic;
+    friend class AiPool;
+    friend class AiSpawnRequest;
 
 private:
     std::string name;

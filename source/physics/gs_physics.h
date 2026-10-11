@@ -59,10 +59,6 @@ namespace TDUSurface {
         return physType == RoadGround || physType == Paved ||
                physType == RoadMesh || physType == Generic;
     }
-
-    inline float friction( uint32_t physType ) {
-        return ( physType == Terrain ) ? 0.75f : 1.0f;
-    }
 } // namespace TDUSurface
 
 // Havok shape type of a collidable overlapping a camera phantom; only the
@@ -114,6 +110,15 @@ extern float gPhysicsRefreshRate;
 
 static constexpr float kNoSurfaceSentinel = -100000.0f; // DAT_00f418fc
 
+struct PhysicsRoadCurve {
+    const void *pKey;
+    Eigen::Vector4f ControlPoints[4];
+    bool bCubic;
+    uint16_t RoadID;
+    uint8_t CurveIndex;
+    uint8_t EntityIndex;
+};
+
 class GSPhysics : public GameSystem,
                   public Bank,
                   public PhysicsStreamingCallback,
@@ -143,6 +148,10 @@ public:
     inline const TirePacejka *getTireProfile( int32_t index ) const {
         return ( index >= 0 && index < numTires ) ? pTireProfiles[index]
                                                   : nullptr;
+    }
+    // DANGER: NOT THREAD SAFE
+    inline const std::vector<PhysicsRoadCurve> &getRoadCurves() const {
+        return roadCurves;
     }
 
 public:
@@ -363,6 +372,8 @@ private:
     PhysicsSHKRoad *pRoads;
     PhysicsSHKRoad *pRoadsBegin;
     PhysicsSHKRoad *pRoadsEnd;
+
+    std::vector<PhysicsRoadCurve> roadCurves;
 
     void *field27335_0x8670;
     Eigen::Vector4f broadPhaseOrigin = Eigen::Vector4f::Zero();
