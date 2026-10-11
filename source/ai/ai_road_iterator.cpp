@@ -12,7 +12,8 @@ static constexpr int32_t kCurveLengthRombergRows = 3;
 static constexpr float kMinAdvanceDistance = 0.001f; // FLOAT_00f4167c
 
 static constexpr int32_t kRoadCenterLane = -1;
-static constexpr float kRoadCenterHeight = 0.2f; // DAT_00f41730
+static constexpr float kRoadCenterHeight = 0.2f;    // DAT_00f41730
+static constexpr float kTunnelMinHeightSpan = 2.0f; // DAT_00f416b0
 
 void AiRoadProfile::computeLaneOffset( const bool bWay,
                                        const int32_t lane,
@@ -76,6 +77,78 @@ void AiRoadProfile::computeWidthOffset( float widthRatio,
     }
     outLateral = 0.0f;
     outHeight = 0.0f;
+}
+
+void AiRoadProfile::computeLaneBounds( const bool bWay,
+                                       const int32_t lane,
+                                       float &outLateralStart,
+                                       float &outLateralEnd,
+                                       float &outHeightStart,
+                                       float &outHeightEnd ) const {
+    // FUN_0092e0b0
+    auto IsLaneMatch = [&]( const int32_t pointIndex, int32_t &laneIndex ) {
+        const uint32_t flags = Points[pointIndex].Flags;
+        if ( flags != 2 && flags != 3 ) {
+            return false;
+        }
+        laneIndex++;
+        if ( laneIndex != lane ) {
+            return false;
+        }
+        outLateralStart = Points[pointIndex].X;
+        outLateralEnd = Points[pointIndex + 1].X;
+        outHeightStart = Points[pointIndex].Y;
+        outHeightEnd = Points[pointIndex + 1].Y;
+        return true;
+    };
+
+    int32_t laneIndex = -1;
+    const int32_t lastSegment = static_cast<int32_t>( NumPoints ) - 2;
+    if ( bWay ) {
+        for ( int32_t i = lastSegment; i >= 0; i-- ) {
+            if ( IsLaneMatch( i, laneIndex ) ) {
+                return;
+            }
+        }
+    } else {
+        for ( int32_t i = 0; i <= lastSegment; i++ ) {
+            if ( IsLaneMatch( i, laneIndex ) ) {
+                return;
+            }
+        }
+    }
+    outLateralStart = 0.0f;
+    outLateralEnd = 0.0f;
+    outHeightStart = 0.0f;
+    outHeightEnd = 0.0f;
+}
+
+void AiRoadProfile::computeLaneWidthRatios( const int32_t lane,
+                                            const bool bWay,
+                                            float &outRatioStart,
+                                            float &outRatioEnd ) const {
+    // FUN_0092ec20
+    float lateralStart = 0.0f;
+    float lateralEnd = 0.0f;
+    float heightStart = 0.0f;
+    float heightEnd = 0.0f;
+    computeLaneBounds( bWay, lane, lateralStart, lateralEnd, heightStart,
+                       heightEnd );
+
+    const float halfWidth = InnerWidth * 0.5f;
+    outRatioStart = std::clamp( lateralStart / halfWidth, -1.0f, 1.0f );
+    outRatioEnd = std::clamp( lateralEnd / halfWidth, -1.0f, 1.0f );
+}
+
+bool AiRoadProfile::isTunnel() const {
+    // FUN_0092e910
+    float minHeight = std::numeric_limits<float>::max();
+    float maxHeight = -std::numeric_limits<float>::max();
+    for ( uint32_t i = 0; i < NumPoints; i++ ) {
+        minHeight = Max( Min( minHeight, Points[i].Y ), 0.0f );
+        maxHeight = Max( maxHeight, Points[i].Y );
+    }
+    return kTunnelMinHeightSpan < maxHeight - minHeight;
 }
 
 Eigen::Vector4f AiRoadMap::Entity::computePosition( const int32_t curveIndex,
@@ -611,6 +684,55 @@ void AiRoadVertexIt::initAtRoadEnd( AiRoadMap::Road *pOwnerRoad,
     }
 }
 
+float AiRoadIt::computeTwist() const {
+    // FUN_00933e50
+    const AiRoadMap::Entity *pEntity = getEntity();
+    const float t = bWay ? T : 1.0f - T;
+    return ( 1.0f - t ) * pEntity->getWaypointTwist( IndWay ) +
+           t * pEntity->Curves[IndWay].TwistEnd;
+}
+
+float AiRoadIt::computeSlope() const {
+    // FUN_00934d60
+    static constexpr float kMaxSlope = 0.5f; // FLOAT_00f41674
+
+    const Eigen::Vector4f direction = computeDirection();
+    const float horizontal =
+        sqrtf( direction.z() * direction.z() + direction.x() * direction.x() );
+    if ( horizontal < 1.0e-4f ) {
+        return 0.0f;
+    }
+    return std::clamp( direction.y() / horizontal, -kMaxSlope, kMaxSlope );
+}
+
+AiRoadIt AiRoadIt::Lerp( const AiRoadIt &a, const AiRoadIt &b, const float t ) {
+    // FUN_00933fb0
+    if ( a.pRoad == nullptr || b.pRoad == nullptr ||
+         a.pRoad->ID != b.pRoad->ID ) {
+        return a;
+    }
+
+    const float startT = ( a.bWay == b.bWay ) ? a.T : 1.0f - a.T;
+    if ( a.IndEntity == b.IndEntity && a.IndWay == b.IndWay ) {
+        AiRoadIt out = b;
+        out.T = startT + ( b.T - startT ) * t;
+        return out;
+    }
+
+    const float remaining = 1.0f - startT;
+    const float distance = ( remaining + b.T ) * t;
+    if ( distance > remaining ) {
+        AiRoadIt out = b;
+        out.T = distance - remaining;
+        return out;
+    }
+
+    AiRoadIt out = a;
+    out.bWay = b.bWay;
+    out.T = ( 1.0f - remaining ) + distance;
+    return out;
+}
+
 Eigen::Vector4f AiRoadIt::computePosition( const int32_t lane ) const {
     // FUN_00934a60
     if ( pRoad == nullptr ) {
@@ -637,6 +759,22 @@ Eigen::Vector4f AiRoadIt::computeWidthPosition( const float widthRatio ) const {
     float lateral = 0.0f;
     float height = 0.0f;
     pEntity->pProfile->computeWidthOffset( widthRatio, lateral, height );
+    const float t = bWay ? T : 1.0f - T;
+    return pEntity->computeOffsetPosition( IndWay, t, lateral, height );
+}
+
+Eigen::Vector4f
+AiRoadIt::computeBankedWidthPosition( const float widthRatio ) const {
+    // FUN_009348a0
+    if ( pRoad == nullptr ) {
+        return Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
+    }
+
+    const AiRoadMap::Entity *pEntity = getEntity();
+    float lateral = 0.0f;
+    float height = 0.0f;
+    pEntity->pProfile->computeWidthOffset( widthRatio, lateral, height );
+    height += computeTwist() * lateral;
     const float t = bWay ? T : 1.0f - T;
     return pEntity->computeOffsetPosition( IndWay, t, lateral, height );
 }

@@ -40,6 +40,7 @@ struct AiRoadIt {
     Eigen::Vector4f computeDirection() const;
     Eigen::Vector4f computePosition( const int32_t lane ) const;
     Eigen::Vector4f computeWidthPosition( const float widthRatio ) const;
+    Eigen::Vector4f computeBankedWidthPosition( const float widthRatio ) const;
     Eigen::Vector4f computeOffsetPosition( const float lateral,
                                            const float height ) const;
     float computeAngleAtJunction( const AiRoadMap::Junction *pJunction ) const;
@@ -55,6 +56,10 @@ struct AiRoadIt {
     bool isAtRoadStart() const;
     bool stepCurve( const bool bBackward );
     bool advanceByDistance( float distance, const bool bEnsureShape );
+    float computeTwist() const;
+    float computeSlope() const;
+
+    static AiRoadIt Lerp( const AiRoadIt &a, const AiRoadIt &b, const float t );
 };
 
 // Waypoint (curve end point) of a road

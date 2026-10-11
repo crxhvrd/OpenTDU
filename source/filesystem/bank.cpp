@@ -630,7 +630,8 @@ Bank::Bank()
       pBankFile( nullptr ),
       bankFileSize( 0u ),
       bLoaded( false ),
-      bResolveFilename( false ) {}
+      bResolveFilename( false ),
+      bUnknownBoolean( false ) {}
 
 Bank::~Bank() {}
 

@@ -26,7 +26,9 @@ static bool IsValidDBStringValue( const std::string &value ) {
     return value.find_first_of( "{}\r\n" ) == std::string::npos;
 }
 
-ModInstaller::ModInstaller() : contentDescSize( 0 ) { pDescription[0] = '\0'; }
+ModInstaller::ModInstaller() : contentDescSize( 0 ), reader( nullptr, true ) {
+    pDescription[0] = '\0';
+}
 
 ModInstaller::~ModInstaller() {}
 
@@ -49,6 +51,22 @@ void ModInstaller::markInjectionsMandatory( const std::wstring &packName ) {
             injection.bMandatory = true;
         }
     }
+}
+
+static std::string GetTrimmedData( const CMarkup &reader ) {
+    static constexpr const char *kXMLSpaces = " \t\r\n";
+
+    const std::string data = reader.getData();
+    const size_t begin = data.find_first_not_of( kXMLSpaces );
+    if ( begin == std::string::npos ) {
+        return "";
+    }
+    return data.substr( begin,
+                        data.find_last_not_of( kXMLSpaces ) - begin + 1 );
+}
+
+static inline const char *NullIfEmpty( const std::string &value ) {
+    return value.empty() ? nullptr : value.c_str();
 }
 
 static void GetActiveLanguage( char *pOutLanguage, const size_t size ) {
@@ -206,20 +224,18 @@ void ModInstaller::onAddDBRow( const EnumerateContextItem &item,
 }
 
 void ModInstaller::readDBStringTranslations( ModDBString &string ) {
-    while ( reader.findNextElem() ) {
-        const char *pLanguage = reader.getElemName();
-        const char *pValue = reader.getData();
-        if ( pLanguage == nullptr || strlen( pLanguage ) != 2 ) {
+    while ( reader.findElem( nullptr ) ) {
+        const std::string language = reader.getTagName();
+        if ( language.size() != 2 ) {
             OTDU_LOG_WARN( "ADDDBSTRING %llu: <%s> is not a language code\n",
-                           string.Hashcode,
-                           ( pLanguage != nullptr ) ? pLanguage : "" );
+                           string.Hashcode, language.c_str() );
             continue;
         }
 
         ModDBStringTranslation translation;
-        translation.Language[0] = (char)tolower( pLanguage[0] );
-        translation.Language[1] = (char)tolower( pLanguage[1] );
-        translation.Value = ( pValue != nullptr ) ? pValue : "";
+        translation.Language[0] = (char)tolower( language[0] );
+        translation.Language[1] = (char)tolower( language[1] );
+        translation.Value = GetTrimmedData( reader );
 
         if ( !IsValidDBStringValue( translation.Value ) ) {
             OTDU_LOG_ERROR( "ADDDBSTRING %llu <%s> contains a brace or a "
@@ -321,28 +337,29 @@ eContentDescResult ModInstaller::loadFromMem( const uint32_t licenceFlags,
 
     reader.intoElem();
     while ( reader.findElem( "ACTION" ) ) {
-        const char *pActionName = reader.getAttrib( "name" );
-        const char *pEnvName = reader.getAttrib( "envname" );
-        const char *pDatabaseIdText = reader.getAttrib( "database_id" );
-        const char *pLicenceFlagsText = reader.getAttrib( "licenceflags" );
-        const char *pMoneyText = reader.getAttrib( "mon" );
-        const char *pTable = reader.getAttrib( "table" );
-        const char *pHashcodeText = reader.getAttrib( "id" );
-        const char *pActionBody = reader.getData();
+        const std::string actionName = reader.getAttrib( "name" );
+        const std::string envName = reader.getAttrib( "envname" );
+        const std::string databaseIdText = reader.getAttrib( "database_id" );
+        const std::string licenceFlagsText = reader.getAttrib( "licenceflags" );
+        const std::string moneyText = reader.getAttrib( "mon" );
+        const std::string table = reader.getAttrib( "table" );
+        const std::string hashcodeText = reader.getAttrib( "id" );
+        const std::string actionBody = GetTrimmedData( reader );
 
-        const bool bHasName =
-            ( pActionName != nullptr && *pActionName != '\0' );
-        const bool bHasEnvName = ( pEnvName != nullptr && *pEnvName != '\0' );
-        const bool bHasLicenceFlags =
-            ( pLicenceFlagsText != nullptr && *pLicenceFlagsText != '\0' );
+        const char *pActionName = actionName.c_str();
+        const char *pEnvName = envName.c_str();
+        const char *pTable = NullIfEmpty( table );
+        const char *pHashcodeText = NullIfEmpty( hashcodeText );
+        const char *pActionBody = actionBody.c_str();
 
-        const uint32_t databaseId = ( pDatabaseIdText != nullptr )
-                                        ? (uint32_t)atoi( pDatabaseIdText )
-                                        : 0;
+        const bool bHasName = !actionName.empty();
+        const bool bHasEnvName = !envName.empty();
+        const bool bHasLicenceFlags = !licenceFlagsText.empty();
+
+        const uint32_t databaseId = (uint32_t)atoi( databaseIdText.c_str() );
         const uint32_t actionLicenceFlags =
-            bHasLicenceFlags ? (uint32_t)atoi( pLicenceFlagsText ) : 0;
-        const int32_t moneyReward =
-            ( pMoneyText != nullptr ) ? atoi( pMoneyText ) : 0;
+            bHasLicenceFlags ? (uint32_t)atoi( licenceFlagsText.c_str() ) : 0;
+        const int32_t moneyReward = atoi( moneyText.c_str() );
 
         OTDU_LOG_INFO( " found ACTION %s , envname=%s database_id=%u "
                        "licenceflags(%s=%u)  mon=%u\n",
@@ -375,17 +392,16 @@ eContentDescResult ModInstaller::loadFromMem( const uint32_t licenceFlags,
             actionMask = ( actionMask & ~CA_AddVehicle ) | CA_UnlockVehicle;
         } else if ( StringCmpI( pActionName, "POSTNEWS" ) == 0 ) {
             if ( reader.findElem( pLanguage ) || reader.findElem( "us" ) ) {
-                const char *pNews = reader.getData();
-                if ( bApplyContent && bHasEnvName && pNews != nullptr &&
-                     *pNews != '\0' ) {
-                    onPostNews( pNews, moneyReward );
+                const std::string news = GetTrimmedData( reader );
+                if ( bApplyContent && bHasEnvName && !news.empty() ) {
+                    onPostNews( news.c_str(), moneyReward );
                 }
             }
         } else if ( StringCmpI( pActionName, "DESC" ) == 0 ) {
             if ( reader.findElem( pLanguage ) || reader.findElem( "us" ) ) {
-                const char *pDesc = reader.getData();
-                if ( pDesc != nullptr && *pDesc != '\0' ) {
-                    strncpy( pDescription, pDesc,
+                const std::string desc = GetTrimmedData( reader );
+                if ( !desc.empty() ) {
+                    strncpy( pDescription, desc.c_str(),
                              kMaxContentDescriptionLength - 1 );
                     pDescription[kMaxContentDescriptionLength - 1] = '\0';
                     OTDU_LOG_INFO( "OnDesc(%s)\n", pDescription );
@@ -461,8 +477,10 @@ ModInstaller::loadContentDesc( const EnumerateContextItem &item,
 
     contentDescSize = fileSize;
 
-    if ( !reader.parse( contentDescBuffer.data(), contentDescSize ) ) {
-        OTDU_LOG_ERROR( "Failed to parse '%s'\n", descPath.string().c_str() );
+    const std::string contentDesc( contentDescBuffer.data(), contentDescSize );
+    if ( !reader.setDoc( contentDesc.c_str() ) ) {
+        OTDU_LOG_ERROR( "Failed to parse '%s': %s\n", descPath.string().c_str(),
+                        reader.getError().c_str() );
         return CDR_Invalid;
     }
 

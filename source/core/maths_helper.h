@@ -647,3 +647,15 @@ static float LengthSq4( const Eigen::Vector4f &vector ) {
     // FUN_00406390
     return vector.squaredNorm();
 }
+
+static float Dot4( const Eigen::Vector4f &a, const Eigen::Vector4f &b ) {
+    return a.dot( b );
+}
+
+static float Project( const Eigen::Vector4f &point,
+                      const Eigen::Vector4f &a,
+                      const Eigen::Vector4f &b ) {
+    // FUN_00909890
+    const Eigen::Vector4f ab = b - a;
+    return Dot4( point - a, ab ) / Dot4( ab, ab );
+}

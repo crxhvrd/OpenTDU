@@ -33,6 +33,17 @@ struct AiRoadProfile {
     void computeWidthOffset( float widthRatio,
                              float &outLateral,
                              float &outHeight ) const;
+    void computeLaneBounds( const bool bWay,
+                            const int32_t lane,
+                            float &outLateralStart,
+                            float &outLateralEnd,
+                            float &outHeightStart,
+                            float &outHeightEnd ) const;
+    void computeLaneWidthRatios( const int32_t lane,
+                                 const bool bWay,
+                                 float &outRatioStart,
+                                 float &outRatioEnd ) const;
+    bool isTunnel() const;
 };
 OTDU_SIZE_MUST_MATCH( AiRoadProfile, 0x30 );
 
@@ -61,6 +72,23 @@ public:
     };
     OTDU_SIZE_MUST_MATCH( Curve, 0x28 );
 
+    // One-way 3 roads junction
+    struct JunctionSplit {
+        enum eType : int32_t {
+            JST_None = 0,
+            JST_SymmetricSplit = 1,
+            JST_SymmetricMerge = 2,
+            JST_Merge = 3,
+            JST_Split = 4,
+        };
+
+        eType Type = JST_None;
+        int32_t PairIndexA = 0;
+        int32_t PairIndexB = 0;
+        int32_t SingleIndex = 0;
+        int32_t RoadIndex = 0;
+    };
+
     struct Junction {
         uint32_t ChunkID;
         uint32_t ID;
@@ -88,6 +116,17 @@ public:
                               const int32_t occurrence ) const;
         Junction *getNeighbor( const int32_t index ) const;
         float computeRoadAngle( const int32_t index ) const;
+        void classifySplit( JunctionSplit &outSplit,
+                            const uint32_t roadID ) const;
+        bool canTurnInto( const int32_t fromIndex,
+                          const int32_t toIndex ) const;
+        bool crossesCircle( const Eigen::Vector2f &centreXZ,
+                            const float radiusSq ) const;
+        int32_t pickStraightestRoad( const int32_t fromIndex,
+                                     float *pOutAngle ) const;
+        int32_t computeTurnType( const int32_t fromIndex,
+                                 const int32_t toIndex,
+                                 float *pOutAngle ) const;
         int32_t computeSideOfLine( const Eigen::Vector2f &pointXZ ) const;
         bool containsPoint( const Eigen::Vector2f &pointXZ ) const;
         bool findClosestOutlinePoint( const Eigen::Vector4f &position,
@@ -117,6 +156,8 @@ public:
         AiRoadShape *pShape;
 
         AiRoadShape *getShape();
+
+        uint8_t getNumLanesAt( const bool bEnd ) const;
     };
 
     struct Entity {
@@ -261,6 +302,10 @@ public:
     inline int32_t getNumRoads() const { return NumRoads; }
     inline int32_t getNumJunctions() const { return NumJunction; }
     inline Road *getRoads() const { return pRoads; }
+    inline int32_t getNumSpeedLimits() const { return NumSpeedLimits; }
+    inline float getSpeedLimit( const int32_t index ) const {
+        return pArraySpeedLimit[index];
+    }
     inline const EntityArray *getEntityArray() const { return pEntityArray; }
 
     inline Road *getRoad( const uint32_t roadID ) const {

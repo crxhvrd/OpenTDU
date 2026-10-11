@@ -189,6 +189,9 @@ enum class eBankEntrySubtype : int32_t {
 class Bank {
 public:
     inline bool isLoaded() const { return bLoaded; }
+    inline bool hasLoadFailed() const {
+        return bResolveFilename || bUnknownBoolean;
+    }
     inline int32_t getNumElements() { return bank.getNumElements(); }
     inline int32_t getEntry( int32_t index, ParsedBankEntry &outEntry ) {
         return bank.getEntry( index, outEntry );

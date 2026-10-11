@@ -1,7 +1,7 @@
 #pragma once
 
 #include "file_map.h"
-#include "xml_reader.h"
+#include "core/markup.h"
 
 static constexpr uint32_t kMaxContentDescSize = 0x8000;
 static constexpr uint32_t kMaxFoundCars = 0x180;
@@ -125,7 +125,7 @@ private:
 
     char pDescription[kMaxContentDescriptionLength];
 
-    XMLReader reader;
+    CMarkup reader;
 };
 
 extern ModInstaller *gpModInstaller;

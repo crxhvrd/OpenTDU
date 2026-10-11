@@ -3,6 +3,8 @@
 
 #include "core/hash/crc32.h"
 
+#include "ai/ai_pool.h"
+
 #include "database/gs_database.h"
 #include "flash/gs_flash.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -262,14 +264,14 @@ void GSConfig::registerGameCommands() {
         int32_t iVar1 = atoi( pArg );
         if ( iVar1 < 0 ) {
             gAIConfig.MaxNumPoliceVehicle = 0;
-            gAIConfig.bEnablePolice = true;
+            gAIConfig.bPoliceCountFromIni = true;
             return;
         }
-        gAIConfig.MaxNumParkedVehicle = 16;
+        gAIConfig.MaxNumPoliceVehicle = 16;
         if ( iVar1 < 17 ) {
-            gAIConfig.MaxNumParkedVehicle = iVar1;
+            gAIConfig.MaxNumPoliceVehicle = iVar1;
         }
-        gAIConfig.bEnablePolice = true;
+        gAIConfig.bPoliceCountFromIni = true;
     } );
 
     registerCommand( "PHYSICSMAXCOUNT", [&]( const char *pArg ) {
@@ -352,17 +354,72 @@ void GSConfig::registerGameCommands() {
         gAIConfig.bEnableJail = ( atoi( pArg ) != 0 );
     } );
 
-    registerCommand( "CULLINGCONFIG",
-                     [&]( const char *pArg ) { OTDU_UNIMPLEMENTED } );
+    registerCommand( "CULLINGCONFIG", [&]( const char *pArg ) {
+        // FUN_00984970
+        static constexpr float kDegToRad = 0.017453292f; // FLOAT_00f41864
 
-    registerCommand( "SPAWNCONFIG",
-                     [&]( const char *pArg ) { OTDU_UNIMPLEMENTED } );
+        std::string argStr( pArg );
+        size_t it = 0;
+        gAIConfig.CullingFirstRadius =
+            static_cast<float>( ParseInteger( argStr, it ) );
+        gAIConfig.CullingSecondRadius =
+            static_cast<float>( ParseInteger( argStr, it ) );
+        gAIConfig.CullingFovDistance =
+            static_cast<float>( ParseInteger( argStr, it ) );
+        gAIConfig.CullingFovMagnitude =
+            static_cast<float>( ParseInteger( argStr, it ) );
 
-    registerCommand( "SPAWNDISTANCES",
-                     [&]( const char *pArg ) { OTDU_UNIMPLEMENTED } );
+        AiLODSorter &sorter = gAiLODSorter;
+        sorter.PhysicsRadius = gAIConfig.CullingFirstRadius;
+        sorter.PhysicsRadiusSq =
+            gAIConfig.CullingFirstRadius * gAIConfig.CullingFirstRadius;
+        sorter.CullRadius = gAIConfig.CullingSecondRadius;
+        sorter.CullRadiusSq =
+            gAIConfig.CullingSecondRadius * gAIConfig.CullingSecondRadius;
+        sorter.FovDistance = gAIConfig.CullingFovDistance;
+        sorter.FovDistanceSq =
+            gAIConfig.CullingFovDistance * gAIConfig.CullingFovDistance;
+        sorter.FovMagnitude = gAIConfig.CullingFovMagnitude * kDegToRad;
+    } );
 
-    registerCommand( "FORCECARMODEL",
-                     [&]( const char *pArg ) { OTDU_UNIMPLEMENTED } );
+    registerCommand( "SPAWNCONFIG", [&]( const char *pArg ) {
+        // FUN_00987aa0
+        std::string argStr( pArg );
+        size_t it = 0;
+        const float arg0 = ParseFloat( argStr, it );
+        const float arg1 = ParseFloat( argStr, it );
+        const float arg2 = ParseFloat( argStr, it );
+        float min = std::clamp( arg1, 0.0f, 1000.0f );
+        float max = std::clamp( arg2, 0.0f, 1000.0f );
+        if ( max < min ) {
+            std::swap( min, max );
+        }
+        gAIConfig.SpawnConfig[0] = std::clamp( arg0, 0.0f, 1.0f );
+        gAIConfig.SpawnConfig[1] = min;
+        gAIConfig.SpawnConfig[2] = max;
+    } );
+
+    registerCommand( "SPAWNDISTANCES", [&]( const char *pArg ) {
+        // FUN_00987990
+        std::string argStr( pArg );
+        size_t it = 0;
+        const float arg0 = ParseFloat( argStr, it );
+        const float arg1 = ParseFloat( argStr, it );
+        const float arg2 = ParseFloat( argStr, it );
+        float min = std::clamp( arg1, 0.0f, 1500.0f );
+        float max = std::clamp( arg2, 0.0f, 1500.0f );
+        if ( max < min ) {
+            std::swap( min, max );
+        }
+        gAIConfig.SpawnDistances[0] = std::max( arg0, 1.0f );
+        gAIConfig.SpawnDistances[1] = min;
+        gAIConfig.SpawnDistances[2] = max;
+    } );
+
+    registerCommand( "FORCECARMODEL", [&]( const char *pArg ) {
+        // FUN_00984940
+        gForcedCarModels.push_back( pArg );
+    } );
 
     registerCommand( "ENABLEBOTS", [&]( const char *pArg ) {
         // FUN_00984920

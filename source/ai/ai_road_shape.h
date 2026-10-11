@@ -28,6 +28,7 @@ struct AiRoadShape {
     float computeRoadFraction( const AiRoadIt &it ) const;
     float computeUniformRoadFraction( const AiRoadIt &it ) const;
     void computeIt( const float fraction, AiRoadIt &outIt ) const;
+    void computeUniformIt( float fraction, AiRoadIt &outIt ) const;
     void addPhantom( GameObject *pObject,
                      const int32_t entityIndex,
                      const int32_t curveIndex,

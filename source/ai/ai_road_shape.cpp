@@ -179,6 +179,42 @@ void AiRoadShape::computeIt( const float fraction, AiRoadIt &outIt ) const {
     }
 }
 
+void AiRoadShape::computeUniformIt( float fraction, AiRoadIt &outIt ) const {
+    // FUN_0092ccc0
+    static constexpr float kMaxCurveT = 0.999f; // DAT_00f41e54
+
+    const float step = 1.0f / static_cast<float>( NumCurves );
+    float covered = step;
+    const CurveCalc *pCurve = pCurveList;
+    while ( fraction > covered ) {
+        pCurve = pCurve->pNext;
+        covered += step;
+        if ( pCurve == nullptr ) {
+            const AiRoadMap::RoadDetail *pDetail = pRoad->pDetail;
+            const int32_t lastEntity = pDetail->NumEntities - 1;
+            outIt.pRoad = pRoad;
+            outIt.IndEntity = lastEntity;
+            outIt.IndWay =
+                ( pDetail->pEntities[lastEntity]->NumVertex + 2 ) / 3 - 2;
+            outIt.bWay = true;
+            outIt.T = 1.0f;
+            return;
+        }
+    }
+
+    float t = ( fraction - ( covered - step ) ) / step;
+    if ( 0.0f > t ) {
+        t = 0.0f;
+    } else if ( t > kMaxCurveT ) {
+        t = 1.0f;
+    }
+    outIt.pRoad = pRoad;
+    outIt.IndEntity = pCurve->IndEntity;
+    outIt.IndWay = pCurve->IndCurve;
+    outIt.bWay = true;
+    outIt.T = t;
+}
+
 void AiRoadShape::computeLateralPosition( const float fraction,
                                           const float lateralRatio,
                                           Eigen::Vector4f &outPosition ) const {
@@ -368,10 +404,7 @@ void ProjectOnRoadShape( const Matrix4x4f_t &frame,
 
     Eigen::Vector4f side( tangent.z(), 0.0f, -tangent.x(), 0.0f );
     if ( bBank ) {
-        const AiRoadMap::Entity *pEntity = io.getEntity();
-        const float t = io.bWay ? io.T : 1.0f - io.T;
-        float twist = ( 1.0f - t ) * pEntity->getWaypointTwist( io.IndWay ) +
-                      t * pEntity->Curves[io.IndWay].TwistEnd;
+        float twist = io.computeTwist();
         if ( io.bWay ) {
             twist = -twist;
         }

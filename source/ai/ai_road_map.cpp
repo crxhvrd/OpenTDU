@@ -80,6 +80,229 @@ float AiRoadMap::Junction::computeRoadAngle( const int32_t index ) const {
     return static_cast<float>( slot / 4 ) * 90.0f + kSlotAngles[slot & 3];
 }
 
+bool AiRoadMap::Junction::crossesCircle( const Eigen::Vector2f &centreXZ,
+                                         const float radiusSq ) const {
+    // FUN_0092fcc0
+    const JunctionDetail *pJunctionDetail =
+        static_cast<const JunctionDetail *>( pDetail );
+    const float *pPoints =
+        reinterpret_cast<const float *>( pJunctionDetail + 1 );
+    const int32_t numPoints =
+        pJunctionDetail->field_0x8 + pJunctionDetail->field_0x9;
+    bool bAnyInside = false;
+    bool bAnyOutside = false;
+    for ( int32_t i = 0; i < numPoints; i++ ) {
+        const Eigen::Vector2f point( pPoints[i * 2], pPoints[i * 2 + 1] );
+        const float distanceSq = ( point - centreXZ ).squaredNorm();
+        if ( distanceSq <= radiusSq ) {
+            bAnyInside = true;
+        } else {
+            bAnyOutside = true;
+        }
+    }
+    return bAnyInside && bAnyOutside;
+}
+
+int32_t AiRoadMap::Junction::pickStraightestRoad( const int32_t fromIndex,
+                                                  float *pOutAngle ) const {
+    // FUN_0092f6c0
+    const float referenceAngle = computeRoadAngle( fromIndex );
+    int32_t bestIndex = -1;
+    float bestScore = -1.0f;
+    float bestAngle = 0.0f;
+    for ( int32_t i = 0; i < NumRoads; i++ ) {
+        if ( i == fromIndex ) {
+            continue;
+        }
+        float angle = computeRoadAngle( i ) - referenceAngle;
+        if ( angle < 0.0f ) {
+            angle += 360.0f;
+        }
+        const float score = fabsf( angle - 180.0f );
+        if ( bestScore < 0.0f || score < bestScore ) {
+            bestScore = score;
+            bestAngle = angle;
+            bestIndex = i;
+        }
+    }
+    if ( pOutAngle != nullptr ) {
+        *pOutAngle = bestAngle;
+    }
+    return bestIndex;
+}
+
+uint8_t AiRoadMap::Road::getNumLanesAt( const bool bEnd ) const {
+    // FUN_0092e830
+    return bEnd ? pDetail->pEntities[pDetail->NumEntities - 1]->NumRightLanes
+                : pDetail->pEntities[0]->NumLeftLanes;
+}
+
+static float WrapAngle180( float angle ) {
+    if ( -180.0f > angle ) {
+        angle += 360.0f;
+    }
+    if ( angle > 180.0f ) {
+        angle -= 360.0f;
+    }
+    return angle;
+}
+
+void AiRoadMap::Junction::classifySplit( JunctionSplit &outSplit,
+                                         const uint32_t roadID ) const {
+    // FUN_0092f310
+    static constexpr float kSymmetryEpsilon = 0.001f; // DAT_00f4167c
+    static constexpr float kMaxPairAngle = 45.0f;     // DAT_00f41808
+
+    outSplit.Type = JunctionSplit::JST_None;
+    if ( NumRoads != 3 ) {
+        return;
+    }
+
+    int32_t numInbound = 0;
+    int32_t numOutbound = 0;
+    int32_t inbound[2] = { 0, 0 };
+    int32_t outbound[2] = { 0, 0 };
+    for ( int32_t i = 0; i < 3; i++ ) {
+        const Road *pRoad = pRoads[i];
+        if ( roadID == pRoad->ID ) {
+            outSplit.RoadIndex = i;
+        }
+        const int32_t numRightLanes = pRoad->getNumLanesAt( true );
+        const int32_t numLeftLanes = pRoad->getNumLanesAt( false );
+        if ( numRightLanes > 0 && numLeftLanes > 0 ) {
+            return;
+        }
+
+        const bool bBegin = ( pRoad->pJunctionBegin == this );
+        const bool bInbound =
+            bBegin ? ( numLeftLanes > 0 ) : ( numRightLanes > 0 );
+        const uint8_t device =
+            bBegin ? pRoad->CtrlDeviceBegin : pRoad->CtrlDeviceEnd;
+        if ( device >= 3 || device == 1 ) {
+            return;
+        }
+
+        if ( bInbound ) {
+            inbound[( ++numInbound == 1 ) ? 0 : 1] = i;
+        } else {
+            outbound[( ++numOutbound == 1 ) ? 0 : 1] = i;
+        }
+    }
+
+    int32_t pairA;
+    int32_t pairB;
+    if ( numInbound == 2 ) {
+        outSplit.SingleIndex = outbound[0];
+        pairA = inbound[0];
+        pairB = inbound[1];
+    } else if ( numOutbound == 2 ) {
+        outSplit.SingleIndex = inbound[0];
+        pairA = outbound[0];
+        pairB = outbound[1];
+    } else {
+        return;
+    }
+
+    const float angleA = computeRoadAngle( pairA );
+    const float angleB = computeRoadAngle( pairB );
+    const float angleSingle = computeRoadAngle( outSplit.SingleIndex );
+    const float pairDelta = WrapAngle180( angleB - angleA );
+    const float deltaA = WrapAngle180( angleA - angleSingle );
+    const float deltaB = WrapAngle180( angleSingle - angleB );
+
+    const bool bSymmetric = fabsf( deltaB - deltaA ) < kSymmetryEpsilon;
+    if ( !bSymmetric && fabsf( pairDelta ) > kMaxPairAngle ) {
+        return;
+    }
+
+    const float side = ( numInbound == 2 ) ? -pairDelta : pairDelta;
+    if ( side >= 0.0f ) {
+        outSplit.PairIndexA = pairB;
+        outSplit.PairIndexB = pairA;
+    } else {
+        outSplit.PairIndexA = pairA;
+        outSplit.PairIndexB = pairB;
+    }
+
+    if ( bSymmetric ) {
+        outSplit.Type = ( numInbound == 2 ) ? JunctionSplit::JST_SymmetricMerge
+                                            : JunctionSplit::JST_SymmetricSplit;
+    } else {
+        outSplit.Type = ( numInbound != 2 ) ? JunctionSplit::JST_Split
+                                            : JunctionSplit::JST_Merge;
+    }
+}
+
+bool AiRoadMap::Junction::canTurnInto( const int32_t fromIndex,
+                                       const int32_t toIndex ) const {
+    // FUN_00932100
+    const int32_t turnMask = computeTurnType( fromIndex, toIndex, nullptr );
+    const Road *pRoad = getRoad( fromIndex );
+    if ( pRoad == nullptr ) {
+        return false;
+    }
+
+    const bool bTowardEnd = ( pRoad->pJunctionBegin != this );
+    const int32_t numLanes = pRoad->getNumLanesAt( bTowardEnd );
+    const int32_t numRightLanes = pRoad->getNumLanesAt( true );
+    const int32_t numLeftLanes = pRoad->getNumLanesAt( false );
+    for ( int32_t lane = 0; lane < numLanes; lane++ ) {
+        int32_t index = bTowardEnd ? numLeftLanes - lane + numRightLanes - 1
+                                   : numRightLanes - lane - 1;
+        if ( index < 0 || index >= numLeftLanes + numRightLanes ) {
+            index = 0;
+        }
+        int32_t laneFlags = static_cast<uint8_t>( pRoad->LaneFlags[index] );
+        if ( laneFlags == 0 ) {
+            laneFlags = 7;
+        }
+        if ( ( laneFlags & turnMask ) == turnMask ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int32_t AiRoadMap::Junction::computeTurnType( const int32_t fromIndex,
+                                              const int32_t toIndex,
+                                              float *pOutAngle ) const {
+    // FUN_00931840
+    static constexpr float kStraightTolerance = 5.0f; // DAT_00f41750
+    static constexpr float kTurnAngleMin = 145.0f;    // DAT_00f41e68
+    static constexpr float kTurnAngleMax = 215.0f;    // DAT_00f41e64
+
+    float straightAngle = 0.0f;
+    const int32_t straightIndex =
+        pickStraightestRoad( fromIndex, &straightAngle );
+    const float straightDeviation = fabsf( straightAngle - 180.0f );
+
+    float angle = computeRoadAngle( toIndex ) - computeRoadAngle( fromIndex );
+    if ( angle < 0.0f ) {
+        angle += 360.0f;
+    }
+    if ( pOutAngle != nullptr ) {
+        *pOutAngle = angle;
+    }
+
+    if ( straightDeviation <= kStraightTolerance ) {
+        if ( toIndex == straightIndex ) {
+            return 2;
+        }
+        if ( angle == 0.0f ) {
+            return 0;
+        }
+        return ( angle > straightAngle ) ? 1 : 4;
+    }
+
+    if ( angle == 0.0f ) {
+        return 0;
+    }
+    if ( angle <= kTurnAngleMin ) {
+        return 4;
+    }
+    return ( angle > kTurnAngleMax ) ? 1 : 2;
+}
+
 int32_t
 AiRoadMap::Junction::computeSideOfLine( const Eigen::Vector2f &pointXZ ) const {
     // FUN_0092f570

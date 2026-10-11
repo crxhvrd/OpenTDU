@@ -442,12 +442,10 @@ void GSConfig::registerPhysicsCommands() {
         // FUN_00985d60
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.ElectronicPowerCoef = ParseFloat( argStr, it );
-        gPhysicsConfig.ElectronicPowerCoef2[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.ElectronicPowerCoef3 = ParseFloat( argStr, it );
-        gPhysicsConfig.ElectronicPowerCoef2[2] = ParseFloat( argStr, it );
-        gPhysicsConfig.ElectronicPowerCoef2[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.ElectronicPowerCoef2[3] = ParseFloat( argStr, it );
+        for ( int32_t i = 0; i < 3; i++ ) {
+            gPhysicsConfig.ElectronicPowerCoefX[i] = ParseFloat( argStr, it );
+            gPhysicsConfig.ElectronicPowerCoefY[i] = ParseFloat( argStr, it );
+        }
     } );
 
     registerCommand( "ACTIVETCTRIGGER", [&]( const char *pArg ) {

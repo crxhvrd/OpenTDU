@@ -24,6 +24,11 @@ public:
     };
 
 public:
+    inline Bucket *getRoadBucket( const uint32_t roadID ) {
+        return getBucket( roadBuckets, roadID );
+    }
+
+public:
     AiRoadBuckets();
     ~AiRoadBuckets();
 
