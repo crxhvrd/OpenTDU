@@ -557,6 +557,7 @@ void GSPlayerData::applyDrivingOptions() {
     options.Linearity =
         localPlayerData.bUseWheel ? localPlayerData.Linearity : 0.0f;
     options.RumbleMax = localPlayerData.QuiverSensitivity;
+    options.DrivingHelpLevel = localPlayerData.DrivingHelpLevel;
 
     pPhysicsVehicle->applyDrivingOptions( options );
 

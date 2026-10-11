@@ -3,6 +3,7 @@
 
 #include "ai/ai_pool.h"
 #include "ai/gs_ai.h"
+#include "ai/ai_road_query.h"
 
 #include "tdu_instance.h"
 
@@ -35,6 +36,7 @@
 #include "input/gs_device.h"
 #include "game/vehicle/bank_vehicle.h"
 #include "game/vehicle/gs_car_state.h"
+#include "core/arg_parser.h"
 #include "game/vehicle/gs_car_display.h"
 #include "game/vehicle/vehicle_base.h"
 #include "game/vehicle/vehicle_car.h"
@@ -86,8 +88,6 @@ static bool gbCarHotReloadRestoreDraw = false;    // DAT_016a6a40
 static bool gbCarHotReloadCooldownElapsed = true; // DAT_00fab8dc
 
 static constexpr float kIgnitionAccelThreshold = 0.1f;
-static constexpr float kManualClutchExponent = 500.0f; // DAT_00fab728
-static constexpr float kManualClutchEngaged = 0.5f;    // DAT_00fab724
 
 static void PlaceLocalPlayerDriver( CarState *pCarState, const bool bAsync ) {
     VehicleBaseResources *pResource = pCarState->getResource();
@@ -173,7 +173,7 @@ void GameModeWorldBase::initialize() {
     GameModeScene::initialize();
 
     AiPool *pAIPool = gpAI->getAIPool();
-    pAIPool->setField0xC( false );
+    pAIPool->setTrafficPaused( false );
     pAIPool->setField0x7C( true );
     pAIPool->setField0x85( true );
     gpAI->setDisableCops( true );
@@ -621,10 +621,10 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     const float throttle = ApplyInputDeadZone( rawAccel, gAccelDeadZone );
     const float brake = ApplyInputDeadZone( rawBrake, gBrakeDeadZone );
 
+    const float steerDeadZone = pPlayerPhysicsVehicle->getSteerDeadZone();
     const float steer =
-        ApplyInputDeadZone( ReadActionAxis( pRightAction ),
-                            gSteeringDeadZone ) -
-        ApplyInputDeadZone( ReadActionAxis( pLeftAction ), gSteeringDeadZone );
+        ApplyInputDeadZone( ReadActionAxis( pLeftAction ), steerDeadZone ) -
+        ApplyInputDeadZone( ReadActionAxis( pRightAction ), steerDeadZone );
 
     const PhysicsVehicle::DrivingGearbox gearbox =
         pPlayerPhysicsVehicle->getDrivingGearbox();
@@ -654,13 +654,11 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     };
     static constexpr int32_t kGearSelectValues[] = { 0, 2, 3, 4, 5, 6, 7, 8 };
     int32_t gearSelect = 1;
-    bool bHasGearSelector = false;
     for ( size_t i = 0; i < std::size( pGearSelectActions ); ++i ) {
         DeviceAction *pAction = pGearSelectActions[i];
         if ( pAction == nullptr || pAction->NumAddedChannels == 0 ) {
             continue;
         }
-        bHasGearSelector = true;
         if ( ( pAction->Flags & 1 ) != 0 ) {
             gearSelect = kGearSelectValues[i];
         }
@@ -715,9 +713,6 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     pBody->Throttle = throttle;
     pBody->Brake = brake;
 
-    const bool bAutomatic = pCfg->bUseAutomatic;
-    pPlayerPhysicsVehicle->setAutomaticGearbox( bAutomatic );
-
     {
         PhysicsLock physLock;
         pPlayerPhysicsVehicle->setDrivingInputScripted(
@@ -726,38 +721,13 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         pPlayerPhysicsVehicle->setHandbrake( pBody->Handbrake );
         pPlayerPhysicsVehicle->setIgnition( pBody->bIgnition,
                                             pBody->bIgnitionOnce );
-
-        if ( !bAutomatic ) {
-            bool bClutchOut = false;
-            if ( pPlayerPhysicsVehicle->isManualClutchEnabled() ) {
-                const float clutchEngagement =
-                    std::pow( 1.0f - pBody->Clutch, kManualClutchExponent );
-                pPlayerPhysicsVehicle->setClutchOverride( clutchEngagement );
-                bClutchOut = clutchEngagement >= kManualClutchEngaged;
-            } else {
-                pPlayerPhysicsVehicle->setClutchOverride( -1.0f );
-            }
-            if ( pBody->bGearUpEdge && !bClutchOut ) {
-                pPlayerPhysicsVehicle->requestUpshift();
-            }
-            if ( pBody->bGearDownEdge && !bClutchOut ) {
-                pPlayerPhysicsVehicle->requestDownshift();
-            }
-            if ( bHasGearSelector ) {
-                if ( bGearSelectBlocked ) {
-                    if ( pBody->GearRequest == 1 ) {
-                        bGearSelectBlocked = false;
-                    }
-                } else if ( pBody->GearRequest != gearbox.Gear ) {
-                    if ( bClutchOut && pBody->GearRequest != 1 ) {
-                        bGearSelectBlocked = true;
-                    } else {
-                        pPlayerPhysicsVehicle->setCurrentGear(
-                            pBody->GearRequest );
-                    }
-                }
-            }
-        }
+        const bool bShiftRequestsBlocked =
+            gearbox.bAutomatic && !gearbox.bEngineRunning;
+        pPlayerPhysicsVehicle->setClutchInput( pBody->Clutch );
+        pPlayerPhysicsVehicle->setGearRequests(
+            !bShiftRequestsBlocked && ( pBody->bGearUpEdge || bTestUpshift ),
+            !bShiftRequestsBlocked && pBody->bGearDownEdge,
+            pBody->GearRequest );
     }
 
     pBody->bGearUpEdge = false;

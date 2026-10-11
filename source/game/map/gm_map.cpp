@@ -458,12 +458,12 @@ GMMap::GMMap()
     numTicksPerTransition = 0;
 
     gpBrandCar->setSuspended( true );
-    gpAI->getAIPool()->setField0xC( true );
+    gpAI->getAIPool()->setTrafficPaused( true );
 }
 
 GMMap::~GMMap() {
     // FUN_009bfae0
-    gpAI->getAIPool()->setField0xC( false );
+    gpAI->getAIPool()->setTrafficPaused( false );
     gpBrandCar->setSuspended( false );
 
     gpGMMap = nullptr;

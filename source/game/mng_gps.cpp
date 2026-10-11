@@ -222,7 +222,7 @@ void MngGPS::tick( float deltaTime, float ) {
     if ( activeGameMode == GM_Mission ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission
     } else {
-        numPlayers = gpAI->getAIPool()->getField0x2448C() + 1;
+        numPlayers = gpAI->getAIPool()->getNumBots() + 1;
     }
     if ( !( gpScenaric->isICEnabled() && gpActiveGameMode != nullptr &&
             gpActiveGameMode->hasRequestedExit() ) ) {

@@ -54,6 +54,9 @@ class Camera;
 class GameObject {
 public:
     inline uint32_t getID() const { return objectID; }
+    inline uint32_t getParentID() const { return parentID; }
+    inline GameObject *getNextInDico() const { return pNextDico; }
+    inline GameObject *getNextInBucket() const { return pNextInBucket; }
     inline const ObjectWorldLocation &getWorldLocation() const {
         return worldLocation;
     }
@@ -69,6 +72,7 @@ public:
     void setRoadLocation( const AiRoadIt &it, const bool bDebug );
     void setJunctionLocation( const Matrix4x4f_t &worldMatrix,
                               const AiRoadMap::Junction *pJunction );
+    void setOffRoadLocation();
 
     virtual int32_t getType() = 0;
     virtual Matrix4x4f_t &getWorldMatrix() = 0;
@@ -101,6 +105,7 @@ public:
     void registerObject( GameObject *pObject );
     void unregisterObject( GameObject *pObject );
     GameObject *findObject( const uint32_t id ) const;
+    inline GameObject *getFirstObject() const { return pFirstObject; }
 
     void updateLocations( const float deltaTime, const bool bDebug );
     void locate( GameObject *pObject,

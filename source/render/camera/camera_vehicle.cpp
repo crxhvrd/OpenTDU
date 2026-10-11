@@ -93,6 +93,7 @@ static constexpr float kGroundClearanceScale = 0.2352941f; // DAT_00f42048
 static constexpr float kTunnelGroundLift = 0.75f;          // DAT_00fab3a0
 static constexpr float kTunnelGroundBand = 7.0f;           // DAT_00fab39c
 static constexpr float kHeightmapMissSentinel = 100000.0f; // DAT_00f418e0
+static constexpr float kHeightmapHoleLimit = -9000.0f;     // DAT_00f41c58
 
 static bool gbCameraCollisionEnabled = true; // DAT_00f7c810
 
@@ -343,7 +344,7 @@ static float QueryHeightmapSurface( const Eigen::Vector4f &position,
     const float height =
         SampleGroundHeight( pSector->geometry.pHeightmapInstance,
                             pSector->heightmap, position.x(), position.z() );
-    if ( kHeightmapMissSentinel <= height ) {
+    if ( kHeightmapMissSentinel <= height || height <= kHeightmapHoleLimit ) {
         return kNoHitSentinel;
     }
     if ( pOutNormal != nullptr ) {
@@ -759,19 +760,10 @@ bool CameraVehicle::tick( float deltaTime, bool param_1, bool param_2 ) {
             }
         }
 
-        bool bWheelInTunnel = false;
-        for ( uint32_t i = 0; i < pCar->getNumWheels(); i++ ) {
-            if ( pCar->getWheel( i ).bInsideTunnel ) {
-                bWheelInTunnel = true;
-                break;
-            }
-        }
-        const bool bUnderRoof = pBody->bIsInTunnel || bWheelInTunnel;
-
         const float groundHeight =
             QueryHeightmapSurface( worldPosition, nullptr );
         if ( groundHeight != kNoHitSentinel ) {
-            if ( !bUnderRoof ) {
+            if ( !pBody->bIsInTunnel ) {
                 const float clearance =
                     BlendClamp( kGroundClearanceMin, kGroundClearanceMax,
                                 ( ( groundHeight - worldPosition.y() ) -

@@ -872,10 +872,4 @@ void GMLogin::pause() {
             pMovie->Flags = pMovie->Flags & 0xfffffffd;
         }
     }
-
-    if ( gpTestDriveInstance != nullptr &&
-         gpTestDriveInstance->getActiveGameMode() != GM_Intro &&
-         gpTestDriveInstance->getActiveGameMode() != GM_VideoBumper ) {
-        EnableWorldSpotStreaming();
-    }
 }

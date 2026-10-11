@@ -47,7 +47,7 @@ void EnableWorldSpotStreaming() {
         gpCarDisplay->freeResources();
     }
 
-    gpAI->getAIPool()->setField0xC( false );
+    gpAI->getAIPool()->setTrafficPaused( false );
 
     if ( gpWorld == nullptr || gpWorld->getStreamingManager() == nullptr ) {
         return;

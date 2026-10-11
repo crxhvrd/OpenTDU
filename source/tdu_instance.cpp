@@ -571,8 +571,8 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6 = new ( pGameModeAlloc ) GMBoatTour();
             break;
         case GM_Jail:
-            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMJail ),
-                                                      alignof( GMJail ) );
+            pGameModeAlloc =
+                TestDrive::AllocAligned( sizeof( GMJail ), alignof( GMJail ) );
             pGVar6 = new ( pGameModeAlloc ) GMJail();
             break;
         case GM_Map:
@@ -589,7 +589,10 @@ void TestDriveGameInstance::mainLoop() {
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLiving ),
                                                       alignof( GMLiving ) );
             pGVar6 = new ( pGameModeAlloc ) GMLiving();
-            EnableWorldSpotStreaming();
+            // TODO: REMOVE once GMIntro is implemented
+            if ( BOOL_010e74f4 ) {
+                EnableWorldSpotStreaming();
+            }
             break;
         default:
             OTDU_FATAL_ERROR( "GAME MODE '%s' (%u) IS NOT IMPLEMENTED!\n",

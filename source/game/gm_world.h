@@ -150,7 +150,6 @@ protected:
     float lastDistance;
     float initializeTime; // GSTimer total time at initialize()
     float pauseFadeTimer; // Pause radial-blur fade countdown
-    bool bGearSelectBlocked = false;
 
     // HACK: REMOVE ME:
     bool bCarGrounded = false;

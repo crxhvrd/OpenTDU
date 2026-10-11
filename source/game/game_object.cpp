@@ -153,6 +153,14 @@ void GameObject::setRoadLocation( const AiRoadIt &it, const bool bDebug ) {
     }
 }
 
+void GameObject::setOffRoadLocation() {
+    // FUN_00960d20 (inlined)
+    gpAI->getRoadBuckets().removeObject( this );
+    worldLocation.LocationType = ObjectWorldLocation::OWL_OffRoad;
+    worldLocation.bNearJunction = 0;
+    gpAI->getRoadBuckets().insertObject( this );
+}
+
 void GameObject::setJunctionLocation( const Matrix4x4f_t &worldMatrix,
                                       const AiRoadMap::Junction *pJunction ) {
     // FUN_0096ab20

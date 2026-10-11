@@ -203,12 +203,16 @@ int32_t SampleGroundType( const SectorHeightmap &heightmap,
     return -1;
 }
 
+static constexpr uint8_t kHeightmapTileFlat = 0xfe;
+static constexpr int32_t kHeightmapNumRealTileX = 18;
+
 float SampleGroundHeight( Instance *pHeightmapInstance,
                           const SectorHeightmap &heightmap,
                           float worldX,
                           float worldZ ) {
     // FUN_0050f200
     static constexpr float kOutOfBoundsHeight = 100000.0f; // DAT_00f418e0
+    static constexpr float kHoleHeight = -100000.0f;       // DAT_00f418dc
 
     if ( pHeightmapInstance == nullptr ||
          pHeightmapInstance->getNumLODs() == 0 ) {
@@ -255,6 +259,16 @@ float SampleGroundHeight( Instance *pHeightmapInstance,
     const int32_t iz = (int32_t)gridZ;
     if ( ix < 0 || ix > stride || iz < 0 || iz > stride ) {
         return kOutOfBoundsHeight;
+    }
+
+    const uint8_t *pTileMask = pHeightmapInstance->getHeightmapLODCache();
+    if ( pTileMask != nullptr ) {
+        const int32_t tile =
+            ( iz / (int32_t)pHmap->NumTileZ + 1 ) * kHeightmapNumRealTileX +
+            ix / (int32_t)pHmap->NumTileX + 1;
+        if ( pTileMask[tile] == kHeightmapTileFlat ) {
+            return kHoleHeight;
+        }
     }
 
     auto sample = [&]( int32_t cx, int32_t cz ) -> float {
@@ -422,9 +436,6 @@ bool GetHeightmapSampleGrid( Instance *pHeightmapInstance,
     }
     return true;
 }
-
-static constexpr uint8_t kHeightmapTileFlat = 0xfe;
-static constexpr int32_t kHeightmapNumRealTileX = 18;
 
 struct HeightmapTriangleQuery {
     const Heightmap *pHmap = nullptr;
