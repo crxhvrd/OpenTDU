@@ -3,6 +3,7 @@
 
 #include "config/gs_config.h"
 #include "gs_physicsfx.h"
+#include "flash/mng_fade.h"
 #include "game/game_object.h"
 #include "game/vehicle/gs_car_state.h"
 #include "vehicle/physics_vehicle.h"
@@ -2054,6 +2055,43 @@ void GSPhysics::setVehicleOwner( PhysicsVehicle *pVehicle, void *pOwner ) {
         ( reinterpret_cast<uint64_t>( pOwner ) << TDUSurface::kOwnerShift ) |
             TDUSurface::Vehicle );
     unlockMutex();
+}
+
+static constexpr int32_t kMaxFadeRequests = 8;
+static eFadeRequest gFadeRequests[kMaxFadeRequests]; // DAT_00f8a3b8
+static int32_t gLastFadeRequest = -1;                // DAT_00f8a3d8
+
+void GSPhysics::pushFadeRequest( const eFadeRequest request ) {
+    // FUN_0081a560
+    PhysicsLock lock;
+    if ( request == eFadeRequest::FR_FadeOut && gpMngFade != nullptr &&
+         ( gpMngFade->getTransitionFlags() >> 3 & 1 ) != 0 ) {
+        return;
+    }
+    if ( gLastFadeRequest >= 0 &&
+         gFadeRequests[gLastFadeRequest] == request ) {
+        return;
+    }
+    gLastFadeRequest++;
+    if ( gLastFadeRequest < kMaxFadeRequests ) {
+        gFadeRequests[gLastFadeRequest] = request;
+    }
+}
+
+eFadeRequest GSPhysics::peekFadeRequest() {
+    // FUN_0081a230
+    return ( gLastFadeRequest >= 0 ) ? gFadeRequests[0] : eFadeRequest::FR_Idle;
+}
+
+eFadeRequest GSPhysics::popFadeRequest() {
+    // FUN_0081a250
+    for ( int32_t i = 0; i < kMaxFadeRequests - 1; i++ ) {
+        gFadeRequests[i] = gFadeRequests[i + 1];
+    }
+    if ( gLastFadeRequest > -1 ) {
+        gLastFadeRequest--;
+    }
+    return peekFadeRequest();
 }
 
 PhysicsVehicle *GSPhysics::findVehicle( const JPH::Body &chassis ) const {

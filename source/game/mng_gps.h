@@ -36,6 +36,9 @@ public:
     void announceArrival();
     void onPlayerLeft( const int32_t numPlayers, const int32_t playerIndex );
     void onPlayerJoined( const int32_t numPlayers, const int32_t playerIndex );
+    bool computeRouteDirectionOnRoad( const uint32_t roadID,
+                                      const Eigen::Vector4f &position,
+                                      Eigen::Vector4f &outDirection );
 
 private:
     static constexpr int32_t kMaxNumRoutePoints = 400;

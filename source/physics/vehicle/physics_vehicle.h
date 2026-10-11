@@ -238,6 +238,13 @@ public:
     int32_t getOdometerTenMeters() const { return odometerTenMeters; }
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
     bool isTrafficBody() const { return bTrafficBody; }
+    void setPostponedPause( uint8_t request ) { postponedPause = request; }
+    void setBackOnTrackPlaced( bool bPlaced ) { bBackOnTrackPlaced = bPlaced; }
+    bool consumeBackOnTrackPlaced() {
+        const bool bPlaced = bBackOnTrackPlaced;
+        bBackOnTrackPlaced = false;
+        return bPlaced;
+    }
     float getLateralSpeed() const { return vehicle.LateralSpeed; }
     inline float getFilteredSteer() const { return filteredSteer; }
     inline float getSteerDeadZone() const { return steerDeadZone; }
@@ -300,6 +307,8 @@ public:
     void updateKeyframedWheels( float deltaTime );
     void resetSimulationState();
     void setVirtual( bool bInVirtual );
+    void pauseSimulation();
+    void resumeSimulation();
     void setPostponedMatrix( const Matrix4x4f_t &worldTransform );
     float computeGroundToOriginOffset() const;
 
@@ -329,6 +338,7 @@ public:
     void updateTyreHeat( float dt );
     float getWheelBurn( int32_t index ) const;
     void applyImpactWheelDamage();
+    bool isInWater() const;
 
     void pushCollisionEvent( const CollisionEvent &event );
     void flushCollisionEvents( std::vector<CollisionEvent> &outEvents );
@@ -442,6 +452,8 @@ private:
     bool bLowSpeedLatAssist = false;  // FIXME
     bool bIsBike = false;
     bool bTrafficBody = false;
+    bool bBackOnTrackPlaced = false; // +0xd32
+    uint8_t postponedPause = 0;      // +0x8da: 1 pause, 2 resume
     float rawInputThrottle;
     float rawInputBrake;
     float inputThrottle;

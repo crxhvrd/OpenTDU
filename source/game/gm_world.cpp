@@ -1,4 +1,5 @@
 #include "shared.h"
+#include "flash/mng_fade.h"
 #include "gm_world.h"
 
 #include "ai/ai_pool.h"
@@ -732,10 +733,20 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
 
     pBody->bGearUpEdge = false;
     pBody->bGearDownEdge = false;
+}
 
-    if ( pBody->bBackOnTrackRequest ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: back on track (BOT_PAD)
+void GameModeWorld::setBlockPauseByStart( const bool bBlock ) {
+    // FUN_007bdd10
+    if ( !bBlock ) {
+        bPauseMenuLocked = false;
+        return;
     }
+    if ( bPaused ) {
+        OTDU_UNIMPLEMENTED; // TODO: close the pause menu
+    }
+    bPauseMenuActive = false;
+    bPaused = false;
+    bPauseMenuLocked = true;
 }
 
 void GameModeWorld::resetAutomaticGearbox() {

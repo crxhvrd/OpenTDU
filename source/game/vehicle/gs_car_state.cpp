@@ -28,6 +28,9 @@
 #include "audio/vehicle/gs_vehicle_sound.h"
 #include "render/camera/camera_game.h"
 #include "game/mng_hud.h"
+#include "game/gm_base.h"
+#include "flash/mng_fade.h"
+#include "tdu_instance.h"
 #include "flash/implementation/flash_player.h"
 
 GSCarState *gpCarState = nullptr; // DAT_010e7518
@@ -212,6 +215,52 @@ namespace {
     }
 } // namespace
 
+static void TickReplayFadeSequencer() {
+    // FUN_0081c330
+    static constexpr float kFadeDuration = 0.5f; // DAT_00f8a660
+    static bool sbStepStarted = false;           // DAT_010e7c1c
+
+    if ( gpTestDriveInstance->getActiveGameMode() == GM_DriveIn ) {
+        return;
+    }
+    if ( gpMngFade == nullptr ||
+         ( gpMngFade->getTransitionFlags() & 1 ) != 0 ) {
+        return;
+    }
+
+    eFadeRequest request = GSPhysics::peekFadeRequest();
+    if ( sbStepStarted ) {
+        if ( request == eFadeRequest::FR_FadeOut ) {
+            gpMngFade->setTransitionFlags( gpMngFade->getTransitionFlags() |
+                                           8 );
+        }
+        request = GSPhysics::popFadeRequest();
+        sbStepStarted = false;
+    }
+
+    switch ( request ) {
+    case eFadeRequest::FR_ReplayPlayback:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: Replay
+        break;
+    case eFadeRequest::FR_FadeIn:
+        gpMngFade->restartTransition(
+            ( gpMngFade->getTransitionFlags() & ~8u ) | 5, kFadeDuration );
+        gpMngFade->setRenderLogo( false );
+        sbStepStarted = true;
+        break;
+    case eFadeRequest::FR_FadeOut:
+        gpMngFade->restartTransition(
+            ( gpMngFade->getTransitionFlags() & ~0xcu ) | 1, kFadeDuration );
+        gpMngFade->setRenderLogo( true );
+        sbStepStarted = true;
+        break;
+    default:
+        break;
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: replay manager
+}
+
 void GSCarState::tick( float totalTime, float deltaTime ) {
     // FUN_008adcd0
     while ( !carToDeinstanciate.empty() ) {
@@ -324,6 +373,10 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             worldMatrix( 3, 1 ) += streamShift.y();
             worldMatrix( 3, 2 ) += streamShift.z();
             body.WorldMatrix = worldMatrix;
+            body.bBackOnTracked = pPhysicsVehicle->consumeBackOnTrackPlaced();
+            if ( body.bBackOnTracked ) {
+                body.PreviousWorldMatrix = body.WorldMatrix;
+            }
 
             body.bIsInTunnel =
                 carState.getSimulationType() ==
@@ -514,6 +567,7 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             phantoms.dispatchEvents();
             phantoms.clearEvents();
         }
+        TickReplayFadeSequencer();
 
         OTDU_UNIMPLEMENTED; // TODO: GMDriveIn
     }

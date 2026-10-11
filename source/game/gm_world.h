@@ -63,6 +63,9 @@ public:
     }
 
     inline bool isPauseMenuActive() const { return bPauseMenuActive; }
+    inline void setPauseMenuLocked( const bool bLocked ) {
+        bPauseMenuLocked = bLocked;
+    }
     virtual bool usesFrontEndDirections() const { return false; }
     inline PlayerGameMech *getGameMech() const { return pGameMech; }
     inline int32_t getGameMechType() const { return gameMechType; }
@@ -105,6 +108,7 @@ public:
     }
     virtual void onMenuPauseAnimOver();
     virtual void onMenuPauseExit( bool bRestoreState );
+    void setBlockPauseByStart( const bool bBlock );
 
 protected:
     bool createGameMech( uint32_t mechID, int32_t mechType );

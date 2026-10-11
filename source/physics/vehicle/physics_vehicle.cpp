@@ -2719,27 +2719,43 @@ void PhysicsVehicle::stepVirtual( float dt ) {
 }
 
 void PhysicsVehicle::setVirtual( bool bInVirtual ) {
-    // FUN_0082d4f0 (pause) / FUN_0082d460 (unpause)
     if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
         return;
     }
-
-    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
-    const JPH::BodyID id = pChassisBody->GetID();
     if ( bInVirtual ) {
-        if ( bi.IsAdded( id ) ) {
-            bi.RemoveBody( id );
-        }
-        bPausePhysics = true;
+        pauseSimulation();
         bVirtual = true;
     } else {
-        if ( !bi.IsAdded( id ) ) {
-            bi.AddBody( id, JPH::EActivation::Activate );
-        }
-        bPausePhysics = false;
+        resumeSimulation();
         bVirtual = false;
         bVirtualGrounded = true;
     }
+}
+
+void PhysicsVehicle::pauseSimulation() {
+    // FUN_0082d4f0
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return;
+    }
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    const JPH::BodyID id = pChassisBody->GetID();
+    if ( bi.IsAdded( id ) ) {
+        bi.RemoveBody( id );
+    }
+    bPausePhysics = true;
+}
+
+void PhysicsVehicle::resumeSimulation() {
+    // FUN_0082d460
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return;
+    }
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    const JPH::BodyID id = pChassisBody->GetID();
+    if ( !bi.IsAdded( id ) ) {
+        bi.AddBody( id, JPH::EActivation::Activate );
+    }
+    bPausePhysics = false;
 }
 
 void PhysicsVehicle::setPostponedMatrix( const Matrix4x4f_t &worldTransform ) {
@@ -2824,6 +2840,24 @@ void PhysicsVehicle::flushCollisionEvents(
     outEvents.assign( collisionEvents.begin(),
                       collisionEvents.begin() + numCollisionEvents );
     numCollisionEvents = 0;
+}
+
+bool PhysicsVehicle::isInWater() const {
+    // FUN_00829a80
+    static constexpr float kSunkHeight = -2.0f; // DAT_00f417d0
+    const Matrix4x4f_t world = getChassisWorldMatrix();
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        const Eigen::Vector4f attach( wheelAttach[i].x(), wheelAttach[i].y(),
+                                      wheelAttach[i].z(), 1.0f );
+        const Eigen::Vector4f position =
+            ( attach.transpose() * world ).transpose();
+        if ( position.y() - vehicle.Wheels[i].Radius < kSunkHeight ||
+             wheelMaterial[i] ==
+                 static_cast<uint32_t>( eMaterialType::MT_Water ) ) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void PhysicsVehicle::applyImpactWheelDamage() {
@@ -3185,6 +3219,14 @@ void PhysicsVehicle::tick( float deltaTime ) {
     if ( pChassisBody == nullptr ) {
         return;
     }
+
+    // FUN_0083fcb0 @0x0083fdb6
+    if ( postponedPause == 1 ) {
+        pauseSimulation();
+    } else if ( postponedPause == 2 ) {
+        resumeSimulation();
+    }
+    postponedPause = 0;
 
     if ( gVehicleDrivingHelpOverride >= 0 && !bIsAI && !bIsNetwork &&
          gVehicleDrivingHelpOverride != appliedDrivingHelpLevel ) {

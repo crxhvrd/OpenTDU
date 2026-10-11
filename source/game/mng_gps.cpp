@@ -212,6 +212,34 @@ void MngGPS::projectOnNearestRoad( const Eigen::Vector4f &position,
     ProjectOnRoadShape( frame, outIt, nullptr, false, pRoad->getShape() );
 }
 
+bool MngGPS::computeRouteDirectionOnRoad( const uint32_t roadID,
+                                          const Eigen::Vector4f &position,
+                                          Eigen::Vector4f &outDirection ) {
+    // FUN_006c3530
+    ScopedMutexLock lock( &mutex );
+    bool bFound = false;
+    for ( const AiRouteElem *pElem = route.getHead(); pElem != nullptr;
+          pElem = pElem->pNext ) {
+        if ( pElem->To.getRoadID() != roadID ) {
+            continue;
+        }
+        AiRoadMap::Road *pRoad = GetRoadMap().getRoad( roadID );
+        Matrix4x4f_t frame = Matrix4x4f_t::Identity();
+        frame.row( 3 ) = position.transpose();
+        AiRoadIt it;
+        ProjectOnRoadShape( frame, it, nullptr, false, pRoad->getShape() );
+        it.bWay = pElem->To.getWay();
+        const Eigen::Vector4f tangent = it.getEntity()->computeTangent(
+            it.IndWay, it.bWay ? it.T : 1.0f - it.T );
+        outDirection = tangent / tangent.norm();
+        if ( !it.bWay ) {
+            outDirection *= -1.0f;
+        }
+        bFound = true;
+    }
+    return bFound;
+}
+
 void MngGPS::tick( float deltaTime, float ) {
     // FUN_006c38d0
     updateAccumulator += deltaTime;

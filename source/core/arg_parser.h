@@ -17,6 +17,8 @@ public:
                            const int32_t cmdLineArgCount );
 
 private:
+    static constexpr uint32_t kMaxNumParsers = 64;
+
     struct ArgParserEntry {
         ParserCallback_t pParser;
         std::string Arg;
@@ -26,7 +28,7 @@ private:
     const ArgParserEntry *findArgParser( const char *pArgValue ) const;
 
 private:
-    std::array<ArgParserEntry, 32> registeredParsers;
+    std::array<ArgParserEntry, kMaxNumParsers> registeredParsers;
     uint32_t registeredParserCount;
 };
 

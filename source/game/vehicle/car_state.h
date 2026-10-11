@@ -271,7 +271,8 @@ public:
     bool headlightsOn() const;
     bool hazardLightsOn() const;
 
-    void updateBackOnTrack( float param_2 );
+    void updateBackOnTrack( float deltaTime );
+    void computeBackOnTrackPose( const int32_t mode );
     void resolveCollisionEvents();
 
     void updateGroundColor();

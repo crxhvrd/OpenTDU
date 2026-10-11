@@ -15,7 +15,7 @@ ArgParserRegister::~ArgParserRegister() {}
 
 ArgParserRegister::ParserHandle_t ArgParserRegister::registerParser(
     const char *pArgValue, ArgParserRegister::ParserCallback_t &pParser ) {
-    OTDU_ASSERT_FATAL( registeredParserCount < 32 );
+    OTDU_ASSERT_FATAL( registeredParserCount < kMaxNumParsers );
 
     ParserHandle_t parserHandle = registeredParserCount;
 

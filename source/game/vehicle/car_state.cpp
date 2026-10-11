@@ -16,6 +16,17 @@
 #include "ai/ai_vehicle.h"
 #include "ai/ai_veh_behaviour.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/game_intro_tutorial.h"
+#include "game/gm_world.h"
+#include "game/mng_gps.h"
+#include "ai/gs_ai.h"
+#include "ai/ai_road_shape.h"
+#include "physics/gs_physicsfx.h"
+#include "player_data/saved_road_discovery.h"
+#include "render/camera/gs_camera.h"
+#include "render/camera/camera_vehicle.h"
+#include "system/ed_sys.h"
+#include "tdu_instance.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/weather/gs_weather.h"
@@ -167,9 +178,282 @@ bool CarState::headlightsOn() const { return body.bHeadlightsOn; }
 
 bool CarState::hazardLightsOn() const { return body.bHazardLightsOn; }
 
-void CarState::updateBackOnTrack( float param_2 ) {
+static constexpr float kBackOnTrackCooldown = 5.0f;       // DAT_00f41750
+static constexpr float kBackOnTrackMaxSpeed = 13.888889f; // DAT_00f42130
+static constexpr float kZeroLength = 0.01f;               // DAT_00f416d4
+
+static void PushWaterSplash( const PhysicsVehicle &vehicle ) {
+    // FUN_007ca480
+    if ( gpPhysicsFX == nullptr || !gpPhysicsFX->isReady() ) {
+        return;
+    }
+    const Matrix4x4f_t world = vehicle.getChassisWorldMatrix();
+    const Eigen::Vector4f up = world.row( 1 ).transpose();
+
+    PhysicsFXEvent event;
+    event.FXMaterialA = GSPhysicsFX::RemapMaterial(
+        static_cast<int32_t>( eMaterialType::MT_Tires ) );
+    event.FXMaterialB = GSPhysicsFX::RemapMaterial(
+        static_cast<int32_t>( eMaterialType::MT_Water ) );
+    event.pBodyA = vehicle.getChassisBody();
+    event.MassA = vehicle.getVehicleMass();
+    event.MassB = vehicle.getVehicleMass();
+    event.VelocityA = Eigen::Vector4f::Zero();
+    event.VelocityB = Eigen::Vector4f::Zero();
+    event.Kind = PFXEK_Impact;
+    event.Energy = vehicle.getChassisVelocity().norm(); // FUN_00829b20
+    event.ContactPosition = world.row( 3 ).transpose() - up;
+    event.ContactPosition.w() = 1.0f;
+    event.Normal = up;
+    gpPhysicsFX->getEventQueue().push( event );
+}
+
+static void PlaceAtBackOnTrackPose( CarBodyState &body,
+                                    PhysicsVehicle &vehicle ) {
     // FUN_008b0b10
-    OTDU_UNIMPLEMENTED; // TODO: Physics
+    vehicle.resetToTransform( body.BackOnTrackWorldMatrix, true );
+    if ( body.BackOnTrackVelocity.norm() > 1.0f ) { // FLOAT_00f4165c
+        vehicle.setVelocity( body.BackOnTrackVelocity.head<3>(), true, -1 );
+        vehicle.setEngineState( eEngineState::ES_Running );
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00828780 (phantom mode 2 for 1 s)
+    body.BackOnTrackState = 0;
+    body.BackOnTrackTimer = kBackOnTrackCooldown;
+}
+
+void CarState::computeBackOnTrackPose( const int32_t mode ) {
+    // FUN_008b0230
+    static constexpr float kRoadEndMargin = 10.0f; // FLOAT_00f4166c
+    static constexpr float kLaneMargin = 2.5f;     // DAT_00f416c0
+    static constexpr float kRespawnSpeed = 10.0f;
+
+    // Secret Island respawn box and point
+    static constexpr float kIslandMinX = 63360.0f;
+    static constexpr float kIslandMaxX = 65280.0f;
+    static constexpr float kIslandMinZ = 43776.0f;
+    static constexpr float kIslandMaxZ = 45312.0f;
+    static const Eigen::Vector4f kIslandRespawn( 64426.0f, 4.0f, 44637.0f,
+                                                 1.0f );
+
+    PhysicsVehicle *pVehicle = pPhysicsVehicle;
+    if ( pVehicle == nullptr ) {
+        return;
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00853340 (P2P sync reset)
+
+    Matrix4x4f_t matrix = body.WorldMatrix;
+    const Eigen::Vector4f worldPosition = body.WorldMatrix.row( 3 ).transpose();
+    Eigen::Vector4f position = worldPosition;
+    Eigen::Vector4f velocity = Eigen::Vector4f::Zero();
+
+    const auto computeOnRoad = [&]() {
+        uint32_t roadID = static_cast<uint32_t>( body.ActiveRoadID );
+        if ( body.ActiveRoadID < 1 ||
+             ( gpActiveGameMode->getCurrentGameMode() != GM_Mission &&
+               !IsRoadAvailable( roadID ) ) ) {
+            const AiRoadMap::Road *pNearest =
+                gpAI->getRoadMap().findNearestRoad( position, false );
+            roadID = ( pNearest != nullptr ) ? pNearest->ID : 0;
+            body.PositionOnRoad = position;
+            body.PrevPositionOnRoad = position;
+            if ( roadID < 1 ) {
+                matrix = Matrix4x4f_t::Identity();
+                position = worldPosition;
+                return;
+            }
+        }
+
+        AiRoadMap::Road *pRoad = gpAI->getRoadMap().getRoad( roadID );
+        AiRoadShape *pShape = pRoad->getShape();
+        const float fractionMargin = kRoadEndMargin / pShape->TotalLength;
+
+        Eigen::Vector4f travel = body.PositionOnRoad - body.PrevPositionOnRoad;
+        if ( body.PrevPositionOnRoad.norm() < kZeroLength ) {
+            travel = body.WorldMatrix.row( 2 ).transpose();
+        }
+
+        Matrix4x4f_t frame = Matrix4x4f_t::Identity();
+        frame.row( 2 ) = travel.transpose();
+        frame.row( 3 ) = body.PositionOnRoad.transpose();
+        AiRoadIt it;
+        ProjectOnRoadShape( frame, it, nullptr, false, pShape );
+        const float fraction = Clamp( pShape->computeRoadFraction( it ),
+                                      fractionMargin, 1.0f - fractionMargin );
+        pShape->computeIt( fraction, it );
+
+        float lateral =
+            1.0f - kLaneMargin / it.getEntity()->pProfile->InnerWidth;
+        const Eigen::Vector4f tangent = it.computeDirection();
+        Eigen::Vector4f forward = tangent;
+        bool bGpsDirection = false;
+        const auto reverse = [&]() {
+            lateral = -lateral;
+            forward = tangent * -1.0f;
+        };
+        if ( mode == 0 ) {
+            Eigen::Vector4f gpsDirection;
+            bGpsDirection =
+                gpMngGPS != nullptr && gpMngGPS->computeRouteDirectionOnRoad(
+                                           roadID, position, gpsDirection );
+            const Eigen::Vector4f &reference =
+                bGpsDirection ? gpsDirection : travel;
+            if ( tangent.dot( reference ) < 0.0f ) {
+                reverse();
+            }
+        } else if ( mode == 2 ) {
+            reverse();
+        }
+        position = it.computeWidthPosition( lateral );
+
+        const Eigen::Vector4f up( 0.0f, 1.0f, 0.0f, 0.0f );
+        const Eigen::Vector4f side = Vector4DCross( up, forward ).normalized();
+        const Eigen::Vector4f newUp =
+            Vector4DCross( forward, side ).normalized();
+        forward = Vector4DCross( side, newUp ).normalized();
+        if ( bGpsDirection || mode != 0 ) {
+            velocity = forward * kRespawnSpeed;
+        }
+        matrix.row( 0 ) = side.transpose();
+        matrix.row( 1 ) = newUp.transpose();
+        matrix.row( 2 ) = forward.transpose();
+    };
+
+    if ( gEdSys.bWindowActivated ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: the debug fly camera branch
+        if ( kIslandMinX < position.x() && position.x() < kIslandMaxX &&
+             kIslandMinZ < position.z() && position.z() < kIslandMaxZ ) {
+            matrix = Matrix4x4f_t::Identity();
+            position = kIslandRespawn;
+            body.PositionOnRoad = worldPosition;
+            body.PrevPositionOnRoad = worldPosition;
+        } else {
+            computeOnRoad();
+        }
+    }
+
+    matrix.row( 3 ) = position.transpose();
+    matrix( 3, 3 ) = 1.0f;
+    body.BackOnTrackState = 1;
+    body.BackOnTrackWorldMatrix = matrix;
+    body.BackOnTrackVelocity = velocity;
+    pVehicle->setBackOnTrackPlaced( true );
+    body.bBackOnTrackRequest = false;
+}
+
+void CarState::updateBackOnTrack( float deltaTime ) {
+    // FUN_008b0b10
+    PhysicsVehicle *pVehicle = pPhysicsVehicle;
+    if ( pVehicle == nullptr || !pVehicle->isActive() ) {
+        return;
+    }
+
+    if ( worldLocation.LocationType == ObjectWorldLocation::OWL_Road ) {
+        static constexpr float kReanchorDistance = 20.0f; // DAT_00f03ee0
+        const Eigen::Vector4f position = body.WorldMatrix.row( 3 ).transpose();
+        if ( kReanchorDistance < ( position - body.PositionOnRoad ).norm() ||
+             body.PositionOnRoad.norm() < kZeroLength ) {
+            body.PrevPositionOnRoad =
+                ( body.PositionOnRoad.norm() < kZeroLength )
+                    ? position
+                    : body.PositionOnRoad;
+            body.PositionOnRoad = position;
+            body.RoadX = ( worldLocation.LocationRoad.FractionMin +
+                           worldLocation.LocationRoad.FractionMax ) *
+                         0.5f;
+            body.ActiveRoadID =
+                static_cast<int32_t>( worldLocation.LocationRoad.RoadID );
+            body.RoadZ = ( worldLocation.LocationRoad.LateralMin +
+                           worldLocation.LocationRoad.LateralMax ) *
+                         0.5f;
+        }
+    }
+
+    const bool bLocal = FUN_00406ce0();
+    switch ( body.BackOnTrackState ) {
+    case 0: {
+        bool bInWater = false;
+        if ( bLocal && !pVehicle->isKeyframed() &&
+             !pVehicle->isPhysicsPaused() ) { // DAT_00f7f1d8
+            bInWater = pVehicle->isInWater();
+            if ( GSPhysics::peekFadeRequest() != eFadeRequest::FR_Idle ) {
+                GSPhysics::pushFadeRequest( eFadeRequest::FR_FadeIn );
+            }
+        }
+
+        // TODO: bike rider, map transition and online respawn
+        OTDU_UNIMPLEMENTED_ONCE;
+        const uint8_t drivingMode = pVehicle->getDrivingMode();
+        bool bAllowed = drivingMode != PhysicsVehicle::DM_Parked &&
+                        drivingMode != PhysicsVehicle::DM_SlowDown &&
+                        !pVehicle->isPhysicsPaused() &&
+                        !pVehicle->isKeyframed() &&
+                        !( gpActiveGM != nullptr && gpActiveGM->isPaused() );
+        if ( field_0x39e0 != nullptr ) {
+            bAllowed = false;
+        }
+        if ( !bAllowed ) {
+            return;
+        }
+
+        if ( 0.0f < body.BackOnTrackTimer ) {
+            body.BackOnTrackTimer -= deltaTime;
+        }
+        const bool bRequested = body.bBackOnTrackRequest &&
+                                body.SpeedInKmh < kBackOnTrackMaxSpeed &&
+                                body.BackOnTrackTimer < 0.0f;
+        if ( !bRequested && !bInWater ) {
+            return;
+        }
+
+        body.BackOnTrackState = 0;
+        computeBackOnTrackPose( 0 );
+        body.bBackOnTrackRequest = false;
+        if ( bInWater ) {
+            PushWaterSplash( *pVehicle );
+        }
+    } break;
+    case 1: {
+        const Eigen::Vector4f target =
+            body.BackOnTrackWorldMatrix.row( 3 ).transpose();
+        const bool bPlaceNow =
+            !bLocal || ( gpWorld->isStreamedAround( &target, true, false ) &&
+                         !pVehicle->isInWater() );
+        if ( bPlaceNow ) {
+            PlaceAtBackOnTrackPose( body, *pVehicle );
+        } else {
+            if ( gpActiveGM != nullptr ) {
+                gpActiveGM->setBlockPauseByStart( true );
+            }
+            GSPhysics::pushFadeRequest( eFadeRequest::FR_FadeOut );
+            body.BackOnTrackState = 2;
+            pVehicle->setPostponedPause( 1 );
+        }
+        CameraVehicle *pCamera = gpCamera->getActiveVehicleCamera();
+        if ( pCamera != nullptr && ( pCamera->getFlags() >> 0x11 & 1 ) == 0 ) {
+            pCamera->resetTransform();
+        }
+    } break;
+    case 2:
+        if ( GSPhysics::peekFadeRequest() == eFadeRequest::FR_Idle ) {
+            body.BackOnTrackState = 3;
+            pVehicle->resetToTransform( body.BackOnTrackWorldMatrix, false );
+        }
+        break;
+    case 3: {
+        const Eigen::Vector4f target =
+            body.BackOnTrackWorldMatrix.row( 3 ).transpose();
+        if ( gpWorld->isStreamedAround( &target, true, true ) ) {
+            GSPhysics::pushFadeRequest( eFadeRequest::FR_FadeIn );
+            pVehicle->setPostponedPause( 2 );
+            PlaceAtBackOnTrackPose( body, *pVehicle );
+            if ( gpActiveGM != nullptr ) {
+                gpActiveGM->setPauseMenuLocked( false );
+            }
+        }
+    } break;
+    default:
+        break;
+    }
 }
 
 static void DispatchAICollision( const CollisionEvent &event,

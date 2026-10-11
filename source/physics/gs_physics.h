@@ -61,6 +61,15 @@ namespace TDUSurface {
     }
 } // namespace TDUSurface
 
+// Screen fade requests queued for the replay manager's fade sequencer
+// (FUN_0081c330)
+enum class eFadeRequest : int32_t {
+    FR_ReplayPlayback = 1,
+    FR_FadeIn = 2,
+    FR_FadeOut = 3,
+    FR_Idle = 4
+};
+
 // Havok shape type of a collidable overlapping a camera phantom; only the
 // shapes the camera code reacts to are distinguished.
 enum class eCameraOverlapShape : int32_t {
@@ -252,6 +261,10 @@ public:
     void destroyVehicle( PhysicsVehicle *pVehicle );
     void setVehicleOwner( PhysicsVehicle *pVehicle, void *pOwner );
     PhysicsVehicle *findVehicle( const JPH::Body &chassis ) const;
+
+    static void pushFadeRequest( const eFadeRequest request );
+    static eFadeRequest peekFadeRequest();
+    static eFadeRequest popFadeRequest();
 
     RigidBody_t createSphere( uint32_t collisionGroup,
                               const Eigen::Vector4f &worldPosition,
