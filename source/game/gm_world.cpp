@@ -725,7 +725,7 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
             gearbox.bAutomatic && !gearbox.bEngineRunning;
         pPlayerPhysicsVehicle->setClutchInput( pBody->Clutch );
         pPlayerPhysicsVehicle->setGearRequests(
-            !bShiftRequestsBlocked && ( pBody->bGearUpEdge || bTestUpshift ),
+            !bShiftRequestsBlocked && pBody->bGearUpEdge,
             !bShiftRequestsBlocked && pBody->bGearDownEdge,
             pBody->GearRequest );
     }

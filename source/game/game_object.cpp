@@ -283,10 +283,8 @@ void GameObjectDico::locate( GameObject *pObject,
         Matrix4x4f_t frame;
         ProjectOnRoadShape( pObject->getWorldMatrix(), it, &frame, false,
                             pRoadHint->getShape() );
-        // NOTE: retail tests "T > 0 || 1 > T", always true but for NaN.
         float distanceSq = 0.0f;
-        if ( ( it.T > 0.0f || 1.0f > it.T ) &&
-             fitsRoad( it, frame, distanceSq ) ) {
+        if ( !std::isnan( it.T ) && fitsRoad( it, frame, distanceSq ) ) {
             bFound = true;
         }
     }
