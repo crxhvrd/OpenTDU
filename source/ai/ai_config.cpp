@@ -46,40 +46,6 @@ static inline void ResetDistrib( AIDistrib &distrib ) {
     }
 }
 
-static inline bool ReadBool( const CMarkup &xml ) {
-    const std::string data = xml.getData();
-    return data == "true";
-}
-
-static inline float ReadFloat( const CMarkup &xml ) {
-    return static_cast<float>( atof( xml.getData().c_str() ) );
-}
-
-static inline int32_t ReadInt( const CMarkup &xml ) {
-    return atoi( xml.getData().c_str() );
-}
-
-static inline void
-ParseBool( CMarkup &xml, const char *pName, bool &bOutValue ) {
-    if ( xml.findElem( pName ) ) {
-        bOutValue = ReadBool( xml );
-    }
-}
-
-static inline void
-ParseFloat( CMarkup &xml, const char *pName, float &outValue ) {
-    if ( xml.findElem( pName ) ) {
-        outValue = ReadFloat( xml );
-    }
-}
-
-static inline void
-ParseInt( CMarkup &xml, const char *pName, int32_t &outValue ) {
-    if ( xml.findElem( pName ) ) {
-        outValue = ReadInt( xml );
-    }
-}
-
 static inline float ParseFloatAttrib( const CMarkup &xml,
                                       const char *pName,
                                       const float fallback ) {
