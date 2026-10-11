@@ -2,6 +2,7 @@
 
 class AiVehicle;
 class CarState;
+struct CollisionEvent;
 
 class AiVehBehaviour {
 public:
@@ -11,8 +12,9 @@ public:
     virtual void reset( const bool bFull ) = 0;
     virtual void tick( const float deltaTime, const float totalTime ) = 0;
     virtual void release() = 0;
-    virtual void
-    onCollision( CarState *pCarA, CarState *pCarB, const float impulse ) = 0;
+    virtual void onCollision( CarState *pCarA,
+                              CarState *pCarB,
+                              const CollisionEvent &event ) = 0;
 };
 
 // Behaviour type 2: traffic gives up its navigation when stuck or crashed
@@ -26,7 +28,7 @@ public:
     void release() override;
     void onCollision( CarState *pCarA,
                       CarState *pCarB,
-                      const float impulse ) override;
+                      const CollisionEvent &event ) override;
 
 private:
     AiVehicle *pVehicle;

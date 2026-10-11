@@ -2272,7 +2272,7 @@ int32_t GSDatabase::getPackLevel( DBEntryCarPhysicsData *pCarEntry,
     return 0;
 }
 
-bool GSDatabase::isTraffic( DBEntryCarPhysicsData *param_1 ) {
+bool GSDatabase::isTraffic( const DBEntryCarPhysicsData *param_1 ) {
     // FUN_009a9e20
     if ( param_1 == nullptr || param_1->Brand == nullptr ) {
         return false;

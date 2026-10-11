@@ -20,16 +20,18 @@ struct PhysicsTire {
 struct PhysicsWheelState {
     PhysicsTire Tire;
 
-    float Radius = 0.3f;           // wheel radius (m)
-    float Inertia = 1.0f;          // wheel rotational inertia
-    float ReflectedInertia = 0.0f; // drivetrain inertia reflected through the
-                                   // gear (driven wheel, clutch engaged)
-    int SideFlag = 0;              // != 1 mirrors lateral/steer sign,
-                                   // so the LEFT wheels are the mirrored ones.
-    int32_t AxleIndex = 0;         // 0 = front, 1 = rear
-    bool bDriven = false;          // driven wheel
-    bool bSteered = false;         // steered / handbrake wheel
-    bool bFreeRoll = true;         // +0x1f4, cleared by the virtual step
+    float Radius = 0.3f;            // wheel radius (m)
+    float Inertia = 1.0f;           // wheel rotational inertia
+    float ReflectedInertia = 0.0f;  // drivetrain inertia reflected through the
+                                    // gear (driven wheel, clutch engaged)
+    int SideFlag = 0;               // != 1 mirrors lateral/steer sign,
+                                    // so the LEFT wheels are the mirrored ones.
+    int32_t AxleIndex = 0;          // 0 = front, 1 = rear
+    bool bDriven = false;           // driven wheel
+    bool bSteered = false;          // steered / handbrake wheel
+    bool bFreeRoll = true;          // cleared by the virtual step
+    float ImpactSteerOffset = 0.0f; // rad, bent by a heavy impact
+    float ImpactDamage = 0.0f;
 
     bool bGroundContact = false; // has a valid ground contact this step
     Eigen::Vector4f WheelLinVel =

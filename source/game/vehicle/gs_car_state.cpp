@@ -440,6 +440,11 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             body.NumWheelsGrounded = numGrounded;
             body.NumWheelsOnRoad = numOnRoad;
 
+            pPhysicsVehicle->flushCollisionEvents( body.CollisionEvents );
+            for ( CollisionEvent &event : body.CollisionEvents ) {
+                event.Location = carState.getWorldLocation();
+            }
+
             audioScratch[i].SmoothedTorque =
                 pPhysicsVehicle->getEngineSmoothedTorque();
             audioScratch[i].NumWheels = physNumWheels;
@@ -650,6 +655,32 @@ CarState &GSCarState::grabCarState( const uint32_t slot ) {
         numCarStates = slot + 1;
     }
     return carStates[slot];
+}
+
+CarState *GSCarState::findCarState( const PhysicsVehicle *pVehicle ) {
+    // FUN_00841dc0
+    for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+        if ( isCarStateUsed( i ) &&
+             carStates[i].getPhysicsVehicle() == pVehicle ) {
+            return &carStates[i];
+        }
+    }
+    return nullptr;
+}
+
+void GSCarState::registerCollidedObject( void *pObject ) {
+    // FUN_008aff60 (inlined)
+    for ( void *pEntry : pointerSet.Content ) {
+        if ( pEntry == pObject ) {
+            return;
+        }
+    }
+    for ( void *&pEntry : pointerSet.Content ) {
+        if ( pEntry == nullptr ) {
+            pEntry = pObject;
+            return;
+        }
+    }
 }
 
 void GSCarState::registerCallback( CarState *param_2,

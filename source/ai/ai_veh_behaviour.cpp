@@ -3,6 +3,7 @@
 
 #include "ai/ai_config.h"
 #include "ai/ai_vehicle.h"
+#include "physics/collision_event.h"
 
 static constexpr float kMaxBlockedTime = 6.0f; // DAT_00f41840
 
@@ -35,11 +36,11 @@ void AiVehBhvTraffic::release() {
 
 void AiVehBhvTraffic::onCollision( CarState *pCarA,
                                    CarState *pCarB,
-                                   const float impulse ) {
+                                   const CollisionEvent &event ) {
     // FUN_009cb990
     (void)pCarA;
     (void)pCarB;
-    if ( impulse > gAIConfig.Unknown0x1BC ) {
+    if ( event.Energy > gAIConfig.Unknown0x1BC ) {
         pVehicle->onNavigationLost();
     }
 }

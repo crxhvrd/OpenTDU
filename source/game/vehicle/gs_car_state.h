@@ -67,6 +67,9 @@ public:
 
     void notifyListeners( float param_1 );
 
+    CarState *findCarState( const PhysicsVehicle *pVehicle );
+    void registerCollidedObject( void *pObject );
+
 private:
     PointerSet pointerSet;
     std::array<CarState, kMaxNumVehicles> carStates;

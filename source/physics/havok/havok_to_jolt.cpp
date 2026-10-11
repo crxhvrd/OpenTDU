@@ -597,8 +597,9 @@ JPH::ShapeRefC HavokToJolt::buildShape( const HavokPackfile &pf,
     }
 
     if ( std::strcmp( pClass, "hkTransformShape" ) == 0 ) {
+        // FUN_00492d50: hkSingleShapeContainer child @ +0x0C
         const int32_t childOffset =
-            pf.resolvePointer( static_cast<uint32_t>( shapeOffset ) + 0x08 );
+            pf.resolvePointer( static_cast<uint32_t>( shapeOffset ) + 0x0C );
         JPH::ShapeRefC child = buildShape( pf, childOffset, depth + 1 );
         if ( child.GetPtr() == nullptr ) {
             return JPH::ShapeRefC();

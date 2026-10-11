@@ -309,6 +309,17 @@ namespace {
                 onSensorContactAdded( inBody1, inBody2 );
                 return;
             }
+            for ( uint32_t i = 0;
+                  i < inManifold.mRelativeContactPointsOn1.size(); i++ ) {
+                if ( IsVehicle( inBody1 ) ) {
+                    queueVehicleCollision( inBody1, inBody2, inManifold, i,
+                                           true );
+                }
+                if ( IsVehicle( inBody2 ) ) {
+                    queueVehicleCollision( inBody2, inBody1, inManifold, i,
+                                           false );
+                }
+            }
             emit( inBody1, inBody2, inManifold, PFXEK_Impact );
         }
 
@@ -360,20 +371,106 @@ namespace {
         }
 
         static const CarState *FindCarState( const JPH::Body &chassis ) {
-            // FUN_00841dc0
             if ( gpCarState == nullptr ) {
                 return nullptr;
             }
-            const CarState *pCarStates = gpCarState->getCarStates();
-            for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
-                const PhysicsVehicle *pVehicle =
-                    pCarStates[i].getPhysicsVehicle();
-                if ( gpCarState->isCarStateUsed( i ) && pVehicle != nullptr &&
-                     pVehicle->getChassisBody() == &chassis ) {
-                    return &pCarStates[i];
-                }
+            const PhysicsVehicle *pVehicle = gpPhysics->findVehicle( chassis );
+            return ( pVehicle != nullptr )
+                       ? gpCarState->findCarState( pVehicle )
+                       : nullptr;
+        }
+
+        static float GetCollisionMass( const JPH::Body &body ) {
+            // FUN_0047aa70
+            const JPH::MotionProperties *pMotion = body.GetMotionProperties();
+            if ( !body.IsDynamic() || pMotion == nullptr ||
+                 pMotion->GetInverseMass() == 0.0f ) {
+                return 0.0f;
             }
-            return nullptr;
+            return 1.0f / pMotion->GetInverseMass();
+        }
+
+        static Eigen::Vector4f ToVehicleSpace( const PhysicsVehicle &vehicle,
+                                               const JPH::Vec3 &v,
+                                               const float w ) {
+            const Eigen::Vector4f row( v.GetX(), v.GetY(), v.GetZ(), w );
+            return ( row.transpose() * vehicle.getInvChassisMatrix() )
+                .transpose();
+        }
+
+        static void queueVehicleCollision( const JPH::Body &self,
+                                           const JPH::Body &other,
+                                           const JPH::ContactManifold &manifold,
+                                           const uint32_t pointIndex,
+                                           const bool bSelfIsBody1 ) {
+            // FUN_0082f030
+            static std::atomic<int32_t> sEventID{ 0 }; // DAT_010e7670
+
+            PhysicsVehicle *pSelf = gpPhysics->findVehicle( self );
+            if ( pSelf == nullptr ) {
+                return;
+            }
+
+            const JPH::Vec3 towardSelf = bSelfIsBody1
+                                             ? -manifold.mWorldSpaceNormal
+                                             : manifold.mWorldSpaceNormal;
+            const JPH::Vec3 position = JPH::Vec3(
+                bSelfIsBody1
+                    ? manifold.GetWorldSpaceContactPointOn1( pointIndex )
+                    : manifold.GetWorldSpaceContactPointOn2( pointIndex ) );
+            const JPH::Vec3 selfVelocity = self.GetLinearVelocity();
+            const JPH::Vec3 otherVelocity = other.GetLinearVelocity();
+
+            const float relativeVelocity =
+                towardSelf.Dot( otherVelocity - selfVelocity );
+            const float energy =
+                relativeVelocity * relativeVelocity *
+                ( GetCollisionMass( other ) + GetCollisionMass( self ) ) * 0.5f;
+
+            const JPH::SubShapeID &selfSubShape =
+                bSelfIsBody1 ? manifold.mSubShapeID1 : manifold.mSubShapeID2;
+            const JPH::SubShapeID &otherSubShape =
+                bSelfIsBody1 ? manifold.mSubShapeID2 : manifold.mSubShapeID1;
+
+            CollisionEvent event;
+            event.EventID = sEventID.fetch_add( 1 );
+            event.RelativeVelocity = relativeVelocity;
+            event.Energy = energy;
+            event.CarMaterial = static_cast<eMaterialType>(
+                ResolveMaterial( self, selfSubShape ) );
+            event.OtherMaterial = static_cast<eMaterialType>(
+                ResolveMaterial( other, otherSubShape ) );
+            event.Velocity = ToVehicleSpace( *pSelf, selfVelocity, 0.0f );
+            event.ContactPosition = ToVehicleSpace( *pSelf, position, 1.0f );
+
+            PhysicsVehicle *pOther = nullptr;
+            switch ( other.GetUserData() & TDUSurface::kClassMask ) {
+            case TDUSurface::Generic:
+                event.Type = eCollisionType::CT_RigidBody;
+                event.pOtherBody = &other;
+                break;
+            case TDUSurface::Vehicle:
+                pOther = gpPhysics->findVehicle( other );
+                event.Type = eCollisionType::CT_Vehicle;
+                event.pOtherVehicle = pOther;
+                break;
+            default:
+                break;
+            }
+            pSelf->pushCollisionEvent( event );
+
+            if ( pOther == nullptr ) {
+                return;
+            }
+            // FUN_00827c80
+            CollisionEvent mirror = event;
+            mirror.pOtherVehicle = pSelf;
+            mirror.RelativeVelocity = 0.0f - relativeVelocity;
+            mirror.CarMaterial = event.OtherMaterial;
+            mirror.OtherMaterial = event.CarMaterial;
+            mirror.Velocity = ToVehicleSpace( *pSelf, otherVelocity, 0.0f );
+            mirror.ContactPosition = ToVehicleSpace( *pOther, position, 1.0f );
+            pOther->pushCollisionEvent( mirror );
         }
 
         static bool IsRoadContactIgnored( const JPH::Body &vehicle,
@@ -1741,6 +1838,24 @@ PhysFactory *GSPhysics::createFromBinary( void *param_3, int32_t param_2 ) {
     return pFactory;
 }
 
+static const HavokToJolt::RigidBody *
+FindFactoryMember( const HavokFactoryData &data, const uint64_t logicID ) {
+    for ( const auto &mecha : data.MechaMembers ) {
+        for ( const HavokToJolt::MechaMember &member : mecha.second ) {
+            if ( std::find( member.LogicIDs.begin(), member.LogicIDs.end(),
+                            logicID ) == member.LogicIDs.end() ) {
+                continue;
+            }
+            for ( const HavokToJolt::RigidBody &body : data.Bodies ) {
+                if ( body.Hashcode == member.BodyHashcode ) {
+                    return &body;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
 PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
                                           const Matrix4x4f_t &worldTransform,
                                           const DBEntryCarPhysicsData &db,
@@ -1774,9 +1889,22 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     if ( bHasFactoryShape ) {
         // Combine the reconstructed collision bodies into a single chassis
         // shape.
+        const HavokToJolt::RigidBody *pChassisMember =
+            FindFactoryMember( *pData, GetIdentifier64bit( "BODY" ) );
+        const JPH::Mat44 toChassis =
+            ( pChassisMember != nullptr )
+                ? JPH::Mat44::sRotationTranslation( pChassisMember->Rotation,
+                                                    pChassisMember->Position )
+                      .InversedRotationTranslation()
+                : JPH::Mat44::sIdentity();
+
         JPH::StaticCompoundShapeSettings compound;
         for ( const HavokToJolt::RigidBody &body : pData->Bodies ) {
-            compound.AddShape( body.Position, body.Rotation, body.Shape );
+            const JPH::Mat44 local =
+                toChassis * JPH::Mat44::sRotationTranslation( body.Rotation,
+                                                              body.Position );
+            compound.AddShape( local.GetTranslation(),
+                               local.GetQuaternion().Normalized(), body.Shape );
         }
         shapeResult = compound.Create();
     } else {
@@ -1926,6 +2054,16 @@ void GSPhysics::setVehicleOwner( PhysicsVehicle *pVehicle, void *pOwner ) {
         ( reinterpret_cast<uint64_t>( pOwner ) << TDUSurface::kOwnerShift ) |
             TDUSurface::Vehicle );
     unlockMutex();
+}
+
+PhysicsVehicle *GSPhysics::findVehicle( const JPH::Body &chassis ) const {
+    for ( PhysicsVehicle *it = pPhysicsVehiclesBegin; it != pPhysicsVehiclesEnd;
+          ++it ) {
+        if ( it->getChassisBody() == &chassis ) {
+            return it;
+        }
+    }
+    return nullptr;
 }
 
 void GSPhysics::destroyVehicle( PhysicsVehicle *pVehicle ) {
@@ -3130,7 +3268,6 @@ RigidBody_t GSPhysics::addHeightfield( const void *pKey,
         return nullptr;
     }
 
-    // FUN_00848b50 @0x00848bd5: friction 0.5 (FLOAT_00f41674), restitution 0
     const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
     JPH::BodyCreationSettings bodySettings(
         shapeResult.Get(),

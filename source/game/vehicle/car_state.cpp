@@ -13,6 +13,9 @@
 #include "game/avatar/avatar_clothes.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "ai/ai_vehicle.h"
+#include "ai/ai_veh_behaviour.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/weather/gs_weather.h"
@@ -169,11 +172,84 @@ void CarState::updateBackOnTrack( float param_2 ) {
     OTDU_UNIMPLEMENTED; // TODO: Physics
 }
 
+static void DispatchAICollision( const CollisionEvent &event,
+                                 CarState *pCarState,
+                                 CarState *pOther ) {
+    // FUN_008af6f0
+    AiVehicle *pAiVehicle =
+        static_cast<AiVehicle *>( pCarState->getAIController() );
+    if ( pAiVehicle == nullptr ) {
+        return;
+    }
+
+    // FUN_00923b30
+    AiVehicle *pOtherAiVehicle =
+        static_cast<AiVehicle *>( pOther->getAIController() );
+    if ( pAiVehicle->getBehaviour() != nullptr ) {
+        pAiVehicle->getBehaviour()->onCollision( pCarState, pOther, event );
+    }
+    if ( pOtherAiVehicle != nullptr &&
+         pOtherAiVehicle->getBehaviour() != nullptr ) {
+        pOtherAiVehicle->getBehaviour()->onCollision( pCarState, pOther,
+                                                      event );
+    }
+}
+
+struct PostponedVelocityScale {
+    std::vector<PhysicsVehicle *> pScaled;
+
+    void request( PhysicsVehicle *pVehicle, const float scale ) {
+        // FUN_00829bb0
+        if ( pVehicle == nullptr || std::find( pScaled.begin(), pScaled.end(),
+                                               pVehicle ) != pScaled.end() ) {
+            return;
+        }
+        pScaled.push_back( pVehicle );
+        const Eigen::Vector4f velocity = pVehicle->getChassisVelocity() * scale;
+        pVehicle->setVelocity( velocity.head<3>(), false, -1 );
+    }
+};
+
 void CarState::resolveCollisionEvents() {
     // FUN_008aff60
-    OTDU_UNIMPLEMENTED; // TODO: Scenarics
-    // TODO: AI
-    // TODO: Physics
+    PostponedVelocityScale softCollision;
+    for ( const CollisionEvent &event : body.CollisionEvents ) {
+        if ( event.Type == eCollisionType::CT_Vehicle ) {
+            if ( event.pOtherVehicle == nullptr ) {
+                continue;
+            }
+        } else if ( event.Type == eCollisionType::CT_DynamicBody &&
+                    event.pOtherObject != nullptr ) {
+            gpCarState->registerCollidedObject( event.pOtherObject );
+        } else {
+            continue;
+        }
+
+        CarState *pOther = nullptr;
+        if ( event.Type == eCollisionType::CT_Vehicle ) {
+            pOther = gpCarState->findCarState( event.pOtherVehicle );
+            if ( pOther != nullptr ) {
+                DispatchAICollision( event, this, pOther );
+            }
+        }
+
+        if ( gpScenaric == nullptr ||
+             this != gpScenaric->getLocalPlayer().getCarState() ) {
+            continue;
+        }
+
+        const AiVehicle *pOtherAiVehicle =
+            ( pOther != nullptr )
+                ? static_cast<const AiVehicle *>( pOther->getAIController() )
+                : nullptr;
+        if ( pOtherAiVehicle != nullptr &&
+             pOtherAiVehicle->isSoftCollision() ) {
+            softCollision.request( pPhysicsVehicle, 0.5f );
+            softCollision.request( pOther->getPhysicsVehicle(), 0.5f );
+        }
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: Police
+    }
 }
 
 void CarState::updateGroundColor() {

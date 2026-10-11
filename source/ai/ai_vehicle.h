@@ -111,6 +111,7 @@ public:
     inline AiVehController *getController() const { return pController; }
     inline AiVehNavigation *getNavigation() const { return pNav; }
     inline AiVehBehaviour *getBehaviour() const { return pBehaviour; }
+    inline bool isSoftCollision() const { return bSoftCollision; }
     inline AiVehicleInfo &getInfos() { return infos; }
     inline const AiVehicleInfo &getInfos() const { return infos; }
     inline AiVehSignals &getSignals() { return signals; }

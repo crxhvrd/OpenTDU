@@ -4,6 +4,8 @@
 
 #include "vehicle_simulation.h"
 
+#include "physics/collision_event.h"
+
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/PhysicsStepListener.h>
 
@@ -235,6 +237,7 @@ public:
     int32_t getOdometerKms() const { return odometerKms; }
     int32_t getOdometerTenMeters() const { return odometerTenMeters; }
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
+    bool isTrafficBody() const { return bTrafficBody; }
     float getLateralSpeed() const { return vehicle.LateralSpeed; }
     inline float getFilteredSteer() const { return filteredSteer; }
     inline float getSteerDeadZone() const { return steerDeadZone; }
@@ -325,6 +328,10 @@ public:
     void reportStuckClutch( float dt );
     void updateTyreHeat( float dt );
     float getWheelBurn( int32_t index ) const;
+    void applyImpactWheelDamage();
+
+    void pushCollisionEvent( const CollisionEvent &event );
+    void flushCollisionEvents( std::vector<CollisionEvent> &outEvents );
     float getChassisSpeed() const;
     float getReportedSpeed() const;
     Eigen::Vector4f getChassisVelocity() const;
@@ -434,6 +441,7 @@ private:
     bool bLowSpeedLongAssist = false; // FIXME
     bool bLowSpeedLatAssist = false;  // FIXME
     bool bIsBike = false;
+    bool bTrafficBody = false;
     float rawInputThrottle;
     float rawInputBrake;
     float inputThrottle;
@@ -530,6 +538,10 @@ private:
     float launchEntryRpm = 0.0f;
     float launchEntrySpeed = 0.0f;
     bool bStuckClutchReported = false;
+
+    static constexpr int32_t kMaxCollisionEvents = 0x80;
+    std::array<CollisionEvent, kMaxCollisionEvents> collisionEvents;
+    int32_t numCollisionEvents = 0;
 
     // Pose published at the end of each physics step (see publishStepPose).
     Matrix4x4f_t physicsMatrix = Matrix4x4f_t::Identity();

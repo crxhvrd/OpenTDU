@@ -13,6 +13,9 @@
 #include "database/gs_database.h"
 #include "database/db_aftermarket_pack.h"
 #include "player_data/gs_playerdata.h"
+#include "game/vehicle/gs_car_state.h"
+#include "ai/ai_vehicle.h"
+#include "core/mutex.h"
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -29,6 +32,8 @@
 constexpr float kMmToM = 0.001f;
 constexpr float kSlipDenom = 3.0f;
 constexpr float kSuspDampingScale = 1.0f;
+static TestDriveMutex gCollisionEventMutex;
+
 static constexpr float kPedalCurveC2 = 0.5f;        // FLOAT_00f41674
 static constexpr float kPedalCurveC3 = 1.0f / 3.0f; // DAT_00f41764
 static constexpr float kThrottleCurveK = 0.0f;      // DAT_00f8a22c
@@ -874,6 +879,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     // Vehicle + per-wheel setup
     vehicle = PhysicsVehicleState();
+    numCollisionEvents = 0;
+    bTrafficBody = gpDatabase != nullptr && gpDatabase->isTraffic( &db );
     initializeElectronics();
     vehicle.NumWheels = 4;
     vehicle.PowertrainSubsteps = bIsAI ? 5 : ( bIsNetwork ? 1 : 10 );
@@ -1209,6 +1216,7 @@ void PhysicsVehicle::destroy() {
     bRegistered = false;
     pPhysicsSystem = nullptr;
     pChassisBody = nullptr;
+    numCollisionEvents = 0;
 }
 
 void PhysicsVehicle::setInput( float throttle, float brake, float steer ) {
@@ -2087,7 +2095,7 @@ bool PhysicsVehicle::applyWheelContact( const JPH::Body &chassis,
     wheelMaterial[i] = material;
 
     // Contact frame.
-    float steerAngle = computeWheelSteerAngle( w );
+    float steerAngle = computeWheelSteerAngle( w ) + w.ImpactSteerOffset;
 
     const JPH::Vec3 steeredFwd =
         forward * JPH::Cos( steerAngle ) + right * JPH::Sin( steerAngle );
@@ -2598,6 +2606,7 @@ void PhysicsVehicle::OnStep(
     updateTyreHeat( dt );
     updateRevRate( dt );
     updateGearLeverAnticipation( dt );
+    applyImpactWheelDamage();
     reportStuckClutch( dt );
 
     virtualSpeed = vForward;
@@ -2705,6 +2714,7 @@ void PhysicsVehicle::stepVirtual( float dt ) {
     updateTyreHeat( dt );
     updateRevRate( dt );
     updateGearLeverAnticipation( dt );
+    applyImpactWheelDamage();
     reportStuckClutch( dt );
 }
 
@@ -2794,6 +2804,61 @@ float PhysicsVehicle::getWheelBurn( int32_t index ) const {
         return 0.0f;
     }
     return ( heat - kTireBurnThreshold ) / ( 1.0f - kTireBurnThreshold );
+}
+
+void PhysicsVehicle::pushCollisionEvent( const CollisionEvent &event ) {
+    // FUN_00827c80
+    ScopedMutexLock lock( &gCollisionEventMutex );
+    if ( numCollisionEvents >= kMaxCollisionEvents ) {
+        return;
+    }
+    collisionEvents[numCollisionEvents] = event;
+    numCollisionEvents++;
+}
+
+void PhysicsVehicle::flushCollisionEvents(
+    std::vector<CollisionEvent> &outEvents ) {
+    // FUN_0083bbd0
+    applyImpactWheelDamage();
+    ScopedMutexLock lock( &gCollisionEventMutex );
+    outEvents.assign( collisionEvents.begin(),
+                      collisionEvents.begin() + numCollisionEvents );
+    numCollisionEvents = 0;
+}
+
+void PhysicsVehicle::applyImpactWheelDamage() {
+    // FUN_0083db70
+    static constexpr float kImpactEnergy = 2000000.0f; // DAT_00fab690
+    static constexpr float kImpactDamage = 0.35f;      // DAT_00f419fc
+    static constexpr float kImpactSteerOffset = 0.25f; // DAT_00f416dc
+
+    bool bStaticBehaviour = false;
+    if ( gpCarState != nullptr ) {
+        const CarState *pCarState = gpCarState->findCarState( this );
+        if ( pCarState != nullptr && pCarState->getAIController() != nullptr ) {
+            const AiVehicle *pAiVehicle =
+                static_cast<const AiVehicle *>( pCarState->getAIController() );
+            bStaticBehaviour = pAiVehicle->getBehaviourType() == 0;
+        }
+    }
+    if ( !bTrafficBody || bStaticBehaviour ) {
+        return;
+    }
+
+    ScopedMutexLock lock( &gCollisionEventMutex );
+    for ( int32_t i = 0; i < numCollisionEvents; i++ ) {
+        const CollisionEvent &event = collisionEvents[i];
+        if ( event.Energy <= kImpactEnergy || event.pOtherObject == nullptr ) {
+            continue;
+        }
+        const int32_t rear = ( event.ContactPosition.z() > 0.0f ) ? 0 : 1;
+        const int32_t right = ( event.ContactPosition.x() > 0.0f ) ? 0 : 1;
+        const int32_t index = ( rear << ( vehicle.NumWheels / 2 - 1 ) ) +
+                              ( vehicle.NumWheels / 4 ) * right;
+        PhysicsWheelState &w = vehicle.Wheels[index];
+        w.ImpactDamage = kImpactDamage;
+        w.ImpactSteerOffset = kImpactSteerOffset;
+    }
 }
 
 void PhysicsVehicle::updateGearLeverAnticipation( float dt ) {
@@ -3780,7 +3845,7 @@ PhysicsVehicle::getWheelReadout( uint32_t index ) const {
     const PhysicsWheelState &w = vehicle.Wheels[index];
     out.LocalPosition = wheelAttach[index];
     out.AngularVelocity = w.AngularVel;
-    out.SteerAngle = computeWheelSteerAngle( w );
+    out.SteerAngle = computeWheelSteerAngle( w ) + w.ImpactSteerOffset;
     out.RotationAngle = w.SpinAngle;
     out.SuspensionLength = prevSuspLength[index];
 

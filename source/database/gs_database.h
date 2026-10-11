@@ -173,7 +173,7 @@ public:
                           const uint64_t packHashcode,
                           int32_t *pOutMaxLevel = nullptr );
     bool isBike( DBEntryCarPhysicsData *param_1 );
-    bool isTraffic( DBEntryCarPhysicsData *param_1 );
+    bool isTraffic( const DBEntryCarPhysicsData *param_1 );
 
     const CarConfig *getCarConfig( int32_t carID ) const;
 

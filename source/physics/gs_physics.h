@@ -251,6 +251,7 @@ public:
                    const bool bIsNetwork = false );
     void destroyVehicle( PhysicsVehicle *pVehicle );
     void setVehicleOwner( PhysicsVehicle *pVehicle, void *pOwner );
+    PhysicsVehicle *findVehicle( const JPH::Body &chassis ) const;
 
     RigidBody_t createSphere( uint32_t collisionGroup,
                               const Eigen::Vector4f &worldPosition,
