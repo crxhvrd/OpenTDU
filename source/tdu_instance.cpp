@@ -1155,8 +1155,8 @@ void TestDriveGameInstance::tickGameMode( float param_1,
 }
 
 void TestDriveGameInstance::FUN_0097c8b0() {
-    // FUN_0097c6e0 (inlined)
-    // OTDU_UNIMPLEMENTED;
+    // FUN_0097c8b0
+    gSavegameManager.refreshService();
 }
 
 void TestDriveGameInstance::FUN_009b4650() {

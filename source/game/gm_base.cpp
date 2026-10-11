@@ -200,7 +200,6 @@ void GameMode::mainLoop( TestDriveGameInstance *param_1 ) {
 
         DAT_016914a0 = iVar6;
         DAT_01691498[iVar6] = 0;
-        gSavegameManager.refreshService();
         if ( BOOL_010e7364 == false ) {
             gSavegameManager.doSaveBlocking();
         }
