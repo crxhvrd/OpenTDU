@@ -524,6 +524,7 @@ int32_t CMarkup::ParseNode( TokenPos &token ) {
     if ( pEnd == nullptr ) {
         return MNT_None;
     }
-    token.Next = static_cast<int32_t>( pEnd - pDoc ) + strlen( pEndOfNode );
+    token.Next = static_cast<int32_t>( pEnd - pDoc ) +
+                 static_cast<int32_t>( strlen( pEndOfNode ) );
     return type;
 }
