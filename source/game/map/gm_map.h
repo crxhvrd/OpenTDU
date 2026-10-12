@@ -103,6 +103,7 @@ private:
     MngCamGPS mngCamGPS;
     MngSectorName mngSectorName;
     MngMapViewer mngMapViewer;
+    DrawList demoZonesDrawList;
 
     bool bGhostCursorVisible;
     float cursorX;

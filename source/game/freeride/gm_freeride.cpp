@@ -229,6 +229,8 @@ void GMFreeride::reset() {
 
     OTDU_UNIMPLEMENTED; // TODO: SCENARIC/TUTORIAL
 
+    gpWorld->getStreamingManager()->setUnderwaterTilesRefined( false );
+
     if ( gpMngHud != nullptr ) {
         gpScenaric->pushObjectivesToCompass( gpMngHud );
     }

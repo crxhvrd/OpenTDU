@@ -30,6 +30,7 @@
 #include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
+#include "player_data/saved_road_discovery.h"
 #include "render/camera/camera_gps.h"
 #include "render/camera/gs_camera.h"
 #include "render/gs_render.h"
@@ -46,6 +47,23 @@ bool gbMapResetGPSCamera = false; // BOOL_010e7d19
 static bool gbMapDebugTeleportAnywhere = false;
 static constexpr float kMapDebugNoGround = -1.0e38f;
 static constexpr float kMapDebugTeleportLift = 1.0f;
+
+static bool gbUnlockDemoRoadsAgain = false; // DAT_010e7d21
+static float gDemoMinOffsetX = 1000.0f;     // DAT_00f96b70
+static float gDemoMinOffsetZ = 1000.0f;     // DAT_00f96b74
+static float gDemoMaxOffsetX = 1000.0f;     // DAT_00f96b78
+static float gDemoMaxOffsetZ = 1000.0f;     // DAT_00f96b7c
+
+// DAT_00fa9be8 (x, z, width, depth)
+static constexpr float kDemoFordZones[2][4] = {
+    {32350.0f, 39800.0f, 1650.0f, 1700.0f},
+    {34800.0f, 45300.0f, 1200.0f, 225.0f },
+};
+
+static constexpr float kDemoZoneOuterHeight = 300.0f; // DAT_00f4183c
+static constexpr float kDemoZoneMinRow = 7.0f;        // DAT_00f41844
+static constexpr float kDemoOffsetMax = 60000.0f;     // DAT_00f41b98
+static constexpr float kDemoOffsetStep = 100.0f;      // DAT_00f41708
 
 static constexpr int32_t kGPSCameraMode = 3;
 static constexpr float kMapFocusMoveMinDistance = 10.0f; // FLOAT_00f4166c
@@ -416,6 +434,7 @@ GMMap::GMMap()
       mngCamGPS(),
       mngSectorName(),
       mngMapViewer(),
+      demoZonesDrawList(),
       bGhostCursorVisible( false ),
       cursorX( kMapFocusDefault ),
       cursorY( kMapFocusDefault ),
@@ -474,7 +493,16 @@ void GMMap::initialize() {
     // FUN_009c3010
     GameModeScene::initialize();
 
-    // TODO: Demo zones debug
+    DrawStreams streams;
+    streams.Normals = 0;
+    streams.Diffuse = 1;
+    streams.Specular = 0;
+    streams.UVMap = 1;
+    streams.Tangent = 0;
+    streams.Binormal = 0;
+    streams.bIndex16 = 1;
+    demoZonesDrawList.initialize( 4, 16, 0, true, &streams, "GMMapDemoZones",
+                                  false );
 }
 
 void GMMap::reset() {
@@ -696,7 +724,10 @@ void GMMap::draw( float deltaTime, float /*totalTime*/ ) {
         }
     }
 
-    // TODO: Demo zones debug render list (gDisplayDemoZones)
+    if ( gDisplayDemoZones ) {
+        gpRender->getRenderPass<RP_SunDazzle>().pScene->enqueueDynamicDrawList(
+            &demoZonesDrawList );
+    }
 }
 
 void GMMap::pause() {
@@ -751,6 +782,8 @@ void GMMap::destroy() {
     gpAI->setDisableCops( true );
     gpAI->setCopsActive( false );
     pAIPool->removeCops();
+
+    demoZonesDrawList.destroy();
 
     if ( pCameraGPS != nullptr ) {
         pCameraGPS->setPoseCallback( nullptr, nullptr );
@@ -1706,9 +1739,82 @@ void GMMap::updateCursor( const float deltaTime ) {
 
 void GMMap::drawDebug( float /*deltaTime*/ ) {
     ImGui::Checkbox( "Free teleport", &gbMapDebugTeleportAnywhere );
+
+    // FUN_0074d360
+    ImGui::Checkbox( "Display Zones", &gDisplayDemoZones );
+    ImGui::Checkbox( "Unlock demo roads again", &gbUnlockDemoRoadsAgain );
+    ImGui::DragFloat( "Min OffSet X", &gDemoMinOffsetX, kDemoOffsetStep, 0.0f,
+                      kDemoOffsetMax );
+    ImGui::DragFloat( "Min OffSet Z", &gDemoMinOffsetZ, kDemoOffsetStep, 0.0f,
+                      kDemoOffsetMax );
+    ImGui::DragFloat( "Max OffSet X", &gDemoMaxOffsetX, kDemoOffsetStep, 0.0f,
+                      kDemoOffsetMax );
+    ImGui::DragFloat( "Max OffSet Z", &gDemoMaxOffsetZ, kDemoOffsetStep, 0.0f,
+                      kDemoOffsetMax );
+}
+
+static void PushDemoZoneQuad( DrawList &drawList,
+                              const float minX,
+                              const float maxX,
+                              const float minZ,
+                              const float maxZ,
+                              const float height,
+                              const uint32_t color ) {
+    const Eigen::Vector4f corners[4] = {
+        Eigen::Vector4f( maxX, height, minZ, 1.0f ),
+        Eigen::Vector4f( minX, height, minZ, 1.0f ),
+        Eigen::Vector4f( maxX, height, maxZ, 1.0f ),
+        Eigen::Vector4f( minX, height, maxZ, 1.0f ),
+    };
+
+    float screen[4][2] = {};
+    for ( int32_t i = 0; i < 4; i++ ) {
+        ProjectToMapScreen( corners[i], nullptr, screen[i][0], screen[i][1] );
+    }
+
+    drawList.beginPrimitive( PT_TriangleStrip, 4 );
+    drawList.setActiveMaterial( gpFlash->getNullMaterial() );
+    drawList.setDiffuse( 0, ColorRGBA( color ) );
+    for ( int32_t i = 0; i < 4; i++ ) {
+        drawList.pushVertex( screen[i][0], screen[i][1], 0.0f );
+    }
+    drawList.commitPrimitive();
 }
 
 void GMMap::drawDemoDebug() {
     // FUN_009bef90
-    OTDU_UNIMPLEMENTED_ONCE;
+    if ( gbUnlockDemoRoadsAgain ) {
+        SavedRoadDiscovery *pRoads =
+            gpPlayerData->getLoadedSave()->getRoadDiscovery();
+        pRoads->clear();
+        pRoads->unlockAllRoads();
+        gbUnlockDemoRoadsAgain = false;
+    }
+
+    if ( !gDisplayDemoZones ) {
+        return;
+    }
+
+    demoZonesDrawList.reset();
+
+    const SectorManager &sectorManager =
+        gpWorld->getStreamingManager()->sectorManager;
+    const float mapWidth = static_cast<float>(
+        static_cast<int32_t>( sectorManager.numSectors * 0x300 ) );
+    const float mapDepth = static_cast<float>(
+        static_cast<int32_t>( sectorManager.numSubSectors * 0x300 ) );
+
+    PushDemoZoneQuad( demoZonesDrawList, mapWidth * kMapNumSectorRows,
+                      mapWidth * kMapNumSectorColumns,
+                      mapDepth * kDemoZoneMinRow, mapDepth * kMapNumSectorRows,
+                      kDemoZoneOuterHeight, 0xb4ff0000 );
+    PushDemoZoneQuad(
+        demoZonesDrawList, mapWidth * kMapNumSectorRows + gDemoMinOffsetX,
+        mapWidth * kMapNumSectorColumns - gDemoMaxOffsetX,
+        mapDepth * kDemoZoneMinRow + gDemoMinOffsetZ,
+        mapDepth * kMapNumSectorRows - gDemoMaxOffsetZ, 0.0f, 0xb40000ff );
+    for ( const float ( &zone )[4] : kDemoFordZones ) {
+        PushDemoZoneQuad( demoZonesDrawList, zone[0], zone[0] + zone[2],
+                          zone[1], zone[1] + zone[3], 0.0f, 0xb40000ff );
+    }
 }
