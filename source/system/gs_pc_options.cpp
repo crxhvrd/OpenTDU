@@ -12,7 +12,9 @@
 #include "flash/implementation/flash_resource.h"
 #include "flash/implementation/flash_sprite.h"
 #include "game/gm_base.h"
+#include "game/gs_tutorial.h"
 #include "game/login/gm_login.h"
+#include "game/vehicle/gs_car_display.h"
 #include "gs_timer.h"
 #include "input/input_device.h"
 #include "physics/vehicle/physics_vehicle.h"
@@ -30,6 +32,10 @@ GSPCOptions *gpPCOptions = nullptr; // DAT_01416130
 static constexpr uint64_t kClearCurrentGameHashcode = 0x3acf5fa;
 static constexpr uint64_t kReturnToWindowsHashcode = 0x39db3ba;
 static constexpr uint64_t kChangeProfileHashcode = 0x35475ba;
+static constexpr uint64_t kInvalidNicknameHashcode = 0x380b5da;
+static constexpr uint64_t kInvalidEmailHashcode = 0x39f3a5a;
+static constexpr uint64_t kInvalidPasswordHashcode = 0x38ff81a;
+static constexpr uint64_t kProfileAlreadyExistsHashcode = 0x3bdbeda;
 
 static constexpr TimeOfDay kWeatherResumeInterval = { 0.0f, 30.0f, 0.0f };
 
@@ -48,6 +54,8 @@ GSPCOptions::GSPCOptions()
       nickname{},
       email{},
       password{},
+      newProfileName{},
+      bConnectOnline( false ),
       bProfileScreenOpened( false ),
       profileScreenMode( 0 ),
       field297_0x188( false ),
@@ -78,14 +86,9 @@ GSPCOptions::~GSPCOptions() {
     gpPCOptions = nullptr;
 }
 
-bool GSPCOptions::initialize( TestDriveGameInstance * ) {
+bool GSPCOptions::initialize( TestDriveGameInstance *pInstance ) {
     // FUN_007c4990
-    reset();
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND (the two globals FUN_007c4990
-                             // publishes are not ported)
-
-    return true;
+    return GameSystem::initialize( pInstance );
 }
 
 void GSPCOptions::tick( float totalTime, float deltaTime ) {
@@ -319,22 +322,40 @@ bool GSPCOptions::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         if ( gpPlayerData->getLoadedSave()->getDriver()->isValid() ) {
             gpPlayerData->requestSave( 1 );
         } else {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_0097bf40)
+            const uint64_t profileHashcode =
+                gUserProfileRegister.getActiveProfileHashcode();
+            std::unique_ptr<LocalPlayerData> pLocalPlayerData =
+                std::make_unique<LocalPlayerData>(
+                    gpPlayerData->getLocalPlayerData() );
+            gSavegameManager.writeCommonDTBlocking( pLocalPlayerData.get(),
+                                                    profileHashcode );
         }
 
         showOptionsRoot();
         return true;
 
-    case 0x7073656c: // "psel" — a profile line was highlighted
+    case 0x7073656c: // "psel" — a profile line was selected
         selectProfile();
-        return false;
+        requestPendingProfileChange();
+        return true;
 
-    case 0x7064656c:             // "pdel" — delete the selected profile
-    case 0x706e6577:             // "pnew"
-    case 0x7063616e:             // "pcan"
-    case 0x736e6473:             // "snds"
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
-        return false;
+    case 0x7064656c: // "pdel" — delete the selected profile
+        deleteSelectedProfile();
+        return true;
+
+    case 0x706e6577: // "pnew" — the new profile form was validated
+        createProfile();
+        requestPendingProfileChange();
+        return true;
+
+    case 0x7063616e: // "pcan" — the new profile form was cancelled
+        if ( cancelProfileCreation() ) {
+            beginProfileChange();
+        }
+        return true;
+
+    case 0x736e6473: // "snds"
+        return gpFlash->getFlashSound()->stopGroup( pMessage[1].pAsChar, 0.0f );
 
     case 0x77696467: // "widg"
         if ( pMessage[1] == FlashMessage( "kmap" ) ) {
@@ -488,10 +509,14 @@ void GSPCOptions::closeMainMenu() {
             return;
         }
         if ( pendingMenuAction == MA_NewGame ) {
+            // FUN_016ad000
             GMLogin::RequestNewGame();
+            gbScenarioTutorialEnabled = true;
             switchToLoginGameMode();
 
-            OTDU_UNIMPLEMENTED_ONCE;
+            if ( BOOL_010e74f4 && gpCarDisplay != nullptr ) {
+                gpCarDisplay->freeResources();
+            }
             return;
         }
         if ( pendingMenuAction == MA_ChangeProfile ) {
@@ -725,9 +750,9 @@ void GSPCOptions::refreshOnlineProfileScreen() {
     // FUN_007c3e80
     const int32_t numProfiles = gUserProfileRegister.getNumProfiles();
 
-    pFlashPlayer->setVariableValue( "/:nickname", nickname );
-    pFlashPlayer->setVariableValue( "/:email", email );
-    pFlashPlayer->setVariableValue( "/:password", password );
+    pFlashPlayer->setVariableValueWritableLinked( "/:nickname", nickname );
+    pFlashPlayer->setVariableValueWritableLinked( "/:email", email );
+    pFlashPlayer->setVariableValueWritableLinked( "/:password", password );
 
     gatherProfileEntries();
     refreshProfileList();
@@ -961,6 +986,211 @@ void GSPCOptions::beginProfileChange() {
 
     field23_0x35 = true;
     bCloseRequested = true;
+}
+
+void GSPCOptions::requestPendingProfileChange() {
+    // FUN_007c5a70
+    if ( field297_0x188 ) {
+        pendingMenuAction = MA_ChangeProfile;
+        onMainMenuSelection( MMO_Quit );
+    }
+}
+
+void GSPCOptions::deleteSelectedProfile() {
+    // FUN_007c3670
+    const int32_t selectedLine =
+        Clamp( pFlashPlayer->getVariableAsInt( "/profile:cur_line" ) - 1, 0,
+               kMaxDisplayedProfiles - 1 );
+
+    const char *pProfileName =
+        gUserProfileRegister.getProfileNameByIndex( selectedLine );
+    if ( UserProfileRegister::HashProfileName( pProfileName ) !=
+         gUserProfileRegister.getActiveProfileHashcode() ) {
+        gUserProfileRegister.deleteProfile( pProfileName );
+    }
+}
+
+void GSPCOptions::buildNewProfileName() {
+    // FUN_007c3340
+    size_t length = 0;
+    for ( const char *pChar = nickname; *pChar != '\0'; pChar++ ) {
+        const char character = *pChar;
+        if ( ( character >= 'a' && character <= 'z' ) ||
+             ( character >= 'A' && character <= 'Z' ) ||
+             ( character >= '0' && character <= '9' ) ) {
+            newProfileName[length++] = character;
+        }
+    }
+    newProfileName[length] = '\0';
+}
+
+static bool IsValidNickname( const char *pNickname ) {
+    // FUN_007c3420
+    const size_t length = strlen( pNickname );
+    if ( length == 0 || length > 20 ) {
+        return false;
+    }
+
+    const char firstChar = pNickname[0];
+    if ( firstChar == '@' || firstChar == '+' || firstChar == ':' ||
+         firstChar == '#' || firstChar == '.' ||
+         ( firstChar >= '0' && firstChar <= '9' ) ) {
+        return false;
+    }
+
+    for ( size_t i = 0; i < length; i++ ) {
+        const char character = pNickname[i];
+        if ( character < '"' || character > '~' || character == ',' ||
+             character == '\\' ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool IsValidEmail( const char *pEmail ) {
+    // FUN_007c33c0
+    const std::string_view email( pEmail );
+
+    const size_t atIndex = email.find( '@' );
+    if ( atIndex == std::string_view::npos || atIndex == 0 ) {
+        return false;
+    }
+
+    const size_t dotIndex = email.find( '.', atIndex + 1 );
+    return dotIndex != std::string_view::npos && dotIndex != atIndex + 1 &&
+           dotIndex != email.length() - 1;
+}
+
+static bool IsStringLengthInRange( const char *pString,
+                                   const size_t minLength,
+                                   const size_t maxLength ) {
+    const size_t length = strlen( pString );
+    return length >= minLength && length <= maxLength;
+}
+
+bool GSPCOptions::validateNewProfileForm() {
+    // FUN_007c3b10
+    uint64_t errorHashcode = 0ull;
+    if ( !IsStringLengthInRange( newProfileName, 1, 0x1f ) ||
+         !IsValidNickname( nickname ) ) {
+        errorHashcode = kInvalidNicknameHashcode;
+    } else if ( bConnectOnline ) {
+        if ( !IsStringLengthInRange( email, 1, 0x33 ) ||
+             !IsValidEmail( email ) ) {
+            errorHashcode = kInvalidEmailHashcode;
+        } else if ( !IsStringLengthInRange( password, 1, 0x1f ) ) {
+            errorHashcode = kInvalidPasswordHashcode;
+        }
+    }
+
+    if ( errorHashcode == 0ull ) {
+        int32_t editedProfileIndex = -1;
+        if ( profileScreenMode == 2 ) {
+            editedProfileIndex = gUserProfileRegister.getProfileIndex(
+                gUserProfileRegister.getActiveProfileHashcode() );
+        }
+
+        const int32_t numProfiles = gUserProfileRegister.getNumProfiles();
+        for ( int32_t i = 0; i < numProfiles; i++ ) {
+            if ( i != editedProfileIndex &&
+                 StringCmpI( gUserProfileRegister.getProfileNameByIndex( i ),
+                             newProfileName ) == 0 ) {
+                errorHashcode = kProfileAlreadyExistsHashcode;
+                break;
+            }
+        }
+
+        if ( errorHashcode == 0ull ) {
+            return true;
+        }
+    }
+
+    TestDrive::DisplayModalPrompt( false, errorHashcode, 0, nullptr, nullptr,
+                                   nullptr, 0, "_Error in login strings.", true,
+                                   false, MPT_Warning, gpFlashMessageBox );
+    return false;
+}
+
+void GSPCOptions::createProfile() {
+    // FUN_007c3cb0
+    field297_0x188 = false;
+    bConnectOnline = pFlashPlayer->getVariableAsInt(
+                         "/profile/new_profile/popup:is_connect" ) != 0;
+
+    buildNewProfileName();
+    if ( !validateNewProfileForm() ) {
+        return;
+    }
+
+    if ( profileScreenMode == 2 ) {
+        const std::string activeProfileName =
+            gUserProfileRegister.getActiveProfileName();
+        gUserProfileRegister.renameProfile( activeProfileName.c_str(),
+                                            newProfileName );
+    } else {
+        if ( gUserProfileRegister.getNumProfiles() >= kMaxDisplayedProfiles ) {
+            return;
+        }
+        gUserProfileRegister.registerProfile( newProfileName );
+    }
+
+    const uint64_t profileHashcode =
+        UserProfileRegister::HashProfileName( newProfileName );
+
+    std::unique_ptr<LocalPlayerData> pLocalPlayerData =
+        std::make_unique<LocalPlayerData>( gpPlayerData->getLocalPlayerData() );
+    pLocalPlayerData->bOnlineAccount = bConnectOnline;
+    pLocalPlayerData->bOffline = bConnectOnline;
+    strncpy( pLocalPlayerData->Nickname, nickname,
+             sizeof( pLocalPlayerData->Nickname ) );
+    if ( bConnectOnline ) {
+        strncpy( pLocalPlayerData->Email, email,
+                 sizeof( pLocalPlayerData->Email ) );
+        strncpy( pLocalPlayerData->Password, password,
+                 sizeof( pLocalPlayerData->Password ) );
+    } else {
+        pLocalPlayerData->Email[0] = '\0';
+        pLocalPlayerData->Password[0] = '\0';
+    }
+
+    gSavegameManager.writeCommonDTBlocking( pLocalPlayerData.get(),
+                                            profileHashcode );
+
+    field297_0x188 = true;
+    activeProfileHashcode = profileHashcode;
+    nickname[0] = '\0';
+    email[0] = '\0';
+    password[0] = '\0';
+    newProfileName[0] = '\0';
+
+    pFlashPlayer->showFrame( "close", "/profile/new_profile", true );
+}
+
+bool GSPCOptions::cancelProfileCreation() {
+    // FUN_007c34c0
+    nickname[0] = '\0';
+    email[0] = '\0';
+    password[0] = '\0';
+    newProfileName[0] = '\0';
+
+    if ( profileScreenMode != 2 ||
+         !gpPlayerData->getLocalPlayerData().bOffline ||
+         gpPlayerData->getLoadedSave()->getDriver()->isValid() ) {
+        return false;
+    }
+
+    const std::string profileName =
+        gUserProfileRegister.getActiveProfileName().substr(
+            0, kMaxProfileNameLength );
+
+    activeProfileHashcode = 0ull;
+    field297_0x188 = true;
+
+    gUserProfileRegister.initialize( 0ull );
+    gUserProfileRegister.deleteProfile( profileName.c_str() );
+    return true;
 }
 
 void GSPCOptions::switchToLoginGameMode() {

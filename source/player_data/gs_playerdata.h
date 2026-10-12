@@ -98,6 +98,7 @@ public:
     bool initialize( TestDriveGameInstance * ) override;
     void tick( float totalTime, float deltaTime ) override;
     void terminate() override;
+    void pause() override;
 
     void setDefaultLanguage( const char *pDefaultLanguage,
                              bool bForceInit = false );

@@ -50,6 +50,7 @@ public:
     void initialize() override;
     void terminate() override;
     void tick( const float deltaTime ) override;
+    void unStart() override;
     void newGame( const bool bInstallCheats ) override;
     void newGameWithCheats();
     bool installCheatCars();

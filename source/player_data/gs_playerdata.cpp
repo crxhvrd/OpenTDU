@@ -287,6 +287,15 @@ void GSPlayerData::tick( float totalTime, float deltaTime ) {
     }
 }
 
+void GSPlayerData::pause() {
+    // FUN_00898b00
+    pLoadedSave2->unStart();
+
+    ScopedMutexLock lock( pMutex );
+    LastArrestedTime = -1.0f;
+    OffenceRepetitionFactor = 1u;
+}
+
 void GSPlayerData::terminate() {
     // FUN_00898550
     if ( !bInitialized ) {

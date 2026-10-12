@@ -72,11 +72,15 @@ void GSDatabase::terminate() {
 }
 
 void GSDatabase::reset() {
+    // FUN_009adfc0
     const char *pLanguage = gpPlayerData->getLanguage();
     reloadDatabases( pLanguage, false );
 }
 
-void GSDatabase::pause() { releaseDatabases(); }
+void GSDatabase::pause() {
+    // FUN_009a9890
+    releaseDatabases();
+}
 
 bool GSDatabase::reloadDatabases( const char *pLanguage,
                                   const bool bForceReload ) {
@@ -192,7 +196,7 @@ void GSDatabase::releaseDatabases( const bool bRetainBuffers ) {
         }
     }
 
-    bInitialized = false;
+    engineDatabase.bInitialized = false;
     activeLocale = eLocale::L_Unknown;
 
     if ( bRetainBuffers ) {

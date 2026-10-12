@@ -265,7 +265,8 @@ void PlayerSave::swapCars( const int32_t indexA,
                            const int32_t indexB,
                            const uint64_t houseHashcodeB ) {
     // FUN_00899330
-    const CarDesc carA( *garage.getCarAtIndex( indexA, houseHashcodeA, false ) );
+    const CarDesc carA(
+        *garage.getCarAtIndex( indexA, houseHashcodeA, false ) );
 
     CarDesc *pCarA = garage.getCarAtIndex( indexA, houseHashcodeA, false );
     *pCarA = *garage.getCarAtIndex( indexB, houseHashcodeB, false );
@@ -281,6 +282,11 @@ void PlayerSave::clear() {
     gSaveStreamRevision = 0;
     gSaveStreamTrailer = 0;
 
+    unStart();
+}
+
+void PlayerSave::unStart() {
+    // FUN_0089ab80
     driver.clear();
     carReserve.clear();
     garage.clear( true );

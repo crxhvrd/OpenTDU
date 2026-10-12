@@ -104,6 +104,12 @@ private:
     void selectProfile();
     void switchToLoginGameMode();
     void beginProfileChange();
+    void requestPendingProfileChange();
+    void deleteSelectedProfile();
+    void createProfile();
+    bool cancelProfileCreation();
+    void buildNewProfileName();
+    bool validateNewProfileForm();
 
 private:
     MngOptions mngOptions;
@@ -114,7 +120,9 @@ private:
     char nickname[0x40];
     char email[0x80];
     char password[0x80];
+    char newProfileName[0x40];
 
+    bool bConnectOnline;
     bool bProfileScreenOpened;
     int32_t profileScreenMode;
     bool field297_0x188;

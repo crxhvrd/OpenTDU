@@ -20,6 +20,7 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/opentdu_settings.h"
+#include "player_data/user_profile.h"
 #include "render/camera/gs_camera.h"
 #include "render/ed_render.h"
 #include "render/gs_render.h"
@@ -62,6 +63,10 @@ static constexpr uint64_t kKeepVideoSettingsHashcode =
     0x38e4a6aull; // "_Do you want to keep these settings ?"
 static constexpr uint64_t kVideoSettingsRevertedHashcode =
     0x39d8caaull; // "_The previous mode was restored"
+static constexpr uint64_t kNoActiveProfileHashcode = 0x33d6b4aull;
+static constexpr uint64_t kSaveNotAllowedHashcode = 0x3b77d4aull;
+static constexpr uint64_t kSaveToDeviceOnlineHashcode = 0x33bbd9aull;
+static constexpr uint64_t kSaveToDeviceHashcode = 0x3a83b0aull;
 
 static constexpr int32_t kApplyTimeoutInSeconds = 10;
 
@@ -236,8 +241,6 @@ bool MngOptions::initialize( TestDriveGameInstance * ) {
 void MngOptions::tick( float, float ) {
     // FUN_006c98b0
     const float deltaTime = gpTimer->SystemDeltaTime;
-
-    deviceSaveTick();
 
     if ( padLinearitySlider.hasFocus() ) {
         padLinearitySlider.tick( deltaTime );
@@ -692,7 +695,12 @@ void MngOptions::onClose( ePopupAnswer answer, void *, int32_t param_3 ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FILESYSTEM
+    if ( gUserProfileRegister.getActiveProfileHashcode() == 0ull ||
+         deviceSelected != 0 ) {
+        return;
+    }
+
+    deviceSelected = 1;
 }
 
 void MngOptions::FUN_006c5c10() {
@@ -840,15 +848,6 @@ void MngOptions::retrieveLocalizedStrings() {
         strncpy( pLocalizedStrings[i], pcVar1, kLocalizedStringLength - 1 );
         pLocalizedStrings[i][kLocalizedStringLength - 1] = '\0';
     }
-}
-
-void MngOptions::deviceSaveTick() {
-    // FUN_006c98b0 (inlined at the head of the tick)
-    if ( deviceSelected == 0 ) {
-        return;
-    }
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FILESYSTEM
 }
 
 static void SetMoviesFlag( const int32_t level,
@@ -1458,9 +1457,41 @@ void MngOptions::enterSeatSetupCamera() {
         gpCamera->findFirstSeatAdjustableTransitionMode() );
 }
 
-void MngOptions::requestSaveToDevice( bool ) {
-    // FUN_006c81f0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FILESYSTEM
+void MngOptions::requestSaveToDevice( bool bOverwrite ) {
+    // FUN_006c81f0 (inlined)
+    const uint64_t profileHashcode =
+        gUserProfileRegister.getActiveProfileHashcode();
+    if ( profileHashcode == 0ull ) {
+        TestDrive::DisplayModalPrompt(
+            false, kNoActiveProfileHashcode, 0, nullptr, nullptr, nullptr, 0,
+            nullptr, true, false, MPT_Warning, gpFlashMessageBox );
+        return;
+    }
+
+    if ( !bOverwrite ) {
+        if ( deviceSelected == 0 ) {
+            deviceSelected = 2;
+        }
+        return;
+    }
+
+    if ( !gbSaveAllowed ) {
+        TestDrive::DisplayModalPrompt(
+            false, kSaveNotAllowedHashcode, 0, nullptr, nullptr, nullptr, 0,
+            nullptr, true, false, MPT_Warning, gpFlashMessageBox );
+        return;
+    }
+
+    if ( deviceSelected != 0 ) {
+        return;
+    }
+
+    const uint64_t promptHashcode = gpPlayerData->isOnline()
+                                        ? kSaveToDeviceOnlineHashcode
+                                        : kSaveToDeviceHashcode;
+    TestDrive::DisplayModalPrompt( true, promptHashcode, 0, nullptr, this,
+                                   nullptr, 1, nullptr, true, false,
+                                   MPT_Warning, gpFlashMessageBox );
 }
 
 // DAT_00f03f30

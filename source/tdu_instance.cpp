@@ -100,6 +100,7 @@ TestDriveGameInstance *gpTestDriveInstance = nullptr;
 // TODO: Where does it belong?
 bool gbLoadingInProgress = false;
 bool gbRequestedExit = false;
+static bool gbResetServicesOnLogin = false; // BOOL_016a2c1d
 // TODO: Where does it belong?
 
 bool DAT_010e723c = false;
@@ -541,6 +542,9 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6 = new ( pGameModeAlloc ) GMDressing();
             break;
         case GM_Login:
+            if ( gbResetServicesOnLogin ) {
+                pauseAndResetServices();
+            }
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLogin ),
                                                       alignof( GMLogin ) );
             pGVar6 = new ( pGameModeAlloc ) GMLogin();
@@ -604,10 +608,16 @@ void TestDriveGameInstance::mainLoop() {
                        kGameModeNames[activeGameMode] );
 
         if ( activeGameMode != GM_VideoBumper ) {
+            const bool bIsLogin = activeGameMode == GM_Login;
+
             pGVar6->mainLoop( this );
 
             pGVar6->~GameMode();
             TestDrive::FreeAligned( pGameModeAlloc );
+
+            if ( bIsLogin ) {
+                gbResetServicesOnLogin = activeGameMode != GM_VideoBumper;
+            }
         } else {
             GMVideoBumper::SetActiveBumper( "Atari.bik" );
             GMVideoBumper::SetNextGameMode( GM_VideoBumper );
@@ -727,6 +737,16 @@ bool TestDriveGameInstance::initialize() {
     resetServices();
 
     return true;
+}
+
+void TestDriveGameInstance::pauseAndResetServices() {
+    // FUN_009b46c0
+    for ( auto it = registeredServices.rbegin();
+          it != registeredServices.rend(); ++it ) {
+        ( *it )->pause();
+    }
+
+    resetServices();
 }
 
 void TestDriveGameInstance::resetServices() {

@@ -14,6 +14,8 @@ public:
     void refreshService();
 
     bool doSaveBlocking( LocalPlayerData *pPlayerData = nullptr );
+    bool writeCommonDTBlocking( LocalPlayerData *pPlayerData,
+                                const uint64_t profileHashcode );
     void requestSave();
 
     bool isProfileChangeInProgress() const;

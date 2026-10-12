@@ -185,6 +185,58 @@ bool UserProfileRegister::updateProfileList( const uint64_t hashcode ) {
     return true;
 }
 
+bool UserProfileRegister::renameProfile( const char *pProfileName,
+                                         const char *pNewProfileName ) {
+    // FUN_0060a890
+    for ( std::string &profileName : profileNames ) {
+        if ( StringCmpI( profileName.c_str(), pProfileName ) != 0 ) {
+            continue;
+        }
+
+        const std::filesystem::path saveLocation(
+            gpFile->getSaveLocation( eContextSource::CS_Savegame ) );
+        if ( saveLocation.empty() ) {
+            return false;
+        }
+
+        std::error_code errorCode;
+        std::filesystem::rename( saveLocation / pProfileName,
+                                 saveLocation / pNewProfileName, errorCode );
+        if ( errorCode ) {
+            return false;
+        }
+
+        profileName = pNewProfileName;
+        serialize();
+        return true;
+    }
+
+    return false;
+}
+
+bool UserProfileRegister::deleteProfile( const char *pProfileName ) {
+    // FUN_0060aa60
+    for ( auto it = profileNames.begin(); it != profileNames.end(); it++ ) {
+        if ( StringCmpI( it->c_str(), pProfileName ) != 0 ) {
+            continue;
+        }
+
+        // FUN_006085a0
+        const std::filesystem::path saveLocation(
+            gpFile->getSaveLocation( eContextSource::CS_Savegame ) );
+        if ( !saveLocation.empty() && !it->empty() ) {
+            std::error_code errorCode;
+            std::filesystem::remove_all( saveLocation / *it, errorCode );
+        }
+
+        profileNames.erase( it );
+        serialize();
+        return true;
+    }
+
+    return false;
+}
+
 void UserProfileRegister::serialize() {
     // FUN_0060a3b0
     std::wstring saveLocation =

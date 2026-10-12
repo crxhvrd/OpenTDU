@@ -32,6 +32,8 @@ public:
 
     bool registerProfile( const char *pProfileName );
     bool updateProfileList( const uint64_t hashcode );
+    bool renameProfile( const char *pProfileName, const char *pNewProfileName );
+    bool deleteProfile( const char *pProfileName );
 
     void FUN_0060a160();
     inline void setUnknownDword( const uint32_t value ) { // FUN_004adc30

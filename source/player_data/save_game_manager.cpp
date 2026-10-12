@@ -244,6 +244,50 @@ bool SavegameManager::doSaveBlocking( LocalPlayerData *pPlayerData ) {
     return true;
 }
 
+bool SavegameManager::writeCommonDTBlocking( LocalPlayerData *pPlayerData,
+                                             const uint64_t profileHashcode ) {
+    // FUN_0097bf40
+    ScopedMutexLock lock( &mutex );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (profile list bookkeeping)
+
+    const char *pContextName =
+        ( strcmp( gActiveSaveContextName, kPlayerSave2ContextName ) == 0 )
+            ? kPlayerSave2ContextName
+            : kPlayerSaveContextName;
+
+    FileDirectAccess file;
+    file.bNeedName = false;
+    if ( !file.openContext( profileHashcode, pContextName,
+                            eContextSource::CS_Savegame ) ) {
+        return false;
+    }
+
+    const int32_t writtenSize =
+        ( gpPlayerData != nullptr )
+            ? gpPlayerData->writeCommonDT( DAT_01041f50, kBufferSize,
+                                           pPlayerData )
+            : 0;
+
+    uint32_t contentSize = uint32_t( writtenSize ) & 0xfffffff8u;
+    if ( contentSize < uint32_t( writtenSize ) ) {
+        contentSize += 8u;
+    }
+    TestDriveTEAEncryptBuffer( DAT_01041f50, contentSize );
+
+    bool bCommonDTWritten = false;
+    if ( contentSize != 0u && file.openFile( "commondt.sav", true, true ) ) {
+        const uint32_t numBytesWritten =
+            file.writeToFile( DAT_01041f50, contentSize );
+        file.close();
+        bCommonDTWritten = numBytesWritten == contentSize;
+    }
+
+    file.reset();
+
+    return bCommonDTWritten;
+}
+
 void SavegameManager::requestSave() {
     // FUN_0097bdb0
     pendingSaveCount++;

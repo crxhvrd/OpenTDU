@@ -194,7 +194,6 @@ private:
 private:
     void retrieveLocalizedStrings();
     void disableAllSliders();
-    void deviceSaveTick();
     void onLanguageChanged( const bool bSkipFade );
 
     void buildVideoModeList();
