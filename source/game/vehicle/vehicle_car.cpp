@@ -89,10 +89,6 @@ void VehicleCar::tick( float param_2, float param_3 ) {
         submitInteriorShadowCasters();
     }
 
-    if ( bInitialized && !bNeedToUnstream && pCarState != nullptr ) {
-        updateTurnSignalFlares();
-    }
-
     updateRendering( param_2, param_3 );
 }
 

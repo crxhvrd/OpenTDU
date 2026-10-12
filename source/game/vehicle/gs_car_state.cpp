@@ -24,6 +24,8 @@
 #include "physics/physics_material.h"
 #include "physics/physics_config.h"
 #include "car_state.h"
+#include "vehicle_base.h"
+#include "render/hiearchy_node.h"
 #include "audio/gs_audio.h"
 #include "audio/vehicle/gs_vehicle_sound.h"
 #include "render/camera/camera_game.h"
@@ -216,6 +218,58 @@ namespace {
     }
 } // namespace
 
+static bool GetBodyShiftedPose( const JPH::Body *pBody,
+                                Matrix4x4f_t &outPose ) {
+    bool bActive = false;
+    if ( !gpPhysics->getBodyPose( const_cast<JPH::Body *>( pBody ), outPose,
+                                  bActive ) ) {
+        return false;
+    }
+    outPose.row( 3 ).head<3>() -= GSPhysics::GetShiftOrigin().head<3>();
+    return true;
+}
+
+static void RefreshVehiclePartsDisplay( const PhysicsVehicle &vehicle,
+                                        const Matrix4x4f_t &bodyMatrix,
+                                        HiearchyNode *pRoot ) {
+    // FUN_004560c0
+    if ( pRoot == nullptr ) {
+        return;
+    }
+    HiearchyNode *pBodyNode = pRoot->findChild( vehicle.getBodyRenderKey() );
+    if ( pBodyNode == nullptr ) {
+        return;
+    }
+    const Matrix4x4f_t invChassis = vehicle.getChassisShiftedMatrix().inverse();
+    pBodyNode->Flags |= 1;
+    pBodyNode->TransformMatrix = bodyMatrix;
+
+    for ( const PhysicsVehicle::AttachedPart &part :
+          vehicle.getAttachedParts() ) {
+        HiearchyNode *pNode = pRoot->findChild( part.RenderKey );
+        if ( pNode == nullptr ) {
+            continue;
+        }
+        const GSPhysics::PropMemberAttachment attachment =
+            gpPhysics->getPropMemberAttachment( part.pBody );
+        const bool bLoose =
+            ( attachment.NumUnbreakable == 0 && attachment.NumBroken != 0 ) ||
+            attachment.NumBreakable == 0;
+        const bool bHanging =
+            attachment.NumBroken != 0 && attachment.NumUnbreakable != 0;
+        if ( !bLoose && !bHanging ) {
+            continue;
+        }
+        Matrix4x4f_t pose;
+        if ( !GetBodyShiftedPose( part.pBody, pose ) ) {
+            continue;
+        }
+        pNode->Flags |= 1;
+        pNode->TransformMatrix =
+            bLoose ? pose : Matrix4x4f_t( pose * invChassis * bodyMatrix );
+    }
+}
+
 static void TickReplayFadeSequencer() {
     // FUN_0081c330
     static constexpr float kFadeDuration = 0.5f; // DAT_00f8a660
@@ -384,6 +438,18 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                     CarState::eSimulationType::CSST_Local &&
                 carState.getOwner() == CarState::eOwner::CSO_LocalPlayer &&
                 isOnTunnelRoad( carState );
+
+            // FUN_0083bbd0 (inlined)
+            if ( !pPhysicsVehicle->getAttachedParts().empty() &&
+                 carState.getVehicleInstance() != nullptr ) {
+                const Matrix4x4f_t bodyMatrix =
+                    pPhysicsVehicle->getChassisShiftedMatrix() *
+                    pPhysicsVehicle->getInvChassisMatrix() * physicsMatrix;
+                RefreshVehiclePartsDisplay(
+                    *pPhysicsVehicle, bodyMatrix,
+                    carState.getVehicleInstance()->getNodeByIndex( 0 ) );
+            }
+            body.bHasBrokenPart = pPhysicsVehicle->hasBrokenPart();
 
             body.SpeedInKmh = pPhysicsVehicle->getReportedSpeed();
 

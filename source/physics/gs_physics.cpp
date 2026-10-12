@@ -1858,6 +1858,108 @@ FindFactoryMember( const HavokFactoryData &data, const uint64_t logicID ) {
     return nullptr;
 }
 
+void GSPhysics::createVehicleParts( PhysicsVehicle &vehicle,
+                                    JPH::Body &chassis,
+                                    const HavokFactoryData &data,
+                                    const HavokToJolt::RigidBody &chassisMember,
+                                    const JPH::Mat44 &factoryWorld,
+                                    const uint32_t groupID ) {
+    // FUN_0082fc80 (inlined) + FUN_00453690 (constraint remap)
+    static constexpr float kPartAngularDamping = 0.1f; // FLOAT_00f41668
+
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    JPH::GroupFilterTable *pFilter = GetPropGroupFilter();
+
+    std::vector<std::pair<uint64_t, JPH::Body *>> placed;
+    placed.emplace_back( chassisMember.Hashcode, &chassis );
+
+    std::vector<PhysicsVehicle::AttachedPart> parts;
+    uint32_t subGroup = 1;
+    for ( const HavokToJolt::RigidBody &member : data.Bodies ) {
+        if ( &member == &chassisMember || member.Shape == nullptr ||
+             member.bFixedMotion ) {
+            continue;
+        }
+        const JPH::Mat44 m =
+            factoryWorld * JPH::Mat44::sRotationTranslation( member.Rotation,
+                                                             member.Position );
+
+        JPH::BodyCreationSettings settings(
+            member.Shape, JPH::RVec3( m.GetTranslation() ),
+            m.GetQuaternion().Normalized(), JPH::EMotionType::Dynamic,
+            TDUPhysLayers::VEHICLE );
+        settings.mOverrideMassProperties =
+            JPH::EOverrideMassProperties::CalculateInertia;
+        settings.mMassPropertiesOverride.mMass =
+            member.Mass > 0.0f ? member.Mass : kDynamicPropMass;
+        settings.mLinearDamping = member.LinearDamping;
+        settings.mAngularDamping = kPartAngularDamping;
+        settings.mMaxLinearVelocity = 138.888885f; // DAT_00f41ee8
+        settings.mMaxAngularVelocity = 12.566371f; // DAT_00f41eec
+        settings.mMotionQuality = JPH::EMotionQuality::Discrete;
+        settings.mFriction = member.Friction;
+        settings.mRestitution = member.Restitution;
+        settings.mCollisionGroup = JPH::CollisionGroup(
+            pFilter, groupID, Min( subGroup++, kMaxPropMembers - 1 ) );
+        settings.mUserData = TDUSurface::Generic;
+
+        JPH::Body *pBody = bodyInterface.CreateBody( settings );
+        if ( pBody == nullptr ) {
+            continue;
+        }
+        bodyInterface.AddBody( pBody->GetID(), JPH::EActivation::Activate );
+        placed.emplace_back( member.Hashcode, pBody );
+
+        PhysicsVehicle::AttachedPart part;
+        part.pBody = pBody;
+        part.RenderKey = member.Hashcode;
+        for ( const auto &mecha : data.MechaMembers ) {
+            for ( const HavokToJolt::MechaMember &mm : mecha.second ) {
+                if ( mm.BodyHashcode == member.Hashcode &&
+                     !mm.LogicIDs.empty() ) {
+                    part.RenderKey = mm.LogicIDs.front();
+                }
+            }
+        }
+        parts.push_back( part );
+    }
+
+    for ( const HavokToJolt::Constraint &jc : data.Constraints ) {
+        JPH::Body *pBodyA = nullptr;
+        JPH::Body *pBodyB = nullptr;
+        for ( const auto &entry : placed ) {
+            if ( entry.first == jc.BodyAHashcode ) {
+                pBodyA = entry.second;
+            }
+            if ( entry.first == jc.BodyBHashcode ) {
+                pBodyB = entry.second;
+            }
+        }
+        if ( pBodyA == nullptr || pBodyB == nullptr || pBodyA == pBodyB ) {
+            continue;
+        }
+
+        JPH::FixedConstraintSettings cs;
+        cs.mAutoDetectPoint = true;
+        JPH::TwoBodyConstraint *pConstraint = cs.Create( *pBodyA, *pBodyB );
+        if ( pConstraint == nullptr ) {
+            continue;
+        }
+        pPhysicsSystem->AddConstraint( pConstraint );
+
+        PropConstraintRecord record;
+        record.pConstraint = static_cast<JPH::FixedConstraint *>( pConstraint );
+        record.BodyA = pBodyA->GetID();
+        record.BodyB = pBodyB->GetID();
+        record.Threshold = jc.Threshold;
+        record.bBreakable = jc.bBreakable;
+        gPropConstraints.push_back( record );
+    }
+
+    vehicle.setAttachedParts( std::move( parts ),
+                              GetIdentifier64bit( "BODY" ) );
+}
+
 PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
                                           const Matrix4x4f_t &worldTransform,
                                           const DBEntryCarPhysicsData &db,
@@ -1887,19 +1989,23 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     const float halfH = bodyHeightM * 0.5f;
     const float halfL = ( db.Length > 0 ? db.Length : 4000 ) * 0.5f * kMmToM;
 
-    JPH::ShapeSettings::ShapeResult shapeResult;
-    if ( bHasFactoryShape ) {
-        // Combine the reconstructed collision bodies into a single chassis
-        // shape.
-        const HavokToJolt::RigidBody *pChassisMember =
-            FindFactoryMember( *pData, GetIdentifier64bit( "BODY" ) );
-        const JPH::Mat44 toChassis =
-            ( pChassisMember != nullptr )
-                ? JPH::Mat44::sRotationTranslation( pChassisMember->Rotation,
-                                                    pChassisMember->Position )
-                      .InversedRotationTranslation()
-                : JPH::Mat44::sIdentity();
+    const HavokToJolt::RigidBody *pChassisMember =
+        bHasFactoryShape
+            ? FindFactoryMember( *pData, GetIdentifier64bit( "BODY" ) )
+            : nullptr;
+    const JPH::Mat44 toChassis =
+        ( pChassisMember != nullptr )
+            ? JPH::Mat44::sRotationTranslation( pChassisMember->Rotation,
+                                                pChassisMember->Position )
+                  .InversedRotationTranslation()
+            : JPH::Mat44::sIdentity();
 
+    JPH::ShapeRefC chassisShape;
+    JPH::ShapeSettings::ShapeResult shapeResult;
+    if ( pChassisMember != nullptr ) {
+        // FUN_0082fc80 (inlined)
+        chassisShape = pChassisMember->Shape;
+    } else if ( bHasFactoryShape ) {
         JPH::StaticCompoundShapeSettings compound;
         for ( const HavokToJolt::RigidBody &body : pData->Bodies ) {
             const JPH::Mat44 local =
@@ -1909,6 +2015,9 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
                                local.GetQuaternion().Normalized(), body.Shape );
         }
         shapeResult = compound.Create();
+        if ( shapeResult.IsValid() ) {
+            chassisShape = shapeResult.Get();
+        }
     } else {
         const auto addBox = [&]( JPH::StaticCompoundShapeSettings &compound,
                                  const JPH::Vec3 &coreHalfExtents,
@@ -1938,8 +2047,11 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
                 JPH::Vec3( 0.0f, 0.25f - halfH, 0.0f ),
                 eMaterialType::MT_Chassis );
         shapeResult = hull.Create();
+        if ( shapeResult.IsValid() ) {
+            chassisShape = shapeResult.Get();
+        }
     }
-    if ( !shapeResult.IsValid() ) {
+    if ( chassisShape == nullptr ) {
         return nullptr;
     }
     const float gcLengthFrac =
@@ -1952,9 +2064,9 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     const float comOffsetZ = ( gcLengthFrac - 0.5f ) * bodyLengthM;
 
     const JPH::Vec3 comOffset = JPH::Vec3( 0.0f, comOffsetY, comOffsetZ ) -
-                                shapeResult.Get()->GetCenterOfMass();
+                                chassisShape->GetCenterOfMass();
     JPH::OffsetCenterOfMassShapeSettings comShapeSettings( comOffset,
-                                                           shapeResult.Get() );
+                                                           chassisShape );
     JPH::ShapeSettings::ShapeResult comResult = comShapeSettings.Create();
     if ( !comResult.IsValid() ) {
         return nullptr;
@@ -1981,13 +2093,27 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
         TDUPhysLayers::VEHICLE );
     const PhysicsVehicle::PerfPackCoefs packCoefs =
         PhysicsVehicle::BuildPerfPackCoefs( pPack );
-    const float chassisMass =
+    float chassisMass =
         ( db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f ) *
         packCoefs.Weight;
+    JPH::Vec3 h( halfW + kConvexRadius, halfH + kConvexRadius,
+                 halfL + kConvexRadius );
+    uint32_t partGroupID = 0;
+    if ( pChassisMember != nullptr ) {
+        // FUN_0082fc80 (inlined)
+        for ( const HavokToJolt::RigidBody &member : pData->Bodies ) {
+            if ( &member != pChassisMember && !member.bFixedMotion ) {
+                chassisMass -= member.Mass;
+            }
+        }
+        h = JPH::Vec3( halfW, halfH, halfL );
+
+        partGroupID = gNextPropGroupID++;
+        settings.mCollisionGroup =
+            JPH::CollisionGroup( GetPropGroupFilter(), partGroupID, 0 );
+    }
     settings.mMassPropertiesOverride.mMass = chassisMass;
 
-    const JPH::Vec3 h( halfW + kConvexRadius, halfH + kConvexRadius,
-                       halfL + kConvexRadius );
     const float k = chassisMass / 3.0f;
     JPH::MassProperties mp;
     mp.mMass = chassisMass;
@@ -2030,6 +2156,9 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
             bodyInterface.RemoveBody( pChassis->GetID() );
             bodyInterface.DestroyBody( pChassis->GetID() );
             pCar = nullptr;
+        } else if ( pChassisMember != nullptr ) {
+            createVehicleParts( *pCar, *pChassis, *pData, *pChassisMember,
+                                world * toChassis, partGroupID );
         }
     }
     unlockMutex();
@@ -2072,8 +2201,7 @@ void GSPhysics::pushFadeRequest( const eFadeRequest request ) {
          ( gpMngFade->getTransitionFlags() >> 3 & 1 ) != 0 ) {
         return;
     }
-    if ( gLastFadeRequest >= 0 &&
-         gFadeRequests[gLastFadeRequest] == request ) {
+    if ( gLastFadeRequest >= 0 && gFadeRequests[gLastFadeRequest] == request ) {
         return;
     }
     gLastFadeRequest++;
@@ -4342,6 +4470,85 @@ void GSPhysics::removePropConstraintsFor( RigidBody_t pBody ) {
         }
     }
     unlockMutex();
+}
+
+void GSPhysics::moveVehicleParts( const PhysicsVehicle &vehicle,
+                                  const JPH::RMat44 &newChassisWorld,
+                                  const bool bActivate ) {
+    // FUN_00455090 (mode 2)
+    const std::vector<PhysicsVehicle::AttachedPart> &parts =
+        vehicle.getAttachedParts();
+    if ( parts.empty() || pPhysicsSystem == nullptr ) {
+        return;
+    }
+
+    lockMutex();
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+
+    std::vector<JPH::BodyID> connected;
+    connected.push_back( vehicle.getChassisBody()->GetID() );
+    for ( size_t i = 0; i < connected.size(); i++ ) {
+        for ( const PropConstraintRecord &record : gPropConstraints ) {
+            if ( record.bBroken || record.pConstraint == nullptr ) {
+                continue;
+            }
+            JPH::BodyID other;
+            if ( record.BodyA == connected[i] ) {
+                other = record.BodyB;
+            } else if ( record.BodyB == connected[i] ) {
+                other = record.BodyA;
+            } else {
+                continue;
+            }
+            if ( std::find( connected.begin(), connected.end(), other ) ==
+                 connected.end() ) {
+                connected.push_back( other );
+            }
+        }
+    }
+
+    const JPH::RMat44 delta =
+        newChassisWorld * bodyInterface.GetWorldTransform( connected.front() )
+                              .InversedRotationTranslation();
+    for ( const PhysicsVehicle::AttachedPart &part : parts ) {
+        const JPH::BodyID id = part.pBody->GetID();
+        if ( std::find( connected.begin(), connected.end(), id ) ==
+             connected.end() ) {
+            continue;
+        }
+        const JPH::RMat44 m = delta * bodyInterface.GetWorldTransform( id );
+        bodyInterface.SetPositionAndRotation(
+            id, m.GetTranslation(), m.GetQuaternion().Normalized(),
+            ( bActivate && bodyInterface.IsAdded( id ) )
+                ? JPH::EActivation::Activate
+                : JPH::EActivation::DontActivate );
+    }
+    unlockMutex();
+}
+
+bool GSPhysics::hasBrokenVehiclePart( const PhysicsVehicle &vehicle ) {
+    // FUN_0083db70 (inlined)
+    const std::vector<PhysicsVehicle::AttachedPart> &parts =
+        vehicle.getAttachedParts();
+    bool bBroken = false;
+    lockMutex();
+    for ( const PropConstraintRecord &record : gPropConstraints ) {
+        if ( !record.bBreakable || !record.bBroken ) {
+            continue;
+        }
+        for ( const PhysicsVehicle::AttachedPart &part : parts ) {
+            if ( record.BodyA == part.pBody->GetID() ||
+                 record.BodyB == part.pBody->GetID() ) {
+                bBroken = true;
+                break;
+            }
+        }
+        if ( bBroken ) {
+            break;
+        }
+    }
+    unlockMutex();
+    return bBroken;
 }
 
 GSPhysics::PropMemberAttachment

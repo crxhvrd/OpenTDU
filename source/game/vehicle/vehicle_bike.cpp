@@ -120,10 +120,6 @@ void VehicleBike::tick( float param_2, float param_3 ) {
         }
     }
 
-    if ( bInitialized && !bNeedToUnstream && pCarState != nullptr ) {
-        updateTurnSignalFlares();
-    }
-
     updateRendering( param_2, param_3 );
 }
 

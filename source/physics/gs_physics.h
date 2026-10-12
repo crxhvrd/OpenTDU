@@ -29,6 +29,11 @@ class TDUObjectLayerPairFilter;
 
 class PhysicsVehicle;
 class DrawList;
+struct HavokFactoryData;
+
+namespace HavokToJolt {
+    struct RigidBody;
+}
 struct PhysicsSHK;
 struct PhysicsSHKRoad;
 struct DBEntryCarPhysicsData;
@@ -249,6 +254,11 @@ public:
     };
     PropMemberAttachment getPropMemberAttachment( RigidBody_t pBody );
 
+    void moveVehicleParts( const PhysicsVehicle &vehicle,
+                           const JPH::RMat44 &newChassisWorld,
+                           bool bActivate );
+    bool hasBrokenVehiclePart( const PhysicsVehicle &vehicle );
+
     bool
     getBodyPose( RigidBody_t body, Matrix4x4f_t &outMatrix, bool &outActive );
 
@@ -352,6 +362,14 @@ private:
     static constexpr int32_t kNumHeightfields = 7; // One per streamed sector
     // Fixed mass for a destructible prop body (temp for test; to be removed)
     static constexpr float kDynamicPropMass = 40.0f;
+
+private:
+    void createVehicleParts( PhysicsVehicle &vehicle,
+                             JPH::Body &chassis,
+                             const HavokFactoryData &data,
+                             const HavokToJolt::RigidBody &chassisMember,
+                             const JPH::Mat44 &factoryWorld,
+                             uint32_t groupID );
 
 private:
     struct PendingSceneryInstance {

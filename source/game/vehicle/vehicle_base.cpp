@@ -60,7 +60,6 @@ static constexpr float gFlareZBiasRatio = 0.004f; // DAT_00f7ced4
 // globals...
 bool VehicleBase::bApplyWheelAttenuation = true; // DAT_00f7f198
 float VehicleBase::MinWheelAttenuation = 0.2f;   // DAT_00f7f194
-float VehicleBase::TurnSignalBlinkPeriod = 1.0f;
 
 static float gSunLODFactor = 1.0f; // DAT_00f7ced0
 
@@ -598,33 +597,6 @@ HiearchyNode *VehicleBase::getNodeByIndex( const uint32_t param_2 ) {
     return displayInstances[param_2].pNode;
 }
 
-float VehicleBase::getTurnSignalBlinkIntensity() {
-    if ( gpTimer == nullptr || TurnSignalBlinkPeriod <= 0.0f ) {
-        return 1.0f;
-    }
-
-    const float phase = fmodf( gpTimer->GameTotalTime, TurnSignalBlinkPeriod );
-    return ( phase < TurnSignalBlinkPeriod * 0.5f ) ? 1.0f : 0.0f;
-}
-
-void VehicleBase::updateTurnSignalFlares() {
-    if ( pCarState == nullptr ) {
-        return;
-    }
-
-    const float blinkOn = getTurnSignalBlinkIntensity();
-    const bool bHazard = pCarState->hazardLightsOn();
-
-    float fVar2 = ( pCarState->isIndicatingLeft() || bHazard ) ? blinkOn : 0.0f;
-    setFlareValue( eFlareType::FT_BlinkL, fVar2 );
-
-    fVar2 = ( pCarState->isIndicatingRight() || bHazard ) ? blinkOn : 0.0f;
-    setFlareValue( eFlareType::FT_BlinkR, fVar2 );
-
-    fVar2 = bHazard ? blinkOn : 0.0f;
-    setFlareValue( eFlareType::FT_Warnings, fVar2 );
-}
-
 const Matrix4x4f_t *VehicleBase::getNodeTransform( const uint32_t param_2 ) {
     // FUN_00413750
     if ( bNeedToUnstream ) {
@@ -841,6 +813,12 @@ void VehicleBase::updateRendering( float param_2, float param_3 ) {
         fVar2 = pCarState->isBraking() ? 1.0f : 0.0f;
         setFlareValue( eFlareType::FT_Brake, fVar2 );
 
+        fVar2 = pCarState->isIndicatingLeft() ? 1.0f : 0.0f;
+        setFlareValue( eFlareType::FT_BlinkL, fVar2 );
+
+        fVar2 = pCarState->isIndicatingRight() ? 1.0f : 0.0f;
+        setFlareValue( eFlareType::FT_BlinkR, fVar2 );
+
         fVar2 = ( !pCarState->headlightsOn() ||
                   headlightState != eHeadlightState::VHS_Open )
                     ? 0.0f
@@ -848,11 +826,10 @@ void VehicleBase::updateRendering( float param_2, float param_3 ) {
         setFlareValue( eFlareType::FT_Headlights, fVar2 );
         setFlareValue( eFlareType::FT_HeadlightsRear, 0.0f );
 
-        bLightsDirty = false;
-    }
+        fVar2 = pCarState->hazardLightsOn() ? 1.0f : 0.0f;
+        setFlareValue( eFlareType::FT_Warnings, fVar2 );
 
-    if ( !bFirstRenderFrame && type != eType::VBT_TrafficCar ) {
-        updateTurnSignalFlares();
+        bLightsDirty = false;
     }
     bFirstRenderFrame = false;
 

@@ -247,6 +247,22 @@ public:
     bool isRespawnForced() const { return bForceRespawn; }
     void setRespawnForced( bool bForced ) { bForceRespawn = bForced; }
     const Eigen::Vector3f &getBodyDimensions() const { return bodyDimensions; }
+
+    // Detachable factory member (bumper, hood, ...) jointed to the chassis.
+    struct AttachedPart {
+        JPH::Body *pBody = nullptr;
+        uint64_t RenderKey = 0;
+    };
+    void setAttachedParts( std::vector<AttachedPart> &&parts,
+                           const uint64_t chassisRenderKey ) {
+        attachedParts = std::move( parts );
+        bodyRenderKey = chassisRenderKey;
+    }
+    const std::vector<AttachedPart> &getAttachedParts() const {
+        return attachedParts;
+    }
+    uint64_t getBodyRenderKey() const { return bodyRenderKey; }
+    bool hasBrokenPart() const { return bHasBrokenPart; }
     void requestPhantomMode( uint8_t mode, float duration );
     bool updatePhantomAlpha( float dt, bool bForceOpaque, float &outAlpha );
     void setBackOnTrackPlaced( bool bPlaced ) { bBackOnTrackPlaced = bPlaced; }
@@ -319,6 +335,7 @@ public:
     void setVirtual( bool bInVirtual );
     void pauseSimulation();
     void resumeSimulation();
+    void setChassisPose( const JPH::RMat44 &world, bool bActivate );
     void setPostponedMatrix( const Matrix4x4f_t &worldTransform );
     float computeGroundToOriginOffset() const;
 
@@ -478,6 +495,9 @@ private:
     float phantomDuration = 0.0f;
     bool bPhantomFadeIn = false;
     Eigen::Vector3f bodyDimensions = Eigen::Vector3f::Zero();
+    std::vector<AttachedPart> attachedParts;
+    uint64_t bodyRenderKey = 0;
+    bool bHasBrokenPart = false;
     float rawInputThrottle;
     float rawInputBrake;
     float inputThrottle;

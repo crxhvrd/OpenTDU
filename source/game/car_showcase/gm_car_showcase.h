@@ -86,6 +86,8 @@ private:
 
     int32_t turnSignalMode;
     bool bLightsEnabled;
+    bool bTurnSignalOn;
+    float turnSignalTimer;
 
 private:
     void applyShowcaseVehicleLights();

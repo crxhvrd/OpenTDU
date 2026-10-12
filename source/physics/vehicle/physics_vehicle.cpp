@@ -34,6 +34,29 @@ constexpr float kSlipDenom = 3.0f;
 constexpr float kSuspDampingScale = 1.0f;
 static TestDriveMutex gCollisionEventMutex;
 
+class IgnoreOwnVehicleBodiesFilter final : public JPH::BodyFilter {
+public:
+    explicit IgnoreOwnVehicleBodiesFilter( const JPH::Body &chassis )
+        : chassisID( chassis.GetID() ), group( chassis.GetCollisionGroup() ) {}
+
+    bool ShouldCollide( const JPH::BodyID &inBodyID ) const override {
+        return inBodyID != chassisID;
+    }
+
+    bool ShouldCollideLocked( const JPH::Body &inBody ) const override {
+        if ( group.GetGroupFilter() == nullptr ) {
+            return true;
+        }
+        const JPH::CollisionGroup &other = inBody.GetCollisionGroup();
+        return other.GetGroupFilter() != group.GetGroupFilter() ||
+               other.GetGroupID() != group.GetGroupID();
+    }
+
+private:
+    JPH::BodyID chassisID;
+    JPH::CollisionGroup group;
+};
+
 static constexpr float kPedalCurveC2 = 0.5f;        // FLOAT_00f41674
 static constexpr float kPedalCurveC3 = 1.0f / 3.0f; // DAT_00f41764
 static constexpr float kThrottleCurveK = 0.0f;      // DAT_00f8a22c
@@ -731,10 +754,16 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
             constexpr float kAspectPctToRatio = 0.01f;
             constexpr float kRimInchToHalfM = 0.0127f;
 
-            frontRadius = pRim->FrontHeight * pRim->FrontWidth *
-                              kAspectPctToRatio * kMmToM +
-                          pRim->FrontDiameter * kRimInchToHalfM;
-            rearRadius = frontRadius;
+            if ( gpDatabase->isTraffic( &db ) ) {
+                constexpr float kDiameterMmToRadiusM = 0.0005f; // DAT_00f42004
+                frontRadius = db.RotorDimFront * kDiameterMmToRadiusM;
+                rearRadius = db.RotorDimRear * kDiameterMmToRadiusM;
+            } else {
+                frontRadius = pRim->FrontHeight * pRim->FrontWidth *
+                                  kAspectPctToRatio * kMmToM +
+                              pRim->FrontDiameter * kRimInchToHalfM;
+                rearRadius = frontRadius;
+            }
 
             frontWidth = pRim->FrontWidth * kMmToM;
             rearWidth = pRim->RearWidth * kMmToM;
@@ -1211,14 +1240,24 @@ void PhysicsVehicle::destroy() {
         if ( bRegistered ) {
             pPhysicsSystem->RemoveStepListener( this );
         }
+        JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+        for ( const AttachedPart &part : attachedParts ) {
+            gpPhysics->removePropConstraintsFor( part.pBody );
+            if ( bi.IsAdded( part.pBody->GetID() ) ) {
+                bi.RemoveBody( part.pBody->GetID() );
+            }
+            bi.DestroyBody( part.pBody->GetID() );
+        }
         if ( pChassisBody != nullptr ) {
-            JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
             if ( bi.IsAdded( pChassisBody->GetID() ) ) {
                 bi.RemoveBody( pChassisBody->GetID() );
             }
             bi.DestroyBody( pChassisBody->GetID() );
         }
     }
+    attachedParts.clear();
+    bodyRenderKey = 0;
+    bHasBrokenPart = false;
     bRegistered = false;
     pPhysicsSystem = nullptr;
     pChassisBody = nullptr;
@@ -1967,7 +2006,7 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
         system.GetDefaultBroadPhaseLayerFilter( chassis.GetObjectLayer() );
     const JPH::DefaultObjectLayerFilter objFilter =
         system.GetDefaultLayerFilter( chassis.GetObjectLayer() );
-    const JPH::IgnoreSingleBodyFilter bodyFilter( chassis.GetID() );
+    const IgnoreOwnVehicleBodiesFilter bodyFilter( chassis );
 
     JPH::RayCastSettings settings;
     settings.mTreatConvexAsSolid = false;
@@ -2164,7 +2203,7 @@ void PhysicsVehicle::applyGroundAlignment( JPH::PhysicsSystem &system,
                     chassis.GetObjectLayer() );
             const JPH::DefaultObjectLayerFilter objFilter =
                 system.GetDefaultLayerFilter( chassis.GetObjectLayer() );
-            const JPH::IgnoreSingleBodyFilter bodyFilter( chassis.GetID() );
+            const IgnoreOwnVehicleBodiesFilter bodyFilter( chassis );
 
             JPH::RayCastSettings settings;
             settings.mTreatConvexAsSolid = false;
@@ -2656,6 +2695,9 @@ void PhysicsVehicle::stepVirtual( float dt ) {
     const JPH::Vec3 forward = world.GetColumn3( 2 );
     chassis.SetLinearVelocity( forward * virtualSpeed );
     chassis.SetAngularVelocity( JPH::Vec3::sZero() );
+    for ( const AttachedPart &part : attachedParts ) {
+        part.pBody->SetLinearVelocity( forward * virtualSpeed );
+    }
 
     applyDrivingMode();
     for ( int i = 0; i < vehicle.NumWheels; ++i ) {
@@ -2748,6 +2790,11 @@ void PhysicsVehicle::pauseSimulation() {
     if ( bi.IsAdded( id ) ) {
         bi.RemoveBody( id );
     }
+    for ( const AttachedPart &part : attachedParts ) {
+        if ( bi.IsAdded( part.pBody->GetID() ) ) {
+            bi.RemoveBody( part.pBody->GetID() );
+        }
+    }
     bPausePhysics = true;
 }
 
@@ -2761,7 +2808,23 @@ void PhysicsVehicle::resumeSimulation() {
     if ( !bi.IsAdded( id ) ) {
         bi.AddBody( id, JPH::EActivation::Activate );
     }
+    for ( const AttachedPart &part : attachedParts ) {
+        if ( !bi.IsAdded( part.pBody->GetID() ) ) {
+            bi.AddBody( part.pBody->GetID(), JPH::EActivation::Activate );
+        }
+    }
     bPausePhysics = false;
+}
+
+void PhysicsVehicle::setChassisPose( const JPH::RMat44 &world,
+                                     const bool bActivate ) {
+    // FUN_00455090 (mode 2)
+    gpPhysics->moveVehicleParts( *this, world, bActivate );
+    pPhysicsSystem->GetBodyInterface().SetPositionAndRotation(
+        pChassisBody->GetID(), world.GetTranslation(),
+        world.GetQuaternion().Normalized(),
+        bActivate ? JPH::EActivation::Activate
+                  : JPH::EActivation::DontActivate );
 }
 
 void PhysicsVehicle::setPostponedMatrix( const Matrix4x4f_t &worldTransform ) {
@@ -2780,10 +2843,7 @@ void PhysicsVehicle::setPostponedMatrix( const Matrix4x4f_t &worldTransform ) {
     world.SetTranslation( world.GetTranslation() -
                           JPH::Vec3( origin.x(), origin.y(), origin.z() ) );
 
-    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
-    bi.SetPositionAndRotation( pChassisBody->GetID(), world.GetTranslation(),
-                               world.GetQuaternion().Normalized(),
-                               JPH::EActivation::DontActivate );
+    setChassisPose( world, false );
 }
 
 float PhysicsVehicle::computeGroundToOriginOffset() const {
@@ -3372,6 +3432,10 @@ void PhysicsVehicle::tick( float deltaTime ) {
     if ( isActive() && !bPausePhysics ) {
         updatePhantomMode( deltaTime );
     }
+    // FUN_0083db70 (inlined)
+    if ( !bHasBrokenPart && !attachedParts.empty() ) {
+        bHasBrokenPart = gpPhysics->hasBrokenVehiclePart( *this );
+    }
 
     if ( gVehicleDrivingHelpOverride >= 0 && !bIsAI && !bIsNetwork &&
          gVehicleDrivingHelpOverride != appliedDrivingHelpLevel ) {
@@ -3734,13 +3798,9 @@ void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform,
     world.SetTranslation( world.GetTranslation() -
                           JPH::Vec3( origin.x(), origin.y(), origin.z() ) );
 
-    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
-    const JPH::BodyID id = pChassisBody->GetID();
-    bi.SetPositionAndRotation( id, world.GetTranslation(),
-                               world.GetQuaternion().Normalized(),
-                               JPH::EActivation::Activate );
-    bi.SetLinearAndAngularVelocity( id, JPH::Vec3::sZero(),
-                                    JPH::Vec3::sZero() );
+    setChassisPose( world, true );
+    pPhysicsSystem->GetBodyInterface().SetLinearAndAngularVelocity(
+        pChassisBody->GetID(), JPH::Vec3::sZero(), JPH::Vec3::sZero() );
 
     setVelocity( Eigen::Vector3f::Zero(), true, -1 );
     vehicle.GearBox.CurrentGear = 1;
@@ -3818,9 +3878,12 @@ void PhysicsVehicle::setVelocity( const Eigen::Vector3f &linearVelocity,
     }
 
     JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
-    bi.SetLinearVelocity( pChassisBody->GetID(),
-                          JPH::Vec3( linearVelocity.x(), linearVelocity.y(),
-                                     linearVelocity.z() ) );
+    const JPH::Vec3 velocity( linearVelocity.x(), linearVelocity.y(),
+                              linearVelocity.z() );
+    bi.SetLinearVelocity( pChassisBody->GetID(), velocity );
+    for ( const AttachedPart &part : attachedParts ) {
+        bi.SetLinearVelocity( part.pBody->GetID(), velocity );
+    }
 
     const Matrix4x4f_t chassis = getChassisShiftedMatrix();
     const Eigen::Vector3f right = chassis.row( 0 ).head<3>().transpose();
@@ -3994,12 +4057,9 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
             c, JPH::Vec3( shifted( c, 0 ), shifted( c, 1 ), shifted( c, 2 ) ) );
     }
 
-    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
-    const JPH::BodyID id = pChassisBody->GetID();
-    bi.SetPositionAndRotation( id, world.GetTranslation(),
-                               world.GetQuaternion().Normalized(),
-                               JPH::EActivation::Activate );
-    bi.SetAngularVelocity( id, JPH::Vec3::sZero() );
+    setChassisPose( world, true );
+    pPhysicsSystem->GetBodyInterface().SetAngularVelocity(
+        pChassisBody->GetID(), JPH::Vec3::sZero() );
 
     publishStepPose();
 }

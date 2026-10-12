@@ -819,6 +819,10 @@ void HavokToJolt::buildBodies( const HavokPackfile &pf,
                         std::min( std::max( 1.0f / invMass, 0.1f ), 1.0e5f );
                 }
             }
+            if ( static_cast<uint32_t>( motionOffset ) + 0xcc <= dataSize ) {
+                body.LinearDamping = *reinterpret_cast<const float *>(
+                    pData + motionOffset + 0xc8 );
+            }
         }
 
         // Recover the registry index from the hkRigidBody's property array

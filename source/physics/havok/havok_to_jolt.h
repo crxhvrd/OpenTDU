@@ -65,6 +65,8 @@ namespace HavokToJolt {
         // (hkMotion+0xc0 == 1/mass; verified: round 60..1000 kg values). 0 if
         // unknown -> caller falls back to a default.
         float Mass = 0.0f;
+        // hkMotion+0xc8; FUN_00453410 keeps it when the controller passes 0
+        float LinearDamping = 0.0f;
         // hkEntity::m_material (+0x58 responseType, +0x5c friction, +0x60
         // restitution); the cinfo defaults (FUN_00482810) when unreadable.
         float Friction = 0.5f;

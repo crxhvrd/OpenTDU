@@ -95,8 +95,6 @@ public:
     static bool bApplyWheelAttenuation;
     static float MinWheelAttenuation;
 
-    static float TurnSignalBlinkPeriod;
-
 public:
     enum class eType {
         VBT_Car = 0,
@@ -212,7 +210,6 @@ public:
     void setGPSTexture( Render2DB *param_2 );
 
     void setFlareValue( eFlareType param_2, const float param_3 );
-    static float getTurnSignalBlinkIntensity();
 
     void updateLOD( const float *param_1 );
     bool drawResourcesReady() const;
@@ -255,7 +252,6 @@ public:
     void setCurrentLuminosity( const float param_1 );
     HiearchyNode *getShadowDummyNode();
 
-    void updateTurnSignalFlares();
 
 protected:
     static constexpr size_t kNumFlares = (size_t)eFlareType::FT_Count;

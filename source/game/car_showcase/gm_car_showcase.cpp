@@ -61,7 +61,9 @@ GMCarShowcase::GMCarShowcase()
       bUsePhysicsInput( false ),
       bFreezeCarSwitch( false ),
       turnSignalMode( 0 ),
-      bLightsEnabled( false ) {
+      bLightsEnabled( false ),
+      bTurnSignalOn( false ),
+      turnSignalTimer( 0.0f ) {
     // FUN_007b5320
     registerManager( &mngFlash );
     registerManager( &mngNumber );
@@ -239,13 +241,13 @@ void GMCarShowcase::applyShowcaseVehicleLights() {
 
     switch ( turnSignalMode ) {
     case 1:
-        pBody->bIndicatingLeft = true;
+        pBody->bIndicatingLeft = bTurnSignalOn;
         break;
     case 2:
-        pBody->bIndicatingRight = true;
+        pBody->bIndicatingRight = bTurnSignalOn;
         break;
     case 3:
-        pBody->bHazardLightsOn = true;
+        pBody->bHazardLightsOn = bTurnSignalOn;
         break;
     default:
         break;
@@ -254,7 +256,6 @@ void GMCarShowcase::applyShowcaseVehicleLights() {
     pBody->bHeadlightsOn = bLightsEnabled;
 
     if ( pVehicle != nullptr ) {
-        pVehicle->updateTurnSignalFlares();
         const float headlightIntensity = bLightsEnabled ? 1.0f : 0.0f;
         pVehicle->setFlareValue( VehicleBase::eFlareType::FT_Headlights,
                                  headlightIntensity );
@@ -272,16 +273,22 @@ void GMCarShowcase::drawDebug( float deltaTime ) {
     }
 
     ImGui::SeparatorText( "Turn signals" );
-    if ( ImGui::RadioButton( "None", &turnSignalMode, 0 ) ) {
+    const int32_t previousMode = turnSignalMode;
+    ImGui::RadioButton( "None", &turnSignalMode, 0 );
+    ImGui::RadioButton( "Left", &turnSignalMode, 1 );
+    ImGui::RadioButton( "Right", &turnSignalMode, 2 );
+    ImGui::RadioButton( "Hazard lights", &turnSignalMode, 3 );
+
+    // Toggle the flags the way AiVehSignals does; the display only mirrors them
+    constexpr float kTurnSignalBlinkPeriod = 0.5f; // FLOAT_00f41674
+    turnSignalTimer -= deltaTime;
+    if ( turnSignalMode != previousMode ) {
+        bTurnSignalOn = true;
+        turnSignalTimer = kTurnSignalBlinkPeriod;
         applyShowcaseVehicleLights();
-    }
-    if ( ImGui::RadioButton( "Left", &turnSignalMode, 1 ) ) {
-        applyShowcaseVehicleLights();
-    }
-    if ( ImGui::RadioButton( "Right", &turnSignalMode, 2 ) ) {
-        applyShowcaseVehicleLights();
-    }
-    if ( ImGui::RadioButton( "Hazard lights", &turnSignalMode, 3 ) ) {
+    } else if ( turnSignalMode != 0 && turnSignalTimer <= 0.0f ) {
+        bTurnSignalOn = !bTurnSignalOn;
+        turnSignalTimer = kTurnSignalBlinkPeriod;
         applyShowcaseVehicleLights();
     }
 
