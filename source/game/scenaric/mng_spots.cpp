@@ -2,6 +2,7 @@
 #include "mng_spots.h"
 
 #include "tdu_instance.h"
+#include "flash/flash_callbacks_register.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/implementation/flash_sprite.h"
@@ -475,6 +476,116 @@ bool IsMapRecordVisible( const MapSpotRecord *pRecord, const bool bMinimap ) {
     return pRecord != nullptr && IsSpotIconVisible( pRecord->Info, bMinimap );
 }
 
+SpotScreensBank::SpotScreensBank()
+    : Bank(),
+      p2DMData( nullptr ),
+      pRender2DM( nullptr ),
+      num2DB( 0 ),
+      state( SSS_Idle ) {
+    // FUN_00742e90
+}
+
+SpotScreensBank::~SpotScreensBank() {
+    delete pRender2DM;
+    unload();
+}
+
+void SpotScreensBank::load() {
+    // FUN_0074b6e0
+    if ( state != SSS_Idle ) {
+        return;
+    }
+
+    pRender2DM = new Render2DM();
+
+    char bankPath[512];
+    snprintf( bankPath, sizeof( bankPath ), "%sFrontEnd/AllRes/SpotsScr.bnk",
+              gpConfig->getResRootPath() );
+    if ( !isLoaded() &&
+         !loadBankWithMemory( gpFile, bankPath, nullptr, 0, true ) ) {
+        return;
+    }
+
+    state = SSS_Loading;
+}
+
+void SpotScreensBank::loadContent() {
+    // FUN_00743380
+    num2DB = 0;
+    ParsedBankEntry entry;
+    const int32_t numEntries = getNumElements();
+    for ( int32_t i = 0; i < numEntries; i++ ) {
+        if ( getEntry( i, entry ) != 0 || entry.Type != 1 ) {
+            continue;
+        }
+        if ( entry.SubType == 2 ) {
+            p2DMData = entry.pData;
+            pRender2DM->initialize( p2DMData );
+        } else if ( entry.SubType == 3 ) {
+            num2DB++;
+        }
+    }
+
+    FileCollection2D &collection = gpFlash->getCollection2D();
+    int32_t index2DB = 0;
+    for ( int32_t i = 0; i < numEntries; i++ ) {
+        if ( getEntry( i, entry ) != 0 || entry.Type != 1 ||
+             entry.SubType != 3 ) {
+            continue;
+        }
+        // NOTE: retail has no bound on the 2DB count (one inline slot).
+        if ( index2DB >= kMax2DB ) {
+            break;
+        }
+        render2DBs[index2DB].initialize( entry.pData );
+        collection.register2DB( &render2DBs[index2DB] );
+        index2DB++;
+    }
+    num2DB = index2DB;
+    collection.register2DM( pRender2DM );
+
+    for ( int32_t i = 0; i < num2DB; i++ ) {
+        Material *pMaterial = pRender2DM->getMaterialAtIndex( i );
+        if ( pMaterial != nullptr ) {
+            pMaterial->OT = 0x2a;
+            pMaterial->DepthTest = 1;
+            pMaterial->DepthWrite = 2;
+            pMaterial->AlphaTest = CF_Never;
+        }
+    }
+
+    state = SSS_Ready;
+}
+
+void SpotScreensBank::release() {
+    // FUN_00742900
+    if ( state != SSS_Ready ) {
+        state = SSS_Idle;
+        return;
+    }
+
+    FileCollection2D &collection = gpFlash->getCollection2D();
+    if ( pRender2DM != nullptr ) {
+        collection.unregister2DM( pRender2DM );
+        pRender2DM->destroy();
+        delete pRender2DM;
+        pRender2DM = nullptr;
+    }
+    for ( int32_t i = 0; i < num2DB; i++ ) {
+        collection.unregister2DB( &render2DBs[i] );
+        render2DBs[i].destroy();
+    }
+    state = SSS_Idle;
+}
+
+Material *SpotScreensBank::getMaterial( const char *pMaterialName ) {
+    // FUN_00743590
+    if ( state != SSS_Ready ) {
+        return nullptr;
+    }
+    return pRender2DM->getMaterial( pMaterialName );
+}
+
 MngSpots::MngSpots()
     : Manager(),
       pOwner( nullptr ),
@@ -487,18 +598,25 @@ MngSpots::MngSpots()
       bResortRecords( true ),
       bWasFreeMode( false ),
       spotKindLabel(),
+      pPicture( nullptr ),
       padRepeatElapsed( 0.0f ),
       padRepeatNext( 0.0f ),
       padRepeatPrevious( 0.0f ),
       pNeighbours(),
+      requestedBookmarkPictureID( -1 ),
+      loadedBookmarkPictureID( -1 ),
+      pictureMutex( "BK_MP" ),
       vehicleRestriction(),
       brandsList(),
       challengeInfoTimer( 0.0f ),
       bChallengeInfoRequested( false ),
       bChallengeInfoFromCache( false ),
-      infoCartTimer( 0.0f ),
-      bInfoCartFlag0( false ),
-      bInfoCartFlag1( false ),
+      pictureTimer( 0.0f ),
+      bPictureRequested( false ),
+      bPictureResolved( false ),
+      pPictureSource( nullptr ),
+      bPictureDrawn( false ),
+      bPictureHidden( false ),
       pChallengeInfoSpot( nullptr ),
       pRouteWaypoints( nullptr ),
       numBookmarks( 0 ),
@@ -513,6 +631,7 @@ MngSpots::MngSpots()
       numOnlineRecords( 0 ),
       visibleRecords(),
       numVisibleRecords( 0 ),
+      bookmarkScreenshots(),
       pSelectedRecord( nullptr ),
       bInfoCartShown( false ),
       bInfoCartRequested( false ),
@@ -531,10 +650,11 @@ MngSpots::MngSpots()
       freeModeRect(),
       bMapRectsLatched( false ),
       whatSpot(),
-      iconBankState( 0 ) {
+      spotScreensBank(),
+      housePictureBank(),
+      mapScreens() {
     // FUN_00744210
-    OTDU_UNIMPLEMENTED; // TODO: EventParameters, MngScreenshots, draw lists,
-                        // 2DM, icon/picture banks
+    OTDU_UNIMPLEMENTED; // TODO: EventParameters
     gpMngSpots = this;
 }
 
@@ -549,9 +669,14 @@ bool MngSpots::initialize( TestDriveGameInstance * ) {
     // FUN_0074cdb0
     pRouteWaypoints = new AiRoadLocation[MngTracRoad::kMaxNumLegs];
     pChallengeInfoSpot = nullptr;
+    pPictureSource = nullptr;
     buildRecords();
-    OTDU_UNIMPLEMENTED; // TODO: SpotsScr.bnk icon bank (FUN_0074b6e0),
-                        // MngScreenshots photo, picture bank buffers
+    spotScreensBank.load();
+    bookmarkScreenshots.create( 0x100, 0x80, VF_X8R8G8B8 );
+    housePictureBank.setBuffer(
+        TestDrive::AllocAligned( HousePictureBank::kBufferSize, 0x10 ) );
+    mapScreens.setBuffer(
+        TestDrive::AllocAligned( MapScreenshotBank::kBufferSize, 0x10 ) );
     return true;
 }
 
@@ -650,8 +775,17 @@ void MngSpots::terminate() {
     // FUN_00745f90
     delete[] pRouteWaypoints;
     pRouteWaypoints = nullptr;
-    OTDU_UNIMPLEMENTED; // TODO: pictures, banks, MngScreenshots
     releaseSpotMaterial();
+    pPicture = nullptr;
+    gFlashCallbacksRegister.removeAllSynonyms( &MngSpots::PictureDrawCallback );
+    mapScreens.release();
+    TestDrive::FreeAligned( mapScreens.getBuffer() );
+    mapScreens.setBuffer( nullptr );
+    housePictureBank.release();
+    TestDrive::FreeAligned( housePictureBank.getBuffer() );
+    housePictureBank.setBuffer( nullptr );
+    spotScreensBank.release();
+    bookmarkScreenshots.destroy();
     onlineRecords.clear();
     records.clear();
     visibleRecords.clear();
@@ -666,7 +800,7 @@ void MngSpots::terminate() {
 
 void MngSpots::tick( float deltaTime, float /*totalTime*/ ) {
     // FUN_0074c9d0
-    if ( pMapPlayer == nullptr || iconBankState == 1 ) {
+    if ( pMapPlayer == nullptr || spotScreensBank.isLoading() ) {
         return;
     }
 
@@ -702,7 +836,7 @@ void MngSpots::tick( float deltaTime, float /*totalTime*/ ) {
                                  // FUN_007463e0)
         updateSelection();
         updateChallengeInfoRequest( deltaTime );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: Picture loader (FUN_0074c430)
+        updatePicture( deltaTime );
 
         if ( gpMngLogoDisplay != nullptr ) {
             const int32_t atlas =
@@ -1059,14 +1193,281 @@ void MngSpots::pushChallengePopularity( const MapSpotRecord *pRecord ) {
                     ( alpha << 24 ) | kPopularityColor, kPopularityColor );
 }
 
+static const DBEntryHouse *FindHouseBySpotHashcode( const uint64_t hashcode ) {
+    // FUN_00742890
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    for ( uint32_t i = 0; i < gameDB.pNumItems[kHouseDatabaseIndex]; i++ ) {
+        const DBEntryHouse &house = gameDB.DBHouse[i];
+        if ( GetIdentifier64bit( house.SpotName.pAsString ) == hashcode ) {
+            return &house;
+        }
+    }
+    return nullptr;
+}
+
+void MngSpots::instanciate() {
+    // FUN_0074b600
+    pictureMutex.lock();
+    if ( requestedBookmarkPictureID == -1 ) {
+        pictureMutex.unlock();
+        return;
+    }
+
+    char fileName[0x200];
+    snprintf( fileName, sizeof( fileName ), "%d.jpg",
+              requestedBookmarkPictureID );
+    pictureMutex.unlock();
+
+    Material *pMaterial =
+        bookmarkScreenshots.loadFromFile( fileName, "bookmark" );
+
+    pictureMutex.lock();
+    showPicture( pMaterial );
+    loadedBookmarkPictureID = requestedBookmarkPictureID;
+    requestedBookmarkPictureID = -1;
+    bPictureResolved = true;
+    bPictureHidden = false;
+    pictureMutex.unlock();
+}
+
+void MngSpots::showPicture( Material *pMaterial ) {
+    pPicture = ( pMaterial != nullptr ) ? pMaterial
+                                        : spotScreensBank.getMaterial( "undf" );
+    if ( pPicture != nullptr ) {
+        gFlashCallbacksRegister.add( "picture", &MngSpots::PictureDrawCallback,
+                                     this );
+    }
+}
+
+void MngSpots::updatePicture( const float deltaTime ) {
+    // FUN_0074c430
+    pictureTimer += deltaTime;
+    if ( pSelectedRecord == nullptr ) {
+        pictureMutex.lock();
+        requestedBookmarkPictureID = -1;
+        loadedBookmarkPictureID = -1;
+        pictureMutex.unlock();
+    }
+
+    if ( pSelectedRecord != nullptr && pSelectedRecord->pSpot == nullptr &&
+         pSelectedRecord->pExtraChallenge == nullptr &&
+         pSelectedRecord->Info.Kind == MapSpotRecord::kKindBookmark &&
+         requestedBookmarkPictureID == -1 && pictureTimer > 0.0f ) {
+        const int32_t pictureID =
+            bookmarks[pSelectedRecord->BookmarkIndex].PictureID;
+        if ( pictureID == loadedBookmarkPictureID ) {
+            pMapPlayer->setVariableValue( "/:InfosLoaded", 1 );
+        } else {
+            gFlashCallbacksRegister.removeAllSynonyms(
+                &MngSpots::PictureDrawCallback );
+            pictureMutex.lock();
+            pMapPlayer->setVariableValue( "/:InfosLoaded", 0 );
+            pPicture = nullptr;
+            pPictureSource = nullptr;
+            bPictureRequested = true;
+            bPictureResolved = false;
+            requestedBookmarkPictureID = pictureID;
+            loadedBookmarkPictureID = -1;
+            gpTestDriveInstance->pushResourceToStream( this );
+            pictureMutex.unlock();
+        }
+    }
+
+    if ( pSelectedRecord == nullptr ) {
+        return;
+    }
+    const void *pSource =
+        ( pSelectedRecord->pSpot != nullptr )
+            ? static_cast<const void *>( pSelectedRecord->pSpot )
+            : static_cast<const void *>( pSelectedRecord->pExtraChallenge );
+    if ( pSource == nullptr || requestedBookmarkPictureID != -1 ) {
+        return;
+    }
+    if ( pictureTimer <= 0.0f && pSource != pPictureSource &&
+         pPicture != nullptr ) {
+        return;
+    }
+    if ( bPictureRequested ) {
+        return;
+    }
+    if ( pSource == pPictureSource && pPicture != nullptr ) {
+        return;
+    }
+
+    gFlashCallbacksRegister.removeAllSynonyms( &MngSpots::PictureDrawCallback );
+    pPicture = nullptr;
+    loadedBookmarkPictureID = -1;
+    if ( bPictureDrawn && !bPictureHidden ) {
+        bPictureHidden = true;
+        return;
+    }
+    if ( mapScreens.isLoading() || housePictureBank.isLoading() ) {
+        return;
+    }
+
+    bPictureRequested = true;
+    bPictureResolved = false;
+    pPictureSource = pSource;
+
+    bool bShowFallback = false;
+    const uint8_t kind = pSelectedRecord->Info.Kind;
+    if ( kind == MapSpotRecord::kKindSpot &&
+         pSelectedRecord->pSpot->Type == kSpotTypeHouse ) {
+        const DBEntryHouse *pHouse =
+            FindHouseBySpotHashcode( pSelectedRecord->pSpot->Hashcode );
+        if ( pHouse != nullptr ) {
+            pPicture = nullptr;
+            housePictureBank.release();
+            bShowFallback =
+                !housePictureBank.load( pHouse->SpotName.pAsString,
+                                        &MngSpots::OnHousePictureLoaded, this );
+        }
+    } else {
+        char bankName[0x40] = {};
+        MapScreenshotBank::eCategory category = MapScreenshotBank::C_Spots;
+        if ( ( kind & 1 ) == 0 ) {
+            const SpotMap *pSpot = pSelectedRecord->pSpot;
+            char sourceName[9] = {};
+            memcpy( sourceName, &pSpot->SourceHashcode, 8 );
+            GridPos2D sectorCell;
+            GridPos2D areaCell;
+            gpWorld->getStreamingManager()->sectorManager.computeCell(
+                Eigen::Vector4f( pSpot->X, pSpot->Y, pSpot->Z, 1.0f ),
+                sectorCell, areaCell );
+            snprintf( bankName, sizeof( bankName ), "%s_%d%d%d%d", sourceName,
+                      areaCell.posX, areaCell.posY, sectorCell.posX,
+                      sectorCell.posY );
+        } else if ( !pSelectedRecord->isExtraChallenge() ) {
+            memcpy( bankName, &pSelectedRecord->pSpot->Hashcode, 8 );
+            category = MapScreenshotBank::C_IGE;
+        } else {
+            // NOTE: retail also calls getChallengeName() here and discards
+            // the result.
+            strncpy(
+                bankName,
+                pSelectedRecord->pExtraChallenge->getInstanceName().c_str(),
+                sizeof( bankName ) - 1 );
+            category = MapScreenshotBank::C_ExtraChallenges;
+        }
+
+        pPicture = nullptr;
+        mapScreens.release();
+        if ( !mapScreens.load( bankName, category, &MngSpots::OnMapScreenLoaded,
+                               this ) ) {
+            bPictureResolved = true;
+            pPictureSource = pSource;
+            bShowFallback = true;
+        }
+    }
+
+    if ( bShowFallback ) {
+        showPicture( nullptr );
+    }
+
+    bPictureHidden = pPicture != spotScreensBank.getMaterial( "undf" );
+    bPictureDrawn = false;
+}
+
+void MngSpots::onMapScreenLoaded() {
+    // FUN_00745a50
+    if ( !bPictureRequested ) {
+        return;
+    }
+
+    showPicture( mapScreens.getMaterial() );
+    if ( pSelectedRecord != nullptr ) {
+        bPictureRequested = true;
+        bPictureResolved = true;
+        bPictureHidden = false;
+        return;
+    }
+    pPicture = nullptr;
+    bPictureHidden = false;
+}
+
+void MngSpots::onHousePictureLoaded() {
+    // FUN_00745b10
+    showPicture( housePictureBank.getMaterial( "IMG_EXT" ) );
+    bPictureHidden = false;
+    if ( pSelectedRecord != nullptr ) {
+        bPictureRequested = true;
+        bPictureResolved = true;
+        return;
+    }
+    pPicture = nullptr;
+}
+
+bool MngSpots::OnMapScreenLoaded( MapScreenshotBank * /*pBank*/,
+                                  void *pUserData ) {
+    // FUN_00745af0
+    if ( pUserData != nullptr ) {
+        static_cast<MngSpots *>( pUserData )->onMapScreenLoaded();
+    }
+    return true;
+}
+
+bool MngSpots::OnHousePictureLoaded( HousePictureBank * /*pBank*/,
+                                     void *pUserData ) {
+    // FUN_00745b90
+    if ( pUserData != nullptr ) {
+        static_cast<MngSpots *>( pUserData )->onHousePictureLoaded();
+    }
+    return true;
+}
+
+void MngSpots::PictureDrawCallback( FlashRECT * /*pViewport*/,
+                                    float /*depth*/,
+                                    DrawList *pDrawList,
+                                    void *pUserData,
+                                    FlashResource *pResource,
+                                    const char * /*pClipName*/ ) {
+    // FUN_00744c30
+    MngSpots *pSpots = static_cast<MngSpots *>( pUserData );
+
+    const char *pClipPath = "/datas/cart/picture";
+    switch ( gpTestDriveInstance->getActiveGameMode() ) {
+    case GM_Lobby:
+        pClipPath = "spotname/picture";
+        break;
+    case GM_Club:
+        pClipPath = "ss_menus/datas/cart_datas/picture";
+        break;
+    default:
+        break;
+    }
+
+    if ( pSpots->pMapPlayer == nullptr ) {
+        return;
+    }
+
+    FlashClip pictureClip;
+    if ( !pSpots->pMapPlayer->getClipPlayer( pClipPath, &pictureClip ) ) {
+        return;
+    }
+
+    FlashRECT viewport;
+    pictureClip.getPropertyViewport( eFlashProperty::FP_Viewport, viewport );
+    if ( pSpots->pPicture == nullptr || pSpots->bPictureHidden ) {
+        return;
+    }
+
+    pSpots->bPictureDrawn = true;
+    pDrawList->setActiveMaterial( pSpots->pPicture );
+    pDrawList->setDiffuse( 0, 0xffffffffu );
+    DrawGaugeQuad( 0.0f, 0.0f, 1.0f, 1.0f, viewport.X, viewport.Y,
+                   viewport.X + viewport.Width, viewport.Y + viewport.Height,
+                   pResource );
+}
+
 void MngSpots::refreshSelectionCart() {
     // FUN_00749830
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: Bookmark picture
+    pPicture = nullptr;
+    gFlashCallbacksRegister.removeAllSynonyms( &MngSpots::PictureDrawCallback );
 
     if ( pMapPlayer == nullptr ) {
-        infoCartTimer = 0.0f;
-        bInfoCartFlag0 = false;
-        bInfoCartFlag1 = false;
+        pictureTimer = 0.0f;
+        bPictureRequested = false;
+        bPictureResolved = false;
         return;
     }
 
@@ -1178,9 +1579,9 @@ void MngSpots::refreshSelectionCart() {
     if ( !bCartRefreshed ) {
         closeInfoCart();
     }
-    infoCartTimer = 0.0f;
-    bInfoCartFlag0 = false;
-    bInfoCartFlag1 = false;
+    pictureTimer = 0.0f;
+    bPictureRequested = false;
+    bPictureResolved = false;
 }
 
 void MngSpots::updatePadNavigation( const float deltaTime ) {
@@ -1604,10 +2005,11 @@ void MngSpots::refreshSpotInfoPanel() {
         }
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: Bookmark picture
-    infoCartTimer = 0.0f;
-    bInfoCartFlag0 = false;
-    bInfoCartFlag1 = false;
+    gFlashCallbacksRegister.removeAllSynonyms( &MngSpots::PictureDrawCallback );
+    pPicture = nullptr;
+    pictureTimer = 0.0f;
+    bPictureRequested = false;
+    bPictureResolved = false;
 }
 
 void MngSpots::setSpotLocked( const uint64_t lockedTextHashcode ) {

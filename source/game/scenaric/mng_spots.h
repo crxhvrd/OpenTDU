@@ -2,8 +2,14 @@
 
 #include "game/mng_base.h"
 #include "ai/ai_road_query.h"
+#include "core/mutex.h"
+#include "filesystem/streamed_resource.h"
 #include "game/bookmark/mng_bookmark.h"
+#include "game/estates/mng_houses.h"
+#include "game/freeride/mng_screenshots.h"
+#include "game/map/map_screenshot_bank.h"
 #include "flash/implementation/flash_resource.h"
+#include "render/2db.h"
 #include "render/2dm.h"
 #include "render/draw_list.h"
 #include "spots.h"
@@ -29,8 +35,13 @@ struct HouseGaragePanel {
 
 // Map spot icon
 struct MapSpotRecord {
+    static constexpr uint8_t kKindSpot = 2;
     static constexpr uint8_t kKindBookmark = 8;
     static constexpr int32_t kMaxBrandLogos = 16;
+
+    inline bool isExtraChallenge() const {
+        return ( Info.ChallengeFlags & 0x10u ) != 0u;
+    }
 
     Eigen::Vector4f Position = Eigen::Vector4f::Zero();
     int32_t CellX = 0;
@@ -45,8 +56,40 @@ struct MapSpotRecord {
     DBEntryBrand *pCurrentBrandLogo = nullptr;
 };
 
+// Fallback map spot picture bank (FrontEnd/AllRes/SpotsScr.bnk)
+class SpotScreensBank : public Bank {
+public:
+    inline bool isLoading() const { return state == SSS_Loading; }
+
+public:
+    SpotScreensBank();
+    ~SpotScreensBank();
+
+    void load();
+    void release();
+    Material *getMaterial( const char *pMaterialName );
+
+    void loadContent() override;
+
+private:
+    enum eSpotScreensState : int32_t {
+        SSS_Idle = 0,
+        SSS_Loading = 1,
+        SSS_Ready = 2,
+    };
+
+    static constexpr int32_t kMax2DB = 1;
+
+private:
+    void *p2DMData;
+    Render2DM *pRender2DM;
+    int32_t num2DB;
+    Render2DB render2DBs[kMax2DB];
+    int32_t state;
+};
+
 // Map spots manager
-class MngSpots : public Manager {
+class MngSpots : public Manager, public StreamedResource {
 public:
     enum ePadDirection : int32_t {
         PD_Up = 0,
@@ -132,6 +175,8 @@ public:
     void pause() override;
     void terminate() override;
 
+    void instanciate() override;
+
     void setFlashPlayer();
     void refreshDensityMap();
     void refreshFilterCheckboxes();
@@ -190,6 +235,20 @@ private:
     void pushDensityMap();
     void resetChallengeConeList();
     void pushChallengePopularity( const MapSpotRecord *pRecord );
+    void updatePicture( float deltaTime );
+    void showPicture( Material *pMaterial );
+    void onMapScreenLoaded();
+    void onHousePictureLoaded();
+
+    static bool OnMapScreenLoaded( MapScreenshotBank *pBank, void *pUserData );
+    static bool OnHousePictureLoaded( HousePictureBank *pBank,
+                                      void *pUserData );
+    static void PictureDrawCallback( FlashRECT *pViewport,
+                                     float depth,
+                                     DrawList *pDrawList,
+                                     void *pUserData,
+                                     FlashResource *pResource,
+                                     const char *pClipName );
 
 private:
     GMMap *pOwner;
@@ -203,18 +262,25 @@ private:
     bool bWasFreeMode;
 
     char spotKindLabel[0x20];
+    Material *pPicture;
     float padRepeatElapsed;
     float padRepeatNext;
     float padRepeatPrevious;
     MapSpotRecord *pNeighbours[kNumPadDirections];
+    int32_t requestedBookmarkPictureID;
+    int32_t loadedBookmarkPictureID;
+    TestDriveMutex pictureMutex;
     char vehicleRestriction[0x400];
     char brandsList[0x400];
     float challengeInfoTimer;
     bool bChallengeInfoRequested;
     bool bChallengeInfoFromCache;
-    float infoCartTimer;
-    bool bInfoCartFlag0;
-    bool bInfoCartFlag1;
+    float pictureTimer;
+    bool bPictureRequested;
+    bool bPictureResolved;
+    const void *pPictureSource;
+    bool bPictureDrawn;
+    bool bPictureHidden;
 
     const SpotMap *pChallengeInfoSpot;
     AiRoadLocation *pRouteWaypoints;
@@ -231,6 +297,7 @@ private:
     int32_t numOnlineRecords;
     std::vector<MapSpotRecord *> visibleRecords;
     int32_t numVisibleRecords;
+    MngScreenshots bookmarkScreenshots;
     MapSpotRecord *pSelectedRecord;
     bool bInfoCartShown;
     bool bInfoCartRequested;
@@ -250,7 +317,9 @@ private:
     FlashRECT freeModeRect;
     bool bMapRectsLatched;
     char whatSpot[0x20];
-    int32_t iconBankState;
+    SpotScreensBank spotScreensBank;
+    HousePictureBank housePictureBank;
+    MapScreenshotBank mapScreens;
 };
 
 extern MngSpots *gpMngSpots;
