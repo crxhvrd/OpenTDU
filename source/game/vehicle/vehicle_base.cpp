@@ -875,7 +875,7 @@ void VehicleBase::draw() {
         }
     };
 
-    if ( alphaSlotIndex != -1 && alphaCache.front() != nullptr ) {
+    if ( alphaSlotIndex != -1 && !alphaInstances.empty() ) {
         enqueueFlares(
             gpRender->getRenderPass<eRenderPass::RP_NearAfterCarAlpha>().pScene,
             this );
@@ -1412,14 +1412,33 @@ void VehicleBase::addLightSetupForNode( HiearchyNode *param_2 ) {
     } while ( param_2 != nullptr );
 }
 
+static uint32_t GetLinkedAvatars( VehicleBase *pVehicle,
+                                  EntityAvatar **ppOutAvatars,
+                                  const uint32_t maxAvatars ) {
+    // FUN_008b9e30
+    const CarState *pCarState = pVehicle->getCarState();
+    if ( pCarState == nullptr ) {
+        return 0;
+    }
+
+    EntityDriver *pDriver = pCarState->getDriver();
+    const uint32_t numAvatars = ( pDriver != nullptr ) ? 1 : 0;
+    OTDU_UNIMPLEMENTED_ONCE;
+
+    if ( ppOutAvatars != nullptr && numAvatars <= maxAvatars &&
+         pDriver != nullptr ) {
+        ppOutAvatars[0] = pDriver;
+    }
+    return numAvatars;
+}
+
 void VehicleBase::onAlphaChange() {
     // FUN_008bad70
-    if ( pCarState != nullptr ) {
-        EntityDriver *pDriver = pCarState->getDriver();
-        if ( pDriver != nullptr ) {
-            pDriver->setAlpha( 1.0f );
-        }
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: passenger alpha
+    std::array<EntityAvatar *, 2> linkedAvatars;
+    const uint32_t numLinkedAvatars =
+        GetLinkedAvatars( this, linkedAvatars.data(), linkedAvatars.size() );
+    for ( uint32_t i = 0; i < numLinkedAvatars; i++ ) {
+        linkedAvatars[i]->setAlpha( 1.0f );
     }
 
     alphaInstances.clear();
@@ -1516,7 +1535,82 @@ void VehicleBase::updateCarAlpha() {
         alphaSlotIndex = -1;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE;
+    if ( alpha < 1.0f && alphaSlotIndex == -1 ) {
+        alphaSlotIndex = gpMngCarAlpha->allocateElement( this );
+    }
+
+    if ( alphaSlotIndex != -1 ) {
+        registerCarAlphaInstances( alphaSlotIndex, true );
+        gpMngCarAlpha->setElementAlpha( alphaSlotIndex, alpha );
+
+        setFlaresAlpha( alpha );
+
+        if ( pParentShadowPlaneNode != nullptr ) {
+            Instance *pShadowPlane = pParentShadowPlaneNode->pInstance;
+            ColorRGBA color = pShadowPlane->getColor();
+            color.A = static_cast<uint8_t>( FloatToInt( alpha * 255.0f ) );
+            pShadowPlane->setColor( color );
+        }
+
+        Eigen::Vector4f screenRect = Eigen::Vector4f::Zero();
+        computeScreenRect( screenRect );
+        gpMngCarAlpha->setElementViewport( alphaSlotIndex, screenRect );
+    }
+
+    std::array<EntityAvatar *, 10> linkedAvatars;
+    const uint32_t numLinkedAvatars =
+        GetLinkedAvatars( this, linkedAvatars.data(), linkedAvatars.size() );
+    for ( uint32_t i = 0; i < numLinkedAvatars; i++ ) {
+        EntityAvatar *pAvatar = linkedAvatars[i];
+        EntityDriver *pDriver = pAvatar->getDriver();
+        // TODO: Passenger branch (vtable +0xa0, seated when +0x25d0 is 1 or 2)
+        if ( pDriver != nullptr && pDriver->isSeating() ) {
+            pAvatar->setAlpha( alpha );
+        } else {
+            pAvatar->setAlpha( 1.0f );
+        }
+    }
+}
+
+void VehicleBase::setFlaresAlpha( const float value ) {
+    // FUN_008ba800
+    for ( Instance *pFlare : flares ) {
+        if ( pFlare != nullptr ) {
+            ColorRGBA color = pFlare->getColor();
+            color.A = static_cast<uint8_t>( FloatToInt( value * 255.0f ) );
+            pFlare->setColor( color );
+        }
+    }
+}
+
+void VehicleBase::computeScreenRect( Eigen::Vector4f &outRect ) {
+    // FUN_008bdac0
+    const Eigen::Vector4f shift = gpWorldStreaming->isEnabled()
+                                      ? gpWorldStreaming->getPosition()
+                                      : Eigen::Vector4f::Zero();
+
+    const eRenderPass renderPass = getRenderPassWithAlpha();
+    const bool bCarActive =
+        pCarState != nullptr && pCarState->isInstanceAlive();
+    if ( renderPass == eRenderPass::RP_Invalid || !bCarActive ) {
+        outRect = Eigen::Vector4f( 0.0f, 0.0f, MngCarAlpha::kMinViewportSize,
+                                   MngCarAlpha::kMinViewportSize );
+        return;
+    }
+
+    RenderScene *pScene = gpRender->getRenderPassAtIndex( renderPass ).pScene;
+
+    Matrix4x4f_t boundingBox;
+    pCarState->retrieveBoundingBox( boundingBox );
+
+    Matrix4x4f_t worldToView = Matrix4x4f_t::Identity();
+    worldToView.row( 3 ) +=
+        Eigen::Vector4f( -shift.x(), -shift.y(), -shift.z(), 0.0f );
+    worldToView = worldToView * pScene->getCamera()->getWorldToCam();
+
+    ProjectBoundingBoxToScreenRect( outRect, boundingBox, worldToView,
+                                    pScene->getFrustumWrite() );
+    adjustScreenProjectionFromContext( outRect );
 }
 
 void VehicleBase::registerCarAlphaInstances( uint32_t param_2, bool param_3 ) {

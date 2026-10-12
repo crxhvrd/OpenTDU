@@ -61,6 +61,8 @@ namespace TDUSurface {
     }
 } // namespace TDUSurface
 
+extern bool gbBackOnTrackFadeGuard; // DAT_00f7f1d8
+
 // Screen fade requests queued for the replay manager's fade sequencer
 // (FUN_0081c330)
 enum class eFadeRequest : int32_t {
@@ -261,6 +263,12 @@ public:
     void destroyVehicle( PhysicsVehicle *pVehicle );
     void setVehicleOwner( PhysicsVehicle *pVehicle, void *pOwner );
     PhysicsVehicle *findVehicle( const JPH::Body &chassis ) const;
+    inline PhysicsVehicle *getVehiclesBegin() const {
+        return pPhysicsVehiclesBegin;
+    }
+    inline PhysicsVehicle *getVehiclesEnd() const {
+        return pPhysicsVehiclesEnd;
+    }
 
     static void pushFadeRequest( const eFadeRequest request );
     static eFadeRequest peekFadeRequest();

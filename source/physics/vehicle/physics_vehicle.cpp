@@ -688,6 +688,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                                  rideHeightFrontMM - kBodyHeightBias ) *
                                kMmToM;
     bodyHeight = dbBodyHeight;
+    bodyDimensions = Eigen::Vector3f(
+        ( db.Width > 0 ? db.Width : 1800 ) * kMmToM, dbBodyHeight,
+        ( db.Length > 0 ? db.Length : 4000 ) * kMmToM );
     if ( bFactoryShape && pChassisBody->GetShape() != nullptr ) {
         bodyHeight =
             pChassisBody->GetShape()->GetLocalBounds().GetSize().GetY();
@@ -880,6 +883,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     // Vehicle + per-wheel setup
     vehicle = PhysicsVehicleState();
     numCollisionEvents = 0;
+    phantomRequest = 0;
+    phantomMode = 1;
+    phantomTimer = 0.0f;
     bTrafficBody = gpDatabase != nullptr && gpDatabase->isTraffic( &db );
     initializeElectronics();
     vehicle.NumWheels = 4;
@@ -1958,9 +1964,9 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
                        JPH::Vec3( 0.0f, -kGroundProbeDepth, 0.0f ) };
 
     const JPH::DefaultBroadPhaseLayerFilter bpFilter =
-        system.GetDefaultBroadPhaseLayerFilter( TDUPhysLayers::VEHICLE );
+        system.GetDefaultBroadPhaseLayerFilter( chassis.GetObjectLayer() );
     const JPH::DefaultObjectLayerFilter objFilter =
-        system.GetDefaultLayerFilter( TDUPhysLayers::VEHICLE );
+        system.GetDefaultLayerFilter( chassis.GetObjectLayer() );
     const JPH::IgnoreSingleBodyFilter bodyFilter( chassis.GetID() );
 
     JPH::RayCastSettings settings;
@@ -2155,9 +2161,9 @@ void PhysicsVehicle::applyGroundAlignment( JPH::PhysicsSystem &system,
 
             const JPH::DefaultBroadPhaseLayerFilter bpFilter =
                 system.GetDefaultBroadPhaseLayerFilter(
-                    TDUPhysLayers::VEHICLE );
+                    chassis.GetObjectLayer() );
             const JPH::DefaultObjectLayerFilter objFilter =
-                system.GetDefaultLayerFilter( TDUPhysLayers::VEHICLE );
+                system.GetDefaultLayerFilter( chassis.GetObjectLayer() );
             const JPH::IgnoreSingleBodyFilter bodyFilter( chassis.GetID() );
 
             JPH::RayCastSettings settings;
@@ -2842,6 +2848,141 @@ void PhysicsVehicle::flushCollisionEvents(
     numCollisionEvents = 0;
 }
 
+void PhysicsVehicle::requestPhantomMode( uint8_t mode, float duration ) {
+    // FUN_00828780
+    PhysicsLock lock;
+    phantomRequest = mode;
+    phantomRequestDuration = duration;
+}
+
+void PhysicsVehicle::applyPhantomRequest() {
+    // FUN_0083fcb0
+    if ( phantomRequest == 0 || bPausePhysics || pPhysicsSystem == nullptr ) {
+        return;
+    }
+    const JPH::ObjectLayer layer = ( phantomRequest == 1 )
+                                       ? TDUPhysLayers::VEHICLE
+                                       : TDUPhysLayers::VEHICLE_GHOST;
+    if ( phantomRequest == 1 ) {
+        bPhantomFadeIn =
+            static_cast<float>( phantomMode ) != phantomRequestDuration;
+    }
+    pPhysicsSystem->GetBodyInterface().SetObjectLayer( pChassisBody->GetID(),
+                                                       layer );
+    phantomMode = phantomRequest;
+    phantomDuration = phantomRequestDuration;
+    phantomTimer = 0.0f;
+    phantomRequest = 0;
+}
+
+static bool IsInsideVehicleBox( const PhysicsVehicle &sampled,
+                                const PhysicsVehicle &box ) {
+    // FUN_0083db70
+    static constexpr float kSampleX[9] = {
+        1.0f,  1.0f,  1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f, 0.0f }; // DAT_00fab644
+    static constexpr float kSampleY[9] = {
+        1.0f, 1.0f,  -1.0f, -1.0f, 1.0f,
+        1.0f, -1.0f, -1.0f, 0.0f }; // DAT_00fab620
+    static constexpr float kSampleZ[9] = {
+        1.0f,  -1.0f, 1.0f,  -1.0f, 1.0f,
+        -1.0f, 1.0f,  -1.0f, 0.0f };          // DAT_00fab5fc
+    static constexpr float kBoxScale = 0.75f; // DAT_00f416a4
+
+    const Eigen::Vector3f &sampledSize = sampled.getBodyDimensions();
+    const Eigen::Vector3f &boxSize = box.getBodyDimensions();
+    for ( int32_t i = 0; i < 9; i++ ) {
+        const Eigen::Vector4f local( kSampleX[i] * sampledSize.x(),
+                                     kSampleY[i] * sampledSize.y(),
+                                     kSampleZ[i] * sampledSize.z(), 1.0f );
+        const Eigen::Vector4f world =
+            ( local.transpose() * sampled.getPhysicsMatrix() ).transpose();
+        const Eigen::Vector4f inBox =
+            ( world.transpose() * box.getInvChassisMatrix() ).transpose();
+        if ( std::fabs( inBox.x() ) < boxSize.x() * kBoxScale &&
+             std::fabs( inBox.y() ) < boxSize.y() &&
+             std::fabs( inBox.z() ) < boxSize.z() * kBoxScale ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PhysicsVehicle::updatePhantomAlpha( float dt,
+                                         bool bForceOpaque,
+                                         float &outAlpha ) {
+    // FUN_0083bbd0
+    static constexpr float kFadeOutRate = 5.0f;    // DAT_00f41750
+    static constexpr float kGhostAlpha = 0.5f;     // FLOAT_00f41674
+    static constexpr float kMinDuration = 0.0001f; // DAT_00f41760
+
+    switch ( phantomMode ) {
+    case 2:
+        outAlpha = bForceOpaque ? 1.0f
+                                : Clamp( 1.0f - phantomTimer * kFadeOutRate,
+                                         kGhostAlpha, 1.0f );
+        return true;
+    case 4:
+        outAlpha = bForceOpaque ? 1.0f : kGhostAlpha;
+        return true;
+    case 1: {
+        if ( !bPhantomFadeIn ) {
+            return false;
+        }
+        float alpha = 1.0f;
+        if ( kMinDuration < phantomDuration ) {
+            alpha = Clamp( phantomTimer / phantomDuration * kGhostAlpha +
+                               kGhostAlpha,
+                           kGhostAlpha, 1.0f );
+        }
+        outAlpha = bForceOpaque ? 1.0f : alpha;
+        phantomTimer += dt;
+        if ( alpha >= 1.0f ) {
+            phantomTimer = 0.0f;
+            phantomDuration = 0.0f;
+            bPhantomFadeIn = false;
+        }
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+void PhysicsVehicle::updatePhantomMode( float dt ) {
+    // FUN_0083db70
+    static constexpr float kGhostTime = 2.0f;       // DAT_00f416b0
+    static constexpr float kRestoreDuration = 0.5f; // FLOAT_00f41674
+
+    bool bOverlapping = false;
+    for ( PhysicsVehicle *it = gpPhysics->getVehiclesBegin();
+          it != gpPhysics->getVehiclesEnd(); ++it ) {
+        if ( it == this || !it->isActive() || it->bPausePhysics ) {
+            continue;
+        }
+        if ( IsInsideVehicleBox( *it, *this ) ||
+             IsInsideVehicleBox( *this, *it ) ) {
+            bOverlapping = true;
+            break;
+        }
+    }
+
+    phantomTimer += dt;
+    if ( phantomMode == 2 ) {
+        if ( kGhostTime < phantomTimer ) {
+            phantomMode = 4;
+            phantomTimer = 0.0f;
+        }
+    } else if ( phantomMode == 4 ) {
+        if ( bOverlapping ) {
+            phantomTimer = 0.0f;
+        }
+        if ( phantomDuration < phantomTimer ) {
+            requestPhantomMode( 1, kRestoreDuration );
+        }
+    }
+}
+
 bool PhysicsVehicle::isInWater() const {
     // FUN_00829a80
     static constexpr float kSunkHeight = -2.0f; // DAT_00f417d0
@@ -3227,6 +3368,10 @@ void PhysicsVehicle::tick( float deltaTime ) {
         resumeSimulation();
     }
     postponedPause = 0;
+    applyPhantomRequest();
+    if ( isActive() && !bPausePhysics ) {
+        updatePhantomMode( deltaTime );
+    }
 
     if ( gVehicleDrivingHelpOverride >= 0 && !bIsAI && !bIsNetwork &&
          gVehicleDrivingHelpOverride != appliedDrivingHelpLevel ) {
@@ -3558,6 +3703,11 @@ void PhysicsVehicle::resetSimulationState() {
     vehicle.GearBox.CurrentGear = 1;
     vehicle.GearBox.ReportedGear = 1;
     vehicle.Clutch.bManualControl = false;
+
+    prevWorldVelocity[0] = prevWorldVelocity[1] = prevWorldVelocity[2] = 0.0f;
+    localAccelLong = 0.0f;
+    localAccelLat = 0.0f;
+    localAccelVert = 0.0f;
 }
 
 void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform,

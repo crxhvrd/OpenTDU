@@ -328,7 +328,7 @@ void VehicleTraffic::draw() {
     if ( alphaSlotIndex == -1 || bAlphaCacheInUse == false ) {
         peVar1->enqueueDynamicHiearchy( getNodeByIndex( 0 ) );
     } else {
-        for ( Instance *pAlphaInstance : alphaCache ) {
+        for ( Instance *pAlphaInstance : alphaInstances ) {
             peVar1->enqueueDynamicInstance( pAlphaInstance );
         }
     }

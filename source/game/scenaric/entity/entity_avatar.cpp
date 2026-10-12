@@ -406,7 +406,7 @@ void EntityAvatar::instanciate( MngActor *pMngActor, Entity *param_1 ) {
 
 void EntityAvatar::deinstanciate() {
     // FUN_007f8d20
-    onCarAlphaTerm();
+    onAlphaChange();
 
     if ( pPooledAvatarEntry != nullptr ) {
         if ( pPooledAvatarEntry->bUsed ) {
@@ -423,7 +423,32 @@ void EntityAvatar::deinstanciate() {
     }
 }
 
-void EntityAvatar::onCarAlphaTerm() {
+static void RegisterAvatarPartCarAlphaMaterials( RenderAvatarBase &part,
+                                                 const uint32_t slot,
+                                                 const bool bEnabled ) {
+    // FUN_00424710
+    const uint32_t numMaterials = part.Material.getNumMaterials();
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        Material *pMaterial = part.Material.getMaterialAtIndex( i );
+        if ( pMaterial != nullptr ) {
+            gpMngCarAlpha->registerMaterial( slot, pMaterial, bEnabled );
+        }
+    }
+}
+
+static void RegisterAvatarCarAlphaMaterials( PooledAvatarEntry *pEntry,
+                                             const uint32_t slot,
+                                             const bool bEnabled ) {
+    // FUN_004246c0
+    for ( AvatarClothe &clothe : pEntry->Slots ) {
+        RegisterAvatarPartCarAlphaMaterials( clothe, slot, bEnabled );
+    }
+    RegisterAvatarPartCarAlphaMaterials( pEntry->Body, slot, bEnabled );
+    RegisterAvatarPartCarAlphaMaterials( pEntry->Impostor, slot, bEnabled );
+    RegisterAvatarPartCarAlphaMaterials( pEntry->CarBelt, slot, bEnabled );
+}
+
+void EntityAvatar::onAlphaChange() {
     // FUN_007f8110
     freeAlphaSlot();
     Alpha = 1.0f;
@@ -436,8 +461,9 @@ void EntityAvatar::freeAlphaSlot() {
     }
 
     if ( pPooledAvatarEntry != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CARALPHA - FUN_004246c0, the per-part
-                                 // alpha material reset
+        RegisterAvatarCarAlphaMaterials(
+            pPooledAvatarEntry, static_cast<uint32_t>( AlphaSceneSlot ),
+            false );
     }
 
     if ( gpMngCarAlpha != nullptr ) {
@@ -569,9 +595,9 @@ int32_t EntityAvatar::unknownAvatarFunc2() {
     return 0;
 }
 
-void EntityAvatar::getLightingFactor( Eigen::Vector4f &outFactor ) {
+void EntityAvatar::getCarAlphaScreenRect( Eigen::Vector4f &outRect ) {
     // FUN_007f72a0
-    outFactor = Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 1.0f );
+    outRect = Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 1.0f );
 }
 
 int32_t EntityAvatar::chooseLODLevel() {
@@ -814,7 +840,36 @@ void EntityAvatar::onHeadUpdate( Matrix4x4f_t &headTransform ) {
 
 void EntityAvatar::updateCarAlpha() {
     // FUN_007f79d0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    if ( Alpha >= 1.0f && AlphaSceneSlot != -1 ) {
+        if ( pPooledAvatarEntry != nullptr ) {
+            RegisterAvatarCarAlphaMaterials(
+                pPooledAvatarEntry, static_cast<uint32_t>( AlphaSceneSlot ),
+                false );
+        }
+        gpMngCarAlpha->freeElement( static_cast<uint32_t>( AlphaSceneSlot ) );
+        AlphaSceneSlot = -1;
+    }
+
+    if ( Alpha < 1.0f && AlphaSceneSlot == -1 ) {
+        AlphaSceneSlot =
+            static_cast<int32_t>( gpMngCarAlpha->allocateElement( this ) );
+        if ( AlphaSceneSlot != -1 && pPooledAvatarEntry != nullptr ) {
+            RegisterAvatarCarAlphaMaterials(
+                pPooledAvatarEntry, static_cast<uint32_t>( AlphaSceneSlot ),
+                true );
+        }
+    }
+
+    if ( AlphaSceneSlot == -1 ) {
+        return;
+    }
+
+    const uint32_t slot = static_cast<uint32_t>( AlphaSceneSlot );
+    gpMngCarAlpha->setElementAlpha( slot, Alpha );
+
+    Eigen::Vector4f screenRect = Eigen::Vector4f::Zero();
+    getCarAlphaScreenRect( screenRect );
+    gpMngCarAlpha->setElementViewport( slot, screenRect );
 }
 
 bool EntityAvatar::isShadowCaster() {

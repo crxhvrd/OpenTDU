@@ -191,6 +191,9 @@ public:
     void setupLights();
     virtual eRenderPass getRenderPass();
     virtual eRenderPass getRenderPassWithAlpha();
+    virtual void adjustScreenProjectionFromContext( Eigen::Vector4f &rect ) {
+        // FUN_0048b2f0
+    }
 
     virtual void initialize() = 0;
     virtual void reset();
@@ -221,6 +224,7 @@ public:
 
     void addLightSetupForNode( HiearchyNode *param_2 );
     void onAlphaChange() override;
+    void computeScreenRect( Eigen::Vector4f &outRect );
 
     char *setPaintColorFromDB( int32_t paintIndex );
     Material *setVehiclePartColor( eCarColorPart param_2, const char *param_3 );
@@ -408,7 +412,6 @@ protected:
 
     float alpha;
     int32_t alphaSlotIndex;
-    std::deque<Instance *> alphaCache;
     uint8_t bAlphaCacheInUse : 1;
 
     DBEntryRim *pCurrentRimDB;
@@ -445,6 +448,7 @@ protected:
     void updateCarAlpha();
 
     void registerCarAlphaInstances( uint32_t param_2, bool param_3 );
+    void setFlaresAlpha( const float value );
     void buildCarAlphaInstances();
 
     void setRVModelMatrix( Matrix4x4f_t &modelMatrix );

@@ -43,3 +43,8 @@ private:
 
     uint8_t bIs2DProjection : 1;
 };
+
+void ProjectBoundingBoxToScreenRect( Eigen::Vector4f &outRect,
+                                     const Matrix4x4f_t &boundingBox,
+                                     const Matrix4x4f_t &worldToView,
+                                     const Frustum &frustum );

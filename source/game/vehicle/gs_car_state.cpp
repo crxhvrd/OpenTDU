@@ -27,6 +27,7 @@
 #include "audio/gs_audio.h"
 #include "audio/vehicle/gs_vehicle_sound.h"
 #include "render/camera/camera_game.h"
+#include "render/camera/camera_vehicle.h"
 #include "game/mng_hud.h"
 #include "game/gm_base.h"
 #include "flash/mng_fade.h"
@@ -493,10 +494,32 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             body.NumWheelsGrounded = numGrounded;
             body.NumWheelsOnRoad = numOnRoad;
 
+            if ( gpScenaric != nullptr &&
+                 &carState == gpScenaric->getLocalPlayer().getCarState() &&
+                 carState.getVehicleInstance() != nullptr ) {
+                // FUN_0083bbd0 (inlined)
+                const CameraVehicle *pCamera =
+                    gpCamera->getActiveVehicleCamera();
+                const uint32_t cameraFlags =
+                    ( pCamera != nullptr ) ? pCamera->getFlags() : 0u;
+                const bool bForceOpaque =
+                    ( cameraFlags >> 0x12 & 1 ) != 0 ||
+                    ( ( cameraFlags >> 0x13 & 1 ) != 0 &&
+                      carState.getVehicleInstance()->getType() ==
+                          VehicleBase::eType::VBT_Bike );
+                float alpha = 1.0f;
+                if ( pPhysicsVehicle->updatePhantomAlpha(
+                         deltaTime, bForceOpaque, alpha ) ) {
+                    carState.getVehicleInstance()->setAlpha( alpha );
+                }
+            }
+
             pPhysicsVehicle->flushCollisionEvents( body.CollisionEvents );
             for ( CollisionEvent &event : body.CollisionEvents ) {
                 event.Location = carState.getWorldLocation();
             }
+
+            carState.bInstanceAlive = true;
 
             audioScratch[i].SmoothedTorque =
                 pPhysicsVehicle->getEngineSmoothedTorque();

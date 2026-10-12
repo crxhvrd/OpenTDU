@@ -1361,7 +1361,8 @@ static uint32_t CollisionBodyColor( JPH::EShapeSubType subType,
     if ( subType == JPH::EShapeSubType::HeightField ) {
         return PackDebugColor( 90, 90, 90 ).Color; // terrain: grey
     }
-    if ( layer == TDUPhysLayers::MOVING || layer == TDUPhysLayers::VEHICLE ) {
+    if ( layer == TDUPhysLayers::MOVING || layer == TDUPhysLayers::VEHICLE ||
+         layer == TDUPhysLayers::VEHICLE_GHOST ) {
         return PackDebugColor( 255, 140, 0 ).Color; // props / car: orange
     }
     switch ( userData & TDUSurface::kClassMask ) {
@@ -2056,6 +2057,9 @@ void GSPhysics::setVehicleOwner( PhysicsVehicle *pVehicle, void *pOwner ) {
             TDUSurface::Vehicle );
     unlockMutex();
 }
+
+// Cleared by the Secret Island teleporter while it runs
+bool gbBackOnTrackFadeGuard = true; // DAT_00f7f1d8
 
 static constexpr int32_t kMaxFadeRequests = 8;
 static eFadeRequest gFadeRequests[kMaxFadeRequests]; // DAT_00f8a3b8

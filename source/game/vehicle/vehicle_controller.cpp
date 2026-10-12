@@ -451,6 +451,24 @@ eRenderPass VehicleController::getRenderPassWithAlpha() {
     return GVar1;
 }
 
+void VehicleController::adjustScreenProjectionFromContext(
+    Eigen::Vector4f &rect ) {
+    // FUN_008b5bd0
+    if ( pCarState != gpCamera->getBoundCarState() ) {
+        return;
+    }
+
+    const uint32_t showFlags = gpCamera->getActiveCamera()->getFlags();
+    if ( ( showFlags & 0xd0000 ) != 0 ) {
+        rect = Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 1.0f );
+    }
+
+    if ( ( showFlags >> 0x10 & 1 ) != 0 && ( showFlags >> 0x13 & 1 ) == 0 &&
+         ( showFlags >> 0x12 & 1 ) == 0 ) {
+        rect = Eigen::Vector4f( 1.1f, 1.1f, 1.0f, 1.0f ); // DAT_00f4174c
+    }
+}
+
 bool VehicleController::instantiateInteriorGauges( uint32_t nodeIndex ) {
     // FUN_008b6970
     Eigen::Vector3f scaleDontCare;

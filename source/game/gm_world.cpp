@@ -20,6 +20,9 @@
 #include "flash/gs_flash.h"
 #include "flash/flash_mouse.h"
 #include "flash/implementation/flash_sprite.h"
+#include "flash/implementation/flash_resource.h"
+#include "flash/implementation/flash_player.h"
+#include "game/mng_hud.h"
 #include "world/weather/gs_weather.h"
 #include "render/camera/gs_camera.h"
 #include "player_data/gs_playerdata.h"
@@ -742,7 +745,32 @@ void GameModeWorld::setBlockPauseByStart( const bool bBlock ) {
         return;
     }
     if ( bPaused ) {
-        OTDU_UNIMPLEMENTED; // TODO: close the pause menu
+        onMenuPauseExit( true );
+        FlashPlayer *pHudPlayer =
+            ( gpMngHud != nullptr ) ? gpMngHud->getHudPlayer() : nullptr;
+        FlashClip menuClip;
+        if ( pHudPlayer != nullptr &&
+             ( pHudPlayer->getClipPlayer( "/menus", &menuClip ) ||
+               pHudPlayer->getClipPlayer( "/menu", &menuClip ) ) ) {
+            pHudPlayer->showFrame( "hud", "/", false );
+            uint32_t menuFlags = 0;
+            {
+                ScopedMutexLock lock = gpFlash->scopedLock();
+                menuFlags = menuClip.pSprite->getDisplayList()->getFlagsRW();
+                gpPreviousActiveFlashResource = gpActiveFlashResource;
+            }
+            if ( ( menuFlags & 1 ) == 1 ) {
+                menuClip.setProperty( eFlashProperty::FP_Visible, false );
+                FlashClip helpClip;
+                if ( pHudPlayer->getClipPlayer( "/help", &helpClip ) ) {
+                    helpClip.setProperty( eFlashProperty::FP_Visible, false );
+                }
+            }
+        }
+        FlashPlayer *pGaugesPlayer = gpFlash->getFlashPlayer( "GAUGES" );
+        if ( pGaugesPlayer != nullptr ) {
+            pGaugesPlayer->showFrame( "on", "/", true );
+        }
     }
     bPauseMenuActive = false;
     bPaused = false;

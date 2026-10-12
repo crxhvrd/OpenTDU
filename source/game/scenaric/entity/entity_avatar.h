@@ -1,6 +1,7 @@
 #pragma once
 
 #include "entity_actor.h"
+#include "game/vehicle/mng_car_alpha.h"
 #include "game/avatar/avatar_clothes.h"
 #include "render/animation/skeleton.h"
 
@@ -11,7 +12,7 @@ class EntityDriver;
 extern float gAvatarLODDistances[3];
 extern bool gbDisableFaceMorph;
 
-class EntityAvatar : public EntityActor {
+class EntityAvatar : public EntityActor, public CarAlphaListener {
     friend class GSAvatar;
 
 public:
@@ -74,13 +75,15 @@ public:
     void relight() override;
     void unknownActorFunc() override;
 
+    void onAlphaChange() override;
+
     // Vtable entries specific to avatar entities
     virtual int32_t getRenderSceneID();
     virtual void setHeadVisible( bool bVisible );
     virtual void setAvatarType( int32_t type );
     virtual EntityDriver *getDriver();
     virtual int32_t unknownAvatarFunc2();
-    virtual void getLightingFactor( Eigen::Vector4f &outFactor );
+    virtual void getCarAlphaScreenRect( Eigen::Vector4f &outRect );
     virtual int32_t chooseLODLevel();
     virtual void onSkeletonChange( void *pSkeleton );
     virtual void onResourceChange();
@@ -103,7 +106,6 @@ public:
     void setSkin( struct AvatarSkinPart *pSkin );
 
 private:
-    void onCarAlphaTerm();
     void freeAlphaSlot();
     void refreshFace();
 

@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "frustum.h"
 
+#include "core/maths_helper.h"
+
 double DOUBLE_00facb40 = 0.0; // DAT_00facb40
 double DOUBLE_00facb38 = 0.0; // DAT_00facb38
 
@@ -163,4 +165,108 @@ const Matrix4x4f_t &Frustum::getOrthoProjectionMatrix() const {
 
 void Frustum::setIs2DFrustum( const bool param_1 ) {
     bIs2DProjection = param_1;
+}
+
+void ProjectBoundingBoxToScreenRect( Eigen::Vector4f &outRect,
+                                     const Matrix4x4f_t &boundingBox,
+                                     const Matrix4x4f_t &worldToView,
+                                     const Frustum &frustum ) {
+    // FUN_006d0f70
+    static constexpr int32_t kNumCorners = 8;
+    static constexpr int32_t kNumEdges = 12;
+    static constexpr int32_t kMaxClippedPoints = kNumEdges * 3;
+
+    static const Eigen::Vector4f kUnitBoxCorners[kNumCorners] = {
+        Eigen::Vector4f( -0.5f, -0.5f, -0.5f, 1.0f ),
+        Eigen::Vector4f( 0.5f, -0.5f, -0.5f, 1.0f ),
+        Eigen::Vector4f( 0.5f, 0.5f, -0.5f, 1.0f ),
+        Eigen::Vector4f( -0.5f, 0.5f, -0.5f, 1.0f ),
+        Eigen::Vector4f( -0.5f, -0.5f, 0.5f, 1.0f ),
+        Eigen::Vector4f( 0.5f, -0.5f, 0.5f, 1.0f ),
+        Eigen::Vector4f( 0.5f, 0.5f, 0.5f, 1.0f ),
+        Eigen::Vector4f( -0.5f, 0.5f, 0.5f, 1.0f ),
+    };
+
+    static constexpr int32_t kBoxEdges[kNumEdges][2] = {
+        {0, 3},
+        {3, 2},
+        {2, 1},
+        {1, 0},
+        {4, 5},
+        {5, 6},
+        {6, 7},
+        {7, 4},
+        {5, 1},
+        {2, 6},
+        {0, 4},
+        {7, 3},
+    };
+
+    const Matrix4x4f_t boxToView = boundingBox * worldToView;
+
+    Eigen::Vector4f viewCorners[kNumCorners];
+    for ( int32_t i = 0; i < kNumCorners; i++ ) {
+        viewCorners[i] = TDUMat4x4MulVec( boxToView, kUnitBoxCorners[i] );
+    }
+
+    const float nearPlane = frustum.getZProjection().x();
+
+    TDUPlane clipPlane;
+    clipPlane.Normal = Eigen::Vector4f( 0.0f, 0.0f, -1.0f, 0.0f );
+    clipPlane.DistanceFromOrigin = nearPlane;
+
+    Eigen::Vector4f clippedPoints[kMaxClippedPoints];
+    int32_t numPoints = 0;
+    for ( int32_t edge = 0; edge < kNumEdges; edge++ ) {
+        Eigen::Vector4f &pointA = viewCorners[kBoxEdges[edge][0]];
+        Eigen::Vector4f &pointB = viewCorners[kBoxEdges[edge][1]];
+        pointA.w() = 1.0f;
+        pointB.w() = 1.0f;
+
+        const float depthA = pointA.z() + nearPlane;
+        const float depthB = pointB.z() + nearPlane;
+        if ( depthA > 0.0f && depthB > 0.0f ) {
+            continue;
+        }
+
+        if ( depthA <= 0.0f ) {
+            clippedPoints[numPoints++] = pointA;
+        }
+        if ( depthB <= 0.0f ) {
+            clippedPoints[numPoints++] = pointB;
+        }
+
+        Eigen::Vector4f intersection;
+        if ( IntersectSegmentWithPlane( pointB, clipPlane, intersection,
+                                        pointA ) ) {
+            clippedPoints[numPoints++] = intersection;
+        }
+    }
+
+    for ( int32_t i = 0; i < numPoints; i++ ) {
+        clippedPoints[i] =
+            TDUMat4x4MulVec( frustum.getProjectionMatrix(), clippedPoints[i] );
+        clippedPoints[i] /= clippedPoints[i].w();
+    }
+
+    float minX = 100000.0f;  // FLOAT_00f418e0
+    float minY = 100000.0f;  // FLOAT_00f418e0
+    float maxX = -100000.0f; // DAT_00f418dc
+    float maxY = -100000.0f; // DAT_00f418dc
+    for ( int32_t i = 0; i < numPoints; i++ ) {
+        Eigen::Vector4f &point = clippedPoints[i];
+        point =
+            point.cwiseProduct( Eigen::Vector4f( 0.5f, -0.5f, 1.0f, 1.0f ) ) +
+            Eigen::Vector4f( 0.5f, 0.5f, 0.0f, 0.0f );
+
+        minX = std::min( minX, point.x() );
+        maxX = std::max( maxX, point.x() );
+        minY = std::min( minY, point.y() );
+        maxY = std::max( maxY, point.y() );
+    }
+
+    outRect.x() = minX;
+    outRect.y() = minY;
+    outRect.z() = std::max( maxX - minX, 0.0f );
+    outRect.w() = std::max( maxY - minY, 0.0f );
 }

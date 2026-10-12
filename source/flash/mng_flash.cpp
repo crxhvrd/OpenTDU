@@ -127,7 +127,7 @@ static void TransitionFromFreerideToMap( int32_t targetGameMode ) {
     pCameraGPS->setFocus( focus );
 
     if ( gpActiveGM != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: FUN_007bdd10
+        gpActiveGM->setBlockPauseByStart( true );
     }
 
     CameraGame *pActiveCamera = gpCamera->getActiveCamera();

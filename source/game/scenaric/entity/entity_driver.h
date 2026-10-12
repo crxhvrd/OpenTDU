@@ -110,6 +110,7 @@ public:
     void setHeadVisible( bool bVisible ) override;
     int32_t getRenderSceneID() override;
     EntityDriver *getDriver() override;
+    void getCarAlphaScreenRect( Eigen::Vector4f &outRect ) override;
 
     void
     onEvent( class CarState *param_1, float param_2, void *param_3 ) override;

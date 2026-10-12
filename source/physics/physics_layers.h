@@ -16,23 +16,27 @@ namespace TDUPhysLayers {
         3; // Drivable road/sidewalk/curb mesh (-R.shk)
     static constexpr JPH::ObjectLayer VEHICLE = 4; // Player/AI car chassis body
     static constexpr JPH::ObjectLayer ROAD_GROUND = 5;
-    static constexpr JPH::ObjectLayer NUM_LAYERS = 6;
+    // Phantom (ghost) chassis: retail layer 4, solid to everything but cars
+    static constexpr JPH::ObjectLayer VEHICLE_GHOST = 6;
+    static constexpr JPH::ObjectLayer NUM_LAYERS = 7;
 
     inline constexpr bool ShouldCollide( JPH::ObjectLayer a,
                                          JPH::ObjectLayer b ) {
         constexpr bool kMatrix[NUM_LAYERS][NUM_LAYERS] = {
-            //          NM     MV     SN     RD     VH     RG
-            /* NM */ {false, true,  false, false, true,  false},
+            //          NM     MV     SN     RD     VH     RG     VG
+            /* NM */ {false, true,  false, false, true,  false, true},
             /* MV */
-            {true,  true,  true,  true,  true,  false},
+            {true,  true,  true,  true,  true,  false, true},
             /* SN */
-            {false, true,  false, false, true,  false},
+            {false, true,  false, false, true,  false, true},
             /* RD */
-            {false, true,  false, false, true,  false},
+            {false, true,  false, false, true,  false, true},
             /* VH */
-            {true,  true,  true,  true,  true,  false},
+            {true,  true,  true,  true,  true,  false, false},
             /* RG */
-            {false, false, false, false, false, false},
+            {false, false, false, false, false, false, false},
+            /* VG */
+            {true,  true,  true,  true,  false, false, false},
         };
         return kMatrix[a][b];
     }
@@ -47,6 +51,7 @@ namespace TDUPhysLayers {
             return 0; // BP NON_MOVING
         case MOVING:
         case VEHICLE:
+        case VEHICLE_GHOST:
             return 1; // BP MOVING
         case SENSOR:
             return 2; // BP SENSOR

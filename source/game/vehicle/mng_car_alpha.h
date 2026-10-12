@@ -34,9 +34,31 @@ struct AlphaElement {
 
 class MngCarAlpha : public Manager, public RenderConfigurationChangeListener {
 public:
+    static constexpr const float kMinViewportSize = 1e-05f; // DAT_00f41710
+
+public:
     const char *getName() const override {
         return "MngCarAlpha";
     } // FUN_00432610
+
+    inline bool isElementAllocated( const uint32_t slot ) const {
+        return slot < kNumAlphaElements && elements[slot].pListener != nullptr;
+    }
+    inline void setElementAlpha( const uint32_t slot, const float alpha ) {
+        if ( isElementAllocated( slot ) ) {
+            elements[slot].Alpha = alpha;
+        }
+    }
+    inline void setElementViewport( const uint32_t slot,
+                                    const Eigen::Vector4f &rect ) {
+        if ( isElementAllocated( slot ) ) {
+            AlphaElement::ScreenRect &viewport = elements[slot].ViewportRect;
+            viewport.X = rect.x();
+            viewport.Y = rect.y();
+            viewport.Width = std::max( rect.z(), kMinViewportSize );
+            viewport.Height = std::max( rect.w(), kMinViewportSize );
+        }
+    }
 
 public:
     MngCarAlpha();

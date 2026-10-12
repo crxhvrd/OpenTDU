@@ -216,7 +216,9 @@ static void PlaceAtBackOnTrackPose( CarBodyState &body,
         vehicle.setVelocity( body.BackOnTrackVelocity.head<3>(), true, -1 );
         vehicle.setEngineState( eEngineState::ES_Running );
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00828780 (phantom mode 2 for 1 s)
+    if ( vehicle.getPhantomMode() != 5 ) {
+        vehicle.requestPhantomMode( 2, 1.0f );
+    }
     body.BackOnTrackState = 0;
     body.BackOnTrackTimer = kBackOnTrackCooldown;
 }
@@ -318,21 +320,32 @@ void CarState::computeBackOnTrackPose( const int32_t mode ) {
         matrix.row( 2 ) = forward.transpose();
     };
 
-    if ( gEdSys.bWindowActivated ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: the debug fly camera branch
-        if ( kIslandMinX < position.x() && position.x() < kIslandMaxX &&
-             kIslandMinZ < position.z() && position.z() < kIslandMaxZ ) {
-            matrix = Matrix4x4f_t::Identity();
-            position = kIslandRespawn;
-            body.PositionOnRoad = worldPosition;
-            body.PrevPositionOnRoad = worldPosition;
-        } else {
-            computeOnRoad();
-        }
+    CameraVehicle *pCamera = gpCamera->getActiveVehicleCamera();
+    if ( !gEdSys.bWindowActivated ) {
+    } else if ( pCamera != nullptr && pCamera->getType() == 1 &&
+                !gpCamera->isInReplayMode() ) {
+        // Debug mouse camera: drop the car 2 m along Z from the camera
+        const Eigen::Vector3f cameraPosition = pCamera->getWorldPosition();
+        matrix = Matrix4x4f_t::Identity();
+        position = Eigen::Vector4f( cameraPosition.x(), cameraPosition.y(),
+                                    cameraPosition.z() + 2.0f, 1.0f );
+    } else if ( kIslandMinX < position.x() && position.x() < kIslandMaxX &&
+                kIslandMinZ < position.z() && position.z() < kIslandMaxZ ) {
+        matrix = Matrix4x4f_t::Identity();
+        position = kIslandRespawn;
+        body.PositionOnRoad = worldPosition;
+        body.PrevPositionOnRoad = worldPosition;
+    } else {
+        computeOnRoad();
     }
 
     matrix.row( 3 ) = position.transpose();
     matrix( 3, 3 ) = 1.0f;
+    if ( pVehicle->isRespawnForced() ) {
+        velocity = Eigen::Vector4f::Zero();
+    }
+    pVehicle->setBackOnTrackForced( false );
+    pVehicle->setRespawnForced( false );
     body.BackOnTrackState = 1;
     body.BackOnTrackWorldMatrix = matrix;
     body.BackOnTrackVelocity = velocity;
@@ -373,23 +386,27 @@ void CarState::updateBackOnTrack( float deltaTime ) {
     case 0: {
         bool bInWater = false;
         if ( bLocal && !pVehicle->isKeyframed() &&
-             !pVehicle->isPhysicsPaused() ) { // DAT_00f7f1d8
+             !pVehicle->isPhysicsPaused() && gbBackOnTrackFadeGuard ) {
             bInWater = pVehicle->isInWater();
             if ( GSPhysics::peekFadeRequest() != eFadeRequest::FR_Idle ) {
                 GSPhysics::pushFadeRequest( eFadeRequest::FR_FadeIn );
             }
         }
 
-        // TODO: bike rider, map transition and online respawn
-        OTDU_UNIMPLEMENTED_ONCE;
         const uint8_t drivingMode = pVehicle->getDrivingMode();
         bool bAllowed = drivingMode != PhysicsVehicle::DM_Parked &&
                         drivingMode != PhysicsVehicle::DM_SlowDown &&
                         !pVehicle->isPhysicsPaused() &&
                         !pVehicle->isKeyframed() &&
                         !( gpActiveGM != nullptr && gpActiveGM->isPaused() );
+        if ( pVehicle->isBackOnTrackForced() || pVehicle->isRespawnForced() ) {
+            bAllowed = true;
+        }
         if ( field_0x39e0 != nullptr ) {
             bAllowed = false;
+        }
+        if ( !gpCamera->isInReplayMode() && bLocal && body.bHasBikeAvatar ) {
+            pVehicle->setBikeRiderBody( true );
         }
         if ( !bAllowed ) {
             return;
@@ -398,10 +415,12 @@ void CarState::updateBackOnTrack( float deltaTime ) {
         if ( 0.0f < body.BackOnTrackTimer ) {
             body.BackOnTrackTimer -= deltaTime;
         }
-        const bool bRequested = body.bBackOnTrackRequest &&
-                                body.SpeedInKmh < kBackOnTrackMaxSpeed &&
-                                body.BackOnTrackTimer < 0.0f;
-        if ( !bRequested && !bInWater ) {
+        const bool bRequested = ( body.bBackOnTrackRequest &&
+                                  body.SpeedInKmh < kBackOnTrackMaxSpeed &&
+                                  body.BackOnTrackTimer < 0.0f ) ||
+                                bInWater || pVehicle->isBackOnTrackForced();
+        if ( !bRequested && !pVehicle->isRespawnForced() &&
+             !pVehicle->hasBikeRiderBody() ) {
             return;
         }
 
@@ -416,8 +435,9 @@ void CarState::updateBackOnTrack( float deltaTime ) {
         const Eigen::Vector4f target =
             body.BackOnTrackWorldMatrix.row( 3 ).transpose();
         const bool bPlaceNow =
-            !bLocal || ( gpWorld->isStreamedAround( &target, true, false ) &&
-                         !pVehicle->isInWater() );
+            ( !bLocal || ( gpWorld->isStreamedAround( &target, true, false ) &&
+                           !pVehicle->isInWater() ) ) &&
+            !pVehicle->hasBikeRiderBody();
         if ( bPlaceNow ) {
             PlaceAtBackOnTrackPose( body, *pVehicle );
         } else {
@@ -426,7 +446,9 @@ void CarState::updateBackOnTrack( float deltaTime ) {
             }
             GSPhysics::pushFadeRequest( eFadeRequest::FR_FadeOut );
             body.BackOnTrackState = 2;
-            pVehicle->setPostponedPause( 1 );
+            if ( !pVehicle->hasBikeRiderBody() ) {
+                pVehicle->setPostponedPause( 1 );
+            }
         }
         CameraVehicle *pCamera = gpCamera->getActiveVehicleCamera();
         if ( pCamera != nullptr && ( pCamera->getFlags() >> 0x11 & 1 ) == 0 ) {
@@ -442,7 +464,9 @@ void CarState::updateBackOnTrack( float deltaTime ) {
     case 3: {
         const Eigen::Vector4f target =
             body.BackOnTrackWorldMatrix.row( 3 ).transpose();
-        if ( gpWorld->isStreamedAround( &target, true, true ) ) {
+        if ( ( !pVehicle->hasBikeRiderBody() || !body.bHasBikeAvatar ) &&
+             gpWorld->isStreamedAround( &target, true, true ) ) {
+            pVehicle->setBikeRiderBody( false );
             GSPhysics::pushFadeRequest( eFadeRequest::FR_FadeIn );
             pVehicle->setPostponedPause( 2 );
             PlaceAtBackOnTrackPose( body, *pVehicle );

@@ -190,6 +190,16 @@ EntityDriver::~EntityDriver() {
 
 EntityDriver *EntityDriver::getDriver() { return this; }
 
+void EntityDriver::getCarAlphaScreenRect( Eigen::Vector4f &outRect ) {
+    // FUN_007f4710
+    if ( pCarState != nullptr && pCarState->getVehicleInstance() != nullptr ) {
+        pCarState->getVehicleInstance()->computeScreenRect( outRect );
+        return;
+    }
+
+    outRect = Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 1.0f );
+}
+
 void EntityDriver::onEvent( class CarState *param_1,
                             float param_2,
                             void *param_3 ) {

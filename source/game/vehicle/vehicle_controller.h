@@ -46,6 +46,7 @@ public:
     void popLights() override;
     virtual eRenderPass getRenderPass() override;
     virtual eRenderPass getRenderPassWithAlpha() override;
+    void adjustScreenProjectionFromContext( Eigen::Vector4f &rect ) override;
 
     void setRimsFromDB( DBEntryRim *pRim ) override;
     void setLowResInteriorColors( const char *param_2,

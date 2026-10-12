@@ -239,6 +239,16 @@ public:
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
     bool isTrafficBody() const { return bTrafficBody; }
     void setPostponedPause( uint8_t request ) { postponedPause = request; }
+    int32_t getPhantomMode() const { return phantomMode; }
+    bool hasBikeRiderBody() const { return bBikeRiderBody; }
+    void setBikeRiderBody( bool bPresent ) { bBikeRiderBody = bPresent; }
+    bool isBackOnTrackForced() const { return bForceBackOnTrack; }
+    void setBackOnTrackForced( bool bForced ) { bForceBackOnTrack = bForced; }
+    bool isRespawnForced() const { return bForceRespawn; }
+    void setRespawnForced( bool bForced ) { bForceRespawn = bForced; }
+    const Eigen::Vector3f &getBodyDimensions() const { return bodyDimensions; }
+    void requestPhantomMode( uint8_t mode, float duration );
+    bool updatePhantomAlpha( float dt, bool bForceOpaque, float &outAlpha );
     void setBackOnTrackPlaced( bool bPlaced ) { bBackOnTrackPlaced = bPlaced; }
     bool consumeBackOnTrackPlaced() {
         const bool bPlaced = bBackOnTrackPlaced;
@@ -339,6 +349,8 @@ public:
     float getWheelBurn( int32_t index ) const;
     void applyImpactWheelDamage();
     bool isInWater() const;
+    void updatePhantomMode( float dt );
+    void applyPhantomRequest();
 
     void pushCollisionEvent( const CollisionEvent &event );
     void flushCollisionEvents( std::vector<CollisionEvent> &outEvents );
@@ -454,6 +466,18 @@ private:
     bool bTrafficBody = false;
     bool bBackOnTrackPlaced = false; // +0xd32
     uint8_t postponedPause = 0;      // +0x8da: 1 pause, 2 resume
+    bool bBikeRiderBody = false;
+    bool bForceBackOnTrack = false;
+    bool bForceRespawn = false;
+    // Phantom (ghost) chassis: 1 normal, 2 ghost, 4 ghost until clear of
+    // other cars, 5 permanent ghost
+    uint8_t phantomRequest = 0;
+    float phantomRequestDuration = 0.0f;
+    int32_t phantomMode = 1;
+    float phantomTimer = 0.0f;
+    float phantomDuration = 0.0f;
+    bool bPhantomFadeIn = false;
+    Eigen::Vector3f bodyDimensions = Eigen::Vector3f::Zero();
     float rawInputThrottle;
     float rawInputBrake;
     float inputThrottle;
