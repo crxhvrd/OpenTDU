@@ -673,7 +673,7 @@ void GSPlayerData::newGame( const bool bInstallCheats ) {
 
 CarDesc *GSPlayerData::getCurrentCar() {
     // FUN_008978d0
-    if ( pLoadedSave == nullptr ) {
+    if ( pLoadedSave == nullptr || !pLoadedSave->hasValidGarage() ) {
         return nullptr;
     }
 
