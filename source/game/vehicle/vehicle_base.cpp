@@ -1412,8 +1412,8 @@ static uint32_t GetLinkedAvatars( VehicleBase *pVehicle,
 void VehicleBase::onAlphaChange() {
     // FUN_008bad70
     std::array<EntityAvatar *, 2> linkedAvatars;
-    const uint32_t numLinkedAvatars =
-        GetLinkedAvatars( this, linkedAvatars.data(), linkedAvatars.size() );
+    const uint32_t numLinkedAvatars = GetLinkedAvatars(
+        this, linkedAvatars.data(), (uint32_t)linkedAvatars.size() );
     for ( uint32_t i = 0; i < numLinkedAvatars; i++ ) {
         linkedAvatars[i]->setAlpha( 1.0f );
     }
@@ -1535,8 +1535,8 @@ void VehicleBase::updateCarAlpha() {
     }
 
     std::array<EntityAvatar *, 10> linkedAvatars;
-    const uint32_t numLinkedAvatars =
-        GetLinkedAvatars( this, linkedAvatars.data(), linkedAvatars.size() );
+    const uint32_t numLinkedAvatars = GetLinkedAvatars(
+        this, linkedAvatars.data(), (uint32_t)linkedAvatars.size() );
     for ( uint32_t i = 0; i < numLinkedAvatars; i++ ) {
         EntityAvatar *pAvatar = linkedAvatars[i];
         EntityDriver *pDriver = pAvatar->getDriver();
