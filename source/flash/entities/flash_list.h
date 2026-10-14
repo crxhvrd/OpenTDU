@@ -94,6 +94,9 @@ protected:
     uint32_t getLineStateValidity( eLineState state );
     void setLineSelected( int32_t lineIndex, const bool param_2 );
     void setLineState( eLineState state, const int32_t index );
+    void showLineSubClipFrame( const int32_t lineIndex,
+                               const char *pSubClip,
+                               const char *pFrame );
     void syncList();
     void reset();
     bool FUN_0071c8b0();

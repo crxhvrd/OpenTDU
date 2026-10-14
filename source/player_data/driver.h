@@ -30,12 +30,18 @@ public:
 
     uint32_t getMoney() const;
     void setMoney( const uint32_t value );
+    void setMoneyAndNotify( const int32_t value );
 
     uint32_t getNumCoupons() const;
     void setNumCoupons( const uint32_t value );
 
     int32_t getPendingMoneyOperation() const;
     void setPendingMoneyOperation( const int32_t value );
+    void tickMoneyOperation( const float deltaTime );
+    void addExpense( const int32_t price,
+                     const int32_t statCounter,
+                     const bool bCharge );
+    void startMoneyAnimation();
 
     uint64_t getCurrentHouse() const;
     void setCurrentHouse( const uint64_t hashcode );

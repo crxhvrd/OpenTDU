@@ -26,6 +26,9 @@
 #include "render/mng_reflection.h"
 #include "render/mng_shadow.h"
 #include "render/render_scene.h"
+#include "render/postfx/gs_postfx.h"
+#include "render/postfx/effects/postfx_blur.h"
+#include "render/postfx/effects/postfx_fake_dof.h"
 #include "render/camera/gs_camera.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/camera_path.h"
@@ -148,6 +151,48 @@ Matrix4x4f_t SceneInterior::getInteriorTransform() const {
 Render2DB *SceneInterior::getBankBitmap( const uint64_t hashcode ) {
     // FUN_007745f0
     return bank.getRender2DBByBitmapHashcode( hashcode );
+}
+
+void SceneInterior::getPositionMatrix( int32_t positionIndex,
+                                       Matrix4x4f_t &outMatrix ) const {
+    // FUN_00774740
+    EntityShopData *pShop = getShopData();
+    if ( pShop == nullptr ) {
+        return;
+    }
+
+    if ( positionIndex >= pShop->getNumPositions() ) {
+        positionIndex = 0;
+    }
+
+    if ( positionIndex >= pShop->getNumPositions() ) {
+        return;
+    }
+
+    Entity *pPosition = pShop->getPosition( positionIndex );
+    if ( pPosition != nullptr ) {
+        outMatrix = pPosition->getModelMatrix();
+    }
+}
+
+Path *SceneInterior::getPositionPath( int32_t positionIndex ) const {
+    // FUN_007746f0
+    EntityShopData *pShop = getShopData();
+    if ( pShop == nullptr ) {
+        return nullptr;
+    }
+
+    if ( positionIndex >= pShop->getNumPositions() ) {
+        positionIndex = 0;
+    }
+
+    if ( positionIndex >= pShop->getNumPositions() ) {
+        return nullptr;
+    }
+
+    EntityPosCam *pPosition =
+        static_cast<EntityPosCam *>( pShop->getPosition( positionIndex ) );
+    return ( pPosition != nullptr ) ? pPosition->getPath() : nullptr;
 }
 
 static Eigen::Vector4f GetLastPathKeyValue( const void *pKeyArray ) {
@@ -768,4 +813,115 @@ void SceneInterior::restoreInteriorCamera() {
         pInteriorCamera->setTime( 1.0f );
     }
     gpCamera->setCameraMode( kInteriorCameraMode, 0, 0.0f );
+}
+
+static void UpdateSunSceneBlurFlag() {
+    // FUN_007744b0 (inlined)
+    RenderScene *pSunScene =
+        gpRender->getRenderPassAtIndex( eRenderPass::RP_Sun ).pScene;
+    if ( pSunScene == nullptr ) {
+        return;
+    }
+
+    PostFXStep *pRadialBlur =
+        gpPostFX->getEffect<ePostFXStep::PFXS_RadialBlur>();
+    PostFXStep *pFakeDOF = gpPostFX->getEffect<ePostFXStep::PFXS_FakeDOF>();
+
+    const bool bIsBlurred =
+        ( pRadialBlur != nullptr && pRadialBlur->getInput()->isEnabled() ) ||
+        ( pFakeDOF != nullptr && pFakeDOF->getInput()->isEnabled() );
+
+    uint32_t flags = pSunScene->getFlags();
+    if ( bIsBlurred ) {
+        flags &= 0xffffffdf;
+    } else {
+        flags |= 0x20;
+    }
+
+    pSunScene->setFlags( flags );
+}
+
+void SceneInterior::resume() {
+    // FUN_007744b0
+    if ( gpRender == nullptr ) {
+        return;
+    }
+
+    RenderScene *pNearScene =
+        gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
+    RenderScene *pDOFScene =
+        gpRender->getRenderPassAtIndex( eRenderPass::RP_FakeDOF ).pScene;
+    RenderScene *pDOFPrePassScene =
+        gpRender->getRenderPassAtIndex( eRenderPass::RP_FakeDOFPrePass ).pScene;
+
+    if ( pNearScene == nullptr || pDOFScene == nullptr || bDrawInDOFPass ) {
+        return;
+    }
+
+    if ( pRootNode == nullptr || pRootNode->pInstance == nullptr ) {
+        return;
+    }
+
+    bDrawInDOFPass = true;
+
+    if ( gpPostFX == nullptr ) {
+        return;
+    }
+
+    PostFXStepFakeDOF *pFakeDOF =
+        (PostFXStepFakeDOF *)gpPostFX->getEffect<ePostFXStep::PFXS_FakeDOF>();
+    if ( !gpPostFX->shouldUpdateEffects() && pFakeDOF != nullptr ) {
+        pFakeDOF->getInput()->setEnabled( true );
+
+        UpdateSunSceneBlurFlag();
+
+        if ( pDOFPrePassScene != nullptr ) {
+            pDOFPrePassScene->setEnabled( true );
+        }
+        pDOFScene->setEnabled( true );
+    }
+
+    if ( pFakeDOF != nullptr ) {
+        pFakeDOF->pBlur->setNumPass( 1 );
+    }
+}
+
+void SceneInterior::suspend() {
+    // FUN_007743c0
+    if ( gpRender == nullptr || !bDrawInDOFPass ) {
+        return;
+    }
+
+    RenderScene *pNearScene =
+        gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
+    RenderScene *pDOFScene =
+        gpRender->getRenderPassAtIndex( eRenderPass::RP_FakeDOF ).pScene;
+    RenderScene *pDOFPrePassScene =
+        gpRender->getRenderPassAtIndex( eRenderPass::RP_FakeDOFPrePass ).pScene;
+
+    if ( pNearScene == nullptr || pDOFScene == nullptr ) {
+        return;
+    }
+
+    if ( pRootNode == nullptr || pRootNode->pInstance == nullptr ) {
+        return;
+    }
+
+    bDrawInDOFPass = false;
+
+    if ( gpPostFX == nullptr ) {
+        return;
+    }
+
+    PostFXStep *pFakeDOF = gpPostFX->getEffect<ePostFXStep::PFXS_FakeDOF>();
+    if ( !gpPostFX->shouldUpdateEffects() && pFakeDOF != nullptr ) {
+        pFakeDOF->getInput()->setEnabled( false );
+
+        UpdateSunSceneBlurFlag();
+
+        if ( pDOFPrePassScene != nullptr ) {
+            pDOFPrePassScene->setEnabled( false );
+        }
+        pDOFScene->setEnabled( false );
+    }
 }

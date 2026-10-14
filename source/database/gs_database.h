@@ -194,6 +194,19 @@ public:
                                       int32_t param_3 );
     DBEntryInterior *getInteriorByIndex( DBEntryCarColor *param_2,
                                          int32_t param_3 );
+    int32_t getNumInteriors( const DBEntryCarColor *pColor ) const;
+    float getCarPrice( int32_t carID,
+                       int32_t paintIndex,
+                       int32_t rimID,
+                       int32_t interiorIndex );
+    float getCarResalePrice( int32_t carID,
+                             int32_t paintIndex,
+                             int32_t rimID,
+                             int32_t interiorIndex );
+    float getCarPrice( DBEntryCarPhysicsData *pCarEntry,
+                       int32_t paintIndex,
+                       int32_t rimID,
+                       int32_t interiorIndex );
 
 private:
     struct CarShopStockEntry {
@@ -258,6 +271,8 @@ private:
 };
 
 extern GSDatabase *gpDatabase;
+
+bool IsCarInPack( const DBEntryCarPack *pCarPack, const int32_t carID );
 
 std::string GetFullCarName( DBEntryCarPhysicsData *param_1 );
 

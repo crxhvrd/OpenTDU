@@ -18,6 +18,7 @@ public:
         return ( pPathRef != nullptr ) ? *reinterpret_cast<Path **>( pPathRef )
                                        : nullptr;
     }
+    inline int32_t getMode() const { return Mode; }
     inline Entity *getZoneVolume() const {
         return ( pZoneVolumeRef != nullptr )
                    ? *reinterpret_cast<Entity **>( pZoneVolumeRef )

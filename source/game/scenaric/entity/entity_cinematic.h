@@ -11,6 +11,7 @@
 
 class AnimStateInstance;
 
+class CarState;
 class CinematicPlayer;
 
 enum eCinematicEvent : int32_t {
@@ -30,6 +31,12 @@ public:
 
 public:
     inline void setLoop( bool bEnabled ) { bLoop = bEnabled; }
+    inline void bindPlayerCar( CarState *pCarState ) {
+        cinematicPlayer.bindPlayerCar( pCarState );
+    }
+    inline void setDontSwitchCamera( bool bEnabled ) {
+        bDontSwitchCamera = bEnabled;
+    }
     inline void setStartTime( float time ) { StartTime = time; }
     inline void setBank( ScenaricBank *pBank ) { pSCBank = pBank; }
     inline ScenaricBank *getBank() const { return pSCBank; }

@@ -37,6 +37,16 @@ FlashList::FlashList()
 
 FlashList::~FlashList() {}
 
+void FlashList::showLineSubClipFrame( const int32_t lineIndex,
+                                      const char *pSubClip,
+                                      const char *pFrame ) {
+    // FUN_0071cb30
+    char clipPath[128];
+    snprintf( clipPath, sizeof( clipPath ), "%s/line%d/%s", movieName.c_str(),
+              lineIndex + 1, pSubClip );
+    pMovie->showFrame( pFrame, clipPath, false );
+}
+
 void FlashList::setLineState( eLineState state, const int32_t index ) {
     // FUN_0071ce80
     std::string local_80 = movieName;

@@ -90,3 +90,13 @@ private:
 };
 
 extern MngPhotoMode *gpMngPhotoMode;
+
+void SetupShowcaseCameraOnCar( Matrix4x4f_t &carTransform,
+                               const bool bEnableRoll,
+                               const bool bEnableTranslation,
+                               const float maxDistance,
+                               const bool bForcePlacement,
+                               const int32_t transition,
+                               const float transitionTime,
+                               const bool bFrameOnBounds,
+                               CarState *pCarState );

@@ -5,7 +5,7 @@
 #include "core/ed_store.h"
 #include "database/gs_database.h"
 
-static const CarConfig *FindCarConfig( const int32_t configID ) {
+const CarConfig *FindCarConfig( const int32_t configID ) {
     // FUN_008916f0 (inlined)
     if ( gpDatabase == nullptr ) {
         return nullptr;
@@ -235,6 +235,43 @@ void CarDesc::setConfigFromID( const uint32_t configID ) {
     setCarConfigID( configID );
 
     pConfig = FindCarConfig( int32_t( getCarConfigID() ) );
+}
+
+void CarDesc::setPaintIndex( const int32_t index ) {
+    // FUN_0088fe90
+    if ( index == paintIndex && paintType == ePaintType::PT_Default ) {
+        return;
+    }
+
+    paintType = ePaintType::PT_Default;
+    paintIndex = index;
+    notify( 0u );
+}
+
+void CarDesc::setPack( const DBEntryAftermarketPack *pPack ) {
+    // FUN_0088fde0
+    if ( pPack == nullptr ) {
+        packHashcode = 0xffffffffffffffffull;
+        return;
+    }
+
+    packHashcode = gpDatabase->getGameDB().Databases[0xc].getHashcodeForPointer(
+        reinterpret_cast<void *>( pPack->PackID ) );
+}
+
+void CarDesc::setPaintColors( const ePaintType type,
+                              const ColorRGBA &mainColor,
+                              const ColorRGBA &secondColor,
+                              const ColorRGBA *pLogoColor,
+                              const ColorRGBA *pSecondColor2 ) {
+    // FUN_0088fe30
+    paintType = type;
+    deluxeMainColor = mainColor;
+    deluxeSecondColor = secondColor;
+    deluxeLogoColor = ( pLogoColor != nullptr ) ? *pLogoColor : 0xffffffffu;
+    deluxeSecondColor2 =
+        ( pSecondColor2 != nullptr ) ? *pSecondColor2 : 0xffffffffu;
+    notify( 0u );
 }
 
 float CarDesc::getUpgradeRate() const {

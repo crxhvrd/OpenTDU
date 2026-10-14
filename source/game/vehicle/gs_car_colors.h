@@ -18,6 +18,7 @@ public:
     void terminate() override;
 
     Eigen::Vector4f getColorFloat( const uint64_t colorHashcode );
+    ColorRGBA getColor( const uint64_t colorHashcode );
 
 private:
     FileCollection2D collection2D;

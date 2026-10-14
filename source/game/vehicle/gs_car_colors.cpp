@@ -129,6 +129,18 @@ bool GSCarColors::initialize( TestDriveGameInstance * ) {
     return true;
 }
 
+ColorRGBA GSCarColors::getColor( const uint64_t colorHashcode ) {
+    // FUN_008b38a0
+    const Eigen::Vector4f color = getColorFloat( colorHashcode );
+
+    ColorRGBA result;
+    result.R = uint8_t( uint64_t( color.x() * 255.0f ) );
+    result.G = uint8_t( uint64_t( color.y() * 255.0f ) );
+    result.B = uint8_t( uint64_t( color.z() * 255.0f ) );
+    result.A = uint8_t( uint64_t( color.w() * 255.0f ) );
+    return result;
+}
+
 Eigen::Vector4f GSCarColors::getColorFloat( const uint64_t colorHashcode ) {
     // FUN_008b3a70
     Eigen::Vector4f color( 0.0f, 0.0f, 0.0f, 1.0f );

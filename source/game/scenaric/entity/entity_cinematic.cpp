@@ -28,6 +28,7 @@
 #include "render/mng_shadow.h"
 #include "render/particles/gs_particles.h"
 #include "config/gs_config.h"
+#include "input/input_device.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
 #include "game/vehicle/car_state.h"
@@ -705,23 +706,38 @@ void EntityCinematic::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     pInstance->cinematicFlags = cinematicFlags;
     pInstance->cinematicPlaybackFlags = cinematicPlaybackFlags;
     pInstance->cinematicPlaybackFlags2 = cinematicPlaybackFlags2;
-    pInstance->StartTime = StartTime;
-    pInstance->CineTotalTime = CineTotalTime;
+    pInstance->pCameraRef = pCameraRef;
+    pInstance->pZoneRef = pZoneRef;
     pInstance->cinematicZNear = cinematicZNear;
     pInstance->cinematicZFar = cinematicZFar;
+    pInstance->pMusic1Ref = pMusic1Ref;
+    pInstance->pSoundEmitter1Ref = pSoundEmitter1Ref;
+    pInstance->pMusic2Ref = pMusic2Ref;
+    pInstance->pSoundEmitter2Ref = pSoundEmitter2Ref;
+    pInstance->numRefs = numRefs;
+    pInstance->pCinRef = pCinRef;
+    pInstance->pSceneRefs = pSceneRefs;
+    pInstance->pMicroRef = pMicroRef;
+    pInstance->pStreamCenterRef = pStreamCenterRef;
+    pInstance->StartTime = StartTime;
+    pInstance->Time = Time;
+    pInstance->CineTotalTime = CineTotalTime;
+    pInstance->cinematicBuffer.clear();
     pInstance->pSCBank = pSCBank;
+    pInstance->bDisableStreamingOnCarBefore = bDisableStreamingOnCarBefore;
+    pInstance->pStreamCenterBefore = pStreamCenterBefore;
     pInstance->cutsceneName = cutsceneName;
-    pInstance->pSpotWorld = pSpotWorld;
     pInstance->bLoop = bLoop;
     pInstance->bHideFrontEnd = bHideFrontEnd;
+    pInstance->bOnFinalFrame = bOnFinalFrame;
     pInstance->bSkipped = bSkipped;
+    pInstance->pGMInterface = pGMInterface;
+    pInstance->pSpotWorld = pSpotWorld;
     pInstance->bStopWhenSkipped = bStopWhenSkipped;
     pInstance->playbackSpeed = playbackSpeed;
     pInstance->numClipColumns = numClipColumns;
     pInstance->numClipVariants = numClipVariants;
     pInstance->pClipRows = pClipRows;
-
-    OTDU_UNIMPLEMENTED;
 }
 
 int32_t EntityCinematic::findClipColumn( uint64_t hashcode ) const {
@@ -766,7 +782,11 @@ void EntityCinematic::start( bool bBeginNow ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: INPUT
+    PlayerConfiguration *pPlayerConfig = gpConfig->pPlayerConfig;
+    if ( ( cinematicPlaybackFlags & 0x10u ) == 0 && pPlayerConfig != nullptr ) {
+        ClearActionFlags( pPlayerConfig->pMenuPause );
+        ClearActionFlags( pPlayerConfig->pMenuValidate );
+    }
 
     if ( gpActiveGMScene != nullptr ) {
         FadeTime = gpActiveGMScene->getTransitionTime();

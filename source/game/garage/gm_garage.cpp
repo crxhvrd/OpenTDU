@@ -42,25 +42,6 @@ static inline Driver *GetDriver() {
     return gpPlayerData->getLoadedSave()->getDriver();
 }
 
-static void GatherParkedCarBodies( SceneCarPark &carPark,
-                                   std::vector<const JPH::Body *> &bodies ) {
-    bodies.clear();
-    for ( int32_t i = 0; i < carPark.getNumEntries(); i++ ) {
-        if ( carPark.getEntry( i ).PlacementState !=
-             SceneCarPark::CPPS_Placed ) {
-            continue;
-        }
-
-        CarState *pCarState = carPark.getCarState( i );
-        PhysicsVehicle *pPhysicsVehicle =
-            ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
-        if ( pPhysicsVehicle != nullptr &&
-             pPhysicsVehicle->getChassisBody() != nullptr ) {
-            bodies.push_back( pPhysicsVehicle->getChassisBody() );
-        }
-    }
-}
-
 GMGarageNotifier::GMGarageNotifier( GMGarage *pOwner )
     : Notifier(), pGMGarage( pOwner ) {}
 

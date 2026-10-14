@@ -52,11 +52,15 @@ public:
         return ( index >= 0 && index < kMaxNumCars ) ? pCarStates[index]
                                                      : nullptr;
     }
+    inline ScenaricBank &getDealerBank() { return dealerBank; }
     inline void setEnvMapTargets( Render2DB *pFront, Render2DB *pBack ) {
         pEnvMapFront = pFront;
         pEnvMapBack = pBack;
     }
     inline Entry &getEntry( const int32_t index ) {
+        return pEntries[getRingIndex( index )];
+    }
+    inline const Entry &getEntry( const int32_t index ) const {
         return pEntries[getRingIndex( index )];
     }
 
@@ -69,6 +73,7 @@ public:
     void pushConfig( const int32_t configID );
     void pushCar( CarDesc *pCar );
     VehicleBase *getVehicle( const int32_t index ) const;
+    VehicleBase *getCarVehicle( const int32_t index ) const;
     void streamAround( const int32_t index );
     void loadBank();
     void commit();
@@ -78,6 +83,14 @@ public:
     void openInnerView( const int32_t index );
     void enterCar( const int32_t index );
     void leaveCar( const int32_t index );
+
+    bool isEntryUsed( const int32_t index ) const;
+    int32_t getNumUsedEntries() const;
+    int32_t getUsedEntryIndex( int32_t usedIndex ) const;
+    int32_t getLastAvailableShopSlot() const;
+    void setPaint( const int32_t index, const int32_t paintIndex );
+    void setRim( const int32_t index, const int32_t rimID );
+    bool applyPaint( const int32_t index );
 
 private:
     int32_t capacity;
@@ -121,7 +134,6 @@ private:
     void unloadBank();
     bool streamList( const int32_t *pList );
     void instantiateCar( const int32_t index, Entry &entry );
-    bool applyPaint( const int32_t index );
     bool isAnyInnerViewUnloading() const;
     void releaseResource( const int32_t index );
 };

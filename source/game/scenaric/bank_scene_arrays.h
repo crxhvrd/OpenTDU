@@ -2,7 +2,6 @@
 
 #include "filesystem/binary.h"
 
-struct TCBKeyPos;
 struct HiearchyNode;
 class ScenaricBank;
 class AudioDispatcherPlaybackSoundInstance;
@@ -31,10 +30,19 @@ inline int32_t GetPathKeyCount( const void *pArray ) {
     return pArray == nullptr ? 0 : *reinterpret_cast<const int32_t *>( pArray );
 }
 
-inline const TCBKeyPos *GetPathKeys( const void *pArray ) {
+struct PathKey {
+    float Position;
+    float Vec4[4];
+    float T;
+    float C;
+    float B;
+};
+OTDU_SIZE_MUST_MATCH( PathKey, 0x20 );
+
+inline const PathKey *GetPathKeys( const void *pArray ) {
     return pArray == nullptr
                ? nullptr
-               : reinterpret_cast<const TCBKeyPos *>(
+               : reinterpret_cast<const PathKey *>(
                      reinterpret_cast<const int32_t *>( pArray ) + 1 );
 }
 
@@ -51,6 +59,12 @@ public:
         }
         return reinterpret_cast<const float *>(
             static_cast<const uint8_t *>( pArray0 ) + 4 + index * 0x20 );
+    }
+
+    inline float getDuration() const {
+        float duration;
+        memcpy( &duration, &field_0x8, sizeof( duration ) );
+        return duration;
     }
 
 public:

@@ -7,6 +7,10 @@ class FlashPlayer;
 
 class SavedExtraChallenges;
 
+static constexpr int32_t CounterIndex( const int32_t retailOffset ) {
+    return ( retailOffset - 0xf038 ) / 4;
+}
+
 class SavedExtraChallengesNotifier : public Notifier {
 public:
     SavedExtraChallengesNotifier( SavedExtraChallenges *pOwner );
@@ -82,6 +86,12 @@ public:
     void clear();
     void resetVehicleType();
     void addDistanceDriven( const float kms );
+    void addCounter( const int32_t index, const int32_t value );
+    void countCarTuned( const bool bBike );
+    void countCarPainted( const bool bBike );
+    void countCarTransaction( const uint32_t carID,
+                              const bool bBought,
+                              const bool bETrade );
     void deserialize( edStore &stream );
     void serialize( edStore &stream ) const;
 

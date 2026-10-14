@@ -12,6 +12,7 @@ public:
     static constexpr uint64_t kChronoRewardHashcode = 0x52f820ull;
     static constexpr uint64_t kSnapshotRewardHashcode = 0x560560ull;
     static constexpr uint64_t kGameModeEditorRewardHashcode = 0x578c00ull;
+    static constexpr uint64_t kCarRewardHashcode = 0x547ec0ull;
     static constexpr int32_t kNumAchievementFlags = 0x96;
     static constexpr int32_t kNumRewardCars = 8;
     static constexpr int32_t kNumPlayerLevels = 5;
@@ -69,6 +70,8 @@ public:
     bool notify( const uint32_t eventMask, const bool bAsync );
 
     void unlockAllChecks();
+    void addRewardCarBought( const uint32_t carID );
+    void addCarTuned();
 
 #ifdef OTDU_USE_IMGUI
     void drawDebug();

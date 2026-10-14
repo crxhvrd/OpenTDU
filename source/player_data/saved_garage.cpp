@@ -421,3 +421,48 @@ bool Garage::validateCars() {
 
     return true;
 }
+
+int32_t Garage::findFreeSlot( const uint64_t houseHashcode,
+                              const int32_t previousSlot ) const {
+    // FUN_00890ef0
+    static constexpr uint64_t kNoHouse = 0xffffffffffffffffull;
+
+    for ( int32_t i = previousSlot + 1; i < kNumSavedCarSlots; i++ ) {
+        GarageSlot &slot = const_cast<GarageSlot &>( pCars[i] );
+        if ( slot.isValid() ) {
+            continue;
+        }
+
+        const uint64_t slotHouse = slot.getHouseHashcode();
+        if ( slotHouse == 0ull || slotHouse == kNoHouse ) {
+            continue;
+        }
+
+        if ( houseHashcode == 0ull || slotHouse == houseHashcode ) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int32_t Garage::getNumSellableCars( const uint64_t houseHashcode ) const {
+    // FUN_00893020
+    int32_t numCars = 0;
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        GarageSlot &slot = const_cast<GarageSlot &>( pCars[i] );
+        if ( !slot.isValid() || slot.state == CarDesc::eState::CDS_PutOnEbay ) {
+            continue;
+        }
+
+        if ( houseHashcode != 0ull &&
+             slot.getHouseHashcode() != houseHashcode ) {
+            continue;
+        }
+
+        if ( gpDatabase->getCarPrice( int32_t( slot.getCarConfigID() ), -1, -1,
+                                      -1 ) > 0.0f ) {
+            numCars++;
+        }
+    }
+    return numCars;
+}

@@ -169,6 +169,36 @@ void AchievementsData::build() {
     notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
 }
 
+void AchievementsData::addCarTuned() {
+    // FUN_00416000
+    TestDriveTEAWriteDword( pNumCarsTuned,
+                            TestDriveTEAReadDword( pNumCarsTuned ) + 1u );
+}
+
+void AchievementsData::addRewardCarBought( const uint32_t carID ) {
+    // FUN_0089cb70
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const DBEntryList &kindList = gameDB.Databases[kAchievementDatabaseIndex];
+    const uint32_t numEntries = gameDB.pNumItems[kAchievementDatabaseIndex];
+
+    for ( uint32_t i = 0u; i < numEntries; i++ ) {
+        const DBEntryAchievement &entry = gameDB.DBAchivement[i];
+        if ( kindList.getHashcodeForString( entry.Reward.pAsString ) !=
+                 kCarRewardHashcode ||
+             uint32_t( entry.RewardData ) != carID ) {
+            continue;
+        }
+
+        for ( uint32_t ( &rewardCar )[2] : pRewardCarsBought ) {
+            if ( TestDriveTEAReadDword( rewardCar ) == 0u ) {
+                TestDriveTEAWriteDword( rewardCar, carID );
+                return;
+            }
+        }
+        return;
+    }
+}
+
 void AchievementsData::applyHardcoreLevelTexts() {
     // FUN_0089c0e0
     static constexpr uint64_t kPlaceholderTextHashcode = 0x88588ull;

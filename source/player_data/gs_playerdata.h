@@ -134,6 +134,7 @@ public:
     bool readProfileOptions( const uint64_t profileHashcode,
                              LocalPlayerData &outPlayerData );
     void requestSave( const int32_t mode );
+    inline TestDriveMutex *getMutex() { return pMutex; }
     void applyDrivingOptions();
     void prepareActiveProfile();
     int32_t writeCommonDT( void *pExternalBuffer,

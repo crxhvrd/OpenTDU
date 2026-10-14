@@ -44,6 +44,9 @@ public:
         // FUN_007745d0
         bModeActive = value;
     }
+    inline void setOverrideFovVsLod( const bool value ) {
+        bOverrideFovVsLod = value;
+    }
     inline void setPlacementGameMode( const eGameMode mode ) {
         placementGameMode = mode;
     }
@@ -65,15 +68,20 @@ public:
     Eigen::Vector4f getWorldPosition() const;
     Matrix4x4f_t getInteriorTransform() const;
     Render2DB *getBankBitmap( const uint64_t hashcode );
+    Path *getPositionPath( int32_t positionIndex ) const;
+    void getPositionMatrix( int32_t positionIndex, Matrix4x4f_t &outMatrix ) const;
 
     void focusCamera( const int32_t positionIndex );
     void moveCameraTo( const int32_t positionIndex );
-    void startCameraPath( Path *pPath, const bool bInvert, const bool bStartAtEnd );
+    void
+    startCameraPath( Path *pPath, const bool bInvert, const bool bStartAtEnd );
     void setupShowcaseCamera( const int32_t positionIndex,
                               PhysicsVehicle *pPhysicsVehicle,
                               const Matrix4x4f_t &carBoundingBox,
                               const bool bNoBlend );
     void restoreInteriorCamera();
+    void resume();
+    void suspend();
 
 private:
     void instanciate();

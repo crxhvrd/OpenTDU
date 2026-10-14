@@ -2409,7 +2409,7 @@ DBEntryCarPack *GSDatabase::getShopCarPack( const DBEntryCarShop *pCarShop,
     return nullptr;
 }
 
-static bool IsCarInPack( const DBEntryCarPack *pCarPack, const int32_t carID ) {
+bool IsCarInPack( const DBEntryCarPack *pCarPack, const int32_t carID ) {
     const uint64_t cars[] = {
         pCarPack->CarHashcode, pCarPack->Upgrades[0].CarHashcode,
         pCarPack->Upgrades[1].CarHashcode, pCarPack->Upgrades[2].CarHashcode };
@@ -2575,6 +2575,79 @@ DBEntryInterior *GSDatabase::getInteriorByIndex( DBEntryCarColor *param_2,
     }
 
     return nullptr;
+}
+
+int32_t GSDatabase::getNumInteriors( const DBEntryCarColor *pColor ) const {
+    // FUN_009a8e30
+    if ( pColor == nullptr ) {
+        return 0;
+    }
+
+    const DBEntryInterior *pNoInterior = gameDatabase.DBInterior;
+
+    int32_t numInteriors = 0;
+    for ( const DBReference &interiorRef : pColor->InteriorColors ) {
+        if ( interiorRef.pAsRawPointer != nullptr &&
+             interiorRef.pAsRawPointer != pNoInterior ) {
+            numInteriors++;
+        }
+    }
+    return numInteriors;
+}
+
+float GSDatabase::getCarPrice( const int32_t carID,
+                               const int32_t paintIndex,
+                               const int32_t rimID,
+                               const int32_t interiorIndex ) {
+    // FUN_009a9570
+    return getCarPrice( getCarDBEntry( carID ), paintIndex, rimID,
+                        interiorIndex );
+}
+
+float GSDatabase::getCarResalePrice( const int32_t carID,
+                                     const int32_t paintIndex,
+                                     const int32_t rimID,
+                                     const int32_t interiorIndex ) {
+    // FUN_009a9da0
+    static constexpr float kResaleRatio = 0.5f; // FLOAT_00f41674
+
+    return getCarPrice( getCarDBEntry( carID ), paintIndex, rimID,
+                        interiorIndex ) *
+           kResaleRatio;
+}
+
+float GSDatabase::getCarPrice( DBEntryCarPhysicsData *pCarEntry,
+                               const int32_t paintIndex,
+                               const int32_t rimID,
+                               const int32_t interiorIndex ) {
+    // FUN_009a94c0
+    if ( pCarEntry == nullptr ) {
+        return -1.0f;
+    }
+
+    uint32_t price = static_cast<uint32_t>( pCarEntry->Price );
+    if ( rimID != -1 ) {
+        DBEntryRim *pRim = getRim( pCarEntry, rimID );
+        if ( pRim != nullptr ) {
+            price += pRim->Price;
+        }
+    }
+
+    if ( paintIndex != -1 ) {
+        DBEntryCarColor *pColor = getColorByIndex( pCarEntry, paintIndex );
+        if ( pColor != nullptr ) {
+            price += pColor->Price;
+            if ( interiorIndex != -1 ) {
+                DBEntryInterior *pInterior =
+                    getInteriorByIndex( pColor, interiorIndex );
+                if ( pInterior != nullptr ) {
+                    price += pInterior->Price;
+                }
+            }
+        }
+    }
+
+    return static_cast<float>( price );
 }
 
 uint64_t DBEntryList::getHashcodeForString( const char *pString ) const {

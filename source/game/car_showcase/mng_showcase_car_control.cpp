@@ -433,6 +433,48 @@ void MngShowCaseCarControl::closeDoorsAndWindows() {
     }
 }
 
+void MngShowCaseCarControl::restartWindows() {
+    if ( !bHasWindows ) {
+        return;
+    }
+
+    LeftWindow.bIsOpening = bIsConvertible;
+    RightWindow.bIsOpening = bIsConvertible;
+    LeftWindow.ElapsedTime = 1.0f;
+    LeftWindow.MoveDuration = 1.0f;
+    LeftWindow.bPaused = false;
+    RightWindow.ElapsedTime = 1.0f;
+    RightWindow.MoveDuration = 1.0f;
+    RightWindow.bPaused = false;
+}
+
+void MngShowCaseCarControl::closeLeftDoor() {
+    // FUN_00770990
+    if ( pVehicle == nullptr || pCar == nullptr ) {
+        return;
+    }
+
+    restartWindows();
+    moveDoor( true, false, true, 0.0f );
+    pCar->setLeftDoorOpen( 0.0f, true );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (vehicle sound +0x323e = 1)
+}
+
+void MngShowCaseCarControl::openLeftDoor( VehicleBase *pVehicleBase ) {
+    // FUN_0076fe90
+    setVehicle( pVehicleBase );
+
+    if ( pVehicle == nullptr ) {
+        return;
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (vehicle sound +0x323e = 0)
+
+    restartWindows();
+    moveDoor( true, true, true, 0.0f );
+}
+
 void MngShowCaseCarControl::resetShowcase() {
     // FUN_007707b0
     if ( pCar == nullptr ) {

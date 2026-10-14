@@ -53,6 +53,8 @@ public:
     void moveDoor( bool bLeft, bool bOpening, bool bApply, float duration );
     void resetShowcase();
     void closeDoorsAndWindows();
+    void closeLeftDoor();
+    void openLeftDoor( VehicleBase *pVehicleBase );
     void setVehicle( VehicleBase *pVehicleBase );
     bool isBikeCategory() const;
     void closeShowcase();
@@ -68,6 +70,7 @@ public:
 
 private:
     void updateVehicleSpecs();
+    void restartWindows();
 
 private:
     VehicleBase *pVehicle;

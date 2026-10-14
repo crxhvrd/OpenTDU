@@ -17,6 +17,7 @@ public:
 
     inline int32_t getActorCount() const { return numActors; }
     inline Entity *getActor( int32_t index ) const { return pActors[index]; }
+    Entity *findActorByName( const char *pName ) const;
     inline void setIsManager( bool bEnabled ) { bIsManager = bEnabled; }
     inline void setParentScenery( SceneryBinary *pScenery ) {
         pParent = pScenery;
@@ -43,7 +44,8 @@ public:
 
     Entity *instanciateActor( Entity *pEntity );
     Matrix4x4f_t placePlayerVehicle( int32_t spawnMode, bool bApply );
-    void applyPlayerVehicleFrame( const Matrix4x4f_t &frame, bool bApply );
+    static void applyPlayerVehicleFrame( const Matrix4x4f_t &frame,
+                                         bool bApply );
 
     void registerActor( Entity *pActor );
     void removeActorFromList( Entity *pActor );

@@ -63,6 +63,9 @@ public:
 
     void endRental();
     bool validateCars();
+    int32_t findFreeSlot( const uint64_t houseHashcode,
+                          const int32_t previousSlot = -1 ) const;
+    int32_t getNumSellableCars( const uint64_t houseHashcode ) const;
 
 public:
     int16_t numCars = 0;

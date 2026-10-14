@@ -5,6 +5,7 @@
 #include "filesystem/binary.h"
 
 #include "tdu_instance.h"
+#include "game/gm_scene.h"
 #include "core/maths_helper.h"
 #include "database/gs_database.h"
 #include "game/gm_base.h"
@@ -1789,8 +1790,8 @@ int32_t EntityDriver::getRenderSceneID() {
     eRenderPass renderPass = eRenderPass::RP_Invalid;
     const bool bIsPlayerDriver = ( avatarType == kAvatarTypeDriver );
 
-    if ( !bIsPlayerDriver ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_WORLD
+    if ( !bIsPlayerDriver && ( gpActiveGMScene == nullptr ||
+                               !gpActiveGMScene->isDrawnInFakeDOF() ) ) {
         renderPass = eRenderPass::RP_NearOpaque;
     }
 

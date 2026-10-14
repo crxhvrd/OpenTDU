@@ -9,6 +9,7 @@
 #include "flash/implementation/flash_player.h"
 #include "game/gm_scene.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/spots.h"
 #include "game/vehicle/bank_vehicle.h"
 #include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
@@ -195,6 +196,15 @@ VehicleBase *SceneCarPark::getVehicle( const int32_t index ) const {
     // FUN_00776480
     CarState *pCarState = getCarState( index );
     return ( pCarState != nullptr ) ? pCarState->getVehicleInstance() : nullptr;
+}
+
+VehicleBase *SceneCarPark::getCarVehicle( const int32_t index ) const {
+    // FUN_00776560
+    VehicleBase *pVehicle = getVehicle( index );
+    return ( pVehicle != nullptr &&
+             pVehicle->getType() == VehicleBase::eType::VBT_Car )
+               ? pVehicle
+               : nullptr;
 }
 
 void SceneCarPark::push( const Entry &entry ) {
@@ -927,4 +937,88 @@ void SceneCarPark::leaveCar( const int32_t index ) {
 
     enteredCarState = 0;
     enteredCarIndex = -1;
+}
+
+bool SceneCarPark::isEntryUsed( const int32_t index ) const {
+    // FUN_0042e530
+    if ( index >= numEntries ) {
+        return false;
+    }
+
+    const Entry &entry = getEntry( index );
+    return entry.ConfigID != -1 || entry.pCar != nullptr;
+}
+
+int32_t SceneCarPark::getNumUsedEntries() const {
+    // FUN_00776370
+    int32_t numUsed = 0;
+    for ( int32_t i = 0; i < numEntries; i++ ) {
+        if ( getEntry( i ).ConfigID != -1 ) {
+            numUsed++;
+        }
+    }
+    return numUsed;
+}
+
+int32_t SceneCarPark::getUsedEntryIndex( int32_t usedIndex ) const {
+    // FUN_007761f0
+    for ( int32_t i = 0; i < numEntries; i++ ) {
+        if ( getEntry( i ).ConfigID == -1 ) {
+            continue;
+        }
+
+        if ( usedIndex == 0 ) {
+            return i;
+        }
+        usedIndex--;
+    }
+    return 0;
+}
+
+int32_t SceneCarPark::getLastAvailableShopSlot() const {
+    // FUN_00777470
+    SpotMap *pSpot = gpScenaric->getSpotList().getWorldSpotChecked(
+        gpScenaric->getCurrentSpotIndex() );
+    if ( pSpot == nullptr ) {
+        return 0;
+    }
+
+    DBEntryCarShop *pCarShop =
+        gpDatabase->getCarShopBySpotName( pSpot->Hashcode );
+    for ( int32_t i = numEntries - 1; i >= 0; i-- ) {
+        if ( getEntry( i ).ConfigID != -1 &&
+             gpDatabase->isCarShopSlotAvailable( pCarShop, i ) ) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+void SceneCarPark::setPaint( const int32_t index, const int32_t paintIndex ) {
+    // FUN_007772a0
+    if ( index < 0 ) {
+        return;
+    }
+
+    getEntry( index ).PaintIndex = paintIndex;
+
+    VehicleBase *pVehicle = getVehicle( index );
+    if ( pVehicle != nullptr ) {
+        pVehicle->setPaintColorFromDB( paintIndex );
+    }
+}
+
+void SceneCarPark::setRim( const int32_t index, const int32_t rimID ) {
+    // FUN_00777c30
+    if ( index < 0 ) {
+        return;
+    }
+
+    Entry &entry = getEntry( index );
+    entry.RimID = rimID;
+
+    VehicleBase *pVehicle = getVehicle( index );
+    if ( pVehicle != nullptr ) {
+        pVehicle->setRimsFromDB( gpDatabase->getRim( entry.ConfigID, rimID ) );
+    }
 }

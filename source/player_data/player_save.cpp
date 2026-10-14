@@ -6,6 +6,8 @@
 #include "core/time.h"
 #include "database/gs_database.h"
 #include "filesystem/gs_file.h"
+#include "flash/gs_flash.h"
+#include "flash/audio/flash_sounds.h"
 #include "game/game_cheats.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
@@ -75,12 +77,14 @@ void PlayerSave::terminate() {
 
 void PlayerSave::tick( const float deltaTime ) {
     // FUN_0089a5b0
+    driver.tickMoneyOperation( deltaTime );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original also restocks
+                             // the classic car stock on a timer and drives the
+                             // profile prompts)
+
     achievements.tick();
     extraChallenges.tickStatisticsScreen();
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original also ticks the
-                             // driver, restocks the classic car stock on a
-                             // timer and drives the profile prompts)
 }
 
 uint32_t PlayerSave::allocateCarUniqueID() {
@@ -258,6 +262,163 @@ void PlayerSave::setCurrentCar( const uint16_t index ) {
     // FUN_00899200
     driver.CurrentCar = index;
     driver.notify( 0u );
+}
+
+void PlayerSave::buyCar( const uint32_t carConfigID,
+                         const int32_t slot,
+                         const int32_t paintIndex,
+                         const int32_t rimID,
+                         const int32_t interiorID ) {
+    // FUN_00899e00
+    const int32_t carSlot =
+        ( slot < 0 || slot > Garage::kNumSavedCarSlots ) ? 0 : slot;
+    GarageSlot &car = garage.pCars[carSlot];
+    if ( car.getHouseHashcode() != 0xffffffffull ) {
+        ScopedMutexLock lock( gpPlayerData->getMutex() );
+
+        car.setup( carConfigID, paintIndex, rimID, interiorID,
+                   allocateCarUniqueID() );
+
+        const bool bBike =
+            gpDatabase->isBike( gpDatabase->getCarDBEntry( carConfigID ) );
+        const int32_t price = int32_t( gpDatabase->getCarPrice(
+            carConfigID, paintIndex, rimID, interiorID ) );
+        extraChallenges.addCounter( CounterIndex( 0xf0c0 ) + ( bBike ? 1 : 0 ),
+                                    price );
+        driver.setPendingMoneyOperation( driver.getPendingMoneyOperation() -
+                                         price );
+
+        gpFlash->getFlashSound()->stopGroup( "money", 0.0f );
+        gpFlash->getFlashSound()->playFrontEndSound( "money_up:money", 1,
+                                                     false );
+        driver.ApplyMoneyOPPendingTimeLeft = 1.0f;
+
+        garage.refreshNumCars();
+        achievements.addRewardCarBought( carConfigID );
+        extraChallenges.countCarTransaction( carConfigID, true, false );
+
+        if ( achievements.getField516_0x204() && achievements.isReady() ) {
+            achievements.setCurrentGameMode(
+                gpTestDriveInstance->getActiveGameMode() );
+        }
+        achievements.notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
+
+        // FUN_00898770 (inlined)
+        gpPlayerData->requestSave( 2 );
+    }
+
+    garage.notify( 1u );
+}
+
+void PlayerSave::sellCar( const uint32_t carID ) {
+    // FUN_00899660
+    int32_t carIndex = 0;
+    for ( ; carIndex < Garage::kNumSavedCarSlots; carIndex++ ) {
+        if ( garage.getCarAtIndex( carIndex, 0ull, false )->getCarID() ==
+             carID ) {
+            break;
+        }
+    }
+    if ( carIndex == Garage::kNumSavedCarSlots ) {
+        return;
+    }
+
+    {
+        ScopedMutexLock lock( gpPlayerData->getMutex() );
+
+        GarageSlot *pCar = garage.getCarAtIndex( carIndex, 0ull, false );
+        const float resalePrice = gpDatabase->getCarResalePrice(
+            int32_t( pCar->getCarConfigID() ), pCar->paintIndex, pCar->rimID,
+            pCar->interiorID );
+
+        // NOTE: Retail looks the database entry up with the car unique ID
+        // instead of its config ID, so the bike split of the sales counter
+        // only works by accident.
+        const bool bBike =
+            gpDatabase->isBike( gpDatabase->getCarDBEntry( carID ) );
+        const int32_t resale = int32_t( resalePrice );
+        extraChallenges.addCounter( CounterIndex( 0xf07c ) + ( bBike ? 1 : 0 ),
+                                    resale );
+        driver.setPendingMoneyOperation( driver.getPendingMoneyOperation() +
+                                         resale );
+
+        gpFlash->getFlashSound()->stopGroup( "money", 0.0f );
+        gpFlash->getFlashSound()->playFrontEndSound( "money_up:money", 1,
+                                                     false );
+        driver.ApplyMoneyOPPendingTimeLeft = 1.0f;
+
+        // FUN_00888d70 (inlined)
+        DBEntryCarPhysicsData *pCarEntry =
+            gpDatabase->getCarDBEntry( pCar->getCarConfigID() );
+        if ( pCarEntry != nullptr ) {
+            extraChallenges.addCounter(
+                CounterIndex( gpDatabase->isBike( pCarEntry ) ? 0xf054
+                                                              : 0xf050 ),
+                1 );
+        }
+
+        garage.getCarAtIndex( carIndex, 0ull, false )->CarDesc::clear();
+        garage.refreshNumCars();
+
+        // FUN_00898770 (inlined)
+        gpPlayerData->requestSave( 2 );
+    }
+
+    garage.notify( 2u );
+}
+
+void PlayerSave::upgradeCar( DBEntryCarPack *pCarPack, const int32_t level ) {
+    // FUN_00899ad0
+    DBEntryCarPhysicsData *pNewCar = nullptr;
+    DBEntryAftermarketPack *pPack = nullptr;
+    int32_t price = 0;
+    if ( level >= 1 && level <= 3 ) {
+        const CarUpgrade &upgrade = pCarPack->Upgrades[level - 1];
+        pNewCar =
+            reinterpret_cast<DBEntryCarPhysicsData *>( upgrade.CarHashcode );
+        if ( gpDatabase->isTraffic( pNewCar ) ) {
+            pPack = reinterpret_cast<DBEntryAftermarketPack *>(
+                upgrade.PackHashcode );
+            pNewCar = nullptr;
+        }
+        price = upgrade.Price;
+    }
+
+    GarageSlot &car = garage.pCars[driver.CurrentCar];
+    if ( pNewCar == nullptr ) {
+        if ( pPack != nullptr &&
+             strcmp( reinterpret_cast<const char *>( pPack->PackID ),
+                     "None" ) != 0 ) {
+            car.setPack( pPack );
+        }
+    } else {
+        car.setConfigFromID( uint32_t( pNewCar->CarID ) );
+        car.packHashcode = 0xffffffffffffffffull;
+    }
+
+    const bool bBike =
+        gpDatabase->isBike( gpDatabase->getCarDBEntry( car.getCarConfigID() ) );
+    extraChallenges.addCounter( CounterIndex( 0xf0c0 ) + 8 + ( bBike ? 1 : 0 ),
+                                price );
+    driver.setPendingMoneyOperation( driver.getPendingMoneyOperation() -
+                                     price );
+    extraChallenges.countCarTuned( bBike );
+
+    gpFlash->getFlashSound()->stopGroup( "money", 0.0f );
+    gpFlash->getFlashSound()->playFrontEndSound( "money_up:money", 1, false );
+    driver.ApplyMoneyOPPendingTimeLeft = 1.0f;
+
+    if ( achievements.getField516_0x204() && achievements.isReady() ) {
+        achievements.setCurrentGameMode(
+            gpTestDriveInstance->getActiveGameMode() );
+    }
+    achievements.addCarTuned();
+    achievements.notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
+
+    // FUN_00898770 (inlined)
+    gpPlayerData->requestSave( 2 );
+
+    garage.notify( 6u );
 }
 
 void PlayerSave::swapCars( const int32_t indexA,

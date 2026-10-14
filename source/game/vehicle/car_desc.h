@@ -37,6 +37,10 @@ struct CarConfig {
           TimeTo60Mph( 0.0f ) {}
 };
 
+struct DBEntryAftermarketPack;
+
+const CarConfig *FindCarConfig( const int32_t configID );
+
 class CarDesc : public Notifiable {
 public:
     enum class eState {
@@ -83,6 +87,13 @@ public:
     uint32_t getCarConfigID() const;
     void setCarConfigID( const uint32_t configID );
     void setConfigFromID( const uint32_t configID );
+    void setPack( const DBEntryAftermarketPack *pPack );
+    void setPaintIndex( const int32_t index );
+    void setPaintColors( const ePaintType type,
+                         const ColorRGBA &mainColor,
+                         const ColorRGBA &secondColor,
+                         const ColorRGBA *pLogoColor,
+                         const ColorRGBA *pSecondColor2 );
 
     float getUpgradeRate() const;
     void setUpgradeRate( const float upgradeRate );

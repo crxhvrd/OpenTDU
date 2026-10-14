@@ -77,15 +77,14 @@ void SnapCameraToPathKey( const Path *pPath,
         Min( keyIndex, GetPathKeyCount( pPath->pArray0 ) - 1 );
     const int32_t rotationIndex =
         Min( keyIndex, GetPathKeyCount( pPath->pArray1 ) - 1 );
-    const TCBKeyPos &positionKey = GetPathKeys( pPath->pArray0 )[positionIndex];
-    const TCBKeyPos &rotationKey = GetPathKeys( pPath->pArray1 )[rotationIndex];
+    const PathKey &positionKey = GetPathKeys( pPath->pArray0 )[positionIndex];
+    const PathKey &rotationKey = GetPathKeys( pPath->pArray1 )[rotationIndex];
 
     const Eigen::Vector4f position( positionKey.Vec4[0], positionKey.Vec4[1],
-                                    positionKey.Vec4[2],
-                                    positionKey.Vec4[3] );
-    const Eigen::Quaternionf rotation(
-        rotationKey.Vec4[3], rotationKey.Vec4[0], rotationKey.Vec4[1],
-        rotationKey.Vec4[2] );
+                                    positionKey.Vec4[2], positionKey.Vec4[3] );
+    const Eigen::Quaternionf rotation( rotationKey.Vec4[3], rotationKey.Vec4[0],
+                                       rotationKey.Vec4[1],
+                                       rotationKey.Vec4[2] );
     pCamera->setTransformFromQuaternion( position, rotation, true, 1.0f );
 }
 
@@ -326,10 +325,10 @@ void CameraTransition::loadPathKeys() {
         *reinterpret_cast<const float *>( &pPath->field_0x8 );
 
     const int32_t numPositionKeys = GetPathKeyCount( pPath->pArray0 );
-    const TCBKeyPos *pPositionKeys = GetPathKeys( pPath->pArray0 );
+    const PathKey *pPositionKeys = GetPathKeys( pPath->pArray0 );
     pOrigin->NumKeys = numPositionKeys;
     for ( int32_t i = 0; i < numPositionKeys; i++ ) {
-        const TCBKeyPos &key = pPositionKeys[i];
+        const PathKey &key = pPositionKeys[i];
         TCBKeyPos &dstKey = pOrigin->pKeys[i];
         dstKey.Position = key.Position / duration;
         dstKey.Vec4 = Eigen::Vector4f( key.Vec4[0], key.Vec4[1], key.Vec4[2],
@@ -340,14 +339,14 @@ void CameraTransition::loadPathKeys() {
     }
 
     const int32_t numRotationKeys = GetPathKeyCount( pPath->pArray1 );
-    const TCBKeyPos *pRotationKeys = GetPathKeys( pPath->pArray1 );
+    const PathKey *pRotationKeys = GetPathKeys( pPath->pArray1 );
     pRotation->NumKeys = numRotationKeys;
     for ( int32_t i = 0; i < numRotationKeys; i++ ) {
-        const TCBKeyPos &key = pRotationKeys[i];
+        const PathKey &key = pRotationKeys[i];
         TCBKeyQuat &dstKey = pRotation->pKeys[i];
         dstKey.Position = key.Position / duration;
-        dstKey.Quat = Eigen::Quaternionf( key.Vec4[3], key.Vec4[0],
-                                          key.Vec4[1], key.Vec4[2] );
+        dstKey.Quat = Eigen::Quaternionf( key.Vec4[3], key.Vec4[0], key.Vec4[1],
+                                          key.Vec4[2] );
         dstKey.T = key.T;
         dstKey.C = key.C;
         dstKey.B = key.B;

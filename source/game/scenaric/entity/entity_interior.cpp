@@ -15,7 +15,7 @@ void EntityInterior::tick( PlayerGameMech *pGameMech,
                            float deltaTime,
                            float totalTime ) {
     // FUN_007e9b90
-    if ( gpActiveGM != nullptr && gpActiveGM->isPaused() ) {
+    if ( gpActiveGM != nullptr && gpActiveGM->isSpotInteriorVisible() ) {
         flags |= 1;
     } else {
         flags &= ~1u;

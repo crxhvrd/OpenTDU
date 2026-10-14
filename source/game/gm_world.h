@@ -92,6 +92,10 @@ public:
         // FUN_0042df00
         return true;
     }
+    virtual bool isSpotInteriorVisible() {
+        // FUN_00630320
+        return false;
+    }
 
     virtual EventParameters *getMissionDescription();
     virtual bool isDrivingInputScripted() { return false; }

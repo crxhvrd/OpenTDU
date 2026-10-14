@@ -1,5 +1,6 @@
 #pragma once
 
+struct DBEntryCarPack;
 class AchievementsData;
 class Driver;
 class Garage;
@@ -36,10 +37,19 @@ public:
     virtual AchievementsData *getAchievements() = 0;
     virtual SavedExtraChallenges *getExtraChallenges() = 0;
 
+    virtual void buyCar( const uint32_t carConfigID,
+                         const int32_t slot,
+                         const int32_t paintIndex,
+                         const int32_t rimID,
+                         const int32_t interiorID ) = 0;
+    virtual void sellCar( const uint32_t carID ) = 0;
     virtual void swapCars( const int32_t indexA,
                            const uint64_t houseHashcodeA,
                            const int32_t indexB,
                            const uint64_t houseHashcodeB ) = 0;
+
+    virtual void upgradeCar( DBEntryCarPack *pCarPack,
+                             const int32_t level ) = 0;
 
     virtual void clear() = 0;
     virtual bool isReady() const = 0;

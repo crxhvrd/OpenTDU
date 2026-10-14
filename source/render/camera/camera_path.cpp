@@ -5,7 +5,6 @@
 #include "game/scenaric/bank_scene_arrays.h"
 #include "gs_camera.h"
 
-
 CameraPath::CameraPath()
     : CameraGame(),
       mutex(),
@@ -97,13 +96,13 @@ void CameraPath::setPath( Path *pNewPath,
 
     // Position keys.
     const int32_t numPositionKeys = GetPathKeyCount( pNewPath->pArray0 );
-    const TCBKeyPos *pPositionKeys = GetPathKeys( pNewPath->pArray0 );
+    const PathKey *pPositionKeys = GetPathKeys( pNewPath->pArray0 );
 
     splinePosition.NumKeys = numPositionKeys;
     OTDU_ASSERT( numPositionKeys <= splinePosition.MaxNumKeys );
 
     for ( int32_t i = 0; i < numPositionKeys; i++ ) {
-        const TCBKeyPos &srcKey = pPositionKeys[i];
+        const PathKey &srcKey = pPositionKeys[i];
         if ( i < splinePosition.NumKeys ) {
             TCBKeyPos &dstKey = splinePosition.pKeys[i];
             dstKey.Position = srcKey.Position / duration;
@@ -117,19 +116,18 @@ void CameraPath::setPath( Path *pNewPath,
 
     // Rotation keys.
     const int32_t numRotationKeys = GetPathKeyCount( pNewPath->pArray1 );
-    const TCBKeyPos *pRotationKeys = GetPathKeys( pNewPath->pArray1 );
+    const PathKey *pRotationKeys = GetPathKeys( pNewPath->pArray1 );
 
     splineRotation.NumKeys = numRotationKeys;
     OTDU_ASSERT( numRotationKeys <= splineRotation.MaxNumKeys );
 
     for ( int32_t i = 0; i < numRotationKeys; i++ ) {
-        const TCBKeyPos &srcKey = pRotationKeys[i];
+        const PathKey &srcKey = pRotationKeys[i];
         if ( i < splineRotation.NumKeys ) {
             TCBKeyQuat &dstKey = splineRotation.pKeys[i];
             dstKey.Position = srcKey.Position / duration;
-            dstKey.Quat =
-                Eigen::Quaternionf( srcKey.Vec4[3], srcKey.Vec4[0],
-                                    srcKey.Vec4[1], srcKey.Vec4[2] );
+            dstKey.Quat = Eigen::Quaternionf( srcKey.Vec4[3], srcKey.Vec4[0],
+                                              srcKey.Vec4[1], srcKey.Vec4[2] );
             dstKey.T = srcKey.T;
             dstKey.C = srcKey.C;
             dstKey.B = srcKey.B;
@@ -214,8 +212,10 @@ bool CameraPath::tick( float deltaTime, bool /*param_1*/, bool /*param_2*/ ) {
             time = kOne;
         }
 
-        Eigen::Vector4f splinePos = splinePosition.evaluate( time );
-        const Eigen::Quaternionf splineRot = splineRotation.evaluate( time );
+        const float splineTime = bInverted ? kOne - time : time;
+        Eigen::Vector4f splinePos = splinePosition.evaluate( splineTime );
+        const Eigen::Quaternionf splineRot =
+            splineRotation.evaluate( splineTime );
 
         splinePos.w() = kOne;
         setTransformFromQuaternion( splinePos, splineRot, bT2Quaternion, kOne );

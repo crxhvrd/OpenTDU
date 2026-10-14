@@ -60,7 +60,14 @@ private:
     void grantStarterHouse( const uint64_t houseHashcode );
 
 public:
+    void upgradeCar( DBEntryCarPack *pCarPack, const int32_t level ) override;
     void clear() override;
+    void buyCar( const uint32_t carConfigID,
+                 const int32_t slot,
+                 const int32_t paintIndex,
+                 const int32_t rimID,
+                 const int32_t interiorID ) override;
+    void sellCar( const uint32_t carID ) override;
     void swapCars( const int32_t indexA,
                    const uint64_t houseHashcodeA,
                    const int32_t indexB,

@@ -44,6 +44,7 @@
 #include "render/render_scene.h"
 #include "render/gs_render.h"
 #include "world/details/gs_details.h"
+#include "game/shop/gm_shop.h"
 
 GameModeScene *gpActiveGMScene = nullptr; // DAT_010e7c80
 
@@ -178,9 +179,15 @@ bool GameModeScene::isStaticFrontEndScene() const {
     case GM_Estates:
     case GM_Club:
         return true;
-    case GM_Shop:
-        OTDU_UNIMPLEMENTED; // TODO: GMShop
-        return true;
+    case GM_Shop: {
+        ShopLogic *pShopLogic =
+            static_cast<const GMShop *>( this )->getShopLogic();
+        if ( pShopLogic == nullptr ) {
+            return false;
+        }
+        const ShopLogic::eType type = pShopLogic->getType();
+        return type != ShopLogic::SLT_Paint && type != ShopLogic::SLT_Rental;
+    }
     case GM_Garage:
     case GM_Living:
         if ( pCinematicIntroE != nullptr &&

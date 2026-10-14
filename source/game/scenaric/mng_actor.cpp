@@ -67,6 +67,16 @@ void MngActor::terminate() {
     }
 }
 
+Entity *MngActor::findActorByName( const char *pName ) const {
+    // FUN_006de9a0
+    for ( int32_t i = 0; i < numActors; i++ ) {
+        if ( pActors[i]->getInstanceName() == pName ) {
+            return pActors[i];
+        }
+    }
+    return nullptr;
+}
+
 RenderScene *MngActor::getRenderPass() {
     // FUN_006dea60
     return gpRender->getRenderPass<eRenderPass::RP_Near>().pScene;

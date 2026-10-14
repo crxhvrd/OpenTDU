@@ -4,11 +4,14 @@
 #include "flash/flash_mouse.h"
 #include "flash/gs_flash.h"
 #include "game/gm_scene.h"
+#include "game/scene_car_park.h"
 #include "game/scene_interior.h"
+#include "game/vehicle/car_state.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
 #include "physics/gs_physics.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "render/camera/camera_first_person.h"
 #include "render/camera/gs_camera.h"
 #include "render/hierarchy_geometry.h"
@@ -379,6 +382,25 @@ void FirstPersonMode::leave() {
     pLoopCinematic = nullptr;
 
     OTDU_LOG_INFO( "First person: left\n" );
+}
+
+void GatherParkedCarBodies( SceneCarPark &carPark,
+                            std::vector<const JPH::Body *> &bodies ) {
+    bodies.clear();
+    for ( int32_t i = 0; i < carPark.getNumEntries(); i++ ) {
+        if ( carPark.getEntry( i ).PlacementState !=
+             SceneCarPark::CPPS_Placed ) {
+            continue;
+        }
+
+        CarState *pCarState = carPark.getCarState( i );
+        PhysicsVehicle *pPhysicsVehicle =
+            ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+        if ( pPhysicsVehicle != nullptr &&
+             pPhysicsVehicle->getChassisBody() != nullptr ) {
+            bodies.push_back( pPhysicsVehicle->getChassisBody() );
+        }
+    }
 }
 
 void FirstPersonMode::tick( SceneInterior *pScene,

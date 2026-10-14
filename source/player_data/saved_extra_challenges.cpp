@@ -182,9 +182,6 @@ static constexpr uint64_t kTitleSpeeds = 0x358946aull;     // case 6
 static constexpr uint64_t kTitleDiscovery = 0x3b6dd22ull;  // case 7
 static constexpr uint64_t kTitleShopping = 0x33b968aull;   // cases 8..11
 
-static constexpr int32_t CounterIndex( const int32_t retailOffset ) {
-    return ( retailOffset - 0xf038 ) / 4;
-}
 static constexpr int32_t ScoreIndex( const int32_t retailOffset ) {
     return ( retailOffset - 0xf130 ) / 8;
 }
@@ -252,6 +249,83 @@ void SavedExtraChallengesNotifier::onUpdate( uint32_t /*param*/ ) {
 
 void SavedExtraChallenges::resetVehicleType() {
     currentVehicleType = VT_Unknown;
+}
+
+void SavedExtraChallenges::addCounter( const int32_t index,
+                                       const int32_t value ) {
+    // FUN_00416600
+    writeCounter( index, readCounter( index ) + value );
+}
+
+void SavedExtraChallenges::countCarPainted( const bool bBike ) {
+    // FUN_00887d30
+    addCounter( CounterIndex( bBike ? 0xf120 : 0xf11c ), 1 );
+}
+
+void SavedExtraChallenges::countCarTuned( const bool bBike ) {
+    // FUN_00887dc0
+    addCounter( CounterIndex( bBike ? 0xf118 : 0xf114 ), 1 );
+}
+
+void SavedExtraChallenges::countCarTransaction( const uint32_t carID,
+                                                const bool bBought,
+                                                const bool bETrade ) {
+    // FUN_00888d70
+    DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry( carID );
+    if ( pCarEntry == nullptr ) {
+        return;
+    }
+
+    const bool bBike = gpDatabase->isBike( pCarEntry );
+    if ( !bBought ) {
+        if ( bETrade ) {
+            addCounter( CounterIndex( bBike ? 0xf04c : 0xf048 ), 1 );
+        } else {
+            addCounter( CounterIndex( bBike ? 0xf054 : 0xf050 ), 1 );
+        }
+        return;
+    }
+
+    if ( bETrade ) {
+        addCounter( CounterIndex( bBike ? 0xf03c : 0xf038 ), 1 );
+    } else {
+        addCounter( CounterIndex( bBike ? 0xf044 : 0xf040 ), 1 );
+    }
+
+    const uint64_t carGroupHashcode =
+        gpDatabase->getGameDB().Databases[1].getHashcodeForPointer(
+            pCarEntry->CarGroup.pAsRawPointer );
+    switch ( carGroupHashcode ) {
+    case 0x467a0e8:
+        addCounter( CounterIndex( 0xf058 ), 1 );
+        break;
+    case 0x476e328:
+        addCounter( CounterIndex( 0xf05c ), 1 );
+        break;
+    case 0x4862568:
+        addCounter( CounterIndex( 0xf060 ), 1 );
+        break;
+    case 0x49567a8:
+        addCounter( CounterIndex( 0xf064 ), 1 );
+        break;
+    case 0x4a4a9e8:
+        addCounter( CounterIndex( 0xf068 ), 1 );
+        break;
+    case 0x4b3ec28:
+        addCounter( CounterIndex( 0xf06c ), 1 );
+        break;
+    case 0x4c32e68:
+        addCounter( CounterIndex( 0xf070 ), 1 );
+        break;
+    case 0x493e108:
+        addCounter( CounterIndex( 0xf074 ), 1 );
+        break;
+    case 0x4a32348:
+        addCounter( CounterIndex( 0xf078 ), 1 );
+        break;
+    default:
+        break;
+    }
 }
 
 void SavedExtraChallenges::addDistanceDriven( const float kms ) {

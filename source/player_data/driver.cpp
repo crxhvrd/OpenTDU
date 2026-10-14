@@ -3,9 +3,12 @@
 
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
+#include "flash/audio/flash_sounds.h"
+#include "flash/gs_flash.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "gs_playerdata.h"
 #include "player_data_interface.h"
+#include "saved_extra_challenges.h"
 #include "saved_garage.h"
 
 Driver::Driver() : Notifiable() {
@@ -166,6 +169,12 @@ void Driver::setMoney( const uint32_t value ) {
     TestDriveTEAWriteDword( pMoney, value );
 }
 
+void Driver::setMoneyAndNotify( const int32_t value ) {
+    // FUN_00891ca0
+    TestDriveTEAWriteDword( pMoney, uint32_t( Max( value, 0 ) ) );
+    notify( 0u );
+}
+
 uint32_t Driver::getNumCoupons() const {
     return TestDriveTEAReadDword( pNumCoupons );
 }
@@ -180,6 +189,63 @@ int32_t Driver::getPendingMoneyOperation() const {
 
 void Driver::setPendingMoneyOperation( const int32_t value ) {
     TestDriveTEAWriteDword( pMoneyOP, uint32_t( value ) );
+}
+
+void Driver::addExpense( const int32_t price,
+                         const int32_t statCounter,
+                         const bool bCharge ) {
+    // FUN_00893bb0
+    gpPlayerData->getLoadedSave()->getExtraChallenges()->addCounter(
+        CounterIndex( 0xf0c0 ) + statCounter, price );
+    if ( bCharge ) {
+        setPendingMoneyOperation( getPendingMoneyOperation() - price );
+    }
+}
+
+void Driver::startMoneyAnimation() {
+    // FUN_00891c20
+    gpFlash->getFlashSound()->stopGroup( "money", 0.0f );
+    gpFlash->getFlashSound()->playFrontEndSound( "money_up:money", 1, false );
+    ApplyMoneyOPPendingTimeLeft = 1.0f;
+}
+
+void Driver::tickMoneyOperation( const float deltaTime ) {
+    // FUN_00893940
+    const float timeLeft = ApplyMoneyOPPendingTimeLeft;
+    if ( timeLeft < 0.0f ) {
+        return;
+    }
+
+    int32_t moneyPerSecond = 0;
+    if ( timeLeft != 0.0f ) {
+        moneyPerSecond =
+            int32_t( float( getPendingMoneyOperation() ) / timeLeft );
+    }
+
+    int32_t step = int32_t( float( moneyPerSecond ) * deltaTime );
+    const int32_t pending = getPendingMoneyOperation();
+    if ( float( pending ) < 0.0f ) {
+        if ( step < pending ) {
+            step = pending;
+        } else if ( step >= 1 ) {
+            step = 0;
+        }
+    } else if ( step < 0 ) {
+        step = 0;
+    } else if ( pending < step ) {
+        step = pending;
+    }
+
+    setMoneyAndNotify( int32_t( getMoney() ) + step );
+    setPendingMoneyOperation( getPendingMoneyOperation() - step );
+
+    ApplyMoneyOPPendingTimeLeft -= deltaTime;
+    if ( ApplyMoneyOPPendingTimeLeft < 0.0f ) {
+        setMoneyAndNotify( int32_t( getMoney() ) + getPendingMoneyOperation() );
+        setPendingMoneyOperation( 0 );
+        ApplyMoneyOPPendingTimeLeft = -1.0f;
+        gpFlash->getFlashSound()->stopGroup( "money", 0.0f );
+    }
 }
 
 uint64_t Driver::getCurrentHouse() const {

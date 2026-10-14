@@ -178,6 +178,8 @@ public:
     inline RenderFile::Section *getShadowPlaneTexture() const {
         return pShadowTexture;
     }
+    inline bool hasColorStrips() const { return bHasColorStrips; }
+    inline bool usesTwoTonesPaint() const { return bUseTwoTonesPaint; }
     inline bool shouldUseDeluxeTwoTones() const {
         return bHasColorStrips || bUseTwoTonesPaint;
     }

@@ -7,7 +7,11 @@ class CameraFirstPerson;
 class CameraGame;
 class EntityCinematic;
 class PhysicsCharacter;
+class SceneCarPark;
 class SceneInterior;
+
+void GatherParkedCarBodies( SceneCarPark &carPark,
+                            std::vector<const JPH::Body *> &bodies );
 
 // First Person Mode for interior game modes (GMLiving/GMGarage/GMGoodies/etc.).
 class FirstPersonMode {
@@ -33,7 +37,8 @@ public:
     void enter( SceneInterior *pScene, EntityCinematic *pLoopCinematic );
     void leave();
 
-    void setExtraCollisionBodies( const std::vector<const JPH::Body *> &bodies );
+    void
+    setExtraCollisionBodies( const std::vector<const JPH::Body *> &bodies );
 
 private:
     bool installCollision( SceneInterior *pScene );

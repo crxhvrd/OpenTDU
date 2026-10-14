@@ -687,8 +687,9 @@ void MngSpots::reset() {
     }
 
     const CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
-    const int32_t carID =
-        ( pCurrentCar != nullptr ) ? int32_t( pCurrentCar->getCarID() ) : 0;
+    const int32_t carID = ( pCurrentCar != nullptr )
+                              ? int32_t( pCurrentCar->getCarConfigID() )
+                              : 0;
     currentCarNumColors = gpDatabase->getNumColors( carID );
 
     DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry( carID );
