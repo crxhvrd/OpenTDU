@@ -216,6 +216,7 @@ void MngLifeSet::manageLifeSets() {
     const int32_t count = GatherNearbyLifeSets( reference, neededTileRadius,
                                                 found, kMaxLifeSets );
 
+    bool withinActivation[kMaxLifeSets];
     bool withinKeep[kMaxLifeSets];
     for ( int32_t i = 0; i < count; i++ ) {
         const auto position = found[i]->getModelMatrix().row( 3 );
@@ -224,6 +225,7 @@ void MngLifeSet::manageLifeSets() {
         const float dz = position[2] - reference[2];
         const float dw = position[3] - reference[3];
         const float squaredDistance = dx * dx + dy * dy + dz * dz + dw * dw;
+        withinActivation[i] = squaredDistance < squaredActivationRadius;
         withinKeep[i] = squaredDistance < squaredDeactivationRadius;
     }
 
@@ -244,5 +246,26 @@ void MngLifeSet::manageLifeSets() {
             pCurrentLifeSets[slot] = pCurrentLifeSets[numCurrentLifeSets];
         }
         slot++;
+    }
+
+    for ( int32_t i = 0; i < count; i++ ) {
+        if ( !withinActivation[i] ) {
+            continue;
+        }
+        uint32_t current = 0;
+        while ( current < numCurrentLifeSets &&
+                pCurrentLifeSets[current] != found[i] ) {
+            current++;
+        }
+
+        if ( current == numCurrentLifeSets &&
+             numCurrentLifeSets < kMaxLifeSets ) {
+            pCurrentLifeSets[numCurrentLifeSets++] = found[i];
+            const uint32_t budget =
+                ( numPlayingLifeCinematics < kMaxPlayingCinematics )
+                    ? kMaxPlayingCinematics - numPlayingLifeCinematics
+                    : 0;
+            numPlayingLifeCinematics += found[i]->startPlaying( this, budget );
+        }
     }
 }

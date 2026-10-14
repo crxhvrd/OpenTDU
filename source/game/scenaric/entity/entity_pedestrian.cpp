@@ -66,7 +66,8 @@ void EntityPedestrian::tick( PlayerGameMech *pGameMech,
     }
 
     if ( pPedestrianAnim->bHasAnim ) {
-        pPedestrianAnim->Anim.update( ( flags & 8 ) ? 0.0f : deltaTime );
+        pPedestrianAnim->Anim.update(
+            ( flags & 8 ) ? 0.0f : deltaTime * pPedestrianAnim->PlaybackRate );
     }
 
     pPedestrianAnim->bDoRefresh = false;
@@ -147,17 +148,15 @@ void EntityPedestrian::instanciate( MngActor *pMngActor, Entity *param_1 ) {
 
         int32_t descriptor[PedestrianResource::kDescriptorSize];
         RandomizeAppearance( descriptor );
-
-        // TODO: DEBUG: REMOVEME: TEST
-        gpPedestrians->debugPickRandomAppearance( descriptor );
-        // TODO: DEBUG: REMOVEME: TEST
+        descriptor[0] = Type;
+        descriptor[1] = SubType;
 
         if ( pTarget->pPedestrianResource != nullptr &&
              pTarget->pPedestrianAnim != nullptr ) {
             gpPedestrians->buildPedestrian( pTarget->pPedestrianResource,
                                             descriptor );
             gpPedestrians->bindPedestrianAnimation( pTarget->pPedestrianAnim,
-                                                    descriptor[0], nullptr );
+                                                    Type, nullptr );
         }
     }
 }
@@ -207,6 +206,11 @@ void EntityPedestrian::playAnimationClip( ClipInstance *pClip ) {
 }
 
 PedestrianAnim *EntityPedestrian::debugGetAnim() { return pPedestrianAnim; }
+
+bool EntityPedestrian::hasModel() const {
+    return pPedestrianResource != nullptr &&
+           pPedestrianResource->pInstance != nullptr;
+}
 
 void *EntityPedestrian::debugGetCharSkeleton() {
     return pPedestrianResource != nullptr ? pPedestrianResource->pSkeleton

@@ -16,6 +16,7 @@
 #include "game/scenaric/entity/entity_actor.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/entity/entity_pedestrian.h"
+#include "world/gs_pedestrians.h"
 #include "database/gs_database.h"
 #include "database/db_aftermarket_pack.h"
 #include "game/avatar/gs_avatar.h"
@@ -88,6 +89,7 @@ static void StepCameraShakeAngle( float &angle,
 }
 
 static constexpr float kDefaultRadialBlurIntensity = 20.0f; // DAT_00f03ee0
+static constexpr float kEndTimeEpsilon = 1e-6f;             // FLOAT_00f41888
 static constexpr int32_t kMaxCinematicAvatars = 8;
 
 static void SetPlayerCarCinematicMode( bool bCinematic ) {
@@ -322,6 +324,33 @@ InterpolateVec3RefTrack( const uint16_t *pTrack, float time, int32_t *pRefId ) {
     return Lerp( vLower, vUpper, frac );
 }
 
+void CinResCollection::bindPlayerCar( CarState *pCarState ) {
+    // FUN_007e1bb0
+    if ( pCarState == nullptr ) {
+        return;
+    }
+
+    if ( !bActorPoolActive || pPlayerCarActor != nullptr ) {
+        pPendingPlayerCar = pCarState;
+        return;
+    }
+
+    CinematicActor *pActor = registerActor( "PLAYER_CAR", nullptr, nullptr,
+                                            CinematicActor::CAK_PlayerCar );
+    if ( pActor != nullptr ) {
+        pActor->pCarState = pCarState;
+        PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
+        if ( pVehicle != nullptr ) {
+            PhysicsLock lock;
+            pActor->DisplayMatrix =
+                pVehicle->computeDisplayMatrix( pVehicle->getPhysicsMatrix() );
+            pActor->TrackMatrix = Matrix4x4f_t::Identity();
+        }
+    }
+    pPlayerCarActor = pActor;
+    pPendingPlayerCar = nullptr;
+}
+
 void CinResCollection::releasePlayerCarActors() {
     for ( int32_t i = 0; i < numActors; i++ ) {
         if ( actors[i].Kind == CinematicActor::CAK_PlayerCar ) {
@@ -345,6 +374,8 @@ void CinResCollection::reset() {
     pRefTable = nullptr;
     pBank = nullptr;
     numActors = 0;
+    pPlayerCarActor = nullptr;
+    bActorPoolActive = false;
     bCreated = false;
     firedMessages.clear();
 }
@@ -597,11 +628,11 @@ void CinResCollection::tick( float time, float deltaTime ) {
         return;
     }
 
-    // Clamp `time` to the cinematic duration (the original biases the upper
-    // bound by a small epsilon) and to zero.
-    const float totalTime = pCinematicData->TotalLength[0];
-    if ( time > totalTime ) {
-        time = totalTime;
+    // The upper bound stays inside the last shot so a seek to the end still
+    // fires that shot's open messages.
+    const float lastTime = pCinematicData->TotalLength[0] - kEndTimeEpsilon;
+    if ( time > lastTime ) {
+        time = lastTime;
     }
     if ( time < 0.0f ) {
         time = 0.0f;
@@ -880,7 +911,7 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
         for ( int32_t i = 0; i < state.NumMessages; i++ ) {
             const CinActorMessage &message = state.Messages[i];
             if ( !isMessageFired( message.pKey ) &&
-                 onPlayerCarMessage( message.pString ) ) {
+                 onPlayerCarMessage( pActor->pCarState, message.pString ) ) {
                 recordFiredMessage( message.pString, message.pKey );
             }
         }
@@ -898,12 +929,10 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
 
     if ( pActor->Kind == CinematicActor::CAK_PlayerCar ) {
         if ( bHasTransformTrack ) {
-            applyPlayerCarTransform( transform );
+            applyPlayerCarTransform( pActor->pCarState, transform );
         }
 
-        CarState *pPlayerCar = ( gpScenaric != nullptr )
-                                   ? gpScenaric->getLocalPlayer().getCarState()
-                                   : nullptr;
+        CarState *pPlayerCar = pActor->pCarState;
         PhysicsVehicle *pPlayerVehicle = ( pPlayerCar != nullptr )
                                              ? pPlayerCar->getPhysicsVehicle()
                                              : nullptr;
@@ -1554,12 +1583,10 @@ static const Eigen::Vector4f *FindCarRefOffset( const char *pName,
     return nullptr;
 }
 
-static bool FindCarRefNodePoint( const char *pName,
+static bool FindCarRefNodePoint( CarState *pCarState,
+                                 const char *pName,
                                  Eigen::Vector4f &outPoint ) {
     // FUN_007e35a0
-    CarState *pCarState = ( gpScenaric != nullptr )
-                              ? gpScenaric->getLocalPlayer().getCarState()
-                              : nullptr;
     if ( pCarState == nullptr ) {
         return false;
     }
@@ -1637,7 +1664,7 @@ bool CinResCollection::resolveActorRefPoint( const CinematicActor *pActor,
     switch ( pActor->Kind ) {
     case CinematicActor::CAK_PlayerCar:
         bOutDeferred = true;
-        if ( !FindCarRefNodePoint( pName, refPoint ) ) {
+        if ( !FindCarRefNodePoint( pActor->pCarState, pName, refPoint ) ) {
             return false;
         }
         break;
@@ -1959,9 +1986,16 @@ void *CinResCollection::loadSourceByName( const char *pName,
                                           const uint64_t *,
                                           uint32_t *pOutSize ) {
     // FUN_007e1c70
+    pPlayerCarActor = nullptr;
+
     *pOutSize = 0;
     if ( pBank == nullptr || pName == nullptr ) {
         return nullptr;
+    }
+
+    bActorPoolActive = true;
+    if ( pPendingPlayerCar != nullptr ) {
+        bindPlayerCar( pPendingPlayerCar );
     }
 
     ParsedBankEntry entry;
@@ -2173,6 +2207,12 @@ void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
         pEntity = spawnActorEntity( pName, key, kind );
     }
 
+    CarState *pPlayerCar = nullptr;
+    if ( kind == CinematicActor::CAK_PlayerCar ) {
+        pPlayerCar = static_cast<CarState *>( pEntity );
+        pEntity = nullptr;
+    }
+
     int32_t avatarRefCount = 0;
     if ( pEntity != nullptr && kind == CinematicActor::CAK_Entity ) {
         Entity *pSpawned = static_cast<Entity *>( pEntity );
@@ -2194,6 +2234,7 @@ void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
     if ( pActor != nullptr ) {
         pActor->AvatarRefCount = avatarRefCount;
         pActor->Hashcode = key;
+        pActor->pCarState = pPlayerCar;
     }
     return pActor;
 }
@@ -2365,7 +2406,7 @@ void *CinResCollection::spawnActorEntity( const char *pName,
             if ( pCar != nullptr ) {
                 outKind = CinematicActor::CAK_PlayerCar;
             }
-            return nullptr;
+            return pCar;
         }
 
         if ( std::strncmp( "TRAFFICCAR", pName, 10 ) == 0 ) {
@@ -2622,11 +2663,9 @@ void CinResCollection::initializePlayerCarForCinematic() {
     }
 }
 
-bool CinResCollection::onPlayerCarMessage( const char *pMessage ) {
+bool CinResCollection::onPlayerCarMessage( CarState *pCarState,
+                                           const char *pMessage ) {
     // FUN_007e26a0
-    CarState *pCarState = ( gpScenaric != nullptr )
-                              ? gpScenaric->getLocalPlayer().getCarState()
-                              : nullptr;
     if ( pCarState == nullptr ) {
         return false;
     }
@@ -2748,10 +2787,7 @@ bool CinResCollection::onPlayerCarMessage( const char *pMessage ) {
 }
 
 void CinResCollection::applyPlayerCarTransform(
-    const Matrix4x4f_t &transform ) {
-    CarState *pCarState = ( gpScenaric != nullptr )
-                              ? gpScenaric->getLocalPlayer().getCarState()
-                              : nullptr;
+    CarState *pCarState, const Matrix4x4f_t &transform ) {
     if ( pCarState == nullptr ) {
         return;
     }
@@ -2776,13 +2812,26 @@ void CinResCollection::applyPlayerCarTransform(
     }
 }
 
-void *CinResCollection::spawnPedestrian( int32_t /*gender*/ ) {
+void *CinResCollection::spawnPedestrian( int32_t gender ) {
     // FUN_008518b0
     if ( gpScenaric == nullptr ) {
         return nullptr;
     }
 
-    return gpScenaric->getPedestrianBank().getFirst( eEntityType::ET_PTDR );
+    EntityPedestrian *pTemplate = static_cast<EntityPedestrian *>(
+        gpScenaric->getPedestrianBank().getFirst( eEntityType::ET_PTDR ) );
+    if ( pTemplate == nullptr ) {
+        return nullptr;
+    }
+
+    AvatarCommonBnk &bank = gpPedestrians->getCharacterBank();
+    const int32_t variantId =
+        ( gender >= 0 && gender <= 1 && bank.getNumBody3DD( gender ) != 0 )
+            ? bank.getVariantId( gender, 0 )
+            : 0;
+    pTemplate->setType( gender );
+    pTemplate->setSubType( variantId );
+    return pTemplate;
 }
 
 static void ReadAvatarConfigFromPNJ( AvatarConfiguration &outConfig,

@@ -9,6 +9,7 @@
 #include "mng_map_screenshot.h"
 #include "game/mng_logo_display.h"
 #include "game/mng_ingame_menu.h"
+#include "game/mng_pedestrians.h"
 
 #include "game/scenaric/gs_scenaric.h"
 #include "online/mng_chat.h"
@@ -35,6 +36,10 @@ public:
     void destroy() override;
 
     void onResourceStreamed() override;
+    bool isSpotInteriorVisible() override {
+        // FUN_0042df00
+        return true;
+    }
     bool onMessage( FlashMessage *pMessage ) override;
     bool executeAction( int32_t param_2,
                         void *param_3,
@@ -91,6 +96,7 @@ private:
     MngMapScreenshot mngMapScreenshot;
     MngInGameMenu mngInGameMenu;
     MngChat mngChat;
+    MngPedestrians mngPedestrians;
 
     FlashListSpots flashListSpots;
     bool bResumedFromPauseMenu;

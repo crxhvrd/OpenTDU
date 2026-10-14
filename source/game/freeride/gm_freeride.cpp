@@ -69,6 +69,7 @@ GMFreeride::GMFreeride()
       mngMapScreenshot(),
       mngInGameMenu(),
       mngChat(),
+      mngPedestrians(),
       flashListSpots(),
       bResumedFromPauseMenu( false ),
       bEnterSpotClipVisible( false ),
@@ -105,6 +106,9 @@ GMFreeride::GMFreeride()
     registerManager( &mngInGameMenu );
     registerManager( &mngCamGPS );
     registerManager( &mngChat );
+    if ( gbPedestriansEnabled ) {
+        registerManagerFirst( &mngPedestrians );
+    }
 
     mngFlash.setWantsAsyncInstall( true );
     mngBookmark.setMngFlash( &mngFlash );
@@ -546,8 +550,16 @@ void GMFreeride::populateEnterSpotPrompt( FlashPlayer *pPlayer ) {
             return;
         }
 
-        if ( pSpot->SubType == 9 ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: DATABASE
+        if ( pSpot->SubType == 9 &&
+             ( pCurrentCarData == nullptr ||
+               ( ( pCurrentCarData->BitField >> 6 ) & 1 ) == 0 ) ) {
+            pPlayer->setVariableValue( "/:IsSpotLocked", 1 );
+            if ( gpMngFlashLocalize != nullptr ) {
+                gpMngFlashLocalize->setVarLocalized(
+                    pPlayer, "/:SpotLockedtext", 0x338b05aull );
+            }
+            refreshChallengeLockState( pPlayer );
+            return;
         }
 
         if ( pSpot->SubType == 1 && pCurrentCar != nullptr &&

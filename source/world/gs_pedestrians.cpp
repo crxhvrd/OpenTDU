@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "gs_pedestrians.h"
 
+#include "ai/ai_pedestrians.h"
+#include "ai/ai_pool_traffic.h"
 #include "config/gs_config.h"
 #include "core/random/bcpl.h"
 #include "game/avatar/avatar_bnk.h"
@@ -13,7 +15,8 @@
 #include "render/mng_shadow.h"
 #include "render/render_scene.h"
 
-static constexpr int32_t kNumPedestrians = 20;
+static constexpr int32_t kNumPedestrians =
+    20 + AiPedestrianManager::kMaxNumDisplayed;
 static constexpr uint32_t kInstanceMagic = 0x2e534e49;
 static constexpr int32_t kNumBodyParts = 5;
 static constexpr uint32_t kBodyPartParameterID = 0xd4;
@@ -269,9 +272,8 @@ bool GSPedestrians::assemblePedestrian( PedestrianResource *pRsc,
             }
 
             if ( totalMatches != 0 ) {
-                const int32_t target = static_cast<int32_t>(
-                    RandomBelow( gpScenaric->getRandomGenerator(),
-                                 static_cast<uint32_t>( totalMatches ) ) );
+                const int32_t target = RandomRange(
+                    gpScenaric->getRandomGenerator(), 1, totalMatches );
                 if ( target != 0 ) {
                     int32_t seen = 0;
                     int32_t idx = 0;

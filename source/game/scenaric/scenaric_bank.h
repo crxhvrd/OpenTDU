@@ -119,6 +119,7 @@ public:
     Render2DB *getRender2DBByBitmapHashcode( uint64_t hashcode );
     SkeletonInstance *getSkeleton( uint64_t hashcode );
     ClipInstance *getClip( uint64_t hashcode );
+    ClipInstance *findClipByFilename( const char *pFilenameSuffix );
     AnimStateInstance *getAnimState( uint64_t hashcode );
 
     ClipInstance *debugScoreClipsForSkeleton( SkeletonInstance *pSkel,

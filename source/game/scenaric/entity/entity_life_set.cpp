@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "entity_life_set.h"
 
+#include "core/maths_helper.h"
 #include "core/random/bcpl.h"
 #include "filesystem/binary.h"
 #include "game/game_mechanism.h"
@@ -139,6 +140,13 @@ void EntityLifeSet::unknownFunc() {
     Entity::unknownFunc();
 }
 
+void EntityLifeSet::unloadResources() {
+    if ( !bLoaded && gpMngLifeSet != nullptr ) {
+        gpMngLifeSet->removeLifeSet( this );
+    }
+    Entity::unloadResources();
+}
+
 void EntityLifeSet::deserialize( BinaryReader *pReader ) {
     // FUN_007de060
     Entity::deserialize( pReader );
@@ -192,13 +200,12 @@ bool EntityLifeSet::startPlayingLifeCinematic( LifeCinematic *pLifeCinematic,
         return false;
     }
 
-    const Matrix4x4f_t &model = getModelMatrix();
     const Eigen::Vector4f shift = gpWorldStreaming->isEnabled()
                                       ? gpWorldStreaming->getPosition()
                                       : Eigen::Vector4f::Zero();
-    float anchorX = model( 3, 0 ) - shift.x();
-    float anchorY = model( 3, 1 ) - shift.y();
-    float anchorZ = model( 3, 2 ) - shift.z();
+    Matrix4x4f_t offset = getModelMatrix();
+    offset.row( 3 ) -= shift.transpose();
+
     if ( pLifeCinematic->NumPositions != 0 ) {
         uint32_t index = RandomBelow( gpScenaric->getRandomGenerator(),
                                       pLifeCinematic->NumPositions );
@@ -208,9 +215,14 @@ bool EntityLifeSet::startPlayingLifeCinematic( LifeCinematic *pLifeCinematic,
         const SerializedTransform *pSpawn =
             pLifeCinematic->pPositions[index].pPosMatrix;
         if ( pSpawn != nullptr ) {
-            anchorX += pSpawn->PositionX;
-            anchorY += pSpawn->PositionY;
-            anchorZ += pSpawn->PositionZ;
+            Matrix4x4f_t spawn = BuildRotationMatrix(
+                Eigen::Quaternionf( pSpawn->RotationW, pSpawn->RotationX,
+                                    pSpawn->RotationY, pSpawn->RotationZ ) );
+            spawn.row( 3 ) =
+                Eigen::Vector4f( pSpawn->PositionX, pSpawn->PositionY,
+                                 pSpawn->PositionZ, 1.0f )
+                    .transpose();
+            offset = spawn * offset;
         }
     }
 
@@ -226,15 +238,13 @@ bool EntityLifeSet::startPlayingLifeCinematic( LifeCinematic *pLifeCinematic,
     pInstance->initialize();
 
     EntityCinematic *pCinematic = static_cast<EntityCinematic *>( pInstance );
-    pCinematic->setPlaybackAnchor(
-        Eigen::Vector3f( anchorX, anchorY, anchorZ ) );
+    pCinematic->setTransformOffset( offset );
     pCinematic->setLoop( true );
     pCinematic->setLifeSetCinematic( true );
     if ( pLifeCinematic->bRandomTimeStart ) {
         pCinematic->setStartTime(
             RandomUnit( gpScenaric->getRandomGenerator() ) );
     }
-    // TODO: CINEMATICS — set the pedestrian style (AvatarStyleIndex)
     pCinematic->start( true );
 
     pCurrentlyPlayingCinematics[numCinematicsPlaying] = pCinematic;

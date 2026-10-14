@@ -4,6 +4,7 @@
 
 #include "ai/ai_config.h"
 #include "ai/ai_path.h"
+#include "ai/ai_pedestrians.h"
 #include "ai/ai_road_buckets.h"
 #include "ai/ai_road_map.h"
 #include "ai/ai_sim_bubble.h"
@@ -35,6 +36,9 @@ public:
     }
     inline AiSimBubble &getSimBubble() { return *pSimBubble; }
     inline AiLODSorter &getLODSorter() { return *pLODSorter; }
+    inline AiPedestrianManager &getPedestrianManager() {
+        return pedestrianManager;
+    }
 
 public:
     GSAI();
@@ -61,6 +65,7 @@ private:
     AiLODSorter *pLODSorter;
     AiSimBubble *pSimBubble;
     AiRoadMap roadMap;
+    AiPedestrianManager pedestrianManager;
     bool bRoadMapLoaded;
     void *pRoadMapStream;
     void *pRoadDetailsStream;

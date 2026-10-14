@@ -47,6 +47,16 @@ public:
     }
 
     inline MngActor &getActorManager() { return mngActor; }
+    inline EntityCinematic *getCinematicLoop() const { return pCinematicLoop; }
+    inline EntityCinematic *getCinematicIntroI() const {
+        return pCinematicIntroI;
+    }
+    inline void setCinematicIntroI( EntityCinematic *pCinematic ) {
+        pCinematicIntroI = pCinematic;
+    }
+    inline void setCinematicLoop( EntityCinematic *pCinematic ) {
+        pCinematicLoop = pCinematic;
+    }
     inline void setWeatherDesc( const char *pDesc ) {
         strncpy( weatherDesc, pDesc, sizeof( weatherDesc ) - 1 );
         weatherDesc[sizeof( weatherDesc ) - 1] = '\0';

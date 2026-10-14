@@ -4,6 +4,7 @@
 #include "audio/gs_ambiance.h"
 #include "core/maths_helper.h"
 #include "game/scenaric/entity/base_entity.h"
+#include "game/mng_pedestrians.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "render/instance.h"
 #include "render/material.h"
@@ -56,6 +57,32 @@ static constexpr size_t kAreaPoolSize = 0x180000;   // 1.5 MiB
 static constexpr int32_t kSectorTerrainGroup = 4;
 // Bank entry type of the "ZONE" chunk GSAmbiance reads its emitters from.
 static constexpr int32_t kSectorAmbianceZones = 10;
+
+// M = Scale * RotX * RotZ * RotY, then world translation.
+static inline Matrix4x4f_t DecodePMITransform( const uint16_t *pInstance,
+                                               const float originY,
+                                               const float cellSizeY,
+                                               const float offsetX,
+                                               const float offsetZ ) {
+    const float scaleX = pInstance[3] * kScaleFactor;
+    const float scaleY = pInstance[4] * kScaleFactor;
+    const float scaleZ = pInstance[5] * kScaleFactor;
+    const float rotX = pInstance[6] * kRotationFactor;
+    const float rotY = pInstance[7] * kRotationFactor;
+    const float rotZ = pInstance[8] * kRotationFactor;
+    const float posX = pInstance[0] * kPositionFactor - kPositionOffset;
+    const float posY = pInstance[1] * cellSizeY + originY;
+    const float posZ = pInstance[2] * kPositionFactor - kPositionOffset;
+
+    Eigen::Vector3f scale( scaleX, scaleY, scaleZ );
+    Matrix4x4f_t transform = MakeScaleMatrix( scale );
+    MatrixRotateX( transform, rotX );
+    MatrixRotateZ( transform, rotZ );
+    MatrixRotateY( transform, rotY );
+    transform.row( 3 ) =
+        Eigen::Vector4f( posX + offsetX, posY, posZ + offsetZ, 1.0f );
+    return transform;
+}
 
 static inline void InstanciatePMI( SectorGeometry &geometry,
                                    const void *pResource,
@@ -127,26 +154,8 @@ static inline void InstanciatePMI( SectorGeometry &geometry,
             }
 
             if ( pTemplate != nullptr ) {
-                const float scaleX = pInstance[3] * kScaleFactor;
-                const float scaleY = pInstance[4] * kScaleFactor;
-                const float scaleZ = pInstance[5] * kScaleFactor;
-                const float rotX = pInstance[6] * kRotationFactor;
-                const float rotY = pInstance[7] * kRotationFactor;
-                const float rotZ = pInstance[8] * kRotationFactor;
-                const float posX =
-                    pInstance[0] * kPositionFactor - kPositionOffset;
-                const float posY = pInstance[1] * cellSizeY + originY;
-                const float posZ =
-                    pInstance[2] * kPositionFactor - kPositionOffset;
-
-                // M = Scale * RotX * RotZ * RotY, then world translation.
-                Eigen::Vector3f scale( scaleX, scaleY, scaleZ );
-                Matrix4x4f_t transform = MakeScaleMatrix( scale );
-                MatrixRotateX( transform, rotX );
-                MatrixRotateZ( transform, rotZ );
-                MatrixRotateY( transform, rotY );
-                transform.row( 3 ) = Eigen::Vector4f( posX + offsetX, posY,
-                                                      posZ + offsetZ, 1.0f );
+                Matrix4x4f_t transform = DecodePMITransform(
+                    pInstance, originY, cellSizeY, offsetX, offsetZ );
 
                 Entity *pInstanceEntity =
                     geometry.mngActor.instanciateActor( pTemplate );
@@ -183,6 +192,77 @@ static inline void InstanciatePMI( SectorGeometry &geometry,
         }
 
         pType = pInstance; // next type record follows the last instance
+    }
+}
+
+static void InstanciateCourtLifeSets( SectorGeometry &geometry,
+                                      const void *pResource,
+                                      uint32_t resourceSize,
+                                      float offsetX,
+                                      float offsetZ ) {
+    const uint16_t *pHeader = static_cast<const uint16_t *>( pResource );
+    if ( !gbPedestriansEnabled || pHeader == nullptr || resourceSize < 0x1d0 ||
+         !geometry.entityGrid.bValid ) {
+        return;
+    }
+    if ( pHeader[0] != 0 || pHeader[1] != 6 ||
+         *reinterpret_cast<const uint32_t *>( pHeader + 6 ) != kPMIMagic ) {
+        return;
+    }
+
+    const uint16_t *pEnd = pHeader + resourceSize / 2;
+    const float originY = *reinterpret_cast<const float *>( pHeader + 0x12 );
+    const float cellSizeY =
+        ( *reinterpret_cast<const float *>( pHeader + 0x14 ) - originY ) *
+        kCellMetricFactor;
+
+    SectorEntityGrid &grid = geometry.entityGrid;
+    const uint32_t numTypes =
+        *reinterpret_cast<const uint32_t *>( pHeader + 0x10 );
+    const uint16_t *pType = pHeader + 0xe8;
+    for ( uint32_t t = 0; t < numTypes; t++ ) {
+        if ( pType + 0x10 > pEnd ) {
+            break;
+        }
+
+        const uint64_t hashcode =
+            static_cast<uint64_t>(
+                *reinterpret_cast<const uint32_t *>( pType + 8 ) ) |
+            ( static_cast<uint64_t>(
+                  *reinterpret_cast<const uint32_t *>( pType + 0xa ) )
+              << 32 );
+        const uint16_t instanceCount = pType[0xc];
+        const uint32_t instanceStride =
+            Align( static_cast<uint32_t>( pType[0xd] ) + 0x20, 16 );
+        const uint16_t *pInstance = pType + 0x10;
+
+        for ( uint16_t n = 0; n < instanceCount; n++ ) {
+            if ( pInstance + 0x0a > pEnd ) {
+                break;
+            }
+
+            if ( hashcode == kTennisCourtHashcode ) {
+                const Matrix4x4f_t transform = DecodePMITransform(
+                    pInstance, originY, cellSizeY, offsetX, offsetZ );
+                Entity *pLifeSet =
+                    CreateCourtLifeSet( geometry.mngActor, transform );
+                if ( pLifeSet != nullptr ) {
+                    const int32_t cellX =
+                        Min( static_cast<int32_t>( pInstance[0] >> 12 ),
+                             kGridDim - 1 );
+                    const int32_t cellZ =
+                        Min( static_cast<int32_t>( pInstance[2] >> 12 ),
+                             kGridDim - 1 );
+                    grid.cells[cellZ * kGridDim + cellX].push_back( pLifeSet );
+                }
+            }
+
+            pInstance = reinterpret_cast<const uint16_t *>(
+                reinterpret_cast<const uint8_t *>( pInstance ) +
+                instanceStride );
+        }
+
+        pType = pInstance;
     }
 }
 
@@ -895,6 +975,14 @@ void SectorBank::instanciate() {
                             static_cast<float>( pOwner->offsetX ),
                             static_cast<float>( pOwner->offsetY ) );
         }
+
+        uint32_t objectsPMISize = 0;
+        void *pObjectsPMI =
+            getFirstEntry( static_cast<eAssetGroup>( 5 ),
+                           static_cast<eAssetType>( 0xd ), &objectsPMISize );
+        InstanciateCourtLifeSets( geometry, pObjectsPMI, objectsPMISize,
+                                  static_cast<float>( pOwner->offsetX ),
+                                  static_cast<float>( pOwner->offsetY ) );
 
         // Build the impostor billboard render set.
         BuildImpostorRenderSet( bank, geometry );

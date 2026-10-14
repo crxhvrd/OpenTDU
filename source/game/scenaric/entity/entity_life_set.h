@@ -33,6 +33,7 @@ public:
     void initialize() override;
     void loadResources( ScenaricBank *pBank ) override;
     void unknownFunc() override;
+    void unloadResources() override;
     void tick( PlayerGameMech *pGameMech,
                float deltaTime,
                float totalTime ) override;

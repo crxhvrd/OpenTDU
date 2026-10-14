@@ -463,6 +463,31 @@ ClipInstance *ScenaricBank::getClip( uint64_t hashcode ) {
     return findResource( listsClip, hashcode );
 }
 
+ClipInstance *ScenaricBank::findClipByFilename( const char *pFilenameSuffix ) {
+    const size_t suffixLength = strlen( pFilenameSuffix );
+    ParsedBankEntry entry;
+    for ( int32_t i = 0; i < bank.getNumElements(); i++ ) {
+        if ( bank.getEntry( i, entry ) != 0 || entry.pData == nullptr ||
+             entry.Filename.size() < suffixLength ||
+             StringCmpI( entry.Filename.c_str() + entry.Filename.size() -
+                             suffixLength,
+                         pFilenameSuffix ) != 0 ) {
+            continue;
+        }
+
+        const uint8_t *pBegin = static_cast<const uint8_t *>( entry.pData );
+        const uint8_t *pEnd = pBegin + entry.Size;
+        for ( auto &clip : listsClip ) {
+            const uint8_t *pHeader =
+                static_cast<const uint8_t *>( clip.object->getHeader() );
+            if ( pHeader >= pBegin && pHeader < pEnd ) {
+                return clip.object.get();
+            }
+        }
+    }
+    return nullptr;
+}
+
 AnimStateInstance *ScenaricBank::getAnimState( uint64_t hashcode ) {
     return findResource( listsAnimState, hashcode );
 }

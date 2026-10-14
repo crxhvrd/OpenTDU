@@ -8,6 +8,7 @@
 class BankInstance;
 class ClipInstance;
 class CameraCinematic;
+class CarState;
 class Entity;
 class EntityActor;
 class EntityAvatar;
@@ -16,14 +17,15 @@ class EntityCinematic;
 struct CinematicActor {
     enum eKind : int32_t {
         CAK_Entity = 0,    // pEntity is an Entity* (scene actor / ped / avatar)
-        CAK_PlayerCar = 1, // the local player car; pEntity stays null
+        CAK_PlayerCar = 1, // PLAYER_CAR; pEntity stays null, see pCarState
         CAK_Plane = 2,     // pEntity is the live GSAircraft instance (Interface
                        // pPlane); owned by GSAircraft, never cloned or freed
     };
 
     char Name[32];
     void *pEntity; // the bound EntityActor / avatar (null until spawned)
-    const void *pSceneData; // this actor's CinScene media descriptor
+    CarState *pCarState = nullptr; // CAK_PlayerCar: the car driven (+0x1c)
+    const void *pSceneData;        // this actor's CinScene media descriptor
     eKind Kind = CAK_Entity;
     bool bInstanced = false;
     int32_t AvatarRefCount = 0;
@@ -178,6 +180,7 @@ public:
 
     void reset();
     void releasePlayerCarActors();
+    void bindPlayerCar( CarState *pCarState );
 
     bool createInterface( const void *pBankData,
                           uint32_t size,
@@ -227,7 +230,7 @@ private:
     void processCinematicMessages( const uint16_t *pTrack, float time );
     void initializePlayerCarForCinematic();
     Entity *findMicroByName( const char *pName ) const;
-    bool onPlayerCarMessage( const char *pMessage );
+    bool onPlayerCarMessage( CarState *pCarState, const char *pMessage );
     void collectActorClips( const CinMediaContext *pCtx,
                             const uint16_t *pTrack,
                             float time,
@@ -247,7 +250,8 @@ private:
                         const Eigen::Vector3f &scale,
                         bool bHasTransformTrack );
     void applySpawnTail( Entity *pEntity );
-    void applyPlayerCarTransform( const Matrix4x4f_t &transform );
+    void applyPlayerCarTransform( CarState *pCarState,
+                                  const Matrix4x4f_t &transform );
     void applyCameraTransform( const CinMediaContext *pCtx,
                                int32_t transformType,
                                const Eigen::Vector3f &position,
@@ -334,6 +338,9 @@ private:
     Matrix4x4f_t baseMatrix = Matrix4x4f_t::Identity();
     bool bHasBaseMatrix = false;
     bool bIsLifeSetCinematic = false;
+    CinematicActor *pPlayerCarActor = nullptr;
+    CarState *pPendingPlayerCar = nullptr;
+    bool bActorPoolActive = false;
     struct ZConfig {
         float Near;
         float Far;

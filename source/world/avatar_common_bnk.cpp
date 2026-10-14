@@ -168,9 +168,17 @@ int32_t AvatarCommonBnk::getNumBody2DM( int32_t bodyType ) const {
 }
 
 int32_t AvatarCommonBnk::getVariantId( int32_t bodyType, int32_t index ) const {
+    // FUN_00850360
     if ( bodyType < 0 || bodyType >= kNumBodyTypes || index < 0 ||
          index >= kMaxBodyEntries ) {
         return 0;
     }
     return VariantIds[bodyType][index];
+}
+
+void AvatarCommonBnk::setVariantId( int32_t bodyType,
+                                    int32_t index,
+                                    int32_t variantId ) {
+    // FUN_00850340
+    VariantIds[bodyType][index] = variantId;
 }

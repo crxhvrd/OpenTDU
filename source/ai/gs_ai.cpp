@@ -37,6 +37,7 @@ GSAI::GSAI()
       pLODSorter( &gAiLODSorter ),
       pSimBubble( &gAiSimBubble ),
       roadMap(),
+      pedestrianManager(),
       bRoadMapLoaded( false ),
       pRoadMapStream( nullptr ),
       pRoadDetailsStream( nullptr ),
@@ -73,6 +74,7 @@ bool GSAI::initialize( TestDriveGameInstance * ) {
     pathSolver.initialize( &pathPool );
     OTDU_UNIMPLEMENTED_ONCE; // TODO: second path solver
     pSimBubble->initialize();
+    pedestrianManager.initialize();
     OTDU_UNIMPLEMENTED_ONCE; // TODO: distribution zones, net interpolation,
                              // MngFontPlayers lists, AiCopMng, bot manager,
                              // path optimiser
@@ -97,7 +99,10 @@ void GSAI::tick( float totalTime, float deltaTime ) {
                              // bots, path optimiser
 }
 
-void GSAI::terminate() { roadBuckets.terminate(); }
+void GSAI::terminate() {
+    pedestrianManager.terminate();
+    roadBuckets.terminate();
+}
 
 void GSAI::reset() {
     // FUN_00969c10

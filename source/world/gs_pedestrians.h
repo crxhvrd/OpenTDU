@@ -42,6 +42,7 @@ struct PedestrianAnim {
     int32_t ID = -1;
     bool bActive = false;
     bool bDoRefresh = false;
+    float PlaybackRate = 1.0f;
 };
 
 struct PedestrianResourceList {
@@ -57,6 +58,7 @@ struct PedestrianAnimList {
 class GSPedestrians : public GameSystem {
 public:
     const char *getName() const override { return "Service : Pedestrian"; }
+    inline AvatarCommonBnk &getCharacterBank() { return characterBank; }
 
 public:
     GSPedestrians();

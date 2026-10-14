@@ -10,6 +10,9 @@ class EntityPedestrian : public EntityActor {
 public:
     const char *GetName() override { return "Pedestrian"; /* FUN_00427be0 */ }
 
+    inline void setType( const int32_t type ) { Type = type; }
+    inline void setSubType( const int32_t subType ) { SubType = subType; }
+
 public:
     EntityPedestrian();
     ~EntityPedestrian();
@@ -36,6 +39,7 @@ public:
     // Debug (cinematic harness): reach the shared animation slot + the bound
     // char-bank skeleton blob to drive a clip onto a cutscene character.
     PedestrianAnim *debugGetAnim();
+    bool hasModel() const;
     void *debugGetCharSkeleton();
 
 protected:

@@ -44,6 +44,7 @@ public:
     int32_t getNumBody3DD( int32_t bodyType ) const;
     int32_t getNumBody2DM( int32_t bodyType ) const;
     int32_t getVariantId( int32_t bodyType, int32_t index ) const;
+    void setVariantId( int32_t bodyType, int32_t index, int32_t variantId );
 
 private:
     void parseEntries();
