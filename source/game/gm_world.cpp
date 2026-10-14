@@ -7,6 +7,7 @@
 #include "ai/ai_road_query.h"
 
 #include "tdu_instance.h"
+#include "core/arg_parser.h"
 
 #include <cmath>
 #include <iterator>
@@ -350,12 +351,38 @@ int32_t gRequestedPlayerCarRimID = -1;
 int32_t gRequestedPlayerCarInteriorID = 0;
 bool gRequestedCarChange = false;
 
+static bool gbPlayerCarOverride = false;
+static CmdLineArg CmdLineArgCar( "car", []( const char *pArg ) {
+    gRequestedPlayerCarID = atoi( pArg );
+    gbPlayerCarOverride = true;
+} );
+
 // Debug teleport request
 bool gRequestedPlayerTeleport = false;
 Eigen::Vector3f gRequestedPlayerTeleportPos = Eigen::Vector3f::Zero();
 
 void GameModeWorld::installLocalPlayerCar() {
     // FUN_007bf280 (inlined)
+    if ( gbPlayerCarOverride ) {
+        bool bKnownCar = false;
+        for ( const CarConfig &car : gpDatabase->getCarList() ) {
+            if ( car.Hash == gRequestedPlayerCarID ) {
+                bKnownCar = true;
+                break;
+            }
+        }
+
+        if ( bKnownCar ) {
+            installLocalPlayerCar( gRequestedPlayerCarID, nullptr );
+            return;
+        }
+
+        OTDU_LOG_WARN( "Car %d (from command line) does not exist; ignoring\n",
+                       gRequestedPlayerCarID );
+        gbPlayerCarOverride = false;
+        gRequestedPlayerCarID = kDefaultPlayerCarID;
+    }
+
     const CarDesc *pCurrentCar =
         ( gpPlayerData != nullptr ) ? gpPlayerData->getCurrentCar() : nullptr;
     if ( pCurrentCar == nullptr ) {
