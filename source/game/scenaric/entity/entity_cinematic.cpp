@@ -998,7 +998,7 @@ bool EntityCinematic::begin() {
 }
 
 void EntityCinematic::publishCameraView() {
-    if ( !hasFocus() || gpCamera == nullptr ) {
+    if ( !hasFocus() || bDontSwitchCamera || gpCamera == nullptr ) {
         return;
     }
 

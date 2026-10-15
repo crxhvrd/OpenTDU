@@ -1,10 +1,13 @@
 #include "shared.h"
 #include "saved_road_discovery.h"
 
+#include "ai/ai_road_iterator.h"
+#include "ai/ai_road_shape.h"
 #include "ai/gs_ai.h"
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
 #include "game/scenaric/spots.h"
+#include "game/vehicle/car_state.h"
 #include "player_data/achievement_checks.h"
 #include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
@@ -75,6 +78,30 @@ void SavedRoadDiscovery::unlockRoad( const int32_t roadID,
     const int32_t blockIndex = roadID + segment / 64;
     const int32_t bitIndex = segment % 64;
     setBlock( blockIndex, getBlock( blockIndex ) | ( 1ull << bitIndex ) );
+}
+
+void DiscoverCarRoad( const CarState *pCarState ) {
+    // FUN_008058f0
+    const ObjectWorldLocation &location = pCarState->getWorldLocation();
+    if ( location.LocationType != ObjectWorldLocation::OWL_Road ) {
+        return;
+    }
+
+    const ObjectLocationRoad &road = location.LocationRoad;
+    const float fraction = ( road.FractionMin + road.FractionMax ) * 0.5f;
+    AiRoadMap::Road *pRoad = gpAI->getRoadMap().getRoad( road.RoadID );
+    AiRoadShape *pShape = ( pRoad != nullptr ) ? pRoad->getShape() : nullptr;
+    if ( pShape == nullptr ) {
+        return;
+    }
+
+    AiRoadIt it;
+    it.IndEntity = 0;
+    it.IndWay = -1;
+    pShape->computeIt( fraction, it );
+
+    gpPlayerData->getLoadedSave()->getRoadDiscovery()->unlockRoad(
+        int32_t( road.RoadID ), it.IndEntity );
 }
 
 void DiscoverSpotRoad( const SpotMap *pSpot ) {

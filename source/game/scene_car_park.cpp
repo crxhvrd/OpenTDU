@@ -258,6 +258,29 @@ void SceneCarPark::pushConfig( const int32_t configID ) {
     push( entry );
 }
 
+void SceneCarPark::pushConfig( const int32_t configID,
+                               const int32_t paintIndex,
+                               const int32_t interiorID,
+                               const int32_t rimID ) {
+    // FUN_007763e0
+    if ( bLoaded || numEntries == capacity ) {
+        return;
+    }
+
+    Entry entry;
+    entry.pCar = nullptr;
+    entry.ConfigID = configID;
+    entry.PaintIndex = paintIndex;
+    entry.RimID = rimID;
+    entry.InteriorID = interiorID;
+    entry.bStreamed = false;
+    entry.Transform = Matrix4x4f_t::Identity();
+    entry.field_0x60 = 0.0f;
+    entry.PlacementState = CPPS_None;
+    entry.InnerViewState = CPIV_Unloaded;
+    push( entry );
+}
+
 void SceneCarPark::pushCar( CarDesc *pCar ) {
     // FUN_00776be0
     if ( bLoaded || numEntries == capacity ) {

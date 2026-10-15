@@ -69,8 +69,12 @@ Progress is tracked on a game mode basis:
 | Login|**Done**|
 | CinViewer|**Done**|
 | BoatTour|**Done**|
+| Garage|**Done**|
+| Dressing|**Done**|
+| Jail|**Done**|
+| AvatarShowcase|**Done**|
+| Map|**Done**|
 | Living|**In Progress**|
-| Garage|**In Progress**|
-| Dressing|**In Progress**|
 | FreeRide|**In Progress**|
-| Jail|**In Progress**|
+| Shop|**In Progress**|
+| TestDrive|**In Progress**|

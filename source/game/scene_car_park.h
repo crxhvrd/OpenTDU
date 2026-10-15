@@ -71,6 +71,10 @@ public:
     void setEnabled( const bool bEnabled );
     void releaseAll();
     void pushConfig( const int32_t configID );
+    void pushConfig( const int32_t configID,
+                     const int32_t paintIndex,
+                     const int32_t interiorID,
+                     const int32_t rimID );
     void pushCar( CarDesc *pCar );
     VehicleBase *getVehicle( const int32_t index ) const;
     VehicleBase *getCarVehicle( const int32_t index ) const;

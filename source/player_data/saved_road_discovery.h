@@ -1,6 +1,7 @@
 #pragma once
 
 class AiRoadMap;
+class CarState;
 class edStore;
 
 extern bool gUnlockAllRoads;
@@ -8,6 +9,7 @@ extern bool gUnlockAllRoads;
 struct SpotMap;
 
 bool IsRoadAvailable( uint32_t roadID );
+void DiscoverCarRoad( const CarState *pCarState );
 void DiscoverSpotRoad( const SpotMap *pSpot );
 float GetRoadNetworkLength( const AiRoadMap *pRoadMap,
                             const bool bIncludeLockedRoads );

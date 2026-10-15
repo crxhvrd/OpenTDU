@@ -37,6 +37,9 @@ public:
     inline void setDontSwitchCamera( bool bEnabled ) {
         bDontSwitchCamera = bEnabled;
     }
+    inline void setCinematicCamera( CameraCinematic *pCamera ) {
+        cinematicPlayer.setCinematicCamera( pCamera );
+    }
     inline void setStartTime( float time ) { StartTime = time; }
     inline void setBank( ScenaricBank *pBank ) { pSCBank = pBank; }
     inline ScenaricBank *getBank() const { return pSCBank; }

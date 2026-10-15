@@ -22,6 +22,7 @@
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
+#include "player_data/saved_car_reserve.h"
 #include "player_data/saved_garage.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
@@ -146,6 +147,10 @@ static const char *GetColorName( const int32_t carID, int32_t paintIndex ) {
 static SpotMap *GetCurrentSpot() {
     return gpScenaric->getSpotList().getWorldSpotChecked(
         gpScenaric->getCurrentSpotIndex() );
+}
+
+static SavedCarReserve *GetClassicCarStock() {
+    return gpPlayerData->getLoadedSave()->getStock();
 }
 
 static int32_t GetShopSlotCarID( const DBEntryCarShop *pCarShop,
@@ -275,7 +280,9 @@ void ShopLogicDealer::onFlashReady() {
     if ( !usesClassicCarStock() ) {
         pFlashPlayer->setVariableValue( "/:IsCarInStock", 2u );
     } else {
-        OTDU_UNIMPLEMENTED; // TODO: GMSHOP (classic car stock: /:IsReservedCar)
+        pFlashPlayer->setVariableValue(
+            "/:IsReservedCar",
+            GetClassicCarStock()->hasReservation() ? 1u : 0u );
         pFlashPlayer->showFrame( "car_dealer_classic", "/", true );
     }
 
@@ -341,7 +348,8 @@ bool ShopLogicDealer::fillCarList( int32_t *pOutCarIDs ) {
 
         DBEntryCarPhysicsData *pCar =
             gpDatabase->getCarDBEntry( pOutCarIDs[i] );
-        bClassicCarStock = pCar != nullptr && pCar->Rarety < 1.0f;
+        bClassicCarStock = !GetClassicCarStock()->isDebugMode() &&
+                           pCar != nullptr && pCar->Rarety < 1.0f;
     }
     return true;
 }
@@ -360,7 +368,12 @@ bool ShopLogicDealer::onMessage( FlashMessage *pMessage,
     switch ( *pMessage ) {
     case FlashMessage( "rese" ):   // reserve (classic cars)
     case FlashMessage( "unre" ): { // unreserve (classic cars)
-        OTDU_UNIMPLEMENTED; // TODO: GMSHOP (classic car stock reservation)
+        if ( *pMessage == FlashMessage( "rese" ) ) {
+            reserveSelectedCar();
+        } else {
+            cancelSelectedCarReservation();
+        }
+
         char value[32];
         if ( pPlayer != nullptr &&
              pPlayer->getVariableAsString( "/:num_car", value ) ) {
@@ -427,6 +440,26 @@ void ShopLogicDealer::onCarSelected( int32_t carIndex ) {
         numOptions = 3;
     }
     pFlashPlayer->setVariableValue( "/:nb_options", numOptions );
+}
+
+void ShopLogicDealer::cancelSelectedCarReservation() {
+    // FUN_00721d20
+    const int32_t carID = pOwner->getSelectedCarID();
+    if ( carID != -1 ) {
+        GetClassicCarStock()->cancelReservation( uint32_t( carID ) );
+    }
+    pFlashPlayer->setVariableValue(
+        "/:IsReservedCar", GetClassicCarStock()->hasReservation() ? 1u : 0u );
+}
+
+void ShopLogicDealer::reserveSelectedCar() {
+    // FUN_00721d80
+    const int32_t carID = pOwner->getSelectedCarID();
+    if ( carID != -1 ) {
+        GetClassicCarStock()->reserve( uint32_t( carID ) );
+    }
+    pFlashPlayer->setVariableValue(
+        "/:IsReservedCar", GetClassicCarStock()->hasReservation() ? 1u : 0u );
 }
 
 bool ShopLogicDealer::hasInteriors() const {
@@ -746,7 +779,7 @@ void ShopLogicDealer::stepBuyOption( const bool bNext ) {
         pFlashPlayer->setVariableValue( "/:has_text", 1 );
         carPark.setRim( slot, entry.RimID );
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: RENDER (details render scene enabled)
+        scene.setDetailsSceneEnabled( true );
         if ( bHasCar ) {
             scene.playCarCinematic( "C_WHEELS_V", slot, true );
             if ( pShowcase != nullptr ) {
@@ -776,7 +809,7 @@ void ShopLogicDealer::stepBuyOption( const bool bNext ) {
             "/:Option_name", GetColorName( carID, entry.PaintIndex ) );
         pFlashPlayer->setVariableValue( "/:has_text", 1 );
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: RENDER (details render scene enabled)
+        scene.setDetailsSceneEnabled( true );
         if ( bHasCar ) {
             scene.playCarCinematic( bBike ? "C_PAINT_V_BIKE" : "C_PAINT_V",
                                     slot, true );
@@ -810,7 +843,7 @@ void ShopLogicDealer::stepBuyOption( const bool bNext ) {
         }
         pFlashPlayer->setVariableValue( "/:has_text", 0 );
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: RENDER (details render scene enabled)
+        scene.setDetailsSceneEnabled( true );
         if ( bHasCar ) {
             scene.playCarCinematic( "C_INTERIOR_V", slot, true );
             if ( pShowcase != nullptr ) {

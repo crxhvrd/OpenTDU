@@ -18,6 +18,12 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
 #include "game/vehicle/vehicle_base.h"
+#include "game/cinematic/cin_res_collection.h"
+#include "game/scenaric/entity/entity_pnj.h"
+#include "game/test_car/gm_test_car.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_car_reserve.h"
 #include "flash/mng_flash_localize.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
@@ -53,6 +59,21 @@ static inline bool IsCheatShop() {
 static inline uint32_t NextRandom( uint32_t &seed ) {
     seed = seed * 0x7ff8a3edu + 0x2aa01d31u;
     return seed;
+}
+
+// /:IsCarInStock values for classic cars.
+static constexpr uint32_t kCarNotInStock = 0u;
+static constexpr uint32_t kCarReserved = 1u;
+static constexpr uint32_t kCarInStock = 2u;
+static constexpr int32_t kNumPriceVariations = 2;
+static constexpr float kTestDriveDuration = 120.0f;   // DAT_00f41a18
+static constexpr float kRandToUnit = 1.0f / 32767.0f; // DAT_00f41714
+
+static uint32_t RandomIntInRange( const int32_t minValue,
+                                  const int32_t maxValue ) {
+    // FUN_0042e6f0
+    return uint32_t( float( minValue ) + float( maxValue - minValue ) *
+                                             float( rand() ) * kRandToUnit );
 }
 
 static const char *GetShopLabel() {
@@ -582,8 +603,11 @@ void GMShop::populateCarPark() {
         const int32_t slot = carPark.getUsedEntryIndex( i );
         const int32_t carID = carIDs[ClampSlot( slot )];
 
-        if ( pShopLogic->usesClassicCarStock() ) {
-            OTDU_UNIMPLEMENTED; // TODO: GMSHOP
+        // Cars in the classic stock keep the configuration rolled by the stock.
+        if ( pShopLogic->usesClassicCarStock() &&
+             gpPlayerData->getLoadedSave()->getStock()->isAvailable(
+                 uint32_t( carID ) ) ) {
+            continue;
         }
 
         int32_t paintIndex = 0;
@@ -675,7 +699,18 @@ void GMShop::selectCar( const int32_t carIndex ) {
 
     const int32_t slot = getShopCarSlot( carIndex );
     if ( pShopLogic->usesClassicCarStock() ) {
-        OTDU_UNIMPLEMENTED; // TODO: GMSHOP
+        const uint32_t carID = uint32_t( carIDs[ClampSlot( slot )] );
+        SavedCarReserve *pStock = gpPlayerData->getLoadedSave()->getStock();
+
+        uint32_t stockState = kCarNotInStock;
+        if ( pStock->isAvailable( carID ) ) {
+            stockState = kCarInStock;
+        } else if ( pStock->isReserved( carID ) ) {
+            stockState = kCarReserved;
+        }
+        pFlashPlayer->setVariableValue( "/:IsCarInStock", stockState );
+        pFlashPlayer->setVariableValue(
+            "/:Price_var", RandomIntInRange( 0, kNumPriceVariations ) );
     }
 
     SceneCarPark &carPark = sceneShop.getCarPark();
@@ -927,5 +962,21 @@ void GMShop::OnCarFadeIn( void *pData, void *pSource ) {
 
 void GMShop::startTestDrive() {
     // FUN_00724e60
-    OTDU_UNIMPLEMENTED; // TODO: GMSHOP
+    SceneCarPark &carPark = sceneShop.getCarPark();
+    const SceneCarPark::Entry &entry = carPark.getEntry( previousCarIndex );
+    GMTestCar::SetTestCar( selectedCarID, entry.PaintIndex, entry.RimID,
+                           entry.InteriorID );
+    GMTestCar::SetTestDuration( kTestDriveDuration );
+
+    EntityPnj *pHostess =
+        static_cast<EntityPnj *>( sceneShop.getContent()->getBank().findEntity(
+            eEntityType::ET_CPNJ, "Hostess" ) );
+    ReadAvatarConfigFromPNJ( GMTestCar::GetPassengerConfiguration(),
+                             ( pHostess != nullptr ) ? pHostess->getPnjName()
+                                                     : "shop_lamborghini" );
+
+    carPark.releaseCar( previousCarIndex );
+
+    requestExit();
+    gpTestDriveInstance->setNextGameMode( GM_TestCar );
 }

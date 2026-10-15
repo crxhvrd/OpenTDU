@@ -92,6 +92,8 @@ public:
 
     inline void setField0x7C( const bool bValue ) { field_0x7c = bValue; }
     inline void setField0x85( const bool bValue ) { field_0x85 = bValue; }
+    inline void setPoliceScale( const float value ) { policeScale = value; }
+    inline void setForceDensity( const bool bValue ) { bForceDensity = bValue; }
     inline bool isZoneDensityIgnored() const { return bIgnoreZoneDensity; }
     inline bool isForceDensity() const;
     inline void setTrafficPaused( const bool bValue ) {

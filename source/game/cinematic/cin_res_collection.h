@@ -5,6 +5,7 @@
 #include "cinematic_format.h"
 #include "game/scenaric/entity/entity_factory.h"
 
+struct AvatarConfiguration;
 class BankInstance;
 class ClipInstance;
 class CameraCinematic;
@@ -163,6 +164,9 @@ public:
     inline void setOwner( EntityCinematic *pCinematic ) { pOwner = pCinematic; }
     inline CameraCinematic *getCinematicCamera() const {
         return pCinematicCamera;
+    }
+    inline void setCinematicCamera( CameraCinematic *pCamera ) {
+        pCinematicCamera = pCamera;
     }
     inline void setActorEntity( int32_t index, void *pEntity ) {
         if ( index >= 0 && index < numActors ) {
@@ -393,3 +397,6 @@ public:
 };
 
 extern uint32_t ExtractBufferSize( const void *pData, uint32_t size );
+
+void ReadAvatarConfigFromPNJ( AvatarConfiguration &outConfig,
+                              const char *pPNJName );

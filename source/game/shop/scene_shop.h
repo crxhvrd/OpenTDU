@@ -4,6 +4,11 @@
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scene_car_park.h"
 #include "game/scene_interior.h"
+#include "render/2dm.h"
+#include "render/camera/camera_cinematic.h"
+#include "render/gs_render_helper.h"
+#include "render/render_scene.h"
+#include "render/render_target.h"
 
 class DrawList;
 class EntityCinematic;
@@ -11,6 +16,7 @@ class FlashPlayer;
 class FlashResource;
 class GMShop;
 struct FlashRECT;
+struct Material;
 
 // Shop interior
 class SceneShop {
@@ -32,6 +38,9 @@ public:
     inline void setSkipCineTimer( const float value, FlashPlayer *pPlayer ) {
         skipCineTimer = value;
         pSkipCinePlayer = pPlayer;
+    }
+    inline void setDetailsSceneEnabled( const bool bEnabled ) {
+        detailsScene.setEnabled( bEnabled );
     }
 
 public:
@@ -72,6 +81,15 @@ private:
 
 private:
     GMShop *pOwner;
+
+    RuntimeRender2DBWithRT detailsRenderTarget;
+    FramebufferAttachments detailsAttachments;
+    RenderScene detailsScene;
+    Viewport detailsViewport;
+    void *pDetails2DMContent;
+    Material *pDetailsMaterial;
+    Render2DM details2DM;
+    CameraCinematic detailsCamera;
 
     EntityCinematic *pDetailsCinematic;
     EntityCinematic *pCinematic;

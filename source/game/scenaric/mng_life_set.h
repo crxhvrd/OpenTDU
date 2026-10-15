@@ -15,6 +15,7 @@ struct ActorInCinematic {
 class MngLifeSet : public Manager {
 public:
     inline EntityLifeSet *getActiveLifeSet() const { return pActiveLifeSet; }
+    inline const MngActorWorld &getMngActor() const { return mngActor; }
 
 public:
     MngLifeSet();

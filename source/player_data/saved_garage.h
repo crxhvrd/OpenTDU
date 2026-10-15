@@ -61,6 +61,10 @@ public:
     bool addHouse( const uint64_t houseHashcode );
     void removeHouse( const uint64_t houseHashcode );
 
+    void beginTestDrive( const uint32_t carID,
+                         const int32_t paintIndex,
+                         const int32_t rimID,
+                         const int32_t interiorID );
     void endRental();
     bool validateCars();
     int32_t findFreeSlot( const uint64_t houseHashcode,

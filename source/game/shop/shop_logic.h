@@ -156,6 +156,8 @@ private:
                           const char *pClipName );
 
     bool hasInteriors() const;
+    void cancelSelectedCarReservation();
+    void reserveSelectedCar();
     void enterBuyScreen();
     void stepBuyOption( const bool bNext );
     void changeBuyOption();

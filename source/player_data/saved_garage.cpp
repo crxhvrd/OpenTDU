@@ -298,6 +298,31 @@ void Garage::removeHouse( const uint64_t houseHashcode ) {
     }
 }
 
+void Garage::beginTestDrive( const uint32_t carID,
+                             const int32_t paintIndex,
+                             const int32_t rimID,
+                             const int32_t interiorID ) {
+    // FUN_00894af0
+    GarageSlot &testSlot = pCars[kNumSavedCarSlots];
+    if ( testSlot.state != CarDesc::eState::CDS_Invalid ) {
+        endRental();
+    }
+
+    testSlot.setup( carID, paintIndex, rimID, interiorID, 0u );
+    if ( testSlot.state != CarDesc::eState::CDS_TestDrive ) {
+        testSlot.state = CarDesc::eState::CDS_TestDrive;
+        testSlot.notify( 0u );
+    }
+
+    Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+    if ( pDriver->CurrentCar != kNumSavedCarSlots ) {
+        currentCar = pDriver->CurrentCar;
+    }
+    pDriver->CurrentCar = kNumSavedCarSlots;
+    pDriver->notify( 0u );
+    notify( 0u );
+}
+
 void Garage::endRental() {
     // FUN_00894890
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE

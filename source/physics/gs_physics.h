@@ -158,6 +158,9 @@ public:
         bHavokDebugEnabled = bState;
     }
     inline void setDebugDrawEnabled( bool bState ) { bDrawDebugInfos = bState; }
+    inline void setForceFeedbackAllowed( bool bState ) {
+        bForceFeedbackAllowed = bState;
+    }
     inline bool isPropFactoryReady() const { return !propFactories.empty(); }
 
     inline int32_t getNumTireProfiles() const { return numTires; }
@@ -432,6 +435,8 @@ private:
     uint8_t bSectorsInit : 1;
     uint8_t bHavokDebugEnabled : 1;
     uint8_t bDrawDebugInfos : 1;
+
+    bool bForceFeedbackAllowed = false;
 
     // Jolt physics runtime objects — only valid after initializeJolt()
     JPH::PhysicsSystem *pPhysicsSystem = nullptr;

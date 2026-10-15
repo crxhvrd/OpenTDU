@@ -78,9 +78,9 @@ void PlayerSave::terminate() {
 void PlayerSave::tick( const float deltaTime ) {
     // FUN_0089a5b0
     driver.tickMoneyOperation( deltaTime );
+    carReserve.tick();
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original also restocks
-                             // the classic car stock on a timer and drives the
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original also drives the
                              // profile prompts)
 
     achievements.tick();
@@ -449,7 +449,7 @@ void PlayerSave::clear() {
 void PlayerSave::unStart() {
     // FUN_0089ab80
     driver.clear();
-    carReserve.clear();
+    carReserve.reset();
     garage.clear( true );
     ranking.clear();
     mailbox.clear();

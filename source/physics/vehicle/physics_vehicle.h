@@ -239,6 +239,7 @@ public:
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
     bool isTrafficBody() const { return bTrafficBody; }
     void setPostponedPause( uint8_t request ) { postponedPause = request; }
+    uint8_t getPostponedPause() const { return postponedPause; }
     int32_t getPhantomMode() const { return phantomMode; }
     bool hasBikeRiderBody() const { return bBikeRiderBody; }
     void setBikeRiderBody( bool bPresent ) { bBikeRiderBody = bPresent; }

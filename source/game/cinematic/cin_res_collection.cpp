@@ -2834,8 +2834,8 @@ void *CinResCollection::spawnPedestrian( int32_t gender ) {
     return pTemplate;
 }
 
-static void ReadAvatarConfigFromPNJ( AvatarConfiguration &outConfig,
-                                     const char *pPNJName ) {
+void ReadAvatarConfigFromPNJ( AvatarConfiguration &outConfig,
+                              const char *pPNJName ) {
     // FUN_007e40d0
     const GameDatabase &gameDB = gpDatabase->getGameDB();
     const int32_t numPNJ =
