@@ -143,10 +143,8 @@ constexpr float kAeroSimuLiftMult = 2.0f; // DAT_00f416b0, simu only
 constexpr float kAeroDensityFallback = 2.0f;
 bool gbSimuModeEnabled = false; // DAT_010e777c
 
-float gVehicleAeroDragScale = 1.0f; // debug: aero drag multiplier
-bool gVehicleStartChronopack =
-    false; // FIXME: programatically trigger chronopack capture
-           // (until input/flash logic is implemented)
+float gVehicleAeroDragScale = 1.0f;   // debug: aero drag multiplier
+bool gVehicleStartChronopack = false; // debug: arm the chronopack (ImGui)
 
 bool gVehicleESPEnabled = true;
 
@@ -164,6 +162,12 @@ constexpr float kChrono100kmh = 27.7778f;        // DAT_00f42124
 constexpr float kChrono200kmh = 55.5556f;        // DAT_00f41be0
 constexpr float kChrono400m = 400.0f;            // DAT_00f41ca0
 constexpr float kChrono1000m = 1000.0f;          // DAT_00f41718
+constexpr float kChrono80mph = 35.755554f;       // DAT_00f42114
+constexpr float kChrono70mph = 31.286112f;       // DAT_00f42110
+constexpr float kChrono60mphBrake = 26.816668f;  // DAT_00f4210c
+constexpr float kChronoMphToMs = 0.44694445f;    // DAT_00f41860
+constexpr float kChronoQuarterMile = 0.25f;      // DAT_00f416dc
+constexpr float kMetresToFeet = 3.28084f;        // DAT_00f42118
 constexpr float kMetresToMiles = 0.000621371f;   // DAT_00f42120
 constexpr float kGMeterVerticalVelMax = 200.0f;  // DAT_00fab688
 constexpr float kGMeterVerticalVelReset = 10.0f; // DAT_00fab684
@@ -3280,9 +3284,63 @@ void PhysicsVehicle::reportStuckClutch( float dt ) {
     const float k = vehicle.GearBox.Ratios[gg] * vehicle.GearBox.FinalDrive;
 }
 
+void PhysicsVehicle::resetChrono() {
+    // FUN_00827ea0
+    chrono.StartDistance = odometerDistance;
+    chrono.Timer = -1.0f;
+    chrono.T100kmh = -1.0f;
+    chrono.T200kmh = -1.0f;
+    chrono.T1000m = -1.0f;
+    chrono.T400m = -1.0f;
+    chrono.T60mph = -1.0f;
+    chrono.TQuarterMile = -1.0f;
+    chrono.Brake100kmhDistance = 0.0f;
+    chrono.Brake80mphDistance = 0.0f;
+    chrono.Brake70mphDistance = 0.0f;
+    chrono.Brake60mphDistance = 0.0f;
+    chrono.AccelState = CAS_Off;
+    chrono.BrakeState = CBS_Off;
+}
+
 void PhysicsVehicle::armChrono() {
-    chrono = Chrono();
-    chrono.State = 2; // "First you must stop the vehicle"
+    // FUN_00827fb0
+    chrono.Timer = -1.0f;
+    chrono.T100kmh = -1.0f;
+    chrono.T200kmh = -1.0f;
+    chrono.T1000m = -1.0f;
+    chrono.T400m = -1.0f;
+    chrono.T60mph = -1.0f;
+    chrono.TQuarterMile = -1.0f;
+    chrono.Brake100kmhDistance = 0.0f;
+    chrono.Brake80mphDistance = 0.0f;
+    chrono.Brake70mphDistance = 0.0f;
+    chrono.Brake60mphDistance = 0.0f;
+    chrono.StartDistance = odometerDistance;
+    chrono.AccelState = CAS_StopFirst;
+
+    chrono.MaxDrivenSlip = 0.0f;
+    chrono.MaxOmega = 0.0f;
+    chrono.SlipIntegral = 0.0f;
+    chrono.LimiterTime = 0.0f;
+}
+
+void PhysicsVehicle::armBrakeChrono( float targetSpeedMph ) {
+    // FUN_00827f20
+    chrono.Timer = -1.0f;
+    chrono.T100kmh = -1.0f;
+    chrono.T200kmh = -1.0f;
+    chrono.T1000m = -1.0f;
+    chrono.T400m = -1.0f;
+    chrono.T60mph = -1.0f;
+    chrono.TQuarterMile = -1.0f;
+    chrono.Brake100kmhDistance = 0.0f;
+    chrono.Brake80mphDistance = 0.0f;
+    chrono.Brake70mphDistance = 0.0f;
+    chrono.Brake60mphDistance = 0.0f;
+    chrono.StartDistance = odometerDistance;
+    chrono.BrakeState = CBS_WaitForSpeed;
+    chrono.BrakeTargetSpeed = targetSpeedMph;
+    chrono.PreviousSpeed = 0.0f;
 }
 
 void PhysicsVehicle::updateOdometer( float dt ) {
@@ -3303,32 +3361,81 @@ void PhysicsVehicle::updateChrono( float dt ) {
     if ( gVehicleStartChronopack ) {
         gVehicleStartChronopack = false;
         armChrono();
+        armBrakeChrono( 60.0f );
     }
-    if ( pChassisBody == nullptr ) {
-        return;
-    }
+    const float speed = ( pChassisBody != nullptr )
+                            ? pChassisBody->GetLinearVelocity().Length()
+                            : 0.0f;
     Chrono &c = chrono;
-    const JPH::Vec3 vel = pChassisBody->GetLinearVelocity();
-    const float speed =
-        JPH::Vec3( vel.GetX(), 0.0f, vel.GetZ() ).Length(); // m/s
-    c.Odometer += speed * dt;
 
-    if ( c.State == 2 && speed < kChronoMoveSpeed ) {
-        c.State = 1; // stopped: start
+    if ( c.AccelState == CAS_StopFirst && speed < kChronoMoveSpeed ) {
+        c.AccelState = CAS_Ready;
     }
-    if ( c.State == 1 && speed > kChronoMoveSpeed ) {
-        c.State = 3; // moved off: run
+    if ( c.AccelState == CAS_Ready && speed > kChronoMoveSpeed ) {
+        c.AccelState = CAS_Running;
         c.Timer = 0.0f;
-        c.StartDistance = c.Odometer;
-    }
-    if ( c.State != 3 ) {
-        return;
+        c.StartDistance = odometerDistance;
     }
 
-    c.Timer += dt;
-    const float dist = c.Odometer - c.StartDistance;
+    if ( c.AccelState == CAS_Running || c.BrakeState == CBS_Braking ) {
+        c.Timer += dt;
+    }
 
+    if ( c.AccelState == CAS_Running ) {
+        updateChronoDiagnostics( speed, dt );
+
+        const float dist = odometerDistance - c.StartDistance;
+        auto latch = [&]( bool bReached, float &split, const char *pLabel ) {
+            if ( bReached && split < 0.0f ) {
+                split = c.Timer;
+                logChronoSplit( pLabel, split );
+            }
+        };
+        latch( speed > kChrono100kmh, c.T100kmh, "0 to 100 km/h" );
+        latch( speed > kChrono200kmh, c.T200kmh, "0 to 200 km/h" );
+        latch( dist > kChrono1000m, c.T1000m, "0 to 1000 m" );
+        latch( dist > kChrono400m, c.T400m, "0 to 400 m" );
+        latch( dist * kMetresToMiles > kChronoQuarterMile, c.TQuarterMile,
+               "0 to 1/4 mile" );
+        latch( speed > kChrono60mph, c.T60mph, "0 to 60 mph" );
+    }
+
+    if ( c.BrakeState == CBS_WaitForSpeed ) {
+        const float targetSpeed = c.BrakeTargetSpeed * kChronoMphToMs;
+        if ( c.PreviousSpeed > targetSpeed && targetSpeed > speed &&
+             inputBrake > 0.0f ) {
+            c.BrakeState = CBS_Braking;
+        }
+        c.PreviousSpeed = speed;
+    }
+
+    if ( c.BrakeState == CBS_Braking ) {
+        const float distanceFeet = speed * dt * kMetresToFeet;
+        if ( speed < kChrono100kmh && speed > kChronoMoveSpeed ) {
+            c.Brake100kmhDistance += distanceFeet;
+        }
+        if ( speed < kChrono80mph && speed > kChronoMoveSpeed ) {
+            c.Brake80mphDistance += distanceFeet;
+        }
+        if ( speed < kChrono70mph && speed > kChronoMoveSpeed ) {
+            c.Brake70mphDistance += distanceFeet;
+        }
+        if ( speed < kChrono60mphBrake && speed > kChronoMoveSpeed ) {
+            c.Brake60mphDistance += distanceFeet;
+        }
+        if ( speed < kChronoMoveSpeed ) {
+            c.BrakeState = CBS_Off;
+            OTDU_LOG_INFO( "Chronopack: braking 100kmh/80mph/70mph/60mph to 0 "
+                           "= %.2f/%.2f/%.2f/%.2f ft\n",
+                           c.Brake100kmhDistance, c.Brake80mphDistance,
+                           c.Brake70mphDistance, c.Brake60mphDistance );
+        }
+    }
+}
+
+void PhysicsVehicle::updateChronoDiagnostics( float speed, float dt ) {
     // Is the engine driving the road, or just spinning the tyres?
+    Chrono &c = chrono;
     float slipSum = 0.0f;
     int numDriven = 0;
     for ( int i = 0; i < vehicle.NumWheels; ++i ) {
@@ -3348,27 +3455,17 @@ void PhysicsVehicle::updateChrono( float dt ) {
     if ( vehicle.Engine.Omega >= 0.99f * vehicle.Engine.OmegaMax ) {
         c.LimiterTime += dt;
     }
+}
 
-    auto latch = [&]( bool reached, float &slot, const char *pLabel ) {
-        if ( reached && slot <= 0.0f ) {
-            slot = c.Timer;
-            const float inv = ( slot > 0.0f ) ? ( 1.0f / slot ) : 0.0f;
-            OTDU_LOG_INFO(
-                "Chronopack: %s = %.2f s (gear %d, %.0f rpm, peak slip %.1f "
-                "m/s, "
-                "peak %.0f rpm, mean slip %.1f m/s, limiter %.0f%%)\n",
-                pLabel, slot, vehicle.GearBox.CurrentGear - 1,
-                vehicle.Engine.Omega * 9.5493f, c.MaxDrivenSlip,
-                c.MaxOmega * 9.5493f, c.SlipIntegral * inv,
-                c.LimiterTime * inv * 100.0f );
-        }
-    };
-    latch( speed > kChrono60mph, c.T60mph, "0 to 60 mph" );
-    latch( speed > kChrono100kmh, c.T100kmh, "0 to 100 km/h" );
-    latch( speed > kChrono200kmh, c.T200kmh, "0 to 200 km/h" );
-    latch( dist > kChrono400m, c.T400m, "0 to 400 m" );
-    latch( dist > kChrono1000m, c.T1000m, "0 to 1000 m" );
-    latch( dist * kMetresToMiles > 0.25f, c.TQuarterMile, "0 to 1/4 mile" );
+void PhysicsVehicle::logChronoSplit( const char *pLabel, float split ) const {
+    const Chrono &c = chrono;
+    const float inv = ( split > 0.0f ) ? ( 1.0f / split ) : 0.0f;
+    OTDU_LOG_INFO( "Chronopack: %s = %.2f s (gear %d, %.0f rpm, peak slip %.1f "
+                   "m/s, peak %.0f rpm, mean slip %.1f m/s, limiter %.0f%%)\n",
+                   pLabel, split, vehicle.GearBox.CurrentGear - 1,
+                   vehicle.Engine.Omega * kOmegaToRpm, c.MaxDrivenSlip,
+                   c.MaxOmega * kOmegaToRpm, c.SlipIntegral * inv,
+                   c.LimiterTime * inv * 100.0f );
 }
 
 void PhysicsVehicle::setDrivingHelpLevel( int32_t level ) {

@@ -125,18 +125,37 @@ public:
         AGS_LineLock,        // both pedals at a standstill (declutched)
     };
 
-    // Chronopack State
+    enum eChronoAccelState : int32_t {
+        CAS_Off = 0,
+        CAS_Ready = 1, // stopped; starts as soon as the car moves
+        CAS_StopFirst = 2,
+        CAS_Running = 3,
+    };
+
+    enum eChronoBrakeState : int32_t {
+        CBS_Off = 0,
+        CBS_WaitForSpeed = 1, // waits for the car to brake below the target
+        CBS_Braking = 3,
+    };
+
     struct Chrono {
-        int32_t State = 0; // 0 off, 1 ready, 2 stop-first, 3 running
-        float Timer = 0.0f;
-        float StartDistance = 0.0f;
-        float Odometer = 0.0f; // in metres
-        float T60mph = 0.0f;
-        float T100kmh = 0.0f;
-        float T200kmh = 0.0f;
-        float T400m = 0.0f;
-        float T1000m = 0.0f;
-        float TQuarterMile = 0.0f;
+        float StartDistance = -1.0f; // odometer when the run started
+        float Timer = -1.0f;
+        float T100kmh = -1.0f;
+        float T200kmh = -1.0f;
+        float T1000m = -1.0f;
+        float T400m = -1.0f;
+        float T60mph = -1.0f;
+        float TQuarterMile = -1.0f;
+        float Brake100kmhDistance = 0.0f; // in feet
+        float Brake80mphDistance = 0.0f;
+        float Brake70mphDistance = 0.0f;
+        float Brake60mphDistance = 0.0f;
+        eChronoBrakeState BrakeState = CBS_Off;
+        eChronoAccelState AccelState = CAS_Off;
+        float BrakeTargetSpeed = 100.0f; // mph
+        float PreviousSpeed = 0.0f;
+
         float MaxDrivenSlip = 0.0f; // m/s
         float MaxOmega = 0.0f;      // rad/s
         float SlipIntegral = 0.0f;  // integral of mean driven slip (m/s) dt
@@ -233,6 +252,9 @@ public:
         return -wheelAttach[i].y() + suspRestLength[i];
     }
     const Chrono &getChrono() const { return chrono; }
+    void resetChrono();
+    void armChrono();
+    void armBrakeChrono( float targetSpeedMph );
     float getOdometerDistance() const { return odometerDistance; }
     int32_t getOdometerKms() const { return odometerKms; }
     int32_t getOdometerTenMeters() const { return odometerTenMeters; }
@@ -357,8 +379,9 @@ public:
     WheelReadout getWheelReadout( uint32_t index ) const;
     float computeWheelSteerAngle( const PhysicsWheelState &w ) const;
 
-    void armChrono();
     void updateChrono( float dt );
+    void updateChronoDiagnostics( float speed, float dt );
+    void logChronoSplit( const char *pLabel, float split ) const;
     void updateOdometer( float dt );
     void updateRevRate( float dt );
     void updateGearLeverAnticipation( float dt );

@@ -81,7 +81,9 @@ private:
     void toggleWindows( bool bPlayAnim );
     void changeDrivingMode( bool bNext, bool bPlayAnim );
     void refreshHasWindows();
-    void resetSpeedChrono( bool bArm );
+    void updateChronoMenu();
+    void setChronoTime( float time );
+    void setChronoAccelerateMessage();
 };
 
 extern MngInGameMenu *gpMngInGameMenu;

@@ -52,6 +52,21 @@ constexpr int32_t kNumDrivingHelpLevels =
 
 constexpr float kMenuNavigationTimeout = 5.0f; // DAT_00f41750
 
+constexpr float kChronoBrakeTestSpeedMph = 60.0f;             // FLOAT_00f41744
+constexpr float kMetersPerSecToMph = 2.2374146f;              // DAT_00f419f4
+constexpr float kMphToKmh = 1.609f;                           // DAT_00f421c0
+constexpr float kFeetToMeters = 0.3048f;                      // DAT_00f421c4
+constexpr float kChronoArcadeBrakeDistanceScale = 1.6666666f; // DAT_00f421c8
+
+constexpr uint64_t kChronoMsgIdle = 0x338fe7a;
+constexpr uint64_t kChronoMsgStopFirst = 0x36b0712;
+constexpr uint64_t kChronoMsgBrake = 0x3898b92;
+constexpr uint64_t kChronoTimeHashcode = 0x38804f2;
+constexpr uint64_t kChronoFeetHashcode = 0x3a68972;
+constexpr uint64_t kChronoMetersHashcode = 0x3974732;
+constexpr uint64_t kChronoMphHashcode = 0x3c50df2;
+constexpr uint64_t kChronoKmhHashcode = 0x3b5cbb2;
+
 static eInGameMenu FindMenuByName( const char *pMenuName ) {
     // FUN_006b66f0
     for ( int32_t i = IGM_None; i <= IGM_Chrono; ++i ) {
@@ -107,8 +122,22 @@ void MngInGameMenu::tick( float, float ) {
         close();
     }
 
-    if ( OpenedMenu == IGM_Players || OpenedMenu == IGM_Chrono ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P + Players/Chrono population
+    FlashPlayer *pHudPlayer = nullptr;
+    if ( gpActiveGameMode != nullptr && gpFlash != nullptr ) {
+        const eGameMode gm = gpActiveGameMode->getCurrentGameMode();
+        if ( gm == GM_FreeRide ) {
+            pHudPlayer = gpFlash->getFlashPlayer( "HUD" );
+        } else if ( gm == GM_Mission ) {
+            pHudPlayer = gpFlash->getFlashPlayer( "HUD_CHA" );
+        }
+    }
+    if ( pHudPlayer != nullptr && OpenedMenu == IGM_Chrono ) {
+        updateChronoMenu();
+    }
+
+    if ( StateMenu == IGMS_Open && pHudPlayer != nullptr &&
+         OpenedMenu == IGM_Players ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P (Players page population)
     }
 }
 
@@ -146,8 +175,8 @@ bool MngInGameMenu::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         updateMenuTimeout();
         CurrentPlayer = -1;
 
-        if ( GetLocalPlayerPhysVehicle() != nullptr ) {
-            resetSpeedChrono( false );
+        if ( PhysicsVehicle *pVehicle = GetLocalPlayerPhysVehicle() ) {
+            pVehicle->resetChrono();
         }
         return true;
     }
@@ -157,8 +186,8 @@ bool MngInGameMenu::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         OpenedMenu = IGM_None;
         StateMenu = IGMS_Closed;
 
-        if ( GetLocalPlayerPhysVehicle() != nullptr ) {
-            resetSpeedChrono( false );
+        if ( PhysicsVehicle *pVehicle = GetLocalPlayerPhysVehicle() ) {
+            pVehicle->resetChrono();
         }
 
         if ( bMustSaveOnClose ) {
@@ -169,8 +198,9 @@ bool MngInGameMenu::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     }
 
     case FlashMessage( "chro" ): { // the chrono page restarts the speed run
-        if ( GetLocalPlayerPhysVehicle() != nullptr ) {
-            resetSpeedChrono( true );
+        if ( PhysicsVehicle *pVehicle = GetLocalPlayerPhysVehicle() ) {
+            pVehicle->armChrono();
+            pVehicle->armBrakeChrono( kChronoBrakeTestSpeedMph );
             MaxSpeedImperial = -1.0f; // FLOAT_00f41664
         }
         return true;
@@ -442,10 +472,205 @@ void MngInGameMenu::refreshDrivingHelpLabel() {
                                          kDrivingHelpLevelHashcodes[level] );
 }
 
-void MngInGameMenu::resetSpeedChrono( bool bEnabled ) {
-    // FUN_00827ea0
-    (void)bEnabled;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (chronopack statistics block)
+static void SetChronoResults( FlashPlayer *pPlayer, const char *pValue ) {
+    static constexpr const char *kChronoResultVars[] = {
+        "/:cur_0_100_i",     "/:cur_0_100_m",    "/:cur_q_mile_i",
+        "/:cur_q_mile_m",    "/:cur_100_0_i",    "/:cur_100_0_m",
+        "/:cur_max_speed_i", "/:cur_max_speed_m" };
+    for ( const char *pVarName : kChronoResultVars ) {
+        pPlayer->setVariableValueNonLinked( pVarName, pValue );
+    }
+}
+
+static void SetChronoDisplay( FlashPlayer *pPlayer,
+                              const char *pTimer,
+                              const char *pResults ) {
+    pPlayer->setVariableValueNonLinked( "/:min_chrono", pTimer );
+    pPlayer->setVariableValueNonLinked( "/:sec_chrono", pTimer );
+    pPlayer->setVariableValueNonLinked( "/:cent_chrono", pTimer );
+    SetChronoResults( pPlayer, pResults );
+}
+
+void MngInGameMenu::setChronoTime( float time ) {
+    // FUN_006b6ac0
+    const float seconds = floorf( time );
+    const int32_t cents = int32_t( ( time - seconds ) * 100.0f );
+    const int32_t secs = int32_t( seconds ) % 60;
+    const int32_t mins = Clamp( int32_t( floorf( seconds / 60.0f ) ), 0, 99 );
+
+    char pSeconds[8];
+    char pCents[8];
+    sprintf( pSeconds, "%02d", secs );
+    sprintf( pCents, "%02d", cents );
+    pFlashVariable->setVariableValue( "/:min_chrono", mins );
+    pFlashVariable->setVariableValueNonLinked( "/:sec_chrono", pSeconds );
+    pFlashVariable->setVariableValueNonLinked( "/:cent_chrono", pCents );
+}
+
+void MngInGameMenu::setChronoAccelerateMessage() {
+    // FUN_006b7170
+    char pSpeed[32];
+    uint64_t speedUnitHashcode;
+    if ( gpPlayerData->isUsingImperialUnits() ) {
+        sprintf( pSpeed, "%d", 60 );
+        gpMngFlashLocalize->setSysVar( "SPEED", pSpeed );
+        speedUnitHashcode = 0x3c50df2;
+    } else {
+        sprintf( pSpeed, "%d", 96 );
+        gpMngFlashLocalize->setSysVar( "SPEED", pSpeed );
+        speedUnitHashcode = 0x3b5cbb2;
+    }
+
+    char pSpeedWithUnit[32];
+    gpMngFlashLocalize->makeSentenceFromHashcode(
+        pSpeedWithUnit, sizeof( pSpeedWithUnit ), speedUnitHashcode, nullptr );
+    gpMngFlashLocalize->clearAllSysVar();
+
+    gpMngFlashLocalize->setSysVar( "SPEED", pSpeedWithUnit );
+    gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:chrono_msg",
+                                         0x37a4952 );
+    gpMngFlashLocalize->clearAllSysVar();
+}
+
+void MngInGameMenu::updateChronoMenu() {
+    // FUN_006b7460
+    CarState *pCarState = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pCarState == nullptr ) {
+        return;
+    }
+    PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
+    if ( pVehicle == nullptr || pFlashVariable == nullptr ||
+         gpMngFlashLocalize == nullptr ) {
+        return;
+    }
+
+    const PhysicsVehicle::Chrono &chrono = pVehicle->getChrono();
+    switch ( chrono.AccelState ) {
+    case PhysicsVehicle::CAS_Off:
+        if ( chrono.BrakeState != PhysicsVehicle::CBS_Off ) {
+            return;
+        }
+        gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:chrono_msg",
+                                             kChronoMsgIdle );
+        SetChronoDisplay( pFlashVariable, "--", "--" );
+        return;
+
+    case PhysicsVehicle::CAS_StopFirst:
+        gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:chrono_msg",
+                                             kChronoMsgStopFirst );
+        SetChronoDisplay( pFlashVariable, "---", "---" );
+        pVehicle->armBrakeChrono( kChronoBrakeTestSpeedMph );
+        updateMenuTimeout();
+        return;
+
+    case PhysicsVehicle::CAS_Ready:
+        setChronoAccelerateMessage();
+        pFlashVariable->setVariableValueNonLinked( "/:min_chrono", "0" );
+        pFlashVariable->setVariableValueNonLinked( "/:sec_chrono", "00" );
+        pFlashVariable->setVariableValueNonLinked( "/:cent_chrono", "00" );
+        SetChronoResults( pFlashVariable, "---" );
+        updateMenuTimeout();
+        return;
+
+    case PhysicsVehicle::CAS_Running:
+        break;
+
+    default:
+        return;
+    }
+
+    const bool bImperial = gpPlayerData->isUsingImperialUnits();
+    const bool bMetric = !bImperial;
+    const float speedMph =
+        pCarState->getBody()->SpeedInKmh * kMetersPerSecToMph;
+
+    const bool bCompleted = ( chrono.T100kmh > 0.0f || bImperial ) &&
+                            ( chrono.T60mph > 0.0f || bMetric ) &&
+                            chrono.TQuarterMile > 0.0f &&
+                            chrono.Brake100kmhDistance > 0.0f;
+    if ( !bCompleted ) {
+        if ( chrono.BrakeState != PhysicsVehicle::CBS_Off ) {
+            Counter = chrono.Timer;
+            MaxSpeedImperial = Max( speedMph, MaxSpeedImperial );
+        }
+        setChronoTime( Counter );
+    }
+
+    if ( chrono.BrakeState == PhysicsVehicle::CBS_WaitForSpeed ) {
+        if ( MaxSpeedImperial <= kChronoBrakeTestSpeedMph ||
+             speedMph < kChronoBrakeTestSpeedMph ) {
+            setChronoAccelerateMessage();
+        } else {
+            gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:chrono_msg",
+                                                 kChronoMsgBrake );
+        }
+    } else if ( chrono.BrakeState == PhysicsVehicle::CBS_Braking ) {
+        gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:chrono_msg",
+                                             kChronoMsgBrake );
+    } else if ( chrono.BrakeState == PhysicsVehicle::CBS_Off ) {
+        gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:chrono_msg",
+                                             kChronoMsgIdle );
+    }
+
+    if ( chrono.T100kmh <= 0.0f ) {
+        pFlashVariable->setVariableValueNonLinked( "/:cur_0_100_m", "---" );
+    } else {
+        gpMngFlashLocalize->setSysVar( "TIME", chrono.T60mph );
+        gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:cur_0_100_m",
+                                             kChronoTimeHashcode );
+        gpMngFlashLocalize->clearAllSysVar();
+    }
+    if ( chrono.T60mph <= 0.0f ) {
+        pFlashVariable->setVariableValueNonLinked( "/:cur_0_100_i", "---" );
+    } else {
+        gpMngFlashLocalize->setSysVar( "TIME", chrono.T60mph );
+        gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:cur_0_100_i",
+                                             kChronoTimeHashcode );
+        gpMngFlashLocalize->clearAllSysVar();
+    }
+    if ( chrono.TQuarterMile <= 0.0f ) {
+        pFlashVariable->setVariableValueNonLinked( "/:cur_q_mile_m", "---" );
+        pFlashVariable->setVariableValueNonLinked( "/:cur_q_mile_i", "---" );
+    } else {
+        gpMngFlashLocalize->setSysVar( "TIME", chrono.TQuarterMile );
+        gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:cur_q_mile_m",
+                                             kChronoTimeHashcode );
+        gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:cur_q_mile_i",
+                                             kChronoTimeHashcode );
+        gpMngFlashLocalize->clearAllSysVar();
+    }
+
+    const float brakeDistanceScale =
+        gbSimuModeEnabled ? 1.0f : kChronoArcadeBrakeDistanceScale;
+    if ( chrono.Brake60mphDistance > 0.0f ) {
+        gpMngFlashLocalize->setSysVar(
+            "DISTANCE", brakeDistanceScale * chrono.Brake60mphDistance );
+        gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:cur_100_0_i",
+                                             kChronoFeetHashcode );
+        gpMngFlashLocalize->clearAllSysVar();
+    }
+
+    if ( chrono.Brake100kmhDistance > 0.0f ) {
+        gpMngFlashLocalize->setSysVar( "DISTANCE", chrono.Brake60mphDistance *
+                                                       kFeetToMeters *
+                                                       brakeDistanceScale );
+        gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:cur_100_0_m",
+                                             kChronoMetersHashcode );
+        gpMngFlashLocalize->clearAllSysVar();
+    }
+
+    gpMngFlashLocalize->setSysVar( "SPEED", MaxSpeedImperial );
+    gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:cur_max_speed_i",
+                                         kChronoMphHashcode );
+    gpMngFlashLocalize->clearAllSysVar();
+    gpMngFlashLocalize->setSysVar( "SPEED", MaxSpeedImperial * kMphToKmh );
+    gpMngFlashLocalize->setVarLocalized( pFlashVariable, "/:cur_max_speed_m",
+                                         kChronoKmhHashcode );
+    gpMngFlashLocalize->clearAllSysVar();
+
+    updateMenuTimeout();
 }
 
 void MngInGameMenu::updateMenuTimeout() {
