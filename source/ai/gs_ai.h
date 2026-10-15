@@ -39,6 +39,7 @@ public:
     inline AiPedestrianManager &getPedestrianManager() {
         return pedestrianManager;
     }
+    inline float *getSignalSyncTime() const { return pSignalSyncTime; }
 
 public:
     GSAI();
@@ -81,7 +82,11 @@ private:
     bool bBotsActive;
     bool bLocationsFromCarState; // Object locations are updated by GSCarState
                                  // instead
+    float *pSignalSyncTime;
 };
+
+// Returns the traffic signal bulb mask (red 0x1, orange 0x2, green 0x4).
+uint32_t GetTrafficSignalState( int32_t synchro, float *pSyncTime );
 
 extern GSAI *gpAI;
 extern GSAI gGSAI;

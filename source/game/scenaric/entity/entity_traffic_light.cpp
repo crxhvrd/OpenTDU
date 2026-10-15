@@ -5,6 +5,7 @@
 #include "render/material.h"
 #include "render/2dm.h"
 #include "filesystem/binary.h"
+#include "ai/gs_ai.h"
 
 // Toggles the red/orange/green bulbs.
 static constexpr FlashMessage kTrafficLightCine =
@@ -109,8 +110,8 @@ void EntityTrafficLight::tick( PlayerGameMech *pGameMech,
     if ( ( flags & 8 ) != 0 ) {
         lightState = CineFlags;
     } else {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
-        return;
+        lightState =
+            GetTrafficSignalState( Synchro, gGSAI.getSignalSyncTime() );
     }
 
     if ( lightState == static_cast<uint32_t>( OldFlags ) ) {

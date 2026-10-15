@@ -303,6 +303,11 @@ public:
     inline int32_t getNumJunctions() const { return NumJunction; }
     inline Road *getRoads() const { return pRoads; }
     inline int32_t getNumSpeedLimits() const { return NumSpeedLimits; }
+    inline int32_t getNumTrafficSignalTypes() const {
+        return NumTrafficSignalTypes;
+    }
+    inline bool isDetailInstalled() const { return bDetailInstalled; }
+    inline uint32_t getSizeRoadmap() const { return SizeRoadmap; }
     inline float getSpeedLimit( const int32_t index ) const {
         return pArraySpeedLimit[index];
     }

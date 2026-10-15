@@ -10,6 +10,7 @@
 #include "game/game_object.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
+#include "gs_timer.h"
 #include "physics/gs_physics.h"
 #include "filesystem/bank.h"
 
@@ -22,6 +23,11 @@ bool gbDisableObstacleParser = false; // DAT_010e73d3
 
 static constexpr int32_t kNumPathNodes = 0xc00;
 static constexpr int32_t kNumRouteElems = 0x400;
+
+static constexpr int32_t kSignalPhaseDurationMs = 20000; // DAT_00faa99c
+static constexpr int32_t kSignalOrangeDurationMs = 5000; // DAT_00faa998
+
+static float gSignalSyncTime = -1.0f; // DAT_00fa9094
 
 static AiPool gAiPool; // DAT_01451070
 AiLODSorter gAiLODSorter;
@@ -48,7 +54,8 @@ GSAI::GSAI()
       bPauseTraffic( false ),
       bCopsActive( false ),
       bBotsActive( false ),
-      bLocationsFromCarState( false ) {
+      bLocationsFromCarState( false ),
+      pSignalSyncTime( &gSignalSyncTime ) {
     OTDU_ASSERT( gpAI == nullptr );
     gpAI = this;
 }
@@ -61,6 +68,40 @@ GSAI::~GSAI() {
         std::free( pUpgradedRoadDetails );
     }
     gpAI = nullptr;
+}
+
+uint32_t GetTrafficSignalState( int32_t synchro, float *pSyncTime ) {
+    // FUN_0092c470
+    const AiRoadMap &roadMap = gGSAI.getRoadMap();
+    if ( roadMap.getSizeRoadmap() == 0 || !roadMap.isDetailInstalled() ||
+         synchro < 0 || synchro >= roadMap.getNumTrafficSignalTypes() ) {
+        return 0;
+    }
+
+    // Synchro packs (numPhases, phase): groups of 2, 3, 4... phases laid out
+    // back to back.
+    int32_t numPhases = 2;
+    while ( numPhases <= synchro ) {
+        synchro -= numPhases;
+        numPhases++;
+    }
+
+    float syncTime = gpTimer->GameTotalTime;
+    const bool bInOnlineSession = false; // TODO: ONLINE (gpCP2PGameService)
+    if ( bInOnlineSession ) {
+        OTDU_UNIMPLEMENTED; // TODO: ONLINE (session clock FUN_0096a980)
+    }
+    *pSyncTime = syncTime;
+
+    const int32_t cycleTimeMs = static_cast<int32_t>( syncTime * 1000.0f ) %
+                                ( kSignalPhaseDurationMs * numPhases );
+    if ( cycleTimeMs / kSignalPhaseDurationMs != synchro ) {
+        return 1;
+    }
+
+    const int32_t phaseTimeLeftMs =
+        kSignalPhaseDurationMs - cycleTimeMs % kSignalPhaseDurationMs;
+    return ( phaseTimeLeftMs > kSignalOrangeDurationMs ) ? 4 : 2;
 }
 
 bool GSAI::initialize( TestDriveGameInstance * ) {
