@@ -1300,7 +1300,7 @@ void HudMinimap::buildMapDrawList() {
         pGps->drawRoute( WorldToMap, drawList );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AI/ONLINE
+    OTDU_UNIMPLEMENTED; // TODO: AI/ONLINE (FUN_006e6bc0 vehicle blips)
 
     if ( gpTestDriveInstance != nullptr &&
          gpTestDriveInstance->getActiveGameMode() == GM_FreeRide ) {
@@ -1400,7 +1400,187 @@ void HudMinimap::LureDrawCallback( FlashRECT * /*pViewport*/,
                    pMinimap->LureX + pMinimap->LureWidth,
                    pMinimap->LureY + pMinimap->LureHeight, pResource );
 
-    OTDU_UNIMPLEMENTED;
+    if ( pMinimap->pGameMech != nullptr ) {
+        pMinimap->drawObjectiveDistance();
+    }
+}
+
+static bool IsObjectiveMarkerEmpty( const HudObjectiveMarker &marker ) {
+    return marker.Type == nullptr || *marker.Type == '\0';
+}
+
+void HudMinimap::drawObjectiveDistance() {
+    // FUN_006e9310
+    FlashPlayer *pHudPlayer = gpMngHud->pHudPlayer;
+    if ( pHudPlayer == nullptr ) {
+        return;
+    }
+
+    char pPath[76];
+    if ( !bDistanceDotsInitialized ) {
+        FlashClip distanceClip;
+        if ( !pHudPlayer->getClipPlayer( "HUD/minimap/distance",
+                                         &distanceClip ) ) {
+            return;
+        }
+
+        for ( int32_t dotIndex = 0; dotIndex < kNumDistanceDots; dotIndex++ ) {
+            snprintf( pPath, sizeof( pPath ),
+                      "/HUD/minimap/distance/obj_dist_%02d", dotIndex + 1 );
+            FlashClip dotClip;
+            if ( !pHudPlayer->getClipPlayer( pPath, &dotClip ) ) {
+                continue;
+            }
+
+            DistanceDot &dot = DistanceDots[dotIndex];
+            dot.X = dotClip.getPropertyFloat( eFlashProperty::FP_X ) +
+                    distanceClip.getPropertyFloat( eFlashProperty::FP_X );
+            dot.Y = dotClip.getPropertyFloat( eFlashProperty::FP_Y ) +
+                    distanceClip.getPropertyFloat( eFlashProperty::FP_Y );
+            dot.bVisible = false;
+            dotClip.setProperty( eFlashProperty::FP_Visible, false );
+        }
+        bDistanceDotsInitialized = true;
+    }
+
+    int32_t numActiveMarkers = 0;
+    for ( const HudObjectiveMarker &marker : gpMngHud->objectiveMarkers ) {
+        if ( !IsObjectiveMarkerEmpty( marker ) ) {
+            numActiveMarkers++;
+        }
+    }
+
+    FlashClip distanceClip;
+    if ( numActiveMarkers == 0 ) {
+        if ( pHudPlayer->getClipPlayer( "HUD/minimap/distance",
+                                        &distanceClip ) ) {
+            distanceClip.setProperty( eFlashProperty::FP_Visible, false );
+        }
+        for ( int32_t markerIndex = 0;
+              markerIndex < MngHud::kMaxObjectiveMarkers; markerIndex++ ) {
+            snprintf( pPath, sizeof( pPath ), "/HUD/minimap/objectif_%02d",
+                      markerIndex + 1 );
+            FlashClip objectiveClip;
+            if ( pHudPlayer->getClipPlayer( pPath, &objectiveClip ) ) {
+                objectiveClip.setProperty( eFlashProperty::FP_Visible, false );
+            }
+        }
+        return;
+    }
+
+    const bool bSingleObjective = numActiveMarkers < 2;
+
+    for ( int32_t markerIndex = 0; markerIndex < MngHud::kMaxObjectiveMarkers;
+          markerIndex++ ) {
+        const HudObjectiveMarker &marker =
+            gpMngHud->objectiveMarkers[markerIndex];
+
+        snprintf( pPath, sizeof( pPath ), "/HUD/minimap/objectif_%02d",
+                  markerIndex + 1 );
+        FlashClip objectiveClip;
+        if ( !pHudPlayer->getClipPlayer( pPath, &objectiveClip ) ) {
+            continue;
+        }
+
+        if ( IsObjectiveMarkerEmpty( marker ) ) {
+            objectiveClip.setProperty( eFlashProperty::FP_Visible, false );
+            continue;
+        }
+
+        objectiveClip.setProperty( eFlashProperty::FP_Visible, true );
+        pHudPlayer->showFrame( marker.Type, pPath, false );
+
+        const Eigen::Vector4f mapPosition = TDUMat4x4MulVec(
+            WorldToMap, Eigen::Vector4f( marker.Position.x(),
+                                         marker.Position.z(), 0.0f, 1.0f ) );
+        const bool bOnScreen =
+            mapPosition.x() >= 0.0f && mapPosition.x() <= 1.0f &&
+            mapPosition.y() >= 0.0f && mapPosition.y() <= 1.0f;
+
+        if ( !bSingleObjective || bOnScreen ) {
+            const float clampedX =
+                std::min( std::max( mapPosition.x(), 0.0f ), 1.0f );
+            const float clampedY =
+                std::min( std::max( mapPosition.y(), 0.0f ), 1.0f );
+            objectiveClip.setProperty( eFlashProperty::FP_X,
+                                       CursorScaleX * clampedX );
+            objectiveClip.setProperty( eFlashProperty::FP_Y,
+                                       CursorScaleY * clampedY );
+
+            if ( pHudPlayer->getClipPlayer( "HUD/minimap/distance",
+                                            &distanceClip ) ) {
+                distanceClip.setProperty( eFlashProperty::FP_Visible, false );
+            }
+            continue;
+        }
+
+        if ( pHudPlayer->getClipPlayer( "HUD/minimap/distance",
+                                        &distanceClip ) ) {
+            distanceClip.setProperty( eFlashProperty::FP_Visible, true );
+        }
+
+        const float targetX = CursorScaleX * mapPosition.x();
+        const float targetY = CursorScaleY * mapPosition.y();
+        int32_t nearestDot = 0;
+        float nearestDistance = 1000000.0f; // DAT_00f03e70
+        for ( int32_t dotIndex = 0; dotIndex < kNumDistanceDots; dotIndex++ ) {
+            DistanceDot &dot = DistanceDots[dotIndex];
+            const float deltaX = targetX - dot.X;
+            const float deltaY = targetY - dot.Y;
+            const float distance =
+                std::sqrt( deltaY * deltaY + deltaX * deltaX );
+            if ( distance < nearestDistance ) {
+                nearestDot = dotIndex;
+                nearestDistance = distance;
+            }
+            dot.bUsed = false;
+        }
+
+        objectiveClip.setProperty( eFlashProperty::FP_X,
+                                   DistanceDots[nearestDot].X );
+        objectiveClip.setProperty( eFlashProperty::FP_Y,
+                                   DistanceDots[nearestDot].Y );
+
+        int32_t numLitDots =
+            1 - static_cast<int32_t>( nearestDistance * -0.1f );
+        numLitDots = std::min( numLitDots, 10 );
+
+        auto lightDot = [&]( const int32_t dotIndex, const int32_t frame ) {
+            DistanceDot &dot = DistanceDots[dotIndex];
+            snprintf( pPath, sizeof( pPath ),
+                      "/HUD/minimap/distance/obj_dist_%02d", dotIndex + 1 );
+            FlashClip dotClip;
+            if ( !dot.bVisible &&
+                 pHudPlayer->getClipPlayer( pPath, &dotClip ) ) {
+                dotClip.setProperty( eFlashProperty::FP_Visible, true );
+                dot.bVisible = true;
+            }
+            dot.bUsed = true;
+            pHudPlayer->goToFrameAndPlay( frame, pPath, false );
+        };
+
+        for ( int32_t step = 1; step <= numLitDots; step++ ) {
+            lightDot( ( nearestDot + step ) % kNumDistanceDots, 1 );
+            lightDot( ( nearestDot - step + kNumDistanceDots ) %
+                          kNumDistanceDots,
+                      0 );
+        }
+
+        for ( int32_t dotIndex = 0; dotIndex < kNumDistanceDots; dotIndex++ ) {
+            DistanceDot &dot = DistanceDots[dotIndex];
+            if ( dot.bUsed || !dot.bVisible ) {
+                continue;
+            }
+
+            snprintf( pPath, sizeof( pPath ),
+                      "/HUD/minimap/distance/obj_dist_%02d", dotIndex + 1 );
+            FlashClip dotClip;
+            if ( pHudPlayer->getClipPlayer( pPath, &dotClip ) ) {
+                dotClip.setProperty( eFlashProperty::FP_Visible, false );
+                dot.bVisible = false;
+            }
+        }
+    }
 }
 
 void HudMinimap::tick( float deltaTime ) {
@@ -1702,9 +1882,8 @@ MngHud::MngHud()
     needleMaterialActive = FlashMaterial{};
 
     if ( gpMngHud == nullptr ) {
+        bGPSRotation = gpPlayerData->getLocalPlayerData().bGPSRotation;
         bDisplayTrace = true;
-        OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA
-        bGPSRotation = true;
         gpMngHud = this;
         screenWidth = static_cast<float>( gpRender->getWidth() );
     }
@@ -1899,8 +2078,8 @@ void MngHud::tick( float deltaTime, float totalTime ) {
         installCarGauges();
     }
 
-    OTDU_UNIMPLEMENTED;           // TODO: SCENARICS
-    const bool bDemoMode = false; // Should be read from GSScenaric
+    const bool bDemoMode =
+        ( gpScenaric != nullptr ) && gpScenaric->isDemoModeActive();
     if ( !gpCamera->isInReplayMode() && !bDemoMode && customGaugesMode == 2 &&
          gaugesState == 6 ) {
         showCustomGauges();
@@ -2134,10 +2313,10 @@ void MngHud::pause() {
 
 void MngHud::updateUnitSystem() {
     // FUN_006e8a10
-
-    OTDU_UNIMPLEMENTED; // TODO: FLASH
-
+    gFlashCallbacksRegister.removeAllSynonyms( &MngHud::GaugeRpmFaceCallback );
     bGaugeClipCallbackA = false;
+    gFlashCallbacksRegister.removeAllSynonyms(
+        &MngHud::GaugeSpeedFaceCallback );
     bGaugeClipCallbackB = false;
 
     const HudGaugeRange &range = gpPlayerData->isUsingImperialUnits()
@@ -2218,7 +2397,7 @@ void MngHud::FUN_006e6a00( CarState *param_2 ) {
     pTruncatedName[0x20] = '\0';
     setCarName( pTruncatedName );
 
-    OTDU_UNIMPLEMENTED; // TODO: DEBUG
+    OTDU_UNIMPLEMENTED; // TODO: ONLINE (FUN_008726c0 "CARSELECT" r_logstat)
 }
 
 void MngHud::initializeFlash() {
@@ -2962,7 +3141,7 @@ void MngHud::showCustomGauges() {
 
 void MngHud::FUN_006ed810() {
     // FUN_006ed810
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED; // TODO: AI (police infraction state, GSAI+0x1394)
 }
 
 void MngHud::setCarName( const char *pName ) {

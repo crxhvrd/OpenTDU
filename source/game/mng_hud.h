@@ -124,6 +124,7 @@ class HudMinimap {
 public:
     static constexpr int32_t kNumMapChunks = 5;
     static constexpr int32_t kTraceCapacity = 300;
+    static constexpr int32_t kNumDistanceDots = 62;
 
 public:
     // View rect for one zoom level, in absolute world units + map UV.
@@ -138,6 +139,15 @@ public:
         float XMax = 0.0f;
         float YMin = 0.0f;
         float YMax = 0.0f;
+    };
+
+    // One "HUD/minimap/distance/obj_dist_NN" dot of the off-screen objective
+    // ring.
+    struct DistanceDot {
+        bool bVisible = false;
+        bool bUsed = false;
+        float X = 0.0f;
+        float Y = 0.0f;
     };
 
 public:
@@ -181,6 +191,9 @@ public:
     bool bLureVisible = false;
     bool bGpsTextureBound = false;
 
+    DistanceDot DistanceDots[kNumDistanceDots];
+    bool bDistanceDotsInitialized = false;
+
     Matrix4x4f_t WorldToMap = Matrix4x4f_t::Identity();
     Matrix4x4f_t MapRotation = Matrix4x4f_t::Identity();
 
@@ -213,6 +226,7 @@ public:
 private:
     void refreshLureRect();
     void bindGpsTextureToPlayerCar();
+    void drawObjectiveDistance();
     void appendTracePoint();
     void drawTrace();
     void drawRoadNetwork();
