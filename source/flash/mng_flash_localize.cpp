@@ -11,6 +11,7 @@
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
+#include "player_data/saved_mailbox.h"
 
 MngFlashLocalize *gpMngFlashLocalize = nullptr;
 char MngFlashLocalize::VersionString[64] = "VERSION UKNOW";
@@ -229,8 +230,10 @@ void MngFlashLocalize::expandMacroToken( const char *pToken, char *pDest ) {
     }
 
     if ( strncmp( pLocalToken, "NEWS", 4 ) == 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA (unread news count)
-        pDest[0] = '\0';
+        const int32_t numMessages =
+            ( pSave != nullptr ) ? pSave->getMailbox()->getNumVisibleMessages()
+                                 : 0;
+        snprintf( pDest, kDestLength, "%d", numMessages );
         return;
     }
 

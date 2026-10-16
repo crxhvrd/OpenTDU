@@ -2,6 +2,8 @@
 #include "mng_flash_counter.h"
 
 #include "core/format.h"
+#include "flash/audio/flash_sounds.h"
+#include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
 #include "gs_timer.h"
 #include "input/gs_device.h"
@@ -20,7 +22,7 @@ MngFlashCounter::MngFlashCounter()
       stepValue( 0.0f ),
       lastTimePressed( 0.0f ),
       timer( 0.0f ),
-      unknownDword( 1 ),
+      movieLevel( 1 ),
       bIsMoney( false ),
       bHasFocus( false ),
       bDisableRepeat( false ),
@@ -40,7 +42,7 @@ MngFlashCounter::~MngFlashCounter() {
 void MngFlashCounter::stopSound() {
     // FUN_0071df60
     if ( bIsSFXPlaying ) {
-        OTDU_UNIMPLEMENTED; // TODO: AUDIO
+        gpFlash->getFlashSound()->stopGroup( "grpShift", 0.0f );
         bIsSFXPlaying = false;
     }
 }
@@ -104,17 +106,17 @@ void MngFlashCounter::setValue( float param_2, bool param_3, bool param_4 ) {
     pFlashPlayer->setVariableValue( valueString.c_str(), local_40 );
     pFlashPlayer->setVariableValue( "/:NameTemp", local_40 );
 
-    if ( ( std::isnan( fVar2 ) || std::isnan( value ) ) !=
-         ( fVar2 == value ) ) {
+    if ( fVar2 == value ) {
         if ( !bDisableRepeat ) {
             bDisableRepeat = true;
-            OTDU_UNIMPLEMENTED;
+            gpFlash->getFlashSound()->playFrontEndSound( "stop", 0, false );
         }
         return;
     }
 
     if ( !bIsSFXPlaying ) {
-        OTDU_UNIMPLEMENTED;
+        gpFlash->getFlashSound()->playFrontEndSound( "ig_move:grpShift", 1,
+                                                     false );
         bIsSFXPlaying = true;
     }
     bDisableRepeat = false;
@@ -137,7 +139,7 @@ void MngFlashCounter::tick( float param_2, float param_3 ) {
     bool bNavDown = false;
     gpDevice->retrieveFlashNavKeyStates( &bNavUp, &bNavDown, true,
                                          !bUpDownPressed,
-                                         static_cast<int32_t>( unknownDword ) );
+                                         static_cast<int32_t>( movieLevel ) );
 
     const MouseState &mouse = gpDevice->getMouseState();
     const bool bWheelDown = mouse.pChannelWheelDown != nullptr &&
@@ -255,7 +257,16 @@ void MngFlashCounter::onActivation( FlashPlayer *param_2 ) {
     bPressedArrowLeft = false;
     bPressedArrowRight = false;
 
-    OTDU_UNIMPLEMENTED; // TODO:
+    for ( int32_t level = 0; level < 2; level++ ) {
+        for ( int32_t movieIndex = 0;
+              movieIndex < gpFlash->getNumMovies( level ); movieIndex++ ) {
+            if ( gpFlash->getLoadedFlashPlayer( level, movieIndex ) ==
+                 pFlashPlayer ) {
+                movieLevel = static_cast<uint32_t>( level );
+                return;
+            }
+        }
+    }
 }
 
 bool MngFlashCounter::onMessage( FlashMessage *pMessage,

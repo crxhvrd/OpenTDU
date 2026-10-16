@@ -634,7 +634,7 @@ FlashDisplayList::FlashDisplayList( FlashStack *param_1,
     action.pStack = param_1;
 }
 
-FlashDisplayList::~FlashDisplayList() { OTDU_UNIMPLEMENTED; }
+FlashDisplayList::~FlashDisplayList() {}
 
 void FlashDisplayList::initialize( FlashSprite *pParent,
                                    uint8_t *pTagsArray,

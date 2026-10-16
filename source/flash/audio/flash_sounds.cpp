@@ -431,6 +431,30 @@ int32_t FlashSounds::getFreeVoice() {
     return -1;
 }
 
+bool FlashSounds::queuePendingSound( const char *pName, const bool bLoop ) {
+    // FUN_0099d230
+    for ( PendingSound &pending : pendingSounds ) {
+        if ( pending.Name[0] == '\0' ) {
+            strncpy( pending.Name, pName, sizeof( pending.Name ) - 1 );
+            pending.Name[sizeof( pending.Name ) - 1] = '\0';
+            pending.bLoop = bLoop;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void FlashSounds::flushPendingSound() {
+    // FUN_0099daf0
+    PendingSound &pending = pendingSounds[0];
+    if ( pending.Name[0] != '\0' ) {
+        playFrontEndSound( pending.Name, pending.bLoop ? 1 : 0, false );
+        pending.Name[0] = '\0';
+        pending.bLoop = false;
+    }
+}
+
 bool FlashSounds::playFrontEndSound( const char *param_2,
                                      int32_t param_3,
                                      bool param_4 ) {
@@ -440,8 +464,7 @@ bool FlashSounds::playFrontEndSound( const char *param_2,
     }
 
     if ( param_4 ) {
-        OTDU_UNIMPLEMENTED;
-        return false;
+        return queuePendingSound( param_2, param_3 == 1 );
     }
 
     std::string message( param_2 );
@@ -535,4 +558,19 @@ bool FlashSounds::stopGroup( const char *pGroupName, float fadeTime ) {
     }
 
     return bStoppedAny;
+}
+
+void FlashSounds::stopAllGroups() {
+    // FUN_0099cfc0
+    for ( int32_t i = 0; i < kNumVoices; i++ ) {
+        if ( voiceGroups[i][0] == '\0' ) {
+            continue;
+        }
+
+        edAudioStreamEntry *pVoice = voices[i].get();
+        if ( pVoice != nullptr && !pVoice->isStopped() ) {
+            pVoice->stop( 0.0f );
+        }
+        voiceGroups[i][0] = '\0';
+    }
 }

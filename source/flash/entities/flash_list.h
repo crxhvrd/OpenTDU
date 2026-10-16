@@ -47,7 +47,7 @@ public:
     virtual void open();
     virtual void close();
     virtual void sort( int32_t param_1 );
-    virtual void update( const int32_t param_2, const int32_t param_3 );
+    virtual void update( const int32_t param_2, const int32_t param_3 ) = 0;
     virtual void scroll( int32_t param_2 );
     virtual void scrollNoUpdate( int32_t param_2 );
     virtual void selectedLineChanged() {

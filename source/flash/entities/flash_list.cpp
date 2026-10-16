@@ -501,10 +501,6 @@ bool FlashList::FUN_0071c8b0() {
     return ( field17_0x68 && field18_0x69 );
 }
 
-void FlashList::update( const int32_t param_2, const int32_t param_3 ) {
-    OTDU_UNIMPLEMENTED;
-}
-
 void FlashList::scroll( int32_t param_2 ) {
     // FUN_0071d950
     int32_t iVar1 = firstLine;

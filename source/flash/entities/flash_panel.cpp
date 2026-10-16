@@ -19,9 +19,52 @@ static bool gbEtradeAvailable =
     false; // DAT_014d5af2 // TODO: ONLINE: MOVE ME TO ONLINE
 FlashPanelOnline *gpFlashPanelOnline = nullptr; // DAT_010e7ee8
 
+static char gFreeMessage[0x80] = "ERROR"; // s_ERROR_00fab990
+
 void FUN_00719350( FlashPlayer *param_1, bool param_2 ) {
     // FUN_00719350
-    OTDU_UNIMPLEMENTED;
+    if ( gpMngFlashLocalize == nullptr ) {
+        return;
+    }
+
+    const uint32_t messageHashcode =
+        gpPlayerData->isOnline() ? 0x575da4u : 0x58e444u;
+    const char *pMessage =
+        gpDatabase->getStringByHashcode( 11, messageHashcode );
+
+    int32_t numPlayers = 0;
+    if ( param_2 ) {
+        OTDU_UNIMPLEMENTED; // TODO: ONLINE (free ride player count)
+    }
+
+    FlashPlayer *pConfigPlayer = gpFlash->getFlashPlayer( "CONFIGPC" );
+    // TODO: ONLINE: also requires a valid GPS tracker IP address
+    if ( numPlayers < 1 ) {
+        if ( pMessage == nullptr ) {
+            param_1->setVariableValueNonLinked( "/:FreeMessage", " " );
+            if ( pConfigPlayer != nullptr ) {
+                pConfigPlayer->setVariableValueNonLinked( "/:FreeMessage",
+                                                          " " );
+            }
+        } else {
+            param_1->setVariableValue( "/:FreeMessage", pMessage );
+            if ( pConfigPlayer != nullptr ) {
+                pConfigPlayer->setVariableValue( "/:FreeMessage", pMessage );
+            }
+        }
+        return;
+    }
+
+    const char *pPlayersLabel = gpDatabase->getStringByHashcode( 0, 0x3c5d142 );
+    if ( pMessage != nullptr && pPlayersLabel != nullptr ) {
+        snprintf( gFreeMessage, sizeof( gFreeMessage ), "%s - %u %s", pMessage,
+                  numPlayers, pPlayersLabel );
+        gFreeMessage[sizeof( gFreeMessage ) - 1] = '\0';
+    }
+    param_1->setVariableValue( "/:FreeMessage", gFreeMessage );
+    if ( pConfigPlayer != nullptr ) {
+        pConfigPlayer->setVariableValue( "/:FreeMessage", gFreeMessage );
+    }
 }
 
 FlashPanel::FlashPanel() : Notifier(), pMovie( nullptr ), pTarget( nullptr ) {}

@@ -36,6 +36,11 @@ public:
                             FlashPlayer *pPlayer ) override;
 
 protected:
+    virtual void initializeWidgets() {
+        // FUN_0063f2b0
+    }
+
+protected:
     std::vector<FlashWidget> flashWidgets;
 
     uint8_t bInitialized : 1;
@@ -43,7 +48,7 @@ protected:
     uint8_t bNeedDatabaseInit : 1;
 
 private:
-    void FUN_007bbd20();
+    bool dispatchWidgetMessage( FlashMessage *pMessage, FlashPlayer *pPlayer );
 };
 
 bool RequestMapGameMode( FlashPlayer *pPlayer );

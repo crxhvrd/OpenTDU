@@ -1362,7 +1362,7 @@ FlashSprite::FlashSprite( FlashStack *param_1, FlashVariables *param_2 )
     // FUN_00448680
 }
 
-FlashSprite::~FlashSprite() { OTDU_UNIMPLEMENTED; }
+FlashSprite::~FlashSprite() {}
 
 void FlashSprite::addChild( FlashRenderResource *param_2,
                             FlashDisplayListEntry *param_3,
@@ -1495,8 +1495,6 @@ void FlashSprite::retrieveRectForID( int32_t param_1, FlashRECT *param_2 ) {
         param_2->Y = local_44.Y * 0.05f;
         param_2->Width = ( local_44.Width - local_44.X ) * 0.05f;
         param_2->Height = ( local_44.Height - local_44.Y ) * 0.05f;
-    } else {
-        OTDU_UNIMPLEMENTED;
     }
 }
 
@@ -2708,8 +2706,29 @@ float FlashSprite::getPropertyFloat( const eFlashProperty property ) {
         return y * gpActiveFlashResource->getScreenRatio().y() +
                pState->Viewport.Y;
     }
+    case eFlashProperty::FP_Width: {
+        FlashRECT rect;
+        getBoundingBox( true, &rect );
+        return ( rect.Width - rect.X ) * 0.05f;
+    }
+    case eFlashProperty::FP_Height: {
+        FlashRECT rect;
+        getBoundingBox( true, &rect );
+        return ( rect.Height - rect.Y ) * 0.05f;
+    }
+    case eFlashProperty::FP_Rotation:
+        return instanceTransform.FUN_00442c70();
+    case eFlashProperty::FP_ColorR:
+    case eFlashProperty::FP_ColorG:
+    case eFlashProperty::FP_ColorB: {
+        // Retail transforms an uninitialized stack color; start from black.
+        ColorRGBA color =
+            FUN_00442940( &instanceTransform.Transform, ColorRGBA( 0u ) );
+        const int32_t channel =
+            int32_t( property ) - int32_t( eFlashProperty::FP_ColorR );
+        return float( color[channel] * 100 ) * ( 1.0f / 256.0f );
+    }
     default:
-        OTDU_UNIMPLEMENTED;
         return 0.0f;
     }
 }

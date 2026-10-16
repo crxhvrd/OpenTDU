@@ -339,7 +339,22 @@ FlashResource::FlashResource( void *pMemPool,
     // FUN_00441700
 }
 
-FlashResource::~FlashResource() { OTDU_UNIMPLEMENTED; }
+FlashResource::~FlashResource() {
+    if ( pClipTrianglesMemory != nullptr ) {
+        TestDrive::Free(
+            flashSprite.getDisplayList()->getAction().pActionsList );
+        flashSprite.getDisplayList()->getAction().pActionsList = nullptr;
+    }
+
+    TestDrive::Free( pClipTrianglesMemory );
+    TestDrive::Free( pBufVertexMemory );
+    TestDrive::Free( pVertexMemory );
+    TestDrive::Free( pClipTriListCount2Memory );
+    pClipTrianglesMemory = nullptr;
+    pBufVertexMemory = nullptr;
+    pVertexMemory = nullptr;
+    pClipTriListCount2Memory = nullptr;
+}
 
 float FlashResource::StringToFloat( const char *pString ) {
     // FUN_00442530
@@ -790,10 +805,41 @@ void FlashResource::bindMaterial( FlashMaterial *param_1 ) {
                     param_1->Bytes );
 }
 
+struct FlashXIXTEntry {
+    int32_t DictionaryIndex;
+    int32_t ID;
+    uint32_t BB[4];
+    float UV[2];
+};
+OTDU_SIZE_MUST_MATCH( FlashXIXTEntry, 0x20 );
+
 void FlashResource::FUN_004421a0( int32_t param_2, FlashMaterial *param_3 ) {
     // FUN_004421a0
-    // NOTE: Seems unused on PC?
-    OTDU_UNIMPLEMENTED;
+    if ( pXIXT == nullptr ) {
+        return;
+    }
+
+    const uint32_t numEntries = *(uint32_t *)( pXIXT + 4 );
+    FlashXIXTEntry *pEntries = (FlashXIXTEntry *)( pXIXT + 8 );
+    for ( uint32_t i = 0; i < numEntries; i++ ) {
+        FlashXIXTEntry &entry = pEntries[i];
+        if ( entry.ID != param_2 || entry.DictionaryIndex < 0 ||
+             entry.DictionaryIndex >= flashDictionary.getSize() ) {
+            continue;
+        }
+
+        FlashTag *pTag = flashDictionary.getTagAtIndex( entry.DictionaryIndex );
+        if ( pTag == nullptr || pTag->getVtable()->GetType() != 0x14 ) {
+            continue;
+        }
+
+        FlashTagDefineBitsLosslessData *pData =
+            (FlashTagDefineBitsLosslessData *)pTag;
+        setTagPtr0( pData, param_3 );
+        memcpy( pData->BB, entry.BB, sizeof( pData->BB ) );
+        memcpy( pData->pFloats, entry.UV, sizeof( pData->pFloats ) );
+        flashDictionary.enqueueAtIndex( entry.DictionaryIndex, nullptr );
+    }
 }
 
 void FlashResource::destroyInternalState() {
@@ -1064,7 +1110,7 @@ void FUN_00442db0( int32_t param_1, uint8_t *param_2, uint8_t *param_3 ) {
                             0x10 );
 }
 
-static ColorRGBA FUN_00442940( CXForm *param_1, ColorRGBA param_2 ) {
+ColorRGBA FUN_00442940( CXForm *param_1, ColorRGBA param_2 ) {
     // FUN_00442940
     for ( int32_t i = 0; i < 4; i++ ) {
         int32_t local = ( (int32_t)( (int32_t)(int16_t)param_1->MulTerm[i] *
@@ -2500,7 +2546,54 @@ void FlashResource::FUN_0044eb40( FlashTagDefineBitsLosslessData *param_2,
         }
     }
     if ( ( isInitialized() == false ) && ( 0 < local_5c ) ) {
-        OTDU_UNIMPLEMENTED;
+        const float *pT = param_4->ScalarsFloat;
+        const float quadTriangles[2][6] = {
+            {local_30, local_2c, local_28, local_24, local_20, local_1c},
+            {local_18, local_14, local_28, local_14, local_20, local_1c}
+        };
+        for ( const float *pTriangle : quadTriangles ) {
+            float clipTriangle[6];
+            for ( int32_t i = 0; i < 3; i++ ) {
+                const float x = pTriangle[i * 2];
+                const float y = pTriangle[i * 2 + 1];
+                clipTriangle[i * 2] = pT[3] * y + x * pT[0] + pT[4];
+                clipTriangle[i * 2 + 1] = pT[2] * x + pT[1] * y + pT[5];
+            }
+
+            int32_t numClipped = 0;
+            FUN_00450c90( pFVar7->pVertexMemory, &numClipped, local_5c,
+                          clipTriangle, pFVar7->pClipTriListCount2Memory );
+            pFVar7 = gpActiveFlashResource;
+            numClipped = numClipped * 3;
+            for ( int32_t i = 0; i < numClipped; i++ ) {
+                const float *pVertex = (float *)pFVar7->pVertexMemory + i * 2;
+                const float fVar9 = pT[1] * pT[0];
+                const float fVar10 = pT[3] * pT[2];
+                float local_8c[4] = { 0, 0, 0, 0 };
+                local_8c[0] = ( ( pT[1] * pVertex[0] - pT[3] * pVertex[1] ) -
+                                pT[1] * pT[4] + pT[3] * pT[5] ) /
+                              ( fVar9 - fVar10 );
+                local_8c[1] = ( ( pT[2] * pVertex[0] - pT[0] * pVertex[1] ) -
+                                pT[2] * pT[4] + pT[5] * pT[0] ) /
+                              ( fVar10 - fVar9 );
+                FUN_0044d860( local_8c, param_2, uvTransform );
+                local_8c[2] = Min( Max( local_8c[2], local_3c ), local_34 );
+                local_8c[3] = Min( Max( local_8c[3], local_40 ), local_38 );
+                local_8c[2] = Min( Max( local_8c[2], 0.0f ), 1.0f );
+                local_8c[3] = Min( Max( local_8c[3], 0.0f ), 1.0f );
+
+                const float fVar8 = pT[3] * local_8c[1];
+                local_8c[1] =
+                    ( pT[1] * local_8c[1] + pT[2] * local_8c[0] + pT[5] ) *
+                        pFVar7->getScreenRatioArray()[1] +
+                    pFVar7->getScreenRatioArray()[3];
+                local_8c[0] = ( fVar8 + pT[0] * local_8c[0] + pT[4] ) *
+                                  pFVar7->getScreenRatioArray()[0] +
+                              pFVar7->getScreenRatioArray()[2];
+                pFVar7->FUN_0099ec30( local_8c );
+            }
+        }
+        return;
     }
 
     float local_8c[4] = { 0, 0, 0, 0 };

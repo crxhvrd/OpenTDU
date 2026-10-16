@@ -17,8 +17,10 @@
 #include "online/ed_net_gamespy_manager.h"
 #include "system/gs_keyboard_pc.h"
 #include "game/gs_tutorial.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "game/gm_world.h"
 #include "gs_timer.h"
+#include "input/ed_dev.h"
 #include "input/input_device.h"
 #include "input/gs_device.h"
 
@@ -52,7 +54,8 @@ GSFlash::GSFlash()
       bOption1ButtonPressed( false ),
       bOption2ButtonPressed( false ),
       field84_0xfec( false ),
-      bUseStick( true ) {
+      bUseStick( true ),
+      pGamepadButton0{ nullptr, nullptr, nullptr, nullptr } {
     // FUN_0099b590
     OTDU_ASSERT( gpFlash == nullptr );
     gpFlash = this;
@@ -152,16 +155,7 @@ void GSFlash::tick( float totalTime, float deltaTime ) {
     gpFlashMessageBox->tick();
     mouse.tick();
 
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO
-    // if (*(char *)&this->bPlayingSound != '\0') {
-    //     FlashSounds::PlayFrontEndSound
-    //             ((bool
-    //             *)&this->bPlayingSound,&this->Audio,(uint)(this->field64_0xf78
-    //             != false),false)
-    //     ;
-    //     *(undefined1 *)&this->bPlayingSound = 0;
-    //     this->field64_0xf78 = false;
-    // }
+    audio.flushPendingSound();
 
     gEdFlash.Input.field6_0x10 = 0;
     uint32_t uVar8 = getInputMask();
@@ -336,7 +330,7 @@ void GSFlash::pause() {
         gpFlashMessageBox->FUN_0099feb0();
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO - FUN_0099cfc0(audio.field12_0x32c)
+    audio.stopAllGroups();
 
     field84_0xfec = false;
 
@@ -721,6 +715,16 @@ void GSFlash::flashCallback( const char *param_1 ) {
     }
 }
 
+static void FUN_0099a140( int8_t param_1, bool param_2, MoviePlayer *param_3 ) {
+    // FUN_0099a140
+    const uint32_t bit = 1u << ( param_1 & 0x1f );
+    if ( param_2 ) {
+        param_3->field5_0xad0 &= ~bit;
+    } else {
+        param_3->field5_0xad0 |= bit;
+    }
+}
+
 static void FUN_0099a440( int8_t param_1,
                           bool param_2,
                           MoviePlayer *param_3,
@@ -737,9 +741,16 @@ static void FUN_0099a440( int8_t param_1,
             param_3->field3_0xac8 &= ~bit;
         }
         return;
-    case ModalMessageBox::MMBDS_Opened:
-        OTDU_UNIMPLEMENTED; // TODO: FUN_0099a140
+    case ModalMessageBox::MMBDS_Opened: {
+        FUN_0099a140( param_1, param_2, param_3 );
+        FlashPlayer *pFlashPlayer = param_3->MovieBank.getFlashPlayer();
+        if ( pFlashPlayer != nullptr &&
+             pFlashPlayer->getBoundFlashResource() != nullptr ) {
+            pFlashPlayer->getBoundFlashResource()->setDrawMode(
+                ( param_3->field5_0xad0 != 0 ) ? 2 : 0 );
+        }
         return;
+    }
     case ModalMessageBox::MMBDS_Closing:
         if ( param_2 ) {
             param_3->IsMoviePaused &= ~bit;
@@ -1288,10 +1299,40 @@ uint32_t GSFlash::getInputMask() {
     }
 
     if ( field84_0xfec != false ) {
-        OTDU_UNIMPLEMENTED;
+        for ( int32_t i = 0; i < 4; i++ ) {
+            Device *pDevice = gEdDev.getDevice( eDeviceType::DT_Other, i );
+            if ( pDevice == nullptr || !pDevice->isEnabled() ) {
+                continue;
+            }
+
+            if ( pGamepadButton0[i] == nullptr ) {
+                FUN_0099a9e0();
+                if ( pGamepadButton0[i] == nullptr ) {
+                    return 0;
+                }
+            }
+
+            if ( ( pGamepadButton0[i]->Flags & 0x10 ) != 0 ) {
+                return FK_Validate;
+            }
+        }
     }
 
     return 0;
+}
+
+void GSFlash::FUN_0099a9e0() {
+    // FUN_0099a9e0
+    for ( int32_t i = 0; i < 4; i++ ) {
+        pGamepadButton0[i] = nullptr;
+    }
+
+    for ( int32_t i = 0; i < 4; i++ ) {
+        Device *pDevice = gEdDev.getDevice( eDeviceType::DT_Other, i );
+        if ( pDevice != nullptr && pDevice->isEnabled() ) {
+            pGamepadButton0[i] = pDevice->getChannel( "BUTTON_0" );
+        }
+    }
 }
 
 bool UnknownEntity::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
@@ -1308,7 +1349,19 @@ bool UnknownEntity::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     };
 
     case ModalMessageBox::kFriendAccept: {
-        OTDU_UNIMPLEMENTED;
+        if ( gpConfig->pPlayerConfig != nullptr ) {
+            ClearActionFlags( gpConfig->pPlayerConfig->pInGameMenuLeft );
+        }
+
+        for ( int32_t iVar10 = 0; iVar10 < gpFlash->getNumMovies( 1 );
+              iVar10++ ) {
+            MoviePlayer *pMVar8 = gpFlash->getMoviePlayer( 1, iVar10 );
+            if ( pMVar8 != nullptr ) {
+                pMVar8->Flags = pMVar8->Flags & 0xffffdfff;
+            }
+        }
+
+        gpEdNetGamespyManager->acceptFriendRequest();
         return true;
     };
 
@@ -1344,8 +1397,7 @@ bool UnknownEntity::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
 
     case ModalMessageBox::kTextFocus: {
         char local_20[32];
-        bool bVar4 = gpFlashMessageBox->pFlashPlayer->getVariableAsString(
-            "/:TextToFocus", local_20 );
+        bool bVar4 = pPlayer->getVariableAsString( "/:TextToFocus", local_20 );
         if ( !bVar4 ) {
             return true;
         }
@@ -1371,21 +1423,12 @@ bool UnknownEntity::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
 
     case ModalMessageBox::kTutorialOut: {
         gpTutorial->bPopupDisplayed = false;
-        OTDU_UNIMPLEMENTED;
-        // if (gpActiveGameMode != nullptr &&
-        // gpActiveGameMode->getCurrentGameMode() == GM_Lobby) {
-        //     if (gpActiveGameMode == (GameMode *)0x0) {
-        //         pbVar9 = (bool *)0x0;
-        //     } else {
-        //         pbVar9 = &gpActiveGameMode[-1].bDraw;
-        //     }
-        //     if (*(int *)(pbVar9 + 0xffa6c) != 0) {
-        //         *(undefined1 *)(*(int *)(pbVar9 + 0xffa6c) + 4) = 1;
-        //     }
-        // }
-        // gpScenaric->getIntroTutorial().FUN_007fbd80(false);
-        // (gpFlash->getMouse())->field12_0x30 = *(char *)&this->_pplayer !=
-        // '\0';
+        if ( gpActiveGameMode != nullptr &&
+             gpActiveGameMode->getCurrentGameMode() == GM_Lobby ) {
+            OTDU_UNIMPLEMENTED; // TODO: ONLINE (GMLobby)
+        }
+        gpScenaric->getIntroTutorial().FUN_007fbd80( false );
+        gpFlash->getMouse()->field12_0x30 = bSavedMouseFlag;
         return true;
     }
 
@@ -1395,34 +1438,18 @@ bool UnknownEntity::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     };
 
     case ModalMessageBox::kTutorialIn: {
-        OTDU_UNIMPLEMENTED;
-        // *(bool *)&this->_pplayer = (gpFlash->getMouse())->field12_0x30;
-        // (gpFlash->getMouse())->field12_0x30 = false;
-        // gpScenaric->getIntroTutorial().FUN_007fbd80(true);
-        // gpTutorial->bPopupDisplayed = true;
-        // if (gpActiveGameMode == nullptr) {
-        //     gpTutorial->bPopupDisplayed = true;
-        //     return true;
-        // }
-        // if (gpActiveGameMode->getCurrentGameMode() != GM_Lobby) {
-        //     gpTutorial->bPopupDisplayed = true;
-        //     return true;
-        // }
-        // if (gpActiveGameMode == nullptr) {
-        //     pbVar9 = (bool *)0x0;
-        // } else {
-        //     pbVar9 = &gpActiveGameMode[-1].bDraw;
-        // }
-        // if (*(int *)(pbVar9 + 0xffa6c) == 0) {
-        //     gpTutorial->bPopupDisplayed = true;
-        //     return true;
-        // }
-        // *(undefined1 *)(*(int *)(pbVar9 + 0xffa6c) + 4) = 0;
+        bSavedMouseFlag = gpFlash->getMouse()->field12_0x30;
+        gpFlash->getMouse()->field12_0x30 = false;
+        gpScenaric->getIntroTutorial().FUN_007fbd80( true );
+        gpTutorial->bPopupDisplayed = true;
+        if ( gpActiveGameMode != nullptr &&
+             gpActiveGameMode->getCurrentGameMode() == GM_Lobby ) {
+            OTDU_UNIMPLEMENTED; // TODO: ONLINE (GMLobby)
+        }
         return true;
     };
 
     default:
-        OTDU_UNIMPLEMENTED;
         break;
     }
 

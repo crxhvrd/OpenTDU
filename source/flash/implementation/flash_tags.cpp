@@ -751,7 +751,6 @@ void FlashTagDefineTextFuncTable::Draw( FlashTag *pThis,
             break;
         }
         default:
-            OTDU_UNIMPLEMENTED;
             break;
         };
 

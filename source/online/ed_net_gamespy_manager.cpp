@@ -9,3 +9,8 @@ void edNetGamespyManager::denyFriendRequest() {
     // FUN_00866040
     OTDU_UNIMPLEMENTED;
 }
+
+void edNetGamespyManager::acceptFriendRequest() {
+    // FUN_00866080
+    OTDU_UNIMPLEMENTED;
+}

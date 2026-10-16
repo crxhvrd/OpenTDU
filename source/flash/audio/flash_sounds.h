@@ -33,6 +33,8 @@ public:
     playFrontEndSound( const char *param_2, int32_t param_3, bool param_4 );
     bool playFrontEndMusic( bool bFromCine );
     bool stopGroup( const char *pGroupName, float fadeTime );
+    void stopAllGroups();
+    void flushPendingSound();
 
 public:
     // One AddFESound line out of the bank's sounds.ini
@@ -48,6 +50,12 @@ public:
         bool bWaitCine = false;
     };
     static constexpr int32_t kMaxMusicEntries = 21;
+
+    struct PendingSound {
+        char Name[32] = {};
+        bool bLoop = false;
+    };
+    static constexpr int32_t kMaxPendingSounds = 1;
 
 private:
     void parseSoundList();
@@ -65,6 +73,7 @@ public:
 private:
 #endif
 
+    bool queuePendingSound( const char *pName, bool bLoop );
     const edAudioSample *getSample( const char *pName );
     int32_t getFreeVoice();
     const FrontEndMusic *findMusic( const char *pKey ) const;
@@ -83,4 +92,5 @@ private:
     std::unordered_map<std::string, FrontEndSound> soundList;
     FrontEndMusic musicList[kMaxMusicEntries] = {};
     int32_t numMusicEntries = 0;
+    PendingSound pendingSounds[kMaxPendingSounds] = {};
 };

@@ -13,6 +13,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "flash/mng_flash_counter.h"
 #include "game/car_showcase/mng_showcase_car_control.h"
+#include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_garage.h"
@@ -60,12 +61,6 @@ static ShowCasePhysControl &GetShowcasePhysControl() {
     return gpActiveGMScene->getShowcaseCarControl().getPhysicsControl();
 }
 
-static bool FUN_007181c0() {
-    // FUN_007181c0
-    OTDU_UNIMPLEMENTED;
-    return false;
-}
-
 // TODO: Move to right cpp
 static bool FUN_00914df0() {
     // FUN_00914df0
@@ -98,7 +93,11 @@ static void TransitionFromFreerideToMap( int32_t targetGameMode ) {
     }
 
     if ( gpActiveGMScene != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: GMFREERIDE
+        if ( gpTestDriveInstance->getActiveGameMode() == GM_FreeRide &&
+             static_cast<GMFreeride *>( gpActiveGMScene )
+                 ->isNextIntroActive() ) {
+            return;
+        }
         gpActiveGMScene->parkLocalPlayerCar();
     }
 
@@ -220,7 +219,7 @@ bool MngFlash::initialize( TestDriveGameInstance * ) {
 void MngFlash::tick( float param_2, float param_3 ) {
     // FUN_00718370
     if ( !bInitialized ) {
-        FUN_007bbd20();
+        initializeWidgets();
         bInitialized = true;
     }
 
@@ -434,7 +433,7 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     }
 
     case kMoneyUp: {
-        OTDU_UNIMPLEMENTED;
+        gpPlayerData->getLoadedSave()->getDriver()->startMoneyAnimation();
         return true;
     }
 
@@ -484,20 +483,7 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     }
 
     case kWidget: {
-        // FUN_007181c0 — iterate pWidgets, match 4-char ID in pMessage[1],
-        // then dispatch pMessage[2..] to that widget's onMessage.
-        FlashMessage *pWidgetMsg = pMessage + 1;
-        const uint32_t widgetID = static_cast<uint32_t>( *pWidgetMsg );
-        for ( auto &widget : flashWidgets ) {
-            if ( widget.pWidgetInstance != nullptr &&
-                 widget.WidgetID == widgetID ) {
-                return widget.pWidgetInstance->onMessage( pWidgetMsg + 1,
-                                                          pPlayer );
-            }
-        }
-        OTDU_LOG_ERROR( "TestDrive Flash : Unknown widget command -=%s=-.\n",
-                        pWidgetMsg->pAsChar );
-        return false;
+        return dispatchWidgetMessage( pMessage + 1, pPlayer );
     }
 
     default:
@@ -509,7 +495,17 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     return false;
 }
 
-void MngFlash::FUN_007bbd20() {
-    // FUN_007bbd20
-    OTDU_UNIMPLEMENTED;
+bool MngFlash::dispatchWidgetMessage( FlashMessage *pMessage,
+                                      FlashPlayer *pPlayer ) {
+    // FUN_007181c0
+    const uint32_t widgetID = static_cast<uint32_t>( *pMessage );
+    for ( auto &widget : flashWidgets ) {
+        if ( widget.pWidgetInstance != nullptr &&
+             widget.WidgetID == widgetID ) {
+            return widget.pWidgetInstance->onMessage( pMessage + 1, pPlayer );
+        }
+    }
+    OTDU_LOG_ERROR( "TestDrive Flash : Unknown widget command -=%s=-.\n",
+                    pMessage->pAsChar );
+    return false;
 }

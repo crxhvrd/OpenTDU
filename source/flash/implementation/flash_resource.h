@@ -327,3 +327,4 @@ extern bool DAT_010e7275;
 extern int32_t DAT_010e7278;
 
 void FUN_00442db0( int32_t param_1, uint8_t *param_2, uint8_t *param_3 );
+ColorRGBA FUN_00442940( CXForm *param_1, ColorRGBA param_2 );

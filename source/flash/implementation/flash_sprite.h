@@ -21,6 +21,8 @@ enum class eFlashProperty {
     FP_TotalFrames = 0x5,
     FP_Alpha = 0x6,
     FP_Visible = 0x7,
+    FP_Width = 0x8,
+    FP_Height = 0x9,
     FP_Rotation = 0xa,
     FP_FramesLoaded = 0xc,
     FP_Name = 0xd,
@@ -30,6 +32,9 @@ enum class eFlashProperty {
     FP_ScreenX = 0x32,
     FP_ScreenY = 0x33,
     FP_Viewport = 0x35,
+    FP_ColorR = 0x36,
+    FP_ColorG = 0x37,
+    FP_ColorB = 0x38,
     FP_BoundingBox = 0x39,
 };
 

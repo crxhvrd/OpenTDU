@@ -649,28 +649,33 @@ namespace flash {
                 pStack->pushString( bVisible ? "1" : "0" );
                 break;
             }
-            case 8:
+            case 8: {
+                float fVar =
+                    pFVar6->getPropertyFloat( eFlashProperty::FP_Width );
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
-                    OTDU_LOG_DEBUG( "GetProperty _width = (unimplemented)\n" );
+                    OTDU_LOG_DEBUG( "GetProperty _width = %0.2f\n", fVar );
                 }
-                OTDU_UNIMPLEMENTED;
-                pStack->pushString( "0" );
+                pStack->pushFloat( fVar );
                 break;
-            case 9:
+            }
+            case 9: {
+                float fVar =
+                    pFVar6->getPropertyFloat( eFlashProperty::FP_Height );
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
-                    OTDU_LOG_DEBUG( "GetProperty _height = (unimplemented)\n" );
+                    OTDU_LOG_DEBUG( "GetProperty _height = %0.2f\n", fVar );
                 }
-                OTDU_UNIMPLEMENTED;
-                pStack->pushString( "0" );
+                pStack->pushFloat( fVar );
                 break;
-            case 10:
+            }
+            case 10: {
+                float fVar =
+                    pFVar6->getPropertyFloat( eFlashProperty::FP_Rotation );
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
-                    OTDU_LOG_DEBUG(
-                        "GetProperty _rotation = (unimplemented)\n" );
+                    OTDU_LOG_DEBUG( "GetProperty _rotation = %0.2f\n", fVar );
                 }
-                OTDU_UNIMPLEMENTED;
-                pStack->pushString( "0" );
+                pStack->pushFloat( fVar );
                 break;
+            }
             case 11: {
                 char propertyValue[64];
                 pFVar6->getStringProperty( 11, propertyValue );
@@ -681,14 +686,15 @@ namespace flash {
                 pStack->pushString( propertyValue );
                 break;
             }
-            case 12:
+            case 12: {
+                uint16_t loaded = *(uint16_t *)( pFVar6->pTagsArray + 0xc );
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
-                    OTDU_LOG_DEBUG(
-                        "GetProperty _framesloaded = (unimplemented)\n" );
+                    OTDU_LOG_DEBUG( "GetProperty _framesloaded = %d\n",
+                                    loaded );
                 }
-                OTDU_UNIMPLEMENTED;
-                pStack->pushString( "0" );
+                pStack->pushFloat( (float)loaded );
                 break;
+            }
             case 13: {
                 char propertyValue[64];
                 pFVar6->getStringProperty( 13, propertyValue );
@@ -731,14 +737,16 @@ namespace flash {
                 pStack->pushString( bVal ? "1" : "0" );
                 break;
             }
-            case 18:
+            case 18: {
+                float fVar =
+                    pFVar6->getPropertyFloat( eFlashProperty::FP_SoundBufTime );
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
-                    OTDU_LOG_DEBUG(
-                        "GetProperty _soundbuftime = (unimplemented)\n" );
+                    OTDU_LOG_DEBUG( "GetProperty _soundbuftime = %0.2f\n",
+                                    fVar );
                 }
-                OTDU_UNIMPLEMENTED;
-                pStack->pushString( "0" );
+                pStack->pushFloat( fVar );
                 break;
+            }
             default:
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
                     OTDU_LOG_DEBUG( "GetProperty **unknown** = 0\n" );
@@ -860,13 +868,13 @@ namespace flash {
             case eFlashProperty::FP_SoundBufTime: {
                 fVar6 = FlashResource::StringToFloat( pString );
                 if ( 0 < gpActiveFlashResource->getDebugVerbosity() ) {
-                    OTDU_LOG_DEBUG( "SetProperty _rotation = %0.2f\n", fVar6 );
+                    OTDU_LOG_DEBUG( "SetProperty _soundbuftime = %0.2f\n",
+                                    fVar6 );
                 }
                 pFVar4->setProperty( eFlashProperty::FP_SoundBufTime, fVar6 );
                 break;
             }
             default:
-                OTDU_UNIMPLEMENTED;
                 break;
             };
         }
@@ -1346,7 +1354,6 @@ void FlashAction::executeAction( uint16_t *param_2, float param_3 ) {
                     flash::actions::getTime( this );
                     break;
                 default:
-                    OTDU_UNIMPLEMENTED;
                     break;
                 };
             } else {
@@ -1386,7 +1393,7 @@ void FlashAction::executeAction( uint16_t *param_2, float param_3 ) {
                                                 (uint8_t *)( puVar4 + 2 ) );
                     break;
                 default:
-                    OTDU_UNIMPLEMENTED;
+                    break;
                 };
             }
 

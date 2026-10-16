@@ -49,9 +49,9 @@ public:
     void serialize( edStore &stream ) const;
 
     void post( const MailMessage &message );
+    int32_t getNumVisibleMessages() const;
 
 private:
-    int32_t getNumVisibleMessages() const;
     int32_t getFreeSlotIndex( int32_t numToSkip ) const;
 
 public:

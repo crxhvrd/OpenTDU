@@ -49,6 +49,7 @@ public:
     void onMenuPauseExit( bool bRestoreState ) override;
 
     bool enterSpot( struct SpotMap *pSpot );
+    inline bool isNextIntroActive() const { return nextIntro.bIsActive; }
 
     static void OnGPSFlyUpEnd( void *pUnused, void *pTargetGameMode );
 

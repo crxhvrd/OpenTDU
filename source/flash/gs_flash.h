@@ -41,6 +41,8 @@ enum eFlashKey : uint32_t {
 #include "render/file_collection_2d.h"
 #include "render/file_collection_3d.h"
 
+struct InputChannel;
+
 class FlashStreamListener {
 public:
     virtual void onResourceStreamed() {}
@@ -50,6 +52,9 @@ class UnknownEntity : public FlashEntity {
 public:
     bool onMessage( FlashMessage *pMessage,
                     class FlashPlayer *pPlayer ) override;
+
+private:
+    bool bSavedMouseFlag = false;
 };
 
 class GSFlash : public GameSystem, public RenderConfigurationChangeListener {
@@ -185,6 +190,8 @@ private:
     uint8_t field84_0xfec : 1;
     uint8_t bUseStick : 1;
 
+    InputChannel *pGamepadButton0[4];
+
 private:
     friend class BankCommonFlash;
 
@@ -194,6 +201,7 @@ private:
     void setupLevel( const bool param_1 );
     void initMoviePlayer( bool param_1, MoviePlayer &param_2 );
     void setViewport( MoviePlayer &param_1 );
+    void FUN_0099a9e0();
 };
 
 extern GSFlash gFlash;

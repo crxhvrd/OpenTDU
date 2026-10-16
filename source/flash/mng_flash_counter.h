@@ -45,7 +45,7 @@ private:
 
     float lastTimePressed;
     float timer;
-    uint32_t unknownDword;
+    uint32_t movieLevel;
 
     uint8_t bIsMoney : 1;
     uint8_t bHasFocus : 1;

@@ -13,7 +13,12 @@ FlashStack::FlashStack()
       numVariables( 0 ),
       allocationSize( 0 ) {}
 
-FlashStack::~FlashStack() { OTDU_UNIMPLEMENTED; }
+FlashStack::~FlashStack() {
+    if ( pMemoryAlloc != nullptr ) {
+        TestDrive::Free( pMemoryAlloc );
+        pMemoryAlloc = nullptr;
+    }
+}
 
 void FlashStack::initialize() {
     // FUN_0044b1a0
