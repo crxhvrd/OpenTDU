@@ -17,7 +17,7 @@
 MngPedestrians *gpMngPedestrians = nullptr; // DAT_010e7ff8
 bool gbPedestriansEnabled = false;
 
-static constexpr const char *kNavigationFolder = "pednav";
+static constexpr const char *kNavigationFolder = "Euro/BNK/OpenTDU/Pedestrians";
 
 static CmdLineArg CmdLineArgPedestrians( "pedestrians", []( const char *pArg ) {
     gbPedestriansEnabled = true;

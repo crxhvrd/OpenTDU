@@ -1193,6 +1193,15 @@ add_custom_command(
 add_custom_command(
     TARGET opentdu
     POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${OTDU_RSC_FOLDER}/pedestrians_nav"
+            "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/Pedestrians"
+    COMMENT "Copying OpenTDU pedestrians navigation..."
+)
+
+add_custom_command(
+    TARGET opentdu
+    POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
             "${OTDU_RSC_FOLDER}/imgui_vs.bin"
             "${OTDU_BIN_FOLDER}/EURO/Shaders/d3d9/imgui_vs.bin"
