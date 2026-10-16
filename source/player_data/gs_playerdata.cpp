@@ -570,8 +570,11 @@ void GSPlayerData::applyDrivingOptions() {
 
     pPhysicsVehicle->applyDrivingOptions( options );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (mouse sensitivity, invert mouse
-                             // and TrackIR are read from the device config)
+    if ( gpCamera != nullptr ) {
+        gpCamera->setMouseSensitivity( localPlayerData.MouseSensitivity );
+        gpCamera->setInvertMouse( localPlayerData.bInvertMouse );
+        gpCamera->setHeadTracking( localPlayerData.bTrackIREnabled );
+    }
 }
 
 void GSPlayerData::requestSave( const int32_t mode ) {
@@ -607,6 +610,10 @@ void GSPlayerData::requestSave( const int32_t mode ) {
         return;
     }
 
+    flushSaveRequest();
+}
+
+void GSPlayerData::flushSaveRequest() {
     if ( gpFlashMessageBox != nullptr ) {
         gpFlashMessageBox->display( kSavingMessageHashcode, 3.0f, 0, nullptr,
                                     nullptr, false );
@@ -771,6 +778,51 @@ const char *GSPlayerData::getLanguage() {
     }
 
     return localPlayerData.Language;
+}
+
+void GSPlayerData::fillSaveDescriptor( PlayerSaveDescriptor *pDescriptor ) {
+    // FUN_008983f0
+    if ( pDescriptor == nullptr ) {
+        return;
+    }
+
+    Driver *pDriver = pLoadedSave2->getDriver();
+    Garage *pGarage = pLoadedSave2->getGarage();
+
+    pDescriptor->Money = pDriver->getMoney();
+    pDescriptor->NumHouses = pGarage->getNumOwnedHouses();
+    pDescriptor->NumCars = pGarage->getNumCars();
+
+    const GarageSlot &currentCar = pGarage->pCars[pDriver->CurrentCar];
+    pDescriptor->CurrentCarConfigID = currentCar.getCarConfigID();
+    pDescriptor->CurrentCarPackHashcode = currentCar.packHashcode;
+
+    const int32_t numCars =
+        Min( pDescriptor->NumCars, PlayerSaveDescriptor::kMaxCars );
+    int32_t numListedCars = 0;
+    for ( int32_t i = 0; i < Garage::kNumSavedCarSlots; i++ ) {
+        if ( numListedCars >= numCars ) {
+            return;
+        }
+
+        GarageSlot &slot = pGarage->pCars[i];
+        if ( slot.isValid() ) {
+            pDescriptor->CarConfigIDs[numListedCars++] =
+                uint16_t( slot.getCarConfigID() );
+        }
+    }
+}
+
+void GSPlayerData::setHelpSystem( const bool bEnabled ) {
+    // FUN_008986b0
+    localPlayerData.bHelpSystem = bEnabled;
+
+    MoviePlayer *pHud = gpFlash->getMoviePlayer( 1, 0 );
+    if ( pHud != nullptr && pHud->MovieBank.isLoaded() &&
+         pHud->MovieBank.getFlashPlayer() != nullptr ) {
+        pHud->MovieBank.getFlashPlayer()->setVariableValue(
+            "/:IsHelpSystem", int32_t( bEnabled ) );
+    }
 }
 
 eAntiAliasingMethod GSPlayerData::getAAMethod() const {

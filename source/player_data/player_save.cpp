@@ -3,6 +3,7 @@
 
 #include "core/ed_store.h"
 #include "core/hash/crc32.h"
+#include "core/mutex.h"
 #include "core/time.h"
 #include "database/gs_database.h"
 #include "filesystem/gs_file.h"
@@ -12,6 +13,9 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
 #include "gs_playerdata.h"
+#include "user_profile.h"
+#include "save_game_manager.h"
+#include "flash/modal_message_box.h"
 #include "online/gs_online.h"
 #include "game/gs_tutorial.h"
 #include "game/scenaric/game_intro_tutorial.h"
@@ -20,6 +24,7 @@
 
 static constexpr uint32_t kNewGameMoney = 200000u;
 static constexpr uint32_t kStarterNumCoupons = 200u; // DAT_00f7f578
+static constexpr uint64_t kProfileWarningHashcode = 0x3a1f97aull;
 
 int32_t gSaveStreamRevision = 0; // DAT_010e7530
 int32_t gSaveStreamTrailer = 0;  // DAT_010e7534
@@ -42,11 +47,11 @@ PlayerSave::PlayerSave()
       extraChallengesNotifier( &extraChallenges ),
       numPendingOperations( 0 ),
       bInitialized( false ),
+      bProfilePromptPending( false ),
       saveIndex( -1 ) {
     // FUN_0089ac90
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (eBay state, the classic car
-                             // stock at +0x145b8, and the environment and
-                             // radio tables)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: EBAY (eBay list and car) / ONLINE (radio
+                             // and advertising resource tables)
 }
 
 PlayerSave::~PlayerSave() {}
@@ -56,7 +61,7 @@ void PlayerSave::initialize() {
     achievements.build();
     driver.subscribe( &extraChallengesNotifier );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    clear();
 
     bInitialized = true;
 }
@@ -64,12 +69,11 @@ void PlayerSave::initialize() {
 void PlayerSave::terminate() {
     // FUN_00899a30
     if ( !gpTestDriveInstance->hasRequestedExit() && gpPlayerData != nullptr &&
-         gpPlayerData->isSaveEnabled() && gpFile != nullptr &&
-         gpFile->hasTaskPending() ) {
-        numPendingOperations = 0;
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (flush the pending save)
+         gpPlayerData->isSaveEnabled() && gbSaveAllowed ) {
+        gpPlayerData->flushSaveRequest();
     }
 
+    achievements.releaseChecks();
     driver.unsubscribe( &extraChallengesNotifier );
 
     bInitialized = false;
@@ -79,12 +83,37 @@ void PlayerSave::tick( const float deltaTime ) {
     // FUN_0089a5b0
     driver.tickMoneyOperation( deltaTime );
     carReserve.tick();
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original also drives the
-                             // profile prompts)
-
     achievements.tick();
     extraChallenges.tickStatisticsScreen();
+
+    if ( gUserProfileRegister.FUN_00630320() ) {
+        return;
+    }
+
+    if ( bProfilePromptPending &&
+         gUserProfileRegister.getUnknownDword() == 0 ) {
+        TestDrive::DisplayModalPrompt(
+            false, kProfileWarningHashcode, 0, nullptr, nullptr, nullptr, 0,
+            nullptr, true, false, MPT_Warning, gpFlashMessageBox );
+    }
+    bProfilePromptPending = false;
+
+    if ( numPendingOperations == 0 || gUserProfileRegister.FUN_00630320() ) {
+        return;
+    }
+
+    const uint32_t profileState = gUserProfileRegister.getUnknownDword();
+    if ( profileState == 0 || profileState == 6 ) {
+        gpPlayerData->setSaveEnabled( false );
+        gUserProfileRegister.setUnknownDword3( 1 );
+        gUserProfileRegister.setUnknownDword( 6 );
+        gUserProfileRegister.setUnknownDword3( 0 );
+        bProfilePromptPending = true;
+    } else if ( numPendingOperations == 2 ) {
+        gSavegameManager.requestSave();
+    }
+
+    numPendingOperations = 0;
 }
 
 uint32_t PlayerSave::allocateCarUniqueID() {
@@ -440,10 +469,27 @@ void PlayerSave::swapCars( const int32_t indexA,
 
 void PlayerSave::clear() {
     // FUN_0089aa90
+    ScopedMutexLock lock( gpPlayerData->getMutex() );
+
     gSaveStreamRevision = 0;
     gSaveStreamTrailer = 0;
 
-    unStart();
+    driver.clear();
+    garage.clear( true );
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: EBAY (FUN_008943f0)
+    ranking.clear();
+    mailbox.clear();
+    newsList.clear();
+    itemTable.clear();
+    avatar.clear();
+    carReserve.reset();
+    roadDiscovery.clear();
+    achievements.reset();
+    extraChallenges.clear( true );
+
+    if ( gpTutorial != nullptr ) {
+        gpTutorial->resetProgress();
+    }
 }
 
 void PlayerSave::unStart() {
@@ -460,10 +506,10 @@ void PlayerSave::unStart() {
     roadDiscovery.clear();
     stringTable.clear();
     achievements.reset();
-    extraChallenges.clear();
+    extraChallenges.clear( true );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (eBay state and the classic
-                             // car stock)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: EBAY (FUN_008943f0 and the item table's
+                             // unmapped tail at +0x274..+0x2a0)
 }
 
 void PlayerSave::serialize( edStore &stream ) {

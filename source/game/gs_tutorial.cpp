@@ -72,6 +72,20 @@ void GSTutorial::terminate() {
     numTutorialMsgs = 0;
 }
 
+void GSTutorial::resetProgress() {
+    // FUN_009810e0
+    for ( int32_t i = 0; i < numTutorialMsgs; i++ ) {
+        TutorialHint *pMessage = pTutorialHints[i];
+        if ( pMessage != nullptr ) {
+            pMessage->bCancel = false;
+            pMessage->bSeen = false;
+            pMessage->CurrentTimer = 0.0f;
+        }
+    }
+
+    memset( bStepDone, 0, sizeof( bStepDone ) );
+}
+
 void GSTutorial::cancelDisplayedMessages() {
     // FUN_00981140
     for ( int32_t i = 0; i < numTutorialMsgs; i++ ) {

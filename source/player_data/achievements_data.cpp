@@ -16,6 +16,8 @@
 #include "player_data_interface.h"
 #include "saved_extra_challenges.h"
 #include "saved_garage.h"
+#include "saved_mailbox.h"
+#include "saved_news.h"
 #include "saved_road_discovery.h"
 #include "tdu_instance.h"
 
@@ -29,11 +31,12 @@ static constexpr uint64_t kRewardNone = 0x517180ull;
 
 static constexpr uint64_t kLevelUpTextHashcode = 0x3867e52ull;
 static constexpr uint64_t kLevelUpMailTitleHashcode = 0x3c07a12ull;
+static constexpr uint64_t kCurrentCaptionHashcode = 0x37bf702ull;
 static constexpr uint64_t kCurrentLevelHashcode = 0x3a502d2ull;
 
 // How long a level up / achievement unlock panel stays up.
-static constexpr float kPopupDisplayDuration = 12.0f; // DAT_00f41850
-static constexpr float kMetresToKilometres = 0.001f;  // DAT_00f4167c
+static constexpr float kPopupDisplayDuration = 12.0f;            // DAT_00f41850
+static constexpr float kMetresToKilometres = 0.001f;             // DAT_00f4167c
 static constexpr float kKilometresToMiles = 0.6215040683746338f; // DAT_00f418c0
 static constexpr int32_t kBDDMenus = 0;
 static constexpr int32_t kBDDAchievement =
@@ -156,6 +159,10 @@ void AchievementsData::build() {
         }
     }
 
+    markReady();
+}
+
+void AchievementsData::markReady() {
     if ( bReady ) {
         return;
     }
@@ -388,6 +395,29 @@ void AchievementsData::tick() {
     popUp.tick( bPopupTick );
 }
 
+static void PostAchievementMail( const char *pTitle, const char *pBody ) {
+    // FUN_008956c0 + FUN_00895af0 (inlined)
+    const time_t nowSeconds = time( nullptr );
+    const struct tm *pNow = localtime( &nowSeconds );
+
+    MailMessage message;
+    message.Language = GetMailLanguageCode( gpPlayerData->getLanguage() );
+    message.Kind = 4;
+    message.Category = 1;
+    if ( pNow != nullptr ) {
+        message.Date = PackSaveDate( uint32_t( pNow->tm_year + 1900 ),
+                                     uint32_t( pNow->tm_mon + 1 ),
+                                     uint32_t( pNow->tm_mday ) );
+    }
+
+    strncpy( message.Title, pTitle, MailMessage::kTitleLength );
+    message.Title[MailMessage::kTitleLength - 1u] = '\0';
+    strncpy( message.Body, pBody, MailMessage::kBodyLength );
+    message.Body[0x76f] = '\0';
+
+    gpPlayerData->getLoadedSave()->getMailbox()->post( message );
+}
+
 void AchievementsData::displayLevelUp() {
     // FUN_0089dde0
     uint32_t movieValidity = 0u;
@@ -413,11 +443,14 @@ void AchievementsData::displayLevelUp() {
             levelUpDisplayTime = GetTimeSeconds();
             bDisplayLevelUp = true;
 
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original also
-                                     // posts the level up as a mailbox entry -
-                                     // FUN_008956c0 builds a 'OneNews' titled
-                                     // with kLevelUpMailTitleHashcode; the
-                                     // mail system is not ported)
+            char pMailTitle[0x80] = {};
+            char pMailBody[0x400] = {};
+            gpMngFlashLocalize->makeSentenceFromHashcode(
+                pMailTitle, sizeof( pMailTitle ), kLevelUpMailTitleHashcode,
+                nullptr );
+            gpMngFlashLocalize->makeSentenceFromHashcode(
+                pMailBody, sizeof( pMailBody ), kLevelUpTextHashcode, nullptr );
+            PostAchievementMail( pMailTitle, pMailBody );
         }
     }
 
@@ -475,7 +508,7 @@ void AchievementsData::displayAchievementPopUp( AchievementCheck *pCheck ) {
         pText, sizeof( pText ), pCheck->TextHashcode, nullptr );
     gpMngFlashLocalize->setDatabaseContext( kBDDMenus );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    PostAchievementMail( pTitle, pText );
 
     popUp.push( pTitle, pText );
 
@@ -571,10 +604,8 @@ bool AchievementsData::notify( const uint32_t eventMask, const bool bAsync ) {
         if ( levelBefore == 0 ) {
             // Leaving Rookie turns the help system off
             if ( gpPlayerData != nullptr ) {
-                gpPlayerData->getLocalPlayerData().bHelpSystem = false;
+                gpPlayerData->setHelpSystem( false );
             }
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (and pushes
-                                     // '/:IsHelpSystem' to the HUD movie)
         }
 
         IPlayerData *pSave = ( gpPlayerData != nullptr )
@@ -595,8 +626,14 @@ bool AchievementsData::notify( const uint32_t eventMask, const bool bAsync ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original then refreshes
-                             // '/:m_CurrentCption' on the HUD movie)
+    MoviePlayer *pHud = gpFlash->getMoviePlayer( 1, 0 );
+    if ( pHud != nullptr && pHud->MovieBank.isLoaded() &&
+         pHud->MovieBank.getFlashPlayer() != nullptr &&
+         gpMngFlashLocalize != nullptr ) {
+        gpMngFlashLocalize->setVarLocalized( pHud->MovieBank.getFlashPlayer(),
+                                             "/:m_CurrentCption",
+                                             kCurrentCaptionHashcode );
+    }
 
     return bUnlockedAny;
 }
@@ -988,10 +1025,7 @@ void AchievementsData::deserializeChecks( edStore &stream ) {
     // FUN_0089e520
     const int32_t numChecks = getNumAchievements();
     if ( numChecks == 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
-                                 // (AchievementsData::build)
-        OTDU_LOG_WARN( "The achievement check table is empty: the tail of "
-                       "'playersave' will not line up\n" );
+        markReady();
         return;
     }
 
@@ -1022,10 +1056,5 @@ void AchievementsData::deserializeChecks( edStore &stream ) {
         }
     }
 
-    if ( field516_0x204 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original stamps the
-                                 // current game mode here)
-    }
-
-    notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
+    markReady();
 }

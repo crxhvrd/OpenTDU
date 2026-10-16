@@ -35,7 +35,9 @@ void Driver::clear() {
     setPendingMoneyOperation( 0 );
 
     ApplyMoneyOPPendingTimeLeft = -1.0f;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (StopGroup 'money')
+    if ( gpFlash != nullptr ) {
+        gpFlash->getFlashSound()->stopGroup( "money", 0.0f );
+    }
 
     CurrentCar = 0u;
     Nickname[0] = '\0';
@@ -140,9 +142,14 @@ void Driver::initialize( const char *pNickname,
 
     ID = id;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (money/coupon history)
+    SavedExtraChallenges *pExtraChallenges =
+        gpPlayerData->getLoadedSave()->getExtraChallenges();
 
+    pExtraChallenges->addCounter( CounterIndex( 0xf0bc ), int32_t( money ) );
     setMoney( money );
+
+    pExtraChallenges->addCounter( CounterIndex( 0xf104 ),
+                                  int32_t( numCoupons ) );
     setNumCoupons( numCoupons );
 
     CurrentCar = currentCar;

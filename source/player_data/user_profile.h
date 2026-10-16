@@ -39,6 +39,13 @@ public:
     inline void setUnknownDword( const uint32_t value ) { // FUN_004adc30
         unknownDword = value;
     }
+    inline uint32_t getUnknownDword() const { // FUN_0060a0b0
+        return unknownDword;
+    }
+    inline void setUnknownDword3( const uint32_t value ) { // FUN_0068bf20
+        unknownDword3 = value;
+    }
+    inline bool FUN_00630320() const { return false; }
     uint32_t FUN_00419de0() const;
 
 private:
@@ -57,6 +64,7 @@ private:
     std::vector<std::string> profileNames;
     uint32_t unknownDword;
     uint32_t unknownDword2;
+    uint32_t unknownDword3;
 };
 
 extern UserProfileRegister gUserProfileRegister;

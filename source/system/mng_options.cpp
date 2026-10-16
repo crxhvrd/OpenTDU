@@ -1196,17 +1196,8 @@ void MngOptions::FUN_006c6db0() {
     localPlayerData.bDisplayGPS =
         pPlayer->getVariableAsInt( "/:DispOp_f_2" ) != 0;
 
-    // FUN_008986b0
-    localPlayerData.bHelpSystem =
-        pPlayer->getVariableAsInt( "/:DispOp_f_3" ) != 0;
-    if ( MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, 0 ) ) {
-        if ( pMovie->MovieBank.isLoaded() ) {
-            if ( FlashPlayer *pInGame = pMovie->MovieBank.getFlashPlayer() ) {
-                pInGame->setVariableValue(
-                    "/:IsHelpSystem", int32_t( localPlayerData.bHelpSystem ) );
-            }
-        }
-    }
+    gpPlayerData->setHelpSystem( pPlayer->getVariableAsInt( "/:DispOp_f_3" ) !=
+                                 0 );
 
     localPlayerData.bDisplayPlayerNames =
         pPlayer->getVariableAsInt( "/:DispOp_f_4" ) != 0;

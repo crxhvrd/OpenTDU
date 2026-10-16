@@ -16,7 +16,8 @@ UserProfileRegister::UserProfileRegister()
       pathToProfile( "" ),
       listHashcode( 0ull ),
       unknownDword( 0 ),
-      unknownDword2( 0 ) {}
+      unknownDword2( 0 ),
+      unknownDword3( 0 ) {}
 
 UserProfileRegister::~UserProfileRegister() {}
 

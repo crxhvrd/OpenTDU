@@ -8,45 +8,52 @@
 #include "flash/implementation/flash_player.h"
 #include "flash/mng_flash_localize.h"
 #include "game/gm_base.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/local_player.h"
+#include "game/vehicle/car_state.h"
 #include "game/vehicle/car_desc.h"
 #include "gs_playerdata.h"
 #include "achievements_data.h"
 #include "driver.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "player_data_interface.h"
 
 SavedExtraChallenges::SavedExtraChallenges() {
     // FUN_00889260
-    clear();
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original also seeds the
-                             // level from the achievements on its reset path)
+    clear( false );
 }
 
 SavedExtraChallenges::~SavedExtraChallenges() {}
 
-void SavedExtraChallenges::clear() {
+void SavedExtraChallenges::clear( const bool bSeedPlayerLevel ) {
+    // FUN_00889260
+    freerideDistanceKms = 0.0f;
+    currentVehicleType = VT_Unknown;
+    if ( bSeedPlayerLevel ) {
+        PlayerLevel =
+            gpPlayerData->getLoadedSave()->getAchievements()->getPlayerLevel();
+    }
+
     memset( Counters, 0, sizeof( Counters ) );
     memset( RuntimeCounters, 0, sizeof( RuntimeCounters ) );
     for ( int32_t i = 0; i < kNumCounters + kNumRuntimeCounters; i++ ) {
         writeCounter( i, 0 );
     }
 
-    memset( Scores, 0, sizeof( Scores ) );
+    for ( double &score : Scores ) {
+        TestDriveTEAWriteQword( (uint32_t *)&score, 0ull );
+    }
 
-    Field_0xf188 = 0.0f;
-    Field_0xf18c = 0;
-    Field_0xf190 = 0.0f;
-    Field_0xf194 = 0;
-    Field_0xf198 = 0;
-    Field_0xf19c = 0;
-    Field_0xf1a0 = 0.0f;
-    Field_0xf1a4 = 0.0f;
+    for ( int32_t *pBlock :
+          { (int32_t *)&Field_0xf188, (int32_t *)&Field_0xf190, &Field_0xf198,
+            (int32_t *)&Field_0xf1a0 } ) {
+        writeTailDword( pBlock, false, 0u );
+        writeTailDword( pBlock, true, 0u );
+    }
 
-    PlayerLevel = 0;
-    freerideDistanceKms = 0.0f;
-    currentVehicleType = VT_Unknown;
-
-    memset( Flags, 0, sizeof( Flags ) );
+    for ( int32_t i = 0; i < kNumFlagBlocks; i++ ) {
+        TestDriveTEAWriteQword( (uint32_t *)&Flags[i * 2], 0ull );
+    }
     memset( BestLow, 0, sizeof( BestLow ) );
     memset( BestHigh, 0, sizeof( BestHigh ) );
     memset( Tail, 0, sizeof( Tail ) );
@@ -168,7 +175,8 @@ static constexpr uint64_t kImperialUnitHashcode = 0x5c2823ull;
 static constexpr float kKilometresToMiles = 0.6215040683746338f; // DAT_00f418c0
 static constexpr float kSecondsToHours = 0.00027777778450399637f;
 static constexpr float kSecondsToMinutes = 0.01666666753590107f;
-static constexpr float kPercentScale = 100.0f; // DAT_00f41708
+static constexpr float kPercentScale = 100.0f;             // DAT_00f41708
+static constexpr float kTopSpeedMinTimeSinceImpact = 1.0f; // FLOAT_00f4165c
 
 static constexpr const char *kStatsTitleVar = "/:stats_title";
 static constexpr const char *kStatsLeftVar = "/:txt_field_01";
@@ -676,7 +684,24 @@ void SavedExtraChallenges::buildStatisticsPage() {
 
 void SavedExtraChallenges::tickStatisticsScreen() {
     // FUN_0088d260
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    CarState *pCarState = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pCarState != nullptr ) {
+        const float speed = pCarState->getBody()->SpeedInKmh;
+        int32_t *pTopSpeedBlock = (int32_t *)&Field_0xf188;
+        const float topSpeed =
+            DwordAsFloat( readTailDword( pTopSpeedBlock, false ) );
+        PhysicsVehicle *pPhysicsVehicle = pCarState->getPhysicsVehicle();
+        if ( topSpeed < speed && pPhysicsVehicle != nullptr &&
+             !pPhysicsVehicle->isAirborne() &&
+             pPhysicsVehicle->getTimeSinceHardImpact() >
+                 kTopSpeedMinTimeSinceImpact ) {
+            writeTailDword( pTopSpeedBlock, false, FloatAsDword( speed ) );
+            writeTailDword( pTopSpeedBlock, true,
+                            uint32_t( pCarState->getCarID() ) );
+        }
+    }
 
     if ( pStatisticsPlayer != nullptr && statisticsCategory > 2 &&
          statisticsCategory < 5 ) {

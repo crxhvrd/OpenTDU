@@ -94,5 +94,6 @@ private:
     SavedExtraChallengesNotifier extraChallengesNotifier;
     int32_t numPendingOperations;
     bool bInitialized;
+    bool bProfilePromptPending;
     int32_t saveIndex;
 };

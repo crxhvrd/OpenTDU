@@ -24,20 +24,21 @@ public:
     bool initialize( TestDriveGameInstance * ) override;
     void terminate() override;
 
+    void resetProgress();
     void cancelDisplayedMessages();
     TutorialHint *findMessage( const uint32_t id );
     void deserialize( edStore &stream );
     void serialize( edStore &stream ) const;
 
 public:
-    int32_t numTutorialMsgs = 0;                          
-    bool bFlashPopupOn = false;                           
+    int32_t numTutorialMsgs = 0;
+    bool bFlashPopupOn = false;
     TutorialHint *pTutorialHints[kMaxTutorialHints] = {};
-    bool bEnabled;                                        
-    bool bPopupDisplayed;                                 
-    bool bStepDone[kNumTutorialSteps] = {};               
+    bool bEnabled;
+    bool bPopupDisplayed;
+    bool bStepDone[kNumTutorialSteps] = {};
 };
 
 extern GSTutorial *gpTutorial;
-extern bool gbTutorialEnabled;      
-extern bool gbScenarioTutorialEnabled; 
+extern bool gbTutorialEnabled;
+extern bool gbScenarioTutorialEnabled;

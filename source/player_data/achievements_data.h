@@ -64,6 +64,7 @@ public:
 
     void reset();
     void build();
+    void releaseChecks();
     void deserialize( edStore &stream );
     void serialize( edStore &stream ) const;
     void tick();
@@ -84,13 +85,13 @@ public:
 
 private:
     void buildCheck( const DBEntryAchievement &entry );
-    void releaseChecks();
     bool refreshCheck( AchievementCheck *pCheck,
                        const uint32_t eventMask,
                        const bool bQuiet );
     void grantReward( const AchievementCheck *pCheck );
 
     void processAsyncRequest();
+    void markReady();
     void displayLevelUp();
     void displayAchievementPopUp( AchievementCheck *pCheck );
     void displayRewardPopUp( const AchievementCheck *pCheck );

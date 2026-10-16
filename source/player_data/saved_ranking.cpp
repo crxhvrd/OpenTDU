@@ -6,15 +6,10 @@
 #include "saved_string_table.h"
 
 void RankingEntry::clear() {
-    // FUN_00415ea0 
-    Hashcode = 0ull;
-
-    TestDriveTEAWriteQword( pBlock0, 0ull );
-    TestDriveTEAWriteQword( pBlock1, 0ull );
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (the original seeds the two
-                             // blocks with (-1, -1, 0, -1) and (9, -1); what
-                             // those fields mean is not mapped yet)
+    // FUN_0088ef40 + FUN_0088eec0
+    TestDriveTEAWriteQword( (uint32_t *)&Hashcode, 0xffffffffull );
+    TestDriveTEAWriteQword( pBlock0, 0xffffffffffffffffull );
+    TestDriveTEAWriteQword( pBlock1, 0xffffffff00000009ull );
 }
 
 uint64_t RankingEntry::getHashcode() const {
@@ -56,12 +51,13 @@ SavedRanking::SavedRanking() : Notifiable(), Entries(), PlayerIDs() {
 SavedRanking::~SavedRanking() {}
 
 void SavedRanking::clear() {
-    // FUN_00415ea0
+    // FUN_00890460
     for ( RankingEntry &entry : Entries ) {
         entry.clear();
     }
 
-    NumPlayerIDs = 0u;
+    RankCheckCounter = 0xffffffffu;
+    NumPlayerIDs = kMaxPlayerIDs;
     memset( PlayerIDs, 0, sizeof( PlayerIDs ) );
 }
 

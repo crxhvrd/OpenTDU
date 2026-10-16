@@ -83,7 +83,7 @@ public:
     SavedExtraChallenges();
     ~SavedExtraChallenges();
 
-    void clear();
+    void clear( const bool bSeedPlayerLevel );
     void resetVehicleType();
     void addDistanceDriven( const float kms );
     void addCounter( const int32_t index, const int32_t value );

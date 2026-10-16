@@ -5,6 +5,21 @@
 
 struct LocalPlayerData;
 
+struct PlayerSaveDescriptor {
+    static constexpr int32_t kMaxCars = 500;
+
+    int32_t Trailer = 0;
+    int32_t Revision = 0;
+    uint32_t Money = 0u;
+    int32_t NumHouses = 0;
+    int32_t NumCars = 0;
+    uint32_t CurrentCarConfigID = 0u;
+    uint64_t CurrentCarPackHashcode = 0ull;
+    uint16_t CarConfigIDs[kMaxCars] = {};
+
+    bool isSameAs( const PlayerSaveDescriptor &other ) const;
+};
+
 class SavegameManager {
 public:
     SavegameManager();
@@ -48,5 +63,6 @@ private:
 };
 
 extern SavegameManager gSavegameManager;
+extern PlayerSaveDescriptor gPlayerSaveDescriptor;
 extern bool BOOL_010e7364; // DAT_010e7364
 extern int32_t gPreviousSaveStreamRevision;

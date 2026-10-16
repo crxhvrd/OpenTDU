@@ -8,6 +8,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "gs_playerdata.h"
 #include "player_data_interface.h"
+#include "saved_extra_challenges.h"
 
 int32_t GetHouseNumGarageSlots( const uint64_t houseHashcode ) {
     // FUN_0088fb00
@@ -398,7 +399,8 @@ bool Garage::addHouse( const uint64_t houseHashcode ) {
         return false;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    gpPlayerData->getLoadedSave()->getExtraChallenges()->addCounter(
+        CounterIndex( 0xf124 ), 1 );
 
     return true;
 }

@@ -197,6 +197,8 @@ public:
     eEngineState getEngineState() const { return vehicle.Engine.State; }
     void setEngineState( eEngineState state ) { vehicle.Engine.State = state; }
     float getVehicleMass() const { return vehicle.Mass; }
+    float getTimeSinceHardImpact() const { return timeSinceHardImpact; }
+    bool isAirborne() const;
     float getInputBrake() const { return inputBrake; }
     float getInputThrottle() const { return inputThrottle; }
     float getInputHandbrake() const { return inputHandbrake; }
@@ -626,6 +628,7 @@ private:
     static constexpr int32_t kMaxCollisionEvents = 0x80;
     std::array<CollisionEvent, kMaxCollisionEvents> collisionEvents;
     int32_t numCollisionEvents = 0;
+    float timeSinceHardImpact = 0.0f;
 
     // Pose published at the end of each physics step (see publishStepPose).
     Matrix4x4f_t physicsMatrix = Matrix4x4f_t::Identity();

@@ -94,6 +94,9 @@ public:
     inline RandomGen &getRandomGenerator() { return randomGenerator; }
     inline float getTimeLeftForRental() const { return rentalTimer; }
     inline void setTimeLeftForRental( const float time ) { rentalTimer = time; }
+    inline void setMailboxUpdated( const bool bUpdated ) {
+        bMailboxUpdated = bUpdated;
+    }
     inline Eigen::Vector4f getDefaultStartPosition() const {
         // HACK: REMOVE ME: VEHICLE PHYSICS TEST
         if ( startPosition.head<3>().squaredNorm() < 1.0f ) {
@@ -249,9 +252,10 @@ private:
     uint32_t demoTimeEnd;
     uint32_t traceSize;
     uint32_t currentDefVersion;
-    bool bWasMapExited;       // DAT_01214740
-    int32_t currentSpotIndex; // DAT_01214744
-    bool bIsFromDriveIn;      // DAT_012162c4
+    bool bWasMapExited;           // DAT_01214740
+    int32_t currentSpotIndex;     // DAT_01214744
+    bool bIsFromDriveIn;          // DAT_012162c4
+    bool bMailboxUpdated = false; // DAT_012164de
     NextIntroInfo nextIntro;
     int32_t numExtraChallenges;
 

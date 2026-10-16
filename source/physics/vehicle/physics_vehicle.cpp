@@ -86,10 +86,11 @@ constexpr float kSuspLoadCapCoef = 19.62f;  // DAT_00f41ef8 (2 g)
 constexpr float kWheelVelDeadband = 0.25f;  // DAT_00f8a1d4
 constexpr float kWheelOmegaDeadband = 0.1f; // FLOAT_00f41668
 
-constexpr float kBrakeBalance = 0.6f;           // fallback
-constexpr float kAWDBrakeCoef = 1.5f;           // DAT_00f416b8
-float gBrakeTorquePerMass = 20.0f;              // DAT_00f8a27c
-constexpr float kWheelInertiaRadiusCoef = 2.5f; // DAT_00f416c0
+constexpr float kBrakeBalance = 0.6f;                     // fallback
+constexpr float kAWDBrakeCoef = 1.5f;                     // DAT_00f416b8
+float gBrakeTorquePerMass = 20.0f;                        // DAT_00f8a27c
+static constexpr float kHardImpactEnergyPerMass = 100.0f; // DAT_00fab540
+constexpr float kWheelInertiaRadiusCoef = 2.5f;           // DAT_00f416c0
 
 constexpr float kEngineFrictionLoss = 0.01f; // DAT_00f416d4
 constexpr float kEngineFakeCoef = 1.0f;      // FLOAT_00f4165c
@@ -916,6 +917,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     // Vehicle + per-wheel setup
     vehicle = PhysicsVehicleState();
     numCollisionEvents = 0;
+    timeSinceHardImpact = 0.0f;
     phantomRequest = 0;
     phantomMode = 1;
     phantomTimer = 0.0f;
@@ -2898,6 +2900,9 @@ void PhysicsVehicle::pushCollisionEvent( const CollisionEvent &event ) {
     if ( numCollisionEvents >= kMaxCollisionEvents ) {
         return;
     }
+    if ( event.Energy > vehicle.Mass * kHardImpactEnergyPerMass ) {
+        timeSinceHardImpact = 0.0f;
+    }
     collisionEvents[numCollisionEvents] = event;
     numCollisionEvents++;
 }
@@ -3561,6 +3566,19 @@ void PhysicsVehicle::tick( float deltaTime ) {
         prevWorldVelocity[1] = vel.GetY();
         prevWorldVelocity[2] = vel.GetZ();
     }
+
+    timeSinceHardImpact += deltaTime;
+}
+
+bool PhysicsVehicle::isAirborne() const {
+    // FUN_008282c0
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        if ( vehicle.Wheels[i].bGroundContact ) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 Matrix4x4f_t PhysicsVehicle::getChassisShiftedMatrix() const {

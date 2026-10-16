@@ -81,6 +81,11 @@ public:
     // x = fore/aft, y = height (metres, in-car space).
     inline const Eigen::Vector2f &getSeatPosition() const { return seatPos; }
     inline bool isHeadTrackingEnabled() const { return bHeadTracking; }
+    inline void setHeadTracking( const bool value ) { bHeadTracking = value; }
+    inline void setMouseSensitivity( const float value ) {
+        field_0x958 = value;
+    }
+    inline void setInvertMouse( const bool value ) { field_0x955 = value; }
 
     inline void setActiveCameraAsDefault() {
         defaultCamera = pActiveVehicleCamera;

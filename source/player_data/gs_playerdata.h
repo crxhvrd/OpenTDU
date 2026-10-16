@@ -25,6 +25,8 @@ enum eSaveLoadState : int32_t {
     SLS_NoSave = 2, // the active profile has no (readable) save
 };
 
+struct PlayerSaveDescriptor;
+
 class GSPlayerData : public GameSystem, public Notifiable {
 public:
     const char *getName() const override { return "Service : PlayerData"; }
@@ -111,6 +113,7 @@ public:
     void setHDREnabled( const bool bEnabled );
 
     const char *getLanguage();
+    void setHelpSystem( const bool bEnabled );
     eAntiAliasingMethod getAAMethod() const;
     bool isHDREnabled() const;
 
@@ -134,6 +137,8 @@ public:
     bool readProfileOptions( const uint64_t profileHashcode,
                              LocalPlayerData &outPlayerData );
     void requestSave( const int32_t mode );
+    void flushSaveRequest();
+    void fillSaveDescriptor( PlayerSaveDescriptor *pDescriptor );
     inline TestDriveMutex *getMutex() { return pMutex; }
     void applyDrivingOptions();
     void prepareActiveProfile();

@@ -10,14 +10,14 @@
 #include "player_data_interface.h"
 #include "player_save.h"
 
-bool BOOL_010e7364 = false; // Always false at runtime
+bool BOOL_010e7364 = false;              // Always false at runtime
 int32_t gPreviousSaveStreamRevision = 0; // DAT_010e7360
 
 static constexpr uint32_t kBufferSize = 0x2000;
 static uint8_t DAT_01041f50[kBufferSize];
 static constexpr uint32_t kPlayerSaveBufferSize = 0x80000;
 static uint8_t gActivePlayerSave[kPlayerSaveBufferSize]; // DAT_01043f50
-static uint32_t gActivePlayerSaveSize = 0u; // DAT_010c3f50
+static uint32_t gActivePlayerSaveSize = 0u;              // DAT_010c3f50
 
 static std::wstring FormatPlayerSaveTimestamp( const wchar_t *pSaveType ) {
     // FUN_0097bed0
@@ -47,7 +47,6 @@ static bool WriteSaveContext( const char *pContextName,
     FileDirectAccess file;
     file.bNeedName = false;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (profile list bookkeeping)
     gUserProfileRegister.FUN_00419de0();
 
     const uint64_t hashcode = gUserProfileRegister.getActiveProfileHashcode();
@@ -92,6 +91,7 @@ static bool WriteSaveContext( const char *pContextName,
 }
 
 SavegameManager gSavegameManager = {};
+PlayerSaveDescriptor gPlayerSaveDescriptor = {}; // DAT_01041b48
 
 SavegameManager::SavegameManager()
     : event(),
@@ -174,17 +174,38 @@ void SavegameManager::refreshService() {
     bUnknownBool4 = true;
 }
 
+bool PlayerSaveDescriptor::isSameAs( const PlayerSaveDescriptor &other ) const {
+    // FUN_00406660
+    bool bSame = Money == other.Money && NumHouses == other.NumHouses &&
+                 NumCars == other.NumCars &&
+                 CurrentCarConfigID == other.CurrentCarConfigID &&
+                 CurrentCarPackHashcode == other.CurrentCarPackHashcode;
+
+    const int32_t numCars = Min( NumCars, kMaxCars );
+    for ( int32_t i = 0; i < numCars; i++ ) {
+        bSame = bSame && CarConfigIDs[i] == other.CarConfigIDs[i];
+    }
+
+    return bSame;
+}
+
 bool SavegameManager::buildPlayerSaveBuffer() {
     // FUN_0097c240
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (profile list bookkeeping)
-    const bool bDescriptorAlreadyKnown = false;
+    const PlayerSaveDescriptor previousDescriptor = gPlayerSaveDescriptor;
+    gPlayerSaveDescriptor.Revision = gSaveStreamRevision;
+    if ( gpPlayerData != nullptr ) {
+        gpPlayerData->fillSaveDescriptor( &gPlayerSaveDescriptor );
+    }
 
+    const bool bDescriptorAlreadyKnown =
+        gPlayerSaveDescriptor.isSameAs( previousDescriptor );
     if ( !bDescriptorAlreadyKnown ) {
         gSaveStreamTrailer++;
         if ( uint32_t( gSaveStreamTrailer ) > 0xffffffeeu ) {
             gSaveStreamTrailer = 0;
         }
     }
+    gPlayerSaveDescriptor.Trailer = gSaveStreamTrailer;
 
     const int32_t writtenSize =
         ( gpPlayerData != nullptr )
@@ -249,7 +270,7 @@ bool SavegameManager::writeCommonDTBlocking( LocalPlayerData *pPlayerData,
     // FUN_0097bf40
     ScopedMutexLock lock( &mutex );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (profile list bookkeeping)
+    gUserProfileRegister.FUN_0060a160();
 
     const char *pContextName =
         ( strcmp( gActiveSaveContextName, kPlayerSave2ContextName ) == 0 )
@@ -258,6 +279,7 @@ bool SavegameManager::writeCommonDTBlocking( LocalPlayerData *pPlayerData,
 
     FileDirectAccess file;
     file.bNeedName = false;
+    gUserProfileRegister.FUN_00419de0();
     if ( !file.openContext( profileHashcode, pContextName,
                             eContextSource::CS_Savegame ) ) {
         return false;
