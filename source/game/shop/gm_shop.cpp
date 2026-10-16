@@ -9,6 +9,7 @@
 #include "database/gs_database.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/implementation/flash_sprite.h"
 #include "flash/mng_fade.h"
 #include "game/game_cheats.h"
 #include "game/mng_music.h"
@@ -37,6 +38,13 @@ static constexpr float kShowcaseCameraFarPlane = 5000.0f; // DAT_00f41b54
 static constexpr uint32_t kDefaultRandomSeed = 12345u;
 static constexpr float kCarFadeDuration = 0.5f; // FLOAT_00f41674
 static constexpr int32_t kNumCheatCars = 8;
+static constexpr const char *kSpecsPanelClip = "/buy/data";
+static constexpr const char *kMenuParamClip = "/buy/param";
+static constexpr const char *kMenuMessageClip = "/buy/message";
+// Plays /:AfterValid once its "valid" animation is over
+static constexpr const char *kMenuSelectionClip = "/buy/param/sur";
+static constexpr float kValidateTimeout = 3.0f;
+static constexpr int32_t kSpecsFirstPersonInactive = -2;
 static constexpr uint32_t kMessageDB = 11;
 static constexpr uint64_t kShopMessageHashcode = 0x525494;
 
@@ -132,9 +140,14 @@ GMShop::GMShop()
       selectedCarID( 0 ),
       bShopFlag1( true ),
       selectedCarDesc(),
+      hoveredCarDesc(),
       carSpecs(),
       firstPerson(),
       parkedCarBodies(),
+      specsHoveredCar( kSpecsFirstPersonInactive ),
+      pSpecsRestoreCar( nullptr ),
+      bSpecsShowHoveredCar( false ),
+      pendingValidateTime( 0.0f ),
       pShopLogic( nullptr ),
       pBuyCinematic( nullptr ),
       bank(),
@@ -283,7 +296,123 @@ void GMShop::tick( float deltaTime, float totalTime ) {
 
     GatherParkedCarBodies( sceneShop.getCarPark(), parkedCarBodies );
     firstPerson.setExtraCollisionBodies( parkedCarBodies );
+    firstPerson.updateHoveredCar( sceneShop.getCarPark() );
     firstPerson.tick( sceneShop.getContent(), pCinematicLoop );
+
+    if ( firstPerson.getClickedCar() != -1 ) {
+        selectFirstPersonCar( firstPerson.getClickedCar() );
+    }
+    updateFirstPersonSpecs();
+
+    if ( pendingValidateTime > 0.0f ) {
+        pendingValidateTime -= deltaTime;
+        validateFirstPersonCar();
+    }
+}
+
+void GMShop::selectFirstPersonCar( const int32_t slot ) {
+    FlashPlayer *pFlashPlayer = gpFlash->getFlashPlayer( "SHOPS" );
+    if ( pFlashPlayer == nullptr ) {
+        return;
+    }
+
+    int32_t carIndex = -1;
+    for ( int32_t i = 0; i < getNumShopCars(); i++ ) {
+        if ( getShopCarSlot( i ) == slot ) {
+            carIndex = i;
+            break;
+        }
+    }
+    if ( carIndex == -1 ) {
+        return;
+    }
+
+    // The buy screen is part of the regular menu
+    firstPerson.leave();
+    updateFirstPersonSpecs();
+
+    // Browse to the car (as the menu arrows do)
+    pFlashPlayer->setVariableValue( "/:num_car", carIndex + 1 );
+    FlashMessage browseMessage( "chca" );
+    onMessage( &browseMessage );
+
+    // Then validate it once the menu accepts input again
+    pendingValidateTime = kValidateTimeout;
+}
+
+void GMShop::validateFirstPersonCar() {
+    // Same as the menu select button
+    FlashPlayer *pFlashPlayer = gpFlash->getFlashPlayer( "SHOPS" );
+    if ( pFlashPlayer == nullptr ||
+         pFlashPlayer->getVariableAsInt( "/:lockChca" ) != 0 ) {
+        return;
+    }
+
+    const int32_t rewardType =
+        pFlashPlayer->getVariableAsInt( "/:reward_type" );
+    if ( rewardType == 0 ) {
+        if ( pFlashPlayer->getVariableAsInt( "/:lockInnerView" ) != 0 ) {
+            return;
+        }
+
+        pendingValidateTime = 0.0f;
+        pFlashPlayer->setVariableValueNonLinked( "/:AfterValid", "car_action" );
+        FlashClip selection;
+        if ( pFlashPlayer->getClipPlayer( kMenuSelectionClip, &selection ) ) {
+            selection.goToLabelAndPlay( "valid", true );
+        }
+        return;
+    }
+
+    pendingValidateTime = 0.0f;
+
+    FlashClip param;
+    FlashClip message;
+    if ( ( rewardType == 1 || rewardType == 2 ) &&
+         pFlashPlayer->getClipPlayer( kMenuParamClip, &param ) &&
+         pFlashPlayer->getClipPlayer( kMenuMessageClip, &message ) ) {
+        param.goToLabelAndPlay( "wait", false );
+        message.goToLabelAndPlay( rewardType == 1 ? "award" : "bought", true );
+    }
+}
+
+void GMShop::updateFirstPersonSpecs() {
+    // In first person mode the specs panel only shows the hovered car
+    const int32_t hoveredCar = firstPerson.isActive()
+                                   ? firstPerson.getHoveredCar()
+                                   : kSpecsFirstPersonInactive;
+    if ( hoveredCar == specsHoveredCar ) {
+        return;
+    }
+    specsHoveredCar = hoveredCar;
+
+    if ( hoveredCar >= 0 ) {
+        if ( !bSpecsShowHoveredCar ) {
+            pSpecsRestoreCar = carSpecs.getCar();
+            bSpecsShowHoveredCar = true;
+        }
+
+        const SceneCarPark::Entry &entry =
+            sceneShop.getCarPark().getEntry( hoveredCar );
+        hoveredCarDesc.clear();
+        hoveredCarDesc.setup( uint32_t( entry.ConfigID ), entry.PaintIndex,
+                              entry.RimID, entry.InteriorID, 0u );
+        carSpecs.watch( &hoveredCarDesc );
+        ApplyCarSpecsGauges( gpFlash->getFlashPlayer( "SHOPS" ),
+                             kSpecsPanelClip );
+    } else if ( bSpecsShowHoveredCar ) {
+        carSpecs.watch( pSpecsRestoreCar );
+        ApplyCarSpecsGauges( gpFlash->getFlashPlayer( "SHOPS" ),
+                             kSpecsPanelClip );
+        pSpecsRestoreCar = nullptr;
+        bSpecsShowHoveredCar = false;
+    }
+
+    if ( hoveredCar >= 0 ) {
+        firstPerson.showMoviePanel( "SHOPS", kSpecsPanelClip );
+    } else {
+        firstPerson.hideMoviePanel();
+    }
 }
 
 void GMShop::draw( float deltaTime, float totalTime ) {

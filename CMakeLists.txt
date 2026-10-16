@@ -1175,6 +1175,15 @@ add_custom_command(
 add_custom_command(
     TARGET opentdu
     POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${OTDU_RSC_FOLDER}/first_person_pointer.2db"
+            "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/first_person_pointer.2b"
+    COMMENT "Copying first person cursor 2DB..."
+)
+
+add_custom_command(
+    TARGET opentdu
+    POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${OTDU_RSC_FOLDER}/localization"
             "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/Localization"

@@ -11,6 +11,8 @@ struct Material;
 class FirstPersonPointer {
 public:
     inline bool isLoaded() const { return bLoaded; }
+    inline bool isHighlighted() const { return bHighlighted; }
+    inline void setHighlighted( bool bValue ) { bHighlighted = bValue; }
 
 public:
     FirstPersonPointer();
@@ -18,7 +20,7 @@ public:
 
     bool initialize();
     void destroy();
-    void draw();
+    void draw( float deltaTime );
 
 private:
     bool loadBitmap();
@@ -33,5 +35,10 @@ private:
     Material *pMaterial;
 
     DrawList drawList;
+
+    float highlightBlend;
+    float pulsePhase;
+
     bool bLoaded;
+    bool bHighlighted;
 };

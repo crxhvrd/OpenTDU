@@ -66,6 +66,8 @@ private:
     void selectCar( const int32_t carIndex );
     bool leave( const eExitAction action );
     void refreshCarStatus( const bool bSelectedCar );
+    void updateFirstPersonSpecs();
+    void selectFirstPersonCar( const int32_t carIndex );
     void swapCars();
 
 private:
@@ -84,4 +86,7 @@ private:
     int32_t selectedSlot;
     eExitAction exitAction;
     int32_t innerViewDelay;
+    int32_t specsHoveredCar;
+    CarDesc *pSpecsRestoreCar;
+    bool bSpecsShowHoveredCar;
 };

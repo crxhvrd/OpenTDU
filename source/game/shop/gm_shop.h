@@ -67,6 +67,9 @@ private:
     void onSceneReady();
     void populateCarPark();
     void startTestDrive();
+    void updateFirstPersonSpecs();
+    void selectFirstPersonCar( const int32_t slot );
+    void validateFirstPersonCar();
 
 private:
     int32_t carIDs[ShopLogic::kNumCarSlots];
@@ -83,10 +86,15 @@ private:
     bool bShopFlag1; // DBEntryCarShop::Flags bit 1
 
     CarDesc selectedCarDesc;
+    CarDesc hoveredCarDesc;
     FlashPanelCarSpecs carSpecs;
 
     FirstPersonMode firstPerson;
     std::vector<const JPH::Body *> parkedCarBodies;
+    int32_t specsHoveredCar;
+    CarDesc *pSpecsRestoreCar;
+    bool bSpecsShowHoveredCar;
+    float pendingValidateTime;
 
     ShopLogic *pShopLogic;
     EntityCinematic *pBuyCinematic;

@@ -3,6 +3,11 @@
 
 #include "flash/flash_mouse.h"
 #include "flash/gs_flash.h"
+#include "flash/implementation/flash_player.h"
+#include "flash/implementation/flash_resource.h"
+#include "flash/implementation/flash_sprite.h"
+#include "flash/movie_player.h"
+#include "gs_timer.h"
 #include "game/gm_scene.h"
 #include "game/scene_car_park.h"
 #include "game/scene_interior.h"
@@ -20,6 +25,10 @@
 // TODO: Should be an option in a new panel
 // (e.g. Interior Navigation: [] TDU1 [x] TDU2)
 static constexpr const char *kToggleChannel = "TAB";
+static constexpr const char *kSelectChannel = "BUTTON_0";
+
+// TODO: PLACEHOLDER
+static constexpr float kHoverMaxDistance = 5.0f;
 
 static constexpr float kCapsuleRadius = 0.4f;
 static constexpr float kCapsuleCylinderHeight = 1.0f;
@@ -48,6 +57,12 @@ FirstPersonMode::FirstPersonMode()
       pCollisionBody( nullptr ),
       extraCollisionBodies(),
       pointer(),
+      hoverBodies(),
+      hoverCarIndices(),
+      hoveredCar( -1 ),
+      clickedCar( -1 ),
+      pPanelMovie( nullptr ),
+      panelClipsVisibility(),
       spawnPosition( 0.0f, 0.0f, 0.0f, 1.0f ),
       hullMin( 0.0f, 0.0f, 0.0f, 1.0f ),
       hullMax( 0.0f, 0.0f, 0.0f, 1.0f ),
@@ -349,7 +364,11 @@ void FirstPersonMode::leave() {
         return;
     }
 
+    hideMoviePanel();
+
     bActive = false;
+    hoveredCar = -1;
+    clickedCar = -1;
 
     gEdSys.setRelativeMouseMode( false );
     SetHUDMoviesPaused( false );
@@ -384,6 +403,168 @@ void FirstPersonMode::leave() {
     OTDU_LOG_INFO( "First person: left\n" );
 }
 
+void FirstPersonMode::updateHoveredCar( SceneCarPark &carPark ) {
+    const int32_t previousHoveredCar = hoveredCar;
+    hoveredCar = -1;
+    if ( !bActive || pCamera == nullptr || gpPhysics == nullptr ||
+         IsFirstPersonInputCaptured() ) {
+        return;
+    }
+
+    hoverBodies.clear();
+    hoverCarIndices.clear();
+    for ( int32_t i = 0; i < carPark.getNumEntries(); i++ ) {
+        if ( carPark.getEntry( i ).PlacementState !=
+             SceneCarPark::CPPS_Placed ) {
+            continue;
+        }
+
+        CarState *pCarState = carPark.getCarState( i );
+        PhysicsVehicle *pPhysicsVehicle =
+            ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+        if ( pPhysicsVehicle == nullptr ||
+             pPhysicsVehicle->getChassisBody() == nullptr ) {
+            continue;
+        }
+
+        hoverBodies.push_back( pPhysicsVehicle->getChassisBody() );
+        hoverCarIndices.push_back( i );
+    }
+
+    const Eigen::Vector3f eyePosition = pCamera->getWorldPosition();
+    const Eigen::Vector3f viewDirection = pCamera->getTarget() - eyePosition;
+    const int32_t hitIndex = gpPhysics->rayCastBodyBounds(
+        eyePosition, viewDirection, kHoverMaxDistance, hoverBodies );
+    if ( hitIndex != -1 ) {
+        hoveredCar = hoverCarIndices[hitIndex];
+    }
+
+    if ( hoveredCar != previousHoveredCar ) {
+        OTDU_LOG_DEBUG(
+            "First person: hovered car %d (config %d)\n", hoveredCar,
+            ( hoveredCar != -1 ) ? carPark.getEntry( hoveredCar ).ConfigID
+                                 : -1 );
+    }
+}
+
+void FirstPersonMode::showMoviePanel( const char *pMovieName,
+                                      const char *pClipPath ) {
+    hideMoviePanel();
+    if ( !bActive || gpFlash == nullptr ) {
+        return;
+    }
+
+    uint32_t levelIndex = 0u;
+    uint32_t movieIndex = 0u;
+    if ( !gpFlash->getFlashMovieIndex( &levelIndex, &movieIndex,
+                                       pMovieName ) ) {
+        return;
+    }
+
+    MoviePlayer *pMovie = gpFlash->getMoviePlayer( levelIndex, movieIndex );
+    FlashPlayer *pPlayer = gpFlash->getFlashPlayer( pMovieName );
+    if ( pMovie == nullptr || pPlayer == nullptr ) {
+        return;
+    }
+
+    // Sprites from the movie root down to the panel (e.g. /, /buy, /buy/data)
+    std::vector<FlashSprite *> panelPath;
+    panelPath.push_back( pPlayer->getBoundFlashResource()->getRoot() );
+    const std::string clipPath = pClipPath;
+    for ( size_t separator = clipPath.find( '/', 1 );;
+          separator = clipPath.find( '/', separator + 1 ) ) {
+        FlashClip clip;
+        if ( !pPlayer->getClipPlayer( clipPath.substr( 0, separator ).c_str(),
+                                      &clip ) ) {
+            return;
+        }
+        panelPath.push_back( clip.pSprite );
+
+        if ( separator == std::string::npos ) {
+            break;
+        }
+    }
+
+    {
+        ScopedMutexLock lock = gpFlash->scopedLock();
+        auto setVisible = [this]( FlashSprite *pSprite, const bool bVisible ) {
+            const bool bWasVisible =
+                ( pSprite->getDisplayList()->getFlagsRW() & 1u ) != 0u;
+            panelClipsVisibility.push_back( { pSprite, bWasVisible } );
+            pSprite->setProperty( eFlashProperty::FP_Visible, bVisible );
+        };
+
+        for ( size_t i = 0; i + 1 < panelPath.size(); i++ ) {
+            for ( FlashDisplayListEntry *pEntry =
+                      panelPath[i]->getDisplayList()->getFirstEntry();
+                  pEntry != nullptr; pEntry = pEntry->pNext ) {
+                if ( pEntry->pSprite == nullptr || !pEntry->isSprite() ) {
+                    continue;
+                }
+
+                setVisible( pEntry->pSprite,
+                            pEntry->pSprite == panelPath[i + 1] );
+            }
+        }
+    }
+
+    pPanelMovie = pMovie;
+    pPanelMovie->IsMoviePaused &= ~2;
+}
+
+void FirstPersonMode::hideMoviePanel() {
+    if ( pPanelMovie == nullptr ) {
+        return;
+    }
+
+    {
+        ScopedMutexLock lock = gpFlash->scopedLock();
+        for ( auto it = panelClipsVisibility.rbegin();
+              it != panelClipsVisibility.rend(); ++it ) {
+            it->first->setProperty( eFlashProperty::FP_Visible, it->second );
+        }
+    }
+    panelClipsVisibility.clear();
+
+    if ( bActive ) {
+        pPanelMovie->IsMoviePaused |= 2;
+    }
+    pPanelMovie = nullptr;
+}
+
+void ApplyCarSpecsGauges( FlashPlayer *pPlayer, const char *pPanelPath ) {
+    static constexpr const char *kGauges[] = { "speed", "accel", "handling",
+                                               "braking" };
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    const std::string basePath = std::string( pPanelPath ) + "/datas_base/";
+    char value[512];
+    for ( const char *pGauge : kGauges ) {
+        const std::string variable = std::string( "/:cur_" ) + pGauge;
+        if ( !pPlayer->getVariableAsString( variable.c_str(), value ) ) {
+            continue;
+        }
+
+        const std::string gaugePath = basePath + "g_" + pGauge;
+        FlashClip gauge;
+        if ( pPlayer->getClipPlayer( ( gaugePath + "/gauge" ).c_str(),
+                                     &gauge ) ) {
+            gauge.setProperty( eFlashProperty::FP_ScaleX,
+                               static_cast<float>( atof( value ) ) );
+        }
+        pPlayer->setVariableValueNonLinked( ( gaugePath + ":value" ).c_str(),
+                                            value );
+    }
+
+    FlashClip group;
+    if ( pPlayer->getVariableAsString( "/:cur_group", value ) &&
+         pPlayer->getClipPlayer( ( basePath + "group" ).c_str(), &group ) ) {
+        group.goToLabelAndPlay( value, false );
+    }
+}
+
 void GatherParkedCarBodies( SceneCarPark &carPark,
                             std::vector<const JPH::Body *> &bodies ) {
     bodies.clear();
@@ -411,11 +592,21 @@ void FirstPersonMode::tick( SceneInterior *pScene,
         IsChannelJustPressed( pKeyboard->getChannel( kToggleChannel ) );
 
     const bool bInputCaptured = IsFirstPersonInputCaptured();
+    clickedCar = -1;
+    if ( bActive && !bInputCaptured && hoveredCar != -1 ) {
+        Device *pMouse = gEdDev.getDevice( eDeviceType::DT_Mouse, 0 );
+        if ( pMouse != nullptr &&
+             IsChannelJustPressed( pMouse->getChannel( kSelectChannel ) ) ) {
+            clickedCar = hoveredCar;
+        }
+    }
+
     if ( bActive ) {
         gEdSys.setRelativeMouseMode( !bInputCaptured );
         if ( !bInputCaptured ) {
             pCamera->updateLook();
-            pointer.draw();
+            pointer.setHighlighted( hoveredCar != -1 );
+            pointer.draw( gpTimer->SystemDeltaTime );
         }
     }
 

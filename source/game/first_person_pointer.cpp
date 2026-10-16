@@ -2,6 +2,7 @@
 #include "first_person_pointer.h"
 
 #include "config/gs_config.h"
+#include "core/maths_helper.h"
 #include "filesystem/gs_file.h"
 #include "render/gs_render.h"
 #include "render/material.h"
@@ -14,8 +15,13 @@ static constexpr uint64_t kPointerMaterialHashcode = 0x230588678a67836dull;
 static constexpr uint8_t kFlashOrderTable = 0x2a;
 static constexpr uint64_t kBoundTextureHashcode = 0x0000000100000000ull;
 
-static constexpr float kPointerSizePixels = 16.0f; // TODO: PLACEHOLDER
+static constexpr float kPointerSizePixels = 48.0f; // TODO: PLACEHOLDER
 static constexpr float kReferenceHeight = 720.0f;
+
+static constexpr float kHighlightFadeDuration = 0.15f;
+static constexpr float kHighlightScale = 1.12f;
+static constexpr float kPulseAmplitude = 0.10f;
+static constexpr float kPulseFrequency = 1.5f;
 
 FirstPersonPointer::FirstPersonPointer()
     : pBitmapResource( nullptr ),
@@ -25,7 +31,10 @@ FirstPersonPointer::FirstPersonPointer()
       material2DM(),
       pMaterial( nullptr ),
       drawList(),
-      bLoaded( false ) {}
+      highlightBlend( 0.0f ),
+      pulsePhase( 0.0f ),
+      bLoaded( false ),
+      bHighlighted( false ) {}
 
 FirstPersonPointer::~FirstPersonPointer() { destroy(); }
 
@@ -105,7 +114,7 @@ bool FirstPersonPointer::initialize() {
 
     DrawStreams streams;
     streams.Normals = '\0';
-    streams.Diffuse = '\0';
+    streams.Diffuse = '\x01';
     streams.Specular = '\0';
     streams.Tangent = '\0';
     streams.Binormal = '\0';
@@ -146,10 +155,13 @@ void FirstPersonPointer::destroy() {
         pBitmapResource = nullptr;
     }
 
+    highlightBlend = 0.0f;
+    pulsePhase = 0.0f;
+    bHighlighted = false;
     bLoaded = false;
 }
 
-void FirstPersonPointer::draw() {
+void FirstPersonPointer::draw( float deltaTime ) {
     if ( !bLoaded || gpRender == nullptr ) {
         return;
     }
@@ -160,8 +172,26 @@ void FirstPersonPointer::draw() {
         return;
     }
 
+    const float fadeStep = deltaTime / kHighlightFadeDuration;
+    highlightBlend = bHighlighted ? Min( highlightBlend + fadeStep, 1.0f )
+                                  : Max( highlightBlend - fadeStep, 0.0f );
+
+    if ( highlightBlend > 0.0f ) {
+        pulsePhase =
+            std::fmod( pulsePhase + deltaTime * kPulseFrequency, 1.0f );
+    } else {
+        pulsePhase = 0.0f;
+    }
+
+    // Smoothstep so the ring eases in/out instead of popping
+    const float blend =
+        highlightBlend * highlightBlend * ( 3.0f - 2.0f * highlightBlend );
+    const float pulse = 0.5f - 0.5f * std::cos( pulsePhase * kTwoPI );
+    const float scale =
+        1.0f + blend * ( ( kHighlightScale - 1.0f ) + kPulseAmplitude * pulse );
+
     const float sizePixels =
-        kPointerSizePixels * renderHeight / kReferenceHeight;
+        kPointerSizePixels * scale * renderHeight / kReferenceHeight;
     const float halfHeight = ( sizePixels / renderHeight ) * 0.5f;
     const float halfWidth = ( sizePixels / renderWidth ) * 0.5f;
 
@@ -176,6 +206,8 @@ void FirstPersonPointer::draw() {
     if ( !drawList.beginPrimitive( ePrimitiveType::PT_TriangleStrip, 4 ) ) {
         return;
     }
+
+    drawList.setDiffuse( 0, ColorRGBA( 0xa0ffffffu ) );
 
     drawList.setTexCoords( 0, { 0.0f, 0.0f } );
     drawList.pushVertex( left, top, 0.0f );

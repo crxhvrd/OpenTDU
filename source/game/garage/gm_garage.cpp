@@ -6,6 +6,7 @@
 #include "database/gs_database.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/implementation/flash_sprite.h"
 #include "game/mng_music.h"
 #include "game/scenaric/avatar_manager.h"
 #include "game/scenaric/entity/entity_driver.h"
@@ -33,6 +34,13 @@ static bool gbGarageSortRequested = false; // DAT_010e7c98
 static constexpr int32_t kInnerViewDelayTicks = 10;
 static constexpr float kShowcaseCameraNearPlane = 0.01f; // DAT_00f416d4
 static constexpr float kResetCinematicTimer = -50.0f;    // DAT_00f41cb8
+
+static constexpr const char *kMovieName = "HOME";
+static constexpr const char *kSpecsPanelClip = "/data";
+static constexpr const char *kMenuMessageClip = "/ss_menu/message";
+// Plays /:AfterValid once its "valid" animation is over
+static constexpr const char *kMenuSelectionClip = "/ss_menu/param/sur";
+static constexpr int32_t kSpecsFirstPersonInactive = -2;
 
 static inline Garage *GetGarage() {
     return gpPlayerData->getLoadedSave()->getGarage();
@@ -68,7 +76,10 @@ GMGarage::GMGarage()
       selectedCar( 0 ),
       selectedSlot( 0 ),
       exitAction( EA_None ),
-      innerViewDelay( -1 ) {
+      innerViewDelay( -1 ),
+      specsHoveredCar( kSpecsFirstPersonInactive ),
+      pSpecsRestoreCar( nullptr ),
+      bSpecsShowHoveredCar( false ) {
     // FUN_00790c50
     setTransitionFlags( 0x27 );
 
@@ -228,7 +239,83 @@ void GMGarage::tick( float deltaTime, float totalTime ) {
 
     GatherParkedCarBodies( sceneGarage.getCarPark(), parkedCarBodies );
     firstPerson.setExtraCollisionBodies( parkedCarBodies );
+    firstPerson.updateHoveredCar( sceneGarage.getCarPark() );
     firstPerson.tick( &sceneGarage, pCinematicLoop );
+
+    if ( firstPerson.getClickedCar() != -1 ) {
+        selectFirstPersonCar( firstPerson.getClickedCar() );
+    }
+    updateFirstPersonSpecs();
+}
+
+void GMGarage::selectFirstPersonCar( const int32_t carIndex ) {
+    GarageSlot *pCar = GetGarage()->getHouseCarAtIndex( carIndex );
+    if ( pCar == nullptr ) {
+        return;
+    }
+
+    // The confirmation prompt is part of the regular menu
+    firstPerson.leave();
+    updateFirstPersonSpecs();
+
+    // Browse to the car (as the menu arrows do)
+    pFlashPlayer->setVariableValue( "/:num_car", carIndex + 1 );
+    FlashMessage browseMessage( "ccar" );
+    onMessage( &browseMessage );
+    FlashMessage changedMessage( "chca" );
+    onMessage( &changedMessage );
+
+    // Then validate it (as the menu select button does)
+    if ( pCar->state == CarDesc::eState::CDS_PutOnEbay ) {
+        pFlashPlayer->setVariableValueNonLinked( "/:WhereFrom", "garage" );
+        FlashClip message;
+        if ( pFlashPlayer->getClipPlayer( kMenuMessageClip, &message ) ) {
+            message.goToLabelAndPlay( "carOnSale_red", true );
+        }
+        return;
+    }
+
+    pFlashPlayer->setVariableValue( "/:IsCarHere", 1 );
+    pFlashPlayer->setVariableValueNonLinked( "/:AfterValid", "confirm_select" );
+    FlashClip selection;
+    if ( pFlashPlayer->getClipPlayer( kMenuSelectionClip, &selection ) ) {
+        selection.goToLabelAndPlay( "valid", true );
+    }
+}
+
+void GMGarage::updateFirstPersonSpecs() {
+    // In first person mode the specs panel only shows the hovered car
+    const int32_t hoveredCar = firstPerson.isActive()
+                                   ? firstPerson.getHoveredCar()
+                                   : kSpecsFirstPersonInactive;
+    if ( hoveredCar == specsHoveredCar ) {
+        return;
+    }
+    specsHoveredCar = hoveredCar;
+
+    CarDesc *pHoveredCar =
+        ( hoveredCar >= 0 )
+            ? sceneGarage.getCarPark().getEntry( hoveredCar ).pCar
+            : nullptr;
+    if ( pHoveredCar != nullptr ) {
+        if ( !bSpecsShowHoveredCar ) {
+            pSpecsRestoreCar = carSpecs.getCar();
+            bSpecsShowHoveredCar = true;
+        }
+        carSpecs.watch( pHoveredCar );
+        ApplyCarSpecsGauges( pFlashPlayer, kSpecsPanelClip );
+    } else if ( bSpecsShowHoveredCar ) {
+        carSpecs.watch( pSpecsRestoreCar );
+        ApplyCarSpecsGauges( pFlashPlayer, kSpecsPanelClip );
+        pSpecsRestoreCar = nullptr;
+        bSpecsShowHoveredCar = false;
+    }
+
+    if ( pHoveredCar != nullptr ) {
+        firstPerson.showMoviePanel( kMovieName, kSpecsPanelClip );
+    } else {
+        firstPerson.hideMoviePanel();
+    }
 }
 
 void GMGarage::destroy() {
