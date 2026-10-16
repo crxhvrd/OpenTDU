@@ -11,11 +11,17 @@
 #include "flash/gs_flash.h"
 
 #include "game/freeride/mng_photo_mode.h"
+#include "game/shop/gm_shop.h"
 #include "game/vehicle/car_state.h"
+#include "game/vehicle/gs_car_state.h"
+#include "game/vehicle/vehicle_base.h"
 #include "gs_camera.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "core/maths_helper.h"
+#include "render/postfx/gs_postfx.h"
+#include "render/postfx/effects/postfx_radial_blur.h"
+#include "world/streaming_manager.h"
 
 #include <vector>
 
@@ -31,6 +37,12 @@ static float FLOAT_00fab368 = 20.0f;           // DAT_00fab368
 static float FLOAT_00fab370 = 0.07f;           // DAT_00fab370
 static float FLOAT_00fab374 = 1.0f;            // DAT_00fab374
 static float FLOAT_00fab378 = 0.18f;           // DAT_00fab378
+static float gShowcaseMinHeight = 0.0f;        // DAT_016a2c8c
+
+static constexpr float kDomeLengthFactor = 2.5f;     // FLOAT_00fab348
+static constexpr float kDomeWidthFactor = 2.5f;      // FLOAT_00fab344
+static constexpr float kDomeHeightFactorBike = 2.5f; // FLOAT_00fab33c
+static constexpr float kDomeHeightFactor = 1.5f;     // FLOAT_00fab340
 
 inline bool IsShowcaseInputCaptured() {
     // FUN_008d80b0
@@ -39,7 +51,17 @@ inline bool IsShowcaseInputCaptured() {
     }
 
     if ( gpActiveGameMode->getCurrentGameMode() == GM_Shop ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: Shop/CarPaint
+        ShopLogic *pShopLogic =
+            static_cast<const GMShop *>( gpActiveGameMode )->getShopLogic();
+        if ( pShopLogic != nullptr &&
+             pShopLogic->getType() == ShopLogic::SLT_Paint &&
+             gpMngColorPalette != nullptr ) {
+            const FlashRECT &viewport = gpMngColorPalette->getClipViewport();
+            if ( gEdFlash.Input.MouseCoordinates[0] <
+                 viewport.Width + viewport.X ) {
+                return true;
+            }
+        }
     }
 
     if ( gpActiveGameMode->getCurrentGameMode() != GM_FreeRide ) {
@@ -47,6 +69,17 @@ inline bool IsShowcaseInputCaptured() {
     }
 
     return ( gpMngPhotoMode != nullptr ) && gpMngPhotoMode->isFilterPopupOpen();
+}
+
+static bool IsBikeVehicle( const PhysicsVehicle *pVehicle ) {
+    CarState *pCar = ( gpCarState != nullptr )
+                         ? gpCarState->findCarState( pVehicle )
+                         : nullptr;
+    VehicleBase *pInstance =
+        ( pCar != nullptr ) ? pCar->getVehicleInstance() : nullptr;
+    return pInstance != nullptr &&
+           ( pInstance->getType() == VehicleBase::eType::VBT_Bike ||
+             pInstance->getType() == VehicleBase::eType::VBT_TrafficBike );
 }
 
 CameraShowcase::CameraShowcase()
@@ -190,7 +223,7 @@ bool CameraShowcase::tick( float deltaTime, bool param_1, bool param_2 ) {
     updateMatrix( worldPosition.head<3>(), upVector.head<3>(),
                   worldTarget.head<3>() );
 
-    FUN_008d8180();
+    updateRadialBlurCenter();
 
     nearPlane = local_134;
     farPlane = 5000.0f;
@@ -317,9 +350,6 @@ float CameraShowcase::sweepCameraSegment( Eigen::Vector4f &out,
     std::vector<CameraSegmentHit> hits;
     gpPhysics->castCameraSegment( from, to, hits );
 
-    // TODO: PHYSICS
-    OTDU_UNIMPLEMENTED_ONCE;
-
     const Matrix4x4f_t *pWorldToCar = nullptr;
     PhysicsVehicle *pVehicle = (PhysicsVehicle *)pTargetPhysicsVehicle;
     if ( pVehicle != nullptr ) {
@@ -332,6 +362,13 @@ float CameraShowcase::sweepCameraSegment( Eigen::Vector4f &out,
     int32_t numAccepted = 0;
 
     for ( const CameraSegmentHit &hit : hits ) {
+        const uint32_t surface = hit.SurfaceClass;
+        if ( surface == TDUSurface::Vehicle || surface == 0xbu ||
+             surface == TDUSurface::RoadMesh || surface == TDUSurface::Paved ||
+             ( surface == 8u && hit.Mass > 0.0f ) ) {
+            continue;
+        }
+
         if ( pWorldToCar != nullptr ) {
             Eigen::Vector4f pointInCar = hit.Point - shiftOrigin;
             pointInCar.w() = 1.0f;
@@ -374,96 +411,184 @@ bool CameraShowcase::FUN_008d90e0( Eigen::Vector4f *param_2,
         Eigen::Vector4f local_d30( 0.0f, 0.0f, 0.0f, 1.0f );
         pPhysicsBoundingSphere =
             gpPhysics->createSphere( 2, local_d30, 1.0f, 1.0f, 1.0f, false );
-    } else {
-        float local_da4 = -3.4028235e+38f; // DAT_00f41790
+        return true;
+    }
 
-        if ( ( ( flagsShowcase & 1 ) != 0 ) &&
-             ( pTargetCarState == nullptr || !pTargetCarState->isIndoor() ) ) {
-            Eigen::Vector4f probePosition = *param_2;
-            probePosition.y() += 1000.0f; // DAT_00f41718
+    float minHeight = -3.4028235e+38f; // DAT_00f41790
 
-            float surfaceHeight = kNoSurfaceSentinel;
-            Eigen::Vector4f surfaceNormal = Eigen::Vector4f::Zero();
-            gpPhysics->probeSurface( probePosition, false, surfaceHeight,
-                                     surfaceNormal );
+    if ( ( ( flagsShowcase & 1 ) != 0 ) &&
+         ( pTargetCarState == nullptr || !pTargetCarState->isIndoor() ) ) {
+        minHeight = gShowcaseMinHeight;
 
-            const float heightmapHeight = kNoSurfaceSentinel;
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: WORLD (heightmap height sample)
+        Eigen::Vector4f probePosition = *param_2;
+        probePosition.y() += 1000.0f; // DAT_00f41718
 
-            float radius = param_4;
-            if ( 0.18f > radius ) {
-                radius = 0.18f;
-            } else if ( radius > 1.0f ) {
-                radius = 1.0f;
+        float surfaceHeight = kNoSurfaceSentinel;
+        Eigen::Vector4f surfaceNormal = Eigen::Vector4f::Zero();
+        gpPhysics->probeSurface( probePosition, false, surfaceHeight,
+                                 surfaceNormal );
+
+        const float heightmapHeight =
+            SampleHeightmapSurface( *param_2, nullptr );
+
+        float radius = param_4;
+        if ( 0.18f > radius ) {
+            radius = 0.18f;
+        } else if ( radius > 1.0f ) {
+            radius = 1.0f;
+        }
+        const float clearance =
+            ( radius - 0.18f ) * 1.2195122f * ( 2.0f - 0.5f ) + 0.5f;
+
+        if ( surfaceHeight > kNoSurfaceSentinel &&
+             clearance + surfaceHeight > gShowcaseMinHeight ) {
+            minHeight = clearance + surfaceHeight;
+        } else if ( heightmapHeight > kNoSurfaceSentinel &&
+                    clearance + heightmapHeight > gShowcaseMinHeight ) {
+            minHeight = clearance + heightmapHeight;
+        }
+    }
+
+    if ( ( ( flagsShowcase >> 7 ) & 1 ) != 0 && minHeight < floorHeight ) {
+        minHeight = floorHeight + 0.3f;
+    }
+
+    const Eigen::Vector4f shiftOrigin = GSPhysics::GetShiftOrigin();
+
+    if ( ( ( flagsShowcase >> 1 ) & 1 ) != 0 ) {
+        const Eigen::Vector4f shiftedPosition = *param_2 - shiftOrigin;
+        for ( PhysicsVehicle *it = gpPhysics->getVehiclesBegin();
+              it != gpPhysics->getVehiclesEnd(); ++it ) {
+            if ( !it->isActive() ) {
+                continue;
             }
-            const float clearance =
-                ( radius - 0.18f ) * 1.2195122f * ( 2.0f - 0.5f ) + 0.5f;
-
-            constexpr float kMinCameraHeight = 0.0f;
-
-            if ( surfaceHeight > kNoSurfaceSentinel &&
-                 clearance + surfaceHeight > kMinCameraHeight ) {
-                local_da4 = clearance + surfaceHeight;
-            } else if ( heightmapHeight > kNoSurfaceSentinel &&
-                        clearance + heightmapHeight > kMinCameraHeight ) {
-                local_da4 = clearance + heightmapHeight;
-            }
-        }
-
-        if ( ( ( flagsShowcase >> 7 ) & 1 ) != 0 && local_da4 < floorHeight ) {
-            local_da4 = floorHeight + 0.3f;
-        }
-
-        if ( ( flagsShowcase >> 1 ) & 1 ) {
-            // TODO: Physics - vehicle avoidance (requires FUN_0082d990)
-            OTDU_UNIMPLEMENTED_ONCE;
-        }
-
-        if ( param_2->y() <= local_da4 ) {
-            param_2->y() = local_da4;
-        }
-
-        if ( ( ( flagsShowcase >> 2 ) & 1 ) != 0 &&
-             pPhysicsBoundingSphere != nullptr ) {
-            if ( pTarget == nullptr ) {
-                return false;
-            }
-
-            const Eigen::Vector4f lookAt = *pTarget + translation;
-            Eigen::Vector4f resolved = lookAt;
-            if ( sweepCameraSegment( resolved, lookAt, *param_2 ) > 0.0f ) {
-                *param_2 = resolved;
-
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (sweep passes 2 and 3)
-            }
-        }
-
-        if ( ( ( flagsShowcase >> 5 ) & 1 ) != 0 &&
-             pPhysicsBoundingSphere != nullptr ) {
-            if ( pTarget == nullptr ) {
-                return false;
+            if ( it == pTargetPhysicsVehicle &&
+                 ( ( flagsShowcase >> 8 ) & 1 ) == 0 ) {
+                continue;
             }
 
-            gpPhysics->moveSphereBody( pPhysicsBoundingSphere, *param_2 );
+            const float heightFactor =
+                IsBikeVehicle( it ) ? kDomeHeightFactorBike : kDomeHeightFactor;
+            const float domeHeight =
+                it->getCameraDomeHeight( shiftedPosition, kDomeLengthFactor,
+                                         kDomeWidthFactor, heightFactor );
+            if ( minHeight < domeHeight ) {
+                minHeight = domeHeight;
+            }
+        }
+    }
 
-            std::vector<CameraPhantomOverlap> overlaps;
-            gpPhysics->queryPhantomOverlaps( pPhysicsBoundingSphere, *param_2,
-                                             1.0f, overlaps );
+    if ( param_2->y() <= minHeight ) {
+        param_2->y() = minHeight;
+    }
 
-            for ( const CameraPhantomOverlap &overlap : overlaps ) {
-                if ( pushOutOfOverlap( *param_2, overlap ) ) {
-                    break;
+    if ( ( ( flagsShowcase >> 2 ) & 1 ) != 0 &&
+         pPhysicsBoundingSphere != nullptr ) {
+        if ( pTarget == nullptr ) {
+            return false;
+        }
+
+        const Eigen::Vector4f cameraPosition = *param_2;
+        const Eigen::Vector4f lookAt = *pTarget + translation;
+
+        Eigen::Vector4f hit = lookAt;
+        if ( sweepCameraSegment( hit, lookAt, cameraPosition ) > 0.0f ) {
+            *param_2 = hit;
+
+            const Eigen::Vector4f beyondHit =
+                hit + Normalize( hit - lookAt ) * 100.0f;
+            Eigen::Vector4f backHit = hit;
+            if ( sweepCameraSegment( backHit, beyondHit, hit ) > 0.0f ) {
+                *param_2 = backHit;
+
+                Eigen::Vector4f unused;
+                if ( sweepCameraSegment( unused, backHit, cameraPosition ) <
+                     0.0f ) {
+                    *param_2 = cameraPosition;
                 }
             }
         }
+    }
 
-        if ( ( ( flagsShowcase >> 6 ) & 1 ) != 0 &&
-             pTargetCarState != nullptr && pTargetCarState->isIndoor() &&
-             pPhysicsBoundingSphere != nullptr ) {
-            // TODO: Physics - interior collision avoidance (FUN_00844730,
-            // FUN_00404b40, FUN_008449f0).
-            OTDU_UNIMPLEMENTED_ONCE;
+    if ( ( ( flagsShowcase >> 5 ) & 1 ) != 0 &&
+         pPhysicsBoundingSphere != nullptr ) {
+        if ( pTarget == nullptr ) {
+            return false;
         }
+
+        gpPhysics->moveSphereBody( pPhysicsBoundingSphere, *param_2 );
+
+        std::vector<CameraPhantomOverlap> overlaps;
+        gpPhysics->queryPhantomOverlaps( pPhysicsBoundingSphere, *param_2, 1.0f,
+                                         overlaps );
+
+        for ( const CameraPhantomOverlap &overlap : overlaps ) {
+            if ( pushOutOfOverlap( *param_2, overlap ) ) {
+                break;
+            }
+        }
+    }
+
+    PhysicsVehicle *pVehicle = (PhysicsVehicle *)pTargetPhysicsVehicle;
+    if ( ( ( flagsShowcase >> 6 ) & 1 ) != 0 && pTargetCarState != nullptr &&
+         pTargetCarState->isIndoor() && pPhysicsBoundingSphere != nullptr &&
+         pVehicle != nullptr && pTarget != nullptr ) {
+        const Matrix4x4f_t &carToWorld = pVehicle->getPhysicsMatrix();
+        const Matrix4x4f_t &worldToCar = pVehicle->getInvChassisMatrix();
+
+        auto toCarSpace = [&]( const Eigen::Vector4f &worldPoint ) {
+            Eigen::Vector4f shifted = worldPoint - shiftOrigin;
+            shifted.w() = 1.0f;
+            return TDUMat4x4MulVec( worldToCar, shifted );
+        };
+
+        Eigen::Vector4f cameraInCar = toCarSpace( *param_2 );
+        if ( cameraInCar.y() < 0.0f ) {
+            cameraInCar.y() = 0.0f;
+            *param_2 = TDUMat4x4MulVec( carToWorld, cameraInCar ) + shiftOrigin;
+            param_2->w() = 1.0f;
+        }
+
+        const Eigen::Vector4f lookAt = *pTarget + translation;
+        gpPhysics->moveSphereBody( pPhysicsBoundingSphere, lookAt );
+
+        std::vector<CameraSegmentHit> hits;
+        gpPhysics->castCameraSegment( lookAt, *param_2, hits );
+
+        Eigen::Vector4f segment = *param_2 - lookAt;
+        segment.w() = 0.0f;
+        const float length = segment.norm();
+        const float limit = length + 1.0f;
+        float nearestHit = limit;
+        int32_t numAccepted = 0;
+
+        for ( const CameraSegmentHit &hit : hits ) {
+            if ( hit.SurfaceClass != TDUSurface::RoadMesh ) {
+                continue;
+            }
+
+            const Eigen::Vector4f pointInCar = toCarSpace( hit.Point );
+            const Eigen::Vector4f normalInCar =
+                TDUMat4x4MulVec( worldToCar, hit.Normal );
+            if ( normalInCar.y() > 0.5f && pointInCar.y() < 0.0f ) {
+                continue;
+            }
+
+            numAccepted++;
+
+            const float alongSegment = hit.Fraction * length;
+            if ( alongSegment < nearestHit ) {
+                nearestHit = alongSegment;
+            }
+        }
+
+        if ( numAccepted != 0 && nearestHit < limit ) {
+            cameraInCar =
+                toCarSpace( lookAt + segment * ( nearestHit / limit ) );
+        }
+
+        *param_2 = TDUMat4x4MulVec( carToWorld, cameraInCar ) + shiftOrigin;
+        param_2->w() = 1.0f;
     }
 
     return true;
@@ -498,9 +623,43 @@ void CameraShowcase::FUN_008d7fb0() {
     lastAngles = angles;
 }
 
-void CameraShowcase::FUN_008d8180() {
+void CameraShowcase::updateRadialBlurCenter() {
     // FUN_008d8180
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: POSTFX (radial blur centre)
+    PhysicsVehicle *pVehicle = gpCamera->getTargetPhysEntity();
+    if ( pVehicle == nullptr || !pVehicle->isActive() ) {
+        return;
+    }
+
+    PostFXStep *pStep =
+        ( gpPostFX != nullptr )
+            ? gpPostFX->getEffect<ePostFXStep::PFXS_RadialBlur>()
+            : nullptr;
+    PostFXNodeRadialBlur *pNode =
+        ( pStep != nullptr )
+            ? static_cast<PostFXStepRadialBlur *>( pStep )->pNode
+            : nullptr;
+    if ( pNode == nullptr ) {
+        return;
+    }
+
+    const Matrix4x4f_t carMatrix = pVehicle->getPhysicsMatrix();
+
+    Matrix4x4f_t camToWorld;
+    MakeWorldToCamMatrix( camToWorld, worldPosition.head<3>(),
+                          upVector.head<3>(), worldTarget.head<3>() );
+
+    const Eigen::Vector4f camRight = camToWorld.row( 0 ).transpose();
+    const Eigen::Vector4f camUp = camToWorld.row( 1 ).transpose();
+    const Eigen::Vector4f camBack = camToWorld.row( 2 ).transpose();
+
+    const Eigen::Vector4f carUp = carMatrix.row( 1 ).transpose();
+    const Eigen::Vector4f carForward = carMatrix.row( 2 ).transpose();
+
+    const float angleHorizontal =
+        -ProjectedAngle( camBack * -1.0f, carForward, camRight );
+    const float angleVertical = ProjectedAngle( camUp, carUp, camBack );
+
+    pNode->setCenter( 0.5f - angleHorizontal, 0.5f - angleVertical );
 }
 
 void CameraShowcase::updateMouse( float param_1 ) {

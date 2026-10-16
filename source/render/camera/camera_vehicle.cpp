@@ -268,22 +268,6 @@ inline float BlendClamp( float a, float b, float t ) {
     return std::min( hi, std::max( lo, lerped ) );
 }
 
-inline float ProjectedAngle( const Eigen::Vector4f &axis,
-                             const Eigen::Vector4f &vector,
-                             const Eigen::Vector4f &readout ) {
-    // FUN_008d2380 (inlined)
-    const Eigen::Vector4f normalizedAxis = axis / std::sqrt( axis.dot( axis ) );
-    const float cosine = vector.dot( normalizedAxis );
-    const Eigen::Vector4f projected = vector - normalizedAxis * cosine;
-
-    const float angle = std::asin( projected.dot( readout ) );
-    if ( cosine < 0.0f ) {
-        // DAT_00f41940 / DAT_00f41944
-        return ( ( angle > 0.0f ) ? kPI : -kPI ) - angle;
-    }
-    return angle;
-}
-
 inline float ClampTowards( float value, float bound ) {
     // FUN_008d2380 (inlined)
     return Max( Min( value, Max( 0.0f, bound ) ), Min( 0.0f, bound ) );

@@ -307,3 +307,4 @@ private:
 
 extern GSCamera *gpCamera;
 extern float gCamViewLockHoldTime;
+static constexpr float kCamViewLockHoldThreshold = 1.0f; // DAT_00f87fe4

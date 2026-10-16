@@ -86,7 +86,7 @@ private:
     float sweepCameraSegment( Eigen::Vector4f &out,
                               const Eigen::Vector4f &from,
                               const Eigen::Vector4f &to );
-    void FUN_008d8180();
+    void updateRadialBlurCenter();
     void updateMouse( float param_1 );
     void updateMouseCursor();
     void updateAngles( float param_1 );

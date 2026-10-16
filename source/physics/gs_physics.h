@@ -97,6 +97,7 @@ struct CameraSegmentHit {
     Eigen::Vector4f Normal;
     float Fraction = 0.0f;     // [0,1] along the segment
     uint32_t SurfaceClass = 0; // TDUSurface::Class from the body user data
+    float Mass = 0.0f;         // FUN_0047aa70 (0 for static/kinematic bodies)
 };
 
 struct TirePacejka {

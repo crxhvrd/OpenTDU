@@ -26,6 +26,7 @@
 #include "game/mng_hud.h"
 #include "world/weather/gs_weather.h"
 #include "render/camera/gs_camera.h"
+#include "render/camera/camera_gps.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_save.h"
 #include "player_data/achievement_checks.h"
@@ -606,6 +607,15 @@ void GameModeWorld::teleportLocalPlayerCar( const Eigen::Vector3f &worldPos ) {
                    worldPos.x(), worldPos.y(), worldPos.z() );
 }
 
+static bool IsVehicleViewSwitchAllowed() {
+    if ( gpActiveGM == nullptr || gpActiveGM->isPaused() ) {
+        return false;
+    }
+    CameraGPS *pCameraGPS = static_cast<CameraGPS *>(
+        gpCamera->findCameraWithMode( 3, gpCamera->getBoundCarState() ) );
+    return pCameraGPS == nullptr || !pCameraGPS->isInTransition();
+}
+
 void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     // FUN_00849380
     if ( pPlayerPhysicsVehicle == nullptr ||
@@ -728,6 +738,14 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     pBody->bHeadlightsOn = IsActionDown( pCfg->pCarLight );
     pBody->bHonking = IsActionDown( pCfg->pCarHorn );
 
+    const bool bViewSwitchAllowed = IsVehicleViewSwitchAllowed();
+    const bool bChangeViewRequest =
+        IsActionReleased( pCfg->pCarCamera ) && bViewSwitchAllowed &&
+        ( 0.0f < gCamViewLockHoldTime ) &&
+        ( gCamViewLockHoldTime < kCamViewLockHoldThreshold );
+    const bool bBackViewRequest =
+        IsActionDown( pCfg->pCarBackview ) && bViewSwitchAllowed;
+
     const bool bChangeViewHeld = IsActionDown( pCfg->pCarCamera );
     if ( gCamViewLockHoldTime < 0.0f ) { // Camera lock (freeride)
         gCamViewLockHoldTime = bChangeViewHeld ? -1.0f : 0.0f;
@@ -755,6 +773,8 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         const bool bShiftRequestsBlocked =
             gearbox.bAutomatic && !gearbox.bEngineRunning;
         pPlayerPhysicsVehicle->setClutchInput( pBody->Clutch );
+        pPlayerPhysicsVehicle->setChangeView( bChangeViewRequest );
+        pPlayerPhysicsVehicle->setBackView( bBackViewRequest );
         pPlayerPhysicsVehicle->setGearRequests(
             !bShiftRequestsBlocked && pBody->bGearUpEdge,
             !bShiftRequestsBlocked && pBody->bGearDownEdge,

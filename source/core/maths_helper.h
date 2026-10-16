@@ -659,3 +659,18 @@ static float Project( const Eigen::Vector4f &point,
     const Eigen::Vector4f ab = b - a;
     return Dot4( point - a, ab ) / Dot4( ab, ab );
 }
+
+static inline float ProjectedAngle( const Eigen::Vector4f &axis,
+                                    const Eigen::Vector4f &vector,
+                                    const Eigen::Vector4f &readout ) {
+    // FUN_008d2380 / FUN_008d8180 (inlined)
+    const Eigen::Vector4f normalizedAxis = axis / std::sqrt( axis.dot( axis ) );
+    const float cosine = vector.dot( normalizedAxis );
+    const Eigen::Vector4f projected = vector - normalizedAxis * cosine;
+
+    const float angle = std::asin( projected.dot( readout ) );
+    if ( cosine < 0.0f ) {
+        return ( ( angle > 0.0f ) ? kPI : kNegPI ) - angle;
+    }
+    return angle;
+}

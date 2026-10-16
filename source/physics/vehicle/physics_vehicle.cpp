@@ -669,6 +669,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     drivingMode = DM_Player;
     pDrivingControl = nullptr;
     bBackView = false;
+    bChangeView = false;
     prevInputThrottle = 0.0f;
     prevInputBrake = 0.0f;
     prevInputSteer = 0.0f;
@@ -1684,6 +1685,7 @@ void PhysicsVehicle::applyDrivingMode() {
         rawInputBrake = 1.0f; // FLOAT_00f4165c
         inputSteer = 0.0f;
         inputHandbrake = 0.0f;
+        bChangeView = false;
         declutchForDrivingMode();
         break;
 
@@ -1692,6 +1694,8 @@ void PhysicsVehicle::applyDrivingMode() {
         rawInputBrake = 0.65f; // DAT_00f41b6c
         inputSteer = 0.0f;
         inputHandbrake = 0.0f;
+        bBackView = false;
+        bChangeView = false;
         declutchForDrivingMode();
         break;
 
@@ -2915,6 +2919,37 @@ void PhysicsVehicle::flushCollisionEvents(
     outEvents.assign( collisionEvents.begin(),
                       collisionEvents.begin() + numCollisionEvents );
     numCollisionEvents = 0;
+}
+
+float PhysicsVehicle::getCameraDomeHeight(
+    const Eigen::Vector4f &shiftedPosition,
+    const float lengthFactor,
+    const float widthFactor,
+    const float heightFactor ) const {
+    // FUN_0082d990
+    const Eigen::Vector4f local =
+        TDUMat4x4MulVec( invChassisMatrix, shiftedPosition );
+    const float halfLength = lengthFactor * bodyDimensions.z();
+    const float halfWidth = bodyDimensions.x() * widthFactor;
+    const float baseHeight = rideHeightFront;
+
+    if ( std::abs( local.z() ) >= halfLength ||
+         std::abs( local.x() ) >= halfWidth ) {
+        return kNoSurfaceSentinel;
+    }
+
+    const float angleX = Clamp(
+        ( ( local.x() + halfWidth ) * kTwoPI ) / ( halfWidth * 2.0f ) - kPI,
+        kNegPI, kPI );
+    const float angleZ = Clamp(
+        ( ( local.z() + halfLength ) * kTwoPI ) / ( halfLength * 2.0f ) - kPI,
+        kNegPI, kPI );
+
+    return ( ( bodyHeight * heightFactor + baseHeight ) *
+                 ( std::cos( angleX ) + 1.0f ) * ( std::cos( angleZ ) + 1.0f ) *
+                 0.25f -
+             bodyHeight * 0.5f - baseHeight ) +
+           physicsMatrix( 3, 1 );
 }
 
 void PhysicsVehicle::requestPhantomMode( uint8_t mode, float duration ) {

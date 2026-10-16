@@ -3035,6 +3035,11 @@ int32_t GSPhysics::castCameraSegment( const Eigen::Vector4f &from,
                                           normal.GetZ(), 0.0f );
             hit.SurfaceClass = static_cast<uint32_t>( body.GetUserData() &
                                                       TDUSurface::kClassMask );
+            const JPH::MotionProperties *pMotion = body.GetMotionProperties();
+            if ( body.IsDynamic() && pMotion != nullptr &&
+                 pMotion->GetInverseMass() != 0.0f ) {
+                hit.Mass = 1.0f / pMotion->GetInverseMass();
+            }
         }
         hits.push_back( hit );
     }

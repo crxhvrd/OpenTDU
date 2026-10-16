@@ -47,6 +47,12 @@ enum eHandsTarget : int32_t {
     HT_Radio = 3,
 };
 
+enum eDriverState : int32_t {
+    DS_Invalid = -1,
+    DS_Bike = 1,
+    DS_Car = 2,
+};
+
 enum eGearBoxType : int32_t {
     GBT_Auto = 0,
     GBT_SemiAuto = 1,
@@ -132,7 +138,7 @@ private:
     void playDriveState( int32_t slot );
     void applyDriveBaseAnim();
     void updateAnimChannels( float deltaTime );
-    void buildIKChains();
+    void buildIKChains( int32_t matchID );
     void updateIKTargets();
     void updateBeltTargets();
     void updateBodyPositionFSM( float deltaTime );
@@ -141,6 +147,7 @@ private:
     float updateSteerValue( float deltaTime );
     void updateSteeringWheel( float steerNormalised );
     void updateStandDriveRatio( float deltaTime );
+    void processDriverState( float deltaTime );
 
 protected:
     RenderAnm AnimRide[kNumDriverAnims];
@@ -190,6 +197,11 @@ protected:
     ResponseCurve<2> GearingLayerResponseCurve;
     ResponseCurve<2> RadioTurnRatioResponseCurve;
     ResponseCurve<4> RadioTurnWeightResponseCurve;
+    ResponseCurve<4> LayerRadioBlendRatioResponseCurve;
+    ResponseCurve<2> LeanResponseCurve;
+    ResponseCurve<3> BikeFrontBackResponseCurve;
+    ResponseCurve<2> CenterFBResponseCurve;
+    ResponseCurve<3> BikeFallSlideRatioResponseCurve;
     TimeRatio SteerTimeRatio;
     IKInterpolator IKSteerInterpolator;
 
@@ -229,6 +241,7 @@ protected:
     float AnimationDeltaTime;
 
     CarState *pCarState;
+    eDriverState DriverState;
     eRideType DriveType;
     eGearBoxType GearboxType;
 

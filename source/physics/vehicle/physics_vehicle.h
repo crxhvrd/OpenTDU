@@ -235,6 +235,8 @@ public:
     PhysicsDrivingControl *getDrivingControl() const { return pDrivingControl; }
     void setBackView( bool bValue ) { bBackView = bValue; }
     bool isBackViewRequested() const { return bBackView; }
+    void setChangeView( bool bValue ) { bChangeView = bValue; }
+    bool isChangeViewRequested() const { return bChangeView; }
     uint8_t getDrivingMode() const { return drivingMode; }
     int32_t getElectronicIndex() const { return vehicle.ElectronicIndex; }
     bool areElectronicsEnabled() const { return vehicle.bElectronicsEnabled; }
@@ -293,6 +295,10 @@ public:
     uint64_t getBodyRenderKey() const { return bodyRenderKey; }
     bool hasBrokenPart() const { return bHasBrokenPart; }
     void requestPhantomMode( uint8_t mode, float duration );
+    float getCameraDomeHeight( const Eigen::Vector4f &shiftedPosition,
+                               float lengthFactor,
+                               float widthFactor,
+                               float heightFactor ) const;
     bool updatePhantomAlpha( float dt, bool bForceOpaque, float &outAlpha );
     void setBackOnTrackPlaced( bool bPlaced ) { bBackOnTrackPlaced = bPlaced; }
     bool consumeBackOnTrackPlaced() {
@@ -303,6 +309,7 @@ public:
     float getLateralSpeed() const { return vehicle.LateralSpeed; }
     inline float getFilteredSteer() const { return filteredSteer; }
     inline float getSteerDeadZone() const { return steerDeadZone; }
+    inline bool isSteerControlUsed() const { return bUseSteerControl; }
 
 public:
     PhysicsVehicle();
@@ -537,6 +544,7 @@ private:
     uint8_t drivingMode;
     PhysicsDrivingControl *pDrivingControl = nullptr;
     bool bBackView = false;
+    bool bChangeView = false;
     float prevInputThrottle;
     float prevInputBrake;
     float prevInputSteer;

@@ -31,6 +31,7 @@
 #include "game/scenaric/gs_scenaric.h"
 
 #include "game/mng_hud.h"
+#include "flash/implementation/flash_player.h"
 #include "game/gm_world.h"
 
 #include "core/maths_helper.h"
@@ -67,7 +68,6 @@ static constexpr uint32_t DAT_00f7c718[9][2] = {
 static int32_t DAT_00fab290[4] = { -1, -1, 0x270E, 0x270D };
 static constexpr float FLOAT_00fab2a0 = 0.0099999998f; // DAT_00fab2a0
 static int32_t DAT_00fab2ac = 0xffffffff;              // DAT_00fab2ac
-static float FLOAT_00f87fe4 = 1.0f;                    // DAT_00f87fe4
 static constexpr float FLOAT_00fab2a8 = 0.2f;          // DAT_00fab2a8
 static constexpr float FLOAT_00fab2a4 = 1.0f;          // DAT_00fab2a4
 
@@ -210,8 +210,12 @@ void GSCamera::tick( float totalTime, float deltaTime ) {
         return;
     }
 
-    if ( pTarget != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: Physics
+    bool bBackViewRequested = false;
+    bool bChangeViewRequested = false;
+    if ( pTarget != nullptr && pTarget->getPhysicsVehicle() != nullptr ) {
+        const PhysicsVehicle *pTargetVehicle = pTarget->getPhysicsVehicle();
+        bBackViewRequested = pTargetVehicle->isBackViewRequested();
+        bChangeViewRequested = pTargetVehicle->isChangeViewRequested();
     }
 
     uint8_t bVar8 = 0;
@@ -297,11 +301,23 @@ void GSCamera::tick( float totalTime, float deltaTime ) {
 LAB_008e2c4f:
     PlayerConfiguration *pPVar7 = gpConfig->pPlayerConfig;
     if ( bEditing == false ) {
-        if ( FLOAT_00f87fe4 < gCamViewLockHoldTime ) {
+        if ( kCamViewLockHoldThreshold < gCamViewLockHoldTime ) {
             if ( pActiveVehicleCamera != nullptr &&
                  ( ( pActiveVehicleCamera->getFlags() >> 0x11 ) & 1 ) == 0 ) {
                 ToggleFreeLookLock( pActiveVehicleCamera );
-                OTDU_UNIMPLEMENTED; // TODO: MngHUD (/HUD/cam_ic lock icon)
+                FlashPlayer *pHudPlayer = ( gpMngHud != nullptr )
+                                              ? gpMngHud->getHudPlayer()
+                                              : nullptr;
+                if ( pHudPlayer != nullptr ) {
+                    const char *pFrame = nullptr;
+                    if ( ( pActiveVehicleCamera->getVehicleFlags() & 1 ) ==
+                         0 ) {
+                        pFrame = gbFreeLookUnlocked ? "unlocked" : "locked";
+                    } else {
+                        pFrame = gbFixedCamLookSnap ? "speed_up" : "speed_down";
+                    }
+                    pHudPlayer->showFrame( pFrame, "/HUD/cam_ic", false );
+                }
             }
             gCamViewLockHoldTime = -1.0f;
         }
@@ -403,32 +419,19 @@ LAB_008e2c4f:
             }
         }
 
-        DeviceAction *pChangeView = pPVar7->pCarCamera;
-        const bool bChangeViewPressed =
-            ( pChangeView != nullptr ) &&
-            ( pChangeView->NumAddedChannels != 0 ) &&
-            ( ( pChangeView->Flags & 8 ) != 0 );
         if ( ( pActiveVehicleCamera->getType() != 5 ) &&
-             ( bInterior == false ) && bChangeViewPressed &&
+             ( bInterior == false ) && bChangeViewRequested &&
              ( bLookingBack == false ) ) {
             bChangeCamTrigger = true;
         }
 
-        DeviceAction *pBackView = pPVar7->pCarBackview;
-        const PhysicsVehicle *pTargetVehicle =
-            ( pTarget != nullptr ) ? pTarget->getPhysicsVehicle() : nullptr;
-        const bool bBackViewPressed = ( ( pBackView != nullptr ) &&
-                                        ( pBackView->NumAddedChannels != 0 ) &&
-                                        ( ( pBackView->Flags & 1 ) != 0 ) ) ||
-                                      ( pTargetVehicle != nullptr &&
-                                        pTargetVehicle->isBackViewRequested() );
         peVar5 = pPVar7->pCarHeadLeft;
         DeviceAction *peVar6 = pPVar7->pCarHeadRight;
         const bool bHeadLookBack =
             ( peVar5 != nullptr ) && ( peVar5->NumAddedChannels != 0 ) &&
             ( ( peVar5->Flags & 1 ) != 0 ) && ( peVar6 != nullptr ) &&
             ( peVar6->NumAddedChannels != 0 ) && ( ( peVar6->Flags & 1 ) != 0 );
-        if ( ( bHeadLookBack == false ) && ( bBackViewPressed == false ) ) {
+        if ( ( bHeadLookBack == false ) && ( bBackViewRequested == false ) ) {
             if ( ( bLookingBack != false ) && ( bChangeCamTrigger == false ) ) {
                 bViewBackOffTrigger = true;
             }
@@ -829,13 +832,18 @@ bool GSCamera::updateActiveCamera( float deltaTime, float accTime ) {
         return true;
     }
 
-    const Eigen::Vector3f previousPosition =
+    Eigen::Vector3f previousPosition =
         pActiveVehicleCamera->getWorldPositionOffset();
 
-    pActiveVehicleCamera->tick( deltaTime, false, false );
+    const bool bJumped = pActiveVehicleCamera->tick( deltaTime, false, false );
 
     const Eigen::Vector3f currentPosition =
         pActiveVehicleCamera->getWorldPositionOffset();
+
+    if ( deltaTime == 0.0f || bJumped || pActiveVehicleCamera->bInitialized ) {
+        previousPosition = currentPosition;
+        pActiveVehicleCamera->bInitialized = false;
+    }
 
     if ( deltaTime <= 0.0f ) {
         pActiveVehicleCamera->setVelocity( Eigen::Vector4f::Zero() );
@@ -852,15 +860,17 @@ bool GSCamera::updateActiveCamera( float deltaTime, float accTime ) {
             pTargetPhysEntity->getChassisVelocity() );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: reset velocity on cam jump
-
     return true;
 }
 
 void GSCamera::tickActiveCamera( float param_2 ) {
     // FUN_008e48a0
-    CarState *local_4 = gpCarState->getCarStates();
-    OTDU_UNIMPLEMENTED; // TODO: Scenaric
+    CarState *local_4 = ( gpScenaric != nullptr )
+                            ? gpScenaric->getLocalPlayer().getCarState()
+                            : nullptr;
+    if ( local_4 == nullptr ) {
+        local_4 = gpCarState->getCarStates();
+    }
 
     CarState *pCVar4 = pTarget;
     if ( bMouseCam ) {

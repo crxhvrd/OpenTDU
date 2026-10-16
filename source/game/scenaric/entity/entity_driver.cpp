@@ -35,7 +35,12 @@ static constexpr uint64_t kGearboxMechanicalHashcode = 0x8c05b;
 static constexpr int32_t kDefaultBikeDBID = 0x29a;
 static constexpr int32_t kDefaultCarDBID = 999;
 
+static constexpr int32_t kIntroCarDBID0 = 0x75;
+static constexpr int32_t kIntroCarDBID1 = 0xf5;
+static constexpr float kIntroSeatFrontBack = 0.08f; // DAT_00f418cc
+
 static constexpr int32_t kExpressionsMatchID = 7;
+static constexpr int32_t kFreeMovementExpressionsMatchID = 1;
 
 static constexpr float kSeatedCarLODDistances[3] = { 20.0f, 10.0f,
                                                      0.0f }; // DAT_00f8b2a0
@@ -110,6 +115,11 @@ EntityDriver::EntityDriver()
       GearingLayerResponseCurve(),
       RadioTurnRatioResponseCurve(),
       RadioTurnWeightResponseCurve(),
+      LayerRadioBlendRatioResponseCurve(),
+      LeanResponseCurve(),
+      BikeFrontBackResponseCurve(),
+      CenterFBResponseCurve(),
+      BikeFallSlideRatioResponseCurve(),
       SteerSM( 0.0f ),
       SteerStack{},
       SteerStackIndex( 0 ),
@@ -133,10 +143,11 @@ EntityDriver::EntityDriver()
       pHandRight( nullptr ),
       VTranslation( Eigen::Vector4f::Zero() ),
       TransformRelativeToVehicle( Matrix4x4f_t::Identity() ),
-      BikeLayersCoeff( 0.0f ),
-      LastBikeLayersCoeff( 0.0f ),
+      BikeLayersCoeff( 1.0f ),
+      LastBikeLayersCoeff( 1.0f ),
       AnimationDeltaTime( 0.0f ),
       pCarState( nullptr ),
+      DriverState( DS_Invalid ),
       DriveType( RT_Car ),
       GearboxType( GBT_Auto ),
       GearLeverAngleUp( 0.0f ),
@@ -181,12 +192,28 @@ EntityDriver::EntityDriver()
     RadioTurnWeightResponseCurve.addPoint( radioTime * 1.002f, 1.0f );
     RadioTurnWeightResponseCurve.addPoint( radioTime * 1.502f, 0.0f );
 
-    OTDU_UNIMPLEMENTED;
+    LayerRadioBlendRatioResponseCurve.addPoint( 0.0f, 0.0f );
+    LayerRadioBlendRatioResponseCurve.addPoint( radioTime * 0.2f, 1.0f );
+    LayerRadioBlendRatioResponseCurve.addPoint( 1.0f - radioTime * 0.2f, 1.0f );
+    LayerRadioBlendRatioResponseCurve.addPoint( 1.0f, 0.0f );
+
+    LeanResponseCurve.addPoint( 13.0f, 0.0f );
+    LeanResponseCurve.addPoint( 30.0f, 1.0f );
+
+    BikeFrontBackResponseCurve.addPoint( 0.0f, 0.0f );
+    BikeFrontBackResponseCurve.addPoint( 0.5f, 0.2f );
+    BikeFrontBackResponseCurve.addPoint( 1.0f, 1.0f );
+
+    CenterFBResponseCurve.addPoint( 13.0f, 0.2f );
+    CenterFBResponseCurve.addPoint( 30.0f, 0.6f );
+
+    BikeFallSlideRatioResponseCurve.addPoint( 0.0f, 1.0f );
+    BikeFallSlideRatioResponseCurve.addPoint( 10.0f, 1.0f );
+    BikeFallSlideRatioResponseCurve.addPoint( 30.0f, 0.0f );
 }
 
 EntityDriver::~EntityDriver() {
     // FUN_00425230
-    OTDU_UNIMPLEMENTED;
 }
 
 EntityDriver *EntityDriver::getDriver() { return this; }
@@ -463,7 +490,13 @@ void EntityDriver::updateSeatTransform() {
             seatFrontBack = *pCarSeatFrontBack;
         }
 
-        OTDU_UNIMPLEMENTED; // TODO: GMINTRO
+        if ( gpTestDriveInstance != nullptr &&
+             gpTestDriveInstance->getActiveGameMode() == GM_Intro &&
+             pCarState != nullptr &&
+             ( pCarState->getCarID() == kIntroCarDBID0 ||
+               pCarState->getCarID() == kIntroCarDBID1 ) ) {
+            seatFrontBack = kIntroSeatFrontBack;
+        }
 
         seatMatrix.row( 3 ) +=
             Eigen::Vector4f( 0.0f, seatHeight, seatFrontBack, 0.0f );
@@ -587,7 +620,7 @@ void EntityDriver::setCarState( CarState *pNewCarState ) {
             }
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC - driver state machine
+        DriverState = bIsBike ? DS_Bike : DS_Car;
 
         if ( DriveType == RT_Car ) {
             buildCarIKPoints();
@@ -669,7 +702,22 @@ void EntityDriver::setCarState( CarState *pNewCarState ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC/ANIM
+    if ( DriveType == RT_Car ) {
+        ExpressionList.clear();
+        ExpressionList.append( &IKBack );
+        ExpressionList.append( &IKRightHand );
+        ExpressionList.append( &IKLeftHand );
+        ExpressionList.append( &IKRightFoot );
+        ExpressionList.append( &IKLeftFoot );
+        ExpressionList.append( &IKRightShoulderBelt1 );
+        ExpressionList.append( &IKRightShoulderBelt2 );
+        ExpressionList.append( &IKLeftShoulderBelt1 );
+        ExpressionList.append( &IKLeftShoulderBelt2 );
+        ExpressionList.append( &IKRightHipsBelt );
+        ExpressionList.append( &IKLeftHipsBelt );
+    } else {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: BIKE - BikeExpressionList
+    }
 
     bIsAccelerationAnimPlayed = true;
     pLinkedExternalHelmet = nullptr;
@@ -850,8 +898,8 @@ bool EntityDriver::placeInLocalPlayerCar() {
             return true;
         }
         pLocalCar->unloadDriver();
-        if ( unknownAvatarFunc2() != 0 ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+        if ( animation.getNumChannels() > 0 ) {
+            animation.resetChannel( 0 );
         }
     }
 
@@ -897,11 +945,11 @@ void EntityDriver::tick( PlayerGameMech *pGameMech,
 
             if ( DriveType == RT_Bike && bHasBiker ) {
                 (void)bBikerMounted;
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: BIKE - FUN_007ec250
             }
 
             if ( DriveType == RT_Bike && bBikerLost ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: BIKE - FUN_00401640
 
                 BikeLayersCoeff = 1.0f;
                 LastBikeLayersCoeff = 1.0f;
@@ -942,9 +990,9 @@ void EntityDriver::tick( PlayerGameMech *pGameMech,
             AnimationDeltaTime = 0.0f;
 
             if ( !bIsFreeMovement || bIsUsedIK || bIsSeating ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+                processDriverState( deltaTime );
             } else {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+                updateIKTargets();
             }
         }
     }
@@ -962,19 +1010,28 @@ void EntityDriver::tick( PlayerGameMech *pGameMech,
         pPooledAvatarEntry->CarBelt.setLowResVisible( bIsSeating );
     }
 
-    const bool bHasCar = pCarState != nullptr;
-    if ( bHasCar ) {
+    EntityAvatar::tick( pGameMech, deltaTime, totalTime );
+
+    if ( pCarState != nullptr && DriverState == DS_Car ) {
+        applyDriveBaseAnim();
+    }
+}
+
+void EntityDriver::processDriverState( float deltaTime ) {
+    // FUN_007efef0
+    switch ( DriverState ) {
+    case DS_Car:
         updateStandDriveRatio( deltaTime );
         updateBodyPositionFSM( deltaTime );
         updateGearRatios( deltaTime );
         updateAnimChannels( deltaTime );
         updateIKTargets();
-    }
-
-    EntityAvatar::tick( pGameMech, deltaTime, totalTime );
-
-    if ( bHasCar ) {
-        applyDriveBaseAnim();
+        break;
+    case DS_Bike:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: BIKE - DriverStateProcess ride state
+        break;
+    default:
+        break;
     }
 }
 
@@ -1010,7 +1067,17 @@ void EntityDriver::playDriveState( int32_t slot ) {
 void EntityDriver::applyDriveBaseAnim() {
 
     // FUN_007efef0
-    if ( !bMustPlayAnims || bIsFreeMovement || !animation.isValid() ) {
+    if ( !bMustPlayAnims || !animation.isValid() ) {
+        return;
+    }
+
+    if ( bIsFreeMovement ) {
+        if ( ( bIsUsedIK || bIsSeating ) && AnimDrive[6].File != 0 ) {
+            animation.playChannel( kFreeMovementExpressionsMatchID,
+                                   AnimDrive[6].ID, nullptr, 0 );
+            buildIKChains( kFreeMovementExpressionsMatchID );
+        }
+        bMustPlayAnims = false;
         return;
     }
 
@@ -1020,11 +1087,9 @@ void EntityDriver::applyDriveBaseAnim() {
         playDriveState( kPlayOrder[i] );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC/ANIM - EXPRESSIONS curve channel
-
     bMustPlayAnims = false;
 
-    buildIKChains();
+    buildIKChains( kExpressionsMatchID );
 }
 
 void EntityDriver::updateAnimChannels( float deltaTime ) {
@@ -1114,15 +1179,14 @@ float EntityDriver::updateSteerValue( float deltaTime ) {
         return SteerSM * kSteerStackScale;
     }
 
-    const bool bHasSteeringAid = false;
-    if ( bHasSteeringAid ) {
+    const PhysicsVehicle *pPhysicsVehicle = pCarState->getPhysicsVehicle();
+    if ( pPhysicsVehicle != nullptr && pPhysicsVehicle->isSteerControlUsed() ) {
         if ( deltaTime * kSteerSmoothRate < kSteerSmoothMaxStep ) {
             LastWheelRatio += ( wheelSteer - LastWheelRatio ) * deltaTime *
                               kSteerSmoothRate * kSteerSmoothGain;
         }
         return LastWheelRatio;
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS - ElectronicParam[12] steer aid
 
     return wheelSteer;
 }
@@ -1580,7 +1644,7 @@ void EntityDriver::updateStandDriveRatio( float deltaTime ) {
     animation.setBlendRatios( StandDriveRatio, 2 );
 }
 
-void EntityDriver::buildIKChains() {
+void EntityDriver::buildIKChains( int32_t matchID ) {
     static constexpr uint32_t kLeftArmNodes[3] = { 0x74d3d78d, 0xd94546d3,
                                                    0x0f4112f6 };
     static constexpr uint32_t kRightArmNodes[3] = { 0xd5d9aac6, 0x4748f02b,
@@ -1607,19 +1671,7 @@ void EntityDriver::buildIKChains() {
     IKRightHipsBelt.NodeID = 0xd9d0ce95;      // node 76
     IKLeftHipsBelt.NodeID = 0xd93741e5;       // node 77
 
-    ExpressionList.clear();
-    ExpressionList.append( &IKBack );
-    ExpressionList.append( &IKRightHand );
-    ExpressionList.append( &IKLeftHand );
-    ExpressionList.append( &IKRightFoot );
-    ExpressionList.append( &IKLeftFoot );
-    ExpressionList.append( &IKRightShoulderBelt1 );
-    ExpressionList.append( &IKRightShoulderBelt2 );
-    ExpressionList.append( &IKLeftShoulderBelt1 );
-    ExpressionList.append( &IKLeftShoulderBelt2 );
-    ExpressionList.append( &IKRightHipsBelt );
-    ExpressionList.append( &IKLeftHipsBelt );
-    animation.setExpressionList( &ExpressionList, kExpressionsMatchID );
+    animation.setExpressionList( &ExpressionList, matchID );
 }
 
 void EntityDriver::updateIKTargets() {

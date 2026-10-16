@@ -29,6 +29,7 @@ public:
     inline void setCursorPath( const char *pPath ) {
         strncpy( cursorPath, pPath, kPathLength );
     }
+    inline const FlashRECT &getClipViewport() const { return clipViewport; }
 
 public:
     MngColorPalette();
