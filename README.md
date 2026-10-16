@@ -74,7 +74,8 @@ Progress is tracked on a game mode basis:
 | Jail|**Done**|
 | AvatarShowcase|**Done**|
 | Map|**Done**|
+| Aftermarket|**Done**|
 | Living|**In Progress**|
 | FreeRide|**In Progress**|
 | Shop|**In Progress**|
-| TestDrive|**In Progress**|
+| TestCar|**In Progress**|

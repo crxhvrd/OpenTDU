@@ -84,6 +84,7 @@
 #include "game/map/gm_map.h"
 #include "game/login/gm_login.h"
 #include "game/garage/gm_garage.h"
+#include "game/aftermarket/gm_aftermarket.h"
 #include "game/living/gm_living.h"
 #include "game/shop/gm_shop.h"
 #include "game/test_car/gm_test_car.h"
@@ -542,6 +543,11 @@ void TestDriveGameInstance::mainLoop() {
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMDressing ),
                                                       alignof( GMDressing ) );
             pGVar6 = new ( pGameModeAlloc ) GMDressing();
+            break;
+        case GM_AfterMarket:
+            pGameModeAlloc = TestDrive::AllocAligned(
+                sizeof( GMAfterMarket ), alignof( GMAfterMarket ) );
+            pGVar6 = new ( pGameModeAlloc ) GMAfterMarket();
             break;
         case GM_Login:
             if ( gbResetServicesOnLogin ) {
