@@ -123,4 +123,5 @@ private:
     const SpotMap *pTargetSpot;
 };
 
+extern bool gbMapResetGPSCamera;
 extern GMMap *gpGMMap;

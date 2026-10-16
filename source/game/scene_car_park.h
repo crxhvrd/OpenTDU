@@ -69,6 +69,9 @@ public:
     ~SceneCarPark();
 
     void setEnabled( const bool bEnabled );
+    void setEntryTransform( const int32_t index,
+                            const Matrix4x4f_t &transform,
+                            const float param_3 );
     void releaseAll();
     void pushConfig( const int32_t configID );
     void pushConfig( const int32_t configID,

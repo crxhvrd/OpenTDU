@@ -192,6 +192,20 @@ void SceneCarPark::setEnabled( const bool bEnable ) {
     }
 }
 
+void SceneCarPark::setEntryTransform( const int32_t index,
+                                      const Matrix4x4f_t &transform,
+                                      const float param_3 ) {
+    // FUN_00776300
+    if ( index >= numEntries ) {
+        return;
+    }
+
+    Entry &entry = getEntry( index );
+    entry.Transform = transform;
+    entry.field_0x60 = param_3;
+    entry.PlacementState = CPPS_Pending;
+}
+
 VehicleBase *SceneCarPark::getVehicle( const int32_t index ) const {
     // FUN_00776480
     CarState *pCarState = getCarState( index );

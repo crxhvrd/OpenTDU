@@ -10,6 +10,7 @@
 #include "filesystem/gs_boot_datas.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/entity/entity_avatar.h"
+#include "game/scenaric/entity/entity_avatar_passenger.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "game/scenaric/entity/entity_extra_challenge.h"
 #include "database/gs_database.h"
@@ -582,6 +583,49 @@ bool GSScenaric::placeDriver( CarState *pCarState, EntityDriver *pDriver ) {
                                ABS_Driver );
     }
 
+    return true;
+}
+
+bool GSScenaric::placePassenger( CarState *pCarState,
+                                 EntityAvatarPassenger *pPassenger ) {
+    // FUN_008056d0
+    if ( pCarState == nullptr || pPassenger == nullptr ||
+         gpCarState == nullptr || gpDatabase == nullptr ) {
+        return false;
+    }
+
+    VehicleBaseResources *pResource = pCarState->getResource();
+    DBEntryCarPhysicsData *pCarData = gpDatabase->getCarDBEntry(
+        pResource != nullptr ? pResource->CarID : -1 );
+
+    if ( !gpDatabase->isBike( pCarData ) &&
+         gpDatabase->isTraffic( pCarData ) ) {
+        return false;
+    }
+
+    pPassenger->setCarState( pCarState );
+    pCarState->pPassenger = pPassenger;
+    pPassenger->seatInCar();
+
+    if ( !gpDatabase->isBike( pCarData ) && gpAvatar != nullptr &&
+         pCarData != nullptr ) {
+        gpAvatar->installBelt( pCarData->BeltType.pAsString, pPassenger,
+                               ABS_Passenger );
+    }
+
+    return true;
+}
+
+bool GSScenaric::unloadPassenger( CarState *pCarState,
+                                  EntityAvatarPassenger *pPassenger ) {
+    // FUN_00805620
+    if ( pCarState == nullptr || pPassenger == nullptr ) {
+        return false;
+    }
+
+    pPassenger->setCarState( nullptr );
+    pCarState->pPassenger = nullptr;
+    pPassenger->unseat();
     return true;
 }
 

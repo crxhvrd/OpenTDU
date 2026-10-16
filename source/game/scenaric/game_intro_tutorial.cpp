@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "game_intro_tutorial.h"
 
+#include "ai/ai_road_query.h"
+#include "core/maths_helper.h"
 #include "game/game_cheats.h"
 #include "game/gm_base.h"
 #include "game/gs_tutorial.h"
@@ -14,6 +16,7 @@
 #include "player_data/saved_road_discovery.h"
 #include "player_data/saved_garage.h"
 #include "player_data/player_data_interface.h"
+#include "world/gs_world.h"
 
 #include "tdu_instance.h"
 
@@ -149,6 +152,26 @@ void GameIntroTutorial::onCarRented( const int32_t carID,
     setStep( kTutorialStateFirstDrive );
 }
 
+void GameIntroTutorial::onDealerGoToMap() {
+    // FUN_007fc9a0
+    if ( !isActive() ) {
+        return;
+    }
+
+    carDealer = gpScenaric->getCurrentSpotIndex();
+    setStep( kTutorialStateHouseBought );
+}
+
+void GameIntroTutorial::onCarBought() {
+    // FUN_007fc9f0
+    if ( !isActive() ) {
+        return;
+    }
+
+    carDealer = gpScenaric->getCurrentSpotIndex();
+    setStep( kTutorialStateCarBought );
+}
+
 void GameIntroTutorial::setStep( const int32_t step ) {
     // FUN_007fc5f0
     endStep( tutorialStep );
@@ -173,8 +196,48 @@ void GameIntroTutorial::setStep( const int32_t step ) {
     beginStep( tutorialStep, previousStep );
 }
 
-void GameIntroTutorial::beginStep( const int32_t step, const int32_t ) {
+static constexpr float kTutorialSpawnDistance = 10.0f;
+
+static void SetPreviousTransformNearSpot( const SpotMap *pSpot,
+                                          const bool bFaceSpot ) {
+    Matrix4x4f_t frame;
+    ComputeRoadApproachFrame(
+        Eigen::Vector4f( pSpot->X, pSpot->Y, pSpot->Z, 1.0f ), frame,
+        kTutorialSpawnDistance );
+    if ( bFaceSpot ) {
+        MatrixPreRotateY( frame, kPI );
+    }
+    gpWorld->setPreviousTransform( frame );
+}
+
+static void RestartFreeRideFromMap() {
+    gpActiveGameMode->requestExit();
+    gpTestDriveInstance->setNextGameMode( GM_Map );
+    gpTestDriveInstance->setNextGameMode( GM_FreeRide );
+}
+
+static void SetSpotObjective( SpotMap *pSpot ) {
+    gpScenaric->getSpotList().setSingleValidSpot( pSpot );
+    if ( pSpot == nullptr ) {
+        return;
+    }
+
+    ObjectiveMarker &objective = gpScenaric->getObjective( 2 );
+    objective.Position = Eigen::Vector4f( pSpot->X, pSpot->Y, pSpot->Z, 1.0f );
+    objective.Type = "finish";
+}
+
+static void LaunchTutorialSpot( SpotMap *pSpot ) {
+    LaunchSpotLevel( pSpot, false );
+    gpScenaric->setCurrentSpotIndex(
+        gpScenaric->getSpotList().getSpotMapIndex( pSpot->Hashcode ) );
+}
+
+void GameIntroTutorial::beginStep( const int32_t step,
+                                   const int32_t previousStep ) {
     // FUN_007fc1b0
+    const bool bResumedFromSave = previousStep == kTutorialStatePending;
+
     switch ( step ) {
     case kTutorialStateIntro:
         if ( gbNewGameSkipIntro ) {
@@ -194,14 +257,77 @@ void GameIntroTutorial::beginStep( const int32_t step, const int32_t ) {
         return;
 
     case kTutorialStateAirplane:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (NextIntro cinematic)
+        gpScenaric->setNextIntro( "Scenarics\\Cinematics\\", "tutorial_intro",
+                                  "C_INTRO", GM_FreeRide, nullptr );
 
         gpActiveGameMode->requestExit();
         gpTestDriveInstance->setNextGameMode( GM_FreeRide );
         return;
 
+    case kTutorialStateCarRental:
+        LaunchTutorialSpot( pCarRental );
+        DiscoverSpotRoad( pCarRental );
+        return;
+
+    case kTutorialStateFirstDrive:
+        if ( bResumedFromSave ) {
+            SetPreviousTransformNearSpot( pCarRental, true );
+            carRentalTime = 600;
+            gpScenaric->setCurrentSpotIndex(
+                gpScenaric->getSpotList().getSpotMapIndex(
+                    pCarRental->Hashcode ) );
+            gpPlayerData->getLoadedSave()->getGarage()->beginRental(
+                uint32_t( carIDRental ), carRentalTime, 0, 0, 0 );
+            RestartFreeRideFromMap();
+        }
+        SetSpotObjective( pRealEstate );
+        return;
+
+    case kTutorialStateBuyHouse:
+        LaunchTutorialSpot( pRealEstate );
+        return;
+
+    case kTutorialStateHouseBought:
+        gbMapResetGPSCamera = true;
+        gpActiveGameMode->requestExit();
+        gpTestDriveInstance->setNextGameMode( GM_Map );
+        return;
+
+    case kTutorialStateBuyCar:
+        if ( bResumedFromSave ) {
+            carDealer = 0;
+            setStep( kTutorialStateHouseBought );
+        }
+        return;
+
+    case kTutorialStateCarBought:
+        if ( bResumedFromSave ) {
+            SpotMap *pDealer =
+                gpScenaric->getSpotList().getWorldSpotChecked( carDealer );
+            if ( pDealer != nullptr ) {
+                SetPreviousTransformNearSpot( pDealer, false );
+            }
+            RestartFreeRideFromMap();
+        }
+        SetSpotObjective( pSpotIntroRace );
+        return;
+
+    case kTutorialStateChallenge:
+        if ( bResumedFromSave ) {
+            LaunchTutorialSpot( pSpotIntroRace );
+        }
+        return;
+
+    case kTutorialStateHome:
+        if ( bResumedFromSave ) {
+            SetPreviousTransformNearSpot( pSpotIntroRace, true );
+            RestartFreeRideFromMap();
+        }
+        SetSpotObjective( gpScenaric->getSpotList().getSpotMap(
+            gpPlayerData->getLoadedSave()->getDriver()->getCurrentHouse() ) );
+        return;
+
     default:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (tutorial steps 4..11)
         return;
     }
 }

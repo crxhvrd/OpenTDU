@@ -60,6 +60,14 @@ public:
     inline uint32_t getNumEntries() const {
         return pRecord != nullptr ? pRecord->NumEntries : 0;
     }
+    inline const AnimStateRecord *getRecordAtIndex( uint32_t index ) const {
+        if ( pPayload == nullptr ) {
+            return nullptr;
+        }
+        const uint32_t offset =
+            reinterpret_cast<const uint32_t *>( pPayload )[index];
+        return reinterpret_cast<const AnimStateRecord *>( pPayload + offset );
+    }
     inline const std::vector<AnimStateClipRef> &getClipRefs() const {
         return clipRefs;
     }

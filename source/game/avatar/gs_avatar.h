@@ -91,7 +91,7 @@ private:
 
 public:
     bool installBelt( const char *pBeltType,
-                      class EntityDriver *pDriver,
+                      EntityAvatar *pAvatar,
                       eAvatarBeltSeat seat );
     AvatarClothePart *findClotheByID( uint16_t id );
     void savePlayerAvatarConfiguration( const EntityAvatar *pAvatar );

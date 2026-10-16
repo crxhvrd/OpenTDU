@@ -82,7 +82,7 @@ public:
     virtual void setHeadVisible( bool bVisible );
     virtual void setAvatarType( int32_t type );
     virtual EntityDriver *getDriver();
-    virtual int32_t unknownAvatarFunc2();
+    virtual class EntityAvatarPassenger *getPassenger();
     virtual void getCarAlphaScreenRect( Eigen::Vector4f &outRect );
     virtual int32_t chooseLODLevel();
     virtual void onSkeletonChange( void *pSkeleton );

@@ -322,9 +322,10 @@ void EntityDriver::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     }
 }
 
-void EntityDriver::buildCarIKPoints() {
+void BuildCarIKPoints( SCIKPoint ( &points )[kNumCarIKPoints],
+                       CarState *pCarState ) {
     // FUN_00800580
-    for ( SCIKPoint &point : CarIKPoints ) {
+    for ( SCIKPoint &point : points ) {
         point.pNode = nullptr;
         point.pOffset = nullptr;
     }
@@ -338,7 +339,7 @@ void EntityDriver::buildCarIKPoints() {
             pCarState->getCarID(), true );
         if ( pOffsets != nullptr ) {
             for ( int32_t i = 0; i < kNumCarIKPoints; i++ ) {
-                CarIKPoints[i].pOffset = &pOffsets->Offsets[i];
+                points[i].pOffset = &pOffsets->Offsets[i];
             }
         }
     }
@@ -370,8 +371,13 @@ void EntityDriver::buildCarIKPoints() {
                 GetIdentifier64bit( kCarIKPointNamesLR[i] ) );
         }
 
-        CarIKPoints[i].pNode = pNode;
+        points[i].pNode = pNode;
     }
+}
+
+void EntityDriver::buildCarIKPoints() {
+    // FUN_00800580
+    BuildCarIKPoints( CarIKPoints, pCarState );
 }
 
 void EntityDriver::buildBikeIKPoints() {

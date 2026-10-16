@@ -771,6 +771,17 @@ void Spots::updateSpotMeshValidity() {
     showSpotMeshes( true );
 }
 
+void Spots::setSingleValidSpot( SpotMap *pSpot ) {
+    // FUN_007d6cb0
+    if ( pSpot != nullptr ) {
+        bUseOnlyValid = true;
+        pValidSpots[0] = pSpot;
+    } else {
+        bUseOnlyValid = false;
+    }
+    updateSpotMeshValidity();
+}
+
 void Spots::showSpotMeshes( bool bShow ) {
     // FUN_007e7a00
     // NOTE: the original re-checks both globals on every sector iteration; they

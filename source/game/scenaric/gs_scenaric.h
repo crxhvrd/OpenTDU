@@ -18,6 +18,7 @@
 class MngHud;
 class CarState;
 class EntityDriver;
+class EntityAvatarPassenger;
 class AudioClient;
 class AudioDispatcherPlaybackSoundInstance;
 class edAudioSample;
@@ -158,6 +159,10 @@ public:
     void prepareWorldEntityTemplates();
 
     bool placeDriver( CarState *pCarState, EntityDriver *pDriver );
+    bool placePassenger( CarState *pCarState,
+                         EntityAvatarPassenger *pPassenger );
+    bool unloadPassenger( CarState *pCarState,
+                          EntityAvatarPassenger *pPassenger );
 
     void loadPacks();
     void unloadPacks();

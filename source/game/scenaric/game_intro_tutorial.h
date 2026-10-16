@@ -15,6 +15,7 @@ static constexpr int32_t kTutorialStateBuyHouse = 6;
 static constexpr int32_t kTutorialStateHouseBought = 7;
 static constexpr int32_t kTutorialStateBuyCar = 8;
 static constexpr int32_t kTutorialStateCarBought = 9;
+static constexpr int32_t kTutorialStateChallenge = 10;
 static constexpr int32_t kTutorialStateHome = 11;
 static constexpr int32_t kTutorialStateRunning = 13;
 
@@ -35,6 +36,8 @@ public:
 
     void onIntroCinematicEnded();
     void onCarRented( const int32_t carID, const int32_t rentalTime );
+    void onDealerGoToMap();
+    void onCarBought();
     void FUN_007fbd80( bool param_2 );
     void computeMapFocus( GMMap *pMap,
                           Eigen::Vector4f *pOutFocus,

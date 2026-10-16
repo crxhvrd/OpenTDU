@@ -506,7 +506,9 @@ bool GMLiving::onMessage( FlashMessage *pMessage ) {
         return true;
 
     case FlashMessage( "liou" ): // back out to the house exterior
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMHome
+        requestExit();
+        gpTestDriveInstance->setNextGameMode( GM_Home );
+        pFlashPlayer->stopClip( "/" );
         return true;
 
     case FlashMessage( "mahe" ): { // the mailbox help line

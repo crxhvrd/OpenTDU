@@ -962,7 +962,8 @@ void GameModeWorld::pause() {
             }
         } else {
             if ( pLocalCar->getPhysicsVehicle() != nullptr ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+                pLocalCar->getPhysicsVehicle()->setSecondaryDrivingControl(
+                    nullptr );
             }
             uninstallLocalPlayerCar();
         }

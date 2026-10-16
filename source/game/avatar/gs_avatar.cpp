@@ -530,10 +530,10 @@ AvatarBeltPart *GSAvatar::findBelt( const eAvatarClotheSize size,
 }
 
 bool GSAvatar::installBelt( const char *pBeltType,
-                            EntityDriver *pDriver,
+                            EntityAvatar *pAvatar,
                             const eAvatarBeltSeat seat ) {
     // FUN_008f6560
-    if ( pBeltType == nullptr || pDriver == nullptr ) {
+    if ( pBeltType == nullptr || pAvatar == nullptr ) {
         return false;
     }
 
@@ -552,7 +552,7 @@ bool GSAvatar::installBelt( const char *pBeltType,
         return false;
     }
 
-    PooledAvatarEntry *pRsc = pDriver->getPooledEntry();
+    PooledAvatarEntry *pRsc = pAvatar->getPooledEntry();
     if ( pRsc == nullptr ) {
         return false;
     }

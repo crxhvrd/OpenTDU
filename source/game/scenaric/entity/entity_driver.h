@@ -85,6 +85,9 @@ static constexpr int32_t kCarIKPointGearLever = 7;
 static constexpr int32_t kCarIKPointWindscreen = 9;
 static constexpr int32_t kBikeIKPointDriverSeat = 0;
 
+void BuildCarIKPoints( SCIKPoint ( &points )[kNumCarIKPoints],
+                       CarState *pCarState );
+
 class EntityDriver : public EntityAvatar, public CarStateEventListener {
 public:
     const char *GetName() override { return "DrivEr"; /* FUN_00425220 */ }

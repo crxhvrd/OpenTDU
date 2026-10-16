@@ -145,7 +145,8 @@ void GMGarage::reset() {
         }
 
         if ( pLocalCar->getPhysicsVehicle() != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+            pLocalCar->getPhysicsVehicle()->setSecondaryDrivingControl(
+                nullptr );
         }
 
         gpCarState->unloadVehicle( pLocalCar, false, false );

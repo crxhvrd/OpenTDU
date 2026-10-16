@@ -3,6 +3,7 @@
 
 #include "ai/ai_pool.h"
 #include "ai/gs_ai.h"
+#include "database/gs_database.h"
 #include "flash/gs_flash.h"
 #include "flash/entities/flash_entity.h"
 #include "flash/implementation/flash_display_list.h"
@@ -12,12 +13,14 @@
 #include "game/avatar/avatar_configuration.h"
 #include "game/mng_hud.h"
 #include "game/scenaric/avatar_manager.h"
+#include "game/scenaric/entity/entity_avatar_passenger.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "gs_timer.h"
+#include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_garage.h"
@@ -54,7 +57,7 @@ static void ReleaseLocalPlayerCar() {
     }
 
     if ( pLocalCar->getPhysicsVehicle() != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+        pLocalCar->getPhysicsVehicle()->setSecondaryDrivingControl( nullptr );
     }
 
     gpCarState->unloadVehicle( pLocalCar, false, false );
@@ -259,19 +262,51 @@ bool GMTestCar::onMessage( FlashMessage *pMessage ) {
 
 void GMTestCar::loadPassenger() {
     // FUN_007b4720
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (seats the shop hostess, built
-                             // from GetPassengerConfiguration(), as passenger
-                             // through GSScenaric::PlacePassenger)
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr ) {
+        return;
+    }
+
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    const int32_t carID =
+        static_cast<int32_t>( pSave->getGarage()
+                                  ->pCars[pSave->getDriver()->CurrentCar]
+                                  .getCarConfigID() );
+    if ( carID >= CarDesc::kFirstBikeConfigID &&
+         carID < CarDesc::kFirstAfterBikeConfigID ) {
+        return;
+    }
+
+    DBEntryCarPhysicsData *pCarData = gpDatabase->getCarDBEntry( carID );
+    if ( pCarData == nullptr ) {
+        return;
+    }
+
+    const char *pNumSeats = pCarData->NumSeats.pAsString;
+    if ( pNumSeats == nullptr || pNumSeats[0] == '\0' || pNumSeats[0] == '1' ||
+         pNumSeats[0] == '3' ) {
+        return;
+    }
+
+    EntityAvatar *pAvatar =
+        gpScenaric->getAvatarManager().allocateAvatar( ~0ull, 5 );
+    if ( pAvatar != nullptr ) {
+        pAvatar->installConfiguration( &gPassengerConfiguration, 0, false,
+                                       false );
+    }
+
+    pPassenger = static_cast<EntityAvatarPassenger *>( pAvatar );
+    gpScenaric->placePassenger( pLocalCar, pPassenger );
 }
 
 void GMTestCar::releasePassenger() {
     // FUN_007b49e0 (inlined)
-    if ( gpScenaric->getLocalPlayer().getCarState() == nullptr ||
-         pPassenger == nullptr ) {
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr || pPassenger == nullptr ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (passenger unload, FUN_00805620)
+    gpScenaric->unloadPassenger( pLocalCar, pPassenger );
     gpScenaric->getAvatarManager().releaseAvatar( pPassenger );
     pPassenger = nullptr;
 }

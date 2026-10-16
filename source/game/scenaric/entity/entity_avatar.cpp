@@ -7,6 +7,7 @@
 #include "game/game_mechanism.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_anm_set.h"
+#include "game/scenaric/entity/entity_avatar_passenger.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "game/vehicle/car_state.h"
 #include "game/avatar/avatar_layer.h"
@@ -169,6 +170,13 @@ void EntityAvatar::initializeForCinematicKeyframed( void *param_2,
     }
 }
 
+static void UnloadSelfAsPassenger( EntityAvatar *pAvatar ) {
+    EntityAvatarPassenger *pPassenger = pAvatar->getPassenger();
+    if ( pPassenger != nullptr && pPassenger->getCarState() != nullptr ) {
+        gpScenaric->unloadPassenger( pPassenger->getCarState(), pPassenger );
+    }
+}
+
 void EntityAvatar::endCinematic( bool bStillReferenced,
                                  EntityCinematic *pLifeCinematic ) {
     // FUN_007e5f70 (inlined)
@@ -198,9 +206,7 @@ void EntityAvatar::endCinematic( bool bStillReferenced,
         }
     }
 
-    if ( unknownAvatarFunc2() != 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (FUN_00805620 passenger unload)
-    }
+    UnloadSelfAsPassenger( this );
 
     bMustProjectOnHMap = false;
     if ( animation.getNumChannels() > 0 ) {
@@ -219,9 +225,7 @@ void EntityAvatar::endLifeSetCinematic() {
         pDriver->returnToSeatAfterCinematic();
     }
     removeInstanceReference();
-    if ( unknownAvatarFunc2() != 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
-    }
+    UnloadSelfAsPassenger( this );
     if ( animation.getNumChannels() > 0 ) {
         animation.resetChannel( 0 );
     }
@@ -590,9 +594,9 @@ EntityDriver *EntityAvatar::getDriver() {
     return nullptr;
 }
 
-int32_t EntityAvatar::unknownAvatarFunc2() {
+EntityAvatarPassenger *EntityAvatar::getPassenger() {
     // FUN_007f7210
-    return 0;
+    return nullptr;
 }
 
 void EntityAvatar::getCarAlphaScreenRect( Eigen::Vector4f &outRect ) {

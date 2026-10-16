@@ -233,6 +233,10 @@ public:
         pDrivingControl = pControl;
     }
     PhysicsDrivingControl *getDrivingControl() const { return pDrivingControl; }
+    void setSecondaryDrivingControl( PhysicsDrivingControl *pControl ) {
+        // FUN_00827cf0
+        pSecondaryDrivingControl = pControl;
+    }
     void setBackView( bool bValue ) { bBackView = bValue; }
     bool isBackViewRequested() const { return bBackView; }
     void setChangeView( bool bValue ) { bChangeView = bValue; }
@@ -384,6 +388,7 @@ public:
     float computeGroundToOriginOffset() const;
 
     void OnStep( const JPH::PhysicsStepListenerContext &inContext ) override;
+    void forwardDrivingInput( const float deltaTime );
 
     Matrix4x4f_t getChassisWorldMatrix() const;
     Matrix4x4f_t getChassisShiftedMatrix() const;
@@ -551,6 +556,7 @@ private:
     float inputHandbrake;
     uint8_t drivingMode;
     PhysicsDrivingControl *pDrivingControl = nullptr;
+    PhysicsDrivingControl *pSecondaryDrivingControl = nullptr;
     bool bBackView = false;
     bool bChangeView = false;
     float prevInputThrottle;

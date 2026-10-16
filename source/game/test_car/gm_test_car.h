@@ -3,7 +3,7 @@
 #include "game/gm_world.h"
 
 struct AvatarConfiguration;
-class EntityAvatar;
+class EntityAvatarPassenger;
 
 class GMTestCar : public GameModeWorld {
 public:
@@ -35,5 +35,5 @@ private:
 private:
     float startTime;
     float endTime;
-    EntityAvatar *pPassenger;
+    EntityAvatarPassenger *pPassenger;
 };

@@ -147,6 +147,11 @@ public:
     inline const VehicleResource &getInteriorResource() const {
         return interiorResource;
     }
+    inline const DirectionalLight &getMainLight() const { return mainLight; }
+    inline float getCurrentEnvFactor() const { return currentEnvFactor; }
+    inline float getCurrentEnvFactorBackFace() const {
+        return currentEnvFactorBackFace;
+    }
 
     inline const CarState *getCarState() const { return pCarState; }
     bool isInteriorLoading() const;
@@ -253,7 +258,6 @@ public:
 
     void setCurrentLuminosity( const float param_1 );
     HiearchyNode *getShadowDummyNode();
-
 
 protected:
     static constexpr size_t kNumFlares = (size_t)eFlareType::FT_Count;

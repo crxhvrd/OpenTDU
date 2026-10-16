@@ -668,6 +668,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     pChassisBody = pChassis;
     drivingMode = DM_Player;
     pDrivingControl = nullptr;
+    pSecondaryDrivingControl = nullptr;
     bBackView = false;
     bChangeView = false;
     prevInputThrottle = 0.0f;
@@ -2428,6 +2429,16 @@ void PhysicsVehicle::updateGripModulation( float chassisSpeed ) {
     }
 }
 
+void PhysicsVehicle::forwardDrivingInput( const float deltaTime ) {
+    // FUN_0081c7b0 (inlined)
+    if ( pDrivingControl != nullptr ) {
+        pDrivingControl->forwardInput( *this, deltaTime );
+    }
+    if ( pSecondaryDrivingControl != nullptr ) {
+        pSecondaryDrivingControl->forwardInput( *this, deltaTime );
+    }
+}
+
 void PhysicsVehicle::OnStep(
     const JPH::PhysicsStepListenerContext &inContext ) {
     if ( pChassisBody == nullptr || pPhysicsSystem == nullptr ) {
@@ -2442,17 +2453,13 @@ void PhysicsVehicle::OnStep(
     const JPH::Body &chassis = *pChassisBody;
     if ( bPausePhysics ) {
         if ( bVirtual ) {
-            if ( pDrivingControl != nullptr ) {
-                pDrivingControl->forwardInput( *this, dt );
-            }
+            forwardDrivingInput( dt );
             stepVirtual( dt );
         }
         return;
     }
 
-    if ( pDrivingControl != nullptr ) {
-        pDrivingControl->forwardInput( *this, dt );
-    }
+    forwardDrivingInput( dt );
     if ( bKeyframed ) {
         if ( drivingMode == DM_Parked ) {
             applyDrivingMode();

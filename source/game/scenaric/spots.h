@@ -178,6 +178,7 @@ public:
                                 int32_t *pOutIndex );
     SpotSector *getSpotSector( uint64_t hashcode );
     void updateSpotMeshValidity();
+    void setSingleValidSpot( SpotMap *pSpot );
     void showSpotMeshes( bool bShow );
 
     bool installWorldSpots( void *pResource );

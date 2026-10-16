@@ -88,7 +88,7 @@ static void ReleaseLocalPlayerCar() {
     }
 
     if ( pLocalCar->getPhysicsVehicle() != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+        pLocalCar->getPhysicsVehicle()->setSecondaryDrivingControl( nullptr );
     }
 
     gpCarState->unloadVehicle( pLocalCar, false, false );
@@ -420,8 +420,11 @@ bool ShopLogicDealer::onMessage( FlashMessage *pMessage,
         return true;
 
     case FlashMessage( "goma" ):
-        OTDU_UNIMPLEMENTED; // TODO: TUTORIAL (FUN_007fc9a0)
-        return false;
+        if ( !gpScenaric->getIntroTutorial().isActive() ) {
+            return false;
+        }
+        gpScenaric->getIntroTutorial().onDealerGoToMap();
+        return true;
 
     default:
         return false;
@@ -1114,7 +1117,7 @@ void ShopLogicDealer::evaluatePurchase() {
         newCarSlot = pGarage->findFreeSlot( 0ull );
         OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_0089bac0 shop stock
                                  // update)
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL (FUN_007fc9f0)
+        gpScenaric->getIntroTutorial().onCarBought();
 
         const SceneCarPark::Entry &entry =
             pOwner->getScene().getCarPark().getEntry(

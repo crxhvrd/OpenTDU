@@ -7,12 +7,23 @@
 EntityAvatarShoppingGirl::EntityAvatarShoppingGirl()
     : EntityAvatarPassenger(), RandomSeed( 0x3039 ) {
     // FUN_007f38f0
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO
 }
 
 EntityAvatarShoppingGirl::~EntityAvatarShoppingGirl() {
     // FUN_00424fc0
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO
+}
+
+void EntityAvatarShoppingGirl::tick( PlayerGameMech *pGameMech,
+                                     float deltaTime,
+                                     float totalTime ) {
+    // FUN_007f3af0
+    EntityAvatarPassenger::tick( pGameMech, deltaTime, totalTime );
+
+    if ( CurrentBehavior == PB_Passenger ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO
+    }
 }
 
 void EntityAvatarShoppingGirl::loadResources( ScenaricBank *param_2 ) {
