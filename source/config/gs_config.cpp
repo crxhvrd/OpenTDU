@@ -585,14 +585,11 @@ void GSConfig::parseWeatherAndFXInis() {
 
 void GSConfig::parseLeaderboardIni() {
     // FUN_0098da20
-    OTDU_UNIMPLEMENTED; // TODO: FIXME: Implement ini parsing
-    return;
-
     const char *pResourcePath = getResRootPath();
 
     std::string leaderboardFilePath;
     leaderboardFilePath += pResourcePath;
-    leaderboardFilePath += "Database/Leaderboards.ini";
+    leaderboardFilePath += "DataBase/Leaderboards.ini";
 
     ParseArgValueFromCmdLine( "leaderboards", leaderboardFilePath.data(),
                               OTDU_MAX_PATH );

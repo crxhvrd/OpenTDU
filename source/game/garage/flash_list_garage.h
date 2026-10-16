@@ -45,12 +45,6 @@ private:
     void refreshHouseNames();
     void rebuild();
     bool compareSlots( const int32_t slotA, const int32_t slotB ) const;
-    void setLineField( const int32_t lineIndex,
-                       const char *pField,
-                       const char *pValue );
-    void setLineFieldNonLinked( const int32_t lineIndex,
-                                const char *pField,
-                                const char *pValue );
 
 private:
     FlashListGarageNotifier notifier;

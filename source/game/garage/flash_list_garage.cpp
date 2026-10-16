@@ -155,26 +155,6 @@ void FlashListGarage::sort( int32_t /*param_1*/ ) {
     selectedLineChanged();
 }
 
-void FlashListGarage::setLineField( const int32_t lineIndex,
-                                    const char *pField,
-                                    const char *pValue ) {
-    // FUN_0071d0e0
-    char variable[128];
-    snprintf( variable, sizeof( variable ), "%s/line%d:%s", movieName.c_str(),
-              lineIndex + 1, pField );
-    pMovie->setVariableValue( variable, pValue );
-}
-
-void FlashListGarage::setLineFieldNonLinked( const int32_t lineIndex,
-                                             const char *pField,
-                                             const char *pValue ) {
-    // FUN_0071d120
-    char variable[128];
-    snprintf( variable, sizeof( variable ), "%s/line%d:%s", movieName.c_str(),
-              lineIndex + 1, pField );
-    pMovie->setVariableValueNonLinked( variable, pValue );
-}
-
 void FlashListGarage::update( const int32_t param_2, const int32_t param_3 ) {
     // FUN_009c3f40
     if ( getListLength() <= param_2 ) {

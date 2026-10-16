@@ -66,6 +66,7 @@ public:
     ~SpotScreensBank();
 
     void load();
+    bool loadImmediate();
     void release();
     Material *getMaterial( const char *pMaterialName );
 

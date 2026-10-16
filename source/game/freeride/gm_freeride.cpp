@@ -1236,7 +1236,7 @@ void GMFreeride::enterCurrentActivity() {
 
 bool GMFreeride::enterSpot( SpotMap *pSpot ) {
     // FUN_00796120
-    gpScenaric->setNumExtraChallenges( 0 );
+    gpScenaric->setActiveExtraChallenge( nullptr );
     pPendingSpot = pSpot;
 
     const ScenaricBank::eBankState bankState = spotBank.getState();

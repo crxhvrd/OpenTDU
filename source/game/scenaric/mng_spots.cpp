@@ -509,6 +509,21 @@ void SpotScreensBank::load() {
     state = SSS_Loading;
 }
 
+bool SpotScreensBank::loadImmediate() {
+    // FUN_007657d0
+    release();
+    unload();
+
+    if ( pRender2DM == nullptr ) {
+        pRender2DM = new Render2DM();
+    }
+
+    char bankPath[512];
+    snprintf( bankPath, sizeof( bankPath ), "%sFrontEnd/AllRes/SpotsScr.bnk",
+              gpConfig->getResRootPath() );
+    return loadBankWithMemory( gpFile, bankPath, nullptr, 0, false );
+}
+
 void SpotScreensBank::loadContent() {
     // FUN_00743380
     num2DB = 0;

@@ -43,7 +43,8 @@ struct SpotMap {
     uint8_t VehicleCategory;
     uint8_t VehicleCategoryMax;
     uint8_t VehicleCategoryMin;
-    uint32_t __PADDING__[3];
+    uint32_t Unknown0x34;
+    uint64_t NameHashcode; // database 7
 };
 OTDU_SIZE_MUST_MATCH( SpotMap, 64 );
 

@@ -97,6 +97,12 @@ protected:
     void showLineSubClipFrame( const int32_t lineIndex,
                                const char *pSubClip,
                                const char *pFrame );
+    void setLineField( const int32_t lineIndex,
+                       const char *pField,
+                       const char *pValue );
+    void setLineFieldNonLinked( const int32_t lineIndex,
+                                const char *pField,
+                                const char *pValue );
     void syncList();
     void reset();
     bool FUN_0071c8b0();

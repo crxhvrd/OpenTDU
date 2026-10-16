@@ -284,7 +284,7 @@ void MngGPS::tick( float deltaTime, float ) {
         target = primary.Position;
         pType = primary.Type;
         bHasObjective = IsObjectiveSet( primary );
-        bNoExtraChallenge = gpScenaric->getNumExtraChallenges() == 0;
+        bNoExtraChallenge = gpScenaric->getActiveExtraChallenge() == nullptr;
         secondary = next.Position;
         bHasSecondary = IsObjectiveSet( next );
     } else {

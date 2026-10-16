@@ -9,9 +9,37 @@ namespace TestDrive {
 
 class Driver;
 
+// Database/Leaderboards.ini row
+struct LeaderboardChallenge {
+    uint64_t SpotHashcode = 0ull;
+    int32_t LeaderboardID = 0;
+};
+
 class GSOnline : public GameSystem {
 public:
     const char *getName() const override { return "Service : Online"; }
+
+public:
+    enum eChallengeLeaderboard : int32_t {
+        CL_Time = 0,
+        CL_Speed = 1,
+        CL_Race = 2,
+        CL_Count
+    };
+
+    static constexpr int32_t kMaxChallengeLeaderboards[CL_Count] = { 50, 30,
+                                                                     50 };
+
+public:
+    inline int32_t
+    getNumChallengeLeaderboards( const eChallengeLeaderboard kind ) const {
+        return numChallengeLeaderboards[kind];
+    }
+    inline const LeaderboardChallenge &
+    getChallengeLeaderboard( const eChallengeLeaderboard kind,
+                             const int32_t index ) const {
+        return challengeLeaderboards[kind][index];
+    }
 
 public:
     GSOnline();
@@ -42,6 +70,9 @@ public:
     void setDbgCOMAddress( const char *param_1 );
 
     int32_t notifyCheatDetected( Driver *pDriver );
+    void addChallengeLeaderboard( const eChallengeLeaderboard kind,
+                                  const uint64_t spotHashcode,
+                                  const int32_t leaderboardID );
 
 private:
     char pFreerideVersion[32];
@@ -56,7 +87,10 @@ private:
     uint8_t bXBLModeSecure : 1;
     uint8_t bLobbying : 1;
     uint8_t bGPSTrackerEnabled : 1;
-    uint8_t bNewsReaderOpen : 1; // +0xa713
+    uint8_t bNewsReaderOpen : 1;
+
+    LeaderboardChallenge challengeLeaderboards[CL_Count][50];
+    int32_t numChallengeLeaderboards[CL_Count];
 };
 
 extern GSOnline gOnline;

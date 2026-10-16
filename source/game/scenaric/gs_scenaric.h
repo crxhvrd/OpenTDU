@@ -185,8 +185,11 @@ public:
         return extraChallengesCineBank;
     }
     inline int32_t getNumExtraChallenges() const { return numExtraChallenges; }
-    inline void setNumExtraChallenges( const int32_t count ) {
-        numExtraChallenges = count;
+    inline Entity *getActiveExtraChallenge() const {
+        return pActiveExtraChallenge;
+    }
+    inline void setActiveExtraChallenge( Entity *pChallenge ) {
+        pActiveExtraChallenge = pChallenge;
     }
     Entity *findExtraChallenge( int32_t index );
     inline ScenaricBank *getWorldExtraChallengesBank() {
@@ -257,7 +260,8 @@ private:
     bool bIsFromDriveIn;          // DAT_012162c4
     bool bMailboxUpdated = false; // DAT_012164de
     NextIntroInfo nextIntro;
-    int32_t numExtraChallenges;
+    Entity *pActiveExtraChallenge; // DAT_01214948
+    int32_t numExtraChallenges;    // DAT_0121494c
 
     float rentalTimer;
     uint64_t objectiveSpotHashcode;

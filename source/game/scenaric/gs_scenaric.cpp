@@ -104,6 +104,7 @@ GSScenaric::GSScenaric()
       bWasMapExited( true ),
       currentSpotIndex( -1 ),
       bIsFromDriveIn( false ),
+      pActiveExtraChallenge( nullptr ),
       numExtraChallenges( 0 ),
       rentalTimer( -1.0f ),
       objectiveSpotHashcode( 0 ),

@@ -47,6 +47,26 @@ void FlashList::showLineSubClipFrame( const int32_t lineIndex,
     pMovie->showFrame( pFrame, clipPath, false );
 }
 
+void FlashList::setLineField( const int32_t lineIndex,
+                              const char *pField,
+                              const char *pValue ) {
+    // FUN_0071d0e0
+    char variable[128];
+    snprintf( variable, sizeof( variable ), "%s/line%d:%s", movieName.c_str(),
+              lineIndex + 1, pField );
+    pMovie->setVariableValue( variable, pValue );
+}
+
+void FlashList::setLineFieldNonLinked( const int32_t lineIndex,
+                                       const char *pField,
+                                       const char *pValue ) {
+    // FUN_0071d120
+    char variable[128];
+    snprintf( variable, sizeof( variable ), "%s/line%d:%s", movieName.c_str(),
+              lineIndex + 1, pField );
+    pMovie->setVariableValueNonLinked( variable, pValue );
+}
+
 void FlashList::setLineState( eLineState state, const int32_t index ) {
     // FUN_0071ce80
     std::string local_80 = movieName;

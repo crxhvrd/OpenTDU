@@ -35,6 +35,7 @@ public:
     const RankingEntry *findEntry( const uint64_t hashcode ) const;
 
     int32_t getChallengeResult( const uint64_t hashcode ) const;
+    float getChallengeBestScore( const uint64_t hashcode ) const;
     void upgradeFromVersion1( SavedStringTable *pStringTable );
 
 public:

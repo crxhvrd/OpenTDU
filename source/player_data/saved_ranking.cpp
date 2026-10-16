@@ -115,6 +115,21 @@ int32_t SavedRanking::getChallengeResult( const uint64_t hashcode ) const {
     return int32_t( TestDriveTEAReadDword( pEntry->pBlock0 ) );
 }
 
+float SavedRanking::getChallengeBestScore( const uint64_t hashcode ) const {
+    // FUN_008902d0
+    const RankingEntry *pEntry = findEntry( hashcode );
+    if ( pEntry == nullptr ) {
+        return 4294967296.0f; // FLOAT_00f41670
+    }
+
+    uint32_t pPlainText[2] = {};
+    TestDriveTEADecrypt( pPlainText, pEntry->pBlock0 );
+
+    float bestScore = 0.0f;
+    memcpy( &bestScore, &pPlainText[1], sizeof( float ) );
+    return bestScore;
+}
+
 void SavedRanking::upgradeFromVersion1( SavedStringTable *pStringTable ) {
     // FUN_00890120
     static constexpr uint64_t kUnusedEntryHashcode = 0xffffffffull;

@@ -17,7 +17,9 @@ GSOnline::GSOnline()
       bXBLModeSecure( false ),
       bLobbying( false ),
       bGPSTrackerEnabled( false ),
-      bNewsReaderOpen( false ) {
+      bNewsReaderOpen( false ),
+      challengeLeaderboards(),
+      numChallengeLeaderboards() {
     gpOnline = this;
 }
 
@@ -82,4 +84,18 @@ int32_t GSOnline::notifyCheatDetected( Driver *pDriver ) {
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (gpCP2PGameService)
 
     return -1;
+}
+
+void GSOnline::addChallengeLeaderboard( const eChallengeLeaderboard kind,
+                                        const uint64_t spotHashcode,
+                                        const int32_t leaderboardID ) {
+    // FUN_00983200 / FUN_00983190 / FUN_00983120 (inlined)
+    int32_t &count = numChallengeLeaderboards[kind];
+    if ( count >= kMaxChallengeLeaderboards[kind] ) {
+        return;
+    }
+
+    challengeLeaderboards[kind][count].SpotHashcode = spotHashcode;
+    challengeLeaderboards[kind][count].LeaderboardID = leaderboardID;
+    count++;
 }
