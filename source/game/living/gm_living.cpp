@@ -4,6 +4,7 @@
 #include "tdu_instance.h"
 
 #include "core/time.h"
+#include "flash/flash_callbacks_register.h"
 #include "flash/gs_flash.h"
 #include "flash/mng_fade.h"
 #include "flash/implementation/flash_player.h"
@@ -16,6 +17,8 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/achievement_checks.h"
+#include "player_data/saved_mailbox.h"
+#include "online/gs_online.h"
 #include "world/details/gs_details.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
@@ -41,7 +44,9 @@ GMLiving::GMLiving()
       mngLogoDisplay(),
       mngCollection(),
       mngRankings(),
+      mngSpotPicture(),
       sceneLiving(),
+      newsWidget(),
       firstPerson(),
       pFlashPlayer( nullptr ),
       resetTime( 0.0f ),
@@ -58,8 +63,7 @@ GMLiving::GMLiving()
     registerManager( &mngLogoDisplay );
     registerManager( &mngCollection );
     registerManager( &mngRankings );
-
-    OTDU_UNIMPLEMENTED; // TODO: ONLINE (news manager)
+    registerManager( &mngSpotPicture );
 
     mngCollection.setGameMode( this );
     mngRankings.setGameMode( this );
@@ -73,6 +77,8 @@ GMLiving::GMLiving()
 
 GMLiving::~GMLiving() {
     // FUN_0076a580
+    gFlashCallbacksRegister.removeAllSynonyms(
+        &MngSpotPicture::PictureDrawCallback );
 }
 
 void GMLiving::resolveHouseSpot() {
@@ -336,8 +342,10 @@ void GMLiving::reset() {
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: ONLINE (bind the news widget to the movie and
-                        // attach it to the save's news list)
+    newsWidget.pMovie = pFlashPlayer;
+    SavedMailbox *pMailbox = gpPlayerData->getLoadedSave()->getMailbox();
+    newsWidget.pTarget = pMailbox;
+    pMailbox->subscribe( &newsWidget );
 
     pFlashPlayer->showFrame( "living_in", "/", true );
 
@@ -418,7 +426,7 @@ void GMLiving::pause() {
 
     sceneLiving.suspend();
 
-    OTDU_UNIMPLEMENTED; // TODO: ONLINE (detach the news observer)
+    newsWidget.detach();
     OTDU_UNIMPLEMENTED; // TODO: GMLIVING (FUN_00765f80)
 
     GameModeScene::pause();
@@ -428,7 +436,9 @@ void GMLiving::destroy() {
     // FUN_00769bd0
     firstPerson.leave();
 
-    OTDU_UNIMPLEMENTED; // TODO: ONLINE
+    OTDU_UNIMPLEMENTED; // TODO: ONLINE (MngNetResource terminate)
+
+    gpPlayerData->getLoadedSave()->getMailbox()->detachPictures();
 
     mngWorld.setDisableStreamingOnCar( false );
 
@@ -522,14 +532,59 @@ bool GMLiving::onMessage( FlashMessage *pMessage ) {
         gpPlayerData->newGame( true );
         return true;
 
-    case FlashMessage( "news" ): // open a news item
+    case FlashMessage( "news" ): { // open a news item
+        gpOnline->setNewsReaderOpen( true );
+
+        SavedMailbox *pMailbox = gpPlayerData->getLoadedSave()->getMailbox();
+        const int32_t newsIndex =
+            pFlashPlayer->getVariableAsInt( "/:num_news" ) - 1;
+        if ( newsIndex >= 0 ) {
+            MailMessage *pMessage = pMailbox->getVisibleMessage( newsIndex );
+            if ( pMessage->Category != 0 ) {
+                pMessage->fillNewsLayout( pFlashPlayer );
+                mngSpotPicture.setTarget(
+                    pFlashPlayer, "ss_menu/news/news_layout/spot_datas/pict" );
+                mngSpotPicture.showSpot( gpScenaric->getSpotList().getSpotMap(
+                    pMessage->Hashcode ) );
+            }
+        }
+        return true;
+    }
+
     case FlashMessage( "nehe" ): // news item closed
     case FlashMessage( "newq" ):
-    case FlashMessage( "nede" ): // delete the selected news item
-    case FlashMessage( "locs" ): // locate the news item's spot on the map
+        gpOnline->setNewsReaderOpen( false );
+        return true;
+
+    case FlashMessage( "nede" ): { // delete the selected news item
+        SavedMailbox *pMailbox = gpPlayerData->getLoadedSave()->getMailbox();
+        const int32_t newsIndex =
+            pFlashPlayer->getVariableAsInt( "/:num_news" ) - 1;
+        if ( pMailbox->getVisibleMessage( newsIndex )->Category != 0 ) {
+            pMailbox->removeVisibleMessage( newsIndex );
+        }
+        return true;
+    }
+
+    case FlashMessage( "locs" ): { // locate the news item's spot on the map
+        SavedMailbox *pMailbox = gpPlayerData->getLoadedSave()->getMailbox();
+        const int32_t newsIndex =
+            pFlashPlayer->getVariableAsInt( "/:num_news" ) - 1;
+        const MailMessage *pMessage = pMailbox->getVisibleMessage( newsIndex );
+        if ( pMessage->Category != 0 ) {
+            pMessage->locateOnMap( pFlashPlayer );
+        }
+        return true;
+    }
+
     case FlashMessage( "vgcd" ):
+        if ( gpOnline->isNewsReaderOpen() ) {
+            return true;
+        }
+        break;
+
     case FlashMessage( "answ" ): // answer a club/team invitation
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (mail/news/club invitations)
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (club invitations)
         return true;
 
     default:

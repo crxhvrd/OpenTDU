@@ -2,12 +2,14 @@
 
 #include "game/gm_world.h"
 
+#include "flash/entities/flash_panel.h"
 #include "game/first_person_mode.h"
 #include "game/mng_logo_display.h"
 #include "render/mng_reflection.h"
 
 #include "mng_collection.h"
 #include "mng_rankings.h"
+#include "mng_spot_picture.h"
 #include "scene_living.h"
 
 struct FlashMessage;
@@ -61,7 +63,9 @@ private:
     MngLogoDisplay mngLogoDisplay;
     MngCollection mngCollection;
     MngRankings mngRankings;
+    MngSpotPicture mngSpotPicture;
     SceneLiving sceneLiving;
+    FlashPanelNews newsWidget;
     FirstPersonMode firstPerson;
     FlashPlayer *pFlashPlayer;
     float resetTime;

@@ -25,6 +25,10 @@ public:
     void setXBLModeSecure( bool param_1 );
     void setUsername( const char *param_1 );
     inline const char *getUsername() const { return pUsername; }
+    inline void setNewsReaderOpen( const bool bOpen ) {
+        bNewsReaderOpen = bOpen;
+    }
+    inline bool isNewsReaderOpen() const { return bNewsReaderOpen; }
 
     void setServerLogin( const char *param_1, const char *param_2 );
     bool setServerAddress( const char *param_1, const int32_t param_2 );
@@ -52,6 +56,7 @@ private:
     uint8_t bXBLModeSecure : 1;
     uint8_t bLobbying : 1;
     uint8_t bGPSTrackerEnabled : 1;
+    uint8_t bNewsReaderOpen : 1; // +0xa713
 };
 
 extern GSOnline gOnline;

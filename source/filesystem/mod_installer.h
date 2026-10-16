@@ -97,7 +97,9 @@ private:
     void onUnlockVehicle( const char *pLanguage,
                           const uint32_t databaseId,
                           const char *pEnvName );
-    void onPostNews( const char *pText, const int32_t moneyReward );
+    void onPostNews( const char *pEnvName,
+                     const char *pText,
+                     const int32_t moneyReward );
     void onAddRadioStation( const char *pEnvName,
                             const EnumerateContextItem &item );
 

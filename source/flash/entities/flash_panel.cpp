@@ -14,6 +14,7 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_garage.h"
+#include "player_data/saved_mailbox.h"
 
 static bool gbEtradeAvailable =
     false; // DAT_014d5af2 // TODO: ONLINE: MOVE ME TO ONLINE
@@ -140,6 +141,24 @@ void FlashPanelRental::tick() {
     // FUN_00719320
     pMovie->setVariableValue( "/:state_Renting",
                               gpPlayerData->isRentingCar() ? 1u : 0u );
+}
+
+FlashPanelNews::FlashPanelNews() : FlashPanel() {}
+
+FlashPanelNews::~FlashPanelNews() {}
+
+void FlashPanelNews::tick() {
+    // FUN_00719cd0
+    if ( gpMngFlashLocalize == nullptr ) {
+        return;
+    }
+
+    SavedMailbox *pMailbox = gpPlayerData->getLoadedSave()->getMailbox();
+    const uint64_t helpHashcode =
+        ( pMailbox->getNumVisibleMessages() < 1 ) ? 0x3723302ull : 0x362f0c2ull;
+    gpMngFlashLocalize->setVarLocalized( pMovie, "v_NewsHelp", helpHashcode );
+
+    pMovie->setVariableValue( "/:nb_news", pMailbox->getNumVisibleMessages() );
 }
 
 FlashPanelInfoCurCar::FlashPanelInfoCurCar() : FlashPanel(), pCarName{} {}

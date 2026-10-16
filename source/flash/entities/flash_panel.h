@@ -45,6 +45,15 @@ public:
     void tick() override;
 };
 
+// Number of messages in the player mailbox.
+class FlashPanelNews : public FlashPanel {
+public:
+    FlashPanelNews();
+    ~FlashPanelNews();
+
+    void tick() override;
+};
+
 // Current car name / group / upgrade level.
 class FlashPanelInfoCurCar : public FlashPanel {
 public:

@@ -43,3 +43,7 @@ private:
 
 uint16_t
 PackSaveDate( const uint32_t year, const uint32_t month, const uint32_t day );
+void UnpackSaveDate( const uint16_t packedDate,
+                     int32_t &outYear,
+                     int32_t &outMonth,
+                     int32_t &outDay );

@@ -16,7 +16,8 @@ GSOnline::GSOnline()
       pDbgCOM( "127.0.0.1" ),
       bXBLModeSecure( false ),
       bLobbying( false ),
-      bGPSTrackerEnabled( false ) {
+      bGPSTrackerEnabled( false ),
+      bNewsReaderOpen( false ) {
     gpOnline = this;
 }
 

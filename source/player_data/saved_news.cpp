@@ -9,6 +9,25 @@ PackSaveDate( const uint32_t year, const uint32_t month, const uint32_t day ) {
     return uint16_t( 31u * ( month + 12u * ( year % 100u ) ) + day );
 }
 
+void UnpackSaveDate( const uint16_t packedDate,
+                     int32_t &outYear,
+                     int32_t &outMonth,
+                     int32_t &outDay ) {
+    // FUN_007190a0 (inlined)
+    outYear = 0;
+    outMonth = 0;
+    outDay = 0;
+    if ( packedDate == 0u ) {
+        return;
+    }
+
+    const int32_t date = int32_t( packedDate );
+    outDay = ( date % 31 != 0 ) ? date % 31 : 31;
+    const int32_t month = ( ( date - outDay ) / 31 ) % 12;
+    outMonth = ( month != 0 ) ? month : 12;
+    outYear = ( date - outMonth * 31 - outDay ) / 372;
+}
+
 void NewsEntry::clear() {
     // FUN_00895bc0 (inlined)
     ID = 0u;

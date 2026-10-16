@@ -1,8 +1,14 @@
 #include "shared.h"
 #include "mod_installer.h"
 
+#include "database/gs_database.h"
 #include "file_direct_access.h"
+#include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_mailbox.h"
+#include "player_data/saved_news.h"
+#include "player_data/saved_string_table.h"
 
 static ModInstaller gModInstaller = {};
 ModInstaller *gpModInstaller = &gModInstaller; // DAT_0147aef0
@@ -169,11 +175,57 @@ void ModInstaller::onUnlockVehicle( const char *pLanguage,
              sizeof( pCar->CardealerSpotName ) - 1 );
 }
 
-void ModInstaller::onPostNews( const char *pText, const int32_t moneyReward ) {
+void ModInstaller::onPostNews( const char *pEnvName,
+                               const char *pText,
+                               const int32_t moneyReward ) {
     // FUN_008a3bf0
     OTDU_LOG_INFO( "OnPostNews(text=%s,mon=%d)\n", pText, moneyReward );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    if ( pEnvName == nullptr || pSave == nullptr || !pSave->isReady() ) {
+        return;
+    }
+
+    SavedStringTable *pStringTable = pSave->getStringTable();
+    const char *pPostedValue = pStringTable->findValue( pEnvName );
+    if ( pPostedValue != nullptr ) {
+        OTDU_LOG_DEBUG( "News %s already posted", pPostedValue );
+        return;
+    }
+    pStringTable->setValue( pEnvName, "1" );
+
+    const char *pTitle = gpDatabase->getStringByHashcode( 0, 0x34e5752ull );
+    if ( pTitle == nullptr ) {
+        pTitle = "#MarketPlace Info";
+    }
+
+    const time_t nowSeconds = time( nullptr );
+    const struct tm *pNow = localtime( &nowSeconds );
+
+    MailMessage message;
+    message.Language = GetMailLanguageCode( gpPlayerData->getLanguage() );
+    message.Kind = 1;
+    message.Category = 1;
+    if ( pNow != nullptr ) {
+        message.Date = PackSaveDate( uint32_t( pNow->tm_year + 1900 ),
+                                     uint32_t( pNow->tm_mon + 1 ),
+                                     uint32_t( pNow->tm_mday ) );
+    }
+
+    strncpy( message.Title, pTitle, MailMessage::kTitleLength );
+    message.Title[MailMessage::kTitleLength - 1u] = '\0';
+    strncpy( message.Body, pText, MailMessage::kBodyLength );
+    message.Body[0x76f] = '\0';
+
+    pSave->getMailbox()->post( message );
+
+    if ( moneyReward != 0 ) {
+        Driver *pDriver = pSave->getDriver();
+        pDriver->setMoneyAndNotify( int32_t( pDriver->getMoney() ) +
+                                    moneyReward );
+    }
+
+    gpPlayerData->requestSave( 2 );
 }
 
 void ModInstaller::onAddRadioStation( const char *pEnvName,
@@ -394,7 +446,7 @@ eContentDescResult ModInstaller::loadFromMem( const uint32_t licenceFlags,
             if ( reader.findElem( pLanguage ) || reader.findElem( "us" ) ) {
                 const std::string news = GetTrimmedData( reader );
                 if ( bApplyContent && bHasEnvName && !news.empty() ) {
-                    onPostNews( news.c_str(), moneyReward );
+                    onPostNews( pEnvName, news.c_str(), moneyReward );
                 }
             }
         } else if ( StringCmpI( pActionName, "DESC" ) == 0 ) {
