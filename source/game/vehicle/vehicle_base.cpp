@@ -4,6 +4,7 @@
 #include "car_state.h"
 #include "mng_car_alpha.h"
 #include "game/scenaric/entity/entity_driver.h"
+#include "game/scenaric/entity/entity_avatar_passenger.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "world/weather/gs_weather.h"
 #include "world/gs_world_streaming.h"
@@ -1013,7 +1014,6 @@ void VehicleBase::setFlareValue( VehicleBase::eFlareType param_2,
             local_6c = 0;
             break;
         default:
-            OTDU_UNIMPLEMENTED;
             break;
         }
     } else {
@@ -1061,7 +1061,6 @@ void VehicleBase::setFlareValue( VehicleBase::eFlareType param_2,
             local_6c = 1;
             break;
         default:
-            OTDU_UNIMPLEMENTED;
             break;
         }
     }
@@ -1399,12 +1398,20 @@ static uint32_t GetLinkedAvatars( VehicleBase *pVehicle,
     }
 
     EntityDriver *pDriver = pCarState->getDriver();
-    const uint32_t numAvatars = ( pDriver != nullptr ) ? 1 : 0;
-    OTDU_UNIMPLEMENTED_ONCE;
+    uint32_t numAvatars = ( pDriver != nullptr ) ? 1 : 0;
+    if ( pCarState->getPassenger() != nullptr ) {
+        numAvatars++;
+    }
 
-    if ( ppOutAvatars != nullptr && numAvatars <= maxAvatars &&
-         pDriver != nullptr ) {
-        ppOutAvatars[0] = pDriver;
+    if ( ppOutAvatars != nullptr && numAvatars <= maxAvatars ) {
+        if ( pDriver != nullptr ) {
+            ppOutAvatars[0] = pDriver;
+        }
+
+        EntityAvatarPassenger *pPassenger = pCarState->getPassenger();
+        if ( pPassenger != nullptr ) {
+            ppOutAvatars[( pDriver != nullptr ) ? 1 : 0] = pPassenger;
+        }
     }
     return numAvatars;
 }
@@ -3182,7 +3189,8 @@ void VehicleBaseResources::unload() {
             bSoundResource = false;
         }
         if ( PhysicsBank.isLoaded() ) {
-            OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+            bUseGamePhysics = 0;
+            bEngineResource = false;
         }
 
         bIsLoading = false;

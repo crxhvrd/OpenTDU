@@ -27,6 +27,11 @@
 #include "ai/gs_ai.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
+#include "physics/gs_physics.h"
+#include "game/gm_scene.h"
+#include "game/scenaric/mng_actor.h"
+#include "world/gs_world.h"
+#include "world/mng_world.h"
 
 MngBookmark *gpMngBookmark = nullptr;          // DAT_010e7f60
 int32_t gAutosaveBookmarkLength = 0xffffffff;  // DAT_00f998f8
@@ -34,6 +39,8 @@ static bool gBookmarkSaveQueryPending = false; // DAT_010e7f64
 
 static constexpr const char *kBookmarkContext = "bookmark";
 static constexpr int32_t kBookmarkPhotoCameraMode = 6;
+static constexpr int32_t kMinAutosaveCameraMode = 0x13;
+static constexpr uint64_t kNoStorageHashcode = 0x55aff4ull; // DAT_0055aff4
 
 static int32_t ComputeBookmarkDynaMapID( const Matrix4x4f_t &frame ) {
     // FUN_0070c280 (inlined)
@@ -265,8 +272,8 @@ void MngBookmark::saveNewBookmark() {
         gpFlashMessageBox->display( 0x37ba8e2, 4.0f, 0, nullptr, this, true );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: FLASH (MngScreenshots clip
-                        // callback/FUN_006cdc70)
+    gFlashCallbacksRegister.removeAllSynonyms(
+        &MngPhotoMode::ShotDrawCallback );
 
     if ( currentName[0] == '\0' ) {
         strcpy( currentName, "none" );
@@ -298,13 +305,16 @@ void MngBookmark::createBookmarkAtPlayer() {
     CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
     PhysicsVehicle *pPhysicsVehicle =
         ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+    bool bOnGenericSurface = false;
     if ( pPhysicsVehicle != nullptr ) {
         frame = pPhysicsVehicle->getChassisWorldMatrix();
+        bOnGenericSurface =
+            pPhysicsVehicle->isAnyWheelOnSurface( TDUSurface::Generic );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: spot detection volume (FUN_006deb80)
-
-    const bool bSnapToRoad = false;
+    const bool bSnapToRoad = ( gpActiveGMScene != nullptr &&
+                               MngActor::IsInSpotDetectionVolume( nullptr ) ) ||
+                             bOnGenericSurface;
     if ( bSnapToRoad && gpAI != nullptr && gpAI->isRoadMapLoaded() ) {
         const Eigen::Vector4f position = frame.row( 3 ).transpose();
         AiRoadIt it;
@@ -355,7 +365,20 @@ bool MngBookmark::LoadBookmarkPositions(
     outNumBookmarks = 0;
     memset( outBookmarks, 0, sizeof( outBookmarks ) );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FILE (savegame context probe)
+    switch (
+        gpFile->ensureContext( kBookmarkContext, kBookmarkContextDisplay ) ) {
+    case CST_Empty:
+        return false;
+    case CST_Error:
+        if ( gpMngBookmark != nullptr ) {
+            TestDrive::DisplayModalPrompt(
+                true, kNoStorageHashcode, 0xb, nullptr, nullptr, nullptr, 0,
+                nullptr, true, false, MPT_Warning, gpFlashMessageBox );
+        }
+        return false;
+    default:
+        break;
+    }
 
     static constexpr uint32_t kMaxFileSize = 0x19000;
     std::vector<char> content( kMaxFileSize );
@@ -695,17 +718,171 @@ bool MngBookmark::requestPictureLoad( int32_t bookmarkIndex ) {
 
 void MngBookmark::recordAutosaveBookmark() {
     // FUN_0070cc10
-    OTDU_UNIMPLEMENTED; // TODO: AI
+    if ( gAutosaveBookmarkLength <= 50 ) {
+        return;
+    }
+
+    CameraVehicle *pCamera = gpCamera->getActiveVehicleCamera();
+    if ( pCamera == nullptr || pCamera->getType() <= kMinAutosaveCameraMode ) {
+        return;
+    }
+
+    CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+    PhysicsVehicle *pPhysicsVehicle =
+        ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+    if ( pPhysicsVehicle == nullptr ) {
+        return;
+    }
+
+    const Matrix4x4f_t frame = pPhysicsVehicle->getChassisWorldMatrix();
+    const Eigen::Vector2f playerPos( frame( 3, 0 ), frame( 3, 2 ) );
+    if ( !bLastPlayerPosIsSet ) {
+        lastPlayerPos = playerPos;
+        bLastPlayerPosIsSet = true;
+        return;
+    }
+
+    const float autosaveLength = float( gAutosaveBookmarkLength );
+    if ( ( playerPos - lastPlayerPos ).squaredNorm() <=
+         autosaveLength * autosaveLength ) {
+        return;
+    }
+
+    // FUN_0070caa0 (inlined)
+    LoadBookmarkPositions( numBookmarks, arrayBookmarks );
+    state = 1;
+
+    lastPlayerPos = playerPos;
+    pNewBookmark = &arrayBookmarks[0];
+    pNewBookmark->Position = frame.block<1, 3>( 3, 0 ).transpose();
+    pNewBookmark->Orientation = frame.block<1, 3>( 2, 0 ).transpose();
+
+    const int32_t dynaMapID = ComputeBookmarkDynaMapID( frame );
+
+    memset( currentName, 0, sizeof( currentName ) );
+    strcpy( currentName, "Autosave" );
+    strcpy( pNewBookmark->pName, currentName );
+    pNewBookmark->DynaMapID = dynaMapID;
+
+    if ( numBookmarks < 1 ) {
+        numBookmarks = 1;
+    }
+
+    // FUN_0070b310 (inlined)
+    SaveBookmarkPos( numBookmarks, arrayBookmarks );
 }
 
 void MngBookmark::applyBookmarkTeleport() {
     // FUN_0070bfb0
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS/WORLD
+    if ( state != 2 || tgtBookmarkIndex < 0 ) {
+        return;
+    }
+
+    CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+    PhysicsVehicle *pPhysicsVehicle =
+        ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+    if ( pPhysicsVehicle != nullptr ) {
+        PhysicsLock physLock;
+        pPhysicsVehicle->setPostponedPause( 1 );
+    }
+
+    if ( gpMngWorld != nullptr ) {
+        gpMngWorld->setDisableStreamingOnCar( true );
+    }
+
+    const Bookmark &bookmark = arrayBookmarks[tgtBookmarkIndex];
+    Matrix4x4f_t frame = Matrix4x4f_t::Identity();
+    frame.row( 2 ) =
+        Eigen::Vector4f( bookmark.Orientation.x(), bookmark.Orientation.y(),
+                         bookmark.Orientation.z(), 0.0f )
+            .normalized();
+    frame.row( 3 ) =
+        Eigen::Vector4f( bookmark.Position.x(), bookmark.Position.y(),
+                         bookmark.Position.z(), 1.0f );
+    frame.row( 0 ) = Eigen::Vector4f( bookmark.Orientation.z(), 0.0f,
+                                      -bookmark.Orientation.x(), 0.0f )
+                         .normalized();
+    const Eigen::Vector3f up = frame.block<1, 3>( 2, 0 ).cross(
+        Eigen::Vector3f( frame.block<1, 3>( 0, 0 ) ) );
+    frame.row( 1 ) =
+        Eigen::Vector4f( up.x(), up.y(), up.z(), 0.0f ).normalized();
+
+    Eigen::Vector4f position = frame.row( 3 ).transpose();
+    gpWorld->setStreamingPosition( &position );
+
+    if ( !gpWorld->isStreamedAround( &position, true, true ) ||
+         pPhysicsVehicle == nullptr ) {
+        return;
+    }
+
+    {
+        PhysicsLock physLock;
+        pCarState->resetBackOnTrack();
+        pPhysicsVehicle->resetToTransform( frame, true );
+    }
+    {
+        PhysicsLock physLock;
+        pPhysicsVehicle->setPostponedPause( 2 );
+    }
+
+    if ( gpMngFade != nullptr ) {
+        gpMngFade->startTransition(
+            ( gpMngFade->getTransitionFlags() & ~8u ) | 7, 0.5f,
+            &MngBookmark::OnTeleportFadeCompleted, nullptr, this );
+    }
+
+    if ( gpMngWorld != nullptr ) {
+        gpMngWorld->setDisableStreamingOnCar( false );
+    }
+    state = 1;
+
+    if ( gpMngFade != nullptr ) {
+        gpMngFade->setRenderLogo( false );
+    }
+}
+
+void MngBookmark::OnTeleportFadeCompleted( void *pData, void * /*pSource*/ ) {
+    // FUN_0070b5b0
+    if ( pData != nullptr ) {
+        const int32_t numMovies = gpFlash->getNumMovies( 1 );
+        for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+            MoviePlayer *pMoviePlayer =
+                gpFlash->getMoviePlayer( 1, movieIndex );
+            if ( pMoviePlayer != nullptr ) {
+                pMoviePlayer->field5_0xad0 &= ~4;
+                FlashPlayer *pFlashPlayer =
+                    pMoviePlayer->MovieBank.getFlashPlayer();
+                if ( pFlashPlayer != nullptr ) {
+                    pFlashPlayer->getBoundFlashResource()->setDrawMode(
+                        ( pMoviePlayer->field5_0xad0 != 0 ) ? 2 : 0 );
+                }
+            }
+        }
+
+        for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+            MoviePlayer *pMoviePlayer =
+                gpFlash->getMoviePlayer( 1, movieIndex );
+            if ( pMoviePlayer != nullptr ) {
+                pMoviePlayer->Flags &= ~4u;
+            }
+        }
+
+        uint32_t isValidGameMode = 0;
+        uint32_t movieIndex = 0;
+        if ( gpFlash->getFlashMovieIndex( &isValidGameMode, &movieIndex,
+                                          "CONFIGPC" ) ) {
+            MoviePlayer *pMoviePlayer =
+                gpFlash->getMoviePlayer( isValidGameMode, movieIndex );
+            if ( pMoviePlayer != nullptr ) {
+                pMoviePlayer->Flags &= ~4u;
+            }
+        }
+    }
 }
 
 void MngBookmark::updateSaveQuery() {
     // FUN_0070ce30
-    OTDU_UNIMPLEMENTED; // TODO: FILE
+    // NOP
 }
 
 void MngBookmark::updateMessageBoxState() {

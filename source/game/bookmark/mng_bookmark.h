@@ -140,6 +140,7 @@ private:
     void computePictureLayout();
 
     static void OnGotoFadeCompleted( void *pData, void *pSource );
+    static void OnTeleportFadeCompleted( void *pData, void *pSource );
 };
 
 extern MngBookmark *gpMngBookmark;

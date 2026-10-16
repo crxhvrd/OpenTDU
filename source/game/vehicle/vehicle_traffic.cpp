@@ -3,6 +3,7 @@
 
 #include "bank_vehicle.h"
 #include "car_state.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 #include "render/instance.h"
 #include "render/material.h"
@@ -83,6 +84,7 @@ VehicleTraffic::VehicleTraffic()
     policeGyroGreenNodes.fill( nullptr );
     policeGyroBlueNodes.fill( nullptr );
     policeGyroAlphaNodes.fill( nullptr );
+    pPoliceGyroGateNode = nullptr;
 }
 
 VehicleTraffic::~VehicleTraffic() {
@@ -161,7 +163,10 @@ void VehicleTraffic::onEvent( CarState *param_1,
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    PhysicsVehicle *pPhysicsVehicle = param_1->getPhysicsVehicle();
+    if ( pPhysicsVehicle == nullptr || !pPhysicsVehicle->isActive() ) {
+        return;
+    }
 
     updateBodyAndWheelsTransform( param_1, param_2 );
     updateAttachments();
@@ -425,6 +430,7 @@ void VehicleTraffic::instantiate( CarState *pCarState,
     policeGyroGreenNodes.fill( nullptr );
     policeGyroBlueNodes.fill( nullptr );
     policeGyroAlphaNodes.fill( nullptr );
+    pPoliceGyroGateNode = nullptr;
 
     bool bVar2 = instantiateGeometry();
     if ( bVar2 ) {
@@ -835,10 +841,9 @@ void VehicleTraffic::setupFlares() {
             displayInstances[0].pNode->findChild( uVar15 );
     }
 
-    // TODO: Check offset
-    if ( policeGyroRedNodes[1] != nullptr ) {
+    if ( policeGyroRedNodes[0] != nullptr ) {
         uint64_t uVar15 = GetIdentifier64bit( "SP4" );
-        policeGyroRedNodes[0] = displayInstances[0].pNode->findChild( uVar15 );
+        pPoliceGyroGateNode = displayInstances[0].pNode->findChild( uVar15 );
     }
 
     uint64_t uVar15 = GetIdentifier64bit( "FRL_G" );
@@ -920,7 +925,174 @@ void VehicleTraffic::setupLogo() {
 
 void VehicleTraffic::updateDamageLogic() {
     // FUN_008c1e80
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    static constexpr float kMinDamageEnergy = 500.0f; // DAT_00f417f4
+
+    if ( pCarState == nullptr ) {
+        return;
+    }
+
+    for ( const CollisionEvent &event :
+          pCarState->getBody()->CollisionEvents ) {
+        if ( event.Energy < kMinDamageEnergy ) {
+            continue;
+        }
+
+        const int32_t partIndex =
+            static_cast<int32_t>( event.CarMaterial ) -
+            static_cast<int32_t>( eMaterialType::MT_Tires );
+        switch ( event.CarMaterial ) {
+        case eMaterialType::MT_Hood:
+            bindDamagedPermutation( true, partIndex );
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            setGlassBroken( 0, true );
+            break;
+        case eMaterialType::MT_Roof:
+            bindDamagedPermutation( true, partIndex );
+            setGlassBroken( 0, true );
+            setGlassBroken( 2, true );
+            setGlassBroken( 3, true );
+            setGlassBroken( 1, true );
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            break;
+        case eMaterialType::MT_BodyR:
+            bindDamagedPermutation( true, partIndex );
+            setGlassBroken( 1, true );
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            break;
+        case eMaterialType::MT_BodyFL:
+            bindDamagedPermutation( true, partIndex );
+            setGlassBroken( 0, true );
+            setGlassBroken( 2, true );
+            bLightEnabled[0xf] = true;
+            bLightEnabled[1] = true;
+            bLightEnabled[5] = true;
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            break;
+        case eMaterialType::MT_BodyFR:
+            bindDamagedPermutation( true, partIndex );
+            setGlassBroken( 0, true );
+            setGlassBroken( 3, true );
+            bLightEnabled[0x10] = true;
+            bLightEnabled[2] = true;
+            bLightEnabled[6] = true;
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            break;
+        case eMaterialType::MT_BodyRL:
+            bindDamagedPermutation( true, partIndex );
+            setGlassBroken( 2, true );
+            setGlassBroken( 1, true );
+            bLightEnabled[0x12] = true;
+            bLightEnabled[4] = true;
+            bLightEnabled[5] = true;
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            break;
+        case eMaterialType::MT_BodyRR:
+            bindDamagedPermutation( true, partIndex );
+            setGlassBroken( 1, true );
+            setGlassBroken( 3, true );
+            bLightEnabled[0x11] = true;
+            bLightEnabled[3] = true;
+            bLightEnabled[6] = true;
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            break;
+        case eMaterialType::MT_BodyML:
+            bindDamagedPermutation( true, partIndex );
+            setGlassBroken( 2, true );
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            break;
+        case eMaterialType::MT_BodyMR:
+            bindDamagedPermutation( true, partIndex );
+            setGlassBroken( 3, true );
+            bLightEnabled[0x12] = true;
+            bLightEnabled[4] = true;
+            bLightEnabled[0x11] = true;
+            bLightEnabled[3] = true;
+            bLightEnabled[5] = true;
+            bLightEnabled[6] = true;
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            break;
+        case eMaterialType::MT_DoorR:
+            bindDamagedPermutation( true, partIndex );
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            setGlassBroken( 1, true );
+            break;
+        case eMaterialType::MT_BumperF:
+        case eMaterialType::MT_BumperRL:
+        case eMaterialType::MT_BumperRR:
+        case eMaterialType::MT_SP1:
+            bindDamagedPermutation( true, partIndex );
+            setDeformAmount( pMaterialInstances[partIndex], 1.0f );
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+void VehicleTraffic::setDeformAmount( Material *pMaterial, float amount ) {
+    // FUN_008c1d50
+    if ( pMaterial == nullptr ) {
+        return;
+    }
+
+    bHasBeenDamaged = true;
+
+    MaterialShaderParameterArray *pParams =
+        (MaterialShaderParameterArray *)pMaterial->getParameterByIndex( 0 );
+    if ( pParams == nullptr ) {
+        return;
+    }
+
+    uint32_t paramIndex = 0;
+    if ( pParams->getParameter( 0x3e, &paramIndex ) == nullptr ) {
+        return;
+    }
+
+    float *pData = (float *)pParams->getParameterDataByIndex( paramIndex );
+    if ( pData != nullptr ) {
+        pData[2] = amount;
+    }
+}
+
+void VehicleTraffic::setGlassBroken( int32_t index, bool bBroken ) {
+    // FUN_008c13e0
+    if ( bBroken ) {
+        bHasBeenDamaged = true;
+    }
+
+    Material *pGlass = pMaterialGlassInstances[index];
+    if ( pGlass == nullptr ) {
+        return;
+    }
+
+    MaterialParameter *pParam = pGlass->getParameterByIndex( 0 );
+    const bool bLayerBound = pParam->Flags.pCustomFlags[5] != '\0';
+    MaterialLayer *pLayer = nullptr;
+    if ( bBroken ) {
+        if ( bLayerBound ) {
+            return;
+        }
+        pParam->Flags.NumUVMaps++;
+        pParam->Flags.pCustomFlags[5] = '\1';
+
+        pLayer = pParam->getLayer( 0 );
+        pLayer->pLayerTextures[1].Hashcode = hashcodesGlass[index];
+        pLayer->pLayerTextures[1].pTextureSection = pTexturesGlass[index];
+    } else {
+        if ( !bLayerBound ) {
+            return;
+        }
+        pParam->Flags.NumUVMaps--;
+        pParam->Flags.pCustomFlags[5] = '\0';
+
+        pLayer = pParam->getLayer( 0 );
+        pTexturesGlass[index] = pLayer->pLayerTextures[1].pTextureSection;
+        hashcodesGlass[index] = pLayer->pLayerTextures[1].Hashcode;
+        pLayer->pLayerTextures[1].Hashcode = 0;
+        pLayer->pLayerTextures[1].pTextureSection = nullptr;
+    }
+
+    gpRenderContext->retrieveShadersForMaterial( pGlass, 0 );
 }
 
 void VehicleTraffic::bindDamagedPermutation( bool param_1, int param_2 ) {
@@ -940,22 +1112,40 @@ void VehicleTraffic::bindDamagedPermutation( bool param_1, int param_2 ) {
 
     bUseDamagedMaterial[param_2] = param_1;
 
-    RenderFile::Section *piVar4 =
+    RenderFile::Section *pMatBank =
         bodyResource.Resource3DD.getMaterialBankArray();
-    if ( piVar4 != nullptr ) {
-        piVar4++;
+    if ( pMatBank == nullptr ) {
+        return;
+    }
 
-        while ( *(uint32_t *)piVar4 != kObjectArrayMagic ) {
-            Render3DDHashEntry *pIt = (Render3DDHashEntry *)piVar4;
-            if ( pIt->Hashcode == gTrafficMatHashes[param_2 * 2] ||
-                 pIt->Hashcode == gTrafficMatHashes[param_2 * 2 + 1] ) {
-                pIt->pEntry =
-                    (RenderFile::Section
-                         *)(peVar5)-1; // NOTE: Minus one to bind the material
-                                       // w/ its section header
-                gpRenderContext->retrieveShadersForMaterial( peVar5, 0 );
-            }
+    uint8_t *pArrayEnd = (uint8_t *)pMatBank + pMatBank->Size;
+    uint8_t *pFirstBank = (uint8_t *)pMatBank + pMatBank->DataSize;
+    if ( pArrayEnd <= pFirstBank ) {
+        return;
+    }
+
+    for ( Render3DDHashEntry *pIt =
+              (Render3DDHashEntry *)( (RenderFile::Section *)pFirstBank + 1 );
+          *(uint32_t *)pIt != kObjectArrayMagic; pIt++ ) {
+        if ( pIt->Hashcode == gTrafficMatHashes[param_2 * 2] ||
+             pIt->Hashcode == gTrafficMatHashes[param_2 * 2 + 1] ) {
+            // NOTE: Minus one to bind the material w/ its section header
+            pIt->pEntry = (RenderFile::Section *)peVar5 - 1;
+            gpRenderContext->retrieveShadersForMaterial( peVar5, 0 );
+            break;
         }
+    }
+}
+
+static inline void SetGyroNodeVisible( HiearchyNode *pNode, bool bVisible ) {
+    // FUN_0050e570 / FUN_0050e5a0
+    if ( pNode == nullptr ) {
+        return;
+    }
+    if ( bVisible ) {
+        pNode->unsetAndPropagateFlags( 4 );
+    } else {
+        pNode->setAndPropagateFlags( 4 );
     }
 }
 
@@ -980,120 +1170,38 @@ void VehicleTraffic::updateGyro( float param_2 ) {
         pfVar4[2] = 0.0f;
         pfVar4[3] = 0.0f;
 
-        bool bShowRed1 = false;
-        if ( bEnableGyro && policeGyroRedNodes[0] != nullptr &&
-             ( policeGyroRedNodes[0]->Flags & 1u ) == 0 ) {
+        if ( bEnableGyro && pPoliceGyroGateNode != nullptr &&
+             ( pPoliceGyroGateNode->Flags & 1u ) == 0 ) {
             for ( int32_t i = 0; i < 4; i++ ) {
                 float lightTime = policeGyroLightTime[i];
                 int32_t lightIdx = policeGyroLightOrder[i];
-                if ( lightTime >= policeGyroLightStartTime[0] ) {
-                    if ( lightTime < policeGyroLightStartTime[1] ) {
-                        pfVar4[lightIdx] = 0.0f;
-                    } else if ( lightTime >= policeGyroLightStartTime[2] ) {
-                        if ( lightTime < policeGyroLightStartTime[3] ) {
-                            pfVar4[lightIdx] = 0.0f;
-                        } else {
-                            pfVar4[lightIdx] = 1.0f;
-                            bPoliceGyroFlareEnabled[lightIdx] = false;
-                        }
-                    } else {
-                        pfVar4[lightIdx] = 1.0f;
-                        bPoliceGyroFlareEnabled[lightIdx] = false;
-                    }
-                } else {
+                if ( lightTime < policeGyroLightStartTime[0] ) {
                     pfVar4[lightIdx] = 1.0f;
                     bPoliceGyroFlareEnabled[lightIdx] = true;
+                } else if ( lightTime < policeGyroLightStartTime[1] ) {
+                    pfVar4[lightIdx] = 0.0f;
+                } else if ( lightTime < policeGyroLightStartTime[2] ) {
+                    pfVar4[lightIdx] = 1.0f;
+                    bPoliceGyroFlareEnabled[lightIdx] = false;
+                } else if ( lightTime < policeGyroLightStartTime[3] ) {
+                    pfVar4[lightIdx] = 0.0f;
                 }
             }
-            bShowRed1 = pfVar4[0] == 1.0f && bPoliceGyroFlareEnabled[0];
         }
 
-        // Nodes [1]: flare (near-light) variants
-        if ( bShowRed1 ) {
-            policeGyroRedNodes[1]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroRedNodes[1]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[1] == 1.0f && bPoliceGyroFlareEnabled[1] ) {
-            policeGyroGreenNodes[1]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroGreenNodes[1]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[2] == 1.0f && bPoliceGyroFlareEnabled[2] ) {
-            policeGyroBlueNodes[1]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroBlueNodes[1]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[3] == 1.0f && bPoliceGyroFlareEnabled[3] ) {
-            policeGyroAlphaNodes[1]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroAlphaNodes[1]->setAndPropagateFlags( 4 );
-        }
-
-        // Nodes [2]: flare (far-light) variants
-        if ( pfVar4[0] == 1.0f && bPoliceGyroFlareEnabled[0] ) {
-            policeGyroRedNodes[2]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroRedNodes[2]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[1] == 1.0f && bPoliceGyroFlareEnabled[1] ) {
-            policeGyroGreenNodes[2]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroGreenNodes[2]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[2] == 1.0f && bPoliceGyroFlareEnabled[2] ) {
-            policeGyroBlueNodes[2]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroBlueNodes[2]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[3] == 1.0f && bPoliceGyroFlareEnabled[3] ) {
-            policeGyroAlphaNodes[2]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroAlphaNodes[2]->setAndPropagateFlags( 4 );
-        }
-
-        // Nodes [3]: no-flare (solid light) variants
-        if ( pfVar4[0] == 1.0f && !bPoliceGyroFlareEnabled[0] ) {
-            policeGyroRedNodes[3]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroRedNodes[3]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[1] == 1.0f && !bPoliceGyroFlareEnabled[1] ) {
-            policeGyroGreenNodes[3]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroGreenNodes[3]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[2] == 1.0f && !bPoliceGyroFlareEnabled[2] ) {
-            policeGyroBlueNodes[3]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroBlueNodes[3]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[3] == 1.0f && !bPoliceGyroFlareEnabled[3] ) {
-            policeGyroAlphaNodes[3]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroAlphaNodes[3]->setAndPropagateFlags( 4 );
-        }
-
-        // Nodes [0]: no-flare variants, channels rotated by one
-        if ( pfVar4[0] == 1.0f && !bPoliceGyroFlareEnabled[0] ) {
-            policeGyroGreenNodes[0]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroGreenNodes[0]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[1] == 1.0f && !bPoliceGyroFlareEnabled[1] ) {
-            policeGyroBlueNodes[0]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroBlueNodes[0]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[2] == 1.0f && !bPoliceGyroFlareEnabled[2] ) {
-            policeGyroAlphaNodes[0]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroAlphaNodes[0]->setAndPropagateFlags( 4 );
-        }
-        if ( pfVar4[3] == 1.0f && !bPoliceGyroFlareEnabled[3] ) {
-            policeGyroRedNodes[0]->unsetAndPropagateFlags( 4 );
-        } else {
-            policeGyroRedNodes[0]->setAndPropagateFlags( 4 );
+        // Variants 1-2 are the flare nodes, 3-4 the solid ones
+        const std::array<HiearchyNode *, 4> *pChannelNodes[4] = {
+            &policeGyroRedNodes, &policeGyroGreenNodes, &policeGyroBlueNodes,
+            &policeGyroAlphaNodes };
+        for ( int32_t variant = 0; variant < 4; variant++ ) {
+            const bool bFlareVariant = variant < 2;
+            for ( int32_t channel = 0; channel < 4; channel++ ) {
+                const bool bVisible =
+                    pfVar4[channel] == 1.0f &&
+                    bPoliceGyroFlareEnabled[channel] == bFlareVariant;
+                SetGyroNodeVisible( ( *pChannelNodes[channel] )[variant],
+                                    bVisible );
+            }
         }
     }
 }
@@ -1216,19 +1324,52 @@ void VehicleTraffic::updateRemorkMatrix() {
         return;
     }
 
-    if ( pCarState->getNumWheels() > 3 &&
-         pCarState->getPhysicsVehicle() != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS (requires
-                            // WheelState::ProjectedPositionOnGround)
-        return;
-    }
-
-    Matrix4x4f_t local_50 = pRemorkNode->pInstance->getModelMatrix();
-    float fY = displayInstances[2].pNode->pInstance->getModelMatrix()( 3, 1 );
-    local_50( 3, 1 ) = fY;
+    static constexpr float kShadowPlaneHeightOffset = 0.04f; // DAT_00f41980
 
     HiearchyNode *pSPlanB = displayInstances[0x10].pNode;
-    pSPlanB->TransformMatrix = displayInstances[0x10].InstanceMatrix * local_50;
+    const int32_t numWheels = static_cast<int32_t>( pCarState->getNumWheels() );
+    PhysicsVehicle *pPhysicsVehicle = pCarState->getPhysicsVehicle();
+    if ( numWheels > 3 && pPhysicsVehicle != nullptr &&
+         ( !pPhysicsVehicle->isPaused() || bForceDrawShadow ) ) {
+        const int32_t wheelA = 1 << ( numWheels / 2 - 1 );
+        const int32_t wheelB = numWheels / 4 + wheelA;
+        const Eigen::Vector4f &groundA =
+            pCarState->getWheel( wheelA ).ProjectedPositionOnGround;
+        const Eigen::Vector4f &groundB =
+            pCarState->getWheel( wheelB ).ProjectedPositionOnGround;
+        const Eigen::Vector4f center = ( groundB + groundA ) * 0.5f;
+
+        const Matrix4x4f_t &remorkMatrix =
+            pRemorkNode->pInstance->getModelMatrix();
+        const Eigen::Vector4f remorkForward = remorkMatrix.row( 2 );
+        const Eigen::Vector4f remorkPosition = remorkMatrix.row( 3 );
+        const float remorkDistance = ( remorkPosition - center ).norm();
+
+        Eigen::Vector4f position = center - remorkForward * remorkDistance;
+        position.y() += kShadowPlaneHeightOffset;
+
+        const Eigen::Vector4f forward = ( center - position ).normalized();
+        const Eigen::Vector4f side = ( groundA - groundB ).normalized();
+        const Eigen::Vector4f up = Vector4DCross( forward, side ).normalized();
+
+        Matrix4x4f_t planeMatrix;
+        planeMatrix.row( 0 ) = side;
+        planeMatrix.row( 1 ) = up;
+        planeMatrix.row( 2 ) = forward;
+        planeMatrix.row( 3 ) = position;
+
+        Matrix4x4f_t localMatrix = displayInstances[0x10].InstanceMatrix;
+        localMatrix.row( 3 ) = Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
+        pSPlanB->TransformMatrix = localMatrix * planeMatrix;
+    } else {
+        Matrix4x4f_t local_50 = pRemorkNode->pInstance->getModelMatrix();
+        float fY =
+            displayInstances[2].pNode->pInstance->getModelMatrix()( 3, 1 );
+        local_50( 3, 1 ) = fY;
+
+        pSPlanB->TransformMatrix =
+            displayInstances[0x10].InstanceMatrix * local_50;
+    }
 
     if ( pSPlanB->pParent != nullptr ) {
         Matrix4x4f_t modelMat = pSPlanB->TransformMatrix *

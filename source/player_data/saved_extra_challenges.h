@@ -86,6 +86,7 @@ public:
     void clear( const bool bSeedPlayerLevel );
     void resetVehicleType();
     void addDistanceDriven( const float kms );
+    void addPlayTime( const float seconds );
     void addCounter( const int32_t index, const int32_t value );
     void countCarTuned( const bool bBike );
     void countCarPainted( const bool bBike );
@@ -116,6 +117,8 @@ private:
     float sumCounterRun( const int32_t firstOffset,
                          const int32_t endOffset ) const;
     double readScore( const int32_t index ) const;
+    void addScore( const int32_t index, const double value );
+    void resolveVehicleType();
 
     void resetStatisticsColumns();
     void publishStatisticsColumns();

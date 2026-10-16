@@ -25,6 +25,7 @@
 #include "game/scenaric/game_intro_tutorial.h"
 #include "game/scenaric/local_player.h"
 #include "game/scenaric/spots.h"
+#include "game/scenaric/mng_actor.h"
 #include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
@@ -593,8 +594,11 @@ void GMFreeride::snapLocalCarBackOnRoad() {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS / SCENARIC
-    if ( !pPhysicsVehicle->isInWater() ) {
+    const bool bOnGenericSurface =
+        pPhysicsVehicle->isAnyWheelOnSurface( TDUSurface::Generic );
+    const bool bInWater = pPhysicsVehicle->isInWater();
+    if ( !MngActor::IsInSpotDetectionVolume( nullptr ) && !bOnGenericSurface &&
+         !bInWater ) {
         return;
     }
 

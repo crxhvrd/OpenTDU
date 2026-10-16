@@ -353,16 +353,9 @@ void SavedExtraChallenges::addDistanceDriven( const float kms ) {
 
     int32_t *pDistanceBlock = (int32_t *)&Field_0xf1a0;
     switch ( currentVehicleType ) {
-    case VT_Unknown: {
-        CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
-        if ( pCurrentCar != nullptr && pCurrentCar->isValid() ) {
-            DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry(
-                int32_t( pCurrentCar->getCarConfigID() ) );
-            currentVehicleType =
-                gpDatabase->isBike( pCarEntry ) ? VT_Bike : VT_Car;
-        }
+    case VT_Unknown:
+        resolveVehicleType();
         break;
-    }
     case VT_Bike:
     case VT_Car: {
         const bool bBike = currentVehicleType == VT_Bike;
@@ -372,6 +365,66 @@ void SavedExtraChallenges::addDistanceDriven( const float kms ) {
         break;
     }
     }
+}
+
+void SavedExtraChallenges::resolveVehicleType() {
+    CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+    if ( pCurrentCar != nullptr && pCurrentCar->isValid() ) {
+        DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry(
+            int32_t( pCurrentCar->getCarConfigID() ) );
+        currentVehicleType = gpDatabase->isBike( pCarEntry ) ? VT_Bike : VT_Car;
+    }
+}
+
+void SavedExtraChallenges::addPlayTime( const float seconds ) {
+    // FUN_0088a5e0
+    addScore( ScoreIndex( 0xf130 ), seconds );
+
+    if ( PlayerLevel >= 0 && PlayerLevel <= 5 ) {
+        addScore( ScoreIndex( 0xf138 ) + PlayerLevel, seconds );
+    }
+
+    const eGameMode currentGM = gpActiveGameMode != nullptr
+                                    ? gpActiveGameMode->getCurrentGameMode()
+                                    : GM_Invalid;
+    if ( currentGM == GM_FreeRide ) {
+        addScore( ScoreIndex( 0xf168 ), seconds );
+    } else if ( currentGM == GM_Mission ) {
+        addScore( ScoreIndex( 0xf170 ), seconds );
+    }
+
+    if ( currentGM != GM_FreeRide && currentGM != GM_Mission ) {
+        return;
+    }
+
+    switch ( currentVehicleType ) {
+    case VT_Unknown:
+        resolveVehicleType();
+        break;
+    case VT_Bike:
+        addScore( ScoreIndex( 0xf178 ), seconds );
+        break;
+    case VT_Car:
+        addScore( ScoreIndex( 0xf180 ), seconds );
+        break;
+    }
+}
+
+void SavedExtraChallenges::addScore( const int32_t index, const double value ) {
+    // FUN_00416510
+    if ( index < 0 || index >= kNumScores ) {
+        return;
+    }
+
+    uint32_t *pBlock = (uint32_t *)&Scores[index];
+    uint64_t bits = TestDriveTEAReadQword( pBlock );
+
+    double asDouble = 0.0;
+    memcpy( &asDouble, &bits, sizeof( double ) );
+    asDouble += value;
+    memcpy( &bits, &asDouble, sizeof( double ) );
+
+    TestDriveTEAWriteQword( pBlock, bits );
 }
 
 double SavedExtraChallenges::readScore( const int32_t index ) const {

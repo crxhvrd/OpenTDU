@@ -16,6 +16,7 @@
 #include "render/2dm.h"
 
 #include "render/camera/gs_camera.h"
+#include "render/render_scene.h"
 #include "game/gm_scene.h"
 #include "render/postfx/gs_postfx.h"
 
@@ -466,6 +467,32 @@ void VehicleController::adjustScreenProjectionFromContext(
     if ( ( showFlags >> 0x10 & 1 ) != 0 && ( showFlags >> 0x13 & 1 ) == 0 &&
          ( showFlags >> 0x12 & 1 ) == 0 ) {
         rect = Eigen::Vector4f( 1.1f, 1.1f, 1.0f, 1.0f ); // DAT_00f4174c
+    }
+}
+
+void VehicleController::drawReflectionModel( RenderScene *pScene ) {
+    // FUN_008b7070
+    static constexpr float kReflectionFarDistanceSq = 100.0f; // DAT_00fab4c8
+
+    HiearchyNode *pRootNode = getNodeByIndex( 0 );
+    if ( pRootNode == nullptr ) {
+        return;
+    }
+
+    Eigen::Vector3f vehiclePos = pRootNode->TransformMatrix.row( 3 ).head<3>();
+    Eigen::Vector3f cameraPos =
+        gpCamera->getActiveCamera()->getWorldPositionOffset();
+    if ( ( vehiclePos - cameraPos ).squaredNorm() > kReflectionFarDistanceSq ) {
+        if ( pVehicleBodyLowResInstance != nullptr ) {
+            pScene->enqueueDynamicInstance( pVehicleBodyLowResInstance );
+        }
+        for ( Instance *pWheel : vehicleWheelLowResInstances ) {
+            if ( pWheel != nullptr ) {
+                pScene->enqueueDynamicInstance( pWheel );
+            }
+        }
+    } else {
+        pScene->enqueueDynamicHiearchy( pRootNode );
     }
 }
 

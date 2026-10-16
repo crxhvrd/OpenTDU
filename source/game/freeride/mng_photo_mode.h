@@ -54,6 +54,13 @@ public:
 
     bool onMessage( FlashMessage *pMessage );
 
+    static void ShotDrawCallback( struct FlashRECT *pViewport,
+                                  float depth,
+                                  class DrawList *pDrawList,
+                                  void *pUser,
+                                  class FlashResource *pResource,
+                                  const char *pClipName );
+
 private:
     static constexpr size_t kMaxCaptionLength = 0x20;
 
@@ -67,12 +74,6 @@ private:
 
     void setShowcaseCameraInput( bool bEnabled );
 
-    static void ShotDrawCallback( struct FlashRECT *pViewport,
-                                  float depth,
-                                  class DrawList *pDrawList,
-                                  void *pUser,
-                                  class FlashResource *pResource,
-                                  const char *pClipName );
     static void OnSavePopupClosed( void *pUser );
 
 private:

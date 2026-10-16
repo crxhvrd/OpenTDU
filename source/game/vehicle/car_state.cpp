@@ -49,6 +49,7 @@ CarState::CarState()
       pVehicleBase( nullptr ),
       pVehicleSound( nullptr ),
       pDriver( nullptr ),
+      pPassenger( nullptr ),
       field_0x39cc( nullptr ),
       field_0x39d4( nullptr ),
       field_0x39d8( nullptr ),
@@ -687,8 +688,10 @@ void CarState::openConvertibleWindows() {
         }
     }
 
+    // Retail clears the window request at edPhysVehicle+0xe24, which
+    // FUN_0083bbd0 mirrors into body.WindowState.
     if ( pPhysicsVehicle != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+        body.WindowState = 0;
     }
 }
 

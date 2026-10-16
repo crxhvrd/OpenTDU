@@ -6,6 +6,7 @@
 #include "entity/base_entity.h"
 #include "entity/entity_car_player.h"
 #include "entity/entity_factory.h"
+#include "entity/entity_volume.h"
 #include "game/gm_scene.h"
 #include "render/gs_render.h"
 #include "world/mng_zone.h"
@@ -19,6 +20,7 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_save.h"
 #include "world/gs_world.h"
+#include "world/streaming_manager.h"
 
 static inline bool IsGameModeRequestingDOFPass() {
     return gpActiveGMScene != nullptr && gpActiveGMScene->isDrawnInFakeDOF();
@@ -186,6 +188,51 @@ void MngActor::preparePlayerSpawnStreaming( const int32_t spawnMode ) {
     SetPlayerSpawnPosition( kDefaultPosition );
 }
 
+bool MngActor::IsInSpotDetectionVolume( const Matrix4x4f_t *pFrame ) {
+    // FUN_006deb80
+    Matrix4x4f_t frame;
+    if ( pFrame == nullptr ) {
+        CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+        PhysicsVehicle *pPhysicsVehicle =
+            ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+        if ( pPhysicsVehicle == nullptr ) {
+            return false;
+        }
+        frame = pPhysicsVehicle->getChassisWorldMatrix();
+    } else {
+        frame = *pFrame;
+    }
+    const Eigen::Vector4f position = frame.row( 3 ).transpose();
+
+    for ( SpotCell &cell : gpWorld->getStreamingManager()->spotStream.cells ) {
+        ScenaricBank *pBank = cell.spot.pSCBank;
+        if ( cell.pSector == nullptr || cell.pSpotSector == nullptr ||
+             pBank == nullptr ) {
+            continue;
+        }
+
+        for ( int32_t i = 0; i < pBank->getEntityCount(); i++ ) {
+            Entity *pEntity = pBank->getEntity( i );
+            if ( pEntity == nullptr ||
+                 pEntity->getType() != eEntityType::ET_VELU ||
+                 pEntity->getInstanceName() != "Spot_Detection" ) {
+                continue;
+            }
+
+            Matrix4x4f_t volumeMatrix =
+                pEntity->getModelMatrix() * pBank->getBankTransform();
+
+            EntityVolume detectionVolume;
+            detectionVolume.setVolumeType( VT_Box );
+            detectionVolume.propagateTransform( volumeMatrix, true );
+            if ( detectionVolume.isPointInside( position, nullptr ) ) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 static constexpr const char *kPlayerParkingName =
     "PosCarParking"; // DAT_00f8e5b8
 
@@ -217,11 +264,11 @@ Matrix4x4f_t MngActor::placePlayerVehicle( const int32_t spawnMode,
             return frame;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
         CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
         PhysicsVehicle *pVehicle =
             ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
-        if ( pVehicle != nullptr && !pVehicle->isInWater() ) {
+        if ( pVehicle != nullptr && !IsInSpotDetectionVolume( &frame ) &&
+             !pVehicle->isInWater() ) {
             pVehicle->resetToTransform( frame, true );
         }
         return frame;

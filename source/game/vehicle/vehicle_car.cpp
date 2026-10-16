@@ -2,6 +2,7 @@
 #include "vehicle_car.h"
 
 #include "car_state.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "database/gs_database.h"
 #include "game/mng_hud.h"
 
@@ -151,7 +152,10 @@ void VehicleCar::onEvent( CarState *param_1, float deltaTime, void *param_3 ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+    PhysicsVehicle *pPhysicsVehicle = param_1->getPhysicsVehicle();
+    if ( pPhysicsVehicle == nullptr || !pPhysicsVehicle->isActive() ) {
+        return;
+    }
 
     updateBodyAndWheelsTransform( param_1, deltaTime );
 
@@ -602,30 +606,7 @@ void VehicleCar::draw() {
             // FUN_008c57a3
             RenderScene *pReflScene = gpMngReflection->getBoundScene();
             if ( pCockpitInteriorNode == nullptr ) {
-                // FUN_008b7070 - DisplayVehiclePlayer::DrawReflectionModel
-                HiearchyNode *pRootNode = getNodeByIndex( 0 );
-                if ( pRootNode != nullptr ) {
-                    Eigen::Vector3f vehiclePos =
-                        pRootNode->TransformMatrix.row( 3 ).head<3>();
-                    Eigen::Vector3f cameraPos =
-                        gpCamera->getActiveCamera()->getWorldPositionOffset();
-                    static constexpr float kReflectionFarDistanceSq =
-                        100.0f; // DAT_00fab4c8
-                    if ( ( vehiclePos - cameraPos ).squaredNorm() >
-                         kReflectionFarDistanceSq ) {
-                        if ( pVehicleBodyLowResInstance != nullptr ) {
-                            pReflScene->enqueueDynamicInstance(
-                                pVehicleBodyLowResInstance );
-                        }
-                        for ( Instance *pWheel : vehicleWheelLowResInstances ) {
-                            if ( pWheel != nullptr ) {
-                                pReflScene->enqueueDynamicInstance( pWheel );
-                            }
-                        }
-                    } else {
-                        pReflScene->enqueueDynamicHiearchy( pRootNode );
-                    }
-                }
+                drawReflectionModel( pReflScene );
             } else {
                 pReflScene->enqueueDynamicHiearchy( getNodeByIndex( 0 ) );
                 pReflScene->enqueueDynamicHiearchy( pCockpitInteriorNode );

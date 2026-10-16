@@ -658,7 +658,9 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         }
         TickReplayFadeSequencer();
 
-        OTDU_UNIMPLEMENTED; // TODO: GMDriveIn
+        OTDU_UNIMPLEMENTED; // TODO: Rest of FUN_0081c330 (camera target
+                            // position, GM actor 0x2ad flag, replay camera
+                            // restore branch)
     }
 
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {

@@ -44,6 +44,7 @@ private:
     std::array<ShaderParameter, kNumShaderParams> pShaderParams;
     Eigen::Vector4f shaderParameterScalars;
 
+    HiearchyNode *pPoliceGyroGateNode; // SP4
     std::array<HiearchyNode *, 4> policeGyroRedNodes;
     std::array<HiearchyNode *, 4> policeGyroGreenNodes;
     std::array<HiearchyNode *, 4> policeGyroBlueNodes;
@@ -73,6 +74,8 @@ private:
     void setupLogo();
     void updateDamageLogic();
     void bindDamagedPermutation( bool param_1, int param_2 );
+    void setDeformAmount( Material *pMaterial, float amount );
+    void setGlassBroken( int32_t index, bool bBroken );
     void updateGyro( float param_2 );
     void onPaintChanged();
     void updateAttachments();

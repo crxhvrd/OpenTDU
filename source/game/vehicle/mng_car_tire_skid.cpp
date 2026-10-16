@@ -44,7 +44,7 @@ inline Eigen::Vector4f SkidPointCenter( const SkidPoint &point ) {
 }
 
 inline float GetBikeScrubAngle( const CarState & ) {
-    OTDU_UNIMPLEMENTED; // TODO: BIKE
+    OTDU_UNIMPLEMENTED; // TODO: BIKE (edPhysVehicle+0xe7c)
     return 0.0f;
 }
 
@@ -331,9 +331,10 @@ void MngCarTireSkid::updateWheelSkid( CarState *pCarState,
                 numWheels >= 2 &&
                 ( wheelIndex >> ( ( numWheels / 2 ) - 1 ) ) == 1;
             const float scrubAngle =
-                std::fabs( GetBikeScrubAngle( *pCarState ) );
-            if ( pCarState->getBody()->bIsBike && bRearAxle &&
-                 kBikeScrubMinAngle < scrubAngle ) {
+                ( pCarState->getBody()->bIsBike && bRearAxle )
+                    ? std::fabs( GetBikeScrubAngle( *pCarState ) )
+                    : 0.0f;
+            if ( kBikeScrubMinAngle < scrubAngle ) {
                 bSkidding = true;
                 bAppendPoint = true;
                 bClassified = true;

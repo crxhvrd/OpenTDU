@@ -236,6 +236,9 @@ public:
     inline VehicleBase *getVehicleInstance() { return pVehicleBase; }
     inline bool hasAvatar() const { return pDriver != nullptr; }
     inline class EntityDriver *getDriver() const { return pDriver; }
+    inline class EntityAvatarPassenger *getPassenger() const {
+        return pPassenger;
+    }
     inline struct VehicleSoundInstance *getVehicleSound() const {
         return pVehicleSound;
     }
@@ -323,6 +326,7 @@ private:
     VehicleBase *pVehicleBase;
     struct VehicleSoundInstance *pVehicleSound;
     class EntityDriver *pDriver;
+    class EntityAvatarPassenger *pPassenger;
     void *field_0x39cc;
     void *field_0x39d4;
     void *field_0x39d8;

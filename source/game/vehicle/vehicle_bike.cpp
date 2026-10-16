@@ -2,6 +2,7 @@
 #include "vehicle_bike.h"
 
 #include "car_state.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "database/gs_database.h"
 
 #include "core/maths_helper.h"
@@ -15,6 +16,7 @@
 #include "world/weather/gs_weather.h"
 
 #include "gs_car_display.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "bank_vehicle.h"
 
 #include "render/gs_render.h"
@@ -133,7 +135,10 @@ void VehicleBike::onEvent( CarState *param_1, float param_2, void *param_3 ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+    PhysicsVehicle *pPhysicsVehicle = param_1->getPhysicsVehicle();
+    if ( pPhysicsVehicle == nullptr || !pPhysicsVehicle->isActive() ) {
+        return;
+    }
 
     updateBodyAndWheelsTransform( param_1, param_2 );
     updateVisibilityFlag( kVehicleBikeLODDistances[0] );
@@ -482,7 +487,13 @@ void VehicleBike::draw() {
 
         if ( bDrawReflections && gpMngReflection != nullptr &&
              alphaSlotIndex == -1 ) {
-            OTDU_UNIMPLEMENTED; // TODO: REFLECTIONS
+            RenderScene *pReflScene = gpMngReflection->getBoundScene();
+            if ( pCockpitInteriorNode == nullptr ) {
+                drawReflectionModel( pReflScene );
+            } else {
+                pReflScene->enqueueDynamicHiearchy( getNodeByIndex( 0 ) );
+                pReflScene->enqueueDynamicHiearchy( pCockpitInteriorNode );
+            }
         }
 
         if ( !bDisableShadow &&
@@ -493,8 +504,16 @@ void VehicleBike::draw() {
         }
 
         if ( ( ( gpCamera->getActiveCamera()->getFlags() ) >> 0x12 & 1 ) != 0 &&
-             gpCarDisplay->getHelmetNode() != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: SCENARICS
+             gpCarDisplay->getHelmetNode() != nullptr &&
+             gpScenaric != nullptr ) {
+            CarState *pLocalCarState =
+                gpScenaric->getLocalPlayer().getCarState();
+            if ( pLocalCarState != nullptr &&
+                 pLocalCarState->getVehicleInstance() == this ) {
+                gpRender->getRenderPassAtIndex( RP_Helmet )
+                    .pScene->enqueueDynamicHiearchy(
+                        gpCarDisplay->getHelmetNode() );
+            }
         }
     }
 }

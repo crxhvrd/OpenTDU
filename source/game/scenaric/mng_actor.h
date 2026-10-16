@@ -47,6 +47,7 @@ public:
     Matrix4x4f_t placePlayerVehicle( int32_t spawnMode, bool bApply );
     static void applyPlayerVehicleFrame( const Matrix4x4f_t &frame,
                                          bool bApply );
+    static bool IsInSpotDetectionVolume( const Matrix4x4f_t *pFrame );
 
     void registerActor( Entity *pActor );
     void removeActorFromList( Entity *pActor );

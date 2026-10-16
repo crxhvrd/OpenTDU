@@ -14,6 +14,7 @@
 #include "game/scenaric/entity/entity_extra_challenge.h"
 #include "database/gs_database.h"
 #include "game/avatar/gs_avatar.h"
+#include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/mng_hud.h"
@@ -25,6 +26,9 @@
 #include "world/gs_world_streaming.h"
 #include "world/sector_manager.h"
 #include "world/streaming_manager.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_extra_challenges.h"
 #include "render/gs_render.h"
 #include "render/heightmap_renderer.h"
 #include "render/hiearchy_node.h"
@@ -97,7 +101,7 @@ GSScenaric::GSScenaric()
       demoTimeEnd( 0u ),
       traceSize( 300 ),
       currentDefVersion( 0 ),
-      bWasMapExited( false ),
+      bWasMapExited( true ),
       currentSpotIndex( -1 ),
       bIsFromDriveIn( false ),
       numExtraChallenges( 0 ),
@@ -115,7 +119,15 @@ GSScenaric::GSScenaric()
 
     randomGenerator.setSeed( 0x3039 );
 
-    OTDU_UNIMPLEMENTED;
+    for ( ICEChallenger &challenger : iceChallengers ) {
+        challenger.reset();
+    }
+
+    for ( ScenaricBank &bank : spotBanks ) {
+        bank.setSpotBank( true );
+    }
+
+    OTDU_UNIMPLEMENTED; // TODO: GAME (IGE/GME/IC/DriveIn state)
     gpScenaric = this;
 }
 
@@ -126,7 +138,7 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
     pGameInstance = pInstance;
     bPaused = false;
 
-    OTDU_UNIMPLEMENTED;
+    OTDU_UNIMPLEMENTED; // TODO: GAME (default IGE EventParameters)
 
     LoadScenaricBank( "scenarics/Missions", "scworld", &worldScenaricBank );
     LoadScenaricBank( "scenarics/Missions/packs", "pack_cinematiks",
@@ -172,6 +184,17 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
     return true;
 }
 
+static void UpdatePlayTime( const float deltaTime ) {
+    // FUN_00423850
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    pSave->getExtraChallenges()->addPlayTime( deltaTime );
+
+    CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+    if ( pCurrentCar != nullptr && pCurrentCar->isValid() ) {
+        pCurrentCar->playTime += deltaTime;
+    }
+}
+
 void GSScenaric::tick( float totalTime, float deltaTime ) {
     // FUN_00806000
     if ( rentalTimer >= 0.0f ) {
@@ -184,7 +207,9 @@ void GSScenaric::tick( float totalTime, float deltaTime ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED;
+    UpdatePlayTime( deltaTime );
+
+    OTDU_UNIMPLEMENTED; // TODO: DEBUG (FUN_007123f0 IK offset editor)
 
     float listenerXZ[2] = { 0.0f, 0.0f };
     float listenerSpeed = kWooshNoListener;
@@ -424,9 +449,9 @@ void GSScenaric::updateWooshVoices( float listenerSpeed ) {
 
 void GSScenaric::terminate() {
     // FUN_00805c80
-    OTDU_UNIMPLEMENTED;
-    terminateWoosh();
     unloadBank( &avatarManager.getBank() );
+    OTDU_UNIMPLEMENTED; // TODO: GAME (GME level buffer)
+    terminateWoosh();
     unloadBank( &cinematicPackBank );
     unloadBank( &worldScenaricBank );
     unloadBank( &worldExtraChallengesBank );
@@ -438,6 +463,7 @@ void GSScenaric::terminate() {
     unloadBank( &spotMeshBank );
     extraChallengesCineBank.unload();
     ikOffsetDB.terminate();
+    OTDU_UNIMPLEMENTED; // TODO: DEBUG (FUN_007123f0 IK offset editor)
 }
 
 void GSScenaric::unloadBank( ScenaricBank *pBank ) {
