@@ -275,6 +275,11 @@ void SavedExtraChallenges::countCarTuned( const bool bBike ) {
     addCounter( CounterIndex( bBike ? 0xf118 : 0xf114 ), 1 );
 }
 
+void SavedExtraChallenges::countCarRented() {
+    // FUN_00887e50
+    addCounter( CounterIndex( 0xf110 ), 1 );
+}
+
 void SavedExtraChallenges::countCarTransaction( const uint32_t carID,
                                                 const bool bBought,
                                                 const bool bETrade ) {

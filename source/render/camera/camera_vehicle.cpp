@@ -1779,8 +1779,7 @@ void CameraVehicle::applyFreeLook( const Matrix4x4f_t &carDisplayMatrix,
 
 void CameraVehicle::applySpeedShake( PhysicsVehicle *pPhys, float deltaTime ) {
     // FUN_008d3e40
-    const float shakeScale =
-        ( gpPlayerData != nullptr ) ? gpPlayerData->getCameraShake() : kOne;
+    const float shakeScale = gpCamera->getCameraShake();
 
     const Eigen::Vector4f viewVector =
         worldTargetWithUnknownOffset - worldPositionWithUnknownOffset;
@@ -1944,7 +1943,7 @@ void CameraVehicle::updateMotionBlur( PhysicsVehicle *pPhys ) {
         blurMin;
     blur = Max( Min( blur, Max( blurMin, blurMax ) ), Min( blurMin, blurMax ) );
 
-    blur *= gpPlayerData->getRadialBlurIntensity();
+    blur *= gpCamera->getRadialBlurIntensity();
 
     if ( absHorizontal > horizontalAngleMaxMove ) {
         const float fade =

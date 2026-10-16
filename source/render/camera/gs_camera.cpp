@@ -89,6 +89,8 @@ GSCamera::GSCamera()
       bInterior( false ),
       bUnknownBool3( false ),
       bLocked( false ),
+      cameraShake( 0.0f ),
+      radialBlurIntensity( 0.0f ),
       bEditing( false ),
       bPaused( false ),
       bLookAtPlayerPos( true ),

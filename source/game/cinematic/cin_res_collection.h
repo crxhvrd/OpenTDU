@@ -185,6 +185,7 @@ public:
     void reset();
     void releasePlayerCarActors();
     void bindPlayerCar( CarState *pCarState );
+    void releasePlayerCarActor( const int32_t index );
 
     bool createInterface( const void *pBankData,
                           uint32_t size,
@@ -364,6 +365,7 @@ private:
     int32_t numHostesses = 0;
     Entity *pCurrentMicro = nullptr;
     bool bPlayerAvatarSpawned = false;
+    bool bPlayerCarSpawned = false;
     EntityAvatar *pPlayerAvatar = nullptr;
     bool bActorsDriveStreaming = true;
     bool bAsyncActorLoad = false;

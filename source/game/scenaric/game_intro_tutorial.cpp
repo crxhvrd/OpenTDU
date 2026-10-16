@@ -33,6 +33,7 @@ GameIntroTutorial::GameIntroTutorial()
       pHome( nullptr ),
       carDealer( 0 ),
       carIDRental( 0 ),
+      carRentalTime( 0 ),
       bModalHintVisible( false ),
       bMapForIntro( true ),
       bMustTeleport( false ),
@@ -134,6 +135,18 @@ void GameIntroTutorial::tick() {
     pDriver->notify( 0u );
 
     beginStep( tutorialStep, previousStep );
+}
+
+void GameIntroTutorial::onCarRented( const int32_t carID,
+                                     const int32_t rentalTime ) {
+    // FUN_007fca90
+    if ( !isActive() ) {
+        return;
+    }
+
+    carIDRental = carID;
+    carRentalTime = rentalTime;
+    setStep( kTutorialStateFirstDrive );
 }
 
 void GameIntroTutorial::setStep( const int32_t step ) {

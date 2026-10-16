@@ -7,6 +7,10 @@
 #include "ai/gs_ai.h"
 
 #include "gs_car_display.h"
+#include "bank_vehicle.h"
+#include "database/gs_database.h"
+#include "database/db_brand.h"
+#include "render/mng_env_map.h"
 
 #include "render/camera/gs_camera.h"
 #include "render/mng_shadow.h"
@@ -985,4 +989,218 @@ void GSCarState::notifyListeners( float param_1 ) {
 PointerSet::PointerSet() {
     // FUN_008acc70
     Content.fill( nullptr );
+}
+
+static constexpr int32_t kDefaultCarConfigID = 999;
+static constexpr int32_t kDefaultBikeConfigID = 666;
+static constexpr int32_t kDefaultCarPhysicsID = 223;
+static constexpr int32_t kDefaultBikePhysicsID = 1502;
+
+static PhysicsVehicle *InstallPhysicsVehicle( VehicleBaseResources *pResource,
+                                              VehicleInstallRequest &request ) {
+    // FUN_008ad370
+    request.pTorqueBinary = nullptr;
+    request.pFactory = nullptr;
+
+    BankVehicle *pBank = pResource->Exterior.pBankInstance;
+    if ( pBank != nullptr ) {
+        request.pTorqueBinary = pBank->getTorqueBinary();
+        request.pFactory = pBank->getPhysFactory();
+    }
+
+    return gpPhysics->installVehicle( request );
+}
+
+VehicleBaseResources *
+GSCarState::loadVehicleResources( const int32_t carID,
+                                  const int32_t tireID,
+                                  const int32_t rimID,
+                                  const uint64_t packHashcode,
+                                  const int32_t param_6,
+                                  const int32_t flags,
+                                  const eVehicleResourceType type ) {
+    // FUN_008ae220
+    VehicleBaseResources *pResource = grabFreeResourceEntry();
+    if ( !pResource->load( carID, rimID, tireID, flags, packHashcode, param_6,
+                           type ) ) {
+        releaseResourceEntry( pResource );
+        return nullptr;
+    }
+    return pResource;
+}
+
+CarState *GSCarState::installVehicle( VehicleBaseResources *pResource,
+                                      const VehicleSpawnParams &params,
+                                      const eVehicleInstallType installType,
+                                      int32_t slot ) {
+    // FUN_008ad420
+    if ( pResource == nullptr ) {
+        return nullptr;
+    }
+
+    if ( slot == -1 ) {
+        slot = 0;
+        while ( isCarStateUsed( slot ) ) {
+            slot++;
+            if ( slot >= int32_t( kMaxNumVehicles ) ) {
+                return nullptr;
+            }
+        }
+    }
+
+    CarState &carState = grabCarState( uint32_t( slot ) );
+    carState.reset();
+
+    bool bAddPhysicsPaused = false;
+    bool bIsAI = false;
+    bool bIsNetwork = false;
+    switch ( installType ) {
+    case VIT_AI:
+        carState.bUseShowcaseControl = false;
+        carState.owner = CarState::eOwner::CSO_Bot;
+        bIsAI = true;
+        carState.simulationType = CarState::eSimulationType::CSST_Local;
+        break;
+    case VIT_Player:
+        carState.owner = CarState::eOwner::CSO_LocalPlayer;
+        carState.bUseShowcaseControl = false;
+        carState.simulationType = CarState::eSimulationType::CSST_Local;
+        break;
+    case VIT_Network:
+        carState.owner = CarState::eOwner::CSO_LocalPlayer;
+        carState.simulationType =
+            CarState::eSimulationType::CSST_ReplicatedFromNetwork;
+        carState.bUseShowcaseControl = false;
+        bIsNetwork = true;
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (resource network flag)
+        break;
+    case VIT_Opponent:
+        bAddPhysicsPaused = true;
+        carState.owner = CarState::eOwner::CSO_NetPlayer;
+        carState.simulationType = CarState::eSimulationType::CSST_Local;
+        carState.bUseShowcaseControl = false;
+        bIsAI = true;
+        break;
+    case VIT_Traffic:
+        bAddPhysicsPaused = true;
+        carState.owner = CarState::eOwner::CSO_Traffic;
+        carState.bUseShowcaseControl = false;
+        bIsAI = true;
+        carState.simulationType = CarState::eSimulationType::CSST_Local;
+        break;
+    case VIT_Showcase:
+        carState.bUseShowcaseControl = true;
+        carState.owner = CarState::eOwner::CSO_Bot;
+        bIsAI = true;
+        carState.simulationType = CarState::eSimulationType::CSST_Local;
+        break;
+    default:
+        break;
+    }
+
+    carState.carID = pResource->CarID;
+    carState.tireID = pResource->TireID;
+    carState.rimID = pResource->RimID;
+    carState.body.BackOnTrackState = 0;
+    carState.body.resetBackOnTrack();
+
+    DBEntryCarPhysicsData *pCarEntry =
+        gpDatabase->getCarDBEntry( pResource->CarID );
+    if ( pCarEntry == nullptr ) {
+        pCarEntry = gpDatabase->getCarDBEntry( kDefaultCarConfigID );
+    } else if ( ( pCarEntry->BitField & 1 ) == 0 ||
+                pCarEntry->Brand == nullptr ||
+                ( pCarEntry->Brand->Flags & 1 ) == 0 ) {
+        const char *pBikeCategory =
+            gpDatabase->getStringByHashcode( 1, 0x35da5b5 );
+        pCarEntry = gpDatabase->getCarDBEntry(
+            ( pBikeCategory == pCarEntry->Category.pAsString )
+                ? kDefaultBikeConfigID
+                : kDefaultCarConfigID );
+    }
+
+    const DBEntryAftermarketPack *pPack =
+        gpDatabase->getAftermarketPack( pResource->PackHashcode );
+
+    VehicleBase *pVehicle = nullptr;
+    if ( installType == VIT_Traffic ) {
+        pVehicle =
+            gpCarDisplay->instantiateTraffic( &carState, &pResource->Exterior );
+    } else if ( gpDatabase->isBike( pCarEntry ) ) {
+        pVehicle = gpCarDisplay->instantiateBike(
+            &carState, &pResource->Exterior, &pResource->Interior,
+            &pResource->FrontRims, &pResource->RearRims );
+    } else {
+        pVehicle = gpCarDisplay->instantiateCar(
+            &carState, &pResource->Exterior, &pResource->Interior,
+            &pResource->FrontRims, &pResource->RearRims );
+    }
+    if ( pVehicle != nullptr && gpMngEnvMap != nullptr &&
+         installType == VIT_Player ) {
+        GSCarDisplay::SetRealTimeEnvMappedCar( pVehicle );
+    }
+
+    PhysicsVehicle *pPhysicsVehicle = nullptr;
+    if ( pResource->bUseGamePhysics != 0 ) {
+        VehicleInstallRequest request;
+        request.bAddPhysicsPaused =
+            params.bAddPhysicsPaused ? true : bAddPhysicsPaused;
+
+        if ( carState.carID == kDefaultCarConfigID ) {
+            pCarEntry = gpDatabase->getCarDBEntry( kDefaultCarPhysicsID );
+            pPack = nullptr;
+        } else if ( carState.carID == kDefaultBikeConfigID ) {
+            pCarEntry = gpDatabase->getCarDBEntry( kDefaultBikePhysicsID );
+            pPack = nullptr;
+        }
+
+        request.pCarData = pCarEntry;
+        request.bIsNetwork = bIsNetwork;
+        request.pPack = pPack;
+        request.bIsAI = bIsAI;
+        request.bSetPosition = params.bSetPosition;
+        if ( params.bSetPosition ) {
+            request.Transform = params.Transform;
+        }
+        request.bCastToGround = params.bCastToGround;
+        request.bResetCar = params.bResetCar;
+        request.PhantomMode = params.PhantomMode;
+        request.bKeyframed = params.bKeyframed;
+        request.bCinematicMode = params.bCinematicMode;
+        request.InstallType = installType;
+        request.pCarState = &carState;
+        pPhysicsVehicle = InstallPhysicsVehicle( pResource, request );
+    }
+
+    VehicleSoundInstance *pVehicleSound = nullptr;
+    if ( pResource->bSoundResource && gpVehicleSound != nullptr ) {
+        pVehicleSound = gpVehicleSound->createInstance( &carState );
+    }
+
+    carState.setPhysicsVehicle( pPhysicsVehicle );
+    carState.bIsIndoor = false;
+    carState.pResource = pResource;
+    carState.pVehicleBase = pVehicle;
+    carState.pVehicleSound = pVehicleSound;
+    pResource->RefCount++;
+    return &carState;
+}
+
+CarState *GSCarState::spawnVehicle( const int32_t carID,
+                                    const int32_t tireID,
+                                    const int32_t rimID,
+                                    const uint64_t packHashcode,
+                                    const VehicleSpawnParams &params,
+                                    const int32_t slot,
+                                    const int32_t flags,
+                                    const eVehicleInstallType installType ) {
+    // FUN_008ae280
+    VehicleBaseResources *pResource = loadVehicleResources(
+        carID, tireID, rimID, packHashcode, 0, flags,
+        ( installType == VIT_Player ) ? eVehicleResourceType::VRT_Exterior
+                                      : eVehicleResourceType::VRT_Traffic );
+    if ( pResource == nullptr ) {
+        return nullptr;
+    }
+    return installVehicle( pResource, params, installType, slot );
 }

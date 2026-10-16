@@ -1961,6 +1961,51 @@ void GSPhysics::createVehicleParts( PhysicsVehicle &vehicle,
                               GetIdentifier64bit( "BODY" ) );
 }
 
+PhysicsVehicle *GSPhysics::installVehicle( VehicleInstallRequest &request ) {
+    // FUN_0084a5d0
+    if ( request.pCarData == nullptr ) {
+        return nullptr;
+    }
+
+    PhysicsVehicle *pVehicle =
+        createVehicle( request.pFactory, request.Transform, *request.pCarData,
+                       request.pTorqueBinary, request.pPack, request.bIsAI,
+                       request.bIsNetwork );
+    if ( pVehicle == nullptr ) {
+        return nullptr;
+    }
+
+    if ( request.InstallType == VIT_Player ) {
+        pVehicle->setDrivingControl( this );
+    }
+
+    pVehicle->setPostponedPause( 0 );
+    pVehicle->setPhysicsPaused( request.bAddPhysicsPaused );
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+
+    {
+        PhysicsLock lock;
+        if ( request.bSetPosition ) {
+            if ( request.bResetCar ) {
+                pVehicle->resetToTransform( request.Transform,
+                                            request.bCastToGround );
+            } else {
+                pVehicle->setPostponedMatrix( request.Transform );
+            }
+        }
+        pVehicle->requestPhantomMode( uint8_t( request.PhantomMode ), 1.0f );
+        if ( request.bKeyframed ) {
+            pVehicle->setKeyframed( true, false );
+        }
+        pVehicle->setCinematicMode( request.bCinematicMode );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+
+    return pVehicle;
+}
+
 PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
                                           const Matrix4x4f_t &worldTransform,
                                           const DBEntryCarPhysicsData &db,

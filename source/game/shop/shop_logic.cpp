@@ -783,6 +783,7 @@ void ShopLogicDealer::stepBuyOption( const bool bNext ) {
         if ( bHasCar ) {
             scene.playCarCinematic( "C_WHEELS_V", slot, true );
             if ( pShowcase != nullptr ) {
+                pShowcase->setPlayerVehicleForceInterior( false );
                 pShowcase->closeLeftDoor();
             }
             scene.playCarCinematic( "C_BUY", slot, false );
@@ -814,6 +815,7 @@ void ShopLogicDealer::stepBuyOption( const bool bNext ) {
             scene.playCarCinematic( bBike ? "C_PAINT_V_BIKE" : "C_PAINT_V",
                                     slot, true );
             if ( pShowcase != nullptr ) {
+                pShowcase->setPlayerVehicleForceInterior( false );
                 pShowcase->closeLeftDoor();
             }
             scene.playCarCinematic( bBike ? "C_BUY_BIKE" : "C_BUY", slot,
@@ -847,7 +849,9 @@ void ShopLogicDealer::stepBuyOption( const bool bNext ) {
         if ( bHasCar ) {
             scene.playCarCinematic( "C_INTERIOR_V", slot, true );
             if ( pShowcase != nullptr ) {
+                pShowcase->setPlayerVehicleForceInterior( false );
                 pShowcase->openLeftDoor( carPark.getCarVehicle( slot ) );
+                pShowcase->setPlayerVehicleForceInterior( true );
             }
             scene.playCarCinematic( "C_INTERIOR", slot, false );
         }
@@ -2342,27 +2346,137 @@ void ShopLogicPaint::SelectedColorCallback( FlashRECT * /*pRect*/,
                    pResource );
 }
 
+static constexpr int32_t kRentalCameraMode = 1;
+static const Eigen::Vector4f
+    kRentalCameraPosition( 62528.0f, 34.0f, 48048.0f, 1.0f );
+static const Eigen::Vector4f
+    kRentalCameraTarget( 62528.0f, 34.0f, 48047.0f, 1.0f );
+static constexpr float kRentalPlaceholderPrice = 99999.0f;
+static constexpr int32_t kRentalShortTime = 10;
+static constexpr int32_t kRentalLongTime = 20;
+static constexpr float kRentalShortRatio = 0.02f; // DAT_00f417f0
+static constexpr float kRentalLongRatio = 0.04f;  // DAT_00f41980
+static constexpr float kRentalPriceScale = 0.2f;  // DAT_00f41730
+static constexpr float kRentalPriceStep = 5.0f;   // DAT_00f41750
+static constexpr int32_t kRentalStatCounter = 10;
+static constexpr int32_t kSecondsPerMinute = 60;
+
+static int32_t GetRentalPrice( const float carPrice, const float ratio ) {
+    const int32_t units =
+        int32_t( uint32_t( int64_t( carPrice * ratio * kRentalPriceScale ) ) );
+    return int32_t( float( units ) * kRentalPriceStep );
+}
+
 ShopLogicRental::ShopLogicRental() : ShopLogic() {}
 
 void ShopLogicRental::onFlashReady() {
     // FUN_009daf60
-    OTDU_UNIMPLEMENTED; // TODO: GMSHOP (rental)
+    if ( gpMngShadow != nullptr ) {
+        gpMngShadow->setReceiversEnabled( false );
+    }
+
+    ReleaseLocalPlayerCar();
+
+    CameraGame *pCamera = gpCamera->findCameraWithMode(
+        kRentalCameraMode, gpCamera->getBoundCarState() );
+    if ( pCamera != nullptr ) {
+        pCamera->setPosition( kRentalCameraPosition );
+        pCamera->setTarget( kRentalCameraTarget );
+
+        const Eigen::Vector4f up( 0.0f, 1.0f, 0.0f, 0.0f );
+        pCamera->setUp( up );
+        pCamera->updateMatrix( kRentalCameraPosition.head<3>(), up.head<3>(),
+                               kRentalCameraTarget.head<3>() );
+    }
+
+    pFlashPlayer->setVariableValueNonLinked( "/:cr_timeunit1", "'" );
+    pFlashPlayer->setVariableValue( "/:cr_time1", 1 );
+    pFlashPlayer->setVariableValue( "/:cr_price1", kRentalPlaceholderPrice );
+    pFlashPlayer->setVariableValueNonLinked( "/:cr_timeunit2", "'" );
+    pFlashPlayer->setVariableValue( "/:cr_time2", 1 );
+    pFlashPlayer->setVariableValue( "/:cr_price2", kRentalPlaceholderPrice );
 }
 
 bool ShopLogicRental::fillCarList( int32_t *pOutCarIDs ) {
     // FUN_009daf00
-    OTDU_UNIMPLEMENTED; // TODO: GMSHOP (rental)
+    static constexpr int32_t kDefaultRentalCars[] = {
+        -1, 0x3f1, 0x414, 0x74, 0x72, 0x73, -1, 0x3f1, 0x414, 0x74, 0x72 };
+
+    if ( !FillCarListFromShop( pOutCarIDs ) ) {
+        std::copy( std::begin( kDefaultRentalCars ),
+                   std::end( kDefaultRentalCars ), pOutCarIDs );
+    }
     return true;
 }
 
 bool ShopLogicRental::onMessage( FlashMessage *pMessage,
                                  FlashPlayer *pPlayer ) {
     // FUN_009db130
-    OTDU_UNIMPLEMENTED; // TODO: GMSHOP (rental)
-    return false;
+    switch ( *pMessage ) {
+    case FlashMessage( "eval" ): {
+        const int32_t price = getSelectedPrice();
+        const int32_t money =
+            int32_t( gpPlayerData->getLoadedSave()->getDriver()->getMoney() );
+        pFlashPlayer->setVariableValue( "/:EnoughMoney",
+                                        price <= money ? 1 : 0 );
+        return true;
+    }
+
+    case FlashMessage( "rent" ): {
+        const int32_t carID = pOwner->getSelectedCarID();
+        const int32_t price = getSelectedPrice();
+        const int32_t rentalTime =
+            pFlashPlayer->getVariableAsInt( "/:cr_selectedTime" ) *
+            kSecondsPerMinute;
+
+        IPlayerData *pSave = gpPlayerData->getLoadedSave();
+        pSave->getExtraChallenges()->countCarRented();
+        pSave->getDriver()->addExpense( price, kRentalStatCounter, true );
+        pSave->getDriver()->startMoneyAnimation();
+        pSave->getGarage()->beginRental( uint32_t( carID ), rentalTime, 0, 0,
+                                         0 );
+
+        gpScenaric->setNextIntro(
+            nullptr, nullptr, "C_RENT_A_CAR", GM_FreeRide,
+            pOwner->getScene().getContent()->getSourceSpot() );
+        pOwner->requestExit();
+        gpTestDriveInstance->setNextGameMode( GM_FreeRide );
+
+        gpScenaric->getIntroTutorial().onCarRented( carID, rentalTime );
+        return true;
+    }
+
+    default:
+        return false;
+    }
 }
 
 void ShopLogicRental::onCarSelected( int32_t carIndex ) {
     // FUN_009dada0
-    OTDU_UNIMPLEMENTED; // TODO: GMSHOP (rental)
+    const CarDesc &desc = pOwner->getSelectedCarDesc();
+    DBEntryCarPhysicsData *pCarEntry =
+        gpDatabase->getCarDBEntry( pOwner->getSelectedCarID() );
+    if ( pCarEntry == nullptr ) {
+        return;
+    }
+
+    const float carPrice = gpDatabase->getCarPrice(
+        pCarEntry, desc.paintIndex, desc.rimID, desc.interiorID );
+
+    char text[128];
+    pFlashPlayer->setVariableValueNonLinked( "/:cr_timeunit1", "'" );
+    pFlashPlayer->setVariableValue( "/:cr_time1", kRentalShortTime );
+    FormatMoneyString( text, GetRentalPrice( carPrice, kRentalShortRatio ) );
+    pFlashPlayer->setVariableValueNonLinked( "/:cr_price1", text );
+
+    pFlashPlayer->setVariableValueNonLinked( "/:cr_timeunit2", "'" );
+    pFlashPlayer->setVariableValue( "/:cr_time2", kRentalLongTime );
+    FormatMoneyString( text, GetRentalPrice( carPrice, kRentalLongRatio ) );
+    pFlashPlayer->setVariableValueNonLinked( "/:cr_price2", text );
+}
+
+int32_t ShopLogicRental::getSelectedPrice() {
+    char text[128] = {};
+    pFlashPlayer->getVariableAsString( "/:cr_selectedPrice", text );
+    return int32_t( int64_t( StringToFloat( text ) ) );
 }

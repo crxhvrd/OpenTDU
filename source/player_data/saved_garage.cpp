@@ -324,6 +324,36 @@ void Garage::beginTestDrive( const uint32_t carID,
     notify( 0u );
 }
 
+void Garage::beginRental( const uint32_t carID,
+                          const int32_t rentalTime,
+                          const int32_t paintIndex,
+                          const int32_t rimID,
+                          const int32_t interiorID ) {
+    // FUN_00894b90
+    GarageSlot &rentalSlot = pCars[kNumSavedCarSlots];
+    if ( rentalSlot.state != CarDesc::eState::CDS_Invalid ) {
+        endRental();
+    }
+
+    rentalSlot.setup( carID, paintIndex, rimID, interiorID, 0u );
+    if ( rentalSlot.state != CarDesc::eState::CDS_Rental ) {
+        rentalSlot.state = CarDesc::eState::CDS_Rental;
+        rentalSlot.notify( 0u );
+    }
+
+    Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+    if ( pDriver->CurrentCar != kNumSavedCarSlots ) {
+        currentCar = pDriver->CurrentCar;
+    }
+    pDriver->CurrentCar = kNumSavedCarSlots;
+    pDriver->notify( 0u );
+
+    gpScenaric->setRentalSpot( gpScenaric->getSpotList().getWorldSpotChecked(
+        gpScenaric->getCurrentSpotIndex() ) );
+    gpScenaric->setTimeLeftForRental( float( rentalTime ) );
+    notify( 0u );
+}
+
 void Garage::endRental() {
     // FUN_00894890
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE

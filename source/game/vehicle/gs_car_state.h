@@ -32,6 +32,50 @@ template <typename T> struct ResourcePool {
     }
 };
 
+class PhysFactory;
+class PhysicsVehicle;
+struct DBEntryAftermarketPack;
+struct DBEntryCarPhysicsData;
+
+enum eVehicleInstallType : int32_t {
+    VIT_AI = 0,
+    VIT_Player = 1,
+    VIT_Network = 2,
+    VIT_Opponent = 3,
+    VIT_Traffic = 4,
+    VIT_Showcase = 6,
+};
+
+struct VehicleSpawnParams {
+    Matrix4x4f_t Transform = Matrix4x4f_t::Identity();
+    bool bSetPosition = false;
+    bool bCastToGround = false;
+    bool bAddPhysicsPaused = false;
+    bool bResetCar = false;
+    bool bKeyframed = false;
+    bool bCinematicMode = false;
+    int32_t PhantomMode = 0;
+};
+
+struct VehicleInstallRequest {
+    DBEntryCarPhysicsData *pCarData = nullptr;
+    const DBEntryAftermarketPack *pPack = nullptr;
+    CarState *pCarState = nullptr;
+    PhysFactory *pFactory = nullptr;
+    const void *pTorqueBinary = nullptr;
+    Matrix4x4f_t Transform = Matrix4x4f_t::Identity();
+    eVehicleInstallType InstallType = VIT_AI;
+    int32_t PhantomMode = 0;
+    bool bIsAI = false;
+    bool bIsNetwork = false;
+    bool bAddPhysicsPaused = false;
+    bool bSetPosition = false;
+    bool bCastToGround = false;
+    bool bResetCar = false;
+    bool bKeyframed = false;
+    bool bCinematicMode = false;
+};
+
 class GSCarState : public GameSystem {
 public:
     const char *getName() const override { return "CAR_STATE"; }
@@ -66,6 +110,27 @@ public:
                         const bool bReleaseDriver );
 
     void notifyListeners( float param_1 );
+
+    VehicleBaseResources *
+    loadVehicleResources( const int32_t carID,
+                          const int32_t tireID,
+                          const int32_t rimID,
+                          const uint64_t packHashcode,
+                          const int32_t param_6,
+                          const int32_t flags,
+                          const eVehicleResourceType type );
+    CarState *installVehicle( VehicleBaseResources *pResource,
+                              const VehicleSpawnParams &params,
+                              const eVehicleInstallType installType,
+                              int32_t slot );
+    CarState *spawnVehicle( const int32_t carID,
+                            const int32_t tireID,
+                            const int32_t rimID,
+                            const uint64_t packHashcode,
+                            const VehicleSpawnParams &params,
+                            const int32_t slot,
+                            const int32_t flags,
+                            const eVehicleInstallType installType );
 
     CarState *findCarState( const PhysicsVehicle *pVehicle );
     void registerCollidedObject( void *pObject );

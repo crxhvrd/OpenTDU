@@ -58,6 +58,7 @@ public:
     void setVehicle( VehicleBase *pVehicleBase );
     bool isBikeCategory() const;
     void closeShowcase();
+    void setPlayerVehicleForceInterior( const bool bForce );
     void enterCar();
     void leaveCar();
 

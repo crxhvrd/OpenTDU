@@ -65,6 +65,11 @@ public:
                          const int32_t paintIndex,
                          const int32_t rimID,
                          const int32_t interiorID );
+    void beginRental( const uint32_t carID,
+                      const int32_t rentalTime,
+                      const int32_t paintIndex,
+                      const int32_t rimID,
+                      const int32_t interiorID );
     void endRental();
     bool validateCars();
     int32_t findFreeSlot( const uint64_t houseHashcode,

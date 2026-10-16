@@ -42,6 +42,9 @@
 #include "input/gs_device.h"
 #include "game/vehicle/bank_vehicle.h"
 #include "game/vehicle/gs_car_state.h"
+#include "game/game_cheats.h"
+#include "game/scenaric/game_intro_tutorial.h"
+#include "database/db_aftermarket_pack.h"
 #include "core/arg_parser.h"
 #include "game/vehicle/gs_car_display.h"
 #include "game/vehicle/vehicle_base.h"
@@ -248,70 +251,71 @@ void GameModeWorld::initialize() {
     initializeTime = ( gpTimer != nullptr ) ? gpTimer->SystemTotalTime : 0.0f;
 }
 
+static int32_t GetLocalPlayerCarConfigID( const CarDesc *pCurrentCar );
+
 void GameModeWorld::reset() {
     // FUN_007bf280
     GameModeScene::reset();
 
-    if ( gpFlash != nullptr && gpFlash->getMouse() != nullptr ) {
-        gpFlash->getMouse()->field12_0x30 = true;
-    }
+    gpFlash->getMouse()->field12_0x30 = true;
     bPaused = false;
     bPauseMenuLocked = false;
     lastDistance = 0.0f;
+    gpCamera->setSeatPosition( gpPlayerData->getSeatPositionHeight(),
+                               gpPlayerData->getSeatPositionPosition() );
 
-    if ( gpCamera != nullptr && gpPlayerData != nullptr ) {
-        gpCamera->setSeatPosition( gpPlayerData->getSeatPositionHeight(),
-                                   gpPlayerData->getSeatPositionPosition() );
-    }
-
-    if ( ( flags & 4 ) != 0 && gpScenaric != nullptr &&
-         gpScenaric->getLocalPlayer().getCarState() == nullptr ) {
-        installLocalPlayerCar();
-    } else if ( gpScenaric != nullptr &&
-                gpScenaric->getLocalPlayer().getCarState() != nullptr ) {
-        CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
-
-        if ( pCarState->getPhysicsVehicle() != nullptr &&
-             gpTestDriveInstance->getActiveGameMode() != GM_Mission ) {
-            PhysicsLock lock;
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (postponed pause = 2)
-        }
-
-        VehicleBase *pVehicleBase = pCarState->getVehicleInstance();
-        if ( pVehicleBase != nullptr &&
-             ( pVehicleBase->getType() == VehicleBase::eType::VBT_Car ||
-               pVehicleBase->getType() == VehicleBase::eType::VBT_Bike ) ) {
-            GSCarDisplay::SetRealTimeEnvMappedCar( pVehicleBase );
-        }
-    }
-
-    if ( gpScenaric != nullptr ) {
-        CarState *pExistingCar = gpScenaric->getLocalPlayer().getCarState();
-        if ( pExistingCar != nullptr ) {
-            pPlayerPhysicsVehicle = pExistingCar->getPhysicsVehicle();
-        }
-    }
-
-    if ( gpCamera != nullptr && gpScenaric != nullptr ) {
-        CarState *pCar = gpScenaric->getLocalPlayer().getCarState();
-        if ( pCar != nullptr ) {
-            gpCamera->restoreCamera();
-        }
-    }
-
-    CarState *pLocalCar = ( gpScenaric != nullptr )
-                              ? gpScenaric->getLocalPlayer().getCarState()
-                              : nullptr;
-    if ( pLocalCar != nullptr ) {
-        lastDistance = pLocalCar->getBody()->Distance;
-        PlaceLocalPlayerDriver( pLocalCar, false );
-    }
-
-    const bool bSpawnFromGarage = ( flags & 4 ) != 0;
-    if ( bSpawnFromGarage && gpPlayerData != nullptr ) {
+    LocalPlayer &localPlayer = gpScenaric->getLocalPlayer();
+    if ( ( flags & 4 ) == 0 ||
+         gpScenaric->getIntroTutorial().getStep() == kTutorialStateAirplane ) {
+        localPlayer.setCarState( nullptr );
+    } else {
         CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+        int32_t rimID = -1;
+        uint64_t packHashcode = kNoPackHashcode;
+        gPlayerCarConfigID = GetLocalPlayerCarConfigID( pCurrentCar );
+        if ( pCurrentCar != nullptr &&
+             int32_t( pCurrentCar->getCarConfigID() ) == gPlayerCarConfigID ) {
+            rimID = pCurrentCar->rimID;
+            packHashcode = pCurrentCar->packHashcode;
+        }
+
+        CarState *pLocalCar = localPlayer.getCarState();
+        if ( pLocalCar == nullptr ) {
+            VehicleSpawnParams params;
+            params.Transform = gpWorld->getPreviousTransform();
+            params.bSetPosition = true;
+            params.bCastToGround = true;
+            params.bAddPhysicsPaused = true;
+            params.PhantomMode = 1;
+            pLocalCar = gpCarState->spawnVehicle( gPlayerCarConfigID, 0, rimID,
+                                                  packHashcode, params, -1, 0,
+                                                  VIT_Player );
+            localPlayer.setCarState( pLocalCar );
+            if ( gpMngInGameMenu != nullptr ) {
+                gpMngInGameMenu->resetWindowsDirection();
+            }
+        } else {
+            PhysicsVehicle *pPhysicsVehicle = pLocalCar->getPhysicsVehicle();
+            if ( pPhysicsVehicle != nullptr &&
+                 gpTestDriveInstance->getActiveGameMode() != GM_Mission ) {
+                PhysicsLock lock;
+                pPhysicsVehicle->setPostponedPause( 2 );
+            }
+
+            VehicleBase *pVehicleBase = pLocalCar->getVehicleInstance();
+            if ( pVehicleBase != nullptr &&
+                 ( pVehicleBase->getType() == VehicleBase::eType::VBT_Car ||
+                   pVehicleBase->getType() == VehicleBase::eType::VBT_Bike ) ) {
+                GSCarDisplay::SetRealTimeEnvMappedCar( pVehicleBase );
+            }
+        }
+
+        if ( pLocalCar != nullptr ) {
+            lastDistance = pLocalCar->getBody()->Distance;
+            PlaceLocalPlayerDriver( pLocalCar, false );
+        }
+
         if ( pCurrentCar != nullptr ) {
-            gPlayerCarConfigID = int32_t( pCurrentCar->getCarConfigID() );
             carColorIndex = pCurrentCar->paintIndex;
             if ( carColorIndex == -1 &&
                  gpDatabase->getNumColors( gPlayerCarConfigID ) > 0 ) {
@@ -320,26 +324,29 @@ void GameModeWorld::reset() {
             carRimIndex = pCurrentCar->rimID;
             carTireIndex = pCurrentCar->interiorID;
 
-            if ( pLocalCar != nullptr &&
-                 pLocalCar->getVehicleInstance() != nullptr ) {
-                pLocalCar->getVehicleInstance()->applyGaragePaint(
+            CarState *pPlayerCar = localPlayer.getCarState();
+            if ( pPlayerCar != nullptr &&
+                 pPlayerCar->getVehicleInstance() != nullptr ) {
+                pPlayerCar->getVehicleInstance()->applyGaragePaint(
                     *pCurrentCar );
             }
         }
-    }
 
-    if ( gpMngHud != nullptr ) {
-        gpMngHud->FUN_006e6a00( pLocalCar );
-    }
-
-    if ( bSpawnFromGarage ) {
+        mngHudChallenge.FUN_006e6a00( localPlayer.getCarState() );
         gpPlayerData->applyDrivingOptions();
+        gpCamera->setDrivingOptions( gpPlayerData->getCameraShake(),
+                                     gpPlayerData->getRadialBlurIntensity() );
 
         if ( pLocalCar != nullptr ) {
             pLocalCar->openConvertibleWindows();
         }
     }
 
+    gpCamera->restoreCamera();
+
+    CarState *pLocalCar = localPlayer.getCarState();
+    pPlayerPhysicsVehicle =
+        ( pLocalCar != nullptr ) ? pLocalCar->getPhysicsVehicle() : nullptr;
     if ( pLocalCar != nullptr ) {
         lastOdometerKms = pLocalCar->getBody()->OdometerKms;
     }
@@ -362,20 +369,12 @@ static CmdLineArg CmdLineArgCar( "car", []( const char *pArg ) {
 bool gRequestedPlayerTeleport = false;
 Eigen::Vector3f gRequestedPlayerTeleportPos = Eigen::Vector3f::Zero();
 
-void GameModeWorld::installLocalPlayerCar() {
-    // FUN_007bf280 (inlined)
+static int32_t GetLocalPlayerCarConfigID( const CarDesc *pCurrentCar ) {
     if ( gbPlayerCarOverride ) {
-        bool bKnownCar = false;
         for ( const CarConfig &car : gpDatabase->getCarList() ) {
             if ( car.Hash == gRequestedPlayerCarID ) {
-                bKnownCar = true;
-                break;
+                return gRequestedPlayerCarID;
             }
-        }
-
-        if ( bKnownCar ) {
-            installLocalPlayerCar( gRequestedPlayerCarID, nullptr );
-            return;
         }
 
         OTDU_LOG_WARN( "Car %d (from command line) does not exist; ignoring\n",
@@ -384,162 +383,16 @@ void GameModeWorld::installLocalPlayerCar() {
         gRequestedPlayerCarID = kDefaultPlayerCarID;
     }
 
-    const CarDesc *pCurrentCar =
-        ( gpPlayerData != nullptr ) ? gpPlayerData->getCurrentCar() : nullptr;
-    if ( pCurrentCar == nullptr ) {
-        // Safe fallback if GMFreeride is requested without a valid profile
-        // (ideally we should use DEFAULTGARAGECONFIG instead of
-        // kDefaultPlayerCarID)
-        installLocalPlayerCar( kDefaultPlayerCarID, nullptr );
-        return;
+    if ( pCurrentCar != nullptr ) {
+        return int32_t( pCurrentCar->getCarConfigID() );
     }
 
-    installLocalPlayerCar( int32_t( pCurrentCar->getCarConfigID() ), nullptr,
-                           pCurrentCar->rimID );
-}
-
-void GameModeWorld::installLocalPlayerCar( int32_t carID,
-                                           const Matrix4x4f_t *pSpawnOverride,
-                                           int32_t rimID,
-                                           int32_t paintIndex,
-                                           int32_t interiorIndex ) {
-    // FUN_007bf280 (inlined) / FUN_0079da80.
-    if ( gpCarState == nullptr || gpCarDisplay == nullptr ||
-         gpScenaric == nullptr ) {
-        return;
-    }
-
-    VehicleBaseResources *pRes = gpCarState->grabFreeResourceEntry();
-    if ( pRes == nullptr ) {
-        return;
-    }
-
-    uint64_t packHashcode = kNoPackHashcode;
-    if ( gpPlayerData != nullptr ) {
-        const CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
-        if ( pCurrentCar != nullptr &&
-             int32_t( pCurrentCar->getCarConfigID() ) == carID ) {
-            packHashcode = pCurrentCar->packHashcode;
-        }
-    }
-
-    if ( !pRes->load( carID, rimID, 0, 4, packHashcode, 0,
-                      eVehicleResourceType::VRT_Exterior ) ) {
-        OTDU_LOG_ERROR(
-            "Failed to load local-player vehicle resources (car %d)\n", carID );
-        gpCarState->releaseResourceEntry( pRes );
-        return;
-    }
-
-    CarState &state = gpCarState->grabNextFreeCarState();
-    state.reset();
-    state.owner = CarState::eOwner::CSO_LocalPlayer;
-    state.simulationType = CarState::eSimulationType::CSST_Local;
-    state.activeMode = CarState::eActiveMode::CSAM_Freeride;
-    state.bUseShowcaseControl = false;
-    state.carID = pRes->CarID;
-    state.tireID = pRes->TireID;
-    state.rimID = pRes->RimID;
-    state.body.BackOnTrackState = 0;
-    state.body.resetBackOnTrack();
-
-    VehicleCar *pController =
-        gpCarDisplay->instantiateCar( &state, &pRes->Exterior, &pRes->Interior,
-                                      &pRes->FrontRims, &pRes->RearRims );
-    if ( pController == nullptr ) {
-        OTDU_LOG_ERROR( "instantiateCar failed for local-player car %d\n",
-                        carID );
-        gpCarState->releaseResourceEntry( pRes );
-        return;
-    }
-
-    state.pVehicleBase = pController;
-    state.pResource = pRes;
-    pRes->RefCount++;
-
-    gpCarState->registerCallback( &state, pController, nullptr );
-
-    if ( paintIndex >= 0 ) {
-        pController->applyPaint( (uint32_t)carID, ePaintType::PT_Default,
-                                 paintIndex, rimID, interiorIndex, nullptr,
-                                 nullptr, nullptr, nullptr );
-    }
-
-    if ( gpMngEnvMap != nullptr ) {
-        GSCarDisplay::SetRealTimeEnvMappedCar( pController );
-    }
-
-    Matrix4x4f_t spawn;
-    if ( pSpawnOverride != nullptr ) {
-        // In-place respawn (debug switch): reuse the transform and leave the
-        // streaming centre where it is.
-        spawn = *pSpawnOverride;
-    } else {
-        if ( gpWorld != nullptr ) {
-            const Matrix4x4f_t &prev = gpWorld->getPreviousTransform();
-            const float distSq = prev( 3, 0 ) * prev( 3, 0 ) +
-                                 prev( 3, 1 ) * prev( 3, 1 ) +
-                                 prev( 3, 2 ) * prev( 3, 2 );
-            if ( distSq < 1.0f ) {
-                Eigen::Vector4f startPos =
-                    gpScenaric->getDefaultStartPosition();
-                gpWorld->setPlayerPosition( &startPos );
-            }
-        }
-        spawn = ( gpWorld != nullptr ) ? gpWorld->getPreviousTransform()
-                                       : Matrix4x4f_t::Identity();
-
-        if ( gpWorld != nullptr ) {
-            Eigen::Vector4f center( spawn( 3, 0 ), 0.0f, spawn( 3, 2 ), 0.0f );
-            gpWorld->setStreamingPosition( &center );
-        }
-    }
-    state.body.WorldMatrix = spawn;
-
-    Matrix4x4f_t offseted = spawn;
-    if ( gpWorldStreaming != nullptr ) {
-        const Eigen::Vector4f &shift = gpWorldStreaming->getPosition();
-        offseted( 3, 0 ) -= shift.x();
-        offseted( 3, 1 ) -= shift.y();
-        offseted( 3, 2 ) -= shift.z();
-    }
-    state.body.OffsetedWorldMatrix = offseted;
-
-    if ( gpPhysics != nullptr && gpDatabase != nullptr ) {
-        PhysFactory *pFactory =
-            ( pRes->Exterior.pBankInstance != nullptr )
-                ? pRes->Exterior.pBankInstance->getPhysFactory()
-                : nullptr;
-        const void *pTorqueBin =
-            ( pRes->Exterior.pBankInstance != nullptr )
-                ? pRes->Exterior.pBankInstance->getTorqueBinary()
-                : nullptr;
-        DBEntryCarPhysicsData *pDB = gpDatabase->getCarDBEntry( state.carID );
-        const DBEntryAftermarketPack *pPack =
-            gpDatabase->getAftermarketPack( pRes->PackHashcode );
-        if ( pDB != nullptr ) {
-            gpPhysics->destroyVehicle( state.pPhysicsVehicle );
-            pPlayerPhysicsVehicle = gpPhysics->createVehicle(
-                pFactory, spawn, *pDB, pTorqueBin, pPack );
-            state.setPhysicsVehicle( pPlayerPhysicsVehicle );
-            if ( pPlayerPhysicsVehicle != nullptr ) {
-                pPlayerPhysicsVehicle->setDrivingControl( gpPhysics );
-            }
-        }
-    }
-
-    resetAutomaticGearbox();
-
-    // Link the local player; the camera binds to slot 0.
-    gpScenaric->getLocalPlayer().setCarState( &state );
-
-    const Eigen::Vector4f pos = spawn.row( 3 );
-    OTDU_LOG_INFO( "Installed local-player car %d at (%.1f, %.1f, %.1f)\n",
-                   carID, pos.x(), pos.y(), pos.z() );
+    return ( !gDefaultGarageConfig.empty() && gDefaultGarageConfig[0] != -1 )
+               ? gDefaultGarageConfig[0]
+               : kDefaultPlayerCarID;
 }
 
 void GameModeWorld::uninstallLocalPlayerCar() {
-    // Mirror of GMCarShowcase::unloadCar (FUN_007b5880)
     if ( gpCarState == nullptr || gpScenaric == nullptr ) {
         return;
     }
@@ -556,6 +409,73 @@ void GameModeWorld::uninstallLocalPlayerCar() {
     pPlayerPhysicsVehicle = nullptr; // was destroyed by releaseCarState
     gpScenaric->getLocalPlayer().setCarState( nullptr );
     resetAutomaticGearbox();
+}
+
+void GameModeWorld::unloadLocalPlayerCar() {
+    // FUN_006d0040
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr ) {
+        return;
+    }
+
+    if ( pLocalCar->getPhysicsVehicle() != nullptr ) {
+        PhysicsLock lock;
+        pLocalCar->getPhysicsVehicle()->setPostponedPause( 1 );
+    }
+
+    ReleaseLocalPlayerDriver( pLocalCar );
+    gpCarState->unloadVehicle( pLocalCar, false, false );
+    pPlayerPhysicsVehicle = nullptr;
+    gpScenaric->getLocalPlayer().setCarState( nullptr );
+}
+
+void GameModeWorld::respawnLocalPlayerCar( const Matrix4x4f_t &transform ) {
+    // FUN_006d0140
+    CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+    if ( pCurrentCar == nullptr ) {
+        return;
+    }
+
+    VehicleSpawnParams params;
+    params.Transform = transform;
+    params.bSetPosition = true;
+    params.bCastToGround = true;
+    params.bResetCar = true;
+    params.PhantomMode = 1;
+
+    CarState *pLocalCar = nullptr;
+    VehicleBaseResources *pResource = gpCarState->loadVehicleResources(
+        int32_t( pCurrentCar->getCarConfigID() ), 0, -1,
+        pCurrentCar->packHashcode, 0, 0, eVehicleResourceType::VRT_Exterior );
+    if ( pResource != nullptr ) {
+        pLocalCar =
+            gpCarState->installVehicle( pResource, params, VIT_Player, 0 );
+        if ( pLocalCar != nullptr ) {
+            PlaceLocalPlayerDriver( pLocalCar, true );
+        }
+    }
+    gpScenaric->getLocalPlayer().setCarState( pLocalCar );
+    pPlayerPhysicsVehicle =
+        ( pLocalCar != nullptr ) ? pLocalCar->getPhysicsVehicle() : nullptr;
+
+    if ( gpMngHud != nullptr ) {
+        gpMngHud->FUN_006e6a00( pLocalCar );
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (re-activate the P2P free ride
+                             // session)
+
+    if ( pLocalCar == nullptr ) {
+        return;
+    }
+
+    VehicleBase *pVehicle = pLocalCar->getVehicleInstance();
+    if ( pVehicle != nullptr ) {
+        pVehicle->applyGaragePaint( *pCurrentCar );
+    }
+
+    gpPlayerData->applyDrivingOptions();
+    pLocalCar->openConvertibleWindows();
 }
 
 void GameModeWorld::teleportLocalPlayerCar( const Eigen::Vector3f &worldPos ) {
@@ -957,21 +877,35 @@ void GameModeWorld::updateCarHotReload() {
 void GameModeWorld::loadHotReloadedCar() {
     // FUN_007beb90 (inlined)
     const int32_t carID = gPlayerCarConfigID;
-    installLocalPlayerCar( carID, &gCarHotReloadPose );
 
-    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
-    if ( pLocalCar != nullptr ) {
-        if ( pLocalCar->getPhysicsVehicle() != nullptr ) {
-            PhysicsLock lock;
-            pLocalCar->getPhysicsVehicle()->setCinematicMode( bCarPhysicsFlag );
+    VehicleSpawnParams params;
+    params.Transform = gCarHotReloadPose;
+    params.bSetPosition = true;
+    params.bCastToGround = true;
+    params.bResetCar = true;
+    params.bCinematicMode = bCarPhysicsFlag;
+    params.PhantomMode = 1;
+
+    CarState *pLocalCar = nullptr;
+    VehicleBaseResources *pResource =
+        gpCarState->loadVehicleResources( carID, 0, -1, kNoPackHashcode, 0, 0,
+                                          eVehicleResourceType::VRT_Exterior );
+    if ( pResource != nullptr ) {
+        pLocalCar =
+            gpCarState->installVehicle( pResource, params, VIT_Player, 0 );
+        if ( pLocalCar != nullptr ) {
+            PlaceLocalPlayerDriver( pLocalCar, true );
         }
-
-        PlaceLocalPlayerDriver( pLocalCar, true );
     }
+    gpScenaric->getLocalPlayer().setCarState( pLocalCar );
+    pPlayerPhysicsVehicle =
+        ( pLocalCar != nullptr ) ? pLocalCar->getPhysicsVehicle() : nullptr;
 
     mngHudChallenge.FUN_006e6a00( pLocalCar );
 
     gpPlayerData->applyDrivingOptions();
+    gpCamera->setDrivingOptions( gpPlayerData->getCameraShake(),
+                                 gpPlayerData->getRadialBlurIntensity() );
 
     carColorIndex = 0;
     if ( gpDatabase->getNumColors( carID ) > 0 ) {

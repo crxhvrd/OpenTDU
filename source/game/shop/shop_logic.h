@@ -325,4 +325,7 @@ public:
     bool fillCarList( int32_t *pOutCarIDs ) override;
     bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
     void onCarSelected( int32_t carIndex ) override;
+
+private:
+    int32_t getSelectedPrice();
 };

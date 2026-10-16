@@ -26,6 +26,7 @@
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_car_reserve.h"
 #include "flash/mng_flash_localize.h"
+#include "player_data/achievements_data.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
 #include "world/mng_ocean.h"
@@ -47,6 +48,41 @@ static constexpr float kValidateTimeout = 3.0f;
 static constexpr int32_t kSpecsFirstPersonInactive = -2;
 static constexpr uint32_t kMessageDB = 11;
 static constexpr uint64_t kShopMessageHashcode = 0x525494;
+static constexpr int32_t kBDDMenus = 0;
+static constexpr int32_t kBDDAchievement =
+    int32_t( AchievementsData::kAchievementDatabaseIndex );
+
+static int32_t GetCarRewardType( const int32_t carID,
+                                 uint64_t &outMustAwardHashcode ) {
+    // FUN_00724840
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const DBEntryList &achievementList =
+        gameDB.Databases[AchievementsData::kAchievementDatabaseIndex];
+    const uint32_t numEntries =
+        gameDB.pNumItems[AchievementsData::kAchievementDatabaseIndex];
+
+    for ( uint32_t i = 0u; i < numEntries; i++ ) {
+        const DBEntryAchievement &entry = gameDB.DBAchivement[i];
+        if ( achievementList.getHashcodeForString( entry.Reward.pAsString ) !=
+                 AchievementsData::kCarRewardHashcode ||
+             entry.RewardData != carID ) {
+            continue;
+        }
+
+        outMustAwardHashcode = achievementList.getHashcodeForString(
+            entry.FailedExplanation.pAsString );
+
+        const AchievementsData *pAchievements =
+            gpPlayerData->getLoadedSave()->getAchievements();
+        if ( pAchievements->isRewardLocked(
+                 AchievementsData::kCarRewardHashcode, carID ) ) {
+            return 1;
+        }
+        return pAchievements->isRewardCarBought( uint32_t( carID ) ) ? 2 : 0;
+    }
+
+    return 0;
+}
 
 static inline SpotMap *GetCurrentSpot() {
     return gpScenaric->getSpotList().getWorldSpotChecked(
@@ -890,8 +926,16 @@ void GMShop::selectCar( const int32_t carIndex ) {
     updatePrices();
     pShopLogic->onCarSelected( carIndex );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ACHIEVEMENTS
-    pFlashPlayer->setVariableValue( "/:reward_type", 0 );
+    uint64_t mustAwardHashcode = 0ull;
+    const int32_t rewardType =
+        GetCarRewardType( selectedCarID, mustAwardHashcode );
+    pFlashPlayer->setVariableValue( "/:reward_type", rewardType );
+    if ( gpMngFlashLocalize != nullptr && rewardType == 1 ) {
+        gpMngFlashLocalize->setDatabaseContext( kBDDAchievement );
+        gpMngFlashLocalize->setVarLocalized( pFlashPlayer, "/:MustAwardText",
+                                             mustAwardHashcode );
+        gpMngFlashLocalize->setDatabaseContext( kBDDMenus );
+    }
 }
 
 void GMShop::updatePrices() {

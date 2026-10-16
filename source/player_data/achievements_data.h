@@ -81,6 +81,9 @@ public:
 
     void applyHardcoreLevelTexts();
     bool isRewardLocked( const uint64_t rewardHashcode ) const;
+    bool isRewardLocked( const uint64_t rewardHashcode,
+                         const int32_t rewardData ) const;
+    bool isRewardCarBought( const uint32_t carID ) const;
     uint32_t getAchievedPoints() const;
     int32_t getPlayerLevel() const;
 

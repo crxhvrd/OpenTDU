@@ -446,6 +446,26 @@ void MngInGameMenu::toggleWindows( bool bPlayAnim ) {
     }
 }
 
+void MngInGameMenu::resetWindowsDirection() {
+    // FUN_006b6950
+    const CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+    if ( pCurrentCar == nullptr ) {
+        return;
+    }
+
+    DBEntryCarPhysicsData *pCarData =
+        gpDatabase->getCarDBEntry( int32_t( pCurrentCar->getCarConfigID() ) );
+    if ( pCarData == nullptr ) {
+        return;
+    }
+
+    const uint64_t bodyHashcode =
+        gpDatabase->getGameDB().Databases[1].getHashcodeForPointer(
+            pCarData->CarBody.pAsRawPointer );
+    WindowsDirection =
+        ( bodyHashcode != 0x56760d && bodyHashcode != 0x57fcad ) ? 1 : -1;
+}
+
 void MngInGameMenu::changeDrivingMode( bool bNext, bool bPlayAnim ) {
     // FUN_006b7250
     if ( gpFlash != nullptr ) {

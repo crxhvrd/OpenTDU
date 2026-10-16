@@ -100,6 +100,8 @@ public:
     virtual EventParameters *getMissionDescription();
     virtual bool isDrivingInputScripted() { return false; }
     bool canEnterSpot() const;
+    void unloadLocalPlayerCar();
+    void respawnLocalPlayerCar( const Matrix4x4f_t &transform );
 
     // Pause-menu flow: onPauseMenuRequested (flash clip flag or focus loss)
     // -> pauseMenuActivated -> "pain" (pause in) -> "afok" (fade anim over)
@@ -121,12 +123,6 @@ protected:
     void updatePauseFade();
     void updateOdometerAutosave();
     void updateOdometer();
-    void installLocalPlayerCar();
-    void installLocalPlayerCar( int32_t carID,
-                                const Matrix4x4f_t *pSpawnOverride,
-                                int32_t rimID = -1,
-                                int32_t paintIndex = -1,
-                                int32_t interiorIndex = 0 );
     void uninstallLocalPlayerCar();
     void updateLocalPlayerDrivingInput( float deltaTime );
     void resetAutomaticGearbox();

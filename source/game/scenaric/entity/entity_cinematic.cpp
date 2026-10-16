@@ -1073,6 +1073,12 @@ void EntityCinematic::end() {
         const bool bLifeSet = cinematicPlayer.isLifeSetCinematic();
         const int32_t count = cinematicPlayer.getActorCount();
         for ( int32_t i = 0; i < count; i++ ) {
+            if ( cinematicPlayer.getActorKind( i ) ==
+                 CinematicActor::CAK_PlayerCar ) {
+                cinematicPlayer.releasePlayerCarActor( i );
+                continue;
+            }
+
             Entity *pActor =
                 static_cast<Entity *>( cinematicPlayer.getActorEntity( i ) );
             if ( pActor != nullptr ) {

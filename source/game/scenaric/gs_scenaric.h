@@ -94,6 +94,8 @@ public:
     inline RandomGen &getRandomGenerator() { return randomGenerator; }
     inline float getTimeLeftForRental() const { return rentalTimer; }
     inline void setTimeLeftForRental( const float time ) { rentalTimer = time; }
+    inline SpotMap *getRentalSpot() const { return pRentalSpot; }
+    inline void setRentalSpot( SpotMap *pSpot ) { pRentalSpot = pSpot; }
     inline void setMailboxUpdated( const bool bUpdated ) {
         bMailboxUpdated = bUpdated;
     }
@@ -263,7 +265,8 @@ private:
     Entity *pActiveExtraChallenge; // DAT_01214948
     int32_t numExtraChallenges;    // DAT_0121494c
 
-    float rentalTimer;
+    float rentalTimer;    // DAT_01214928
+    SpotMap *pRentalSpot; // DAT_0121492c
     uint64_t objectiveSpotHashcode;
     ObjectiveMarker objectives[6];
 

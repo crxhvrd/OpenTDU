@@ -117,7 +117,6 @@ SceneShop::SceneShop()
       skipCineTimer( -1.0f ),
       pSkipCinePlayer( nullptr ) {
     // FUN_00772840
-    OTDU_UNIMPLEMENTED; // TODO: GMSHOP
 }
 
 SceneShop::~SceneShop() {
@@ -147,8 +146,6 @@ void SceneShop::loadResources( const bool bRental ) {
     }
 
     content.enter( &interiorBank, false );
-
-    OTDU_UNIMPLEMENTED; // TODO: GMSHOP
 
     gpCamera->setMouseCam( false );
 
@@ -223,7 +220,6 @@ void SceneShop::terminate() {
     }
 
     detailsCamera.destroy();
-    OTDU_UNIMPLEMENTED; // TODO: GMSHOP (second camera terminate)
 
     const ScenaricBank::eBankState bankState = bank.getState();
     if ( bankState != ScenaricBank::BBS_Unused &&
@@ -241,8 +237,6 @@ void SceneShop::terminate() {
         pDetails2DMContent = nullptr;
     }
     pDetailsMaterial = nullptr;
-
-    OTDU_UNIMPLEMENTED; // TODO: GMSHOP
 
     carPark.releaseAll();
     content.leave();
@@ -462,13 +456,13 @@ void SceneShop::playOptionCinematic( const int32_t option,
     DBEntryCarPhysicsData *pCarEntry =
         gpDatabase->getCarDBEntry( int32_t( pCarState->getCarID() ) );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: VEHICLE (showcase player vehicle
-                             // force-cockpit flag)
-
     MngShowCaseCarControl *pShowcase =
         ( gpActiveGMScene != nullptr )
             ? &gpActiveGMScene->getShowcaseCarControl()
             : nullptr;
+    if ( pShowcase != nullptr ) {
+        pShowcase->setPlayerVehicleForceInterior( false );
+    }
 
     switch ( option ) {
     case 0: {
@@ -504,6 +498,7 @@ void SceneShop::playOptionCinematic( const int32_t option,
     case 3:
         if ( pShowcase != nullptr ) {
             pShowcase->openLeftDoor( carPark.getCarVehicle( carIndex ) );
+            pShowcase->setPlayerVehicleForceInterior( true );
         }
         playCarCinematic( "C_INTERIOR", carIndex, false );
         break;

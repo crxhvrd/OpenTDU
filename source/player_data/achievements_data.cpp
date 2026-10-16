@@ -1009,6 +1009,31 @@ bool AchievementsData::isRewardLocked( const uint64_t rewardHashcode ) const {
     return true;
 }
 
+bool AchievementsData::isRewardLocked( const uint64_t rewardHashcode,
+                                       const int32_t rewardData ) const {
+    // FUN_0089bcd0
+    for ( size_t i = 1; i < achievements.size(); i++ ) {
+        const AchievementCheck *pAchievement = achievements[i];
+        if ( pAchievement != nullptr &&
+             pAchievement->RewardHashcode == rewardHashcode &&
+             pAchievement->RewardData == rewardData ) {
+            return pAchievement->bLock;
+        }
+    }
+
+    return true;
+}
+
+bool AchievementsData::isRewardCarBought( const uint32_t carID ) const {
+    // FUN_0089cc50
+    for ( const uint32_t ( &rewardCar )[2] : pRewardCarsBought ) {
+        if ( TestDriveTEAReadDword( rewardCar ) == carID ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 uint32_t AchievementsData::getAchievedPoints() const {
     // FUN_0089bd90
     uint32_t achievedPoints = 0u;

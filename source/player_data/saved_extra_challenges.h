@@ -90,6 +90,7 @@ public:
     void addCounter( const int32_t index, const int32_t value );
     void countCarTuned( const bool bBike );
     void countCarPainted( const bool bBike );
+    void countCarRented();
     void countCarTransaction( const uint32_t carID,
                               const bool bBought,
                               const bool bETrade );

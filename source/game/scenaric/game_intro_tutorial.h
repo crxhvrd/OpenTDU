@@ -25,6 +25,7 @@ public:
 
     void initialize( Spots &spotList );
     inline int32_t getStep() const { return tutorialStep; }
+    inline int32_t getCarRentalTime() const { return carRentalTime; }
     inline bool isModalHintVisible() const { return bModalHintVisible; }
 
     bool isActive() const;
@@ -33,6 +34,7 @@ public:
     void tick();
 
     void onIntroCinematicEnded();
+    void onCarRented( const int32_t carID, const int32_t rentalTime );
     void FUN_007fbd80( bool param_2 );
     void computeMapFocus( GMMap *pMap,
                           Eigen::Vector4f *pOutFocus,
@@ -61,6 +63,7 @@ private:
     SpotMap *pHome;
     int32_t carDealer;
     int32_t carIDRental;
+    int32_t carRentalTime;
 
     uint8_t bModalHintVisible : 1;
     uint8_t bMapForIntro : 1;

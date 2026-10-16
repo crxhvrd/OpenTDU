@@ -274,6 +274,7 @@ public:
                    const DBEntryAftermarketPack *pPack = nullptr,
                    const bool bIsAI = false,
                    const bool bIsNetwork = false );
+    PhysicsVehicle *installVehicle( struct VehicleInstallRequest &request );
     void destroyVehicle( PhysicsVehicle *pVehicle );
     void setVehicleOwner( PhysicsVehicle *pVehicle, void *pOwner );
     PhysicsVehicle *findVehicle( const JPH::Body &chassis ) const;

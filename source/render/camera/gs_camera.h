@@ -52,9 +52,7 @@ public:
         pTargetPhysEntity = pPhysEntity;
     }
     inline CarState *getBoundCarState() const { return pTarget; }
-    inline void setBoundCarState( CarState *pCarState ) {
-        pTarget = pCarState;
-    }
+    inline void setBoundCarState( CarState *pCarState ) { pTarget = pCarState; }
 
     inline CameraGame *getActiveCamera() { return pActiveVehicleCamera; }
     inline CameraGame *getPreviousCamera() { return pPrevCamera; }
@@ -73,6 +71,12 @@ public:
     inline void setInteriorView( const bool value ) { bInterior = value; }
     inline void setMouseCam( const bool value ) { bMouseCam = value; }
     inline void setUseBlur( const bool value ) { bUseBlur = value; }
+    inline float getCameraShake() const { return cameraShake; }
+    inline float getRadialBlurIntensity() const { return radialBlurIntensity; }
+    inline void setDrivingOptions( const float shake, const float blur ) {
+        cameraShake = shake;
+        radialBlurIntensity = blur;
+    }
     inline float getLeftView() const { return leftView; }
     inline float getRightView() const { return rightView; }
     inline float getUpView() const { return upView; }
@@ -160,8 +164,7 @@ public:
 
     CameraMouse *getMouseCamera();
 
-    void
-    findAndSetCameraMode( int param_1, int32_t transition, float param_3 );
+    void findAndSetCameraMode( int param_1, int32_t transition, float param_3 );
     void bindCamera( CameraGame *param_1, int32_t transition, float param_3 );
 
     void tickActiveCamera( float param_2 );
@@ -209,6 +212,8 @@ private:
     uint8_t bInterior : 1;
     uint8_t bUnknownBool3 : 1;
     uint8_t bLocked : 1;
+    float cameraShake;         // +0x960
+    float radialBlurIntensity; // +0x964
     uint8_t bEditing : 1;
     uint8_t bPaused : 1;
     uint8_t bLookAtPlayerPos : 1;

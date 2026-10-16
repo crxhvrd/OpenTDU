@@ -46,12 +46,16 @@ public:
     void onFadeDone( int32_t phase );
 
 private:
+    static void OnFadeDone( void *pData, void *pSource );
+
     bool updateRentalTimer();
+    void startRentalExpiry();
+    void returnToRentalSpot();
 
 private:
     FlashPlayer *pFlashPlayer;
     bool bEnabled;
-    Eigen::Matrix4f Matrix;
+    Matrix4x4f_t Matrix;
     eGameMode activeGameMode;
 
     // 0 = idle; 1 = a spot respawn was deferred in onFadeDone and is waiting

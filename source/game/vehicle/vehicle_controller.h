@@ -16,6 +16,9 @@ public:
     inline bool hasValidGaugeSetup() const {
         return gauges[0].pNeedles[0] != nullptr;
     }
+    inline void setForceInterior( const bool bForce ) {
+        bForceInterior = bForce;
+    }
 
 public:
     static constexpr int32_t kNumGauges = 3;

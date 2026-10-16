@@ -57,8 +57,6 @@
 
 // TDU_PNJ row index in the game database
 static constexpr int32_t kPNJDatabaseIndex = 0x10;
-static constexpr int32_t kDefaultCarDBID = 999;
-static constexpr int32_t kDefaultBikeDBID = 666;
 
 static constexpr int32_t kCinematicCameraMode = 0xa; // DAT_00f143b4
 
@@ -1987,6 +1985,7 @@ void *CinResCollection::loadSourceByName( const char *pName,
                                           uint32_t *pOutSize ) {
     // FUN_007e1c70
     pPlayerCarActor = nullptr;
+    bPlayerCarSpawned = false;
 
     *pOutSize = 0;
     if ( pBank == nullptr || pName == nullptr ) {
@@ -2450,148 +2449,107 @@ void *CinResCollection::findSceneActorByName( const char *pName ) {
 
 void *CinResCollection::spawnPlayerCar() {
     // FUN_007e6520
-    if ( gpScenaric == nullptr ) {
-        return nullptr;
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr ) {
+        const int32_t tutorialStep = gpScenaric->getIntroTutorial().getStep();
+        if ( tutorialStep != kTutorialStatePending &&
+             tutorialStep != kTutorialStateRunning &&
+             tutorialStep < kTutorialStateBuyCar ) {
+            return nullptr;
+        }
+
+        GarageSlot *pSlot = GetCurrentGarageSlot();
+        if ( pSlot == nullptr ) {
+            return nullptr;
+        }
+
+        const Eigen::Vector4f shift = ( gpWorldStreaming->isEnabled() )
+                                          ? gpWorldStreaming->getPosition()
+                                          : Eigen::Vector4f::Zero();
+
+        VehicleSpawnParams params;
+        params.Transform.row( 3 ) << shift.x(), shift.y(), shift.z(), 1.0f;
+        params.bSetPosition = true;
+        params.bCastToGround = true;
+        params.bResetCar = true;
+        params.bCinematicMode = true;
+        params.PhantomMode = 1;
+
+        VehicleBaseResources *pResource = gpCarState->loadVehicleResources(
+            int32_t( pSlot->getCarConfigID() ), 0, pSlot->rimID,
+            pSlot->packHashcode, 0, 0, eVehicleResourceType::VRT_Exterior );
+        pLocalCar = ( pResource != nullptr )
+                        ? gpCarState->installVehicle( pResource, params,
+                                                      VIT_Player, -1 )
+                        : nullptr;
+        if ( pLocalCar == nullptr ) {
+            return nullptr;
+        }
+
+        PhysicsVehicle *pPhysicsVehicle = pLocalCar->getPhysicsVehicle();
+        if ( pPhysicsVehicle != nullptr ) {
+            PhysicsLock lock;
+            pPhysicsVehicle->resetToTransform( params.Transform, true );
+        }
+
+        gpScenaric->getLocalPlayer().setCarState( pLocalCar );
+        VehicleBase *pVehicle = pLocalCar->getVehicleInstance();
+        if ( pVehicle != nullptr ) {
+            pVehicle->applyGaragePaint( *pSlot );
+        }
+        bPlayerCarSpawned = true;
+
+        pLocalCar->getBody()->WorldMatrix.row( 3 ) = shift;
+
+        if ( pVehicle != nullptr &&
+             ( pVehicle->getType() == VehicleBase::eType::VBT_Car ||
+               pVehicle->getType() == VehicleBase::eType::VBT_Bike ) ) {
+            GSCarDisplay::SetRealTimeEnvMappedCar( pVehicle );
+        } else {
+            GSCarDisplay::SetRealTimeEnvMappedCar( nullptr );
+        }
+    }
+
+    if ( pPlayerAvatar != nullptr && pLocalCar->getDriver() == nullptr ) {
+        gpScenaric->placeDriver( pLocalCar, pPlayerAvatar->getDriver() );
+    }
+
+    return pLocalCar;
+}
+
+void CinResCollection::releasePlayerCarActor( const int32_t index ) {
+    // FUN_007e5f70
+    CarState *pCarState = actors[index].pCarState;
+    if ( pCarState == nullptr ) {
+        return;
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+    SetPlayerCarCinematicMode( false );
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+
+    if ( gpActiveGMScene != nullptr ) {
+        MngShowCaseCarControl &showcase =
+            gpActiveGMScene->getShowcaseCarControl();
+        showcase.resetShowcase();
+        showcase.setVehicle( nullptr );
+    }
+
+    if ( !bPlayerCarSpawned ) {
+        return;
     }
 
     CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
     if ( pLocalCar != nullptr ) {
-        return pLocalCar;
-    }
-
-    const int32_t tutorialStep = gpScenaric->getIntroTutorial().getStep();
-    if ( tutorialStep != kTutorialStatePending &&
-         tutorialStep != kTutorialStateRunning &&
-         tutorialStep < kTutorialStateBuyCar ) {
-        return nullptr;
-    }
-
-    GarageSlot *pSlot = GetCurrentGarageSlot();
-    if ( pSlot == nullptr || gpCarState == nullptr || gpCarDisplay == nullptr ||
-         gpDatabase == nullptr ) {
-        return nullptr;
-    }
-
-    Matrix4x4f_t spawn = Matrix4x4f_t::Identity();
-    Eigen::Vector4f shift = Eigen::Vector4f::Zero();
-    if ( gpWorldStreaming != nullptr ) {
-        shift = gpWorldStreaming->getPosition();
-        spawn.row( 3 ) << shift.x(), shift.y(), shift.z(), 1.0f;
-    }
-
-    VehicleBaseResources *pRes = gpCarState->grabFreeResourceEntry();
-    if ( pRes == nullptr ) {
-        return nullptr;
-    }
-
-    const int32_t configID = static_cast<int32_t>( pSlot->getCarConfigID() );
-    if ( !pRes->load( configID, pSlot->rimID, 0, 0, pSlot->packHashcode, 0,
-                      eVehicleResourceType::VRT_Exterior ) ) {
-        gpCarState->releaseResourceEntry( pRes );
-        return nullptr;
-    }
-
-    CarState &state = gpCarState->grabNextFreeCarState();
-    state.reset();
-    state.owner = CarState::eOwner::CSO_LocalPlayer;
-    state.simulationType = CarState::eSimulationType::CSST_Local;
-    state.bUseShowcaseControl = false;
-    state.carID = pRes->CarID;
-    state.tireID = pRes->TireID;
-    state.rimID = pRes->RimID;
-    state.body.BackOnTrackState = 0;
-    state.body.resetBackOnTrack();
-
-    DBEntryCarPhysicsData *pCarEntry = gpDatabase->getCarDBEntry( state.carID );
-    if ( pCarEntry == nullptr ) {
-        pCarEntry = gpDatabase->getCarDBEntry( kDefaultCarDBID );
-    } else if ( ( ( pCarEntry->BitField & 1 ) == 0 ) ||
-                ( pCarEntry->Brand == nullptr ) ||
-                ( ( pCarEntry->Brand->Flags & 1 ) == 0 ) ) {
-        const char *pBikeCategory =
-            gpDatabase->getStringByHashcode( 1, 0x35da5b5 );
-        pCarEntry = gpDatabase->getCarDBEntry(
-            ( pBikeCategory == pCarEntry->Category.pAsString )
-                ? kDefaultBikeDBID
-                : kDefaultCarDBID );
-    }
-
-    VehicleController *pController =
-        gpDatabase->isBike( pCarEntry )
-            ? static_cast<VehicleController *>( gpCarDisplay->instantiateBike(
-                  &state, &pRes->Exterior, &pRes->Interior, &pRes->FrontRims,
-                  &pRes->RearRims ) )
-            : static_cast<VehicleController *>( gpCarDisplay->instantiateCar(
-                  &state, &pRes->Exterior, &pRes->Interior, &pRes->FrontRims,
-                  &pRes->RearRims ) );
-    if ( pController == nullptr ) {
-        gpCarState->releaseResourceEntry( pRes );
-        return nullptr;
-    }
-
-    if ( gpMngEnvMap != nullptr ) {
-        GSCarDisplay::SetRealTimeEnvMappedCar( pController );
-    }
-
-    PhysicsVehicle *pPhysicsVehicle = nullptr;
-    if ( pRes->bUseGamePhysics != 0 && gpPhysics != nullptr ) {
-        DBEntryCarPhysicsData *pPhysEntry = pCarEntry;
-        const DBEntryAftermarketPack *pPack =
-            gpDatabase->getAftermarketPack( pRes->PackHashcode );
-        if ( state.carID == kDefaultCarDBID ) {
-            pPhysEntry = gpDatabase->getCarDBEntry( 223 );
-            pPack = nullptr;
-        } else if ( state.carID == kDefaultBikeDBID ) {
-            pPhysEntry = gpDatabase->getCarDBEntry( 1502 );
-            pPack = nullptr;
+        VehicleBase *pVehicle = pLocalCar->getVehicleInstance();
+        if ( pVehicle != nullptr ) {
+            pVehicle->unloadInterior();
         }
-
-        BankVehicle *pBank = pRes->Exterior.pBankInstance;
-        PhysFactory *pFactory =
-            ( pBank != nullptr ) ? pBank->getPhysFactory() : nullptr;
-        const void *pTorqueBin =
-            ( pBank != nullptr ) ? pBank->getTorqueBinary() : nullptr;
-        if ( pPhysEntry != nullptr ) {
-            pPhysicsVehicle = gpPhysics->createVehicle(
-                pFactory, spawn, *pPhysEntry, pTorqueBin, pPack );
-        }
+        gpScenaric->getLocalPlayer().setCarState( nullptr );
+        gpCarState->unloadVehicle( pLocalCar, false, false );
     }
-
-    state.setPhysicsVehicle( pPhysicsVehicle );
-    state.bIsIndoor = false;
-    state.pVehicleBase = pController;
-    state.pResource = pRes;
-    if ( pRes->bSoundResource && gpVehicleSound != nullptr ) {
-        state.pVehicleSound = gpVehicleSound->createInstance( &state );
-    }
-    pRes->RefCount++;
-
-    if ( pPhysicsVehicle != nullptr && gpPhysics != nullptr ) {
-        PhysicsLock lock;
-        pPhysicsVehicle->setCinematicMode( true );
-        pPhysicsVehicle->setIgnition( false, false );
-        pPhysicsVehicle->resetToTransform( spawn, true );
-        pPhysicsVehicle->setDrivingControl( gpPhysics );
-    }
-
-    gpScenaric->getLocalPlayer().setCarState( &state );
-    pController->applyGaragePaint( *pSlot );
-
-    state.body.WorldMatrix = spawn;
-    Matrix4x4f_t offseted = spawn;
-    offseted( 3, 0 ) -= shift.x();
-    offseted( 3, 1 ) -= shift.y();
-    offseted( 3, 2 ) -= shift.z();
-    state.body.OffsetedWorldMatrix = offseted;
-
-    if ( pController->getType() == VehicleBase::eType::VBT_Car ||
-         pController->getType() == VehicleBase::eType::VBT_Bike ) {
-        GSCarDisplay::SetRealTimeEnvMappedCar( pController );
-    } else {
-        GSCarDisplay::SetRealTimeEnvMappedCar( nullptr );
-    }
-
-    return &state;
+    bPlayerCarSpawned = false;
 }
 
 static void SnapCinematicWindow( WindowState &window, bool bOpening ) {

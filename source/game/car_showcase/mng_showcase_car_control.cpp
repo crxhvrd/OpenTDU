@@ -332,6 +332,14 @@ void MngShowCaseCarControl::moveDoor( bool bLeft,
     door.MoveDuration = duration;
 }
 
+void MngShowCaseCarControl::setPlayerVehicleForceInterior( const bool bForce ) {
+    // FUN_0076f930
+    if ( pPlayerVehicle != nullptr ) {
+        static_cast<VehicleController *>( pPlayerVehicle )
+            ->setForceInterior( bForce );
+    }
+}
+
 void MngShowCaseCarControl::setVehicle( VehicleBase *pVehicleBase ) {
     // FUN_0076fa20
     pCar = nullptr;

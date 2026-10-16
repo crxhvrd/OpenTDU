@@ -1169,6 +1169,8 @@ void MngOptions::commitPlayerOptions() {
     localPlayerData.SeatPositionPosition = seatPositionSlider.getValue();
 
     gpPlayerData->applyDrivingOptions();
+    gpCamera->setDrivingOptions( gpPlayerData->getCameraShake(),
+                                 gpPlayerData->getRadialBlurIntensity() );
 
     FUN_006c6db0();
 

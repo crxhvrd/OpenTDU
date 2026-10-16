@@ -107,6 +107,7 @@ GSScenaric::GSScenaric()
       pActiveExtraChallenge( nullptr ),
       numExtraChallenges( 0 ),
       rentalTimer( -1.0f ),
+      pRentalSpot( nullptr ),
       objectiveSpotHashcode( 0 ),
       bDelockChallengesRoad( true ),
       bInstantChallengeEnabled( false ) {
