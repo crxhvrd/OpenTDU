@@ -336,7 +336,24 @@ void MngCollection::publishAchievementHeader() {
     pPlayer->setVariableValue( "/:GamerScore",
                                pAchievements->getAchievedPoints() );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLIVING (achievements panel)
+    pAchievements->publishLevelSteps( pPlayer );
+    pAchievements->publishCheckStates( pPlayer );
+}
+
+void MngCollection::publishAchievementDetails() {
+    // FUN_009d1c40
+    FlashPlayer *pPlayer = getFlashPlayer();
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    const int32_t menuIndex = pPlayer->getVariableAsInt( "/:num_menu" );
+    const int32_t rowIndex = pPlayer->getVariableAsInt( "/:num_row" );
+    const int32_t columnIndex = pPlayer->getVariableAsInt( "/:num_col" );
+    const int32_t panelID = ( menuIndex * 10 + rowIndex ) * 10 + columnIndex;
+
+    gpPlayerData->getLoadedSave()->getAchievements()->publishAchievementDetails(
+        pPlayer, panelID );
 }
 
 void MngCollection::ThumbnailDrawCallback( FlashRECT * /*pViewport*/,
@@ -459,8 +476,8 @@ bool MngCollection::onMessage( FlashMessage *pMessage ) {
         }
         return true;
 
-    case FlashMessage( "acda" ):
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLIVING (achievements panel)
+    case FlashMessage( "acda" ): // one achievement selected
+        publishAchievementDetails();
         return true;
 
     case FlashMessage( "stin" ): // the statistics screen opened

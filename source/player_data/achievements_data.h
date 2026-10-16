@@ -4,6 +4,7 @@
 #include "achievement_popup.h"
 
 class edStore;
+class FlashPlayer;
 struct DBEntryAchievement;
 
 class AchievementsData {
@@ -82,6 +83,11 @@ public:
     bool isRewardLocked( const uint64_t rewardHashcode ) const;
     uint32_t getAchievedPoints() const;
     int32_t getPlayerLevel() const;
+
+    void publishLevelSteps( FlashPlayer *pMovie ) const;
+    void publishCheckStates( FlashPlayer *pMovie ) const;
+    void publishAchievementDetails( FlashPlayer *pMovie,
+                                    const int32_t panelID );
 
 private:
     void buildCheck( const DBEntryAchievement &entry );

@@ -64,6 +64,7 @@ private:
     void hideBigPhoto();
     void deleteSelectedPhoto();
     void publishAchievementHeader();
+    void publishAchievementDetails();
 
     int32_t getSelectedSlot() const;
     void clearAlbumMaterials();

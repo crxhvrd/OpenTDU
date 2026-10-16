@@ -125,6 +125,100 @@ int32_t AchievementsData::getExploredRoadLength() {
 
 AchievementsData::~AchievementsData() { releaseChecks(); }
 
+static inline int32_t GetCheckPanelID( const AchievementCheck *pCheck ) {
+    if ( pCheck->RewardHashcode == 0xffffffffffffffffull ||
+         pCheck->RewardHashcode == kRewardNone ) {
+        return pCheck->RewardData;
+    }
+
+    return -1;
+}
+
+void AchievementsData::publishLevelSteps( FlashPlayer *pMovie ) const {
+    // FUN_0089d960
+    if ( pMovie == nullptr ) {
+        return;
+    }
+
+    pMovie->setVariableValue( "/:stepNovice", pointsNeeded[0] );
+    pMovie->setVariableValue( "/:stepPro", pointsNeeded[1] );
+    pMovie->setVariableValue( "/:stepExpert", pointsNeeded[2] );
+    pMovie->setVariableValue( "/:stepMaster", pointsNeeded[3] );
+}
+
+void AchievementsData::publishCheckStates( FlashPlayer *pMovie ) const {
+    // FUN_0089d920
+    if ( pMovie == nullptr ) {
+        return;
+    }
+
+    for ( const AchievementCheck *pCheck : achievements ) {
+        if ( pCheck == nullptr ) {
+            continue;
+        }
+
+        // FUN_0089d5a0 (inlined)
+        if ( pCheck->RewardHashcode != 0xffffffffffffffffull &&
+             pCheck->RewardHashcode != kRewardNone ) {
+            continue;
+        }
+
+        char varName[64];
+        snprintf( varName, sizeof( varName ), "/:achv_%d", pCheck->RewardData );
+        pMovie->setVariableValue( varName, pCheck->bLock ? 0 : 1 );
+    }
+}
+
+void AchievementsData::publishAchievementDetails( FlashPlayer *pMovie,
+                                                  const int32_t panelID ) {
+    // FUN_0089d7c0
+    if ( pMovie == nullptr ) {
+        return;
+    }
+
+    exploredRoadLength = -1;
+
+    int32_t numItemsTotal = 0;
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const uint32_t numEntries = gameDB.pNumItems[kAchievementDatabaseIndex];
+    for ( uint32_t i = 0u; i < numEntries; i++ ) {
+        const DBEntryAchievement &entry = gameDB.DBAchivement[i];
+        if ( entry.RewardData != panelID ) {
+            continue;
+        }
+
+        numItemsTotal = entry.NumItemsReq;
+        pMovie->setVariableValue( "/:AchvTitle", entry.Tile.pAsString );
+        pMovie->setVariableValue( "/:AchvDescr", entry.Description.pAsString );
+        pMovie->setVariableValue( "/:achvPoints", entry.NumPoints );
+        pMovie->setVariableValue( "/:achvTotal", numItemsTotal );
+        break;
+    }
+
+    for ( const AchievementCheck *pCheck : achievements ) {
+        if ( pCheck == nullptr || GetCheckPanelID( pCheck ) != panelID ) {
+            continue;
+        }
+
+        int32_t numItemsDone = 0;
+        if ( pCheck->bShowsProgress ) {
+            numItemsDone = pCheck->getDetailedProgress( &numItemsTotal );
+            pMovie->setVariableValue( "/:achvTotal", numItemsTotal );
+        } else {
+            numItemsDone = pCheck->getProgress( nullptr );
+        }
+
+        if ( !pCheck->bLock ) {
+            numItemsDone = numItemsTotal;
+        } else if ( numItemsDone >= numItemsTotal ) {
+            numItemsDone = numItemsTotal;
+        }
+
+        pMovie->setVariableValue( "/:achvDone", numItemsDone );
+        return;
+    }
+}
+
 void AchievementsData::build() {
     // FUN_0089f490
     releaseChecks();

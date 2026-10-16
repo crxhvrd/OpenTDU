@@ -3,9 +3,9 @@
 struct DBEntryAchievement {
     DBReference Kind;    
     int32_t NumItemsReq;
-    int32_t NumPoints; 
-    DBReference Tile;   
-    DBReference Unknown0x18; 
+    int32_t NumPoints;
+    DBReference Tile;
+    DBReference Description;
     DBReference Text;       
     DBReference FailedExplanation; 
     DBReference Reward;     
