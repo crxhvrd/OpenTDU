@@ -213,6 +213,10 @@ public:
     bool isKeyframed() const { return bKeyframed; }
     void setPhysicsPaused( bool bPaused ) { bPausePhysics = bPaused; }
     bool isPhysicsPaused() const { return bPausePhysics; }
+    bool isPaused() const {
+        // FUN_0040aab0
+        return ( bPausePhysics || postponedPause == 1 ) && postponedPause != 2;
+    }
     bool isVirtual() const { return bVirtual; }
     bool isVirtualGrounded() const { return bVirtualGrounded; }
     float getVirtualSpeed() const { return virtualSpeed; }

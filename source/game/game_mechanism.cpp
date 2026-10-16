@@ -2,6 +2,9 @@
 #include "game_mechanism.h"
 
 #include "game/scenaric/entity/base_entity.h"
+#include "game/scenaric/entity/entity_factory.h"
+#include "game/scenaric/entity/entity_traffic_light.h"
+#include "render/serialized_skinned_model.h"
 #include "physics/gs_physics.h"
 
 GameMechanism::GameMechanism()
@@ -172,7 +175,19 @@ void GameMechanism::reInit() {
         removeAndDestroy();
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: WORLD (TrafficLight)
+    SerializedSkinnedModel *pModel =
+        pEntity != nullptr ? static_cast<SerializedSkinnedModel *>(
+                                 pEntity->getGeometryData() )
+                           : nullptr;
+    if ( pModel != nullptr ) {
+        FileCollection3D *p3DFiles = pModel->p3DFiles;
+        pModel->uninstanciate();
+        pModel->instanciate( p3DFiles, true );
+        if ( pEntity->getType() == eEntityType::ET_TRLI ) {
+            static_cast<EntityTrafficLight *>( pEntity )
+                ->computeROGHiearchies();
+        }
+    }
 
     if ( pParent == nullptr && pEntity != nullptr ) {
         initialTransformMatrix = pEntity->getModelMatrix();

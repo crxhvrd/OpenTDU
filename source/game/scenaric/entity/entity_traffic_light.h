@@ -22,7 +22,6 @@ public:
     void unknownFunc2( void *param_2 ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
 
-private:
     void computeROGHiearchies();
 
 protected:

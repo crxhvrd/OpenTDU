@@ -9,6 +9,7 @@ public:
     inline void setFlashPlayer( FlashPlayer *pFlashPlayer ) {
         pPlayer = pFlashPlayer;
     }
+    inline struct SpotMap *getSelectedSpot() const { return pSelectedSpot; }
 
 public:
     FlashListSpots();
@@ -22,4 +23,5 @@ public:
 
 private:
     FlashPlayer *pPlayer;
+    struct SpotMap *pSelectedSpot;
 };

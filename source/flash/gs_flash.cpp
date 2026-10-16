@@ -51,7 +51,8 @@ GSFlash::GSFlash()
       bBackButtonPressed( false ),
       bOption1ButtonPressed( false ),
       bOption2ButtonPressed( false ),
-      field84_0xfec( false ) {
+      field84_0xfec( false ),
+      bUseStick( true ) {
     // FUN_0099b590
     OTDU_ASSERT( gpFlash == nullptr );
     gpFlash = this;

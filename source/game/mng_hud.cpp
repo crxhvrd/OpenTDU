@@ -3045,3 +3045,74 @@ void MngHudChallenge::initializeFlash() {
     countdownCents.NumDigits = 2;
     countdownCents.update( 0 );
 }
+
+void MngHud::setActivityLock( const int32_t index,
+                              const int32_t type,
+                              const int32_t subType ) {
+    // FUN_00430390
+    char pVariableName[64];
+    snprintf( pVariableName, sizeof( pVariableName ),
+              "/menus/ss_menus/ssm/:lock_%d", index );
+    pHudPlayer->setVariableValue(
+        pVariableName,
+        gpScenaric->getSpotList().countWorldSpots( type, subType ) > 0 ? 0
+                                                                       : 1 );
+}
+
+void MngHud::updateActivityLocks() {
+    // FUN_006e8150
+    if ( pHudPlayer == nullptr ) {
+        return;
+    }
+
+    setActivityLock( 0, ST_CarDealer, -1 );
+    setActivityLock( 1, ST_BikeDealer, -1 );
+    setActivityLock( 2, ST_AfterMarket, -1 );
+    setActivityLock( 3, ST_Unknown8, 2 );
+    setActivityLock( 4, ST_Unknown8, 0 );
+    setActivityLock( 5, ST_Unknown8, 1 );
+    setActivityLock( 6, ST_Unknown8, 4 );
+    setActivityLock( 7, ST_Goodies, -1 );
+}
+
+struct ActivityStatusDesc {
+    const char *pWhatSpot;
+    const char *pLabel;
+    int32_t Type;
+    int32_t SubType;
+};
+
+static constexpr ActivityStatusDesc kActivityStatusDescs[] = {
+    {"bikeDealer", "Bike Dealer",  ST_BikeDealer,  -1},
+    {"carDealer",  "Car Dealer",   ST_CarDealer,   -1},
+    {"carRental",  "Car Rental",   ST_Unknown8,    2 },
+    {"carWash",    "Car Wash",     ST_Unknown8,    0 },
+    {"estates",    "Realtor",      ST_Unknown8,    4 },
+    {"goodies",    "Goodies Shop", ST_Goodies,     -1},
+    {"tuning",     "Tunning Shop", ST_AfterMarket, -1},
+    {"carPaint",   "Car Paint",    ST_Unknown8,    1 },
+};
+
+void MngHud::updateActivityStatus() {
+    // FUN_006e6790
+    if ( pHudPlayer == nullptr ) {
+        return;
+    }
+
+    char pWhatSpot[32];
+    pHudPlayer->getVariableAsString( "/:WhatSpot", pWhatSpot );
+
+    for ( const ActivityStatusDesc &desc : kActivityStatusDescs ) {
+        if ( strcmp( pWhatSpot, desc.pWhatSpot ) != 0 ) {
+            continue;
+        }
+
+        char pStatus[32];
+        snprintf( pStatus, sizeof( pStatus ), "_%d available %s",
+                  gpScenaric->getSpotList().countWorldSpots( desc.Type,
+                                                             desc.SubType ),
+                  desc.pLabel );
+        pHudPlayer->setVariableValueNonLinked( "/:ActivityStatus", pStatus );
+        return;
+    }
+}

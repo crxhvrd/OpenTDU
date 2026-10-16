@@ -101,6 +101,9 @@ public:
         }
         return startPosition;
     }
+    inline bool hasDefaultStartPosition() const {
+        return startPosition.x() != 0.0f;
+    }
     inline LocalPlayer &getLocalPlayer() { return localPlayer; }
     inline void setObjectiveSpotHashcode( const uint64_t hashcode ) {
         objectiveSpotHashcode = hashcode;
@@ -179,6 +182,9 @@ public:
         return extraChallengesCineBank;
     }
     inline int32_t getNumExtraChallenges() const { return numExtraChallenges; }
+    inline void setNumExtraChallenges( const int32_t count ) {
+        numExtraChallenges = count;
+    }
     Entity *findExtraChallenge( int32_t index );
     inline ScenaricBank *getWorldExtraChallengesBank() {
         return &worldExtraChallengesBank;

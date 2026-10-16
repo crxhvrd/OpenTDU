@@ -32,6 +32,7 @@ public:
     void reset();
     void tick();
 
+    void onIntroCinematicEnded();
     void FUN_007fbd80( bool param_2 );
     void computeMapFocus( GMMap *pMap,
                           Eigen::Vector4f *pOutFocus,

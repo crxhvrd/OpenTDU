@@ -31,6 +31,9 @@ public:
     EntityAvatar *getDriverAvatar();
 
     inline bool getUnknownBoolean() const { return bUnknownBoolean; }
+    inline void setUnknownBoolean( const bool bValue ) {
+        bUnknownBoolean = bValue;
+    }
     inline void setFullUpdate( const bool bEnabled ) {
         bIsFullUpdate = bEnabled;
     }

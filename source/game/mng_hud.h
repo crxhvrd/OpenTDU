@@ -291,6 +291,10 @@ public:
     using MovieFilterCallback_t = bool ( * )( const char *pMovieName );
 
 public:
+    inline void setMovieFilter( MovieFilterCallback_t pFilter ) {
+        pMovieFilter = pFilter;
+    }
+
     static constexpr int32_t kMaxObjectiveMarkers = 8;
 
 public:
@@ -322,6 +326,8 @@ public:
     void updateUnitSystem();
     void FUN_006e6a00( CarState *param_2 );
     void cycleMinimapZoom();
+    void updateActivityLocks();
+    void updateActivityStatus();
 
     void setObjectiveMarker( const int32_t slot,
                              const Eigen::Vector4f &pPosition,
@@ -343,6 +349,9 @@ public:
                                         const char *pClipName );
 
 private:
+    void setActivityLock( const int32_t index,
+                          const int32_t type,
+                          const int32_t subType );
     void loadCarGauges( const char *pFilename );
     void installCarGauges();
     void unloadCarGauges();

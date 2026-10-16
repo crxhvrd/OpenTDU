@@ -1450,8 +1450,7 @@ void GMMap::updateExit() {
             }
 
             PhysicsLock lock;
-            // FUN_008ae5c0
-            pCarState->getBody()->resetBackOnTrack();
+            pCarState->resetBackOnTrack();
             pPhysicsVehicle->resetToTransform( carTransform, true );
         }
 

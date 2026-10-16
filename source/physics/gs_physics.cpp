@@ -59,6 +59,7 @@
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Geometry/RayAABox.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/GroupFilterTable.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
@@ -2707,6 +2708,63 @@ void GSPhysics::setCharacterExtraCollisionBodies(
             pCharacter->ExtraBodies.push_back( pBody->GetID() );
         }
     }
+}
+
+int32_t
+GSPhysics::rayCastBodyBounds( const Eigen::Vector3f &worldOrigin,
+                              const Eigen::Vector3f &direction,
+                              float maxDistance,
+                              const std::vector<const JPH::Body *> &bodies,
+                              float *pHitDistance ) {
+    if ( direction.squaredNorm() <= 0.0f || maxDistance <= 0.0f ) {
+        return -1;
+    }
+
+    PhysicsLock lock;
+
+    const Eigen::Vector4f origin = GetShiftOrigin();
+    const JPH::RVec3 rayOrigin( worldOrigin.x() - origin.x(),
+                                worldOrigin.y() - origin.y(),
+                                worldOrigin.z() - origin.z() );
+    const Eigen::Vector3f rayDirection = direction.normalized() * maxDistance;
+    const JPH::Vec3 rayVector( rayDirection.x(), rayDirection.y(),
+                               rayDirection.z() );
+
+    int32_t closestIndex = -1;
+    float closestFraction = 1.0f;
+    for ( size_t i = 0; i < bodies.size(); i++ ) {
+        const JPH::Body *pBody = bodies[i];
+        if ( pBody == nullptr ) {
+            continue;
+        }
+
+        // Shape bounds are expressed relative to the center of mass
+        const JPH::RMat44 worldToBody =
+            pBody->GetCenterOfMassTransform().InversedRotationTranslation();
+        const JPH::Vec3 localOrigin( worldToBody * rayOrigin );
+        const JPH::Vec3 localVector = worldToBody.Multiply3x3( rayVector );
+
+        const JPH::AABox bounds = pBody->GetShape()->GetLocalBounds();
+        const float fraction =
+            JPH::RayAABox( localOrigin, JPH::RayInvDirection( localVector ),
+                           bounds.mMin, bounds.mMax );
+        if ( fraction == FLT_MAX ) {
+            continue;
+        }
+
+        // Negative fraction: the ray starts inside the box
+        const float clampedFraction = Max( fraction, 0.0f );
+        if ( clampedFraction <= closestFraction ) {
+            closestFraction = clampedFraction;
+            closestIndex = static_cast<int32_t>( i );
+        }
+    }
+
+    if ( pHitDistance != nullptr && closestIndex != -1 ) {
+        *pHitDistance = closestFraction * maxDistance;
+    }
+
+    return closestIndex;
 }
 
 void GSPhysics::destroyCharacter( CharacterController_t pCharacter ) {

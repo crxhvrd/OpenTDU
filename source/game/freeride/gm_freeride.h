@@ -58,6 +58,8 @@ public:
 
 private:
     void updateGPSFlyUp();
+    void updateMapScreenshotProps();
+    void snapLocalCarBackOnRoad();
 
 private:
     static constexpr int32_t kMaxNumExtraChallenges = 100;
@@ -74,9 +76,13 @@ private:
     bool selectExtraChallenge( EntityExtraChallenge *pChallenge );
     Entity *spawnExtraChallengeMarker( const int32_t subType );
     void releaseExtraChallengeProp();
+    void releaseExtraChallenges();
     void resolveNextIntroCine( const struct SpotSector *pSector );
 
     bool requestEnterActivity();
+    bool enterCurrentHouseSpot();
+    bool goToSelectedSpot();
+    bool launchCurrentSpotInfo();
     void enterCurrentActivity();
     void acquireSpotIntroCine( struct SpotMap *pSpot );
     void startMapFlyDown();

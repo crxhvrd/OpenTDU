@@ -43,6 +43,7 @@ public:
                           Eigen::Vector4f *param_3 ) override;
 
     Entity *instanciateActor( Entity *pEntity );
+    void preparePlayerSpawnStreaming( const int32_t spawnMode );
     Matrix4x4f_t placePlayerVehicle( int32_t spawnMode, bool bApply );
     static void applyPlayerVehicleFrame( const Matrix4x4f_t &frame,
                                          bool bApply );
@@ -57,6 +58,9 @@ public:
 
 protected:
     static constexpr int32_t kMaxNumEntity = 1024;
+
+protected:
+    Entity *findSpawnCarPark( const int32_t spawnMode ) const;
 
 protected:
     int32_t numActors;

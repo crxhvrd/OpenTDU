@@ -25,6 +25,9 @@ public:
     const char *getName() const override { return "Rental"; /* FUN_00431cc0 */ }
 
 public:
+    inline bool isRespawnPending() const { return respawnState == 1; }
+
+public:
     MngRental();
     ~MngRental();
 

@@ -183,6 +183,8 @@ public:
     void resetWorldSpots();
     bool installSectorSpots( Sector *pSector, Bank *pSpotsBank );
     void spawnPendingSectorSpotMeshes();
+    void despawnSectorSpotMeshes();
+    int32_t countWorldSpots( const int32_t type, const int32_t subType );
     void removeSectorSpots( void *pBlob );
 
 private:

@@ -24,6 +24,10 @@ public:
     void deserialize( BinaryReader *param_2 ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
 
+    inline int32_t getSpawnTag() const {
+        return *reinterpret_cast<const int32_t *>( pData + 4 );
+    }
+
 protected:
     int32_t Index;
     uint8_t *pData;

@@ -4,6 +4,7 @@
 #include "ai/ai_road_query.h"
 #include "bank_scene_arrays.h"
 #include "entity/base_entity.h"
+#include "entity/entity_car_player.h"
 #include "entity/entity_factory.h"
 #include "game/gm_scene.h"
 #include "render/gs_render.h"
@@ -14,6 +15,10 @@
 #include "game/scenaric/local_player.h"
 #include "game/vehicle/car_state.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "player_data/driver.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_save.h"
+#include "world/gs_world.h"
 
 static inline bool IsGameModeRequestingDOFPass() {
     return gpActiveGMScene != nullptr && gpActiveGMScene->isDrawnInFakeDOF();
@@ -97,6 +102,90 @@ bool MngActor::onWorldStreamed( Eigen::Vector4f *param_1,
     return true;
 }
 
+static constexpr float kHouseSpawnRoadBackOff = 10.0f;
+
+static Matrix4x4f_t BuildSpawnFrame( const Eigen::Vector4f &position ) {
+    Matrix4x4f_t frame;
+    frame.row( 0 ) << -1.0f, 0.0f, 0.0f, 0.0f;
+    frame.row( 1 ) << 0.0f, 1.0f, 0.0f, 0.0f;
+    frame.row( 2 ) << 0.0f, 0.0f, -1.0f, 0.0f;
+    frame.row( 3 ) = position.transpose();
+    return frame;
+}
+
+static const SpotMap *FindCurrentHouseSpot() {
+    Spots &spots = gpScenaric->getSpotList();
+    const uint64_t houseHashcode =
+        gpPlayerData->getLoadedSave()->getDriver()->getCurrentHouse();
+    return spots.getWorldSpotChecked( spots.getSpotMapIndex( houseHashcode ) );
+}
+
+Entity *MngActor::findSpawnCarPark( const int32_t spawnMode ) const {
+    // FUN_006df570 / FUN_006df7d0 (inlined)
+    for ( int32_t i = 0; i < numActors; i++ ) {
+        Entity *pActor = pActors[i];
+        if ( pActor->getType() != eEntityType::ET_CARP ) {
+            continue;
+        }
+
+        const EntityCarPlayer *pCarPark =
+            static_cast<const EntityCarPlayer *>( pActor );
+        if ( spawnMode == 0 || pCarPark->getSpawnTag() == spawnMode ) {
+            return pActor;
+        }
+    }
+    return nullptr;
+}
+
+static void SetPlayerSpawnPosition( const Eigen::Vector4f &position ) {
+    Eigen::Vector4f streamingPosition = position;
+    gpWorld->setPlayerPosition( &position );
+    gpWorld->setStreamingPosition( &streamingPosition );
+}
+
+void MngActor::preparePlayerSpawnStreaming( const int32_t spawnMode ) {
+    // FUN_006df570
+    if ( spawnMode == 8 ) {
+        if ( gpScenaric->hasDefaultStartPosition() ) {
+            SetPlayerSpawnPosition( gpScenaric->getDefaultStartPosition() );
+            return;
+        }
+
+        const SpotMap *pHouse = FindCurrentHouseSpot();
+        if ( pHouse != nullptr ) {
+            Matrix4x4f_t frame;
+            ComputeRoadApproachFrame(
+                Eigen::Vector4f( pHouse->X, pHouse->Y, pHouse->Z, 1.0f ), frame,
+                kHouseSpawnRoadBackOff );
+            SetPlayerSpawnPosition( frame.row( 3 ).transpose() );
+            return;
+        }
+    } else {
+        if ( spawnMode == 4 && gpScenaric->wasMapExited() ) {
+            return;
+        }
+        if ( spawnMode == 6 || spawnMode == 7 ) {
+            return;
+        }
+
+        const Entity *pCarPark = findSpawnCarPark( spawnMode );
+        if ( pCarPark != nullptr ) {
+            gpWorld->setPreviousTransform( pCarPark->getModelMatrix() );
+            Eigen::Vector4f streamingPosition =
+                pCarPark->getModelMatrix().row( 3 ).transpose();
+            gpWorld->setStreamingPosition( &streamingPosition );
+            return;
+        }
+
+        if ( gpScenaric->hasDefaultStartPosition() ) {
+            SetPlayerSpawnPosition( gpScenaric->getDefaultStartPosition() );
+            return;
+        }
+    }
+
+    SetPlayerSpawnPosition( kDefaultPosition );
+}
+
 static constexpr const char *kPlayerParkingName =
     "PosCarParking"; // DAT_00f8e5b8
 
@@ -105,18 +194,57 @@ Matrix4x4f_t MngActor::placePlayerVehicle( const int32_t spawnMode,
     // FUN_006df7d0
     Matrix4x4f_t frame = Matrix4x4f_t::Identity();
 
-    if ( spawnMode != 6 || gpScenaric == nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (spawn modes 7 and 8)
+    if ( spawnMode == 8 ) {
+        if ( gpScenaric->hasDefaultStartPosition() ) {
+            frame = BuildSpawnFrame( gpScenaric->getDefaultStartPosition() );
+        } else {
+            const SpotMap *pHouse = FindCurrentHouseSpot();
+            if ( pHouse != nullptr ) {
+                ComputeRoadApproachFrame(
+                    Eigen::Vector4f( pHouse->X, pHouse->Y, pHouse->Z, 1.0f ),
+                    frame, kHouseSpawnRoadBackOff );
+            } else {
+                frame = BuildSpawnFrame( kDefaultPosition );
+            }
+        }
+        applyPlayerVehicleFrame( frame, bApply );
+        return frame;
+    }
+
+    if ( spawnMode == 7 ) {
+        frame = gpWorld->getPreviousTransform();
+        if ( !bApply ) {
+            return frame;
+        }
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+        CarState *pCarState = gpScenaric->getLocalPlayer().getCarState();
+        PhysicsVehicle *pVehicle =
+            ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+        if ( pVehicle != nullptr && !pVehicle->isInWater() ) {
+            pVehicle->resetToTransform( frame, true );
+        }
         return frame;
     }
 
     Spots &spots = gpScenaric->getSpotList();
     SpotMap *pSpot =
-        spots.getWorldSpotChecked( gpScenaric->getCurrentSpotIndex() );
+        ( spawnMode == 6 )
+            ? spots.getWorldSpotChecked( gpScenaric->getCurrentSpotIndex() )
+            : nullptr;
     if ( pSpot == nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (the no-spot fallback walks
-                                 // the actor list for an ET_CARP first)
-        frame.row( 3 ) = gpScenaric->getDefaultStartPosition();
+        const Entity *pCarPark = findSpawnCarPark( spawnMode );
+        if ( pCarPark == nullptr ) {
+            frame = BuildSpawnFrame( gpScenaric->hasDefaultStartPosition()
+                                         ? gpScenaric->getDefaultStartPosition()
+                                         : kDefaultPosition );
+            applyPlayerVehicleFrame( frame, bApply );
+            return frame;
+        }
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: EventParameters
+        frame = pCarPark->getModelMatrix();
+        frame.row( 3 ).head<3>() += Eigen::Vector3f( 0.0f, 1.0f, 0.0f );
         applyPlayerVehicleFrame( frame, bApply );
         return frame;
     }

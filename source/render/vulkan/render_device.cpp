@@ -686,6 +686,7 @@ GPUTexture *RenderDevice::createTexture( Texture *pTexture ) {
         device, &viewInfos, nullptr, &renderTarget->ImageView[0] );
     OTDU_ASSERT( imageViewCreationResult == VK_SUCCESS );
 
+    pTexture->bUploaded = false;
     return renderTarget;
 }
 

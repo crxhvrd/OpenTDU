@@ -938,6 +938,66 @@ void Spots::spawnPendingSectorSpotMeshes() {
     }
 }
 
+void Spots::despawnSectorSpotMeshes() {
+    // FUN_007d7ff0
+    for ( int32_t i = 0; i < kNumSectorLists; i++ ) {
+        SpotsList &slot = spotsSectors[i];
+        if ( slot.pFile == nullptr || slot.pSector == nullptr ) {
+            continue;
+        }
+
+        // FUN_007d7a60 (inlined)
+        MngActor &mngActor = slot.pSector->geometry.mngActor;
+        for ( int32_t j = 0; j < mngActor.getActorCount(); j++ ) {
+            Entity *pActor = mngActor.getActor( j );
+            if ( pActor->getType() == eEntityType::ET_SPTM ) {
+                MngActor::Uninstanciate( &mngActor, pActor );
+                j--;
+            }
+        }
+        slot.bMeshesSpawned = false;
+    }
+}
+
+int32_t Spots::countWorldSpots( const int32_t type, const int32_t subType ) {
+    // FUN_007d7170
+    int32_t count = 0;
+    for ( int32_t i = 0; i < static_cast<int32_t>( getNumWorldSpots() ); i++ ) {
+        const SpotMap *pSpot = getWorldSpot( i );
+        if ( pSpot->Type != type || type < 1 ) {
+            continue;
+        }
+
+        if ( type <= 4 ) {
+            count++;
+            continue;
+        }
+
+        if ( type != ST_Unknown8 ) {
+            continue;
+        }
+
+        switch ( subType ) {
+        case 0:
+        case 1:
+        case 4:
+        case 9:
+            if ( pSpot->SubType == subType ) {
+                count++;
+            }
+            break;
+        case 2:
+            if ( pSpot->SubType == 2 || pSpot->SubType == 3 ) {
+                count++;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return count;
+}
+
 Entity *Spots::selectSpotTemplate( ScenaricBank &meshBank,
                                    int32_t spotType,
                                    int32_t ownedFlag ) {

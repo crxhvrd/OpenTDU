@@ -52,6 +52,20 @@ public:
         SDN_Count
     };
 
+    enum eStateProcess : int32_t {
+        SP_Init = 0xc0c0,
+        SP_Update = 0xc0c1,
+        SP_Term = 0xc0c2,
+    };
+
+    enum eMechState : int32_t {
+        MS_None = -1,
+        MS_FR_LoadingMap = 0xf200,
+        MS_FR_Playing = 0xf201,
+        MS_FR_LogginIn = 0xf202,
+        MS_FR_LogginIn_Retrying = 0xf203,
+    };
+
 public:
     inline int32_t getMechType() const { return mechType; }
     inline uint32_t getMechID() const { return mechID; }
@@ -66,6 +80,10 @@ public:
         return pCurrentExtraChallenge;
     }
     inline bool getUnknown75C() const { return bUnknown75C; }
+    inline int32_t getCurrentState() const { return curState; }
+    inline void setSpawnFrame( const Matrix4x4f_t &frame ) {
+        spawnFrame = frame;
+    }
 
 public:
     PlayerGameMech( int32_t type, uint32_t id );
@@ -77,8 +95,16 @@ public:
     const char *getDisplayTypeName() const;
     const char *getDisplayName() const;
 
+    bool stateChange( const int32_t state );
+    void tick( const float deltaTime );
+
 private:
     void clearCurrentActivity();
+    bool stateProcess( const int32_t state,
+                       const float deltaTime,
+                       const eStateProcess process );
+    bool processLoadingMap( const eStateProcess process );
+    bool processPlaying( const eStateProcess process );
 
 private:
     int32_t mechType;
@@ -92,6 +118,15 @@ private:
     int32_t spotDisplayNameIndex;
     Entity *pCurrentExtraChallenge;
     bool bUnknown75C;
+
+    int32_t curState;
+    int32_t prevState;
+    int32_t nextState;
+    float stateInitTime;
+
+    Matrix4x4f_t spawnFrame;
+    float loadingMapStartTime;
+    int32_t botsReenableCountdown;
 };
 
 void GetSpotDisplayIndices( const SpotMap *pSpot,

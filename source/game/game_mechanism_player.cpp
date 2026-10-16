@@ -9,6 +9,15 @@
 #include "game/scenaric/local_player.h"
 #include "game/scenaric/spots.h"
 #include "game/vehicle/car_state.h"
+#include "game/vehicle/vehicle_base.h"
+#include "ai/gs_ai.h"
+#include "core/time.h"
+#include "gs_timer.h"
+#include "physics/gs_physics.h"
+#include "physics/vehicle/physics_vehicle.h"
+#include "world/gs_world.h"
+#include "world/mng_world.h"
+#include "game/scenaric/entity/entity_driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_garage.h"
@@ -185,7 +194,14 @@ PlayerGameMech::PlayerGameMech( int32_t type, uint32_t id )
       spotDisplayTypeIndex( -1 ),
       spotDisplayNameIndex( -1 ),
       pCurrentExtraChallenge( nullptr ),
-      bUnknown75C( false ) {
+      bUnknown75C( false ),
+      curState( MS_None ),
+      prevState( MS_None ),
+      nextState( MS_None ),
+      stateInitTime( 0.0f ),
+      spawnFrame( Matrix4x4f_t::Identity() ),
+      loadingMapStartTime( 0.0f ),
+      botsReenableCountdown( -1 ) {
     // FUN_00737730
     OTDU_UNIMPLEMENTED; // TODO: GameLogic
 }
@@ -266,6 +282,133 @@ bool PlayerGameMech::onMessage( Entity *pSender,
 
     default:
         OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
+        return false;
+    }
+}
+
+bool PlayerGameMech::stateChange( const int32_t state ) {
+    // FUN_00801470
+    nextState = state;
+    if ( curState != MS_None ) {
+        stateProcess( curState, 0.0f, SP_Term );
+    }
+    prevState = curState;
+    curState = state;
+    stateInitTime = gpTimer->GameTotalTime;
+    if ( state != MS_None ) {
+        stateProcess( state, 0.0f, SP_Init );
+    }
+    return true;
+}
+
+void PlayerGameMech::tick( const float deltaTime ) {
+    // FUN_00733020
+    stateProcess( curState, deltaTime, SP_Update );
+}
+
+static constexpr int32_t kBotsReenableDelay = 210;
+
+bool PlayerGameMech::stateProcess( const int32_t state,
+                                   const float /*deltaTime*/,
+                                   const eStateProcess process ) {
+    // FUN_00737d50
+    if ( !gpPlayerData->isOnline() || !gpPlayerData->getOnlineOp( 0 ) ) {
+        if ( botsReenableCountdown >= 0 ) {
+            if ( botsReenableCountdown == 0 ) {
+                gpAI->setDisableBots( false );
+            } else {
+                botsReenableCountdown--;
+            }
+        }
+    }
+
+    switch ( state ) {
+    case MS_FR_LoadingMap:
+        return processLoadingMap( process );
+    case MS_FR_Playing:
+        return processPlaying( process );
+    case MS_FR_LogginIn:
+    case MS_FR_LogginIn_Retrying:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        return process == SP_Init || process == SP_Update;
+    default:
+        return false;
+    }
+}
+
+bool PlayerGameMech::processLoadingMap( const eStateProcess process ) {
+    // FUN_00737d50 (inlined)
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    PhysicsVehicle *pPhysicsVehicle =
+        ( pLocalCar != nullptr ) ? pLocalCar->getPhysicsVehicle() : nullptr;
+
+    switch ( process ) {
+    case SP_Init: {
+        loadingMapStartTime = GetTimeSeconds();
+        if ( pPhysicsVehicle != nullptr ) {
+            PhysicsLock physLock;
+            pPhysicsVehicle->setPostponedPause( 1 );
+        }
+
+        Eigen::Vector4f streamingPosition = spawnFrame.row( 3 ).transpose();
+        gpWorld->setStreamingPosition( &streamingPosition );
+        gpMngWorld->setDisableStreamingOnCar( true );
+        return false;
+    }
+    case SP_Update: {
+        const Eigen::Vector4f spawnPosition = spawnFrame.row( 3 ).transpose();
+        if ( !gpWorld->isStreamedAround( &spawnPosition, true, true ) ||
+             pLocalCar == nullptr ) {
+            return true;
+        }
+
+        pLocalCar->resetBackOnTrack();
+        if ( pPhysicsVehicle == nullptr || !pPhysicsVehicle->isSimulated() ) {
+            return true;
+        }
+
+        pPhysicsVehicle->resetToTransform( spawnFrame, true );
+        if ( pPhysicsVehicle->isPaused() ) {
+            PhysicsLock physLock;
+            pPhysicsVehicle->setPostponedPause( 2 );
+        }
+
+        if ( pPhysicsVehicle->isKeyframed() ) {
+            // FUN_0082e370
+            PhysicsLock physLock;
+            pPhysicsVehicle->setKeyframed( false, false );
+        }
+
+        gpMngWorld->setDisableStreamingOnCar( false );
+        stateChange( MS_FR_Playing );
+        return true;
+    }
+    case SP_Term:
+        if ( pLocalCar != nullptr &&
+             pLocalCar->getVehicleInstance() != nullptr ) {
+            pLocalCar->getVehicleInstance()->setShouldDraw( true );
+            EntityDriver *pDriver = pLocalCar->getDriver();
+            if ( pDriver != nullptr ) {
+                pDriver->addInstanceReference();
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+bool PlayerGameMech::processPlaying( const eStateProcess process ) {
+    // FUN_00737d50 (inlined)
+    switch ( process ) {
+    case SP_Init:
+        botsReenableCountdown = kBotsReenableDelay;
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        return true;
+    case SP_Update:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        gpAI->setDisableCops( false );
+        return true;
+    default:
         return false;
     }
 }

@@ -80,7 +80,6 @@ private:
     void close();
     void toggleWindows( bool bPlayAnim );
     void changeDrivingMode( bool bNext, bool bPlayAnim );
-    void refreshHasWindows();
     void updateChronoMenu();
     void setChronoTime( float time );
     void setChronoAccelerateMessage();

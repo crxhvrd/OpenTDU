@@ -1,7 +1,8 @@
 #include "shared.h"
 #include "flash_list_spots.h"
 
-FlashListSpots::FlashListSpots() : FlashList(), pPlayer( nullptr ) {
+FlashListSpots::FlashListSpots()
+    : FlashList(), pPlayer( nullptr ), pSelectedSpot( nullptr ) {
     // FUN_0042c500
     levelIndex = 1;
     bIsEmpty = true;

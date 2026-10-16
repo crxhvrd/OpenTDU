@@ -261,6 +261,19 @@ void GameIntroTutorial::computeMapFocus( GMMap *pMap,
     *pOutFocus = kTutorialDefaultMapFocus;
 }
 
+void GameIntroTutorial::onIntroCinematicEnded() {
+    // FUN_007fcd40
+    if ( tutorialStep == kTutorialStateAirplane ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (unload LandingCinematicBank)
+        setStep( kTutorialStateCarRental );
+        return;
+    }
+
+    if ( isActive() ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_007fc7f0 (current step dialog)
+    }
+}
+
 void GameIntroTutorial::FUN_007fbd80( bool param_2 ) {
     // FUN_007fbd80
     OTDU_UNIMPLEMENTED;

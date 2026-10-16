@@ -93,6 +93,15 @@ void CarState::setPhysicsVehicle( PhysicsVehicle *pVehicle ) {
     }
 }
 
+void CarState::resetBackOnTrack() {
+    // FUN_008ae5c0
+    body.resetBackOnTrack();
+    if ( pPhysicsVehicle != nullptr ) {
+        pPhysicsVehicle->setBackOnTrackForced( false );
+        pPhysicsVehicle->setRespawnForced( false );
+    }
+}
+
 void CarState::reset() {
     // FUN_008af040
     policeState.reset();

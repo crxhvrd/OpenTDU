@@ -64,6 +64,7 @@ public:
     inline FlashMouse *getMouse() { return &mouse; }
     inline char *getContactTypeRW() { return pContactType; }
     inline FileCollection2D &getCollection2D() { return collection2D; }
+    inline void setUseStick( const bool bEnabled ) { bUseStick = bEnabled; }
 
 public:
     GSFlash();
@@ -182,6 +183,7 @@ private:
     uint8_t bOption1ButtonPressed : 1;
     uint8_t bOption2ButtonPressed : 1;
     uint8_t field84_0xfec : 1;
+    uint8_t bUseStick : 1;
 
 private:
     friend class BankCommonFlash;

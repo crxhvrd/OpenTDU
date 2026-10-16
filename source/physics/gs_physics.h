@@ -310,6 +310,11 @@ public:
     void setCharacterExtraCollisionBodies(
         CharacterController_t pCharacter,
         const std::vector<const JPH::Body *> &bodies );
+    int32_t rayCastBodyBounds( const Eigen::Vector3f &worldOrigin,
+                               const Eigen::Vector3f &direction,
+                               float maxDistance,
+                               const std::vector<const JPH::Body *> &bodies,
+                               float *pHitDistance = nullptr );
     void updateCharacter( CharacterController_t pCharacter,
                           const Eigen::Vector3f &desiredVelocity,
                           float deltaTime );

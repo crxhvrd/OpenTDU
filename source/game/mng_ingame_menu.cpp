@@ -16,7 +16,11 @@
 #include "flash/entities/flash_entity.h"
 #include "flash/implementation/flash_player.h"
 #include "player_data/gs_playerdata.h"
+#include "flash/mng_fade.h"
+#include "game/mng_rental.h"
+#include "game/cinematic/gs_cinematics.h"
 #include "game/cinematic/mng_cinematics.h"
+#include "game/vehicle/car_desc.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
 #include "game/vehicle/car_state.h"
@@ -158,7 +162,9 @@ bool MngInGameMenu::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     case FlashMessage( "igop" ): { // the open animation started
         updateMenuTimeout();
         StateMenu = IGMS_Opening;
-        OTDU_UNIMPLEMENTED; // TODO: FLASH
+        if ( gpFlash != nullptr ) {
+            gpFlash->setUseStick( false );
+        }
         refreshDrivingHelpLabel();
         return true;
     }
@@ -182,7 +188,9 @@ bool MngInGameMenu::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     }
 
     case FlashMessage( "igcl" ): { // the close animation is over
-        OTDU_UNIMPLEMENTED;        // TODO: FLASH
+        if ( gpFlash != nullptr ) {
+            gpFlash->setUseStick( true );
+        }
         OpenedMenu = IGM_None;
         StateMenu = IGMS_Closed;
 
@@ -192,7 +200,9 @@ bool MngInGameMenu::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
 
         if ( bMustSaveOnClose ) {
             bMustSaveOnClose = false;
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERDATA (save on menu close)
+            if ( gpPlayerData != nullptr ) {
+                gpPlayerData->requestSave( 1 );
+            }
         }
         return true;
     }
@@ -338,8 +348,10 @@ void MngInGameMenu::updateInput() {
 
 bool MngInGameMenu::canOpenMap() {
     // FUN_006b6820
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (Scenario Tutorial)
-    return true;
+    if ( gpScenaric == nullptr ) {
+        return true;
+    }
+    return !gpScenaric->getIntroTutorial().isActive();
 }
 
 bool MngInGameMenu::canOpenMenu() {
@@ -358,18 +370,34 @@ bool MngInGameMenu::canOpenMenu() {
     if ( gpActiveGM != nullptr && gpActiveGM->isPaused() ) {
         return false;
     }
-    if ( gpActiveGameMode != nullptr && gpActiveGameMode->hasRequestedExit() ) {
+    if ( gpActiveGameMode != nullptr &&
+         ( gpActiveGameMode->isMessageBoxVisible() ||
+           gpActiveGameMode->hasRequestedExit() ) ) {
         return false;
     }
 
-    if ( gpMngCinematics != nullptr &&
-         gpMngCinematics->getActiveCinematic() != nullptr ) {
+    if ( gpCinematics != nullptr &&
+         gpCinematics->isCinematicPlaying( CT_Foreground, false, true ) ) {
         return false;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE;
+    if ( gpMngFade != nullptr && ( gpMngFade->getTransitionFlags() & 1 ) ) {
+        return false;
+    }
 
-    return bEnabled;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc == 5 blocks the menu)
+
+    if ( gpMngRental != nullptr && gpMngRental->isRespawnPending() ) {
+        return false;
+    }
+    if ( !bEnabled ) {
+        return false;
+    }
+
+    CarState *pCarState = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    return pCarState == nullptr || !pCarState->getPoliceState().isArrested();
 }
 
 bool MngInGameMenu::changeMenu( eInGameMenu menu ) {
@@ -420,7 +448,9 @@ void MngInGameMenu::toggleWindows( bool bPlayAnim ) {
 
 void MngInGameMenu::changeDrivingMode( bool bNext, bool bPlayAnim ) {
     // FUN_006b7250
-    OTDU_UNIMPLEMENTED; // TODO: FLASH
+    if ( gpFlash != nullptr ) {
+        gpFlash->setUseStick( false );
+    }
 
     if ( pFlashVariable != nullptr &&
          pFlashVariable->spriteExists( "HUD/menu_ig" ) ) {
@@ -682,16 +712,17 @@ void MngInGameMenu::updateMenuTimeout() {
     MenuCloseTimeLeft = now + kInGameMenuNames[OpenedMenu].Timeout;
 }
 
-void MngInGameMenu::refreshHasWindows() {
+void MngInGameMenu::reset() {
+    // FUN_006b6a10
     bHasWindows = false;
-    if ( gpScenaric == nullptr || gpDatabase == nullptr ) {
+
+    CarDesc *pCurrentCar =
+        ( gpPlayerData != nullptr ) ? gpPlayerData->getCurrentCar() : nullptr;
+    if ( pCurrentCar == nullptr || gpDatabase == nullptr ) {
         return;
     }
-    CarState *pCar = gpScenaric->getLocalPlayer().getCarState();
-    if ( pCar == nullptr ) {
-        return;
-    }
-    DBEntryCarPhysicsData *pDB = gpDatabase->getCarDBEntry( pCar->getCarID() );
+    DBEntryCarPhysicsData *pDB =
+        gpDatabase->getCarDBEntry( pCurrentCar->getCarConfigID() );
     if ( pDB == nullptr ) {
         return;
     }
@@ -699,12 +730,6 @@ void MngInGameMenu::refreshHasWindows() {
         gpDatabase->getGameDB().Databases[1].getHashcodeForPointer(
             pDB->WindowsType.pAsRawPointer );
     bHasWindows = ( windowsHash != kNoWindowsTypeHashcode );
-}
-
-void MngInGameMenu::reset() {
-    // FUN_006b6a10
-    refreshHasWindows();
-    OTDU_UNIMPLEMENTED; // TODO: PLAYERDATA (garage-selected car override)
 }
 
 void MngInGameMenu::pause() {

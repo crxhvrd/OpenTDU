@@ -814,6 +814,10 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
     // FUN_007beb90
     GameModeScene::tick( deltaTime, totalTime );
 
+    if ( pGameMech != nullptr ) {
+        pGameMech->tick( deltaTime );
+    }
+
 #ifdef OTDU_DEVBUILD
     // Process teleport request
     if ( gRequestedPlayerTeleport ) {
@@ -842,10 +846,6 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
             pBody->OffsetedWorldMatrix( 3, 1 ) = targetY;
             bCarGrounded = true;
         }
-    }
-
-    if ( pGameMech != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
     }
 
     updatePauseMenuTrigger();
