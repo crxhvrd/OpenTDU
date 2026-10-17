@@ -53,6 +53,17 @@ enum eDriverState : int32_t {
     DS_Car = 2,
 };
 
+enum eRiderFallState : int32_t {
+    RFS_OnBike = 0,
+    RFS_Thrown = 1,
+    RFS_SlideFaceDown = 2,
+    RFS_SlideFaceUp = 3,
+    RFS_LieFaceDown = 4,
+    RFS_LieFaceUp = 5,
+    RFS_GetUpFaceDown = 6,
+    RFS_GetUpFaceUp = 7,
+};
+
 enum eGearBoxType : int32_t {
     GBT_Auto = 0,
     GBT_SemiAuto = 1,
@@ -84,6 +95,11 @@ static constexpr int32_t kCarIKPointLeftHipsBelt = 20;
 static constexpr int32_t kCarIKPointGearLever = 7;
 static constexpr int32_t kCarIKPointWindscreen = 9;
 static constexpr int32_t kBikeIKPointDriverSeat = 0;
+static constexpr int32_t kBikeIKPointHandRight = 1; // "Hand_R"
+static constexpr int32_t kBikeIKPointHandLeft = 2;  // "Hand_L"
+static constexpr int32_t kBikeIKPointFootRight = 3; // "Foot_R"
+static constexpr int32_t kBikeIKPointFootLeft = 4;  // "Foot_L"
+static constexpr int32_t kNumBikeStandDriveRatios = 8;
 
 void BuildCarIKPoints( SCIKPoint ( &points )[kNumCarIKPoints],
                        CarState *pCarState );
@@ -103,6 +119,10 @@ public:
         bMustRecalculateDriverSeatPos = true;
     }
     inline eRideType getDriveType() const { return DriveType; }
+    inline const Matrix4x4f_t &getTransformRelativeToVehicle() const {
+        return TransformRelativeToVehicle;
+    }
+    inline const Matrix4x4f_t &getHeadMatrix() const { return HeadMatrix; }
 
 public:
     EntityDriver();
@@ -120,6 +140,7 @@ public:
     int32_t getRenderSceneID() override;
     EntityDriver *getDriver() override;
     void getCarAlphaScreenRect( Eigen::Vector4f &outRect ) override;
+    void onHeadUpdate( Matrix4x4f_t &headTransform ) override;
 
     void
     onEvent( class CarState *param_1, float param_2, void *param_3 ) override;
@@ -138,8 +159,9 @@ private:
     void setSteer( HiearchyNode *pNode );
     void setGearLever( HiearchyNode *pNode );
     void updateSeatTransform();
-    void playDriveState( int32_t slot );
+    void playAnimState( RenderAnm &anim );
     void applyDriveBaseAnim();
+    void applyRideBaseAnim();
     void updateAnimChannels( float deltaTime );
     void buildIKChains( int32_t matchID );
     void updateIKTargets();
@@ -151,6 +173,13 @@ private:
     void updateSteeringWheel( float steerNormalised );
     void updateStandDriveRatio( float deltaTime );
     void processDriverState( float deltaTime );
+    void computeRiderScreenRect( Eigen::Vector4f &outRect );
+    void updateBikeRideState( float deltaTime );
+    void updateBikeIKTargets();
+    void updateRiderFall( float deltaTime,
+                          bool bJustThrown,
+                          Matrix4x4f_t &outMatrix );
+    void playFallState( int32_t slot, uint32_t clipID, bool bLooped );
 
 protected:
     RenderAnm AnimRide[kNumDriverAnims];
@@ -171,7 +200,40 @@ protected:
     AnimLinkParams IKLeftShoulderBelt2;
     AnimLinkParams IKRightHipsBelt;
     AnimLinkParams IKLeftHipsBelt;
+    AnimExpressionList BikeExpressionList;
+    AnimIK3NParams IKLeftHand2;
+    AnimAlign1NParams IKLeftHandAlignY;
+    AnimIK3NParams IKRightHand2;
+    AnimAlign1NParams IKRightHandAlignY;
     AnimStateBlendEntry StandDriveRatio[2];
+    AnimStateBlendEntry BikeStandDriveRatio[kNumBikeStandDriveRatios];
+    AnimStateBlendEntry BikeHeadTurnRatio[2];
+    AnimStateBlendEntry BikeHeadHeightRatio;
+    AnimStateBlendEntry BikeLeftRightTorso;
+    AnimStateBlendEntry BikeHandSizeRatio;
+    AnimStateBlendEntry BikeAccelerateRatio;
+    AnimStateBlendEntry BikeFootGearingRatio;
+    float LastTurnWeight;
+    float LastStandWeight;
+    float LastRatioLean;
+    float LastWheelingAngle;
+    float LastLeanFrontBack;
+    float WheelingRandomNoise;
+    float LastWheelingRandomNoise;
+    float LastFBAccelInfluence;
+    float LastAccelBrakeRatio;
+    float CurrentBikeGearAnimRatio;
+    bool bLastIsInBikeStand;
+    bool bIsPlayingBikeGearingAnim;
+    bool bRideRatiosLinked[kNumDriverAnims];
+    AnimStateBlendEntry BikeFallSide[2];
+    float LastSlideRatio;
+    float TimeSinceFalled;
+    float TimeSinceOnGround;
+    float TotalTimeToGetUp;
+    bool bMustCalculateTotalTimeToGetUp;
+    eRiderFallState RiderFallState;
+    Matrix4x4f_t LastPosOnBike;
     float LastStandDriveWeight;
     float KeepAccelRatio;
     eDriverBodyPosition CurrentBodyPosition;
@@ -237,6 +299,7 @@ protected:
     Eigen::Vector4f VTranslation;
 
     Matrix4x4f_t TransformRelativeToVehicle;
+    Matrix4x4f_t HeadMatrix;
 
     float BikeLayersCoeff;
     float LastBikeLayersCoeff;

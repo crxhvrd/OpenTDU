@@ -991,16 +991,6 @@ void VehicleCar::setupHiearchy() {
                     wheelNode.pInstance->getModelMatrix().row( 3 )[1];
             }
         }
-
-        if ( pCarState != nullptr ) {
-            pCarState->numWheels = kMaxNumWheels;
-            const float bodyHalfHeight =
-                pCarState->getBody()->BodyDimensions.y() * 0.5f;
-            for ( uint32_t i = 0; i < kMaxNumWheels; i++ ) {
-                pCarState->wheels[i].Position =
-                    pWheelOffsets[i] - bodyHalfHeight;
-            }
-        }
     }
 
     kitHiearchyNodes.clear();
@@ -1537,5 +1527,15 @@ void VehicleCar::lerpTransform( HiearchyNode *pNode,
             Lerp( transformA.Translation, transformB.Translation, T );
 
         pNode->TransformMatrix.row( 3 ).head<3>() += local_90.Translation;
+    }
+}
+
+void VehicleCar::buildCarAlphaInstances() {
+    // FUN_008c4b20
+    VehicleController::buildCarAlphaInstances();
+    if ( !displayInstances.empty() && displayInstances[0].pNode != nullptr &&
+         !bNeedToUnstream ) {
+        appendCarAlphaInstances( pDoorsHR[0] );
+        appendCarAlphaInstances( pDoorsHR[1] );
     }
 }

@@ -53,6 +53,7 @@ namespace TDUSurface {
         Generic = 7,    // .shk/-R.shk NON-mesh (posts, boxes) + placed props
         Vehicle = 9,    // car chassis (FUN_0082fc80)
         RoadPhantom = 0x10, // SR20 record sensor (FUN_00819ec0)
+        BikeRider = 0x11,   // ejected bike rider (FUN_0081d760)
     };
 
     // Mask applied to a body's Jolt UserData to recover the phys-type byte.

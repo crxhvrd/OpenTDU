@@ -2,6 +2,8 @@
 
 #include "shared.h"
 
+#include "physics/physics_config.h"
+
 struct PhysicsTire {
     static constexpr int kMaxLoadTable = 32;
 
@@ -242,6 +244,8 @@ struct PhysicsDifferentialSim {
 struct PhysicsVehicleState {
     static constexpr int kMaxWheels = 4;
 
+    const PhysicsConfig *pConfig = &gPhysicsConfig;
+
     int NumWheels = 4;
     int PowertrainSubsteps = 10;
     PhysicsWheelState Wheels[kMaxWheels];
@@ -263,6 +267,7 @@ struct PhysicsVehicleState {
     bool bFrontDrive = false;
     bool bRearDrive = false;
     bool bCenterDrive = false;
+    bool bBike = false;
     bool AnyWheelGrounded = false; // any wheel touched ground (last step)
     int CouplingMode = 0;
     float CouplingCoefE = 1.0f;
@@ -277,6 +282,7 @@ struct PhysicsVehicleState {
     float DiffInputTorque = 0.0f; // T_in fed to the driven diff node
 
     float BrakeTorque = 0.0f;
+    float HandbrakeTorque = 0.0f; // bikes only
     float Mass = 1200.0f;         // total vehicle mass (kg)
     int32_t ElectronicIndex = -1; // driving help level
     int32_t ElectronicMode = 1;   // 0 off, 1 player, 2 AI, 3 bypass

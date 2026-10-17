@@ -64,6 +64,16 @@ public:
     uint32_t NodesID[2] = { 0, 0 };
 };
 
+class AnimAlign1NParams : public AnimExpression {
+public:
+    void timeslice( Animation &animation, float deltaTime ) override;
+
+public:
+    uint32_t NodeID = 0;
+    Eigen::Vector4f LocalAxis = Eigen::Vector4f::Zero();
+    Eigen::Vector4f Target = Eigen::Vector4f::Zero();
+};
+
 class AnimLinkParams : public AnimExpression {
 public:
     void timeslice( Animation &animation, float deltaTime ) override;

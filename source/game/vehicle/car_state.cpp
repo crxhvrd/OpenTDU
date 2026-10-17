@@ -88,6 +88,39 @@ void CarState::setPhysicsVehicle( PhysicsVehicle *pVehicle ) {
     pPhysicsVehicle = pVehicle;
     if ( pVehicle != nullptr ) {
         numWheels = pVehicle->getNumWheels();
+        const uint32_t numFilledWheels = Min( numWheels, kMaxNumWheels );
+
+        std::array<PhysicsVehicle::WheelReadout, kMaxNumWheels> readouts;
+        for ( uint32_t i = 0; i < numFilledWheels; i++ ) {
+            readouts[i] = pVehicle->getWheelReadout( i );
+        }
+
+        const Eigen::Vector3f &box = pVehicle->getBodyDimensions();
+        body.BodyDimensions =
+            Eigen::Vector4f( box.x(), pVehicle->getBodyHeight(), box.z(),
+                             readouts[0].LocalPosition.z() );
+        if ( numFilledWheels >= 4 ) {
+            const uint32_t rearWheel = 1u << ( numFilledWheels / 2 - 1 );
+            body.WheelBase = readouts[0].LocalPosition.z() -
+                             readouts[rearWheel].LocalPosition.z();
+            body.TrackWidth = std::fabs( readouts[1].LocalPosition.x() -
+                                         readouts[0].LocalPosition.x() );
+            body.TrackLength =
+                std::fabs( readouts[rearWheel + 1].LocalPosition.x() -
+                           readouts[rearWheel].LocalPosition.x() );
+        }
+
+        for ( uint32_t i = 0; i < numFilledWheels; i++ ) {
+            const PhysicsVehicle::WheelReadout &readout = readouts[i];
+            WheelState &wheel = wheels[i];
+            wheel.WheelIndex = static_cast<int32_t>( i );
+            wheel.bInitialized = true;
+            wheel.WheelRadius = readout.Radius;
+            wheel.Position = readout.ReleasedPosition;
+            wheel.RelativeWorldPosition = Eigen::Vector4f(
+                readout.LocalPosition.x(), readout.LocalPosition.y(),
+                readout.LocalPosition.z(), 1.0f );
+        }
         gGameObjectDico.registerObject( this );
         gpPhysics->setVehicleOwner( pVehicle,
                                     static_cast<GameObject *>( this ) );
@@ -222,6 +255,7 @@ static void PlaceAtBackOnTrackPose( CarBodyState &body,
                                     PhysicsVehicle &vehicle ) {
     // FUN_008b0b10
     vehicle.resetToTransform( body.BackOnTrackWorldMatrix, true );
+    vehicle.requestRollLimitRestore();
     if ( body.BackOnTrackVelocity.norm() > 1.0f ) { // FLOAT_00f4165c
         vehicle.setVelocity( body.BackOnTrackVelocity.head<3>(), true, -1 );
         vehicle.setEngineState( eEngineState::ES_Running );
@@ -416,7 +450,7 @@ void CarState::updateBackOnTrack( float deltaTime ) {
             bAllowed = false;
         }
         if ( !gpCamera->isInReplayMode() && bLocal && body.bHasBikeAvatar ) {
-            pVehicle->setBikeRiderBody( true );
+            pVehicle->setBikeCrashRecovery( true );
         }
         if ( !bAllowed ) {
             return;
@@ -430,7 +464,7 @@ void CarState::updateBackOnTrack( float deltaTime ) {
                                   body.BackOnTrackTimer < 0.0f ) ||
                                 bInWater || pVehicle->isBackOnTrackForced();
         if ( !bRequested && !pVehicle->isRespawnForced() &&
-             !pVehicle->hasBikeRiderBody() ) {
+             !pVehicle->isBikeCrashRecoveryPending() ) {
             return;
         }
 
@@ -447,7 +481,7 @@ void CarState::updateBackOnTrack( float deltaTime ) {
         const bool bPlaceNow =
             ( !bLocal || ( gpWorld->isStreamedAround( &target, true, false ) &&
                            !pVehicle->isInWater() ) ) &&
-            !pVehicle->hasBikeRiderBody();
+            !pVehicle->isBikeCrashRecoveryPending();
         if ( bPlaceNow ) {
             PlaceAtBackOnTrackPose( body, *pVehicle );
         } else {
@@ -456,7 +490,7 @@ void CarState::updateBackOnTrack( float deltaTime ) {
             }
             GSPhysics::pushFadeRequest( eFadeRequest::FR_FadeOut );
             body.BackOnTrackState = 2;
-            if ( !pVehicle->hasBikeRiderBody() ) {
+            if ( !pVehicle->isBikeCrashRecoveryPending() ) {
                 pVehicle->setPostponedPause( 1 );
             }
         }
@@ -469,14 +503,16 @@ void CarState::updateBackOnTrack( float deltaTime ) {
         if ( GSPhysics::peekFadeRequest() == eFadeRequest::FR_Idle ) {
             body.BackOnTrackState = 3;
             pVehicle->resetToTransform( body.BackOnTrackWorldMatrix, false );
+            pVehicle->requestRollLimitRestore();
         }
         break;
     case 3: {
         const Eigen::Vector4f target =
             body.BackOnTrackWorldMatrix.row( 3 ).transpose();
-        if ( ( !pVehicle->hasBikeRiderBody() || !body.bHasBikeAvatar ) &&
+        if ( ( !pVehicle->isBikeCrashRecoveryPending() ||
+               !body.bHasBikeAvatar ) &&
              gpWorld->isStreamedAround( &target, true, true ) ) {
-            pVehicle->setBikeRiderBody( false );
+            pVehicle->setBikeCrashRecovery( false );
             GSPhysics::pushFadeRequest( eFadeRequest::FR_FadeIn );
             pVehicle->setPostponedPause( 2 );
             PlaceAtBackOnTrackPose( body, *pVehicle );
@@ -688,8 +724,6 @@ void CarState::openConvertibleWindows() {
         }
     }
 
-    // Retail clears the window request at edPhysVehicle+0xe24, which
-    // FUN_0083bbd0 mirrors into body.WindowState.
     if ( pPhysicsVehicle != nullptr ) {
         body.WindowState = 0;
     }

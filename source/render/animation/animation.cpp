@@ -246,10 +246,31 @@ void Animation::playChannel( int32_t matchID,
     pChannel->BlendSet.assign( pEntries, pEntries + std::max( count, 0 ) );
     pChannel->ClipID = clipID;
     pChannel->State = AnimChannel::ACS_Playing;
+    pChannel->bLooped = true;
+    pChannel->PostureTime = 0.0f;
+    pChannel->PostureLength = 0.0f;
     if ( !bSameClip ) {
         pChannel->Progress = 0.0f;
     }
     refreshBlendDuration( *pChannel );
+}
+
+void Animation::playChannelFromPosture( int32_t matchID,
+                                        uint32_t clipID,
+                                        const AnimStateBlendEntry *pEntries,
+                                        int32_t count,
+                                        float transitionLength,
+                                        bool bLooped ) {
+    // FUN_00401400
+    AnimChannel *pChannel = getChannel( matchID );
+    if ( pChannel == nullptr ) {
+        return;
+    }
+
+    posture = pose;
+    playChannel( matchID, clipID, pEntries, count );
+    pChannel->bLooped = bLooped;
+    pChannel->PostureLength = transitionLength;
 }
 
 void Animation::stopChannel( int32_t matchID ) {
@@ -257,6 +278,32 @@ void Animation::stopChannel( int32_t matchID ) {
     if ( pChannel != nullptr ) {
         pChannel->State = AnimChannel::ACS_Free;
     }
+}
+
+void Animation::stopChannelsWithClipID( uint32_t clipID ) {
+    // FUN_00401640
+    for ( int32_t i = 0; i < getNumChannels(); i++ ) {
+        if ( channels[i].ClipID == clipID ) {
+            resetChannel( i );
+        }
+    }
+}
+
+float Animation::getChannelDuration( int32_t matchID ) const {
+    // FUN_009b3b30
+    for ( const AnimChannel &channel : channels ) {
+        if ( channel.MatchID != matchID ) {
+            continue;
+        }
+        if ( channel.State == AnimChannel::ACS_Playing ) {
+            return channel.Duration;
+        }
+        if ( channel.State == AnimChannel::ACS_Transition ) {
+            return channel.DurationB;
+        }
+        return 0.0f;
+    }
+    return 0.0f;
 }
 
 void Animation::resetChannel( int32_t index ) {
@@ -272,6 +319,9 @@ void Animation::resetChannel( int32_t index ) {
     channel.DurationB = 0.0f;
     channel.TransitionTime = 0.0f;
     channel.TransitionLength = 1.0f;
+    channel.bLooped = true;
+    channel.PostureTime = 0.0f;
+    channel.PostureLength = 0.0f;
 
     if ( channel.MatchID == expressionMatchID ) {
         pExpressionList = nullptr;
@@ -325,6 +375,8 @@ void Animation::setBlendRatios( const AnimStateBlendEntry *pEntries,
                                 int32_t count ) {
     setChannelBlendRatios( 0, pEntries, count );
 }
+
+static constexpr float kAnimHoldLastFrame = 0.99999f;
 
 static float
 ComputeBlendDuration( const std::vector<AnimStateBlendEntry> &blendSet,
@@ -457,13 +509,21 @@ void Animation::update( float deltaTime ) {
             }
             continue;
         }
+        if ( channel.PostureLength > 0.0f ) {
+            channel.PostureTime += deltaTime;
+            if ( channel.PostureTime >= channel.PostureLength ) {
+                channel.PostureLength = 0.0f;
+            }
+        }
         if ( channel.State != AnimChannel::ACS_Playing ||
              channel.Duration <= 0.0f ) {
             continue;
         }
         channel.Progress += deltaTime / channel.Duration;
         if ( channel.Progress >= 1.0f ) {
-            channel.Progress = std::fmod( channel.Progress, 1.0f );
+            channel.Progress = channel.bLooped
+                                   ? std::fmod( channel.Progress, 1.0f )
+                                   : kAnimHoldLastFrame;
         }
     }
     evaluate( deltaTime );
@@ -489,6 +549,10 @@ void Animation::evaluate( float deltaTime ) {
             evaluateTransition( channel, target );
         } else {
             evaluateChannel( channel, target );
+        }
+        if ( channel.PostureLength > 0.0f && posture.isValid() ) {
+            blendPoses( posture, target,
+                        channel.PostureTime / channel.PostureLength, target );
         }
 
         if ( !bDirect ) {
@@ -836,14 +900,17 @@ void Animation::aimNodeAt( int32_t parentNode,
     const Eigen::Vector3f childPosition( childLocal( 3, 0 ), childLocal( 3, 1 ),
                                          childLocal( 3, 2 ) );
 
-    const Eigen::Quaternionf delta =
-        BuildAimRotation( childPosition, targetInParentSpace, damping );
+    rotateNode( parentNode, BuildAimRotation( childPosition,
+                                              targetInParentSpace, damping ) );
+}
 
-    if ( pose.getWeight( parentNode ) == kAnimNodeUntouched ) {
-        pose.setWeight( parentNode, 0.0f );
+void Animation::rotateNode( int32_t node, const Eigen::Quaternionf &delta ) {
+    // FUN_006790e0
+    if ( pose.getWeight( node ) == kAnimNodeUntouched ) {
+        pose.setWeight( node, 0.0f );
     }
 
-    AnimationTransform &rts = pose.at( parentNode );
+    AnimationTransform &rts = pose.at( node );
     rts.Rotation = delta * rts.Rotation;
 }
 

@@ -43,9 +43,9 @@ inline Eigen::Vector4f SkidPointCenter( const SkidPoint &point ) {
     return ( point.In + point.Out ) * 0.5f;
 }
 
-inline float GetBikeScrubAngle( const CarState & ) {
-    OTDU_UNIMPLEMENTED; // TODO: BIKE (edPhysVehicle+0xe7c)
-    return 0.0f;
+inline float GetBikeScrubAngle( const CarState &carState ) {
+    const PhysicsVehicle *pVehicle = carState.getPhysicsVehicle();
+    return ( pVehicle != nullptr ) ? pVehicle->getDisplayYaw() : 0.0f;
 }
 
 static inline void EndSkidTrail( TireSkid &skid ) {

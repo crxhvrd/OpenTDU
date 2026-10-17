@@ -33,6 +33,10 @@ static constexpr float kGroundMinHeight =
     0.8f; // DAT_00f416d0 (raycast valid floor)
 static constexpr float kGroundContactMin = 0.75f;   // DAT_00fab3d4
 static constexpr float kNoHitSentinel = -100000.0f; // DAT_00f418fc
+static constexpr float kBikeHeadHeightHigh = 1.3f;  // DAT_00fab3c4
+static constexpr float kBikeHeadHeightLow = 1.0f;   // DAT_00fab3c0
+static constexpr float kBikeHelmetPitchLow = 0.5f;  // DAT_00fab3bc
+static float gBikeHelmetPitchHigh = 0.0f;           // DAT_016a2cb0
 static constexpr float kFixedFwdStep =
     20.0f; // DAT_00f03ee0 (in-car target forward step)
 static constexpr float kLeanCross = 1.0f;              // DAT_00fab3c8
@@ -1471,14 +1475,40 @@ void CameraVehicle::tickFixed( CarState *pCar,
                                        ? pPhys->getDisplayMatrix()
                                        : pCar->getBody()->OffsetedWorldMatrix;
 
+    VehicleBase *pVehicle = pCar->getVehicleInstance();
+    const bool bIsBike =
+        ( pVehicle != nullptr ) &&
+        ( pVehicle->getType() == VehicleBase::eType::VBT_Bike ||
+          pVehicle->getType() == VehicleBase::eType::VBT_TrafficBike );
+
+    Eigen::Vector3f dir =
+        ( params.TrgInCar.head<3>() - params.PosIncar.head<3>() );
+    if ( dir.squaredNorm() > 1e-12f ) {
+        dir.normalize();
+    }
+
     Eigen::Vector4f localPos = params.PosIncar;
     Eigen::Vector4f localTgt;
-    {
-        Eigen::Vector3f dir =
-            ( params.TrgInCar.head<3>() - params.PosIncar.head<3>() );
-        if ( dir.squaredNorm() > 1e-12f ) {
-            dir.normalize();
-        }
+    if ( ( flags & 0x40000 ) != 0 && bIsBike ) {
+        const Matrix4x4f_t &head = pCar->getBody()->BikerHeadMatrix;
+        const Eigen::Vector3f headPos = head.block<1, 3>( 3, 0 ).transpose();
+        Eigen::Vector3f headFwd = head.block<1, 3>( 2, 0 ).transpose();
+
+        const float pitchHigh = gBikeHelmetPitchHigh;
+        const float pitch = std::min(
+            std::max( ( headPos.y() - kBikeHeadHeightHigh ) *
+                              ( kBikeHelmetPitchLow - pitchHigh ) /
+                              ( kBikeHeadHeightLow - kBikeHeadHeightHigh ) +
+                          pitchHigh,
+                      std::min( pitchHigh, kBikeHelmetPitchLow ) ),
+            std::max( pitchHigh, kBikeHelmetPitchLow ) );
+        headFwd.y() += pitch;
+
+        localPos.head<3>() = headPos + params.PosIncar.head<3>();
+        localPos.w() = 1.0f;
+        localTgt.head<3>() = headPos + ( dir + headFwd ) * kFixedFwdStep;
+        localTgt.w() = 1.0f;
+    } else {
         localTgt.head<3>() = params.PosIncar.head<3>() + dir * kFixedFwdStep;
         localTgt.w() = 1.0f;
     }
@@ -1526,11 +1556,6 @@ void CameraVehicle::tickFixed( CarState *pCar,
 
     if ( ( flags & 0x40000 ) != 0 && gpCamera != nullptr &&
          !gpCamera->isLookingBack() ) {
-        VehicleBase *pVehicle = pCar->getVehicleInstance();
-        const bool bIsBike =
-            ( pVehicle != nullptr ) &&
-            ( pVehicle->getType() == VehicleBase::eType::VBT_Bike ||
-              pVehicle->getType() == VehicleBase::eType::VBT_TrafficBike );
         if ( !bIsBike ) {
             const Eigen::Vector2f &seatPos = gpCamera->getSeatPosition();
             localPos.z() += seatPos.x();

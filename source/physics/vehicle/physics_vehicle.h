@@ -6,10 +6,15 @@
 
 #include "physics/collision_event.h"
 
+#include <atomic>
+
 #include <Jolt/Jolt.h>
+#include <Jolt/Physics/Constraints/Constraint.h>
 #include <Jolt/Physics/PhysicsStepListener.h>
 
 namespace JPH {
+    class MutableCompoundShape;
+    class Shape;
     class PhysicsSystem;
     class Body;
     class BodyInterface;
@@ -33,7 +38,10 @@ public:
         float SteerAngle;              // rad
         float RotationAngle;           // rad
         float SuspensionLength;        // m (current, from the hard point)
-        float SuspensionDeflection;    // m, rest - current (+ = compressed/up)
+        float ReleasedPosition;        // m, wheel centre Y at full droop,
+                                       // body space (retail PosReleased)
+        float SuspensionTravel;        // m, drawn wheel centre above
+                                       // ReleasedPosition (+ = up)
         float SuspensionStaticLength;  // m, ride height
         float SuspensionDroopStop;     // m, full droop (max length)
         float SuspensionBumpStop;      // m, full compression (min length)
@@ -220,7 +228,8 @@ public:
         return ( bPausePhysics || postponedPause == 1 ) && postponedPause != 2;
     }
     bool isVirtual() const { return bVirtual; }
-    bool isVirtualGrounded() const { return bVirtualGrounded; }
+    bool areWheelsActive() const { return bWheelsActive; }
+    bool isBike() const { return bIsBike; }
     float getVirtualSpeed() const { return virtualSpeed; }
     void setVirtualSpeed( float speed ) { virtualSpeed = speed; }
     void resetAutomaticGearbox();
@@ -283,8 +292,24 @@ public:
         return false;
     }
     int32_t getPhantomMode() const { return phantomMode; }
-    bool hasBikeRiderBody() const { return bBikeRiderBody; }
-    void setBikeRiderBody( bool bPresent ) { bBikeRiderBody = bPresent; }
+    bool isBikeCrashRecoveryPending() const { return bBikeCrashRecovery; }
+    void setBikeCrashRecovery( bool bPending ) {
+        bBikeCrashRecovery = bPending;
+    }
+    bool hasBikeRider() const { return bBikeRiderPresent; }
+    const Matrix4x4f_t &getBikeRiderMatrix() const { return bikeRiderMatrix; }
+    const Eigen::Vector4f &getBikeRiderVelocity() const {
+        return bikeRiderVelocity;
+    }
+    bool isBikeRiderOnGround() const { return bBikeRiderOnGround; }
+    bool isBikeRiderMoving() const { return bBikeRiderMoving; }
+    bool isBikeRiderBody( const JPH::Body &body ) const {
+        return pBikeRiderBody == &body;
+    }
+    void notifyBikeRiderGroundContact() { bBikeRiderGroundContact = true; }
+    void setBikeRiderSeatMatrix( const Matrix4x4f_t &seatMatrix ) {
+        bikeRiderSeatMatrix = seatMatrix;
+    }
     bool isBackOnTrackForced() const { return bForceBackOnTrack; }
     void setBackOnTrackForced( bool bForced ) { bForceBackOnTrack = bForced; }
     bool isRespawnForced() const { return bForceRespawn; }
@@ -313,6 +338,16 @@ public:
                                float heightFactor ) const;
     bool updatePhantomAlpha( float dt, bool bForceOpaque, float &outAlpha );
     void setBackOnTrackPlaced( bool bPlaced ) { bBackOnTrackPlaced = bPlaced; }
+    void requestRollLimitRestore() { bRollLimitRestoreRequest = true; }
+    bool requestCollisionInertia();
+    bool isRollLimitActive() const {
+        return pRollLimitConstraint != nullptr &&
+               pRollLimitConstraint->GetEnabled();
+    }
+    // Havok group-filter layer of the chassis wheel spheres: 15 while the
+    // wheels are active, 5 at rest.
+    static bool IsWheelSphere( const JPH::Shape *pShape );
+    uint32_t getWheelSphereLayer() const { return wheelSphereLayer.load(); }
     bool consumeBackOnTrackPlaced() {
         const bool bPlaced = bBackOnTrackPlaced;
         bBackOnTrackPlaced = false;
@@ -330,8 +365,10 @@ public:
     static PerfPackCoefs
     BuildPerfPackCoefs( const DBEntryAftermarketPack *pPack );
     static SuspensionSetup
-    ComputeAxleSuspension( const DBEntryCarPhysicsData &db,
+    ComputeAxleSuspension( const PhysicsConfig &config,
+                           const DBEntryCarPhysicsData &db,
                            bool bFront,
+                           bool bBike,
                            const PerfPackCoefs &pack );
 
     void initialize();
@@ -347,6 +384,12 @@ public:
 
     void setInput( float throttle, float brake, float steer );
     void setHandbrake( float handbrake );
+    void setLean( float lean ) { inputLean = lean; }
+    float getDisplayRoll() const { return displayRoll; }
+    float getDisplayPitch() const { return displayPitch; }
+    float getDisplayYaw() const { return displayYaw; }
+    float getBikeHeadLean() const { return bikeHeadLean; }
+    float getBikeLeanSmoothed() const { return bikeLeanSmoothed; }
     void setIgnition( bool bKeyOn, bool bCutEdge );
     void applyDrivingMode();
     void declutchForDrivingMode();
@@ -396,10 +439,6 @@ public:
 
     void publishStepPose();
     void onWorldShifted( const Eigen::Vector3f &worldShift );
-    void calibrateDisplayYOffset( float modelWheelRestY );
-
-    void setAuthoredWheelHeights( const float *pAuthoredWheelY,
-                                  uint32_t numAuthored );
 
     uint32_t getNumWheels() const;
     WheelReadout getWheelReadout( uint32_t index ) const;
@@ -465,6 +504,19 @@ private:
                           const JPH::Body &chassis,
                           float deltaTime );
     void applyAntiRollBars();
+    void updateBikeRollLimit( const JPH::Body &chassis );
+    void updateBikeRider();
+    void updateWheelsActive();
+    void updateCollisionInertia( float deltaTime );
+    void spawnBikeRider();
+    void destroyBikeRider();
+    void publishBikeRider();
+    void updateBikeLean( float deltaTime );
+    void updateBikePitch( float deltaTime );
+    void resetBikeLean();
+    void installWheelCollision( bool bProceduralShape );
+    void updateWheelCollision();
+    void updateBikeCollision();
     void applyGroundAlignment( JPH::PhysicsSystem &system,
                                const JPH::Body &chassis,
                                JPH::BodyInterface &bi,
@@ -480,6 +532,7 @@ private:
     bool bRegistered;
 
     PhysicsVehicleState vehicle;
+    const PhysicsConfig *pConfig = &gPhysicsConfig;
 
     Eigen::Vector3f
         wheelAttach[PhysicsVehicleState::kMaxWheels]; // suspension hard point,
@@ -531,11 +584,31 @@ private:
     bool bLowSpeedLatAssist = false;  // FIXME
     bool bIsBike = false;
     bool bTrafficBody = false;
-    bool bBackOnTrackPlaced = false; // +0xd32
-    uint8_t postponedPause = 0;      // +0x8da: 1 pause, 2 resume
-    bool bBikeRiderBody = false;
-    bool bForceBackOnTrack = false;
-    bool bForceRespawn = false;
+    bool bRollLimitRestoreRequest = false;          // +0xd31
+    bool bBackOnTrackPlaced = false;                // +0xd32
+    JPH::Ref<JPH::Constraint> pRollLimitConstraint; // +0x3f1c
+    uint8_t postponedPause = 0;                     // +0x8da: 1 pause, 2 resume
+    bool bBikeCrashRecovery = false;                // +0xbf0
+    JPH::Body *pBikeRiderBody = nullptr;            // +0x4368
+    JPH::MutableCompoundShape *pChassisCompound = nullptr; // +0x4378
+    JPH::Vec3 chassisCompoundCOM = JPH::Vec3::sZero();
+    int32_t numBikeCollisionBoxes = 0;
+    Matrix4x4f_t bikeCollisionBoxRest[3]; // +0x3fa0, +0x3fe0, +0x4020
+    std::atomic<uint32_t> wheelSphereLayer{ 15 };
+    bool bWheelSpheresActive = true;                    // entry+0x8c
+    std::atomic<bool> bBikeRiderGroundContact{ false }; // +0xe4a
+    std::atomic<bool> bCollisionInertiaRequest{ false };
+    float collisionInertiaTimer = 0.0f;                     // +0xec4
+    JPH::Vec3 savedInvInertiaDiagonal = JPH::Vec3::sZero(); // +0xd40
+    JPH::Quat savedInertiaRotation = JPH::Quat::sIdentity();
+    bool bBikeRiderPresent = false;
+    bool bBikeRiderOnGround = false;
+    bool bBikeRiderMoving = false;
+    Matrix4x4f_t bikeRiderMatrix = Matrix4x4f_t::Identity();
+    Matrix4x4f_t bikeRiderSeatMatrix = Matrix4x4f_t::Identity();
+    Eigen::Vector4f bikeRiderVelocity = Eigen::Vector4f::Zero();
+    bool bForceBackOnTrack = false; // +0xbf1
+    bool bForceRespawn = false;     // +0xbf2
     // Phantom (ghost) chassis: 1 normal, 2 ghost, 4 ghost until clear of
     // other cars, 5 permanent ghost
     uint8_t phantomRequest = 0;
@@ -554,6 +627,8 @@ private:
     float inputBrake;
     float inputSteer;
     float inputHandbrake;
+    float inputLean = 0.0f; // Driving::Lean (+0xe14)
+    float prevInputLean = 0.0f;
     uint8_t drivingMode;
     PhysicsDrivingControl *pDrivingControl = nullptr;
     PhysicsDrivingControl *pSecondaryDrivingControl = nullptr;
@@ -579,7 +654,7 @@ private:
     bool bInputControllerAttached;
     bool bPausePhysics;
     bool bVirtual;
-    bool bVirtualGrounded;
+    bool bWheelsActive; // +0x40e0
     float virtualSpeed;
     bool bKeyframed;
     bool bForceKeyframeMatrix;
@@ -617,12 +692,15 @@ private:
     int32_t currentGear;
     float finalDriveRatio;
 
-    float displayRoll;
-    float displayPitch;
-    float displayYaw;
+    float displayRoll;             // +0xe68, bike lean
+    float displayPitch;            // +0xe74, bike wheelie (< 0) / stoppie (> 0)
+    float displayYaw;              // +0xe7c
+    float bikeLeanSmoothed = 0.0f; // +0xe6c, smoothed Driving::Lean
+    float bikeHeadLean = 0.0f;     // +0xe70
+    float displayPitchRate = 0.0f; // +0xe78
+    bool bPitchCrossedZero = true; // +0xd2c
+    int32_t pitchLandingSide = -1; // +0xd28
     float y3DOffset;
-    float authoredWheelY[PhysicsVehicleState::kMaxWheels] = {};
-    bool bAuthoredWheelYKnown = false;
     float bodyHeight;
     float rideHeightFront;
     float rideHeightRear;

@@ -605,7 +605,8 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/debug/mng_debug_hud.cpp"
                     "${OTDU_SRC_FOLDER}/physics/road_phantom_manager.cpp"
                     "${OTDU_SRC_FOLDER}/physics/vehicle/physics_vehicle.cpp"
-                    "${OTDU_SRC_FOLDER}/physics/vehicle/vehicle_simulation.cpp")
+                    "${OTDU_SRC_FOLDER}/physics/vehicle/vehicle_simulation.cpp"
+                    "${OTDU_SRC_FOLDER}/physics/vehicle/bike_roll_limit_constraint.cpp")
 
 file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/gs_pub.h"
@@ -1124,6 +1125,7 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/debug/mng_debug_hud.h"
                     "${OTDU_SRC_FOLDER}/physics/road_phantom_manager.h"
                     "${OTDU_SRC_FOLDER}/physics/vehicle/physics_vehicle.h"
+                    "${OTDU_SRC_FOLDER}/physics/vehicle/bike_roll_limit_constraint.h"
                     "${OTDU_SRC_FOLDER}/physics/vehicle/vehicle_simulation.h"
                     "${OTDU_SRC_FOLDER}/physics/world_collisions.h" )
 
@@ -1147,6 +1149,14 @@ add_ide_filters( "${OTDU_SOURCES}" )
 set( OTDU_SOURCES ${OTDU_SOURCES} )
 
 add_executable( opentdu ${GUI_TYPE} ${OTDU_SOURCES} )
+
+if ( MSVC )
+    set_source_files_properties( "${OTDU_SRC_FOLDER}/physics/vehicle/bike_roll_limit_constraint.cpp"
+                                 PROPERTIES COMPILE_OPTIONS "/GR-" SKIP_PRECOMPILE_HEADERS ON )
+else()
+    set_source_files_properties( "${OTDU_SRC_FOLDER}/physics/vehicle/bike_roll_limit_constraint.cpp"
+                                 PROPERTIES COMPILE_OPTIONS "-fno-rtti" SKIP_PRECOMPILE_HEADERS ON )
+endif()
 set_property(TARGET opentdu PROPERTY FOLDER "Projects")
 
 target_precompile_headers( opentdu PRIVATE "${OTDU_SRC_FOLDER}/pch.h" )

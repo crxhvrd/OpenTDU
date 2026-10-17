@@ -239,6 +239,30 @@ void AnimTarget2NParams::timeslice( Animation &animation, float deltaTime ) {
     animation.aimNodeAt( parentNode, childNode, targetLocal, Damping );
 }
 
+void AnimAlign1NParams::timeslice( Animation &animation, float deltaTime ) {
+    // FUN_00679e30
+    advanceDamping( deltaTime );
+    if ( Damping < kAnimExpressionEpsilon ) {
+        return;
+    }
+
+    const SkeletonInstance *pSkeleton = animation.getSkeleton();
+    const int32_t node =
+        ( pSkeleton != nullptr ) ? pSkeleton->findNode( NodeID ) : -1;
+    if ( node < 0 ) {
+        Flags |= 1;
+        return;
+    }
+
+    Matrix4x4f_t worldInverse;
+    InvertSoft( animation.getNodeWorldMatrix( -1, node ), worldInverse );
+
+    const Eigen::Vector3f targetLocal =
+        worldInverse.block<3, 3>( 0, 0 ).transpose() * Target.head<3>();
+    animation.rotateNode(
+        node, BuildAimRotation( LocalAxis.head<3>(), targetLocal, Damping ) );
+}
+
 void AnimExpressionList::append( AnimExpression *pExpression ) {
     // FUN_00678ec0
     if ( pExpression == nullptr ) {

@@ -35,6 +35,8 @@
 #include <Jolt/Physics/Collision/Shape/Shape.h>
 
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
+#include <Jolt/Physics/Collision/SimShapeFilter.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/TransformedShape.h>
 
@@ -239,6 +241,20 @@ namespace {
             inCenterOfMassTransform2, ioSettings, collector, inShapeFilter );
     }
 
+    // hkContactPointMaterial stores friction as u16 / 256 (FLOAT_00f419c0)
+    // and restitution as u8 / 128 (FLOAT_00f4176c).
+    float QuantizeFriction( const float fixedFriction ) {
+        const int32_t fixed =
+            static_cast<int32_t>( std::nearbyint( fixedFriction ) );
+        return static_cast<float>( static_cast<uint16_t>( fixed ) ) / 256.0f;
+    }
+
+    float QuantizeRestitution( const float fixedRestitution ) {
+        const int32_t fixed =
+            static_cast<int32_t>( std::nearbyint( fixedRestitution ) );
+        return static_cast<float>( static_cast<uint8_t>( fixed ) ) / 128.0f;
+    }
+
     float CombineFriction( const JPH::Body &inBody1,
                            const JPH::SubShapeID &,
                            const JPH::Body &inBody2,
@@ -246,9 +262,7 @@ namespace {
         // FUN_0048d730
         const float combined =
             std::sqrt( inBody1.GetFriction() * inBody2.GetFriction() );
-        const int32_t fixed = static_cast<int32_t>(
-            std::nearbyint( combined * 256.0f ) ); // FLOAT_00f419c0
-        return static_cast<float>( static_cast<uint16_t>( fixed ) ) / 256.0f;
+        return QuantizeFriction( combined * 256.0f );
     }
 
     float CombineRestitution( const JPH::Body &inBody1,
@@ -257,10 +271,73 @@ namespace {
                               const JPH::SubShapeID & ) {
         const float combined =
             std::sqrt( inBody1.GetRestitution() * inBody2.GetRestitution() );
-        const int32_t fixed = static_cast<int32_t>(
-            std::nearbyint( combined * 128.0f ) ); // FLOAT_00f4176c
-        return static_cast<float>( static_cast<uint8_t>( fixed ) ) / 128.0f;
+        return QuantizeRestitution( combined * 128.0f );
     }
+
+    // Havok group-filter layer of a body
+    uint32_t RetailCollisionLayer( const JPH::Body &body ) {
+        switch ( body.GetUserData() & TDUSurface::kClassMask ) {
+        case TDUSurface::RoadGround:
+            return 6; // DAT_010d6ec0 (FUN_00848530)
+        case TDUSurface::RoadMesh:
+            return 7; // FUN_00845380
+        case TDUSurface::Vehicle:
+            return body.GetObjectLayer() == TDUPhysLayers::VEHICLE_GHOST ? 4
+                                                                         : 2;
+        case TDUSurface::BikeRider:
+            return 2;
+        default:
+            break;
+        }
+        // DAT_010d6ec4: .shk objects (FUN_00844f00) and the terrain
+        // heightfield (FUN_00848b50).
+        return body.GetObjectLayer() == TDUPhysLayers::MOVING ? 1 : 0;
+    }
+
+    bool RetailLayersCollide( uint32_t a, uint32_t b ) {
+        // FUN_00841100: layer 15 collides with nothing; otherwise the
+        // FUN_00841270 default (a == b, or layer 0) + Initialize_Scene
+        // (FUN_0081d960) overrides, for the layers a wheel sphere uses.
+        if ( a == 15 || b == 15 ) {
+            return false;
+        }
+        if ( a == b || a == 0 || b == 0 ) {
+            return true;
+        }
+        const uint32_t other = ( a == 5 ) ? b : a;
+        return other == 1 || other == 7;
+    }
+
+    // The chassis wheel spheres sit on their own Havok layer (FUN_0083a560)
+    // inside the chassis list shape.
+    class WheelSphereFilter final : public JPH::SimShapeFilter {
+    public:
+        bool ShouldCollide( const JPH::Body &inBody1,
+                            const JPH::Shape *inShape1,
+                            const JPH::SubShapeID &,
+                            const JPH::Body &inBody2,
+                            const JPH::Shape *inShape2,
+                            const JPH::SubShapeID & ) const override {
+            const bool bSphere1 = PhysicsVehicle::IsWheelSphere( inShape1 );
+            const bool bSphere2 = PhysicsVehicle::IsWheelSphere( inShape2 );
+            if ( !bSphere1 && !bSphere2 ) {
+                return true;
+            }
+            return RetailLayersCollide( layerOf( inBody1, bSphere1 ),
+                                        layerOf( inBody2, bSphere2 ) );
+        }
+
+    private:
+        static uint32_t layerOf( const JPH::Body &body, bool bSphere ) {
+            if ( bSphere ) {
+                const PhysicsVehicle *pVehicle = gpPhysics->findVehicle( body );
+                return ( pVehicle != nullptr ) ? pVehicle->getWheelSphereLayer()
+                                               : 15;
+            }
+            return RetailCollisionLayer( body );
+        }
+    };
+    WheelSphereFilter gWheelSphereFilter;
 
     // Equivalent of hkCollisionListener used by the original game.
     class PhysicsFXContactListener : public JPH::ContactListener {
@@ -273,6 +350,9 @@ namespace {
             // FUN_00833BA0
             if ( inBody1.IsSensor() || inBody2.IsSensor() ) {
                 return JPH::ValidateResult::AcceptContact;
+            }
+            if ( IsOwnBikeRiderPair( inBody1, inBody2 ) ) {
+                return JPH::ValidateResult::RejectContact;
             }
             const bool bVehicle1 = IsVehicle( inBody1 );
             if ( bVehicle1 == IsVehicle( inBody2 ) ) {
@@ -306,11 +386,12 @@ namespace {
         void OnContactAdded( const JPH::Body &inBody1,
                              const JPH::Body &inBody2,
                              const JPH::ContactManifold &inManifold,
-                             JPH::ContactSettings & ) override {
+                             JPH::ContactSettings &ioSettings ) override {
             if ( inBody1.IsSensor() || inBody2.IsSensor() ) {
                 onSensorContactAdded( inBody1, inBody2 );
                 return;
             }
+            processVehicleContact( inBody1, inBody2, inManifold, ioSettings );
             for ( uint32_t i = 0;
                   i < inManifold.mRelativeContactPointsOn1.size(); i++ ) {
                 if ( IsVehicle( inBody1 ) ) {
@@ -323,6 +404,7 @@ namespace {
                 }
             }
             emit( inBody1, inBody2, inManifold, PFXEK_Impact );
+            onBikeRiderContact( inBody1, inBody2 );
         }
 
         void OnContactRemoved( const JPH::SubShapeIDPair &inPair ) override {
@@ -336,13 +418,15 @@ namespace {
         void OnContactPersisted( const JPH::Body &inBody1,
                                  const JPH::Body &inBody2,
                                  const JPH::ContactManifold &inManifold,
-                                 JPH::ContactSettings & ) override {
+                                 JPH::ContactSettings &ioSettings ) override {
             // A contact that survives across steps is a scrape/slide, which is
             // what the original's looping kind describes.
             if ( inBody1.IsSensor() || inBody2.IsSensor() ) {
                 return;
             }
+            processVehicleContact( inBody1, inBody2, inManifold, ioSettings );
             emit( inBody1, inBody2, inManifold, PFXEK_Slide );
+            onBikeRiderContact( inBody1, inBody2 );
         }
 
     private:
@@ -364,6 +448,175 @@ namespace {
             if ( pOwner != nullptr ) {
                 gpPhysics->getRoadPhantomManager().onOverlapAdded(
                     phantom.GetID(), other.GetID(), pOwner );
+            }
+        }
+
+        static PhysicsVehicle *GetBikeRiderOwner( const JPH::Body &body ) {
+            if ( ( body.GetUserData() & TDUSurface::kClassMask ) !=
+                 TDUSurface::BikeRider ) {
+                return nullptr;
+            }
+            return reinterpret_cast<PhysicsVehicle *>(
+                body.GetUserData() >> TDUSurface::kOwnerShift );
+        }
+
+        // The rider body shares its bike's collision filter in retail.
+        static bool IsOwnBikeRiderPair( const JPH::Body &inBody1,
+                                        const JPH::Body &inBody2 ) {
+            PhysicsVehicle *pOwner1 = GetBikeRiderOwner( inBody1 );
+            PhysicsVehicle *pOwner2 = GetBikeRiderOwner( inBody2 );
+            if ( pOwner1 == nullptr && pOwner2 == nullptr ) {
+                return false;
+            }
+            const JPH::Body &other = ( pOwner1 != nullptr ) ? inBody2 : inBody1;
+            PhysicsVehicle *pOwner = ( pOwner1 != nullptr ) ? pOwner1 : pOwner2;
+            return IsVehicle( other ) &&
+                   gpPhysics->findVehicle( other ) == pOwner;
+        }
+
+        static void onBikeRiderContact( const JPH::Body &inBody1,
+                                        const JPH::Body &inBody2 ) {
+            // FUN_0082d570
+            PhysicsVehicle *pOwner1 = GetBikeRiderOwner( inBody1 );
+            PhysicsVehicle *pOwner2 = GetBikeRiderOwner( inBody2 );
+            if ( pOwner1 == nullptr && pOwner2 == nullptr ) {
+                return;
+            }
+            const JPH::Body &other = ( pOwner1 != nullptr ) ? inBody2 : inBody1;
+            const uint64_t physType =
+                other.GetUserData() & TDUSurface::kClassMask;
+            if ( physType > 0 && physType <= 6 ) {
+                ( ( pOwner1 != nullptr ) ? pOwner1 : pOwner2 )
+                    ->notifyBikeRiderGroundContact();
+            }
+        }
+
+        static float ContactInvInertiaScale( const JPH::Body &body ) {
+            static constexpr float kInertia = 20000.0f; // DAT_00fab808
+            const JPH::MotionProperties *pMotion = body.GetMotionProperties();
+            if ( pMotion == nullptr ) {
+                return 1.0f;
+            }
+            const float minInvInertia =
+                pMotion->GetInverseInertiaDiagonal().ReduceMin();
+            if ( minInvInertia <= 0.0f ) {
+                return 1.0f;
+            }
+            return Min( 1.0f, 1.0f / ( kInertia * minInvInertia ) );
+        }
+
+        static void
+        requestCollisionInertia( const JPH::Body &body,
+                                 PhysicsVehicle &vehicle,
+                                 const bool bBody1,
+                                 JPH::ContactSettings &ioSettings ) {
+            if ( !vehicle.requestCollisionInertia() ) {
+                return;
+            }
+            const float scale = ContactInvInertiaScale( body );
+            ( bBody1 ? ioSettings.mInvInertiaScale1
+                     : ioSettings.mInvInertiaScale2 ) = scale;
+        }
+
+        static void
+        applyVehicleContactProperties( const JPH::Body &self,
+                                       const JPH::SubShapeID &selfSubShape,
+                                       const JPH::Body &other,
+                                       const bool bSelfIsBody1,
+                                       JPH::ContactSettings &ioSettings ) {
+            // FUN_0082e740
+            static constexpr float kUprightMinY = 0.5f;        // FLOAT_00f41674
+            static constexpr float kBodyFriction = 115.2f;     // DAT_00f41df0
+            static constexpr float kBikeBodyFriction = 51.2f;  // DAT_00f41df4
+            static constexpr float kGenericRestitution = 6.4f; // DAT_00f41dec
+            static constexpr float kVehicleRestitution = 32.0f; // DAT_00f41ae8
+
+            PhysicsVehicle *pSelf = gpPhysics->findVehicle( self );
+            if ( pSelf == nullptr ) {
+                return;
+            }
+
+            const uint64_t otherType =
+                other.GetUserData() & TDUSurface::kClassMask;
+            if ( otherType >= TDUSurface::Generic &&
+                 otherType <= TDUSurface::Vehicle ) {
+                if ( otherType == TDUSurface::Vehicle ) {
+                    PhysicsVehicle *pOther = gpPhysics->findVehicle( other );
+                    if ( pOther != nullptr ) {
+                        requestCollisionInertia( other, *pOther, !bSelfIsBody1,
+                                                 ioSettings );
+                    }
+                }
+                requestCollisionInertia( self, *pSelf, bSelfIsBody1,
+                                         ioSettings );
+            }
+
+            // m_userData bit 31 (FUN_0082f030): a contact on a wheel sphere
+            // grips with the brake pedal below 10 m/s.
+            JPH::SubShapeID remainder;
+            if ( PhysicsVehicle::IsWheelSphere( self.GetShape()->GetLeafShape(
+                     selfSubShape, remainder ) ) ) {
+                static constexpr float kGripSpeed = 10.0f; // FLOAT_00f4166c
+                const float grip =
+                    Clamp( kGripSpeed - self.GetLinearVelocity().Length(), 0.0f,
+                           kGripSpeed );
+                ioSettings.mCombinedFriction =
+                    QuantizeFriction( pSelf->getInputBrake() * grip * 256.0f );
+                ioSettings.mCombinedRestitution = 0.0f;
+                return;
+            }
+
+            // Havok also flattens near-vertical Generic contact normals here;
+            // Jolt exposes no contact normal to edit.
+            float friction = 0.0f;
+            float restitution = 0.0f;
+            switch ( otherType ) {
+            case TDUSurface::RoadGround:
+            case TDUSurface::Paved:
+            case TDUSurface::RoadMesh: {
+                const float upY =
+                    ( self.GetRotation() * JPH::Vec3::sAxisY() ).GetY();
+                if ( !pSelf->areWheelsActive() ||
+                     std::fabs( upY ) <= kUprightMinY ) {
+                    friction =
+                        pSelf->isBike() ? kBikeBodyFriction : kBodyFriction;
+                }
+                break;
+            }
+            case 6:
+                break;
+            case TDUSurface::Generic:
+                friction = kBodyFriction;
+                restitution = kGenericRestitution;
+                break;
+            case 8:
+                restitution = kGenericRestitution;
+                break;
+            case TDUSurface::Vehicle:
+                restitution = kVehicleRestitution;
+                break;
+            default:
+                // Case 4 (friction 89.6 unless GrassAsTarmac) never runs:
+                // the retail heightfield carries no phys-type property.
+                return;
+            }
+            ioSettings.mCombinedFriction = QuantizeFriction( friction );
+            ioSettings.mCombinedRestitution =
+                QuantizeRestitution( restitution );
+        }
+
+        static void
+        processVehicleContact( const JPH::Body &inBody1,
+                               const JPH::Body &inBody2,
+                               const JPH::ContactManifold &inManifold,
+                               JPH::ContactSettings &ioSettings ) {
+            if ( IsVehicle( inBody1 ) ) {
+                applyVehicleContactProperties( inBody1, inManifold.mSubShapeID1,
+                                               inBody2, true, ioSettings );
+            }
+            if ( IsVehicle( inBody2 ) ) {
+                applyVehicleContactProperties( inBody2, inManifold.mSubShapeID2,
+                                               inBody1, false, ioSettings );
             }
         }
 
@@ -2031,7 +2284,9 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     const float bodyHeightM =
         ( ( db.Height > 0 ? db.Height : 1300 ) - rideHeightFrontMM - 100.0f ) *
         kMmToM;
-    const float halfW = ( db.Width > 0 ? db.Width : 1800 ) * 0.5f * kMmToM;
+    const bool bBike = gpDatabase != nullptr && gpDatabase->isBike( &db );
+    const float halfW = ( db.Width > 0 ? db.Width : 1800 ) * 0.5f * kMmToM *
+                        ( bBike ? 0.5f : 1.0f );
     const float halfH = bodyHeightM * 0.5f;
     const float halfL = ( db.Length > 0 ? db.Length : 4000 ) * 0.5f * kMmToM;
 
@@ -2048,54 +2303,58 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
 
     JPH::ShapeRefC chassisShape;
     JPH::ShapeSettings::ShapeResult shapeResult;
+    JPH::MutableCompoundShapeSettings hull;
     if ( pChassisMember != nullptr ) {
-        // FUN_0082fc80 (inlined)
-        chassisShape = pChassisMember->Shape;
+        hull.AddShape( JPH::Vec3::sZero(), JPH::Quat::sIdentity(),
+                       pChassisMember->Shape );
     } else if ( bHasFactoryShape ) {
-        JPH::StaticCompoundShapeSettings compound;
         for ( const HavokToJolt::RigidBody &body : pData->Bodies ) {
             const JPH::Mat44 local =
                 toChassis * JPH::Mat44::sRotationTranslation( body.Rotation,
                                                               body.Position );
-            compound.AddShape( local.GetTranslation(),
-                               local.GetQuaternion().Normalized(), body.Shape );
-        }
-        shapeResult = compound.Create();
-        if ( shapeResult.IsValid() ) {
-            chassisShape = shapeResult.Get();
+            hull.AddShape( local.GetTranslation(),
+                           local.GetQuaternion().Normalized(), body.Shape );
         }
     } else {
-        const auto addBox = [&]( JPH::StaticCompoundShapeSettings &compound,
-                                 const JPH::Vec3 &coreHalfExtents,
+        const auto addBox = [&]( const JPH::Vec3 &coreHalfExtents,
                                  const JPH::Vec3 &offset,
                                  eMaterialType material ) {
             const JPH::Vec3 halfExtents(
                 Max( kConvexRadius, coreHalfExtents.GetX() + kConvexRadius ),
                 Max( kConvexRadius, coreHalfExtents.GetY() + kConvexRadius ),
                 Max( kConvexRadius, coreHalfExtents.GetZ() + kConvexRadius ) );
-            compound.AddShape( offset, JPH::Quat::sIdentity(),
-                               new JPH::BoxShapeSettings(
-                                   halfExtents, kConvexRadius,
-                                   TDUPhysicsMaterials::get(
-                                       static_cast<uint32_t>( material ) ) ) );
+            hull.AddShape( offset, JPH::Quat::sIdentity(),
+                           new JPH::BoxShapeSettings(
+                               halfExtents, kConvexRadius,
+                               TDUPhysicsMaterials::get(
+                                   static_cast<uint32_t>( material ) ) ) );
         };
 
-        JPH::StaticCompoundShapeSettings hull;
-        addBox( hull, JPH::Vec3( halfW - 0.05f, halfH - 0.15f, halfL - 0.55f ),
-                JPH::Vec3( 0.0f, 0.10f, 0.0f ), eMaterialType::MT_Body );
-        addBox( hull, JPH::Vec3( halfW - 0.15f, 0.225f, 0.275f ),
-                JPH::Vec3( 0.0f, 0.375f - halfH, halfL - 0.375f ),
-                eMaterialType::MT_BumperF );
-        addBox( hull, JPH::Vec3( halfW - 0.15f, 0.350f, 0.275f ),
-                JPH::Vec3( 0.0f, 0.500f - halfH, -( halfL - 0.375f ) ),
-                eMaterialType::MT_BumperR );
-        addBox( hull, JPH::Vec3( halfW * 0.8f - 0.05f, 0.20f, halfL - 0.30f ),
-                JPH::Vec3( 0.0f, 0.25f - halfH, 0.0f ),
-                eMaterialType::MT_Chassis );
-        shapeResult = hull.Create();
-        if ( shapeResult.IsValid() ) {
-            chassisShape = shapeResult.Get();
+        if ( bBike ) {
+            addBox( JPH::Vec3( halfW - 0.05f, halfH - 0.15f, halfL - 0.05f ),
+                    JPH::Vec3( 0.0f, 0.10f, 0.0f ), eMaterialType::MT_Body );
+            addBox( JPH::Vec3( 0.30f, 0.425f, 0.30f ),
+                    JPH::Vec3( 0.0f, 0.50f, 0.0f ), eMaterialType::MT_Body );
+            addBox( JPH::Vec3( 0.01f, 0.20f, halfL - 0.30f ),
+                    JPH::Vec3( 0.0f, 0.25f - halfH, 0.0f ),
+                    eMaterialType::MT_Chassis );
+        } else {
+            addBox( JPH::Vec3( halfW - 0.05f, halfH - 0.15f, halfL - 0.55f ),
+                    JPH::Vec3( 0.0f, 0.10f, 0.0f ), eMaterialType::MT_Body );
+            addBox( JPH::Vec3( halfW - 0.15f, 0.225f, 0.275f ),
+                    JPH::Vec3( 0.0f, 0.375f - halfH, halfL - 0.375f ),
+                    eMaterialType::MT_BumperF );
+            addBox( JPH::Vec3( halfW - 0.15f, 0.350f, 0.275f ),
+                    JPH::Vec3( 0.0f, 0.500f - halfH, -( halfL - 0.375f ) ),
+                    eMaterialType::MT_BumperR );
+            addBox( JPH::Vec3( halfW * 0.8f - 0.05f, 0.20f, halfL - 0.30f ),
+                    JPH::Vec3( 0.0f, 0.25f - halfH, 0.0f ),
+                    eMaterialType::MT_Chassis );
         }
+    }
+    shapeResult = hull.Create();
+    if ( shapeResult.IsValid() ) {
+        chassisShape = shapeResult.Get();
     }
     if ( chassisShape == nullptr ) {
         return nullptr;
@@ -4808,6 +5067,7 @@ void GSPhysics::initializeJolt() {
 
     pContactListener = new PhysicsFXContactListener();
     pPhysicsSystem->SetContactListener( pContactListener );
+    pPhysicsSystem->SetSimShapeFilter( &gWheelSphereFilter );
     pPhysicsSystem->SetSimCollideBodyVsBody( &TDUSimCollideBodyVsBody );
     pPhysicsSystem->SetCombineFriction( &CombineFriction );
     pPhysicsSystem->SetCombineRestitution( &CombineRestitution );

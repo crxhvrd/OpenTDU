@@ -2492,7 +2492,7 @@ int32_t GSDatabase::getNumCarsAvailableInShop( DBEntryCarShop *pCarShop ) {
     return numCarsAvailable;
 }
 
-bool GSDatabase::isBike( DBEntryCarPhysicsData *param_1 ) {
+bool GSDatabase::isBike( const DBEntryCarPhysicsData *param_1 ) {
     // FUN_009a9bc0
     if ( param_1 == nullptr ) {
         return false;

@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "gs_config.h"
 
+#include "physics/physics_config.h"
+
 #include "core/arg_parser.h"
 #include "core/assert.h"
 #include "core/hash/crc32.h"
@@ -195,6 +197,7 @@ void GSConfig::parseIniFiles() {
     parseIniFile( physicsIniPath.c_str() );
 
     parseDeviceIni();
+    EndBikePhysicsConfig();
 
     ParseArgValueFromCmdLine( "replay", replayIniPath.data(), OTDU_MAX_PATH );
     parseIniFile( replayIniPath.c_str() );
@@ -369,6 +372,9 @@ bool GSConfig::parseIniFile( const char *pPath ) {
             }
             OTDU_LOG_DEBUG( "Found Section '%s'\n", sectionName.c_str() );
             currentSection = sectionName;
+            if ( sectionName == "Bike" ) {
+                BeginBikePhysicsConfig();
+            }
 
             // EOF marker can be a section (e.g. Weather.ini)
             if ( sectionName == "END" ) {
@@ -420,18 +426,6 @@ bool GSConfig::parseIniFile( const char *pPath ) {
             if ( variableName == "END" || lineIt > inputLine.length() ) {
                 OTDU_LOG_DEBUG( "Reached EOF\n" );
                 lineIt = inputLine.length();
-                break;
-            }
-
-            // HACK: FIXME: Skip bike section for now (until vehicle physics are
-            // correctly implemented).
-            const bool bGlobalInBikeSection =
-                ( variableName == "SENSITIVTY" ||
-                  variableName == "USESTEERCONTROL" );
-            if ( currentSection == "Bike" && !bGlobalInBikeSection ) {
-                while ( inputLine[lineIt] != '\n' ) {
-                    lineIt++;
-                }
                 break;
             }
 

@@ -52,6 +52,7 @@ public:
     void adjustScreenProjectionFromContext( Eigen::Vector4f &rect ) override;
     void drawReflectionModel( class RenderScene *pScene );
 
+    void buildCarAlphaInstances() override;
     void setRimsFromDB( DBEntryRim *pRim ) override;
     void setLowResInteriorColors( const char *param_2,
                                   const char *param_3 ) override;

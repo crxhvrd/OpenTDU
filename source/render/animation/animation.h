@@ -75,6 +75,9 @@ struct AnimChannel {
     float DurationB = 0.0f;
     float TransitionTime = 0.0f;
     float TransitionLength = 1.0f;
+    bool bLooped = true;
+    float PostureTime = 0.0f;
+    float PostureLength = 0.0f;
 };
 
 class Animation {
@@ -125,7 +128,15 @@ public:
                       uint32_t clipID,
                       const AnimStateBlendEntry *pEntries,
                       int32_t count );
+    void playChannelFromPosture( int32_t matchID,
+                                 uint32_t clipID,
+                                 const AnimStateBlendEntry *pEntries,
+                                 int32_t count,
+                                 float transitionLength,
+                                 bool bLooped );
     void stopChannel( int32_t matchID );
+    void stopChannelsWithClipID( uint32_t clipID );
+    float getChannelDuration( int32_t matchID ) const;
     void resetChannel( int32_t index );
     void setChannelLayer( int32_t matchID, int32_t layerMode, float weight );
     void setChannelBlendRatios( int32_t matchID,
@@ -149,6 +160,8 @@ public:
                              const Matrix4x4f_t &local,
                              float damping );
 
+    void rotateNode( int32_t node, const Eigen::Quaternionf &delta );
+
     void aimNodeAt( int32_t parentNode,
                     int32_t childNode,
                     const Eigen::Vector3f &targetInParentSpace,
@@ -163,6 +176,7 @@ private:
     AnimPoseBuffer layerBuffer;
     AnimPoseBuffer transitionFrom;
     AnimPoseBuffer transitionTo;
+    AnimPoseBuffer posture;
     AnimPoseBuffer *pAccumulator = nullptr;
     AnimExpressionList *pExpressionList = nullptr;
     int32_t expressionMatchID = -1;

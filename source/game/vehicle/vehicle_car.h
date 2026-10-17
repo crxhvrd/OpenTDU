@@ -52,6 +52,7 @@ public:
     void reset() override;
     void uninstantiateWheels() override;
     void uninstantiateInterior() override;
+    void buildCarAlphaInstances() override;
 
 private:
     void setupHiearchy();

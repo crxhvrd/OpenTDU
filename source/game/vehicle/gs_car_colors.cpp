@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "gs_car_colors.h"
 
+#include "gs_car_common.h"
 #include "paint.h"
 
 #include "config/gs_config.h"
@@ -125,7 +126,9 @@ bool GSCarColors::initialize( TestDriveGameInstance * ) {
     }
 
     collection2D.register2DM( &render2DM );
-    collection2D.bindBitmapReferences( &render2DM );
+    if ( gpCarCommon != nullptr ) {
+        gpCarCommon->getCollection2D().bindBitmapReferences( &render2DM );
+    }
     return true;
 }
 

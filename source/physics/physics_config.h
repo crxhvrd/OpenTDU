@@ -80,6 +80,11 @@ struct PhysicsConfig {
 };
 
 extern PhysicsConfig gPhysicsConfig;
+extern PhysicsConfig gBikePhysicsConfig;
+extern PhysicsConfig *gpPhysicsConfig;
+
+void BeginBikePhysicsConfig();
+void EndBikePhysicsConfig();
 
 extern float gSpringCoef;
 extern float gSensitivity[6];
@@ -90,10 +95,11 @@ extern float gShift2ndTo1st;
 extern float gTorquePurcentToContact;
 extern bool gUseSteerControl;
 
+extern float gLeanSpeedValueHigh;
 extern float gLeanSpeedRange[3];
 extern float gLeanSpeedValue[3];
-extern float gLeanCurveRange[3];
-extern float gLeanCurveValue[3];
-extern float gLeanHead[3];
+extern float gLeanCurveRange[2];
+extern float gLeanCurveValue[2];
+extern float gLeanHead[2];
 
 extern bool gbGrassAsTarmac;

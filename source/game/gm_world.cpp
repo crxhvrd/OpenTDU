@@ -566,6 +566,7 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         pBody->Brake = 0.0f;
         PhysicsLock physLock;
         pPlayerPhysicsVehicle->setInput( 0.0f, 0.0f, 0.0f );
+        pPlayerPhysicsVehicle->setLean( 0.0f );
         return;
     }
 
@@ -688,6 +689,7 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
             isDrivingInputScripted() );
         pPlayerPhysicsVehicle->setInput( throttle, brake, steer );
         pPlayerPhysicsVehicle->setHandbrake( pBody->Handbrake );
+        pPlayerPhysicsVehicle->setLean( pBody->Lean );
         pPlayerPhysicsVehicle->setIgnition( pBody->bIgnition,
                                             pBody->bIgnitionOnce );
         const bool bShiftRequestsBlocked =
@@ -826,10 +828,6 @@ void GameModeWorld::updateCarHotReload() {
     DBEntryCarPhysicsData *pNewCarData =
         gpDatabase->getCarDBEntry( gRequestedPlayerCarID );
     if ( pNewCarData == nullptr ) {
-        return;
-    }
-    if ( gpDatabase->isBike( pNewCarData ) ) {
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS (bike dynamics)
         return;
     }
 

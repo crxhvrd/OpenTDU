@@ -451,7 +451,8 @@ protected:
 
     void registerCarAlphaInstances( uint32_t param_2, bool param_3 );
     void setFlaresAlpha( const float value );
-    void buildCarAlphaInstances();
+    virtual void buildCarAlphaInstances();
+    void appendCarAlphaInstances( HiearchyNode *pNode );
 
     void setRVModelMatrix( Matrix4x4f_t &modelMatrix );
     void setShadowPlaneMatrix( Matrix4x4f_t &modelMatrix );

@@ -14,6 +14,10 @@
 
 #include "world/gs_mng_resources.h"
 
+#include "core/mutex.h"
+
+#include <unordered_set>
+
 static VertexShader *gpDefaultVertexShader = nullptr; // DAT_00fe8a08
 static PixelShader *gpDefaultPixelShader = nullptr;   // DAT_00fe8a0c
 
@@ -891,6 +895,18 @@ Material *Material::createInheritedTerrainMaterial( uint8_t *param_1 ) {
 #endif
 }
 
+static bool ShouldReportMissingTexture( const Material *pMaterial,
+                                        const uint8_t slot ) {
+    static TestDriveMutex reportedMutex;
+    static std::unordered_set<uint64_t> reported;
+    const uint64_t key =
+        ( static_cast<uint64_t>( reinterpret_cast<uintptr_t>( pMaterial ) )
+          << 4 ) |
+        slot;
+    ScopedMutexLock lock( &reportedMutex );
+    return reported.insert( key ).second;
+}
+
 void Material::bindParameter( MaterialShaderParameterArray *param_1 ) {
     // FUN_00601f90
     // Bind param constants
@@ -943,11 +959,14 @@ void Material::bindParameter( MaterialShaderParameterArray *param_1 ) {
                             pTexture = GetFallbackTexture();
                         }
                     } else {
-                        OTDU_LOG_WARN(
-                            "Material %x Layer[%u] Texture[%u] (type '%s' "
-                            "hashcode "
-                            "'%s') is missing! Pink fallback will be used...\n",
-                            this, 0, i, dbgHash.AsChar, dbgTexHash.AsChar );
+                        if ( ShouldReportMissingTexture( this, i ) ) {
+                            OTDU_LOG_WARN( "Material %p Layer[0] Texture[%u] "
+                                           "(type '%.8s' hashcode '%.8s') is "
+                                           "missing! Pink fallback will be "
+                                           "used...\n",
+                                           this, i, dbgHash.AsChar,
+                                           dbgTexHash.AsChar );
+                        }
                         pTexture = GetFallbackTexture();
                     }
                 }

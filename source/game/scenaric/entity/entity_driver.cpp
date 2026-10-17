@@ -21,6 +21,9 @@
 #include "render/animation/anim_state.h"
 #include "render/animation/clip.h"
 #include "render/hiearchy_node.h"
+#include "render/gs_render.h"
+#include "render/frustum.h"
+#include "world/gs_world_streaming.h"
 #include "render/instance.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
@@ -87,6 +90,34 @@ EntityDriver::EntityDriver()
       NumAnimDrive( 0 ),
       AnimFalls{},
       StandDriveRatio{},
+      BikeStandDriveRatio{},
+      BikeHeadTurnRatio{},
+      BikeHeadHeightRatio{},
+      BikeLeftRightTorso{},
+      BikeHandSizeRatio{},
+      BikeAccelerateRatio{},
+      BikeFootGearingRatio{},
+      LastTurnWeight( 0.0f ),
+      LastStandWeight( 1.0f ),
+      LastRatioLean( 0.0f ),
+      LastWheelingAngle( 0.0f ),
+      LastLeanFrontBack( 0.0f ),
+      WheelingRandomNoise( 0.0f ),
+      LastWheelingRandomNoise( 0.0f ),
+      LastFBAccelInfluence( 0.0f ),
+      LastAccelBrakeRatio( 0.0f ),
+      CurrentBikeGearAnimRatio( 0.0f ),
+      bLastIsInBikeStand( false ),
+      bIsPlayingBikeGearingAnim( false ),
+      bRideRatiosLinked{},
+      BikeFallSide{},
+      LastSlideRatio( 0.0f ),
+      TimeSinceFalled( 0.0f ),
+      TimeSinceOnGround( 0.0f ),
+      TotalTimeToGetUp( 0.0f ),
+      bMustCalculateTotalTimeToGetUp( false ),
+      RiderFallState( RFS_OnBike ),
+      LastPosOnBike( Matrix4x4f_t::Identity() ),
       LastStandDriveWeight( 1.0f ),
       KeepAccelRatio( 0.0f ),
       CurrentBodyPosition( DBP_2HandsOnWheel ),
@@ -143,6 +174,7 @@ EntityDriver::EntityDriver()
       pHandRight( nullptr ),
       VTranslation( Eigen::Vector4f::Zero() ),
       TransformRelativeToVehicle( Matrix4x4f_t::Identity() ),
+      HeadMatrix( Matrix4x4f_t::Identity() ),
       BikeLayersCoeff( 1.0f ),
       LastBikeLayersCoeff( 1.0f ),
       AnimationDeltaTime( 0.0f ),
@@ -219,13 +251,55 @@ EntityDriver::~EntityDriver() {
 EntityDriver *EntityDriver::getDriver() { return this; }
 
 void EntityDriver::getCarAlphaScreenRect( Eigen::Vector4f &outRect ) {
-    // FUN_007f4710
-    if ( pCarState != nullptr && pCarState->getVehicleInstance() != nullptr ) {
-        pCarState->getVehicleInstance()->computeScreenRect( outRect );
+    // FUN_007ed6f0
+    if ( pCarState == nullptr || pCarState->getVehicleInstance() == nullptr ) {
+        outRect = Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 1.0f );
         return;
     }
 
-    outRect = Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 1.0f );
+    const DBEntryCarPhysicsData *pCarData =
+        ( gpDatabase != nullptr )
+            ? gpDatabase->getCarDBEntry( pCarState->getCarID() )
+            : nullptr;
+    if ( pCarData != nullptr && gpDatabase->isBike( pCarData ) ) {
+        computeRiderScreenRect( outRect );
+        return;
+    }
+
+    pCarState->getVehicleInstance()->computeScreenRect( outRect );
+}
+
+void EntityDriver::computeRiderScreenRect( Eigen::Vector4f &outRect ) {
+    // FUN_007ecb10
+    const Eigen::Vector4f &dimensions = pCarState->getBody()->BodyDimensions;
+    Eigen::Vector3f scale( dimensions.x(), dimensions.y() * 2.0f,
+                           dimensions.z() );
+    Matrix4x4f_t boundingBox = MakeScaleMatrix( scale );
+    boundingBox.row( 3 ) += Eigen::Vector4f( 0.0f, dimensions.y(), 0.0f, 0.0f );
+    boundingBox = boundingBox * pCarState->getWorldMatrix();
+
+    const Eigen::Vector4f shift = gpWorldStreaming->isEnabled()
+                                      ? gpWorldStreaming->getPosition()
+                                      : Eigen::Vector4f::Zero();
+    RenderScene *pScene =
+        gpRender->getRenderPassAtIndex( getRenderSceneID() ).pScene;
+
+    Matrix4x4f_t worldToView = Matrix4x4f_t::Identity();
+    worldToView.row( 3 ) +=
+        Eigen::Vector4f( -shift.x(), -shift.y(), -shift.z(), 0.0f );
+    worldToView = worldToView * pScene->getCamera()->getWorldToCam();
+
+    ProjectBoundingBoxToScreenRect( outRect, boundingBox, worldToView,
+                                    pScene->getFrustumWrite() );
+}
+
+void EntityDriver::onHeadUpdate( Matrix4x4f_t &headTransform ) {
+    // FUN_007f2200
+    EntityAvatar::onHeadUpdate( headTransform );
+    if ( pCarState != nullptr ) {
+        HeadMatrix = headTransform *
+                     OrthoInvert( pCarState->getBody()->OffsetedWorldMatrix );
+    }
 }
 
 void EntityDriver::onEvent( class CarState *param_1,
@@ -722,7 +796,15 @@ void EntityDriver::setCarState( CarState *pNewCarState ) {
         ExpressionList.append( &IKRightHipsBelt );
         ExpressionList.append( &IKLeftHipsBelt );
     } else {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: BIKE - BikeExpressionList
+        BikeExpressionList.clear();
+        BikeExpressionList.append( &IKRightHand );
+        BikeExpressionList.append( &IKRightHandAlignY );
+        BikeExpressionList.append( &IKRightHand2 );
+        BikeExpressionList.append( &IKLeftHand );
+        BikeExpressionList.append( &IKLeftHandAlignY );
+        BikeExpressionList.append( &IKLeftHand2 );
+        BikeExpressionList.append( &IKRightFoot );
+        BikeExpressionList.append( &IKLeftFoot );
     }
 
     bIsAccelerationAnimPlayed = true;
@@ -940,7 +1022,7 @@ void EntityDriver::tick( PlayerGameMech *pGameMech,
         }
 
         const bool bHasBiker = pCarState->getBody()->bHasBikeAvatar;
-        const bool bBikerMounted = bHasBiker && !bRiderHasFalled;
+        const bool bRiderJustThrown = bHasBiker && !bRiderHasFalled;
         const bool bBikerLost = !bHasBiker && bRiderHasFalled;
         bRiderHasFalled = bHasBiker;
 
@@ -950,33 +1032,31 @@ void EntityDriver::tick( PlayerGameMech *pGameMech,
             Matrix4x4f_t driverMatrix = carMatrix;
 
             if ( DriveType == RT_Bike && bHasBiker ) {
-                (void)bBikerMounted;
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: BIKE - FUN_007ec250
-            }
+                updateRiderFall( deltaTime, bRiderJustThrown, driverMatrix );
+            } else {
+                if ( DriveType == RT_Bike && bBikerLost ) {
+                    animation.stopChannelsWithClipID( 0 );
+                    BikeLayersCoeff = 1.0f;
+                    LastBikeLayersCoeff = 1.0f;
+                    bIsUsedIK = true;
+                    bMustPlayAnims = true;
+                    bMustRecalculateDriverSeatPos = true;
+                }
 
-            if ( DriveType == RT_Bike && bBikerLost ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: BIKE - FUN_00401640
+                Eigen::Vector4f seatOffset = VTranslation;
+                seatOffset.w() = 0.0f;
 
-                BikeLayersCoeff = 1.0f;
-                LastBikeLayersCoeff = 1.0f;
-                bIsUsedIK = true;
-                bMustPlayAnims = true;
-                bMustRecalculateDriverSeatPos = true;
-            }
+                const Eigen::Vector4f seatPosition =
+                    Mat4x4fTransform( driverMatrix, seatOffset );
+                driverMatrix( 3, 0 ) = seatPosition.x();
+                driverMatrix( 3, 1 ) = seatPosition.y();
+                driverMatrix( 3, 2 ) = seatPosition.z();
 
-            Eigen::Vector4f seatOffset = VTranslation;
-            seatOffset.w() = 0.0f;
-
-            const Eigen::Vector4f seatPosition =
-                Mat4x4fTransform( driverMatrix, seatOffset );
-            driverMatrix( 3, 0 ) = seatPosition.x();
-            driverMatrix( 3, 1 ) = seatPosition.y();
-            driverMatrix( 3, 2 ) = seatPosition.z();
-
-            if ( pBikeBikerAngle != nullptr &&
-                 ( bIsUsedIK || !bIsFreeMovement ) ) {
-                driverMatrix =
-                    MakeRotationMatX( *pBikeBikerAngle ) * driverMatrix;
+                if ( pBikeBikerAngle != nullptr &&
+                     ( bIsUsedIK || !bIsFreeMovement ) ) {
+                    driverMatrix =
+                        MakeRotationMatX( *pBikeBikerAngle ) * driverMatrix;
+                }
             }
 
             TransformRelativeToVehicle =
@@ -999,6 +1079,7 @@ void EntityDriver::tick( PlayerGameMech *pGameMech,
                 processDriverState( deltaTime );
             } else {
                 updateIKTargets();
+                updateBikeIKTargets();
             }
         }
     }
@@ -1018,8 +1099,12 @@ void EntityDriver::tick( PlayerGameMech *pGameMech,
 
     EntityAvatar::tick( pGameMech, deltaTime, totalTime );
 
-    if ( pCarState != nullptr && DriverState == DS_Car ) {
-        applyDriveBaseAnim();
+    if ( pCarState != nullptr ) {
+        if ( DriverState == DS_Car ) {
+            applyDriveBaseAnim();
+        } else if ( DriverState == DS_Bike ) {
+            applyRideBaseAnim();
+        }
     }
 }
 
@@ -1034,16 +1119,15 @@ void EntityDriver::processDriverState( float deltaTime ) {
         updateIKTargets();
         break;
     case DS_Bike:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: BIKE - DriverStateProcess ride state
+        updateBikeRideState( deltaTime );
+        updateBikeIKTargets();
         break;
     default:
         break;
     }
 }
 
-void EntityDriver::playDriveState( int32_t slot ) {
-    RenderAnm &anim = AnimDrive[slot];
-
+void EntityDriver::playAnimState( RenderAnm &anim ) {
     if ( anim.pAnimState == nullptr && anim.pRefBas != nullptr &&
          gpScenaric != nullptr ) {
         anim.pAnimState = gpScenaric->resolveAnimState( nullptr, anim.pRefBas );
@@ -1090,12 +1174,569 @@ void EntityDriver::applyDriveBaseAnim() {
     static constexpr int32_t kPlayOrder[kNumDriverAnims] = { 0, 1, 3, 2,
                                                              4, 5, 6 };
     for ( int32_t i = 0; i < kNumDriverAnims; i++ ) {
-        playDriveState( kPlayOrder[i] );
+        playAnimState( AnimDrive[kPlayOrder[i]] );
     }
 
     bMustPlayAnims = false;
 
     buildIKChains( kExpressionsMatchID );
+}
+
+void EntityDriver::applyRideBaseAnim() {
+    // FUN_007efef0
+    if ( !bMustPlayAnims || !animation.isValid() ) {
+        return;
+    }
+
+    if ( !bIsFreeMovement ) {
+        resetAnimationChannels();
+        for ( RenderAnm &anim : AnimRide ) {
+            playAnimState( anim );
+        }
+        for ( bool &bLinked : bRideRatiosLinked ) {
+            bLinked = true;
+        }
+        if ( AnimRide[6].File != 0 ) {
+            buildIKChains( kExpressionsMatchID );
+        }
+    } else if ( bIsUsedIK && AnimRide[6].File != 0 ) {
+        animation.playChannel( kFreeMovementExpressionsMatchID, AnimRide[6].ID,
+                               nullptr, 0 );
+        buildIKChains( kFreeMovementExpressionsMatchID );
+    }
+
+    bMustPlayAnims = false;
+}
+
+static inline float SlewLimit( float target, float last, float step ) {
+    if ( step < target - last ) {
+        target = last + step;
+    }
+    if ( target - last < -step ) {
+        target = last - step;
+    }
+    return target;
+}
+
+void EntityDriver::updateBikeRideState( float deltaTime ) {
+    // FUN_007efef0
+    static constexpr float kToNormalised =
+        0.49999749660491943f;                                // _DAT_00f420c0
+    static constexpr float kMaxWheelingAngle = 1.5f;         // DAT_00f416b8
+    static constexpr float kAccelInfluence = 0.2f;           // DAT_00f41730
+    static constexpr float kFrontBackCenter = 0.5f;          // FLOAT_00f41674
+    static constexpr float kEpsilon = 1e-5f;                 // DAT_00f41710
+    static constexpr float kSteerDeadZone = 0.01f;           // DAT_00f416d4
+    static constexpr float kTurnScale = 0.5050504803657532f; // DAT_00f420b8
+    static constexpr float kTurnRate = 2.0f;                 // DAT_00f416b0
+    static constexpr float kStandExitSpeed = 0.8f;           // DAT_00f416d0
+    static constexpr float kStandEnterSpeed = 0.4f;          // DAT_00f4175c
+    static constexpr float kStandEnterRate = 4.0f;           // DAT_00f418d4
+    static constexpr float kStandExitRate = 2.5f;            // DAT_00f416c0
+    static constexpr float kNoiseMaxWheelingRate = 0.2f;     // DAT_00f41730
+    static constexpr float kNoiseMax = 0.1f;                 // 0x3dcccccd
+    static constexpr float kNoiseRate = 0.1f;                // FLOAT_00f41668
+    static constexpr float kLeanRate = 3.0f;                 // DAT_00f416b4
+    static constexpr float kHeadHeightScale = 0.3333311f;    // _DAT_00f420b4
+    static constexpr float kAccelRate = 4.0f;                // DAT_00f418d4
+
+    if ( pCarState == nullptr || !animation.isValid() ) {
+        return;
+    }
+
+    const CarBodyState *pBody = pCarState->getBody();
+
+    const float steer = updateSteerValue( deltaTime );
+    const float steerNormalised = ( steer + 1.0f ) * kToNormalised;
+    const float headSteer = ( pBody->SteeringRaw + 1.0f ) * kToNormalised;
+
+    const float wheeling = std::min(
+        std::max( -pBody->BikeLeanLongitudinal, 0.0f ), kMaxWheelingAngle );
+    const float speed = pBody->SpeedInKmh;
+
+    const float accelBrake =
+        std::min( std::max( pBody->Throttle - pBody->Brake, -1.0f ), 1.0f ) *
+        kAccelInfluence;
+    LastFBAccelInfluence =
+        SlewLimit( accelBrake, LastFBAccelInfluence, deltaTime );
+    BikeFrontBackResponseCurve.setPointValue(
+        kFrontBackCenter,
+        CenterFBResponseCurve.evaluate( speed ) + LastFBAccelInfluence );
+
+    const float wheelingRate =
+        ( deltaTime > kEpsilon ) ? ( wheeling - LastWheelingAngle ) / deltaTime
+                                 : 0.0f;
+    LastWheelingAngle = wheeling;
+
+    float turnTarget = 0.0f;
+    if ( steer > kSteerDeadZone || steer < -kSteerDeadZone ) {
+        const float steerPastDeadZone = ( steer > kSteerDeadZone )
+                                            ? steer - kSteerDeadZone
+                                            : steer + kSteerDeadZone;
+        turnTarget = ( steerPastDeadZone * kTurnScale != 0.0f ) ? 1.0f : 0.0f;
+    }
+    const float turnStep = deltaTime * kTurnRate;
+    const float turn = SlewLimit( turnTarget, LastTurnWeight, turnStep );
+    LastTurnWeight = turn;
+
+    const float standThreshold =
+        bLastIsInBikeStand ? kStandExitSpeed : kStandEnterSpeed;
+    bLastIsInBikeStand = ( speed < standThreshold );
+    const float standRate =
+        bLastIsInBikeStand ? kStandEnterRate : kStandExitRate;
+    const float stand = SlewLimit( bLastIsInBikeStand ? 1.0f : 0.0f,
+                                   LastStandWeight, deltaTime * standRate );
+    LastStandWeight = stand;
+
+    const float lean =
+        std::min( std::max( pBody->BikeLeanLateral, -1.0f ), 1.0f );
+
+    CameraVehicle *pCamera =
+        ( gpCamera != nullptr ) ? gpCamera->getActiveVehicleCamera() : nullptr;
+    const bool bHoodView =
+        pCamera != nullptr && ( pCamera->getFlags() & kShowFlagViewHood ) != 0;
+    const float frontBackInput =
+        bHoodView ? kFrontBackCenter
+                  : ( pBody->BikeLeanInput + 1.0f ) * kFrontBackCenter;
+    const float frontBackCurve =
+        BikeFrontBackResponseCurve.evaluate( frontBackInput );
+
+    if ( wheeling <= kSteerDeadZone ||
+         std::fabs( wheelingRate ) > kNoiseMaxWheelingRate ) {
+        WheelingRandomNoise = 0.0f;
+    } else if ( LastWheelingRandomNoise == WheelingRandomNoise &&
+                gpScenaric != nullptr ) {
+        WheelingRandomNoise =
+            RandomUnit( gpScenaric->getRandomGenerator() ) * kNoiseMax;
+    }
+    LastWheelingRandomNoise = SlewLimit(
+        WheelingRandomNoise, LastWheelingRandomNoise, deltaTime * kNoiseRate );
+
+    float frontBack = std::min(
+        std::max( LastWheelingRandomNoise + frontBackCurve, 0.0f ), 1.0f );
+    if ( pBikeFrontLimit != nullptr && pBikeBackLimit != nullptr ) {
+        frontBack = ( 1.0f - frontBack ) * *pBikeBackLimit +
+                    *pBikeFrontLimit * frontBack;
+        frontBack = std::min( std::max( frontBack, -1.0f ), 1.0f );
+    }
+    const float leanStep = deltaTime * kLeanRate;
+    frontBack = SlewLimit( frontBack, LastLeanFrontBack, leanStep );
+    LastLeanFrontBack = frontBack;
+
+    const float ratioLean = SlewLimit( LeanResponseCurve.evaluate( speed ),
+                                       LastRatioLean, leanStep );
+    LastRatioLean = ratioLean;
+
+    const float leanNormalised = ( lean + 1.0f ) * kToNormalised;
+    const float notTurn = 1.0f - turn;
+    const float notStand = 1.0f - stand;
+    const float rideUpright = notStand * ( 1.0f - ratioLean );
+    const float rideUprightBack = rideUpright * ( 1.0f - frontBack );
+
+    const auto setBlend = []( AnimStateBlendEntry &entry, float weight,
+                              float ratio ) {
+        entry.Weight = weight;
+        entry.Ratio = ratio;
+    };
+    setBlend( BikeStandDriveRatio[0], notTurn * stand, kAnimRatioFollowCurve );
+    setBlend( BikeStandDriveRatio[1], stand * turn, steerNormalised );
+    setBlend( BikeStandDriveRatio[2], rideUprightBack * notTurn,
+              kAnimRatioFollowCurve );
+    setBlend( BikeStandDriveRatio[3], rideUpright * notTurn * frontBack,
+              kAnimRatioFollowCurve );
+    setBlend( BikeStandDriveRatio[4], rideUprightBack * turn, steerNormalised );
+    setBlend( BikeStandDriveRatio[5], rideUpright * frontBack * turn,
+              steerNormalised );
+    setBlend( BikeStandDriveRatio[6],
+              ratioLean * notStand * ( 1.0f - frontBack ), leanNormalised );
+    setBlend( BikeStandDriveRatio[7], ratioLean * notStand * frontBack,
+              leanNormalised );
+    setBlend( BikeHeadTurnRatio[0], 1.0f - std::fabs( lean ), headSteer );
+    setBlend( BikeHeadTurnRatio[1], std::fabs( lean ), headSteer );
+    setBlend( BikeHeadHeightRatio, 1.0f,
+              kFrontBackCenter - wheeling * kHeadHeightScale );
+    setBlend( BikeLeftRightTorso, 1.0f, leanNormalised );
+    setBlend( BikeHandSizeRatio, 1.0f, kAlmostOne );
+
+    float handSizeWeight = 0.0f;
+    if ( pBikeHandSize != nullptr ) {
+        handSizeWeight = std::min( std::max( *pBikeHandSize, 0.0f ), 1.0f );
+    }
+
+    LastAccelBrakeRatio = SlewLimit( pBody->Throttle, LastAccelBrakeRatio,
+                                     deltaTime * kAccelRate );
+    setBlend( BikeAccelerateRatio, 1.0f,
+              std::max( LastAccelBrakeRatio, 0.0f ) * kAlmostOne );
+
+    const PhysicsVehicle *pPhysics = pCarState->getPhysicsVehicle();
+    const int32_t shiftState =
+        ( pPhysics != nullptr ) ? pPhysics->getDrivingGearbox().ShiftState : 0;
+    if ( !bIsPlayingBikeGearingAnim && ( shiftState == 3 || shiftState == 5 ) &&
+         speed >= standThreshold ) {
+        bIsPlayingBikeGearingAnim = true;
+        CurrentBikeGearAnimRatio = 0.0f;
+    }
+    if ( bIsPlayingBikeGearingAnim ) {
+        CurrentBikeGearAnimRatio += turnStep;
+        if ( CurrentBikeGearAnimRatio >= 1.0f ) {
+            bIsPlayingBikeGearingAnim = false;
+            CurrentBikeGearAnimRatio = kAlmostOne;
+        }
+        setBlend( BikeFootGearingRatio, 1.0f, CurrentBikeGearAnimRatio );
+    } else {
+        setBlend( BikeFootGearingRatio, 0.0f, 0.0f );
+    }
+
+    const auto setRideRatios = [this]( int32_t matchID,
+                                       const AnimStateBlendEntry *pEntries,
+                                       int32_t count ) {
+        if ( bRideRatiosLinked[matchID] ) {
+            animation.setChannelBlendRatios( matchID, pEntries, count );
+        }
+    };
+    setRideRatios( 0, BikeStandDriveRatio, kNumBikeStandDriveRatios );
+    setRideRatios( 1, BikeHeadTurnRatio, 2 );
+    animation.setChannelLayer( 1, AnimChannel::ALM_BindDelta,
+                               BikeLayersCoeff * rideUpright );
+    setRideRatios( 2, &BikeHeadHeightRatio, 1 );
+    animation.setChannelLayer( 2, AnimChannel::ALM_BindDelta,
+                               BikeLayersCoeff * notStand );
+    setRideRatios( 3, &BikeLeftRightTorso, 1 );
+    animation.setChannelLayer( 3, AnimChannel::ALM_BindDelta,
+                               BikeLayersCoeff * rideUpright );
+    setRideRatios( 4, &BikeHandSizeRatio, 1 );
+    animation.setChannelLayer( 4, AnimChannel::ALM_BindDelta,
+                               handSizeWeight * BikeLayersCoeff );
+    setRideRatios( 5, &BikeAccelerateRatio, 1 );
+    animation.setChannelLayer( 5, AnimChannel::ALM_BindDelta, BikeLayersCoeff );
+    if ( bIsFreeMovement && bIsUsedIK ) {
+        animation.setChannelLayer( 1, AnimChannel::ALM_Weighted, 1.0f );
+    }
+    setRideRatios( 6, &BikeFootGearingRatio, 1 );
+    animation.setChannelLayer( 6, AnimChannel::ALM_BindDelta, BikeLayersCoeff );
+}
+
+// Rotation slerped from one frame to another; keeps the translation of `to`.
+static Matrix4x4f_t
+SlerpFrame( const Matrix4x4f_t &from, const Matrix4x4f_t &to, float ratio ) {
+    const Eigen::Quaternionf qFrom( from.block<3, 3>( 0, 0 ) );
+    const Eigen::Quaternionf qTo( to.block<3, 3>( 0, 0 ) );
+    Matrix4x4f_t frame =
+        BuildRotationMatrix( QuaternionSlerpShortest( qFrom, qTo, ratio ) );
+    frame.row( 3 ) = to.row( 3 );
+    return frame;
+}
+
+void EntityDriver::playFallState( int32_t slot,
+                                  uint32_t clipID,
+                                  bool bLooped ) {
+    // FUN_00401400
+    static constexpr float kFallTransition = 0.4f; // DAT_00f4175c
+
+    RenderAnm &anim = AnimFalls[slot];
+    if ( anim.pAnimState == nullptr && anim.pRefBas != nullptr &&
+         gpScenaric != nullptr ) {
+        anim.pAnimState = gpScenaric->resolveAnimState( nullptr, anim.pRefBas );
+    }
+
+    const AnimStateInstance *pState = anim.pAnimState;
+    if ( pState == nullptr || !animation.isValid() ) {
+        return;
+    }
+
+    std::vector<AnimStateBlendEntry> blendSet;
+    pState->getBlendSet( blendSet );
+    blendSet.erase( std::remove_if( blendSet.begin(), blendSet.end(),
+                                    []( const AnimStateBlendEntry &entry ) {
+                                        return entry.pClip == nullptr;
+                                    } ),
+                    blendSet.end() );
+    if ( blendSet.empty() ) {
+        return;
+    }
+
+    const int32_t matchID = static_cast<int32_t>( pState->getMatchID() );
+    animation.playChannelFromPosture( matchID, clipID, blendSet.data(),
+                                      static_cast<int32_t>( blendSet.size() ),
+                                      kFallTransition, bLooped );
+    if ( matchID >= 0 && matchID < kNumDriverAnims ) {
+        bRideRatiosLinked[matchID] = false;
+    }
+}
+
+void EntityDriver::updateRiderFall( float deltaTime,
+                                    bool bJustThrown,
+                                    Matrix4x4f_t &outMatrix ) {
+    // FUN_007ec250
+    static constexpr float kLayerFadeRate = 2.5f; // DAT_00f416c0
+    static constexpr float kRiderBodyDrop = -0.2f;
+    static constexpr float kSeatBlendTime = 0.4f;      // DAT_00f4175c
+    static constexpr float kSlideRatioRate = 2.0f;     // DAT_00f416b0
+    static constexpr float kGetUpUprightStart = 0.4f;  // DAT_00f4175c
+    static constexpr float kGetUpUprightLength = 0.3f; // FLOAT_00f416bc
+
+    const CarBodyState *pBody = pCarState->getBody();
+
+    const float layerStep = deltaTime * kLayerFadeRate;
+    BikeLayersCoeff = SlewLimit( 0.0f, LastBikeLayersCoeff, layerStep );
+    LastBikeLayersCoeff = BikeLayersCoeff;
+
+    if ( bMustCalculateTotalTimeToGetUp ) {
+        TotalTimeToGetUp = animation.getChannelDuration( 0 );
+        bMustCalculateTotalTimeToGetUp = false;
+    }
+
+    if ( !bJustThrown ) {
+        outMatrix = pBody->BikeRiderMatrix;
+        const Eigen::Vector3f position = TDUMat4x4MulVec(
+            outMatrix, Eigen::Vector3f( 0.0f, kRiderBodyDrop, 0.0f ) );
+        outMatrix( 3, 0 ) = position.x();
+        outMatrix( 3, 1 ) = position.y();
+        outMatrix( 3, 2 ) = position.z();
+    } else {
+        TimeSinceFalled = 0.0f;
+        TimeSinceOnGround = 0.0f;
+        if ( AnimFalls[0].File != 0 ) {
+            playFallState( 0, 1, true );
+            RiderFallState = RFS_Thrown;
+        }
+        bIsUsedIK = false;
+        bMustPlayAnims = false;
+
+        const Eigen::Vector3f seatPosition = TDUMat4x4MulVec(
+            outMatrix, Eigen::Vector3f( VTranslation.head<3>() ) );
+        outMatrix( 3, 0 ) = seatPosition.x();
+        outMatrix( 3, 1 ) = seatPosition.y();
+        outMatrix( 3, 2 ) = seatPosition.z();
+        LastPosOnBike = outMatrix;
+    }
+
+    if ( TimeSinceFalled < kSeatBlendTime ) {
+        const float seatRatio = TimeSinceFalled * ( 1.0f / kSeatBlendTime );
+        outMatrix = SlerpFrame( LastPosOnBike, outMatrix, seatRatio );
+        if ( pBikeBikerAngle != nullptr && ( bIsUsedIK || !bIsFreeMovement ) ) {
+            outMatrix =
+                MakeRotationMatX( *pBikeBikerAngle * seatRatio ) * outMatrix;
+        }
+    }
+    TimeSinceFalled += deltaTime;
+
+    const bool bOnGround = pBody->bBikeRiderOnGround;
+    const bool bFaceDown = outMatrix( 2, 1 ) < 0.0f;
+    const bool bAtRest = !pBody->bBikeRiderMoving;
+
+    const float slideSpeed = pBody->BikeRiderVelocity.norm();
+    LastSlideRatio =
+        SlewLimit( BikeFallSlideRatioResponseCurve.evaluate( slideSpeed ),
+                   LastSlideRatio, deltaTime * kSlideRatioRate );
+    BikeFallSide[0].Weight = 1.0f - LastSlideRatio;
+    BikeFallSide[0].Ratio = kAnimRatioFollowCurve;
+    BikeFallSide[1].Weight = LastSlideRatio;
+    BikeFallSide[1].Ratio = kAnimRatioFollowCurve;
+
+    const eRiderFallState previousState = RiderFallState;
+    eRiderFallState nextState = RFS_OnBike;
+    switch ( previousState ) {
+    case RFS_OnBike:
+    case RFS_Thrown:
+    case RFS_SlideFaceDown:
+    case RFS_SlideFaceUp:
+        if ( !bOnGround && !bAtRest ) {
+            TotalTimeToGetUp = 0.0f;
+            TimeSinceOnGround = 0.0f;
+            nextState = previousState;
+        } else if ( bOnGround && !bAtRest ) {
+            nextState = bFaceDown ? RFS_SlideFaceDown : RFS_SlideFaceUp;
+        } else {
+            nextState = bFaceDown ? RFS_LieFaceDown : RFS_LieFaceUp;
+        }
+        break;
+    case RFS_LieFaceDown:
+    case RFS_LieFaceUp:
+        if ( !bAtRest ) {
+            nextState = previousState;
+        } else if ( TotalTimeToGetUp < TimeSinceOnGround ) {
+            nextState = bFaceDown ? RFS_GetUpFaceDown : RFS_GetUpFaceUp;
+        } else {
+            nextState = bFaceDown ? RFS_LieFaceDown : RFS_LieFaceUp;
+        }
+        TimeSinceOnGround += deltaTime;
+        break;
+    case RFS_GetUpFaceDown:
+    case RFS_GetUpFaceUp:
+        nextState = previousState;
+        TimeSinceOnGround += deltaTime;
+        break;
+    default:
+        break;
+    }
+
+    if ( nextState != previousState ) {
+        switch ( nextState ) {
+        case RFS_SlideFaceDown:
+            if ( AnimFalls[1].File != 0 ) {
+                playFallState( 1, 5, true );
+            }
+            break;
+        case RFS_SlideFaceUp:
+            if ( AnimFalls[2].File != 0 ) {
+                playFallState( 2, 6, true );
+            }
+            break;
+        case RFS_LieFaceDown:
+            if ( AnimFalls[3].File != 0 ) {
+                playFallState( 3, 2, false );
+                bMustCalculateTotalTimeToGetUp = true;
+            }
+            break;
+        case RFS_LieFaceUp:
+            if ( AnimFalls[4].File != 0 ) {
+                playFallState( 4, 3, false );
+                bMustCalculateTotalTimeToGetUp = true;
+            }
+            break;
+        case RFS_GetUpFaceDown:
+            if ( AnimFalls[5].File != 0 ) {
+                playFallState( 5, 4, true );
+            }
+            break;
+        case RFS_GetUpFaceUp:
+            if ( AnimFalls[6].File != 0 ) {
+                playFallState( 6, 7, true );
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    RiderFallState = nextState;
+
+    const bool bGrounded = nextState >= RFS_LieFaceDown;
+    const float uprightStart = TotalTimeToGetUp * kGetUpUprightStart;
+    if ( !bGrounded || TimeSinceOnGround < uprightStart ||
+         TotalTimeToGetUp <= 0.0f ) {
+        return;
+    }
+
+    Matrix4x4f_t upright = outMatrix;
+    Eigen::Vector3f axisX = upright.block<1, 3>( 0, 0 ).transpose();
+    Eigen::Vector3f axisY = upright.block<1, 3>( 1, 0 ).transpose();
+    axisX.y() = 0.0f;
+    axisX.normalize();
+    axisY.y() = 0.0f;
+    axisY.normalize();
+    const Eigen::Vector3f axisZ = axisX.cross( axisY );
+    axisY = axisZ.cross( axisX );
+    upright.block<1, 3>( 0, 0 ) = axisX.transpose();
+    upright.block<1, 3>( 1, 0 ) = axisY.transpose();
+    upright.block<1, 3>( 2, 0 ) = axisZ.transpose();
+
+    if ( TimeSinceOnGround > TotalTimeToGetUp ) {
+        outMatrix = upright;
+        return;
+    }
+
+    const float uprightRatio =
+        std::min( ( TimeSinceOnGround - uprightStart ) /
+                      ( TotalTimeToGetUp * kGetUpUprightLength ),
+                  1.0f );
+    outMatrix = SlerpFrame( outMatrix, upright, uprightRatio );
+}
+
+void EntityDriver::updateBikeIKTargets() {
+    // FUN_007ed010
+    static const Eigen::Vector3f kFootRightBias( 0.06f, 0.06f, -0.02f );
+    static const Eigen::Vector3f kFootLeftBias( -0.06f, 0.06f, -0.02f );
+
+    if ( !bIsUsedIK ) {
+        IKLeftHand.changeDamping( 0.0f, 0.0f );
+        IKLeftHandAlignY.changeDamping( 0.0f, 0.0f );
+        IKLeftHand2.changeDamping( 0.0f, 0.0f );
+        IKRightHand.changeDamping( 0.0f, 0.0f );
+        IKRightHandAlignY.changeDamping( 0.0f, 0.0f );
+        IKRightHand2.changeDamping( 0.0f, 0.0f );
+        IKRightFoot.changeDamping( 0.0f, 0.0f );
+        IKLeftFoot.changeDamping( 0.0f, 0.0f );
+        return;
+    }
+
+    Matrix4x4f_t driverMatrix = Matrix4x4f_t::Identity();
+    const Eigen::Vector4f *pShaking =
+        ( pCarState != nullptr ) ? &pCarState->getBody()->Shaking : nullptr;
+    driverMatrix( 3, 0 ) = VTranslation.x();
+    driverMatrix( 3, 1 ) = VTranslation.y();
+    driverMatrix( 3, 2 ) = VTranslation.z();
+    if ( pShaking != nullptr ) {
+        driverMatrix( 3, 0 ) -= pShaking->x();
+        driverMatrix( 3, 1 ) -= pShaking->y();
+        driverMatrix( 3, 2 ) -= pShaking->z();
+    }
+    if ( pBikeBikerAngle != nullptr && ( bIsUsedIK || !bIsFreeMovement ) ) {
+        driverMatrix = MakeRotationMatX( *pBikeBikerAngle ) * driverMatrix;
+    }
+    const Matrix4x4f_t driverInverse = OrthoInvert( driverMatrix );
+
+    const auto resolveTarget =
+        [&]( const SCIKPoint &point,
+             const Eigen::Vector3f &bias ) -> Eigen::Vector3f {
+        Matrix4x4f_t nodeWorld = Matrix4x4f_t::Identity();
+        AccumulateNodeWorldMatrix( point.pNode, nodeWorld );
+
+        Eigen::Vector3f position( nodeWorld( 3, 0 ), nodeWorld( 3, 1 ),
+                                  nodeWorld( 3, 2 ) );
+        if ( point.pOffset != nullptr ) {
+            position = TDUMat4x4MulVec(
+                nodeWorld,
+                Eigen::Vector3f( point.pOffset->Offset.head<3>() + bias ) );
+        }
+        return TDUMat4x4MulVec( driverInverse, position );
+    };
+
+    const auto resolveAlign = [&]( const SCIKPoint &point,
+                                   AnimAlign1NParams &align ) {
+        if ( point.pOffset == nullptr ) {
+            return;
+        }
+
+        Matrix4x4f_t nodeWorld = Matrix4x4f_t::Identity();
+        AccumulateNodeWorldMatrix( point.pNode, nodeWorld );
+        nodeWorld = MakeRotationMatZ( point.pOffset->RotationZ ) * nodeWorld;
+        nodeWorld = MakeRotationMatY( point.pOffset->RotationY ) * nodeWorld;
+
+        const Matrix4x4f_t nodeInverse = nodeWorld.inverse();
+        align.Target =
+            Eigen::Vector4f( -nodeInverse( 0, 0 ), -nodeInverse( 1, 0 ),
+                             -nodeInverse( 2, 0 ), 0.0f );
+        align.changeDamping( 1.0f, 0.0f );
+    };
+
+    const Eigen::Vector3f noBias = Eigen::Vector3f::Zero();
+
+    const Eigen::Vector3f handLeft =
+        resolveTarget( BikeIKPoints[kBikeIKPointHandLeft], noBias );
+    IKLeftHand.TargetParams.setTarget( handLeft, 0.0f );
+    IKLeftHand.changeDamping( 1.0f, 0.0f );
+    IKLeftHand2.TargetParams.setTarget( handLeft, 0.0f );
+    IKLeftHand2.changeDamping( 1.0f, 0.0f );
+    resolveAlign( BikeIKPoints[kBikeIKPointHandLeft], IKLeftHandAlignY );
+
+    const Eigen::Vector3f handRight =
+        resolveTarget( BikeIKPoints[kBikeIKPointHandRight], noBias );
+    IKRightHand.TargetParams.setTarget( handRight, 0.0f );
+    IKRightHand.changeDamping( 1.0f, 0.0f );
+    IKRightHand2.TargetParams.setTarget( handRight, 0.0f );
+    IKRightHand2.changeDamping( 1.0f, 0.0f );
+    resolveAlign( BikeIKPoints[kBikeIKPointHandRight], IKRightHandAlignY );
+
+    IKRightFoot.TargetParams.setTarget(
+        resolveTarget( BikeIKPoints[kBikeIKPointFootRight], kFootRightBias ),
+        0.0f );
+    IKRightFoot.changeDamping( 1.0f, 0.0f );
+
+    IKLeftFoot.TargetParams.setTarget(
+        resolveTarget( BikeIKPoints[kBikeIKPointFootLeft], kFootLeftBias ),
+        0.0f );
+    IKLeftFoot.changeDamping( 1.0f - LastStandWeight, 0.0f );
 }
 
 void EntityDriver::updateAnimChannels( float deltaTime ) {
@@ -1667,6 +2308,18 @@ void EntityDriver::buildIKChains( int32_t matchID ) {
         IKRightFoot.NodesID[i] = kRightLegNodes[i];
     }
 
+    for ( int32_t i = 0; i < 3; i++ ) {
+        IKLeftHand2.NodesID[i] = kLeftArmNodes[i];
+        IKRightHand2.NodesID[i] = kRightArmNodes[i];
+    }
+
+    IKLeftHandAlignY.NodeID = 0xd8d4c694;  // "LeftHand", node 22
+    IKRightHandAlignY.NodeID = 0xd6c8b12a; // "RightHand", node 62
+    IKLeftHandAlignY.LocalAxis = Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 0.0f );
+    IKRightHandAlignY.LocalAxis = Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 0.0f );
+    IKLeftHandAlignY.changeDamping( 1.0f, 0.0f );
+    IKRightHandAlignY.changeDamping( 1.0f, 0.0f );
+
     IKBack.NodesID[0] = 0x6e6970b8; // "Spine", node 14
     IKBack.NodesID[1] = 0x42caaeaa; // Spine2 effector marker, node 17
 
@@ -1677,7 +2330,9 @@ void EntityDriver::buildIKChains( int32_t matchID ) {
     IKRightHipsBelt.NodeID = 0xd9d0ce95;      // node 76
     IKLeftHipsBelt.NodeID = 0xd93741e5;       // node 77
 
-    animation.setExpressionList( &ExpressionList, matchID );
+    animation.setExpressionList( ( DriveType == RT_Bike ) ? &BikeExpressionList
+                                                          : &ExpressionList,
+                                 matchID );
 }
 
 void EntityDriver::updateIKTargets() {

@@ -527,15 +527,6 @@ void VehicleTraffic::setupHiearchy() {
                 }
             }
         }
-
-        if ( pCarState != nullptr ) {
-            const float bodyHalfHeight =
-                pCarState->getBody()->BodyDimensions.y() * 0.5f;
-            for ( uint32_t i = 0; i < kMaxNumWheels; i++ ) {
-                pCarState->wheels[i].Position =
-                    pWheelOffsets[i] - bodyHalfHeight;
-            }
-        }
     }
 
     Matrix4x4f_t identity = Matrix4x4f_t::Identity();

@@ -10,4 +10,9 @@ public:
     void initialize() override;
     bool tick( float deltaTime, bool param_1, bool param_2 ) override;
     void destroy() override;
+
+protected:
+    Eigen::Vector4f shiftedRoadPosition;
+    Eigen::Vector4f roadUpVector;
+    uint8_t bNeedsRoadPosition : 1;
 };

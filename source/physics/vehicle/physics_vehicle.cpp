@@ -2,6 +2,8 @@
 
 #include "physics_vehicle.h"
 
+#include "bike_roll_limit_constraint.h"
+
 #include "core/maths_helper.h"
 #include "core/random/lcg.h"
 
@@ -20,9 +22,14 @@
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Body/Body.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/Shape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -33,6 +40,9 @@ constexpr float kMmToM = 0.001f;
 constexpr float kSlipDenom = 3.0f;
 constexpr float kSuspDampingScale = 1.0f;
 static TestDriveMutex gCollisionEventMutex;
+
+static constexpr uint64_t kWheelSphereTag = 0x57484C5300000000ull;
+static constexpr uint64_t kWheelSphereTagMask = 0xFFFFFFFF00000000ull;
 
 class IgnoreOwnVehicleBodiesFilter final : public JPH::BodyFilter {
 public:
@@ -273,8 +283,7 @@ static float EvalHelpCurveSqrt( const float *pThresholds,
     return JPH::Clamp( r, std::min( a, b ), std::max( a, b ) );
 }
 
-inline void SeedTire( PhysicsTire &t, bool bFront ) {
-    const PhysicsConfig &c = gPhysicsConfig;
+inline void SeedTire( PhysicsTire &t, const PhysicsConfig &c, bool bFront ) {
     if ( bFront ) {
         t.MaxSlipRatio =
             c.WheelMaxSlipRatioFront > 0 ? c.WheelMaxSlipRatioFront : 0.15f;
@@ -366,6 +375,11 @@ public:
         if ( pBody->IsSensor() ) {
             return;
         }
+        JPH::SubShapeID remainder;
+        if ( PhysicsVehicle::IsWheelSphere( pBody->GetShape()->GetLeafShape(
+                 inResult.mSubShapeID2, remainder ) ) ) {
+            return;
+        }
         const uint64_t userData = pBody->GetUserData();
         const JPH::RVec3 pos = mRay.GetPointOnRay( inResult.mFraction );
         const JPH::Vec3 normal =
@@ -422,7 +436,7 @@ static void ApplyHandbrakeAbsOverride( PhysicsVehicleState &vehicle,
         vehicle.AbsMagRear = kHandbrakeAbsSimu;
         return;
     }
-    const PhysicsConfig &c = gPhysicsConfig;
+    const PhysicsConfig &c = *vehicle.pConfig;
     const float t0 = c.ActiveABSSpeed[3];
     const float t2 = c.ActiveABSSpeed[4];
     const float v0 = c.ActiveABSValue[3];
@@ -487,7 +501,7 @@ PhysicsVehicle::PhysicsVehicle()
       bInputControllerAttached( true ),
       bPausePhysics( false ),
       bVirtual( false ),
-      bVirtualGrounded( true ),
+      bWheelsActive( true ),
       virtualSpeed( 0.0f ),
       bKeyframed( false ),
       bForceKeyframeMatrix( false ),
@@ -570,12 +584,16 @@ PhysicsVehicle::BuildPerfPackCoefs( const DBEntryAftermarketPack *pPack ) {
     return coefs;
 }
 
-PhysicsVehicle::SuspensionSetup PhysicsVehicle::ComputeAxleSuspension(
-    const DBEntryCarPhysicsData &db, bool bFront, const PerfPackCoefs &pack ) {
+PhysicsVehicle::SuspensionSetup
+PhysicsVehicle::ComputeAxleSuspension( const PhysicsConfig &config,
+                                       const DBEntryCarPhysicsData &db,
+                                       bool bFront,
+                                       bool bBike,
+                                       const PerfPackCoefs &pack ) {
     // FUN_008345e0
     constexpr float kGravity = 9.81f;
     const float springCoef =
-        gPhysicsConfig.SpringCoef > 0.0f ? gPhysicsConfig.SpringCoef : 1.0f;
+        config.SpringCoef > 0.0f ? config.SpringCoef : 1.0f;
 
     const float dbWeight =
         db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f;
@@ -592,18 +610,23 @@ PhysicsVehicle::SuspensionSetup PhysicsVehicle::ComputeAxleSuspension(
     const float suspRate = rateRaw > 0 ? static_cast<float>( rateRaw ) : 100.0f;
     const float dampRate = dampRaw > 0 ? static_cast<float>( dampRaw ) : 100.0f;
 
-    // Base rate per corner (N/m): 0.006 = 0.01(coef)*0.01(rate)*30*2.
-    float kBase =
-        0.006f * coefSuspRaw * weight * axleFrac * suspRate * pack.Suspension;
-    if ( dbWeight > 3500.0f ) {
+    const float kRateScale = bBike ? 0.008f : 0.006f;
+    float kBase = kRateScale * coefSuspRaw * weight * axleFrac * suspRate *
+                  pack.Suspension;
+    if ( bBike && !bFront ) {
+        kBase *= 2.0f;
+    }
+    if ( !bBike && dbWeight > 3500.0f ) {
         kBase *= 2.5f; // heavy car boost (DAT_00f416c0)
     }
-    const float k = Max( 1000.0f, kBase * springCoef * 1.2f );
+    const float wheelRateScale = bBike ? ( bFront ? 2.0f : 1.0f ) : 1.2f;
+    const float k = Max( 1000.0f, kBase * springCoef * wheelRateScale );
     const float d = kSuspDampingScale * kBase * 0.0625f *
                     ( coefSuspRaw * 0.01f ) * ( dampRate * 0.01f ) *
                     springCoef * pack.Suspension;
 
-    const float cornerLoad = weight * axleFrac * kGravity * 0.5f;
+    const float cornerLoad =
+        weight * axleFrac * kGravity * ( bBike ? 1.0f : 0.5f );
     const float sag = cornerLoad / k;
 
     const int32_t rideHtRaw = bFront ? db.RideHeightFront : db.RideHeightBack;
@@ -651,6 +674,10 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     bIsAI = bIsAIDriven;
     bIsNetwork = bIsNetworkDriven;
 
+    pConfig = ( gpDatabase != nullptr && gpDatabase->isBike( &db ) )
+                  ? &gBikePhysicsConfig
+                  : &gPhysicsConfig;
+
     const PerfPackCoefs pack = BuildPerfPackCoefs( pPack );
     if ( pack.bInstalled ) {
         OTDU_LOG_DEBUG( "Vehicle perf pack: topSpeed x%.4f bhp x%.4f "
@@ -676,15 +703,14 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     prevInputSteer = 0.0f;
 
     for ( int i = 0; i < PhysicsVehicleState::kMaxWheels; ++i ) {
-        authoredWheelY[i] = 0.0f;
         wheelTyreHeat[i] = 0.0f;
     }
-    bAuthoredWheelYKnown = false;
 
     bLowSpeedGripState = false;
     bLowSpeedLongAssist = false;
     bLowSpeedLatAssist = false;
-    bIsBike = false;
+    bIsBike = ( pConfig == &gBikePhysicsConfig );
+    const int32_t numWheels = bIsBike ? 2 : 4;
 
     resetAutomaticGearbox();
     bDrivingInputScripted = false;
@@ -692,7 +718,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     bInputControllerAttached = true;
     bPausePhysics = false;
     bVirtual = false;
-    bVirtualGrounded = true;
+    bWheelsActive = true;
     virtualSpeed = 0.0f;
     bKeyframed = false;
     bForceKeyframeMatrix = false;
@@ -778,9 +804,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     }
 
     const SuspensionSetup attachSuspFront =
-        ComputeAxleSuspension( db, true, pack );
+        ComputeAxleSuspension( *pConfig, db, true, bIsBike, pack );
     const SuspensionSetup attachSuspRear =
-        ComputeAxleSuspension( db, false, pack );
+        ComputeAxleSuspension( *pConfig, db, false, bIsBike, pack );
     const float attachYFront =
         ( frontRadius - rideHeightFront - bodyHeight * 0.5f ) +
         attachSuspFront.staticLength;
@@ -790,10 +816,17 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     // FL, FR, RL, RR (TDU: left = +x, forward = +z). FUN_00832420 places
     // wheel i at X = (1 - (2 & 2i)) * halfTrack, matching the FORK_* nodes.
-    wheelAttach[0] = Eigen::Vector3f( halfTrackF, attachYFront, frontAxleZ );
-    wheelAttach[1] = Eigen::Vector3f( -halfTrackF, attachYFront, frontAxleZ );
-    wheelAttach[2] = Eigen::Vector3f( halfTrackR, attachYRear, rearAxleZ );
-    wheelAttach[3] = Eigen::Vector3f( -halfTrackR, attachYRear, rearAxleZ );
+    if ( bIsBike ) {
+        wheelAttach[0] = Eigen::Vector3f( 0.0f, attachYFront, frontAxleZ );
+        wheelAttach[1] = Eigen::Vector3f( 0.0f, attachYRear, rearAxleZ );
+    } else {
+        wheelAttach[0] =
+            Eigen::Vector3f( halfTrackF, attachYFront, frontAxleZ );
+        wheelAttach[1] =
+            Eigen::Vector3f( -halfTrackF, attachYFront, frontAxleZ );
+        wheelAttach[2] = Eigen::Vector3f( halfTrackR, attachYRear, rearAxleZ );
+        wheelAttach[3] = Eigen::Vector3f( -halfTrackR, attachYRear, rearAxleZ );
+    }
 
     const float bodyWidth = ( db.Width > 0 ? db.Width : 1800 ) * kMmToM;
     const float frontalArea = Max( 0.0f, bodyWidth * dbBodyHeight );
@@ -802,9 +835,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                          ( gbSimuModeEnabled ? kAeroSimuLiftMult : 1.0f );
     aeroDragArea = 0.5f * frontalArea * cxDrag;
     aeroDownArea = 0.5f * frontalArea * czLift;
-    aeroDensity = gPhysicsConfig.AeroDensity[0] > 0.0f
-                      ? gPhysicsConfig.AeroDensity[0]
-                      : kAeroDensityFallback;
+    aeroDensity = pConfig->AeroDensity[0] > 0.0f ? pConfig->AeroDensity[0]
+                                                 : kAeroDensityFallback;
     wheelBase = wheelBaseM;
 
     char *pFWDStr = gpDatabase != nullptr
@@ -833,9 +865,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         BrakeBalance = bFWD ? 0.75f : ( bRWD ? 0.70f : 0.72f );
         brakeCoef = 1.0f;
     }
-    constexpr float kNumWheels = 4.0f;
-    const float BrakeTorque =
-        mass * brakeCoef * gBrakeTorquePerMass / kNumWheels;
+    const float BrakeTorque = mass * brakeCoef * gBrakeTorquePerMass /
+                              static_cast<float>( numWheels );
 
     // Select the vehicle tire curve from tires.bnk
     const int numProfiles = gpPhysics ? gpPhysics->getNumTireProfiles() : 0;
@@ -855,9 +886,11 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     }
 
     const PhysicsVehicle::SuspensionSetup suspFront =
-        PhysicsVehicle::ComputeAxleSuspension( db, true, pack );
+        PhysicsVehicle::ComputeAxleSuspension( *pConfig, db, true, bIsBike,
+                                               pack );
     const PhysicsVehicle::SuspensionSetup suspRear =
-        PhysicsVehicle::ComputeAxleSuspension( db, false, pack );
+        PhysicsVehicle::ComputeAxleSuspension( *pConfig, db, false, bIsBike,
+                                               pack );
     const float kTwoPiSusp = 6.28318530718f;
 
     const float groundY =
@@ -881,7 +914,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     steerLockRad = ( db.SteerLock > 0 ? db.SteerLock : 30.0f ) * kDegToRad;
 
     {
-        const PhysicsConfig &c = gPhysicsConfig;
+        const PhysicsConfig &c = *pConfig;
         const float *pY[SC_Count] = {
             c.SteeringLimit, c.SteeringSpeed, c.SteeringCenterSpeed,
             c.SteeringStraightSpeed, c.SteeringCounterSpeed };
@@ -918,19 +951,24 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     // Vehicle + per-wheel setup
     vehicle = PhysicsVehicleState();
+    vehicle.pConfig = pConfig;
     numCollisionEvents = 0;
     timeSinceHardImpact = 0.0f;
     phantomRequest = 0;
     phantomMode = 1;
     phantomTimer = 0.0f;
+    bCollisionInertiaRequest.store( false );
+    collisionInertiaTimer = 0.0f;
     bTrafficBody = gpDatabase != nullptr && gpDatabase->isTraffic( &db );
     initializeElectronics();
-    vehicle.NumWheels = 4;
+    vehicle.NumWheels = numWheels;
+    vehicle.bBike = bIsBike;
     vehicle.PowertrainSubsteps = bIsAI ? 5 : ( bIsNetwork ? 1 : 10 );
     vehicle.Mass = mass; // auto shift near-lift traction threshold
-    for ( int i = 0; i < 4; ++i ) {
+    const int32_t axleShift = numWheels / 2 - 1;
+    for ( int i = 0; i < numWheels; ++i ) {
         PhysicsWheelState &w = vehicle.Wheels[i];
-        const bool bFront = ( i < 2 );
+        const bool bFront = ( i >> axleShift ) == 0;
         const PhysicsVehicle::SuspensionSetup &s =
             bFront ? suspFront : suspRear;
         const float springOmega = kTwoPiSusp * s.frequency;
@@ -939,9 +977,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         suspRestLength[i] = s.staticLength;
         suspStiffness[i] = massPerWheel * springOmega * springOmega;
         suspDamping[i] = 2.0f * s.damping * massPerWheel * springOmega;
-        const float reboundCoef = ( gPhysicsConfig.ReboundCoef > 0.0f )
-                                      ? gPhysicsConfig.ReboundCoef
-                                      : 1.0f;
+        const float reboundCoef =
+            ( pConfig->ReboundCoef > 0.0f ) ? pConfig->ReboundCoef : 1.0f;
         suspDamperRebound[i] =
             suspDamping[i] * kSuspReboundStiffen * reboundCoef;
         suspDamperLP[i] = 0.0f;
@@ -951,9 +988,13 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         w.Radius = bFront ? frontRadius : rearRadius;
         wheelWidth[i] = bFront ? frontWidth : rearWidth;
         w.Inertia = w.Radius * w.Radius * kWheelInertiaRadiusCoef;
-        w.SideFlag = ( i & 1 ) ? 1 : 0; // left wheels mirror lateral/steer
+        w.SideFlag = i & axleShift; // left wheels mirror lateral/steer
         w.bSteered = bFront;
-        w.bDriven = bFWD ? bFront : ( bRWD ? !bFront : true );
+        if ( bIsBike ) {
+            w.bDriven = !bFront;
+        } else {
+            w.bDriven = bFWD ? bFront : ( bRWD ? !bFront : true );
+        }
         w.DeadbandLong = kWheelVelDeadband;
         w.DeadbandLat = kWheelVelDeadband;
         w.DeadbandOmega = kWheelOmegaDeadband;
@@ -966,7 +1007,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         w.DynamicGrip = 1.0f;
         w.GripMult = 1.0f;
 
-        const PhysicsConfig &c = gPhysicsConfig;
+        const PhysicsConfig &c = *pConfig;
         w.AxleIndex = bFront ? 0 : 1;
         const float local70 = bFront ? axleBalance : ( 1.0f / axleBalance );
 
@@ -1026,7 +1067,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         const float axleBal = bFront ? BrakeBalance : ( 1.0f - BrakeBalance );
         w.BrakeTorque = axleBal * BrakeTorque;
 
-        SeedTire( w.Tire, bFront );
+        SeedTire( w.Tire, *pConfig, bFront );
         const TirePacejka *pProfile = bFront ? pFrontTire : pRearTire;
         if ( pProfile != nullptr ) {
             CopyTireCurve( w.Tire, *pProfile );
@@ -1036,13 +1077,18 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         prevGroundHeight[i] = suspRestLength[i] + vehicle.Wheels[i].Radius;
     }
 
-    arbStiffness[0] = kAntiRollFraction * suspStiffness[0]; // front
-    arbStiffness[1] = kAntiRollFraction * suspStiffness[2]; // rear
+    if ( bIsBike ) {
+        arbStiffness[0] = 0.0f;
+        arbStiffness[1] = 0.0f;
+    } else {
+        arbStiffness[0] = kAntiRollFraction * suspStiffness[0]; // front
+        arbStiffness[1] = kAntiRollFraction * suspStiffness[2]; // rear
+    }
 
     // Drivetrain routing from DriveType (AWD when neither FWD nor RWD).
-    vehicle.bFrontDrive = bFWD;
-    vehicle.bRearDrive = bRWD;
-    if ( !bFWD && !bRWD ) {
+    vehicle.bFrontDrive = !bIsBike && bFWD;
+    vehicle.bRearDrive = !bIsBike && bRWD;
+    if ( !bIsBike && !bFWD && !bRWD ) {
         vehicle.bFrontDrive = vehicle.bRearDrive = vehicle.bCenterDrive = true;
     }
 
@@ -1054,8 +1100,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     const int nDbGears =
         ( db.NumGears > 0 && db.NumGears <= 7 ) ? db.NumGears : 5;
     gb.NumGears = nDbGears + 2;
-    gb.Ratios[0] = -4.0f; // reverse (DAT_00f41e80)
-    gb.Ratios[1] = 0.0f;  // neutral
+    gb.Ratios[0] = bIsBike ? -2.0f : -4.0f; // reverse (DAT_00f417d0/0x00f41e80)
+    gb.Ratios[1] = 0.0f;                    // neutral
     for ( int i = 0; i < nDbGears; ++i ) {
         gb.Ratios[i + 2] =
             ( db.GearRatios[i] != 0.0f ) ? db.GearRatios[i] : 1.0f;
@@ -1087,9 +1133,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     gb.CurrentGear = 2; // 1st forward
     gb.ReportedGear = gb.CurrentGear;
     gb.bAutomatic = true;
-    gb.UpshiftBand = gPhysicsConfig.RedlinePurcent > 0.0f
-                         ? gPhysicsConfig.RedlinePurcent
-                         : 0.7f;
+    gb.UpshiftBand =
+        pConfig->RedlinePurcent > 0.0f ? pConfig->RedlinePurcent : 0.7f;
     gb.DownshiftBand = ( gShift2ndTo1st > 0.0f && gShift2ndTo1st < 1.0f )
                            ? gShift2ndTo1st
                            : 0.5f;
@@ -1136,8 +1181,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     const float engBrakeScale =
         0.1f * 2.0f; // = 0.2 (FLOAT_00f41668*DAT_00f416b0)
     const float frictionCoef =
-        ( gPhysicsConfig.EngineBrakePower > 0 ? gPhysicsConfig.EngineBrakePower
-                                              : 1.0f ) *
+        ( pConfig->EngineBrakePower > 0 ? pConfig->EngineBrakePower : 1.0f ) *
         engBrakeScale;
 
     int32_t blobCount = 0;
@@ -1234,7 +1278,18 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     vehicle.DiffFront.LockCoef = vehicle.bFrontDrive ? 10.0f : 0.0f;
     vehicle.DiffRear.LockCoef = vehicle.bRearDrive ? 10.0f : 0.0f;
 
-    vehicle.BrakeTorque = BrakeTorque; // veh+0x4190
+    vehicle.BrakeTorque = BrakeTorque;
+    vehicle.HandbrakeTorque = gbSimuModeEnabled ? 1000.0f : 0.0f;
+
+    bRollLimitRestoreRequest = false;
+    if ( bIsBike ) {
+        BikeRollLimitConstraintSettings settings;
+        pRollLimitConstraint =
+            settings.Create( JPH::Body::sFixedToWorld, *pChassisBody );
+        pPhysicsSystem->AddConstraint( pRollLimitConstraint );
+    }
+
+    installWheelCollision( !bFactoryShape );
 
     pPhysicsSystem->AddStepListener( this );
     bRegistered = true;
@@ -1243,11 +1298,159 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     return true;
 }
 
+bool PhysicsVehicle::IsWheelSphere( const JPH::Shape *pShape ) {
+    return pShape != nullptr &&
+           ( pShape->GetUserData() & kWheelSphereTagMask ) == kWheelSphereTag;
+}
+
+void PhysicsVehicle::installWheelCollision( bool bProceduralShape ) {
+    // FUN_0082fc80
+    static constexpr float kSphereDrop = 0.4f; // DAT_00f4175c
+
+    pChassisCompound = nullptr;
+    numBikeCollisionBoxes = 0;
+    bWheelSpheresActive = true;
+    wheelSphereLayer.store( 15 );
+
+    const JPH::Shape *pShape = pChassisBody->GetShape();
+    if ( pShape->GetSubType() != JPH::EShapeSubType::OffsetCenterOfMass ) {
+        return;
+    }
+    const JPH::Shape *pInner =
+        static_cast<const JPH::OffsetCenterOfMassShape *>( pShape )
+            ->GetInnerShape();
+    if ( pInner->GetSubType() != JPH::EShapeSubType::MutableCompound ) {
+        return;
+    }
+    pChassisCompound = const_cast<JPH::MutableCompoundShape *>(
+        static_cast<const JPH::MutableCompoundShape *>( pInner ) );
+    chassisCompoundCOM = pChassisCompound->GetCenterOfMass();
+
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        JPH::SphereShape *pSphere = new JPH::SphereShape(
+            wheelWidth[i] * 0.5f,
+            TDUPhysicsMaterials::get(
+                static_cast<uint32_t>( eMaterialType::MT_Tires ) ) );
+        pSphere->SetUserData( kWheelSphereTag | static_cast<uint64_t>( i ) );
+        const JPH::Vec3 position( wheelAttach[i].x(),
+                                  wheelAttach[i].y() - suspStaticLength[i] -
+                                      kSphereDrop,
+                                  wheelAttach[i].z() );
+        pChassisCompound->AddShape( position, JPH::Quat::sIdentity(), pSphere,
+                                    0, i );
+    }
+
+    if ( bIsBike && bProceduralShape &&
+         pChassisCompound->GetNumSubShapes() ==
+             static_cast<uint32_t>( vehicle.NumWheels ) + 3 ) {
+        numBikeCollisionBoxes = 3;
+        for ( int32_t k = 0; k < numBikeCollisionBoxes; k++ ) {
+            const JPH::CompoundShape::SubShape &box =
+                pChassisCompound->GetSubShape( vehicle.NumWheels + k );
+            const JPH::Mat44 local = JPH::Mat44::sRotationTranslation(
+                box.GetRotation(), box.GetPositionCOM() + chassisCompoundCOM );
+            Matrix4x4f_t &rest = bikeCollisionBoxRest[k];
+            rest = Matrix4x4f_t::Identity();
+            for ( int32_t c = 0; c < 4; c++ ) {
+                const JPH::Vec4 column = local.GetColumn4( c );
+                rest.row( c ) = Eigen::Vector4f( column.GetX(), column.GetY(),
+                                                 column.GetZ(), column.GetW() );
+            }
+        }
+    }
+
+    pPhysicsSystem->GetBodyInterfaceNoLock().NotifyShapeChanged(
+        pChassisBody->GetID(), pChassisBody->GetShape()->GetCenterOfMass(),
+        false, JPH::EActivation::DontActivate );
+}
+
+void PhysicsVehicle::updateWheelCollision() {
+    // FUN_0083a560
+    static constexpr float kRoadLift = 0.05f; // DAT_00fab76c
+    if ( pChassisCompound == nullptr ) {
+        return;
+    }
+
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        const float lift = ( wheelSurface[i] == TDUSurface::Paved ||
+                             wheelSurface[i] == TDUSurface::RoadMesh )
+                               ? kRoadLift
+                               : 0.0f;
+        const JPH::Vec3 position( wheelAttach[i].x(),
+                                  ( wheelAttach[i].y() - prevSuspLength[i] ) -
+                                      vehicle.Wheels[i].Radius +
+                                      wheelWidth[i] * 0.5f + lift,
+                                  wheelAttach[i].z() );
+        pChassisCompound->ModifyShape( i, position, JPH::Quat::sIdentity() );
+    }
+
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterfaceNoLock();
+    if ( bWheelSpheresActive != bWheelsActive ) {
+        bWheelSpheresActive = bWheelsActive;
+        wheelSphereLayer.store( bWheelsActive ? 15 : 5 );
+        bi.InvalidateContactCache( pChassisBody->GetID() );
+    }
+    bi.NotifyShapeChanged( pChassisBody->GetID(),
+                           pChassisBody->GetShape()->GetCenterOfMass(), false,
+                           JPH::EActivation::DontActivate );
+}
+
+void PhysicsVehicle::updateBikeCollision() {
+    // FUN_0041c470
+    static constexpr float kRollPivotDrop = -0.05f;   // _DAT_00fab69c
+    static constexpr float kPitchPivotRadius = -2.0f; // _DAT_00fab698
+    static constexpr float kPitchPivotLift = 0.13f;   // _DAT_00fab694
+    if ( pChassisCompound == nullptr || numBikeCollisionBoxes == 0 ) {
+        return;
+    }
+
+    const int32_t pivot = ( displayPitch > 0.0f ) ? vehicle.NumWheels / 2 : 0;
+    const float wheelY = wheelAttach[pivot].y() - prevSuspLength[pivot];
+    const float radius = vehicle.Wheels[pivot].Radius;
+    const Eigen::Vector3f wheelPivot( 0.0f, -wheelY - radius - kRollPivotDrop,
+                                      0.0f );
+    const Eigen::Vector3f rollPivot( 0.0f, bodyDimensions.y() * 0.5f, 0.0f );
+    const Eigen::Vector3f pitchPivot(
+        0.0f, radius * kPitchPivotRadius - wheelY + kPitchPivotLift,
+        wheelAttach[pivot].z() );
+
+    const auto translation = []( const Eigen::Vector3f &t ) {
+        Matrix4x4f_t m = Matrix4x4f_t::Identity();
+        m.row( 3 ) = Eigen::Vector4f( t.x(), t.y(), t.z(), 1.0f );
+        return m;
+    };
+
+    for ( int32_t k = 0; k < numBikeCollisionBoxes; k++ ) {
+        const Matrix4x4f_t &rest = bikeCollisionBoxRest[k];
+        const Eigen::Vector3f boxPosition = rest.row( 3 ).head<3>();
+        const Matrix4x4f_t local =
+            translation( wheelPivot + boxPosition + rollPivot ) *
+            MakeRotationMatZ( -displayRoll ) *
+            translation( pitchPivot - wheelPivot ) *
+            MakeRotationMatX( displayPitch ) *
+            translation( -rollPivot - boxPosition - pitchPivot ) * rest;
+
+        JPH::Mat44 joltLocal = JPH::Mat44::sIdentity();
+        for ( int32_t c = 0; c < 3; c++ ) {
+            joltLocal.SetColumn3(
+                c, JPH::Vec3( local( c, 0 ), local( c, 1 ), local( c, 2 ) ) );
+        }
+        const JPH::Vec3 position( local( 3, 0 ), local( 3, 1 ), local( 3, 2 ) );
+        pChassisCompound->ModifyShape( vehicle.NumWheels + k, position,
+                                       joltLocal.GetQuaternion().Normalized() );
+    }
+}
+
 void PhysicsVehicle::destroy() {
     if ( pPhysicsSystem != nullptr ) {
         if ( bRegistered ) {
             pPhysicsSystem->RemoveStepListener( this );
         }
+        if ( pRollLimitConstraint != nullptr ) {
+            pPhysicsSystem->RemoveConstraint( pRollLimitConstraint );
+            pRollLimitConstraint = nullptr;
+        }
+        destroyBikeRider();
         JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
         for ( const AttachedPart &part : attachedParts ) {
             gpPhysics->removePropConstraintsFor( part.pBody );
@@ -1269,6 +1472,8 @@ void PhysicsVehicle::destroy() {
     bRegistered = false;
     pPhysicsSystem = nullptr;
     pChassisBody = nullptr;
+    pChassisCompound = nullptr;
+    numBikeCollisionBoxes = 0;
     numCollisionEvents = 0;
 }
 
@@ -1680,12 +1885,14 @@ void PhysicsVehicle::applyDrivingMode() {
         rawInputBrake = 0.5f; // DAT_00f41674
         inputSteer = 0.0f;
         inputHandbrake = 0.0f;
+        inputLean = 0.0f;
         break;
 
     case DM_Parked:
         rawInputBrake = 1.0f; // FLOAT_00f4165c
         inputSteer = 0.0f;
         inputHandbrake = 0.0f;
+        inputLean = -1.0f; // FLOAT_00f41664
         bChangeView = false;
         declutchForDrivingMode();
         break;
@@ -1695,6 +1902,7 @@ void PhysicsVehicle::applyDrivingMode() {
         rawInputBrake = 0.65f; // DAT_00f41b6c
         inputSteer = 0.0f;
         inputHandbrake = 0.0f;
+        inputLean = 0.0f;
         bBackView = false;
         bChangeView = false;
         declutchForDrivingMode();
@@ -1704,6 +1912,7 @@ void PhysicsVehicle::applyDrivingMode() {
         rawInputThrottle = prevInputThrottle;
         rawInputBrake = prevInputBrake;
         inputSteer = prevInputSteer;
+        inputLean = prevInputLean;
         break;
 
     default:
@@ -1713,6 +1922,7 @@ void PhysicsVehicle::applyDrivingMode() {
     prevInputThrottle = rawInputThrottle;
     prevInputBrake = rawInputBrake;
     prevInputSteer = inputSteer;
+    prevInputLean = inputLean;
 
     for ( int i = 0; i < vehicle.NumWheels; ++i ) {
         vehicle.Wheels[i].bFreeRoll = true;
@@ -2179,6 +2389,528 @@ bool PhysicsVehicle::applyWheelContact( const JPH::Body &chassis,
     return true;
 }
 
+// Piecewise-linear curve through (0, 0), (x[0], y[0]), (x[1], y[1]), each
+// segment clamped to its end values.
+static float
+EvaluateLeanSegment( float x, float x0, float x1, float y0, float y1 ) {
+    const float span = x1 - x0;
+    float y;
+    if ( span == 0.0f ) {
+        // LEAN_CURVE_RANGE stores the same value twice.
+        y = ( x > x0 ) ? ( ( y1 > y0 ) ? FLT_MAX : -FLT_MAX ) : y0;
+    } else {
+        y = ( ( y1 - y0 ) * ( x - x0 ) ) / span + y0;
+    }
+    return Clamp( y, std::min( y0, y1 ), std::max( y0, y1 ) );
+}
+
+void PhysicsVehicle::resetBikeLean() {
+    // FUN_0083d220
+    displayYaw = 0.0f;
+    displayPitch = 0.0f;
+    displayPitchRate = 0.0f;
+    displayRoll = 0.0f;
+    pitchLandingSide = -1;
+    bPitchCrossedZero = true;
+}
+
+void PhysicsVehicle::updateBikeLean( float deltaTime ) {
+    // FUN_0083db70
+    static constexpr float kLeanInputKeep = 0.8f;   // _DAT_00fab66c
+    static constexpr float kRatePerSecond = 100.0f; // DAT_00f41708
+    bikeLeanSmoothed += ( inputLean - bikeLeanSmoothed ) *
+                        ( 1.0f - kLeanInputKeep ) * deltaTime * kRatePerSecond;
+
+    // FUN_0041c470
+    static constexpr float kLeanRateMax = 100.0f;              // DAT_00fab6dc
+    static constexpr float kSteerLeanSpeedScale = 0.1f;        // FLOAT_00f41668
+    static constexpr float kSlipLeanBlendStart = 15.0f;        // DAT_00f41700
+    static constexpr float kSlipLeanBlendScale = 1.0f / 15.0f; // DAT_00f41c50
+    static constexpr float kLeanKeep = 0.975f;                 // DAT_00fab6d8
+    static constexpr float kAccelToGrams = 0.10193679f;        // DAT_00f42104
+    static constexpr float kGramsScale = 1000.0f;              // DAT_00f41718
+    static constexpr float kYawAccelMin = 300.0f;              // DAT_00fab6cc
+    static constexpr float kYawAccelRange = 750.0f;            // DAT_00fab6d0
+    static constexpr float kYawMax = 0.3f;                     // DAT_00fab6d4
+    static constexpr float kYawLeanMin = 0.1f;                 // DAT_00fab6c0
+    static constexpr float kYawKeepCoasting = 0.95f;           // DAT_00fab6c4
+    static constexpr float kYawKeepAccelerating = 0.975f;      // DAT_00fab6c8
+    if ( !bIsBike ) {
+        displayRoll = 0.0f;
+        return;
+    }
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return;
+    }
+
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    const JPH::Vec3 velocity = bi.GetLinearVelocity( pChassisBody->GetID() );
+    const JPH::Quat rotation = bi.GetRotation( pChassisBody->GetID() );
+    const JPH::Vec3 localVelocity = rotation.Conjugated() * velocity;
+    const float speed = velocity.Length();
+
+    float speedLean;
+    if ( speed < gLeanSpeedRange[0] ) {
+        speedLean = Clamp( ( gLeanSpeedValue[0] * speed ) / gLeanSpeedRange[0],
+                           std::min( 0.0f, gLeanSpeedValue[0] ),
+                           std::max( 0.0f, gLeanSpeedValue[0] ) );
+    } else if ( speed < gLeanSpeedRange[1] ) {
+        speedLean =
+            EvaluateLeanSegment( speed, gLeanSpeedRange[0], gLeanSpeedRange[1],
+                                 gLeanSpeedValue[0], gLeanSpeedValue[1] );
+    } else {
+        speedLean =
+            EvaluateLeanSegment( speed, gLeanSpeedRange[1], gLeanSpeedRange[2],
+                                 gLeanSpeedValue[1], gLeanSpeedValue[2] );
+    }
+
+    const float slipAngle =
+        std::atan2( localVelocity.GetX(), localVelocity.GetZ() );
+    const float steerLean = inputSteer *
+                            Clamp( speed * kSteerLeanSpeedScale, 0.0f, 1.0f ) *
+                            gLeanCurveValue[0];
+
+    const float absSlip = std::fabs( slipAngle );
+    float slipCurve;
+    if ( absSlip < gLeanCurveRange[0] ) {
+        slipCurve =
+            Clamp( ( gLeanCurveValue[0] * absSlip ) / gLeanCurveRange[0],
+                   std::min( 0.0f, gLeanCurveValue[0] ),
+                   std::max( 0.0f, gLeanCurveValue[0] ) );
+    } else {
+        slipCurve = EvaluateLeanSegment( absSlip, gLeanCurveRange[0],
+                                         gLeanCurveRange[1], gLeanCurveValue[0],
+                                         gLeanCurveValue[1] );
+    }
+    const float slipSign = ( slipAngle > 0.0f ) ? 1.0f : -1.0f;
+    const float slipLean = -( slipSign * slipCurve * speedLean );
+
+    float targetLean = Clamp(
+        ( slipLean - steerLean ) * ( speed - kSlipLeanBlendStart ) *
+                kSlipLeanBlendScale +
+            steerLean,
+        std::min( steerLean, slipLean ), std::max( steerLean, slipLean ) );
+    targetLean = Clamp( targetLean, -gLeanSpeedValueHigh, gLeanSpeedValueHigh );
+
+    const bool bBothWheelsGrounded =
+        vehicle.Wheels[0].bGroundContact && vehicle.Wheels[1].bGroundContact;
+    float lean = displayRoll;
+    if ( bBothWheelsGrounded ) {
+        lean += ( targetLean - lean ) * ( 1.0f - kLeanKeep ) * deltaTime *
+                kRatePerSecond;
+    }
+    const float maxStep = kLeanRateMax * deltaTime;
+    lean = Clamp( lean, displayRoll - maxStep, displayRoll + maxStep );
+    displayRoll = lean;
+
+    bikeHeadLean = gLeanHead[0] * lean;
+    if ( bikeHeadLean > gLeanHead[0] ) {
+        bikeHeadLean = gLeanHead[1];
+    } else if ( bikeHeadLean < -gLeanHead[0] ) {
+        bikeHeadLean = -gLeanHead[1];
+    }
+
+    float accel = localAccelLong * kAccelToGrams * kGramsScale;
+    if ( accel < kYawAccelMin ) {
+        accel = 0.0f;
+    }
+    const float leanSign = ( lean > 0.0f ) ? 1.0f : -1.0f;
+    const float leanAmount =
+        Clamp( ( std::fabs( lean ) - kYawLeanMin ) / ( 1.0f - kYawLeanMin ),
+               0.0f, 1.0f );
+    const float yawAmount =
+        Clamp( ( kYawMax * accel ) / kYawAccelRange, 0.0f, kYawMax );
+    const float yawKeep =
+        ( accel > 0.0f ) ? kYawKeepAccelerating : kYawKeepCoasting;
+    displayYaw +=
+        ( yawAmount * leanAmount * vehicle.Engine.Throttle * leanSign -
+          displayYaw ) *
+        ( 1.0f - yawKeep );
+
+    if ( !bIsNetwork ) {
+        updateBikePitch( deltaTime );
+    }
+}
+
+void PhysicsVehicle::updateBikePitch( float deltaTime ) {
+    // FUN_0041c470
+    static constexpr float kSteerFade = 4.0f;               // DAT_00f418d4
+    static constexpr float kLeanDeadzone = 0.2f;            // DAT_00fab6ac
+    static constexpr float kPitchFlat = 0.001f;             // DAT_00fab6b0
+    static constexpr float kForceSpeedMin = 2.0f;           // _DAT_00fab6a8
+    static constexpr float kForceSpeedMax = 10.0f;          // _DAT_00fab6a4
+    static constexpr float kForceScale = 2.5f;              // _DAT_00fab6bc
+    static constexpr float kGravityTorque = 15.0f;          // DAT_00fab6b8
+    static constexpr float kPitchDamping = 15.0f;           // DAT_00fab6b4
+    static constexpr float kLandingRate = 1.0f;             // DAT_00fab6a0
+    static constexpr float kRestZ = 0.0f, kRestY = -0.15f;  // DAT_016a8214/8
+    static constexpr float kBackZ = 0.6f, kBackY = 0.0f;    // DAT_016a820c/10
+    static constexpr float kFrontZ = -0.4f, kFrontY = 0.0f; // DAT_016a8204/8
+
+    const float mass = ( vehicle.Mass > 0.0f ) ? vehicle.Mass : 1.0f;
+    const float steerFade =
+        Clamp( 1.0f - std::fabs( steerCommand ) * kSteerFade, 0.0f, 1.0f );
+
+    float leanBlend;
+    if ( bikeLeanSmoothed <= 0.0f ) {
+        leanBlend = ( ( bikeLeanSmoothed + kLeanDeadzone ) * -1.0f ) /
+                    ( -1.0f + kLeanDeadzone );
+        leanBlend = ( leanBlend < 0.0f ) ? std::max( leanBlend, -1.0f ) : 0.0f;
+    } else {
+        leanBlend = Clamp( ( bikeLeanSmoothed - kLeanDeadzone ) /
+                               ( 1.0f - kLeanDeadzone ),
+                           0.0f, 1.0f );
+    }
+    float cogZ;
+    float cogY;
+    if ( bikeLeanSmoothed >= 0.0f ) {
+        cogZ =
+            Clamp( ( kFrontZ - kRestZ ) * leanBlend + kRestZ,
+                   std::min( kRestZ, kFrontZ ), std::max( kRestZ, kFrontZ ) );
+        cogY =
+            Clamp( ( kFrontY - kRestY ) * leanBlend + kRestY,
+                   std::min( kRestY, kFrontY ), std::max( kRestY, kFrontY ) );
+    } else {
+        cogZ = Clamp( kRestZ - ( kBackZ - kRestZ ) * leanBlend,
+                      std::min( kRestZ, kBackZ ), std::max( kRestZ, kBackZ ) );
+        cogY = Clamp( kRestY - ( kBackY - kRestY ) * leanBlend,
+                      std::min( kRestY, kBackY ), std::max( kRestY, kBackY ) );
+    }
+
+    const auto wheelCentreY = [this]( int32_t i ) {
+        return wheelAttach[i].y() - prevSuspLength[i];
+    };
+    const int32_t pivot = ( displayPitch >= 0.0f ) ? 0 : 1;
+    const float pivotZ = wheelAttach[pivot].z();
+    const float pivotY = wheelCentreY( pivot );
+    const float sinPitch = std::sin( displayPitch );
+    const float cosPitch = std::cos( displayPitch );
+    const auto rotateAboutPivot = [&]( float z, float y, float &outZ,
+                                       float &outY ) {
+        outY = cosPitch * ( y - pivotY ) - sinPitch * ( z - pivotZ ) + pivotY;
+        outZ = cosPitch * ( z - pivotZ ) + sinPitch * ( y - pivotY ) + pivotZ;
+    };
+
+    float cogRotZ;
+    float cogRotY;
+    rotateAboutPivot( cogZ, cogY, cogRotZ, cogRotY );
+
+    float driveTorque = 0.0f;
+    float gravityTorque[2] = {};
+    for ( int32_t i = 0; i < 2; i++ ) {
+        float wheelZ;
+        float wheelY;
+        rotateAboutPivot( wheelAttach[i].z(), wheelCentreY( i ), wheelZ,
+                          wheelY );
+        float forceZ = 0.0f;
+        if ( ( i == 0 && -kPitchFlat < displayPitch ) ||
+             ( i == 1 && displayPitch < kPitchFlat ) ) {
+            const PhysicsWheelState &w = vehicle.Wheels[i];
+            const float speedScale =
+                Clamp( ( std::fabs( w.ContactVelLong ) - kForceSpeedMin ) /
+                           ( kForceSpeedMax - kForceSpeedMin ),
+                       0.0f, 1.0f );
+            forceZ = -w.TireForceLong * speedScale * kForceScale / mass;
+        }
+        driveTorque -= ( wheelY - cogRotY ) * forceZ;
+        gravityTorque[i] = ( wheelZ - cogRotZ ) * kGravityTorque;
+    }
+    driveTorque *= steerFade;
+
+    pitchLandingSide = -1;
+    if ( bPitchCrossedZero ) {
+        if ( displayPitchRate > kLandingRate ) {
+            pitchLandingSide = 0;
+        } else if ( displayPitchRate < -kLandingRate ) {
+            pitchLandingSide = 1;
+        }
+        displayPitchRate = 0.0f;
+        displayPitch = 0.0f;
+    }
+
+    float restoringTorque = gravityTorque[1];
+    if ( displayPitch <= kPitchFlat ) {
+        if ( -kPitchFlat <= displayPitch && driveTorque >= 0.0f ) {
+            restoringTorque = ( driveTorque > 0.0f ) ? gravityTorque[1] : 0.0f;
+        } else {
+            restoringTorque = gravityTorque[0];
+        }
+    }
+    float totalTorque = restoringTorque + driveTorque;
+    if ( std::fabs( displayPitch ) < kPitchFlat ) {
+        if ( driveTorque > 0.0f && totalTorque < 0.0f ) {
+            totalTorque = 0.0f;
+        }
+        if ( driveTorque < 0.0f && totalTorque > 0.0f ) {
+            totalTorque = 0.0f;
+        }
+    }
+
+    const float pitchSign = ( displayPitch > 0.0f ) ? 1.0f : -1.0f;
+    const float rateSign = ( displayPitchRate > 0.0f ) ? 1.0f : -1.0f;
+    const float damping = ( pitchSign != rateSign ) ? 0.0f : kPitchDamping;
+    const float previousPitch = displayPitch;
+    displayPitchRate +=
+        ( totalTorque - damping * displayPitchRate ) * deltaTime;
+    displayPitch = displayPitchRate * deltaTime + previousPitch;
+
+    if ( previousPitch == 0.0f ) {
+        bPitchCrossedZero = false;
+    } else {
+        const bool bWasPositive = previousPitch > 0.0f;
+        const bool bIsPositive = displayPitch > 0.0f;
+        bPitchCrossedZero = bWasPositive != bIsPositive;
+    }
+}
+
+void PhysicsVehicle::updateBikeRollLimit( const JPH::Body &chassis ) {
+    // FUN_00837cd0
+    static constexpr float kTiltMax = 0.9f;               // DAT_00f416a0
+    static constexpr float kCrashImpactEnergy = 50000.0f; // DAT_00fab740
+    static constexpr int32_t kLastReservedSlot = 7;
+    static constexpr float kPitchMin = -1.5f;   // DAT_00fab73c
+    static constexpr float kPitchMax = 1.2f;    // DAT_00fab738
+    static constexpr float kSlideSpeed = 10.0f; // FLOAT_00f4166c
+    static constexpr float kSlideRatio = 1.0f;  // DAT_00fab734
+    if ( pRollLimitConstraint == nullptr ) {
+        return;
+    }
+
+    if ( bIsNetwork ) {
+        pRollLimitConstraint->SetEnabled( true );
+        bRollLimitRestoreRequest = false;
+        return;
+    }
+
+    const JPH::Quat rotation = chassis.GetRotation();
+    const JPH::Vec3 forward = rotation * JPH::Vec3::sAxisZ();
+    bool bCrashed = std::fabs( forward.GetY() ) > kTiltMax;
+    {
+        ScopedMutexLock lock( &gCollisionEventMutex );
+        for ( int32_t i = 0; i < numCollisionEvents && !bCrashed; i++ ) {
+            const CollisionEvent &event = collisionEvents[i];
+            if ( event.Type == eCollisionType::CT_None ||
+                 event.Type == eCollisionType::CT_DynamicBody ) {
+                continue;
+            }
+            if ( event.Type == eCollisionType::CT_Vehicle ) {
+                const PhysicsVehicle *pOther = event.pOtherVehicle;
+                const int32_t otherSlot =
+                    ( pOther != nullptr && gpPhysics != nullptr )
+                        ? static_cast<int32_t>( pOther -
+                                                gpPhysics->getVehiclesBegin() )
+                        : -1;
+                if ( otherSlot <= kLastReservedSlot ) {
+                    continue;
+                }
+            }
+            bCrashed = event.Energy > kCrashImpactEnergy;
+        }
+    }
+    if ( displayPitch < kPitchMin || kPitchMax < displayPitch ) {
+        bCrashed = true;
+    }
+
+    bool bSliding = false;
+    if ( vehicle.LaunchState != 1 ) {
+        const JPH::Vec3 velocity = chassis.GetLinearVelocity();
+        if ( velocity.Length() > kSlideSpeed ) {
+            const JPH::Vec3 localVelocity = rotation.Conjugated() * velocity;
+            bSliding = std::fabs( localVelocity.GetX() ) /
+                           std::fabs( localVelocity.GetZ() ) >
+                       kSlideRatio;
+        }
+    }
+
+    if ( pRollLimitConstraint->GetEnabled() && ( bCrashed || bSliding ) ) {
+        pRollLimitConstraint->SetEnabled( false );
+    }
+    if ( !pRollLimitConstraint->GetEnabled() &&
+         ( ( !bCrashed && !bSliding ) || bRollLimitRestoreRequest ) ) {
+        pRollLimitConstraint->SetEnabled( true );
+    }
+    bRollLimitRestoreRequest = false;
+}
+
+void PhysicsVehicle::updateBikeRider() {
+    // FUN_0083db70
+    const bool bRollLimitOut =
+        pRollLimitConstraint != nullptr && !pRollLimitConstraint->GetEnabled();
+    if ( bRollLimitOut ) {
+        if ( pBikeRiderBody == nullptr ) {
+            spawnBikeRider();
+        }
+    } else if ( pBikeRiderBody != nullptr ) {
+        destroyBikeRider();
+    }
+}
+
+void PhysicsVehicle::updateWheelsActive() {
+    // FUN_0083a560
+    static constexpr float kDriveTorqueMin = 10.0f;      // FLOAT_00f4166c
+    static constexpr float kLoadMin = 10.0f;             // FLOAT_00f4166c
+    static constexpr float kSuspensionTravelMin = 0.01f; // _DAT_00fab770
+    static constexpr float kRollingSpeedMin = 0.25f;     // DAT_00f8a1d4
+    static constexpr float kBikePitchMin = 0.01f;        // DAT_00f416d4
+
+    bWheelsActive = false;
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        const PhysicsWheelState &w = vehicle.Wheels[i];
+        bWheelsActive |= std::fabs( w.DriveTorque ) > kDriveTorqueMin ||
+                         w.NormalLoad < kLoadMin ||
+                         std::fabs( prevSuspLength[i] - suspRestLength[i] ) >
+                             kSuspensionTravelMin ||
+                         std::fabs( w.ContactVelLong ) > kRollingSpeedMin;
+    }
+    if ( bIsBike ) {
+        bWheelsActive |=
+            std::fabs( displayPitch ) > kBikePitchMin || pitchLandingSide != -1;
+        if ( pRollLimitConstraint != nullptr &&
+             !pRollLimitConstraint->GetEnabled() ) {
+            bWheelsActive = false;
+        }
+    }
+}
+
+bool PhysicsVehicle::requestCollisionInertia() {
+    // FUN_0082e740
+    if ( collisionInertiaTimer == 0.0f && !bKeyframed && !bTrafficBody ) {
+        bCollisionInertiaRequest.store( true );
+    }
+    return bCollisionInertiaRequest.load();
+}
+
+void PhysicsVehicle::updateCollisionInertia( float deltaTime ) {
+    // FUN_0082e740
+    static constexpr float kInertia = 20000.0f; // DAT_00fab808
+    static constexpr float kDuration = 0.05f;   // DAT_00fab804
+
+    JPH::MotionProperties *pMotion = pChassisBody->GetMotionProperties();
+    if ( bCollisionInertiaRequest.exchange( false ) && pMotion != nullptr ) {
+        savedInvInertiaDiagonal = pMotion->GetInverseInertiaDiagonal();
+        savedInertiaRotation = pMotion->GetInertiaRotation();
+        pMotion->SetInverseInertia( JPH::Vec3::sReplicate( 1.0f / kInertia ),
+                                    JPH::Quat::sIdentity() );
+        collisionInertiaTimer = kDuration;
+    }
+
+    // FUN_0083db70
+    if ( collisionInertiaTimer > 0.0f && !bKeyframed ) {
+        collisionInertiaTimer -= deltaTime;
+        if ( collisionInertiaTimer <= 0.0f ) {
+            if ( pMotion != nullptr ) {
+                pMotion->SetInverseInertia( savedInvInertiaDiagonal,
+                                            savedInertiaRotation );
+            }
+            collisionInertiaTimer = 0.0f;
+        }
+    }
+}
+
+void PhysicsVehicle::spawnBikeRider() {
+    // FUN_0083db70
+    static constexpr float kThrowPitch = 0.7853982f;    // 0x3f490fdb
+    static constexpr float kSpawnHeight = 0.2f;         // 0x3e4ccccd
+    static constexpr float kThrowUpSpeed = 0.5f;        // FLOAT_00f41674
+    static constexpr float kThrowScaleMax = 1.5f;       // DAT_00fab668
+    static constexpr float kThrowPitchBias = -0.5f;     // DAT_00f4186c
+    static constexpr float kRiderMass = 80.0f;          // 0x42a00000
+    static constexpr float kRiderFriction = 0.9f;       // 0x3f666666
+    static constexpr float kRiderConvexRadius = 0.05f;  // 0x3d4ccccd
+    static constexpr float kRiderLinearDamping = 0.1f;  // FLOAT_00f41668
+    static constexpr float kRiderAngularDamping = 5.0f; // DAT_00f41750
+    static const JPH::Vec3 kRiderHalfExtents( 0.2f, 0.65f,
+                                              0.06f ); // FUN_0081d760
+
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return;
+    }
+
+    Matrix4x4f_t spawn = MakeRotationMatX( kThrowPitch ) *
+                         ( bikeRiderSeatMatrix * displayMatrix );
+    const Eigen::Vector3f position =
+        TDUMat4x4MulVec( spawn, Eigen::Vector3f( 0.0f, kSpawnHeight, 0.0f ) );
+
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    JPH::Vec3 velocity = bi.GetLinearVelocity( pChassisBody->GetID() );
+    velocity.SetY( velocity.GetY() + kThrowUpSpeed );
+
+    const float minScale = 1.0f / kThrowScaleMax;
+    const float throwScale =
+        std::min( std::max( ( kThrowScaleMax - minScale ) *
+                                    ( displayPitch - kThrowPitchBias ) +
+                                minScale,
+                            minScale ),
+                  kThrowScaleMax );
+    velocity *= throwScale;
+
+    JPH::Mat44 rotation = JPH::Mat44::sIdentity();
+    for ( int32_t r = 0; r < 3; r++ ) {
+        rotation.SetColumn3(
+            r, JPH::Vec3( spawn( r, 0 ), spawn( r, 1 ), spawn( r, 2 ) ) );
+    }
+
+    JPH::BodyCreationSettings settings(
+        new JPH::BoxShapeSettings( kRiderHalfExtents, kRiderConvexRadius ),
+        JPH::RVec3( position.x(), position.y(), position.z() ),
+        rotation.GetQuaternion().Normalized(), JPH::EMotionType::Dynamic,
+        TDUPhysLayers::MOVING );
+    settings.mOverrideMassProperties =
+        JPH::EOverrideMassProperties::CalculateInertia;
+    settings.mMassPropertiesOverride.mMass = kRiderMass;
+    settings.mFriction = kRiderFriction;
+    settings.mLinearDamping = kRiderLinearDamping;
+    settings.mAngularDamping = kRiderAngularDamping;
+    settings.mLinearVelocity = velocity;
+    settings.mUserData =
+        TDUSurface::BikeRider |
+        ( reinterpret_cast<uint64_t>( this ) << TDUSurface::kOwnerShift );
+
+    pBikeRiderBody = bi.CreateBody( settings );
+    if ( pBikeRiderBody != nullptr ) {
+        bi.AddBody( pBikeRiderBody->GetID(), JPH::EActivation::Activate );
+    }
+}
+
+void PhysicsVehicle::destroyBikeRider() {
+    // FUN_0083db70
+    if ( pBikeRiderBody == nullptr || pPhysicsSystem == nullptr ) {
+        pBikeRiderBody = nullptr;
+        return;
+    }
+
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    bi.RemoveBody( pBikeRiderBody->GetID() );
+    bi.DestroyBody( pBikeRiderBody->GetID() );
+    pBikeRiderBody = nullptr;
+}
+
+void PhysicsVehicle::publishBikeRider() {
+    // FUN_0083bbd0
+    bBikeRiderPresent = pBikeRiderBody != nullptr;
+    if ( !bBikeRiderPresent ) {
+        bBikeRiderOnGround = false;
+        bBikeRiderMoving = false;
+        bikeRiderMatrix = Matrix4x4f_t::Identity();
+        return;
+    }
+
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    const JPH::BodyID id = pBikeRiderBody->GetID();
+    const JPH::Vec3 velocity = bi.GetLinearVelocity( id );
+    bikeRiderVelocity = Eigen::Vector4f( velocity.GetX(), velocity.GetY(),
+                                         velocity.GetZ(), 0.0f );
+    const JPH::RMat44 world = bi.GetWorldTransform( id );
+    for ( int32_t c = 0; c < 4; c++ ) {
+        const JPH::Vec3 column = world.GetColumn3( c );
+        bikeRiderMatrix( c, 0 ) = column.GetX();
+        bikeRiderMatrix( c, 1 ) = column.GetY();
+        bikeRiderMatrix( c, 2 ) = column.GetZ();
+        bikeRiderMatrix( c, 3 ) = ( c == 3 ) ? 1.0f : 0.0f;
+    }
+    bBikeRiderMoving = bi.IsActive( id );
+}
+
 void PhysicsVehicle::applyGroundAlignment( JPH::PhysicsSystem &system,
                                            const JPH::Body &chassis,
                                            JPH::BodyInterface &bi,
@@ -2522,6 +3254,7 @@ void PhysicsVehicle::OnStep(
     for ( int i = 0; i < vehicle.NumWheels; ++i ) {
         castWheel( system, chassis, i, dt );
     }
+    updateWheelsActive();
     int numWheelsOnRoad = 0;
     for ( int i = 0; i < vehicle.NumWheels; ++i ) {
         if ( TDUSurface::isOnRoad( wheelSurface[i] ) ) {
@@ -2662,6 +3395,9 @@ void PhysicsVehicle::OnStep(
     if ( !bIsBike && !gbSimuModeEnabled ) {
         applyGroundAlignment( system, chassis, bi, dt );
     }
+    if ( bIsBike ) {
+        updateBikeRollLimit( chassis );
+    }
 
     updateChrono( dt );
     updateOdometer( dt );
@@ -2768,8 +3504,8 @@ void PhysicsVehicle::stepVirtual( float dt ) {
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_0043c000 / wheel +0x2b4 (grounded
                              // test), assumed always grounded
-    bVirtualGrounded = true;
-    virtualSpeed = bVirtualGrounded
+    bWheelsActive = true;
+    virtualSpeed = bWheelsActive
                        ? virtualSpeed + ( bodyForceLong + wheelLongForce ) /
                                             vehicle.Mass * dt
                        : 0.0f;
@@ -2793,7 +3529,7 @@ void PhysicsVehicle::setVirtual( bool bInVirtual ) {
     } else {
         resumeSimulation();
         bVirtual = false;
-        bVirtualGrounded = true;
+        bWheelsActive = true;
     }
 }
 
@@ -2812,6 +3548,11 @@ void PhysicsVehicle::pauseSimulation() {
             bi.RemoveBody( part.pBody->GetID() );
         }
     }
+    // FUN_00828f30
+    if ( pRollLimitConstraint != nullptr &&
+         pRollLimitConstraint->GetEnabled() ) {
+        pRollLimitConstraint->SetEnabled( false );
+    }
     bPausePhysics = true;
 }
 
@@ -2829,6 +3570,11 @@ void PhysicsVehicle::resumeSimulation() {
         if ( !bi.IsAdded( part.pBody->GetID() ) ) {
             bi.AddBody( part.pBody->GetID(), JPH::EActivation::Activate );
         }
+    }
+    // FUN_00828ed0
+    if ( pRollLimitConstraint != nullptr &&
+         !pRollLimitConstraint->GetEnabled() ) {
+        pRollLimitConstraint->SetEnabled( true );
     }
     bPausePhysics = false;
 }
@@ -3517,8 +4263,7 @@ void PhysicsVehicle::logChronoSplit( const char *pLabel, float split ) const {
 
 void PhysicsVehicle::setDrivingHelpLevel( int32_t level ) {
     // FUN_008287d0
-    const int32_t maxElectronicParams =
-        gPhysicsConfig.NumElectronicParamsValues;
+    const int32_t maxElectronicParams = pConfig->NumElectronicParamsValues;
     if ( level >= 0 && level < maxElectronicParams ) {
         vehicle.bElectronicsEnabled = true;
         vehicle.ElectronicMode = 1;
@@ -3536,7 +4281,7 @@ void PhysicsVehicle::initializeElectronics() {
     static constexpr int32_t kMaxElectronicValues = 9;
     static constexpr float kSimuElectronicScale = 0.4f; // DAT_00f4175c
 
-    const PhysicsConfig &c = gPhysicsConfig;
+    const PhysicsConfig &c = *pConfig;
     for ( int32_t i = 0; i < kMaxElectronicValues; i++ ) {
         vehicle.ElectronicValues[i] = c.ElectronicParamsValue[i];
     }
@@ -3610,6 +4355,24 @@ void PhysicsVehicle::tick( float deltaTime ) {
     }
 
     timeSinceHardImpact += deltaTime;
+
+    if ( bPausePhysics ) {
+        return;
+    }
+
+    updateCollisionInertia( deltaTime );
+
+    if ( !bKeyframed ) {
+        updateBikeLean( deltaTime );
+        if ( bIsBike ) {
+            updateBikeCollision();
+        }
+    }
+    updateWheelCollision();
+    bBikeRiderOnGround = bBikeRiderGroundContact.exchange( false );
+    if ( bIsBike ) {
+        updateBikeRider();
+    }
 }
 
 bool PhysicsVehicle::isAirborne() const {
@@ -3738,33 +4501,7 @@ void PhysicsVehicle::publishStepPose() {
     // TODO: REPLAY
     displayMatrix = computeDisplayMatrix( physicsMatrix );
     invChassisMatrix = OrthoInvert( physicsMatrix );
-}
-
-void PhysicsVehicle::calibrateDisplayYOffset( float modelWheelRestY ) {
-    (void)modelWheelRestY;
-    y3DOffset = 0.0f;
-}
-
-void PhysicsVehicle::setAuthoredWheelHeights( const float *pAuthoredWheelY,
-                                              uint32_t numAuthored ) {
-    if ( bAuthoredWheelYKnown || pAuthoredWheelY == nullptr ) {
-        return;
-    }
-    const uint32_t numWheels =
-        Min( (uint32_t)vehicle.NumWheels, Min( numAuthored, 4u ) );
-    if ( numWheels == 0 ) {
-        return;
-    }
-    for ( uint32_t i = 0; i < numWheels; i++ ) {
-        if ( pAuthoredWheelY[i] == 0.0f ) {
-            return;
-        }
-    }
-
-    for ( uint32_t i = 0; i < numWheels; i++ ) {
-        authoredWheelY[i] = pAuthoredWheelY[i];
-    }
-    bAuthoredWheelYKnown = true;
+    publishBikeRider();
 }
 
 static bool ProbeGroundUnder( const Eigen::Vector4f &point,
@@ -3940,6 +4677,7 @@ void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform,
 
     // FUN_0083d220
     resetSimulationState();
+    resetBikeLean();
 
     Matrix4x4f_t placed = transform;
     if ( bCastToGround ) {
@@ -4160,7 +4898,11 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
     filteredSteer = steer;
     steerCommand = steer;
     if ( bIsBike ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: bike lean angles (+0xe68..+0xe80)
+        // FUN_0083ff50
+        displayRoll = steer * 0.5f; // FLOAT_00f41674
+        displayPitch = 0.0f;
+        displayPitchRate = 0.0f;
+        displayYaw = 0.0f;
     }
 
     const float forwardSpeed = keyframeVelocity.dot( forward );
@@ -4264,12 +5006,8 @@ PhysicsVehicle::getWheelReadout( uint32_t index ) const {
     const float maxTravel = -rideHeightMax[axle] - droopY;
     const float displayTravel =
         ( compression < maxTravel ) ? compression : maxTravel;
-    const float displayLength = suspDroopStop[index] - displayTravel;
-    const float deflection =
-        bAuthoredWheelYKnown ? ( wheelAttach[index].y() + bodyHeight * 0.5f -
-                                 authoredWheelY[index] - displayLength )
-                             : ( suspStaticLength[index] - displayLength );
-    out.SuspensionDeflection = JPH::Clamp( deflection, -0.25f, 0.25f );
+    out.ReleasedPosition = droopY;
+    out.SuspensionTravel = displayTravel;
     out.SuspensionStaticLength = suspStaticLength[index];
     out.SuspensionDroopStop = suspDroopStop[index];
     out.SuspensionBumpStop = suspMinLength[index];

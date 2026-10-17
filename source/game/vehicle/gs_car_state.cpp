@@ -386,6 +386,21 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         PhysicsLock physLock;
 
         for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+            CarState &carState = carStates[i];
+            const EntityDriver *pDriver = carState.getDriver();
+            if ( pDriver == nullptr ) {
+                continue;
+            }
+            carState.body.BikeRiderMatrix =
+                pDriver->getTransformRelativeToVehicle();
+            carState.body.BikerHeadMatrix = pDriver->getHeadMatrix();
+            if ( carState.pPhysicsVehicle != nullptr ) {
+                carState.pPhysicsVehicle->setBikeRiderSeatMatrix(
+                    carState.body.BikeRiderMatrix );
+            }
+        }
+
+        for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
             if ( ( ( bUsedSlot >> i ) & 1u ) == 0 ) {
                 continue;
             }
@@ -396,27 +411,6 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             }
 
             CarBodyState &body = carState.body;
-            const uint32_t modelNumWheels =
-                Min( pPhysicsVehicle->getNumWheels(), CarState::kMaxNumWheels );
-            if ( modelNumWheels > 0 ) {
-                const float bodyHalfHeight =
-                    carState.body.BodyDimensions.y() * 0.5f;
-                float wheelRestSum = 0.0f;
-                for ( uint32_t w = 0; w < modelNumWheels; w++ ) {
-                    wheelRestSum +=
-                        carState.wheels[w].Position + bodyHalfHeight;
-                }
-                const float modelWheelRestY = wheelRestSum / modelNumWheels;
-                pPhysicsVehicle->calibrateDisplayYOffset( modelWheelRestY );
-                float authoredWheelY[CarState::kMaxNumWheels] = {};
-                for ( uint32_t w = 0; w < modelNumWheels; w++ ) {
-                    authoredWheelY[w] =
-                        carState.wheels[w].Position + bodyHalfHeight;
-                }
-                pPhysicsVehicle->setAuthoredWheelHeights( authoredWheelY,
-                                                          modelNumWheels );
-            }
-
             const Matrix4x4f_t &physicsMatrix =
                 pPhysicsVehicle->getPhysicsMatrix();
             body.PhysicsWorldMatrix = physicsMatrix;
@@ -459,6 +453,16 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
 
             const float publishedSteer = pPhysicsVehicle->getFilteredSteer();
             body.SteeringRaw = publishedSteer;
+            body.BikeLeanLateral = pPhysicsVehicle->getDisplayRoll();
+            body.BikeLeanInput = pPhysicsVehicle->getBikeLeanSmoothed();
+            body.bHasBikeAvatar = pPhysicsVehicle->hasBikeRider();
+            body.BikeRiderVelocity = pPhysicsVehicle->getBikeRiderVelocity();
+            body.bBikeRiderOnGround = pPhysicsVehicle->isBikeRiderOnGround();
+            if ( body.bHasBikeAvatar ) {
+                body.BikeRiderMatrix = pPhysicsVehicle->getBikeRiderMatrix();
+            }
+            body.bBikeRiderMoving = pPhysicsVehicle->isBikeRiderMoving();
+            body.BikeLeanLongitudinal = pPhysicsVehicle->getDisplayPitch();
 
             const float leanScale = std::min(
                 std::max( 1.0f - std::fabs( body.BikeLeanLateral ), 0.0f ),
@@ -503,7 +507,7 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 wheel.LateralSpeed = ro.LateralGroundSpeed;
                 wheel.Load = ro.SuspensionLoad;
 
-                wheel.SuspensionTravelLength = ro.SuspensionDeflection;
+                wheel.SuspensionTravelLength = ro.SuspensionTravel;
                 wheel.WheelRadius = ro.Radius;
                 wheel.RelativeWorldPosition =
                     Eigen::Vector4f( ro.LocalPosition.x(), ro.LocalPosition.y(),

@@ -348,7 +348,7 @@ void AiVehLocomotion::moveKinematic() {
 void AiVehLocomotion::writeInputs( PhysicsVehicle &vehicle,
                                    const float deltaTime ) {
     // FUN_009378d0
-    if ( vehicle.isVirtualGrounded() ) {
+    if ( vehicle.areWheelsActive() ) {
         virtualDistanceAccum += vehicle.getVirtualSpeed() * deltaTime;
     }
     timeAccum += deltaTime;

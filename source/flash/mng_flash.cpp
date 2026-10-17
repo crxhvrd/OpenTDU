@@ -164,7 +164,12 @@ static void TransitionFromFreerideToMap( int32_t targetGameMode ) {
         gpMngCamGPS->setUpdateStreaming( true );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: BIKES
+    // A rider thrown off the bike is put back on it once the map closes.
+    if ( pPhysicsVehicle != nullptr && pPhysicsVehicle->isBike() &&
+         pPhysicsVehicle->hasBikeRider() ) {
+        pPhysicsVehicle->setBackOnTrackForced( true );
+        pCarState->getBody()->bHasBikeAvatar = false;
+    }
 
     gpFlash->getFlashSound()->playFrontEndSound( "ent_map", 0, false );
     if ( gpMngChat != nullptr ) {

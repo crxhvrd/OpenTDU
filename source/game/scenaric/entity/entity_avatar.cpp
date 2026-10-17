@@ -304,7 +304,12 @@ void EntityAvatar::tick( PlayerGameMech *pGameMech,
         unknownActorFunc();
 
         if ( animation.isValid() && pPooledAvatarEntry != nullptr ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR — head bone update
+            Matrix4x4f_t headMatrix =
+                animation.getNodeWorldMatrix( -1, HeadBoneIndex );
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - FUN_008f1d80 head
+                                     // material up/right shader params
+            headMatrix = headMatrix * getModelMatrix();
+            onHeadUpdate( headMatrix );
         }
 
         for ( AvatarLayer *pLayer = pLayers; pLayer != nullptr;
@@ -839,7 +844,10 @@ void EntityAvatar::relightFromWeather( DirectionalLight *pLight ) {
 
 void EntityAvatar::onHeadUpdate( Matrix4x4f_t &headTransform ) {
     // FUN_007f8fc0
-    OTDU_UNIMPLEMENTED; // TODO: AVATAR
+    if ( pPooledAvatarEntry != nullptr ) {
+        pPooledAvatarEntry->Slots[AC_Helmet].setMatrix( headTransform );
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - voice position (+0x1c3c)
 }
 
 void EntityAvatar::updateCarAlpha() {

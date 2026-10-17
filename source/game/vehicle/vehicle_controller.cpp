@@ -703,3 +703,11 @@ void VehicleController::updateGauges() {
         }
     }
 }
+void VehicleController::buildCarAlphaInstances() {
+    // FUN_008b5ff0
+    VehicleBase::buildCarAlphaInstances();
+    if ( !displayInstances.empty() && displayInstances[0].pNode != nullptr &&
+         !bNeedToUnstream ) {
+        appendCarAlphaInstances( getInstantiatedInteriorNode() );
+    }
+}

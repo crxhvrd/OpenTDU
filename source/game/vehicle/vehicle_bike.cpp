@@ -34,15 +34,15 @@ inline void UpdateWheelTransform( HiearchyNode *pNode ) {
     pNode->propagateTransformMatrices();
 }
 
-// Helmet camera configuration (set externally via DB or config)
-static float gHelmetCameraFOV = 0.0f;    // DAT_00f42038
-static float gHelmetCameraAspect = 0.0f; // DAT_00f41874
-static float gHelmetCamOffsetX = 0.0f;   // DAT_00f41d40
-static float gHelmetCamOffsetY = 0.0f;   // DAT_00f41d44
-static float gHelmetCamOffsetZ = 0.0f;   // DAT_00f41d48
-static float gHelmetHeadPosX = 0.0f;     // FLOAT_010e7508
-static float gHelmetHeadPosY = 0.0f;     // FLOAT_010e750c
-static float gHelmetHeadPosZ = 0.0f;     // FLOAT_010e7510
+// Helmet overlay camera
+static constexpr float kHelmetCameraFOV = 0.9948377f;    // DAT_00f42038
+static constexpr float kHelmetCameraAspect = 1.7777778f; // DAT_00f41874
+static float gHelmetCamOffsetX = 0.0f;                   // DAT_010e7500
+static float gHelmetCamOffsetY = 0.0f;                   // DAT_010e7504
+static float gHelmetCamOffsetZ = -0.07625f;              // DAT_00f7f1b0
+static float gHelmetHeadPosX = 0.0f;                     // DAT_010e7508
+static float gHelmetHeadPosY = 0.0f;                     // DAT_010e750c
+static float gHelmetHeadPosZ = 0.0f;                     // DAT_010e7510
 
 // DAT_00f7c890
 static constexpr int32_t kBikeNumPrimitives = 0x19;
@@ -604,7 +604,7 @@ void VehicleBike::setupHiearchy() {
         Eigen::Vector4f fStack_74 = local_88->row( 3 ) - local_84->row( 3 );
         float auVar17 = fStack_74.norm();
         pWheelOffsets[2] = auVar17;
-        float fVar17 = asin( auVar17 );
+        float fVar17 = asinf( ( *local_88 )( 3, 1 ) / ( auVar17 + auVar17 ) );
         pWheelOffsets[1] = fVar17 + fVar17;
     }
 
@@ -664,15 +664,15 @@ void VehicleBike::updateHelmetPosition() {
         return;
     }
 
-    pHelmetCam->setFOV( gHelmetCameraFOV );
-    pHelmetCam->copyAspectRatio( gHelmetCameraAspect );
+    pHelmetCam->setFOV( kHelmetCameraFOV );
+    pHelmetCam->copyAspectRatio( kHelmetCameraAspect );
     pHelmetCam->setWorldToCam( pNearCam->getWorldToCam() );
     pHelmetCam->setCamToWorld( pNearCam->getCamToWorld() );
 
     Matrix4x4f_t localMat = pHelmetCam->getCamToWorld();
-    Eigen::Vector3f offset( gHelmetCamOffsetX - gHelmetHeadPosX,
-                            gHelmetCamOffsetY - gHelmetHeadPosY,
-                            gHelmetCamOffsetZ - gHelmetHeadPosZ );
+    Eigen::Vector3f offset( gHelmetCamOffsetX + gHelmetHeadPosX,
+                            gHelmetCamOffsetY + gHelmetHeadPosY,
+                            gHelmetCamOffsetZ + gHelmetHeadPosZ );
     Eigen::Vector4f transformedOffset = RotateByMatrix( localMat, offset );
     localMat( 3, 0 ) += transformedOffset.x();
     localMat( 3, 1 ) += transformedOffset.y();
@@ -726,12 +726,17 @@ void VehicleBike::updateBodyAndWheelsTransform( CarState *param_2,
     const uint32_t numWheels = param_2->numWheels;
     const float bodyHalfHeight = param_2->body.BodyDimensions.y() * 0.5f;
 
+    const uint32_t axleShift = numWheels / 2 - 1;
     for ( uint32_t i = 0; i < numWheels; i++ ) {
         WheelState &wheel = param_2->wheels[i];
         float updatedAngle = wheel.Omega * param_3 * 0.5f + wheel.WheelAngle;
         wheel.WheelAngle = updatedAngle;
 
-        if ( i == 0 ) {
+        if ( ( i & axleShift ) != 0 ) {
+            continue;
+        }
+
+        if ( ( i >> axleShift ) == 0 ) {
             Matrix4x4f_t rotMat = Matrix4x4f_t::Identity();
             MatrixRotateY( rotMat, wheel.SteerAngle );
 
@@ -748,6 +753,7 @@ void VehicleBike::updateBodyAndWheelsTransform( CarState *param_2,
                             wheel.SuspensionTravelLength ) /
                               pWheelOffsets[3] -
                           pWheelOffsets[0];
+            rotMat = Matrix4x4f_t::Identity();
             rotMat( 3, 1 ) += forkY;
 
             for ( uint32_t n : { 13u, 23u } ) {
@@ -773,8 +779,7 @@ void VehicleBike::updateBodyAndWheelsTransform( CarState *param_2,
         } else {
             float armArg = ( bodyHalfHeight + wheel.Position +
                              wheel.SuspensionTravelLength ) /
-                               pWheelOffsets[3] -
-                           pWheelOffsets[0];
+                           pWheelOffsets[2];
             float armAngle = asinf( armArg ) - pWheelOffsets[1];
 
             Matrix4x4f_t rotMat = Matrix4x4f_t::Identity();
@@ -784,7 +789,7 @@ void VehicleBike::updateBodyAndWheelsTransform( CarState *param_2,
                 HiearchyNode *pNode = displayInstances[n].pNode;
                 if ( !bNeedToUnstream && pNode != nullptr ) {
                     pNode->TransformMatrix =
-                        rotMat * displayInstances[n].InstanceMatrix;
+                        rotMat * displayInstances[14].InstanceMatrix;
                     UpdateWheelTransform( pNode );
                 }
             }

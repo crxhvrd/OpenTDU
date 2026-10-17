@@ -13,6 +13,14 @@ public:
 public:
     inline int32_t getNumPoints() const { return NumElements; }
     inline const Element *getFirstPoint() const { return pFirst; }
+    inline void setPointValue( float x, float y ) {
+        for ( Element *pIt = pFirst; pIt != nullptr; pIt = pIt->pNext ) {
+            if ( pIt->X == x ) {
+                pIt->Y = y;
+                return;
+            }
+        }
+    }
 
 public:
     void addPoint( float x, float y );

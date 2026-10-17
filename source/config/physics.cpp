@@ -97,133 +97,137 @@ void GSConfig::registerPhysicsCommands() {
         // FUN_009866e0
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.GravityCoeff = ParseFloat( argStr, it );
+        gpPhysicsConfig->GravityCoeff = ParseFloat( argStr, it );
     } );
 
     registerCommand( "FRONTFRICTIONCOEF", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.FrontFrictionCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->FrontFrictionCoef = ParseFloat( argStr, it );
     } );
 
     registerCommand( "REARFRICTIONCOEF", [&]( const char *pArg ) {
         // FUN_00986590
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.RearFrictionCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->RearFrictionCoef = ParseFloat( argStr, it );
     } );
 
     registerCommand( "FRONTLATERALFRICTIONCOEF", [&]( const char *pArg ) {
         // FUN_009865d0
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.FrontLateralFrictionCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->FrontLateralFrictionCoef = ParseFloat( argStr, it );
     } );
 
     registerCommand( "REARLATERALFRICTIONCOEF", [&]( const char *pArg ) {
         // FUN_00986570
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.RearLateralFrictionCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->RearLateralFrictionCoef = ParseFloat( argStr, it );
     } );
 
     registerCommand( "FRONTLNGBRAKEFRICTIONCOEF", [&]( const char *pArg ) {
         // FUN_009865b0
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.FrontLngBrakeFrictionCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->FrontLngBrakeFrictionCoef = ParseFloat( argStr, it );
     } );
 
     registerCommand( "REARLNGBRAKEFRICTIONCOEF", [&]( const char *pArg ) {
         // FUN_00986550
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.RearLngBrakeFrictionCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->RearLngBrakeFrictionCoef = ParseFloat( argStr, it );
     } );
 
     registerCommand( "FRONTLATBRAKEFRICTIONCOEFSLOW", [&]( const char *pArg ) {
         // FUN_00986530
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.FrontLatBrakeFrictionCoefSlow = ParseFloat( argStr, it );
+        gpPhysicsConfig->FrontLatBrakeFrictionCoefSlow =
+            ParseFloat( argStr, it );
     } );
 
     registerCommand( "REARLATBRAKEFRICTIONCOEFSLOW", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.RearLatBrakeFrictionCoefSlow = ParseFloat( argStr, it );
+        gpPhysicsConfig->RearLatBrakeFrictionCoefSlow =
+            ParseFloat( argStr, it );
     } );
 
     registerCommand( "FRONTLATBRAKEFRICTIONCOEFFAST", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.FrontLatBrakeFrictionCoefFast = ParseFloat( argStr, it );
+        gpPhysicsConfig->FrontLatBrakeFrictionCoefFast =
+            ParseFloat( argStr, it );
     } );
 
     registerCommand( "REARLATBRAKEFRICTIONCOEFFAST", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.RearLatBrakeFrictionCoefFast = ParseFloat( argStr, it );
+        gpPhysicsConfig->RearLatBrakeFrictionCoefFast =
+            ParseFloat( argStr, it );
     } );
 
     registerCommand( "LATBRAKEFRICTIONSPEEDSLOW", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
         const float speed = ParseScaledFloat( argStr, it );
-        gPhysicsConfig.LatBrakeFrictionSpeedSlowFront = speed;
-        gPhysicsConfig.LatBrakeFrictionSpeedSlowRear = speed;
+        gpPhysicsConfig->LatBrakeFrictionSpeedSlowFront = speed;
+        gpPhysicsConfig->LatBrakeFrictionSpeedSlowRear = speed;
     } );
 
     registerCommand( "LATBRAKEFRICTIONSPEEDFAST", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
         const float speed = ParseScaledFloat( argStr, it );
-        gPhysicsConfig.LatBrakeFrictionSpeedFastFront = speed;
-        gPhysicsConfig.LatBrakeFrictionSpeedFastRear = speed;
+        gpPhysicsConfig->LatBrakeFrictionSpeedFastFront = speed;
+        gpPhysicsConfig->LatBrakeFrictionSpeedFastRear = speed;
     } );
 
     registerCommand( "RESISTIVECOEF", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.ResistiveCoefFront = ParseFloat( argStr, it );
-        gPhysicsConfig.ResistiveCoefRear = ParseFloat( argStr, it );
+        gpPhysicsConfig->ResistiveCoefFront = ParseFloat( argStr, it );
+        gpPhysicsConfig->ResistiveCoefRear = ParseFloat( argStr, it );
     } );
 
     registerCommand( "RESISTIVELATERALCOEF", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.ResistiveLateralCoefFront = ParseFloat( argStr, it );
-        gPhysicsConfig.ResistiveLateralCoefRear = ParseFloat( argStr, it );
+        gpPhysicsConfig->ResistiveLateralCoefFront = ParseFloat( argStr, it );
+        gpPhysicsConfig->ResistiveLateralCoefRear = ParseFloat( argStr, it );
     } );
 
     registerCommand( "INERTIACOEF", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.InertiaCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->InertiaCoef = ParseFloat( argStr, it );
     } );
 
     registerCommand( "MASSCOEF", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.MassCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->MassCoef = ParseFloat( argStr, it );
     } );
 
     registerCommand( "CGHEIGHTCOEF", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.CGHeightCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->CGHeightCoef = ParseFloat( argStr, it );
     } );
 
     registerCommand( "REBOUNDCOEF", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.ReboundCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->ReboundCoef = ParseFloat( argStr, it );
     } );
 
     registerCommand( "SPRINGCOEF", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.SpringCoef = ParseFloat( argStr, it );
+        gpPhysicsConfig->SpringCoef = ParseFloat( argStr, it );
         gSpringCoef = ParseFloat( argStr, it );
     } );
 
@@ -256,69 +260,69 @@ void GSConfig::registerPhysicsCommands() {
     registerCommand( "TORQUEINERTIAUP", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.TorqueInertiaUp = ParseFloat( argStr, it );
+        gpPhysicsConfig->TorqueInertiaUp = ParseFloat( argStr, it );
     } );
 
     registerCommand( "TORQUEINERTIADOWN", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.TorqueInertiaDown = ParseFloat( argStr, it );
+        gpPhysicsConfig->TorqueInertiaDown = ParseFloat( argStr, it );
     } );
 
     registerCommand( "ENGINEBRAKEPOWER", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.EngineBrakePower = ParseFloat( argStr, it );
+        gpPhysicsConfig->EngineBrakePower = ParseFloat( argStr, it );
     } );
 
     registerCommand( "REDLINEPURCENT", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.RedlinePurcent = ParseFloat( argStr, it );
+        gpPhysicsConfig->RedlinePurcent = ParseFloat( argStr, it );
     } );
 
     registerCommand( "WHEELMAXSLIPRATIO", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.WheelMaxSlipRatioFront = ParseFloat( argStr, it );
-        gPhysicsConfig.WheelMaxSlipRatioRear = ParseFloat( argStr, it );
+        gpPhysicsConfig->WheelMaxSlipRatioFront = ParseFloat( argStr, it );
+        gpPhysicsConfig->WheelMaxSlipRatioRear = ParseFloat( argStr, it );
     } );
 
     registerCommand( "WHEELMAXSLIPANGLE", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.WheelMaxSlipAngleFront = ParseFloat( argStr, it );
-        gPhysicsConfig.WheelMaxSlipAngleRear = ParseFloat( argStr, it );
+        gpPhysicsConfig->WheelMaxSlipAngleFront = ParseFloat( argStr, it );
+        gpPhysicsConfig->WheelMaxSlipAngleRear = ParseFloat( argStr, it );
     } );
 
     registerCommand( "SLIPRATIOSTARTLOOSELATERAL", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.SlipRatioStartLooseLateralFront =
+        gpPhysicsConfig->SlipRatioStartLooseLateralFront =
             ParseFloat( argStr, it );
-        gPhysicsConfig.SlipRatioStartLooseLateralRear =
+        gpPhysicsConfig->SlipRatioStartLooseLateralRear =
             ParseFloat( argStr, it );
     } );
 
     registerCommand( "MAXLATERALLOSS", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.MaxLateralLossFront = ParseFloat( argStr, it );
-        gPhysicsConfig.MaxLateralLossRear = ParseFloat( argStr, it );
+        gpPhysicsConfig->MaxLateralLossFront = ParseFloat( argStr, it );
+        gpPhysicsConfig->MaxLateralLossRear = ParseFloat( argStr, it );
     } );
 
     registerCommand( "STEERINGHELPSTRAIGHT", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.SteeringHelpStraight[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringHelpStraight[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringHelpStraight[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringHelpStraight[1] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "STEERINGHELPTURN", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.SteeringHelpTurn[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringHelpTurn[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringHelpTurn[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringHelpTurn[1] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "SENSITIVTY", [&]( const char *pArg ) {
@@ -339,85 +343,85 @@ void GSConfig::registerPhysicsCommands() {
         const float b = ParseScaledFloat( argStr, it );
         const float c = ParseScaledFloat( argStr, it );
         for ( int32_t i = 0; i < 5; i++ ) {
-            gPhysicsConfig.SteeringFilterSpeed[i][0] = a;
-            gPhysicsConfig.SteeringFilterSpeed[i][1] = b;
-            gPhysicsConfig.SteeringFilterSpeed[i][2] = c;
+            gpPhysicsConfig->SteeringFilterSpeed[i][0] = a;
+            gpPhysicsConfig->SteeringFilterSpeed[i][1] = b;
+            gpPhysicsConfig->SteeringFilterSpeed[i][2] = c;
         }
     } );
 
     registerCommand( "STEERINGLIMIT", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.SteeringLimit[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringLimit[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringLimit[2] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringLimit[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringLimit[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringLimit[2] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "STEERINGCENTERSPEED", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.SteeringCenterSpeed[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringCenterSpeed[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringCenterSpeed[2] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringCenterSpeed[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringCenterSpeed[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringCenterSpeed[2] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "STEERINGSPEED", [&]( const char *pArg ) {
         // FUN_00986190
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.SteeringSpeed[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringSpeed[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringSpeed[2] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringSpeed[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringSpeed[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringSpeed[2] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "STEERINGSTRAIGHTSPEED", [&]( const char *pArg ) {
         // FUN_00986110
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.SteeringStraightSpeed[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringStraightSpeed[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringStraightSpeed[2] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringStraightSpeed[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringStraightSpeed[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringStraightSpeed[2] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "STEERINGCOUNTERSPEED", [&]( const char *pArg ) {
         // FUN_009860d0
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.SteeringCounterSpeed[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringCounterSpeed[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.SteeringCounterSpeed[2] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringCounterSpeed[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringCounterSpeed[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->SteeringCounterSpeed[2] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "ACTIVEABSSPEED", [&]( const char *pArg ) {
         // FUN_00985eb0
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.ActiveABSSpeed[0] = ParseScaledFloat( argStr, it );
-        gPhysicsConfig.ActiveABSSpeed[1] = ParseScaledFloat( argStr, it );
-        gPhysicsConfig.ActiveABSSpeed[2] = ParseScaledFloat( argStr, it );
-        gPhysicsConfig.ActiveABSSpeed[3] = ParseFloat( argStr, it );
-        gPhysicsConfig.ActiveABSSpeed[4] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveABSSpeed[0] = ParseScaledFloat( argStr, it );
+        gpPhysicsConfig->ActiveABSSpeed[1] = ParseScaledFloat( argStr, it );
+        gpPhysicsConfig->ActiveABSSpeed[2] = ParseScaledFloat( argStr, it );
+        gpPhysicsConfig->ActiveABSSpeed[3] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveABSSpeed[4] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "ACTIVEABSVALUE", [&]( const char *pArg ) {
         // FUN_00985e60
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.ActiveABSValue[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.ActiveABSValue[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.ActiveABSValue[2] = ParseFloat( argStr, it );
-        gPhysicsConfig.ActiveABSValue[3] = ParseFloat( argStr, it );
-        gPhysicsConfig.ActiveABSValue[4] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveABSValue[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveABSValue[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveABSValue[2] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveABSValue[3] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveABSValue[4] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "ELECTRONICPARAMS", [&]( const char *pArg ) {
         std::string argStr( pArg );
         size_t it = 0ull;
         std::string name = ParseStringNoQuotes( argStr, it );
-        strncpy( gPhysicsConfig.ElectronicParams, name.c_str(),
-                 sizeof( gPhysicsConfig.ElectronicParams ) - 1 );
+        strncpy( gpPhysicsConfig->ElectronicParams, name.c_str(),
+                 sizeof( gpPhysicsConfig->ElectronicParams ) - 1 );
         gPhysicsConfig
-            .ElectronicParams[sizeof( gPhysicsConfig.ElectronicParams ) - 1] =
+            .ElectronicParams[sizeof( gpPhysicsConfig->ElectronicParams ) - 1] =
             '\0';
     } );
 
@@ -428,13 +432,13 @@ void GSConfig::registerPhysicsCommands() {
         std::string name = ParseStringNoQuotes( argStr, it );
         float value = ParseFloat( argStr, it );
 
-        int32_t idx = gPhysicsConfig.NumElectronicParamsValues;
+        int32_t idx = gpPhysicsConfig->NumElectronicParamsValues;
         if ( idx < 9 ) {
-            char *pName = gPhysicsConfig.ElectronicParamsValueName[idx];
+            char *pName = gpPhysicsConfig->ElectronicParamsValueName[idx];
             strncpy( pName, name.c_str(), 31 );
             pName[31] = '\0';
-            gPhysicsConfig.ElectronicParamsValue[idx] = value;
-            gPhysicsConfig.NumElectronicParamsValues = idx + 1;
+            gpPhysicsConfig->ElectronicParamsValue[idx] = value;
+            gpPhysicsConfig->NumElectronicParamsValues = idx + 1;
         }
     } );
 
@@ -443,8 +447,8 @@ void GSConfig::registerPhysicsCommands() {
         std::string argStr( pArg );
         size_t it = 0ull;
         for ( int32_t i = 0; i < 3; i++ ) {
-            gPhysicsConfig.ElectronicPowerCoefX[i] = ParseFloat( argStr, it );
-            gPhysicsConfig.ElectronicPowerCoefY[i] = ParseFloat( argStr, it );
+            gpPhysicsConfig->ElectronicPowerCoefX[i] = ParseFloat( argStr, it );
+            gpPhysicsConfig->ElectronicPowerCoefY[i] = ParseFloat( argStr, it );
         }
     } );
 
@@ -452,18 +456,18 @@ void GSConfig::registerPhysicsCommands() {
         // FUN_00985d20
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.ActiveTCTrigger[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.ActiveTCTrigger[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.ActiveTCTrigger[2] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveTCTrigger[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveTCTrigger[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveTCTrigger[2] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "ACTIVETCVALUE", [&]( const char *pArg ) {
         // FUN_00985ce0
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.ActiveTCValue[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.ActiveTCValue[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.ActiveTCValue[2] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveTCValue[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveTCValue[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->ActiveTCValue[2] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "TCSTRAIGHTTRIGGER", [&]( const char *pArg ) {
@@ -473,24 +477,24 @@ void GSConfig::registerPhysicsCommands() {
         const float a = ParseScaledFloat( argStr, it );
         const float b = ParseScaledFloat( argStr, it );
         const float c = ParseScaledFloat( argStr, it );
-        gPhysicsConfig.TCStraightTrigger[0] = a;
-        gPhysicsConfig.TCStraightTrigger[1] = b;
-        gPhysicsConfig.TCStraightTrigger[2] = c;
-        gPhysicsConfig.TCStraightTriggerMid[0] = a;
-        gPhysicsConfig.TCStraightTriggerMid[1] = b;
-        gPhysicsConfig.TCStraightTriggerMid[2] = c;
-        gPhysicsConfig.TCStraightTriggerAlt[0] = a;
-        gPhysicsConfig.TCStraightTriggerAlt[1] = b;
-        gPhysicsConfig.TCStraightTriggerAlt[2] = c;
+        gpPhysicsConfig->TCStraightTrigger[0] = a;
+        gpPhysicsConfig->TCStraightTrigger[1] = b;
+        gpPhysicsConfig->TCStraightTrigger[2] = c;
+        gpPhysicsConfig->TCStraightTriggerMid[0] = a;
+        gpPhysicsConfig->TCStraightTriggerMid[1] = b;
+        gpPhysicsConfig->TCStraightTriggerMid[2] = c;
+        gpPhysicsConfig->TCStraightTriggerAlt[0] = a;
+        gpPhysicsConfig->TCStraightTriggerAlt[1] = b;
+        gpPhysicsConfig->TCStraightTriggerAlt[2] = c;
     } );
 
     registerCommand( "TCSTRAIGHTVALUE", [&]( const char *pArg ) {
         // FUN_00985bd0
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.TCStraightValue[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.TCStraightValue[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.TCStraightValue[2] = ParseFloat( argStr, it );
+        gpPhysicsConfig->TCStraightValue[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->TCStraightValue[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->TCStraightValue[2] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "AEROSPEEDS", [&]( const char *pArg ) {
@@ -499,42 +503,42 @@ void GSConfig::registerPhysicsCommands() {
         size_t it = 0ull;
         const float v0 = ParseFloat( argStr, it );
         const float v1 = ParseFloat( argStr, it );
-        gPhysicsConfig.AeroSpeeds[0] = v0 * v0;
-        gPhysicsConfig.AeroSpeeds[1] = v1 * v1;
+        gpPhysicsConfig->AeroSpeeds[0] = v0 * v0;
+        gpPhysicsConfig->AeroSpeeds[1] = v1 * v1;
     } );
 
     registerCommand( "AEROLENGTH", [&]( const char *pArg ) {
         // FUN_00985b60
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.AeroLength[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.AeroLength[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->AeroLength[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->AeroLength[1] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "AEROWIDTH", [&]( const char *pArg ) {
         // FUN_00985b20
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.AeroWidth[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.AeroWidth[1] = ParseFloat( argStr, it );
-        gPhysicsConfig.AeroWidth[2] = ParseFloat( argStr, it );
+        gpPhysicsConfig->AeroWidth[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->AeroWidth[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->AeroWidth[2] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "AERODENSITY", [&]( const char *pArg ) {
         // FUN_00985af0
         std::string argStr( pArg );
         size_t it = 0ull;
-        gPhysicsConfig.AeroDensity[0] = ParseFloat( argStr, it );
-        gPhysicsConfig.AeroDensity[1] = ParseFloat( argStr, it );
+        gpPhysicsConfig->AeroDensity[0] = ParseFloat( argStr, it );
+        gpPhysicsConfig->AeroDensity[1] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "LEAN_SPEED_RANGE", [&]( const char *pArg ) {
         // FUN_00985aa0
         std::string argStr( pArg );
         size_t it = 0ull;
-        gLeanSpeedRange[0] = ParseFloat( argStr, it );
-        gLeanSpeedRange[1] = ParseFloat( argStr, it );
-        gLeanSpeedRange[2] = ParseFloat( argStr, it );
+        gLeanSpeedRange[0] = ParseScaledFloat( argStr, it );
+        gLeanSpeedRange[1] = ParseScaledFloat( argStr, it );
+        gLeanSpeedRange[2] = ParseScaledFloat( argStr, it );
     } );
 
     registerCommand( "LEAN_SPEED_VAL", [&]( const char *pArg ) {
@@ -544,15 +548,16 @@ void GSConfig::registerPhysicsCommands() {
         gLeanSpeedValue[0] = ParseFloat( argStr, it );
         gLeanSpeedValue[1] = ParseFloat( argStr, it );
         gLeanSpeedValue[2] = ParseFloat( argStr, it );
+        gLeanSpeedValueHigh = ParseFloat( argStr, it );
     } );
 
     registerCommand( "LEAN_CURVE_RANGE", [&]( const char *pArg ) {
         // FUN_00985a30
         std::string argStr( pArg );
         size_t it = 0ull;
+        // The original stores the first value in both slots.
         gLeanCurveRange[0] = ParseFloat( argStr, it );
-        gLeanCurveRange[1] = ParseFloat( argStr, it );
-        gLeanCurveRange[2] = ParseFloat( argStr, it );
+        gLeanCurveRange[1] = gLeanCurveRange[0];
     } );
 
     registerCommand( "LEAN_CURVE_VAL", [&]( const char *pArg ) {
@@ -561,7 +566,6 @@ void GSConfig::registerPhysicsCommands() {
         size_t it = 0ull;
         gLeanCurveValue[0] = ParseFloat( argStr, it );
         gLeanCurveValue[1] = ParseFloat( argStr, it );
-        gLeanCurveValue[2] = ParseFloat( argStr, it );
     } );
 
     registerCommand( "LEAN_HEAD", [&]( const char *pArg ) {
@@ -570,6 +574,5 @@ void GSConfig::registerPhysicsCommands() {
         size_t it = 0ull;
         gLeanHead[0] = ParseFloat( argStr, it );
         gLeanHead[1] = ParseFloat( argStr, it );
-        gLeanHead[2] = ParseFloat( argStr, it );
     } );
 }

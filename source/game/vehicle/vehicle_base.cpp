@@ -683,39 +683,45 @@ void VehicleBase::setRealTimeEnvMap( Render2DB *param_1,
 
     for ( int32_t nodeIndex = 0; nodeIndex < 4; nodeIndex++ ) {
         VehicleResource *pResource = pResourceNodes[nodeIndex];
-        Render2DM &resource2DM = pResource->Resource2DM;
-
-        const uint32_t numMaterials = resource2DM.getNumMaterials();
-        for ( uint32_t matIndex = 0; matIndex < numMaterials; matIndex++ ) {
-            Material *pMaterial = resource2DM.getMaterialAtIndex( matIndex );
-            if ( pMaterial == nullptr || pMaterial->NumParams == 0 ) {
+        for ( Render2DM *pRender2DM : pResource->Collection2D.Render2DMs ) {
+            if ( pRender2DM == nullptr ) {
                 continue;
             }
 
-            MaterialParameter *pParam = pMaterial->getParameterByIndex( 0 );
-            if ( pParam->Type != eMaterialParameterType::MPT_Generic ) {
-                continue;
-            }
+            const uint32_t numMaterials = pRender2DM->getNumMaterials();
+            for ( uint32_t matIndex = 0; matIndex < numMaterials; matIndex++ ) {
+                Material *pMaterial =
+                    pRender2DM->getMaterialAtIndex( matIndex );
+                if ( pMaterial == nullptr || pMaterial->NumParams == 0 ) {
+                    continue;
+                }
 
-            const uint64_t guid = pParam->Hashcode;
-            const bool bGroupA = ( guid == 0x183157b81c6c7357ull ||
-                                   guid == 0xc288dfc455ae5ef8ull ||
-                                   guid == 0x1b38348331d3942aull );
-            const bool bGroupB = ( guid == 0xb39c35015789e65cull ||
-                                   guid == 0xcab12190a00d5c4eull ||
-                                   guid == 0x69f07f72719bf862ull );
+                MaterialParameter *pParam = pMaterial->getParameterByIndex( 0 );
+                if ( pParam->Type != eMaterialParameterType::MPT_Generic ) {
+                    continue;
+                }
 
-            const bool bGroupBAllowed =
-                bGroupB &&
-                ( type == eType::VBT_Bike || pResource != &interiorResource );
+                const uint64_t guid = pParam->Hashcode;
+                const bool bGroupA = ( guid == 0x183157b81c6c7357ull ||
+                                       guid == 0xc288dfc455ae5ef8ull ||
+                                       guid == 0x1b38348331d3942aull );
+                const bool bGroupB = ( guid == 0xb39c35015789e65cull ||
+                                       guid == 0xcab12190a00d5c4eull ||
+                                       guid == 0x69f07f72719bf862ull );
 
-            if ( ( bGroupA || bGroupBAllowed ) &&
-                 pParam->Flags.bUsingReflection ) {
-                if ( RebindReflectionTexture( pParam, cubemapHash,
-                                              pCubemapSection, cubemapBHash,
-                                              pCubemapBSection ) ) {
-                    pParam->Flags.pCustomFlags[2] = param_2;
-                    gpRenderContext->retrieveShadersForMaterial( pMaterial, 0 );
+                const bool bGroupBAllowed =
+                    bGroupB && ( type == eType::VBT_Bike ||
+                                 pResource != &interiorResource );
+
+                if ( ( bGroupA || bGroupBAllowed ) &&
+                     pParam->Flags.bUsingReflection ) {
+                    if ( RebindReflectionTexture( pParam, cubemapHash,
+                                                  pCubemapSection, cubemapBHash,
+                                                  pCubemapBSection ) ) {
+                        pParam->Flags.pCustomFlags[2] = param_2;
+                        gpRenderContext->retrieveShadersForMaterial( pMaterial,
+                                                                     0 );
+                    }
                 }
             }
         }
@@ -1653,54 +1659,29 @@ void VehicleBase::buildCarAlphaInstances() {
     // FUN_008b9d40
     alphaInstances.clear();
 
-    if ( displayInstances.empty() || bNeedToUnstream ) {
+    HiearchyNode *pNode =
+        ( !bNeedToUnstream ) ? displayInstances[0].pNode : nullptr;
+    if ( displayInstances.empty() || pNode == nullptr ) {
         bAlphaCacheInUse = true;
         return;
     }
 
-    HiearchyNode *peVar4 = nullptr;
-    if ( !bNeedToUnstream ) {
-        peVar4 = displayInstances[0].pNode;
-    } else {
-        peVar4 = nullptr;
-    }
-
-    if ( peVar4 == nullptr ) {
-        bAlphaCacheInUse = true;
-        return;
-    }
-
-    do {
-        Instance *peVar1 = peVar4->pInstance;
-        if ( peVar1 != nullptr ) {
-            bool bVar3 = true;
-
-            for ( uint32_t iVar6 = 0; iVar6 < 0x3c; iVar6++ ) {
-                uint32_t ppeVar5 = 1 + iVar6 * 6;
-                if ( !bVar3 || peVar1 == flares[ppeVar5 - 1] ||
-                     peVar1 == flares[ppeVar5] ||
-                     peVar1 == flares[ppeVar5 + 1] ||
-                     peVar1 == flares[ppeVar5 + 2] ||
-                     peVar1 == flares[ppeVar5 + 3] ) {
-                    bVar3 = false;
-                    break;
-                }
-
-                if ( peVar1 == flares[ppeVar5 + 4] ) {
-                    bVar3 = false;
-                }
-            }
-
-            if ( bVar3 ) {
-                alphaInstances.push_front( peVar1 );
-            }
+    for ( ; pNode != nullptr; pNode = pNode->pNext ) {
+        Instance *pInstance = pNode->pInstance;
+        if ( pInstance != nullptr && std::find( flares.begin(), flares.end(),
+                                                pInstance ) == flares.end() ) {
+            alphaInstances.push_front( pInstance );
         }
-        peVar4 = peVar4->pNext;
-        if ( peVar4 == nullptr ) {
-            bAlphaCacheInUse = true;
-            return;
+    }
+    bAlphaCacheInUse = true;
+}
+
+void VehicleBase::appendCarAlphaInstances( HiearchyNode *pNode ) {
+    for ( ; pNode != nullptr; pNode = pNode->pNext ) {
+        if ( pNode->pInstance != nullptr ) {
+            alphaInstances.push_front( pNode->pInstance );
         }
-    } while ( true );
+    }
 }
 
 void VehicleBase::setRVModelMatrix( Matrix4x4f_t &modelMatrix ) {

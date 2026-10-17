@@ -627,8 +627,10 @@ static void ApplyAxleDiff( const PhysicsDifferentialSim &d,
     }
 }
 
-static void
-StepEngineState( PhysicsEngineSim &e, float dt, bool bAdvanceTimers ) {
+static void StepEngineState( PhysicsEngineSim &e,
+                             const PhysicsConfig &config,
+                             float dt,
+                             bool bAdvanceTimers ) {
     // FUN_0043f660
     if ( !gVehicleEngineStateMachine ) {
         e.State = eEngineState::ES_Running; // debug: always-on
@@ -688,8 +690,8 @@ StepEngineState( PhysicsEngineSim &e, float dt, bool bAdvanceTimers ) {
     }
 
     const float inertia = ( e.TorqueOut <= e.SmoothedTorque )
-                              ? gPhysicsConfig.TorqueInertiaDown
-                              : gPhysicsConfig.TorqueInertiaUp;
+                              ? config.TorqueInertiaDown
+                              : config.TorqueInertiaUp;
     const float netTorque = e.TorqueOut - e.FrictionLoss * e.Omega;
     e.SmoothedTorque += ( netTorque - e.SmoothedTorque ) * ( 1.0f - inertia ) *
                         dt * kTorqueSmoothRate;
@@ -1248,7 +1250,7 @@ static void StepPowertrainSubstep( PhysicsVehicleState &v,
     PhysicsGearboxSim &g = v.GearBox;
     PhysicsClutchSim &c = v.Clutch;
 
-    StepEngineState( e, h, false );
+    StepEngineState( e, *v.pConfig, h, false );
     if ( gVehicleEngineStateMachine && e.State == eEngineState::ES_Crank ) {
         g.CurrentGear = 1;
     }
@@ -1314,7 +1316,7 @@ static void StepPowertrainSubstep( PhysicsVehicleState &v,
         c.Target = 0.0f;
     }
 
-    StepEngineState( e, h, true );
+    StepEngineState( e, *v.pConfig, h, true );
 
     const int gear = ClampedGear( g );
     const bool neutral = ( gear == 1 );
@@ -1327,6 +1329,24 @@ static void StepPowertrainSubstep( PhysicsVehicleState &v,
     v.CouplingTorque = coupling;
     v.ClutchEngage = engage;
     v.DiffInputTorque = gearboxOut;
+
+    if ( v.bBike ) {
+        // Type 1: the gearbox drives the rear wheel directly, and the rear
+        // wheel keeps the engine inertia in neutral (through 1st gear).
+        const float kRear =
+            neutral
+                ? ( ( g.NumGears >= 3 ) ? g.Ratios[2] * g.FinalDrive : 0.0f )
+                : k;
+        for ( int i = 0; i < v.NumWheels; ++i ) {
+            PhysicsWheelState &w = v.Wheels[i];
+            w.DriveTorque = 0.0f;
+            w.ReflectedInertia = w.bDriven ? kRear * kRear * Idl : 0.0f;
+            if ( w.bDriven && !neutral ) {
+                w.DriveTorque = gearboxOut;
+            }
+        }
+        return;
+    }
 
     float reflectedInertia = k * k * Idl + g.DiffInertia;
     if ( v.bCenterDrive ) {
@@ -1382,8 +1402,17 @@ static void StepWheelSubstep( PhysicsVehicleState &v,
 
     const float brakeSign = ( w.AngularVel > 0.0f ) ? 1.0f : -1.0f;
     w.BrakeCmdTorque = -brakeSign * in.Brake * w.BrakeTorque;
-    w.HandbrakeCmdTorque =
-        bHandbrakeWheel ? -brakeSign * in.Handbrake * v.BrakeTorque : 0.0f;
+    if ( v.bBike ) {
+        w.HandbrakeCmdTorque =
+            bHandbrakeWheel ? -brakeSign * in.Handbrake * v.HandbrakeTorque
+                            : 0.0f;
+        if ( w.HandbrakeCmdTorque > 1.0f ) {
+            w.BrakeCmdTorque = 0.0f;
+        }
+    } else {
+        w.HandbrakeCmdTorque =
+            bHandbrakeWheel ? -brakeSign * in.Handbrake * v.BrakeTorque : 0.0f;
+    }
 
     ComputeTireForces( w, vehicleMatrix );
 
@@ -1416,7 +1445,11 @@ static void UpdateCouplingFeedback( PhysicsVehicleState &v ) {
     // FUN_0043aba0 (inlined)
     float omega = 0.0f;
     float reaction = 0.0f;
-    if ( v.NumWheels >= 4 && v.bCenterDrive ) {
+    if ( v.bBike ) {
+        const PhysicsWheelState &rear = v.Wheels[v.NumWheels - 1];
+        reaction = rear.NetTorque;
+        omega = rear.AngularVel;
+    } else if ( v.NumWheels >= 4 && v.bCenterDrive ) {
         const float cs = v.DiffCenter.SplitRatio;
         float omegaF, reactF, omegaR, reactR;
         AxleFeedback( v.Wheels[0], v.Wheels[1], v.DiffInputTorque * cs, omegaF,
@@ -1539,14 +1572,14 @@ static float ComputeElectronicPowerCoef( const PhysicsVehicleState &v,
     if ( bSimuMode ) {
         return 1.0f;
     }
-    return EvalHelpCurve( gPhysicsConfig.ElectronicPowerCoefX,
-                          gPhysicsConfig.ElectronicPowerCoefY,
-                          v.Engine.PeakTorque, 1.0f );
+    return EvalHelpCurve( v.pConfig->ElectronicPowerCoefX,
+                          v.pConfig->ElectronicPowerCoefY, v.Engine.PeakTorque,
+                          1.0f );
 }
 
 void StepElectronics( PhysicsVehicleState &v, const ElectronicsInput &in ) {
     // FUN_0041b920
-    const PhysicsConfig &c = gPhysicsConfig;
+    const PhysicsConfig &c = *v.pConfig;
     const float speed = in.Speed;
     const int32_t slot = ( !v.bCenterDrive && v.bFrontDrive ) ? 0 : 1;
 

@@ -98,6 +98,8 @@ struct CarBodyState {
     uint8_t bIsBike : 1;
     uint8_t bBikeIdle : 1;
     uint8_t bHasBikeAvatar : 1;
+    uint8_t bBikeRiderOnGround : 1;
+    uint8_t bBikeRiderMoving : 1;
 
     CarBodyState()
         : bInitialized( false ),
@@ -116,7 +118,9 @@ struct CarBodyState {
           bHasBrokenPart( false ),
           bIsBike( false ),
           bBikeIdle( false ),
-          bHasBikeAvatar( false ) {}
+          bHasBikeAvatar( false ),
+          bBikeRiderOnGround( false ),
+          bBikeRiderMoving( false ) {}
 
     int32_t WindowState;
     int32_t Gears;
@@ -129,8 +133,9 @@ struct CarBodyState {
     int32_t NumWheelsGrounded;
 
     float GearShiftTimer;
-    float BikeLeanLateral;
-    float BikeLeanLongitudinal;
+    float BikeLeanLateral = 0.0f;
+    float BikeLeanInput = 0.0f;
+    float BikeLeanLongitudinal = 0.0f;
     float SteeringRaw;
 
     // Inputs.
@@ -147,10 +152,10 @@ struct CarBodyState {
     bool bIgnitionOnce; // press while running = cut off
     bool bBackOnTrackRequest;
 
-    Eigen::Vector4f Shaking;
-    Eigen::Vector4f BikeVelocity;
-    Matrix4x4f_t WorldBikeMatrix;
-    Matrix4x4f_t BikeHelmetMatrix;
+    Eigen::Vector4f Shaking = Eigen::Vector4f::Zero();
+    Eigen::Vector4f BikeRiderVelocity = Eigen::Vector4f::Zero();
+    Matrix4x4f_t BikeRiderMatrix = Matrix4x4f_t::Identity();
+    Matrix4x4f_t BikerHeadMatrix = Matrix4x4f_t::Identity();
 
     Eigen::Vector4f PositionOnRoad;
     Eigen::Vector4f PrevPositionOnRoad;
