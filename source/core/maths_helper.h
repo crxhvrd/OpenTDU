@@ -56,7 +56,7 @@ static Eigen::Vector4f Vector4DLerp( const Eigen::Vector4f &param_2,
                                      const float t ) {
 
     // FUN_00412520
-    return param_2 * ( 1.0f - t ) + param_3 * t;
+    return param_2 * t + param_3 * ( 1.0f - t );
 }
 
 static Eigen::Vector4f &Vector4DSaturate( Eigen::Vector4f &vec1 ) {

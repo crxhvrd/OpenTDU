@@ -81,7 +81,6 @@ void SceneLiving::tick( float /*deltaTime*/, float /*totalTime*/ ) {
     }
 
     content.tick();
-    content.draw();
 }
 
 void SceneLiving::draw() {

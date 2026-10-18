@@ -56,26 +56,42 @@ Copy the opentdu binary and EURO folder content (**must be merged with your orig
 | -verbose | Enable verbose (aka Debug) logging. Adds significant runtime overhead |
 | -maxfps (fps) | Set framecap (0: unlimited) (default: 0) |
 
-## Debug Menu
-Debug Menu can be toggled with the *F1* key.
+## Debug Shortcuts
+- F1 - Engine debug menu (services + managers)
+- F2 - Pause simulation
+- F3 - Active game mode debug menu
 
 ## Project progress
 Progress is tracked on a game mode basis:
-| GameMode  | Status |
+| GameMode ID  | GameMode  | Status |
 | -----------  | ----------- |
-| VideoBumper|**Done**|
-| CarShowCase|**Done**|
-| Sandbox|**Done**|
-| Login|**Done**|
-| CinViewer|**Done**|
-| BoatTour|**Done**|
-| Garage|**Done**|
-| Dressing|**Done**|
-| Jail|**Done**|
-| AvatarShowcase|**Done**|
-| Map|**Done**|
-| Aftermarket|**Done**|
-| Living|**In Progress**|
-| FreeRide|**In Progress**|
-| Shop|**In Progress**|
-| TestCar|**In Progress**|
+| 1| FreeRide|**Done**|
+| 2| Map|**Done**|
+| 3| Home|**Done**|
+| 4| Shop|**Done**|
+| 5| Mission|**In Progress**|
+| 6| GameModeEdit|**In Progress**|
+| 7| CarShowCase|**Done**|
+| 8| InstantChallenge|**In Progress**|
+| 9| TestCar|**Done**|
+| 10| Garage|**Done**|
+| 11| Living|**Done**|
+| 12| Sandbox|**Done**|
+| 13| Goodies|**Done**|
+| 14| AvatarShowcase|**Done**|
+| 15| DriveIn|**In Progress**|
+| 16| Dressing|**Done**|
+| 17| Aftermarket|**Done**|
+| 18| VideoBumper|**Done**|
+| 19| AITrainer|**In Progress**|
+| 20| CinViewer|**Done**|
+| 21| Estates|**Done**|
+| 22| Club|**In Progress**|
+| 23| Lobby|**In Progress**|
+| 24| Login|**Done**|
+| 25| OnlineReplay|**In Progress**|
+| 26| Intro|**In Progress**|
+| 27| OutroDemo|**In Progress**|
+| 28| BoatTour|**Done**|
+| 29| Jail|**Done**|
+| 30| IntroDemo|**In Progress**|

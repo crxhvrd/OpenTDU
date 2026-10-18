@@ -4,6 +4,7 @@
 #include "game/vehicle/car_desc.h"
 
 class edStore;
+struct DBEntryHouse;
 
 int32_t GetHouseNumGarageSlots( const uint64_t houseHashcode );
 
@@ -57,6 +58,8 @@ public:
 
     bool isHouseOwned( const uint64_t houseHashcode ) const;
     int32_t getNumOwnedHouses() const;
+    const DBEntryHouse *getOwnedHouse( int32_t index ) const;
+    int32_t getNumGarageSlots() const;
 
     bool addHouse( const uint64_t houseHashcode );
     void removeHouse( const uint64_t houseHashcode );

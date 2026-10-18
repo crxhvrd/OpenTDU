@@ -22,10 +22,12 @@ public:
     void unstream() override;
 
     void instantiate( CarState *pCarState, StreamedInBankVehicle *pExterior );
+    void setLogoVariant( const int32_t variant );
 
 private:
     static constexpr int32_t kNumMaterials = 0x1d;
     static constexpr int32_t kNumShaderParams = 6;
+    static constexpr int32_t kNumLogoVariants = 3;
 
 private:
     Material *pMaterialLogo;

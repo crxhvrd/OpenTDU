@@ -148,7 +148,6 @@ void GMCinViewer::tick( float deltaTime, float totalTime ) {
 
     if ( pInteriorScene != nullptr ) {
         pInteriorScene->tick();
-        pInteriorScene->draw();
     }
 
     if ( bPlayRequested ) {

@@ -85,7 +85,9 @@
 #include "game/login/gm_login.h"
 #include "game/garage/gm_garage.h"
 #include "game/aftermarket/gm_aftermarket.h"
+#include "game/estates/gm_estates.h"
 #include "game/living/gm_living.h"
+#include "game/intro/gm_intro.h"
 #include "game/shop/gm_shop.h"
 #include "game/test_car/gm_test_car.h"
 #include "game/scene_interior.h"
@@ -549,6 +551,11 @@ void TestDriveGameInstance::mainLoop() {
                 sizeof( GMAfterMarket ), alignof( GMAfterMarket ) );
             pGVar6 = new ( pGameModeAlloc ) GMAfterMarket();
             break;
+        case GM_Estates:
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMEstates ),
+                                                      alignof( GMEstates ) );
+            pGVar6 = new ( pGameModeAlloc ) GMEstates();
+            break;
         case GM_Login:
             if ( gbResetServicesOnLogin ) {
                 pauseAndResetServices();
@@ -607,6 +614,11 @@ void TestDriveGameInstance::mainLoop() {
                                                       alignof( GMTestCar ) );
             pGVar6 = new ( pGameModeAlloc ) GMTestCar();
             break;
+        case GM_Intro:
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMIntro ),
+                                                      alignof( GMIntro ) );
+            pGVar6 = new ( pGameModeAlloc ) GMIntro();
+            break;
         case GM_Living:
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLiving ),
                                                       alignof( GMLiving ) );
@@ -627,11 +639,16 @@ void TestDriveGameInstance::mainLoop() {
 
         if ( activeGameMode != GM_VideoBumper ) {
             const bool bIsLogin = activeGameMode == GM_Login;
+            const bool bIsIntro = activeGameMode == GM_Intro;
 
             pGVar6->mainLoop( this );
 
             pGVar6->~GameMode();
             TestDrive::FreeAligned( pGameModeAlloc );
+
+            if ( bIsIntro ) {
+                EnableWorldSpotStreaming();
+            }
 
             if ( bIsLogin ) {
                 gbResetServicesOnLogin = activeGameMode != GM_VideoBumper;

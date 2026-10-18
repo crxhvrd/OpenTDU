@@ -14,6 +14,8 @@ class MngReflection : public Manager {
 public:
     const char *getName() const override { return "Reflection"; }
     inline RenderScene *getBoundScene() { return pScene; }
+    inline const Eigen::Vector3f &getPlaneNormal() const { return planeNormal; }
+    inline float getPlaneOffset() const { return planeOffset; }
 
 public:
     MngReflection();

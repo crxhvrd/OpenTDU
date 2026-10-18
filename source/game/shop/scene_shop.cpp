@@ -248,7 +248,6 @@ void SceneShop::terminate() {
 void SceneShop::tick( float deltaTime ) {
     // FUN_00773030
     content.tick();
-    content.draw();
 
     carPark.tick( deltaTime );
 

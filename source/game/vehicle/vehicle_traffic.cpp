@@ -5,11 +5,13 @@
 #include "car_state.h"
 #include "physics/vehicle/physics_vehicle.h"
 
+#include "render/2db.h"
 #include "render/instance.h"
 #include "render/material.h"
 #include "render/render_context.h"
 
 #include "gs_car_state.h"
+#include "gs_car_common.h"
 #include "gs_car_display.h"
 
 #include "render/camera/gs_camera.h"
@@ -605,8 +607,7 @@ void VehicleTraffic::setupMaterials() {
                     MaterialParameter *peVar10 =
                         pMaterialInstances[j]->getParameterByIndex( 0 );
                     if ( peVar10 != nullptr &&
-                         peVar10->Hashcode !=
-                             0x31d6646666383483 ) { // TODO: Might need to flip
+                         peVar10->Hashcode != 0x6638348331d66466 ) {
                         pMaterialInstances[j] = nullptr;
                     }
                 }
@@ -760,10 +761,10 @@ void VehicleTraffic::setupMaterials() {
 
                     for ( uint32_t uVar16 = 0; uVar16 < 6; uVar16++ ) {
                         float *dstData =
-                            (float *)peVar10->getParameterByIndex( uVar16 );
+                            (float *)peVar10->getParameterDataByIndex( uVar16 );
                         float *srcData =
                             (float *)( (MaterialShaderParameterArray *)peVar11 )
-                                ->getParameterByIndex( uVar16 );
+                                ->getParameterDataByIndex( uVar16 );
                         dstData[0] = srcData[0];
                         dstData[1] = srcData[1];
                         dstData[2] = srcData[2];
@@ -912,6 +913,29 @@ void VehicleTraffic::setupLogo() {
             break;
         }
     }
+}
+
+void VehicleTraffic::setLogoVariant( const int32_t variant ) {
+    // FUN_008c14b0
+    static constexpr const char *kLogoVariantNames[kNumLogoVariants] = {
+        "SWITCH1", "SWITCH2", "SWITCH3" }; // PTR_s_SWITCH1_00fab498
+
+    if ( variant >= kNumLogoVariants || pMaterialLogo == nullptr ) {
+        return;
+    }
+
+    Render2DB *pLogo = gpCarCommon->getRender2DB(
+        GetIdentifier64bit( kLogoVariantNames[variant] ) );
+    if ( pLogo == nullptr || pLogo->getBitmapSection() == nullptr ) {
+        return;
+    }
+
+    MaterialParameter *pParameter = pMaterialLogo->getParameterByIndex( 0 );
+    if ( pParameter->NumLayers == 0 ) {
+        return;
+    }
+    pParameter->getLayer( 0 )->pLayerTextures[0].pTextureSection =
+        pLogo->getBitmapSection();
 }
 
 void VehicleTraffic::updateDamageLogic() {
@@ -1217,8 +1241,8 @@ void VehicleTraffic::onPaintChanged() {
         ppeVar8->EmissiveColor = ppeVar9->EmissiveColor;
 
         for ( int32_t j = 0; j < 6; j++ ) {
-            float *puVar4 = (float *)peVar1->getParameterByIndex( j );
-            float *puVar3 = (float *)peVar2->getParameterByIndex( j );
+            float *puVar4 = (float *)peVar1->getParameterDataByIndex( j );
+            float *puVar3 = (float *)peVar2->getParameterDataByIndex( j );
 
             *puVar4 = *puVar3;
             puVar4[1] = puVar3[1];

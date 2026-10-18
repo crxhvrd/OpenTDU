@@ -4322,7 +4322,7 @@ void PhysicsVehicle::tick( float deltaTime ) {
         updatePhantomMode( deltaTime );
     }
     // FUN_0083db70 (inlined)
-    if ( !bHasBrokenPart && !attachedParts.empty() ) {
+    if ( !bPausePhysics && !bHasBrokenPart && !attachedParts.empty() ) {
         bHasBrokenPart = gpPhysics->hasBrokenVehiclePart( *this );
     }
 

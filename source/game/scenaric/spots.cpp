@@ -1068,10 +1068,15 @@ void Spots::spawnSectorSpotMeshes( Sector *pSector, SpotsList &slot ) {
             continue;
         }
 
-        // TODO: PLAYERSAVE — query gGSPlayerData's loaded save garage here.
         const int32_t spotType = pWorld->Type;
-        const int32_t ownedFlag =
-            ( spotType == 0 ) ? 1 : static_cast<int32_t>( pWorld->SubType );
+        int32_t ownedFlag = static_cast<int32_t>( pWorld->SubType );
+        if ( spotType == 0 ) {
+            ownedFlag =
+                gpPlayerData->getLoadedSave()->getGarage()->isHouseOwned(
+                    pWorld->Hashcode )
+                    ? 0
+                    : 1;
+        }
 
         Entity *pTemplate = selectSpotTemplate( meshBank, spotType, ownedFlag );
         if ( pTemplate == nullptr ) {

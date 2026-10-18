@@ -56,7 +56,7 @@ void SceneGarage::loadBank( const bool bReentry ) {
     }
 
     if ( interiorBank.isLoaded() ) {
-        enter( &interiorBank, false );
+        enter( &interiorBank, bReentry );
 
         if ( gpPlayerData->getLoadedSave()->getGarage()->isValid() ) {
             gpCamera->setMouseCam( false );
@@ -74,14 +74,11 @@ void SceneGarage::terminate() {
 
 void SceneGarage::tick() {
     // FUN_00775cf0
-    // TODO: FIXME: The scene is re-enqueued every frame (see
-    // SceneInterior::draw).
     if ( !isEntered() ) {
         loadBank( bBankReentry );
     }
 
     SceneInterior::tick();
-    draw();
 }
 
 void SceneGarage::setupCamera() {

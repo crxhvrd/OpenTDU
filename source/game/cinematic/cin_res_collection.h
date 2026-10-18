@@ -21,14 +21,18 @@ struct CinematicActor {
         CAK_PlayerCar = 1, // PLAYER_CAR; pEntity stays null, see pCarState
         CAK_Plane = 2,     // pEntity is the live GSAircraft instance (Interface
                        // pPlane); owned by GSAircraft, never cloned or freed
+        CAK_TrafficCar = 3, // TRAFFICCAR_<id>; spawned for the cinematic,
+                            // see pCarState
     };
 
     char Name[32];
     void *pEntity; // the bound EntityActor / avatar (null until spawned)
-    CarState *pCarState = nullptr; // CAK_PlayerCar: the car driven (+0x1c)
+    CarState *pCarState = nullptr; // CAK_PlayerCar / CAK_TrafficCar: the car
+                                   // driven (+0x1c)
     const void *pSceneData;        // this actor's CinScene media descriptor
     eKind Kind = CAK_Entity;
     bool bInstanced = false;
+    bool bCarTeleport = true;
     int32_t AvatarRefCount = 0;
     uint64_t Hashcode = 0;
     Matrix4x4f_t TrackMatrix = Matrix4x4f_t::Identity();
@@ -184,6 +188,7 @@ public:
 
     void reset();
     void releasePlayerCarActors();
+    void releaseTrafficCarActors();
     void bindPlayerCar( CarState *pCarState );
     void releasePlayerCarActor( const int32_t index );
 
@@ -202,6 +207,15 @@ public:
 
     void tick( float time, float deltaTime );
     void resolveRefCamera();
+
+    bool areActorsValid() const;
+    void *findActorEntity( const char *pName );
+    void setVeryFarScene( const bool bEnabled );
+    inline void setCameraShake( const float amplitude, const float speed ) {
+        cameraShake.Amplitude = amplitude;
+        cameraShake.Speed = speed;
+        cameraShake.bEnabled = true;
+    }
 
 private:
     struct CinRefSlot {
@@ -255,8 +269,9 @@ private:
                         const Eigen::Vector3f &scale,
                         bool bHasTransformTrack );
     void applySpawnTail( Entity *pEntity );
-    void applyPlayerCarTransform( CarState *pCarState,
-                                  const Matrix4x4f_t &transform );
+    void applyCarTransform( CarState *pCarState,
+                            const Matrix4x4f_t &transform,
+                            bool &bTeleport );
     void applyCameraTransform( const CinMediaContext *pCtx,
                                int32_t transformType,
                                const Eigen::Vector3f &position,
@@ -317,6 +332,7 @@ private:
                             bool bBikeClothes );
     void *findSceneActorByName( const char *pName );
     void *spawnPlayerCar();
+    void *spawnTrafficCar( const char *pName );
     void *spawnPnjAvatar( const char *pPnjName, uint64_t hashcode );
     void registerLifeSetActor( uint64_t hashcode );
 

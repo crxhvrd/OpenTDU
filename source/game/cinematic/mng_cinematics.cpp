@@ -244,7 +244,10 @@ void MngCinematics::removeCinematic( EntityCinematic *pCinematic ) {
                 numCinematics--;
             }
             pSlot = nullptr;
-            OTDU_UNIMPLEMENTED; // TODO: SCENARIC
+            CinematicPlayer *pGMInterface = pCinematic->getGameModeInterface();
+            if ( pGMInterface != nullptr ) {
+                pGMInterface->executeAction( CE_Removed, pCinematic );
+            }
             return;
         }
     }

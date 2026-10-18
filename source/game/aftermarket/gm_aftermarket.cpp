@@ -42,7 +42,6 @@ void GMAfterMarket::tick( float deltaTime, float totalTime ) {
     GameModeScene::tick( deltaTime, totalTime );
 
     sceneAfterMarket.getContent().tick();
-    sceneAfterMarket.getContent().draw();
 
     sceneAfterMarket.getCarPark().tick( deltaTime );
 }

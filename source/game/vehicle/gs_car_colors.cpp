@@ -54,7 +54,7 @@ GetMaterialDominantColorCarMaterial( Material *pMaterial ) {
     Eigen::Vector4f color = MakeStaticParamColor( pFirstColor );
 
     if ( pSecondColor != nullptr && pBlendFactor != nullptr ) {
-        color = Vector4DLerp( color, MakeStaticParamColor( pSecondColor ),
+        color = Vector4DLerp( MakeStaticParamColor( pSecondColor ), color,
                               pBlendFactor[0] * kSpecularContribution );
     }
 
@@ -79,8 +79,8 @@ static Eigen::Vector4f GetMaterialDominantColorCarPaint( Material *pMaterial ) {
     }
 
     Eigen::Vector4f color =
-        Vector4DLerp( MakeStaticParamColor( pFirstColor ),
-                      MakeStaticParamColor( pSecondColor ),
+        Vector4DLerp( MakeStaticParamColor( pSecondColor ),
+                      MakeStaticParamColor( pFirstColor ),
                       pBlendFactor[0] * kSpecularContribution );
 
     color += pMaterial->SpecularColor * kSpecularContribution;

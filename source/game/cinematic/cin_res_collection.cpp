@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "cin_res_collection.h"
 
+#include "ai/ai_pool.h"
+#include "ai/gs_ai.h"
 #include "tdu_instance.h"
 
 #include "game/cinematic/cinematic_music_emitter.h"
@@ -24,7 +26,9 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/gm_scene.h"
+#include "game/intro/gm_intro.h"
 #include "game/vehicle/gs_car_state.h"
+#include "game/vehicle/vehicle_traffic.h"
 #include "game/vehicle/gs_car_display.h"
 #include "game/vehicle/vehicle_controller.h"
 #include "audio/vehicle/gs_vehicle_sound.h"
@@ -358,12 +362,34 @@ void CinResCollection::releasePlayerCarActors() {
     }
 }
 
+void CinResCollection::releaseTrafficCarActors() {
+    // FUN_007e5f70
+    for ( int32_t i = 0; i < numActors; i++ ) {
+        CinematicActor &actor = actors[i];
+        if ( actor.Kind != CinematicActor::CAK_TrafficCar ||
+             actor.pCarState == nullptr ) {
+            continue;
+        }
+
+        PhysicsVehicle *pVehicle = actor.pCarState->getPhysicsVehicle();
+        if ( pVehicle != nullptr ) {
+            PhysicsLock lock;
+            pVehicle->setCinematicMode( false );
+        }
+        if ( gpCarState != nullptr ) {
+            gpCarState->releaseCarState( actor.pCarState, false );
+        }
+        actor.pCarState = nullptr;
+    }
+}
+
 void CinResCollection::reset() {
     // FUN_007e23c0
     numAvatars = 0;
     numHostesses = 0;
 
     releasePlayerCarActors();
+    releaseTrafficCarActors();
     releaseCinematicCamera();
     pCinematicData = nullptr;
     pRefData = nullptr;
@@ -864,6 +890,7 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
         return;
     }
     if ( pActor->Kind != CinematicActor::CAK_PlayerCar &&
+         pActor->Kind != CinematicActor::CAK_TrafficCar &&
          pActor->pEntity == nullptr ) {
         return;
     }
@@ -925,9 +952,26 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
         transform = transform * baseMatrix;
     }
 
+    if ( pActor->Kind == CinematicActor::CAK_TrafficCar ) {
+        if ( bHasTransformTrack ) {
+            applyCarTransform( pActor->pCarState, transform,
+                               pActor->bCarTeleport );
+        }
+        PhysicsVehicle *pVehicle = ( pActor->pCarState != nullptr )
+                                       ? pActor->pCarState->getPhysicsVehicle()
+                                       : nullptr;
+        if ( pVehicle != nullptr ) {
+            PhysicsLock lock;
+            pActor->DisplayMatrix =
+                pVehicle->computeDisplayMatrix( pVehicle->getPhysicsMatrix() );
+        }
+        return;
+    }
+
     if ( pActor->Kind == CinematicActor::CAK_PlayerCar ) {
         if ( bHasTransformTrack ) {
-            applyPlayerCarTransform( pActor->pCarState, transform );
+            applyCarTransform( pActor->pCarState, transform,
+                               bPlayerCarTeleport );
         }
 
         CarState *pPlayerCar = pActor->pCarState;
@@ -1661,6 +1705,7 @@ bool CinResCollection::resolveActorRefPoint( const CinematicActor *pActor,
     Eigen::Vector4f refPoint = Eigen::Vector4f::Zero();
     switch ( pActor->Kind ) {
     case CinematicActor::CAK_PlayerCar:
+    case CinematicActor::CAK_TrafficCar:
         bOutDeferred = true;
         if ( !FindCarRefNodePoint( pActor->pCarState, pName, refPoint ) ) {
             return false;
@@ -2207,7 +2252,8 @@ void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
     }
 
     CarState *pPlayerCar = nullptr;
-    if ( kind == CinematicActor::CAK_PlayerCar ) {
+    if ( kind == CinematicActor::CAK_PlayerCar ||
+         kind == CinematicActor::CAK_TrafficCar ) {
         pPlayerCar = static_cast<CarState *>( pEntity );
         pEntity = nullptr;
     }
@@ -2284,6 +2330,34 @@ CinematicActor *CinResCollection::findActor( const char *pName ) {
         }
     }
     return nullptr;
+}
+
+void *CinResCollection::findActorEntity( const char *pName ) {
+    CinematicActor *pActor = findActor( pName );
+    return ( pActor != nullptr ) ? pActor->pEntity : nullptr;
+}
+
+bool CinResCollection::areActorsValid() const {
+    // FUN_007e0a00
+    for ( int32_t i = 0; i < numActors; i++ ) {
+        const CinematicActor &actor = actors[i];
+        if ( actor.Kind != CinematicActor::CAK_Entity ||
+             actor.pEntity == nullptr ) {
+            continue;
+        }
+        if ( !static_cast<const Entity *>( actor.pEntity )->isValid() ) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void CinResCollection::setVeryFarScene( const bool bEnabled ) {
+    if ( bEnabled ) {
+        zConfigVeryFar = { 100.0f, 40000.0f };
+    }
+    bVeryFarScene = bEnabled;
+    applyZConfig( { 0.1f, -1.0f } );
 }
 
 CinematicActor *CinResCollection::registerActor( const char *pName,
@@ -2376,15 +2450,34 @@ void *CinResCollection::spawnActorEntity( const char *pName,
         if ( std::strstr( pName, "AvatarM_" ) != nullptr ||
              std::strstr( pName, "AvatarF_" ) != nullptr ) {
             if ( std::strstr( pName, "_Intro" ) != nullptr &&
-                 gpTestDriveInstance != nullptr &&
-                 gpTestDriveInstance->getActiveGameMode() == GM_Intro ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO (FUN_0076b410)
-                return nullptr;
+                 gpGMIntro != nullptr ) {
+                int32_t introAvatarIndex = 0;
+                if ( std::strstr( pName, "_IntroMoto" ) != nullptr ) {
+                    introAvatarIndex = 1;
+                } else if ( std::strstr( pName, "_IntroSG" ) != nullptr ) {
+                    introAvatarIndex = 2;
+                }
+
+                EntityAvatar *pIntroAvatar =
+                    gpGMIntro->addIntroAvatarReference( introAvatarIndex );
+                if ( pIntroAvatar != nullptr ) {
+                    OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO (driver setup,
+                                             // FUN_007ebe50 / FUN_007ebe80)
+                }
+                return pIntroAvatar;
             }
 
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (FUN_008f5f90)
-            return spawnNamedAvatar( nullptr, GetIdentifier64bit( pName ),
-                                     false );
+            char avatarName[128];
+            strncpy( avatarName, pName, sizeof( avatarName ) - 1 );
+            avatarName[sizeof( avatarName ) - 1] = '\0';
+
+            AvatarConfiguration styleConfig;
+            const AvatarConfiguration *pStyleConfig = nullptr;
+            if ( gpAvatar->loadStyleConfiguration( styleConfig, avatarName ) ) {
+                pStyleConfig = &styleConfig;
+            }
+            return spawnNamedAvatar( pStyleConfig,
+                                     GetIdentifier64bit( avatarName ), false );
         }
         if ( std::strncmp( pName, "Seller", 6 ) == 0 ) {
             return spawnAvatar( eEntityType::ET_AVAT, hashcode, pName );
@@ -2409,8 +2502,11 @@ void *CinResCollection::spawnActorEntity( const char *pName,
         }
 
         if ( std::strncmp( "TRAFFICCAR", pName, 10 ) == 0 ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
-            return nullptr;
+            void *pCar = spawnTrafficCar( pName );
+            if ( pCar != nullptr ) {
+                outKind = CinematicActor::CAK_TrafficCar;
+            }
+            return pCar;
         }
 
         if ( std::strstr( pName, "PLANE" ) != nullptr ) {
@@ -2445,6 +2541,48 @@ void *CinResCollection::findSceneActorByName( const char *pName ) {
     }
 
     return nullptr;
+}
+
+void *CinResCollection::spawnTrafficCar( const char *pName ) {
+    // FUN_007e6cb0
+    static constexpr int32_t kDefaultTrafficCarID = 0x7da;
+    static constexpr int32_t kCinematicLogoVariant = 1; // SWITCH2
+
+    char name[0x32] = {};
+    std::strncpy( name, pName, sizeof( name ) - 1 );
+
+    int32_t carID = kDefaultTrafficCarID;
+    const char *pSeparator = std::strrchr( name, '_' );
+    if ( pSeparator != nullptr ) {
+        const int32_t parsedID = std::atoi( pSeparator + 1 );
+        if ( parsedID != 0 ) {
+            carID = parsedID;
+        }
+    }
+
+    VehicleBaseResources *pResource =
+        gpAI->getAIPool()->getTraffic().getTemplateResource( carID );
+    if ( pResource == nullptr || gpCarState == nullptr ) {
+        return nullptr;
+    }
+
+    VehicleSpawnParams params;
+    params.bCinematicMode = true;
+    params.PhantomMode = 1;
+    CarState *pCarState =
+        gpCarState->installVehicle( pResource, params, VIT_Traffic, -1 );
+    if ( pCarState == nullptr ) {
+        return nullptr;
+    }
+
+    VehicleBase *pVehicle = pCarState->getVehicleInstance();
+    if ( pVehicle != nullptr &&
+         pVehicle->getType() == VehicleBase::eType::VBT_TrafficCar ) {
+        static_cast<VehicleTraffic *>( pVehicle )
+            ->setLogoVariant( kCinematicLogoVariant );
+    }
+
+    return pCarState;
 }
 
 void *CinResCollection::spawnPlayerCar() {
@@ -2666,10 +2804,10 @@ bool CinResCollection::onPlayerCarMessage( CarState *pCarState,
         return false;
     }
 
-    const bool bIntro = gpTestDriveInstance != nullptr &&
-                        gpTestDriveInstance->getActiveGameMode() == GM_Intro;
+    const bool bIntro = gpGMIntro != nullptr;
     if ( bIntro ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMINTRO
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO (IntroCarSlot showcase
+                                 // control, car actor +0xb0)
     }
     MngShowCaseCarControl &control = gpActiveGMScene->getShowcaseCarControl();
 
@@ -2744,8 +2882,9 @@ bool CinResCollection::onPlayerCarMessage( CarState *pCarState,
     return true;
 }
 
-void CinResCollection::applyPlayerCarTransform(
-    CarState *pCarState, const Matrix4x4f_t &transform ) {
+void CinResCollection::applyCarTransform( CarState *pCarState,
+                                          const Matrix4x4f_t &transform,
+                                          bool &bTeleport ) {
     if ( pCarState == nullptr ) {
         return;
     }
@@ -2763,10 +2902,10 @@ void CinResCollection::applyPlayerCarTransform(
         PhysicsLock lock;
         if ( !pVehicle->isKeyframed() ) {
             pVehicle->setKeyframed( true, true );
-            bPlayerCarTeleport = true;
+            bTeleport = true;
         }
-        pVehicle->moveKeyframed( world, lastDeltaTime, bPlayerCarTeleport );
-        bPlayerCarTeleport = false;
+        pVehicle->moveKeyframed( world, lastDeltaTime, bTeleport );
+        bTeleport = false;
     }
 }
 

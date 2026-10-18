@@ -456,6 +456,37 @@ int32_t Garage::getNumOwnedHouses() const {
     return numOwnedHouses;
 }
 
+const DBEntryHouse *Garage::getOwnedHouse( int32_t index ) const {
+    // FUN_00893400
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const uint32_t numHouses = gameDB.pNumItems[kHouseDatabaseIndex];
+    for ( uint32_t i = 0; i < numHouses; i++ ) {
+        const DBEntryHouse &houseEntry = gameDB.DBHouse[i];
+        if ( !isHouseOwned(
+                 GetIdentifier64bit( houseEntry.SpotName.pAsString ) ) ) {
+            continue;
+        }
+
+        if ( index == 0 ) {
+            return &houseEntry;
+        }
+        index--;
+    }
+
+    return nullptr;
+}
+
+int32_t Garage::getNumGarageSlots() const {
+    // FUN_00890fd0
+    int32_t numSlots = 0;
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        if ( pCars[i].getHouseHashcode() != 0ull ) {
+            numSlots++;
+        }
+    }
+    return numSlots;
+}
+
 bool Garage::validateCars() {
     // FUN_00895510
     for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {

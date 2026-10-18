@@ -240,10 +240,6 @@ void AvatarCatalogScene::tick( float deltaTime, float totalTime ) {
         onInteriorReady();
     }
     refreshChangeColorVariable();
-
-    // TODO: FIXME: The scene is re-enqueued every frame (see
-    // SceneInterior::draw).
-    scene.draw();
 }
 
 void AvatarCatalogScene::onInteriorReady() {

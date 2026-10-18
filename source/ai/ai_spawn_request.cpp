@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "ai_spawn_request.h"
 
+#include "game/vehicle/vehicle_traffic.h"
+
 #include "ai/ai_oriented_box.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_vehicle.h"
@@ -251,5 +253,9 @@ void AiSpawnRequest::applyRandomTrafficColor() {
     }
     pCarState->colorID = color;
 
-    OTDU_UNIMPLEMENTED_ONCE;
+    if ( pDisplay != nullptr &&
+         pDisplay->getType() == VehicleBase::eType::VBT_TrafficCar ) {
+        static_cast<VehicleTraffic *>( pDisplay )
+            ->setLogoVariant( RandomRange( random, 0, 2 ) );
+    }
 }

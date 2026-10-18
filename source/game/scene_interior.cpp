@@ -5,6 +5,7 @@
 
 #include "core/maths_helper.h"
 
+#include "ai/ai_road_query.h"
 #include "audio/vehicle/gs_vehicle_sound.h"
 #include "game/gm_scene.h"
 #include "game/scenaric/bank_scene_arrays.h"
@@ -337,7 +338,9 @@ bool SceneInterior::waitForSpotSector() {
     return true;
 }
 
-void SceneInterior::enter( Bank *pBank, const bool bIsReentry ) {
+void SceneInterior::enter( Bank *pBank,
+                           const bool bIsReentry,
+                           const bool bInstanciateNow ) {
     // FUN_00775d60
     bReentry = bIsReentry;
     gbSceneInteriorLeaving = false;
@@ -409,27 +412,44 @@ void SceneInterior::enter( Bank *pBank, const bool bIsReentry ) {
             }
             pStreaming->areaGrid.bStreamArea = true;
 
+            AiRoadLocation spotRoadLocation;
+            ProjectOnRoad(
+                Eigen::Vector4f( pSpot->X, pSpot->Y, pSpot->Z, 1.0f ), nullptr,
+                nullptr, false, &spotRoadLocation );
+            gpWorld->setPreviousTransform( spotRoadLocation.Frame );
+
             Eigen::Vector4f interiorPosition = getWorldPosition();
             gpWorld->setStreamingPosition( &interiorPosition );
+            if ( gpWorldStreaming != nullptr &&
+                 gpWorldStreaming->isStreamingActive() ) {
+                gpWorldStreaming->setStreamCenter( nullptr );
+                gpWorldStreaming->setStreamCenterPosition( interiorPosition );
+                gpWorldStreaming->updateStreaming();
+            }
         }
     }
 
-    gpWorld->setDirtyStreaming( true );
-    state = SIS_Instanciate;
+    if ( bInstanciateNow ) {
+        instanciate();
+    } else {
+        gpWorld->setDirtyStreaming( true );
+        state = SIS_Instanciate;
+    }
 
     if ( gpCamera != nullptr ) {
-        CameraMouse *pFreeCamera = gpCamera->getMouseCamera();
-        if ( pFreeCamera != nullptr ) {
+        CameraGame *pCamera =
+            gpCamera->findCameraWithMode( 1, gpCamera->getBoundCarState() );
+        if ( pCamera != nullptr ) {
             const Eigen::Vector4f interiorPosition = getWorldPosition();
             const Eigen::Vector4f lookAt =
                 interiorPosition + Eigen::Vector4f( 1.0f, 0.0f, 0.0f, 0.0f );
+            const Eigen::Vector4f up( 0.0f, 1.0f, 0.0f, 0.0f );
 
-            pFreeCamera->setPosition( interiorPosition );
-            pFreeCamera->setTarget( lookAt );
-            pFreeCamera->setUp( Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f ) );
-            pFreeCamera->updateMatrix( interiorPosition.head<3>(),
-                                       Eigen::Vector3f( 0.0f, 1.0f, 0.0f ),
-                                       lookAt.head<3>() );
+            pCamera->setPosition( interiorPosition );
+            pCamera->setTarget( lookAt );
+            pCamera->setUp( up );
+            pCamera->updateMatrix( interiorPosition.head<3>(), up.head<3>(),
+                                   lookAt.head<3>() );
         }
     }
 
@@ -467,8 +487,7 @@ void SceneInterior::instanciate() {
     bank.load( pInteriorBank->getBankFile(), 0, 0, pMngActor,
                /*bNoCopy=*/true );
     bank.forceLoad();
-
-    bank.instanciateSceneries();
+    bank.activate( pMngActor );
 
     SceneryBinary *pScenery = bank.getActiveScenery();
     if ( pScenery != nullptr ) {
@@ -627,21 +646,6 @@ void SceneInterior::tick() {
 
     if ( gpMngShadow != nullptr && pRootNode != nullptr ) {
         gpMngShadow->addShadowReceiver( pRootNode, false );
-    }
-}
-
-void SceneInterior::draw() {
-    if ( pRootNode == nullptr || pRootNode->pInstance == nullptr ||
-         gpRender == nullptr ) {
-        return;
-    }
-
-    const eRenderPass pass =
-        bDrawInDOFPass ? eRenderPass::RP_FakeDOF : eRenderPass::RP_Near;
-
-    RenderScene *pScene = gpRender->getRenderPassAtIndex( pass ).pScene;
-    if ( pScene != nullptr ) {
-        pScene->enqueueDynamicHiearchy( pRootNode );
     }
 }
 
@@ -862,6 +866,8 @@ void SceneInterior::resume() {
         return;
     }
 
+    pNearScene->removeStaticHiearchy( pRootNode );
+    pDOFScene->enqueueStaticHiearchy( pRootNode );
     bDrawInDOFPass = true;
 
     if ( gpPostFX == nullptr ) {
@@ -907,6 +913,8 @@ void SceneInterior::suspend() {
         return;
     }
 
+    pNearScene->enqueueStaticHiearchy( pRootNode );
+    pDOFScene->removeStaticHiearchy( pRootNode );
     bDrawInDOFPass = false;
 
     if ( gpPostFX == nullptr ) {
