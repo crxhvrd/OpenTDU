@@ -42,6 +42,10 @@ GSDevice *gpDevice = nullptr;
 
 GSDevice::GSDevice()
     : GameSystem(),
+      replayFilename{},
+      replaySize( 0 ),
+      bReplayLoading( false ),
+      bReplaySaving( false ),
       bUseNaturalPointHeadTracking( false ),
       field14_0x54( true ) {
     gpDevice = this;

@@ -49,6 +49,10 @@ extern bool gbFixedCamLookSnap;
 class CameraVehicle;
 void ToggleFreeLookLock( CameraVehicle *pCamera );
 
+// Shared camera RNG (DAT_010e7480)
+float CameraRandom01();
+float CameraRandomGaussian( float center, float spread );
+
 struct LerpParams {
     uint8_t MinInput = 0;
     uint8_t MaxInput = 0;

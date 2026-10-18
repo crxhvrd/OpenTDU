@@ -451,6 +451,9 @@ public:
 
     uint32_t getNumWheels() const;
     WheelReadout getWheelReadout( uint32_t index ) const;
+    inline const PhysicsWheelState &getWheelState( uint32_t index ) const {
+        return vehicle.Wheels[index];
+    }
     float computeWheelSteerAngle( const PhysicsWheelState &w ) const;
 
     void updateChrono( float dt );

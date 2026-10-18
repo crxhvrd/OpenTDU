@@ -35,6 +35,19 @@ public:
         return bUseNaturalPointHeadTracking;
     }
 
+    inline void requestReplay( const char *pFilename,
+                               const uint32_t size,
+                               const bool bSave ) {
+        strncpy( replayFilename, pFilename, sizeof( replayFilename ) - 1 );
+        replayFilename[sizeof( replayFilename ) - 1] = '\0';
+        replaySize = size;
+        if ( bSave ) {
+            bReplaySaving = true;
+        } else {
+            bReplayLoading = true;
+        }
+    }
+
 public:
     GSDevice();
     ~GSDevice();
@@ -50,6 +63,10 @@ public:
                                     const int32_t param_5 );
 
 private:
+    char replayFilename[32];
+    uint32_t replaySize;
+    bool bReplayLoading;
+    bool bReplaySaving;
     MouseState mouseState;
     bool bUseNaturalPointHeadTracking;
     bool field14_0x54;

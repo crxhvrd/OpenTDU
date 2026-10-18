@@ -180,9 +180,9 @@ public:
     void clearCinematicCameraOverride();
 #ifdef OTDU_USE_IMGUI
     void drawDebug( float deltaTime ) override;
-    // Debug: frame the active camera on a world point (placed 'distance' back +
-    // up, looking at the point). Best used with the free-fly camera enabled.
     void focusOnPoint( const Eigen::Vector4f &worldPos, float distance );
+    void forceDebugCamera( CameraGame *pCamera );
+    void restoreDebugCamera();
 #endif
 #ifdef OTDU_DEVBUILD
     void toggleFreeCam();
@@ -289,6 +289,9 @@ private:
     int32_t activeModeVehicleOverride;
 
     bool bFlyCam;
+
+    CameraGame *pPreDebugCamera = nullptr;
+    Eigen::Vector4f *pPreDebugStreamPos = nullptr;
 
     // Cinematic camera override (debug live playback) — see bindToRender.
     bool bCinematicCameraOverride = false;

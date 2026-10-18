@@ -150,11 +150,11 @@ static inline uint32_t AdvanceCameraRandom() {
     return gCameraRandomSeed;
 }
 
-static inline float CameraRandom01() {
+float CameraRandom01() {
     return RandFloat01( AdvanceCameraRandom() );
 }
 
-static float CameraRandomGaussian( float center, float spread ) {
+float CameraRandomGaussian( float center, float spread ) {
     // FUN_008e23e0
     const float u1 = CameraRandom01();
     const float u2 = CameraRandom01();

@@ -1101,6 +1101,44 @@ void GSCamera::drawDebug( float deltaTime ) {
         toggleFreeCam();
     }
 
+    if ( numCameraRegistered > 0 ) {
+        ImGui::SeparatorText( "Force Camera (debug)" );
+        static uint32_t sSelectedCamera = 0;
+        if ( sSelectedCamera >= numCameraRegistered ) {
+            sSelectedCamera = 0;
+        }
+
+        CameraGame *pSelected = cameraRegister[sSelectedCamera];
+        if ( ImGui::BeginCombo( "Camera Override",
+                                pSelected ? pSelected->getName() : "-" ) ) {
+            for ( uint32_t i = 0; i < numCameraRegistered; i++ ) {
+                CameraGame *pCamera = cameraRegister[i];
+                if ( pCamera == nullptr ) {
+                    continue;
+                }
+                char label[64];
+                snprintf( label, sizeof( label ), "%s (type %d)",
+                          pCamera->getName(), pCamera->getType() );
+                if ( ImGui::Selectable( label, i == sSelectedCamera ) ) {
+                    sSelectedCamera = i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::BeginDisabled( pSelected == nullptr || bFlyCam );
+        if ( ImGui::Button( "Bind" ) ) {
+            forceDebugCamera( pSelected );
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::BeginDisabled( pPreDebugCamera == nullptr );
+        if ( ImGui::Button( "Restore" ) ) {
+            restoreDebugCamera();
+        }
+        ImGui::EndDisabled();
+    }
+
     if ( pActiveVehicleCamera != nullptr ) {
         ImGui::SeparatorText( "Active Camera" );
         ImGui::Text( "Name: '%s'", pActiveVehicleCamera->name.c_str() );
@@ -1178,6 +1216,34 @@ void GSCamera::drawDebug( float deltaTime ) {
                               &pShowcaseCam->distanceToTarget, 0.01f );
         }
     }
+}
+
+void GSCamera::forceDebugCamera( CameraGame *pCamera ) {
+    if ( pCamera == nullptr || pCamera == pActiveVehicleCamera ) {
+        return;
+    }
+
+    if ( pPreDebugCamera == nullptr ) {
+        pPreDebugCamera = pActiveVehicleCamera;
+        if ( gpWorld != nullptr ) {
+            pPreDebugStreamPos = gpWorld->getStreamPosition();
+        }
+    }
+    bindCamera( pCamera, 0, 0.0f );
+}
+
+void GSCamera::restoreDebugCamera() {
+    if ( pPreDebugCamera == nullptr ) {
+        return;
+    }
+
+    bindCamera( pPreDebugCamera, 0, 0.0f );
+    pPreDebugCamera = nullptr;
+
+    if ( gpWorld != nullptr && pPreDebugStreamPos != nullptr ) {
+        gpWorld->setStreamingPositionPtr( pPreDebugStreamPos );
+    }
+    pPreDebugStreamPos = nullptr;
 }
 
 void GSCamera::focusOnPoint( const Eigen::Vector4f &worldPos, float distance ) {
