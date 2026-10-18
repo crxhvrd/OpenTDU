@@ -81,6 +81,7 @@ protected:
     void applyActiveItem( int32_t clotheSet, int32_t category );
     bool applyNextColor( int32_t clotheSet, int32_t category );
     void restoreSavedItem( int32_t clotheSet, int32_t category );
+    bool buyActiveItem( int32_t category );
     void updateItemVariables( int32_t category );
     void updateItemCounts();
     void updateIsDressVariable();

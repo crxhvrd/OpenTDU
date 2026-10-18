@@ -190,6 +190,14 @@ void Driver::setNumCoupons( const uint32_t value ) {
     TestDriveTEAWriteDword( pNumCoupons, value );
 }
 
+void Driver::spendCoupons( const uint32_t numCoupons ) {
+    // FUN_00893ad0
+    gpPlayerData->getLoadedSave()->getExtraChallenges()->addCouponsSpent(
+        numCoupons );
+    setNumCoupons( getNumCoupons() - numCoupons );
+    notify( 0u );
+}
+
 int32_t Driver::getPendingMoneyOperation() const {
     return int32_t( TestDriveTEAReadDword( pMoneyOP ) );
 }

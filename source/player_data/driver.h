@@ -34,6 +34,7 @@ public:
 
     uint32_t getNumCoupons() const;
     void setNumCoupons( const uint32_t value );
+    void spendCoupons( const uint32_t numCoupons );
 
     int32_t getPendingMoneyOperation() const;
     void setPendingMoneyOperation( const int32_t value );

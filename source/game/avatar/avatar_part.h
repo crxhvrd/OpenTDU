@@ -78,6 +78,7 @@ struct AvatarClothePart : public AvatarDBEntry {
     const char *getBrandName() const;
     bool isOwned() const;
     bool isColorOwned( uint8_t colorIndex ) const;
+    void setColorOwned( uint8_t colorIndex );
     int32_t getNumColors() const;
 };
 

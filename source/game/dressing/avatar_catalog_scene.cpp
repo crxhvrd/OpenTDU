@@ -19,10 +19,13 @@
 #include "game/scenaric/entity/entity_driver.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "player_data/achievement_checks.h"
+#include "player_data/achievements_data.h"
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_avatar.h"
+#include "player_data/saved_extra_challenges.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
 
@@ -274,7 +277,10 @@ bool AvatarCatalogScene::onMessage( FlashMessage *pMessage ) {
         pFlashPlayer->stopClip( "/" );
         return true;
     case FlashMessage( "buit" ):
-        OTDU_UNIMPLEMENTED; // TODO: Buy item (FUN_008f95b0)
+        updateItemVariables( getCurrentCategory() );
+        if ( buyActiveItem( getCurrentCategory() ) ) {
+            gpAvatar->savePlayerAvatarConfiguration( pAvatar );
+        }
         return true;
     case FlashMessage( "came" ):
         setGameCamera( findSelectedCamera() );
@@ -557,7 +563,43 @@ bool AvatarCatalogScene::nextColor( const AvatarClothePart *pPart,
 
 void AvatarCatalogScene::resetToSavedOutfit() {
     // FUN_008f90a0
-    OTDU_UNIMPLEMENTED; // TODO: GMGoodies
+    const int32_t clotheSet = getCurrentClotheSet();
+    gpAvatar->bakeAvatar( pAvatar, TestDrive::GetSavedAvatarConfiguration(),
+                          clotheSet, false, true );
+    syncCursorsToAvatar( pAvatar );
+    updateItemCounts();
+}
+
+bool AvatarCatalogScene::buyActiveItem( const int32_t category ) {
+    // FUN_008f95b0
+    if ( category == kNoCategory || activeCursors[category] == nullptr ) {
+        return false;
+    }
+
+    AvatarClothePart *pItem = getActiveItem( category );
+    const uint8_t colorIndex = *activeColors[category];
+    if ( pItem == nullptr ) {
+        return false;
+    }
+
+    IPlayerData *pLoadedSave = gpPlayerData->getLoadedSave();
+    Driver *pDriver = pLoadedSave->getDriver();
+    if ( static_cast<int32_t>( pDriver->getNumCoupons() -
+                               static_cast<uint32_t>( pItem->Price ) ) < 0 ) {
+        return false;
+    }
+
+    if ( !pItem->isColorOwned( colorIndex ) ) {
+        pLoadedSave->getExtraChallenges()->countClotheBought();
+        pDriver->spendCoupons( static_cast<uint32_t>( pItem->Price ) );
+        pFlashPlayer->setVariableValue( "/:Solded", 1 );
+        pItem->setColorOwned( colorIndex );
+        pLoadedSave->getAchievements()->notify(
+            ACF_Challenge | ACF_Road | ACF_Collection, false );
+    }
+
+    applyActiveItem( pAvatar->getPooledEntry()->ActiveClotheSet, category );
+    return true;
 }
 
 void AvatarCatalogScene::refreshChangeColorVariable() {

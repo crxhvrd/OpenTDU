@@ -503,8 +503,7 @@ void MngFlashLocalize::setVarLocalized( FlashPlayer *pPlayer,
     }
 
     const char *pArgs[kMaxLocalizeArgs] = {};
-    pArgs[0] = pVarName;
-    pArgs[1] = pArg1;
+    pArgs[0] = pArg1;
 
     char pFormatted[512];
     const bool bFormatted = makeLocalizedSentence(

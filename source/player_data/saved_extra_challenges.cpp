@@ -280,6 +280,16 @@ void SavedExtraChallenges::countCarRented() {
     addCounter( CounterIndex( 0xf110 ), 1 );
 }
 
+void SavedExtraChallenges::countClotheBought() {
+    // FUN_00887b40
+    addCounter( CounterIndex( 0xf12c ), 1 );
+}
+
+void SavedExtraChallenges::addCouponsSpent( const uint32_t numCoupons ) {
+    // FUN_00887f30
+    addCounter( CounterIndex( 0xf108 ), int32_t( numCoupons ) );
+}
+
 void SavedExtraChallenges::countCarTransaction( const uint32_t carID,
                                                 const bool bBought,
                                                 const bool bETrade ) {

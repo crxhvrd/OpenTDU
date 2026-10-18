@@ -105,6 +105,14 @@ bool AvatarClothePart::isColorOwned( const uint8_t colorIndex ) const {
            ( *pMask & ( 1u << ( colorIndex & 0x1f ) ) ) != 0;
 }
 
+void AvatarClothePart::setColorOwned( const uint8_t colorIndex ) {
+    // FUN_008eddf0
+    uint16_t *pMask = const_cast<uint16_t *>( GetOwnedColorMask( IDHashcode ) );
+    if ( pMask != nullptr ) {
+        *pMask |= static_cast<uint16_t>( 1u << ( colorIndex & 0x1f ) );
+    }
+}
+
 int32_t AvatarClothePart::getNumColors() const {
     // FUN_008edf50
     const DBEntryClothe *pRow = GetClotheRow( Index );

@@ -86,6 +86,7 @@
 #include "game/garage/gm_garage.h"
 #include "game/aftermarket/gm_aftermarket.h"
 #include "game/estates/gm_estates.h"
+#include "game/goodies/gm_goodies.h"
 #include "game/living/gm_living.h"
 #include "game/intro/gm_intro.h"
 #include "game/shop/gm_shop.h"
@@ -545,6 +546,11 @@ void TestDriveGameInstance::mainLoop() {
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMDressing ),
                                                       alignof( GMDressing ) );
             pGVar6 = new ( pGameModeAlloc ) GMDressing();
+            break;
+        case GM_Goodies:
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMGoodies ),
+                                                      alignof( GMGoodies ) );
+            pGVar6 = new ( pGameModeAlloc ) GMGoodies();
             break;
         case GM_AfterMarket:
             pGameModeAlloc = TestDrive::AllocAligned(
