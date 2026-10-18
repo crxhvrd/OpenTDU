@@ -195,7 +195,7 @@ Device::Device()
       channelCount( 0 ),
       numChannelAxis( 0 ),
       numChannelButtons( 0 ),
-      unknown( 0 ),
+      numChannelEffects( 0 ),
       numChannelsDown( 0 ),
       channelIsPressed( -1 ),
       channelHasBeenPressed( -1 ),

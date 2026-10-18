@@ -71,6 +71,7 @@ extern uint32_t gWindowHeight;
 extern int32_t gPickedRefreshRate;
 extern DisplayMode gBootDisplayMode;
 extern bool gWindowSizeDirty;
+extern bool gbIgnoreFocusLoss;
 
 static inline float GetScreenAspectRatio() {
     return static_cast<float>( gWindowWidth ) /

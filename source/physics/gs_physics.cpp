@@ -2,8 +2,14 @@
 #include "gs_physics.h"
 
 #include "config/gs_config.h"
+#include "debug/debug_graph.h"
+#include "gs_timer.h"
 #include "gs_physicsfx.h"
 #include "flash/mng_fade.h"
+#include "flash/modal_message_box.h"
+#include "game/gm_base.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/vehicle/car_state.h"
 #include "game/game_object.h"
 #include "game/vehicle/gs_car_state.h"
 #include "vehicle/physics_vehicle.h"
@@ -18,6 +24,8 @@
 #include "database/gs_database.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
+#include "input/gs_device.h"
+#include "player_data/gs_playerdata.h"
 
 #include "render/camera/gs_camera.h"
 #include "render/draw_list.h"
@@ -878,6 +886,8 @@ bool gDrawCollisionVisTerrain = false;
 bool gDrawVehicleCollisionVis = false;
 bool gDrawVehicleCoMVis = false;
 
+static DebugGraph gPhysicsGraph; // DAT_00fa951c
+
 ePhysicsThreadMode gPhysicsThreadPriority = PTM_Off; // DAT_010e765c
 int32_t gPhysicsThreadFrequency = 0x64;              // DAT_00f87ffc
 
@@ -1178,7 +1188,8 @@ GSPhysics::GSPhysics()
       bHeightfieldInit( false ),
       bSectorsInit( false ),
       bHavokDebugEnabled( false ),
-      bDrawDebugInfos( false ) {
+      bDrawDebugInfos( false ),
+      debugDrawFlags( 0x200 ) {
     // FUN_008471e0
     // Original: initializes factories, Havok memory masters,
     // thread, mutex, and various flags. Havok memory subsystem init is not
@@ -1350,6 +1361,8 @@ bool GSPhysics::initialize( TestDriveGameInstance *param_2 ) {
 
     roadPhantomManager.initialize( 0x41a, 4 );
 
+    createGraph();
+
     if ( bDrawDebugInfos ) {
         OTDU_UNIMPLEMENTED;
     }
@@ -1375,6 +1388,13 @@ void GSPhysics::terminate() {
             std::this_thread::yield();
         }
         simulationThread.terminate();
+    }
+
+    gPhysicsGraph.release();
+    if ( pGraphDrawList != nullptr ) {
+        pGraphDrawList->destroy();
+        delete pGraphDrawList;
+        pGraphDrawList = nullptr;
     }
 
 #if OTDU_DEVBUILD
@@ -1981,6 +2001,10 @@ void GSPhysics::draw( float deltaTime ) {
         drawVehicleShapes();
 #endif
     }
+
+    if ( ( debugDrawFlags & 0xc00 ) != 0 ) {
+        drawGraph();
+    }
     // Both debug flags must be set for any rendering to occur.
     // bHavokDebugEnabled is set by AI trainer (GMAITrainer::tick);
     // bDrawDebugInfos is a secondary opt-in. Both start false so this function
@@ -1989,6 +2013,49 @@ void GSPhysics::draw( float deltaTime ) {
         return;
 
     OTDU_UNIMPLEMENTED;
+}
+
+void GSPhysics::createGraph() {
+    DrawStreams streams;
+    streams.Diffuse = '\1';
+    streams.bIndex16 = '\1';
+
+    pGraphDrawList = new DrawList();
+    if ( !pGraphDrawList->initialize( 16, 0x1000, 0, true, &streams,
+                                      "PhysicsGraph", false ) ) {
+        pGraphDrawList->destroy();
+        delete pGraphDrawList;
+        pGraphDrawList = nullptr;
+        return;
+    }
+
+    // FUN_0084d570 (graph creation)
+    gPhysicsGraph.create( 4, pGraphDrawList, -10.0f, 10.0f, 1000, 2.0f );
+    if ( gPhysicsGraph.getNumCurves() == 4 ) {
+        gPhysicsGraph.getCurve( 0 ).setColor( 0xf0, 0x00, 0x00, 0xff );
+        gPhysicsGraph.getCurve( 1 ).setColor( 0x00, 0xf0, 0x00, 0xff );
+        gPhysicsGraph.getCurve( 2 ).setColor( 0x00, 0x00, 0xf0, 0xff );
+        gPhysicsGraph.getCurve( 3 ).setColor( 0xf0, 0x00, 0xf0, 0xff );
+    }
+    gPhysicsGraph.setBounds( 0.0f, 0.5f, 1.0f, 0.95f );
+}
+
+void GSPhysics::drawGraph() {
+    // FUN_0084b650 (graph draw)
+    if ( pGraphDrawList == nullptr ) {
+        return;
+    }
+
+    pGraphDrawList->reset();
+    lockMutex();
+    gPhysicsGraph.draw( gpTimer->SystemTotalTime );
+    unlockMutex();
+
+    if ( pGraphDrawList->getNumPrimitives() == 0 ) {
+        return;
+    }
+    gpRender->getRenderPass<eRenderPass::RP_2D>()
+        .pScene->enqueueDynamicDrawList( pGraphDrawList );
 }
 
 void GSPhysics::FUN_00843b40() {
@@ -2570,6 +2637,13 @@ void GSPhysics::drawDebug( float ) {
                      &gDrawVehicleCollisionVis );
     ImGui::Checkbox( "Vehicle CoM (magenta = CoM, white = body origin)",
                      &gDrawVehicleCoMVis );
+    bool bForceFeedbackGraph = ( debugDrawFlags & 0x400 ) != 0;
+    if ( ImGui::Checkbox(
+             "FFB graph (red = slip, blue = slip factor, magenta = torque)",
+             &bForceFeedbackGraph ) ) {
+        debugDrawFlags = bForceFeedbackGraph ? ( debugDrawFlags | 0x400 )
+                                             : ( debugDrawFlags & ~0x400u );
+    }
 
     extern int32_t gVehicleDrivingHelpOverride;
     extern bool gVehicleAntiRoll;
@@ -5031,9 +5105,217 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
         gpCamera->updateActiveCamera( dt, accTime );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_0081cd10 (FFB)
+    updateForceFeedback( dt );
 
     unlockMutex();
+}
+
+static float RemapClamped( const float value,
+                           const float inMin,
+                           const float inMax,
+                           const float outMin,
+                           const float outMax ) {
+    // FUN_0040b760
+    const float remapped =
+        ( value - inMin ) * ( outMax - outMin ) / ( inMax - inMin ) + outMin;
+    return std::clamp( remapped, std::min( outMin, outMax ),
+                       std::max( outMin, outMax ) );
+}
+
+static float
+EvalFFBCurve( const float value, const float *pInputs, const float *pOutputs ) {
+    if ( value < pInputs[1] ) {
+        return RemapClamped( value, pInputs[0], pInputs[1], pOutputs[0],
+                             pOutputs[1] );
+    }
+    return RemapClamped( value, pInputs[1], pInputs[2], pOutputs[1],
+                         pOutputs[2] );
+}
+
+static bool IsForceFeedbackGameMode() {
+    if ( gpActiveGameMode == nullptr ) {
+        return true;
+    }
+    const eGameMode gameMode = gpActiveGameMode->getCurrentGameMode();
+    return gameMode == GM_FreeRide || gameMode == GM_Mission ||
+           gameMode == GM_TestCar;
+}
+
+void GSPhysics::updateForceFeedback( float dt ) {
+    // FUN_0081cd10
+    static constexpr float kDamperAtRest = 0.5f;            // DAT_00fab840
+    static constexpr float kDamperSpeedMax = 14.0f;         // DAT_00fab844
+    static constexpr float kDamperSpeedMin = 1.0f;          // DAT_00fab848
+    static constexpr float kSlipFactorMin = 0.5f;           // DAT_00fab84c
+    static constexpr float kArcadeTorqueScale = 1.0f;       // DAT_00fab850
+    static constexpr float kSimuTorqueScale = 0.75f;        // DAT_00fab854
+    static constexpr float kTorqueDivisorMaxStr = 3000.0f;  // DAT_00fab858
+    static constexpr float kTorqueDivisorMinStr = 10000.0f; // DAT_00fab85c
+    static constexpr float kTorqueMassScale = 0.0008f;      // DAT_00f41de0
+    static constexpr float kSlideSpeedMin = 2.5f;           // DAT_00fab83c
+    static constexpr float kSlideSpeedMax = 20.0f;          // DAT_00fab838
+    static constexpr float kImpactEnergyMin = 50000.0f;     // DAT_00fab830
+    static constexpr float kImpactEnergyMax = 100000.0f;    // DAT_00fab82c
+    static constexpr float kImpactDecay = 0.95f;            // DAT_00fab828
+    static constexpr float kImpactDecayScale = 1.1111112f;  // DAT_00f41ddc
+
+    static constexpr float kDamperAtSpeed = 0.0f;
+
+    static constexpr float kGraphScale = 10.0f; // FLOAT_00f4166c
+
+    static float sImpactRumble = 0.0f; // DAT_016a6a0c
+    static float sGraphTime = 0.0f;    // DAT_010e7c0c
+
+    sGraphTime += dt;
+
+    ForceFeedbackOutput &output = gForceFeedbackOutput;
+    output.SecondaryForce = 0.0f;
+    output.ConstantForce = 0.0f;
+    output.Damper = 0.0f;
+
+    CarState *pCarState = gpScenaric != nullptr
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    PhysicsVehicle *pVehicle =
+        pCarState != nullptr ? pCarState->getPhysicsVehicle() : nullptr;
+    if ( pVehicle == nullptr || !pVehicle->isActive() ||
+         pVehicle->isPhysicsPaused() || pVehicle->isKeyframed() ) {
+        return;
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc == 5 disables FFB)
+
+    float strength = 0.0f;
+    if ( !bPauseJoltTick && !bPausePhysicsThread && bForceFeedbackAllowed &&
+         IsForceFeedbackGameMode() ) {
+        strength = pVehicle->getRumbleMax();
+    }
+
+    // Front axle
+    const uint32_t numWheels = pVehicle->getNumWheels();
+    const PhysicsWheelState &frontLeft = pVehicle->getWheelState( 0 );
+    const PhysicsWheelState &frontRight =
+        pVehicle->getWheelState( numWheels / 4 );
+
+    const float speed = pVehicle->getChassisVelocity().head<3>().norm();
+    const float longitudinalG = pVehicle->getLongitudinalG();
+    const float slip =
+        ( frontLeft.NormLatClamped + frontRight.NormLatClamped ) * 0.5f;
+
+    const float speedInputs[3] = { gFFBSpeedFactor[1][0], gFFBSpeedFactor[2][0],
+                                   gFFBSpeedFactor[3][0] };
+    const float speedOutputs[3] = {
+        gFFBSpeedFactor[1][1], gFFBSpeedFactor[2][1], gFFBSpeedFactor[3][1] };
+    const float speedFactor = EvalFFBCurve( speed, speedInputs, speedOutputs );
+    const float loadFactor =
+        EvalFFBCurve( longitudinalG, gFFBLoadFromAccel, gFFBLoadFactor );
+    const float modeScale =
+        gbSimuModeEnabled ? kSimuTorqueScale : kArcadeTorqueScale;
+    const float torqueDivisor = RemapClamped(
+        strength, 0.0f, 1.0f, kTorqueDivisorMinStr, kTorqueDivisorMaxStr );
+    const float slipFactor =
+        RemapClamped( std::fabs( slip ), 1.0f, 2.0f, 1.0f, kSlipFactorMin );
+
+    float steeringTorque =
+        ( slipFactor *
+          ( ( frontLeft.TireForceLat + frontRight.TireForceLat ) * -0.5f ) *
+          loadFactor * speedFactor ) /
+        ( torqueDivisor * modeScale * pVehicle->getVehicleMass() *
+          kTorqueMassScale );
+    if ( !bForceFeedbackAllowed || strength == 0.0f ) {
+        steeringTorque = 0.0f;
+    }
+    if ( gpPlayerData->getLocalPlayerData().bFFBInvert ) {
+        steeringTorque = 0.0f - steeringTorque;
+    }
+
+    if ( ( debugDrawFlags & 0x400 ) != 0 && !gPhysicsGraph.isFrozen() ) {
+        const int32_t numCurves = gPhysicsGraph.getNumCurves();
+        if ( 0 < numCurves ) {
+            const float slipAngleMax = gFFBSlipAngle[2][0];
+            const float clampedSlip =
+                std::max( -slipAngleMax, std::min( slip, slipAngleMax ) );
+            gPhysicsGraph.getCurve( 0 ).addPoint( sGraphTime,
+                                                  clampedSlip * kGraphScale );
+        }
+        if ( 2 < numCurves && !gPhysicsGraph.isFrozen() ) {
+            gPhysicsGraph.getCurve( 2 ).addPoint( sGraphTime,
+                                                  slipFactor * kGraphScale );
+        }
+        if ( 3 < numCurves && !gPhysicsGraph.isFrozen() ) {
+            gPhysicsGraph.getCurve( 3 ).addPoint( sGraphTime, steeringTorque *
+                                                                  kGraphScale );
+        }
+    }
+
+    const float damper = RemapClamped( speed, kDamperSpeedMin, kDamperSpeedMax,
+                                       kDamperAtRest, kDamperAtSpeed );
+
+    if ( gpMngFade != nullptr && gpMngFade->isRenderingLogo() ) {
+        strength = 0.0f;
+    }
+
+    float slideSpeed = 0.0f;
+    if ( gpFlashMessageBox->getNumOpenMsgBox() != 0 ||
+         gpFlashMessageBox->getUnknownFlag() ) {
+        strength = 0.0f;
+    } else if ( strength > 0.0f && !pVehicle->isAirborne() ) {
+        slideSpeed = std::fabs( pVehicle->getLateralSpeed() );
+    }
+    const float slideRumble =
+        RemapClamped( slideSpeed, kSlideSpeedMin, kSlideSpeedMax, 0.0f, 1.0f );
+
+    float impactRumble = 0.0f;
+    if ( strength > 0.0f ) {
+        impactRumble =
+            RemapClamped( pVehicle->getMaxCollisionEnergy(), kImpactEnergyMin,
+                          kImpactEnergyMax, 0.0f, 1.0f );
+        impactRumble = std::max( impactRumble, pVehicle->getLandingImpact() );
+        if ( impactRumble == 0.0f ) {
+            sImpactRumble = ( impactRumble - sImpactRumble ) *
+                                ( 1.0f - kImpactDecay ) * kImpactDecayScale +
+                            sImpactRumble;
+        } else {
+            sImpactRumble = impactRumble;
+        }
+    } else {
+        sImpactRumble = 0.0f;
+    }
+
+    if ( gpConfig->pPlayerConfig == nullptr ) {
+        return;
+    }
+    DeviceAction *pSteerAction = pVehicle->isBike()
+                                     ? gpConfig->pPlayerConfig->pBikeRight
+                                     : gpConfig->pPlayerConfig->pCarRight;
+    if ( pSteerAction == nullptr || pSteerAction->NumAddedChannels == 0 ) {
+        return;
+    }
+    InputChannel *pChannel = pSteerAction->pChannel->pChannel;
+    Device *pDevice = pChannel != nullptr ? pChannel->pParent : nullptr;
+    if ( pDevice == nullptr ) {
+        return;
+    }
+
+    if ( gpPlayerData->getLocalPlayerData().bUseWheel ) {
+        output.Mode = eForceFeedbackMode::FFBM_Wheel;
+        output.ConstantForce = steeringTorque;
+        output.Damper = damper * strength;
+        return;
+    }
+
+    if ( pDevice->getNumEffects() != 0 ) {
+        output.Mode = eForceFeedbackMode::FFBM_Pad;
+        if ( pDevice->getChannelIndex( int32_t( eInputChannelType::ICT_Effect ),
+                                       1 ) >= 0 ) {
+            output.SecondaryForce = slideRumble * strength;
+        }
+        if ( pDevice->getChannelIndex( int32_t( eInputChannelType::ICT_Effect ),
+                                       0 ) >= 0 ) {
+            output.ConstantForce = impactRumble * strength;
+        }
+        output.latchPadPeaks();
+    }
 }
 
 void GSPhysics::initializeJolt() {

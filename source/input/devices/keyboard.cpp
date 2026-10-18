@@ -485,8 +485,8 @@ bool DeviceKeyboard::initialize() {
 
     numChannelButtons = SDL_Scancode::SDL_SCANCODE_COUNT;
     numChannelAxis = 0;
-    unknown = 0;
-    channelCount = numChannelButtons + numChannelAxis + unknown;
+    numChannelEffects = 0;
+    channelCount = numChannelButtons + numChannelAxis + numChannelEffects;
 
     InputChannel* iVar1 = allocateChannels(channelCount);
     if (iVar1 == nullptr) {

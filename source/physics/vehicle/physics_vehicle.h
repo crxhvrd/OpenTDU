@@ -235,6 +235,9 @@ public:
     void resetAutomaticGearbox();
     void applyDrivingOptions( const DrivingOptions &options );
     bool isActive() const { return pChassisBody != nullptr; }
+    void setAutoReverseAllowed( const bool bAllowed ) {
+        bAutoReverseAllowed = bAllowed;
+    }
     const JPH::Body *getChassisBody() const { return pChassisBody; }
     bool isSimulated() const { return bRegistered; }
     void setDrivingMode( uint8_t mode ) { drivingMode = mode; }
@@ -361,6 +364,9 @@ public:
         return bPlaced;
     }
     float getLateralSpeed() const { return vehicle.LateralSpeed; }
+    float getRumbleMax() const { return rumbleMax; }
+    float getLandingImpact() const { return landingImpact; }
+    float getMaxCollisionEnergy() const;
     inline float getFilteredSteer() const { return filteredSteer; }
     inline float getSteerDeadZone() const { return steerDeadZone; }
     inline bool isSteerControlUsed() const { return bUseSteerControl; }
@@ -475,6 +481,7 @@ public:
     float getChassisSpeed() const;
     float getReportedSpeed() const;
     Eigen::Vector4f getChassisVelocity() const;
+    Eigen::Vector4f getChassisAngularVelocity() const;
 
     float getEngineAngularVelocity() const;
     int32_t getCurrentGear() const;
@@ -507,6 +514,13 @@ private:
                             float hitDist,
                             uint32_t surface,
                             uint32_t material );
+    void updateWheelLandingGap( int i,
+                                float gap,
+                                float heightStep,
+                                float deltaTime );
+    void resetLandingState();
+    void updateLandingImpact();
+    void pushLandingFXEvent();
     void setVirtualWheelContact( const JPH::Body &chassis,
                                  int wheelIndex,
                                  float deltaTime );
@@ -572,6 +586,16 @@ private:
         {}; // last step's probed ground height (slew limit)
     float wheelWidth[PhysicsVehicleState::kMaxWheels] = {};
     float wheelGroundGap[PhysicsVehicleState::kMaxWheels] = {};
+    float landingGap[PhysicsVehicleState::kMaxWheels] = {};
+    float landingPrevGap[PhysicsVehicleState::kMaxWheels] = {};
+    float landingGapRate[PhysicsVehicleState::kMaxWheels] = {};
+    float landingPeakGap[PhysicsVehicleState::kMaxWheels] = {};
+    float groundHeightStep[PhysicsVehicleState::kMaxWheels] = {};
+    float landingScore = 0.0f;
+    float landingImpact = 0.0f;
+    bool bLandingDetected = false;
+    uint8_t landingWindowSteps = 0;
+    uint8_t landingCooldownSteps = 0;
     float wheelRumbleTimer[PhysicsVehicleState::kMaxWheels] = {};
     float wheelRumbleAmount[PhysicsVehicleState::kMaxWheels] = {};
     float wheelTyreHeat[PhysicsVehicleState::kMaxWheels] = {};

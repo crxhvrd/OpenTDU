@@ -10,6 +10,7 @@
 #include "config/gs_config.h"
 #include "core/time.h"
 #include "input/input_device.h"
+#include "physics/gs_physics.h"
 
 #include "database/gs_database.h"
 #include "game/game_mechanism_player.h"
@@ -244,6 +245,7 @@ static void HideLocalPlayerCar( CarState *pCarState ) {
 
 void GMFreeride::reset() {
     // FUN_00796830
+    gpPhysics->setForceFeedbackAllowed( true );
     bIntroCineDone = false;
     activityReentryTick = 0u;
     gbGPSFlyUpDone = false;
@@ -853,6 +855,7 @@ void GMFreeride::pause() {
     // FUN_00794900
     OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
 
+    gpPhysics->setForceFeedbackAllowed( false );
     if ( gpTutorial != nullptr ) {
         gpTutorial->bEnabled = false;
     }

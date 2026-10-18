@@ -426,6 +426,9 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             worldMatrix( 3, 1 ) += streamShift.y();
             worldMatrix( 3, 2 ) += streamShift.z();
             body.WorldMatrix = worldMatrix;
+            body.AngularVelocity = pPhysicsVehicle->getChassisAngularVelocity();
+            body.LinearVelocity = pPhysicsVehicle->getChassisVelocity();
+
             body.bBackOnTracked = pPhysicsVehicle->consumeBackOnTrackPlaced();
             if ( body.bBackOnTracked ) {
                 body.PreviousWorldMatrix = body.WorldMatrix;

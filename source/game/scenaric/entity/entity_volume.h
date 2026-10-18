@@ -18,6 +18,9 @@ public:
         return static_cast<eVolumeType>( Type );
     }
     inline void setVolumeType( eVolumeType volumeType ) { Type = volumeType; }
+    inline const Matrix4x4f_t &getInverseTransform() const {
+        return InverseTransform;
+    }
 
 public:
     EntityVolume();

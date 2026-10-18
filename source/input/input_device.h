@@ -28,7 +28,8 @@ enum class eDeviceSpecialization : uint32_t {
 enum class eInputChannelType : int32_t {
     ICT_Digital = 0,
     ICT_Analog = 1,
-    ICT_Keyboard = 2
+    ICT_Keyboard = 2,
+    ICT_Effect = 4 // force feedback actuator
 };
 
 // Mirrors the DirectInput GUID layout (savegames store it verbatim)
@@ -169,6 +170,7 @@ public:
     inline bool isEnabled() const { return ( flags & 1 ) != 0; }
     inline uint32_t getNumAxis() { return numChannelAxis; }
     inline uint32_t getNumChannels() { return channelCount; }
+    inline uint32_t getNumEffects() const { return numChannelEffects; }
     inline InputChannel *getChannels() const { return pChannels; }
     inline uint32_t getNumChannelsDown() const { return numChannelsDown; }
     inline int32_t getPressedChannelIndex() const { return channelIsPressed; }
@@ -221,7 +223,7 @@ protected:
     uint32_t channelCount;
     uint32_t numChannelAxis;
     uint32_t numChannelButtons;
-    uint32_t unknown;
+    uint32_t numChannelEffects;
     uint32_t numChannelsDown;
     int32_t channelIsPressed;
     int32_t channelHasBeenPressed;

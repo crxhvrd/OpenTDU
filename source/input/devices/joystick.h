@@ -9,6 +9,9 @@ public:
 
     bool initialize( SDL_JoystickID param_1 );
 
+    inline SDL_Joystick *getSDLJoystick() const { return pJoystick; }
+    inline SDL_Haptic *getSDLHaptic() const { return pHaptic; }
+
     void setEnabled() override;
     void setDisabled() override;
     bool FUN_0042df00() override;
@@ -35,4 +38,5 @@ private:
     SDL_JoystickID joystickID;
     SDL_Joystick *pJoystick;
     SDL_Gamepad *pGamepad;
+    SDL_Haptic *pHaptic;
 };

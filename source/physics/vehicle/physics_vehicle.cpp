@@ -11,6 +11,7 @@
 #include "physics/physics_config.h"
 #include "physics/physics_layers.h"
 #include "physics/gs_physics.h"
+#include "physics/gs_physicsfx.h"
 #include "physics/physics_material.h"
 #include "database/gs_database.h"
 #include "database/db_aftermarket_pack.h"
@@ -188,6 +189,8 @@ constexpr float kAntiFlyGapDeadband = 0.05f;   // DAT_00f41778
 constexpr float kAntiFlyMinForce = 100.0f;     // DAT_00f41708 (apply gate, N)
 constexpr float kAntiFlyGravityCoef = 1.0f;    // DAT_00f8a21c (simu: 0.0)
 constexpr float kAntiFlyMaxGap = 1.5f;         // DAT_00f8a220 (simu: 0.0)
+constexpr float kNoGroundY = -999.0f;          // DAT_00f41f98
+constexpr float kNoPreviousGap = -9999.0f;     // DAT_00f41ef4
 constexpr float kAntiFlyLeverScale = 0.75f;    // DAT_00f416a4
 constexpr float kGroundProbeDepth = 10.0f;     // FLOAT_00f4166c
 constexpr float kProbeRise = 0.5f;             // FLOAT_00f41674
@@ -955,6 +958,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     vehicle.pConfig = pConfig;
     numCollisionEvents = 0;
     timeSinceHardImpact = 0.0f;
+    resetLandingState();
     phantomRequest = 0;
     phantomMode = 1;
     phantomTimer = 0.0f;
@@ -2254,6 +2258,9 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
         const JPH::RVec3 droopedW = attachW + suspRayLen * down;
         w.GroundProbePoint = Eigen::Vector4f( droopedW.GetX(), droopedW.GetY(),
                                               droopedW.GetZ(), 1.0f );
+        updateWheelLandingGap(
+            i, static_cast<float>( droopedW.GetY() ) - kNoGroundY, 0.0f,
+            deltaTime );
         return false;
     }
 
@@ -2271,6 +2278,7 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
         hitDist = JPH::Vec3( collector.mPosition - attachW ).Dot( down );
     }
 
+    const float heightStep = hitDist - prevGroundHeight[i];
     if ( deltaTime > 0.0f ) {
         const float maxStep = kGroundHeightSlewRate * deltaTime;
         hitDist = JPH::Clamp( hitDist, prevGroundHeight[i] - maxStep,
@@ -2286,16 +2294,207 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
 
     if ( hitDist > suspRayLen || up.GetY() < kUprightMinY ) {
         setAirborne();
+        updateWheelLandingGap( i, wheelGroundGap[i], heightStep, deltaTime );
         return false;
     }
 
     prevGroundHeight[i] =
         JPH::Clamp( hitDist - w.Radius, suspMinLength[i], droopStop ) +
         w.Radius;
-    return applyWheelContact( chassis, i, deltaTime, attachW,
-                              collector.mPosition, collector.mNormal, hitDist,
-                              static_cast<uint32_t>( collector.mSurface ),
-                              collector.mMaterial );
+    const bool bContact = applyWheelContact(
+        chassis, i, deltaTime, attachW, collector.mPosition, collector.mNormal,
+        hitDist, static_cast<uint32_t>( collector.mSurface ),
+        collector.mMaterial );
+    const float compression = ( droopStop - prevSuspLength[i] ) * up.GetY();
+    updateWheelLandingGap( i, wheelGroundGap[i] + compression, heightStep,
+                           deltaTime );
+    return bContact;
+}
+
+void PhysicsVehicle::updateWheelLandingGap( int i,
+                                            float gap,
+                                            float heightStep,
+                                            float deltaTime ) {
+    // FUN_0083a560
+    static constexpr float kGapRateDeadband = 0.1f; // DAT_00fab788
+    static constexpr float kLandedGap = 0.05f;      // DAT_00f41778
+
+    groundHeightStep[i] = heightStep;
+    if ( landingPrevGap[i] == kNoPreviousGap ) {
+        gap = landingGap[i];
+    }
+    const float gapRate =
+        deltaTime > 0.0f ? ( gap - landingGap[i] ) / deltaTime : 0.0f;
+    landingGapRate[i] = gapRate;
+    landingPrevGap[i] = landingGap[i];
+    landingGap[i] = gap;
+
+    if ( gapRate > kGapRateDeadband ) {
+        landingPeakGap[i] = std::max( landingPeakGap[i], gap );
+    } else if ( gapRate >= -kGapRateDeadband && gap < kLandedGap ) {
+        landingPeakGap[i] = 0.0f;
+    }
+}
+
+void PhysicsVehicle::resetLandingState() {
+    for ( int32_t i = 0; i < PhysicsVehicleState::kMaxWheels; i++ ) {
+        landingGap[i] = 0.0f;
+        landingPrevGap[i] = kNoPreviousGap;
+        landingGapRate[i] = 0.0f;
+        landingPeakGap[i] = 0.0f;
+        groundHeightStep[i] = 0.0f;
+    }
+    landingScore = 0.0f;
+    landingImpact = 0.0f;
+    bLandingDetected = false;
+    landingWindowSteps = 0;
+    landingCooldownSteps = 0;
+}
+
+void PhysicsVehicle::updateLandingImpact() {
+    // FUN_0041e300
+    static constexpr float kLandedGap = 0.05f;                 // DAT_00f41778
+    static constexpr float kGapRateLimit = 1000.0f;            // DAT_00f41718
+    static constexpr float kPeakGapHigh = 2.5f;                // DAT_00fab5f0
+    static constexpr float kPeakGapMedium = 1.5f;              // DAT_00fab5f4
+    static constexpr float kPeakGapLow = 0.3f;                 // DAT_00fab5f8
+    static constexpr float kScoreHigh = 300.0f;                // DAT_00f4183c
+    static constexpr float kScoreMedium = 200.0f;              // DAT_00f4170c
+    static constexpr float kScoreLow = 100.0f;                 // DAT_00f41708
+    static constexpr float kStepHeight = 0.125f;               // DAT_00fab5e0
+    static constexpr float kStepScoreMax = 50.0f;              // DAT_00f41848
+    static constexpr float kStepGapEpsilon = 0.01f;            // DAT_00f416d4
+    static constexpr float kStepGapRate = 10.0f;               // FLOAT_00f4166c
+    static constexpr float kStepPeakGapMax = 0.3f;             // FLOAT_00f416bc
+    static constexpr float kStepUpScore = 10.0f;               // FLOAT_00f4166c
+    static constexpr float kStepDownScore = 15.0f;             // DAT_00f41700
+    static constexpr float kStepFastSpeed = 13.888889f;        // DAT_00fab5ec
+    static constexpr float kStepFastScale = 2.0f;              // DAT_00f416b0
+    static constexpr float kImpactScoreOffset = 40.0f;         // DAT_00f41b70
+    static constexpr float kImpactScoreScale0 = 0.75f;         // DAT_00f416a4
+    static constexpr float kImpactScoreScale1 = 0.0047619049f; // DAT_00f41de4
+    static constexpr float kImpactMin = 0.25f;                 // DAT_00f416dc
+    static constexpr uint8_t kCooldownSteps = 10;              // DAT_00fab5e4
+    static constexpr uint8_t kWindowSteps = 10;                // DAT_00fab5e8
+
+    static constexpr float kFallRateMax = 0.0f;
+
+    if ( bVirtual ) {
+        return;
+    }
+
+    landingImpact = 0.0f;
+
+    int32_t numWheelsOnRoad = 0;
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        if ( TDUSurface::isOnRoad( wheelSurface[i] ) ) {
+            numWheelsOnRoad++;
+        }
+    }
+
+    if ( landingCooldownSteps != 0 ) {
+        landingCooldownSteps--;
+        return;
+    }
+
+    if ( landingWindowSteps == 0 ) {
+        if ( landingScore > 0.0f ) {
+            pushLandingFXEvent();
+            landingImpact =
+                std::clamp( ( landingScore - kImpactScoreOffset ) *
+                                    kImpactScoreScale0 * kImpactScoreScale1 +
+                                kImpactMin,
+                            kImpactMin, 1.0f );
+            bLandingDetected = true;
+            landingCooldownSteps = kCooldownSteps;
+        }
+        landingScore = 0.0f;
+        landingWindowSteps = kWindowSteps;
+        return;
+    }
+
+    bool bAllWheelsAirborne = true;
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        const float gap = landingGap[i];
+        const float gapRate = landingGapRate[i];
+        const float peakGap = landingPeakGap[i];
+
+        if ( !bLandingDetected && gap < kLandedGap && gapRate < kFallRateMax &&
+             std::fabs( gapRate ) < kGapRateLimit ) {
+            if ( peakGap > kPeakGapHigh && landingScore < kScoreHigh ) {
+                landingScore = kScoreHigh;
+            } else if ( peakGap > kPeakGapMedium &&
+                        landingScore < kScoreMedium ) {
+                landingScore = kScoreMedium;
+            } else if ( peakGap > kPeakGapLow && landingScore < kScoreLow ) {
+                landingScore = kScoreLow;
+            }
+        }
+
+        const float heightStep = groundHeightStep[i];
+        if ( numWheelsOnRoad != 0 && std::fabs( heightStep ) > kStepHeight &&
+             landingScore < kStepScoreMax &&
+             gap - heightStep < kStepGapEpsilon &&
+             std::fabs( gapRate ) > kStepGapRate &&
+             peakGap < kStepPeakGapMax ) {
+            landingScore = heightStep < 0.0f ? kStepUpScore : kStepDownScore;
+            if ( std::fabs( vehicle.Wheels[i].ContactVelLong ) >
+                 kStepFastSpeed ) {
+                landingScore *= kStepFastScale;
+            }
+        }
+
+        if ( gap < kPeakGapLow ) {
+            bAllWheelsAirborne = false;
+        }
+    }
+
+    if ( bAllWheelsAirborne ) {
+        bLandingDetected = false;
+    }
+    landingWindowSteps--;
+}
+
+void PhysicsVehicle::pushLandingFXEvent() {
+    // FUN_007ca480
+    static constexpr int32_t kRawMaterialChassis = 14;
+    static constexpr int32_t kRawMaterialWorld = 0;
+
+    if ( gpPhysicsFX == nullptr || !gpPhysicsFX->isReady() ||
+         pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return;
+    }
+
+    PhysicsFXEvent event;
+    event.FXMaterialA = GSPhysicsFX::RemapMaterial( kRawMaterialChassis );
+    event.FXMaterialB = GSPhysicsFX::RemapMaterial( kRawMaterialWorld );
+    if ( !gpPhysicsFX->hasEffectFor( event.FXMaterialA, event.FXMaterialB,
+                                     PFXEK_Impact ) ) {
+        return;
+    }
+
+    const JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    const JPH::RMat44 world = bi.GetWorldTransform( pChassisBody->GetID() );
+    const JPH::Vec3 up = world.GetColumn3( 1 );
+    const JPH::Vec3 position( world.GetTranslation() - up );
+    const JPH::Vec3 velocity = bi.GetLinearVelocity( pChassisBody->GetID() );
+
+    event.pBodyA = pChassisBody;
+    event.pBodyB = nullptr;
+    event.MassA = vehicle.Mass;
+    event.MassB = vehicle.Mass;
+    event.VelocityA = Eigen::Vector4f( velocity.GetX(), velocity.GetY(),
+                                       velocity.GetZ(), 0.0f );
+    event.VelocityB = Eigen::Vector4f::Zero();
+    event.Kind = PFXEK_Impact;
+    event.ContactPosition = Eigen::Vector4f( position.GetX(), position.GetY(),
+                                             position.GetZ(), 1.0f ) +
+                            GSPhysics::GetShiftOrigin();
+    event.ContactPosition.w() = 1.0f;
+    event.Normal = Eigen::Vector4f( up.GetX(), up.GetY(), up.GetZ(), 0.0f );
+    event.Energy = landingScore;
+
+    gpPhysicsFX->getEventQueue().push( event );
 }
 
 bool PhysicsVehicle::applyWheelContact( const JPH::Body &chassis,
@@ -3665,6 +3864,15 @@ void PhysicsVehicle::pushCollisionEvent( const CollisionEvent &event ) {
     numCollisionEvents++;
 }
 
+float PhysicsVehicle::getMaxCollisionEnergy() const {
+    ScopedMutexLock lock( &gCollisionEventMutex );
+    float maxEnergy = 0.0f;
+    for ( int32_t i = 0; i < numCollisionEvents; i++ ) {
+        maxEnergy = std::max( maxEnergy, collisionEvents[i].Energy );
+    }
+    return maxEnergy;
+}
+
 void PhysicsVehicle::flushCollisionEvents(
     std::vector<CollisionEvent> &outEvents ) {
     // FUN_0083bbd0
@@ -4363,6 +4571,8 @@ void PhysicsVehicle::tick( float deltaTime ) {
 
     updateCollisionInertia( deltaTime );
 
+    updateLandingImpact();
+
     if ( !bKeyframed ) {
         updateBikeLean( deltaTime );
         if ( bIsBike ) {
@@ -4647,6 +4857,7 @@ void PhysicsVehicle::resetSimulationState() {
         prevSuspLength[i] = suspStaticLength[i];
         prevGroundHeight[i] = suspStaticLength[i] + wheel.Radius;
     }
+    resetLandingState();
 
     PhysicsEngineSim &engine = vehicle.Engine;
     engine.State = eEngineState::ES_Off;
@@ -5094,6 +5305,15 @@ Eigen::Vector4f PhysicsVehicle::getChassisVelocity() const {
         return Eigen::Vector4f::Zero();
     }
     const JPH::Vec3 v = pPhysicsSystem->GetBodyInterface().GetLinearVelocity(
+        pChassisBody->GetID() );
+    return Eigen::Vector4f( v.GetX(), v.GetY(), v.GetZ(), 0.0f );
+}
+
+Eigen::Vector4f PhysicsVehicle::getChassisAngularVelocity() const {
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return Eigen::Vector4f::Zero();
+    }
+    const JPH::Vec3 v = pPhysicsSystem->GetBodyInterface().GetAngularVelocity(
         pChassisBody->GetID() );
     return Eigen::Vector4f( v.GetX(), v.GetY(), v.GetZ(), 0.0f );
 }

@@ -11,6 +11,8 @@
 #include "player_data/gs_playerdata.h"
 #include "render/camera/gs_camera.h"
 
+static constexpr float kMphToMs = 0.44694445f; // DAT_00f41860
+
 // TODO: REMOVE ME: Remove when control mapping is implemented in game.
 static bool gUseDefaultPadMapping = false;
 static CmdLineArg CmdLineGamepad( "gamepad", []( const char *pArg ) {
@@ -255,24 +257,36 @@ void GSConfig::registerDeviceCommands() {
         }
     } );
 
-    registerCommandFloat( "FFB_FACTOR", &gFFBSlipAngle[1][0] ); // FUN_009859b0
+    registerCommandFloat( "FFB_FACTOR", &gFFBFactor ); // FUN_009859b0
 
     registerCommand( "FFB_SLIPANGLE", [&]( const char *pArg ) {
         // FUN_00985980
         std::string argStr( pArg );
         size_t it = 0;
 
-        int32_t iVar1 = ParseInteger( argStr, it );
-        float fVar1 = ParseFloat( argStr, it );
-        float fVar2 = ParseFloat( argStr, it );
+        int32_t index = ParseInteger( argStr, it );
+        float slipAngle = ParseFloat( argStr, it );
+        float factor = ParseFloat( argStr, it );
 
-        gFFBSlipAngle[iVar1][0] = fVar1;
-        gFFBSlipAngle[iVar1][1] = fVar2;
+        if ( index >= 0 && index < 3 ) {
+            gFFBSlipAngle[index][0] = slipAngle;
+            gFFBSlipAngle[index][1] = factor;
+        }
     } );
 
     registerCommand( "FFB_SPEEDFACTOR", [&]( const char *pArg ) {
         // FUN_00985940
-        OTDU_UNIMPLEMENTED
+        std::string argStr( pArg );
+        size_t it = 0;
+
+        int32_t index = ParseInteger( argStr, it );
+        float speedMph = ParseFloat( argStr, it );
+        float factor = ParseFloat( argStr, it );
+
+        if ( index >= 0 && index < 4 ) {
+            gFFBSpeedFactor[index][0] = speedMph * kMphToMs;
+            gFFBSpeedFactor[index][1] = factor;
+        }
     } );
 
     registerCommand( "FFB_LOADFROMACCEL", [&]( const char *pArg ) {

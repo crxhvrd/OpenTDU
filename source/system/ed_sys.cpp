@@ -33,6 +33,7 @@ int32_t gPickedRefreshRate = 0; // DAT_00fac8ec
 DisplayMode gBootDisplayMode = {};
 
 bool gWindowSizeDirty = false;
+bool gbIgnoreFocusLoss = false;
 
 edSys::edSys()
     : edBase( kedSysName, 1, 0xd, 0 ),
@@ -55,7 +56,8 @@ edSys::~edSys() {}
 int32_t edSys::initialize() {
     // FUN_00432fb0
 #if defined( OTDU_USE_SDL )
-    if ( !SDL_Init( SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO ) ) {
+    if ( !SDL_Init( SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC |
+                    SDL_INIT_AUDIO ) ) {
         OTDU_LOG_ERROR( "Failed to initialize SDL: '%s'!\n", SDL_GetError() );
         state = 4;
         return state;
@@ -112,7 +114,7 @@ void edSys::pollEvents() {
             break;
         }
         case SDL_EVENT_WINDOW_FOCUS_LOST: {
-            gEdSys.bWindowActivated = false;
+            gEdSys.bWindowActivated = gbIgnoreFocusLoss;
             gEdAudio.setOutputMuted( true );
             break;
         }

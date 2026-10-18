@@ -35,7 +35,7 @@ bool DeviceMouse::initialize() {
     // SDL3: hardcode 3 physical buttons, 2 scroll channels (digital), 2 axes.
     numChannelButtons = 5; // LEFT, RIGHT, MIDDLE, SCROLL_UP, SCROLL_DOWN
     numChannelAxis = 2;    // MOUSE_X, MOUSE_Y
-    unknown = 0;
+    numChannelEffects = 0;
     channelCount = numChannelButtons + numChannelAxis;
 
     InputChannel *iVar1 = allocateChannels( channelCount );

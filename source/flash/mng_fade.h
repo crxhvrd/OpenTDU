@@ -27,6 +27,7 @@ public:
     }
     inline float getTransitionDuration() const { return transitionDuration; }
     inline void setRenderLogo( const bool bEnabled ) { bRenderLogo = bEnabled; }
+    inline bool isRenderingLogo() const { return bRenderLogo; }
     inline void restartTransition( const uint32_t newFlags,
                                    const float durationInSeconds ) {
         transitionDuration = durationInSeconds;

@@ -2,8 +2,44 @@
 
 #include "game/gs_base.h"
 
+#include <atomic>
+
 class Device;
+class DeviceJoystick;
 struct InputChannel;
+
+enum class eForceFeedbackMode : int32_t {
+    FFBM_None = 0,
+    FFBM_Wheel = 1,
+    FFBM_Pad = 2
+};
+
+// Written by the physics step (FUN_0081cd10), sent to the device by
+// GSDevice::tick
+struct ForceFeedbackOutput {
+    float ConstantForce = 0.0f;                              // DAT_010e72a4
+    float Damper = 0.0f;                                     // DAT_010e72a8
+    float SecondaryForce = 0.0f;                             // DAT_010e72b0
+    eForceFeedbackMode Mode = eForceFeedbackMode::FFBM_None; // DAT_010e72b4
+
+    // NOTE: the physics thread steps faster than the device tick; keep the
+    // pad peaks so single-step impact pulses are not lost between frames.
+    std::atomic<float> PeakConstantForce{ 0.0f };
+    std::atomic<float> PeakSecondaryForce{ 0.0f };
+
+    void latchPadPeaks() {
+        LatchPeak( PeakConstantForce, ConstantForce );
+        LatchPeak( PeakSecondaryForce, SecondaryForce );
+    }
+
+private:
+    static void LatchPeak( std::atomic<float> &peak, const float value ) {
+        float current = peak.load();
+        while ( value > current &&
+                !peak.compare_exchange_weak( current, value ) ) {
+        }
+    }
+};
 
 struct MouseState {
     Device *pInstance = nullptr;
@@ -63,6 +99,11 @@ public:
                                     const int32_t param_5 );
 
 private:
+    void createForceFeedbackEffects( DeviceJoystick *pDevice );
+    void updateForceFeedbackEffects();
+    void releaseForceFeedbackEffects();
+
+private:
     char replayFilename[32];
     uint32_t replaySize;
     bool bReplayLoading;
@@ -85,4 +126,6 @@ extern float gAccelDeadZone;
 extern float gFFBLoadFactor[3];
 extern float gFFBLoadFromAccel[3];
 extern float gFFBSlipAngle[3][2];
+extern float gFFBSpeedFactor[4][2];
 extern bool gPedalsSeparated;
+extern ForceFeedbackOutput gForceFeedbackOutput;

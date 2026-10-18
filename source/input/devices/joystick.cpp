@@ -24,6 +24,7 @@
 static constexpr float kAxisScale = 1.0f / 32767.0f; // DAT_00f4167c
 static constexpr int32_t kPOVCentered = -1;
 static constexpr int32_t kNumPOVDirections = 4;
+static constexpr int32_t kNumRumbleMotors = 2; // low/high frequency
 
 static constexpr const char *kPOVDirectionNames[kNumPOVDirections] = {
     "UP", "RIGHT", "DOWN", "LEFT" }; // NOTE: order matches the direction bits
@@ -125,9 +126,13 @@ DeviceJoystick::DeviceJoystick()
       field_0x80( 0 ),
       joystickID( 0 ),
       pJoystick( nullptr ),
-      pGamepad( nullptr ) {}
+      pGamepad( nullptr ),
+      pHaptic( nullptr ) {}
 
 DeviceJoystick::~DeviceJoystick() {
+    if ( pHaptic != nullptr ) {
+        SDL_CloseHaptic( pHaptic );
+    }
     SDL_CloseGamepad( pGamepad );
     SDL_CloseJoystick( pJoystick );
 }
@@ -143,6 +148,17 @@ bool DeviceJoystick::initialize( SDL_JoystickID param_1 ) {
 
     if ( SDL_IsGamepad( joystickID ) ) {
         pGamepad = SDL_OpenGamepad( joystickID );
+    }
+
+    // NOTE: DirectInput only exposed force feedback through FF actuators;
+    // devices without a constant force effect fall back to SDL rumble.
+    if ( SDL_IsJoystickHaptic( pJoystick ) ) {
+        pHaptic = SDL_OpenHapticFromJoystick( pJoystick );
+        if ( pHaptic != nullptr &&
+             ( SDL_GetHapticFeatures( pHaptic ) & SDL_HAPTIC_CONSTANT ) == 0 ) {
+            SDL_CloseHaptic( pHaptic );
+            pHaptic = nullptr;
+        }
     }
 
     SDL_JoystickType type = SDL_GetJoystickTypeForID( joystickID );
@@ -175,6 +191,11 @@ bool DeviceJoystick::initialize( SDL_JoystickID param_1 ) {
 
     if ( !createChannels() ) {
         return false;
+    }
+
+    if ( numChannelEffects != 0 && pHaptic != nullptr &&
+         ( SDL_GetHapticFeatures( pHaptic ) & SDL_HAPTIC_AUTOCENTER ) != 0 ) {
+        SDL_SetHapticAutocenter( pHaptic, 0 );
     }
 
     flags = ( flags ^ ( flags ^ 0x01 ) ) & 1; // set connected bit
@@ -211,11 +232,19 @@ bool DeviceJoystick::createChannels() {
         numAxisChannels += pAxes[i].pNegativeName != nullptr ? 2 : 1;
     }
 
+    int32_t numEffects = 0;
+    if ( pHaptic != nullptr ) {
+        numEffects = std::max( SDL_GetNumHapticAxes( pHaptic ), 1 );
+    } else if ( SDL_GetBooleanProperty( SDL_GetJoystickProperties( pJoystick ),
+                                        SDL_PROP_JOYSTICK_CAP_RUMBLE_BOOLEAN,
+                                        false ) ) {
+        numEffects = kNumRumbleMotors;
+    }
+
     numChannelButtons = uint32_t( numButtons + numHats * kNumPOVDirections );
     numChannelAxis = uint32_t( numAxisChannels );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FFB
-    unknown = 0;
-    channelCount = numChannelButtons + numChannelAxis;
+    numChannelEffects = uint32_t( numEffects );
+    channelCount = numChannelButtons + numChannelAxis + numChannelEffects;
 
     if ( allocateChannels( channelCount ) == nullptr ) {
         return false;
@@ -266,6 +295,14 @@ bool DeviceJoystick::createChannels() {
         }
         addAxisChannel( axis.Axis, axis.pPositiveName,
                         OTDU_CHANNEL_AXIS_POSITIVE );
+    }
+
+    for ( int32_t i = 0; i < numEffects; i++ ) {
+        InputChannel &channel = pChannels[cursor++];
+        channel.Unknown = int32_t( eInputChannelType::ICT_Effect );
+        channel.Index = i;
+        channel.Flags = 0;
+        snprintf( channel.pName, sizeof( channel.pName ), "EFFECT_%d", i );
     }
 
     OTDU_ASSERT( cursor == channelCount );

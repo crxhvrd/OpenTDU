@@ -445,6 +445,7 @@ private:
     uint8_t bDrawDebugInfos : 1;
 
     bool bForceFeedbackAllowed = false;
+    uint32_t debugDrawFlags;
 
     // Jolt physics runtime objects — only valid after initializeJolt()
     JPH::PhysicsSystem *pPhysicsSystem = nullptr;
@@ -477,6 +478,8 @@ private:
     std::vector<uint8_t> pendingSceneryBlob;
     PhysFactory *pSceneryFactory = nullptr;
 
+    DrawList *pGraphDrawList = nullptr;
+
 #if OTDU_DEVBUILD
     DrawList *pCollisionDebugList = nullptr;
     DrawList *pVehicleDebugList = nullptr;
@@ -491,6 +494,9 @@ private:
     void initializeJolt();
     void buildProcessPendingProps();
     void physicsStep( float dt, float accTime );
+    void updateForceFeedback( float dt );
+    void createGraph();
+    void drawGraph();
     void drawCollisionShapes();
     void drawVehicleShapes();
     void updateGMeterToggle();

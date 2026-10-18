@@ -3,6 +3,7 @@
 
 #include "ed_dev.h"
 #include "input_device.h"
+#include "devices/joystick.h"
 #include "system/ed_sys.h"
 
 #include "debug/mng_debug_hud.h"
@@ -11,6 +12,10 @@
 #include "flash/gs_flash.h"
 
 #include "config/gs_config.h"
+
+#include "game/scenaric/gs_scenaric.h"
+#include "game/vehicle/car_state.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 #include "tdu_instance.h"
 
@@ -35,7 +40,45 @@ float gFFBSlipAngle[3][2] = {
     {0.0f, 0.0f},
     {0.0f, 0.0f}
 };
+float gFFBSpeedFactor[4][2] = {
+    // DAT_010d6ed8
+    {0.0f, 0.0f},
+    {0.0f, 0.0f},
+    {0.0f, 0.0f},
+    {0.0f, 0.0f}
+};
 bool gPedalsSeparated = false;
+ForceFeedbackOutput gForceFeedbackOutput = {};
+
+static constexpr float kFFBUnitsScale = 10000.0f; // DAT_00f416c4
+static constexpr uint32_t kRumbleDurationMs = 100;
+
+static DeviceJoystick *gpFFBDevice = nullptr;
+static int32_t gFFBDamperEffect = -1;    // DAT_010e729c
+static int32_t gFFBConstantEffect = -1;  // DAT_010e72a0
+static bool gbFFBEffectsCreated = false; // BOOL_010e72ac
+static bool gbFFBEffectsRunning = false;
+static Uint16 gRumbleLevels[2] = { 0, 0 };
+static uint64_t gRumbleHoldEndMs[2] = { 0, 0 };
+
+static Uint16 HoldRumbleLevel( const int32_t motor,
+                               const Uint16 level,
+                               const uint64_t nowMs ) {
+    if ( level >= gRumbleLevels[motor] || nowMs >= gRumbleHoldEndMs[motor] ) {
+        gRumbleLevels[motor] = level;
+        gRumbleHoldEndMs[motor] = nowMs + kRumbleDurationMs;
+    }
+    return gRumbleLevels[motor];
+}
+
+static Sint16 ToSDLHapticLevel( const float dinputValue ) {
+    const float level = dinputValue * ( 32767.0f / kFFBUnitsScale );
+    return Sint16( std::clamp( level, -32767.0f, 32767.0f ) );
+}
+
+static Uint16 ToSDLRumbleStrength( const float value ) {
+    return Uint16( std::clamp( value, 0.0f, 1.0f ) * 65535.0f );
+}
 
 GSDevice gDevice = {}; /* FUN_009ddeb0 */ // DAT_00fa3ff0
 GSDevice *gpDevice = nullptr;
@@ -199,22 +242,170 @@ void GSDevice::tick( float totalTime, float deltaTime ) {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
+    CarState *pCarState = gpScenaric != nullptr
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    PhysicsVehicle *pVehicle =
+        pCarState != nullptr ? pCarState->getPhysicsVehicle() : nullptr;
+    if ( pVehicle != nullptr && gpConfig->pPlayerConfig != nullptr ) {
+        DeviceAction *pSteerAction = pVehicle->isBike()
+                                         ? gpConfig->pPlayerConfig->pBikeRight
+                                         : gpConfig->pPlayerConfig->pCarRight;
+        if ( pSteerAction != nullptr && pSteerAction->NumAddedChannels != 0 ) {
+            InputChannel *pChannel = pSteerAction->pChannel->pChannel;
+            Device *pDevice = pChannel != nullptr ? pChannel->pParent : nullptr;
+            if ( pDevice != nullptr && pDevice->getNumEffects() != 0 ) {
+                // Only joysticks expose effect channels
+                DeviceJoystick *pJoystick =
+                    static_cast<DeviceJoystick *>( pDevice );
+                if ( pJoystick->getSDLJoystick() == nullptr ) {
+                    return;
+                }
+                if ( gbFFBEffectsCreated ) {
+                    updateForceFeedbackEffects();
+                } else {
+                    createForceFeedbackEffects( pJoystick );
+                }
+                return;
+            }
+        }
+    }
 
-    // if ( BOOL_010e72ac != false ) {
-    //     if ( DAT_010e729c != (int *)0x0 ) {
-    //         ( **(code **)( *DAT_010e729c + 8 ) )( DAT_010e729c );
-    //     }
-    //     if ( DAT_010e72a0 != (int *)0x0 ) {
-    //         ( **(code **)( *DAT_010e72a0 + 8 ) )( DAT_010e72a0 );
-    //     }
-    //     BOOL_010e72ac = false;
-    // }
+    if ( gbFFBEffectsCreated ) {
+        releaseForceFeedbackEffects();
+    }
+}
+
+void GSDevice::createForceFeedbackEffects( DeviceJoystick *pDevice ) {
+    // FUN_00980380
+    gpFFBDevice = pDevice;
+
+    SDL_Haptic *pHaptic = pDevice->getSDLHaptic();
+    if ( pHaptic != nullptr ) {
+        SDL_HapticEffect effect = {};
+        effect.type = SDL_HAPTIC_CONSTANT;
+        effect.constant.direction.type = SDL_HAPTIC_STEERING_AXIS;
+        effect.constant.length = SDL_HAPTIC_INFINITY;
+        effect.constant.level = 0;
+        gFFBConstantEffect = SDL_CreateHapticEffect( pHaptic, &effect );
+
+        if ( ( SDL_GetHapticFeatures( pHaptic ) & SDL_HAPTIC_DAMPER ) != 0 ) {
+            effect = {};
+            effect.type = SDL_HAPTIC_DAMPER;
+            effect.condition.direction.type = SDL_HAPTIC_STEERING_AXIS;
+            effect.condition.length = SDL_HAPTIC_INFINITY;
+            gFFBDamperEffect = SDL_CreateHapticEffect( pHaptic, &effect );
+        }
+    }
+
+    gbFFBEffectsCreated = true;
+}
+
+void GSDevice::updateForceFeedbackEffects() {
+    // FUN_009801e0
+    ForceFeedbackOutput &output = gForceFeedbackOutput;
+    const float peakConstantForce = output.PeakConstantForce.exchange( 0.0f );
+    const float peakSecondaryForce = output.PeakSecondaryForce.exchange( 0.0f );
+
+    SDL_Haptic *pHaptic = gpFFBDevice->getSDLHaptic();
+    if ( pHaptic == nullptr ) {
+        // NOTE: DirectInput pads without FF actuators never rumbled; SDL
+        // rumble motors stand in for the two pad effect channels. Each motor
+        // holds a raised level for the rumble duration so short impact
+        // pulses can be felt.
+        Uint16 lowFrequency = 0;
+        Uint16 highFrequency = 0;
+        if ( output.Mode == eForceFeedbackMode::FFBM_Pad ) {
+            lowFrequency = ToSDLRumbleStrength(
+                std::max( output.ConstantForce, peakConstantForce ) );
+            highFrequency = ToSDLRumbleStrength(
+                std::max( output.SecondaryForce, peakSecondaryForce ) );
+        }
+        const uint64_t nowMs = SDL_GetTicks();
+        SDL_RumbleJoystick( gpFFBDevice->getSDLJoystick(),
+                            HoldRumbleLevel( 0, lowFrequency, nowMs ),
+                            HoldRumbleLevel( 1, highFrequency, nowMs ),
+                            kRumbleDurationMs );
+        return;
+    }
+
+    if ( gFFBDamperEffect >= 0 ) {
+        const Sint16 coefficient =
+            ToSDLHapticLevel( output.Damper * kFFBUnitsScale );
+
+        SDL_HapticEffect effect = {};
+        effect.type = SDL_HAPTIC_DAMPER;
+        effect.condition.direction.type = SDL_HAPTIC_STEERING_AXIS;
+        effect.condition.length = SDL_HAPTIC_INFINITY;
+        effect.condition.right_coeff[0] = coefficient;
+        effect.condition.left_coeff[0] = coefficient;
+        effect.condition.right_sat[0] = 0xffff;
+        effect.condition.left_sat[0] = 0xffff;
+        SDL_UpdateHapticEffect( pHaptic, gFFBDamperEffect, &effect );
+    }
+
+    if ( gFFBConstantEffect >= 0 &&
+         output.Mode != eForceFeedbackMode::FFBM_None ) {
+        float magnitude = output.ConstantForce * kFFBUnitsScale;
+        if ( output.Mode == eForceFeedbackMode::FFBM_Pad ) {
+            const float secondary = output.SecondaryForce * kFFBUnitsScale;
+            magnitude =
+                std::sqrt( secondary * secondary + magnitude * magnitude );
+        }
+
+        SDL_HapticEffect effect = {};
+        effect.type = SDL_HAPTIC_CONSTANT;
+        effect.constant.direction.type = SDL_HAPTIC_STEERING_AXIS;
+        effect.constant.length = SDL_HAPTIC_INFINITY;
+        effect.constant.level = ToSDLHapticLevel( magnitude );
+        SDL_UpdateHapticEffect( pHaptic, gFFBConstantEffect, &effect );
+    }
+
+    // NOTE: DirectInput restarted both effects on every update (DIEP_START);
+    // SDL only needs them started once.
+    if ( !gbFFBEffectsRunning ) {
+        if ( gFFBDamperEffect >= 0 ) {
+            SDL_RunHapticEffect( pHaptic, gFFBDamperEffect, 1 );
+        }
+        if ( gFFBConstantEffect >= 0 ) {
+            SDL_RunHapticEffect( pHaptic, gFFBConstantEffect, 1 );
+        }
+        gbFFBEffectsRunning = true;
+    }
+}
+
+void GSDevice::releaseForceFeedbackEffects() {
+    // FUN_00980700 (inlined)
+    SDL_Haptic *pHaptic = gpFFBDevice->getSDLHaptic();
+    if ( pHaptic != nullptr ) {
+        if ( gFFBDamperEffect >= 0 ) {
+            SDL_DestroyHapticEffect( pHaptic, gFFBDamperEffect );
+        }
+        if ( gFFBConstantEffect >= 0 ) {
+            SDL_DestroyHapticEffect( pHaptic, gFFBConstantEffect );
+        }
+    } else {
+        SDL_RumbleJoystick( gpFFBDevice->getSDLJoystick(), 0, 0, 0 );
+    }
+
+    gFFBDamperEffect = -1;
+    gFFBConstantEffect = -1;
+    gpFFBDevice = nullptr;
+    gRumbleLevels[0] = gRumbleLevels[1] = 0;
+    gRumbleHoldEndMs[0] = gRumbleHoldEndMs[1] = 0;
+    gbFFBEffectsRunning = false;
+    gbFFBEffectsCreated = false;
 }
 
 void GSDevice::terminate() {
     // FUN_00980670
     bUseNaturalPointHeadTracking = false;
+
+    // NOTE: DirectInput effects were released with their device; SDL effects
+    // must go before the haptic device is closed.
+    if ( gbFFBEffectsCreated ) {
+        releaseForceFeedbackEffects();
+    }
 
     // TODO: NaturalPoint SDK support
     // puVar1 = gNPFuncPointers[0xb];

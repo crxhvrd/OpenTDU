@@ -152,6 +152,13 @@ static CmdLineArg CmdLineArgLogSilent( "silent", []( const char *pArg ) {
 static CmdLineArg CmdLineArgNoRunLock( "norunlock", []( const char *pArg ) {
     gDisableRunLock = true;
 } );
+
+// Keeps the game running (no auto pause, input not suppressed) when the window
+// loses focus
+static CmdLineArg CmdLineArgNoFocusPause( "nofocuspause",
+                                          []( const char *pArg ) {
+                                              gbIgnoreFocusLoss = true;
+                                          } );
 #endif
 
 static CmdLineArg CmdLineArgORB( "orb", []( const char *pArg ) {
