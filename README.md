@@ -64,7 +64,7 @@ Copy the opentdu binary and EURO folder content (**must be merged with your orig
 ## Project progress
 Progress is tracked on a game mode basis:
 | GameMode ID  | GameMode  | Status |
-| -----------  | ----------- |
+| -----------  | ----------- | ----------- |
 | 1| FreeRide|**Done**|
 | 2| Map|**Done**|
 | 3| Home|**Done**|
