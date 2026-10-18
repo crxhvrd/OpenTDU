@@ -19,6 +19,7 @@
 #include "world/weather/gs_weather.h"
 #include "tdu_instance.h"
 #include "game/gm_scene.h"
+#include "game/intro/gm_intro.h"
 #include "render/gs_render.h"
 #include "render/postfx/gs_postfx.h"
 #include "render/mng_reflection.h"
@@ -234,10 +235,8 @@ void EntityAvatar::endLifeSetCinematic() {
 
 bool EntityAvatar::isValid() const {
     // FUN_007f7530
-    if ( pPooledAvatarEntry != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AVATAR
-    }
-    return true;
+    return pPooledAvatarEntry != nullptr &&
+           pPooledAvatarEntry->getLoadingState() == AVT_Ready;
 }
 
 void EntityAvatar::initialize() {
@@ -550,9 +549,8 @@ int32_t EntityAvatar::getRenderSceneID() {
         renderPass = eRenderPass::RP_CarPlayer;
     }
 
-    if ( gpTestDriveInstance != nullptr &&
-         gpTestDriveInstance->getActiveGameMode() == GM_Intro ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO
+    if ( gpGMIntro != nullptr && gpGMIntro->isCockpitZFarActive() ) {
+        renderPass = eRenderPass::RP_Cockpit;
     }
 
     if ( AlphaSceneSlot != -1 && gpMngCarAlpha != nullptr ) {

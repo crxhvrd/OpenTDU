@@ -3,6 +3,7 @@
 
 #include "filesystem/binary.h"
 #include "game/gm_scene.h"
+#include "game/intro/gm_intro.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_actor.h"
 #include "render/gs_render.h"
@@ -25,8 +26,8 @@ static inline bool IsGameModeRequestingDOFPass() {
 }
 
 static inline bool IsIntroCockpitSequenceRunning() {
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMIntro is not ported yet.
-    return false;
+    return gpGMIntro != nullptr && gpGMIntro->isCockpitZFarActive() &&
+           !gpGMIntro->isCockpitZFarNoPostCockpit();
 }
 
 static inline bool IsRenderingCockpitPass() {

@@ -6,6 +6,7 @@
 
 #include "tdu_instance.h"
 #include "game/gm_scene.h"
+#include "game/intro/gm_intro.h"
 #include "core/maths_helper.h"
 #include "database/gs_database.h"
 #include "game/gm_base.h"
@@ -2517,9 +2518,9 @@ int32_t EntityDriver::getRenderSceneID() {
         renderPass = eRenderPass::RP_Cockpit;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO - forced cockpit scene
-
-    if ( renderPass == eRenderPass::RP_Invalid ) {
+    if ( gpGMIntro != nullptr && gpGMIntro->isCockpitZFarActive() ) {
+        renderPass = eRenderPass::RP_Cockpit;
+    } else if ( renderPass == eRenderPass::RP_Invalid ) {
         return EntityAvatar::getRenderSceneID();
     }
 

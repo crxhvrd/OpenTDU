@@ -124,6 +124,17 @@ static void SetPlayerCarCinematicMode( bool bCinematic ) {
     }
 }
 
+static Matrix4x4f_t BuildScaledActorMatrix( const CinActorState &state,
+                                            const Eigen::Vector3f &scale ) {
+    Matrix4x4f_t transform = BuildRotationMatrix( state.Heading );
+    transform.row( 0 ) *= scale.x();
+    transform.row( 1 ) *= scale.y();
+    transform.row( 2 ) *= scale.z();
+    transform.row( 3 ) = Eigen::Vector4f(
+        state.Position.x(), state.Position.y(), state.Position.z(), 1.0f );
+    return transform;
+}
+
 static bool IsLocalPlayerCarInstalled() {
     return gpScenaric != nullptr &&
            gpScenaric->getLocalPlayer().getCarState() != nullptr;
@@ -366,6 +377,21 @@ void CinResCollection::releaseTrafficCarActors() {
     // FUN_007e5f70
     for ( int32_t i = 0; i < numActors; i++ ) {
         CinematicActor &actor = actors[i];
+        if ( actor.Kind == CinematicActor::CAK_IntroCarPart ) {
+            releaseIntroCarPart( i );
+            continue;
+        }
+        if ( actor.Kind == CinematicActor::CAK_IntroCar ) {
+            // FUN_007e4f00
+            GMIntro::IntroCarSlot *pSlot =
+                GMIntro::FindIntroCarSlot( actor.Name );
+            if ( pSlot != nullptr ) {
+                gpGMIntro->releaseIntroCar( pSlot );
+            }
+            actor.pCarState = nullptr;
+            actor.pIntroCarSlot = nullptr;
+            continue;
+        }
         if ( actor.Kind != CinematicActor::CAK_TrafficCar ||
              actor.pCarState == nullptr ) {
             continue;
@@ -380,6 +406,14 @@ void CinResCollection::releaseTrafficCarActors() {
             gpCarState->releaseCarState( actor.pCarState, false );
         }
         actor.pCarState = nullptr;
+    }
+}
+
+void CinResCollection::releaseIntroCarPart( const int32_t index ) {
+    CinematicActor &actor = actors[index];
+    if ( actor.pEntity != nullptr ) {
+        static_cast<GMIntro::IntroCarPart *>( actor.pEntity )->bUsed = false;
+        actor.pEntity = nullptr;
     }
 }
 
@@ -732,7 +766,7 @@ void CinResCollection::tickController( const uint8_t *pController,
             ? ( frac / duration ) * ( endTime - startTime ) + startTime
             : startTime;
 
-    const int32_t sourceIdx = static_cast<int32_t>( kf[1] );
+    const int32_t sourceIdx = *reinterpret_cast<const int32_t *>( &kf[1] );
     const uint32_t mediaId = *reinterpret_cast<const uint32_t *>( &kf[2] );
 
     if ( pSourceTable == nullptr || pCinematicData == nullptr ) {
@@ -891,7 +925,17 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
     }
     if ( pActor->Kind != CinematicActor::CAK_PlayerCar &&
          pActor->Kind != CinematicActor::CAK_TrafficCar &&
+         pActor->Kind != CinematicActor::CAK_IntroCar &&
          pActor->pEntity == nullptr ) {
+        return;
+    }
+
+    if ( pActor->Kind == CinematicActor::CAK_IntroCarPart ) {
+        dispatchIntroCarPart( pActor, state, scale );
+        return;
+    }
+    if ( pActor->Kind == CinematicActor::CAK_IntroCar ) {
+        applyIntroCarPose( pActor, state, scale, bHasTransformTrack );
         return;
     }
 
@@ -942,12 +986,7 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
         }
     }
 
-    Matrix4x4f_t transform = BuildRotationMatrix( state.Heading );
-    transform.row( 0 ) *= scale.x();
-    transform.row( 1 ) *= scale.y();
-    transform.row( 2 ) *= scale.z();
-    transform.row( 3 ) = Eigen::Vector4f(
-        state.Position.x(), state.Position.y(), state.Position.z(), 1.0f );
+    Matrix4x4f_t transform = BuildScaledActorMatrix( state, scale );
     if ( bHasBaseMatrix ) {
         transform = transform * baseMatrix;
     }
@@ -1019,6 +1058,102 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
         OTDU_LOG_ALWAYS(
             "[CINACT]   applied -> entity world pos=(%.2f,%.2f,%.2f)\n",
             worldPos.x(), worldPos.y(), worldPos.z() );
+}
+
+void CinResCollection::dispatchIntroCarPart( CinematicActor *pActor,
+                                             const CinActorState &state,
+                                             const Eigen::Vector3f &scale ) {
+    // FUN_0076bb50
+    GMIntro::IntroCarPart *pPart =
+        static_cast<GMIntro::IntroCarPart *>( pActor->pEntity );
+    GMIntro::IntroCarSlot *pSlot = pPart->pSlot;
+    if ( pSlot == nullptr || pSlot->pCarState == nullptr ) {
+        return;
+    }
+
+    if ( pPart->PartIndex == -1 ) {
+        const size_t length = std::strlen( pActor->Name );
+        const int32_t numWheels =
+            static_cast<int32_t>( pSlot->pCarState->getNumWheels() );
+        const bool bRear = pActor->Name[length - 2] != 'F';
+        const bool bRight = pActor->Name[length - 1] != 'L';
+        const bool bFork = std::strstr( pActor->Name, "_Fork_" ) != nullptr;
+        pPart->PartIndex =
+            ( static_cast<int32_t>( bRear ) << ( numWheels / 2 - 1 ) ) +
+            static_cast<int32_t>( bRight ) * ( numWheels / 4 ) +
+            ( bFork ? 4 : 0 );
+    }
+
+    Matrix4x4f_t transform = BuildScaledActorMatrix( state, scale );
+    if ( bHasBaseMatrix ) {
+        transform = transform * baseMatrix;
+    } else {
+        const Eigen::Vector4f shift = gpWorldStreaming->isEnabled()
+                                          ? gpWorldStreaming->getPosition()
+                                          : Eigen::Vector4f::Zero();
+        transform.row( 3 ) -= shift.transpose();
+    }
+
+    pSlot->PartMatrices[pPart->PartIndex] = transform;
+    pSlot->NumPartsUpdated++;
+    if ( pSlot->NumPartsUpdated >= pSlot->NumParts && pSlot->bPosePending &&
+         pSlot->pActor != nullptr ) {
+        applyIntroCarPose( pSlot->pActor, pSlot->PendingPose,
+                           pSlot->PendingScale, pSlot->bPendingTransformTrack );
+        pSlot->bPosePending = false;
+        pSlot->NumPartsUpdated = 0;
+    }
+}
+
+void CinResCollection::applyIntroCarPose( CinematicActor *pActor,
+                                          CinActorState &state,
+                                          const Eigen::Vector3f &scale,
+                                          bool bHasTransformTrack ) {
+    // FUN_007e5610
+    GMIntro::IntroCarSlot *pSlot =
+        static_cast<GMIntro::IntroCarSlot *>( pActor->pIntroCarSlot );
+    if ( pSlot != nullptr ) {
+        if ( !pSlot->bPosePending ) {
+            pSlot->PendingPose = state;
+            pSlot->PendingScale = scale;
+            pSlot->bPendingTransformTrack = bHasTransformTrack;
+            pSlot->bPosePending = true;
+            if ( pSlot->NumPartsUpdated < pSlot->NumParts ) {
+                return;
+            }
+            applyIntroCarPose( pActor, pSlot->PendingPose, pSlot->PendingScale,
+                               pSlot->bPendingTransformTrack );
+            pSlot->bPosePending = false;
+            pSlot->NumPartsUpdated = 0;
+            return;
+        }
+        if ( pSlot->NumPartsUpdated < pSlot->NumParts ) {
+            return;
+        }
+    }
+
+    Matrix4x4f_t transform = BuildScaledActorMatrix( state, scale );
+    if ( bHasBaseMatrix ) {
+        transform = transform * baseMatrix;
+    }
+
+    if ( bHasTransformTrack ) {
+        const bool bUseParts = pSlot != nullptr && pSlot->NumParts != 0;
+        applyCarTransform(
+            pActor->pCarState, transform, pActor->bCarTeleport,
+            bUseParts ? &pSlot->PartMatrices[GMIntro::kMaxIntroCarSlotParts / 2]
+                      : nullptr,
+            bUseParts ? &pSlot->PartMatrices[0] : nullptr );
+    }
+
+    PhysicsVehicle *pVehicle = ( pActor->pCarState != nullptr )
+                                   ? pActor->pCarState->getPhysicsVehicle()
+                                   : nullptr;
+    if ( pVehicle != nullptr ) {
+        PhysicsLock lock;
+        pActor->DisplayMatrix =
+            pVehicle->computeDisplayMatrix( pVehicle->getPhysicsMatrix() );
+    }
 }
 
 Matrix4x4f_t
@@ -1706,6 +1841,7 @@ bool CinResCollection::resolveActorRefPoint( const CinematicActor *pActor,
     switch ( pActor->Kind ) {
     case CinematicActor::CAK_PlayerCar:
     case CinematicActor::CAK_TrafficCar:
+    case CinematicActor::CAK_IntroCar:
         bOutDeferred = true;
         if ( !FindCarRefNodePoint( pActor->pCarState, pName, refPoint ) ) {
             return false;
@@ -2258,6 +2394,13 @@ void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
         pEntity = nullptr;
     }
 
+    GMIntro::IntroCarSlot *pIntroCarSlot = nullptr;
+    if ( kind == CinematicActor::CAK_IntroCar ) {
+        pIntroCarSlot = static_cast<GMIntro::IntroCarSlot *>( pEntity );
+        pPlayerCar = pIntroCarSlot->pCarState;
+        pEntity = nullptr;
+    }
+
     int32_t avatarRefCount = 0;
     if ( pEntity != nullptr && kind == CinematicActor::CAK_Entity ) {
         Entity *pSpawned = static_cast<Entity *>( pEntity );
@@ -2280,7 +2423,12 @@ void *CinResCollection::createActorMedia( const CinSceneMediaHeader *pMedia ) {
         pActor->AvatarRefCount = avatarRefCount;
         pActor->Hashcode = key;
         pActor->pCarState = pPlayerCar;
+        if ( pIntroCarSlot != nullptr && bBindIntroCarActor ) {
+            pIntroCarSlot->pActor = pActor;
+            pActor->pIntroCarSlot = pIntroCarSlot;
+        }
     }
+    bBindIntroCarActor = false;
     return pActor;
 }
 
@@ -2509,6 +2657,29 @@ void *CinResCollection::spawnActorEntity( const char *pName,
             return pCar;
         }
 
+        if ( std::strstr( pName, "_D_CAR" ) != nullptr ) {
+            if ( gpGMIntro == nullptr ) {
+                return nullptr;
+            }
+            GMIntro::IntroCarSlot *pSlot =
+                gpGMIntro->acquireIntroCar( pName, bBindIntroCarActor );
+            if ( pSlot != nullptr ) {
+                outKind = CinematicActor::CAK_IntroCar;
+            }
+            return pSlot;
+        }
+
+        if ( ( std::strstr( pName, "_Fork_" ) != nullptr ||
+               std::strstr( pName, "_Disc_" ) != nullptr ) &&
+             gpGMIntro != nullptr ) {
+            GMIntro::IntroCarPart *pPart =
+                gpGMIntro->allocateIntroCarPart( pName );
+            if ( pPart != nullptr ) {
+                outKind = CinematicActor::CAK_IntroCarPart;
+            }
+            return pPart;
+        }
+
         if ( std::strstr( pName, "PLANE" ) != nullptr ) {
             if ( pPlane == nullptr ) {
                 return nullptr;
@@ -2658,7 +2829,7 @@ void *CinResCollection::spawnPlayerCar() {
 void CinResCollection::releasePlayerCarActor( const int32_t index ) {
     // FUN_007e5f70
     CarState *pCarState = actors[index].pCarState;
-    if ( pCarState == nullptr ) {
+    if ( pCarState == nullptr || actors[index].pSceneData == nullptr ) {
         return;
     }
 
@@ -2884,7 +3055,9 @@ bool CinResCollection::onPlayerCarMessage( CarState *pCarState,
 
 void CinResCollection::applyCarTransform( CarState *pCarState,
                                           const Matrix4x4f_t &transform,
-                                          bool &bTeleport ) {
+                                          bool &bTeleport,
+                                          const Matrix4x4f_t *pForkMatrices,
+                                          const Matrix4x4f_t *pDiscMatrices ) {
     if ( pCarState == nullptr ) {
         return;
     }
@@ -2904,7 +3077,8 @@ void CinResCollection::applyCarTransform( CarState *pCarState,
             pVehicle->setKeyframed( true, true );
             bTeleport = true;
         }
-        pVehicle->moveKeyframed( world, lastDeltaTime, bTeleport );
+        pVehicle->moveKeyframed( world, lastDeltaTime, bTeleport, pForkMatrices,
+                                 pDiscMatrices );
         bTeleport = false;
     }
 }

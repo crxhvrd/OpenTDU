@@ -265,6 +265,13 @@ public:
     const Matrix4x4f_t &getDisplayMatrix() const { return displayMatrix; }
     const Matrix4x4f_t &getInvChassisMatrix() const { return invChassisMatrix; }
     float getBodyHeight() const { return bodyHeight; }
+    bool hasKeyframedWheelMatrices() const { return bKeyframedWheelMatrices; }
+    const Matrix4x4f_t &getKeyframedForkMatrix( uint32_t i ) const {
+        return keyframedForkMatrices[i];
+    }
+    const Matrix4x4f_t &getKeyframedDiscMatrix( uint32_t i ) const {
+        return keyframedDiscMatrices[i];
+    }
     float getDisplayYOffset() const { return y3DOffset; }
     float getWheelRestCenterDrop( uint32_t i ) const {
         if ( i >= static_cast<uint32_t>( vehicle.NumWheels ) ) {
@@ -417,7 +424,9 @@ public:
     void setKeyframed( bool bInKeyframed, bool bForceMatrix );
     void moveKeyframed( const Matrix4x4f_t &worldTransform,
                         float deltaTime,
-                        bool bTeleport );
+                        bool bTeleport,
+                        const Matrix4x4f_t *pForkMatrices = nullptr,
+                        const Matrix4x4f_t *pDiscMatrices = nullptr );
     void setVelocity( const Eigen::Vector3f &linearVelocity,
                       bool bSyncPowertrain,
                       int32_t preferredGear );
@@ -654,11 +663,14 @@ private:
     bool bInputControllerAttached;
     bool bPausePhysics;
     bool bVirtual;
-    bool bWheelsActive; // +0x40e0
+    bool bWheelsActive;
     float virtualSpeed;
     bool bKeyframed;
     bool bForceKeyframeMatrix;
     Matrix4x4f_t keyframeMatrix;
+    bool bKeyframedWheelMatrices = false;
+    Matrix4x4f_t keyframedForkMatrices[PhysicsVehicleState::kMaxWheels];
+    Matrix4x4f_t keyframedDiscMatrices[PhysicsVehicleState::kMaxWheels];
     Eigen::Vector3f prevKeyframePosition; // absolute world space
     Eigen::Vector3f keyframeVelocity = Eigen::Vector3f::Zero();
     Eigen::Vector3f prevKeyframeForward = Eigen::Vector3f::UnitZ();

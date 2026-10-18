@@ -60,16 +60,17 @@ public:
                           Eigen::Vector4f *param_2,
                           Eigen::Vector4f *param_3 ) override;
 
-    void enter( Bank *pInteriorBank, bool bReentry );
+    void
+    enter( Bank *pInteriorBank, bool bReentry, bool bInstanciateNow = false );
     void leave();
     void tick();
-    void draw();
 
     Eigen::Vector4f getWorldPosition() const;
     Matrix4x4f_t getInteriorTransform() const;
     Render2DB *getBankBitmap( const uint64_t hashcode );
     Path *getPositionPath( int32_t positionIndex ) const;
-    void getPositionMatrix( int32_t positionIndex, Matrix4x4f_t &outMatrix ) const;
+    void getPositionMatrix( int32_t positionIndex,
+                            Matrix4x4f_t &outMatrix ) const;
 
     void focusCamera( const int32_t positionIndex );
     void moveCameraTo( const int32_t positionIndex );
@@ -82,11 +83,11 @@ public:
     void restoreInteriorCamera();
     void resume();
     void suspend();
+    void applyWeatherDescriptor();
 
 private:
     void instanciate();
     bool waitForSpotSector();
-    void applyWeatherDescriptor();
 
 private:
     HiearchyNode *pRootNode;

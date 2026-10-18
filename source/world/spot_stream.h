@@ -69,6 +69,15 @@ public:
 
     void updateCenter( const Eigen::Vector4f &position );
     void unloadSpotsForSector( Sector *pSector );
+    bool isLoading() const {
+        // FUN_006fbfa0
+        for ( const SpotCell &cell : cells ) {
+            if ( cell.spot.status == SS_Loading ) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     bool bDraw = false;
     bool bStream = false;

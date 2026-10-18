@@ -241,6 +241,7 @@ GSRender::GSRender()
       hmapFadeLength( 3000.0f ),
       nearPlane( 0.8f ),
       farPlane( 40000.0f ),
+      lodFarPlane( 40000.0f ),
       interiorNearPlane( 0.1f ),
       interiorFarPlane( 40.0f ),
       sunDirection( 0.0f, -0.4f, -1.0f ),
@@ -429,16 +430,16 @@ void GSRender::setLODQuality( const uint32_t qualityIndex ) {
     switch ( activeLODQuality ) {
     case 0:
         globalLODFactor = 0.6f;
-        interiorNearPlane = farPlane * 0.25f;
+        lodFarPlane = farPlane * 0.25f;
         break;
     case 1:
         globalLODFactor = 0.8f;
-        interiorNearPlane = farPlane * 0.50f;
+        lodFarPlane = farPlane * 0.50f;
         break;
     case 2:
     default:
         globalLODFactor = 1.0f;
-        interiorNearPlane = farPlane;
+        lodFarPlane = farPlane;
         break;
     };
 

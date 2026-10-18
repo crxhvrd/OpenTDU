@@ -723,6 +723,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     bKeyframed = false;
     bForceKeyframeMatrix = false;
     keyframeMatrix = Matrix4x4f_t::Identity();
+    bKeyframedWheelMatrices = false;
     prevKeyframePosition = Eigen::Vector3f::Zero();
     keyframeVelocity = Eigen::Vector3f::Zero();
     prevKeyframeForward = Eigen::Vector3f::UnitZ();
@@ -4841,7 +4842,9 @@ void PhysicsVehicle::setVelocity( const Eigen::Vector3f &linearVelocity,
 
 void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
                                     float deltaTime,
-                                    bool bTeleport ) {
+                                    bool bTeleport,
+                                    const Matrix4x4f_t *pForkMatrices,
+                                    const Matrix4x4f_t *pDiscMatrices ) {
     // FUN_0083ff50
     if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
         return;
@@ -4933,6 +4936,30 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
         rawInputThrottle = 1.0f;
     }
     vehicle.GearBox.ShiftState = PhysicsGearboxSim::SS_Settle;
+
+    if ( pForkMatrices != nullptr && pDiscMatrices != nullptr ) {
+        Matrix4x4f_t chassis = worldTransform;
+        chassis.row( 3 ).head<3>() +=
+            chassis.row( 1 ).head<3>() * ( bodyDimensions.y() * 0.5f );
+        setPostponedMatrix( chassis );
+
+        const Eigen::Vector4f origin = GSPhysics::GetShiftOrigin();
+        keyframeMatrix = chassis;
+        keyframeMatrix( 3, 0 ) -= origin.x();
+        keyframeMatrix( 3, 1 ) -= origin.y();
+        keyframeMatrix( 3, 2 ) -= origin.z();
+        bForceKeyframeMatrix = bKeyframed;
+
+        bKeyframedWheelMatrices = true;
+        setVelocity( keyframeVelocity, true, -1 );
+        for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+            keyframedForkMatrices[i] = pForkMatrices[i];
+            keyframedDiscMatrices[i] = pDiscMatrices[i];
+        }
+
+        publishStepPose();
+        return;
+    }
 
     // FUN_0083d950
     Matrix4x4f_t chassis = worldTransform;

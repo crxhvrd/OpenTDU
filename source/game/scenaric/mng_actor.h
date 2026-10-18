@@ -25,6 +25,9 @@ public:
     inline bool isRenderingInCockpitPass() const {
         return bRenderInCockpitRenderPass;
     }
+    inline void setRenderingInCockpitPass( const bool bEnabled ) {
+        bRenderInCockpitRenderPass = bEnabled;
+    }
     inline void setGameMech( PlayerGameMech *pMech ) { pGameMech = pMech; }
     inline PlayerGameMech *getGameMech() const { return pGameMech; }
 

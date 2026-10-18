@@ -166,8 +166,6 @@ EntityCinematic::EntityCinematic()
       pStreamCenterBefore( nullptr ),
       bStopGuard( false ),
       bStackActive( false ),
-      bCameraHandedOver( false ),
-      bCameraDrivenByObject( false ),
       activeGameMode( GM_FreeRide ) {
     // FUN_007e80d0
     cinematicPlayer.setOwner( this );
@@ -179,6 +177,11 @@ EntityCinematic::~EntityCinematic() {
 
 void EntityCinematic::initialize() {
     // FUN_007e9530
+    setTransformFromDesc();
+    if ( pMechanism != nullptr ) {
+        pMechanism->setEntity( this );
+    }
+
     pCinData = nullptr;
     cinDataSize = 0;
     cinematicBuffer.clear();
@@ -561,7 +564,6 @@ void EntityCinematic::tick( PlayerGameMech *pGameMech,
         if ( !reachedEnd ) {
             cinematicPlayer.tick( Time, deltaTime );
             cinematicPlayer.resolveRefCamera();
-            publishCameraView();
         }
         if ( pGMInterface != nullptr &&
              Time >= duration - FadeTime * kMillisecondsToSeconds ) {
@@ -873,6 +875,16 @@ bool EntityCinematic::createTDUInterface() {
         pCinData, cinDataSize, cinematicBuffer.data(), &pSCBank->getBank() );
 }
 
+bool EntityCinematic::areResourcesReady() {
+    // FUN_007e7e80
+    if ( pMusicEmitter != nullptr &&
+         pMusicEmitter->areSoundBanksInstalling() ) {
+        return false;
+    }
+
+    return cinematicPlayer.areActorsValid();
+}
+
 bool EntityCinematic::launchSpotCine( SpotMap *pSpot, float startTime ) {
     // FUN_007e96c0
     Matrix4x4f_t mat;
@@ -985,6 +997,8 @@ bool EntityCinematic::begin() {
     CineTotalTime = cinematicPlayer.getTotalTime();
     Time = StartTime;
     cinematicFlags = ( cinematicFlags & 0xfffffffcu ) | 4u;
+    cinematicPlayer.tick( StartTime * CineTotalTime, 0.0f );
+    cinematicPlayer.resolveRefCamera();
 
     if ( pMusicEmitter != nullptr ) {
         pMusicEmitter->setPaused( bPaused, 0.0f );
@@ -995,44 +1009,6 @@ bool EntityCinematic::begin() {
     }
 
     return true;
-}
-
-void EntityCinematic::publishCameraView() {
-    if ( !hasFocus() || bDontSwitchCamera || gpCamera == nullptr ) {
-        return;
-    }
-
-    const CinResCollection::CameraView &view = cinematicPlayer.getCameraView();
-    if ( !view.bValid ) {
-        return;
-    }
-
-    CameraCinematic *pCinematicCamera = cinematicPlayer.getCinematicCamera();
-    const bool bDrivesCamera = pCinematicCamera != nullptr &&
-                               gpCamera->getActiveCamera() == pCinematicCamera;
-
-    if ( !bCameraHandedOver || bCameraDrivenByObject != bDrivesCamera ) {
-        bCameraHandedOver = true;
-        bCameraDrivenByObject = bDrivesCamera;
-        OTDU_LOG_DEBUG( "Cinematic '%s' took the camera: pos=(%.1f %.1f %.1f) "
-                        "target=(%.1f %.1f %.1f) fov=%.1f deg, %.2fs%s "
-                        "(LED flags 0x%08x, via %s, active cam flags 0x%x)\n",
-                        name.c_str(), view.Position.x(), view.Position.y(),
-                        view.Position.z(), view.Target.x(), view.Target.y(),
-                        view.Target.z(), view.Fov, CineTotalTime,
-                        bLoop ? ", looping" : "", cinematicPlaybackFlags,
-                        bDrivesCamera ? "the CINEMATIC camera"
-                                      : "the view override",
-                        gpCamera->getActiveCamera()->getFlags() );
-    }
-
-    if ( bDrivesCamera ) {
-        gpCamera->clearCinematicCameraOverride();
-        return;
-    }
-
-    gpCamera->setCinematicCameraOverride( view.Position, view.Up, view.Target,
-                                          view.Fov * kDegToRad );
 }
 
 void EntityCinematic::end() {
@@ -1076,6 +1052,11 @@ void EntityCinematic::end() {
             if ( cinematicPlayer.getActorKind( i ) ==
                  CinematicActor::CAK_PlayerCar ) {
                 cinematicPlayer.releasePlayerCarActor( i );
+                continue;
+            }
+            if ( cinematicPlayer.getActorKind( i ) ==
+                 CinematicActor::CAK_IntroCarPart ) {
+                cinematicPlayer.releaseIntroCarPart( i );
                 continue;
             }
 
@@ -1141,11 +1122,6 @@ void EntityCinematic::end() {
     bStopGuard = false;
     if ( bWasRunning ) {
         bForceStop = false;
-    }
-    if ( hasFocus() && gpCamera != nullptr ) {
-        gpCamera->clearCinematicCameraOverride();
-        bCameraHandedOver = false;
-        bCameraDrivenByObject = false;
     }
     if ( bWasRunning && pGMInterface != nullptr ) {
         pGMInterface->executeAction( CE_Ended, this );

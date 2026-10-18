@@ -94,6 +94,9 @@ public:
                       EntityAvatar *pAvatar,
                       eAvatarBeltSeat seat );
     AvatarClothePart *findClotheByID( uint16_t id );
+    int32_t getSavedAvatarGender();
+    void unlockClothe( uint16_t id, uint16_t colorMask );
+    void unlockSavedAvatarClothes();
     void savePlayerAvatarConfiguration( const EntityAvatar *pAvatar );
     int32_t getNumPNJConfigurations();
     bool getPNJConfiguration( int32_t index,
@@ -101,6 +104,8 @@ public:
                               AvatarConfiguration &outConfig );
     void readAvatarConfig( const EntityAvatar *pAvatar,
                            AvatarConfiguration &outConfig );
+    bool loadStyleConfiguration( AvatarConfiguration &outConfig,
+                                 const char *pStyleName );
 
 private:
     AvatarBeltPart *findBelt( eAvatarClotheSize size,

@@ -7,6 +7,8 @@
 #include "game/scenaric/entity/entity_car_player.h"
 #include "render/serialized_skinned_model.h"
 #include "render/instance.h"
+#include "render/gs_render.h"
+#include "render/render_scene.h"
 #include "render/animation/skeleton.h"
 #include "render/animation/clip.h"
 #include "render/animation/anim_state.h"
@@ -83,6 +85,7 @@ void ScenaricBank::activate( MngActor *pTargetMngActor ) {
     prepareTemplates( zoneVolumes );
     prepareTemplates( zones );
     prepareTemplates( entities );
+    instanciateSceneries();
 
     // The InstantiateEntity loops (only when an actor manager owns this bank).
     if ( pTargetMngActor != nullptr ) {
@@ -92,10 +95,6 @@ void ScenaricBank::activate( MngActor *pTargetMngActor ) {
             instanciateContainer( zoneVolumes );
         }
         instanciateContainer( entities );
-    }
-
-    if ( bIsSpotBank ) {
-        instanciateSceneries();
     }
 }
 
@@ -697,6 +696,14 @@ void ScenaricBank::instanciateSceneries() {
     pActiveScenery->pBank = this;
     pActiveScenery->InitialMatrix = pNode->TransformMatrix;
 
+    if ( !bIsSpotBank ) {
+        RenderScene *pNearScene =
+            gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
+        if ( pNearScene != nullptr ) {
+            pNearScene->enqueueStaticHiearchy( pNode );
+        }
+    }
+
     if ( !bIsSpotBank && gpActiveGM != nullptr ) {
         gpActiveGM->getActorManager().setParentScenery( pActiveScenery );
     }
@@ -823,6 +830,14 @@ void ScenaricBank::destroy() {
 
         if ( gpActiveGM != nullptr ) {
             gpActiveGM->getActorManager().setParentScenery( nullptr );
+        }
+
+        if ( pScenery->pBank != nullptr && !pScenery->pBank->bIsSpotBank ) {
+            RenderScene *pNearScene =
+                gpRender->getRenderPassAtIndex( eRenderPass::RP_Near ).pScene;
+            if ( pNearScene != nullptr ) {
+                pNearScene->removeStaticHiearchy( pScenery->pHierarchyNode );
+            }
         }
 
         FileCollection3D *pOwnerCollection =

@@ -124,7 +124,7 @@ public:
     const char *getName() const override { return "Service : Render"; }
 
     inline float getDefaultNearPlane() const { return nearPlane; }
-    inline float getDefaultFarPlane() const { return farPlane; }
+    inline float getDefaultFarPlane() const { return lodFarPlane; }
     inline float getDefaultInteriorNearPlane() const {
         return interiorNearPlane;
     }
@@ -471,6 +471,7 @@ private:
 
     float nearPlane;
     float farPlane;
+    float lodFarPlane;
     float interiorNearPlane;
     float interiorFarPlane;
 

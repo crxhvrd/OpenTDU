@@ -21,8 +21,12 @@ struct CinematicActor {
         CAK_PlayerCar = 1, // PLAYER_CAR; pEntity stays null, see pCarState
         CAK_Plane = 2,     // pEntity is the live GSAircraft instance (Interface
                        // pPlane); owned by GSAircraft, never cloned or freed
-        CAK_TrafficCar = 3, // TRAFFICCAR_<id>; spawned for the cinematic,
-                            // see pCarState
+        CAK_TrafficCar = 3,   // TRAFFICCAR_<id>; spawned for the cinematic,
+                              // see pCarState
+        CAK_IntroCar = 4,     // CARn_<id>_D_CAR; GMIntro car slot car, see
+                              // pCarState / pIntroCarSlot
+        CAK_IntroCarPart = 5, // CARn_*_Disc_* / _Fork_*; pEntity is the
+                              // GMIntro::IntroCarPart
     };
 
     char Name[32];
@@ -35,6 +39,7 @@ struct CinematicActor {
     bool bCarTeleport = true;
     int32_t AvatarRefCount = 0;
     uint64_t Hashcode = 0;
+    void *pIntroCarSlot = nullptr;
     Matrix4x4f_t TrackMatrix = Matrix4x4f_t::Identity();
     Matrix4x4f_t DisplayMatrix = Matrix4x4f_t::Identity();
 };
@@ -191,6 +196,7 @@ public:
     void releaseTrafficCarActors();
     void bindPlayerCar( CarState *pCarState );
     void releasePlayerCarActor( const int32_t index );
+    void releaseIntroCarPart( const int32_t index );
 
     bool createInterface( const void *pBankData,
                           uint32_t size,
@@ -271,7 +277,16 @@ private:
     void applySpawnTail( Entity *pEntity );
     void applyCarTransform( CarState *pCarState,
                             const Matrix4x4f_t &transform,
-                            bool &bTeleport );
+                            bool &bTeleport,
+                            const Matrix4x4f_t *pForkMatrices = nullptr,
+                            const Matrix4x4f_t *pDiscMatrices = nullptr );
+    void dispatchIntroCarPart( CinematicActor *pActor,
+                               const CinActorState &state,
+                               const Eigen::Vector3f &scale );
+    void applyIntroCarPose( CinematicActor *pActor,
+                            CinActorState &state,
+                            const Eigen::Vector3f &scale,
+                            bool bHasTransformTrack );
     void applyCameraTransform( const CinMediaContext *pCtx,
                                int32_t transformType,
                                const Eigen::Vector3f &position,
@@ -358,6 +373,7 @@ private:
     CameraView cameraView{};
     Matrix4x4f_t baseMatrix = Matrix4x4f_t::Identity();
     bool bHasBaseMatrix = false;
+    bool bBindIntroCarActor = false;
     bool bIsLifeSetCinematic = false;
     CinematicActor *pPlayerCarActor = nullptr;
     CarState *pPendingPlayerCar = nullptr;

@@ -207,6 +207,26 @@ void AvatarManager::releaseAvatar( EntityAvatar *pAvatar ) {
     }
 }
 
+void AvatarManager::addReference( EntityAvatar *pAvatar ) {
+    // FUN_0076b410 (inlined)
+    for ( PlayerAvatar &slot : playerAvatars ) {
+        if ( slot.pAvatar == pAvatar ) {
+            slot.ReferenceCount++;
+            return;
+        }
+    }
+}
+
+bool AvatarManager::areAvatarsReady() const {
+    // FUN_007f5800
+    for ( const PlayerAvatar &slot : playerAvatars ) {
+        if ( slot.ReferenceCount > 0 && !slot.pAvatar->isValid() ) {
+            return false;
+        }
+    }
+    return true;
+}
+
 int32_t AvatarManager::getReferenceCount( const EntityAvatar *pAvatar ) const {
     // FUN_007f5780
     for ( const PlayerAvatar &slot : playerAvatars ) {

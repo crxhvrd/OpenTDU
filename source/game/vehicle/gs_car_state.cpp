@@ -449,6 +449,20 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             }
             body.bHasBrokenPart = pPhysicsVehicle->hasBrokenPart();
 
+            // FUN_0083bbd0 (inlined)
+            body.bUseWheelMatrix = pPhysicsVehicle->hasKeyframedWheelMatrices();
+            if ( body.bUseWheelMatrix ) {
+                const uint32_t numWheels = Min( pPhysicsVehicle->getNumWheels(),
+                                                CarState::kMaxNumWheels );
+                for ( uint32_t w = 0; w < numWheels; w++ ) {
+                    WheelState &wheel = carState.wheels[w];
+                    wheel.WorldMatrixRotor =
+                        pPhysicsVehicle->getKeyframedDiscMatrix( w );
+                    wheel.WorldMatrixFork =
+                        pPhysicsVehicle->getKeyframedForkMatrix( w );
+                }
+            }
+
             body.SpeedInKmh = pPhysicsVehicle->getReportedSpeed();
 
             const float publishedSteer = pPhysicsVehicle->getFilteredSteer();

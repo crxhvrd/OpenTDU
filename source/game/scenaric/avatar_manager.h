@@ -26,9 +26,12 @@ public:
                                 const bool bCritical,
                                 const int32_t type );
     void releaseAvatar( EntityAvatar *pAvatar );
+    void addReference( EntityAvatar *pAvatar );
     int32_t getReferenceCount( const EntityAvatar *pAvatar ) const;
+    bool areAvatarsReady() const;
 
     EntityAvatar *getDriverAvatar();
+    void releaseDriverAvatar();
 
     inline bool getUnknownBoolean() const { return bUnknownBoolean; }
     inline void setUnknownBoolean( const bool bValue ) {
@@ -61,5 +64,4 @@ private:
 private:
     EntityAvatar *createAvatarInstance( int32_t type );
     void destroyAvatarInstance( EntityAvatar *pAvatar );
-    void releaseDriverAvatar();
 };

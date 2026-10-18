@@ -1098,6 +1098,10 @@ void Spots::spawnSectorSpotMeshes( Sector *pSector, SpotsList &slot ) {
         transform.row( 3 ) = Eigen::Vector4f( spot.X, spot.Y, spot.Z, 1.0f );
         pInstance->setTransform( transform, true );
         pInstance->onWorldStreamed();
+
+        if ( !isSpotValid( pWorld ) ) {
+            pSpotMesh->setSpotValid( false );
+        }
     }
 
     slot.bMeshesSpawned = true;

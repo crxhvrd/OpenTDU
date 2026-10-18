@@ -25,6 +25,7 @@ public:
     ~GameIntroTutorial();
 
     void initialize( Spots &spotList );
+    void resolveSpots( Spots &spotList );
     inline int32_t getStep() const { return tutorialStep; }
     inline int32_t getCarRentalTime() const { return carRentalTime; }
     inline bool isModalHintVisible() const { return bModalHintVisible; }
@@ -35,9 +36,11 @@ public:
     void tick();
 
     void onIntroCinematicEnded();
+    void onIntroFinished();
     void onCarRented( const int32_t carID, const int32_t rentalTime );
     void onDealerGoToMap();
     void onCarBought();
+    void onHouseBought( SpotMap *pHouse );
     void FUN_007fbd80( bool param_2 );
     void computeMapFocus( GMMap *pMap,
                           Eigen::Vector4f *pOutFocus,

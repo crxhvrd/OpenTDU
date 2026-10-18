@@ -22,6 +22,7 @@ enum eCinematicEvent : int32_t {
     CE_StartEndFade = 6,
     CE_Finished = 7,
     CE_FlashMessage = 8,
+    CE_Removed = 9,
     CE_Begun = 10,
 };
 
@@ -86,6 +87,7 @@ public:
     }
     inline struct SpotMap *getSpotWorld() const { return pSpotWorld; }
     inline bool isLooping() const { return bLoop; }
+    inline void setLooping( bool bEnabled ) { bLoop = bEnabled; }
     inline bool isPlaying() const {
         return ( cinematicFlags & 0x4u ) != 0 && ( cinematicFlags & 0x2u ) == 0;
     }
@@ -95,7 +97,9 @@ public:
     inline float getPlaybackSpeed() const { return playbackSpeed; }
 
     inline float getTime() const { return Time; }
+    inline void setTime( float time ) { Time = time; }
     inline float getDuration() const { return CineTotalTime; }
+    inline CinResCollection &getCinResCollection() { return cinematicPlayer; }
     const CinResCollection::CameraView &getCameraView() const {
         return cinematicPlayer.getCameraView();
     }
@@ -135,6 +139,7 @@ public:
     bool calculateSpotMatrix( struct SpotMap *pSpot, Matrix4x4f_t &outMatrix );
     void installMusicBanks();
     bool createTDUInterface();
+    bool areResourcesReady();
     void seek( float time );
     void setPlaybackAnchor( const Eigen::Vector3f &pos );
 
@@ -147,7 +152,6 @@ private:
     void restoreForegroundCine();
     void end();
     void releaseMusicEmitter();
-    void publishCameraView();
     void resolveClipTable();
 
 private:
@@ -210,8 +214,6 @@ private:
     Eigen::Vector4f *pStreamCenterBefore;
     bool bStopGuard;
     bool bStackActive;
-    bool bCameraHandedOver;
-    bool bCameraDrivenByObject;
 
     eGameMode activeGameMode;
 };

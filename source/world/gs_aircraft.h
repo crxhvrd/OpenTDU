@@ -197,6 +197,9 @@ public:
     uint32_t getNumAircrafts() const;
     Entity *getAircraft( uint32_t index ) const;
     const Aircraft *getFlight( uint32_t index ) const;
+    inline void setDrawAircrafts( const bool bEnabled ) {
+        bDrawAircrafts = bEnabled;
+    }
 
 #ifdef OTDU_USE_IMGUI
     void drawDebug( float deltaTime ) override;

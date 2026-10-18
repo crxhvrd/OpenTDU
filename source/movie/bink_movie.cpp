@@ -101,6 +101,11 @@ void BinkMovie::play() {
     audio.requestPlayback();
 }
 
+void BinkMovie::pause() {
+    // FUN_006756f0
+    nextState = MPS_Paused;
+}
+
 bool BinkMovie::isPlaying() const {
     // FUN_00675700
     return currentState == MPS_Playing;

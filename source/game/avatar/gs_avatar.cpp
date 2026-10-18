@@ -405,6 +405,24 @@ bool GSAvatar::loadFaceModifSet( AvatarConfiguration &outConfig,
     return ReadAvatarConfigFromBankEntry( outConfig, pnjBank, entryIndex );
 }
 
+bool GSAvatar::loadStyleConfiguration( AvatarConfiguration &outConfig,
+                                       const char *pStyleName ) {
+    // FUN_008f5f90
+    if ( !styleBank.isLoaded() ) {
+        return false;
+    }
+
+    std::string entryName = pStyleName;
+    entryName += kAvatarConfigExtension;
+
+    const int32_t entryIndex = styleBank.getEntryIndex( entryName.data() );
+    if ( entryIndex == -1 ) {
+        return false;
+    }
+
+    return ReadAvatarConfigFromBankEntry( outConfig, styleBank, entryIndex );
+}
+
 int32_t GSAvatar::getNumPNJConfigurations() {
     return pnjBank.isLoaded() ? pnjBank.getNumElements() : 0;
 }
@@ -496,6 +514,50 @@ static AvatarClothePart *FindPartByID( AvatarPartDB *pDB, const uint16_t id ) {
 AvatarClothePart *GSAvatar::findClotheByID( const uint16_t id ) {
     // FUN_008f6390
     return FindPartByID( pClothesDB, id );
+}
+
+int32_t GSAvatar::getSavedAvatarGender() {
+    // FUN_008f64b0
+    static constexpr int32_t kUnknownGender = 2;
+
+    IPlayerData *pLoadedSave = gpPlayerData->getLoadedSave();
+    if ( pLoadedSave == nullptr || pLoadedSave->getAvatar() == nullptr ) {
+        return kUnknownGender;
+    }
+
+    const AvatarDBEntry *pStyle =
+        FindPartByID( pStyleDB, pLoadedSave->getAvatar()->Config.StyleID );
+    return ( pStyle != nullptr ) ? pStyle->Gender : kUnknownGender;
+}
+
+void GSAvatar::unlockClothe( const uint16_t id, const uint16_t colorMask ) {
+    AvatarClothePart *pClothe = findClotheByID( id );
+    IPlayerData *pLoadedSave = gpPlayerData->getLoadedSave();
+    if ( pClothe == nullptr || pLoadedSave == nullptr ||
+         pLoadedSave->getAvatar() == nullptr ) {
+        return;
+    }
+
+    uint16_t *pOwnedColorMasks =
+        reinterpret_cast<uint16_t *>( pLoadedSave->getAvatar()->AvatarData );
+    pOwnedColorMasks[pClothe->Index] |= colorMask;
+}
+
+void GSAvatar::unlockSavedAvatarClothes() {
+    // FUN_008f6400
+    IPlayerData *pLoadedSave = gpPlayerData->getLoadedSave();
+    if ( pLoadedSave == nullptr || pLoadedSave->getAvatar() == nullptr ) {
+        return;
+    }
+
+    const AvatarConfiguration &config = pLoadedSave->getAvatar()->Config;
+    for ( int32_t set = 0; set < kNumClotheTypes; set++ ) {
+        for ( int32_t part = 0; part < AC_Count; part++ ) {
+            unlockClothe( config.ClotheID[set][part],
+                          static_cast<uint16_t>(
+                              1u << ( config.ColorID[set][part] & 0x1f ) ) );
+        }
+    }
 }
 
 AvatarBeltPart *GSAvatar::findBelt( const eAvatarClotheSize size,

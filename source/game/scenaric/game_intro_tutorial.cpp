@@ -10,6 +10,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
 #include "flash/implementation/flash_player.h"
+#include "player_data/achievements_data.h"
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_save.h"
@@ -46,16 +47,20 @@ GameIntroTutorial::~GameIntroTutorial() {}
 
 void GameIntroTutorial::initialize( Spots &spotList ) {
     // FUN_007fbbe0
+    resolveSpots( spotList );
+
+    bModalHintVisible = false;
+    tutorialStep = 0;
+    bMapForIntro = true;
+}
+
+void GameIntroTutorial::resolveSpots( Spots &spotList ) {
     pRealEstate = spotList.getSpotMap( GetIdentifier64bit( "ERE_A_6627" ) );
     pCarRental = spotList.getSpotMap( GetIdentifier64bit( "ECR_A_6703" ) );
     pSpotECD12E = spotList.getSpotMap( GetIdentifier64bit( "ECD_12E_7757" ) );
     pSpotECD8F = spotList.getSpotMap( GetIdentifier64bit( "ECD_8F_7756" ) );
     pSpotECD12B = spotList.getSpotMap( GetIdentifier64bit( "ECD_12B_7777" ) );
     pSpotIntroRace = spotList.getSpotMap( GetIdentifier64bit( "RSFE0028" ) );
-
-    bModalHintVisible = false;
-    tutorialStep = 0;
-    bMapForIntro = true;
 }
 
 bool GameIntroTutorial::isActive() const {
@@ -160,6 +165,34 @@ void GameIntroTutorial::onDealerGoToMap() {
 
     carDealer = gpScenaric->getCurrentSpotIndex();
     setStep( kTutorialStateHouseBought );
+}
+
+void GameIntroTutorial::onHouseBought( SpotMap *pHouse ) {
+    // FUN_007fca40
+    if ( !isActive() ) {
+        return;
+    }
+
+    pHome = pHouse;
+    setStep( kTutorialStateHouseBought );
+}
+
+void GameIntroTutorial::onIntroFinished() {
+    // FUN_007fc670
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    if ( !pAchievements->getField516_0x204() ) {
+        pAchievements->setField516_0x204( true );
+        if ( pAchievements->isReady() ) {
+            pAchievements->setCurrentGameMode(
+                gpTestDriveInstance->getActiveGameMode() );
+        }
+
+        pAchievements->notify( ACF_Challenge | ACF_Road | ACF_Collection,
+                               false );
+    }
+
+    setStep( kTutorialStateCarRental );
 }
 
 void GameIntroTutorial::onCarBought() {

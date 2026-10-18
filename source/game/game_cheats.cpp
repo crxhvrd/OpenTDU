@@ -11,5 +11,5 @@ bool gbGMEDesigner = false;                                      // DAT_010e7ce0
 bool gbICESolo = false;                                          // DAT_010e7c31
 bool gbAllChallengesSolo = false;                                // DAT_010e7c32
 
-bool gbNewGameSkipIntro = true; // TEMP: Jump straight to GMFreeride on new game
-                                // (+ install cheat cars)
+bool gbNewGameSkipIntro =
+    false; // Jump straight to GMFreeride on new game (+ install cheat cars)

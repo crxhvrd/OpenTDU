@@ -17,6 +17,7 @@
 #include "ai/gs_ai.h"
 #include "game/game_cheats.h"
 #include "game/gs_tutorial.h"
+#include "game/intro/gm_intro.h"
 #include "game/bookmark/mng_bookmark.h"
 #include "game/mng_hud.h"
 #include "game/freeride/mng_map_screenshot.h"
@@ -52,12 +53,13 @@ void GSConfig::registerGameCommands() {
 
     registerCommand( "UNLOCKALLROADS", [&]( const char *pArg ) {
         // FUN_00986a60
-        gUnlockAllRoads = kDevCheatsEnabled;
+        gUnlockAllRoads = kDevCheatsEnabled && ( strcmp( pArg, "TRUE" ) == 0 );
     } );
 
     registerCommand( "DELOCKCHALLENGESROADS", [&]( const char *pArg ) {
         // FUN_00986a70
-        gpScenaric->delockChallengeRoads( kDevCheatsEnabled );
+        gpScenaric->delockChallengeRoads( kDevCheatsEnabled &&
+                                          ( strcmp( pArg, "TRUE" ) == 0 ) );
     } );
 
     registerCommand( "SETRESPATH", [&]( const char *pArg ) {
@@ -679,7 +681,20 @@ void GSConfig::registerGameCommands() {
 
     registerCommand( "INTROSTATE", [&]( const char *pArg ) {
         // FUN_00986910
-        OTDU_UNIMPLEMENTED
+        int32_t state = 0;
+        int32_t secondValue = 0;
+        const int32_t numValues = sscanf( pArg, "%d %d", &state, &secondValue );
+        if ( state == 0 ) {
+            return;
+        }
+
+        gIntroStartState = state;
+        if ( state == 5 ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO (INT_010e7d0c)
+        }
+        if ( numValues > 1 && secondValue > 0 ) {
+            gIntroCmdAvatarIndex = secondValue;
+        }
     } );
 
     registerCommand( "PUB_BANDWIDTH",

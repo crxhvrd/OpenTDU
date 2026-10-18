@@ -25,6 +25,7 @@ public:
     void retrieveParsedFramebufferInfos( BinkFrameBuffersInfos &infos );
 
     void play();
+    void pause();
     bool isPlaying() const;
     bool isDone() const;
 

@@ -66,6 +66,10 @@ public:
     inline const std::vector<HiearchyNode *> &getSceneryNodes() const {
         return sceneryNodes;
     }
+    inline const std::vector<BankRenderResource<Render2DM>> &
+    getRender2DMs() const {
+        return lists2DM;
+    }
     inline SceneryBinary *getActiveScenery() const { return pActiveScenery; }
     inline const std::string &getFilename() const { return filename; }
 
