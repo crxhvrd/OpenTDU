@@ -32,6 +32,7 @@
 #include "render/gs_render.h"
 #include "render/2dm.h"
 #include "render/render_context.h"
+#include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/streaming_manager.h"
 
@@ -1578,12 +1579,124 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
         gGMeterAvailableBits |= 1;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AI trainer + back-on-track
+    OTDU_UNIMPLEMENTED; // TODO: AI trainer car cycling (DAT_010e7654)
 
     updateGMeterToggle();
 
     if ( bHavokDebugEnabled ) {
         OTDU_UNIMPLEMENTED;
+    }
+
+    updateSecretIslandTeleporter();
+}
+
+static bool gbSecretIslandTeleporterEnabled = true;       // DAT_00fab50c
+static constexpr float kSecretIslandTriggerRadius = 5.0f; // DAT_00f41750
+static constexpr float kSecretIslandMinSpeedKmh = 50.0f;  // DAT_00fab508
+static constexpr float kMsToKmh = 3.6f;                   // DAT_00f41768
+static const Eigen::Vector4f kSecretIslandMainland( 63515.0f,
+                                                    224.0f,
+                                                    46303.0f,
+                                                    1.0f ); // DAT_0168bf30
+static const Eigen::Vector4f
+    kSecretIslandIsland( 64426.0f, 4.0f, 44637.0f, 1.0f ); // DAT_0168bf40
+static int32_t gSecretIslandTeleporterState = 0;           // DAT_016a2d48
+
+static void PlaceAtSecretIslandEndpoint( PhysicsVehicle *pVehicle,
+                                         Matrix4x4f_t &matrix,
+                                         const Eigen::Vector4f &endpoint ) {
+    matrix.row( 3 ) = endpoint.transpose();
+
+    // FUN_0083d900
+    PhysicsLock lock;
+    pVehicle->resetToTransform( matrix, true );
+}
+
+static void SetSecretIslandPostponedPause( PhysicsVehicle *pVehicle,
+                                           const uint8_t request ) {
+    PhysicsLock lock;
+    pVehicle->setPostponedPause( request );
+}
+
+void GSPhysics::updateSecretIslandTeleporter() {
+    // FUN_0084de60 (tail)
+    CarState *pCarState = gpScenaric != nullptr
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( !gbSecretIslandTeleporterEnabled || pCarState == nullptr ) {
+        return;
+    }
+    PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
+    if ( pVehicle == nullptr || !pVehicle->isActive() ) {
+        return;
+    }
+
+    Matrix4x4f_t matrix = pCarState->getBody()->WorldMatrix;
+    const Eigen::Vector4f position = matrix.row( 3 ).transpose();
+    const float distanceToMainland =
+        ( position - kSecretIslandMainland ).norm();
+    const float distanceToIsland = ( position - kSecretIslandIsland ).norm();
+
+    switch ( gSecretIslandTeleporterState ) {
+    case 0: {
+        const float speedKmh =
+            pVehicle->getChassisVelocity().head<3>().norm() * kMsToKmh;
+        if ( distanceToMainland < kSecretIslandTriggerRadius &&
+             kSecretIslandMinSpeedKmh < speedKmh ) {
+            gbBackOnTrackFadeGuard = false;
+            SetSecretIslandPostponedPause( pVehicle, 1 );
+            pushFadeRequest( eFadeRequest::FR_FadeOut );
+            gSecretIslandTeleporterState = 1;
+        }
+        if ( distanceToIsland < kSecretIslandTriggerRadius &&
+             kSecretIslandMinSpeedKmh < speedKmh ) {
+            gbBackOnTrackFadeGuard = false;
+            SetSecretIslandPostponedPause( pVehicle, 1 );
+            pushFadeRequest( eFadeRequest::FR_FadeOut );
+            gSecretIslandTeleporterState = 4;
+        }
+    } break;
+    case 1:
+        if ( peekFadeRequest() == eFadeRequest::FR_Idle ) {
+            PlaceAtSecretIslandEndpoint( pVehicle, matrix,
+                                         kSecretIslandIsland );
+            gSecretIslandTeleporterState = 2;
+        }
+        break;
+    case 2:
+        if ( gpWorld->isStreamedAround( &kSecretIslandIsland, false, false ) ) {
+            gSecretIslandTeleporterState = 3;
+            pushFadeRequest( eFadeRequest::FR_FadeIn );
+        }
+        break;
+    case 3:
+        PlaceAtSecretIslandEndpoint( pVehicle, matrix, kSecretIslandIsland );
+        SetSecretIslandPostponedPause( pVehicle, 2 );
+        gSecretIslandTeleporterState = 0;
+        gbBackOnTrackFadeGuard = true;
+        break;
+    case 4:
+        if ( peekFadeRequest() == eFadeRequest::FR_Idle ) {
+            PlaceAtSecretIslandEndpoint( pVehicle, matrix,
+                                         kSecretIslandMainland );
+            gSecretIslandTeleporterState = 5;
+        }
+        break;
+    case 5:
+        if ( gpWorld->isStreamedAround( &kSecretIslandMainland, false,
+                                        false ) ) {
+            gSecretIslandTeleporterState = 6;
+            pushFadeRequest( eFadeRequest::FR_FadeIn );
+        }
+        break;
+    case 6:
+        PlaceAtSecretIslandEndpoint( pVehicle, matrix, kSecretIslandMainland );
+        SetSecretIslandPostponedPause( pVehicle, 2 );
+        gSecretIslandTeleporterState = 0;
+        gbBackOnTrackFadeGuard = true;
+        break;
+    default:
+        break;
     }
 }
 

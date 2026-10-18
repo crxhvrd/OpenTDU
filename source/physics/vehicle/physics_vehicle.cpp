@@ -4541,7 +4541,7 @@ void PhysicsVehicle::tick( float deltaTime ) {
     }
 
     // G-Meter telemetry
-    if ( pPhysicsSystem != nullptr && deltaTime > 1.0e-5f ) {
+    if ( pPhysicsSystem != nullptr && deltaTime > 1.0e-5f && !bPausePhysics ) {
         JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
         const JPH::Vec3 vel = bi.GetLinearVelocity( pChassisBody->GetID() );
 

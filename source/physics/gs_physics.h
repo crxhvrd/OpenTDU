@@ -500,6 +500,7 @@ private:
     void drawCollisionShapes();
     void drawVehicleShapes();
     void updateGMeterToggle();
+    void updateSecretIslandTeleporter();
     bool
     hasCollisionBelow( float worldX, float worldZ, float startY, float depth );
     bool isRegionCovered( float minX,
