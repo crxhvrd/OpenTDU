@@ -1,6 +1,9 @@
 #pragma once
 
+#include "game/scenaric/scenaric_bank.h"
+
 class Spots;
+class EntityCinematic;
 struct SpotMap;
 class GMMap;
 class FlashPlayer;
@@ -36,6 +39,7 @@ public:
     void tick();
 
     void onIntroCinematicEnded();
+    EntityCinematic *loadLandingCinematic();
     void onIntroFinished();
     void onCarRented( const int32_t carID, const int32_t rentalTime );
     void onDealerGoToMap();
@@ -70,6 +74,8 @@ private:
     int32_t carDealer;
     int32_t carIDRental;
     int32_t carRentalTime;
+
+    ScenaricBank landingCinematicBank;
 
     uint8_t bModalHintVisible : 1;
     uint8_t bMapForIntro : 1;

@@ -69,6 +69,7 @@ public:
     bool loadImmediate();
     void release();
     Material *getMaterial( const char *pMaterialName );
+    Material *getMaterial( const uint64_t hashcode );
 
     void loadContent() override;
 

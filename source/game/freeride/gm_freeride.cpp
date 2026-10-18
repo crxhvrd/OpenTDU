@@ -162,12 +162,13 @@ void GMFreeride::initialize() {
     }
 
     if ( gpMngFontPlayers != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (reset the 16 P2P player name
+                                 // tags at CP2PGameService+0x2e0d0)
     }
 
     if ( nextIntro.bIsActive && nextIntro.NextGameMode == GM_FreeRide ) {
         if ( nextIntro.pSpot == nullptr ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+            pIntroCine = gpScenaric->getIntroTutorial().loadLandingCinematic();
         } else {
             Spots &spots = gpScenaric->getSpotList();
             resolveNextIntroCine(
@@ -251,7 +252,18 @@ void GMFreeride::reset() {
     gbGPSFlyUpDone = false;
     gGPSFlyUpTargetMode = 0;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS / ONNLINE / AI
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (local P2P player reset)
+
+    AiPool *pAIPool = gpAI->getAIPool();
+    if ( !gpScenaric->getIntroTutorial().isActive() ) {
+        pAIPool->setPoliceScale( 1.0f );
+        pAIPool->setForceDensity( false );
+        gpAI->setDisableCops( false );
+    } else {
+        pAIPool->setPoliceScale( 0.0f );
+        pAIPool->setForceDensity( false );
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (pursuit manager +0x44/+0x45)
 
     int32_t spawnMode = 6;
     switch ( gpTestDriveInstance->getPreviousGameMode() ) {
@@ -283,7 +295,7 @@ void GMFreeride::reset() {
     }
 
     if ( pLocalCar != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (restore pursuit infringements)
     }
 
     pGameMech->stateChange( PlayerGameMech::MS_FR_LoadingMap );
@@ -853,15 +865,14 @@ void GMFreeride::markCurrentSpotDiscovered() {
 
 void GMFreeride::pause() {
     // FUN_00794900
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
-
     gpPhysics->setForceFeedbackAllowed( false );
     if ( gpTutorial != nullptr ) {
         gpTutorial->bEnabled = false;
     }
 
     gpAI->setDisableBots( true );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (GSAI+0x2a988 flag, instant challenge
+                             // pursuit infringement save)
     gpAI->getAIPool()->removeBots();
 
     if ( pIntroCine != nullptr ) {
@@ -1518,6 +1529,23 @@ void GMFreeride::onMenuPauseExit( bool bRestoreState ) {
 
 #ifdef OTDU_USE_IMGUI
 void GMFreeride::drawDebug( float deltaTime ) {
+    if ( ImGui::CollapsingHeader( "Map screenshots" ) ) {
+        if ( ImGui::Checkbox( "Enabled", &gbMapScreenshotsMngEnabled ) &&
+             gbMapScreenshotsMngEnabled &&
+             std::find( registeredManagers.begin(), registeredManagers.end(),
+                        &mngMapScreenshot ) == registeredManagers.end() ) {
+            registerManagerFirst( &mngMapScreenshot );
+            mngMapScreenshot.initialize( gpTestDriveInstance );
+            mngMapScreenshot.reset();
+        }
+
+        if ( gbMapScreenshotsMngEnabled ) {
+            mngMapScreenshot.drawDebug();
+        } else {
+            ImGui::TextDisabled( "Disabled" );
+        }
+    }
+
     if ( gpDatabase != nullptr ) {
         const GameDatabase &gdb = gpDatabase->getGameDB();
         const int32_t numCars = static_cast<int32_t>( gdb.pNumItems[1] );

@@ -388,6 +388,37 @@ void MngScreenshots::uploadBitmap() {
     Render2DB::PrepareForUpload( pTexture, true );
 }
 
+static void ConvertA2R10G10B10ToBGRA8( std::vector<uint8_t> &texels,
+                                       const size_t texelCount ) {
+    for ( size_t i = 0; i < texelCount; i++ ) {
+        uint32_t packed;
+        std::memcpy( &packed, &texels[i * 4], sizeof( packed ) );
+
+        texels[i * 4 + 0] = (uint8_t)( ( packed & 0x3ffu ) >> 2 );
+        texels[i * 4 + 1] = (uint8_t)( ( ( packed >> 10 ) & 0x3ffu ) >> 2 );
+        texels[i * 4 + 2] = (uint8_t)( ( ( packed >> 20 ) & 0x3ffu ) >> 2 );
+        texels[i * 4 + 3] = 0xff;
+    }
+}
+
+static void ConvertR5G6B5ToBGRA8( std::vector<uint8_t> &texels,
+                                  const size_t texelCount ) {
+    std::vector<uint8_t> converted( texelCount * 4 );
+    for ( size_t i = 0; i < texelCount; i++ ) {
+        uint16_t packed;
+        std::memcpy( &packed, &texels[i * 2], sizeof( packed ) );
+
+        const uint32_t r = ( packed >> 11 ) & 0x1fu;
+        const uint32_t g = ( packed >> 5 ) & 0x3fu;
+        const uint32_t b = packed & 0x1fu;
+        converted[i * 4 + 0] = (uint8_t)( ( b << 3 ) | ( b >> 2 ) );
+        converted[i * 4 + 1] = (uint8_t)( ( g << 2 ) | ( g >> 4 ) );
+        converted[i * 4 + 2] = (uint8_t)( ( r << 3 ) | ( r >> 2 ) );
+        converted[i * 4 + 3] = 0xff;
+    }
+    texels.swap( converted );
+}
+
 bool MngScreenshots::grabBackbuffer() {
     // FUN_005136b0
     Texture *pTexture = getBitmap();
@@ -409,25 +440,35 @@ bool MngScreenshots::grabBackbuffer() {
         return false;
     }
 
-    if ( format != VF_X8R8G8B8 && format != VF_A8R8G8B8 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: RENDER
-        OTDU_LOG_WARN( "Cannot capture a screenshot from a %u backbuffer\n",
-                       (uint32_t)format );
+    const size_t texelCount = (size_t)width * height;
+    const size_t bytesPerTexel = ( format == VF_R5G6B5 ) ? 2 : 4;
+    if ( backbuffer.size() < texelCount * bytesPerTexel ) {
+        OTDU_LOG_ERROR( "Backbuffer readback is too small (%zu < %zu)\n",
+                        backbuffer.size(), texelCount * bytesPerTexel );
         return false;
     }
 
-    const size_t expectedSize = (size_t)width * height * 4;
-    if ( backbuffer.size() < expectedSize ) {
-        OTDU_LOG_ERROR( "Backbuffer readback is too small (%zu < %zu)\n",
-                        backbuffer.size(), expectedSize );
+    switch ( format ) {
+    case VF_X8R8G8B8:
+    case VF_A8R8G8B8:
+        break;
+    case VF_A2R10G10B10:
+        ConvertA2R10G10B10ToBGRA8( backbuffer, texelCount );
+        break;
+    case VF_R5G6B5:
+        ConvertR5G6B5ToBGRA8( backbuffer, texelCount );
+        break;
+    default:
+        OTDU_LOG_WARN( "Cannot capture a screenshot from a %u backbuffer\n",
+                       (uint32_t)format );
         return false;
     }
 
     ResampleBGRA( backbuffer.data(), width, height, pTexels, pTexture->Width,
                   pTexture->Height );
 
-    const size_t texelCount = (size_t)pTexture->Width * pTexture->Height;
-    for ( size_t i = 0; i < texelCount; i++ ) {
+    const size_t dstTexelCount = (size_t)pTexture->Width * pTexture->Height;
+    for ( size_t i = 0; i < dstTexelCount; i++ ) {
         pTexels[i * 4 + 3] = 0xff;
     }
 

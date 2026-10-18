@@ -1009,6 +1009,53 @@ int32_t Spots::countWorldSpots( const int32_t type, const int32_t subType ) {
     return count;
 }
 
+SpotMap *Spots::getWorldSpotOfType( int32_t index,
+                                    const int32_t type,
+                                    const int32_t subType ) {
+    // FUN_007d7060
+    const int32_t numSpots = static_cast<int32_t>( getNumWorldSpots() );
+    if ( numSpots < 1 ) {
+        return nullptr;
+    }
+
+    for ( int32_t i = 0; i < numSpots; i++ ) {
+        SpotMap *pSpot = getWorldSpot( i );
+        if ( pSpot->Type != type || type < 1 ) {
+            continue;
+        }
+
+        bool bMatch = false;
+        if ( type <= 4 ) {
+            bMatch = true;
+        } else if ( type == ST_Unknown8 ) {
+            switch ( subType ) {
+            case 0:
+            case 1:
+            case 4:
+            case 9:
+                bMatch = pSpot->SubType == subType;
+                break;
+            case 2:
+                bMatch = pSpot->SubType == 2 || pSpot->SubType == 3;
+                break;
+            default:
+                break;
+            }
+        }
+
+        if ( !bMatch ) {
+            continue;
+        }
+
+        if ( index == 0 ) {
+            return pSpot;
+        }
+        index--;
+    }
+
+    return getWorldSpot( 0 );
+}
+
 Entity *Spots::selectSpotTemplate( ScenaricBank &meshBank,
                                    int32_t spotType,
                                    int32_t ownedFlag ) {

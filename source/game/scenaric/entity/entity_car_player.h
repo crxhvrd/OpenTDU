@@ -2,6 +2,8 @@
 
 #include "base_entity.h"
 
+class AiVehicle;
+
 class EntityCarPlayer : public Entity {
 public:
     const char *GetName() override { return "Actor"; /* FUN_00423f40 */ }
@@ -24,6 +26,10 @@ public:
     void deserialize( BinaryReader *param_2 ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
 
+    inline AiVehicle *getParkedVehicle() const { return pParkedVehicle; }
+    inline void setParkedVehicle( AiVehicle *pVehicle ) {
+        pParkedVehicle = pVehicle;
+    }
     inline int32_t getSpawnTag() const {
         return *reinterpret_cast<const int32_t *>( pData + 4 );
     }
@@ -34,5 +40,6 @@ protected:
     uint32_t Value;
 
     eSpawnKind SpawnKind;
+    AiVehicle *pParkedVehicle;
     bool bBrandCarSpawned;
 };

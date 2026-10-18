@@ -2,12 +2,14 @@
 #include "game_intro_tutorial.h"
 
 #include "ai/ai_road_query.h"
+#include "config/gs_config.h"
 #include "core/maths_helper.h"
 #include "game/game_cheats.h"
 #include "game/gm_base.h"
 #include "game/gs_tutorial.h"
 #include "game/map/gm_map.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/spots.h"
 #include "flash/implementation/flash_player.h"
 #include "player_data/achievements_data.h"
@@ -38,6 +40,7 @@ GameIntroTutorial::GameIntroTutorial()
       carDealer( 0 ),
       carIDRental( 0 ),
       carRentalTime( 0 ),
+      landingCinematicBank(),
       bModalHintVisible( false ),
       bMapForIntro( true ),
       bMustTeleport( false ),
@@ -436,7 +439,12 @@ void GameIntroTutorial::computeMapFocus( GMMap *pMap,
 void GameIntroTutorial::onIntroCinematicEnded() {
     // FUN_007fcd40
     if ( tutorialStep == kTutorialStateAirplane ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (unload LandingCinematicBank)
+        const ScenaricBank::eBankState bankState =
+            landingCinematicBank.getState();
+        if ( bankState != ScenaricBank::BBS_Unused &&
+             bankState != ScenaricBank::BBS_LoadFailed ) {
+            gpScenaric->unloadBank( &landingCinematicBank );
+        }
         setStep( kTutorialStateCarRental );
         return;
     }
@@ -444,6 +452,34 @@ void GameIntroTutorial::onIntroCinematicEnded() {
     if ( isActive() ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_007fc7f0 (current step dialog)
     }
+}
+
+EntityCinematic *GameIntroTutorial::loadLandingCinematic() {
+    // FUN_007fcdc0
+    if ( tutorialStep != kTutorialStateAirplane ) {
+        return nullptr;
+    }
+
+    NextIntroInfo &nextIntro = gpScenaric->getNextIntro();
+    nextIntro.bIsActive = false;
+
+    // FUN_00806250
+    std::string bankPath = gpConfig->getResRootPath();
+    bankPath += nextIntro.pPath;
+    const char lastChar = bankPath.empty() ? '\0' : bankPath.back();
+    if ( lastChar != '\\' && lastChar != '/' ) {
+        bankPath += '\\';
+    }
+    bankPath += nextIntro.pFilename;
+    bankPath += ".bnk";
+
+    gpScenaric->registerBank( &landingCinematicBank );
+    landingCinematicBank.loadFromFile( bankPath.c_str(), nullptr, false );
+    landingCinematicBank.forceLoad();
+
+    // FUN_007dac10
+    return static_cast<EntityCinematic *>( landingCinematicBank.findEntity(
+        eEntityType::ET_CINE, nextIntro.pCinematicName ) );
 }
 
 void GameIntroTutorial::FUN_007fbd80( bool param_2 ) {

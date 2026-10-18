@@ -601,6 +601,15 @@ Material *SpotScreensBank::getMaterial( const char *pMaterialName ) {
     return pRender2DM->getMaterial( pMaterialName );
 }
 
+Material *SpotScreensBank::getMaterial( const uint64_t hashcode ) {
+    // FUN_0040fc80 (inlined)
+    if ( state != SSS_Ready ) {
+        return nullptr;
+    }
+    RenderFile::Section *pSection = pRender2DM->getMaterial( hashcode );
+    return ( pSection != nullptr ) ? (Material *)( pSection + 1 ) : nullptr;
+}
+
 MngSpots::MngSpots()
     : Manager(),
       pOwner( nullptr ),

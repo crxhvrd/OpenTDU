@@ -1,12 +1,17 @@
 #include "shared.h"
 #include "entity_car_player.h"
 
+#include "ai/ai_pool.h"
+#include "ai/ai_vehicle.h"
+#include "ai/gs_ai.h"
 #include "database/gs_database.h"
 #include "filesystem/binary.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/game_mechanism.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_brand_car.h"
+#include "game/freeride/mng_map_screenshot.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 // Squared distances the original spawns / despawns a parked vehicle at
 static constexpr float kSpawnDistanceSq = 40000.0f;   // DAT_00f41c78
@@ -22,6 +27,7 @@ EntityCarPlayer::EntityCarPlayer()
       pData( nullptr ),
       Value( 0 ),
       SpawnKind( SK_None ),
+      pParkedVehicle( nullptr ),
       bBrandCarSpawned( false ) {
     // FUN_00423f50
 }
@@ -75,6 +81,25 @@ void EntityCarPlayer::initialize() {
     }
 }
 
+static constexpr float kParkedRemovalDelay = -1.0f; // DAT_00f41664
+
+static bool IsParkingSimulationActive( CarState *pPlayerCar ) {
+    // FUN_009c7dc0 (inlined gate)
+    const PhysicsVehicle *pPhysics = pPlayerCar->getPhysicsVehicle();
+    if ( pPhysics != nullptr && !pPhysics->isPaused() ) {
+        return true;
+    }
+    return gpMngMapScreenshot != nullptr && gpMngMapScreenshot->isCapturing();
+}
+
+static float ComputeDistanceSqXZ( const Eigen::Vector4f &position,
+                                  const Matrix4x4f_t &matrix ) {
+    // FUN_00425a60
+    const float dx = position.x() - matrix( 3, 0 );
+    const float dz = position.z() - matrix( 3, 2 );
+    return dx * dx + dz * dz;
+}
+
 void EntityCarPlayer::unloadResources() {
     // FUN_009c7d40
     if ( bBrandCarSpawned ) {
@@ -84,7 +109,17 @@ void EntityCarPlayer::unloadResources() {
         bBrandCarSpawned = false;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AI
+    if ( pParkedVehicle == nullptr ) {
+        return;
+    }
+    if ( pParkedVehicle->getLocomotionType() == 2 &&
+         pParkedVehicle->getLocomotion() != nullptr ) {
+        pParkedVehicle->getParkedLocomotion().setOwnerEntity( nullptr );
+    }
+    pParkedVehicle->setRemovable( true );
+    pParkedVehicle->requestRemoval( kParkedRemovalDelay,
+                                    "parked vehicle ScCarPos Term" );
+    pParkedVehicle = nullptr;
 }
 
 void EntityCarPlayer::tick( PlayerGameMech *pGameMech,
@@ -98,26 +133,33 @@ void EntityCarPlayer::tick( PlayerGameMech *pGameMech,
     }
 
     CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
-    if ( pPlayerCar == nullptr ) {
+    if ( pPlayerCar == nullptr || !IsParkingSimulationActive( pPlayerCar ) ) {
         return;
     }
 
+    const Matrix4x4f_t spawn = getWorldMatrix();
+    const float distanceSq =
+        ComputeDistanceSqXZ( pPlayerCar->getWorldPosition(), spawn );
+
     if ( SpawnKind == SK_ParkedTraffic ) {
-        OTDU_UNIMPLEMENTED; // TODO: AI
+        if ( pParkedVehicle == nullptr ) {
+            if ( distanceSq < kSpawnDistanceSq && gpAI != nullptr ) {
+                pParkedVehicle =
+                    gpAI->getAIPool()->requestParked( spawn, -1, this );
+            }
+        } else if ( distanceSq > kDespawnDistanceSq &&
+                    pParkedVehicle->getLocomotion() != nullptr ) {
+            pParkedVehicle->setRemovable( true );
+            pParkedVehicle->requestRemoval( kParkedRemovalDelay,
+                                            "parked vehicle too far" );
+            pParkedVehicle = nullptr;
+        }
         return;
     }
 
     if ( gpBrandCar == nullptr ) {
         return;
     }
-
-    const Matrix4x4f_t spawn = getWorldMatrix();
-    const Eigen::Vector4f playerPos = pPlayerCar->getWorldPosition();
-    const float dx = playerPos.x() - spawn( 3, 0 );
-    const float dy = playerPos.y() - spawn( 3, 1 );
-    const float dz = playerPos.z() - spawn( 3, 2 );
-    const float distanceSq = dx * dx + dy * dy + dz * dz;
-
     if ( !bBrandCarSpawned ) {
         if ( distanceSq < kSpawnDistanceSq ) {
             gpBrandCar->addCar( this, static_cast<int32_t>( Value ), spawn );
