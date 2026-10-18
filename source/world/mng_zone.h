@@ -20,6 +20,11 @@ public:
     void registerVolume( Entity *pVolume );
     void unregisterVolume( Entity *pVolume );
 
+    inline int32_t getNumVolumes() const { return numVolume; }
+    inline Entity *getVolume( const int32_t index ) const {
+        return pVolumes[index];
+    }
+
 protected:
     static constexpr int32_t kMaxNumEntity = 256;
 
