@@ -46,6 +46,11 @@ struct ObjectWorldLocation {
           LocationRoad() {}
 
     void computeWorldPosition( Eigen::Vector4f &outPosition ) const;
+    bool isChangingLane() const;
+    bool overlapsLaterally( const ObjectWorldLocation &other ) const;
+    bool isObjectAhead( const ObjectWorldLocation &other ) const;
+    bool isMovingSameDirection( const ObjectWorldLocation &other ) const;
+    float computeFractionGap( const ObjectWorldLocation &other ) const;
 };
 
 class P2PPlayer;

@@ -123,6 +123,31 @@ void AiRoadProfile::computeLaneBounds( const bool bWay,
     outHeightEnd = 0.0f;
 }
 
+int32_t AiRoadProfile::computeLaneFromWidthRatio( const bool bWay,
+                                                  float widthRatio ) const {
+    // FUN_0092ead0
+    widthRatio = std::clamp( widthRatio, -1.0f, 1.0f );
+    const float lateral = InnerWidth * widthRatio * 0.5f;
+
+    int32_t lane = -1;
+    const int32_t numSegments = static_cast<int32_t>( NumPoints ) - 1;
+    for ( int32_t i = 0; i < numSegments; i++ ) {
+        if ( Points[i].Flags == 2 || Points[i].Flags == 3 ) {
+            lane++;
+        }
+        if ( Points[i + 1].X > lateral ) {
+            break;
+        }
+    }
+    if ( lane == -1 ) {
+        lane = 0;
+    }
+    if ( bWay ) {
+        return static_cast<int32_t>( NumLeftLanes + NumRightLanes ) - lane - 1;
+    }
+    return lane;
+}
+
 void AiRoadProfile::computeLaneWidthRatios( const int32_t lane,
                                             const bool bWay,
                                             float &outRatioStart,

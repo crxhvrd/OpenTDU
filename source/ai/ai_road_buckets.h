@@ -27,6 +27,9 @@ public:
     inline Bucket *getRoadBucket( const uint32_t roadID ) {
         return getBucket( roadBuckets, roadID );
     }
+    inline Bucket *getJunctionBucket( const uint32_t junctionID ) {
+        return getBucket( junctionBuckets, junctionID );
+    }
 
 public:
     AiRoadBuckets();

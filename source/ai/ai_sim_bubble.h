@@ -39,6 +39,10 @@ public:
     inline void setCullFromCamera( const bool bEnabled ) {
         bCullFromCamera = bEnabled;
     }
+    inline void setPosition( const Eigen::Vector4f &newPosition ) {
+        position = newPosition;
+        velocity = Eigen::Vector4f::Zero();
+    }
 
 public:
     AiSimBubble();

@@ -250,6 +250,18 @@ void GSAI::loadRoadMap( Bank &levelBank ) {
     OTDU_LOG_INFO( "AI roadmap loaded (%d roads)\n", roadMap.getNumRoads() );
 }
 
+void GSAI::resumeTraffic( const Eigen::Vector4f *pBubblePosition ) {
+    // FUN_00968e40
+    pAIPool->setTrafficPaused( false );
+    pAIPool->setField0x7C( true );
+    pAIPool->setField0x85( true );
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (GSAI+0x2a9a7 flag)
+
+    if ( pBubblePosition != nullptr ) {
+        pSimBubble->setPosition( *pBubblePosition );
+    }
+}
+
 void GSAI::setTrafficCategories( const bool bResetPool,
                                  const uint32_t categoryMask ) {
     // FUN_00969b50 / FUN_016adb51
@@ -323,6 +335,10 @@ void GSAI::drawDebug( float deltaTime ) {
         spawnDebugTraffic();
     }
     ImGui::SameLine();
+    if ( ImGui::Button( "Spawn parked car ahead" ) ) {
+        spawnDebugParked();
+    }
+    ImGui::SameLine();
     if ( ImGui::Button( "Remove traffic" ) ) {
         pAIPool->removeTraffic();
     }
@@ -355,4 +371,20 @@ void GSAI::drawDebug( float deltaTime ) {
         }
         ImGui::TreePop();
     }
+}
+
+void GSAI::spawnDebugParked() {
+    // FUN_00971330
+    static constexpr float kSpawnDistance = 5.0f; // DAT_00f41750
+
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar == nullptr ) {
+        return;
+    }
+    Matrix4x4f_t matrix = pPlayerCar->getWorldMatrix();
+    Eigen::Vector4f forward = matrix.row( 2 );
+    forward = forward / forward.norm() * kSpawnDistance;
+    forward.w() = 0.0f;
+    matrix.row( 3 ) += forward.transpose();
+    pAIPool->requestParked( matrix, -1, nullptr );
 }

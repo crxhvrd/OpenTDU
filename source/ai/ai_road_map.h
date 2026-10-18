@@ -43,6 +43,8 @@ struct AiRoadProfile {
                                  const bool bWay,
                                  float &outRatioStart,
                                  float &outRatioEnd ) const;
+    int32_t computeLaneFromWidthRatio( const bool bWay,
+                                       float widthRatio ) const;
     bool isTunnel() const;
 };
 OTDU_SIZE_MUST_MATCH( AiRoadProfile, 0x30 );
@@ -154,6 +156,22 @@ public:
         void *pRoadProfile;
         RoadDetail *pDetail;
         AiRoadShape *pShape;
+
+        inline uint8_t getControlDevice( const bool bEnd ) const {
+            // FUN_0092df30
+            const uint8_t device = bEnd ? CtrlDeviceEnd : CtrlDeviceBegin;
+            return ( device < 3 ) ? device : 3;
+        }
+        inline bool isOncomingOvertakeForbidden() const {
+            // FUN_0092dd60
+            return pJunctionBegin != nullptr && pJunctionEnd != nullptr &&
+                   pJunctionBegin->Flags == 2 && pJunctionEnd->Flags == 2;
+        }
+        inline int32_t getSignalSynchro( const bool bEnd ) const {
+            // FUN_0092df10
+            const int32_t device = bEnd ? CtrlDeviceEnd : CtrlDeviceBegin;
+            return ( device >= 3 ) ? device - 3 : 0;
+        }
 
         AiRoadShape *getShape();
 

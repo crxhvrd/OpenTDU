@@ -12,6 +12,8 @@
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/paint.h"
 #include "game/vehicle/vehicle_base.h"
+#include "physics/gs_physics.h"
+#include "physics/vehicle/physics_vehicle.h"
 
 static constexpr int32_t kMinTrafficColor = 1;
 static constexpr int32_t kMaxTrafficColor = 11;
@@ -26,7 +28,8 @@ AiSpawnRequest::AiSpawnRequest()
       lane( 0 ),
       bPolice( false ),
       botDBIndex( -1 ),
-      colorIndex( 0 ) {
+      colorIndex( 0 ),
+      pParkedOwner( nullptr ) {
     // FUN_00921f80
 }
 
@@ -51,6 +54,58 @@ void AiSpawnRequest::fillTraffic( AiVehicle *pVehicle,
     execute();
 }
 
+void AiSpawnRequest::fillParked( AiVehicle *pVehicle,
+                                 const Matrix4x4f_t &matrix,
+                                 const int32_t newColorIndex,
+                                 EntityCarPlayer *pOwner ) {
+    // FUN_00921e00
+    if ( state != ASS_Idle ) {
+        gpAI->getAIPool()->releaseVehicleSlot( pVehicle );
+        return;
+    }
+    kind = ASK_Parked;
+    state = ASS_Ready;
+    pAiVehicle = pVehicle;
+    spawnMatrix = matrix;
+    colorIndex = newColorIndex;
+    pParkedOwner = pOwner;
+    execute();
+}
+
+bool AiSpawnRequest::executeParked() {
+    // FUN_009224f0
+    AiPool *pPool = gpAI->getAIPool();
+    AiPoolTraffic::Template *pTemplate =
+        pPool->getTraffic().pickTemplateForSpawn( -1, true );
+    pCarState =
+        ( pTemplate != nullptr )
+            ? pPool->installVehicle( pTemplate, pAiVehicle, false, spawnMatrix )
+            : nullptr;
+    if ( pCarState == nullptr ) {
+        pPool->releaseVehicleSlot( pAiVehicle );
+        return false;
+    }
+    return true;
+}
+
+void AiSpawnRequest::finalizeParked() {
+    // FUN_009228d0
+    applyRandomTrafficColor();
+    {
+        PhysicsLock lock;
+        pCarState->getPhysicsVehicle()->resetToTransform( spawnMatrix, true );
+    }
+    pCarState->getWorldMatrix() = spawnMatrix;
+    pAiVehicle->initializeParked( pCarState );
+    gpAI->getAIPool()->addVehicle( pAiVehicle );
+    if ( pCarState != nullptr && pAiVehicle != nullptr ) {
+        pCarState->setAIController( pAiVehicle );
+    }
+    if ( pAiVehicle != nullptr ) {
+        pAiVehicle->getParkedLocomotion().setOwnerEntity( pParkedOwner );
+    }
+}
+
 void AiSpawnRequest::execute() {
     // FUN_00922740
     if ( state != ASS_Ready ) {
@@ -63,8 +118,10 @@ void AiSpawnRequest::execute() {
     case ASK_Traffic:
         bSuccess = executeTraffic();
         break;
-    case ASK_Network:
     case ASK_Parked:
+        bSuccess = executeParked();
+        break;
+    case ASK_Network:
     case ASK_CopDam:
     case ASK_Bot:
         OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00922540 / 009224f0 / 00922490 /
@@ -189,6 +246,9 @@ void AiSpawnRequest::finalize() {
     switch ( kind ) {
     case ASK_Traffic:
         finalizeTraffic();
+        break;
+    case ASK_Parked:
+        finalizeParked();
         break;
     default:
         OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00922b50 / 009228d0 / 009227d0 /

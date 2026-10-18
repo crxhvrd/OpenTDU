@@ -11,6 +11,8 @@
 #include "ai/ai_pool_traffic.h"
 
 class CarState;
+class GameObject;
+struct ObjectWorldLocation;
 
 enum class eAiVehicleCategory : int32_t {
     AVC_Traffic = 0,
@@ -132,6 +134,23 @@ public:
     float computeBrakingDistance( const float speedFrom,
                                   const float speedTo,
                                   const float slope ) const;
+    int32_t computeCurrentLane() const;
+    float findClosestObstacle( GameObject **ppOutObstacle ) const;
+    float computeSphereContactTime( GameObject *pObject ) const;
+    float computeRoadContactTime( GameObject *pObject ) const;
+    GameObject *findObjectAheadInLane( const AiRoadIt &it,
+                                       const int32_t lane,
+                                       float *pOutGap,
+                                       float *pOutSpeed ) const;
+    bool isJunctionOccupied( const uint32_t junctionID ) const;
+    bool isCopInPursuit() const;
+    void initializeParked( CarState *pCar );
+    inline AiVehLocoParked &getParkedLocomotion() { return locoParked; }
+    bool isLaneFree( const int32_t lane,
+                     const AiRoadIt &position,
+                     const float timeHorizon,
+                     const float distanceMin,
+                     const float distanceMax ) const;
 
 public:
     AiVehicle();
@@ -166,6 +185,7 @@ private:
     eAiVehicleCategory category;
 
     AiVehLocoTraffic locoTraffic;
+    AiVehLocoParked locoParked;
     AiVehLocomotion *pLoco;
     int32_t locoType;
     AiVehNavTraffic navTraffic;
@@ -211,3 +231,24 @@ float ComputeBrakingDistance( const float coefLinear,
                               const float speedFrom,
                               const float speedTo,
                               const float slope );
+GameObject *FindObjectAheadOnRoad( const ObjectWorldLocation &location,
+                                   const uint32_t selfID,
+                                   float *pOutGap,
+                                   float *pOutSpeed );
+bool FindObjectApproachingJunction( const uint32_t junctionID,
+                                    const uint32_t roadID,
+                                    GameObject **ppOutObject,
+                                    float *pOutDistance );
+int32_t CollectRoadObjects( const uint32_t roadID,
+                            GameObject **ppOutObjects,
+                            const int32_t maxObjects,
+                            const float fractionMin,
+                            const float fractionMax,
+                            const int32_t lane,
+                            const bool bWay );
+GameObject *FindObjectInLaneNear( const uint32_t roadID,
+                                  const float fraction,
+                                  const int32_t lane,
+                                  const bool bWay,
+                                  bool bAhead,
+                                  const uint32_t selfID );

@@ -1,4 +1,5 @@
 #include "shared.h"
+#include "ai/ai_vehicle.h"
 #include "game_object.h"
 
 #include "ai/ai_pool.h"
@@ -29,6 +30,84 @@ void ObjectWorldLocation::computeWorldPosition(
         ( LocationRoad.LateralMin + LocationRoad.LateralMax ) * 0.5f, 0.0f,
         1.0f );
     pRoad->getShape()->computeLateralPosition( fraction, lateral, outPosition );
+}
+
+bool ObjectWorldLocation::isChangingLane() const {
+    // FUN_0096a0a0
+    static constexpr float kLaneChangeLateralVelocity = 0.4f; // DAT_00faa77c
+
+    if ( LocationType != OWL_Road ) {
+        return false;
+    }
+    return VelocityZ < -kLaneChangeLateralVelocity ||
+           VelocityZ > kLaneChangeLateralVelocity;
+}
+
+bool ObjectWorldLocation::overlapsLaterally(
+    const ObjectWorldLocation &other ) const {
+    // FUN_0096a840
+    if ( other.LocationType != OWL_Road || LocationType != OWL_Road ||
+         other.LocationRoad.RoadID != LocationRoad.RoadID ) {
+        return false;
+    }
+    return LocationRoad.LateralMax > other.LocationRoad.LateralMin &&
+           other.LocationRoad.LateralMax > LocationRoad.LateralMin;
+}
+
+bool ObjectWorldLocation::isObjectAhead(
+    const ObjectWorldLocation &other ) const {
+    // FUN_0096a920
+    if ( other.LocationType != OWL_Road || LocationType != OWL_Road ||
+         other.LocationRoad.RoadID != LocationRoad.RoadID ) {
+        return false;
+    }
+    if ( bWay ) {
+        return other.LocationRoad.FractionMax > LocationRoad.FractionMax;
+    }
+    return LocationRoad.FractionMin > other.LocationRoad.FractionMin;
+}
+
+bool ObjectWorldLocation::isMovingSameDirection(
+    const ObjectWorldLocation &other ) const {
+    // FUN_0096a890
+    static constexpr float kStillVelocity = 0.001f;     // DAT_00f4167c
+    static constexpr float kStillVelocityNeg = -0.001f; // DAT_00f41a4c
+
+    if ( other.LocationType != OWL_Road || LocationType != OWL_Road ||
+         other.LocationRoad.RoadID != LocationRoad.RoadID ) {
+        return false;
+    }
+    if ( bWay == other.bWay ) {
+        if ( other.VelocityX <= kStillVelocity &&
+             VelocityX <= kStillVelocity ) {
+            return true;
+        }
+        return other.VelocityX >= kStillVelocityNeg &&
+               VelocityX >= kStillVelocityNeg;
+    }
+    if ( other.VelocityX <= kStillVelocity && VelocityX >= kStillVelocity ) {
+        return true;
+    }
+    return other.VelocityX >= kStillVelocityNeg &&
+           VelocityX <= kStillVelocityNeg;
+}
+
+float ObjectWorldLocation::computeFractionGap(
+    const ObjectWorldLocation &other ) const {
+    // FUN_0096a7e0
+    static constexpr float kNoGap = 1000000.0f; // DAT_00f41814
+
+    if ( other.LocationType != OWL_Road || LocationType != OWL_Road ||
+         other.LocationRoad.RoadID != LocationRoad.RoadID ) {
+        return kNoGap;
+    }
+    if ( LocationRoad.FractionMin > other.LocationRoad.FractionMax ) {
+        return LocationRoad.FractionMin - other.LocationRoad.FractionMax;
+    }
+    if ( other.LocationRoad.FractionMin > LocationRoad.FractionMax ) {
+        return other.LocationRoad.FractionMin - LocationRoad.FractionMax;
+    }
+    return 0.0f;
 }
 
 GameObject::GameObject()
@@ -242,9 +321,22 @@ void GameObjectDico::updateLocations( const float deltaTime,
         const CarState *pCar = ( pObject->getType() == 0 )
                                    ? static_cast<const CarState *>( pObject )
                                    : nullptr;
-        if ( pCar != nullptr && pCar->getAIController() != nullptr ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
-            continue;
+        const AiVehicle *pAI =
+            ( pCar != nullptr )
+                ? static_cast<const AiVehicle *>( pCar->getAIController() )
+                : nullptr;
+        if ( pAI != nullptr ) {
+            const eAiVehicleCategory category = pAI->getCategory();
+            const uint8_t locationType = pObject->worldLocation.LocationType;
+            const bool bLocate =
+                category == eAiVehicleCategory::AVC_CopDam ||
+                ( category == eAiVehicleCategory::AVC_Network &&
+                  ( locationType == ObjectWorldLocation::OWL_None ||
+                    locationType == ObjectWorldLocation::OWL_OffRoad ) ) ||
+                pAI->getInfos().bCrashed;
+            if ( !bLocate ) {
+                continue;
+            }
         }
         locate( pObject, nullptr, bDebug );
     }

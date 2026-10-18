@@ -1,55 +1,11 @@
 #pragma once
 
+#include "ai/ai_fsm.h"
 #include "ai/ai_nav_path.h"
 #include "ai/ai_road_iterator.h"
 
 class AiVehicle;
-
-class AiFsm {
-public:
-    enum eEvent : int32_t {
-        FE_Update = 0,
-        FE_Enter = 1,
-        FE_Exit = 2,
-    };
-
-    static constexpr int32_t kMaxStackSize = 4;
-    static constexpr int32_t kMaxChainedTransitions = 10;
-
-public:
-    inline int32_t getCurrentState() const { return currentState; }
-
-public:
-    AiFsm();
-    virtual ~AiFsm() = default;
-
-    void process( const int32_t event );
-
-protected:
-    int32_t currentState;
-    int32_t nextState;
-    bool bTransitionPending;
-    int32_t stateStack[kMaxStackSize];
-    int32_t stackSize;
-
-protected:
-    virtual bool handle( const int32_t event, const int32_t state ) = 0;
-
-    inline void goTo( const int32_t state ) {
-        nextState = state;
-        bTransitionPending = true;
-    }
-
-    inline void push( const int32_t state ) {
-        stateStack[stackSize++] = currentState;
-        goTo( state );
-    }
-
-    inline void pop() {
-        nextState = stateStack[--stackSize];
-        bTransitionPending = true;
-    }
-};
+class GameObject;
 
 class AiVehNavigation {
 public:
@@ -139,7 +95,7 @@ private:
     bool bMustStopAtJunction;
     AiRoadIt pathEnd;
     int32_t pathEndLane;
-    float obstacleDistance;
+    float obstacleContactTime;
     int32_t waitReason;
     bool bLaneChangeLock;
     int32_t targetLane;
@@ -153,13 +109,13 @@ private:
     float targetSpeed;
     StopRamp stop;
     AiVehicle *pContextVehicle;
-    bool field_0x258;
+    bool bBackOvertaking;
     Eigen::Vector4f backOvertakeStart;
     float backOvertakeTime;
     float backOvertakeDistance;
-    float field_0x278;
-    bool bOvertakeWanted;
-    float overtakeDecisionTime;
+    float backOvertakePassDistance;
+    bool bPullOver;
+    float pullOverDecisionTime;
     bool bZeroDeltaTime;
     float speedDistribCoef;
     float secDistCoef;
@@ -194,13 +150,18 @@ private:
     int32_t checkObstacle( AiVehicle *pContext,
                            float &outDistance,
                            const float secDistance );
+    GameObject *findLeader( float *pOutGap, float *pOutLeaderSpeed ) const;
     void computeFollowing( float &outFollowSpeed,
                            float &outSpeedCoef,
                            const bool bDebug );
-    void updateOvertake();
+    void updatePullOver();
     bool isBackOvertakeWanted();
     bool isLaneChangeWanted();
-    bool isLaneChangeFinished();
+    bool abortBlockedLaneChange();
+    bool checkLaneChangeGap( const int32_t laneFrom,
+                             const int32_t laneTo,
+                             const bool bWay,
+                             float distance ) const;
     bool isOnLane( const int32_t lane ) const;
     bool mustWaitAtJunction( int32_t &outReason, const bool bUpdate );
     bool isBackOvertakePossible();

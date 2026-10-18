@@ -127,9 +127,10 @@ void VehicleParticles::update( VehicleBase *pVehicle ) {
     }
 
     PhysicsVehicle *pPhysics = pCarState->getPhysicsVehicle();
-    if ( pPhysics == nullptr || !pPhysics->isActive() ) {
-        // TODO: INCOMPLETE (Original additionally gates on
-        // IsPaused()/ready/disabled flags read)
+    if ( pPhysics == nullptr || !pPhysics->isActive() ||
+         pPhysics->isPaused() ) {
+        // TODO: INCOMPLETE (Original additionally gates on the PhysVehicle
+        // +0xbd0 flag)
         stopAll( false );
         return;
     }

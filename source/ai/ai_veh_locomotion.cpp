@@ -3,6 +3,9 @@
 
 #include "ai/ai_vehicle.h"
 #include "core/maths_helper.h"
+#include "game/game_object.h"
+#include "game/scenaric/entity/entity_car_player.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
 #include "physics/gs_physics.h"
 #include "gs_timer.h"
@@ -579,5 +582,115 @@ void AiVehLocoTraffic::computeControls( PhysicsVehicle &vehicle,
         const float coef = std::clamp( smoothSteerCoef, 0.0f, 1.0f );
         padSteering = ( 1.0f - coef ) * lastSteering + coef * padSteering;
         lastSteering = padSteering;
+    }
+}
+
+static constexpr float kParkedHandbrake = 1.0f;                // DAT_00faa96c
+static constexpr float kParkedActivateDistanceSq = 10000.0f;   // DAT_00f7c350
+static constexpr float kParkedDeactivateDistanceSq = 40000.0f; // DAT_00f7c354
+static constexpr float kNoPlayerDistanceSq = 1e10f;            // DAT_00f41b80
+
+AiVehLocoParked::AiVehLocoParked()
+    : AiVehLocomotion(), AiFsm(), pOwnerEntity( nullptr ) {
+    // FUN_00937470
+}
+
+void AiVehLocoParked::attach( AiVehicle *pOwner ) {
+    // FUN_00937420
+    AiVehLocomotion::attach( pOwner );
+    reset( false );
+    currentState = PS_Inactive;
+    bTransitionPending = false;
+    nextState = PS_Inactive;
+    stackSize = 0;
+    process( FE_Enter );
+    pVehicle->getInfos().bHandbrake = true;
+}
+
+void AiVehLocoParked::reset( const bool bFull ) {
+    // FUN_009373e0
+    if ( bFull ) {
+        AiVehLocomotion::reset( bFull );
+        currentState = PS_Inactive;
+        bTransitionPending = false;
+        nextState = PS_Inactive;
+        stackSize = 0;
+    }
+    pOwnerEntity = nullptr;
+}
+
+void AiVehLocoParked::tick( const float deltaTime, const float totalTime ) {
+    // FUN_009374c0
+    (void)deltaTime;
+    (void)totalTime;
+    process( FE_Update );
+    checkPhysicsDistance();
+    PhysicsLock lock;
+    if ( bPhysicsPaused ) {
+        moveKinematic();
+    }
+    virtualDistanceAccum = 0.0f;
+    timeAccum = 0.0f;
+    numAccum = 0;
+}
+
+void AiVehLocoParked::detach() {
+    // FUN_009373b0
+    if ( pOwnerEntity != nullptr ) {
+        if ( pOwnerEntity->getParkedVehicle() == pVehicle ) {
+            pOwnerEntity->setParkedVehicle( nullptr );
+        }
+        pOwnerEntity = nullptr;
+    }
+    AiVehLocomotion::detach();
+}
+
+void AiVehLocoParked::forwardInput( PhysicsVehicle &vehicle, float deltaTime ) {
+    // FUN_00937280
+    (void)deltaTime;
+    vehicle.setInput( 0.0f, 0.0f, 0.0f );
+    vehicle.setHandbrake( kParkedHandbrake );
+}
+
+float AiVehLocoParked::computePlayerDistanceSq() const {
+    // FUN_00937310
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar == nullptr ) {
+        return kNoPlayerDistanceSq;
+    }
+    const Eigen::Vector4f delta =
+        pPlayerCar->getWorldPosition() -
+        pVehicle->getInfos().GroundMatrix.row( 3 ).transpose();
+    return delta.squaredNorm();
+}
+
+bool AiVehLocoParked::handle( const int32_t event, const int32_t state ) {
+    // FUN_00937510
+    switch ( state ) {
+    case PS_Inactive:
+        if ( event != FE_Update ) {
+            return false;
+        }
+        if ( kParkedActivateDistanceSq > computePlayerDistanceSq() ) {
+            goTo( PS_Active );
+        }
+        return true;
+    case PS_Active:
+        if ( event != FE_Update ) {
+            return false;
+        }
+        if ( computePlayerDistanceSq() > kParkedDeactivateDistanceSq ) {
+            goTo( PS_Inactive );
+        }
+        return true;
+    case PS_Parked:
+        if ( event != FE_Update ) {
+            return false;
+        }
+        gGameObjectDico.locate( pVehicle->getCarState(),
+                                pVehicle->getInfos().LastRoadPos.pRoad, false );
+        return true;
+    default:
+        return false;
     }
 }

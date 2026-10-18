@@ -35,6 +35,9 @@ public:
 
     inline void setNearPlane( const float value ) { nearPlane = value; }
     inline void setFarPlane( const float value ) { farPlane = value; }
+    inline float getNearPlane() const { return nearPlane; }
+    inline float getFarPlane() const { return farPlane; }
+    inline bool isDepthAware() const { return bDepthAware; }
     inline void setInteriorNearPlane( const float value ) {
         nearPlaneInterior = value;
     }

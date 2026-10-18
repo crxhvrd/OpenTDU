@@ -2,6 +2,9 @@
 #include "ai_vehicle.h"
 
 #include "ai/ai_config.h"
+#include "ai/ai_oriented_box.h"
+#include "ai/ai_road_buckets.h"
+#include "ai/ai_road_shape.h"
 #include "ai/ai_sim_bubble.h"
 #include "ai/gs_ai.h"
 #include "database/gs_database.h"
@@ -303,6 +306,619 @@ float AiVehicle::computeBrakingDistance( const float speedFrom,
            brakingDistanceCoef * kBrakingDistanceScale;
 }
 
+int32_t AiVehicle::computeCurrentLane() const {
+    // FUN_009269c0
+    const ObjectWorldLocation &location = pCarState->getWorldLocation();
+    if ( location.LocationType != ObjectWorldLocation::OWL_Road ) {
+        return 0;
+    }
+    const AiRoadIt it = infos.LastRoadPos;
+    if ( it.pRoad == nullptr ) {
+        return 0;
+    }
+
+    const float lateralMin = location.LocationRoad.LateralMin;
+    const float lateralMax = location.LocationRoad.LateralMax;
+    AiRoadMap::Road *pLocatedRoad =
+        gpAI->getRoadMap().getRoad( location.LocationRoad.RoadID );
+    if ( pLocatedRoad != nullptr ) {
+        pLocatedRoad->getShape();
+    }
+
+    const AiRoadProfile *pProfile = it.getEntity()->pProfile;
+    const int32_t laneMin =
+        pProfile->computeLaneFromWidthRatio( it.bWay, lateralMin );
+    const int32_t laneMax =
+        pProfile->computeLaneFromWidthRatio( it.bWay, lateralMax );
+    if ( laneMin == laneMax ) {
+        return laneMin;
+    }
+
+    float ratioStart = 0.0f;
+    float ratioEnd = 0.0f;
+    pProfile->computeLaneWidthRatios( laneMin, it.bWay, ratioStart, ratioEnd );
+    return ( fabsf( lateralMin - ratioEnd ) > fabsf( lateralMax - ratioEnd ) )
+               ? laneMin
+               : laneMax;
+}
+
+bool AiVehicle::isLaneFree( const int32_t lane,
+                            const AiRoadIt &position,
+                            const float timeHorizon,
+                            const float distanceMin,
+                            const float distanceMax ) const {
+    // FUN_00926ec0
+    static constexpr float kVelocityEpsilon =
+        1e-6f; // DAT_00f41888 / -DAT_00f420e8
+    static constexpr float kNoContactTime = 10000.0f; // DAT_00f416c4
+
+    // Time window [outEnter, outExit] during which a moving interval overlaps
+    // [lo, hi]
+    auto ComputeOverlapTimes = []( const float velocity, const float lo,
+                                   const float hi, const float objectMin,
+                                   const float objectMax, float &outEnter,
+                                   float &outExit ) {
+        if ( velocity > kVelocityEpsilon || velocity < -kVelocityEpsilon ) {
+            const float invVelocity = 1.0f / velocity;
+            const float from = ( velocity > kVelocityEpsilon ) ? lo : hi;
+            const float to = ( velocity > kVelocityEpsilon ) ? hi : lo;
+            outEnter = std::min( ( from - objectMin ) * invVelocity,
+                                 ( from - objectMax ) * invVelocity );
+            outExit = std::max( ( to - objectMin ) * invVelocity,
+                                ( to - objectMax ) * invVelocity );
+            return;
+        }
+        const bool bInside = ( lo <= objectMin && objectMin <= hi ) ||
+                             ( lo <= objectMax && objectMax <= hi );
+        outEnter = bInside ? 0.0f : kNoContactTime;
+        outExit = kNoContactTime;
+    };
+
+    if ( position.pRoad == nullptr ) {
+        return false;
+    }
+    AiRoadBuckets::Bucket *pBucket =
+        gpAI->getRoadBuckets().getRoadBucket( position.pRoad->ID );
+    const AiRoadShape *pShape = position.pRoad->getShape();
+
+    float ratioStart = -1.0f;
+    float ratioEnd = 1.0f;
+    if ( lane >= 0 ) {
+        const AiRoadProfile *pProfile = position.getEntity()->pProfile;
+        pProfile->computeLaneWidthRatios( lane, position.bWay, ratioStart,
+                                          ratioEnd );
+    }
+
+    const float fraction = pShape->computeRoadFraction( position );
+    const float invLength = 1.0f / pShape->TotalLength;
+    float fractionLo = 0.0f;
+    float fractionHi = 0.0f;
+    if ( position.bWay ) {
+        fractionLo = invLength * distanceMin + fraction;
+        fractionHi = invLength * distanceMax + fraction;
+    } else {
+        fractionLo = fraction - invLength * distanceMax;
+        fractionHi = fraction - invLength * distanceMin;
+    }
+    if ( 0.0f > fractionLo || fractionHi > 1.0f ) {
+        return false;
+    }
+    if ( pBucket == nullptr ) {
+        return true;
+    }
+
+    const uint32_t selfID = pCarState->getID();
+    for ( GameObject *pObject = pBucket->pFirstObject; pObject != nullptr;
+          pObject = pObject->getNextInBucket() ) {
+        if ( selfID == pObject->getID() || selfID == pObject->getParentID() ) {
+            continue;
+        }
+        const ObjectWorldLocation &location = pObject->getWorldLocation();
+        if ( location.LocationType != ObjectWorldLocation::OWL_Road ) {
+            continue;
+        }
+
+        float enterAlong = 0.0f;
+        float exitAlong = 0.0f;
+        ComputeOverlapTimes( location.VelocityX, fractionLo, fractionHi,
+                             location.LocationRoad.FractionMin,
+                             location.LocationRoad.FractionMax, enterAlong,
+                             exitAlong );
+        float enterLateral = 0.0f;
+        float exitLateral = 0.0f;
+        ComputeOverlapTimes( location.VelocityZ, ratioStart, ratioEnd,
+                             location.LocationRoad.LateralMin,
+                             location.LocationRoad.LateralMax, enterLateral,
+                             exitLateral );
+
+        const float enter = std::max( enterAlong, enterLateral );
+        const float exit = std::min( exitAlong, exitLateral );
+        if ( exit >= enter && timeHorizon >= enter && exit >= 0.0f ) {
+            return false;
+        }
+    }
+    return true;
+}
+
+float AiVehicle::computeSphereContactTime( GameObject *pObject ) const {
+    // FUN_00924880
+    static constexpr float kMaxContactTimeSq = 2500.0f; // DAT_00f41c5c
+    static constexpr float kStaticSpeedSq =
+        1e-4f; // DAT_00f41760 (-: DAT_00f41890)
+    static constexpr float kDiscriminantTolerance = -0.001f; // DAT_00f41a4c
+
+    Eigen::Vector4f objectCenter = Eigen::Vector4f::Zero(); // DAT_00fac350
+    float objectRadius = 0.0f;
+    const Eigen::Vector4f &objectVelocity = pObject->getLinearVelocity();
+    pObject->retrieveBoundingSphere( &objectCenter, &objectRadius );
+
+    Eigen::Vector4f center = Eigen::Vector4f::Zero();
+    float radius = 0.0f;
+    const Eigen::Vector4f &velocity = pCarState->getLinearVelocity();
+    pCarState->retrieveBoundingSphere( &center, &radius );
+
+    const Eigen::Vector4f delta = objectCenter - center;
+    const Eigen::Vector4f relativeVelocity = objectVelocity - velocity;
+    const float a = relativeVelocity.dot( relativeVelocity );
+    const float b = delta.dot( relativeVelocity ) * 2.0f;
+    const float sumRadius = radius + objectRadius;
+    const float c = delta.dot( delta ) - sumRadius * sumRadius;
+    if ( c > a * kMaxContactTimeSq ) {
+        return -1.0f;
+    }
+    if ( a >= -kStaticSpeedSq && a <= kStaticSpeedSq ) {
+        return ( c <= 0.0f ) ? 0.0f : -1.0f;
+    }
+
+    float discriminant = b * b - a * c * 4.0f;
+    if ( discriminant < kDiscriminantTolerance ) {
+        return -1.0f;
+    }
+    discriminant = std::max( discriminant, 0.0f );
+    const float root = sqrtf( discriminant );
+    const float tEnter = ( -b - root ) / ( a * 2.0f );
+    const float tExit = ( root - b ) / ( a * 2.0f );
+    if ( tExit > tEnter && tEnter >= 0.0f ) {
+        return tEnter;
+    }
+    if ( tExit >= 0.0f ) {
+        return tExit;
+    }
+    return -1.0f;
+}
+
+float AiVehicle::computeRoadContactTime( GameObject *pObject ) const {
+    // FUN_00923c10
+    static constexpr float kStaticVelocity =
+        1e-5f; // DAT_00f41710 (-: DAT_00f41aac)
+    static constexpr float kNoExitTime = 1000.0f; // DAT_00f41718
+
+    const ObjectWorldLocation &self = pCarState->getWorldLocation();
+    const ObjectWorldLocation &other = pObject->getWorldLocation();
+    const ObjectLocationRoad &roadA = self.LocationRoad;
+    const ObjectLocationRoad &roadB = other.LocationRoad;
+    const float velocityLong = other.VelocityX - self.VelocityX;
+    const float velocityLat = other.VelocityZ - self.VelocityZ;
+
+    float longEnter = 0.0f;
+    float longExit = kNoExitTime;
+    if ( velocityLong > -kStaticVelocity && velocityLong < kStaticVelocity ) {
+        if ( !( roadB.FractionMax > roadA.FractionMin ) ||
+             !( roadA.FractionMax > roadB.FractionMin ) ) {
+            return -1.0f;
+        }
+    } else {
+        const float invVelocity = 1.0f / velocityLong;
+        longEnter = ( roadA.FractionMin - roadB.FractionMax ) * invVelocity;
+        longExit = ( roadA.FractionMax - roadB.FractionMin ) * invVelocity;
+    }
+
+    float latEnter = 0.0f;
+    float latExit = kNoExitTime;
+    if ( velocityLat > -kStaticVelocity && velocityLat < kStaticVelocity ) {
+        if ( !( roadB.LateralMax > roadA.LateralMin ) ||
+             !( roadA.LateralMax > roadB.LateralMin ) ) {
+            return -1.0f;
+        }
+    } else {
+        const float invVelocity = 1.0f / velocityLat;
+        latEnter = ( roadA.LateralMin - roadB.LateralMax ) * invVelocity;
+        latExit = ( roadA.LateralMax - roadB.LateralMin ) * invVelocity;
+    }
+
+    if ( longEnter > longExit ) {
+        std::swap( longEnter, longExit );
+    }
+    if ( latEnter > latExit ) {
+        std::swap( latEnter, latExit );
+    }
+    const float enter = std::max( longEnter, latEnter );
+    const float exit = std::min( longExit, latExit );
+    if ( enter > exit || exit < 0.0f ) {
+        return -1.0f;
+    }
+    return std::max( enter, 0.0f );
+}
+
+float AiVehicle::findClosestObstacle( GameObject **ppOutObstacle ) const {
+    // FUN_00925e40
+    static constexpr float kMaxContactTime = 50.0f; // DAT_00f41848
+
+    float bestTime = -1.0f;
+    if ( !infos.bValid ) {
+        return bestTime;
+    }
+
+    const uint32_t selfID = pCarState->getID();
+    for ( GameObject *pObject = gGameObjectDico.getFirstObject();
+          pObject != nullptr; pObject = pObject->getNextInDico() ) {
+        if ( selfID == pObject->getID() || selfID == pObject->getParentID() ) {
+            continue;
+        }
+
+        float contactTime = computeSphereContactTime( pObject );
+        if ( contactTime < 0.0f || contactTime > kMaxContactTime ) {
+            contactTime = -1.0f;
+        } else {
+            const ObjectWorldLocation &otherLocation =
+                pObject->getWorldLocation();
+            const ObjectWorldLocation &selfLocation =
+                pCarState->getWorldLocation();
+            if ( otherLocation.LocationType == ObjectWorldLocation::OWL_Road &&
+                 selfLocation.LocationType == otherLocation.LocationType &&
+                 otherLocation.LocationRoad.RoadID ==
+                     selfLocation.LocationRoad.RoadID ) {
+                contactTime = computeRoadContactTime( pObject );
+            } else {
+                contactTime = ComputeObjectsContactTime( pCarState, pObject,
+                                                         kMaxContactTime );
+            }
+        }
+
+        if ( bestTime < 0.0f ||
+             ( contactTime >= 0.0f && contactTime < bestTime ) ) {
+            bestTime = contactTime;
+            if ( ppOutObstacle != nullptr ) {
+                *ppOutObstacle = pObject;
+            }
+        }
+    }
+    return bestTime;
+}
+
+GameObject *FindObjectAheadOnRoad( const ObjectWorldLocation &location,
+                                   const uint32_t selfID,
+                                   float *pOutGap,
+                                   float *pOutSpeed ) {
+    // FUN_009275a0
+    if ( location.LocationType != ObjectWorldLocation::OWL_Road ) {
+        return nullptr;
+    }
+
+    const uint32_t roadID = location.LocationRoad.RoadID;
+    AiRoadBuckets::Bucket *pBucket =
+        gpAI->getRoadBuckets().getRoadBucket( roadID );
+    AiRoadMap::Road *pRoad = gpAI->getRoadMap().getRoad( roadID );
+    if ( pBucket == nullptr || pRoad == nullptr ) {
+        return nullptr;
+    }
+    const AiRoadShape *pShape = pRoad->getShape();
+
+    GameObject *pClosest = nullptr;
+    float closestGap = 0.0f;
+    float closestSpeed = 0.0f;
+    for ( GameObject *pObject = pBucket->pFirstObject; pObject != nullptr;
+          pObject = pObject->getNextInBucket() ) {
+        if ( selfID == pObject->getID() || selfID == pObject->getParentID() ) {
+            continue;
+        }
+
+        const ObjectWorldLocation &other = pObject->getWorldLocation();
+        if ( other.LocationType != ObjectWorldLocation::OWL_Road ||
+             location.LocationType != other.LocationType ||
+             other.LocationRoad.RoadID != roadID ) {
+            continue;
+        }
+        if ( location.bWay ) {
+            if ( !( other.LocationRoad.FractionMax >
+                    location.LocationRoad.FractionMax ) ) {
+                continue;
+            }
+        } else if ( !( location.LocationRoad.FractionMin >
+                       other.LocationRoad.FractionMin ) ) {
+            continue;
+        }
+        if ( !( location.LocationRoad.LateralMax >
+                other.LocationRoad.LateralMin ) ||
+             !( other.LocationRoad.LateralMax >
+                location.LocationRoad.LateralMin ) ) {
+            continue;
+        }
+
+        const float gap =
+            location.computeFractionGap( other ) * pShape->TotalLength;
+        if ( pClosest == nullptr || closestGap > gap ) {
+            pClosest = pObject;
+            closestSpeed = pShape->TotalLength * other.VelocityX;
+            closestGap = gap;
+        }
+    }
+
+    if ( pOutGap != nullptr ) {
+        *pOutGap = closestGap;
+    }
+    if ( pOutSpeed != nullptr ) {
+        *pOutSpeed = closestSpeed;
+    }
+    return pClosest;
+}
+
+bool FindObjectApproachingJunction( const uint32_t junctionID,
+                                    const uint32_t roadID,
+                                    GameObject **ppOutObject,
+                                    float *pOutDistance ) {
+    // FUN_00926ce0
+    static constexpr float kStaticVelocity = 1e-5f;  // DAT_00f41710
+    static constexpr float kNoContactTime = 1000.0f; // DAT_00f41718
+    static constexpr float kMaxDistance = 50.0f;     // DAT_00f41848
+    static constexpr float kMaxContactTime = 10.0f;  // DAT_00f4166c
+
+    AiRoadMap::Road *pRoad = gpAI->getRoadMap().getRoad( roadID );
+    if ( pRoad == nullptr ) {
+        return false;
+    }
+
+    bool bAtEnd = false;
+    if ( pRoad->pJunctionEnd != nullptr &&
+         pRoad->pJunctionEnd->ID == junctionID ) {
+        bAtEnd = true;
+    } else if ( pRoad->pJunctionBegin == nullptr ||
+                pRoad->pJunctionBegin->ID != junctionID ) {
+        return false;
+    }
+
+    const AiRoadShape *pShape = pRoad->getShape();
+    AiRoadBuckets::Bucket *pBucket =
+        gpAI->getRoadBuckets().getRoadBucket( roadID );
+    if ( pBucket == nullptr ) {
+        return false;
+    }
+
+    float minFraction = 1.0f;
+    GameObject *pMinObject = nullptr;
+    float maxFraction = 0.0f;
+    GameObject *pMaxObject = nullptr;
+    float velocity = 0.0f;
+    int32_t index = 0;
+    for ( GameObject *pObject = pBucket->pFirstObject;
+          pObject != nullptr && index < pBucket->NumObjects;
+          pObject = pObject->getNextInBucket(), index++ ) {
+        const ObjectWorldLocation &location = pObject->getWorldLocation();
+        if ( location.LocationType != ObjectWorldLocation::OWL_Road ||
+             pObject->getParentID() != 0 || ( location.bWay != 0 ) != bAtEnd ) {
+            continue;
+        }
+        if ( minFraction > location.LocationRoad.FractionMin ) {
+            minFraction = location.LocationRoad.FractionMin;
+            pMinObject = pObject;
+        }
+        if ( location.LocationRoad.FractionMax > maxFraction ) {
+            maxFraction = location.LocationRoad.FractionMax;
+            pMaxObject = pObject;
+        }
+        velocity = location.VelocityX;
+    }
+
+    GameObject *pObject = nullptr;
+    float distance = 0.0f;
+    float contactTime = kNoContactTime;
+    if ( bAtEnd ) {
+        pObject = pMaxObject;
+        distance = pShape->TotalLength * ( 1.0f - maxFraction );
+        if ( velocity > kStaticVelocity ) {
+            contactTime = ( 1.0f - maxFraction ) / velocity;
+        }
+    } else {
+        pObject = pMinObject;
+        distance = pShape->TotalLength * minFraction;
+        if ( velocity > kStaticVelocity ) {
+            contactTime = 0.0f - minFraction / velocity;
+        }
+    }
+
+    if ( ppOutObject != nullptr ) {
+        *ppOutObject = pObject;
+    }
+    if ( pOutDistance != nullptr ) {
+        *pOutDistance = distance;
+    }
+    return ( kMaxDistance > distance || kMaxContactTime > contactTime ) &&
+           pObject != nullptr;
+}
+
+GameObject *AiVehicle::findObjectAheadInLane( const AiRoadIt &it,
+                                              const int32_t lane,
+                                              float *pOutGap,
+                                              float *pOutSpeed ) const {
+    // FUN_00927710
+    AiRoadShape *pShape = it.pRoad->getShape();
+    const float fraction = pShape->computeRoadFraction( it );
+    const AiRoadProfile *pProfile = it.getEntity()->pProfile;
+    float ratioStart = 0.0f;
+    float ratioEnd = 0.0f;
+    pProfile->computeLaneWidthRatios( lane, it.bWay, ratioStart, ratioEnd );
+
+    ObjectWorldLocation location;
+    location.LocationType = ObjectWorldLocation::OWL_Road;
+    location.bWay = it.bWay ? 1 : 0;
+    location.bNearJunction = 0;
+    location.LocationRoad.RoadID = it.pRoad->ID;
+    location.LocationRoad.FractionMin = fraction;
+    location.LocationRoad.FractionMax = fraction;
+    location.LocationRoad.LateralMin = ratioStart;
+    location.LocationRoad.LateralMax = ratioEnd;
+
+    const uint32_t selfID =
+        ( pCarState != nullptr ) ? pCarState->getID() : 0xffffffffu;
+    return FindObjectAheadOnRoad( location, selfID, pOutGap, pOutSpeed );
+}
+
+bool AiVehicle::isJunctionOccupied( const uint32_t junctionID ) const {
+    // FUN_00923b80
+    AiRoadBuckets::Bucket *pBucket =
+        gpAI->getRoadBuckets().getJunctionBucket( junctionID );
+    if ( pBucket == nullptr ) {
+        return false;
+    }
+
+    const uint32_t selfID = pCarState->getID();
+    int32_t index = 0;
+    for ( GameObject *pObject = pBucket->pFirstObject;
+          pObject != nullptr && index < pBucket->NumObjects;
+          pObject = pObject->getNextInBucket(), index++ ) {
+        if ( selfID != pObject->getID() && selfID != pObject->getParentID() ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AiVehicle::isCopInPursuit() const {
+    // FUN_00923a60
+    if ( behaviourType != 0 || navType != 1 ) {
+        return false;
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: police behaviour state (+0xc == 4 || 5)
+    return false;
+}
+
+int32_t CollectRoadObjects( const uint32_t roadID,
+                            GameObject **ppOutObjects,
+                            const int32_t maxObjects,
+                            const float fractionMin,
+                            const float fractionMax,
+                            const int32_t lane,
+                            const bool bWay ) {
+    // FUN_00927250
+    AiRoadMap::Road *pRoad = gpAI->getRoadMap().getRoad( roadID );
+    if ( pRoad == nullptr ) {
+        return 0;
+    }
+    AiRoadBuckets::Bucket *pBucket =
+        gpAI->getRoadBuckets().getRoadBucket( roadID );
+
+    AiRoadIt it;
+    it.setRoadEntry( pRoad, bWay );
+    pRoad->getShape();
+
+    float ratioStart = -1.0f;
+    float ratioEnd = 1.0f;
+    if ( lane >= 0 ) {
+        it.getEntity()->pProfile->computeLaneWidthRatios(
+            lane, bWay, ratioStart, ratioEnd );
+    }
+
+    const float windowMin = bWay ? fractionMin : 1.0f - fractionMin;
+    const float windowMax = bWay ? fractionMax : 1.0f - fractionMax;
+    auto NearEdge = [bWay]( const ObjectWorldLocation &location ) {
+        return bWay ? location.LocationRoad.FractionMin
+                    : 1.0f - location.LocationRoad.FractionMin;
+    };
+
+    int32_t numObjects = 0;
+    if ( pBucket == nullptr ) {
+        return numObjects;
+    }
+    for ( GameObject *pObject = pBucket->pFirstObject;
+          pObject != nullptr && numObjects < maxObjects;
+          pObject = pObject->getNextInBucket() ) {
+        const ObjectWorldLocation &location = pObject->getWorldLocation();
+        if ( location.LocationType != ObjectWorldLocation::OWL_Road ) {
+            continue;
+        }
+        const float nearEdge = NearEdge( location );
+        const float farEdge = bWay ? location.LocationRoad.FractionMax
+                                   : 1.0f - location.LocationRoad.FractionMax;
+        if ( !( farEdge >= windowMin ) || !( windowMax >= nearEdge ) ||
+             !( location.LocationRoad.LateralMax >= ratioStart ) ||
+             !( ratioEnd >= location.LocationRoad.LateralMin ) ) {
+            continue;
+        }
+
+        int32_t slot = 0;
+        while ( slot < numObjects &&
+                !( NearEdge( ppOutObjects[slot]->getWorldLocation() ) >
+                   nearEdge ) ) {
+            slot++;
+        }
+        for ( int32_t i = numObjects; i > slot; i-- ) {
+            ppOutObjects[i] = ppOutObjects[i - 1];
+        }
+        ppOutObjects[slot] = pObject;
+        numObjects++;
+    }
+    return numObjects;
+}
+
+GameObject *FindObjectInLaneNear( const uint32_t roadID,
+                                  const float fraction,
+                                  const int32_t lane,
+                                  const bool bWay,
+                                  bool bAhead,
+                                  const uint32_t selfID ) {
+    // FUN_00927420
+    if ( !bWay ) {
+        bAhead = !bAhead;
+    }
+
+    AiRoadBuckets::Bucket *pBucket =
+        gpAI->getRoadBuckets().getRoadBucket( roadID );
+    AiRoadMap::Road *pRoad = gpAI->getRoadMap().getRoad( roadID );
+    if ( pBucket == nullptr || pRoad == nullptr ) {
+        return nullptr;
+    }
+    pRoad->getShape();
+
+    AiRoadIt it;
+    it.setRoadEntry( pRoad, bWay );
+    float ratioStart = -1.0f;
+    float ratioEnd = 1.0f;
+    it.getEntity()->pProfile->computeLaneWidthRatios( lane, it.bWay, ratioStart,
+                                                      ratioEnd );
+
+    GameObject *pClosest = nullptr;
+    float closest = 1.0f;
+    for ( GameObject *pObject = pBucket->pFirstObject; pObject != nullptr;
+          pObject = pObject->getNextInBucket() ) {
+        if ( selfID == pObject->getID() || selfID == pObject->getParentID() ) {
+            continue;
+        }
+        const ObjectWorldLocation &location = pObject->getWorldLocation();
+        if ( location.LocationType != ObjectWorldLocation::OWL_Road ||
+             ratioStart > location.LocationRoad.LateralMax ||
+             location.LocationRoad.LateralMin > ratioEnd ) {
+            continue;
+        }
+        const float center = ( location.LocationRoad.FractionMin +
+                               location.LocationRoad.FractionMax ) *
+                             0.5f;
+        const float delta = bAhead ? center - fraction : fraction - center;
+        if ( closest >= delta && delta > 0.0f ) {
+            closest = delta;
+            pClosest = pObject;
+        }
+    }
+    return pClosest;
+}
+
+void AiVehicle::initializeParked( CarState *pCar ) {
+    // FUN_00928830
+    initialize( eAiVehicleCategory::AVC_Parked, pCar, AiRoadIt(), 0,
+                kBehaviourNone, kControllerNone, kNavigationNone, 2, false );
+    bRemovable = false;
+    signals.bHeadlightActivated = false;
+}
+
 void AiVehicle::setLocomotion( const int32_t type,
                                const bool bReset,
                                const bool bKeepPhysics ) {
@@ -316,10 +932,14 @@ void AiVehicle::setLocomotion( const int32_t type,
         return;
     }
 
-    if ( type != 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE;
+    if ( type == 2 ) {
+        pLoco = &locoParked;
+    } else {
+        if ( type != 0 ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: opponent locomotion (type 1)
+        }
+        pLoco = &locoTraffic;
     }
-    pLoco = &locoTraffic;
     if ( bReset ) {
         pLoco->reset( true );
     }
@@ -434,7 +1054,7 @@ void AiVehicle::initialize( const eAiVehicleCategory newCategory,
     pCarState = pCar;
     category = newCategory;
     if ( newCategory != eAiVehicleCategory::AVC_Network ) {
-        OTDU_UNIMPLEMENTED_ONCE;
+        pCar->getPhysicsVehicle()->setAutoReverseAllowed( false );
     }
     gpCarState->registerCallback( pCar, this, nullptr );
 
@@ -548,7 +1168,9 @@ void AiVehicle::initialize( const eAiVehicleCategory newCategory,
 void AiVehicle::release() {
     // FUN_00927eb0
     if ( pCarState != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE;
+        if ( pCarState->getPhysicsVehicle() != nullptr ) {
+            pCarState->getPhysicsVehicle()->setAutoReverseAllowed( true );
+        }
         gpCarState->unregisterCallback( pCarState, this );
     }
     if ( pLoco != nullptr ) {

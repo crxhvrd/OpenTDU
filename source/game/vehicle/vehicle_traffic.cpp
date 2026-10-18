@@ -653,7 +653,8 @@ void VehicleTraffic::setupMaterials() {
             bUseDamagedMaterial[local_10] = false;
             if ( pMaterialInstances[local_10] != nullptr ) {
                 Material *peVar9 = Render2DM::Create(
-                    pMemoryPool + local_18, 0xabcdeffedcbaabcd, 6, 6, 0x60, 1 );
+                    reinterpret_cast<uint8_t *>( pMemoryPool ) + local_18,
+                    0xabcdeffedcbaabcd, 6, 6, 0x60, 1 );
 
                 if ( peVar9 != nullptr ) {
                     peVar9->DepthWrite =
@@ -755,7 +756,8 @@ void VehicleTraffic::setupMaterials() {
                             peVar15->pLayerTextures[i].pTextureSection;
                     }
 
-                    materials[local_10].initialize( pMemoryPool + local_18 );
+                    materials[local_10].initialize(
+                        reinterpret_cast<uint8_t *>( pMemoryPool ) + local_18 );
                     bodyResource.Collection2D.register2DM(
                         &materials[local_10] );
 
@@ -772,6 +774,7 @@ void VehicleTraffic::setupMaterials() {
                     }
                 }
             }
+            local_18 += gpCarDisplay->getDeformableMaterialSize();
         }
 
         for ( int32_t iVar5 = 0; iVar5 < kNumMaterials; iVar5++ ) {

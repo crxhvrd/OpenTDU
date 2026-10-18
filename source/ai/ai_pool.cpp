@@ -744,3 +744,38 @@ void AiPool::tick( const float deltaTime, const float totalTime ) {
         pVehicle->tick( deltaTime, totalTime );
     }
 }
+
+AiVehicle *AiPool::requestParked( const Matrix4x4f_t &frame,
+                                  const int32_t colorIndex,
+                                  EntityCarPlayer *pOwner ) {
+    // FUN_0091dd00
+    const int32_t numParked =
+        lists[AVL_FirstCategory +
+              static_cast<int32_t>( eAiVehicleCategory::AVC_Parked )]
+            .Count;
+    if ( !spawnRequest.isIdle() || numParked >= gAIConfig.MaxNumParkedVehicle ||
+         traffic.getNumLoadedTemplates() <= 0 ) {
+        return nullptr;
+    }
+
+    AiVehicle *pVehicle = allocVehicleSlot();
+    if ( pVehicle == nullptr ) {
+        return nullptr;
+    }
+    spawnRequest.fillParked( pVehicle, frame, colorIndex, pOwner );
+    return isVehicleSlotUsed( pVehicle ) ? pVehicle : nullptr;
+}
+
+bool AiPool::isVehicleSlotUsed( const AiVehicle *pVehicle ) const {
+    // FUN_0040bac0
+    const ptrdiff_t index = pVehicle - vehicles.data();
+    if ( index < 0 || index >= kMaxNumVehicles ) {
+        return false;
+    }
+    for ( int32_t i = 0; i < numUsedVehicles; i++ ) {
+        if ( pUsedVehicles[i] == pVehicle ) {
+            return true;
+        }
+    }
+    return false;
+}

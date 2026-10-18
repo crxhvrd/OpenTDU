@@ -72,6 +72,9 @@ public:
     void *allocate2DMFromPool();
     void *allocate3DDFromPool();
     Material *allocateTrafficMaterialsFromPool();
+    inline uint32_t getDeformableMaterialSize() const {
+        return sizeMaterialDeformation;
+    }
 
     void release3DDPoolEntry( void *pEntry );
     void release2DMPoolEntry( void *pEntry );

@@ -74,7 +74,7 @@ CarState::CarState()
 CarState::~CarState() {}
 
 int32_t CarState::getType() {
-    // FUN_0047a8b0
+    // FUN_0047a8a0
     return 0;
 }
 

@@ -55,8 +55,10 @@ public:
     void loadAIConfig();
     void setTrafficCategories( const bool bResetPool,
                                const uint32_t categoryMask );
+    void resumeTraffic( const Eigen::Vector4f *pBubblePosition );
     void drawDebug( float deltaTime ) override;
     bool spawnDebugTraffic();
+    void spawnDebugParked();
 
 private:
     AiRoadBuckets roadBuckets;

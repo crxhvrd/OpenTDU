@@ -7,6 +7,8 @@
 #include "ai/ai_vehicle.h"
 #include "core/random/bcpl.h"
 
+class EntityCarPlayer;
+
 class CarState;
 
 // Fixed size list of AI vehicles
@@ -115,6 +117,10 @@ public:
     int32_t getMaxTraffic() const;
     int32_t getMaxPolice() const;
     bool spawnTrafficOnRoad( const AiRoadIt &candidate, const bool bPolice );
+    AiVehicle *requestParked( const Matrix4x4f_t &frame,
+                              const int32_t colorIndex,
+                              EntityCarPlayer *pOwner );
+    bool isVehicleSlotUsed( const AiVehicle *pVehicle ) const;
     bool requestTraffic( const Matrix4x4f_t &frame,
                          const AiRoadIt &roadIt,
                          const int32_t lane,

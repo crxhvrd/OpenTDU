@@ -123,10 +123,12 @@ public:
         return points.at( index );
     }
     inline float getProgress() const { return progress; }
+    inline int32_t getNearestIndex() const { return nearestIndex; }
     inline float getTotalLength() const { return totalLength; }
     inline NavRing<Span> &getSpans() { return spans; }
 
 public:
+    float computePointSpeed( const Point &point ) const;
     NavPath();
 
     void initialize( AiVehicle *pOwner );
@@ -213,5 +215,4 @@ private:
                                 const float distance,
                                 Eigen::Vector4f &outPosition ) const;
     Eigen::Vector4f computeTangent( const int32_t index ) const;
-    float computePointSpeed( const Point &point ) const;
 };

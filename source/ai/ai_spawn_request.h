@@ -2,6 +2,8 @@
 
 #include "ai/ai_road_iterator.h"
 
+class EntityCarPlayer;
+
 class AiVehicle;
 class CarState;
 
@@ -37,6 +39,10 @@ public:
                       const AiRoadIt &roadIt,
                       const int32_t laneIndex,
                       const bool bPoliceCar );
+    void fillParked( AiVehicle *pVehicle,
+                     const Matrix4x4f_t &matrix,
+                     const int32_t newColorIndex,
+                     EntityCarPlayer *pOwner );
     void execute();
     void tick( const bool bCancel );
     void flush();
@@ -52,9 +58,12 @@ private:
     bool bPolice;
     int32_t botDBIndex;
     int32_t colorIndex;
+    EntityCarPlayer *pParkedOwner;
 
 private:
     bool executeTraffic();
+    bool executeParked();
+    void finalizeParked();
     void finalize();
     void finalizeTraffic();
     void applyRandomTrafficColor();
