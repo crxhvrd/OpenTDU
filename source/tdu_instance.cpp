@@ -81,6 +81,8 @@
 #include "game/cinviewer/gm_cin_viewer.h"
 #include "game/boat_tour/gm_boat_tour.h"
 #include "game/jail/gm_jail.h"
+#include "game/demo/gm_intro_demo.h"
+#include "game/demo/gm_outro_demo.h"
 #include "game/map/gm_map.h"
 #include "game/login/gm_login.h"
 #include "game/garage/gm_garage.h"
@@ -599,6 +601,16 @@ void TestDriveGameInstance::mainLoop() {
             pGameModeAlloc =
                 TestDrive::AllocAligned( sizeof( GMJail ), alignof( GMJail ) );
             pGVar6 = new ( pGameModeAlloc ) GMJail();
+            break;
+        case GM_OutroDemo:
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMOutroDemo ),
+                                                      alignof( GMOutroDemo ) );
+            pGVar6 = new ( pGameModeAlloc ) GMOutroDemo();
+            break;
+        case GM_IntroDemo:
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMIntroDemo ),
+                                                      alignof( GMIntroDemo ) );
+            pGVar6 = new ( pGameModeAlloc ) GMIntroDemo();
             break;
         case GM_Map:
             pGameModeAlloc =
