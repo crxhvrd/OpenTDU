@@ -1,8 +1,15 @@
 #pragma once
 
 #include "ai/ai_road_iterator.h"
+#include "core/cubic_bezier.h"
 
 class AiVehicle;
+
+bool ComputeCircle( Eigen::Vector2f p1,
+                    Eigen::Vector2f p2,
+                    Eigen::Vector2f p3,
+                    Eigen::Vector2f &outCenter,
+                    float &outRadius );
 
 template <typename T> struct NavRing {
     int32_t Capacity = 0;
@@ -74,6 +81,7 @@ public:
         PT_None = 0,
         PT_Road = 1,
         PT_Junction = 2,
+        PT_End = 3, // Junction curve point without junction (opponent path)
     };
 
     struct Point {
@@ -87,7 +95,7 @@ public:
         float RoadSpeedLimit = -1.0f;
         ePointType Type = PT_None;
         AiRoadIt It;
-        float field_0x60 = 0.0f;
+        float WidthRatio = 0.0f; // -1024 on junction points
         const AiRoadMap::Junction *pJunction = nullptr;
         float JunctionLocalX = 0.0f;
         float JunctionLocalZ = 0.0f;
@@ -130,11 +138,12 @@ public:
 public:
     float computePointSpeed( const Point &point ) const;
     NavPath();
+    virtual ~NavPath() = default;
 
-    void initialize( AiVehicle *pOwner );
+    virtual void initialize( AiVehicle *pOwner );
     void attach( AiVehicle *pOwner );
-    void release();
-    void reset( const bool bFull );
+    virtual void release();
+    virtual void reset( const bool bFull );
 
     Point &front();
     Point &back();
@@ -183,9 +192,9 @@ public:
     float computeLookAhead() const;
     float computeCurrentSpeedLimit() const;
     float computeCrestSpeedLimit( const int32_t index ) const;
-    void computeSpeedProfile( int32_t &outCount,
-                              SpeedSample *pOutSamples,
-                              const int32_t maxSamples ) const;
+    virtual void computeSpeedProfile( int32_t &outCount,
+                                      SpeedSample *pOutSamples,
+                                      const int32_t maxSamples ) const;
     bool computeTarget( Eigen::Vector4f &outDirection,
                         float &outSpeed,
                         float maxSpeed,
@@ -193,7 +202,7 @@ public:
 
     void updateProgress( const Matrix4x4f_t &groundMatrix );
 
-private:
+protected:
     int32_t pointIdCounter;
     NavRing<Point> points;
     Point dummyPoint;
@@ -204,7 +213,7 @@ private:
     float progress;
     NavRing<Span> spans;
 
-private:
+protected:
     float popFrontPoints( int32_t numPoints );
     bool generatePoints( const bool bKeepIds, const Span &span );
     int32_t getNextSpanFirstIndex() const;
@@ -216,3 +225,69 @@ private:
                                 Eigen::Vector4f &outPosition ) const;
     Eigen::Vector4f computeTangent( const int32_t index ) const;
 };
+
+// Opponent navigation path
+class NavPathOpponent : public NavPath {
+public:
+    struct Bend {
+        float Radius = 0.0f;
+        float Angle = 0.0f;
+        int32_t FirstIndex = 0;
+        int32_t PeakIndex = 0;
+        int32_t LastIndex = 0;
+    };
+
+public:
+    inline bool isFull() const { return points.Count == points.Capacity; }
+    inline int32_t getCapacity() const { return points.Capacity; }
+    inline AiVehicle *getVehicle() const { return pVehicle; }
+    inline void setBatchAppend( const bool bValue ) { bBatchAppend = bValue; }
+    inline const NavRing<Bend> &getBends() const { return bends; }
+
+public:
+    NavPathOpponent();
+
+    void initialize( AiVehicle *pOwner ) override;
+    void release() override;
+    void reset( const bool bFull ) override;
+
+    void popBack();
+    void pushRoadPoint( const AiRoadIt &it,
+                        const float widthRatio,
+                        float speedLimit,
+                        const bool bForce );
+    bool appendUTurn( const AiRoadIt &it,
+                      const float widthFrom,
+                      const float widthTo );
+    bool appendRoadInterval( const AiRoadIt &from,
+                             const AiRoadIt &to,
+                             const float widthRatioFrom,
+                             const float widthRatioTo,
+                             const float speedLimit,
+                             AiRoadIt *pOutEnd );
+    bool appendRoadBezier( const AiRoadIt &itA,
+                           const AiRoadIt &itB,
+                           Eigen::Vector2f key0,
+                           Eigen::Vector2f key1,
+                           Eigen::Vector2f key2,
+                           Eigen::Vector2f key3,
+                           const Eigen::Vector4f &positionA,
+                           const Eigen::Vector4f &positionB );
+    bool appendJunctionCurve( const AiRoadMap::Junction *pJunction,
+                              const Eigen::Vector4f &p0,
+                              const Eigen::Vector4f &p1,
+                              const Eigen::Vector4f &p2,
+                              const Eigen::Vector4f &p3 );
+    void rebuildBends() const;
+
+    void computeSpeedProfile( int32_t &outCount,
+                              SpeedSample *pOutSamples,
+                              const int32_t maxSamples ) const override;
+
+private:
+    mutable NavRing<Bend> bends;
+    int32_t field_0x108;
+    int32_t field_0x10c;
+};
+
+float ComputeBezierBend( const CubicBezier &curve );

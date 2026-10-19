@@ -1,9 +1,11 @@
 #pragma once
 
+#include "ai/ai_bot_personality.h"
 #include "ai/ai_road_iterator.h"
 #include "ai/ai_veh_behaviour.h"
 #include "ai/ai_veh_controller.h"
 #include "ai/ai_veh_locomotion.h"
+#include "ai/ai_veh_nav_opponent.h"
 #include "ai/ai_veh_nav_traffic.h"
 #include "core/random/bcpl.h"
 #include "game/vehicle/vehicle_base.h"
@@ -114,6 +116,10 @@ public:
     inline AiVehNavigation *getNavigation() const { return pNav; }
     inline AiVehBehaviour *getBehaviour() const { return pBehaviour; }
     inline bool isSoftCollision() const { return bSoftCollision; }
+    inline bool isPlayerCar() const { return bPlayerCar; }
+    inline void setFlashFade( const bool bEnabled ) { bFlashFade = bEnabled; }
+    inline AiVehIndDPC &getDPC() { return dpc; }
+    inline const AiVehIndDPC &getDPC() const { return dpc; }
     inline AiVehicleInfo &getInfos() { return infos; }
     inline const AiVehicleInfo &getInfos() const { return infos; }
     inline AiVehSignals &getSignals() { return signals; }
@@ -145,7 +151,21 @@ public:
     bool isJunctionOccupied( const uint32_t junctionID ) const;
     bool isCopInPursuit() const;
     void initializeParked( CarState *pCar );
+    void initializeOpponent( CarState *pCar,
+                             const Matrix4x4f_t &startFrame,
+                             const int32_t newControllerType,
+                             const AiRoadIt &startHint );
+    void reset( const bool bFull, const bool bKeepSecondary );
+    void startFade( const bool bByDistance );
+    void applyBotPersonality( const int32_t context,
+                              const int32_t personality,
+                              const int32_t difficulty );
+    void assignBotPersonality( const int32_t botIndex );
     inline AiVehLocoParked &getParkedLocomotion() { return locoParked; }
+    inline AiVehNavOpponent &getOpponentNavigation() { return navOpponent; }
+    inline AiVehCtrlChase &getChaseController() { return ctrlChase; }
+    inline AiVehBhvOpponent &getOpponentBehaviour() { return bhvOpponent; }
+    inline AiVehBhvBot &getBotBehaviour() { return bhvBot; }
     bool isLaneFree( const int32_t lane,
                      const AiRoadIt &position,
                      const float timeHorizon,
@@ -167,6 +187,7 @@ public:
     void release();
     void tick( const float deltaTime, const float totalTime );
     void requestRemoval( const float delay, const char *pReason );
+    void setController( const int32_t type );
     void detachCarState();
 
     void onEvent( CarState *pCar, float deltaTime, void *pData ) override;
@@ -175,8 +196,7 @@ public:
     void setGroundMatrixFromCenter( const Matrix4x4f_t &center );
 
 private:
-    float brakingDistanceCoef;
-    float turningSpeedCoef;
+    AiVehIndDPC dpc;
     AiVehicleInfo infos;
     AiVehSignals signals;
     int32_t carStateIndex;
@@ -185,16 +205,23 @@ private:
     eAiVehicleCategory category;
 
     AiVehLocoTraffic locoTraffic;
+    AiVehLocoOpponent locoOpponent;
     AiVehLocoParked locoParked;
     AiVehLocomotion *pLoco;
     int32_t locoType;
     AiVehNavTraffic navTraffic;
+    AiVehNavOpponent navOpponent;
     AiVehNavigation *pNav;
     int32_t navType;
+    AiVehCtrlChase ctrlChase;
     AiVehCtrlRoute ctrlRoute;
+    AiVehCtrlRacePath ctrlRacePath;
+    AiVehCtrlFreeRoam ctrlFreeRoam;
     AiVehController *pController;
     int32_t controllerType;
+    AiVehBhvOpponent bhvOpponent;
     AiVehBhvTraffic bhvTraffic;
+    AiVehBhvBot bhvBot;
     AiVehBehaviour *pBehaviour;
     int32_t behaviourType;
 
@@ -219,7 +246,6 @@ private:
                         const bool bReset,
                         const bool bKeepPhysics );
     void setNavigation( const int32_t type );
-    void setController( const int32_t type );
     void setBehaviour( const int32_t type );
     void updateFade( const float totalTime );
     void updateFlashFade();

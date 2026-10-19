@@ -277,7 +277,7 @@ static void ClearIndicators( AiVehSignals &signals ) {
     signals.bWarningActive = false;
 }
 
-static void QueueHorn( AiVehSignals &signals, const float random ) {
+void QueueHorn( AiVehSignals &signals, const float random ) {
     // FUN_00920af0
     if ( signals.bIsCops || signals.bHornActive ) {
         return;

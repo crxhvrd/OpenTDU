@@ -10,9 +10,14 @@ class EntityCarPlayer;
 class AiVehLocomotion : public PhysicsDrivingControl {
 public:
     inline bool isPhysicsDriven() const { return bPhysicsControl; }
+    inline bool isDrivenByNavigation() const { return bDrivenByNavigation; }
     inline bool isPhysicsPaused() const { return bPhysicsPaused; }
     inline void setResetPhysicsOnAttach( const bool bReset ) {
         bResetPhysicsOnAttach = bReset;
+    }
+    inline void setSmoothSteering( const bool bEnabled, const float coef ) {
+        bSmoothSteering = bEnabled;
+        smoothSteerCoef = coef;
     }
     inline float getTargetSpeed() const { return targetSpeed; }
     inline float getPadThrottle() const { return padThrottle; }
@@ -91,6 +96,29 @@ private:
 
 private:
     void refreshPIDCoefs();
+    void computeControls( PhysicsVehicle &vehicle, const float deltaTime );
+};
+
+class AiVehLocoOpponent : public AiVehLocomotion {
+public:
+    AiVehLocoOpponent();
+
+    void attach( AiVehicle *pOwner ) override;
+    void reset( const bool bFull ) override;
+    void tick( const float deltaTime, const float totalTime ) override;
+    void detach() override;
+    void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) override;
+
+private:
+    PIDCtrl steerControl;
+    PIDCtrl accelControl;
+    PIDCtrl brakeControl;
+    float targetAngle;
+    float throttleDelta;
+    float currentAngle;
+    float lastSteering;
+
+private:
     void computeControls( PhysicsVehicle &vehicle, const float deltaTime );
 };
 

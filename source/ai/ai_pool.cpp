@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "ai_pool.h"
 
+#include "ai/ai_bot_manager.h"
 #include "ai/ai_config.h"
 #include "ai/ai_road_buckets.h"
 #include "ai/ai_sim_bubble.h"
@@ -640,7 +641,12 @@ bool AiPool::wantsPhysics( AiVehicle *pVehicle,
         if ( sorter.bNoOpponentPhysics ) {
             return false;
         }
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: opponent AI
+        if ( pVehicle->getOpponentNavigation().getState() ==
+                 AiVehNavOpponent::NS_Idle ||
+             pVehicle->getOpponentNavigation().getState() ==
+                 AiVehNavOpponent::NS_Grid ) {
+            return true;
+        }
         return isInPhysicsRange();
     case eAiVehicleCategory::AVC_Cinematic:
         return true;
@@ -738,11 +744,143 @@ void AiPool::tick( const float deltaTime, const float totalTime ) {
         addToSubLists( pVehicle );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: opponent
+    updateOpponentRoundRobin();
+    updateController1RoundRobin();
 
     for ( AiVehicle *pVehicle : lists[AVL_All] ) {
         pVehicle->tick( deltaTime, totalTime );
     }
+}
+
+// Next CarState slot after the current one (cyclic over the 32 slots)
+static int32_t PickNextCarStateSlot( const AiVehicleList &list,
+                                     const int32_t current ) {
+    static constexpr int32_t kNumCarStateSlots = 32;
+
+    if ( list.Count == 0 ) {
+        return -1;
+    }
+    if ( list.Count == 1 ) {
+        return list.Items[0]->getCarStateIndex();
+    }
+
+    const int32_t from = ( current == -1 ) ? kNumCarStateSlots : current;
+    int32_t bestDistance = kNumCarStateSlots;
+    int32_t next = list.Count;
+    for ( int32_t i = 0; i < list.Count; i++ ) {
+        const int32_t slot = list.Items[i]->getCarStateIndex();
+        if ( slot == from ) {
+            continue;
+        }
+        const int32_t distance =
+            ( slot > from ) ? slot - from : slot - from + kNumCarStateSlots;
+        if ( distance < bestDistance ) {
+            bestDistance = distance;
+            next = slot;
+        }
+    }
+    return next;
+}
+
+void AiPool::updateOpponentRoundRobin() {
+    // FUN_0091def0
+    static constexpr int32_t kNumPickFrames = 8;
+
+    opponentPickFrame++;
+    if ( opponentPickFrame == kNumPickFrames ) {
+        opponentPickFrame = 0;
+        return;
+    }
+    nextOpponentIndex = PickNextCarStateSlot( lists[AVL_FirstNavigation + 1],
+                                              nextOpponentIndex );
+}
+
+void AiPool::updateController1RoundRobin() {
+    // FUN_0091de30
+    nextController1Index = PickNextCarStateSlot( lists[AVL_FirstController + 1],
+                                                 nextController1Index );
+}
+
+AiVehicle *AiPool::addOpponent( CarState *pCar,
+                                const Matrix4x4f_t &startFrame,
+                                const AiRoadIt &startHint,
+                                const int32_t missionType ) {
+    // FUN_0091f020
+    static constexpr int32_t kMissionTypeRace = 5;
+
+    if ( missionType != kMissionTypeRace ) {
+        return nullptr;
+    }
+    AiVehicle *pVehicle = allocVehicleSlot();
+    if ( pVehicle == nullptr ) {
+        return nullptr;
+    }
+    pVehicle->initializeOpponent( pCar, startFrame, 2, startHint );
+    addVehicle( pVehicle );
+    return pVehicle;
+}
+
+bool AiPool::requestBot( const AiRoadIt &candidate ) {
+    // FUN_0091fa40
+    static constexpr float kSplitEntryWidthRatio = 0.5f;    // DAT_00f41674
+    static constexpr float kSplitCrossedWidthRatio = -0.5f; // DAT_00f4186c
+    static constexpr float kMinBotSpawnDistanceSq = 100.0f; // DAT_00f41708
+
+    AiRoadIt roadIt = candidate;
+    AiRoadMap::Road *pRoad = roadIt.pRoad;
+    float widthRatio = 0.0f;
+    pRoad->getShape();
+    if ( pRoad->isOncomingOvertakeForbidden() ) {
+        widthRatio =
+            roadIt.bWay ? kSplitEntryWidthRatio : kSplitCrossedWidthRatio;
+    }
+    const AiRoadProfile *pProfile = roadIt.getEntity()->pProfile;
+    const int32_t lane =
+        pProfile->computeLaneFromWidthRatio( roadIt.bWay, widthRatio );
+
+    Matrix4x4f_t frame;
+    if ( !roadIt.computeFrame( frame, lane ) ) {
+        return false;
+    }
+
+    const int32_t botIndex =
+        PickRandomBotInZone( gpAI->getBotManager().computeRoadZone( roadIt ) );
+    if ( botIndex == -1 ) {
+        return false;
+    }
+
+    AiRoadBuckets::Bucket *pBucket =
+        gpAI->getRoadBuckets().getRoadBucket( pRoad->ID );
+    if ( pBucket != nullptr ) {
+        for ( GameObject *pObject = pBucket->pFirstObject; pObject != nullptr;
+              pObject = pObject->getNextInBucket() ) {
+            const Eigen::Vector4f delta =
+                frame.row( 3 ).transpose() - pObject->getWorldPosition();
+            if ( delta.squaredNorm() < kMinBotSpawnDistanceSq ) {
+                return false;
+            }
+        }
+    }
+    return spawnBot( botIndex, frame, roadIt, lane );
+}
+
+bool AiPool::spawnBot( const int32_t botIndex,
+                       const Matrix4x4f_t &frame,
+                       const AiRoadIt &roadIt,
+                       const int32_t lane ) {
+    // FUN_0091f8c0
+    if ( !spawnRequest.isIdle() || getNumBots() >= gAIConfig.MaxNumBots ) {
+        return false;
+    }
+    AiVehicle *pVehicle = allocVehicleSlot();
+    if ( pVehicle == nullptr ) {
+        return false;
+    }
+    if ( spawnRequest.fillBot( pVehicle, frame, roadIt, lane, botIndex ) ) {
+        return true;
+    }
+    releaseVehicleSlot( pVehicle );
+    return false;
 }
 
 AiVehicle *AiPool::requestParked( const Matrix4x4f_t &frame,

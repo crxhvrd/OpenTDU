@@ -19,6 +19,7 @@ public:
     virtual ~AiFsm() = default;
 
     void process( const int32_t event );
+    void restart( const int32_t state );
 
 protected:
     int32_t currentState;

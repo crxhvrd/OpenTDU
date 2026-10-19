@@ -51,6 +51,8 @@ public:
     void tick( const float deltaTime, const float totalTime );
     void selectZone();
     bool pickCandidate( AiRoadIt &outIt, const bool bUseAltWeight );
+    bool
+    pickBotCandidate( AiRoadIt &outIt, const bool bBehind, const bool bAhead );
 
 private:
     struct CircleHit {
@@ -108,6 +110,7 @@ private:
                         const float t,
                         const bool bWay );
     void spawnTraffic( const float totalTime );
+    void spawnBots( const float deltaTime );
     AiVehicle *pickLeastVisible() const;
     void cullLeastVisible( const float totalTime, const char *pReason );
     bool computeEnabledZones( bool *pOutMask ) const;

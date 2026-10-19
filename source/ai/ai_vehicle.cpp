@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "ai_vehicle.h"
 
+#include "ai/ai_bot_manager.h"
 #include "ai/ai_config.h"
 #include "ai/ai_oriented_box.h"
 #include "ai/ai_road_buckets.h"
@@ -178,8 +179,7 @@ void AiVehSignals::apply() {
 }
 
 AiVehicle::AiVehicle()
-    : brakingDistanceCoef( 1.0f ),
-      turningSpeedCoef( 1.0f ),
+    : dpc(),
       infos(),
       signals(),
       carStateIndex( -1 ),
@@ -187,15 +187,22 @@ AiVehicle::AiVehicle()
       pTemplate( nullptr ),
       category( eAiVehicleCategory::AVC_None ),
       locoTraffic(),
+      locoOpponent(),
       pLoco( nullptr ),
       locoType( kLocomotionNone ),
       navTraffic(),
+      navOpponent(),
       pNav( nullptr ),
       navType( kNavigationNone ),
+      ctrlChase(),
       ctrlRoute(),
+      ctrlRacePath(),
+      ctrlFreeRoam(),
       pController( nullptr ),
       controllerType( kControllerNone ),
+      bhvOpponent(),
       bhvTraffic(),
+      bhvBot(),
       pBehaviour( nullptr ),
       behaviourType( kBehaviourNone ),
       bRemovable( false ),
@@ -252,7 +259,7 @@ float AiVehicle::computeTurningSpeed( const float radius ) const {
     }
 
     if ( fabsf( infos.MaxSpeed - speed ) > 1.0f ) {
-        float coef = turningSpeedCoef;
+        float coef = dpc.CurveSpeedFactor;
         if ( pLoco != nullptr && !pLoco->isPhysicsDriven() ) {
             coef = std::clamp( coef, 0.0f, 1.0f );
         }
@@ -303,7 +310,7 @@ float AiVehicle::computeBrakingDistance( const float speedFrom,
     }
     return ComputeBrakingDistance( infos.BrakingDistC1, infos.BrakingDistC2,
                                    speedFrom, speedTo, slope ) *
-           brakingDistanceCoef * kBrakingDistanceScale;
+           dpc.BrakingDistanceFactor * kBrakingDistanceScale;
 }
 
 int32_t AiVehicle::computeCurrentLane() const {
@@ -911,12 +918,164 @@ GameObject *FindObjectInLaneNear( const uint32_t roadID,
     return pClosest;
 }
 
+void AiVehicle::applyBotPersonality( const int32_t context,
+                                     const int32_t personality,
+                                     const int32_t difficulty ) {
+    // FUN_0090c460
+    static constexpr float kGearIndexToUpshiftBand = 0.1f; // DAT_00f41668
+
+    const AiVehIndDPCPattern *pPattern = gpAI->getBotPersonalities().getPattern(
+        difficulty, personality, context );
+    if ( pPattern == nullptr ) {
+        dpc.reset();
+        return;
+    }
+
+    dpc.DPCPattern = *pPattern;
+    dpc.randomizeFactors( gpAI->getRandom() );
+    if ( pCarState != nullptr && pCarState->getPhysicsVehicle() != nullptr ) {
+        pCarState->getPhysicsVehicle()->setUpshiftBand(
+            static_cast<float>( dpc.DPCPattern.RPMToChangeGearIndex ) *
+            kGearIndexToUpshiftBand );
+    }
+}
+
+void AiVehicle::assignBotPersonality( const int32_t botIndex ) {
+    // FUN_0090bfa0
+    const DBEntryBot *pBot = GetBotDBEntry( botIndex );
+    if ( pBot == nullptr ) {
+        dpc.pName[0] = '\0';
+        dpc.BotID = -1;
+        dpc.BotSectorIndex = -1;
+        return;
+    }
+
+    dpc.BotID = botIndex;
+    dpc.BotSectorIndex = pBot->ZoneIndex;
+    strncpy( dpc.pName,
+             ( pBot->FirstName.pAsString != nullptr )
+                 ? pBot->FirstName.pAsString
+                 : "",
+             AiVehIndDPC::kNameLength );
+
+    struct BehaviourPreset {
+        uint64_t Hashcode;
+        int32_t Difficulty;
+        int32_t Personality;
+    };
+    static constexpr BehaviourPreset kBehaviourPresets[] = {
+        {0x32fefe8, 2, 1},
+        {0x33dab88, 2, 2},
+        {0x33f3228, 1, 1},
+        {0x34e7468, 0, 1},
+        {0x35c3008, 0, 2},
+        {0x36b7248, 2, 3},
+        {0x37ab488, 1, 3},
+        {0x389f6c8, 0, 3},
+        {0x3993908, 2, 0},
+        {0x3a87b48, 1, 0},
+        {0x3b7bd88, 0, 0},
+    };
+
+    const uint64_t behaviour =
+        gpDatabase->getGameDB().Databases[0xe].getHashcodeForString(
+            pBot->Behaviour.pAsString );
+    dpc.Difficulty = 1;
+    dpc.Personality = 2;
+    for ( const BehaviourPreset &preset : kBehaviourPresets ) {
+        if ( preset.Hashcode == behaviour ) {
+            dpc.Difficulty = preset.Difficulty;
+            dpc.Personality = preset.Personality;
+            break;
+        }
+    }
+}
+
 void AiVehicle::initializeParked( CarState *pCar ) {
     // FUN_00928830
     initialize( eAiVehicleCategory::AVC_Parked, pCar, AiRoadIt(), 0,
                 kBehaviourNone, kControllerNone, kNavigationNone, 2, false );
     bRemovable = false;
     signals.bHeadlightActivated = false;
+}
+
+void AiVehicle::initializeOpponent( CarState *pCar,
+                                    const Matrix4x4f_t &startFrame,
+                                    const int32_t newControllerType,
+                                    const AiRoadIt &startHint ) {
+    // FUN_00928650
+    static constexpr float kOpponentSmoothSteerCoef = 0.2f; // DAT_00faa9c8
+
+    AiRoadIt location;
+    AiRoadMap::Road *pRoad = gpAI->getRoadMap().findNearestRoad(
+        startFrame.row( 3 ).transpose(), true );
+    if ( pRoad != nullptr ) {
+        Matrix4x4f_t projectedFrame = Matrix4x4f_t::Identity();
+        ProjectOnRoadShape( startFrame, location, &projectedFrame, false,
+                            pRoad->getShape() );
+    }
+    if ( startHint.pRoad != nullptr && location.pRoad != startHint.pRoad ) {
+        location = startHint;
+    }
+
+    pCar->getBody()->OffsetedWorldMatrix = startFrame;
+    initialize( eAiVehicleCategory::AVC_Opponent, pCar, location, 0, 1,
+                newControllerType, 1, 1, false );
+    if ( pLoco != nullptr ) {
+        pLoco->setPhysicsActive( true, false );
+    }
+    locoOpponent.setSmoothSteering( true, kOpponentSmoothSteerCoef );
+    bRemovable = false;
+    signals.bHeadlightActivated = false;
+}
+
+void AiVehicle::reset( const bool bFull, const bool bKeepSecondary ) {
+    // FUN_00924e40
+    removalTime = -1.0f;
+    fadeInEndTime = -1.0f;
+    bRemovable = true;
+    bPendingRemoval = false;
+    bSoftCollision = false;
+    bPlayerCar = false;
+    bFlashFade = false;
+    bFlashStarted = false;
+    flashStartTime = 0.0f;
+    netSendTime = gpTimer->GameTotalTime;
+    netReceiveTime = netSendTime;
+    bFadeActive = false;
+    bFadeByDistance = false;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AiVehicle+0x2308 holder release
+    if ( !bFull ) {
+        return;
+    }
+
+    dpc.reset();
+    infos.reset();
+    if ( !bKeepSecondary ) {
+        infos.reset();
+    }
+    if ( pLoco != nullptr ) {
+        pLoco->reset( true );
+    }
+    if ( pNav != nullptr ) {
+        pNav->reset( true );
+    }
+    if ( pController != nullptr ) {
+        pController->reset( true );
+    }
+    if ( pBehaviour != nullptr ) {
+        pBehaviour->reset( true );
+    }
+}
+
+void AiVehicle::startFade( const bool bByDistance ) {
+    // FUN_009246e0
+    bFadeActive = true;
+    bFadeByDistance = bByDistance;
+    VehicleBase *pDisplay = pCarState->getVehicleInstance();
+    if ( pDisplay != nullptr ) {
+        pDisplay->setAlpha( 0.0f );
+    }
 }
 
 void AiVehicle::setLocomotion( const int32_t type,
@@ -932,12 +1091,11 @@ void AiVehicle::setLocomotion( const int32_t type,
         return;
     }
 
-    if ( type == 2 ) {
+    if ( type == 1 ) {
+        pLoco = &locoOpponent;
+    } else if ( type == 2 ) {
         pLoco = &locoParked;
     } else {
-        if ( type != 0 ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: opponent locomotion (type 1)
-        }
         pLoco = &locoTraffic;
     }
     if ( bReset ) {
@@ -958,10 +1116,14 @@ void AiVehicle::setNavigation( const int32_t type ) {
         return;
     }
 
-    if ( type != 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE;
+    if ( type == 1 ) {
+        pNav = &navOpponent;
+    } else {
+        if ( type != 0 ) {
+            OTDU_UNIMPLEMENTED_ONCE;
+        }
+        pNav = &navTraffic;
     }
-    pNav = &navTraffic;
     pNav->attach( this );
     const int32_t numWarmUpTicks = ( type == 0 ) ? 5 : 1;
     for ( int32_t i = 0; i < numWarmUpTicks; i++ ) {
@@ -1008,10 +1170,18 @@ void AiVehicle::setController( const int32_t type ) {
         return;
     }
 
-    if ( type != 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE;
+    if ( type == 1 ) {
+        pController = &ctrlChase;
+    } else if ( type == 2 ) {
+        pController = &ctrlRacePath;
+    } else if ( type == 7 ) {
+        pController = &ctrlFreeRoam;
+    } else {
+        if ( type != 0 && type != 3 && type != 4 && type != 5 ) {
+            OTDU_UNIMPLEMENTED_ONCE;
+        }
+        pController = &ctrlRoute;
     }
-    pController = &ctrlRoute;
     pController->attach( this );
     pController->tick( 0.0f, 0.0f );
 }
@@ -1027,12 +1197,17 @@ void AiVehicle::setBehaviour( const int32_t type ) {
         return;
     }
 
-    if ( type != 2 ) {
+    if ( type == 1 ) {
+        pBehaviour = &bhvOpponent;
+    } else if ( type == 2 ) {
+        pBehaviour = &bhvTraffic;
+    } else if ( type == 3 ) {
+        pBehaviour = &bhvBot;
+    } else {
         OTDU_UNIMPLEMENTED_ONCE;
         pBehaviour = nullptr;
         return;
     }
-    pBehaviour = &bhvTraffic;
     pBehaviour->attach( this );
     pBehaviour->tick( 0.0f, 0.0f );
 }
@@ -1130,8 +1305,7 @@ void AiVehicle::initialize( const eAiVehicleCategory newCategory,
     if ( pNav == nullptr ) {
         infos.Speed = 0.0f;
     } else if ( navType == 1 ) {
-        OTDU_UNIMPLEMENTED_ONCE;
-        infos.Speed = 0.0f;
+        infos.Speed = pPhysics->getChassisVelocity().head<3>().norm();
     } else {
         Eigen::Vector4f direction;
         if ( !pNav->getTarget( direction, infos.Speed ) ) {

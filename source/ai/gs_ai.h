@@ -2,16 +2,21 @@
 
 #include "game/gs_base.h"
 
+#include "ai/ai_bot_manager.h"
+#include "ai/ai_bot_personality.h"
 #include "ai/ai_config.h"
 #include "ai/ai_path.h"
+#include "ai/ai_race.h"
 #include "ai/ai_pedestrians.h"
 #include "ai/ai_road_buckets.h"
 #include "ai/ai_road_map.h"
 #include "ai/ai_sim_bubble.h"
 
+class AiPathOptimiser;
 class AiPool;
 struct AiLODSorter;
 class Bank;
+class RandomGen;
 
 class GSAI : public GameSystem {
 public:
@@ -30,7 +35,13 @@ public:
     }
     inline void setPauseTraffic( const bool bPause ) { bPauseTraffic = bPause; }
     inline void setCopsActive( const bool bActive ) { bCopsActive = bActive; }
-    inline void setBotsActive( const bool bActive ) { bBotsActive = bActive; }
+    inline void setBotsActive( const bool bActive ) {
+        pBotManager->setActive( bActive );
+    }
+    inline AiBotManager &getBotManager() { return *pBotManager; }
+    inline AiPathFloodSolver &getFloodSolver() { return floodSolver; }
+    inline bool areBotsDisabled() const { return bDisableBots; }
+    inline bool isTrafficPaused() const { return bPauseTraffic; }
     inline void setCullFromCamera( const bool bEnabled ) {
         pSimBubble->setCullFromCamera( bEnabled );
     }
@@ -40,6 +51,12 @@ public:
         return pedestrianManager;
     }
     inline float *getSignalSyncTime() const { return pSignalSyncTime; }
+    inline const AiBotPersonalities &getBotPersonalities() const {
+        return *pBotPersonalities;
+    }
+    inline RandomGen &getRandom() const { return *pRandom; }
+    inline AiRaceDescriptor *getRace() const { return pRace; }
+    inline void setRace( AiRaceDescriptor *pNewRace ) { pRace = pNewRace; }
 
 public:
     GSAI();
@@ -53,10 +70,12 @@ public:
 
     void loadRoadMap( Bank &levelBank );
     void loadAIConfig();
+    void loadBotPersonalities();
     void setTrafficCategories( const bool bResetPool,
                                const uint32_t categoryMask );
     void resumeTraffic( const Eigen::Vector4f *pBubblePosition );
     void drawDebug( float deltaTime ) override;
+    void broadcastRaceMessage( const AiRaceMessage &message );
     bool spawnDebugTraffic();
     void spawnDebugParked();
 
@@ -64,9 +83,12 @@ private:
     AiRoadBuckets roadBuckets;
     AiPathPool pathPool;
     AiPathSolver pathSolver;
+    AiPathFloodSolver floodSolver;
     AiPool *pAIPool;
     AiLODSorter *pLODSorter;
+    AiBotPersonalities *pBotPersonalities;
     AiSimBubble *pSimBubble;
+    RandomGen *pRandom;
     AiRoadMap roadMap;
     AiPedestrianManager pedestrianManager;
     bool bRoadMapLoaded;
@@ -81,10 +103,12 @@ private:
     bool bPauseTraffic;
 
     bool bCopsActive;
-    bool bBotsActive;
+    AiBotManager *pBotManager;
     bool bLocationsFromCarState; // Object locations are updated by GSCarState
                                  // instead
     float *pSignalSyncTime;
+    AiRaceDescriptor *pRace;
+    AiPathOptimiser *pPathOptimiser;
 };
 
 // Returns the traffic signal bulb mask (red 0x1, orange 0x2, green 0x4).

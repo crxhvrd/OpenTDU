@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "ai_veh_locomotion.h"
 
+#include "ai/ai_config.h"
 #include "ai/ai_vehicle.h"
 #include "core/maths_helper.h"
 #include "game/game_object.h"
@@ -578,6 +579,192 @@ void AiVehLocoTraffic::computeControls( PhysicsVehicle &vehicle,
     }
 
     padHandbrake = 0.0f;
+    if ( bSmoothSteering ) {
+        const float coef = std::clamp( smoothSteerCoef, 0.0f, 1.0f );
+        padSteering = ( 1.0f - coef ) * lastSteering + coef * padSteering;
+        lastSteering = padSteering;
+    }
+}
+
+// AiVehLocoOpponent PID gains (Steer, Accel, Brake)
+static constexpr float kOpponentSteerP = -4.0f; // DAT_00f7c32c
+static constexpr float kOpponentSteerI = 0.0f;  // DAT_00f7c330
+static constexpr float kOpponentSteerD = -0.4f; // DAT_00f7c334
+static constexpr float kOpponentAccelP = -1.0f; // DAT_00f7c338
+static constexpr float kOpponentAccelI = 0.0f;  // DAT_00f7c33c
+static constexpr float kOpponentAccelD = -1.0f; // DAT_00f7c340
+static constexpr float kOpponentBrakeP = 8.0f;  // DAT_00f7c344
+static constexpr float kOpponentBrakeI = 0.0f;  // DAT_00f7c348
+static constexpr float kOpponentBrakeD = 0.0f;  // DAT_00f7c34c
+
+static constexpr float kOpponentThrottleRate = 30.0f; // DAT_00faa968
+static constexpr bool kOpponentSharpTurnClamp =
+    false; // DAT_016a2c3a (never written by retail)
+static constexpr int32_t kOpponentMaxAccelMinGear = 3; // 3rd and up
+
+static bool IsOpponentDrivingDisabled( const AiVehicle &vehicle ) {
+    const AiVehicleInfo &infos = vehicle.getInfos();
+    return infos.bHandbrake || !infos.bValid || vehicle.isRemovalPending();
+}
+
+AiVehLocoOpponent::AiVehLocoOpponent()
+    : AiVehLocomotion(),
+      steerControl(),
+      accelControl(),
+      brakeControl(),
+      targetAngle( 0.0f ),
+      throttleDelta( 0.0f ),
+      currentAngle( 0.0f ),
+      lastSteering( 0.0f ) {
+    // FUN_009d7da0
+}
+
+void AiVehLocoOpponent::attach( AiVehicle *pOwner ) {
+    // FUN_009d7b60
+    reset( false );
+    steerControl.initialize( kMinusOne, kOne, kPidIntegralTime, false,
+                             kPidMaxValues );
+    accelControl.initialize( kMinusOne, kOne, kPidIntegralTime, false,
+                             kPidMaxValues );
+    brakeControl.initialize( kMinusOne, kOne, kPidIntegralTime, false,
+                             kPidMaxValues );
+    AiVehLocomotion::attach( pOwner );
+}
+
+void AiVehLocoOpponent::reset( const bool bFull ) {
+    // FUN_009d7a00
+    targetAngle = 0.0f;
+    throttleDelta = 0.0f;
+    currentAngle = 0.0f;
+    lastSteering = 0.0f;
+    if ( !bFull ) {
+        return;
+    }
+
+    AiVehLocomotion::reset( bFull );
+    steerControl.reset( true );
+    accelControl.reset( true );
+    brakeControl.reset( true );
+}
+
+void AiVehLocoOpponent::tick( const float deltaTime, const float totalTime ) {
+    // FUN_009d7e00
+    (void)deltaTime;
+    updateBlockedTime( totalTime );
+
+    AiVehicleInfo &infos = pVehicle->getInfos();
+    if ( IsOpponentDrivingDisabled( *pVehicle ) ) {
+        targetSpeed = 0.0f;
+    } else {
+        if ( pVehicle->getNavigation() == nullptr ||
+             !pVehicle->getNavigation()->getTarget( targetDirection,
+                                                    targetSpeed ) ) {
+            targetDirection = infos.GroundMatrix.row( 2 );
+            targetSpeed = infos.Speed;
+        }
+        steerControl.setCoefs( kOpponentSteerP, kOpponentSteerI,
+                               kOpponentSteerD );
+        accelControl.setCoefs( kOpponentAccelP, kOpponentAccelI,
+                               kOpponentAccelD );
+        brakeControl.setCoefs( kOpponentBrakeP, kOpponentBrakeI,
+                               kOpponentBrakeD );
+    }
+
+    checkPhysicsDistance();
+    PhysicsLock lock;
+    if ( bPhysicsPaused ) {
+        if ( numAccum == 0 ) {
+            return;
+        }
+        moveKinematic();
+    }
+    virtualDistanceAccum = 0.0f;
+    timeAccum = 0.0f;
+    numAccum = 0;
+}
+
+void AiVehLocoOpponent::detach() {
+    // FUN_009d7970
+    AiVehLocomotion::detach();
+    steerControl.release();
+    accelControl.release();
+    brakeControl.release();
+}
+
+void AiVehLocoOpponent::forwardInput( PhysicsVehicle &vehicle,
+                                      float deltaTime ) {
+    // FUN_009d7920
+    if ( bDrivenByNavigation && deltaTime > 0.0f ) {
+        computeControls( vehicle, deltaTime );
+    }
+    writeInputs( vehicle, deltaTime );
+}
+
+void AiVehLocoOpponent::computeControls( PhysicsVehicle &vehicle,
+                                         const float deltaTime ) {
+    // FUN_009d75c0
+    if ( IsOpponentDrivingDisabled( *pVehicle ) ) {
+        padThrottle = 0.0f;
+        padSteering = 0.0f;
+        return;
+    }
+
+    const JPH::Body *pChassis = vehicle.getChassisBody();
+    if ( pChassis == nullptr ) {
+        return;
+    }
+
+    const JPH::Vec3 forward = pChassis->GetWorldTransform().GetColumn3( 2 );
+    currentAngle = atan2f( forward.GetX(), forward.GetZ() );
+
+    Eigen::Vector4f direction = targetDirection;
+    direction.normalize();
+    targetAngle = atan2f( direction.x(), direction.z() );
+
+    const float delta = targetAngle - currentAngle;
+    if ( delta > kPI ) {
+        targetAngle -= kTwoPI;
+    } else if ( delta <= kNegPI ) {
+        targetAngle += kTwoPI;
+    }
+
+    const float clampedDelta = targetAngle - currentAngle;
+    if ( clampedDelta > kHalfPI ) {
+        targetAngle = currentAngle + kHalfPI;
+    } else if ( clampedDelta < kNegHalfPi ) {
+        targetAngle = currentAngle - kHalfPI;
+    }
+
+    steerControl.update( currentAngle * kTwoOverPi, targetAngle * kTwoOverPi,
+                         deltaTime );
+    padSteering = steerControl.getOutput();
+
+    const float speed = pChassis->GetLinearVelocity().Length();
+    const float invMaxSpeed = 1.0f / pVehicle->getInfos().MaxSpeed;
+    accelControl.update( speed * invMaxSpeed, targetSpeed * invMaxSpeed,
+                         deltaTime );
+    brakeControl.update( speed * invMaxSpeed, targetSpeed * invMaxSpeed,
+                         deltaTime );
+
+    static const float sSharpTurnLimit = gAIConfig.OpponentSharpTurnLimit;
+    throttleDelta = accelControl.getOutput() - brakeControl.getOutput();
+    const bool bSharpTurn = kOpponentSharpTurnClamp &&
+                            gAIConfig.OpponentSharpTurnMaxSpeed >= speed &&
+                            fabsf( padSteering ) > sSharpTurnLimit;
+    padThrottle = std::clamp( padThrottle + kOpponentThrottleRate * deltaTime *
+                                                throttleDelta,
+                              kMinusOne, kOne );
+    if ( bSharpTurn && padThrottle > gAIConfig.OpponentSharpTurnClampValue ) {
+        padThrottle = gAIConfig.OpponentSharpTurnClampValue;
+    }
+
+    const AiVehIndDPC &dpc = pVehicle->getDPC();
+    if ( padThrottle > 0.0f &&
+         vehicle.getCurrentGear() >= kOpponentMaxAccelMinGear ) {
+        padThrottle = std::clamp( padThrottle, 0.0f, dpc.DPCPattern.MaxAccel );
+    }
+
+    padSteering = dpc.applySteerDeadZone( padSteering );
     if ( bSmoothSteering ) {
         const float coef = std::clamp( smoothSteerCoef, 0.0f, 1.0f );
         padSteering = ( 1.0f - coef ) * lastSteering + coef * padSteering;

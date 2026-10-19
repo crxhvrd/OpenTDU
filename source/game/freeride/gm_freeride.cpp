@@ -871,8 +871,9 @@ void GMFreeride::pause() {
     }
 
     gpAI->setDisableBots( true );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (GSAI+0x2a988 flag, instant challenge
-                             // pursuit infringement save)
+    gpAI->setBotsActive( false );
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (instant challenge pursuit
+                             // infringement save)
     gpAI->getAIPool()->removeBots();
 
     if ( pIntroCine != nullptr ) {

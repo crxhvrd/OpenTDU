@@ -3,6 +3,7 @@
 
 #include "ai/ai_road_shape.h"
 #include "ai/ai_vehicle.h"
+#include "ai/gs_ai.h"
 #include "core/cubic_bezier.h"
 #include "core/maths_helper.h"
 #include "game/game_object.h"
@@ -49,11 +50,11 @@ static float SnapProjection( float t ) {
     return t;
 }
 
-static bool ComputeCircle( Eigen::Vector2f p1,
-                           Eigen::Vector2f p2,
-                           Eigen::Vector2f p3,
-                           Eigen::Vector2f &outCenter,
-                           float &outRadius ) {
+bool ComputeCircle( Eigen::Vector2f p1,
+                    Eigen::Vector2f p2,
+                    Eigen::Vector2f p3,
+                    Eigen::Vector2f &outCenter,
+                    float &outRadius ) {
     // FUN_0090a020
     static constexpr float kEpsilon = 1.0e-4f; // DAT_00f41760
 
@@ -338,7 +339,7 @@ bool NavPath::generatePoints( const bool bKeepIds, const Span &span ) {
             point.pJunction = span.pJunction;
             point.Position =
                 Eigen::Vector4f( key.x(), junctionHeight, key.z(), 1.0f );
-            point.field_0x60 = kJunctionPointMarker;
+            point.WidthRatio = kJunctionPointMarker;
         } else if ( span.Type == PT_Road ) {
             point.Type = PT_Road;
             const AiRoadShape *pShape = span.pRoad->getShape();
@@ -1065,6 +1066,507 @@ void NavPath::updateProgress( const Matrix4x4f_t &groundMatrix ) {
         nearestIndex = 1;
         if ( std::isnan( progress ) ) {
             progress = 0.0f;
+        }
+    }
+}
+
+static constexpr int32_t kBendCapacity = 0x20;
+static constexpr float kOpponentBendCoeffMin = 1.0f;      // DAT_00f7a0fc
+static constexpr float kOpponentBendCoeffMax = 2.0f;      // DAT_00f7a100
+static constexpr float kOpponentBendMaxAngle = 0.314159f; // DAT_00f7a104
+static constexpr float kCrestBendMinAngle = 0.19634955f;  // DAT_00faa81c
+static constexpr float kBendCurvatureEpsilon = 0.001f;    // DAT_00faa810
+static constexpr float kBendMeanTolerance = 1.0f;         // DAT_00faa818
+static constexpr float kBendDeltaTolerance = 1.0f;        // DAT_00faa814
+static constexpr float kMinBendAngle = 0.0f;              // DAT_016a2c34
+static constexpr float kUTurnSpeed = 5.0f;                // DAT_00f41750
+static constexpr float kUTurnHandleLength = 8.0f;         // DAT_00f41ac4
+static constexpr float kPointsPerMetre = 0.909091f;       // DAT_00f417e4
+static constexpr int32_t kMaxUTurnPoints = 16;
+static constexpr float kStraightBend = 0.02f;            // DAT_00f417f0
+static constexpr float kMediumBend = 0.4f;               // DAT_00f4175c
+static constexpr float kCurveSpeedLimit = 100.0f;        // DAT_00f41708
+static constexpr float kBezierDegenerateRatio = 1000.0f; // DAT_00f41718
+static constexpr float kRoadPointSpeedLimitScale = 1.0f; // DAT_00faa990
+static constexpr float kMinElemSpacing = 1.1f;           // DAT_00f4174c
+
+float ComputeBezierBend( const CubicBezier &curve ) {
+    // FUN_0095e9c0
+    const Eigen::Vector4f &p0 = curve.ControlPoints[0];
+    const Eigen::Vector4f &p1 = curve.ControlPoints[1];
+    const Eigen::Vector4f &p2 = curve.ControlPoints[2];
+    const Eigen::Vector4f &p3 = curve.ControlPoints[3];
+    const Eigen::Vector4f chord = p3 - p0;
+    const Eigen::Vector4f foot1 = p0 + chord * Project( p1, p0, p3 );
+    const Eigen::Vector4f foot2 = p0 + chord * Project( p2, p0, p3 );
+    const float lengthA = ( foot1 - p0 ).norm();
+    const float lengthB = ( foot2 - foot1 ).norm();
+    const float lengthC = ( p3 - foot2 ).norm();
+    const float deviation1 = ( p1 - foot1 ).norm();
+    const float deviation2 = ( p2 - foot2 ).norm();
+
+    auto ratio = []( const float deviation, const float length ) {
+        return ( length != 0.0f ) ? deviation / length : kBezierDegenerateRatio;
+    };
+    const float bend1 = ( deviation1 != 0.0f )
+                            ? std::max( ratio( deviation1, lengthA ),
+                                        ratio( deviation1, lengthB ) )
+                            : 0.0f;
+    const float bend2 = ( deviation2 != 0.0f )
+                            ? std::max( ratio( deviation2, lengthB ),
+                                        ratio( deviation2, lengthC ) )
+                            : 0.0f;
+    return bend1 + bend2;
+}
+
+NavPathOpponent::NavPathOpponent()
+    : NavPath(), bends(), field_0x108( 0 ), field_0x10c( -1 ) {
+    // FUN_00409460
+}
+
+void NavPathOpponent::initialize( AiVehicle *pOwner ) {
+    // FUN_009cdcf0
+    bends.allocate( kBendCapacity );
+    NavPath::initialize( pOwner );
+}
+
+void NavPathOpponent::release() {
+    // FUN_009cdca0
+    bends.Data.clear();
+    bends.Count = 0;
+    bends.Capacity = 0;
+    points.Data.clear();
+    points.Count = 0;
+    points.Capacity = 0;
+}
+
+void NavPathOpponent::reset( const bool bFull ) {
+    // FUN_009cdd40
+    if ( bFull ) {
+        bends.clear();
+    }
+    nearestIndex = 0;
+    progress = 0.0f;
+    if ( bFull ) {
+        pointIdCounter = 0;
+        totalLength = 0.0f;
+        bBatchAppend = false;
+        points.clear();
+    }
+}
+
+void NavPathOpponent::popBack() {
+    if ( points.Count == 0 ) {
+        return;
+    }
+    totalLength -= back().Len;
+    points.Count--;
+    points.Back--;
+    if ( points.Back < 0 ) {
+        points.Back = points.Capacity - 1;
+    }
+}
+
+void NavPathOpponent::pushRoadPoint( const AiRoadIt &it,
+                                     const float widthRatio,
+                                     float speedLimit,
+                                     const bool bForce ) {
+    // FUN_0095fb50
+    if ( isFull() ) {
+        return;
+    }
+
+    const AiRoadIt *pPointIt = &it;
+    AiRoadIt routeFrom0;
+    AiRoadIt routeTo0;
+    AiRoadIt routeFrom1;
+    AiRoadIt routeTo1;
+    if ( !bForce ) {
+        if ( points.Count > 0 && back().Type == PT_Road &&
+             back().It.isSamePosition( it, 0.0f ) ) {
+            return;
+        }
+
+        const float tolerance = 1.0f / it.pRoad->getShape()->TotalLength;
+        AiVehController *pController = pVehicle->getController();
+        if ( pController->getCount() != 0 ) {
+            pController->getAt( 0, routeFrom0, routeTo0 );
+        }
+        if ( pController->getCount() > 1 ) {
+            pController->getAt( 1, routeFrom1, routeTo1 );
+        }
+
+        auto isNear = [&]( const AiRoadIt &routeIt ) {
+            if ( it.pRoad != routeIt.pRoad || it.bWay != routeIt.bWay ) {
+                return false;
+            }
+            const float fraction =
+                it.pRoad->getShape()->computeRoadFraction( it );
+            const float routeFraction =
+                routeIt.pRoad->getShape()->computeRoadFraction( routeIt );
+            return tolerance > fabsf( fraction - routeFraction );
+        };
+        if ( isNear( routeTo0 ) ) {
+            routeTo0.setWay( it.bWay );
+            pPointIt = &routeTo0;
+        } else if ( routeTo1.pRoad != nullptr && isNear( routeTo1 ) ) {
+            routeTo1.setWay( it.bWay );
+            pPointIt = &routeTo1;
+        }
+    }
+
+    float lateral = 0.0f;
+    float height = 0.0f;
+    pPointIt->getEntity()->pProfile->computeWidthOffset( widthRatio, lateral,
+                                                         height );
+    Point point;
+    point.Position = pPointIt->computeOffsetPosition( lateral, height );
+    point.It = *pPointIt;
+    point.Type = PT_Road;
+    point.WidthRatio = widthRatio;
+    if ( speedLimit < 0.0f ) {
+        const AiRoadMap &roadMap = gpAI->getRoadMap();
+        int32_t index = it.getEntity()->SpeedLimitIndice;
+        if ( index < 0 || index >= roadMap.getNumSpeedLimits() ) {
+            index = 0;
+        }
+        speedLimit = roadMap.getSpeedLimit( index ) * kRoadPointSpeedLimitScale;
+    }
+    point.RoadSpeedLimit = speedLimit;
+    push( point, bForce );
+}
+
+bool NavPathOpponent::appendUTurn( const AiRoadIt &it,
+                                   const float widthFrom,
+                                   const float widthTo ) {
+    // FUN_00960050
+    back().RoadSpeedLimit = kUTurnSpeed;
+
+    const Eigen::Vector4f start =
+        it.computeWidthPosition( std::clamp( widthFrom, -1.0f, 1.0f ) );
+    const Eigen::Vector4f end =
+        it.computeWidthPosition( std::clamp( widthTo, -1.0f, 1.0f ) );
+    Eigen::Vector4f direction = it.computeDirection();
+    direction /= direction.norm();
+
+    CubicBezier curve;
+    curve.ControlPoints[0] = start;
+    curve.ControlPoints[1] = start + direction * kUTurnHandleLength;
+    curve.ControlPoints[2] = end + direction * kUTurnHandleLength;
+    curve.ControlPoints[3] = end;
+    const int32_t numPoints = std::clamp(
+        static_cast<int32_t>( curve.computeLength( 1.0f ) * kPointsPerMetre ),
+        1, kMaxUTurnPoints );
+    if ( points.Count + numPoints >= points.Capacity ) {
+        return false;
+    }
+
+    const AiRoadShape *pShape = it.pRoad->getShape();
+    AiRoadIt projection;
+    for ( int32_t i = 1; i <= numPoints; i++ ) {
+        const float s =
+            static_cast<float>( i ) / static_cast<float>( numPoints );
+        Matrix4x4f_t frame = Matrix4x4f_t::Identity();
+        const Eigen::Vector4f position = curve.evaluate( s );
+        frame.row( 3 ) = position.transpose();
+        ProjectOnRoadShape( frame, projection, nullptr, false, pShape );
+        projection.setWay( ( s > 0.5f ) ? !it.bWay : it.bWay );
+
+        const Eigen::Vector4f left = projection.computeWidthPosition( -1.0f );
+        const Eigen::Vector4f right = projection.computeWidthPosition( 1.0f );
+        const float width =
+            std::clamp( Project( position, left, right ), 0.0f, 1.0f ) * 2.0f -
+            1.0f;
+        if ( i == numPoints ) {
+            projection = it;
+            projection.flip();
+        }
+        pushRoadPoint( projection, width, kUTurnSpeed, true );
+    }
+    return true;
+}
+
+bool NavPathOpponent::appendRoadInterval( const AiRoadIt &from,
+                                          const AiRoadIt &to,
+                                          const float widthRatioFrom,
+                                          const float widthRatioTo,
+                                          const float speedLimit,
+                                          AiRoadIt *pOutEnd ) {
+    // FUN_00960a20
+    if ( from.pRoad->ID != to.pRoad->ID || from.bWay != to.bWay ||
+         from.isSamePosition( to, 0.0f ) ) {
+        if ( pOutEnd != nullptr ) {
+            *pOutEnd = from;
+        }
+        return false;
+    }
+
+    const AiRoadShape *pShape = from.pRoad->getShape();
+    const float invLength = 1.0f / pShape->TotalLength;
+    const float fractionFrom = pShape->computeRoadFraction( from );
+    const float fractionTo = to.pRoad->getShape()->computeRoadFraction( to );
+    const float span = fabsf( fractionTo - fractionFrom );
+    if ( invLength > span ) {
+        return false;
+    }
+
+    const int32_t numSteps = std::clamp(
+        static_cast<int32_t>( span / ( invLength * kMinElemSpacing ) ), 1, 8 );
+    const float widthStep =
+        ( widthRatioTo - widthRatioFrom ) / static_cast<float>( numSteps );
+    float fractionStep = span / static_cast<float>( numSteps );
+    if ( fractionFrom > fractionTo ) {
+        fractionStep = -fractionStep;
+    }
+    const float snapDistance = fabsf( fractionStep ) * 0.5f;
+
+    AiRoadIt it;
+    for ( int32_t i = 1; !isFull(); i++ ) {
+        float widthRatio = widthRatioFrom + static_cast<float>( i ) * widthStep;
+        const float fraction =
+            fractionFrom + static_cast<float>( i ) * fractionStep;
+        if ( snapDistance > fabsf( fractionTo - fraction ) ) {
+            it = to;
+            widthRatio = widthRatioTo;
+        } else {
+            from.pRoad->getShape()->computeIt( fraction, it );
+            it.setWay( from.bWay );
+        }
+        if ( i == numSteps ) {
+            pushRoadPoint( it, widthRatio, speedLimit, true );
+            break;
+        }
+        pushRoadPoint( it, widthRatio, speedLimit, false );
+    }
+
+    if ( pOutEnd != nullptr ) {
+        *pOutEnd = it;
+    }
+    return !back().It.isSamePosition( from, 0.0f );
+}
+
+bool NavPathOpponent::appendRoadBezier( const AiRoadIt &itA,
+                                        const AiRoadIt &itB,
+                                        Eigen::Vector2f key0,
+                                        Eigen::Vector2f key1,
+                                        Eigen::Vector2f key2,
+                                        Eigen::Vector2f key3,
+                                        const Eigen::Vector4f &positionA,
+                                        const Eigen::Vector4f &positionB ) {
+    // FUN_009605d0
+    if ( isFull() ) {
+        return false;
+    }
+    for ( Eigen::Vector2f *pKey : { &key0, &key1, &key2, &key3 } ) {
+        pKey->x() = std::clamp( pKey->x(), 0.0f, 1.0f );
+    }
+
+    const AiRoadShape *pShape = itA.pRoad->getShape();
+    CubicBezier keyCurve;
+    keyCurve.ControlPoints[0] =
+        Eigen::Vector4f( key0.x(), 0.0f, key0.y(), 0.0f );
+    keyCurve.ControlPoints[1] =
+        Eigen::Vector4f( key1.x(), 0.0f, key1.y(), 0.0f );
+    keyCurve.ControlPoints[2] =
+        Eigen::Vector4f( key2.x(), 0.0f, key2.y(), 0.0f );
+    keyCurve.ControlPoints[3] =
+        Eigen::Vector4f( key3.x(), 0.0f, key3.y(), 0.0f );
+
+    CubicBezier worldCurve;
+    worldCurve.ControlPoints[0] = positionA;
+    pShape->computeLateralPosition( key1.x(), key1.y(),
+                                    worldCurve.ControlPoints[1] );
+    pShape->computeLateralPosition( key2.x(), key2.y(),
+                                    worldCurve.ControlPoints[2] );
+    worldCurve.ControlPoints[3] = positionB;
+    const float bend = ComputeBezierBend( worldCurve );
+    int32_t numPoints = 4;
+    if ( bend <= kStraightBend ) {
+        numPoints = 1;
+    } else if ( bend < kMediumBend ) {
+        numPoints = 3;
+    }
+    if ( points.Count + numPoints > points.Capacity ) {
+        return false;
+    }
+
+    for ( int32_t i = 1; i <= numPoints; i++ ) {
+        const float s = std::min(
+            static_cast<float>( i ) / static_cast<float>( numPoints ), 1.0f );
+        const Eigen::Vector4f key = keyCurve.evaluate( s );
+        AiRoadIt it;
+        pShape->computeIt( key.x(), it );
+        it.setWay( itA.bWay );
+        if ( i == numPoints ) {
+            it = itB;
+        }
+        pushRoadPoint( it, key.z(), kCurveSpeedLimit, true );
+    }
+    return true;
+}
+
+bool NavPathOpponent::appendJunctionCurve( const AiRoadMap::Junction *pJunction,
+                                           const Eigen::Vector4f &p0,
+                                           const Eigen::Vector4f &p1,
+                                           const Eigen::Vector4f &p2,
+                                           const Eigen::Vector4f &p3 ) {
+    // FUN_0095f5a0
+    CubicBezier curve;
+    curve.ControlPoints[0] = p0;
+    curve.ControlPoints[1] = p1;
+    curve.ControlPoints[2] = p2;
+    curve.ControlPoints[3] = p3;
+    const float length = curve.computeLength( 1.0f );
+    int32_t numPoints = 1;
+    if ( ComputeBezierBend( curve ) > kStraightBend ) {
+        numPoints = std::clamp(
+            static_cast<int32_t>( length * kPointsPerMetre ), 1, 2 );
+    }
+    if ( points.Count + numPoints >= points.Capacity ) {
+        return false;
+    }
+
+    for ( int32_t i = 1; i <= numPoints; i++ ) {
+        Point point;
+        point.Position = curve.evaluate( static_cast<float>( i ) /
+                                         static_cast<float>( numPoints ) );
+        point.Position.w() = 1.0f;
+        point.Type = ( pJunction != nullptr ) ? PT_Junction : PT_End;
+        point.pJunction = pJunction;
+        point.WidthRatio = kJunctionPointMarker;
+        point.RoadSpeedLimit = kCurveSpeedLimit;
+        push( point, true );
+    }
+    return true;
+}
+
+void NavPathOpponent::rebuildBends() const {
+    // FUN_009cddf0
+    struct Sample {
+        int32_t Index;
+        float Curvature;
+        int32_t Group;
+    };
+
+    bends.clear();
+    const int32_t numPoints = points.Count;
+    if ( numPoints == 0 ) {
+        return;
+    }
+
+    Sample samples[kPointCapacity];
+    int32_t group = 0;
+    int32_t groupSize = 0;
+    float mean = 0.0f;
+    for ( int32_t i = 0; i < numPoints; i++ ) {
+        Sample &sample = samples[i];
+        sample.Index = i;
+        sample.Curvature = points.at( i ).Curvature;
+        const float curvature = sample.Curvature;
+
+        bool bJoin = false;
+        if ( groupSize > 0 ) {
+            const bool bSameSign = ( kBendCurvatureEpsilon >= curvature &&
+                                     kBendCurvatureEpsilon >= mean ) ||
+                                   ( curvature >= -kBendCurvatureEpsilon &&
+                                     mean >= -kBendCurvatureEpsilon );
+            const float delta = fabsf( curvature - mean );
+            bJoin =
+                bSameSign && ( fabsf( mean ) * kBendMeanTolerance >= delta ||
+                               kBendDeltaTolerance >= delta );
+            if ( !bJoin ) {
+                group++;
+            }
+        }
+
+        sample.Group = group;
+        if ( bJoin ) {
+            mean = ( static_cast<float>( groupSize ) * mean + curvature ) /
+                   static_cast<float>( groupSize + 1 );
+            groupSize++;
+        } else {
+            groupSize = 1;
+            mean = curvature;
+        }
+    }
+
+    int32_t first = 0;
+    int32_t next = 0;
+    while ( first < numPoints ) {
+        const int32_t currentGroup = samples[first].Group;
+        while ( next < numPoints && samples[next].Group == currentGroup ) {
+            next++;
+        }
+        const int32_t last = std::min( numPoints - 1, next );
+
+        int32_t peak = first;
+        float peakCurvature = fabsf( points.at( first ).Curvature );
+        for ( int32_t i = first + 1; i <= last; i++ ) {
+            const float curvature = fabsf( points.at( i ).Curvature );
+            if ( curvature > peakCurvature ) {
+                peakCurvature = curvature;
+                peak = i;
+            }
+        }
+        peakCurvature = std::max( peakCurvature, kMinCurvature );
+
+        const Eigen::Vector4f tangentFirst = computeTangent( first );
+        const Eigen::Vector4f tangentLast = computeTangent( last );
+        const float angle = -atan2f( tangentLast.z() * tangentFirst.x() -
+                                         tangentFirst.z() * tangentLast.x(),
+                                     tangentLast.z() * tangentFirst.z() +
+                                         tangentLast.x() * tangentFirst.x() );
+        if ( fabsf( angle ) > kMinBendAngle && bends.Count < bends.Capacity ) {
+            Bend bend;
+            bend.Radius = 1.0f / peakCurvature;
+            bend.Angle = angle;
+            bend.FirstIndex = first;
+            bend.PeakIndex = peak;
+            bend.LastIndex = last;
+            bends.pushBack( bend );
+        }
+        first = next;
+    }
+}
+
+void NavPathOpponent::computeSpeedProfile( int32_t &outCount,
+                                           SpeedSample *pOutSamples,
+                                           const int32_t maxSamples ) const {
+    // FUN_009ce120
+    outCount = 0;
+    float distance = progress;
+    rebuildBends();
+
+    for ( int32_t bendIndex = 0; bendIndex < bends.Count; bendIndex++ ) {
+        const Bend &bend = bends.at( bendIndex );
+        for ( int32_t i = bend.FirstIndex + 1; i <= bend.LastIndex; i++ ) {
+            if ( outCount >= maxSamples ) {
+                return;
+            }
+
+            const float angle = fabsf( bend.Angle );
+            float coef = 1.0f;
+            if ( kOpponentBendMaxAngle > angle ) {
+                coef = ( 1.0f - angle / kOpponentBendMaxAngle ) *
+                           ( kOpponentBendCoeffMax - kOpponentBendCoeffMin ) +
+                       kOpponentBendCoeffMin;
+            }
+
+            const Point &point = points.at( i );
+            SpeedSample &sample = pOutSamples[outCount];
+            if ( i > nearestIndex ) {
+                distance += point.Len;
+                sample.Distance = distance;
+            } else {
+                sample.Distance = 0.0f;
+            }
+
+            sample.Speed = pVehicle->computeTurningSpeed( point.Radius ) * coef;
+            if ( angle > kCrestBendMinAngle && point.CrestSpeedLimit > 0.0f &&
+                 sample.Speed > point.CrestSpeedLimit ) {
+                sample.Speed = point.CrestSpeedLimit;
+            }
+            outCount++;
         }
     }
 }

@@ -1,13 +1,17 @@
 #include "shared.h"
 #include "gs_ai.h"
 
+#include "ai/ai_debug_race.h"
+#include "ai/ai_path_optimiser.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_road_query.h"
 #include "ai/roadmap_upgrader.h"
 #include "config/gs_config.h"
+#include "core/random/bcpl.h"
 #include "database/gs_database.h"
 #include "filesystem/gs_file.h"
 #include "game/game_object.h"
+#include "game/scenaric/game_intro_tutorial.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
 #include "gs_timer.h"
@@ -20,6 +24,7 @@ std::vector<std::string> gForcedCarModels; // DAT_010c4018
 
 bool gbDisablePathOpt = false;        // DAT_010e73d2
 bool gbDisableObstacleParser = false; // DAT_010e73d3
+bool gbForceOptimWhenPaused = false;  // DAT_010e73c5
 
 static constexpr int32_t kNumPathNodes = 0xc00;
 static constexpr int32_t kNumRouteElems = 0x400;
@@ -29,7 +34,9 @@ static constexpr int32_t kSignalOrangeDurationMs = 5000; // DAT_00faa998
 
 static float gSignalSyncTime = -1.0f; // DAT_00fa9094
 
-static AiPool gAiPool; // DAT_01451070
+static AiPool gAiPool;                         // DAT_01451070
+static AiBotPersonalities gAiBotPersonalities; // DAT_014775a0
+static RandomGen gAiRandom;                    // DAT_00fa9120
 AiLODSorter gAiLODSorter;
 
 GSAI gGSAI; // DAT_013a70d0
@@ -39,9 +46,12 @@ GSAI::GSAI()
       roadBuckets(),
       pathPool(),
       pathSolver(),
+      floodSolver(),
       pAIPool( &gAiPool ),
       pLODSorter( &gAiLODSorter ),
+      pBotPersonalities( &gAiBotPersonalities ),
       pSimBubble( &gAiSimBubble ),
+      pRandom( &gAiRandom ),
       roadMap(),
       pedestrianManager(),
       bRoadMapLoaded( false ),
@@ -53,11 +63,14 @@ GSAI::GSAI()
       bDisableBots( true ),
       bPauseTraffic( false ),
       bCopsActive( false ),
-      bBotsActive( false ),
+      pBotManager( &gAiBotManager ),
       bLocationsFromCarState( false ),
-      pSignalSyncTime( &gSignalSyncTime ) {
+      pSignalSyncTime( &gSignalSyncTime ),
+      pRace( nullptr ),
+      pPathOptimiser( nullptr ) {
     OTDU_ASSERT( gpAI == nullptr );
     gpAI = this;
+    gAiRandom.setSeed( 0x3039 );
 }
 
 GSAI::~GSAI() {
@@ -107,18 +120,21 @@ uint32_t GetTrafficSignalState( int32_t synchro, float *pSyncTime ) {
 bool GSAI::initialize( TestDriveGameInstance * ) {
     // FUN_00969900
     loadAIConfig();
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AIBotPers.xml
+    loadBotPersonalities();
     pAIPool->initialize();
     pathPool.initialize( kNumPathNodes, kNumRouteElems );
     roadBuckets.initialize( &roadMap, &gpPhysics->getRoadPhantomManager() );
     OTDU_UNIMPLEMENTED_ONCE; // TODO: debug render list, AiTrainer
     pathSolver.initialize( &pathPool );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: second path solver
+    floodSolver.initialize( &pathPool );
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AiCopMng
+    pBotManager->initialize();
+    gAiPathOptimiser.initialize();
+    pPathOptimiser = &gAiPathOptimiser;
     pSimBubble->initialize();
     pedestrianManager.initialize();
     OTDU_UNIMPLEMENTED_ONCE; // TODO: distribution zones, net interpolation,
-                             // MngFontPlayers lists, AiCopMng, bot manager,
-                             // path optimiser
+                             // MngFontPlayers lists
     return true;
 }
 
@@ -132,15 +148,39 @@ void GSAI::tick( float totalTime, float deltaTime ) {
     }
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: Online
+    static constexpr bool bOnlineSession = false;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: cop manager active flag (GSAI+0x2a984)
+    const bool bBotsWanted =
+        ( !bDisableBots && !bOnlineSession && !bPauseTraffic ) ||
+        gbForceBotsEnabled;
+    if ( bBotsWanted ) {
+        pBotManager->setActive( true );
+    } else if ( pBotManager->isActive() ) {
+        pBotManager->setActive( false );
+        pAIPool->removeBots();
+    }
+
     pAIPool->tick( dt, totalTime );
     OTDU_UNIMPLEMENTED_ONCE; // TODO: debug overlay (FUN_00975a10), AiTrainer
     gGameObjectDico.updateLocations( dt, false );
     pSimBubble->tick( dt, totalTime );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: online zones, net interpolation, cops,
-                             // bots, path optimiser
+    gAiDebugRace.tick();
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: online zones, net interpolation
+    if ( gpTimer->GameSpeed != 0.0f && dt != 0.0f ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: cop manager tick (FUN_00915010)
+        pBotManager->tick();
+    }
+    if ( ( dt > 0.0f || gbForceOptimWhenPaused ) &&
+         pPathOptimiser != nullptr ) {
+        pPathOptimiser->tick();
+    }
 }
 
 void GSAI::terminate() {
+    if ( pPathOptimiser != nullptr ) {
+        pPathOptimiser->release();
+        pPathOptimiser = nullptr;
+    }
     pedestrianManager.terminate();
     roadBuckets.terminate();
 }
@@ -155,6 +195,53 @@ void GSAI::reset() {
 void GSAI::pause() {
     // FUN_00968ea0
     pAIPool->setTrafficPaused( true );
+}
+
+void GSAI::broadcastRaceMessage( const AiRaceMessage &message ) {
+    // FUN_00968ed0
+    auto dispatch = [&message]( AiVehicle *pVehicle ) {
+        if ( pVehicle->getBehaviour() != nullptr ) {
+            pVehicle->getBehaviour()->onRaceMessage( message );
+        }
+        if ( pVehicle->getController() != nullptr ) {
+            pVehicle->getController()->onRaceMessage( message );
+        }
+    };
+
+    AiVehicleList &opponents = pAIPool->getList(
+        AiPool::AVL_FirstCategory +
+        static_cast<int32_t>( eAiVehicleCategory::AVC_Opponent ) );
+    for ( int32_t i = 0; i < opponents.Count; i++ ) {
+        dispatch( opponents.Items[i] );
+    }
+
+    AiVehicleList &network = pAIPool->getList(
+        AiPool::AVL_FirstCategory +
+        static_cast<int32_t>( eAiVehicleCategory::AVC_Network ) );
+    if ( network.Count != 0 ) {
+        dispatch( network.Items[0] );
+    }
+}
+
+void GSAI::loadBotPersonalities() {
+    // FUN_00969610
+    char path[256];
+    snprintf( path, sizeof( path ), "%sDataBase/AIBotPers.xml",
+              gpConfig->getResRootPath() );
+
+    void *pContent = nullptr;
+    uint32_t contentSize = 0;
+    if ( gpFile->loadFile( path, &pContent, &contentSize ) ) {
+        uint32_t remainingBytes = 0;
+        Bank::DecryptTEA( pContent, contentSize, &remainingBytes );
+        const int32_t numPatterns =
+            pBotPersonalities->parse( static_cast<const char *>( pContent ) );
+        OTDU_LOG_INFO( "AI bot personalities loaded (%d patterns)\n",
+                       numPatterns );
+    }
+    if ( pContent != nullptr ) {
+        TestDrive::Free( pContent );
+    }
 }
 
 void GSAI::loadAIConfig() {
@@ -281,7 +368,7 @@ void GSAI::setTrafficCategories( const bool bResetPool,
             pAIPool->setField0x85( false );
         }
         if ( ( categoryMask & kCategoryBots ) == 0u ) {
-            bBotsActive = false;
+            pBotManager->setActive( false );
             pAIPool->removeBots();
             bPauseTraffic = true;
         }
@@ -342,6 +429,25 @@ void GSAI::drawDebug( float deltaTime ) {
     if ( ImGui::Button( "Remove traffic" ) ) {
         pAIPool->removeTraffic();
     }
+
+    ImGui::SeparatorText( "Bots" );
+    ImGui::Text( "Bots %d / wanted %d (max %d, limited %d) | manager %s",
+                 pAIPool->getNumBots(), pBotManager->getWantedCount(),
+                 gAIConfig.MaxNumBots, gAIConfig.MaxNumBotsLimited,
+                 pBotManager->isActive() ? "active" : "inactive" );
+    ImGui::Text( "EnableBots %d | disabled %d | traffic paused %d | tutorial "
+                 "step %d | can spawn %d",
+                 gAIConfig.bEnableBots ? 1 : 0, bDisableBots ? 1 : 0,
+                 bPauseTraffic ? 1 : 0,
+                 gpScenaric->getIntroTutorial().getStep(),
+                 pBotManager->canSpawn() ? 1 : 0 );
+    ImGui::Checkbox( "Force bots enabled", &gbForceBotsEnabled );
+    ImGui::SameLine();
+    if ( ImGui::Button( "Remove bots" ) ) {
+        pAIPool->removeBots();
+    }
+
+    gAiDebugRace.drawDebug();
 
     if ( ImGui::TreeNode( "Templates" ) ) {
         ImGui::Text( "#   ID  L C #I #USE #TOT RATE" );

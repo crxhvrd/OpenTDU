@@ -6,6 +6,9 @@
 
 class AiVehicle;
 class GameObject;
+struct AiVehSignals;
+
+void QueueHorn( AiVehSignals &signals, const float random );
 
 class AiVehNavigation {
 public:

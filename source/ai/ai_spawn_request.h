@@ -6,6 +6,7 @@ class EntityCarPlayer;
 
 class AiVehicle;
 class CarState;
+struct VehicleBaseResources;
 
 class AiSpawnRequest {
 public:
@@ -43,6 +44,11 @@ public:
                      const Matrix4x4f_t &matrix,
                      const int32_t newColorIndex,
                      EntityCarPlayer *pOwner );
+    bool fillBot( AiVehicle *pVehicle,
+                  const Matrix4x4f_t &matrix,
+                  const AiRoadIt &spawnRoadIt,
+                  const int32_t laneIndex,
+                  const int32_t botIndex );
     void execute();
     void tick( const bool bCancel );
     void flush();
@@ -59,6 +65,7 @@ private:
     int32_t botDBIndex;
     int32_t colorIndex;
     EntityCarPlayer *pParkedOwner;
+    VehicleBaseResources *pBotResource;
 
 private:
     bool executeTraffic();
@@ -66,5 +73,9 @@ private:
     void finalizeParked();
     void finalize();
     void finalizeTraffic();
+    bool loadBotResource();
+    bool executeBot();
+    void finalizeBot();
+    void installBotDriver();
     void applyRandomTrafficColor();
 };

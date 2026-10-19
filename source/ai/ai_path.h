@@ -141,6 +141,7 @@ struct AiPathEndpoint {
     void buildLinks( const bool bIgnoreOneWay,
                      const bool bReversePenalty,
                      const bool bAllowReverseStart );
+    void buildFloodLinks( const bool bBehind, const bool bAhead );
 };
 
 struct AiPathGraph {
@@ -213,19 +214,46 @@ public:
     void reset();
     int32_t solve();
 
-private:
+protected:
     void resetLists();
     void insertSorted( AiPathNode *pNode );
     void pushUnique( AiPathNode *pNode );
     bool propagate( AiPathNode *pNode );
 
-private:
+protected:
     AiPathGraph graph;
     AiPathPool *pPool;
     AiPathNode *pOpen;
     AiPathNode *pClosed;
     AiPathNode *pStack;
     AiPathNode *pResult;
+};
+
+// Floods the junction graph from a road location until a junction is at
+// least the given distance away
+class AiPathFloodSolver : public AiPathSolver {
+public:
+    inline void setDirections( const bool bBehind, const bool bAhead ) {
+        bFloodBehind = bBehind;
+        bFloodAhead = bAhead;
+    }
+
+public:
+    AiPathFloodSolver();
+
+    void setStart( const AiRoadIt &it );
+    void setRadius( const int32_t newRadius );
+    int32_t solve();
+
+private:
+    int32_t radius;
+    bool bFloodBehind;
+    bool bFloodAhead;
+
+private:
+    void initStartNode( AiPathNode *pNode );
+    bool isGoal( const AiPathNode *pNode ) const;
+    int32_t computeHeuristic( const int32_t waypoint ) const;
 };
 
 class AiPath {
@@ -235,6 +263,7 @@ public:
     inline AiRouteElem *getHead() const { return pHead; }
     inline AiRouteElem *getTail() const { return pTail; }
     inline int32_t getNumElems() const { return NumElems; }
+    inline const AiRoadIt &getStart() const { return Start; }
     inline const AiRoadIt &getEnd() const { return End; }
     inline int32_t getEndSide() const { return EndSide; }
     inline const Matrix4x4f_t &getStartFrame() const { return StartFrame; }
@@ -254,6 +283,12 @@ public:
     void setEnd( const AiRoadIt &it );
     int32_t solve( const bool bReversePenalty );
     void computeBounds();
+    void append( AiPath &leg, const bool bMergeJoint );
+    void popFront();
+    inline void setStartFrame( const Matrix4x4f_t &frame ) {
+        StartFrame = frame;
+    }
+    inline void setEndFrame( const Matrix4x4f_t &frame ) { EndFrame = frame; }
 
 private:
     AiPathPool *pPool;

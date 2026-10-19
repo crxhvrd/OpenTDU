@@ -3,15 +3,22 @@
 
 #include "game/vehicle/vehicle_traffic.h"
 
+#include "ai/ai_bot_manager.h"
 #include "ai/ai_oriented_box.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_vehicle.h"
 #include "ai/gs_ai.h"
 #include "database/gs_database.h"
+#include "game/avatar/avatar_configuration.h"
+#include "game/avatar/gs_avatar.h"
 #include "game/game_object.h"
+#include "game/scenaric/entity/entity_avatar.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
+#include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/paint.h"
 #include "game/vehicle/vehicle_base.h"
+#include "filesystem/gs_file.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 
@@ -29,7 +36,8 @@ AiSpawnRequest::AiSpawnRequest()
       bPolice( false ),
       botDBIndex( -1 ),
       colorIndex( 0 ),
-      pParkedOwner( nullptr ) {
+      pParkedOwner( nullptr ),
+      pBotResource( nullptr ) {
     // FUN_00921f80
 }
 
@@ -70,6 +78,147 @@ void AiSpawnRequest::fillParked( AiVehicle *pVehicle,
     colorIndex = newColorIndex;
     pParkedOwner = pOwner;
     execute();
+}
+
+bool AiSpawnRequest::fillBot( AiVehicle *pVehicle,
+                              const Matrix4x4f_t &matrix,
+                              const AiRoadIt &spawnRoadIt,
+                              const int32_t laneIndex,
+                              const int32_t botIndex ) {
+    // FUN_009232c0
+    if ( state != ASS_Idle ) {
+        gpAI->getAIPool()->releaseVehicleSlot( pVehicle );
+        return false;
+    }
+
+    pAiVehicle = pVehicle;
+    kind = ASK_Bot;
+    state = ASS_WaitResource;
+    spawnMatrix = matrix;
+    roadIt = spawnRoadIt;
+    lane = laneIndex;
+    bPolice = false;
+    botDBIndex = botIndex;
+    if ( !loadBotResource() ) {
+        state = ASS_Idle;
+        return false;
+    }
+    return true;
+}
+
+bool AiSpawnRequest::loadBotResource() {
+    // FUN_009231e0
+    const DBEntryBot *pBot = GetBotDBEntry( botDBIndex );
+    const DBEntryCarPhysicsData *pBotCar =
+        ( pBot != nullptr ) ? static_cast<const DBEntryCarPhysicsData *>(
+                                  pBot->BotCar.pAsRawPointer )
+                            : nullptr;
+    const int32_t carID = ( pBotCar != nullptr ) ? pBotCar->CarID : -1;
+
+    const DBEntryCarPhysicsData *pCarData = gpDatabase->getCarDBEntry( carID );
+    if ( pCarData == nullptr || ( pCarData->BitField & 1 ) == 0 ||
+         pCarData->Brand == nullptr || ( pCarData->Brand->Flags & 1 ) == 0 ) {
+        return false;
+    }
+
+    pBotResource = gpCarState->grabFreeResourceEntry();
+    if ( pBotResource != nullptr &&
+         !pBotResource->load( carID, 0, 0, 0, ~0ull, 1,
+                              eVehicleResourceType::VRT_Traffic ) ) {
+        gpCarState->releaseResourceEntry( pBotResource );
+        pBotResource = nullptr;
+    }
+    colorIndex = GetBotColorIndex( botDBIndex );
+    return true;
+}
+
+bool AiSpawnRequest::executeBot() {
+    // FUN_00922160
+    pCarState = nullptr;
+    if ( pBotResource != nullptr ) {
+        VehicleSpawnParams params;
+        params.bAddPhysicsPaused = true;
+        params.PhantomMode = 1;
+        pCarState =
+            gpCarState->installVehicle( pBotResource, params, VIT_Opponent,
+                                        pAiVehicle->getCarStateIndex() );
+    }
+    pBotResource = nullptr;
+    if ( pCarState == nullptr ) {
+        gpAI->getAIPool()->releaseVehicleSlot( pAiVehicle );
+        return false;
+    }
+    pCarState->setAIController( pAiVehicle );
+    return true;
+}
+
+void AiSpawnRequest::finalizeBot() {
+    // FUN_00922c00
+    pCarState->getWorldMatrix() = spawnMatrix;
+    pAiVehicle->assignBotPersonality( botDBIndex );
+    pAiVehicle->initialize( eAiVehicleCategory::AVC_Bot, pCarState, roadIt,
+                            lane, 3, 7, 1, 1, false );
+    pAiVehicle->setRemovable( false );
+    pAiVehicle->getSignals().bHeadlightActivated = false;
+    if ( pCarState != nullptr ) {
+        installBotDriver();
+    }
+
+    gpAI->getAIPool()->addVehicle( pAiVehicle );
+    if ( pCarState != nullptr && pAiVehicle != nullptr ) {
+        pCarState->setAIController( pAiVehicle );
+    }
+
+    VehicleBase *pDisplay = pCarState->getVehicleInstance();
+    if ( pDisplay != nullptr ) {
+        pDisplay->applyPaint( static_cast<uint32_t>( pCarState->getCarID() ),
+                              ePaintType::PT_Default, colorIndex, 0, 0, nullptr,
+                              nullptr, nullptr, nullptr );
+    }
+}
+
+void AiSpawnRequest::installBotDriver() {
+    // FUN_00922c00 (driver avatar)
+    static constexpr int32_t kBotAvatarType = 3;
+
+    int32_t clotheSet = 0;
+    const VehicleBaseResources *pResource = pCarState->getResource();
+    if ( pResource != nullptr ) {
+        DBEntryCarPhysicsData *pCarData =
+            gpDatabase->getCarDBEntry( pResource->CarID );
+        if ( pCarData != nullptr && gpDatabase->isBike( pCarData ) ) {
+            clotheSet = 1;
+        }
+    }
+
+    AvatarConfiguration config;
+    const DBEntryBot *pBot = GetBotDBEntry( botDBIndex );
+    const DBEntryPNJ *pPNJ =
+        ( pBot != nullptr )
+            ? static_cast<const DBEntryPNJ *>( pBot->PNJ.pAsRawPointer )
+            : nullptr;
+    if ( pPNJ == nullptr ||
+         !gpAvatar->applyPNJConfiguration( config, *pPNJ ) ) {
+        config = gpAvatar->getDefaultConfiguration( 0 );
+    }
+
+    AvatarManager &avatarManager = gpScenaric->getAvatarManager();
+    EntityAvatar *pAvatar =
+        avatarManager.allocateAvatar( ~0ull, kBotAvatarType );
+    if ( pAvatar == nullptr ) {
+        return;
+    }
+
+    const int32_t activeClotheSet = pAvatar->getPooledEntry()->ActiveClotheSet;
+    if ( activeClotheSet == kNoClotheSet ) {
+        gpAvatar->bakeAvatar( pAvatar, &config, clotheSet, true, false );
+    } else if ( activeClotheSet != clotheSet ) {
+        gpAvatar->installClothes( pAvatar, &config, clotheSet, true, false );
+    }
+
+    if ( !gpScenaric->placeDriver( pCarState, pAvatar->getDriver() ) ) {
+        avatarManager.releaseAvatar( pAvatar );
+    }
 }
 
 bool AiSpawnRequest::executeParked() {
@@ -121,11 +270,12 @@ void AiSpawnRequest::execute() {
     case ASK_Parked:
         bSuccess = executeParked();
         break;
+    case ASK_Bot:
+        bSuccess = executeBot();
+        break;
     case ASK_Network:
     case ASK_CopDam:
-    case ASK_Bot:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00922540 / 009224f0 / 00922490 /
-                                 // 00922160
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00922540 / 00922490
         break;
     default:
         state = ASS_Idle;
@@ -206,7 +356,13 @@ void AiSpawnRequest::tick( const bool bCancel ) {
     // FUN_00922ee0
     switch ( state ) {
     case ASS_WaitResource:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: bot resource (kind 4)
+        if ( pBotResource != nullptr && pBotResource->isLoaded() ) {
+            state = ASS_Ready;
+            execute();
+        } else if ( pBotResource == nullptr ) {
+            gpAI->getAIPool()->releaseVehicleSlot( pAiVehicle );
+            state = ASS_Idle;
+        }
         break;
     case ASS_WaitPhysics:
         if ( bCancel ) {
@@ -233,7 +389,15 @@ void AiSpawnRequest::flush() {
     // FUN_00922f80
     while ( state != ASS_Idle ) {
         if ( state == ASS_WaitResource ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: bot resource streaming wait
+            if ( pBotResource != nullptr ) {
+                while ( !pBotResource->isLoaded() ) {
+                    gpFile->tick( 0.0f, 0.0f );
+                }
+                pBotResource->unload();
+                gpCarState->releaseResourceEntry( pBotResource );
+                pBotResource = nullptr;
+            }
+            gpAI->getAIPool()->releaseVehicleSlot( pAiVehicle );
             state = ASS_Idle;
             break;
         }
@@ -250,9 +414,11 @@ void AiSpawnRequest::finalize() {
     case ASK_Parked:
         finalizeParked();
         break;
+    case ASK_Bot:
+        finalizeBot();
+        break;
     default:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00922b50 / 009228d0 / 009227d0 /
-                                 // 00922c00
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00922b50 / 009227d0
         break;
     }
 }

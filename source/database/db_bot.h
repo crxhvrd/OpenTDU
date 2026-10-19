@@ -1,12 +1,13 @@
 #pragma once
 
 struct DBEntryBot {
-    uint64_t Hashcode;
-    uint64_t AIBehaviorID;
-    uint64_t NPCName;
-    float BotDifficulty;
+    DBReference FirstName;
+    DBReference Behaviour;
+    DBReference PNJ; // DBEntryPNJ
+    float Difficulty;
     int32_t ZoneIndex;
-    uint64_t BotCar;
+    DBReference BotCar; // DBEntryCarPhysicsData
     int32_t ColorIndex;
-    float SpawnProbability;
+    float Rarety;
 };
+OTDU_SIZE_MUST_MATCH( DBEntryBot, 0x30 );

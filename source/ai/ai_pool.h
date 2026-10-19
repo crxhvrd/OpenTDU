@@ -98,6 +98,14 @@ public:
     inline void setForceDensity( const bool bValue ) { bForceDensity = bValue; }
     inline bool isZoneDensityIgnored() const { return bIgnoreZoneDensity; }
     inline bool isForceDensity() const;
+    inline int32_t getNextOpponentIndex() const {
+        // FUN_00409440
+        return ( opponentPickFrame != 0 ) ? nextOpponentIndex : -1;
+    }
+    inline int32_t getOpponentPickFrame() const { return opponentPickFrame; }
+    inline int32_t getNextController1Index() const {
+        return nextController1Index;
+    }
     inline void setTrafficPaused( const bool bValue ) {
         traffic.setPaused( bValue );
     }
@@ -117,6 +125,15 @@ public:
     int32_t getMaxTraffic() const;
     int32_t getMaxPolice() const;
     bool spawnTrafficOnRoad( const AiRoadIt &candidate, const bool bPolice );
+    AiVehicle *addOpponent( CarState *pCar,
+                            const Matrix4x4f_t &startFrame,
+                            const AiRoadIt &startHint,
+                            const int32_t missionType );
+    bool requestBot( const AiRoadIt &candidate );
+    bool spawnBot( const int32_t botIndex,
+                   const Matrix4x4f_t &frame,
+                   const AiRoadIt &roadIt,
+                   const int32_t lane );
     AiVehicle *requestParked( const Matrix4x4f_t &frame,
                               const int32_t colorIndex,
                               EntityCarPlayer *pOwner );
@@ -181,6 +198,8 @@ private:
     void removeCategory( const eAiVehicleCategory category,
                          const char *pReason );
     void updateLOD( AiLODSorter &sorter );
+    void updateOpponentRoundRobin();
+    void updateController1RoundRobin();
     bool wantsPhysics( AiVehicle *pVehicle,
                        const AiLODSorter &sorter,
                        const int32_t maxPhysics,

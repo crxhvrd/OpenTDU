@@ -206,6 +206,60 @@ void AiPathEndpoint::buildLinks( const bool bIgnoreOneWay,
     }
 }
 
+void AiPathEndpoint::buildFloodLinks( const bool bBehind, const bool bAhead ) {
+    // FUN_00966980
+    AiRoadMap::Road *pRoad = It.pRoad;
+    AiRoadMap::Junction *pAhead =
+        It.bWay ? pRoad->pJunctionEnd : pRoad->pJunctionBegin;
+    AiRoadMap::Junction *pBehind =
+        It.bWay ? pRoad->pJunctionBegin : pRoad->pJunctionEnd;
+
+    const AiRoadShape *pShape = pRoad->getShape();
+    const float fraction = ComputeTravelledFraction( pShape, It );
+    const float covered = pShape->TotalLength * fraction;
+    const float remaining = pShape->TotalLength - covered;
+
+    if ( pAhead == pBehind ) {
+        WaypointA = pAhead->ID;
+        WaypointB = pAhead->ID;
+        CostToB = static_cast<int32_t>( remaining );
+        NumExtraA = 0;
+        NumExtraB = 0;
+        CostToA = static_cast<int32_t>( covered );
+        IndexA = pAhead->getRoadIndex( pRoad, 0 );
+        IndexB = pAhead->getRoadIndex( pRoad, 1 );
+    } else if ( pAhead == nullptr ) {
+        if ( pBehind != nullptr ) {
+            WaypointA = pBehind->ID;
+            WaypointB = 0;
+            CostToA = bBehind ? static_cast<int32_t>( remaining ) : -1;
+            CostToB = -1;
+            NumExtraA = 1;
+            NumExtraB = 0;
+            IndexA = pBehind->NumNeighbors;
+            IndexB = 0;
+        }
+    } else if ( pBehind != nullptr ) {
+        WaypointA = pAhead->ID;
+        WaypointB = pBehind->ID;
+        CostToA = bAhead ? static_cast<int32_t>( covered ) : -1;
+        CostToB = bBehind ? static_cast<int32_t>( remaining ) : -1;
+        NumExtraA = 0;
+        NumExtraB = 0;
+        IndexA = pAhead->getRoadIndex( pRoad );
+        IndexB = pBehind->getRoadIndex( pRoad );
+    } else {
+        WaypointA = pAhead->ID;
+        WaypointB = 0;
+        CostToA = bAhead ? static_cast<int32_t>( covered ) : -1;
+        CostToB = -1;
+        NumExtraA = 1;
+        NumExtraB = 0;
+        IndexA = pAhead->NumNeighbors;
+        IndexB = 0;
+    }
+}
+
 void AiPathGraph::setStart( const AiRoadIt &it, const int32_t side ) {
     // FUN_009681a0
     Start.It = it;
@@ -961,6 +1015,165 @@ int32_t AiPathSolver::solve() {
     return S_Failed;
 }
 
+AiPathFloodSolver::AiPathFloodSolver()
+    : AiPathSolver(), radius( 0 ), bFloodBehind( false ), bFloodAhead( false ) {
+    // FUN_00407400
+}
+
+void AiPathFloodSolver::setStart( const AiRoadIt &it ) {
+    // FUN_009681a0
+    graph.setStart( it, 0 );
+}
+
+void AiPathFloodSolver::setRadius( const int32_t newRadius ) {
+    // FUN_00966770
+    radius = newRadius;
+    graph.End.Position = Eigen::Vector4f::Zero();
+    graph.End.It = AiRoadIt();
+}
+
+void AiPathFloodSolver::initStartNode( AiPathNode *pNode ) {
+    graph.Start.buildFloodLinks( bFloodBehind, bFloodAhead );
+    AiPathEndpoint &end = graph.End;
+    end.WaypointA = 0;
+    end.WaypointB = 0;
+    end.CostToA = 0;
+    end.CostToB = 0;
+    end.NumExtraA = 0;
+    end.NumExtraB = 0;
+    end.IndexA = -1;
+    end.IndexB = -1;
+
+    pNode->Waypoint = AiPathNode::kStartWaypoint;
+    pNode->IndexNeighbor = -1;
+    pNode->G = 0;
+    pNode->H = radius;
+    pNode->pParent = nullptr;
+    pNode->F = radius;
+}
+
+bool AiPathFloodSolver::isGoal( const AiPathNode *pNode ) const {
+    // FUN_009667c0
+    if ( pNode == nullptr || pNode->Waypoint == AiPathNode::kStartWaypoint ) {
+        return false;
+    }
+    const AiRoadMap::Junction *pJunction =
+        GetRoadMap().getJunction( static_cast<uint32_t>( pNode->Waypoint ) );
+    if ( pJunction == nullptr ) {
+        return false;
+    }
+    const float distance =
+        ( pJunction->Position.toVector4() - graph.Start.Position ).norm();
+    return static_cast<float>( radius ) <= distance;
+}
+
+int32_t AiPathFloodSolver::computeHeuristic( const int32_t waypoint ) const {
+    // FUN_00966870
+    if ( waypoint == 0 ) {
+        return INT32_MAX;
+    }
+    if ( waypoint == AiPathNode::kStartWaypoint ) {
+        return radius;
+    }
+    const AiRoadMap::Junction *pJunction =
+        GetRoadMap().getJunction( static_cast<uint32_t>( waypoint ) );
+    if ( pJunction == nullptr ) {
+        return INT32_MAX;
+    }
+    const float distance =
+        ( graph.Start.Position - pJunction->Position.toVector4() ).norm();
+    return std::max(
+        static_cast<int32_t>( static_cast<float>( radius ) - distance ), 0 );
+}
+
+int32_t AiPathFloodSolver::solve() {
+    // FUN_00407ac0
+    AiPathNode *pStart = pPool->allocNode();
+    if ( pStart == nullptr ) {
+        return S_OutOfMemory;
+    }
+    initStartNode( pStart );
+    insertSorted( pStart );
+
+    int32_t numIterations = 0;
+    while ( pOpen != nullptr ) {
+        AiPathNode *pCurrent = pOpen;
+        pOpen = pCurrent->pNext;
+        pCurrent->pNext = nullptr;
+        pResult = pCurrent;
+        if ( isGoal( pCurrent ) ) {
+            return S_Success;
+        }
+
+        const int32_t numNeighbors = graph.getNumNeighbors( pCurrent );
+        for ( int32_t i = 0; i < numNeighbors; i++ ) {
+            const int32_t waypoint = graph.getNeighbor( pCurrent, i );
+            if ( waypoint == 0 ) {
+                continue;
+            }
+            int32_t side = 0;
+            const int32_t cost =
+                graph.computeEdgeCost( pCurrent, i, waypoint, &side );
+            if ( cost < 0 ) {
+                continue;
+            }
+            const int32_t g = pCurrent->G + cost;
+
+            AiPathNode *pPrevious = nullptr;
+            AiPathNode *pNode = FindNode( pOpen, waypoint, side, &pPrevious );
+            if ( pNode != nullptr ) {
+                if ( pPrevious != nullptr ) {
+                    pPrevious->pNext = pNode->pNext;
+                } else {
+                    pOpen = pNode->pNext;
+                }
+                pNode->pNext = nullptr;
+                AddChild( pCurrent, pNode );
+                if ( g < pNode->G ) {
+                    UpdateNode( pNode, pCurrent, g, i, side );
+                }
+                insertSorted( pNode );
+                continue;
+            }
+
+            pNode = FindNode( pClosed, waypoint, side, nullptr );
+            if ( pNode != nullptr ) {
+                AddChild( pCurrent, pNode );
+                if ( g < pNode->G ) {
+                    UpdateNode( pNode, pCurrent, g, i, side );
+                    if ( !propagate( pNode ) ) {
+                        return S_Failed;
+                    }
+                }
+                continue;
+            }
+
+            pNode = pPool->allocNode();
+            if ( pNode == nullptr ) {
+                return S_OutOfMemory;
+            }
+            pNode->Waypoint = waypoint;
+            pNode->Side = side;
+            pNode->IndexNeighbor = i;
+            pNode->pParent = pCurrent;
+            pNode->G = g;
+            pNode->H = computeHeuristic( waypoint );
+            pNode->F = g + pNode->H;
+            insertSorted( pNode );
+            AddChild( pCurrent, pNode );
+        }
+
+        pCurrent->pNext = pClosed;
+        pClosed = pCurrent;
+        if ( ++numIterations > kMaxSolverIterations ) {
+            return S_Failed;
+        }
+    }
+
+    pResult = nullptr;
+    return S_Failed;
+}
+
 AiPath::AiPath()
     : pPool( nullptr ),
       Status( 0 ),
@@ -1221,6 +1434,77 @@ int32_t AiPath::solve( const bool bReversePenalty ) {
     pHead = pElem;
     NumElems++;
     return Status;
+}
+
+void AiPath::append( AiPath &leg, const bool bMergeJoint ) {
+    // FUN_009653e0
+    if ( leg.pHead == nullptr || leg.pTail == nullptr || leg.NumElems == 0 ) {
+        return;
+    }
+
+    if ( pTail == nullptr || pHead == nullptr || NumElems == 0 ) {
+        *this = leg;
+    } else {
+        AiRouteElem *pLegHead = leg.pHead;
+        AiRouteElem *pLegNext = pLegHead->pNext;
+        const uint32_t jointInfos =
+            pTail->To.RoadInfos ^ pLegHead->From.RoadInfos;
+        if ( bMergeJoint && ( jointInfos & 0xfffcu ) == 0 &&
+             ( jointInfos & 1u ) == 0 ) {
+            // Same road and way on both sides of the joint
+            pTail->To = pLegHead->To;
+            pPool->freeRouteElem( pLegHead );
+            NumElems--;
+            pLegHead = pLegNext;
+        }
+
+        pTail->pNext = pLegHead;
+        if ( pLegHead != nullptr ) {
+            pLegHead->pPrevious = pTail;
+            pTail = leg.pTail;
+        }
+        NumElems += leg.NumElems;
+        TotalDistance += leg.TotalDistance;
+        EndFrameSaved = leg.EndFrameSaved;
+        EndFrame = leg.EndFrame;
+        End = leg.End;
+    }
+
+    leg.pHead = nullptr;
+    leg.pTail = nullptr;
+    leg.NumElems = 0;
+    leg.TotalDistance = 0;
+    leg.Status = 0;
+}
+
+void AiPath::popFront() {
+    // FUN_00965c80
+    AiRouteElem *pElem = pHead;
+    if ( pElem == nullptr ) {
+        return;
+    }
+
+    pHead = pElem->pNext;
+    if ( pHead != nullptr ) {
+        pHead->pPrevious = nullptr;
+    }
+    NumElems--;
+    if ( NumElems == 0 ) {
+        pTail = nullptr;
+        TotalDistance = 0;
+        pPool->freeRouteElem( pElem );
+        return;
+    }
+
+    AiRoadIt from;
+    AiRoadIt to;
+    pElem->From.unpack( from );
+    pElem->To.unpack( to );
+    const AiRoadShape *pShape = from.pRoad->getShape();
+    const float distanceFrom = ComputeRoadDistance( pShape, false, from );
+    const float distanceTo = ComputeRoadDistance( pShape, false, to );
+    TotalDistance -= static_cast<int32_t>( distanceFrom - distanceTo );
+    pPool->freeRouteElem( pElem );
 }
 
 void AiPath::computeBounds() {

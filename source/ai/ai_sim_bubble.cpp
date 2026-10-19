@@ -1,7 +1,9 @@
 #include "shared.h"
 #include "ai_sim_bubble.h"
 
+#include "ai/ai_bot_manager.h"
 #include "ai/ai_config.h"
+#include "ai/ai_opt_path.h"
 #include "ai/ai_pool.h"
 #include "ai/gs_ai.h"
 #include "core/cubic_bezier.h"
@@ -10,6 +12,7 @@
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "physics/gs_physics.h"
+#include "player_data/saved_road_discovery.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
 
@@ -264,11 +267,14 @@ void AiSimBubble::tick( const float deltaTime, const float totalTime ) {
     selectZone();
     updateTrafficVisibility( deltaTime, totalTime );
     updateOtherVisibility( totalTime );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: opponents spawn
-    buildCandidates();
+    AiPool *pPool = gpAI->getAIPool();
+    if ( pPool->getOpponentPickFrame() == 0 ||
+         pPool->getNextOpponentIndex() == -1 ) {
+        buildCandidates();
+    }
     OTDU_UNIMPLEMENTED_ONCE; // TODO: cop spawn (FUN_0091a290)
     spawnTraffic( totalTime );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: bot spawn (FUN_0091a5b0)
+    spawnBots( deltaTime );
 }
 
 void AiSimBubble::selectZone() {
@@ -752,4 +758,133 @@ void AiSimBubble::spawnTraffic( const float totalTime ) {
         return;
     }
     pPool->spawnTrafficOnRoad( it, bPolice );
+}
+
+bool AiSimBubble::pickBotCandidate( AiRoadIt &outIt,
+                                    const bool bBehind,
+                                    const bool bAhead ) {
+    // FUN_00918720
+    if ( candidates.empty() || bubbleIt.pRoad == nullptr ) {
+        return false;
+    }
+
+    AiPathFloodSolver &solver = gpAI->getFloodSolver();
+    solver.reset();
+    solver.setDirections( bBehind, bAhead );
+    solver.setStart( bubbleIt );
+    solver.setRadius( static_cast<int32_t>( radius ) );
+    if ( solver.solve() != AiPathSolver::S_Success ||
+         solver.getResult() == nullptr ) {
+        return false;
+    }
+    const AiRoadMap::Junction *pFrontier = gpAI->getRoadMap().getJunction(
+        static_cast<uint32_t>( solver.getResult()->Waypoint ) );
+
+    for ( auto candidate = candidates.rbegin(); candidate != candidates.rend();
+          candidate++ ) {
+        outIt = candidate->It;
+        const AiRoadMap::Road *pRoad = outIt.pRoad;
+        if ( pRoad == nullptr ) {
+            continue;
+        }
+
+        if ( pRoad != bubbleIt.pRoad ) {
+            if ( bBehind ) {
+                if ( pRoad->pJunctionEnd == pFrontier ) {
+                    outIt.setWay( false );
+                    return true;
+                }
+                if ( pRoad->pJunctionBegin == pFrontier ) {
+                    outIt.setWay( true );
+                    return true;
+                }
+            } else if ( bAhead ) {
+                if ( pRoad->pJunctionEnd == pFrontier ) {
+                    outIt.setWay( true );
+                    return true;
+                }
+                if ( pRoad->pJunctionBegin == pFrontier ) {
+                    outIt.setWay( false );
+                    return true;
+                }
+            } else {
+                return true;
+            }
+            continue;
+        }
+
+        const bool bNoEnd = pRoad->pJunctionEnd == nullptr;
+        const bool bNoBegin = pRoad->pJunctionBegin == nullptr;
+        if ( bNoEnd ) {
+            outIt.setWay( false );
+        } else if ( bNoBegin ) {
+            outIt.setWay( true );
+        } else {
+            outIt.setWay( bubbleIt.bWay );
+        }
+
+        if ( bAhead ) {
+            if ( bBehind ) {
+                return true;
+            }
+            if ( !IsBeforeInWay( bubbleIt, outIt, bubbleIt.bWay ) ) {
+                continue;
+            }
+            if ( !bNoEnd && !bNoBegin ) {
+                outIt.setWay( gpAI->getAIPool()->getRandom().getRandomUint32() <
+                              0x7fffffffu );
+            }
+            return true;
+        }
+        if ( bBehind && IsBeforeInWay( outIt, bubbleIt, bubbleIt.bWay ) ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void AiSimBubble::spawnBots( const float deltaTime ) {
+    // FUN_0091a5b0
+    static constexpr float kNearSpawnDistance = 1024.0f; // 0x44800000
+    static constexpr float kFarSpawnDistance = 2048.0f;  // 0x45000000
+
+    if ( deltaTime <= 0.0f || gpAI == nullptr ) {
+        return;
+    }
+    AiPool *pPool = gpAI->getAIPool();
+    AiBotManager &botManager = gpAI->getBotManager();
+    if ( !pPool->getSpawnRequest().isIdle() || !botManager.canSpawn() ) {
+        return;
+    }
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr ) {
+        return;
+    }
+
+    const Eigen::Vector4f position = pLocalCar->getWorldPosition();
+    const int32_t zone = botManager.computeZone( &position );
+    const int32_t numBots = pPool->getNumBots();
+    AiRoadIt candidate;
+    if ( numBots == 0 || numBots < gAIConfig.MaxNumBots / 3 ) {
+        if ( !pickBotCandidate( candidate, true, false ) &&
+             !pickBotCandidate( candidate, false, true ) ) {
+            return;
+        }
+    } else if ( numBots < ( gAIConfig.MaxNumBots * 2 ) / 3 ) {
+        botManager.pickSpawnRoad( candidate, zone, position, 0.0f,
+                                  kNearSpawnDistance );
+    } else {
+        botManager.pickSpawnRoad( candidate, zone, position, kNearSpawnDistance,
+                                  kFarSpawnDistance );
+    }
+
+    const AiRoadMap::Road *pRoad = candidate.pRoad;
+    if ( pRoad == nullptr || !IsRoadAvailable( pRoad->ID ) ) {
+        return;
+    }
+    if ( ( candidate.bWay ? pRoad->pJunctionEnd : pRoad->pJunctionBegin ) ==
+         nullptr ) {
+        candidate.flip();
+    }
+    pPool->requestBot( candidate );
 }
