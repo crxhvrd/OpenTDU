@@ -317,8 +317,6 @@ void MngOcean::draw() {
 
     // Heightmap -> normal map conversion quad, then the projected-grid
     // surface in the near pass.
-    pDrawListNMapHM->forceUploadToGPU();
-
     gpRender->getRenderPass<eRenderPass::RP_OceanNMap>()
         .pScene->enqueueDynamicDrawList( pDrawListNMapHM );
     gpRender->getRenderPass<eRenderPass::RP_Near>()
@@ -830,6 +828,8 @@ void MngOcean::buildOceanGridIndices() {
         pIndices[writeIndex + 1] = nextRowStart;
         writeIndex += 2;
     }
+
+    pDrawListOcean->mirrorCPUBuffers();
 }
 
 void MngOcean::tickSimulation() {
@@ -1173,7 +1173,6 @@ void MngOcean::uploadToGPU() {
         pDrawListOcean->getVertexBufferRaw( sizeof( vertices ) );
     if ( pVertexData != nullptr ) {
         memcpy( pVertexData, vertices, sizeof( vertices ) );
-        pDrawListOcean->forceUploadToGPU();
     }
 }
 

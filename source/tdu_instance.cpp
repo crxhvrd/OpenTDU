@@ -679,40 +679,11 @@ void TestDriveGameInstance::mainLoop() {
                 gbResetServicesOnLogin = activeGameMode != GM_VideoBumper;
             }
         } else {
-            GMVideoBumper::SetActiveBumper( "Atari.bik" );
-            GMVideoBumper::SetNextGameMode( GM_VideoBumper );
-            GMVideoBumper::SetSkippable();
-
-            setNextGameMode(
-                GM_VideoBumper ); // NOTE: Done twice in the original game (see
-            // 0x0097c91e and 0x0097c96d). Not sure why
-            GMVideoBumper::OnPlaybackComplete( "LOG_IN", "/popup", "on",
-                                               false );
-
-            pGVar6->setTransitionFlags( 0x0 );
-            pGVar6->mainLoop( this );
-
-            pGVar6->~GameMode();
-            TestDrive::FreeAligned( pGameModeAlloc );
-            GMVideoBumper::ClearActiveBumper();
-
-            GMVideoBumper::SetActiveBumper( "Bumper_EDEN_TDU.bik" );
-            GMVideoBumper::SetNextGameMode( GM_Login );
-            GMVideoBumper::SetSkippable();
-
-            GMVideoBumper::OnPlaybackComplete( "LOG_IN", "/popup", "on",
-                                               false );
-
-            pGameModeAlloc = TestDrive::AllocAligned(
-                sizeof( GMVideoBumper ), alignof( GMVideoBumper ) );
-            pGVar6 = new ( pGameModeAlloc ) GMVideoBumper();
             pGVar6->setTransitionFlags( 0x30 );
             pGVar6->mainLoop( this );
 
             pGVar6->~GameMode();
             TestDrive::FreeAligned( pGameModeAlloc );
-
-            setNextGameMode( GM_Login );
         }
 
         if ( gpPlayerData != nullptr ) {

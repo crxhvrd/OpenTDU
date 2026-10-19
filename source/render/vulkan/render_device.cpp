@@ -325,6 +325,7 @@ RenderDevice::RenderDevice()
       bPendingMipGen( false ),
       bNeedRecreateSwapchain( false ),
       bVSyncEnabled( false ),
+      bNeedBackbufferClear( false ),
       activeClearColor( gColorBlackNoAlpha ),
       activeRenderRegion{ { 0, 0 }, { 0, 0 } },
       boundPSO( VK_NULL_HANDLE ),
@@ -862,6 +863,7 @@ GPUBuffer *RenderDevice::createBuffer( const struct GPUBufferDesc *desc ) {
         }
 
         pBuffer->NumResources = PendingFrameCount;
+        pBuffer->ShadowCopy.resize( desc->Size, 0u );
     } else {
         opResult = vmaCreateBuffer( allocator, &bufferInfo, &allocInfo, &buffer,
                                     &allocation, nullptr );
@@ -871,6 +873,8 @@ GPUBuffer *RenderDevice::createBuffer( const struct GPUBufferDesc *desc ) {
         pBuffer->Allocation[0] = allocation;
         pBuffer->NumResources = 1;
     }
+    pBuffer->ByteSize = desc->Size;
+
     switch ( desc->BufferType ) {
     case GPUBufferDesc::Type::BT_VertexBuffer:
         pBuffer->Stride = desc->Stride;
@@ -891,22 +895,73 @@ void *RenderDevice::lockBuffer( GPUBuffer *pBuffer,
                                 const uint32_t offset,
                                 const uint32_t size,
                                 const bool bDiscardContent ) {
-    void *pMappedMemory = nullptr;
+    OTDU_ASSERT( offset <= pBuffer->ByteSize );
 
-    uint32_t resourceIndex = pBuffer->NumResources == 1 ? 0 : frameIndex;
+    const uint32_t lockSize = ( size == 0 )
+                                  ? ( pBuffer->ByteSize - offset )
+                                  : Min( size, pBuffer->ByteSize - offset );
+
+    if ( pBuffer->NumResources > 1 ) {
+        pBuffer->LockStart = offset;
+        pBuffer->LockEnd = offset + lockSize;
+        return pBuffer->ShadowCopy.data() + offset;
+    }
+
+    void *pMappedMemory = nullptr;
+    VkResult opResult =
+        vmaMapMemory( allocator, pBuffer->Allocation[0], &pMappedMemory );
+    OTDU_ASSERT( opResult == VK_SUCCESS && pMappedMemory != nullptr );
+
+    return static_cast<uint8_t *>( pMappedMemory ) + offset;
+}
+
+void RenderDevice::unlockBuffer( GPUBuffer *pBuffer ) {
+    if ( pBuffer->NumResources == 1 ) {
+        vmaUnmapMemory( allocator, pBuffer->Allocation[0] );
+        return;
+    }
+
+    if ( pBuffer->LockEnd > pBuffer->LockStart ) {
+        for ( uint32_t i = 0; i < pBuffer->NumResources; i++ ) {
+            pBuffer->StaleStart[i] =
+                Min( pBuffer->StaleStart[i], pBuffer->LockStart );
+            pBuffer->StaleEnd[i] =
+                Max( pBuffer->StaleEnd[i], pBuffer->LockEnd );
+        }
+    }
+    pBuffer->LockStart = 0;
+    pBuffer->LockEnd = 0;
+
+    if ( bRecordingCommands ) {
+        syncDynamicBuffer( pBuffer, frameIndex );
+    }
+}
+
+void RenderDevice::syncDynamicBuffer( GPUBuffer *pBuffer,
+                                      const uint32_t resourceIndex ) {
+    if ( pBuffer->NumResources == 1 ||
+         pBuffer->StaleEnd[resourceIndex] <=
+             pBuffer->StaleStart[resourceIndex] ) {
+        return;
+    }
+
+    const uint32_t start = pBuffer->StaleStart[resourceIndex];
+    const uint32_t length = pBuffer->StaleEnd[resourceIndex] - start;
+
+    void *pMappedMemory = nullptr;
     VkResult opResult = vmaMapMemory(
         allocator, pBuffer->Allocation[resourceIndex], &pMappedMemory );
     OTDU_ASSERT( opResult == VK_SUCCESS && pMappedMemory != nullptr );
 
-    return pMappedMemory;
-}
+    memcpy( static_cast<uint8_t *>( pMappedMemory ) + start,
+            pBuffer->ShadowCopy.data() + start, length );
 
-void RenderDevice::unlockBuffer( GPUBuffer *pBuffer ) {
-    // TODO: Assumes this is only used by staging buffers and the buffer will be
-    // locked for the pending frame only (add sanity check to prevent
-    // multi-frame mapping and/or keep track of mapped buffer index?)
-    uint32_t resourceIndex = pBuffer->NumResources == 1 ? 0 : frameIndex;
     vmaUnmapMemory( allocator, pBuffer->Allocation[resourceIndex] );
+    vmaFlushAllocation( allocator, pBuffer->Allocation[resourceIndex], start,
+                        length );
+
+    pBuffer->StaleStart[resourceIndex] = ~0u;
+    pBuffer->StaleEnd[resourceIndex] = 0u;
 }
 
 void RenderDevice::generateMipchain( Texture *pTexture ) {
@@ -1246,16 +1301,17 @@ void RenderDevice::clearFramebuffer( const ColorRGBA clearColor,
 
         for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
             if ( bFramebufferAttachmentValid[i] ) {
+                GPUTexture *pAttachment = pFramebufferAttachments[i];
+                const uint32_t resourceIndex =
+                    pAttachment->getResourceIndex( frameIndex );
                 insertMemoryBarrier(
-                    pFramebufferAttachments[i],
-                    pFramebufferAttachments[i]->CurrentLayout[frameIndex],
+                    pAttachment, pAttachment->CurrentLayout[resourceIndex],
                     VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                    frameIndex );
-                vkCmdClearColorImage(
-                    commandBuffer,
-                    pFramebufferAttachments[i]->Image[frameIndex],
-                    pFramebufferAttachments[i]->CurrentLayout[frameIndex],
-                    &clearColorValue, 1, &subresourceRange );
+                    resourceIndex );
+                vkCmdClearColorImage( commandBuffer,
+                                      pAttachment->Image[resourceIndex],
+                                      pAttachment->CurrentLayout[resourceIndex],
+                                      &clearColorValue, 1, &subresourceRange );
             }
         }
     }
@@ -1314,13 +1370,14 @@ void RenderDevice::clearColorRenderTarget( GPUTexture *pTexture,
     clearColorValue.float32[2] = clearColor.B / 255.0f;
     clearColorValue.float32[3] = clearColor.A / 255.0f;
 
-    insertMemoryBarrier( pTexture, pTexture->CurrentLayout[frameIndex],
+    const uint32_t resourceIndex = pTexture->getResourceIndex( frameIndex );
+    insertMemoryBarrier( pTexture, pTexture->CurrentLayout[resourceIndex],
                          VK_IMAGE_LAYOUT_GENERAL,
-                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, frameIndex );
+                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, resourceIndex );
 
-    vkCmdClearColorImage( commandBuffer, pTexture->Image[frameIndex],
-                          pTexture->CurrentLayout[frameIndex], &clearColorValue,
-                          1, &subresourceRange );
+    vkCmdClearColorImage( commandBuffer, pTexture->Image[resourceIndex],
+                          pTexture->CurrentLayout[resourceIndex],
+                          &clearColorValue, 1, &subresourceRange );
 }
 
 void RenderDevice::bindVertexLayout( GPUVertexLayout *pLayout ) {
@@ -1337,6 +1394,9 @@ void RenderDevice::bindVertexBuffer( GPUBuffer *pBuffer,
     } else {
         uint32_t resourceIndex =
             ( pBuffer->NumResources == 1 ) ? 0 : frameIndex;
+        if ( bRecordingCommands ) {
+            syncDynamicBuffer( pBuffer, resourceIndex );
+        }
 
         vertexBuffers[index] = pBuffer->NativeBuffer[resourceIndex];
         vertexBufferOffsets[index] = offset;
@@ -1399,6 +1459,7 @@ void RenderDevice::drawIndexedPrimitive( ePrimitiveType primitiveType,
 
     uint32_t resourceIndex =
         ( pIndexBuffer->NumResources == 1 ) ? 0 : frameIndex;
+    syncDynamicBuffer( pIndexBuffer, resourceIndex );
     vkCmdBindIndexBuffer( commandBuffer,
                           pIndexBuffer->NativeBuffer[resourceIndex], 0,
                           pIndexBuffer->IndexType );
@@ -1488,14 +1549,15 @@ void RenderDevice::blit( GPUTexture *pSrc,
     }
     VkImage srcImage = pSrc->Image[srcFrameIndex];
 
-    VkImage dstImage = pTextureRT->Image[frameIndex];
+    const uint32_t dstFrameIndex = pTextureRT->getResourceIndex( frameIndex );
+    VkImage dstImage = pTextureRT->Image[dstFrameIndex];
 
     insertMemoryBarrier( pSrc, pSrc->CurrentLayout[srcFrameIndex],
                          VK_IMAGE_LAYOUT_GENERAL,
                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, srcFrameIndex );
-    insertMemoryBarrier( pTextureRT, pTextureRT->CurrentLayout[frameIndex],
+    insertMemoryBarrier( pTextureRT, pTextureRT->CurrentLayout[dstFrameIndex],
                          VK_IMAGE_LAYOUT_GENERAL,
-                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, frameIndex );
+                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, dstFrameIndex );
 
     const bool bSrcMSAA = ( pSrc->SampleCount != VK_SAMPLE_COUNT_1_BIT );
     const bool bDstMSAA = ( pTextureRT->SampleCount != VK_SAMPLE_COUNT_1_BIT );
@@ -1526,7 +1588,7 @@ void RenderDevice::blit( GPUTexture *pSrc,
 
         vkCmdBlitImage( commandBuffer, srcImage,
                         pSrc->CurrentLayout[srcFrameIndex], dstImage,
-                        pTextureRT->CurrentLayout[frameIndex], 1, &region,
+                        pTextureRT->CurrentLayout[dstFrameIndex], 1, &region,
                         VK_FILTER_NEAREST );
     } else if ( bSrcMSAA && !bDstMSAA ) {
         // Multisampled source into a single-sampled destination: resolve.
@@ -1537,9 +1599,9 @@ void RenderDevice::blit( GPUTexture *pSrc,
         region.dstSubresource.layerCount = 1;
         region.extent = { copyWidth, copyHeight, 1 };
 
-        vkCmdResolveImage( commandBuffer, srcImage,
-                           pSrc->CurrentLayout[srcFrameIndex], dstImage,
-                           pTextureRT->CurrentLayout[frameIndex], 1, &region );
+        vkCmdResolveImage(
+            commandBuffer, srcImage, pSrc->CurrentLayout[srcFrameIndex],
+            dstImage, pTextureRT->CurrentLayout[dstFrameIndex], 1, &region );
     } else if ( pSrc->SampleCount == pTextureRT->SampleCount ) {
         // Matching multisampled source and destination: blit/resolve can't
         // target a multisampled image, but a straight copy can when the sample
@@ -1553,7 +1615,7 @@ void RenderDevice::blit( GPUTexture *pSrc,
 
         vkCmdCopyImage( commandBuffer, srcImage,
                         pSrc->CurrentLayout[srcFrameIndex], dstImage,
-                        pTextureRT->CurrentLayout[frameIndex], 1, &region );
+                        pTextureRT->CurrentLayout[dstFrameIndex], 1, &region );
     } else {
         OTDU_FATAL_ERROR( "Cannot transfer a single-sampled source into a "
                           "multisampled render target! (bad logic)\n" );
@@ -2237,6 +2299,12 @@ void RenderDevice::beginScene() {
         OTDU_ASSERT( vkBeginCommandBuffer( commandBuffer, &beginInfo ) ==
                      VK_SUCCESS );
         bRecordingCommands = true;
+
+        if ( bNeedBackbufferClear ) {
+            clearColorRenderTarget( backbuffer.pTexture, gColorBlack,
+                                    ClearRegion{} );
+            bNeedBackbufferClear = false;
+        }
 
         resourceBinder.dirtyStates = 0xffffffff;
     }
@@ -3208,7 +3276,8 @@ bool RenderDevice::createBackbufferTexture( const VkFormat format,
     backbuffer.pTexture->Height = extent.height;
     backbuffer.pTexture->NumMips = 1;
     backbuffer.pTexture->Depth = 1;
-    backbuffer.pTexture->NumResources = PendingFrameCount;
+    backbuffer.pTexture->NumResources = 1;
+    bNeedBackbufferClear = true;
 
     VkImageViewCreateInfo viewInfos = {};
     viewInfos.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -3218,7 +3287,7 @@ bool RenderDevice::createBackbufferTexture( const VkFormat format,
     viewInfos.subresourceRange.levelCount = 1;
     viewInfos.subresourceRange.layerCount = 1;
 
-    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
+    for ( uint32_t i = 0; i < backbuffer.pTexture->NumResources; i++ ) {
         VkResult imageCreationResult =
             vmaCreateImage( allocator, &imageInfo, &allocCreateInfo,
                             &backbuffer.pTexture->Image[i],
@@ -3254,6 +3323,7 @@ void RenderDevice::presentBackbuffer() {
     pushDebugLabel( "Present" );
 
     GPUTexture *pBackbuffer = backbuffer.pTexture;
+    const uint32_t resourceIndex = pBackbuffer->getResourceIndex( frameIndex );
 
     VkImageMemoryBarrier barrier = {};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -3268,7 +3338,8 @@ void RenderDevice::presentBackbuffer() {
         gammaRampPass.uploadRamp( commandBuffer );
 
         insertImageBarrier(
-            pBackbuffer, frameIndex, pBackbuffer->CurrentLayout[frameIndex],
+            pBackbuffer, resourceIndex,
+            pBackbuffer->CurrentLayout[resourceIndex],
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -3278,7 +3349,8 @@ void RenderDevice::presentBackbuffer() {
         gammaRampPass.draw( commandBuffer, frameIndex, imageIndex );
     } else {
         insertImageBarrier(
-            pBackbuffer, frameIndex, pBackbuffer->CurrentLayout[frameIndex],
+            pBackbuffer, resourceIndex,
+            pBackbuffer->CurrentLayout[resourceIndex],
             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -3299,7 +3371,7 @@ void RenderDevice::presentBackbuffer() {
         region.srcSubresource.layerCount = 1;
         region.dstSubresource = region.srcSubresource;
         region.extent = { backbuffer.Width, backbuffer.Height, 1 };
-        vkCmdCopyImage( commandBuffer, pBackbuffer->Image[frameIndex],
+        vkCmdCopyImage( commandBuffer, pBackbuffer->Image[resourceIndex],
                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                         swapchainImages[imageIndex],
                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
@@ -3435,10 +3507,12 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     uint32_t numAttachments = 0;
     for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
         if ( bFramebufferAttachmentValid[i] ) {
-            OTDU_ASSERT( pFramebufferAttachments[i] &&
-                         pFramebufferAttachments[i]->ImageView[frameIndex] );
+            OTDU_ASSERT( pFramebufferAttachments[i] );
+            const uint32_t resourceIndex =
+                pFramebufferAttachments[i]->getResourceIndex( frameIndex );
+            OTDU_ASSERT( pFramebufferAttachments[i]->ImageView[resourceIndex] );
             attachments[numAttachments] =
-                pFramebufferAttachments[i]->ImageView[frameIndex];
+                pFramebufferAttachments[i]->ImageView[resourceIndex];
             numAttachments++;
         }
     }
@@ -3446,13 +3520,15 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     // Mem barrier RTVs (if required)
     for ( uint32_t i = 0; i < numAttachments; i++ ) {
         if ( bFramebufferAttachmentValid[i] ) {
-            OTDU_ASSERT( pFramebufferAttachments[i] &&
-                         pFramebufferAttachments[i]->ImageView[frameIndex] );
-            if ( pFramebufferAttachments[i]->CurrentLayout[frameIndex] !=
+            OTDU_ASSERT( pFramebufferAttachments[i] );
+            const uint32_t resourceIndex =
+                pFramebufferAttachments[i]->getResourceIndex( frameIndex );
+            OTDU_ASSERT( pFramebufferAttachments[i]->ImageView[resourceIndex] );
+            if ( pFramebufferAttachments[i]->CurrentLayout[resourceIndex] !=
                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ) {
                 insertImageBarrier(
-                    pFramebufferAttachments[i], frameIndex,
-                    pFramebufferAttachments[i]->CurrentLayout[frameIndex],
+                    pFramebufferAttachments[i], resourceIndex,
+                    pFramebufferAttachments[i]->CurrentLayout[resourceIndex],
                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
@@ -3738,8 +3814,16 @@ void RenderDevice::insertMemoryBarrier( GPUTexture *pTexture,
         barrier.dstAccessMask =
             !bIsDepthStencil ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
                              : VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        VkPipelineStageFlags srcStage = stageSync;
+        if ( prevLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL ) {
+            srcStage |= VK_PIPELINE_STAGE_TRANSFER_BIT;
+        } else if ( prevLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ) {
+            srcStage |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        }
+
         vkCmdPipelineBarrier(
-            commandBuffer, stageSync,
+            commandBuffer, srcStage,
             !bIsDepthStencil ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
                              : VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
                                    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,

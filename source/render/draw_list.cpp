@@ -519,17 +519,34 @@ void *DrawList::getIndexBufferRaw( uint32_t size ) {
     return pIndexBuffer->Buffer.lock( 0, size );
 }
 
-void DrawList::forceUploadToGPU() {
-    pVertexBuffer->Buffer.LockStart = 0;
-    pVertexBuffer->Buffer.LockEnd = pVertexBuffer->Buffer.ByteSize;
-    pVertexBuffer->Buffer.bLocked = true;
+void *DrawList::lockUVStream( const uint32_t primitiveIndex,
+                              const uint32_t uvIndex ) {
+    // FUN_005082f0
+    const Primitive &primitive =
+        pMemPrimsList[primitiveIndex].PrimitiveInstance;
+    const uint32_t attributeIndex =
+        1 + streams.Normals + streams.Diffuse + streams.Specular + uvIndex;
+    return pVertexBuffer->Buffer.lock(
+        primitive.VertexAttributeOffsets[attributeIndex],
+        primitive.NumVertex * sizeof( Eigen::Vector2f ) );
+}
 
-    pIndexBuffer->Buffer.LockStart = 0;
-    pIndexBuffer->Buffer.LockEnd = pIndexBuffer->Buffer.ByteSize;
-    pIndexBuffer->Buffer.bLocked = true;
+static inline void MirrorCPUBuffer( GeomtryBufferWithHeader *pBuffer ) {
+    if ( pBuffer == nullptr ) {
+        return;
+    }
 
-    pVertexBuffer->Buffer.uploadVerticesToGPU();
-    pIndexBuffer->Buffer.uploadIndicesToGPU();
+    GeometryBuffer &buffer = pBuffer->Buffer;
+    if ( buffer.pCPUBuffer != nullptr && buffer.pCPUBufferCopy != nullptr &&
+         buffer.pCPUBuffer != buffer.pCPUBufferCopy ) {
+        memcpy( buffer.pCPUBufferCopy, buffer.pCPUBuffer, buffer.ByteSize );
+    }
+}
+
+void DrawList::mirrorCPUBuffers() {
+    // FUN_0042fc30
+    MirrorCPUBuffer( pVertexBuffer );
+    MirrorCPUBuffer( pIndexBuffer );
 }
 
 uint32_t DrawList::getNumPrimitives() const { return numPrimitives; }

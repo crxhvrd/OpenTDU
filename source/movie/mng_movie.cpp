@@ -26,7 +26,11 @@ inline void DestroyFramePointer( BinkFramePointer *param_1 ) {
 MngMovie *gpMngMovie = nullptr; // DAT_010e7efc
 
 MngMovie::MngMovie()
-    : Manager(), drawList(), pActiveMovieFrame( nullptr ), frameIndex( 0 ) {
+    : Manager(),
+      drawList(),
+      pActiveMovieFrame( nullptr ),
+      frameIndex( 0 ),
+      lastDirtiedFrameIndex( -1 ) {
     // FUN_00713ba0
     for ( uint32_t i = 0; i < kNumRenderTargets; i++ ) {
         render2DBs[i] = {};
@@ -136,6 +140,7 @@ bool MngMovie::loadMovie( const char *param_1 ) {
 
     BinkFramePointer *pBVar5 = gEdMovie.openBik( pathToVideo.c_str() );
     pActiveMovieFrame = pBVar5;
+    lastDirtiedFrameIndex = -1;
 
     if ( pBVar5 != nullptr ) {
         BinkFrameBuffersInfos infos;
@@ -393,11 +398,20 @@ void MngMovie::renderPendingFrames() {
     }
 #endif
 
-    for ( uint32_t i = 0; i < kNumRenderTargets; i++ ) {
-        Texture *pTexture = render2DBs[i].getFirstBitmap();
-        if ( pTexture != nullptr ) {
-            pTexture->bUploaded = false;
+    // NOTE: The original flags all 8 planes dirty every tick. Only the set
+    // holding a newly decoded frame needs a re-upload.
+    const int32_t decodedFrameIndex =
+        pActiveMovieFrame->pContent->getDecodedFrameIndex();
+    if ( decodedFrameIndex != lastDirtiedFrameIndex ) {
+        const uint32_t bufferSet = pActiveMovieFrame->pContent->getFrameIndex();
+        for ( uint32_t i = 0; i < kNumPlanes; i++ ) {
+            Texture *pTexture =
+                render2DBs[bufferSet * kNumPlanes + i].getFirstBitmap();
+            if ( pTexture != nullptr ) {
+                pTexture->bUploaded = false;
+            }
         }
+        lastDirtiedFrameIndex = decodedFrameIndex;
     }
 
     drawList.reset();

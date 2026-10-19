@@ -50,6 +50,7 @@ private:
 
     BinkFramePointer *pActiveMovieFrame;
     int32_t frameIndex;
+    int32_t lastDirtiedFrameIndex;
 
 private:
     bool allocateRenderTargets( BinkFrameBuffersInfos &param_2 );

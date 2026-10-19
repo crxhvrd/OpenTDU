@@ -474,8 +474,7 @@ void TallGrassInstance::rebuildGeometry( int32_t numElements ) {
         rowZ += step;
     }
 
-    // FUN_0042fc30
-    drawList.forceUploadToGPU();
+    drawList.mirrorCPUBuffers();
 }
 
 void TallGrassInstance::updateHeights( int32_t numElements ) {
@@ -525,15 +524,10 @@ void TallGrassInstance::updateHeights( int32_t numElements ) {
             heightmap.pShadowBitmap->getBitmapSection();
     }
 
-    // Streams are laid out sequentially in the vertex buffer (positions, then
-    // diffuse, then UV). Fill the UV stream: u = billboard variant column,
-    // v = sampled ground height (the vertex shader lifts each blade onto the
-    // terrain; an invalid/submerged blade is pushed underground via v).
-    const uint32_t numVertices = (uint32_t)numElements * 4;
-    Eigen::Vector2f *pUV =
-        (Eigen::Vector2f *)( (uint8_t *)pPositionStart +
-                             numVertices * ( sizeof( Eigen::Vector3f ) +
-                                             sizeof( uint32_t ) ) );
+    // Fill the UV stream: u = billboard variant column, v = sampled ground
+    // height (the vertex shader lifts each blade onto the terrain; an
+    // invalid/submerged blade is pushed underground via v).
+    Eigen::Vector2f *pUV = (Eigen::Vector2f *)drawList.lockUVStream( 0, 0 );
     const Eigen::Vector3f *pPositions = pPositionStart;
 
     const float waterLevel =
@@ -569,7 +563,6 @@ void TallGrassInstance::updateHeights( int32_t numElements ) {
         pUV += 4;
     }
 
-    drawList.forceUploadToGPU();
     status = GS_Ready;
 }
 

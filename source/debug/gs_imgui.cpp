@@ -295,8 +295,6 @@ void GSImgui::uploadGeometryBuffers( ImDrawData *pDrawData ) {
         vtx_dst += draw_list->VtxBuffer.Size;
         idx_dst += draw_list->IdxBuffer.Size;
     }
-
-    pDrawList->forceUploadToGPU();
 }
 
 void GSImgui::enqueueDrawCommands( ImDrawData *pDrawData ) {

@@ -96,8 +96,11 @@ public:
     void *getVertexBufferRaw( uint32_t size );
     void *getIndexBufferRaw( uint32_t size );
 
-    // Force immediate buffer upload to GPU (whole CPU buffer range).
-    void forceUploadToGPU();
+    // Locks the UV stream 'uvIndex' of primitive 'primitiveIndex'.
+    void *lockUVStream( const uint32_t primitiveIndex, const uint32_t uvIndex );
+
+    // Copies each CPU buffer into its double-buffered copy (if any).
+    void mirrorCPUBuffers();
 
     uint32_t getNumPrimitives() const;
     Material *getMaterialAtIndex( const uint32_t index ) const {

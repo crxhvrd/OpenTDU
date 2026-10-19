@@ -185,19 +185,24 @@ eMoviePlaybackState BinkMovie::getNextFrame( eMoviePlaybackState param_2 ) {
     // FUN_006759f0
     if ( param_2 == eMoviePlaybackState::MPS_Playing ) {
         YUVbuffer planes;
-        int32_t nextFrameIndex = static_cast<int32_t>(
-            ( gpTimer->SystemTotalTime - startTime ) * framerate );
-        if ( nextFrameIndex >= numFrames ) {
-            audio.markFinished();
-            return eMoviePlaybackState::MPS_Paused;
-        }
+        // Like BinkWait/BinkShouldSkip, catching up may skip frames but never
+        // the last one (isDone() requires it to have been decoded).
+        int32_t nextFrameIndex =
+            Min( static_cast<int32_t>(
+                     ( gpTimer->SystemTotalTime - startTime ) * framerate ),
+                 numFrames - 1 );
 
-        internalBufferIndex = ( ++internalBufferIndex % 2 );
         while ( frameIndex < nextFrameIndex ) {
             frameIndex = Bink_GetNextFrame( binkHandle, planes );
             // Bink_GetNextFrame already decoded this frame's audio packet into
             // the track buffer; copy it out before the next one overwrites it.
             audio.pumpDecodedFrame( binkHandle );
+        }
+
+        // libbinkdec decodes frame N into the app buffer set N % 2; this
+        // mirrors BINKFRAMEBUFFERS::FrameNum (set holding the newest frame).
+        if ( frameIndex >= 0 ) {
+            internalBufferIndex = static_cast<uint32_t>( frameIndex % 2 );
         }
 
         if ( frameIndex == ( numFrames - 1 ) ) {

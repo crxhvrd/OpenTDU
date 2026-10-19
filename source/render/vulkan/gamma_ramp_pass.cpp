@@ -192,7 +192,8 @@ void GammaRampPass::createSwapchainResources(
     VkDescriptorImageInfo backbufferInfos[PendingFrameCount] = {};
     VkWriteDescriptorSet backbufferWrites[PendingFrameCount] = {};
     for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        backbufferInfos[i].imageView = pBackbuffer->ImageView[i];
+        backbufferInfos[i].imageView =
+            pBackbuffer->ImageView[pBackbuffer->getResourceIndex( i )];
         backbufferInfos[i].imageLayout =
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 

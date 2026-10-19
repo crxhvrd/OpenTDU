@@ -35,11 +35,21 @@ struct GPUBuffer {
                                                  VK_NULL_HANDLE };
     VmaAllocation Allocation[PendingFrameCount] = { nullptr, nullptr, nullptr };
     uint32_t NumResources = 1; // 1 if static; 3 if dynamic
+    uint32_t ByteSize = 0;
 
     union {
         uint32_t Stride;       // VB
         VkIndexType IndexType; // IB
     };
+
+    // Dynamic buffers emulate a single persistent D3D9 buffer: locks write to
+    // this CPU copy, and each per-frame resource re-syncs the bytes it missed
+    // (StaleStart/StaleEnd) before the GPU reads it.
+    std::vector<uint8_t> ShadowCopy;
+    uint32_t LockStart = 0;
+    uint32_t LockEnd = 0;
+    uint32_t StaleStart[PendingFrameCount] = { ~0u, ~0u, ~0u };
+    uint32_t StaleEnd[PendingFrameCount] = { 0u, 0u, 0u };
 };
 
 // dxvk push constants for D3D9 RS emulation (copied from dxvk)
@@ -97,6 +107,11 @@ struct GPUTexture {
     uint32_t NumResources = 3;
     uint8_t bNeedMSAAResolve : 1; // If true, resolve the texture the next time
                                   // it's used in a render pass
+
+    inline uint32_t getResourceIndex( const uint32_t frameIndex ) const {
+        return ( frameIndex < NumResources ) ? frameIndex
+                                             : ( NumResources - 1 );
+    }
 };
 
 struct GPUShader {
@@ -432,6 +447,7 @@ private:
     uint8_t bPendingMipGen : 1;
     uint8_t bNeedRecreateSwapchain : 1;
     uint8_t bVSyncEnabled : 1;
+    uint8_t bNeedBackbufferClear : 1;
 
     VkPipelineCache psoCache;
 
@@ -510,6 +526,7 @@ private:
     void releaseFramebufferCache();
     void flushPendingTextureUploads();
     void flushPendingMipchainGens();
+    void syncDynamicBuffer( GPUBuffer *pBuffer, const uint32_t resourceIndex );
 
     bool copyRenderTargetToHost( GPUTexture *pTexture,
                                  const uint32_t imageIndex,

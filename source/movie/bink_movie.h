@@ -38,6 +38,7 @@ public:
     uint32_t getLumaFrameHeight() const;
 
     uint32_t getFrameIndex() const;
+    inline int32_t getDecodedFrameIndex() const { return frameIndex; }
 
 private:
     std::string filename;
