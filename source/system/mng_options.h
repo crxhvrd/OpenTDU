@@ -225,6 +225,7 @@ private:
     void skipLockedVideoRow( const int32_t focusedRow,
                              const int32_t previousRow );
     void selectVideoRow( const int32_t rowIndex, const bool bPlaySound );
+    void resetIdleRowWidgets();
     void updateCheckboxRowsOrientation();
     void highlightCheckboxRow( const int32_t rowIndex );
     bool isVideoModeLocked() const;

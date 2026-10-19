@@ -602,3 +602,18 @@ void FlashPlayer::setClipProperty( const char *pClipPath,
     clip.pParent = pFlashResource;
     clip.setProperty( property, value );
 }
+
+bool FlashPlayer::isClipAtLabel( const char *pClipPath, const char *pLabel ) {
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    ScopedFlashParentClip targetClip( pFlashResource, pClipPath );
+    FlashSprite *pClip = targetClip.getParent();
+    if ( pClip == nullptr ) {
+        return false;
+    }
+
+    FlashDisplayList *pDisplayList = pClip->getDisplayList();
+    const int32_t labelFrame = pClip->findLabel( pLabel );
+    return labelFrame > 0 &&
+           pDisplayList->getCurrentFrameIndex() == labelFrame &&
+           !pDisplayList->hasPendingFrameChange();
+}

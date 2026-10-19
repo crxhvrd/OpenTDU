@@ -81,6 +81,7 @@ public:
     void setClipProperty( const char *pClipPath,
                           const eFlashProperty property,
                           const float value );
+    bool isClipAtLabel( const char *pClipPath, const char *pLabel );
     bool getObjectMatrix( const char *pParentPath,
                           uint16_t depth,
                           float pMatrix[6] );

@@ -293,6 +293,7 @@ void MngOptions::tick( float, float ) {
     onLanguageChanged( false );
 
     updateExtraVideoRows();
+    resetIdleRowWidgets();
 }
 
 void MngOptions::terminate() {
@@ -2115,6 +2116,35 @@ void MngOptions::skipLockedVideoRow( const int32_t focusedRow,
             selectVideoRow( rowIndex, false );
             return;
         }
+    }
+}
+
+void MngOptions::resetIdleRowWidgets() {
+    if ( pPlayer == nullptr ) {
+        return;
+    }
+
+    char path[64];
+    snprintf( path, sizeof( path ), "%s:nb_ssms_max", kVideoMenuPath );
+    const int32_t numRows = pPlayer->getVariableAsInt( path );
+    for ( int32_t i = 1; i <= numRows; i++ ) {
+        snprintf( path, sizeof( path ), "%s/sur%d/cart", kVideoMenuPath, i );
+        if ( !pPlayer->spriteExists( path ) ||
+             pPlayer->isClipAtLabel( path, "default" ) ) {
+            continue;
+        }
+
+        snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath, i );
+        if ( !pPlayer->isClipAtLabel( path, "off" ) &&
+             !pPlayer->isClipAtLabel( path, "off_lock" ) &&
+             !pPlayer->isClipAtLabel( path, "lock" ) ) {
+            continue;
+        }
+
+        snprintf( path, sizeof( path ), "%s/sur%d/title", kVideoMenuPath, i );
+        pPlayer->showFrame( "default", path, false );
+        snprintf( path, sizeof( path ), "%s/sur%d/cart", kVideoMenuPath, i );
+        pPlayer->showFrame( "default", path, false );
     }
 }
 
