@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "shader_binary_cache.h"
 
+#include "core/arg_parser.h"
 #include "core/hash/crc64.h"
 #include "filesystem/gs_file.h"
 #include "render/ed_render.h"
@@ -14,6 +15,12 @@
 
 ShaderBinaryCache gShaderBinaryCache = {};
 
+static bool gbUseRebuiltShaders = false;
+static CmdLineArg CmdLineArgRebuiltShaders( "rebuilt_shaders",
+                                            []( const char *pArg ) {
+                                                gbUseRebuiltShaders = true;
+                                            } );
+
 ShaderBinaryCache::ShaderBinaryCache() {}
 
 ShaderBinaryCache::~ShaderBinaryCache() {
@@ -22,6 +29,12 @@ ShaderBinaryCache::~ShaderBinaryCache() {
     for ( auto &table : shaderTableBinary ) {
         TestDrive::Free( table.second );
     }
+    for ( auto &rebuilt : rebuiltBinaries ) {
+        if ( std::get<0>( rebuilt.second ) != nullptr ) {
+            TestDrive::Free( std::get<0>( rebuilt.second ) );
+        }
+    }
+    rebuiltBinaries.clear();
     shaderTableBinary.clear();
 }
 
@@ -203,7 +216,46 @@ ShaderBinaryCache::getOrLoadBytecode( const ShaderTableEntry *pTableEntry ) {
         return std::make_tuple( nullptr, 0ull );
     }
 
+#if OTDU_VULKAN
+    if ( gbUseRebuiltShaders ) {
+        ShaderBytecode_t rebuilt = getRebuiltBytecode( pTableEntry );
+        if ( std::get<0>( rebuilt ) != nullptr ) {
+            return rebuilt;
+        }
+    }
+#endif
+
     return shaderBinIt->second;
+}
+
+ShaderBytecode_t
+ShaderBinaryCache::getRebuiltBytecode( const ShaderTableEntry *pTableEntry ) {
+    auto it = rebuiltBinaries.find( pTableEntry->Hashcode );
+    if ( it != rebuiltBinaries.end() ) {
+        return it->second;
+    }
+
+    char hashcode[17];
+    snprintf( hashcode, sizeof( hashcode ), "%016llX",
+              (unsigned long long)pTableEntry->Hashcode );
+
+    std::string path = kShadersRootFolder;
+    path += kShadersRebuiltFolder;
+    path += hashcode;
+    path += ( pTableEntry->ShaderStage == eShaderType::ST_Vertex )
+                ? ".vert.spv"
+                : ".frag.spv";
+
+    void *pBytecode = nullptr;
+    uint32_t bytecodeSize = 0;
+    ShaderBytecode_t rebuilt = std::make_tuple( nullptr, 0ull );
+    if ( gpFile->fileExists( path.c_str() ) &&
+         gpFile->loadFile( path.c_str(), &pBytecode, &bytecodeSize ) ) {
+        OTDU_LOG_INFO( "Using rebuilt shader '%s'\n", path.c_str() );
+        rebuilt = std::make_tuple( pBytecode, (uint64_t)bytecodeSize );
+    }
+    rebuiltBinaries.insert( std::make_pair( pTableEntry->Hashcode, rebuilt ) );
+    return rebuilt;
 }
 
 ShaderMetadataSPIRVRuntime *

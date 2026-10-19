@@ -57,17 +57,17 @@ OTDU_SIZE_MUST_MATCH( SPIRVBindingInfo, 0x24 );
 // to its D3D9 Usage semantic so the runtime can match vertex declaration
 // elements to shader inputs by semantic instead of by sequential stream index.
 struct SPIRVInputElement {
-    uint32_t Location;    // SPIRV layout(location=N) — ISGN sequential slot
-    uint8_t  Usage;       // D3DDECLUSAGE value (matches dxvk::DxsoUsage)
-    uint8_t  UsageIndex;
-    uint8_t  _pad[2];
+    uint32_t Location; // SPIRV layout(location=N) — ISGN sequential slot
+    uint8_t Usage;     // D3DDECLUSAGE value (matches dxvk::DxsoUsage)
+    uint8_t UsageIndex;
+    uint8_t _pad[2];
 };
 OTDU_SIZE_MUST_MATCH( SPIRVInputElement, 8 );
 
 // Used to store metadata at runtime
 struct ShaderMetadataSPIRVRuntime : public ShaderMetadataSPIRV {
-    std::vector<SPIRVBindingInfo>   Bindings;
-    std::vector<SPIRVInputElement>  InputElements; // empty for PS
+    std::vector<SPIRVBindingInfo> Bindings;
+    std::vector<SPIRVInputElement> InputElements; // empty for PS
 };
 #endif
 
@@ -112,6 +112,7 @@ static constexpr const char *kShadersRootFolder = "EURO/Shaders/";
 static constexpr const char *kShadersD3D9Folder = "d3d9/";
 static constexpr const char *kShadersOpenGLFolder = "gl330/";
 static constexpr const char *kShadersVulkanFolder = "vulkan/";
+static constexpr const char *kShadersRebuiltFolder = "rebuilt/";
 static constexpr const char *kShaderTableExtension = ".bin";
 static constexpr const char *kShaderTableSourceExtension = ".glsl";
 
@@ -129,6 +130,12 @@ public:
 private:
     std::unordered_map<std::string, void *> shaderTableBinary;
     std::unordered_map<uint64_t, std::tuple<void *, uint64_t>> shaderBinaries;
+
+    // Rebuilt modules replacing the dxvk ones (nullptr when there is none).
+    std::unordered_map<uint64_t, std::tuple<void *, uint64_t>> rebuiltBinaries;
+
+private:
+    ShaderBytecode_t getRebuiltBytecode( const ShaderTableEntry *pTableEntry );
 
     // Pointer to shader metadata/reflection. Only valid for SPIRV (for now).
     std::unordered_map<uint64_t, ShaderMetadataSPIRVRuntime> shaderMetadata;

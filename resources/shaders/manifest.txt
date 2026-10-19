@@ -1,0 +1,28 @@
+# Retail shader permutations rebuilt from source.
+#
+# <hashcode> <source> [defines...]
+#
+# The hashcode is the retail shader table entry (source/render/shaders/*.inl)
+# the compiled module replaces.
+
+# Terrain (heightmap)
+8627B94EB904F867 terrain/terrain.frag
+06BFEEBD9629727A terrain/terrain.vert
+1C23F8D63294C5AE terrain/terrain.frag TERRAIN_DETAIL
+9CBBAF251DB94FB3 terrain/terrain.vert TERRAIN_DETAIL
+6242AB856CDBB007 terrain/terrain.frag
+E2DAFC7643F63A1A terrain/terrain.vert TERRAIN_SCALED_UV
+F846EA1DE74B8DCE terrain/terrain.frag TERRAIN_DETAIL
+78DEBDEEC86607D3 terrain/terrain.vert TERRAIN_SCALED_UV TERRAIN_DETAIL
+A6FF19CBF8C947FC terrain/terrain.frag TERRAIN_FADE
+26674E38D7E4CDE1 terrain/terrain.vert TERRAIN_FADE
+3CFB585373597A35 terrain/terrain.frag TERRAIN_DETAIL TERRAIN_FADE
+BC630FA05C74F028 terrain/terrain.vert TERRAIN_DETAIL TERRAIN_FADE
+429A0B002D160F9C terrain/terrain.frag TERRAIN_FADE
+C2025CF3023B8581 terrain/terrain.vert TERRAIN_SCALED_UV TERRAIN_FADE
+D89E4A98A6863255 terrain/terrain.frag TERRAIN_DETAIL TERRAIN_FADE
+58061D6B89ABB848 terrain/terrain.vert TERRAIN_SCALED_UV TERRAIN_DETAIL TERRAIN_FADE
+
+# Terrain shadow map rendering
+0BEB5678A2FF17C5 terrain/terrain_shadow.frag
+3E2D307900DCF64C terrain/terrain_shadow.vert

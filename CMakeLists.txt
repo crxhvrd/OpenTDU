@@ -1322,6 +1322,53 @@ if (${OTDU_GFX_API} STREQUAL "OTDU_VULKAN")
     target_include_directories( opentdu PUBLIC ${Vulkan_INCLUDE_DIRS} )
     target_link_libraries( opentdu Vulkan::Vulkan )
 
+    # Retail shaders rebuilt from source (resources/shaders/manifest.txt);
+    # used in place of the dxvk translation with -rebuilt_shaders.
+    find_program( OTDU_GLSLANG_VALIDATOR
+                  NAMES glslangValidator
+                  HINTS "${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}" "$ENV{VULKAN_SDK}/bin" "$ENV{VULKAN_SDK}/Bin" )
+    if ( OTDU_GLSLANG_VALIDATOR )
+        set( OTDU_SHADER_SRC_FOLDER "${OTDU_RSC_FOLDER}/shaders" )
+        set( OTDU_SHADER_MANIFEST "${OTDU_SHADER_SRC_FOLDER}/manifest.txt" )
+        set_property( DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${OTDU_SHADER_MANIFEST}" )
+        file( GLOB OTDU_SHADER_INCLUDES "${OTDU_SHADER_SRC_FOLDER}/include/*.glsl" )
+        file( STRINGS "${OTDU_SHADER_MANIFEST}" OTDU_SHADER_MANIFEST_LINES )
+
+        set( OTDU_REBUILT_SHADERS "" )
+        foreach( OTDU_LINE ${OTDU_SHADER_MANIFEST_LINES} )
+            string( REGEX REPLACE "#.*" "" OTDU_LINE "${OTDU_LINE}" )
+            string( STRIP "${OTDU_LINE}" OTDU_LINE )
+            if ( OTDU_LINE STREQUAL "" )
+                continue()
+            endif()
+            string( REGEX REPLACE "[ \t]+" ";" OTDU_FIELDS "${OTDU_LINE}" )
+            list( GET OTDU_FIELDS 0 OTDU_HASHCODE )
+            list( GET OTDU_FIELDS 1 OTDU_SOURCE )
+            set( OTDU_DEFINES ${OTDU_FIELDS} )
+            list( REMOVE_AT OTDU_DEFINES 0 1 )
+            list( TRANSFORM OTDU_DEFINES PREPEND "-D" )
+            get_filename_component( OTDU_STAGE "${OTDU_SOURCE}" LAST_EXT )
+
+            set( OTDU_OUTPUT "${OTDU_BIN_FOLDER}/EURO/Shaders/rebuilt/${OTDU_HASHCODE}${OTDU_STAGE}.spv" )
+            add_custom_command(
+                OUTPUT "${OTDU_OUTPUT}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_BIN_FOLDER}/EURO/Shaders/rebuilt"
+                COMMAND "${OTDU_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 --quiet
+                        "-I${OTDU_SHADER_SRC_FOLDER}/include" ${OTDU_DEFINES}
+                        -o "${OTDU_OUTPUT}" "${OTDU_SHADER_SRC_FOLDER}/${OTDU_SOURCE}"
+                DEPENDS "${OTDU_SHADER_SRC_FOLDER}/${OTDU_SOURCE}" ${OTDU_SHADER_INCLUDES}
+                COMMENT "Compiling ${OTDU_SOURCE} (${OTDU_HASHCODE})"
+                VERBATIM )
+            list( APPEND OTDU_REBUILT_SHADERS "${OTDU_OUTPUT}" )
+        endforeach()
+
+        add_custom_target( opentdu_rebuilt_shaders ALL DEPENDS ${OTDU_REBUILT_SHADERS} )
+        set_property( TARGET opentdu_rebuilt_shaders PROPERTY FOLDER "Shaders" )
+        add_dependencies( opentdu opentdu_rebuilt_shaders )
+    else()
+        message( WARNING "glslangValidator not found: shaders rebuilt from source will not be available." )
+    endif()
+
     include_directories( "${OTDU_THIRDPARTY_FOLDER}/Vulkan-Headers/include/" )
     include_directories( "${OTDU_THIRDPARTY_FOLDER}/volk/" )
     include_directories( SYSTEM PRIVATE "${OTDU_THIRDPARTY_FOLDER}/VulkanMemoryAllocator/include" ) # clang spawns a shiton of warnings because of VMA so we'll turn it off for now
@@ -1403,7 +1450,7 @@ endif()
 
 # System Options
 if ( WIN32 )
-    target_link_libraries( opentdu winmm Pathcch Shlwapi )
+    target_link_libraries( opentdu winmm Pathcch Shlwapi ole32 uuid )
     if ( OTDU_TARGET_WIN7 )
         set_target_properties( opentdu PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS,6.01" )
     else()
