@@ -2,6 +2,8 @@
 #include "gm_jail.h"
 
 #include "tdu_instance.h"
+#include "ai/ai_pool.h"
+#include "ai/gs_ai.h"
 #include "config/gs_config.h"
 #include "core/maths_helper.h"
 #include "flash/gs_flash.h"
@@ -55,8 +57,7 @@ void GMJail::initialize() {
 void GMJail::reset() {
     // FUN_009d30f0
     GameModeScene::reset();
-
-    OTDU_UNIMPLEMENTED; // TODO: AI
+    gpAI->setTrafficCategories( false, 0u );
 
     pJailCinematic = static_cast<EntityCinematic *>(
         jailBank.findEntity( eEntityType::ET_CINE, "C_JAIL" ) );
@@ -147,7 +148,12 @@ void GMJail::draw( float /*deltaTime*/, float /*totalTime*/ ) {
 
 void GMJail::pause() {
     // FUN_009d2eb0
-    OTDU_UNIMPLEMENTED; // TODO: AI
+    AiPool *pAIPool = gpAI->getAIPool();
+    pAIPool->setTrafficPaused( false );
+    pAIPool->setField0x7C( true );
+    pAIPool->setField0x85( true );
+    gpAI->setPauseTraffic( false );
+
     if ( pJailCinematic != nullptr ) {
         pJailCinematic->stop( true );
     }

@@ -22,6 +22,9 @@ public:
     }
 
 public:
+    inline const AiPath &getRoute() const { return route; }
+
+public:
     MngGPS();
     ~MngGPS();
 

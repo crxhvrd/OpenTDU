@@ -5,6 +5,7 @@
 #include "audio/implementation/ed_audio_sample.h"
 #include "core/time.h"
 #include "filesystem/binary.h"
+#include "flash/gs_flash.h"
 #include "game/cinematic/cin_res_collection.h"
 #include "game/game_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -239,12 +240,17 @@ void EntitySoundEmitter::instanciate( MngActor *pMngActor, Entity *param_1 ) {
 
 void EntitySoundEmitter::onPipeEntryPlayed( edAudioStreamEntry * ) {
     // FUN_007df6c0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH AUDIO
+    gpFlash->getFlashSound()->stopFrontEndMusic();
 }
 
 void EntitySoundEmitter::onPipeEntryStopped( edAudioStreamEntry * ) {
     // FUN_007e0250
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH AUDIO
+    gpFlash->getFlashSound()->playFrontEndMusic( true );
+}
+
+void EntitySoundEmitter::onPipeEntryEnded( edAudioStreamEntry * ) {
+    // FUN_007e0260
+    gpFlash->getFlashSound()->playFrontEndMusic( true );
 }
 
 void EntitySoundEmitter::play( bool bInLoop ) {

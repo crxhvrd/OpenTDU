@@ -7,6 +7,8 @@
 #include <filesystem>
 
 #if defined( OTDU_WIN32 )
+#include "system/system_shared.h"
+
 static constexpr char kPathSeparator = '\\';
 #else
 static constexpr char kPathSeparator = '/';
@@ -121,7 +123,39 @@ static bool IsPlaylistFile( const char *pFilename ) {
 
 static void ResolveShortcut( char *pFilePath ) {
     // FUN_007c6da0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: RADIO (.lnk resolution via IShellLinkA)
+#if defined( OTDU_WIN32 )
+    const HRESULT comResult =
+        CoInitializeEx( nullptr, COINIT_APARTMENTTHREADED );
+
+    IShellLinkA *pShellLink = nullptr;
+    if ( SUCCEEDED( CoCreateInstance( CLSID_ShellLink, nullptr,
+                                      CLSCTX_INPROC_SERVER, IID_IShellLinkA,
+                                      (void **)&pShellLink ) ) ) {
+        IPersistFile *pPersistFile = nullptr;
+        if ( SUCCEEDED( pShellLink->QueryInterface(
+                 IID_IPersistFile, (void **)&pPersistFile ) ) ) {
+            WCHAR widePath[MAX_PATH];
+            if ( MultiByteToWideChar( CP_ACP, 0, pFilePath, -1, widePath,
+                                      MAX_PATH ) > 0 ) {
+                WIN32_FIND_DATAA findData;
+                if ( SUCCEEDED( pPersistFile->Load( widePath, STGM_READ ) ) &&
+                     SUCCEEDED( pShellLink->GetPath(
+                         pFilePath, MAX_PATH, &findData, SLGP_SHORTPATH ) ) ) {
+                    GetLongPathNameA( pFilePath, pFilePath, MAX_PATH );
+                }
+            }
+            pPersistFile->Release();
+        }
+        pShellLink->Release();
+    }
+
+    if ( SUCCEEDED( comResult ) ) {
+        CoUninitialize();
+    }
+#else
+    // Windows shortcuts are not supported outside Windows.
+    (void)pFilePath;
+#endif
 }
 
 static void
@@ -130,6 +164,248 @@ GetFileTitle( const char *pFilePath, char *pOutTitle, const size_t maxLength ) {
     const std::string title =
         std::filesystem::path( pFilePath ).stem().string();
     strncpy( pOutTitle, title.c_str(), maxLength );
+}
+
+struct ID3v1Tag {
+    char Artist[31];
+    char Album[31];
+    char Title[31];
+    bool bValid;
+};
+
+static void ReadID3v1Tag( FileDirectAccess &file, ID3v1Tag &tag ) {
+    // FUN_007c7e30
+    static constexpr uint32_t kTagSize = 0x80;
+    static constexpr size_t kFieldLength = 30;
+
+    tag.bValid = false;
+
+    char rawTag[kTagSize];
+    if ( !file.seek( kTagSize, true ) ||
+         file.readFromFile( rawTag, kTagSize ) != kTagSize ||
+         strncmp( rawTag, "TAG", 3 ) != 0 ) {
+        return;
+    }
+
+    memcpy( tag.Title, rawTag + 3, kFieldLength );
+    memcpy( tag.Artist, rawTag + 33, kFieldLength );
+    memcpy( tag.Album, rawTag + 63, kFieldLength );
+    tag.Title[kFieldLength] = '\0';
+    tag.Artist[kFieldLength] = '\0';
+    tag.Album[kFieldLength] = '\0';
+    tag.bValid = true;
+}
+
+static bool ReadID3v1( FileDirectAccess &file, RadioTrack &track ) {
+    // FUN_007c6e60
+    ID3v1Tag tag;
+    ReadID3v1Tag( file, tag );
+    if ( !tag.bValid ) {
+        return false;
+    }
+
+    strncpy( track.Title, tag.Title, RadioStation::kMaxNameLength );
+    strncpy( track.Artist, tag.Artist, RadioStation::kMaxNameLength );
+    return true;
+}
+
+static int32_t DecodeSyncSafeInteger( const uint8_t *pBytes ) {
+    // FUN_0042b140
+    int32_t value = 0;
+    int32_t shift = 0;
+    for ( int32_t i = 3; i > 0; i--, shift += 7 ) {
+        if ( ( pBytes[i] & 0x80 ) != 0 ) {
+            return -1;
+        }
+        value += int32_t( pBytes[i] ) << shift;
+    }
+    return value;
+}
+
+struct ID3v2Reader {
+    FileDirectAccess *pFile = nullptr;
+    uint32_t FramesOffset = 0;
+    int8_t Version = 0;
+    int32_t TagSize = 0;
+    char FrameID[4] = {};
+    int32_t FrameSize = 0;
+    uint8_t FrameFlags[2] = {};
+    bool bValid = false;
+
+    void open( FileDirectAccess &file );
+    bool readTitle( char *pOutTitle, const int32_t maxLength );
+    bool readArtist( char *pOutArtist, const int32_t maxLength );
+
+private:
+    bool readHeader();
+    bool readFrameHeaderV22();
+    bool readFrameHeaderV23();
+    bool findFrame( const char *pFrameID );
+    bool readTextFrame( char *pOutText, const int32_t maxLength );
+
+    inline bool useV22Frames() const { return !bValid || Version < 3; }
+};
+
+bool ID3v2Reader::readHeader() {
+    // FUN_007c79f0
+    char magic[3];
+    if ( pFile->readFromFile( magic, 3 ) != 3 ||
+         ( strncmp( magic, "ID3", 3 ) != 0 &&
+           strncmp( magic, "3DI", 3 ) != 0 ) ) {
+        return false;
+    }
+
+    if ( pFile->readFromFile( &Version, 1 ) != 1 || Version > 4 ) {
+        return false;
+    }
+
+    uint8_t flags = 0;
+    uint8_t sizeBytes[4];
+    if ( !pFile->seek( int32_t( pFile->tell() ) + 1 ) ||
+         pFile->readFromFile( &flags, 1 ) != 1 ||
+         pFile->readFromFile( sizeBytes, 4 ) != 4 ) {
+        return false;
+    }
+
+    TagSize = DecodeSyncSafeInteger( sizeBytes );
+    if ( TagSize < 0 ) {
+        return false;
+    }
+
+    if ( ( flags & 2 ) == 0 ) {
+        return true;
+    }
+
+    uint8_t extendedSizeBytes[4];
+    if ( pFile->readFromFile( extendedSizeBytes, 4 ) != 4 ) {
+        return false;
+    }
+
+    const int32_t extendedSize = DecodeSyncSafeInteger( extendedSizeBytes );
+    return extendedSize >= 0 && pFile->seek( extendedSize );
+}
+
+void ID3v2Reader::open( FileDirectAccess &file ) {
+    // FUN_007c7ce0
+    pFile = &file;
+    memset( FrameID, 0, sizeof( FrameID ) );
+    FrameSize = 0;
+    memset( FrameFlags, 0, sizeof( FrameFlags ) );
+
+    bValid = pFile->seek( 0 ) && readHeader();
+    if ( !bValid ) {
+        bValid = pFile->seek( 10, true ) && readHeader();
+        if ( bValid ) {
+            bValid = pFile->seek( TagSize + 0xc, true );
+        }
+    }
+
+    if ( bValid ) {
+        FramesOffset = pFile->tell();
+    }
+}
+
+bool ID3v2Reader::readFrameHeaderV22() {
+    // FUN_007c7920
+    FrameID[3] = '\0';
+
+    int8_t sizeBytes[3];
+    if ( pFile->readFromFile( FrameID, 3 ) != 3 ||
+         pFile->readFromFile( sizeBytes, 3 ) != 3 ) {
+        return false;
+    }
+
+    FrameSize = ( ( ( int32_t( sizeBytes[0] ) << 8 ) + sizeBytes[1] ) << 8 ) +
+                sizeBytes[2];
+    return FrameSize >= 0;
+}
+
+bool ID3v2Reader::readFrameHeaderV23() {
+    // FUN_007c7980
+    uint8_t sizeBytes[4];
+    if ( pFile->readFromFile( FrameID, 4 ) != 4 ||
+         pFile->readFromFile( sizeBytes, 4 ) != 4 ) {
+        return false;
+    }
+
+    // Retail decodes v2.3 frame sizes as sync-safe too.
+    FrameSize = DecodeSyncSafeInteger( sizeBytes );
+    if ( FrameSize < 0 ) {
+        return false;
+    }
+
+    return pFile->readFromFile( FrameFlags, 2 ) == 2;
+}
+
+bool ID3v2Reader::findFrame( const char *pFrameID ) {
+    // FUN_007c7b40
+    if ( !bValid || !pFile->seek( int32_t( FramesOffset ) ) ) {
+        return false;
+    }
+
+    const bool bV22Frames = useV22Frames();
+    while ( bV22Frames ? readFrameHeaderV22() : readFrameHeaderV23() ) {
+        if ( memcmp( FrameID, pFrameID, sizeof( FrameID ) ) == 0 ) {
+            return true;
+        }
+
+        if ( !pFile->seek( int32_t( pFile->tell() ) + FrameSize ) ) {
+            return false;
+        }
+    }
+    return false;
+}
+
+bool ID3v2Reader::readTextFrame( char *pOutText, const int32_t maxLength ) {
+    // FUN_007c7af0
+    const int32_t length = FrameSize - 1;
+    if ( length < 0 || length >= maxLength ) {
+        return false;
+    }
+
+    // Only ISO-8859-1 (0) and UTF-8 (3) are read; the bytes are kept as is.
+    uint8_t encoding = 0;
+    if ( pFile->readFromFile( &encoding, 1 ) != 1 ||
+         ( encoding != 0 && encoding != 3 ) ) {
+        return false;
+    }
+
+    if ( pFile->readFromFile( pOutText, uint32_t( length ) ) !=
+         uint32_t( length ) ) {
+        return false;
+    }
+
+    pOutText[length] = '\0';
+    return true;
+}
+
+bool ID3v2Reader::readTitle( char *pOutTitle, const int32_t maxLength ) {
+    // FUN_007c7bf0
+    const char pFrameID[4] = { 'T', useV22Frames() ? 'T' : 'I',
+                               useV22Frames() ? '2' : 'T',
+                               useV22Frames() ? '\0' : '2' };
+    return findFrame( pFrameID ) && readTextFrame( pOutTitle, maxLength );
+}
+
+bool ID3v2Reader::readArtist( char *pOutArtist, const int32_t maxLength ) {
+    // FUN_007c7c90
+    const char pFrameID[4] = { 'T', 'P', useV22Frames() ? '1' : 'E',
+                               useV22Frames() ? '\0' : '1' };
+    return findFrame( pFrameID ) && readTextFrame( pOutArtist, maxLength );
+}
+
+static bool ReadID3v2( FileDirectAccess &file, RadioTrack &track ) {
+    // FUN_007c6ee0
+    ID3v2Reader reader;
+    reader.open( file );
+    if ( !reader.bValid ||
+         !reader.readTitle( track.Title,
+                            int32_t( RadioStation::kMaxNameLength ) ) ) {
+        return false;
+    }
+
+    reader.readArtist( track.Artist, int32_t( RadioStation::kMaxNameLength ) );
+    return true;
 }
 
 RadioStation::RadioStation()
@@ -352,8 +628,9 @@ bool RadioStation::readTrackTags( RadioTrack &track ) {
 
     bool bHasTitle = false;
     if ( file.openFile( track.Path, true, false ) ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: RADIO (ID3v2 FUN_007c6ee0, ID3v1
-                                 // FUN_007c6e60)
+        if ( !ReadID3v2( file, track ) ) {
+            ReadID3v1( file, track );
+        }
         bHasTitle = track.Title[0] != '\0';
         file.close();
     }

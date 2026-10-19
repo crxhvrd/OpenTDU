@@ -51,6 +51,7 @@ struct FileDirectAccess {
 
     uint32_t getFileSize();
     bool seek( const int32_t offset, const bool bFromEnd = false );
+    uint32_t tell();
     uint32_t readFromFile( void *pDest, const uint32_t size );
     uint32_t writeToFile( const void *pSource, const uint32_t size );
 

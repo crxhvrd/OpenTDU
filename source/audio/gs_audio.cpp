@@ -356,18 +356,21 @@ GSAudio::GSAudio()
     : pMemory( nullptr ),
       MemorySize( 0 ),
       NbSpeakers( 5 ),
-      OutputSpatialFactor( 0.0f ),
-      OutputSpatialFactor2( 0.0f ),
-      OutputDopplerFactor( 0.0f ),
-      OutputDopplerFactor2( 0.0f ),
+      OutputSpatialFactor( 0.03f ),  // DAT_00ef1b40
+      OutputSpatialFactor2( 0.03f ), // DAT_00ef1b40
+      OutputDopplerFactor( 1.0f ),   // DAT_00ef1b3c
+      OutputDopplerFactor2( 1.0f ),  // DAT_00ef1b3c
       pSpatialBuffer( nullptr ),
       pSpatialMixer( nullptr ),
       pSpatialOutput( nullptr ) {
-    OTDU_UNIMPLEMENTED;
+    // FUN_009ddfd0
     gpAudio = this;
 }
 
-GSAudio::~GSAudio() { OTDU_UNIMPLEMENTED; }
+GSAudio::~GSAudio() {
+    // FUN_00401e60
+    gpAudio = nullptr;
+}
 
 bool GSAudio::initialize( TestDriveGameInstance * ) {
     // FUN_009b1df0
@@ -819,8 +822,7 @@ void GSAudio::tick( float totalTime, float deltaTime ) {
                        GameModeMixState[GameMode] );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AUDIO
-
+    updateReplayPitch();
     updateClientPriorities();
 
     const bool bRadioIsOnAir = gpRadio != nullptr && gpRadio->isOnAir();
@@ -832,6 +834,34 @@ void GSAudio::tick( float totalTime, float deltaTime ) {
             }
         }
     }
+}
+
+void GSAudio::updateReplayPitch() {
+    // FUN_009b1a60
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc/e8/ec)
+    constexpr int32_t replayState = 0;
+    constexpr int32_t replaySlowDownFactor = 0;
+    constexpr int32_t replaySpeedUpFactor = 0;
+
+    float pitch = 1.0f;
+    if ( replayState == 5 ) {
+        float speedRatio = 1.0f;
+        if ( replaySlowDownFactor >= 2 ) {
+            speedRatio = 1.0f / float( replaySlowDownFactor );
+        } else if ( replaySpeedUpFactor >= 2 ) {
+            speedRatio = float( replaySpeedUpFactor );
+        }
+
+        if ( speedRatio < 1.0f ) {
+            pitch = ( speedRatio + 1.0f ) * 0.5f * 0.1f +
+                    ReplayPitch * 0.9f; // FLOAT_00f41674, FLOAT_00f41668,
+                                        // DAT_00f416a0
+        }
+    }
+
+    pSpatialMixer->Volume = pitch;
+    ReplayPitch = pitch;
+    pSpatialMixer->Pitch = pitch;
 }
 
 void GSAudio::updateClientPriorities() {

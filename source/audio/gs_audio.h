@@ -317,7 +317,10 @@ private:
     edAudioReverb *pAmbianceReverbModule = nullptr;
     edAudioReverb *pVehicleReverbModule = nullptr;
 
+    float ReplayPitch = 1.0f; // FLOAT_00faa6a8
+
 private:
+    void updateReplayPitch();
     void updateClientPriorities();
 };
 

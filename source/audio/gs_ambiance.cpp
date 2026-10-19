@@ -13,10 +13,13 @@
 #include "gs_audio.h"
 #include "implementation/audio_sound_resource.h"
 #include "implementation/ed_audio_reverb.h"
+#include "render/camera/camera_gps.h"
 #include "render/camera/gs_camera.h"
 #include "core/binary_helpers.h"
 
 GSAmbiance *gpAmbiance = nullptr;
+
+static constexpr int32_t kGPSCameraMode = 3;
 
 static constexpr uint32_t kZoneMagic = 0x5a445345; // 'ESDZ' // DAT_00fa9430
 static constexpr uint32_t kZoneDefinitionMagic =
@@ -163,9 +166,14 @@ void GSAmbiance::tick( float totalTime, float deltaTime ) {
 
     clearEmitterLists();
 
-    OTDU_UNIMPLEMENTED; // TODO: CAMERA (missing/unknown field lookup)
-
-    gatherEmitters( listenerPosition );
+    CameraGPS *pGPSCamera =
+        static_cast<CameraGPS *>( gpCamera->findCameraWithMode(
+            kGPSCameraMode, gpCamera->getBoundCarState() ) );
+    if ( gpCamera->getActiveCamera() != pGPSCamera ||
+         ( pGPSCamera != nullptr &&
+           pGPSCamera->getZoom() == CameraGPS::GZL_Close ) ) {
+        gatherEmitters( listenerPosition );
+    }
 
     updateEnvironments( listenerPosition, listener.LeftToRight );
 }

@@ -11,6 +11,7 @@ class RadioMp3Reader final : public edAudioStreamReader {
 public:
     static constexpr uint32_t kReadChunkSize = 0x4000;
     static constexpr int32_t kMaxFramesPerMPEGFrame = 1152;
+    static constexpr int32_t kSeekPreRollFrames = 4;
 
 public:
     explicit RadioMp3Reader( FileDirectAccess *pInFile );
@@ -24,7 +25,7 @@ public:
 
 private:
     bool refillInput();
-    int32_t decodeFrame();
+    int32_t decodeFrame( const bool bSkipPCM = false );
 
 private:
     FileDirectAccess *pFile;
@@ -35,5 +36,6 @@ private:
     std::vector<int16_t> planes;
     int32_t ChannelCount;
     int32_t SampleRate;
+    int32_t PendingFrameCount;
     bool bEndOfFile;
 };

@@ -38,6 +38,7 @@ public:
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
     void onPipeEntryPlayed( edAudioStreamEntry *pEntry ) override;
     void onPipeEntryStopped( edAudioStreamEntry *pEntry ) override;
+    void onPipeEntryEnded( edAudioStreamEntry *pEntry ) override;
     void play( bool bInLoop );
     virtual void installSoundBank() {}
     virtual void uninstallSoundBank() {}

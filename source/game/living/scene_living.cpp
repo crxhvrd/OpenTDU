@@ -5,6 +5,7 @@
 
 #include "config/gs_config.h"
 #include "filesystem/gs_file.h"
+#include "game/scenaric/entity/entity_shop_data.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
 #include "render/camera/camera_game.h"
@@ -104,7 +105,9 @@ void SceneLiving::draw() {
         }
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (FUN_008d7b70)
+    EntityShopData *pShop = content.getShopData();
+    content.startCameraPath(
+        ( pShop != nullptr ) ? pShop->getCameraPath() : nullptr, false, false );
 }
 
 void SceneLiving::pause() {

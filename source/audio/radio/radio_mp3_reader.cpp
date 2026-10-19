@@ -16,6 +16,7 @@ RadioMp3Reader::RadioMp3Reader( FileDirectAccess *pInFile )
       planes(),
       ChannelCount( 0 ),
       SampleRate( 0 ),
+      PendingFrameCount( 0 ),
       bEndOfFile( false ) {
     mp3dec_t *pMp3Decoder = new mp3dec_t();
     mp3dec_init( pMp3Decoder );
@@ -47,6 +48,7 @@ bool RadioMp3Reader::getFormat( Format &format ) const {
     format.SampleRate = SampleRate;
     format.CodecFlags = 0;
     format.EndSample = 0;
+    format.LoopStartSample = 0;
     format.LoopEndSample = 0;
     format.MarkerCount = 0;
 
@@ -56,7 +58,11 @@ bool RadioMp3Reader::getFormat( Format &format ) const {
 const int16_t *RadioMp3Reader::decode( int32_t &sampleCount ) {
     sampleCount = 0;
 
-    const int32_t frameCount = decodeFrame();
+    int32_t frameCount = PendingFrameCount;
+    PendingFrameCount = 0;
+    if ( frameCount <= 0 ) {
+        frameCount = decodeFrame();
+    }
     if ( frameCount <= 0 || ChannelCount <= 0 ) {
         return nullptr;
     }
@@ -79,19 +85,32 @@ const int16_t *RadioMp3Reader::decode( int32_t &sampleCount ) {
 }
 
 int32_t RadioMp3Reader::seek( int32_t position ) {
-    if ( position > 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: RADIO (no sample accurate MP3 seek)
-    }
-
     inputBytes = 0;
     bEndOfFile = false;
+    PendingFrameCount = 0;
     mp3dec_init( static_cast<mp3dec_t *>( pDecoder ) );
 
     if ( pFile != nullptr ) {
         pFile->seek( 0 );
     }
 
-    return 0;
+    const int32_t preRollStart =
+        position - kSeekPreRollFrames * kMaxFramesPerMPEGFrame;
+    int32_t reached = 0;
+    while ( reached < position ) {
+        const int32_t frameCount = decodeFrame( reached < preRollStart );
+        if ( frameCount <= 0 ) {
+            break;
+        }
+
+        if ( reached + frameCount > position ) {
+            PendingFrameCount = frameCount;
+            break;
+        }
+        reached += frameCount;
+    }
+
+    return reached;
 }
 
 bool RadioMp3Reader::refillInput() {
@@ -115,14 +134,14 @@ bool RadioMp3Reader::refillInput() {
     return true;
 }
 
-int32_t RadioMp3Reader::decodeFrame() {
+int32_t RadioMp3Reader::decodeFrame( const bool bSkipPCM ) {
     mp3dec_t *pMp3Decoder = static_cast<mp3dec_t *>( pDecoder );
 
     while ( true ) {
         mp3dec_frame_info_t info = {};
-        const int32_t frameCount =
-            mp3dec_decode_frame( pMp3Decoder, input.data(), int( inputBytes ),
-                                 interleaved.data(), &info );
+        const int32_t frameCount = mp3dec_decode_frame(
+            pMp3Decoder, input.data(), int( inputBytes ),
+            bSkipPCM ? nullptr : interleaved.data(), &info );
 
         if ( info.frame_bytes > 0 ) {
             inputBytes -= uint32_t( info.frame_bytes );

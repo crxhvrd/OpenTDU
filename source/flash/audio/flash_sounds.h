@@ -32,6 +32,7 @@ public:
     bool
     playFrontEndSound( const char *param_2, int32_t param_3, bool param_4 );
     bool playFrontEndMusic( bool bFromCine );
+    void stopFrontEndMusic();
     bool stopGroup( const char *pGroupName, float fadeTime );
     void stopAllGroups();
     void flushPendingSound();

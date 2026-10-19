@@ -587,6 +587,16 @@ bool FileDirectAccess::seek( const int32_t offset, const bool bFromEnd ) {
     return Stream.good();
 }
 
+uint32_t FileDirectAccess::tell() {
+    // FUN_00607b30
+    if ( !Stream.is_open() ) {
+        return 0u;
+    }
+
+    const auto position = Stream.tellg();
+    return ( position < 0 ) ? 0u : uint32_t( position );
+}
+
 uint32_t FileDirectAccess::readFromFile( void *pDest, const uint32_t size ) {
     // FUN_00607ab0
     if ( !Stream.is_open() || pDest == nullptr ) {

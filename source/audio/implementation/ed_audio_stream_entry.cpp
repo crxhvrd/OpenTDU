@@ -82,6 +82,7 @@ edAudioStreamEntry::edAudioStreamEntry()
       SourceSampleRate( kAudioOutputSampleRate ),
       CodecFlags( 0 ),
       EndSample( 0 ),
+      LoopStartSample( 0 ),
       LoopEndSample( 0 ),
       MarkerCount( 0 ),
       pSampleData( nullptr ),
@@ -148,6 +149,7 @@ bool edAudioStreamEntry::setReader(
         SourceSampleRate = kAudioOutputSampleRate;
         EndSample = 0;
         CodecFlags = 0;
+        LoopStartSample = 0;
         LoopEndSample = 0;
         MarkerCount = 0;
         PlayingState = APES_Stop;
@@ -177,6 +179,7 @@ void edAudioStreamEntry::cacheReaderFormat() {
     SourceSampleRate = format.SampleRate;
     CodecFlags = format.CodecFlags;
     EndSample = format.EndSample;
+    LoopStartSample = format.LoopStartSample;
     LoopEndSample = format.LoopEndSample;
     MarkerCount = format.MarkerCount;
 
@@ -199,16 +202,25 @@ void edAudioStreamEntry::setLoopCount( int32_t loopCount ) {
 void edAudioStreamEntry::seek( float seconds, bool bWrapIntoLoop ) {
     // FUN_00613ea0
     int32_t position = int32_t( seconds * float( SourceSampleRate ) );
+    int32_t loopsDone = 0;
 
-    if ( bWrapIntoLoop && LoopCount != 0 ) {
-        OTDU_UNIMPLEMENTED;
+    const int32_t loopLength = LoopEndSample - LoopStartSample;
+    if ( bWrapIntoLoop && LoopCount != 0 && position >= LoopEndSample &&
+         loopLength > 0 ) {
+        if ( LoopCount != -1 &&
+             position >= LoopCount * loopLength + LoopStartSample ) {
+            loopsDone = LoopCount;
+        } else {
+            loopsDone = ( position - LoopStartSample ) / loopLength;
+        }
+        position -= loopsDone * loopLength;
     }
 
     if ( position > EndSample ) {
         position = EndSample;
     }
 
-    resetStream( position, 0 );
+    resetStream( position, loopsDone );
 }
 
 bool edAudioStreamEntry::addListener( edAudioStreamEntryListener *pListener ) {
@@ -236,6 +248,15 @@ void edAudioStreamEntry::notifyListeners( ListenerEvent event ) {
     for ( int32_t i = 0; i < kMaxListeners; i++ ) {
         if ( pListeners[i] != nullptr ) {
             ( pListeners[i]->*event )( this );
+        }
+    }
+}
+
+void edAudioStreamEntry::notifyMarkerReached( int32_t markerIndex ) {
+    // FUN_00614c80
+    for ( int32_t i = 0; i < kMaxListeners; i++ ) {
+        if ( pListeners[i] != nullptr ) {
+            pListeners[i]->onPipeEntryMarker( this, markerIndex );
         }
     }
 }
@@ -590,6 +611,11 @@ void edAudioStreamEntry::refill() {
 
 void edAudioStreamEntry::onDataSwap() {
     // FUN_00614910
+    if ( MarkerCount > 0 && NextMarkerIndex > 0 &&
+         Markers[NextMarkerIndex - 1] == ConsumedSampleCount ) {
+        notifyMarkerReached( NextMarkerIndex - 1 );
+    }
+
     if ( PlayingState != APES_Stop && ConsumedSampleCount == LoopEndSample &&
          ( LoopCount == -1 || LoopsDone < LoopCount ) ) {
         loopRewind();
@@ -605,7 +631,12 @@ void edAudioStreamEntry::onDataSwap() {
 void edAudioStreamEntry::loopRewind() {
     // FUN_006143c0
     LoopsDone++;
-    resetStream( 0, LoopsDone );
+    PendingSeek = LoopStartSample;
+    AvailableSampleCount = 0;
+    ConsumedSampleCount = 0;
+    TotalSampleCount = 0;
+
+    notifyListeners( &edAudioStreamEntryListener::onPipeEntryLooped );
 }
 
 void edAudioStreamEntry::onEndOfStream() {

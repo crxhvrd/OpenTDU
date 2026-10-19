@@ -39,15 +39,13 @@ class edAudioStreamEntryListener {
 public:
     virtual ~edAudioStreamEntryListener() = default;
 
-    virtual void onPipeEntryPlayed( edAudioStreamEntry * ) { /* FUN_00415350 */
-    }
-    virtual void onPipeEntryResumed( edAudioStreamEntry * ) { /* FUN_004019d0 */
-    }
-    virtual void onPipeEntryStopped( edAudioStreamEntry * ) { /* FUN_00614cc0 */
-    }
-    virtual void onPipeEntryPaused( edAudioStreamEntry * ) { /* FUN_004019c0 */
-    }
-    virtual void onPipeEntryEnded( edAudioStreamEntry * ) { /* FUN_0042e240 */ }
+    virtual void onPipeEntryPlayed( edAudioStreamEntry * ) {}
+    virtual void onPipeEntryStopped( edAudioStreamEntry * ) {}
+    virtual void onPipeEntryPaused( edAudioStreamEntry * ) {}
+    virtual void onPipeEntryResumed( edAudioStreamEntry * ) {}
+    virtual void onPipeEntryEnded( edAudioStreamEntry * ) {}
+    virtual void onPipeEntryLooped( edAudioStreamEntry * ) {}
+    virtual void onPipeEntryMarker( edAudioStreamEntry *, int32_t ) {}
 };
 
 class edAudioStreamReader {
@@ -58,6 +56,7 @@ public:
         int32_t SampleRate;
         int32_t CodecFlags;
         int32_t EndSample;
+        int32_t LoopStartSample;
         int32_t LoopEndSample;
         int32_t MarkerCount;
     };
@@ -182,6 +181,7 @@ private:
     void pauseInternal();
     void releaseReader();
     void notifyListeners( ListenerEvent event );
+    void notifyMarkerReached( int32_t markerIndex );
 
 private:
     char Name[32];
@@ -190,6 +190,7 @@ private:
     int32_t SourceSampleRate;
     int32_t CodecFlags;
     int32_t EndSample;
+    int32_t LoopStartSample;
     int32_t LoopEndSample;
     int32_t MarkerCount;
     std::vector<int32_t> Markers;

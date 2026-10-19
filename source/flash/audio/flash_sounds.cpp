@@ -390,6 +390,14 @@ bool FlashSounds::playFrontEndMusic( bool bFromCine ) {
     return true;
 }
 
+void FlashSounds::stopFrontEndMusic() {
+    // FUN_0099d720
+    OTDU_LOG_DEBUG( "Stoping music\n" );
+    if ( gpMngMusic != nullptr ) {
+        gpMngMusic->setPlayFlags( 0 );
+    }
+}
+
 const edAudioSample *FlashSounds::getSample( const char *pName ) {
     if ( pName == nullptr || pName[0] == '\0' || !isLoaded() ) {
         return nullptr;

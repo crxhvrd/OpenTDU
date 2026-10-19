@@ -181,6 +181,7 @@ bool BinkAudioStreamReader::getFormat( Format &format ) const {
     format.SampleRate = pRing->getSampleRate();
     format.CodecFlags = 0;
     format.EndSample = 0;
+    format.LoopStartSample = 0;
     format.LoopEndSample = 0;
     format.MarkerCount = 0;
 
