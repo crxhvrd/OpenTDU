@@ -50,6 +50,10 @@ public:
                             const char *pContextName = nullptr,
                             char *pOutMetaInfos = nullptr,
                             size_t metaInfosSize = 0 );
+    Material *loadFromContext( const char *pContextName,
+                               const wchar_t *pContextDisplay,
+                               const int32_t fileIndex );
+    Material *copyBitmap( const MngScreenshots &source );
     void instanciate() override;
 
 private:

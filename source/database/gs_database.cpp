@@ -2286,6 +2286,66 @@ bool GSDatabase::isTraffic( const DBEntryCarPhysicsData *param_1 ) {
     return ( pcVar1 == param_1->Brand->BrandID.pAsString );
 }
 
+bool GSDatabase::isTrafficOnlyBrand( const DBEntryBrand *pBrand ) {
+    // FUN_009aa980
+    if ( pBrand == nullptr ) {
+        return true;
+    }
+
+    for ( uint32_t i = 0; i < gameDatabase.pNumItems[1]; i++ ) {
+        const DBEntryBrand *pCarBrand = gameDatabase.DBCarData[i].Brand;
+        if ( pCarBrand->BrandID.Hashcode != pBrand->BrandID.Hashcode ) {
+            continue;
+        }
+
+        if ( getStringByHashcode( 6, 0x3540681 ) !=
+             pCarBrand->BrandID.pAsString ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool GSDatabase::brandHasAvailableCar( const DBEntryBrand *pBrand ) {
+    // FUN_009a8f50
+    if ( pBrand == nullptr || ( pBrand->Flags & 1 ) == 0 ) {
+        return false;
+    }
+
+    for ( uint32_t i = 0; i < gameDatabase.pNumItems[1]; i++ ) {
+        const DBEntryCarPhysicsData &car = gameDatabase.DBCarData[i];
+        const DBEntryBrand *pCarBrand = car.Brand;
+        if ( pCarBrand->BrandID.Hashcode == pBrand->BrandID.Hashcode &&
+             ( car.BitField & 1 ) != 0 && ( pCarBrand->Flags & 1 ) != 0 &&
+             ( car.BitField >> 5 & 1 ) == 0 ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool GSDatabase::brandHasCarOfCategory( const DBEntryBrand *pBrand,
+                                        const bool bBike ) {
+    // FUN_009aa800 (bBike) / FUN_009aa770 (!bBike)
+    if ( pBrand == nullptr ) {
+        return false;
+    }
+
+    const char *pBikeCategory = getStringByHashcode( 1, 0x35da5b5 );
+    for ( uint32_t i = 0; i < gameDatabase.pNumItems[1]; i++ ) {
+        const DBEntryCarPhysicsData &car = gameDatabase.DBCarData[i];
+        if ( car.Brand->BrandID.pAsString != pBrand->BrandID.pAsString ) {
+            continue;
+        }
+        if ( ( pBikeCategory == car.Category.pAsString ) == bBike ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 const CarConfig *GSDatabase::getCarConfig( const int32_t carID ) const {
     // FUN_009a92b0
     for ( const CarConfig &car : cars ) {

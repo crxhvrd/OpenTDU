@@ -82,6 +82,7 @@ public:
     inline void setAsyncActorLoad( bool bEnabled ) {
         cinematicPlayer.setAsyncActorLoad( bEnabled );
     }
+    inline void setApplyCineMix( bool bEnabled ) { bApplyCineMix = bEnabled; }
     inline void setRestoreCineMix( bool bEnabled ) {
         bRestoreCineMix = bEnabled;
     }

@@ -533,6 +533,87 @@ int32_t Garage::findFreeSlot( const uint64_t houseHashcode,
     return -1;
 }
 
+int32_t Garage::getNumCarsOfKind( const uint64_t houseHashcode,
+                                  const bool bBikes ) const {
+    // FUN_00892a20 (cars) / FUN_00892c50 (bikes)
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const char *pBikeCategory = gpDatabase->getStringByHashcode( 1, 0x35da5b5 );
+
+    int32_t numCars = 0;
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        GarageSlot &slot = const_cast<GarageSlot &>( pCars[i] );
+
+        const int32_t carID = int32_t( slot.getCarConfigID() );
+        const DBEntryCarPhysicsData *pCarData = nullptr;
+        for ( uint32_t j = 0; j < gameDB.pNumItems[1]; j++ ) {
+            if ( gameDB.DBCarData[j].CarID == carID ) {
+                pCarData = &gameDB.DBCarData[j];
+                break;
+            }
+        }
+
+        if ( !slot.isValid() ) {
+            continue;
+        }
+
+        const bool bIsBike = pCarData != nullptr &&
+                             pCarData->Category.pAsString == pBikeCategory;
+        if ( bIsBike != bBikes ) {
+            continue;
+        }
+
+        if ( houseHashcode == 0ull ||
+             slot.getHouseHashcode() == houseHashcode ) {
+            numCars++;
+        }
+    }
+    return numCars;
+}
+
+GarageSlot *Garage::getCarOfKindAtIndex( const int32_t index,
+                                         const uint64_t houseHashcode,
+                                         const bool bBikes ) {
+    // FUN_008928f0 (cars) / FUN_00892b20 (bikes)
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const char *pBikeCategory = gpDatabase->getStringByHashcode( 1, 0x35da5b5 );
+
+    int32_t numMatches = 0;
+    for ( int32_t i = 0; i < kNumSavedCarSlots; i++ ) {
+        GarageSlot &slot = pCars[i];
+
+        const int32_t carID = int32_t( slot.getCarConfigID() );
+        const DBEntryCarPhysicsData *pCarData = nullptr;
+        for ( uint32_t j = 0; j < gameDB.pNumItems[1]; j++ ) {
+            if ( gameDB.DBCarData[j].CarID == carID ) {
+                pCarData = &gameDB.DBCarData[j];
+                break;
+            }
+        }
+
+        if ( !slot.isValid() ) {
+            continue;
+        }
+
+        const bool bIsBike = pCarData != nullptr &&
+                             pCarData->Category.pAsString == pBikeCategory;
+        if ( bIsBike != bBikes ) {
+            continue;
+        }
+
+        if ( houseHashcode != 0ull &&
+             slot.getHouseHashcode() != houseHashcode ) {
+            continue;
+        }
+
+        if ( numMatches == index ) {
+            return &slot;
+        }
+        numMatches++;
+    }
+
+    return &pCars[0];
+}
+
 int32_t Garage::getNumSellableCars( const uint64_t houseHashcode ) const {
     // FUN_00893020
     int32_t numCars = 0;

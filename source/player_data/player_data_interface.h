@@ -3,6 +3,7 @@
 struct DBEntryCarPack;
 class AchievementsData;
 class Driver;
+class EbayList;
 class Garage;
 class SavedAvatar;
 class SavedCarReserve;
@@ -27,6 +28,7 @@ public:
     virtual Driver *getDriver() = 0;
     virtual SavedCarReserve *getStock() = 0;
     virtual Garage *getGarage() = 0;
+    virtual EbayList *getEbayList() = 0;
     virtual SavedRanking *getRanking() = 0;
     virtual SavedMailbox *getMailbox() = 0;
     virtual SavedNewsList *getNewsList() = 0;

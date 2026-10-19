@@ -78,6 +78,11 @@ public:
     int32_t findFreeSlot( const uint64_t houseHashcode,
                           const int32_t previousSlot = -1 ) const;
     int32_t getNumSellableCars( const uint64_t houseHashcode ) const;
+    int32_t getNumCarsOfKind( const uint64_t houseHashcode,
+                              const bool bBikes ) const;
+    GarageSlot *getCarOfKindAtIndex( const int32_t index,
+                                     const uint64_t houseHashcode,
+                                     const bool bBikes );
 
 public:
     int16_t numCars = 0;

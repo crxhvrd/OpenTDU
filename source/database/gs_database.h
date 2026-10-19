@@ -174,6 +174,9 @@ public:
                           int32_t *pOutMaxLevel = nullptr );
     bool isBike( const DBEntryCarPhysicsData *param_1 );
     bool isTraffic( const DBEntryCarPhysicsData *param_1 );
+    bool isTrafficOnlyBrand( const DBEntryBrand *pBrand );
+    bool brandHasAvailableCar( const DBEntryBrand *pBrand );
+    bool brandHasCarOfCategory( const DBEntryBrand *pBrand, const bool bBike );
 
     const CarConfig *getCarConfig( int32_t carID ) const;
 

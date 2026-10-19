@@ -192,6 +192,9 @@ public:
                  g.UpshiftBand * vehicle.Engine.OmegaMax ) *
                9.549296f;
     }
+    void setUpshiftBand( const float band ) {
+        vehicle.GearBox.UpshiftBand = band;
+    }
     float getPeakPowerRpm() const {
         return vehicle.Engine.PeakPowerOmega * 9.549296f;
     }

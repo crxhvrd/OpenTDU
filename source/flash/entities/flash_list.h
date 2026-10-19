@@ -36,6 +36,14 @@ public:
     static constexpr FlashMessage kSelectRight = 0x726c6573u; // selr
 
 public:
+    inline void setInputEnabled( const bool bEnabled ) {
+        field16_0x67 = bEnabled;
+    }
+    inline void setNavigationEnabled( const bool bEnabled ) {
+        field_0x66 = bEnabled;
+    }
+
+public:
     FlashList();
     ~FlashList();
 

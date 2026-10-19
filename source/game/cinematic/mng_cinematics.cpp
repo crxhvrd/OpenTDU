@@ -190,6 +190,19 @@ EntityCinematic *MngCinematics::findFocusedPlayingCinematic() const {
     return nullptr;
 }
 
+void StopActiveForegroundCinematic() {
+    // FUN_007698f0 / FUN_007676e0 (inlined)
+    if ( gpMngCinematics == nullptr ||
+         !gpMngCinematics->isCinematicPlaying( CT_Foreground, false, true ) ) {
+        return;
+    }
+
+    EntityCinematic *pActiveCinematic = gpMngCinematics->getActiveCinematic();
+    if ( pActiveCinematic != nullptr ) {
+        pActiveCinematic->stop( true );
+    }
+}
+
 bool MngCinematics::isCinematicPlaying( eCinematicType type,
                                         bool bRequireAudio,
                                         bool bIncludeRequested ) const {

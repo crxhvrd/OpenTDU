@@ -174,31 +174,12 @@ void MailMessage::serialize( edStore &stream ) const {
 static void FormatNewsDate( char *pDest,
                             const size_t destLength,
                             const uint16_t packedDate ) {
-    // FUN_007190a0 / FUN_00718fd0
+    // FUN_007190a0
     int32_t year = 0;
     int32_t month = 0;
     int32_t day = 0;
     UnpackSaveDate( packedDate, year, month, day );
-
-    if ( gpMngFlashLocalize == nullptr ) {
-        strncpy( pDest, "(ERROR-DATE)", destLength );
-        pDest[destLength - 1] = '\0';
-        return;
-    }
-
-    char yearString[8];
-    char monthString[8];
-    char dayString[8];
-    snprintf( yearString, sizeof( yearString ), "%02d", year );
-    snprintf( monthString, sizeof( monthString ), "%02d", month );
-    snprintf( dayString, sizeof( dayString ), "%02d", day );
-
-    gpMngFlashLocalize->setSysVar( "YEAR", yearString );
-    gpMngFlashLocalize->setSysVar( "MONTH", monthString );
-    gpMngFlashLocalize->setSysVar( "DAY", dayString );
-    gpMngFlashLocalize->makeSentenceFromHashcode( pDest, destLength,
-                                                  0x39439f2ull );
-    gpMngFlashLocalize->clearAllSysVar();
+    FormatSaveDate( pDest, destLength, year, month, day );
 }
 
 static inline size_t GetUTF8LeadLength( const uint8_t leadByte ) {

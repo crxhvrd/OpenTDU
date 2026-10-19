@@ -34,6 +34,7 @@ PlayerSave::PlayerSave()
       driver(),
       carReserve(),
       garage(),
+      ebayList(),
       ranking(),
       mailbox(),
       newsList(),
@@ -50,8 +51,8 @@ PlayerSave::PlayerSave()
       bProfilePromptPending( false ),
       saveIndex( -1 ) {
     // FUN_0089ac90
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: EBAY (eBay list and car) / ONLINE (radio
-                             // and advertising resource tables)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: EBAY (eBay car) / ONLINE (radio and
+                             // advertising resource tables)
 }
 
 PlayerSave::~PlayerSave() {}
@@ -476,7 +477,7 @@ void PlayerSave::clear() {
 
     driver.clear();
     garage.clear( true );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: EBAY (FUN_008943f0)
+    ebayList.clear( true );
     ranking.clear();
     mailbox.clear();
     newsList.clear();
@@ -497,6 +498,7 @@ void PlayerSave::unStart() {
     driver.clear();
     carReserve.reset();
     garage.clear( true );
+    ebayList.clear( true );
     ranking.clear();
     mailbox.clear();
     newsList.clear();
@@ -508,8 +510,8 @@ void PlayerSave::unStart() {
     achievements.reset();
     extraChallenges.clear( true );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: EBAY (FUN_008943f0 and the item table's
-                             // unmapped tail at +0x274..+0x2a0)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: the item table's unmapped tail at
+                             // +0x274..+0x2a0
 }
 
 void PlayerSave::serialize( edStore &stream ) {

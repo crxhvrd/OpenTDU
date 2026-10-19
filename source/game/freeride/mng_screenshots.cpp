@@ -362,6 +362,47 @@ Material *MngScreenshots::loadFromFile( const char *pFilepath,
     return pMaterial;
 }
 
+Material *MngScreenshots::loadFromContext( const char *pContextName,
+                                           const wchar_t * /*pContextDisplay*/,
+                                           const int32_t fileIndex ) {
+    // FUN_006ce490
+    if ( pContextName == nullptr || pContextName[0] == '\0' ) {
+        return nullptr;
+    }
+
+    char filename[512] = {};
+    if ( !gpFile->getFileNameInContext( pContextName, "*.jpg", fileIndex,
+                                        filename, sizeof( filename ) ) ) {
+        return nullptr;
+    }
+
+    return loadFromFile( filename, pContextName );
+}
+
+Material *MngScreenshots::copyBitmap( const MngScreenshots &source ) {
+    // FUN_006cd940
+    Texture *pTexture = getBitmap();
+    Texture *pSourceTexture = source.getBitmap();
+    if ( pTexture == nullptr || pSourceTexture == nullptr ) {
+        return nullptr;
+    }
+
+    void *pTexels = Render2DB::GetTexelsPointer( pTexture, 0 );
+    const void *pSourceTexels =
+        Render2DB::GetTexelsPointer( pSourceTexture, 0 );
+    if ( pTexels == nullptr || pSourceTexels == nullptr ) {
+        return nullptr;
+    }
+
+    memcpy( pTexels, pSourceTexels,
+            size_t( pTexture->Width ) * size_t( pTexture->Height ) * 4u );
+
+    pTexture->bUploaded = false;
+    uploadBitmap();
+
+    return getMaterial();
+}
+
 Texture *MngScreenshots::getBitmap() const {
     RenderFile::Section *pSection = render2DB.getBitmapSection();
     return ( pSection != nullptr ) ? (Texture *)( pSection + 1 ) : nullptr;

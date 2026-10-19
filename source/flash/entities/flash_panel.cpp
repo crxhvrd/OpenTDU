@@ -13,6 +13,7 @@
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
+#include "player_data/saved_ebay_state.h"
 #include "player_data/saved_garage.h"
 #include "player_data/saved_mailbox.h"
 
@@ -567,4 +568,35 @@ void FlashPanelCarSpecs::watch( CarDesc *pNewCar ) {
     if ( pNewCar != nullptr ) {
         pNewCar->subscribe( this );
     }
+}
+
+FlashPanelEbayOffer::FlashPanelEbayOffer() : FlashPanel(), pOffer( nullptr ) {}
+
+FlashPanelEbayOffer::~FlashPanelEbayOffer() {}
+
+void FlashPanelEbayOffer::tick() {
+    // FUN_00767370
+    if ( pMovie == nullptr || pOffer == nullptr ) {
+        return;
+    }
+
+    if ( pOffer->CarID == 0xffffu ) {
+        pMovie->setVariableValueNonLinked( "/:CarName", "" );
+        pMovie->setVariableValueNonLinked( "/:CurrentPrice", "" );
+        pMovie->setVariableValueNonLinked( "/:CurrentSeller", "" );
+        return;
+    }
+
+    for ( const CarConfig &car : gpDatabase->getCarList() ) {
+        if ( uint32_t( car.Hash ) == pOffer->CarID ) {
+            pMovie->setVariableValue( "/:CarName", car.FullName.c_str() );
+            break;
+        }
+    }
+
+    char priceString[32];
+    FormatMoneyString( priceString, int32_t( pOffer->Price ) );
+    pMovie->setVariableValueNonLinked( "/:BuyPrice", priceString );
+    pMovie->setVariableValueNonLinked( "/:CurrentSeller", pOffer->pOwnerName );
+    pMovie->setVariableValueNonLinked( "/:SellType", "???" );
 }

@@ -2,6 +2,7 @@
 #include "saved_news.h"
 
 #include "core/ed_store.h"
+#include "flash/mng_flash_localize.h"
 
 uint16_t
 PackSaveDate( const uint32_t year, const uint32_t month, const uint32_t day ) {
@@ -26,6 +27,33 @@ void UnpackSaveDate( const uint16_t packedDate,
     const int32_t month = ( ( date - outDay ) / 31 ) % 12;
     outMonth = ( month != 0 ) ? month : 12;
     outYear = ( date - outMonth * 31 - outDay ) / 372;
+}
+
+void FormatSaveDate( char *pDest,
+                     const size_t destLength,
+                     const int32_t year,
+                     const int32_t month,
+                     const int32_t day ) {
+    // FUN_00718fd0
+    if ( gpMngFlashLocalize == nullptr ) {
+        strncpy( pDest, "(ERROR-DATE)", destLength );
+        pDest[destLength - 1] = '\0';
+        return;
+    }
+
+    char yearString[8];
+    char monthString[8];
+    char dayString[8];
+    snprintf( yearString, sizeof( yearString ), "%02d", year );
+    snprintf( monthString, sizeof( monthString ), "%02d", month );
+    snprintf( dayString, sizeof( dayString ), "%02d", day );
+
+    gpMngFlashLocalize->setSysVar( "YEAR", yearString );
+    gpMngFlashLocalize->setSysVar( "MONTH", monthString );
+    gpMngFlashLocalize->setSysVar( "DAY", dayString );
+    gpMngFlashLocalize->makeSentenceFromHashcode( pDest, destLength,
+                                                  0x39439f2ull );
+    gpMngFlashLocalize->clearAllSysVar();
 }
 
 void NewsEntry::clear() {

@@ -45,6 +45,18 @@ public:
     void terminate() override;
     bool onMessage( FlashMessage *pMessage );
 
+    inline void resetPhotoSelector() { selectorIndex = -1; }
+    int32_t countPhotos() const;
+    void scrollPhotoSelector( const int32_t index );
+    Material *grabSelectorPhoto();
+
+    static void SelectorDrawCallback( FlashRECT *pViewport,
+                                      float depth,
+                                      DrawList *pDrawList,
+                                      void *pUser,
+                                      FlashResource *pResource,
+                                      const char *pClipName );
+
 private:
     struct AlbumSlot {
         MngScreenshots Shot;
@@ -88,5 +100,7 @@ private:
     MngScreenshots bigPhoto;
     Material *pBigPhotoMaterial = nullptr;
     int32_t drawSlotCounter = 1;
+    int32_t selectorIndex = -1;
+    int32_t selectorPhotoIndices[64] = {};
     bool bUploadPending = false;
 };

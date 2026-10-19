@@ -5,6 +5,7 @@
 #include "player_data_interface.h"
 #include "saved_avatar.h"
 #include "saved_car_reserve.h"
+#include "saved_ebay_state.h"
 #include "saved_extra_challenges.h"
 #include "saved_garage.h"
 #include "saved_item_table.h"
@@ -26,6 +27,7 @@ public:
     AchievementsData *getAchievements() override { return &achievements; }
 
     Garage *getGarage() override { return &garage; }
+    EbayList *getEbayList() override { return &ebayList; }
     SavedCarReserve *getStock() override { return &carReserve; }
     SavedRanking *getRanking() override { return &ranking; }
     SavedMailbox *getMailbox() override { return &mailbox; }
@@ -81,6 +83,7 @@ private:
     Driver driver;
     SavedCarReserve carReserve;
     Garage garage;
+    EbayList ebayList;
     SavedRanking ranking;
     SavedMailbox mailbox;
     SavedNewsList newsList;

@@ -47,3 +47,8 @@ void UnpackSaveDate( const uint16_t packedDate,
                      int32_t &outYear,
                      int32_t &outMonth,
                      int32_t &outDay );
+void FormatSaveDate( char *pDest,
+                     const size_t destLength,
+                     const int32_t year,
+                     const int32_t month,
+                     const int32_t day );

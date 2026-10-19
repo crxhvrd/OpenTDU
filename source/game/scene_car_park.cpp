@@ -192,6 +192,19 @@ void SceneCarPark::setEnabled( const bool bEnable ) {
     }
 }
 
+void SceneCarPark::setVehicleVisible( const int32_t index,
+                                      const bool bVisible ) {
+    // FUN_007764a0
+    if ( index >= numEntries ) {
+        return;
+    }
+
+    VehicleBase *pVehicle = getVehicle( index );
+    if ( pVehicle != nullptr ) {
+        pVehicle->setShouldDraw( bVisible );
+    }
+}
+
 void SceneCarPark::setEntryTransform( const int32_t index,
                                       const Matrix4x4f_t &transform,
                                       const float param_3 ) {

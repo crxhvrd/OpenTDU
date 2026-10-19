@@ -11,6 +11,7 @@
 #include "mng_rankings.h"
 #include "mng_spot_picture.h"
 #include "scene_living.h"
+#include "trading_menu.h"
 
 struct FlashMessage;
 class FlashPlayer;
@@ -20,6 +21,13 @@ extern bool gbEnteringLivingHub;
 class GMLiving : public GameModeWorldBase {
 public:
     inline FlashPlayer *getFlashPlayer() const { return pFlashPlayer; }
+    inline SceneLiving &getSceneLiving() { return sceneLiving; }
+    inline void setSceneResumeAllowed( const bool bAllowed ) {
+        bSceneResumeAllowed = bAllowed;
+    }
+    inline void setRadialMenuOpen( const bool bOpen ) {
+        bRadialMenuOpen = bOpen;
+    }
 
 public:
     GMLiving();
@@ -39,6 +47,7 @@ public:
     bool executeAction( int32_t param_2,
                         void *param_3,
                         void *pData = nullptr ) override;
+    void restartLoopCinematic();
     bool isDrawnInFakeDOF() override {
         // FUN_0042cf80
         return sceneLiving.getContent()->isDrawnInDOFPass();
@@ -59,6 +68,7 @@ private:
 #endif
 
 private:
+    TradingMenu tradingMenu;
     MngReflection mngReflection;
     MngLogoDisplay mngLogoDisplay;
     MngCollection mngCollection;
@@ -69,7 +79,6 @@ private:
     FirstPersonMode firstPerson;
     FlashPlayer *pFlashPlayer;
     float resetTime;
-    bool bBlockSceneUpdate;
     bool bSceneResumeAllowed;
     bool bHouseSpotInstalled;
     bool bRadialMenuOpen;

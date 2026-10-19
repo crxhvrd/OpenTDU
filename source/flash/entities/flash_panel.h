@@ -3,6 +3,7 @@
 #include "core/notifier.h"
 
 class CarDesc;
+class EbayOffer;
 class FlashPlayer;
 
 class FlashPanel : public Notifier {
@@ -84,4 +85,20 @@ private:
     CarDesc *pCar;
     void *pUpgradeEntry;
     bool bPictureInstalled;
+};
+
+// e-trade offer details (car name, price, seller)
+class FlashPanelEbayOffer : public FlashPanel {
+public:
+    inline void setOffer( EbayOffer *pNewOffer ) { pOffer = pNewOffer; }
+    inline EbayOffer *getOffer() const { return pOffer; }
+
+public:
+    FlashPanelEbayOffer();
+    ~FlashPanelEbayOffer();
+
+    void tick() override;
+
+private:
+    EbayOffer *pOffer;
 };

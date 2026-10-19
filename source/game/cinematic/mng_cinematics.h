@@ -54,6 +54,7 @@ private:
 
 extern MngCinematics *gpMngCinematics;
 
+void StopActiveForegroundCinematic();
 void ProjectActorOnGround( Entity *pActor,
                            bool bRebaseOnWorldShift,
                            bool bQueryPhysics );

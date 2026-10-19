@@ -9,6 +9,7 @@
 #include "flash/mng_fade.h"
 #include "flash/implementation/flash_player.h"
 #include "game/mng_music.h"
+#include "game/cinematic/mng_cinematics.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/spots.h"
@@ -40,6 +41,7 @@ static inline void BuildHouseBankName( const SpotMap *pSpot,
 
 GMLiving::GMLiving()
     : GameModeWorldBase(),
+      tradingMenu(),
       mngReflection(),
       mngLogoDisplay(),
       mngCollection(),
@@ -50,15 +52,13 @@ GMLiving::GMLiving()
       firstPerson(),
       pFlashPlayer( nullptr ),
       resetTime( 0.0f ),
-      bBlockSceneUpdate( false ),
       bSceneResumeAllowed( false ),
       bHouseSpotInstalled( false ),
       bRadialMenuOpen( false ),
       pendingHouseSpotIndex( -1 ) {
     // FUN_0076a6f0
     registerManager( &mngReflection );
-
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (house menu)
+    registerManager( &tradingMenu.getScene().getShowcaseControl() );
 
     registerManager( &mngLogoDisplay );
     registerManager( &mngCollection );
@@ -304,8 +304,7 @@ void GMLiving::initialize() {
     sceneLiving.initialize();
 
     sceneLiving.getContent()->setModeActive( true );
-
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (house menu)
+    tradingMenu.setLiving( this );
 
     StreamingManager *pStreaming = gpWorld->getStreamingManager();
     pStreaming->sectorManager.bNeedStreamUpdate = true;
@@ -356,7 +355,9 @@ void GMLiving::reset() {
         pFlashPlayer->setVariableValueNonLinked( "/:WhereFrom", "avatar" );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (weather + FUN_00765fd0)
+    tradingMenu.setFlashPlayer( pFlashPlayer );
+    tradingMenu.setFlashManager( &mngFlash );
+    tradingMenu.setupTables();
 
     if ( gpWorldStreaming != nullptr &&
          gpWorldStreaming->isStreamingActive() ) {
@@ -383,7 +384,7 @@ void GMLiving::tick( float deltaTime, float totalTime ) {
         switchHouse( spotIndex );
     }
 
-    if ( !bBlockSceneUpdate && bSceneResumeAllowed &&
+    if ( !tradingMenu.isOpen() && bSceneResumeAllowed &&
          gpTestDriveInstance != nullptr ) {
         const eGameMode previousGM = gpTestDriveInstance->getPreviousGameMode();
         if ( previousGM != GM_BootMenu && previousGM != GM_Login &&
@@ -407,7 +408,7 @@ void GMLiving::tick( float deltaTime, float totalTime ) {
 
     sceneLiving.tick( deltaTime, totalTime );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLIVING (FUN_00768a90)
+    tradingMenu.tick( deltaTime );
 
     if ( !bHouseSpotInstalled &&
          sceneLiving.getContent()->getState() == SceneInterior::SIS_Live ) {
@@ -427,7 +428,7 @@ void GMLiving::pause() {
     sceneLiving.suspend();
 
     newsWidget.detach();
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (FUN_00765f80)
+    tradingMenu.detachObservers();
 
     GameModeScene::pause();
 }
@@ -442,7 +443,7 @@ void GMLiving::destroy() {
 
     mngWorld.setDisableStreamingOnCar( false );
 
-    OTDU_UNIMPLEMENTED; // TODO: GMLIVING (FUN_009dc690)
+    tradingMenu.terminate();
 
     sceneLiving.pause();
     sceneLiving.getContent()->setModeActive( false );
@@ -458,6 +459,19 @@ void GMLiving::destroy() {
     pStreaming->setActiveRenderLayers( 1 );
 
     GameModeWorldBase::destroy();
+}
+
+void GMLiving::restartLoopCinematic() {
+    // FUN_007698f0
+    StopActiveForegroundCinematic();
+
+    if ( pCinematicLoop == nullptr ) {
+        return;
+    }
+
+    pCinematicLoop->setGameModeInterface( this );
+    pCinematicLoop->launchSpotCine( sceneLiving.getContent()->getSourceSpot(),
+                                    0.0f );
 }
 
 bool GMLiving::executeAction( int32_t param_2, void *param_3, void *pData ) {
@@ -593,8 +607,7 @@ bool GMLiving::onMessage( FlashMessage *pMessage ) {
         break;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLIVING (ebay)
-
-    return mngCollection.onMessage( pMessage ) ||
+    return tradingMenu.onMessage( pMessage ) ||
+           mngCollection.onMessage( pMessage ) ||
            mngRankings.onMessage( pMessage );
 }

@@ -438,6 +438,100 @@ void MngCollection::BigPhotoDrawCallback( FlashRECT * /*pViewport*/,
                    rect.Height + rect.Y, pResource );
 }
 
+int32_t MngCollection::countPhotos() const {
+    // FUN_006cd1d0
+    return gpFile->countFilesInContext( kPhotoContext, kPhotoPattern );
+}
+
+void MngCollection::scrollPhotoSelector( const int32_t index ) {
+    // FUN_009d1e60
+    if ( selectorIndex == -1 ) {
+        for ( int32_t slot = 0; slot < kNumPhotosPerPage; slot++ ) {
+            if ( slot + index < 64 ) {
+                albumSlots[slot].pMaterial =
+                    albumSlots[slot].Shot.loadFromContext(
+                        kPhotoContext, kPhotoContextDisplay,
+                        selectorPhotoIndices[index] + slot );
+            }
+        }
+    } else if ( index == selectorIndex + 1 ) {
+        albumSlots[0].pMaterial =
+            albumSlots[0].Shot.copyBitmap( albumSlots[1].Shot );
+        albumSlots[1].pMaterial =
+            albumSlots[1].Shot.copyBitmap( albumSlots[2].Shot );
+        albumSlots[2].pMaterial =
+            albumSlots[2].Shot.copyBitmap( albumSlots[3].Shot );
+        albumSlots[3].pMaterial = albumSlots[3].Shot.loadFromContext(
+            kPhotoContext, kPhotoContextDisplay, index + 3 );
+    } else if ( index == selectorIndex - 1 ) {
+        albumSlots[3].pMaterial =
+            albumSlots[3].Shot.copyBitmap( albumSlots[2].Shot );
+        albumSlots[2].pMaterial =
+            albumSlots[2].Shot.copyBitmap( albumSlots[1].Shot );
+        albumSlots[1].pMaterial =
+            albumSlots[1].Shot.copyBitmap( albumSlots[0].Shot );
+        albumSlots[0].pMaterial = albumSlots[0].Shot.loadFromContext(
+            kPhotoContext, kPhotoContextDisplay, index );
+    }
+
+    selectorIndex = index;
+}
+
+Material *MngCollection::grabSelectorPhoto() {
+    // FUN_006cdd40 (inlined)
+    return albumSlots[0].Shot.grabAndGetMaterial();
+}
+
+void MngCollection::SelectorDrawCallback( FlashRECT * /*pViewport*/,
+                                          float /*depth*/,
+                                          DrawList *pDrawList,
+                                          void *pUser,
+                                          FlashResource *pResource,
+                                          const char *pClipName ) {
+    // FUN_009d1930 / FUN_009d17f0
+    MngCollection *pManager = static_cast<MngCollection *>( pUser );
+    if ( pManager == nullptr || pClipName == nullptr ) {
+        return;
+    }
+
+    int32_t slot = -1;
+    for ( int32_t i = 0; i < kNumPhotosPerPage; i++ ) {
+        char clipName[8];
+        snprintf( clipName, sizeof( clipName ), "ph%d", i + 1 );
+        if ( strcmp( pClipName, clipName ) == 0 ) {
+            slot = i;
+            break;
+        }
+    }
+    if ( slot == -1 ) {
+        return;
+    }
+
+    Material *pMaterial = pManager->albumSlots[slot].pMaterial;
+    FlashPlayer *pPlayer = pManager->getFlashPlayer();
+    if ( pMaterial == nullptr || pPlayer == nullptr ) {
+        return;
+    }
+
+    char clipPath[64];
+    snprintf( clipPath, sizeof( clipPath ), "/ss_menu/selector/%s/lurephoto",
+              pClipName );
+
+    FlashClip clip;
+    if ( !pPlayer->getClipPlayer( clipPath, &clip ) ) {
+        return;
+    }
+
+    FlashRECT rect;
+    clip.getPropertyViewport( eFlashProperty::FP_Viewport, rect );
+
+    pDrawList->setActiveMaterial( pMaterial );
+    pDrawList->setDiffuse( 0, 0xffffffffu );
+
+    DrawGaugeQuad( 0.0f, 0.0f, 1.0f, 1.0f, rect.X, rect.Y, rect.Width + rect.X,
+                   rect.Height + rect.Y, pResource );
+}
+
 bool MngCollection::onMessage( FlashMessage *pMessage ) {
     // FUN_009d2ac0
     switch ( *pMessage ) {

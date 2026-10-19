@@ -340,27 +340,6 @@ static DBEntryBrand *FindBrandByHashcode( const uint64_t hashcode ) {
     return nullptr;
 }
 
-static bool BrandHasCarOfCategory( const DBEntryBrand *pBrand,
-                                   const bool bBike ) {
-    // FUN_009aa800 (bBike) / FUN_009aa770 (!bBike)
-    if ( pBrand == nullptr ) {
-        return false;
-    }
-
-    const GameDatabase &gameDB = gpDatabase->getGameDB();
-    const char *pBikeCategory = gpDatabase->getStringByHashcode( 1, 0x35da5b5 );
-    for ( uint32_t i = 0; i < gameDB.pNumItems[1]; i++ ) {
-        const DBEntryCarPhysicsData &car = gameDB.DBCarData[i];
-        if ( car.Brand->BrandID.pAsString != pBrand->BrandID.pAsString ) {
-            continue;
-        }
-        if ( ( pBikeCategory == car.Category.pAsString ) == bBike ) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static inline bool IsSpotHashcode( const SpotMap *pSpot, const char *pName ) {
     return memcmp( &pSpot->Hashcode, pName, sizeof( uint64_t ) ) == 0;
 }
@@ -488,10 +467,10 @@ void GetSpotIconInfo( const SpotMap *pSpot, SpotIconInfo &outInfo ) {
                 outInfo.ChallengeFlags |= GetCarGroupIconFlag( &car );
             }
         }
-        if ( BrandHasCarOfCategory( pBrand, true ) ) {
+        if ( gpDatabase->brandHasCarOfCategory( pBrand, true ) ) {
             outInfo.ChallengeFlags |= 0x100u;
         }
-        if ( BrandHasCarOfCategory( pBrand, false ) ) {
+        if ( gpDatabase->brandHasCarOfCategory( pBrand, false ) ) {
             outInfo.ChallengeFlags |= 0x80u;
         }
     } break;
