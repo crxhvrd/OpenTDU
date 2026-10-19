@@ -847,7 +847,10 @@ void GSAudio::updateReplayPitch() {
     if ( replayState == 5 ) {
         float speedRatio = 1.0f;
         if ( replaySlowDownFactor >= 2 ) {
-            speedRatio = 1.0f / float( replaySlowDownFactor );
+            speedRatio = 1.0f / 1.0f; // float( replaySlowDownFactor ); // TODO:
+                                      // Apparently MSVC is too retarded to
+                                      // statically evaluate the branch and
+                                      // flags a divide by zero here
         } else if ( replaySpeedUpFactor >= 2 ) {
             speedRatio = float( replaySpeedUpFactor );
         }

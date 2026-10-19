@@ -91,7 +91,7 @@ Progress is tracked on a game mode basis:
 | 24| Login|**Done**|
 | 25| OnlineReplay|**In Progress**|
 | 26| Intro|**In Progress**|
-| 27| OutroDemo|**In Progress**|
+| 27| OutroDemo|**Done**|
 | 28| BoatTour|**Done**|
 | 29| Jail|**Done**|
-| 30| IntroDemo|**In Progress**|
+| 30| IntroDemo|**Done**|
