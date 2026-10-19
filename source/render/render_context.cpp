@@ -2248,7 +2248,9 @@ void RenderContext::registerMasterTable() {
     eStack_58.PermutationHashcode = 0xb9bae7f43dafe4f6;
     eStack_58.PermutationFlags.pCustomFlags[0] = '\x01';
     eStack_58.PermutationFlags.pCustomFlags[1] = '\x01';
-    OTDU_ASSERT( retrieveVSPSForFlags( eStack_58, &pDefaultVS, &pDefaultPS ) );
+    bool bFoundDefaultShaders =
+        retrieveVSPSForFlags( eStack_58, &pDefaultVS, &pDefaultPS );
+    OTDU_ASSERT( bFoundDefaultShaders );
 }
 
 void RenderContext::retrieveShadersForMaterial( Material *param_1,

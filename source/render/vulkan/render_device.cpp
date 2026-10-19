@@ -546,8 +546,9 @@ void RenderDevice::initialize() {
 
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        OTDU_ASSERT( vkCreateFence( device, &fenceInfo, nullptr,
-                                    &inFlightFence[i] ) == VK_SUCCESS );
+        VkResult fenceResult =
+            vkCreateFence( device, &fenceInfo, nullptr, &inFlightFence[i] );
+        OTDU_ASSERT( fenceResult == VK_SUCCESS );
     }
 
     framebufferInfos = {};
@@ -2296,8 +2297,9 @@ void RenderDevice::beginScene() {
         VkCommandBufferBeginInfo beginInfo = {};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-        OTDU_ASSERT( vkBeginCommandBuffer( commandBuffer, &beginInfo ) ==
-                     VK_SUCCESS );
+        VkResult beginResult =
+            vkBeginCommandBuffer( commandBuffer, &beginInfo );
+        OTDU_ASSERT( beginResult == VK_SUCCESS );
         bRecordingCommands = true;
 
         if ( bNeedBackbufferClear ) {
@@ -3406,8 +3408,9 @@ void RenderDevice::submitPendingCommandBuffer() {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &frameSubmissionSemaphore[frameIndex];
 
-    OTDU_ASSERT( vkQueueSubmit( queues[0].queue, 1, &submitInfo,
-                                inFlightFence[frameIndex] ) == VK_SUCCESS );
+    VkResult submitResult = vkQueueSubmit( queues[0].queue, 1, &submitInfo,
+                                           inFlightFence[frameIndex] );
+    OTDU_ASSERT( submitResult == VK_SUCCESS );
     commandBuffer = VK_NULL_HANDLE;
 }
 
