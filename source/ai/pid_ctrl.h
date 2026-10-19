@@ -18,6 +18,8 @@ public:
 public:
     inline float getOutput() const { return output; }
     inline float getErrorProportional() const { return errorProportional; }
+    inline float getCurrentValue() const { return currentValue; }
+    inline float getWantedValue() const { return wantedValue; }
     inline void setType( const int32_t newType ) { type = newType; }
 
 public:

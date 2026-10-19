@@ -4,6 +4,7 @@
 #include "flash/gs_flash.h"
 #include "core/arg_parser.h"
 #include "core/color.h"
+#include "debug/ed_debug_text.h"
 
 #include "render/text_renderer.h"
 #include "render/camera/gs_camera.h"
@@ -28,27 +29,6 @@ static CmdLineArg CmdLineArgPOS( "pos", []( const char *pArg ) {
 MngDebugHUD *gpMngDebugHUD = nullptr; // DAT_010e8040
 
 static constexpr uint32_t kLineHeight = 12;
-
-enum eDebugDrawColor {
-    DDC_Black = 0,
-    DDC_Blue = 1,
-    DDC_Red = 2,
-    DDC_Magenta = 3,
-    DDC_Green = 4,
-    DDC_White_NoAlpha = 5,
-    DDC_Yellow = 6,
-    DDC_White = 7,
-};
-
-static ColorRGBA RetrieveDebugTextColor( eDebugDrawColor colorIndex ) {
-    // FUN_0042ec00
-    static const uint32_t gDebugDrawColors[8] = {
-        0xff000000, 0xffff0000, 0xff0000ff, 0xffff00ff,
-        0xff00ff00, 0xffffffff, 0xff00ffff, 0xffffffff,
-    };
-
-    return ColorRGBA( gDebugDrawColors[colorIndex] );
-}
 
 MngDebugHUD::MngDebugHUD()
     : Manager(), pGeneralPlayer( nullptr ), bVisible( false ) {

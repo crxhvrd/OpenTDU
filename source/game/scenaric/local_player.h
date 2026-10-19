@@ -1,10 +1,16 @@
 #pragma once
 
+#include "game/police_state.h"
 #include "game/vehicle/vehicle_base.h"
 
 class CarState;
 class Driver;
 class PlayerCarStateHandler;
+
+class LocalPlayerInfringementCheck : public PoliceStateJob {
+public:
+    void check( class CarState *pCarState, float deltaTime ) override;
+};
 
 class LocalPlayer : public CarStateEventListener {
 public:
@@ -29,6 +35,7 @@ public:
     onEvent( class CarState *param_1, float param_2, void *param_3 ) override;
 
 private:
+    LocalPlayerInfringementCheck checkInfringement;
     int32_t gameID;
     Driver *pDriver;
     CarState *pCarState;

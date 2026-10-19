@@ -206,10 +206,10 @@ static bool ComputeQueueAhead( const AiRoadIt &position,
     return false;
 }
 
-static void ApplyStopRamp( AiVehNavTraffic::StopRamp &stop,
-                           bool &bHandbrake,
-                           float &speed,
-                           const bool bZeroDeltaTime ) {
+void ApplyStopRamp( AiVehNavTraffic::StopRamp &stop,
+                    bool &bHandbrake,
+                    float &speed,
+                    const bool bZeroDeltaTime ) {
     // FUN_0095ae60
     if ( stop.State == 0 ) {
         return;
@@ -465,6 +465,12 @@ void AiVehNavTraffic::detach() {
     // FUN_00939e30
     pContextVehicle = nullptr;
     path.release();
+}
+
+void AiVehNavTraffic::debugDraw( DrawList *pDrawList ) {
+    // FUN_0093b910
+    (void)pDrawList;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: DEBUG
 }
 
 bool AiVehNavTraffic::getTarget( Eigen::Vector4f &outDirection,

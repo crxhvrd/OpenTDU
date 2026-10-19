@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "gs_ai.h"
 
+#include "ai/ai_debug_draw.h"
 #include "ai/ai_debug_race.h"
 #include "ai/ai_path_optimiser.h"
 #include "ai/ai_pool.h"
@@ -38,6 +39,9 @@ static AiPool gAiPool;                         // DAT_01451070
 static AiBotPersonalities gAiBotPersonalities; // DAT_014775a0
 static RandomGen gAiRandom;                    // DAT_00fa9120
 AiLODSorter gAiLODSorter;
+static AiCullingShape gAiCullingShape = { 100.0f,     250.0f,   200.0f,
+                                          kPI / 4.0f, 10000.0f, 62500.0f,
+                                          40000.0f }; // DAT_00fa90a0
 
 GSAI gGSAI; // DAT_013a70d0
 
@@ -67,7 +71,9 @@ GSAI::GSAI()
       bLocationsFromCarState( false ),
       pSignalSyncTime( &gSignalSyncTime ),
       pRace( nullptr ),
-      pPathOptimiser( nullptr ) {
+      pPathOptimiser( nullptr ),
+      pCullingShape( &gAiCullingShape ),
+      pDebugDraw( &gAiDebugDraw ) {
     OTDU_ASSERT( gpAI == nullptr );
     gpAI = this;
     gAiRandom.setSeed( 0x3039 );
@@ -124,7 +130,9 @@ bool GSAI::initialize( TestDriveGameInstance * ) {
     pAIPool->initialize();
     pathPool.initialize( kNumPathNodes, kNumRouteElems );
     roadBuckets.initialize( &roadMap, &gpPhysics->getRoadPhantomManager() );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: debug render list, AiTrainer
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: culling shape +0x64 array (FUN_0040b990)
+                             // and +0x70 = -1
+    pDebugDraw->createBackground();
     pathSolver.initialize( &pathPool );
     floodSolver.initialize( &pathPool );
     OTDU_UNIMPLEMENTED_ONCE; // TODO: AiCopMng
@@ -161,7 +169,7 @@ void GSAI::tick( float totalTime, float deltaTime ) {
     }
 
     pAIPool->tick( dt, totalTime );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: debug overlay (FUN_00975a10), AiTrainer
+    TickAiDebugOverlay( dt, totalTime );
     gGameObjectDico.updateLocations( dt, false );
     pSimBubble->tick( dt, totalTime );
     gAiDebugRace.tick();
@@ -176,12 +184,22 @@ void GSAI::tick( float totalTime, float deltaTime ) {
     }
 }
 
+void GSAI::draw( float deltaTime ) {
+    // FUN_00969260
+    (void)deltaTime;
+    if ( bRoadMapLoaded ) {
+        SubmitAiDebugDrawLists();
+    }
+}
+
 void GSAI::terminate() {
     if ( pPathOptimiser != nullptr ) {
         pPathOptimiser->release();
         pPathOptimiser = nullptr;
     }
     pedestrianManager.terminate();
+    pDebugDraw->release();
+    pDebugDraw->releaseBackground();
     roadBuckets.terminate();
 }
 
@@ -449,6 +467,42 @@ void GSAI::drawDebug( float deltaTime ) {
 
     gAiDebugRace.drawDebug();
 
+    if ( ImGui::TreeNode( "Debug overlay" ) ) {
+        ImGui::Checkbox( "Enable 3D overlay", &gDistributionZoneDebugDraw );
+        ImGui::Checkbox( "Road map", &gDisplayRoadMap );
+        ImGui::SameLine();
+        ImGui::Checkbox( "Traffic lights", &gDisplayTrafficLights );
+        ImGui::Checkbox( "Sim bubble", &gDisplaySimBubble );
+        ImGui::SameLine();
+        ImGui::Checkbox( "Culling shapes", &gDisplayCullingShapes );
+        ImGui::SliderFloat( "Bound box width", &gBoundBoxWidth, 100.0f,
+                            5000.0f );
+        ImGui::RadioButton( "No vehicle state", &gDebugAiVehicleState, 0 );
+        ImGui::SameLine();
+        ImGui::RadioButton( "Player road frame", &gDebugAiVehicleState, 4 );
+        ImGui::Checkbox( "Junction IDs", &gDisplayJunctionsID );
+        ImGui::SameLine();
+        ImGui::Checkbox( "Entity names", &gDisplayEntitiesNames );
+        ImGui::Checkbox( "PID steer graph", &gTogglePIDSteerGraph );
+        ImGui::SameLine();
+        ImGui::Checkbox( "PID speed graph", &gTogglePIDSpeedGraph );
+        ImGui::SameLine();
+        ImGui::Checkbox( "Speed graph", &gToggleSpeedGraph );
+        ImGui::Checkbox( "Debug page", &gbAiDebugPageOpen );
+        static const char *kDebugPageNames[] = {
+            "None",      "Memory / counts", "Path optim",   "Police",
+            "Templates", "Sim bubble",      "Net (online)", "Removed vehicles",
+        };
+        ImGui::Combo( "Page", &gAiDebugPage, kDebugPageNames,
+                      IM_ARRAYSIZE( kDebugPageNames ) );
+        if ( ImGui::Button( "Next handmade junction" ) ) {
+            SelectNextHandmadeJunction();
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox( "Flush instanciation", &gFlushInstanciation );
+        ImGui::TreePop();
+    }
+
     if ( ImGui::TreeNode( "Templates" ) ) {
         ImGui::Text( "#   ID  L C #I #USE #TOT RATE" );
         for ( int32_t i = 0; i < traffic.getNumTotalTemplates(); i++ ) {
@@ -463,10 +517,19 @@ void GSAI::drawDebug( float deltaTime ) {
     }
 
     if ( ImGui::TreeNode( "Vehicles" ) ) {
+        if ( ImGui::Button( "Stop debugging vehicle" ) ) {
+            SetDebuggedAiVehicle( nullptr );
+        }
         for ( AiVehicle *pVehicle : pAIPool->getVehicles() ) {
             CarState *pCarState = pVehicle->getCarState();
             const Eigen::Vector4f position =
                 pVehicle->getInfos().GroundMatrix.row( 3 );
+            ImGui::PushID( pVehicle );
+            if ( ImGui::SmallButton( "Debug" ) ) {
+                SetDebuggedAiVehicle( pVehicle );
+            }
+            ImGui::PopID();
+            ImGui::SameLine();
             ImGui::Text( "slot %d car %d cat %d | %.1f %.1f %.1f | %s",
                          pVehicle->getCarStateIndex(),
                          pCarState ? pCarState->getCarID() : -1,

@@ -12,11 +12,23 @@
 #include "ai/ai_road_map.h"
 #include "ai/ai_sim_bubble.h"
 
+struct AiDebugDraw;
 class AiPathOptimiser;
 class AiPool;
 struct AiLODSorter;
 class Bank;
 class RandomGen;
+
+// DAT_00fa90a0
+struct AiCullingShape {
+    float FirstRadius;
+    float SecondRadius;
+    float FovDistance;
+    float FovHalfAngle;
+    float FirstRadiusSq;
+    float SecondRadiusSq;
+    float FovDistanceSq;
+};
 
 class GSAI : public GameSystem {
 public:
@@ -57,6 +69,10 @@ public:
     inline RandomGen &getRandom() const { return *pRandom; }
     inline AiRaceDescriptor *getRace() const { return pRace; }
     inline void setRace( AiRaceDescriptor *pNewRace ) { pRace = pNewRace; }
+    inline AiDebugDraw *getDebugDraw() const { return pDebugDraw; }
+    inline const AiCullingShape &getCullingShape() const {
+        return *pCullingShape;
+    }
 
 public:
     GSAI();
@@ -64,6 +80,7 @@ public:
 
     bool initialize( TestDriveGameInstance * ) override;
     void tick( float totalTime, float deltaTime ) override;
+    void draw( float deltaTime ) override;
     void terminate() override;
     void pause() override;
     void reset() override;
@@ -109,6 +126,8 @@ private:
     float *pSignalSyncTime;
     AiRaceDescriptor *pRace;
     AiPathOptimiser *pPathOptimiser;
+    AiCullingShape *pCullingShape;
+    AiDebugDraw *pDebugDraw;
 };
 
 // Returns the traffic signal bulb mask (red 0x1, orange 0x2, green 0x4).

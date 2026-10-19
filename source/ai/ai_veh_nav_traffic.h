@@ -5,6 +5,7 @@
 #include "ai/ai_road_iterator.h"
 
 class AiVehicle;
+class DrawList;
 class GameObject;
 struct AiVehSignals;
 
@@ -18,6 +19,7 @@ public:
     virtual void reset( const bool bFull ) = 0;
     virtual void tick( const float deltaTime, const float totalTime ) = 0;
     virtual void detach() = 0;
+    virtual void debugDraw( DrawList *pDrawList ) {}
     virtual bool getTarget( Eigen::Vector4f &outDirection,
                             float &outSpeed ) const = 0;
     virtual void getHeightAndTwist( float &outHeight,
@@ -79,6 +81,7 @@ public:
     void reset( const bool bFull ) override;
     void tick( const float deltaTime, const float totalTime ) override;
     void detach() override;
+    void debugDraw( DrawList *pDrawList ) override;
     bool getTarget( Eigen::Vector4f &outDirection,
                     float &outSpeed ) const override;
     void getHeightAndTwist( float &outHeight, float &outTwist ) const override;
@@ -177,3 +180,8 @@ private:
                      const float rangeMax ) const;
     int32_t computeCurrentLane() const;
 };
+
+void ApplyStopRamp( AiVehNavTraffic::StopRamp &stop,
+                    bool &bHandbrake,
+                    float &speed,
+                    const bool bZeroDeltaTime );

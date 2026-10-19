@@ -105,6 +105,12 @@ void DebugGraphCurve::computeRange( float &min, float &max ) const {
     }
 }
 
+void DebugGraphCurve::setName( const char *pName ) {
+    // FUN_006dce60
+    strncpy( Name, pName, sizeof( Name ) );
+    Name[sizeof( Name ) - 1] = '\0';
+}
+
 void DebugGraphCurve::draw( DrawList *pDrawList,
                             const float left,
                             const float right,
@@ -224,6 +230,33 @@ bool DebugGraph::create( const int32_t numCurves,
 void DebugGraph::release() {
     // FUN_006dd550
     curves.clear();
+}
+
+void DebugGraph::clear() {
+    // FUN_006dcd80
+    for ( DebugGraphCurve &curve : curves ) {
+        curve.Tail = curve.Head;
+        curve.NumPoints = 0;
+    }
+}
+
+void DebugGraph::setAutoRange( const bool bEnabled ) {
+    // FUN_006dd4d0
+    for ( DebugGraphCurve &curve : curves ) {
+        if ( curve.bAutoRange == bEnabled ) {
+            continue;
+        }
+
+        curve.bAutoRange = bEnabled;
+        if ( !bEnabled ) {
+            continue;
+        }
+
+        curve.computeRange( curve.MinY, curve.MaxY );
+        if ( curve.MaxY <= curve.MinY ) {
+            curve.MaxY = curve.MinY + kMinRange;
+        }
+    }
 }
 
 void DebugGraph::autoScale() {

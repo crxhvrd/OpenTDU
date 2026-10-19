@@ -7,6 +7,7 @@
 
 class AiVehicle;
 class CarState;
+class DrawList;
 
 // Feeds the navigation with the roads to drive on
 class AiVehController {
@@ -17,6 +18,7 @@ public:
     virtual void reset( const bool bFull ) = 0;
     virtual void tick( const float deltaTime, const float totalTime ) = 0;
     virtual void release() = 0;
+    virtual void debugDraw( DrawList *pDrawList ) {}
     virtual bool getFront( AiRoadIt &outFrom, AiRoadIt &outTo ) const = 0;
     virtual bool getSecond( AiRoadIt &outFrom, AiRoadIt &outTo ) const = 0;
     virtual int32_t getCount() const = 0;
@@ -169,6 +171,7 @@ public:
     void reset( const bool bFull ) override;
     void tick( const float deltaTime, const float totalTime ) override;
     void release() override;
+    void debugDraw( DrawList *pDrawList ) override;
     bool getFront( AiRoadIt &outFrom, AiRoadIt &outTo ) const override;
     bool getSecond( AiRoadIt &outFrom, AiRoadIt &outTo ) const override;
     int32_t getCount() const override;
@@ -200,6 +203,8 @@ private:
     AiRoadIt targetIt;
     AiRoadIt goalIt;
     AiRoadIt vehicleIt;
+    Eigen::Vector4f debugLineStart;
+    Eigen::Vector4f debugLineEnd;
 
 private:
     bool handle( const int32_t event, const int32_t state ) override;

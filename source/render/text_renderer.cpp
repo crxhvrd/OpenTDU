@@ -262,6 +262,13 @@ void TextRenderer::submitCommands() {
     static constexpr uint32_t kBufferVertexCapacity =
         96000 / kGlyphVertexStride;
 
+    Viewport textViewport;
+    textViewport.Width = static_cast<float>( gpRender->getWidth() );
+    textViewport.Height = static_cast<float>( gpRender->getHeight() );
+    textViewport.Flags = 0;
+    textViewport.bNativeViewport = true;
+    gEdRender.pRenderDevice->setViewport( textViewport );
+
     uint32_t vertexOffset = 0;
     for ( uint32_t i = 0; i < numDrawCommands; i++ ) {
         const DrawCommand &cmd = drawCommands[i];
@@ -336,7 +343,7 @@ uint32_t TextRenderer::submitDrawCommand( float originX,
     pPS->bind();
 
     float scale[4] = { 2.0f / (float)gpRender->getWidth(),
-                       -2.0f / (float)gpRender->getHeight(), -1.0f, 1.0f };
+                       2.0f / (float)gpRender->getHeight(), -1.0f, -1.0f };
     gEdRender.pRenderDevice->setFloatConstants( eShaderType::ST_Vertex, scale,
                                                 225, 1 );
 

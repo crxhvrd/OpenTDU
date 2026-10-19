@@ -476,6 +476,12 @@ void AiVehNavOpponent::detach() {
     builder.detach();
 }
 
+void AiVehNavOpponent::debugDraw( DrawList *pDrawList ) {
+    // FUN_00957750
+    (void)pDrawList;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: DEBUG
+}
+
 bool AiVehNavOpponent::getTarget( Eigen::Vector4f &outDirection,
                                   float &outSpeed ) const {
     // FUN_00953bd0

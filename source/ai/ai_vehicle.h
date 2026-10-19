@@ -7,12 +7,14 @@
 #include "ai/ai_veh_locomotion.h"
 #include "ai/ai_veh_nav_opponent.h"
 #include "ai/ai_veh_nav_traffic.h"
+#include "ai/ai_veh_nav_trainer.h"
 #include "core/random/bcpl.h"
 #include "game/vehicle/vehicle_base.h"
 
 #include "ai/ai_pool_traffic.h"
 
 class CarState;
+class DrawList;
 class GameObject;
 struct ObjectWorldLocation;
 
@@ -88,7 +90,7 @@ struct AiVehSignals {
     void apply();
 };
 
-class AiVehicle : public CarStateEventListener {
+class AiVehicle final : public CarStateEventListener {
 public:
     static constexpr int32_t kRemovalReasonLength = 0x80;
     static constexpr int32_t kLocomotionNone = 3;
@@ -141,6 +143,12 @@ public:
                                   const float speedTo,
                                   const float slope ) const;
     int32_t computeCurrentLane() const;
+    void getAxleSlipRatios( float &outRear,
+                            float &outFront,
+                            float &outMaxSlip ) const;
+    bool isOverSteering() const;
+    bool isUnderSteering() const;
+    bool isFullSliding() const;
     float findClosestObstacle( GameObject **ppOutObstacle ) const;
     float computeSphereContactTime( GameObject *pObject ) const;
     float computeRoadContactTime( GameObject *pObject ) const;
@@ -163,6 +171,17 @@ public:
     void assignBotPersonality( const int32_t botIndex );
     inline AiVehLocoParked &getParkedLocomotion() { return locoParked; }
     inline AiVehNavOpponent &getOpponentNavigation() { return navOpponent; }
+    inline AiVehNavTrainer &getTrainerNavigation() { return navTrainer; }
+    inline const AiVehLocoTraffic &getTrafficLocomotion() const {
+        return locoTraffic;
+    }
+    inline const AiVehLocoOpponent &getOpponentLocomotion() const {
+        return locoOpponent;
+    }
+    inline const AiVehNavTraffic &getTrafficNavigation() const {
+        return navTraffic;
+    }
+    inline float getFadeInEndTime() const { return fadeInEndTime; }
     inline AiVehCtrlChase &getChaseController() { return ctrlChase; }
     inline AiVehBhvOpponent &getOpponentBehaviour() { return bhvOpponent; }
     inline AiVehBhvBot &getBotBehaviour() { return bhvBot; }
@@ -186,6 +205,7 @@ public:
                      const bool bKeepPhysics );
     void release();
     void tick( const float deltaTime, const float totalTime );
+    void debugDraw( DrawList *pDrawList );
     void requestRemoval( const float delay, const char *pReason );
     void setController( const int32_t type );
     void detachCarState();
@@ -211,6 +231,7 @@ private:
     int32_t locoType;
     AiVehNavTraffic navTraffic;
     AiVehNavOpponent navOpponent;
+    AiVehNavTrainer navTrainer;
     AiVehNavigation *pNav;
     int32_t navType;
     AiVehCtrlChase ctrlChase;
@@ -249,6 +270,7 @@ private:
     void setBehaviour( const int32_t type );
     void updateFade( const float totalTime );
     void updateFlashFade();
+    void drawNetPositionBox( DrawList *pDrawList );
 };
 
 bool IsLocallyOwned( CarState *pCarState );

@@ -800,6 +800,21 @@ void Bank::DecryptTEA( void *pBankData,
 #endif
 }
 
+void Bank::EncryptTEA( void *pBankData, const uint32_t bankSize ) {
+    OTDU_ASSERT( pBankData );
+
+    uint32_t *pBankDataAsDword = static_cast<uint32_t *>( pBankData );
+    const uint32_t numBlocks = ( bankSize - 8 ) >> 3;
+    for ( uint32_t i = numBlocks; i > 0; i-- ) {
+        uint32_t *pBlock = pBankDataAsDword + ( i - 1 ) * 2;
+        uint32_t keyStream[2] = { 0, 0 };
+        TestDriveTEADecrypt( keyStream, pBlock + 2, kTEAKeysBank );
+
+        pBlock[0] ^= keyStream[0];
+        pBlock[1] ^= keyStream[1];
+    }
+}
+
 void *Bank::getFirstEntry( const eAssetGroup type,
                            const eAssetType subType,
                            uint32_t *pOutEntrySize ) {

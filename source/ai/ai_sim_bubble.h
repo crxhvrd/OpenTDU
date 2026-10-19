@@ -32,6 +32,18 @@ public:
     inline int32_t getNumCandidates() const {
         return static_cast<int32_t>( candidates.size() );
     }
+    inline const std::vector<Candidate> &getCandidates() const {
+        return candidates;
+    }
+    inline float getMaxWeight() const { return maxWeight; }
+    inline float getMinWeight() const { return minWeight; }
+    inline float getAltWeightSum() const { return altWeightSum; }
+    inline float getRoadLengthInside() const { return roadLengthInside; }
+    inline float getZoneWeight( const int32_t index ) const {
+        return zoneWeights[index];
+    }
+    inline int32_t getNumTraffic() const { return numTraffic; }
+    inline int32_t getNumVisibleHits() const { return numVisibleHits; }
     inline int32_t getTargetTraffic() const { return targetTraffic; }
     inline int32_t getTargetVisible() const { return targetVisible; }
     inline float getLaneLengthInside() const { return laneLengthInside; }

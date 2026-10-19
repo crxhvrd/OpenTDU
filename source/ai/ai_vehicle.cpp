@@ -3,6 +3,7 @@
 
 #include "ai/ai_bot_manager.h"
 #include "ai/ai_config.h"
+#include "ai/ai_debug_draw.h"
 #include "ai/ai_oriented_box.h"
 #include "ai/ai_road_buckets.h"
 #include "ai/ai_road_shape.h"
@@ -192,6 +193,7 @@ AiVehicle::AiVehicle()
       locoType( kLocomotionNone ),
       navTraffic(),
       navOpponent(),
+      navTrainer(),
       pNav( nullptr ),
       navType( kNavigationNone ),
       ctrlChase(),
@@ -221,8 +223,8 @@ AiVehicle::AiVehicle()
       random(),
       removalReason{} {
     // FUN_00926690
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
     random.setSeed( 0x3039 );
-    OTDU_UNIMPLEMENTED;
 }
 
 bool AiVehicle::isPhysicsDriven() const {
@@ -311,6 +313,94 @@ float AiVehicle::computeBrakingDistance( const float speedFrom,
     return ComputeBrakingDistance( infos.BrakingDistC1, infos.BrakingDistC2,
                                    speedFrom, speedTo, slope ) *
            dpc.BrakingDistanceFactor * kBrakingDistanceScale;
+}
+
+void AiVehicle::getAxleSlipRatios( float &outRear,
+                                   float &outFront,
+                                   float &outMaxSlip ) const {
+    // FUN_00923d80
+    PhysicsVehicle *pPhysics =
+        ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+    const int32_t numWheels =
+        ( pPhysics != nullptr )
+            ? static_cast<int32_t>( pPhysics->getNumWheels() )
+            : 0;
+    if ( numWheels < 1 ) {
+        outRear = 0.0f;
+        outFront = 0.0f;
+        outMaxSlip = 0.0f;
+        return;
+    }
+
+    const int32_t quarter = numWheels / 4;
+    const int32_t shift = numWheels / 2 - 1;
+    const PhysicsWheelState &frontA =
+        pPhysics->getWheelState( quarter + ( 0 << shift ) );
+    const PhysicsWheelState &frontB = pPhysics->getWheelState( 0 << shift );
+    const PhysicsWheelState &rearA =
+        pPhysics->getWheelState( quarter + ( 1 << shift ) );
+    const PhysicsWheelState &rearB = pPhysics->getWheelState( 1 << shift );
+
+    const float frontVelLong =
+        ( frontA.ContactVelLong + frontB.ContactVelLong ) * 0.5f;
+    const float rearVelLong =
+        ( rearA.ContactVelLong + rearB.ContactVelLong ) * 0.5f;
+    outFront = ( frontA.ContactVelLat + frontB.ContactVelLat ) * 5.0f;
+    outRear = ( rearA.ContactVelLat + rearB.ContactVelLat ) * 5.0f;
+    if ( frontVelLong > 0.1f ) {
+        outFront /= frontVelLong;
+    }
+    if ( rearVelLong > 0.1f ) {
+        outRear /= rearVelLong;
+    }
+
+    const float slipFrontB = fabsf( frontB.NormLongClamped );
+    const float slipFrontA = fabsf( frontA.NormLongClamped );
+    const float slipRearB = fabsf( rearB.NormLongClamped );
+    const float slipRearA = fabsf( rearA.NormLongClamped );
+    if ( slipFrontB > slipFrontA && slipFrontB > slipRearB &&
+         slipFrontB > slipRearA ) {
+        outMaxSlip = frontB.NormLongClamped;
+    } else if ( slipFrontA > slipRearB && slipFrontA > slipRearA ) {
+        outMaxSlip = frontA.NormLongClamped;
+    } else if ( slipRearB > slipRearA ) {
+        outMaxSlip = rearB.NormLongClamped;
+    } else {
+        outMaxSlip = rearA.NormLongClamped;
+    }
+}
+
+bool AiVehicle::isOverSteering() const {
+    // FUN_00923f90
+    float rear = 0.0f;
+    float front = 0.0f;
+    float maxSlip = 0.0f;
+    getAxleSlipRatios( rear, front, maxSlip );
+    if ( ( rear > 0.0f && front > 0.0f ) || ( rear < 0.0f && front < 0.0f ) ) {
+        return fabsf( rear ) > fabsf( front ) && fabsf( rear ) > 1.0f;
+    }
+    return fabsf( rear ) > 1.0f && fabsf( front ) > 1.0f;
+}
+
+bool AiVehicle::isUnderSteering() const {
+    // FUN_00924030
+    float rear = 0.0f;
+    float front = 0.0f;
+    float maxSlip = 0.0f;
+    getAxleSlipRatios( rear, front, maxSlip );
+    if ( ( rear > 0.0f && front > 0.0f ) || ( rear < 0.0f && front < 0.0f ) ) {
+        return fabsf( front ) > fabsf( rear ) && fabsf( front ) > 1.0f;
+    }
+    return false;
+}
+
+bool AiVehicle::isFullSliding() const {
+    // FUN_009240b0
+    float rear = 0.0f;
+    float front = 0.0f;
+    float maxSlip = 0.0f;
+    getAxleSlipRatios( rear, front, maxSlip );
+    return ( rear > 1.0f && front > 1.0f ) || ( rear < -1.0f && front < -1.0f );
 }
 
 int32_t AiVehicle::computeCurrentLane() const {
@@ -1118,6 +1208,8 @@ void AiVehicle::setNavigation( const int32_t type ) {
 
     if ( type == 1 ) {
         pNav = &navOpponent;
+    } else if ( type == 3 ) {
+        pNav = &navTrainer;
     } else {
         if ( type != 0 ) {
             OTDU_UNIMPLEMENTED_ONCE;
@@ -1416,6 +1508,39 @@ void AiVehicle::tick( const float deltaTime, const float totalTime ) {
     if ( pLoco != nullptr ) {
         pLoco->tick( deltaTime, totalTime );
     }
+    // TODO: ONLINE - feed the net interpolation slot (+0x2308, GSAI+0x1398
+    // pool, allocated by the network update FUN_00927a10) with the ground
+    // matrix and centre (FUN_00924530 + FUN_00921a20)
+}
+
+void AiVehicle::debugDraw( DrawList *pDrawList ) {
+    // FUN_00925940
+    drawNetPositionBox( pDrawList );
+    if ( pBehaviour != nullptr ) {
+        pBehaviour->debugDraw( pDrawList );
+    }
+    if ( pController != nullptr ) {
+        pController->debugDraw( pDrawList );
+    }
+    if ( pNav != nullptr ) {
+        pNav->debugDraw( pDrawList );
+    }
+    if ( pLoco != nullptr ) {
+        pLoco->debugDraw( pDrawList );
+    }
+}
+
+void AiVehicle::drawNetPositionBox( DrawList *pDrawList ) {
+    // FUN_00925890
+    const bool bInOnlineSession = false; // TODO: ONLINE (gpCP2PGameService)
+    if ( !bInOnlineSession || pCarState == nullptr ) {
+        return;
+    }
+
+    Eigen::Vector3f extents = pCarState->getDimensions().head<3>();
+    Matrix4x4f_t matrix = MakeScaleMatrix( extents ) * infos.GroundMatrix;
+    matrix.row( 3 ) = infos.NetPos.transpose();
+    DrawDebugBox( matrix, 0xff00ffff, *pDrawList, 2 );
 }
 
 void AiVehicle::updateFade( const float totalTime ) {

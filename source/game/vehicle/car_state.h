@@ -210,8 +210,15 @@ public:
         CSAM_InstantChallengePostLobby = 8
     };
 
-    using OnCollisionCallback_t =
-        std::function<void( uint32_t, CarState *, DynamicRigidBody *, void * )>;
+    using CollisionCallback_t = void ( * )( uint8_t collisionType,
+                                            CarState *pOther,
+                                            void *pOtherObject,
+                                            void *pUserData );
+
+    struct CollisionCallback {
+        CollisionCallback_t pCallback;
+        void *pUserData;
+    };
 
 public:
     inline int32_t getCarID() const { return carID; }
@@ -283,6 +290,10 @@ public:
     void updateBackOnTrack( float deltaTime );
     void computeBackOnTrackPose( const int32_t mode );
     void resolveCollisionEvents();
+    void addCollisionCallback( CollisionCallback_t pCallback, void *pUserData );
+    void removeCollisionCallback( CollisionCallback_t pCallback );
+    bool hasCollisionCallback( CollisionCallback_t pCallback,
+                               void *pUserData ) const;
 
     void updateGroundColor();
     void openConvertibleWindows();
@@ -336,8 +347,7 @@ private:
     void *field_0x39d4;
     void *field_0x39d8;
     void *field_0x39e0;
-    void *field_0x39e4;
-    void *field_0x39ec;
+    std::array<CollisionCallback, 2> collisionCallbacks;
     void *field_0x39fc;
 
     uint8_t bInstanceAlive : 1;

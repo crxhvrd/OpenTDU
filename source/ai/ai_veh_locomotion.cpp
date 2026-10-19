@@ -2,6 +2,7 @@
 #include "ai_veh_locomotion.h"
 
 #include "ai/ai_config.h"
+#include "ai/ai_debug_draw.h"
 #include "ai/ai_vehicle.h"
 #include "core/maths_helper.h"
 #include "game/game_object.h"
@@ -17,6 +18,7 @@ static constexpr float kBlockedSpeedThreshold = 0.1f;       // DAT_00f41668
 static constexpr float kBlockedTargetSpeedThreshold = 0.2f; // DAT_00f41730
 static constexpr float kDefaultSmoothSteerCoef = 0.2f;      // DAT_00f41730
 static constexpr float kMaxPhysicsDistanceSq = 63999900.0f; // DAT_00f41cac
+static constexpr float kKinematicCrossHalfSize = 0.2f;      // DAT_00faa95c
 
 static constexpr float kTwoOverPi = 0.63661975f;         // DAT_00f41a30
 static constexpr float kSpeedNormalization = 0.025f;     // DAT_00f41734
@@ -163,6 +165,37 @@ void AiVehLocomotion::detach() {
         PhysicsLock lock;
         pPhysics->setDrivingControl( nullptr );
     }
+}
+
+void AiVehLocomotion::debugDraw( DrawList *pDrawList ) {
+    // FUN_00937ff0
+    static constexpr float kDirectionHeight = 2.0f;
+    static constexpr uint32_t kKinematicCrossColor = 0xff0000ff; // DAT_016a7fcc
+
+    if ( isPhysicsDriven() ) {
+        const AiVehicleInfo &infos = pVehicle->getInfos();
+        const Eigen::Vector4f base =
+            infos.GroundMatrix.row( 3 ).transpose() +
+            Eigen::Vector4f( 0.0f, kDirectionHeight, 0.0f, 0.0f ) -
+            GetShiftWorldPosition();
+        const Eigen::Vector4f forward =
+            base + infos.GroundMatrix.row( 2 ).transpose();
+        const Eigen::Vector4f target = base + targetDirection;
+        DrawDebugLine( base, forward, 0xff0000ff, *pDrawList );
+        DrawDebugLine( base, target, 0xff00ff00, *pDrawList );
+        return;
+    }
+
+    const Eigen::Vector4f center = groupPosNew - GetShiftWorldPosition();
+    const Eigen::Vector4f axisX( kKinematicCrossHalfSize, 0.0f, 0.0f, 0.0f );
+    const Eigen::Vector4f axisZ( 0.0f, 0.0f, kKinematicCrossHalfSize, 0.0f );
+    DrawDebugLine( center - axisX, center + axisX, kKinematicCrossColor,
+                   *pDrawList );
+    // sic: X axis drawn twice (Y was likely intended)
+    DrawDebugLine( center - axisX, center + axisX, kKinematicCrossColor,
+                   *pDrawList );
+    DrawDebugLine( center - axisZ, center + axisZ, kKinematicCrossColor,
+                   *pDrawList );
 }
 
 void AiVehLocomotion::setPhysicsActive( const bool bActive,
@@ -830,6 +863,11 @@ void AiVehLocoParked::detach() {
         pOwnerEntity = nullptr;
     }
     AiVehLocomotion::detach();
+}
+
+void AiVehLocoParked::debugDraw( DrawList *pDrawList ) {
+    // FUN_009372b0
+    (void)pDrawList;
 }
 
 void AiVehLocoParked::forwardInput( PhysicsVehicle &vehicle, float deltaTime ) {

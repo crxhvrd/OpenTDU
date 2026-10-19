@@ -36,13 +36,21 @@ static inline float GetMouseAxis( Device *pMouse, const char *pChannelName ) {
     return ( FLOAT_00fab2c8 <= fabsf( value ) ) ? value : 0.0f;
 }
 
+static inline const float *GetTargetPhysPosition() {
+    PhysicsVehicle *pTarget = gpCamera->getTargetPhysEntity();
+    if ( pTarget == nullptr ) {
+        return nullptr;
+    }
+    return pTarget->getPhysicsMatrix().row( 3 ).data();
+}
+
 CameraFocusObject::CameraFocusObject()
     : CameraGame(),
       mouseIndex( -1 ),
       offset( Eigen::Vector4f::Zero() ),
       angle( Eigen::Vector4f::Zero() ),
       distance( FLOAT_00f4166c ),
-      pObject( nullptr ) {
+      pObjectPosition( nullptr ) {
     // FUN_00411e70
 }
 
@@ -52,7 +60,7 @@ void CameraFocusObject::initialize() {
     // FUN_008de330
     offset = Eigen::Vector4f::Zero();
     angle = Eigen::Vector4f::Zero();
-    pObject = gpCamera->getTargetPhysEntity();
+    pObjectPosition = GetTargetPhysPosition();
 }
 
 bool CameraFocusObject::tick( float deltaTime, bool param_1, bool param_2 ) {
@@ -61,9 +69,9 @@ bool CameraFocusObject::tick( float deltaTime, bool param_1, bool param_2 ) {
         deltaTime = DAT_00f417f0;
     }
 
-    if ( pObject == nullptr ) {
-        pObject = gpCamera->getTargetPhysEntity();
-        if ( pObject == nullptr ) {
+    if ( pObjectPosition == nullptr ) {
+        pObjectPosition = GetTargetPhysPosition();
+        if ( pObjectPosition == nullptr ) {
             return false;
         }
     }
@@ -74,9 +82,8 @@ bool CameraFocusObject::tick( float deltaTime, bool param_1, bool param_2 ) {
     Eigen::Vector4f direction =
         TDUMat4x4MulVec( rotation, Eigen::Vector4f( 0.0f, 0.0f, 1.0f, 0.0f ) );
 
-    Eigen::Vector4f objectPosition =
-        pObject->getChassisShiftedMatrix().row( 3 ).transpose();
-    objectPosition.w() = 1.0f;
+    const Eigen::Vector4f objectPosition =
+        Eigen::Map<const Eigen::Vector4f>( pObjectPosition );
 
     Eigen::Vector4f focusPoint = objectPosition + offset;
     setTargetOffseted( focusPoint );

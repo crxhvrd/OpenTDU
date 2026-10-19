@@ -296,23 +296,22 @@ void GameMode::drawLoadingScreen() {
     while ( true ) {
         bool bVar12 =
             gpFlash->getFlashMovieIndex( &local_18, &local_14, "GENERAL" );
-        if ( bVar12 ) {
-            MoviePlayer *pMVar13 =
-                gpFlash->getMoviePlayer( local_18, local_14 );
-            if ( pMVar13 != nullptr && pMVar13->MovieBank.isLoaded() &&
-                 pMVar13->MovieBank.getFlashPlayer() != nullptr ) {
-                bVar12 = gpFlash->getFlashMovieIndex( &local_10, &local_c,
-                                                      "GENERAL" );
-                if ( bVar12 ) {
-                    pMVar13 = gpFlash->getMoviePlayer( local_10, local_c );
-                    peVar15 = ( ( pMVar13 == nullptr ||
-                                  !pMVar13->MovieBank.isLoaded() )
-                                    ? nullptr
-                                    : pMVar13->MovieBank.getFlashPlayer() );
-                } else {
-                    peVar15 = nullptr;
-                }
+        MoviePlayer *pMVar13 =
+            bVar12 ? gpFlash->getMoviePlayer( local_18, local_14 ) : nullptr;
+        if ( pMVar13 != nullptr && pMVar13->MovieBank.isLoaded() &&
+             pMVar13->MovieBank.getFlashPlayer() != nullptr ) {
+            bVar12 =
+                gpFlash->getFlashMovieIndex( &local_10, &local_c, "GENERAL" );
+            if ( bVar12 ) {
+                pMVar13 = gpFlash->getMoviePlayer( local_10, local_c );
+                peVar15 =
+                    ( ( pMVar13 == nullptr || !pMVar13->MovieBank.isLoaded() )
+                          ? nullptr
+                          : pMVar13->MovieBank.getFlashPlayer() );
+            } else {
+                peVar15 = nullptr;
             }
+
             {
                 ScopedMutexLock lock = gpFlash->scopedLock();
 

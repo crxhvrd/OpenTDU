@@ -102,6 +102,7 @@ public:
                            void *pData );
     void unregisterCallback( CarState *param_2,
                              CarStateEventListener *pListener );
+    void setPoliceStateJob( CarState *pCarState, PoliceStateJob *pJob );
 
     void releaseResourceEntry( VehicleBaseResources *pResource );
     void releaseCarState( CarState *param_2, bool param_3 );

@@ -54,8 +54,7 @@ CarState::CarState()
       field_0x39d4( nullptr ),
       field_0x39d8( nullptr ),
       field_0x39e0( nullptr ),
-      field_0x39e4( nullptr ),
-      field_0x39ec( nullptr ),
+      collisionCallbacks{},
       field_0x39fc( nullptr ),
       bInstanceAlive( false ),
       bIsIndoor( false ),
@@ -139,8 +138,8 @@ void CarState::resetBackOnTrack() {
 void CarState::reset() {
     // FUN_008af040
     policeState.reset();
-    field_0x39e4 = nullptr;
-    field_0x39ec = nullptr;
+    collisionCallbacks[0].pCallback = nullptr;
+    collisionCallbacks[1].pCallback = nullptr;
     body.reset();
     for ( WheelState &wheelState : wheels ) {
         wheelState.reset();
@@ -604,6 +603,45 @@ void CarState::resolveCollisionEvents() {
 
         OTDU_UNIMPLEMENTED_ONCE; // TODO: Police
     }
+}
+
+void CarState::addCollisionCallback( CollisionCallback_t pCallback,
+                                     void *pUserData ) {
+    // FUN_008ae530
+    for ( CollisionCallback &slot : collisionCallbacks ) {
+        if ( slot.pCallback == nullptr ) {
+            slot.pCallback = pCallback;
+            slot.pUserData = pUserData;
+            return;
+        }
+    }
+    for ( CollisionCallback &slot : collisionCallbacks ) {
+        if ( slot.pCallback == pCallback ) {
+            slot.pUserData = pUserData;
+            return;
+        }
+    }
+}
+
+void CarState::removeCollisionCallback( CollisionCallback_t pCallback ) {
+    // FUN_008ae4c0
+    for ( CollisionCallback &slot : collisionCallbacks ) {
+        if ( slot.pCallback == pCallback ) {
+            slot.pCallback = nullptr;
+            return;
+        }
+    }
+}
+
+bool CarState::hasCollisionCallback( CollisionCallback_t pCallback,
+                                     void *pUserData ) const {
+    // FUN_008ae4f0
+    for ( const CollisionCallback &slot : collisionCallbacks ) {
+        if ( slot.pCallback == pCallback ) {
+            return pUserData == nullptr || slot.pUserData == pUserData;
+        }
+    }
+    return false;
 }
 
 void CarState::updateGroundColor() {

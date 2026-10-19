@@ -1569,7 +1569,7 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
         }
     }
 
-    // Post-step debug hook (FUN_00846590 — GMAITrainer update)
+    // Input device wizard (FUN_00846590, "DevicePCNew.ini")
     if ( DAT_010e7668 != 0 ) {
         OTDU_UNIMPLEMENTED;
     }
@@ -1579,7 +1579,8 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
         gGMeterAvailableBits |= 1;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AI trainer car cycling (DAT_010e7654)
+    OTDU_UNIMPLEMENTED; // TODO: car tester state machine (DAT_010e7654 /
+                        // DAT_010e7658, writes CarData.txt)
 
     updateGMeterToggle();
 
@@ -2118,10 +2119,7 @@ void GSPhysics::draw( float deltaTime ) {
     if ( ( debugDrawFlags & 0xc00 ) != 0 ) {
         drawGraph();
     }
-    // Both debug flags must be set for any rendering to occur.
-    // bHavokDebugEnabled is set by AI trainer (GMAITrainer::tick);
-    // bDrawDebugInfos is a secondary opt-in. Both start false so this function
-    // is a no-op until the game mode is implemented.
+
     if ( !bHavokDebugEnabled || !bDrawDebugInfos )
         return;
 

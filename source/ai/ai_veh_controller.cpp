@@ -3,6 +3,7 @@
 
 #include "ai/ai_bot_manager.h"
 #include "ai/ai_config.h"
+#include "ai/ai_debug_draw.h"
 #include "ai/ai_opt_path.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_pool_traffic.h"
@@ -12,7 +13,9 @@
 #include "ai/gs_ai.h"
 #include "core/maths_helper.h"
 #include "core/random/bcpl.h"
+#include "core/color.h"
 #include "game/vehicle/car_state.h"
+#include "render/draw_list.h"
 #include "world/gs_world.h"
 #include "world/sector_manager.h"
 #include "world/streaming_manager.h"
@@ -20,7 +23,10 @@
 static constexpr int32_t kTrafficRouteCapacity = 2;
 static constexpr int32_t kRouteCapacity = 32;
 static constexpr int32_t kMaxNumCandidates = 16;
-static constexpr float kMinWeightSum = 0.001f; // DAT_00f4167c
+static constexpr float kMinWeightSum = 0.001f;      // DAT_00f4167c
+static constexpr float kDebugLineEpsilon = 1.0e-5f; // DAT_00f41710
+
+static float gNavPathSurelevation = 1.5f; // DAT_00f7a114
 
 static bool IsRoadAccessible( const AiRoadMap::Road *pRoad ) {
     // FUN_0088d4b0
@@ -974,7 +980,9 @@ AiVehCtrlChase::AiVehCtrlChase()
       pGoal( nullptr ),
       targetIt(),
       goalIt(),
-      vehicleIt() {
+      vehicleIt(),
+      debugLineStart( Eigen::Vector4f::Zero() ),
+      debugLineEnd( Eigen::Vector4f::Zero() ) {
     // FUN_00963a90
 }
 
@@ -1001,6 +1009,8 @@ void AiVehCtrlChase::reset( const bool bFull ) {
     targetIt = AiRoadIt();
     goalIt = AiRoadIt();
     vehicleIt = AiRoadIt();
+    debugLineStart = Eigen::Vector4f::Zero();
+    debugLineEnd = Eigen::Vector4f::Zero();
     pTarget = nullptr;
     pGoal = nullptr;
 }
@@ -1064,6 +1074,28 @@ void AiVehCtrlChase::release() {
         pPath.reset();
     }
     reset( true );
+}
+
+void AiVehCtrlChase::debugDraw( DrawList *pDrawList ) {
+    // FUN_00963480
+    const Eigen::Vector4f delta = debugLineStart - debugLineEnd;
+    if ( ( delta.array().square() <= kDebugLineEpsilon * kDebugLineEpsilon )
+             .all() ) {
+        return;
+    }
+
+    Matrix4x4f_t transform = Matrix4x4f_t::Identity();
+    transform.row( 3 ) +=
+        Eigen::Vector4f( 0.0f, gNavPathSurelevation, 0.0f, 0.0f ).transpose();
+    pDrawList->setActiveTransformMatrix( transform );
+    pDrawList->setActiveMaterial( nullptr );
+    pDrawList->beginPrimitive( PT_LineStrip, 2 );
+    pDrawList->setDiffuse( 0, ColorRGBA( 0xffffffffu ) );
+    const Eigen::Vector4f start = debugLineStart - GetShiftWorldPosition();
+    pDrawList->pushVertex( start.x(), start.y(), start.z() );
+    const Eigen::Vector4f end = debugLineEnd - GetShiftWorldPosition();
+    pDrawList->pushVertex( end.x(), end.y(), end.z() );
+    pDrawList->commitPrimitive();
 }
 
 bool AiVehCtrlChase::getFront( AiRoadIt &outFrom, AiRoadIt &outTo ) const {

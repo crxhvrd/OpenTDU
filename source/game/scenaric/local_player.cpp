@@ -5,6 +5,12 @@
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_base.h"
 
+void LocalPlayerInfringementCheck::check( CarState *pCarState,
+                                          float deltaTime ) {
+    // FUN_00805db0
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: Police (FUN_008b1650)
+}
+
 LocalPlayer::LocalPlayer()
     : CarStateEventListener(),
       gameID( -1 ),
@@ -28,14 +34,14 @@ void LocalPlayer::setCarState( CarState *pNewCarState ) {
 
     if ( pCarState != nullptr ) {
         gpCarState->unregisterCallback( pCarState, this );
-        OTDU_UNIMPLEMENTED;
+        gpCarState->setPoliceStateJob( pCarState, nullptr );
     }
 
     pCarState = pNewCarState;
 
     if ( pNewCarState != nullptr ) {
         gpCarState->registerCallback( pNewCarState, this, nullptr );
-        OTDU_UNIMPLEMENTED;
+        gpCarState->setPoliceStateJob( pNewCarState, &checkInfringement );
     }
 }
 

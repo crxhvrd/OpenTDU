@@ -3,6 +3,9 @@
 
 #include "core/markup.h"
 #include "core/random/bcpl.h"
+#include "database/gs_database.h"
+
+#include <cstdarg>
 
 static_assert( offsetof( AIConfig, MaxNumPoliceVehicle ) == 0x10 );
 static_assert( offsetof( AIConfig, bPoliceCountFromIni ) == 0x20 );
@@ -30,9 +33,18 @@ static_assert( offsetof( AIConfig, VehiclePhysics ) == 0x12dc );
 static_assert( offsetof( AIConfig, NumVehiclePhysics ) == 0x2edc );
 static_assert( offsetof( AIConfig, PedMaxToDisplay ) == 0x2ee0 );
 
-AIConfig gAIConfig; // DAT_0143f720
+AIConfig gAIConfig;                            // DAT_0143f720
+AIHandlingReference gAIHandlingReference = {}; // DAT_00fa9210
 
-static constexpr float kGravity = 9.81f; // DAT_00f419bc
+static constexpr float kGravity = 9.81f;                 // DAT_00f419bc
+static constexpr float kReferenceSpeed = 27.0f;          // DAT_00f420e0
+static constexpr float kReferenceSpeedSquared = 729.0f;  // DAT_00f420e4
+static constexpr float kDefaultReferenceValue = 1000.0f; // DAT_00f41718
+static constexpr float kUnknownHandlingMark = -1.0f;     // DAT_00f41664
+static constexpr float kHandlingMarkScale = 100.0f;      // DAT_00f41708
+static constexpr float kTurnLinearEpsilon = 1.0e-4f;     // DAT_00f41760
+static constexpr float kDiscriminantEpsilon = -0.001f;   // DAT_00f41a4c
+static constexpr int32_t kSerializedVersion = 7;
 
 static inline void ResetDistrib( AIDistrib &distrib ) {
     const float step = 1.0f / static_cast<float>( distrib.NumPoints - 1 );
@@ -622,4 +634,459 @@ float AIDistrib::sample( RandomGen &random ) const {
         return Min + x0;
     }
     return Min;
+}
+
+int32_t GetNextAvailableCarID( const int32_t carID ) {
+    // FUN_009ab590 (forward, traffic excluded)
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const int32_t numCars = static_cast<int32_t>( gameDB.pNumItems[1] );
+    if ( numCars == 0 ) {
+        return -1;
+    }
+
+    int32_t currentIndex = -1;
+    for ( int32_t i = 0; i < numCars; i++ ) {
+        if ( gameDB.DBCarData[i].CarID == carID ) {
+            currentIndex = i;
+            break;
+        }
+    }
+
+    int32_t index = ( currentIndex < 0 ) ? numCars - 1 : currentIndex + 1;
+    if ( index >= numCars ) {
+        index = 0;
+    }
+    for ( int32_t numTested = 0; index != currentIndex; numTested++ ) {
+        if ( numTested == numCars ) {
+            return -1;
+        }
+
+        const DBEntryCarPhysicsData &car = gameDB.DBCarData[index];
+        if ( ( car.BitField & 1 ) != 0 && car.Brand != nullptr &&
+             ( car.Brand->Flags & 1 ) != 0 && !gpDatabase->isTraffic( &car ) &&
+             gpDatabase->carBankExists( &car ) ) {
+            break;
+        }
+
+        index++;
+        if ( index >= numCars ) {
+            index = 0;
+        }
+    }
+    return gameDB.DBCarData[index].CarID;
+}
+
+static float ComputeTurningRadius( const float coef1,
+                                   const float coef2,
+                                   const float speed ) {
+    // FUN_00924280
+    float root0 = 0.0f;
+    float root1 = 0.0f;
+    if ( fabsf( coef2 ) < kTurnLinearEpsilon ) {
+        root0 = speed / coef1;
+        root1 = root0;
+    } else {
+        float discriminant = coef1 * coef1 - ( -speed * coef2 ) * 4.0f;
+        if ( discriminant < kDiscriminantEpsilon ) {
+            return kDefaultReferenceValue;
+        }
+        if ( discriminant < 0.0f ) {
+            discriminant = 0.0f;
+        }
+        const float root = sqrtf( discriminant );
+        root0 = ( -coef1 - root ) / ( 2.0f * coef2 );
+        root1 = ( root - coef1 ) / ( 2.0f * coef2 );
+    }
+
+    float sqrtRadius = 0.0f;
+    if ( root0 < 0.0f ) {
+        sqrtRadius = root1;
+    } else if ( root1 < 0.0f ) {
+        sqrtRadius = root0;
+    } else {
+        sqrtRadius = std::min( root0, root1 );
+    }
+    if ( !( sqrtRadius > 0.0f ) ) {
+        sqrtRadius = 0.0f;
+    }
+    return sqrtRadius * sqrtRadius;
+}
+
+float ComputeMaxTopSpeed() {
+    // FUN_00906c40
+    float maxTopSpeed = 0.0f;
+    ForEachAvailableCar( [&]( const int32_t carID ) {
+        const DBEntryCarPhysicsData *pCar = gpDatabase->getCarDBEntry( carID );
+        if ( pCar->TopSpeedKMH > maxTopSpeed ) {
+            maxTopSpeed = pCar->TopSpeedKMH;
+        }
+    } );
+    return maxTopSpeed;
+}
+
+float ComputeMinAcceleration() {
+    // FUN_00906b90
+    float minAcceleration = kDefaultReferenceValue;
+    ForEachAvailableCar( [&]( const int32_t carID ) {
+        const DBEntryCarPhysicsData *pCar = gpDatabase->getCarDBEntry( carID );
+        if ( minAcceleration > pCar->AccelerationKMH &&
+             pCar->AccelerationKMH != 0.0f ) {
+            minAcceleration = pCar->AccelerationKMH;
+        }
+    } );
+    return minAcceleration;
+}
+
+const AIVehiclePhysics *
+AIConfig::findVehiclePhysics( const int32_t carID ) const {
+    for ( int32_t i = 0; i < NumVehiclePhysics; i++ ) {
+        if ( VehiclePhysics[i].DatabaseId == carID ) {
+            return &VehiclePhysics[i];
+        }
+    }
+    return nullptr;
+}
+
+float AIConfig::computeMinTurnRadius() const {
+    // FUN_009068c0
+    float minRadius = kDefaultReferenceValue;
+    ForEachAvailableCar( [&]( const int32_t carID ) {
+        const AIVehiclePhysics *pPhysics = findVehiclePhysics( carID );
+        if ( pPhysics == nullptr ||
+             pPhysics->TurningSpeedC1 == kUnknownHandlingMark ) {
+            return;
+        }
+
+        const float radius =
+            ComputeTurningRadius( pPhysics->TurningSpeedC1,
+                                  pPhysics->TurningSpeedC2, kReferenceSpeed );
+        if ( minRadius > radius && radius != 0.0f ) {
+            minRadius = radius;
+        }
+    } );
+    return minRadius;
+}
+
+float AIConfig::computeMinBrakingDistance() const {
+    // FUN_00906aa0
+    float minDistance = kDefaultReferenceValue;
+    ForEachAvailableCar( [&]( const int32_t carID ) {
+        float coef1 = kDefaultReferenceValue;
+        float coef2 = kDefaultReferenceValue;
+        const AIVehiclePhysics *pPhysics = findVehiclePhysics( carID );
+        if ( pPhysics != nullptr ) {
+            coef1 = pPhysics->BrakingDistC1;
+            coef2 = pPhysics->BrakingDistC2;
+        }
+
+        float distance =
+            coef1 * kReferenceSpeed + coef2 * kReferenceSpeedSquared;
+        if ( !( distance > 0.0f ) ) {
+            distance = 0.0f;
+        }
+        if ( minDistance > distance && distance != 0.0f ) {
+            minDistance = distance;
+        }
+    } );
+    return minDistance;
+}
+
+float AIConfig::computeHandlingMark( const int32_t carID,
+                                     AIHandlingReference &reference ) const {
+    // FUN_00906d60
+    if ( reference.MinTurnRadius == kDefaultReferenceValue ) {
+        reference.MinTurnRadius = computeMinTurnRadius();
+    }
+
+    const AIVehiclePhysics *pPhysics = findVehiclePhysics( carID );
+    if ( pPhysics == nullptr ||
+         pPhysics->TurningSpeedC1 == kUnknownHandlingMark ) {
+        return kUnknownHandlingMark;
+    }
+
+    const float radius = ComputeTurningRadius(
+        pPhysics->TurningSpeedC1, pPhysics->TurningSpeedC2, kReferenceSpeed );
+    if ( radius == 0.0f ) {
+        return kUnknownHandlingMark;
+    }
+    return kHandlingMarkScale /
+           ( ( radius * radius ) /
+             ( reference.MinTurnRadius * reference.MinTurnRadius ) );
+}
+
+static std::string FormatValue( const char *pFormat, ... ) {
+    // FUN_006dca10
+    char buffer[256];
+    va_list args;
+    va_start( args, pFormat );
+    vsnprintf( buffer, sizeof( buffer ), pFormat, args );
+    va_end( args );
+    return buffer;
+}
+
+static inline void
+AddElemValue( CMarkup &xml, const char *pName, const std::string &value ) {
+    xml.addElem( pName, value.c_str() );
+}
+
+static inline void
+AddElemBool( CMarkup &xml, const char *pName, const bool bValue ) {
+    AddElemValue( xml, pName, FormatValue( "%s", bValue ? "true" : "false" ) );
+}
+
+static inline void
+SetAttribValue( CMarkup &xml, const char *pName, const std::string &value ) {
+    xml.setAttrib( pName, value.c_str() );
+}
+
+static void
+SerializeDistrib( CMarkup &xml, const char *pName, const AIDistrib &distrib ) {
+    xml.addElem( pName );
+    xml.intoElem();
+    for ( int32_t i = 0; i < distrib.NumPoints; i++ ) {
+        xml.addElem( "POINT" );
+        SetAttribValue( xml, "val",
+                        FormatValue( "%.2f", distrib.Points[i].Value ) );
+        SetAttribValue( xml, "freq",
+                        FormatValue( "%.2f", distrib.Points[i].Frequency ) );
+    }
+    xml.outOfElem();
+}
+
+int32_t AIConfig::serialize( char *pBuffer, const uint32_t bufferSize ) const {
+    // FUN_00976850
+    CMarkup xml;
+    xml.setDoc( "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\r\n" );
+    xml.addElem( "AICONFIG" );
+    SetAttribValue( xml, "version", FormatValue( "%d", kSerializedVersion ) );
+    xml.intoElem();
+
+    xml.addElem( "VEHICLE_REPARTITION" );
+    SetAttribValue( xml, "nb_zones", FormatValue( "%d", NumZones ) );
+    xml.intoElem();
+    for ( int32_t i = 0; i < NumZones; i++ ) {
+        const AIZone &zone = Zones[i];
+        xml.addElem( "ZONE" );
+        SetAttribValue( xml, "nb_traffic_per_lane_kilometer",
+                        FormatValue( "%.2f", zone.TrafficPerLaneKm ) );
+        xml.intoElem();
+        for ( const AIZoneVehicle &vehicle : zone.Vehicles ) {
+            xml.addElem( "VEHICLE" );
+            SetAttribValue( xml, "database_id",
+                            FormatValue( "%d", vehicle.DatabaseId ) );
+            SetAttribValue( xml, "frequency",
+                            FormatValue( "%.3f", vehicle.Frequency ) );
+        }
+        xml.outOfElem();
+    }
+    xml.outOfElem();
+
+    xml.addElem( "VEHICLE_PHYSICS" );
+    xml.intoElem();
+    for ( int32_t i = 0; i < NumVehiclePhysics; i++ ) {
+        const AIVehiclePhysics &physics = VehiclePhysics[i];
+        xml.addElem( "VEHICLE" );
+        SetAttribValue( xml, "database_id",
+                        FormatValue( "%d", physics.DatabaseId ) );
+        if ( physics.LogMaxSpeed > 0.0f ) {
+            SetAttribValue( xml, "log_max_speed",
+                            FormatValue( "%.1f", physics.LogMaxSpeed ) );
+        }
+        SetAttribValue( xml, "braking_dist_c1",
+                        FormatValue( "%.3f", physics.BrakingDistC1 ) );
+        SetAttribValue( xml, "braking_dist_c2",
+                        FormatValue( "%.3f", physics.BrakingDistC2 ) );
+        SetAttribValue( xml, "turning_speed_c1",
+                        FormatValue( "%.3f", physics.TurningSpeedC1 ) );
+        SetAttribValue( xml, "turning_speed_c2",
+                        FormatValue( "%.3f", physics.TurningSpeedC2 ) );
+        SetAttribValue( xml, "handling_mark",
+                        FormatValue( "%.3f", physics.HandlingMark ) );
+    }
+    xml.outOfElem();
+
+    SerializeDistrib( xml, "SPEED_DISTRIB", SpeedDistrib );
+    SerializeDistrib( xml, "SECDIST_DISTRIB", SecDistDistrib );
+
+    xml.addElem( "HARDCODED_ZONES" );
+    xml.intoElem();
+    for ( int32_t i = 0; i < NumHardcodedZones; i++ ) {
+        const AIHardcodedZone &hardcodedZone = HardcodedZones[i];
+        xml.addElem( "HZONE" );
+        SetAttribValue( xml, "sector",
+                        FormatValue( "%c%c%c%c", hardcodedZone.Sector[0] + '0',
+                                     hardcodedZone.Sector[1] + '0',
+                                     hardcodedZone.Sector[2] + '0',
+                                     hardcodedZone.Sector[3] + '0' ) );
+        SetAttribValue( xml, "zone",
+                        FormatValue( "%c", hardcodedZone.Zone + '0' ) );
+    }
+    xml.outOfElem();
+
+    xml.addElem( "Pedestrians" );
+    xml.intoElem();
+    AddElemValue(
+        xml, "Max2Display",
+        FormatValue( "%d", static_cast<int32_t>( PedMaxToDisplay ) ) );
+    AddElemValue( xml, "CollideSphereRadius",
+                  FormatValue( "%.3f", PedCollideSphereRadius ) );
+    AddElemValue( xml, "CollideSphereDetectionRadius",
+                  FormatValue( "%.3f", PedCollideSphereDetectionRadius ) );
+    AddElemValue( xml, "MinSpeed", FormatValue( "%.2f", PedMinSpeed ) );
+    AddElemValue( xml, "MaxSpeed", FormatValue( "%.2f", PedMaxSpeed ) );
+    AddElemValue( xml, "MaxLength2Player",
+                  FormatValue( "%.2f", PedMaxLength2Player ) );
+    xml.outOfElem();
+
+    xml.addElem( "OppAndCop" );
+    xml.intoElem();
+
+    xml.addElem( "PathOptimizerParams" );
+    xml.intoElem();
+    AddElemBool( xml, "PathOptFixedNormals", bPathOptFixedNormals );
+    AddElemValue( xml, "PathOptMinAngle",
+                  FormatValue( "%.8f", PathOptMinAngle ) );
+    AddElemValue( xml, "PathOptTrackDistance",
+                  FormatValue( "%.3f", PathOptTrackDistance ) );
+    AddElemValue( xml, "PathOptForceFactor",
+                  FormatValue( "%.3f", PathOptForceFactor ) );
+    AddElemValue( xml, "PathOptDamping",
+                  FormatValue( "%.3f", PathOptDamping ) );
+    AddElemValue( xml, "PathOptCoeffMaxValue",
+                  FormatValue( "%.3f", PathOptCoeffMaxValue ) );
+    AddElemValue( xml, "PathOptNbPasses",
+                  FormatValue( "%i", PathOptNbPasses ) );
+    AddElemValue( xml, "PathOptMethod", FormatValue( "%i", PathOptMethod ) );
+    AddElemValue( xml, "PathOptMethodPower",
+                  FormatValue( "%i", PathOptMethodPower ) );
+    AddElemValue( xml, "PathOptMinAmpFactor",
+                  FormatValue( "%.3f", PathOptMinAmpFactor ) );
+    AddElemValue( xml, "PathOptMaxAmpFactor",
+                  FormatValue( "%.3f", PathOptMaxAmpFactor ) );
+    AddElemValue( xml, "PathOptReduceFactor",
+                  FormatValue( "%.3f", PathOptReduceFactor ) );
+    AddElemValue( xml, "PathOptUncurveToExtractCoeff",
+                  FormatValue( "%.3f", PathOptUncurveToExtractCoeff ) );
+    AddElemValue( xml, "Speed1", FormatValue( "%.3f", PathOptSpeed[0] ) );
+    AddElemValue( xml, "Speed2", FormatValue( "%.3f", PathOptSpeed[1] ) );
+    AddElemValue( xml, "Speed3", FormatValue( "%.3f", PathOptSpeed[2] ) );
+    AddElemValue( xml, "Coeff1", FormatValue( "%.3f", PathOptCoeff[0] ) );
+    AddElemValue( xml, "Coeff2", FormatValue( "%.3f", PathOptCoeff[1] ) );
+    AddElemValue( xml, "Coeff3", FormatValue( "%.3f", PathOptCoeff[2] ) );
+    AddElemBool( xml, "PathOptEnableAmp", bPathOptEnableAmp );
+    xml.outOfElem();
+
+    xml.addElem( "PoliceParams" );
+    xml.intoElem();
+    AddElemValue( xml, "PoliceMaxCount",
+                  FormatValue( "%i", MaxNumPoliceVehicle ) );
+    AddElemValue( xml, "PoliceDamMaxCount",
+                  FormatValue( "%i", MaxNumPoliceDam ) );
+    AddElemValue( xml, "PoliceDeleteDistance",
+                  FormatValue( "%.3f", PoliceDeleteDistance ) );
+    AddElemValue( xml, "PoliceSearchDistance",
+                  FormatValue( "%.3f", PoliceSearchDistance ) );
+    AddElemValue( xml, "PoliceCaptureDistance",
+                  FormatValue( "%.3f", PoliceCaptureDistance ) );
+    AddElemValue( xml, "PoliceCaptureSpeed",
+                  FormatValue( "%.3f", PoliceCaptureSpeed ) );
+    AddElemValue( xml, "PoliceCaptureTime",
+                  FormatValue( "%.3f", PoliceCaptureTime ) );
+    AddElemBool( xml, "PoliceForceChase", bPoliceForceChase );
+    AddElemValue( xml, "PoliceSpawnProba",
+                  FormatValue( "%.3f", PoliceSpawnProba ) );
+    AddElemValue( xml, "PoliceSearchSpawnProba",
+                  FormatValue( "%.3f", PoliceSearchSpawnProba ) );
+    AddElemValue( xml, "PoliceSearchMinTime",
+                  FormatValue( "%.3f", PoliceSearchMinTime ) );
+    AddElemValue( xml, "PoliceSearchMinTimeStep",
+                  FormatValue( "%.3f", PoliceSearchMinTimeStep ) );
+    AddElemBool( xml, "PoliceCanBackOnTrack", bPoliceCanBackOnTrack );
+    AddElemBool( xml, "PoliceForceDensity", bPoliceForceDensity );
+    AddElemBool( xml, "OutsideAllowed", bPoliceOutsideAllowed );
+    AddElemBool( xml, "CaptureByTime", bCaptureByTime );
+    AddElemBool( xml, "CaptureBySpeed", bCaptureBySpeed );
+    AddElemBool( xml, "NeedSpeedANDTime", bNeedSpeedAndTime );
+    AddElemBool( xml, "CanCollide", bPoliceCanCollide );
+    AddElemBool( xml, "CanCollideFromBehind", bPoliceCanCollideFromBehind );
+    AddElemBool( xml, "CanCollideFromAhead", bPoliceCanCollideFromAhead );
+    AddElemBool( xml, "CanChaseFromAhead", bPoliceCanChaseFromAhead );
+    xml.outOfElem();
+
+    xml.addElem( "Infringement" );
+    xml.intoElem();
+    AddElemValue( xml, "InfLimit", FormatValue( "%.3f", InfLimit ) );
+    AddElemValue( xml, "InfACGraceDelay",
+                  FormatValue( "%.3f", InfACGraceDelay ) );
+    AddElemValue( xml, "InfGracePeriod",
+                  FormatValue( "%.3f", InfGracePeriod ) );
+    AddElemValue( xml, "InfLoweringFactor",
+                  FormatValue( "%.3f", InfLoweringFactor ) );
+    AddElemValue( xml, "InfCollisionValue",
+                  FormatValue( "%.3f", InfCollisionValue ) );
+    AddElemValue( xml, "InfSpeedLimitTolerance",
+                  FormatValue( "%.3f", InfSpeedLimitTolerance ) );
+    AddElemValue( xml, "InfSpeedLimitFactor",
+                  FormatValue( "%.3f", InfSpeedLimitFactor ) );
+    AddElemValue( xml, "InfOncomingLaneFactor",
+                  FormatValue( "%.3f", InfOncomingLaneFactor ) );
+    AddElemValue( xml, "InfOncomingLaneValue",
+                  FormatValue( "%.3f", InfOncomingLaneValue ) );
+    AddElemValue( xml, "InfRedLightValue",
+                  FormatValue( "%.3f", InfRedLightValue ) );
+    AddElemValue( xml, "InfStopValue", FormatValue( "%.3f", InfStopValue ) );
+    AddElemValue( xml, "InfYieldValue", FormatValue( "%.3f", InfYieldValue ) );
+    AddElemValue( xml, "InfAllowedDistToStop",
+                  FormatValue( "%.3f", InfAllowedDistToStop ) );
+    AddElemValue( xml, "InfAllowedSpeedToStop",
+                  FormatValue( "%.3f", InfAllowedSpeedToStop ) );
+    AddElemValue( xml, "InfAllowedDurationOnControl",
+                  FormatValue( "%.3f", InfAllowedDurationOnControl ) );
+    AddElemValue( xml, "InfYieldObsTimeToJunc",
+                  FormatValue( "%.3f", InfYieldObsTimeToJunc ) );
+    AddElemValue( xml, "InfCopMalusFactor",
+                  FormatValue( "%.3f", InfCopMalusFactor ) );
+    AddElemValue( xml, "InfPoliceDamLimit",
+                  FormatValue( "%.3f", InfPoliceDamLimit ) );
+    AddElemValue( xml, "InfSecondCopLimit",
+                  FormatValue( "%.3f", InfSecondCopLimit ) );
+    AddElemValue( xml, "InfThirdCopLimit",
+                  FormatValue( "%.3f", InfThirdCopLimit ) );
+    AddElemValue( xml, "InfAggressiveLimit",
+                  FormatValue( "%.3f", InfAggressiveLimit ) );
+    AddElemValue( xml, "WitnessedOffenceTime",
+                  FormatValue( "%.3f", WitnessedOffenceTime ) );
+    AddElemValue( xml, "WitnessedOffenceValue",
+                  FormatValue( "%.3f", WitnessedOffenceValue ) );
+    AddElemBool( xml, "InfAllButCollision", bInfAllButCollision );
+    AddElemValue( xml, "FineCarValue", FormatValue( "%i", FineCarValue ) );
+    AddElemValue( xml, "FineSetValue", FormatValue( "%i", FineSetValue ) );
+    AddElemValue( xml, "RecidiveTime", FormatValue( "%.2f", RecidiveTime ) );
+    AddElemValue( xml, "GInfMaxValue", FormatValue( "%.3f", GInfMaxValue ) );
+    AddElemValue( xml, "GInfLoweringFactor",
+                  FormatValue( "%.3f", GInfLoweringFactor ) );
+    AddElemValue( xml, "GInfDestroyCar",
+                  FormatValue( "%.3f", GInfDestroyCar ) );
+    xml.outOfElem();
+
+    xml.addElem( "Opponents" );
+    xml.intoElem();
+    AddElemValue( xml, "OpponentDifficulty",
+                  FormatValue( "%.3f", OpponentDifficulty ) );
+    AddElemValue( xml, "ForceNbOpponent",
+                  FormatValue( "%i", NumOpponentsOverride ) );
+    AddElemBool( xml, "IAReplacePlayer", bAIReplacePlayer );
+    AddElemBool( xml, "SameCarThanPlayer", bSameCarAsPlayer );
+    AddElemBool( xml, "NavOppRespectLane", bNavOppRespectLane );
+    xml.outOfElem();
+    xml.outOfElem();
+    xml.outOfElem();
+
+    const std::string &doc = xml.getDoc();
+    const uint32_t length = static_cast<uint32_t>( strlen( doc.c_str() ) );
+    if ( length + 1 > bufferSize ) {
+        return 0;
+    }
+    memcpy( pBuffer, doc.c_str(), length + 1 );
+    return static_cast<int32_t>( length );
 }

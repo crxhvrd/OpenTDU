@@ -19,9 +19,17 @@ public:
 
 public:
     inline const std::string &getError() const { return error; }
+    inline const std::string &getDoc() const { return doc; }
     inline void resetPos() { setPos( 0, 0, 0 ); }
+    inline bool addElem( const char *pName, const char *pValue = nullptr ) {
+        return addElem( pName, pValue, false, false );
+    }
+    inline bool setAttrib( const char *pAttrib, const char *pValue ) {
+        return setAttrib( pos, pAttrib, pValue );
+    }
 
 public:
+    CMarkup();
     CMarkup( const char *pDoc, const bool bCaseInsensitive = false );
 
     bool isWellFormed() const;
@@ -43,6 +51,17 @@ private:
         int32_t ElemParent = 0;
         int32_t ElemChild = 0;
         int32_t ElemNext = 0;
+
+        inline bool isEmptyElement() const { return StartR == EndL + 1; }
+        inline bool hasNoContent() const { return StartR + 1 == EndL; }
+        inline void adjustStart( const int32_t shift ) {
+            StartL += shift;
+            StartR += shift;
+        }
+        inline void adjustEnd( const int32_t shift ) {
+            EndL += shift;
+            EndR += shift;
+        }
     };
 
     struct TokenPos {
@@ -88,6 +107,23 @@ private:
     std::string getData( const int32_t position ) const;
     std::string textFromDoc( int32_t left, const int32_t right ) const;
     std::string getToken( const TokenPos &token ) const;
+
+    bool addElem( const char *pName,
+                  const char *pValue,
+                  const bool bInsert,
+                  const bool bAddChild );
+    bool setAttrib( const int32_t position,
+                    const char *pAttrib,
+                    const char *pValue );
+    void locateNew( const int32_t posParent,
+                    int32_t &posRel,
+                    int32_t &offset,
+                    const int32_t length,
+                    const int32_t flags );
+    void docChange( int32_t left, int32_t replace, const std::string &insert );
+    void adjust( int32_t position, const int32_t shift, const bool bAfterPos );
+
+    static std::string TextToDoc( const char *pText, const bool bAttrib );
 
     static bool FindAny( const char *pDoc, int32_t &nChar );
     static bool FindChar( const char *pDoc, int32_t &nChar, const char c );

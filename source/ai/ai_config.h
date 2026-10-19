@@ -26,6 +26,7 @@ struct AIDistribPoint {
 };
 
 class RandomGen;
+struct AIHandlingReference;
 
 struct AIDistrib {
     static constexpr int32_t kMaxNumPoints = 8;
@@ -199,7 +200,44 @@ struct AIConfig {
 
     void reset();
     void parse( const char *pXml );
+    int32_t serialize( char *pBuffer, const uint32_t bufferSize ) const;
+
+    float computeMinTurnRadius() const;
+    float computeMinBrakingDistance() const;
+    float computeHandlingMark( const int32_t carID,
+                               AIHandlingReference &reference ) const;
+
+private:
+    const AIVehiclePhysics *findVehiclePhysics( const int32_t carID ) const;
 };
 OTDU_SIZE_MUST_MATCH( AIConfig, 0x2ef8 );
 
+struct AIHandlingReference {
+    float MaxTopSpeed;
+    float MinAcceleration;
+    float MinTurnRadius;
+    float MinBrakingDistance;
+};
+
 extern AIConfig gAIConfig;
+extern AIHandlingReference gAIHandlingReference; // DAT_00fa9210
+
+int32_t GetNextAvailableCarID( const int32_t carID );
+float ComputeMaxTopSpeed();
+float ComputeMinAcceleration();
+
+static constexpr int32_t kFirstIteratedCarID = 0;
+
+template <typename TFunctor>
+static inline void ForEachAvailableCar( TFunctor functor ) {
+    const int32_t firstCarID = GetNextAvailableCarID( kFirstIteratedCarID );
+    if ( firstCarID == -1 ) {
+        return;
+    }
+
+    int32_t carID = firstCarID;
+    do {
+        functor( carID );
+        carID = GetNextAvailableCarID( carID );
+    } while ( carID != firstCarID );
+}

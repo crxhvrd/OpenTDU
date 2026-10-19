@@ -326,6 +326,9 @@ public:
     }
     inline bool isDetailInstalled() const { return bDetailInstalled; }
     inline uint32_t getSizeRoadmap() const { return SizeRoadmap; }
+    inline uint32_t getSizeDetails() const { return SizeDetails; }
+    inline int32_t getNumProfiles() const { return NumProfile; }
+    inline const char *getPoolNames() const { return pPoolNames; }
     inline float getSpeedLimit( const int32_t index ) const {
         return pArraySpeedLimit[index];
     }

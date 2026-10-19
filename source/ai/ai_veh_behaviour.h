@@ -5,6 +5,7 @@
 
 class AiVehicle;
 class CarState;
+class DrawList;
 struct CollisionEvent;
 
 class AiVehBehaviour {
@@ -15,6 +16,7 @@ public:
     virtual void reset( const bool bFull ) = 0;
     virtual void tick( const float deltaTime, const float totalTime ) = 0;
     virtual void release() = 0;
+    virtual void debugDraw( DrawList *pDrawList ) {}
     virtual void onCollision( CarState *pCarA,
                               CarState *pCarB,
                               const CollisionEvent &event ) = 0;

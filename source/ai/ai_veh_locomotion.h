@@ -5,6 +5,7 @@
 #include "physics/vehicle/physics_vehicle.h"
 
 class AiVehicle;
+class DrawList;
 class EntityCarPlayer;
 
 class AiVehLocomotion : public PhysicsDrivingControl {
@@ -21,6 +22,10 @@ public:
     }
     inline float getTargetSpeed() const { return targetSpeed; }
     inline float getPadThrottle() const { return padThrottle; }
+    inline float getPadSteering() const { return padSteering; }
+    inline void setPadThrottle( const float throttle ) {
+        padThrottle = throttle;
+    }
     inline const Eigen::Vector4f &getTargetDirection() const {
         return targetDirection;
     }
@@ -33,6 +38,7 @@ public:
     virtual void reset( const bool bFull );
     virtual void tick( const float deltaTime, const float totalTime );
     virtual void detach();
+    virtual void debugDraw( DrawList *pDrawList );
     virtual void setPhysicsActive( const bool bActive, const bool bForce );
     virtual void setDrivenByNavigation( const bool bDriven );
     virtual void setManualInputs( const float accel,
@@ -76,6 +82,10 @@ protected:
 
 class AiVehLocoTraffic : public AiVehLocomotion {
 public:
+    inline const PIDCtrl &getSpeedControl() const { return speedControl; }
+    inline const PIDCtrl &getSteerControl() const { return steerControl; }
+
+public:
     AiVehLocoTraffic();
 
     void attach( AiVehicle *pOwner ) override;
@@ -100,6 +110,10 @@ private:
 };
 
 class AiVehLocoOpponent : public AiVehLocomotion {
+public:
+    inline const PIDCtrl &getSteerControl() const { return steerControl; }
+    inline const PIDCtrl &getAccelControl() const { return accelControl; }
+
 public:
     AiVehLocoOpponent();
 
@@ -143,6 +157,7 @@ public:
     void reset( const bool bFull ) override;
     void tick( const float deltaTime, const float totalTime ) override;
     void detach() override;
+    void debugDraw( DrawList *pDrawList ) override;
     void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) override;
 
 private:

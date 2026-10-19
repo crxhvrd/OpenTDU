@@ -184,6 +184,7 @@ constexpr float kMetresToMiles = 0.000621371f;   // DAT_00f42120
 constexpr float kGMeterVerticalVelMax = 200.0f;  // DAT_00fab688
 constexpr float kGMeterVerticalVelReset = 10.0f; // DAT_00fab684
 constexpr float kGravityAccel = 9.81f;           // 1 / DAT_00f42104
+constexpr float kInvGravityAccel = 0.101936795f; // DAT_00f42104
 
 constexpr float kAntiFlyGapDeadband = 0.05f;   // DAT_00f41778
 constexpr float kAntiFlyMinForce = 100.0f;     // DAT_00f41708 (apply gate, N)
@@ -538,9 +539,9 @@ PhysicsVehicle::PhysicsVehicle()
       aeroDragArea( 0.0f ),
       aeroDownArea( 0.0f ),
       aeroDensity( kAeroDensityFallback ),
-      localAccelLong( 0.0f ),
-      localAccelLat( 0.0f ),
-      localAccelVert( 0.0f ) {
+      worldAcceleration( Eigen::Vector4f::Zero() ),
+      localAcceleration( Eigen::Vector4f::Zero() ),
+      localAccelerationG( Eigen::Vector4f::Zero() ) {
     for ( int i = 0; i < PhysicsVehicleState::kMaxWheels; ++i ) {
         wheelAttach[i] = Eigen::Vector3f::Zero();
         suspMaxLength[i] = 0.30f;
@@ -2710,7 +2711,7 @@ void PhysicsVehicle::updateBikeLean( float deltaTime ) {
         bikeHeadLean = -gLeanHead[1];
     }
 
-    float accel = localAccelLong * kAccelToGrams * kGramsScale;
+    float accel = localAcceleration.z() * kAccelToGrams * kGramsScale;
     if ( accel < kYawAccelMin ) {
         accel = 0.0f;
     }
@@ -4540,27 +4541,33 @@ void PhysicsVehicle::tick( float deltaTime ) {
         setDrivingHelpLevel( gVehicleDrivingHelpOverride );
     }
 
-    // G-Meter telemetry
+    // FUN_0083db70 @0x0083ec2a
     if ( pPhysicsSystem != nullptr && deltaTime > 1.0e-5f && !bPausePhysics ) {
         JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
-        const JPH::Vec3 vel = bi.GetLinearVelocity( pChassisBody->GetID() );
-
-        JPH::Vec3 sample = vel;
-        if ( sample.GetY() > kGMeterVerticalVelMax ) {
-            sample.SetY( kGMeterVerticalVelReset );
+        JPH::Vec3 velocity = bi.GetLinearVelocity( pChassisBody->GetID() );
+        if ( velocity.GetY() > kGMeterVerticalVelMax ) {
+            velocity.SetY( kGMeterVerticalVelReset );
+            setVelocity( Eigen::Vector3f( velocity.GetX(), velocity.GetY(),
+                                          velocity.GetZ() ),
+                         false, -1 );
         }
 
         const JPH::Vec3 prev( prevWorldVelocity[0], prevWorldVelocity[1],
                               prevWorldVelocity[2] );
-        const JPH::Vec3 worldAccel = ( sample - prev ) / deltaTime;
+        const JPH::Vec3 worldAccel = ( velocity - prev ) * ( 1.0f / deltaTime );
         const JPH::Quat rot = bi.GetRotation( pChassisBody->GetID() );
         const JPH::Vec3 localAccel = rot.Conjugated() * worldAccel;
-        localAccelLong = localAccel.GetZ();
-        localAccelLat = localAccel.GetX();
-        localAccelVert = localAccel.GetY();
-        prevWorldVelocity[0] = vel.GetX();
-        prevWorldVelocity[1] = vel.GetY();
-        prevWorldVelocity[2] = vel.GetZ();
+        worldAcceleration = Eigen::Vector4f(
+            worldAccel.GetX(), worldAccel.GetY(), worldAccel.GetZ(), 0.0f );
+        localAcceleration = Eigen::Vector4f(
+            localAccel.GetX(), localAccel.GetY(), localAccel.GetZ(), 0.0f );
+        localAccelerationG.head<3>() =
+            localAcceleration.head<3>() * kInvGravityAccel;
+
+        const JPH::Vec3 current = bi.GetLinearVelocity( pChassisBody->GetID() );
+        prevWorldVelocity[0] = current.GetX();
+        prevWorldVelocity[1] = current.GetY();
+        prevWorldVelocity[2] = current.GetZ();
     }
 
     timeSinceHardImpact += deltaTime;
@@ -4875,9 +4882,9 @@ void PhysicsVehicle::resetSimulationState() {
     vehicle.Clutch.bManualControl = false;
 
     prevWorldVelocity[0] = prevWorldVelocity[1] = prevWorldVelocity[2] = 0.0f;
-    localAccelLong = 0.0f;
-    localAccelLat = 0.0f;
-    localAccelVert = 0.0f;
+    worldAcceleration = Eigen::Vector4f::Zero();
+    localAcceleration = Eigen::Vector4f::Zero();
+    localAccelerationG = Eigen::Vector4f::Zero();
 }
 
 void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform,
@@ -5330,14 +5337,10 @@ int32_t PhysicsVehicle::getReportedGear() const {
     return vehicle.GearBox.ReportedGear - 1;
 }
 
-float PhysicsVehicle::getLateralG() const {
-    return localAccelLat / kGravityAccel;
-}
+float PhysicsVehicle::getLateralG() const { return localAccelerationG.x(); }
 
 float PhysicsVehicle::getLongitudinalG() const {
-    return localAccelLong / kGravityAccel;
+    return localAccelerationG.z();
 }
 
-float PhysicsVehicle::getVerticalG() const {
-    return localAccelVert / kGravityAccel;
-}
+float PhysicsVehicle::getVerticalG() const { return localAccelerationG.y(); }

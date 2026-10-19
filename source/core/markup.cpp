@@ -12,6 +12,22 @@ static constexpr const char *kEntityNames[kNumEntities] = {
     "lt;", "amp;", "gt;", "apos;", "quot;" }; // PTR_DAT_00fabf08
 static constexpr int32_t kEntityLengths[kNumEntities] = { 3, 4, 3, 5,
                                                           5 }; // DAT_00fabef4
+static constexpr const char *kEntityReferences[kNumEntities] = {
+    "&lt;", "&amp;", "&gt;", "&apos;", "&quot;" }; // PTR_DAT_00fabf1c
+
+CMarkup::CMarkup()
+    : doc(),
+      error(),
+      elements(),
+      parentPos( 0 ),
+      pos( 0 ),
+      childPos( 0 ),
+      freePos( 0 ),
+      nodeType( 0 ),
+      bIgnoreCase( false ) {
+    // FUN_00406730
+    setDoc( nullptr );
+}
 
 CMarkup::CMarkup( const char *pDoc, const bool bCaseInsensitive )
     : doc(),
@@ -527,4 +543,247 @@ int32_t CMarkup::ParseNode( TokenPos &token ) {
     token.Next = static_cast<int32_t>( pEnd - pDoc ) +
                  static_cast<int32_t>( strlen( pEndOfNode ) );
     return type;
+}
+
+bool CMarkup::addElem( const char *pName,
+                       const char *pValue,
+                       const bool bInsert,
+                       const bool bAddChild ) {
+    // FUN_006dc0b0
+    if ( bAddChild ) {
+        if ( pos == 0 ) {
+            return false;
+        }
+    } else if ( parentPos == 0 ) {
+        if ( isWellFormed() ) {
+            return false;
+        }
+        elemAt( 0 ).EndL = static_cast<int32_t>( strlen( doc.c_str() ) );
+    }
+
+    int32_t posParent = parentPos;
+    int32_t posBefore = pos;
+    if ( bAddChild ) {
+        posParent = pos;
+        posBefore = childPos;
+    }
+
+    int32_t offset = 0;
+    locateNew( posParent, posBefore, offset, 0, bInsert ? 1 : 0 );
+    const bool bEmptyParent = elemAt( posParent ).isEmptyElement();
+    if ( bEmptyParent || elemAt( posParent ).hasNoContent() ) {
+        offset += 2;
+    }
+
+    const int32_t position = getFreePos();
+    elemAt( position ).StartL = offset;
+    elemAt( position ).ElemParent = posParent;
+    elemAt( position ).ElemChild = 0;
+    elemAt( position ).ElemNext = 0;
+    if ( posBefore != 0 ) {
+        elemAt( position ).ElemNext = elemAt( posBefore ).ElemNext;
+        elemAt( posBefore ).ElemNext = position;
+    } else {
+        elemAt( position ).ElemNext = elemAt( posParent ).ElemChild;
+        elemAt( posParent ).ElemChild = position;
+    }
+
+    std::string insert = "<";
+    insert += pName;
+    const int32_t nameLength = static_cast<int32_t>( strlen( pName ) );
+    ElemPos &elem = elemAt( position );
+    if ( pValue != nullptr && *pValue != '\0' ) {
+        const std::string value = TextToDoc( pValue, false );
+        insert += ">";
+        insert += value;
+        insert += "</";
+        insert += pName;
+        insert += ">\r\n";
+        elem.StartR = elem.StartL + 1 + nameLength;
+        elem.EndL = elem.StartR + 1 + static_cast<int32_t>( value.size() );
+        elem.EndR = elem.EndL + 2 + nameLength;
+    } else {
+        insert += "/>\r\n";
+        elem.StartR = elem.StartL + 2 + nameLength;
+        elem.EndL = elem.StartR - 1;
+        elem.EndR = elem.EndL + 1;
+    }
+
+    int32_t left = elem.StartL;
+    int32_t replace = 0;
+    ElemPos &parent = elemAt( posParent );
+    if ( bEmptyParent ) {
+        const std::string parentName = getTagName( posParent );
+        insert = ">\r\n" + insert + "</" + parentName;
+        left = parent.StartR - 1;
+        replace = 1;
+        parent.StartR -= 1;
+        parent.EndL -= 1 + static_cast<int32_t>( parentName.size() );
+    } else if ( parent.hasNoContent() ) {
+        insert = "\r\n" + insert;
+        left = parent.StartR + 1;
+    }
+    docChange( left, replace, insert );
+    adjust( position, static_cast<int32_t>( insert.size() ) - replace, false );
+
+    if ( bAddChild ) {
+        setPos( parentPos, posParent, position );
+    } else {
+        setPos( posParent, position, 0 );
+    }
+    return true;
+}
+
+bool CMarkup::setAttrib( const int32_t position,
+                         const char *pAttrib,
+                         const char *pValue ) {
+    // FUN_006dbb70
+    if ( position == 0 || nodeType != MNT_Element ) {
+        return false;
+    }
+
+    TokenPos token( doc, bIgnoreCase );
+    token.Next = elemAt( position ).StartL + 1;
+
+    int32_t insertAt = 0;
+    int32_t replace = 0;
+    std::string insert;
+    if ( findAttrib( token, pAttrib ) ) {
+        insert = TextToDoc( pValue, true );
+        insertAt = token.L;
+        replace = token.R - token.L + 1;
+    } else {
+        insert = " ";
+        insert += pAttrib;
+        insert += "=\"";
+        insert += TextToDoc( pValue, true );
+        insert += "\"";
+        insertAt = elemAt( position ).StartR -
+                   ( elemAt( position ).isEmptyElement() ? 1 : 0 );
+    }
+    docChange( insertAt, replace, insert );
+
+    const int32_t shift = static_cast<int32_t>( insert.size() ) - replace;
+    elemAt( position ).StartR += shift;
+    elemAt( position ).adjustEnd( shift );
+    adjust( position, shift, false );
+    return true;
+}
+
+void CMarkup::locateNew( const int32_t posParent,
+                         int32_t &posRel,
+                         int32_t &offset,
+                         const int32_t length,
+                         const int32_t flags ) {
+    // FUN_006da250
+    const bool bInsert = ( flags & 1 ) != 0;
+    const bool bHonorWhitespace = ( flags & 2 ) != 0;
+
+    int32_t startL = 0;
+    if ( length != 0 ) {
+        startL = bInsert ? offset : offset + length;
+    } else if ( posRel != 0 ) {
+        startL = bInsert ? elemAt( posRel ).StartL : elemAt( posRel ).EndR + 1;
+    } else if ( posParent == 0 ) {
+        startL = bInsert ? 0 : static_cast<int32_t>( strlen( doc.c_str() ) );
+    } else if ( elemAt( posParent ).isEmptyElement() ) {
+        startL = elemAt( posParent ).StartR;
+    } else {
+        startL =
+            bInsert ? elemAt( posParent ).StartR + 1 : elemAt( posParent ).EndL;
+    }
+
+    if ( !bHonorWhitespace && !elemAt( posParent ).isEmptyElement() ) {
+        int32_t nChar = startL;
+        if ( !FindAny( doc.c_str(), nChar ) || doc[nChar] == '<' ) {
+            startL = nChar;
+        }
+    }
+
+    int32_t posBefore = 0;
+    if ( posRel != 0 ) {
+        if ( bInsert ) {
+            int32_t posPrev = elemAt( posParent ).ElemChild;
+            if ( posPrev != posRel ) {
+                while ( elemAt( posPrev ).ElemNext != posRel ) {
+                    posPrev = elemAt( posPrev ).ElemNext;
+                }
+                posBefore = posPrev;
+            }
+        } else {
+            posBefore = posRel;
+        }
+    } else if ( elemAt( posParent ).ElemChild != 0 && !bInsert ) {
+        int32_t posNext = elemAt( posParent ).ElemChild;
+        while ( posNext != 0 ) {
+            posBefore = posNext;
+            posNext = elemAt( posNext ).ElemNext;
+        }
+    }
+
+    offset = startL;
+    posRel = posBefore;
+}
+
+void CMarkup::docChange( int32_t left,
+                         int32_t replace,
+                         const std::string &insert ) {
+    // FUN_006da8f0
+    const int32_t docLength = static_cast<int32_t>( strlen( doc.c_str() ) );
+    left = std::max( 0, std::min( left, docLength ) );
+    replace = std::max( 0, std::min( replace, docLength - left ) );
+    doc.replace( left, replace, insert );
+}
+
+void CMarkup::adjust( int32_t position,
+                      const int32_t shift,
+                      const bool bAfterPos ) {
+    // FUN_006da4f0
+    int32_t posTop = elemAt( position ).ElemParent;
+    bool bPosFirst = bAfterPos;
+    while ( position != 0 ) {
+        bool bPosTop = false;
+        if ( position == posTop ) {
+            posTop = elemAt( position ).ElemParent;
+            bPosTop = true;
+        }
+
+        if ( !bPosTop && !bPosFirst && elemAt( position ).ElemChild != 0 ) {
+            position = elemAt( position ).ElemChild;
+        } else if ( elemAt( position ).ElemNext != 0 ) {
+            position = elemAt( position ).ElemNext;
+        } else {
+            while ( ( position = elemAt( position ).ElemParent ) != 0 &&
+                    position != posTop ) {
+                if ( elemAt( position ).ElemNext != 0 ) {
+                    position = elemAt( position ).ElemNext;
+                    break;
+                }
+            }
+        }
+        bPosFirst = false;
+
+        if ( position != posTop ) {
+            elemAt( position ).adjustStart( shift );
+        }
+        elemAt( position ).adjustEnd( shift );
+    }
+}
+
+std::string CMarkup::TextToDoc( const char *pText, const bool bAttrib ) {
+    // FUN_006dab70
+    const char *pSource = bAttrib ? "<&>'\"" : "<&>";
+
+    std::string text;
+    const size_t length = strlen( pText );
+    text.reserve( length + 7 + length / 10 );
+    for ( ; *pText != '\0'; pText++ ) {
+        const char *pFound = strchr( pSource, *pText );
+        if ( pFound != nullptr ) {
+            text += kEntityReferences[pFound - pSource];
+        } else {
+            text += *pText;
+        }
+    }
+    return text;
 }

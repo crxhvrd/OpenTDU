@@ -31,6 +31,7 @@ struct DebugGraphCurve {
                      const float timeWindow );
     void addPoint( const float x, const float y );
     void computeRange( float &min, float &max ) const;
+    void setName( const char *pName );
     void draw( DrawList *pDrawList,
                const float left,
                const float right,
@@ -59,6 +60,11 @@ public:
         return curves[index];
     }
     inline bool isFrozen() const { return bFrozen; }
+    inline void setFrozen( const bool bState ) { bFrozen = bState; }
+    inline void setShowNames( const bool bState ) { bShowNames = bState; }
+    inline void setShowRange( const bool bState ) { bShowRange = bState; }
+    inline void setAutoScale( const bool bState ) { bAutoScale = bState; }
+    inline void setScrolling( const bool bState ) { bScrolling = bState; }
     inline void setDrawList( DrawList *pList ) { pDrawList = pList; }
     inline void
     setBounds( const float l, const float t, const float r, const float b ) {
@@ -79,6 +85,8 @@ public:
                  const float timeWindow );
     void release();
     void draw( float time );
+    void clear();
+    void setAutoRange( const bool bEnabled );
 
 private:
     void autoScale();

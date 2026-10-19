@@ -463,6 +463,15 @@ public:
     inline const PhysicsWheelState &getWheelState( uint32_t index ) const {
         return vehicle.Wheels[index];
     }
+    inline const Eigen::Vector4f &getWorldAcceleration() const {
+        return worldAcceleration;
+    }
+    inline const Eigen::Vector4f &getLocalAcceleration() const {
+        return localAcceleration;
+    }
+    inline const Eigen::Vector4f &getLocalAccelerationG() const {
+        return localAccelerationG;
+    }
     float computeWheelSteerAngle( const PhysicsWheelState &w ) const;
 
     void updateChrono( float dt );
@@ -785,10 +794,9 @@ private:
     // G-meter accel tracking
     float prevWorldVelocity[3];
 
-    // Body space acceleration
-    float localAccelLong;
-    float localAccelLat;
-    float localAccelVert;
+    Eigen::Vector4f worldAcceleration;
+    Eigen::Vector4f localAcceleration;
+    Eigen::Vector4f localAccelerationG;
 };
 
 extern bool gbSimuModeEnabled;

@@ -225,6 +225,7 @@ public:
     static void DecryptTEA( void *pBankData,
                             const uint32_t bankSize,
                             uint32_t *pOutDataPointer );
+    static void EncryptTEA( void *pBankData, const uint32_t bankSize );
 
     void *getFirstEntry( const eAssetGroup type,
                          const eAssetType subType,

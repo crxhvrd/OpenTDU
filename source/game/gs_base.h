@@ -30,6 +30,7 @@ public:
     virtual void reset();
 
     bool isPaused() const;
+    inline void setPaused( const bool bState ) { bPaused = bState; }
     uint32_t getIndex() const;
 
 #ifdef OTDU_USE_IMGUI

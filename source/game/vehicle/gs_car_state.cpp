@@ -895,6 +895,27 @@ void GSCarState::unregisterCallback( CarState *param_2,
     }
 }
 
+static void OnPoliceCollision( uint8_t collisionType,
+                               CarState *pOther,
+                               void *pOtherObject,
+                               void *pUserData ) {
+    // LAB_008b1620
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: Police (FUN_008b1270, skipped when the
+                             // AI controller +0x224 == 8)
+}
+
+void GSCarState::setPoliceStateJob( CarState *pCarState,
+                                    PoliceStateJob *pJob ) {
+    // FUN_008ad850
+    if ( pJob == nullptr ) {
+        pCarState->removeCollisionCallback( &OnPoliceCollision );
+    } else if ( !pCarState->hasCollisionCallback( &OnPoliceCollision,
+                                                  pCarState ) ) {
+        pCarState->addCollisionCallback( &OnPoliceCollision, pCarState );
+    }
+    policeStateJobs[pCarState->carInstanceID] = pJob;
+}
+
 void GSCarState::releaseResourceEntry( VehicleBaseResources *pResource ) {
     // FUN_004141c0
     uint32_t elementIndex =
