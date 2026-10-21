@@ -2,6 +2,11 @@
 <!--
     One child element per language (us fr it ge sp ja ko ch ru po), UTF-8.
     NOTE: a language without an entry falls back to <us>
+
+    Credits:
+    - Polish - https://github.com/Kudeshido
+    - French - https://github.com/PspLover-dev
+    - Russian - https://github.com/p4radigma
 -->
 <CONTENTDESC>
     <ACTION name="DESC">
@@ -12,30 +17,44 @@
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000001">
         <us>DISPLAY MODE</us>
         <fr>MODE D'AFFICHAGE</fr>
+        <po>Tryb wyświetlania</po>
+        <ru>Режим Отображения</ru>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000002">
         <us>FRAME RATE</us>
         <fr>IMAGES PAR SECONDE</fr>
+        <po>Klatek na sekundę</po>
+        <ru>Частота кадров</ru>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000003">
         <us>REFLECTIONS</us>
         <fr>REFLETS</fr>
+        <po>ODBICIA</po>
+        <ru>Отражения</ru>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000004">
         <us>VSYNC</us>
         <fr>SYNCHRO VERTICALE</fr>
+        <po>Synchronizacja Pionowa</po>
+        <ru>Вертикальная Синхронизация</ru>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000005">
         <us>BORDERLESS</us>
         <fr>FENÊTRÉ SANS BORDURE</fr>
+        <po>Bez ramek</po>
+        <ru>Безрамочный</ru>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000006">
         <us>WINDOWED</us>
         <fr>FENÊTRÉ</fr>
+        <po>W oknie</po>
+        <ru>Оконный</ru>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000007">
         <us>UNLIMITED</us>
         <fr>ILLIMITÉ</fr>
+        <po>Nielimitowane</po>
+        <ru>Неограниченная</ru>
     </ACTION>
 
     <!-- Mod manager -->
