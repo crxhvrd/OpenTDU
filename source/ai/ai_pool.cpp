@@ -747,8 +747,8 @@ void AiPool::tick( const float deltaTime, const float totalTime ) {
     updateOpponentRoundRobin();
     updateController1RoundRobin();
 
-    for ( AiVehicle *pVehicle : lists[AVL_All] ) {
-        pVehicle->tick( deltaTime, totalTime );
+    for ( int32_t i = 0; i < lists[AVL_All].Count; i++ ) {
+        lists[AVL_All].Items[i]->tick( deltaTime, totalTime );
     }
 }
 
