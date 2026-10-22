@@ -25,6 +25,9 @@ public:
                float totalTime ) override;
     void deserialize( BinaryReader *param_2 ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
+    int32_t gmeEditionFactory( const int32_t controlIndex,
+                               const int32_t request,
+                               void *pData ) override;
 
     inline AiVehicle *getParkedVehicle() const { return pParkedVehicle; }
     inline void setParkedVehicle( AiVehicle *pVehicle ) {
@@ -38,6 +41,7 @@ protected:
     int32_t Index;
     uint8_t *pData;
     uint32_t Value;
+    SerializedInt32 serializedValue;
 
     eSpawnKind SpawnKind;
     AiVehicle *pParkedVehicle;

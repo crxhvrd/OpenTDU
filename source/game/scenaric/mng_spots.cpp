@@ -26,10 +26,12 @@
 #include "player_data/saved_ranking.h"
 #include "render/gs_render.h"
 #include "render/render_scene.h"
+#include "game/lobby/gm_lobby.h"
 #include "game/map/gm_map.h"
 #include "game/scenaric/entity/entity_extra_challenge.h"
 #include "game/scenaric/game_intro_tutorial.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "game/scenaric/ige_file.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
@@ -641,6 +643,7 @@ MngSpots::MngSpots()
       pPictureSource( nullptr ),
       bPictureDrawn( false ),
       bPictureHidden( false ),
+      challengeInfo(),
       pChallengeInfoSpot( nullptr ),
       pRouteWaypoints( nullptr ),
       numBookmarks( 0 ),
@@ -678,7 +681,6 @@ MngSpots::MngSpots()
       housePictureBank(),
       mapScreens() {
     // FUN_00744210
-    OTDU_UNIMPLEMENTED; // TODO: EventParameters
     gpMngSpots = this;
 }
 
@@ -798,6 +800,11 @@ void MngSpots::pause() {
 
 void MngSpots::terminate() {
     // FUN_00745f90
+    if ( gIGEFileRequest.pEventParameters == &challengeInfo &&
+         gIGEFileRequest.pCallback != nullptr ) {
+        gpFile->cancelAsyncRequest( &gIGEFileRequest );
+        gIGEFileRequest.pCallback = nullptr;
+    }
     delete[] pRouteWaypoints;
     pRouteWaypoints = nullptr;
     releaseSpotMaterial();
@@ -2214,6 +2221,74 @@ void MngSpots::refreshExtraChallengePanel( EntityExtraChallenge *pChallenge ) {
     pMapPlayer->setVariableValue( "/:IsChaLocked", 0 );
 }
 
+void MngSpots::refreshChallengeRequirements() {
+    // FUN_00745d40
+    int32_t requiredLevel = int32_t( challengeInfo.getLevel().getValue() );
+    if ( requiredLevel == 0 ) {
+        requiredLevel = 7;
+    }
+    pMapPlayer->setVariableValue( "/:Level", requiredLevel );
+
+    if ( challengeInfo.getSpotType() == EventParameters::EST_Solo ) {
+        char restrictionText[0x80];
+        challengeInfo.buildVehicleRestrictionText(
+            restrictionText, sizeof( restrictionText ) - 1, false );
+        challengeInfo.setGroupRestrictionVars( pMapPlayer );
+        pMapPlayer->setVariableValueNonLinked( "/:vehicle_restriction",
+                                               restrictionText );
+    } else {
+        pMapPlayer->setVariableValueNonLinked( "/:Level_range", "" );
+        pMapPlayer->setVariableValue( "/:Level_min", 7 );
+        pMapPlayer->setVariableValue( "/:Level_max", 7 );
+        pMapPlayer->setVariableValueNonLinked(
+            "/:vehicle_restriction",
+            gpDatabase->getStringByHashcode(
+                0, kGameParameterRestrictionOptions[0] ) );
+        pMapPlayer->setVariableValueNonLinked( "/:GroupRestriction01",
+                                               "empty" );
+        pMapPlayer->setVariableValueNonLinked( "/:GroupRestriction02",
+                                               "empty" );
+    }
+
+    bool bLevelTooLow = false;
+    bool bCurrentCarOK = false;
+    bool bOtherCarOK = false;
+    challengeInfo.checkRequirements( &bLevelTooLow, &bCurrentCarOK,
+                                     &bOtherCarOK );
+
+    if ( pSelectedRecord != nullptr && pSelectedRecord->pSpot != nullptr ) {
+        const SpotMap *pSpot = pSelectedRecord->pSpot;
+        if ( pSpot->RoadID != 0 ) {
+            // NOTE: Retail evaluates the road lock here and drops the result.
+            IsRoadUnreachable(
+                gpPlayerData->getLoadedSave()->getRoadDiscovery(),
+                pSpot->RoadID, pSpot->RoadSegment );
+        }
+    }
+
+    const bool bNoCarOK = !bOtherCarOK && !bCurrentCarOK;
+    int32_t carState = 0;
+    if ( bCurrentCarOK ) {
+        carState = 1;
+    } else if ( bOtherCarOK ) {
+        carState = 2;
+    }
+    pMapPlayer->setVariableValue( "/:IsLevelOK", bLevelTooLow ? 0 : 1 );
+    pMapPlayer->setVariableValue( "/:IsCarOK", carState );
+
+    const bool bLocked =
+        ( bNoCarOK || bLevelTooLow ) &&
+        challengeInfo.getSpotType() == EventParameters::EST_Solo;
+    pMapPlayer->setVariableValue( "/:IsChaLocked", bLocked ? 1 : 0 );
+    pMapPlayer->setVariableValue( "/:InfosLoaded", 1 );
+}
+
+void MngSpots::refreshOnlineGameCount() {
+    // FUN_00744d90
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (CP2PGameService free ride games
+                             // count: /:NbGames, /datas/cart/infos/m_on)
+}
+
 void MngSpots::refreshChallengeInfoPanel( const bool bReset ) {
     // FUN_00746910
     if ( pSelectedRecord == nullptr || pSelectedRecord->pSpot == nullptr ||
@@ -2234,9 +2309,93 @@ void MngSpots::refreshChallengeInfoPanel( const bool bReset ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: EventParameters (+0xe38): SpotName, IsSolo,
-                        // requirements (FUN_00745d40), WhatCup, GoldReward,
-                        // NbGames, then release the IGE buffer
+    challengeInfo.setNameVariable( pMapPlayer, "/:SpotName" );
+    pMapPlayer->setVariableValue(
+        "/:IsSolo",
+        ( challengeInfo.getSpotType() == EventParameters::EST_Solo ) ? 1 : 0 );
+    refreshChallengeRequirements();
+
+    int32_t cup = 4;
+    switch ( gpPlayerData->getLoadedSave()->getRanking()->getChallengeResult(
+        pSelectedRecord->pSpot->Hashcode ) ) {
+    case 1:
+        cup = 1;
+        break;
+    case 2:
+        cup = 2;
+        break;
+    case 3:
+        cup = 3;
+        break;
+    default:
+        break;
+    }
+    pMapPlayer->setVariableValue( "/:WhatCup", cup );
+
+    char rewardText[0x20] = " ";
+    const int32_t reward = int32_t( challengeInfo.getRewardMoney().getValue() );
+    if ( reward > 0 ) {
+        FormatMoneyString( rewardText, reward );
+    }
+    pMapPlayer->setVariableValueNonLinked( "/:GoldReward", rewardText );
+
+    if ( challengeInfo.getSpotType() == EventParameters::EST_Solo ) {
+        pMapPlayer->setVariableValueNonLinked( "/:NbGames", "--" );
+    } else {
+        refreshOnlineGameCount();
+    }
+    gpScenaric->releaseIGEBuffer();
+}
+
+void MngSpots::onChallengeInfoLoaded( MapSpotRecord *pRecord ) {
+    // FUN_00746be0
+    if ( pSelectedRecord != pRecord ) {
+        return;
+    }
+
+    pMapPlayer->setVariableValueNonLinked( "/:WhatSpot", whatSpot );
+    refreshChallengeInfoPanel( false );
+    bChallengeInfoRequested = true;
+    bChallengeInfoFromCache = true;
+    pChallengeInfoSpot = pRecord->pSpot;
+
+    const SpotMap *pSpot = pRecord->pSpot;
+    if ( pSpot == nullptr ) {
+        return;
+    }
+    if ( pSpot->Type == kSpotTypeChallenge &&
+         GetSpotChallengeKind( pSpot ) == 1 ) {
+        return;
+    }
+
+    MngTracRoadMap *pTracRoad = nullptr;
+    if ( pOwner != nullptr ) {
+        pTracRoad = &pOwner->getTracRoadMap();
+    } else if ( gpActiveGameMode->getCurrentGameMode() == GM_Lobby ) {
+        pTracRoad =
+            &static_cast<GMLobby *>( gpActiveGameMode )->getTracRoadMap();
+    } else if ( gpActiveGameMode->getCurrentGameMode() == GM_Club ) {
+        OTDU_UNIMPLEMENTED; // TODO: GMClub (MngTracRoadMap at +0x10d0c0)
+        return;
+    } else {
+        return;
+    }
+
+    pTracRoad->solveLegs( true );
+    const float distance =
+        ComputeEventRouteLength( &challengeInfo, pTracRoad ) * 0.001f;
+    char distanceText[0x20];
+    FormatRouteDistance( distance, distanceText );
+    pMapPlayer->setVariableValueNonLinked( "/:Distance", distanceText );
+}
+
+bool MngSpots::OnChallengeInfoLoaded( int32_t /*param_1*/, void *pUserData ) {
+    // FUN_00746df0
+    if ( gpMngSpots != nullptr ) {
+        gpMngSpots->onChallengeInfoLoaded(
+            static_cast<MapSpotRecord *>( pUserData ) );
+    }
+    return true;
 }
 
 void MngSpots::updateChallengeInfoRequest( const float deltaTime ) {
@@ -2255,7 +2414,7 @@ void MngSpots::updateChallengeInfoRequest( const float deltaTime ) {
     }
 
     if ( bChallengeInfoRequested ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        refreshOnlineGameCount();
         return;
     }
     if ( pSpot == pChallengeInfoSpot ) {
@@ -2266,10 +2425,14 @@ void MngSpots::updateChallengeInfoRequest( const float deltaTime ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: Async IGE load of the challenge
-                             // (FUN_008025e0 into EventParameters +0xe38;
-                             // completion callback FUN_00746df0 ->
-                             // FUN_00746be0)
+    char spotName[9] = {};
+    memcpy( spotName, &pSpot->Hashcode, sizeof( pSpot->Hashcode ) );
+    if ( LoadIGEFile( &gIGEFileRequest, spotName, nullptr, false,
+                      &challengeInfo, true, &MngSpots::OnChallengeInfoLoaded,
+                      pSelectedRecord ) ) {
+        bChallengeInfoRequested = true;
+        bChallengeInfoFromCache = false;
+    }
 }
 
 void MngSpots::resetGaragePanel( const MapSpotRecord *pRecord ) {

@@ -90,6 +90,8 @@ public:
     void instanciateSceneries();
 
     Entity *getFirst( eEntityType type );
+    Entity *findCheckpointTemplate( const uint32_t checkpointType,
+                                    const bool bBigCheckpoint );
     Entity *findEntity( eEntityType type, const char *pInstanceName );
     Entity *getEntityByHashcode( uint64_t hashcode ) const;
     Entity *getVolumeByHashcode( uint64_t hashcode ) const;
@@ -211,6 +213,7 @@ protected:
     uint8_t bExternalBuffer : 1;
     uint8_t bNoCopy : 1;
     bool bActivated = false;
+    bool bTemplatesPrepared = false;
     bool bTransform = false;
     Matrix4x4f_t bankTransform = Matrix4x4f_t::Identity();
 
@@ -219,6 +222,7 @@ private:
     void installStaticPhysics( void *pBlob, uint32_t blobSize );
     bool streamFromFile();
     void instanciateContainer( BinaryArray &container );
+    void prepareAllTemplates();
     void prepareTemplates( BinaryArray &container );
     void deserializeFileReferences( BinaryReader &reader );
     void constructResourceLists();

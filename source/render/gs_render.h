@@ -229,6 +229,10 @@ public:
 
     void setupScenes( float nearZ, float farZ );
     void setupInteriorScenes( float nearZ, float farZ );
+    void setSceneViewports( const float x,
+                            const float y,
+                            const float width,
+                            const float height );
     void updateFovVsLOD( float param_2 );
 
     bool notifyConfigListeners( RenderConfigurationChangeListener *param_1 );

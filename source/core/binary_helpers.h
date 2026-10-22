@@ -66,6 +66,11 @@ static inline uint16_t ReverseEndianness16( uint16_t value ) {
     return (uint16_t)( ( value >> 8 ) | ( value << 8 ) );
 }
 
+static inline uint64_t ReverseEndianness64( uint64_t value ) {
+    return ( uint64_t( ReverseEndianness32( uint32_t( value ) ) ) << 32 ) |
+           ReverseEndianness32( uint32_t( value >> 32 ) );
+}
+
 static inline int32_t FloatToInt( float value ) {
     // FUN_00674eb4
     return (int32_t)value;

@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "base_entity.h"
 
+#include "core/binary_helpers.h"
+
 #include "game/cinematic/cin_res_collection.h"
 #include "game/game_mechanism.h"
 #include "game/scenaric/mng_actor.h"
@@ -351,14 +353,100 @@ void Entity::deinstanciate() {
     }
 }
 
-void Entity::gmeEditionFactory() {
+int32_t Entity::gmeEditionFactory( const int32_t controlIndex,
+                                   const int32_t request,
+                                   void *pData ) {
     // FUN_007fb0a0
-    OTDU_UNIMPLEMENTED; // TODO: GAME EDITOR
+    if ( request == GCR_NumControls ) {
+        return 1;
+    }
+    if ( controlIndex != 0 ) {
+        return 0;
+    }
+
+    return GMEControlAttribute( &serializedModelMatrix, 0u, request, pData );
 }
 
-void Entity::gmeGetControlIndex() {
+int32_t Entity::gmeGetControlIndex( const uint32_t controlID ) {
     // FUN_007fae70
-    OTDU_UNIMPLEMENTED; // TODO: GAME EDITOR
+    const int32_t numControls =
+        gmeEditionFactory( 0, GCR_NumControls, nullptr );
+    for ( int32_t i = 0; i < numControls; i++ ) {
+        if ( uint32_t( gmeEditionFactory( i, GCR_GetID, nullptr ) ) ==
+             controlID ) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int32_t Entity::GMEControlAttribute( SerializedAttribute *pAttribute,
+                                     const uint32_t controlID,
+                                     const int32_t request,
+                                     void *pData ) {
+    // Inlined in retail (FUN_007fb0a0, FUN_009c7aa0, FUN_007f9690)
+    static constexpr int32_t kControlVersion = 100002;
+
+    switch ( request ) {
+    case GCR_Deserialize:
+        return pAttribute->deserialize( *static_cast<void **>( pData ) ) ? 1
+                                                                         : 0;
+    case GCR_Serialize:
+        return pAttribute->serialize( *static_cast<void **>( pData ) ) ? 1 : 0;
+    case GCR_GetSize:
+        return int32_t( pAttribute->getSize() );
+    case 4:
+    case 5:
+    case 6:
+        *static_cast<uint32_t *>( pData ) = 0u;
+        return 1;
+    case GCR_GetID:
+        return int32_t( controlID );
+    case GCR_GetAttribute:
+        *static_cast<SerializedAttribute **>( pData ) = pAttribute;
+        return 1;
+    case GCR_GetVersion:
+        return kControlVersion;
+    default:
+        return 0;
+    }
+}
+
+bool SerializedMatrix::serialize( void *pPtr ) {
+    // FUN_007868a0
+    const float *pValues = pMatrixPointer->data();
+    uint8_t *pOut = static_cast<uint8_t *>( pPtr );
+    for ( int32_t i = 0; i < 16; i++ ) {
+        uint32_t bits = 0u;
+        memcpy( &bits, &pValues[i], sizeof( bits ) );
+        Write<uint32_t>( pOut, i * 4, ReverseEndianness32( bits ) );
+    }
+    return true;
+}
+
+bool SerializedMatrix::deserialize( void *pPtr ) {
+    // FUN_00785760
+    float *pValues = pMatrixPointer->data();
+    const uint8_t *pIn = static_cast<const uint8_t *>( pPtr );
+    for ( int32_t i = 0; i < 16; i++ ) {
+        pValues[i] =
+            BitsToFloat( ReverseEndianness32( ReadUint32( pIn + i * 4 ) ) );
+    }
+    return true;
+}
+
+bool SerializedInt32::serialize( void *pPtr ) {
+    // FUN_00785160
+    Write<uint32_t>( static_cast<uint8_t *>( pPtr ), 0,
+                     ReverseEndianness32( uint32_t( *pValuePointer ) ) );
+    return true;
+}
+
+bool SerializedInt32::deserialize( void *pPtr ) {
+    // FUN_00785120
+    *pValuePointer = int32_t( ReverseEndianness32(
+        ReadUint32( static_cast<const uint8_t *>( pPtr ) ) ) );
+    return true;
 }
 
 bool Entity::isPMIInTile( const SectorHeightmap *pHeightmap, int32_t tileKey ) {

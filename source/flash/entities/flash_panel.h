@@ -102,3 +102,9 @@ public:
 private:
     EbayOffer *pOffer;
 };
+
+struct DBEntryCarPhysicsData;
+
+void ShowCarDataGauges( FlashPlayer *pPlayer,
+                        const char *pPanelPath,
+                        DBEntryCarPhysicsData *pEntry );

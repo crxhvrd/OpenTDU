@@ -15,6 +15,7 @@
 #include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
+#include "player_data/saved_garage.h"
 
 GSDatabase gDatabase = {};
 GSDatabase *gpDatabase = nullptr; // DAT_011ee900
@@ -2344,6 +2345,165 @@ bool GSDatabase::brandHasCarOfCategory( const DBEntryBrand *pBrand,
         }
     }
     return false;
+}
+
+static bool IsCarConfigInGarage( const int32_t carConfigID ) {
+    // FUN_009aa5a0 (inlined)
+    Garage *pGarage = gpPlayerData->getLoadedSave()->getGarage();
+    for ( int32_t slot = 0; slot < Garage::kNumCarSlots; slot++ ) {
+        GarageSlot &car = pGarage->pCars[slot];
+        if ( !car.isValid() || car.state == CarDesc::eState::CDS_PutOnEbay ) {
+            continue;
+        }
+        if ( int32_t( car.getCarConfigID() ) == carConfigID ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static inline bool IsCarEntrySelectable( const DBEntryCarPhysicsData &car ) {
+    return ( car.BitField & 1 ) != 0 && car.Brand != nullptr &&
+           ( car.Brand->Flags & 1 ) != 0;
+}
+
+int32_t GSDatabase::getCarIndex( const int32_t carID ) const {
+    // FUN_009a9300
+    for ( uint32_t i = 0; i < gameDatabase.pNumItems[1]; i++ ) {
+        if ( gameDatabase.DBCarData[i].CarID == carID ) {
+            return int32_t( i );
+        }
+    }
+    return -1;
+}
+
+int32_t GSDatabase::getBrandCarIndex( const uint64_t brandHashcode,
+                                      const int32_t carID ) const {
+    // FUN_009a9990
+    int32_t brandCarIndex = 0;
+    for ( uint32_t i = 0; i < gameDatabase.pNumItems[1]; i++ ) {
+        const DBEntryCarPhysicsData &car = gameDatabase.DBCarData[i];
+        if ( car.Brand->Hashcode != brandHashcode ||
+             !IsCarEntrySelectable( car ) ) {
+            continue;
+        }
+        if ( car.CarID == carID ) {
+            return brandCarIndex;
+        }
+        brandCarIndex++;
+    }
+    return -1;
+}
+
+int32_t GSDatabase::findBrandCar( const uint64_t brandHashcode,
+                                  const int32_t brandCarIndex,
+                                  const bool bOwnedOnly ) const {
+    // FUN_009aa5a0
+    int32_t numBrandCars = 0;
+    for ( uint32_t i = 0; i < gameDatabase.pNumItems[1]; i++ ) {
+        const DBEntryCarPhysicsData &car = gameDatabase.DBCarData[i];
+        if ( car.Brand->Hashcode != brandHashcode ||
+             !IsCarEntrySelectable( car ) ) {
+            continue;
+        }
+        if ( bOwnedOnly && !IsCarConfigInGarage( car.CarID ) ) {
+            continue;
+        }
+        if ( numBrandCars == brandCarIndex ) {
+            return int32_t( i );
+        }
+        numBrandCars++;
+    }
+    return -1;
+}
+
+bool GSDatabase::isCarOfVehicleType( const DBEntryCarPhysicsData *pCarEntry,
+                                     const int32_t vehicleType ) {
+    // FUN_009aa6d0
+    if ( pCarEntry == nullptr || !IsCarEntrySelectable( *pCarEntry ) ) {
+        return false;
+    }
+
+    switch ( vehicleType ) {
+    case 1:
+        return !isBike( pCarEntry );
+    case 2:
+        return isBike( pCarEntry );
+    default:
+        return true;
+    }
+}
+
+bool GSDatabase::isBrandSelectable( const int32_t brandIndex,
+                                    const bool bOwnedOnly,
+                                    const int32_t vehicleType ) {
+    // FUN_009aac30
+    if ( brandIndex < 0 ||
+         brandIndex >= int32_t( gameDatabase.pNumItems[6] ) ) {
+        return false;
+    }
+
+    const DBEntryBrand *pBrand = &gameDatabase.DBBrand[brandIndex];
+    if ( strncmp( pBrand->BrandID.pAsString, "TRAFFIC", 7 ) == 0 ) {
+        return false;
+    }
+    if ( ( ( pBrand->Flags >> 1 ) & 1 ) != 0 ) {
+        return false;
+    }
+
+    if ( bOwnedOnly ) {
+        bool bOwned = false;
+        Garage *pGarage = gpPlayerData->getLoadedSave()->getGarage();
+        for ( int32_t slot = 0; slot < Garage::kNumCarSlots && !bOwned;
+              slot++ ) {
+            GarageSlot &car = pGarage->pCars[slot];
+            if ( !car.isValid() ||
+                 car.state == CarDesc::eState::CDS_PutOnEbay ) {
+                continue;
+            }
+            const DBEntryCarPhysicsData *pEntry =
+                getCarDBEntry( int32_t( car.getCarConfigID() ) );
+            bOwned = pEntry != nullptr &&
+                     pEntry->Brand->Hashcode == pBrand->Hashcode;
+        }
+        if ( !bOwned ) {
+            return false;
+        }
+    }
+
+    for ( uint32_t i = 0; i < gameDatabase.pNumItems[1]; i++ ) {
+        const DBEntryCarPhysicsData *pCar = &gameDatabase.DBCarData[i];
+        if ( pCar->Brand == pBrand &&
+             isCarOfVehicleType( pCar, vehicleType ) ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int32_t GSDatabase::findNextSelectableBrand( const int32_t brandIndex,
+                                             const bool bOwnedOnly,
+                                             const int32_t vehicleType ) {
+    // FUN_009ab1d0
+    for ( int32_t i = brandIndex + 1; i < int32_t( gameDatabase.pNumItems[6] );
+          i++ ) {
+        if ( isBrandSelectable( i, bOwnedOnly, vehicleType ) ) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int32_t GSDatabase::findPreviousSelectableBrand( const int32_t brandIndex,
+                                                 const bool bOwnedOnly,
+                                                 const int32_t vehicleType ) {
+    // FUN_009ab190
+    for ( int32_t i = brandIndex - 1; i >= 0; i-- ) {
+        if ( isBrandSelectable( i, bOwnedOnly, vehicleType ) ) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 const CarConfig *GSDatabase::getCarConfig( const int32_t carID ) const {

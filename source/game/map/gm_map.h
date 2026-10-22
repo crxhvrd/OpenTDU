@@ -41,6 +41,7 @@ class GMMap : public GameModeScene {
 public:
     inline int32_t getExitState() const { return exitState; }
     inline MngSpots &getMngSpots() { return mngSpots; }
+    inline MngTracRoadMap &getTracRoadMap() { return mngTracRoadMap; }
     inline float getCursorX() const { return cursorX; }
     inline float getCursorY() const { return cursorY; }
 

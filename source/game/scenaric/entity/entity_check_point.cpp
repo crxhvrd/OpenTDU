@@ -79,6 +79,7 @@ EntityCheckPoint::EntityCheckPoint()
       WasIn( 0 ),
       RoadWidth( 0.0f ),
       Index( 0 ),
+      serializedIndex( &Index ),
       pBinActors{ nullptr, nullptr },
       pInstanciatedActors{ nullptr, nullptr },
       AIComputedRoadIt() {
@@ -260,9 +261,20 @@ void EntityCheckPoint::deinstanciate() {
     }
 }
 
-void EntityCheckPoint::gmeEditionFactory() {
+int32_t EntityCheckPoint::gmeEditionFactory( const int32_t controlIndex,
+                                             const int32_t request,
+                                             void *pData ) {
     // FUN_007f9690
-    OTDU_UNIMPLEMENTED; // TODO: GAME EDITOR
+    if ( request == GCR_NumControls ) {
+        return 2;
+    }
+    if ( controlIndex < 1 ) {
+        return Entity::gmeEditionFactory( controlIndex, request, pData );
+    }
+    if ( controlIndex != 1 ) {
+        return 0;
+    }
+    return GMEControlAttribute( &serializedIndex, 1u, request, pData );
 }
 
 void EntityCheckPoint::onWorldStreamed() {

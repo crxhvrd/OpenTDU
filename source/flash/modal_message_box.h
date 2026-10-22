@@ -50,6 +50,7 @@ public:
 public:
     inline bool getUnknownFlag() const { return bUnknownFlag; }
     inline int32_t getNumOpenMsgBox() const { return numOpenMessageBox; }
+    inline FlashPlayer *getFlashPlayer() const { return pFlashPlayer; }
 
 public:
     ModalMessageBox();

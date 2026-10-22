@@ -54,23 +54,39 @@ protected:
     void *pStreamPointer;
 };
 
+// Big endian matrix (vtable 0x00f2ac60).
 struct SerializedMatrix : public SerializedAttribute {
     Matrix4x4f_t *pMatrixPointer = nullptr;
 
     SerializedMatrix( Matrix4x4f_t *pResource )
         : SerializedAttribute( pResource ), pMatrixPointer( pResource ) {}
 
-    virtual bool serialize( void *pPtr ) override {
-        *(Matrix4x4f_t *)pPtr = *pMatrixPointer;
-        return true;
-    }
-
-    virtual bool deserialize( void *pPtr ) override {
-        pMatrixPointer = (Matrix4x4f_t *)pPtr;
-        return true;
-    }
-
+    virtual bool serialize( void *pPtr ) override;
+    virtual bool deserialize( void *pPtr ) override;
     virtual uint32_t getSize() const override { return sizeof( Matrix4x4f_t ); }
+};
+
+// Big endian 32 bit integer (vtable 0x00f2a7a0).
+struct SerializedInt32 : public SerializedAttribute {
+    int32_t *pValuePointer = nullptr;
+
+    SerializedInt32( int32_t *pResource )
+        : SerializedAttribute( pResource ), pValuePointer( pResource ) {}
+
+    virtual bool serialize( void *pPtr ) override;
+    virtual bool deserialize( void *pPtr ) override;
+    virtual uint32_t getSize() const override { return sizeof( int32_t ); }
+};
+
+// Requests of the game editor control API (Entity::gmeEditionFactory).
+enum eGMEControlRequest : int32_t {
+    GCR_Deserialize = 0x0,
+    GCR_Serialize = 0x1,
+    GCR_GetSize = 0x2,
+    GCR_NumControls = 0x9,
+    GCR_GetID = 0xc,
+    GCR_GetAttribute = 0xd,
+    GCR_GetVersion = 0xe,
 };
 
 struct EntityDesc {
@@ -95,6 +111,9 @@ public:
         return pDesc != nullptr ? pDesc->Type : eEntityType::ET_None;
     }
     inline bool isShifted() const { return bShifted != 0; }
+    inline void setPrimaryInstance( const bool b ) { bPrimaryInstance = b; }
+    inline uint32_t getFlags() const { return flags; }
+    inline void setFlags( const uint32_t newFlags ) { flags = newFlags; }
     inline const std::string &getInstanceName() const { return name; }
     inline const EntityDesc *getDesc() const { return pDesc; }
     inline Entity *getParent() const { return pParent; }
@@ -164,8 +183,10 @@ public:
     virtual void instanciate( MngActor *pMngActor, Entity *param_1 );
     virtual void deinstanciate();
     // GME (GameModeEditor) vtable entries.
-    virtual void gmeEditionFactory();
-    virtual void gmeGetControlIndex();
+    virtual int32_t gmeEditionFactory( const int32_t controlIndex,
+                                       const int32_t request,
+                                       void *pData );
+    virtual int32_t gmeGetControlIndex( const uint32_t controlID );
     virtual void onWorldStreamed() { /* NOP */ }
     virtual void *getGeometryData() { return nullptr; }
     virtual void setColor( ColorRGBA color ) { /* NOP */ }
@@ -210,6 +231,11 @@ protected:
 protected:
     void setTransformFromDesc();
     void resolveSoundReference();
+
+    static int32_t GMEControlAttribute( SerializedAttribute *pAttribute,
+                                        const uint32_t controlID,
+                                        const int32_t request,
+                                        void *pData );
 };
 
 void ResolvePathList( uint32_t *pList );

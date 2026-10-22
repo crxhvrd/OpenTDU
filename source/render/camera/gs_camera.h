@@ -94,6 +94,21 @@ public:
     }
     inline void setInvertMouse( const bool value ) { field_0x955 = value; }
 
+    // Freezes the vehicle camera selection while a scripted (front end) view
+    // drives the active vehicle camera.
+    inline void lockScriptedView() {
+        timer = 99.0f; // DAT_00f417e8
+        bMouseCam = false;
+        bReplayMode = false;
+        bDisableInteriorView = true;
+        bNeedSwitch = true;
+        activeModeVehicle = -1;
+        activeMode = -1;
+        timerToSwitch = 0.0f;
+        activeModeOverride = -1;
+        activeModeVehicleOverride = -1;
+    }
+
     inline void setActiveCameraAsDefault() {
         defaultCamera = pActiveVehicleCamera;
         applyCinematicOverride( defaultCamera );

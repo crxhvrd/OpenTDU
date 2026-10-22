@@ -28,6 +28,7 @@
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/gs_playerdata.h"
+#include "game/vehicle/car_desc.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/achievements_data.h"
 #include "player_data/saved_garage.h"
@@ -624,14 +625,91 @@ void GetChallengeCarAvailability( const SpotMap *pSpot,
     OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA
 }
 
+// DAT_00f941d8
+static constexpr uint64_t kCarCategoryHashcodes[7] = {
+    0x0467a0e8, 0x0476e328, 0x04862568, 0x049567a8,
+    0x04a4a9e8, 0x04b3ec28, 0x04c32e68 };
+// DAT_00f94210
+static constexpr uint64_t kBikeCategoryHashcodes[2] = { 0x0493e108,
+                                                        0x04a32348 };
+
+bool IsCarAllowedByRestriction( const CarDesc *pCar,
+                                const int32_t vehicleType,
+                                const int32_t restriction,
+                                const uint64_t brandHashcode,
+                                const uint32_t modelID,
+                                const int32_t category,
+                                const int32_t categoryMax,
+                                const int32_t categoryMin ) {
+    // FUN_00893650
+    DBEntryCarPhysicsData *pEntry =
+        gpDatabase->getCarDBEntry( int32_t( pCar->getCarConfigID() ) );
+    if ( pEntry == nullptr ) {
+        return false;
+    }
+
+    const bool bIsBike = gpDatabase->isBike( pEntry );
+    if ( bIsBike ? vehicleType == 1 : vehicleType == 2 ) {
+        return false;
+    }
+
+    const uint64_t groupHashcode =
+        gpDatabase->getGameDB().Databases[1].getHashcodeForPointer(
+            pEntry->CarGroup.pAsRawPointer );
+
+    switch ( restriction ) {
+    case 1:
+        return pEntry->Brand->Hashcode == brandHashcode;
+    case 2:
+        return modelID == pCar->getCarConfigID();
+    case 3:
+        if ( bIsBike ) {
+            return category >= 0 && category <= 1 && vehicleType != 1 &&
+                   kBikeCategoryHashcodes[category] == groupHashcode;
+        }
+        return vehicleType != 2 && category >= 0 && category < 7 &&
+               kCarCategoryHashcodes[category] == groupHashcode;
+    case 4:
+        for ( int32_t i = categoryMin; i <= categoryMax; i++ ) {
+            if ( bIsBike ) {
+                if ( category < 2 && vehicleType != 1 && i < 2 &&
+                     kBikeCategoryHashcodes[i] == groupHashcode ) {
+                    return true;
+                }
+            } else if ( vehicleType != 2 && i < 7 &&
+                        kCarCategoryHashcodes[i] == groupHashcode ) {
+                return true;
+            }
+        }
+        return false;
+    default:
+        return true;
+    }
+}
+
+bool IsCarAllowedOnSpot( const CarDesc *pCar, const SpotMap *pSpot ) {
+    // FUN_0075d580
+    if ( pSpot == nullptr ) {
+        return true;
+    }
+
+    return IsCarAllowedByRestriction(
+        pCar, pSpot->VehicleType, pSpot->VehicleRestriction,
+        pSpot->VehicleBrand, pSpot->VehicleModel, pSpot->VehicleCategory,
+        pSpot->VehicleCategoryMax, pSpot->VehicleCategoryMin );
+}
+
 static bool IsSpotID( const SpotMap *pSpot, const char *pID ) {
     return std::memcmp( &pSpot->Hashcode, pID, sizeof( pSpot->Hashcode ) ) == 0;
 }
 
-static void LaunchHardcodedMission( const char *pMissionName ) {
+static void LaunchHardcodedMission( const char *pMissionName,
+                                    const uint32_t field124 ) {
     // FUN_007d8050 (inlined)
-    (void)pMissionName;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+    EventParameters &eventParameters = gpScenaric->getSelectedEventParameters();
+    eventParameters.setRequestedName( pMissionName );
+    eventParameters.setSource( EventParameters::ES_HardcodedMission );
+    eventParameters.setField124( field124 );
     gpTestDriveInstance->setNextGameMode( GM_Mission );
 }
 
@@ -675,15 +753,22 @@ bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
         break;
     case ST_Challenge:
         if ( IsSpotID( pSpot, "HACK_HVK" ) ) {
-            LaunchHardcodedMission( "Test_Havock" );
+            LaunchHardcodedMission( "Test_Havock", 0x3ba0bab );
         } else if ( IsSpotID( pSpot, "HACK_WKS" ) ) {
-            LaunchHardcodedMission( "walkstreet" );
+            LaunchHardcodedMission( "walkstreet", 0x1b00b5 );
         } else if ( IsSpotID( pSpot, "HACK_DRV" ) ) {
-            LaunchHardcodedMission( "drive001" );
+            LaunchHardcodedMission( "drive001", 0x1defe4d );
         } else if ( IsSpotID( pSpot, "LED_STRP" ) ) {
             gpTestDriveInstance->setNextGameMode( GM_FreeRide );
         } else {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC / ONLINE
+            char spotName[9] = {};
+            memcpy( spotName, &pSpot->Hashcode, sizeof( pSpot->Hashcode ) );
+            EventParameters &eventParameters =
+                gpScenaric->getSelectedEventParameters();
+            eventParameters.setRequestedName( spotName );
+            eventParameters.setSource( EventParameters::ES_IGEFile );
+            eventParameters.setField124( 0x1020304 );
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
             if ( gpActiveGameMode->getCurrentGameMode() != GM_Lobby ||
                  bJoiningLobby ) {
                 gpTestDriveInstance->setNextGameMode( GM_Lobby );

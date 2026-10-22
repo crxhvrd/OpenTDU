@@ -26,6 +26,14 @@ public:
 
 public:
     inline int32_t getIndex() const { return Index; }
+    inline const SerializedCheckPoint *getLEDData() const { return pLEDData; }
+    inline void setRoadWidth( const float width ) { RoadWidth = width; }
+    inline void setIndex( const int32_t index ) { Index = index; }
+    inline Entity *getZoneTrigger() const { return pZoneTrigger; }
+    inline void resetEventCounters() {
+        memset( NbTimesEventReached, 0, sizeof( NbTimesEventReached ) );
+        PassedData = 0.0f;
+    }
 
 public:
     EntityCheckPoint();
@@ -44,7 +52,9 @@ public:
     void propagatePosition( Eigen::Vector4f &position, bool param_1 ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
     void deinstanciate() override;
-    void gmeEditionFactory() override;
+    int32_t gmeEditionFactory( const int32_t controlIndex,
+                               const int32_t request,
+                               void *pData ) override;
     void onWorldStreamed() override;
 
 protected:
@@ -61,6 +71,7 @@ protected:
     uint32_t WasIn;
     float RoadWidth;
     int32_t Index;
+    SerializedInt32 serializedIndex;
     uint8_t *pBinActors[kNumGateActors];
     Entity *pInstanciatedActors[kNumGateActors];
     AIRoadIterator AIComputedRoadIt;

@@ -5,6 +5,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/entity/entity_car_player.h"
+#include "game/scenaric/entity/entity_check_point.h"
 #include "render/serialized_skinned_model.h"
 #include "render/instance.h"
 #include "render/gs_render.h"
@@ -67,6 +68,7 @@ void ScenaricBank::instanciate() {
     constructResourceLists();
     pushResources2D();
     pushResources3D();
+    prepareAllTemplates();
 
     if ( pMngActor != nullptr ) {
         activate( pMngActor );
@@ -82,9 +84,7 @@ void ScenaricBank::activate( MngActor *pTargetMngActor ) {
     }
     bActivated = true;
 
-    prepareTemplates( zoneVolumes );
-    prepareTemplates( zones );
-    prepareTemplates( entities );
+    prepareAllTemplates();
     instanciateSceneries();
 
     // The InstantiateEntity loops (only when an actor manager owns this bank).
@@ -96,6 +96,17 @@ void ScenaricBank::activate( MngActor *pTargetMngActor ) {
         }
         instanciateContainer( entities );
     }
+}
+
+void ScenaricBank::prepareAllTemplates() {
+    if ( bTemplatesPrepared ) {
+        return;
+    }
+    bTemplatesPrepared = true;
+
+    prepareTemplates( zoneVolumes );
+    prepareTemplates( zones );
+    prepareTemplates( entities );
 }
 
 void ScenaricBank::prepareTemplates( BinaryArray &container ) {
@@ -208,6 +219,7 @@ void ScenaricBank::unload() {
 
     releaseResourceLists();
     bActivated = false;
+    bTemplatesPrepared = false;
     pSpotSector = nullptr;
     pSector = nullptr;
 
@@ -731,6 +743,30 @@ Entity *ScenaricBank::getFirst( eEntityType type ) {
         }
     }
     return nullptr;
+}
+
+Entity *ScenaricBank::findCheckpointTemplate( const uint32_t checkpointType,
+                                              const bool bBigCheckpoint ) {
+    // FUN_00804530
+    Entity *pFallback = nullptr;
+    for ( int32_t i = 0; i < entities.getCount(); i++ ) {
+        Entity *pEntity = static_cast<Entity *>( entities.getElement( i ) );
+        if ( pEntity == nullptr ||
+             pEntity->getType() != eEntityType::ET_CHPT ) {
+            continue;
+        }
+
+        const SerializedCheckPoint *pLEDData =
+            static_cast<EntityCheckPoint *>( pEntity )->getLEDData();
+        if ( pLEDData->Type != checkpointType ) {
+            continue;
+        }
+        if ( ( pLEDData->BigCheckpoint != 0 ) == bBigCheckpoint ) {
+            return pEntity;
+        }
+        pFallback = pEntity;
+    }
+    return pFallback;
 }
 
 Entity *ScenaricBank::findEntity( eEntityType type,

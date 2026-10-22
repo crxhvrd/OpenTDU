@@ -178,6 +178,24 @@ public:
     bool brandHasAvailableCar( const DBEntryBrand *pBrand );
     bool brandHasCarOfCategory( const DBEntryBrand *pBrand, const bool bBike );
 
+    int32_t getCarIndex( const int32_t carID ) const;
+    int32_t getBrandCarIndex( const uint64_t brandHashcode,
+                              const int32_t carID ) const;
+    int32_t findBrandCar( const uint64_t brandHashcode,
+                          const int32_t brandCarIndex,
+                          const bool bOwnedOnly ) const;
+    bool isCarOfVehicleType( const DBEntryCarPhysicsData *pCarEntry,
+                             const int32_t vehicleType );
+    bool isBrandSelectable( const int32_t brandIndex,
+                            const bool bOwnedOnly,
+                            const int32_t vehicleType );
+    int32_t findNextSelectableBrand( const int32_t brandIndex,
+                                     const bool bOwnedOnly,
+                                     const int32_t vehicleType );
+    int32_t findPreviousSelectableBrand( const int32_t brandIndex,
+                                         const bool bOwnedOnly,
+                                         const int32_t vehicleType );
+
     const CarConfig *getCarConfig( int32_t carID ) const;
 
     DBEntryCarShop *getCarShopBySpotName( uint64_t spotHashcode );

@@ -1045,8 +1045,7 @@ bool GameModeWorld::onMessage( FlashMessage *pMessage ) {
 
 EventParameters *GameModeWorld::getMissionDescription() {
     // FUN_0042b4d0
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
-    return nullptr;
+    return &gpScenaric->getSelectedEventParameters();
 }
 
 void GameModeWorld::onPauseMenuRequested( bool bOpened ) {

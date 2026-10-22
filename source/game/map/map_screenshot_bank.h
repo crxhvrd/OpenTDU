@@ -24,6 +24,7 @@ public:
 
 public:
     inline bool isLoading() const { return state == MSS_Loading; }
+    inline bool isReady() const { return state == MSS_Ready; }
     inline void setBuffer( void *pNewBuffer ) { pBuffer = pNewBuffer; }
     inline void *getBuffer() const { return pBuffer; }
 

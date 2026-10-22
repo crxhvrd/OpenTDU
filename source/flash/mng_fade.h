@@ -28,6 +28,18 @@ public:
     inline float getTransitionDuration() const { return transitionDuration; }
     inline void setRenderLogo( const bool bEnabled ) { bRenderLogo = bEnabled; }
     inline bool isRenderingLogo() const { return bRenderLogo; }
+    inline void clearTransitionCallback() {
+        pCallback = nullptr;
+        pCallbackSource = nullptr;
+        pCallbackData = nullptr;
+    }
+    inline void setFadeRect( const Eigen::Vector2f &newPosition,
+                             const float newWidth,
+                             const float newHeight ) {
+        position = newPosition;
+        width = newWidth;
+        height = newHeight;
+    }
     inline void restartTransition( const uint32_t newFlags,
                                    const float durationInSeconds ) {
         transitionDuration = durationInSeconds;

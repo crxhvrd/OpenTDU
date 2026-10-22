@@ -721,6 +721,35 @@ void GSScenaric::setTraceSize( uint32_t param_1 ) { traceSize = param_1; }
 
 void GSScenaric::setDefaultIGE( const char *param_1 ) { defaultIGE = param_1; }
 
+void GSScenaric::releaseIGEBuffer() {
+    // FUN_004238c0
+    if ( pIGEBuffer != nullptr ) {
+        TestDrive::Free( pIGEBuffer );
+        pIGEBuffer = nullptr;
+    }
+}
+
+bool GSScenaric::loadPackBank( const char *pBankFolder,
+                               const char *pBankName,
+                               ScenaricBank *pBank ) {
+    // FUN_00806250
+    if ( pBank != &worldScenaricBank ) {
+        registerBank( pBank );
+    }
+
+    std::string bankPath = gpConfig->getResRootPath();
+    if ( pBankFolder != nullptr ) {
+        bankPath += pBankFolder;
+        bankPath += '/';
+    }
+    bankPath += pBankName;
+    bankPath += ".bnk";
+
+    pBank->loadFromFile( bankPath.c_str(), nullptr, false );
+    pBank->forceLoad();
+    return true;
+}
+
 void GSScenaric::LoadScenaricBank( const char *pBankFolder,
                                    const char *pBankName,
                                    ScenaricBank *pOutBank,

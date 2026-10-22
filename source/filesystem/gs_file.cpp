@@ -828,6 +828,26 @@ bool GSFile::hasPendingAsyncRequests() {
     return false;
 }
 
+bool GSFile::cancelAsyncRequest( void *pUserData ) {
+    // FUN_009a2a90
+    for ( AsyncFileOpen *pRequest : asyncData ) {
+        if ( !pRequest->bInUse || pRequest->pUserData != pUserData ) {
+            continue;
+        }
+
+        pRequest->bCanceled = true;
+        if ( workerThreadContext.bRunning &&
+             workerThreadContext.pAsyncData == pRequest ) {
+            return false;
+        }
+
+        asyncData.erase( pRequest );
+        delete pRequest;
+        return true;
+    }
+    return true;
+}
+
 void GSFile::flushPendingAsync() {
     while ( hasPendingAsyncRequests() ) {
         syncAsyncWorkerThread();

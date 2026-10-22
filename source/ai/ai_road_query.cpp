@@ -86,7 +86,9 @@ bool ProjectFrameOnRoad( const Matrix4x4f_t &frame,
 
     AiRoadIt it;
     ProjectOnRoadShape( frame, it, &outFrame, bBank, pShape );
-    *ppOutProfile = it.getEntity()->pProfile;
+    if ( ppOutProfile != nullptr ) {
+        *ppOutProfile = it.getEntity()->pProfile;
+    }
     return true;
 }
 

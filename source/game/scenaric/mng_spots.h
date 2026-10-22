@@ -12,6 +12,7 @@
 #include "render/2db.h"
 #include "render/2dm.h"
 #include "render/draw_list.h"
+#include "event_parameters.h"
 #include "spots.h"
 
 class GMMap;
@@ -137,6 +138,7 @@ public:
     inline AiRoadLocation *getRouteWaypoint( const int32_t index ) const {
         return &pRouteWaypoints[index];
     }
+    inline EventParameters &getChallengeInfo() { return challengeInfo; }
     inline bool isChallengeInfoRequested() const {
         return bChallengeInfoRequested;
     }
@@ -229,6 +231,9 @@ private:
     void buildBrandLogoLists();
     void refreshChallengeInfoPanel( bool bReset );
     void updateChallengeInfoRequest( float deltaTime );
+    void refreshChallengeRequirements();
+    void refreshOnlineGameCount();
+    void onChallengeInfoLoaded( MapSpotRecord *pRecord );
     void refreshExtraChallengePanel( EntityExtraChallenge *pChallenge );
     void refreshTuningShopPanel( const SpotMap *pSpot );
     void setSpotLocked( uint64_t lockedTextHashcode );
@@ -243,6 +248,7 @@ private:
     void onHousePictureLoaded();
 
     static bool OnMapScreenLoaded( MapScreenshotBank *pBank, void *pUserData );
+    static bool OnChallengeInfoLoaded( int32_t param_1, void *pUserData );
     static bool OnHousePictureLoaded( HousePictureBank *pBank,
                                       void *pUserData );
     static void PictureDrawCallback( FlashRECT *pViewport,
@@ -283,6 +289,7 @@ private:
     const void *pPictureSource;
     bool bPictureDrawn;
     bool bPictureHidden;
+    EventParameters challengeInfo;
 
     const SpotMap *pChallengeInfoSpot;
     AiRoadLocation *pRouteWaypoints;

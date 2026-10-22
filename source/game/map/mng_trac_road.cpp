@@ -2,10 +2,14 @@
 #include "mng_trac_road.h"
 
 #include "ai/ai_road_query.h"
+#include "database/gs_database.h"
+#include "game/scenaric/event_parameters.h"
+#include "player_data/gs_playerdata.h"
 #include "core/cubic_bezier.h"
 #include "game/game_mechanism_player.h"
 #include "game/gm_base.h"
 #include "game/map/gm_map.h"
+#include "game/map/mng_map_viewer.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_spots.h"
 #include "game/scenaric/spots.h"
@@ -211,6 +215,59 @@ void MngTracRoad::solveLegs( const bool bIgnoreOneWay ) {
     if ( isLoop() ) {
         solveLeg( numLegWaypoints - 1, bIgnoreOneWay );
     }
+}
+
+float MngTracRoad::computeRouteLength( const bool bLoop,
+                                       const int32_t loopCheckpointIndex,
+                                       const int32_t numLaps ) {
+    // FUN_00783060
+    if ( !bLoop ) {
+        float length = 0.0f;
+        for ( int32_t i = 0; i < getNumWaypoints() - 1; i++ ) {
+            length += legLengths[i];
+        }
+        return length;
+    }
+
+    float lapLength = 0.0f;
+    float leadLength = 0.0f;
+    for ( int32_t i = 0; i < getNumWaypoints(); i++ ) {
+        if ( i < loopCheckpointIndex - 1 ) {
+            leadLength += legLengths[i];
+        } else {
+            lapLength += legLengths[i];
+        }
+    }
+    return float( numLaps ) * lapLength + leadLength;
+}
+
+float ComputeEventRouteLength( EventParameters *pEventParameters,
+                               MngTracRoad *pTracRoad ) {
+    // FUN_00783370
+    const bool bLoop = pEventParameters->getLoop().getValue() != 0;
+    const int32_t loopCheckpointIndex =
+        int32_t( pEventParameters->getLoopCheckpointIndex().getValue() );
+    int32_t numLaps = int32_t( pEventParameters->getNumLaps().getValue() );
+    if ( numLaps == 0 ) {
+        numLaps = int32_t( pEventParameters->getNumOpponents().getValue() );
+    }
+    return pTracRoad->computeRouteLength( bLoop, loopCheckpointIndex, numLaps );
+}
+
+void FormatRouteDistance( const float distanceKm, char *pOutText ) {
+    // FUN_00783310
+    static constexpr uint64_t kMilesHashcode = 0x5f3563;
+    static constexpr uint64_t kKilometersHashcode = 0x60bc03;
+    static constexpr float kKilometersToMiles = 0.621504f;
+
+    float distance = distanceKm;
+    uint64_t unitHashcode = kKilometersHashcode;
+    if ( gpPlayerData->isUsingImperialUnits() ) {
+        distance *= kKilometersToMiles;
+        unitHashcode = kMilesHashcode;
+    }
+    sprintf( pOutText, "%.1f %s", distance,
+             gpDatabase->getStringByHashcode( 0, unitHashcode ) );
 }
 
 void MngTracRoad::solveLeg( const int32_t legIndex, const bool bIgnoreOneWay ) {
@@ -465,8 +522,10 @@ void MngTracRoadMap::setNumWaypoints( const int32_t count ) {
 
 bool MngTracRoadMap::isActive() const {
     // FUN_00783ac0
-    if ( gpTestDriveInstance->getActiveGameMode() == GM_Lobby ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLobby
+    if ( gpTestDriveInstance->getActiveGameMode() == GM_Lobby &&
+         gpMngMapViewer != nullptr &&
+         gpMngMapViewer->getState() == MngMapViewer::MS_Idle ) {
+        return true;
     }
     if ( pOwner == nullptr ) {
         return false;
@@ -497,20 +556,26 @@ int32_t MngTracRoadMap::getNumWaypoints() const {
 bool MngTracRoadMap::isLoop() const {
     // FUN_00783230
     if ( gpTestDriveInstance->getActiveGameMode() == GM_Lobby ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLobby (DAT_011f3da8)
-        return false;
+        if ( bLobby ) {
+            return gpScenaric->getSelectedEventParameters()
+                       .getLoop()
+                       .getValue() != 0;
+        }
+        if ( pOwner == nullptr ) {
+            return false;
+        }
+    } else {
+        const MapSpotRecord *pRecord = pOwner->getSelectedRecord();
+        if ( pRecord != nullptr && ( pRecord->Info.ChallengeFlags &
+                                     kExtraChallengeRecordFlag ) != 0 ) {
+            return false;
+        }
     }
-    const MapSpotRecord *pRecord = pOwner->getSelectedRecord();
-    if ( pRecord != nullptr &&
-         ( pRecord->Info.ChallengeFlags & kExtraChallengeRecordFlag ) != 0 ) {
-        return false;
-    }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: EventParameters
-    return false;
+    return pOwner->getChallengeInfo().getLoop().getValue() != 0;
 }
 
 int32_t MngTracRoadMap::getLoopWaypointCount() const {
     // FUN_00783210
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: EventParameters
-    return 0;
+    return int32_t(
+        pOwner->getChallengeInfo().getLoopCheckpointIndex().getValue() );
 }

@@ -1649,7 +1649,7 @@ void GSRender::setupRenderPasses() {
         RenderPass{&sceneBack2D,                       &camera2D,            &viewportNear,
                    &mainRTwMFramebuffer,                                                                                            &lightsBack,      0x20, 0, "BACK2D",
                    nullptr,                                                                                                                                                                                      false, true },
-        RenderPass{&scenePreNear,                      &cameraMain,            &clearColorStencilViewport,
+        RenderPass{&scenePreNear,                      &cameraMain,          &clearColorStencilViewport,
                    &mainRTwMFramebuffer,                                                                                            &lightsDefault,   0x20, 0, "PRE_NEAR",
                    &sceneNear,                                                                                                                                                                                   true,  false},
         RenderPass{&sceneClearDepth,                   &cameraMain,          &clearDepthViewport,
@@ -1736,18 +1736,20 @@ void GSRender::setupRenderPasses() {
         RenderPass{&sceneHelmet,                       &cameraHelmet,        &viewportHelmet,
                    &mainRTFramebuffer,                                                                                              &lightsDefault,   0,    0, "HELMET",                nullptr,
                    true,                                                                                                                                                                                                true },
-        RenderPass{&sceneCockpitCarAlpha,              &cameraMain,          &clearColorDepthViewport,
-                   &carPlayerFramebuffer,                                                                                                 &lightsDefault,   0x20, 0, "COCKPIT CA",
-                   nullptr,                                                                                                                                                                                      true,  false},
+        RenderPass{&sceneCockpitCarAlpha,              &cameraMain,
+                   &clearColorDepthViewport,                                                             &carPlayerFramebuffer,
+                   &lightsDefault,                                                                                                                    0x20, 0, "COCKPIT CA",            nullptr,                 true,
+                   false                                                                                                                                                                                                     },
         RenderPass{&sceneCockpitAvatarPrepassCarAlpha, &cameraMain,
-                   &defaultViewport,                                                                     &carPlayerFramebuffer,           &lightsDefault,   0x28, 0,
-                   "COCKPIT AVT PP CA",                                                                                                                                                 &sceneCockpitCarAlpha,   true,  false},
+                   &defaultViewport,                                                                     &carPlayerFramebuffer,     &lightsDefault,
+                   0x28,                                                                                                                                    0, "COCKPIT AVT PP CA",     &sceneCockpitCarAlpha,   true,
+                   false                                                                                                                                                                                                     },
         RenderPass{&sceneCockpitAvatarCarAlpha,        &cameraMain,          &defaultViewport,
-                   &carPlayerFramebuffer,                                                                                                 &lightsDefault,   0x20, 0,
+                   &carPlayerFramebuffer,                                                                                           &lightsDefault,   0x20, 0,
                    "COCKPIT AVATAR CA",                                                                                                                                                 &sceneCockpitCarAlpha,   true,  false},
         RenderPass{&sceneHelmetCarAlpha,               &cameraHelmet,        &defaultViewport,
-                   &carPlayerFramebuffer,                                                                                                 &lightsDefault,   0,    0, "HELMET CA",             nullptr,
-                   true,                                                                                                                                                                                                false},
+                   &carPlayerFramebuffer,                                                                                           &lightsDefault,   0,    0, "HELMET CA",
+                   nullptr,                                                                                                                                                                                      true,  false},
         RenderPass{&sceneCockpitCompositing,           &camera2D,            &defaultViewport,
                    &mainRTFramebuffer,                                                                                              nullptr,          0x10, 0, "COCKPIT COMPO ",
                    nullptr,                                                                                                                                                                                      false, false},
@@ -1872,6 +1874,21 @@ void GSRender::FUN_00993df0() {
     for ( uint32_t i = 0; i < kNumSunRT; i++ ) {
         sun2DBs[i].destroy();
         ReleasePooledRenderTarget( pSunRTs[i] );
+    }
+}
+
+void GSRender::setSceneViewports( const float x,
+                                  const float y,
+                                  const float width,
+                                  const float height ) {
+    // FUN_009948e0
+    for ( uint32_t i = eRenderPass::RP_Occlusion;
+          i <= eRenderPass::RP_SunDazzle; i++ ) {
+        Viewport *pViewport = renderPasses[i].pViewport;
+        pViewport->X = x;
+        pViewport->Y = y;
+        pViewport->Width = width;
+        pViewport->Height = height;
     }
 }
 

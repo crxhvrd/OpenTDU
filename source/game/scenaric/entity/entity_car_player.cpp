@@ -26,6 +26,7 @@ EntityCarPlayer::EntityCarPlayer()
       Index( 0 ),
       pData( nullptr ),
       Value( 0 ),
+      serializedValue( reinterpret_cast<int32_t *>( &Value ) ),
       SpawnKind( SK_None ),
       pParkedVehicle( nullptr ),
       bBrandCarSpawned( false ) {
@@ -49,6 +50,22 @@ void EntityCarPlayer::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     // FUN_009c7bd0
     Entity::instanciate( pMngActor, param_1 );
     static_cast<EntityCarPlayer *>( param_1 )->pData = pData;
+}
+
+int32_t EntityCarPlayer::gmeEditionFactory( const int32_t controlIndex,
+                                            const int32_t request,
+                                            void *pData ) {
+    // FUN_009c7aa0
+    if ( request == GCR_NumControls ) {
+        return 2;
+    }
+    if ( controlIndex < 1 ) {
+        return Entity::gmeEditionFactory( controlIndex, request, pData );
+    }
+    if ( controlIndex != 1 ) {
+        return 0;
+    }
+    return GMEControlAttribute( &serializedValue, 1u, request, pData );
 }
 
 void EntityCarPlayer::initialize() {

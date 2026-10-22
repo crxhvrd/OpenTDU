@@ -40,3 +40,23 @@ const char *FormatMoneyString( char *param_1, int32_t param_2 ) {
 
     return param_1;
 }
+
+char *FormatRaceTime( char *pOutText, const float seconds ) {
+    // FUN_00730760
+    if ( pOutText == nullptr ) {
+        return nullptr;
+    }
+    if ( seconds == 0.0f ) {
+        strcpy( pOutText, "0'00\"00" );
+        return pOutText;
+    }
+
+    const int32_t milliseconds = int32_t( seconds * 1000.0f );
+    const int32_t subSecond = milliseconds % 1000;
+    const int32_t wholeMilliseconds = milliseconds - subSecond;
+    const int32_t minuteRemainder = wholeMilliseconds % 60000;
+    sprintf( pOutText, "%3d'%02d\"%02d",
+             ( wholeMilliseconds - minuteRemainder ) / 60000,
+             minuteRemainder / 1000, subSecond / 10 );
+    return pOutText;
+}

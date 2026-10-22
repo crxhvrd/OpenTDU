@@ -43,6 +43,9 @@ public:
     virtual int32_t getLoopWaypointCount() const = 0;
 
     void solveLegs( const bool bIgnoreOneWay );
+    float computeRouteLength( const bool bLoop,
+                              const int32_t loopCheckpointIndex,
+                              const int32_t numLaps );
 
 private:
     static constexpr int32_t kMaxNumPoints = 400;
@@ -80,6 +83,7 @@ private:
 class MngTracRoadMap : public MngTracRoad {
 public:
     inline void setOwner( MngSpots *pSpots ) { pOwner = pSpots; }
+    inline void setLobby( const bool bEnabled ) { bLobby = bEnabled; }
 
 public:
     MngTracRoadMap();
@@ -99,3 +103,9 @@ private:
 };
 
 extern MngTracRoad *gpMngTracRoad;
+
+class EventParameters;
+
+float ComputeEventRouteLength( EventParameters *pEventParameters,
+                               MngTracRoad *pTracRoad );
+void FormatRouteDistance( const float distanceKm, char *pOutText );

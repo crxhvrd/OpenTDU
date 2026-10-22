@@ -52,9 +52,9 @@ static float GetQueryRefreshDelay() {
     return refreshDelayMs * kMillisecondsToSeconds;
 }
 
-static void ShowCarDataGauges( FlashPlayer *pPlayer,
-                               const char *pPanelPath,
-                               DBEntryCarPhysicsData *pEntry ) {
+void ShowCarDataGauges( FlashPlayer *pPlayer,
+                        const char *pPanelPath,
+                        DBEntryCarPhysicsData *pEntry ) {
     // FUN_007197d0
     static constexpr const char *kGauges[4] = { "speed", "accel", "handling",
                                                 "braking" };

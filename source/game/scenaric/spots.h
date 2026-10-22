@@ -107,6 +107,15 @@ bool IsSpotRewardLocked( uint64_t rewardHashcode );
 void GetChallengeCarAvailability( const SpotMap *pSpot,
                                   bool *pOutLevelTooLow,
                                   bool *pOutHasEligibleCar );
+bool IsCarAllowedByRestriction( const class CarDesc *pCar,
+                                const int32_t vehicleType,
+                                const int32_t restriction,
+                                const uint64_t brandHashcode,
+                                const uint32_t modelID,
+                                const int32_t category,
+                                const int32_t categoryMax,
+                                const int32_t categoryMin );
+bool IsCarAllowedOnSpot( const class CarDesc *pCar, const SpotMap *pSpot );
 ScenaricBank *FindStreamedSpotBank( const struct SpotSector *pSpotSector );
 EntityCinematic *
 FindStreamedSpotCinematic( const struct SpotSector *pSpotSector,

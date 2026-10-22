@@ -157,6 +157,7 @@ public:
                                   const eContextSource source );
 
     bool hasPendingAsyncRequests();
+    bool cancelAsyncRequest( void *pUserData );
     void flushPendingAsync();
 
     bool fileExists( const char *pFilename );

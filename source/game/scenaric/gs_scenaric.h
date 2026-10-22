@@ -12,6 +12,7 @@
 #include "game/scenaric/spots.h"
 #include "game/scenaric/ik_offset_db.h"
 #include "game/scenaric/extra_challenge_cine_bank.h"
+#include "game/scenaric/event_parameters.h"
 
 #include "core/random/bcpl.h"
 
@@ -155,6 +156,12 @@ public:
                                   const char *pBankName,
                                   ScenaricBank *pOutBank,
                                   bool bNoCopy = false );
+    bool loadPackBank( const char *pBankFolder,
+                       const char *pBankName,
+                       ScenaricBank *pBank );
+    inline EventParameters &getSelectedEventParameters() {
+        return selectedEventParameters;
+    }
 
     void prepareWorldEntityTemplates();
 
@@ -236,12 +243,37 @@ public:
     inline bool isDemoModeActive() const { return bDemoMode; }
     inline void setDemoModeActive( const bool value ) { bDemoMode = value; }
     inline bool isFromDriveIn() const { return bIsFromDriveIn; }
+    inline void setFromDriveIn( const bool value ) { bIsFromDriveIn = value; }
+    inline void setTrainingLevel( const bool value ) { bTrainingLevel = value; }
+    inline void setInstantChallenge( const bool value ) {
+        bInstantChallenge = value;
+    }
+    inline void setFromGameInvite( const bool value ) {
+        bFromGameInvite = value;
+    }
+    inline void setLobbyMapOpened( const bool value ) {
+        bLobbyMapOpened = value;
+    }
+    inline bool isLobbyMapOpened() const { return bLobbyMapOpened; }
+    inline void **getIGEBufferPointer() { return &pIGEBuffer; }
+    inline const uint8_t *getIGEBuffer() const {
+        return static_cast<const uint8_t *>( pIGEBuffer );
+    }
+    inline int32_t getClubChallengeKind() const { return clubChallengeKind; }
+    inline void setClubChallengeKind( const int32_t value ) {
+        clubChallengeKind = value;
+    }
+    inline ScenaricBank *getCheckpointBank() const { return pCheckpointBank; }
+    inline void setCheckpointBank( ScenaricBank *pBank ) {
+        pCheckpointBank = pBank;
+    }
     inline bool wasMapExited() const { return bWasMapExited; }
     inline void setWasMapExited( const bool value ) { bWasMapExited = value; }
     void startDemoMode();
     void delockChallengeRoads( const bool bDelocked );
     void setTraceSize( uint32_t param_1 );
     void setDefaultIGE( const char *param_1 );
+    void releaseIGEBuffer();
     void pushObjectivesToCompass( MngHud *pHud );
 
 private:
@@ -249,6 +281,7 @@ private:
 
 private:
     GameIntroTutorial introTutorial;
+    EventParameters selectedEventParameters; // DAT_011f30f8
     LocalPlayer localPlayer;
     AvatarManager avatarManager;
     SCIKOffsetDB ikOffsetDB;
@@ -262,10 +295,17 @@ private:
     uint32_t demoTimeEnd;
     uint32_t traceSize;
     uint32_t currentDefVersion;
-    bool bWasMapExited;           // DAT_01214740
-    int32_t currentSpotIndex;     // DAT_01214744
-    bool bIsFromDriveIn;          // DAT_012162c4
-    bool bMailboxUpdated = false; // DAT_012164de
+    bool bWasMapExited;             // DAT_01214740
+    int32_t currentSpotIndex;       // DAT_01214744
+    bool bIsFromDriveIn;            // DAT_012162c4
+    bool bMailboxUpdated = false;   // DAT_012164de
+    bool bTrainingLevel = false;    // DAT_01214748
+    bool bInstantChallenge = false; // DAT_01214750
+    bool bFromGameInvite = false;   // DAT_012164dc
+    bool bLobbyMapOpened = false;   // DAT_012164dd
+    int32_t clubChallengeKind = 0;  // DAT_012164e4 (0: none, 1/2: club)
+    ScenaricBank *pCheckpointBank = nullptr; // DAT_012147b8
+    void *pIGEBuffer = nullptr;              // DAT_0120bdf0
     NextIntroInfo nextIntro;
     Entity *pActiveExtraChallenge; // DAT_01214948
     int32_t numExtraChallenges;    // DAT_0121494c
