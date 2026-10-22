@@ -18,7 +18,7 @@ IF "%~2"=="Win7" (
 )
 
 pushd "build"
-cmake --build . --parallel --config Release
+cmake --build . --parallel --config Release  --target opentdu
 popd
 
 IF %ERRORLEVEL% NEQ 0 (
