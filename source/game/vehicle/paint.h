@@ -113,6 +113,56 @@ static void ComputeDeluxeShades( const ColorRGBA &param_2,
     }
 }
 
+// OpenTDU: deluxe paint calibrated against the stock paints of colors.bnk.
+// Ratios are medians relative to the palette colour (GSCarColors::getColor).
+static constexpr float kCalibratedSolidFlipRatio = 0.58f;
+static constexpr float kCalibratedMetalFlipRatio = 0.36f;
+static constexpr float kCalibratedMetalSpecularRatio = 0.83f;
+static constexpr uint8_t kCalibratedSolidSpecular = 0x26;
+
+static DeluxeSurfaceSettings gCalibratedMetalSurfaceSettings = {
+    1.0f,
+    9.0f,
+    { 0.6f, 2.0f, 0.3f, 1.0f }
+};
+
+static bool IsSolidDeluxePaint( const ePaintType paintType ) {
+    return paintType == ePaintType::PT_CustomSolid ||
+           paintType == ePaintType::PT_CustomSolidTwoTones;
+}
+
+static void ComputeCalibratedDeluxeShades( const ColorRGBA &color,
+                                           const ePaintType paintType,
+                                           ColorRGBA *pOutFlip,
+                                           ColorRGBA *pOutSpecular ) {
+    const bool bSolid = IsSolidDeluxePaint( paintType );
+    const ColorRGBA flip = ScaleDeluxeColor(
+        color, bSolid ? kCalibratedSolidFlipRatio : kCalibratedMetalFlipRatio );
+    *pOutFlip = flip;
+    pOutFlip->A = 0xff;
+
+    if ( bSolid ) {
+        pOutSpecular->R = kCalibratedSolidSpecular;
+        pOutSpecular->G = kCalibratedSolidSpecular;
+        pOutSpecular->B = kCalibratedSolidSpecular;
+    } else {
+        *pOutSpecular = ScaleDeluxeColor( color, kCalibratedMetalSpecularRatio );
+    }
+    pOutSpecular->A = 0xff;
+}
+
+// True when the flip colour is still the one the paint shop derives from the
+// main colour (i.e. it was not picked by the player).
+static bool IsAutoDarkenedColor( const ColorRGBA &color,
+                                 const ColorRGBA &flip ) {
+    ColorRGBA darkened;
+    ColorRGBA unused;
+    ComputeDeluxeShades( color, ePaintType::PT_CustomSolid, &darkened,
+                         &unused );
+    return flip.R == darkened.R && flip.G == darkened.G &&
+           flip.B == darkened.B;
+}
+
 static bool IsPaintShaderGUID( const uint64_t guid, const bool bNPaint ) {
     if ( !bNPaint ) {
         return guid == 0x183157b81c6c7357ull || guid == 0xb39c35015789e65cull ||

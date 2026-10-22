@@ -12,6 +12,7 @@
 #include "game/gs_intro_pool.h"
 
 #include "car_state.h"
+#include "player_data/opentdu_settings.h"
 
 DirectionalLight gSunLight = {};           // DAT_00fa94b0
 LightSetupNode gCarDisplayLightSetup = {}; // DAT_0147aee0
@@ -586,6 +587,11 @@ void GSCarDisplay::releaseTrafficMaterial( Material *pEntry ) {
 
 #ifdef OTDU_USE_IMGUI
 void GSCarDisplay::drawDebug( float deltaTime ) {
+    if ( ImGui::Checkbox( "Calibrated custom paint (OpenTDU)",
+                          &VehicleBase::bCalibratedDeluxePaint ) ) {
+        OpenTDUSettings::Save();
+    }
+
     ImGui::SeparatorText( "Car Pool" );
     for ( uint32_t i = 0; i < numCars; i++ ) {
         std::string carEntry = "Cars[" + std::to_string( i ) + "]";

@@ -95,6 +95,9 @@ public:
     static bool bApplyWheelAttenuation;
     static float MinWheelAttenuation;
 
+    // OpenTDU: deluxe paints match the look of the stock paints
+    static bool bCalibratedDeluxePaint;
+
 public:
     enum class eType {
         VBT_Car = 0,

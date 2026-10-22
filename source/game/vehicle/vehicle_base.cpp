@@ -27,6 +27,7 @@
 #include "gs_car_colors.h"
 #include "game/mng_hud.h"
 #include "world/gs_mng_resources.h"
+#include "world/otdu_lights.h"
 
 static constexpr uint64_t kHashcodeGPSScreenShader = 0x7dad16b47eb57b95ull;
 static constexpr float kGPSScreenParamZ = 3.0f; // DAT_00f416b4
@@ -61,6 +62,7 @@ static constexpr float gFlareZBiasRatio = 0.004f; // DAT_00f7ced4
 // globals...
 bool VehicleBase::bApplyWheelAttenuation = true; // DAT_00f7f198
 float VehicleBase::MinWheelAttenuation = 0.2f;   // DAT_00f7f194
+bool VehicleBase::bCalibratedDeluxePaint = false;
 
 static float gSunLODFactor = 1.0f; // DAT_00f7ced0
 
@@ -817,7 +819,6 @@ void VehicleBase::updateRendering( float param_2, float param_3 ) {
         fVar2 = pCarState->isReversing() ? 1.0f : 0.0f;
         setFlareValue( eFlareType::FT_Reverse, fVar2 );
 
-        fVar2 = pCarState->isBraking() ? 1.0f : 0.0f;
         setFlareValue( eFlareType::FT_Brake, fVar2 );
 
         fVar2 = pCarState->isIndicatingLeft() ? 1.0f : 0.0f;
@@ -2663,30 +2664,53 @@ void VehicleBase::applyDeluxePaint( ePaintType paintType,
           ( paintType == ePaintType::PT_CustomSolid ||
             paintType == ePaintType::PT_CustomMetal ) );
 
-    const ColorRGBA mainColor =
-        ScaleDeluxeColor( *pMainColor, kDeluxeColorScale );
+    const bool bCalibrated = bCalibratedDeluxePaint;
+    const float colorScale = bCalibrated ? 1.0f : kDeluxeColorScale;
+
+    const ColorRGBA mainColor = ScaleDeluxeColor( *pMainColor, colorScale );
     const ColorRGBA secondColor =
         ( pSecondColor != nullptr )
-            ? ScaleDeluxeColor( *pSecondColor, kDeluxeColorScale )
+            ? ScaleDeluxeColor( *pSecondColor, colorScale )
             : gColorBlackNoAlpha;
     const ColorRGBA secondColor2 =
         ( pSecondColor2 != nullptr )
-            ? ScaleDeluxeColor( *pSecondColor2, kDeluxeColorScale )
+            ? ScaleDeluxeColor( *pSecondColor2, colorScale )
             : gColorBlackNoAlpha;
 
     ColorRGBA logoColor = gColorBlackNoAlpha;
     if ( bLogoDrivesTones ) {
         logoColor = ScaleDeluxeColor( *pLogoColor, 1.0f ); // FLOAT_00fab97c
     } else if ( bIsTwoTones && pLogoColor != nullptr ) {
-        logoColor = ScaleDeluxeColor( *pLogoColor, kDeluxeColorScale );
+        logoColor = ScaleDeluxeColor( *pLogoColor, colorScale );
     }
+
+    auto computeShades =
+        [bCalibrated]( const ColorRGBA &color, const ePaintType type,
+                       ColorRGBA *pOutDarkened, ColorRGBA *pOutSpecular ) {
+            if ( bCalibrated ) {
+                ComputeCalibratedDeluxeShades( color, type, pOutDarkened,
+                                               pOutSpecular );
+            } else {
+                ComputeDeluxeShades( color, type, pOutDarkened, pOutSpecular );
+            }
+        };
+
+    // Calibrated: a flip colour the player did not pick is replaced with the
+    // calibrated one
+    const bool bUseSecondColor =
+        pSecondColor != nullptr &&
+        !( bCalibrated && IsAutoDarkenedColor( *pMainColor, *pSecondColor ) );
+    const bool bUseSecondColor2 =
+        pSecondColor2 != nullptr &&
+        !( bCalibrated && pLogoColor != nullptr &&
+           IsAutoDarkenedColor( *pLogoColor, *pSecondColor2 ) );
 
     ColorRGBA darkenedColor = gColorBlackNoAlpha;
     ColorRGBA specularColor = gColorBlackNoAlpha;
 
-    ComputeDeluxeShades( mainColor, paintType, &darkenedColor, &specularColor );
+    computeShades( mainColor, paintType, &darkenedColor, &specularColor );
     applyDeluxeColorPairToResNodes(
-        mainColor, ( pSecondColor != nullptr ) ? secondColor : darkenedColor,
+        mainColor, bUseSecondColor ? secondColor : darkenedColor,
         CCP_BodyColor );
     applyColorToResNodes( specularColor, 0, CCP_BodyColor );
 
@@ -2697,29 +2721,30 @@ void VehicleBase::applyDeluxePaint( ePaintType paintType,
         applyTwoTonesColorToResNodes( logoColor, CCP_LogoColor2, true );
         applyTwoTonesColorToResNodes( logoColor, CCP_LogoColor2, false );
     } else if ( bIsTwoTones ) {
-        ComputeDeluxeShades( logoColor, paintType, &darkenedColor,
-                             &toneSpecular );
+        computeShades( logoColor, paintType, &darkenedColor, &toneSpecular );
         applyDeluxeColorPairToResNodes(
-            logoColor,
-            ( pSecondColor2 != nullptr ) ? secondColor2 : darkenedColor,
+            logoColor, bUseSecondColor2 ? secondColor2 : darkenedColor,
             CCP_BodyColor2 );
-        applyColorToResNodes( specularColor, 0, CCP_BodyColor2 );
+        // Retail reuses the body specular (the tone one is never read back)
+        applyColorToResNodes( bCalibrated ? toneSpecular : specularColor, 0,
+                              CCP_BodyColor2 );
     }
 
     // Ford GT always gets the second tone (even for deliveries w/o stripes)
     if ( pCarState != nullptr && pCarState->getCarID() == 0x75 ) {
-        ComputeDeluxeShades( logoColor, ePaintType::PT_CustomSolid,
-                             &darkenedColor, &toneSpecular );
+        computeShades( logoColor, ePaintType::PT_CustomSolid, &darkenedColor,
+                       &toneSpecular );
         applyDeluxeColorPairToResNodes( logoColor, darkenedColor,
                                         CCP_BodyColor2 );
-        applyColorToResNodes( specularColor, 0, CCP_BodyColor2 );
+        applyColorToResNodes( bCalibrated ? toneSpecular : specularColor, 0,
+                              CCP_BodyColor2 );
     }
 
     const DeluxeSurfaceSettings &surface =
-        ( paintType == ePaintType::PT_CustomSolid ||
-          paintType == ePaintType::PT_CustomSolidTwoTones )
+        IsSolidDeluxePaint( paintType )
             ? gSolidSurfaceSettings
-            : gMetalSurfaceSettings;
+            : ( bCalibrated ? gCalibratedMetalSurfaceSettings
+                            : gMetalSurfaceSettings );
 
     applyRampExpToResNodes( surface.RampExp, CCP_BodyColor );
     applySpecularParamToResNodes( surface.SpecularExp, CCP_BodyColor, true );
