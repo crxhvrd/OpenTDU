@@ -19,10 +19,10 @@ layout( location = D3D9_SLOT_TEXCOORD1 ) out vec4 out_Texcoord1;
 layout( location = D3D9_SLOT_TEXCOORD2 ) out vec4 out_Texcoord2;
 
 void main() {
-    gl_Position = vec4( dot( in_Position0, gWorldViewProject( 0 ) ),
-                        dot( in_Position0, gWorldViewProject( 1 ) ),
-                        dot( in_Position0, gWorldViewProject( 2 ) ),
-                        dot( in_Position0, gWorldViewProject( 3 ) ) );
+    gl_Position = vec4( d3d9_dot( in_Position0, gWorldViewProject( 0 ) ),
+                        d3d9_dot( in_Position0, gWorldViewProject( 1 ) ),
+                        d3d9_dot( in_Position0, gWorldViewProject( 2 ) ),
+                        d3d9_dot( in_Position0, gWorldViewProject( 3 ) ) );
 
     out_Texcoord0 = vec4( in_Texcoord0.xy, 0.0, 0.0 );
     out_Texcoord1 = vec4( in_Position0.xy, 0.0, 0.0 );

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include "render/gs_render_helper.h"
 #include "render/material.h"
@@ -126,6 +127,7 @@ public:
     ShaderBytecode_t getOrLoadBytecode( const ShaderTableEntry *pTableEntry );
     ShaderMetadataSPIRVRuntime *
     getMetadataSPIRV( const ShaderTableEntry *pTableEntry );
+    bool isRebuilt( const ShaderTableEntry *pTableEntry ) const;
 
 private:
     std::unordered_map<std::string, void *> shaderTableBinary;
@@ -133,6 +135,9 @@ private:
 
     // Rebuilt modules replacing the dxvk ones (nullptr when there is none).
     std::unordered_map<uint64_t, std::tuple<void *, uint64_t>> rebuiltBinaries;
+    // TODO: FIXME: HACK: Remove once dxvk is removed
+    std::unordered_set<std::string> rebuiltFilenames;
+    bool bRebuiltFolderListed = false;
 
 private:
     ShaderBytecode_t getRebuiltBytecode( const ShaderTableEntry *pTableEntry );

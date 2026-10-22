@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "shader_binary_cache.h"
 
+#include <filesystem>
+
 #include "core/arg_parser.h"
 #include "core/hash/crc64.h"
 #include "filesystem/gs_file.h"
@@ -239,23 +241,42 @@ ShaderBinaryCache::getRebuiltBytecode( const ShaderTableEntry *pTableEntry ) {
     snprintf( hashcode, sizeof( hashcode ), "%016llX",
               (unsigned long long)pTableEntry->Hashcode );
 
-    std::string path = kShadersRootFolder;
-    path += kShadersRebuiltFolder;
-    path += hashcode;
-    path += ( pTableEntry->ShaderStage == eShaderType::ST_Vertex )
-                ? ".vert.spv"
-                : ".frag.spv";
+    std::string folder = kShadersRootFolder;
+    folder += kShadersRebuiltFolder;
+    if ( !bRebuiltFolderListed ) { // TODO: REMOVE ME: WA to locate recompiled
+                                   // shaders. Remove once we ditch dxvk/shader
+                                   // bin extraction
+        bRebuiltFolderListed = true;
+        std::error_code errorCode;
+        for ( const auto &entry :
+              std::filesystem::directory_iterator( folder, errorCode ) ) {
+            rebuiltFilenames.insert( entry.path().filename().string() );
+        }
+        OTDU_LOG_INFO( "Found %zu rebuilt shader(s) in '%s'\n",
+                       rebuiltFilenames.size(), folder.c_str() );
+    }
+
+    std::string filename = hashcode;
+    filename += ( pTableEntry->ShaderStage == eShaderType::ST_Vertex )
+                    ? ".vert.spv"
+                    : ".frag.spv";
+    std::string path = folder + filename;
 
     void *pBytecode = nullptr;
     uint32_t bytecodeSize = 0;
     ShaderBytecode_t rebuilt = std::make_tuple( nullptr, 0ull );
-    if ( gpFile->fileExists( path.c_str() ) &&
+    if ( rebuiltFilenames.count( filename ) != 0 &&
          gpFile->loadFile( path.c_str(), &pBytecode, &bytecodeSize ) ) {
         OTDU_LOG_INFO( "Using rebuilt shader '%s'\n", path.c_str() );
         rebuilt = std::make_tuple( pBytecode, (uint64_t)bytecodeSize );
     }
     rebuiltBinaries.insert( std::make_pair( pTableEntry->Hashcode, rebuilt ) );
     return rebuilt;
+}
+
+bool ShaderBinaryCache::isRebuilt( const ShaderTableEntry *pTableEntry ) const {
+    auto it = rebuiltBinaries.find( pTableEntry->Hashcode );
+    return it != rebuiltBinaries.end() && std::get<0>( it->second ) != nullptr;
 }
 
 ShaderMetadataSPIRVRuntime *

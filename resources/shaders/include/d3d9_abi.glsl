@@ -19,6 +19,53 @@
 
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_EXT_demote_to_helper_invocation : require
+#extension GL_EXT_spirv_intrinsics : require
+
+// D3D9 saturate (_sat modifier, fog output): dxvk emits NClamp, which maps
+// NaN to 0 where GLSL clamp() is undefined.
+spirv_instruction( set = "GLSL.std.450",
+                   id = 81 ) float d3d9_nclamp( float x, float lo, float hi );
+spirv_instruction( set = "GLSL.std.450", id = 81 ) vec2
+    d3d9_nclamp( vec2 x, vec2 lo, vec2 hi );
+spirv_instruction( set = "GLSL.std.450", id = 81 ) vec3
+    d3d9_nclamp( vec3 x, vec3 lo, vec3 hi );
+spirv_instruction( set = "GLSL.std.450", id = 81 ) vec4
+    d3d9_nclamp( vec4 x, vec4 lo, vec4 hi );
+
+// D3D9 lrp (and the matching fog mad), in dxvk's operation order: unlike
+// mix(), the result keeps the cancellation of (y - x) when x is large.
+float d3d9_lerp( float x, float y, float a ) { return a * ( y - x ) + x; }
+vec2 d3d9_lerp( vec2 x, vec2 y, vec2 a ) { return a * ( y - x ) + x; }
+vec3 d3d9_lerp( vec3 x, vec3 y, vec3 a ) { return a * ( y - x ) + x; }
+vec4 d3d9_lerp( vec4 x, vec4 y, vec4 a ) { return a * ( y - x ) + x; }
+vec2 d3d9_lerp( vec2 x, vec2 y, float a ) { return a * ( y - x ) + x; }
+vec3 d3d9_lerp( vec3 x, vec3 y, float a ) { return a * ( y - x ) + x; }
+vec4 d3d9_lerp( vec4 x, vec4 y, float a ) { return a * ( y - x ) + x; }
+
+// D3D9 dp2/dp3/dp4, in dxvk's operation order (one multiply per component,
+// summed left to right). dot() leaves the order to the driver: positions must
+// be bit identical to the dxvk modules still drawing the same geometry in
+// other passes (shadow receivers), or their depth test fails in patches.
+float d3d9_dot( vec2 a, vec2 b ) { return a.x * b.x + a.y * b.y; }
+float d3d9_dot( vec3 a, vec3 b ) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+float d3d9_dot( vec4 a, vec4 b ) {
+    return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+}
+
+// D3D9 nrm and crs, in dxvk's operation order (see d3d9_dot).
+vec3 d3d9_normalize( vec3 v ) { return v * inversesqrt( d3d9_dot( v, v ) ); }
+vec3 d3d9_cross( vec3 a, vec3 b ) { return a.yzx * b.zxy - a.zxy * b.yzx; }
+
+float d3d9_saturate( float x ) { return d3d9_nclamp( x, 0.0, 1.0 ); }
+vec2 d3d9_saturate( vec2 x ) {
+    return d3d9_nclamp( x, vec2( 0.0 ), vec2( 1.0 ) );
+}
+vec3 d3d9_saturate( vec3 x ) {
+    return d3d9_nclamp( x, vec3( 0.0 ), vec3( 1.0 ) );
+}
+vec4 d3d9_saturate( vec4 x ) {
+    return d3d9_nclamp( x, vec4( 0.0 ), vec4( 1.0 ) );
+}
 
 // Spec constant 12 tells whether dxvk's spec constants are used (VS) or
 // whether the spec state has to be read from the UBO (PS).
@@ -77,6 +124,13 @@ render_state;
 #define D3D9_SLOT_TEXCOORD4 8
 #define D3D9_SLOT_TEXCOORD6 9
 #define D3D9_SLOT_TEXCOORD7 10
+// OTDU_ADDITION: varyings of the OpenTDU extensions start past dxvk's slots.
+#define OTDU_SLOT_VIEW_POSITION 11
+#define OTDU_SLOT_VIEW_NORMAL 12
+// Normal mapped shaders: view space basis (normal map axes) at 12..14.
+#define OTDU_SLOT_VIEW_BASIS 12
+// Buildings: object space position (lit window cells).
+#define OTDU_SLOT_OBJECT_POSITION 13
 
 #ifdef D3D9_VERTEX_SHADER
 
@@ -98,9 +152,8 @@ void d3d9_vs_epilogue() {
     gl_PointSize = clamp( render_state.point_size, render_state.point_size_min,
                           render_state.point_size_max );
 
-    uint clipPlaneCount =
-        bitfieldExtract( ( D3D9_SPEC_ENABLED != 0u ) ? D3D9_SPEC_DWORD5 : 6u,
-                         21, 3 );
+    uint clipPlaneCount = bitfieldExtract(
+        ( D3D9_SPEC_ENABLED != 0u ) ? D3D9_SPEC_DWORD5 : 6u, 21, 3 );
     for ( uint i = 0u; i < 6u; i++ ) {
         gl_ClipDistance[i] = ( i < clipPlaneCount )
                                  ? dot( gl_Position, clip_info.clip_planes[i] )
@@ -120,11 +173,11 @@ c;
 
 layout( set = 1, binding = 0 ) uniform sampler d3d9_sampler_heap[];
 
-#define D3D9_SPEC_DWORD( n ) \
+#define D3D9_SPEC_DWORD( n )                                                   \
     ( ( D3D9_SPEC_ENABLED != 0u ) ? D3D9_SPEC_DWORD##n : spec_state.dword##n )
 
-#define D3D9_SAMPLER( n )                                                    \
-    d3d9_sampler_heap[bitfieldExtract( render_state.sampler_idx[( n ) >> 1], \
+#define D3D9_SAMPLER( n )                                                      \
+    d3d9_sampler_heap[bitfieldExtract( render_state.sampler_idx[( n ) >> 1],   \
                                        ( ( n ) & 1 ) * 16, 16 )]
 
 #define D3D9_TEXTURE_BINDING( n ) ( 13 + ( n ) )
@@ -132,8 +185,8 @@ layout( set = 1, binding = 0 ) uniform sampler d3d9_sampler_heap[];
 // Declares texture register sN and its tex2D_sN / texCUBE_sN / tex3D_sN
 // helper.
 #define D3D9_DECLARE_SAMPLER_2D( n )                                           \
-    layout( set = 0, binding = D3D9_TEXTURE_BINDING( n ) ) uniform texture2D \
-        t##n##_2d;                                                             \
+    layout( set = 0, binding = D3D9_TEXTURE_BINDING( n ) )                     \
+        uniform texture2D t##n##_2d;                                           \
     vec4 tex2D_s##n( vec2 uv ) {                                               \
         return texture( sampler2D( t##n##_2d, D3D9_SAMPLER( n ) ), uv );       \
     }                                                                          \
@@ -141,34 +194,34 @@ layout( set = 1, binding = 0 ) uniform sampler d3d9_sampler_heap[];
         return texture( sampler2D( t##n##_2d, D3D9_SAMPLER( n ) ), uv, bias ); \
     }
 
-#define D3D9_DECLARE_SAMPLER_CUBE( n )                                          \
-    layout( set = 0, binding = D3D9_TEXTURE_BINDING( n ) ) uniform textureCube \
-        t##n##_cube;                                                            \
-    vec4 texCUBE_s##n( vec3 uvw ) {                                             \
-        return texture( samplerCube( t##n##_cube, D3D9_SAMPLER( n ) ), uvw );   \
-    }                                                                           \
-    vec4 texCUBEbias_s##n( vec3 uvw, float bias ) {                             \
-        return texture( samplerCube( t##n##_cube, D3D9_SAMPLER( n ) ), uvw,     \
-                        bias );                                                 \
+#define D3D9_DECLARE_SAMPLER_CUBE( n )                                         \
+    layout( set = 0, binding = D3D9_TEXTURE_BINDING( n ) )                     \
+        uniform textureCube t##n##_cube;                                       \
+    vec4 texCUBE_s##n( vec3 uvw ) {                                            \
+        return texture( samplerCube( t##n##_cube, D3D9_SAMPLER( n ) ), uvw );  \
+    }                                                                          \
+    vec4 texCUBEbias_s##n( vec3 uvw, float bias ) {                            \
+        return texture( samplerCube( t##n##_cube, D3D9_SAMPLER( n ) ), uvw,    \
+                        bias );                                                \
     }
 
-#define D3D9_DECLARE_SAMPLER_3D( n )                                         \
-    layout( set = 0, binding = D3D9_TEXTURE_BINDING( n ) ) uniform texture3D \
-        t##n##_3d;                                                           \
-    vec4 tex3D_s##n( vec3 uvw ) {                                            \
-        return texture( sampler3D( t##n##_3d, D3D9_SAMPLER( n ) ), uvw );    \
-    }                                                                        \
-    vec4 tex3Dbias_s##n( vec3 uvw, float bias ) {                            \
-        return texture( sampler3D( t##n##_3d, D3D9_SAMPLER( n ) ), uvw,      \
-                        bias );                                              \
+#define D3D9_DECLARE_SAMPLER_3D( n )                                           \
+    layout( set = 0, binding = D3D9_TEXTURE_BINDING( n ) )                     \
+        uniform texture3D t##n##_3d;                                           \
+    vec4 tex3D_s##n( vec3 uvw ) {                                              \
+        return texture( sampler3D( t##n##_3d, D3D9_SAMPLER( n ) ), uvw );      \
+    }                                                                          \
+    vec4 tex3Dbias_s##n( vec3 uvw, float bias ) {                              \
+        return texture( sampler3D( t##n##_3d, D3D9_SAMPLER( n ) ), uvw,        \
+                        bias );                                                \
     }
 
 // Texture coordinate inputs are replaced by gl_PointCoord when point sprites
 // are enabled (SpecPointMode bit 1).
 vec4 d3d9_ps_texcoord( vec4 texcoord ) {
     bool bPointSprite =
-        bitfieldExtract( bitfieldExtract( D3D9_SPEC_DWORD( 1 ), 24, 2 ), 1, 1 ) ==
-        1u;
+        bitfieldExtract( bitfieldExtract( D3D9_SPEC_DWORD( 1 ), 24, 2 ), 1,
+                         1 ) == 1u;
     return bPointSprite ? vec4( gl_PointCoord, 0.0, 0.0 ) : texcoord;
 }
 
@@ -183,8 +236,9 @@ void d3d9_ps_alpha_test( vec4 color ) {
     float alphaRef;
     float alpha;
     if ( alphaPrecision <= 8u ) {
-        alphaRef = float( ( render_state.alpha_ref << alphaPrecision ) |
-                          ( render_state.alpha_ref >> ( 8u - alphaPrecision ) ) );
+        alphaRef =
+            float( ( render_state.alpha_ref << alphaPrecision ) |
+                   ( render_state.alpha_ref >> ( 8u - alphaPrecision ) ) );
         alpha = roundEven( color.w * float( ( 256u << alphaPrecision ) - 1u ) );
     } else {
         alphaRef = float( render_state.alpha_ref ) / 255.0;
