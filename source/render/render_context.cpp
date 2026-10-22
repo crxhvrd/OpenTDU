@@ -1,6 +1,9 @@
 #include "shared.h"
 #include "render_context.h"
 
+#ifdef OTDU_USE_IMGUI
+#include "debug/debug_object_picker.h"
+#endif
 #include "2dm.h"
 #include "3dd.h"
 #include "3dg.h"
@@ -83,6 +86,18 @@ Matrix4x4f_t gActiveTransformMatrix = Matrix4x4f_t::Identity(); // DAT_00fe7370
 static Matrix4x4f_t gInvActiveTransformMatrix =
     Matrix4x4f_t::Identity(); // DAT_00fe73b0
 
+static constexpr uint32_t kNightParamsRegisterVS = 255;   // OTDU_ADDITION
+static constexpr uint32_t kNightParamsRegisterPS = 223;   // OTDU_ADDITION
+static constexpr uint32_t kMoonDirectionRegisterPS = 222; // OTDU_ADDITION
+static constexpr uint32_t kCamToWorldRegisterVS = 252;    // OTDU_ADDITION (3)
+static constexpr uint32_t kLampParamsRegisterVS = 251;    // OTDU_ADDITION
+// OTDU_ADDITION: c31 = (count, intensity), c32 = view space up, c33 + 2i =
+// light i (view position, radius), c34 + 2i = its color and fade weight.
+static constexpr uint32_t kLampRegisterPS = 31;
+// OTDU_ADDITION: c100 = (headlight count, intensity), c101 + 3i = (view
+// position, range), c102 + 3i = (view direction, cos outer), c103 + 3i =
+// (color, cos inner), up to c124.
+static constexpr uint32_t kHeadlightRegisterPS = 100;
 static constexpr uint32_t kSceneUniformsOffsets[kMaxNumCustomUniforms] =
     { // DAT_00f47224
         0xCE, 0xCF, 0xD0, 0xD1, 0xE1, 0xE2, 0xE3, 0xE4 };
@@ -847,6 +862,89 @@ void RenderContext::FUN_00515000() {
         // TODO: Is '* 4' correct?
         UploadConstant( &peVar2->FloatVS, kSceneUniformsOffsets[i] * 4,
                         pDataToUpload, 1 );
+    }
+
+    // OTDU_ADDITION: night parameters for the rebuilt shaders. No og
+    // constant map has a slot for them, so they go to registers og never
+    // reads (VS uses up to c247, PS up to c30).
+    const bool bNightScene = peVar3->isNightScene();
+    const Eigen::Vector4f kNeutralNightParams( 1.0f, 1.0f, 0.0f, 0.0f );
+    Eigen::Vector4f nightParams =
+        bNightScene ? gEdRender.NightParams : kNeutralNightParams;
+    gEdRender.pRenderDevice->setFloatConstants(
+        eShaderType::ST_Vertex, nightParams.data(), kNightParamsRegisterVS, 1 );
+    gEdRender.pRenderDevice->setFloatConstants(
+        eShaderType::ST_Pixel, nightParams.data(), kNightParamsRegisterPS, 1 );
+    gEdRender.pRenderDevice->setFloatConstants( eShaderType::ST_Pixel,
+                                                gEdRender.MoonDirection.data(),
+                                                kMoonDirectionRegisterPS, 1 );
+
+    // Night lamps, in this scene's view space. Off (count 0) unless the
+    // weather gives them an intensity.
+    const uint32_t numLamps = ( bNightScene && gEdRender.LampParams.x() > 0.0f )
+                                  ? gEdRender.NumLamps
+                                  : 0u;
+    const uint32_t numHeadlights = bNightScene ? gEdRender.NumHeadlights : 0u;
+    Eigen::Vector4f lampParams( static_cast<float>( numLamps ),
+                                gEdRender.LampParams.x(), 0.0f, 0.0f );
+    // The VS only tests for any light to pass the view space varyings.
+    Eigen::Vector4f lampParamsVS(
+        static_cast<float>( numLamps + numHeadlights ),
+        gEdRender.LampParams.x(), 0.0f, 0.0f );
+    gEdRender.pRenderDevice->setFloatConstants(
+        eShaderType::ST_Vertex, lampParamsVS.data(), kLampParamsRegisterVS, 1 );
+    gEdRender.pRenderDevice->setFloatConstants(
+        eShaderType::ST_Pixel, lampParams.data(), kLampRegisterPS, 1 );
+    std::array<Eigen::Vector4f, 1 + edRender::kMaxNumLamps * 2> lampConstants;
+    lampConstants[0] = TDUMat4x4MulVec(
+        gWorldToCamMatrices[0], Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f ) );
+    for ( uint32_t i = 0; i < numLamps; i++ ) {
+        const Eigen::Vector4f &lamp = gEdRender.LampPositions[i];
+        Eigen::Vector4f viewPosition = TDUMat4x4MulVec(
+            gWorldToCamMatrices[0],
+            Eigen::Vector4f( lamp.x(), lamp.y(), lamp.z(), 1.0f ) );
+        viewPosition.w() = lamp.w();
+        lampConstants[1 + i * 2] = viewPosition;
+        lampConstants[2 + i * 2] = gEdRender.LampColors[i];
+    }
+    gEdRender.pRenderDevice->setFloatConstants(
+        eShaderType::ST_Pixel, lampConstants[0].data(), kLampRegisterPS + 1,
+        1 + numLamps * 2 );
+
+    std::array<Eigen::Vector4f, 1 + edRender::kMaxNumHeadlights * 3>
+        headlightConstants;
+    headlightConstants[0] =
+        Eigen::Vector4f( static_cast<float>( numHeadlights ),
+                         gEdRender.HeadlightIntensity, 0.0f, 0.0f );
+    for ( uint32_t i = 0; i < numHeadlights; i++ ) {
+        const Eigen::Vector4f &position = gEdRender.HeadlightPositions[i];
+        const Eigen::Vector4f &direction = gEdRender.HeadlightDirections[i];
+        Eigen::Vector4f viewPosition = TDUMat4x4MulVec(
+            gWorldToCamMatrices[0],
+            Eigen::Vector4f( position.x(), position.y(), position.z(), 1.0f ) );
+        viewPosition.w() = position.w();
+        Eigen::Vector4f viewDirection =
+            TDUMat4x4MulVec( gWorldToCamMatrices[0],
+                             Eigen::Vector4f( direction.x(), direction.y(),
+                                              direction.z(), 0.0f ) );
+        viewDirection.w() = direction.w();
+        headlightConstants[1 + i * 3] = viewPosition;
+        headlightConstants[2 + i * 3] = viewDirection;
+        headlightConstants[3 + i * 3] = gEdRender.HeadlightColors[i];
+    }
+    gEdRender.pRenderDevice->setFloatConstants(
+        eShaderType::ST_Pixel, headlightConstants[0].data(),
+        kHeadlightRegisterPS, 1 + numHeadlights * 3 );
+
+    // Camera to world rotation (row vectors: world_i = dot(cam, column i)),
+    // so the night sky can be built from world space view directions.
+    const Matrix4x4f_t camToWorld = gWorldToCamMatrices[0].inverse();
+    for ( int32_t i = 0; i < 3; i++ ) {
+        Eigen::Vector4f column( camToWorld( 0, i ), camToWorld( 1, i ),
+                                camToWorld( 2, i ), 0.0f );
+        gEdRender.pRenderDevice->setFloatConstants(
+            eShaderType::ST_Vertex, column.data(), kCamToWorldRegisterVS + i,
+            1 );
     }
 
     // Apply scissor override (if any)
@@ -1803,6 +1901,10 @@ void RenderContext::submitHeightmap( Heightmap *param_1, Instance *param_2 ) {
 
 void RenderContext::submitObject( RenderObject *param_1, Instance *param_2 ) {
     // FUN_00509160
+#if 0
+    TestDrive::RecordObjectPickerCandidate( pActiveScene,
+                                            param_2 ); // OTDU_ADDITION
+#endif
     if ( ( ( param_2->getFlags() & 1 ) == 0 ) ||
          isInstanceVisible( param_1, param_2 ) ) {
         RenderFile::Section *pPrimitiveSection = param_1->PrimitiveSection;
@@ -2201,7 +2303,17 @@ Shader *RenderContext::registerShader( const ShaderTableEntry *pTableEntry,
         VertexShader *pShader = allocVertexShaderFromPool();
         pShader->setConstantMap(
             getConstantMapByIndex( pTableEntry->ConstantMapIndex ) );
-        pShader->setShaderInfos( pTableEntry->Flag0, pTableEntry->Flag1 );
+        uint32_t vsFlags = pTableEntry->Flag0;
+        // OTDU_ADDITION: the rebuilt avatar and vehicle interior shaders light
+        // the night lamps in view space; always request the world view matrix
+        // (bit 0x10, c20).
+        if ( ( strcmp( pTableEntry->pShaderCategory, "Avatar" ) == 0 ||
+               strcmp( pTableEntry->pShaderCategory, "VehicleInterior" ) ==
+                   0 ) &&
+             gShaderBinaryCache.isRebuilt( pTableEntry ) ) {
+            vsFlags |= 0x10;
+        }
+        pShader->setShaderInfos( vsFlags, pTableEntry->Flag1 );
         pShader->setHashcode( pTableEntry->Hashcode );
 #if OTDU_VULKAN
         pShader->setMetadata( pMetadata );

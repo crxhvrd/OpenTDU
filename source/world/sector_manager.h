@@ -199,3 +199,15 @@ public:
     // TODO: Must be updated by the sector init logic (not ported yet).
     Sector *pCurrentSector = nullptr;
 };
+
+// OTDU_ADDITION: walks the impostor / dynamic object PMI of a sector bank
+// (grid 0 = asset type 10, grid 1 = type 0xd) without building the grid, with
+// the same instance decoding. Instance matrices are in world space (sector
+// world corner origin).
+void ForEachPMIInstance(
+    const void *pPMI,
+    uint32_t pmiSize,
+    uint32_t gridIndex,
+    const Eigen::Vector4f &worldCorner,
+    const std::function<bool( uint64_t )> &acceptType,
+    const std::function<void( uint64_t, const Matrix4x4f_t & )> &callback );

@@ -2,6 +2,7 @@
 #include "gs_config.h"
 
 #include "world/weather/gs_weather.h"
+#include "world/otdu_lights.h"
 
 static WeatherConfig *gpParsingWeatherConfig = nullptr; // DAT_010e7294
 static WeatherDesc *gpParsingWeatherDesc = nullptr;     // DAT_010e7290
@@ -683,6 +684,180 @@ void GSConfig::registerWeatherCommands() {
         // FUN_00983be0
         if ( gpParsingWeatherConfig != nullptr ) {
             gpParsingWeatherConfig->setCarCloudsGroundFactor(
+                static_cast<float>( atof( pArg ) ) );
+        }
+    } );
+
+    // OTDU_ADDITION: night time parameters (see WeatherConfig::getNightParams).
+    registerCommand( "OTDU_UNLITSCALE", [&]( const char *pArg ) {
+        if ( gpParsingWeatherConfig != nullptr ) {
+            gpParsingWeatherConfig->setUnlitScale(
+                static_cast<float>( atof( pArg ) ) );
+        }
+    } );
+
+    registerCommand( "OTDU_STARS", [&]( const char *pArg ) {
+        if ( gpParsingWeatherConfig != nullptr ) {
+            gpParsingWeatherConfig->setStarBrightness(
+                static_cast<float>( atof( pArg ) ) );
+        }
+    } );
+
+    registerCommand( "OTDU_MOON", [&]( const char *pArg ) {
+        if ( gpParsingWeatherConfig != nullptr ) {
+            gpParsingWeatherConfig->setMoonBrightness(
+                static_cast<float>( atof( pArg ) ) );
+        }
+    } );
+
+    registerCommand( "OTDU_LAMPS", [&]( const char *pArg ) {
+        if ( gpParsingWeatherConfig != nullptr ) {
+            gpParsingWeatherConfig->setLampIntensity(
+                static_cast<float>( atof( pArg ) ) );
+        }
+    } );
+
+    // OTDU_HDREXPOSURE stops: HDR exposure offset
+    registerCommand( "OTDU_HDREXPOSURE", [&]( const char *pArg ) {
+        if ( gpParsingWeatherConfig != nullptr ) {
+            gpParsingWeatherConfig->setHDRExposure(
+                static_cast<float>( atof( pArg ) ) );
+        }
+    } );
+
+    // OTDU_EMISSIVE scale: unlit signs (emissive color or OTDU_EMISSIVETEXTURE)
+    // use this scale instead of OTDU_UNLITSCALE.
+    registerCommand( "OTDU_EMISSIVE", [&]( const char *pArg ) {
+        if ( gpParsingWeatherConfig != nullptr ) {
+            gpParsingWeatherConfig->setEmissiveScale(
+                static_cast<float>( atof( pArg ) ) );
+        }
+    } );
+
+    // OTDU_EMISSIVETEXTURE "TEXTURE": unlit materials whose base texture is
+    // TEXTURE are emissive.
+    registerCommand( "OTDU_EMISSIVETEXTURE", [&]( const char *pArg ) {
+        std::string argStr( pArg );
+        size_t it = 0;
+        const std::string textureName = ParseString( argStr, it );
+        if ( textureName.empty() ) {
+            OTDU_LOG_WARN( "Invalid OTDU_EMISSIVETEXTURE '%s'\n", pArg );
+            return;
+        }
+        RegisterOTDUEmissiveTexture(
+            GetIdentifier64bit( textureName.c_str() ) );
+    } );
+
+    // OTDU_LIGHTMODEL "MODEL" x y z r g b radius (object space offset).
+    registerCommand( "OTDU_LIGHTMODEL", [&]( const char *pArg ) {
+        std::string argStr( pArg );
+        size_t it = 0;
+        std::string modelName = ParseString( argStr, it );
+        float values[7] = {};
+        if ( sscanf( argStr.c_str() + it, "%f %f %f %f %f %f %f", &values[0],
+                     &values[1], &values[2], &values[3], &values[4], &values[5],
+                     &values[6] ) != 7 ||
+             modelName.empty() ) {
+            OTDU_LOG_WARN( "Invalid OTDU_LIGHTMODEL '%s'\n", pArg );
+            return;
+        }
+        OTDULightModel model;
+        // A model name or its hashcode (w/ 0x prefix)
+        model.Hashcode = ( modelName.rfind( "0x", 0 ) == 0 )
+                             ? strtoull( modelName.c_str(), nullptr, 16 )
+                             : GetIdentifier64bit( modelName.c_str() );
+        model.Offset = Eigen::Vector3f( values[0], values[1], values[2] );
+        model.Color = Eigen::Vector3f( values[3], values[4], values[5] );
+        model.Radius = values[6];
+        RegisterOTDULightModel( model );
+    } );
+
+    // OTDU_HEADLIGHTS r g b lowBeamRange highBeamRange outerAngle innerAngle
+    // pitch intensity [tailLightLevel] (ranges in meters, cone half angles and
+    // pitch in degrees).
+    registerCommand( "OTDU_HEADLIGHTS", [&]( const char *pArg ) {
+        float values[10] = {};
+        values[9] = OTDUHeadlightConfig().TailLightLevel;
+        if ( sscanf( pArg, "%f %f %f %f %f %f %f %f %f %f", &values[0],
+                     &values[1], &values[2], &values[3], &values[4], &values[5],
+                     &values[6], &values[7], &values[8], &values[9] ) < 9 ) {
+            OTDU_LOG_WARN( "Invalid OTDU_HEADLIGHTS '%s'\n", pArg );
+            return;
+        }
+        OTDUHeadlightConfig config;
+        config.Color = Eigen::Vector3f( values[0], values[1], values[2] );
+        config.LowBeamRange = values[3];
+        config.HighBeamRange = values[4];
+        config.OuterAngle = values[5];
+        config.InnerAngle = values[6];
+        config.Pitch = values[7];
+        config.Intensity = values[8];
+        config.TailLightLevel = values[9];
+        SetOTDUHeadlightConfig( config );
+    } );
+
+    // OTDU_WINDOWS warm(r g b) litFraction cool(r g b) coolRatio intensity:
+    // the default lit window profile.
+    // OTDU_WINDOWPROFILE "PREFIX" (same values): models whose name starts
+    // with PREFIX
+    auto parseWindowProfile = []( const char *pValues,
+                                  OTDUWindowProfile &profile ) {
+        float values[9] = {};
+        if ( sscanf( pValues, "%f %f %f %f %f %f %f %f %f", &values[0],
+                     &values[1], &values[2], &values[3], &values[4], &values[5],
+                     &values[6], &values[7], &values[8] ) != 9 ) {
+            return false;
+        }
+        profile.WarmColor = Eigen::Vector3f( values[0], values[1], values[2] );
+        profile.LitFraction = values[3];
+        profile.CoolColor = Eigen::Vector3f( values[4], values[5], values[6] );
+        profile.CoolRatio = values[7];
+        profile.Intensity = values[8];
+        return true;
+    };
+    registerCommand( "OTDU_WINDOWS", [=]( const char *pArg ) {
+        OTDUWindowProfile profile;
+        if ( !parseWindowProfile( pArg, profile ) ) {
+            OTDU_LOG_WARN( "Invalid OTDU_WINDOWS '%s'\n", pArg );
+            return;
+        }
+        RegisterOTDUWindowProfile( profile );
+    } );
+    registerCommand( "OTDU_WINDOWPROFILE", [=]( const char *pArg ) {
+        std::string argStr( pArg );
+        size_t it = 0;
+        OTDUWindowProfile profile;
+        profile.Prefix = ParseString( argStr, it );
+        if ( profile.Prefix.empty() ||
+             !parseWindowProfile( argStr.c_str() + it, profile ) ) {
+            OTDU_LOG_WARN( "Invalid OTDU_WINDOWPROFILE '%s'\n", pArg );
+            return;
+        }
+        RegisterOTDUWindowProfile( profile );
+    } );
+
+    // OTDU_WINDOWEXCLUDE "TEXTURE": materials whose gloss map is TEXTURE get
+    // no lit windows.
+    registerCommand( "OTDU_WINDOWEXCLUDE", [&]( const char *pArg ) {
+        std::string argStr( pArg );
+        size_t it = 0;
+        const std::string textureName = ParseString( argStr, it );
+        if ( textureName.empty() ) {
+            OTDU_LOG_WARN( "Invalid OTDU_WINDOWEXCLUDE '%s'\n", pArg );
+            return;
+        }
+        ExcludeOTDUWindowTexture( GetIdentifier64bit( textureName.c_str() ) );
+    } );
+
+    // OTDU_WINDOWSPOTRADIUS meters: no lit windows within this distance of a
+    // building spot (every world spot but the challenges).
+    registerCommand( "OTDU_WINDOWSPOTRADIUS", [&]( const char *pArg ) {
+        SetOTDUWindowSpotRadius( static_cast<float>( atof( pArg ) ) );
+    } );
+
+    registerCommand( "OTDU_BAKEDSHADOW", [&]( const char *pArg ) {
+        if ( gpParsingWeatherConfig != nullptr ) {
+            gpParsingWeatherConfig->setBakedShadowStrength(
                 static_cast<float>( atof( pArg ) ) );
         }
     } );

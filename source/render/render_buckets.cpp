@@ -15,6 +15,7 @@
 #include "render/scene_renderer.h"
 #include "render/setup_node.h"
 #include "render/shaders/shader_binary_cache.h"
+#include "world/otdu_lights.h"
 
 // Default (or global) Light Setup?
 LightSetupNode DAT_00fe89f8; // DAT_00fe89f8
@@ -330,11 +331,17 @@ void TransformMatrixCommand::execute( uint32_t isHeightmap,
         gEdRender.pRenderDevice->setScissor( *gpScissorOverride );
     }
 
+    // OTDU_ADDITION: night lit windows (per instance profile and seed) and
+    // emissive signs.
+    BindOTDUWindowConstants( pInstance );
+    BindOTDUEmissiveConstants();
+
     if ( isHeightmap == 0 ) {
         gpRenderContext->drawIndexedPrimitive( param_3 );
     } else if ( isHeightmap == 1 ) {
         gpRenderContext->drawHeightmap( param_3, param_4 );
     }
+    UnbindOTDUEmissiveConstants();
 
     SetupGraph::Unbind( 1 );
 }

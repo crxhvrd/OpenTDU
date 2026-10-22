@@ -32,6 +32,8 @@ public:
     void setRGBFactor( float param_1, float param_2, float param_3 );
     void setGlowMod( float param_1 );
     void setStarMod( float param_1 );
+    // OTDU_ADDITION: per weather exposure (night), see GameModeScene.
+    inline void setMiddleGray( float value ) { middleGray = value; }
 
 private:
     friend struct PostFXStepHDRI;

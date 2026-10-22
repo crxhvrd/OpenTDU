@@ -68,6 +68,10 @@ public:
     void unload();
 
     void updateCenter( const Eigen::Vector4f &position );
+    // OTDU_ADDITION: the address lies in a loaded spot bank. Night lit windows
+    // skip spot materials: spots keep baked light maps in the building gloss
+    // slot.
+    bool isInLoadedSpot( const void *pAddress ) const;
     void unloadSpotsForSector( Sector *pSector );
     bool isLoading() const {
         // FUN_006fbfa0

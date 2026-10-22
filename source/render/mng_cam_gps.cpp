@@ -850,6 +850,13 @@ void MngCamGPS::OnWeatherConfigUpdate( WeatherConfig *pConfig ) {
                                 pConfig->getHeightmapColor() * s );
     pConfig->setHeightmapContrast( pMap->getTerrainContrast() * t +
                                    pConfig->getTerrainContrast() * s );
+
+    // OTDU_ADDITION: the map look ignores night time, like the rest of this
+    // blend (MAP keeps the neutral night parameters).
+    pConfig->setNightParams( pMap->getNightParams() * t +
+                             pConfig->getNightParams() * s );
+    pConfig->setLampParams( pMap->getLampParams() * t +
+                            pConfig->getLampParams() * s );
 }
 
 void MngCamGPS::OnHDRConfigUpdate( HDRIConfig *pConfig ) {

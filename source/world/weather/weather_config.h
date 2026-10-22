@@ -153,6 +153,34 @@ public:
     float getCloudsScaleV() const;
     float getCloudsEmissive() const;
 
+    // OTDU_ADDITION: night time parameters, uploaded to the rebuilt shaders:
+    // x = unlit/emissive scale, y = baked shadow strength (retail 1),
+    // z = star brightness, w = moon brightness (retail 0).
+    const Eigen::Vector4f &getNightParams() const { return nightParams; }
+    void setNightParams( const Eigen::Vector4f &params ) {
+        nightParams = params;
+    }
+    void setLampParams( const Eigen::Vector4f &params ) { lampParams = params; }
+    void setUnlitScale( const float scale ) { nightParams.x() = scale; }
+    void setStarBrightness( const float brightness ) {
+        nightParams.z() = brightness;
+    }
+    void setMoonBrightness( const float brightness ) {
+        nightParams.w() = brightness;
+    }
+    // OTDU_ADDITION: x = night lamp intensity (retail 0), y = HDR exposure
+    // offset in stops (retail 0), z = emissive scale of the unlit signs
+    // (0 = unlit scale, as retail).
+    const Eigen::Vector4f &getLampParams() const { return lampParams; }
+    void setLampIntensity( const float intensity ) {
+        lampParams.x() = intensity;
+    }
+    void setHDRExposure( const float stops ) { lampParams.y() = stops; }
+    void setEmissiveScale( const float scale ) { lampParams.z() = scale; }
+    void setBakedShadowStrength( const float strength ) {
+        nightParams.y() = strength;
+    }
+
 private:
     std::string name;
 
@@ -222,6 +250,9 @@ private:
     float carReflectionFactor;
     float carReflectionLuminosity;
     float carCloudsFactor;
+
+    Eigen::Vector4f nightParams;
+    Eigen::Vector4f lampParams;
 
     HDRIConfig *pHDRIConfig;
     uint8_t bHDRIEnabled : 1;

@@ -71,6 +71,9 @@ public:
     inline Viewport *getViewport() { return pActiveViewport; }
     inline bool isOrthoProjection() const { return bOrthoProjection; }
     inline SetupGraph &getSetup() { return sceneSetup; }
+    // OTDU_ADDITION: receives the night time shader parameters.
+    inline bool isNightScene() const { return bNightScene; }
+    inline void setNightScene( const bool bNight ) { bNightScene = bNight; }
 
     inline uint32_t getActiveVSIndex() const { return activeVertexShaderIndex; }
     inline uint32_t getActivePSIndex() const { return activePixelShaderIndex; }
@@ -128,6 +131,7 @@ public:
     bool FUN_00508930( Material *param_2 ) const;
 
 private:
+    bool bNightScene = false; // OTDU_ADDITION
     Frustum frustum;
     FogDesc fogDesc;
     Camera *pActiveCamera;

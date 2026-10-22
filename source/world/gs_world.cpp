@@ -1,5 +1,6 @@
 #include "shared.h"
 #include "gs_world.h"
+#include "otdu_lights.h"
 
 #include "config/gs_config.h"
 #include "filesystem/gs_file.h"
@@ -8,6 +9,9 @@
 #include "gs_world_streaming.h"
 #include "streaming_manager.h"
 #include "debug/debug_streaming.h"
+#ifdef OTDU_USE_IMGUI
+#include "debug/debug_object_picker.h"
+#endif
 
 GSWorld gWorld = {}; // DAT_00fa47a0
 GSWorld *gpWorld = nullptr;
@@ -106,6 +110,8 @@ void GSWorld::tick( float totalTime, float deltaTime ) {
     if ( bEnabled && !gpConfig->pPlayerConfig->bCarReset &&
          pStreamingManager != nullptr && pStreamPosition != nullptr ) {
         pStreamingManager->tick( pStreamPosition, totalTime, deltaTime );
+        UpdateOTDULights();     // OTDU_ADDITION
+        UpdateOTDUHeadlights(); // OTDU_ADDITION
         if ( bDirtyStreaming ) {
             gpFile->flushPendingAsync();
             bDirtyStreaming = false;
@@ -116,6 +122,7 @@ void GSWorld::tick( float totalTime, float deltaTime ) {
 
 void GSWorld::terminate() {
     // FUN_007cc0f0
+    ReleaseOTDULightGlows(); // OTDU_ADDITION
     if ( pStreamingManager != nullptr ) {
         pStreamingManager->shutdown();
         delete pStreamingManager;
@@ -125,11 +132,15 @@ void GSWorld::terminate() {
 
 void GSWorld::draw( float deltaTime ) {
     // FUN_007cbef0
+#if 0
+    TestDrive::BeginObjectPickerFrame(); // OTDU_ADDITION
+#endif
     if ( bEnabled ) {
         if ( !gpConfig->pPlayerConfig->bCarReset &&
              pStreamingManager != nullptr && pStreamPosition != nullptr ) {
             if ( bForceUpdate ) {
                 pStreamingManager->render();
+                DrawOTDULightGlows(); // OTDU_ADDITION
             }
         }
         bForceUpdate = false;
@@ -253,6 +264,10 @@ void GSWorld::reset() {
 #include "render/camera/gs_camera.h"
 
 void GSWorld::drawDebug( float deltaTime ) {
+#if 0
+    TestDrive::DrawObjectPickerPanel();
+#endif
+
     StreamingManager *pStreaming = getStreamingManager();
     if ( pStreaming == nullptr ) {
         ImGui::TextDisabled( "No active world streaming." );

@@ -367,6 +367,7 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/debug/gs_profile.cpp"
                     "${OTDU_SRC_FOLDER}/debug/debug_streaming.cpp"
                     "${OTDU_SRC_FOLDER}/debug/debug_entity.cpp"
+                    "${OTDU_SRC_FOLDER}/debug/debug_object_picker.cpp"
                     "${OTDU_SRC_FOLDER}/debug/debug_graph.cpp"
                     "${OTDU_SRC_FOLDER}/debug/ed_debug_text.cpp"
                     "${OTDU_SRC_FOLDER}/game/mods/flash_list_mods.cpp"
@@ -493,6 +494,7 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/filesystem/virtual_file_system.cpp"
                     "${OTDU_SRC_FOLDER}/filesystem/file_path_register.cpp"
                     "${OTDU_SRC_FOLDER}/world/gs_world.cpp"
+                    "${OTDU_SRC_FOLDER}/world/otdu_lights.cpp"
                     "${OTDU_SRC_FOLDER}/world/details/gs_details.cpp"
                     "${OTDU_SRC_FOLDER}/world/details/tdu_detail.cpp"
                     "${OTDU_SRC_FOLDER}/world/details/road_patch.cpp"
@@ -949,6 +951,7 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/debug/gs_profile.h"
                     "${OTDU_SRC_FOLDER}/debug/debug_streaming.h"
                     "${OTDU_SRC_FOLDER}/debug/debug_entity.h"
+                    "${OTDU_SRC_FOLDER}/debug/debug_object_picker.h"
                     "${OTDU_SRC_FOLDER}/debug/debug_graph.h"
                     "${OTDU_SRC_FOLDER}/debug/ed_debug_text.h"
                     "${OTDU_SRC_FOLDER}/game/mods/flash_list_mods.h"
@@ -1549,6 +1552,20 @@ endif()
 # Tools subprojects
 add_subdirectory( tools/asset_extractor )
 add_subdirectory( tools/mod_packer )
+
+# OpenTDU Mod Packs (TODO: add cmake option to enable mod packing)
+set( OTDU_NIGHT_PACK_FOLDER "${OTDU_BIN_FOLDER}/Mods/OpenTDU_Night-Time" )
+add_custom_target( opentdu_night_pack ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_NIGHT_PACK_FOLDER}"
+    COMMAND $<TARGET_FILE:opentdu_modPacker>
+            -input "${OTDU_RSC_FOLDER}/mods/night_time/Files"
+            -output "${OTDU_NIGHT_PACK_FOLDER}"
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${OTDU_RSC_FOLDER}/mods/night_time/contentdesc.xml"
+            "${OTDU_NIGHT_PACK_FOLDER}/contentdesc.xml"
+    DEPENDS opentdu_modPacker
+    COMMENT "Packing night time mod..."
+    VERBATIM )
 add_subdirectory( tools/save_decryptor )
 add_subdirectory( tools/zc_uncompressor )
 

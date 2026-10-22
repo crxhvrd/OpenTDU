@@ -487,6 +487,13 @@ void GSRender::onWeatherConfigChange( WeatherConfig *param_1 ) {
     updateWind();
 
     shaderUniforms[1] = param_1->getTerrainUniformParams();
+
+    // OTDU_ADDITION
+    gEdRender.NightParams = param_1->getNightParams();
+    gEdRender.LampParams = param_1->getLampParams();
+    const Eigen::Vector3f sunDirection = param_1->getSunDirection();
+    gEdRender.MoonDirection = Eigen::Vector4f(
+        -sunDirection.x(), -sunDirection.y(), -sunDirection.z(), 0.0f );
 }
 
 uint32_t GSRender::getFreeStencilMask() {
@@ -1771,6 +1778,19 @@ void GSRender::setupRenderPasses() {
                    &backbufferFramebuffer,                                                                                          &lights2DDefault, 0x20, 0,
                    "After2D",                                                                                                                                                           nullptr,                 false, true }
     };
+
+    // OTDU_ADDITION: the night time parameters only reach the world scenes
+    // (main and reflection cameras, environment maps); 2D, HUD (helmet) and
+    // shadow scenes keep the neutral values.
+    for ( RenderPass &pass : renderPasses ) {
+        if ( pass.pScene == nullptr ) {
+            continue;
+        }
+        const bool bWorldCamera =
+            pass.pCamera == &cameraMain || pass.pCamera == &cameraReflection ||
+            pass.pCamera == &cameraEnvMap || pass.pCamera == &cameraEnvMapBack;
+        pass.pScene->setNightScene( bWorldCamera );
+    }
 }
 
 void GSRender::updateWind() {

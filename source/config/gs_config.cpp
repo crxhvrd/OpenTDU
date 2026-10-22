@@ -36,6 +36,10 @@ static constexpr const char *kAudioIniFilename = "Audio.ini";   // DAT_00f7655c
 static constexpr const char *kPhysicsIniFilename =
     "Physics.ini";                                              // DAT_00f76550
 static constexpr const char *kReplayIniFilename = "Replay.ini"; // DAT_00f76568
+static constexpr const char *kWeatherModIniFilename =
+    "FX/Weather_OpenTDU.ini"; // OTDU_ADDITION
+static constexpr const char *kLightsModIniFilename =
+    "FX/Lights_OpenTDU.ini"; // OTDU_ADDITION
 static constexpr const char *kDeviceIniFilename =
     "DevicesPC.ini"; // DAT_00f76540
 
@@ -192,6 +196,8 @@ void GSConfig::parseIniFiles() {
 
     ParseArgValueFromCmdLine( "game", gamePCIniPath.data(), OTDU_MAX_PATH );
     parseIniFile( gamePCIniPath.c_str() );
+
+    gpFile->initCarPacks( false );
 
     ParseArgValueFromCmdLine( "physics", physicsIniPath.data(), OTDU_MAX_PATH );
     parseIniFile( physicsIniPath.c_str() );
@@ -571,6 +577,29 @@ void GSConfig::parseWeatherAndFXInis() {
     std::string weatherDescFilePath = pResPath;
     weatherDescFilePath += "FX/WeatherDesc.ini";
     parseIniFile( weatherDescFilePath.c_str() );
+
+    // OTDU_ADDITION: extend weather config parsing to allow mods to override
+    // existing presets/add their own (mapping to an already existing or new
+    // ToD)
+    std::string weatherModFilePath = pResPath;
+    weatherModFilePath += kWeatherModIniFilename;
+    FileMapEntry *pModEntry = nullptr;
+    FileMap *pModMap = nullptr;
+    if ( gpFile->findMapEntriesForFile( weatherModFilePath.c_str(), &pModEntry,
+                                        &pModMap ) ) {
+        bHDRWeather = false;
+        parseIniFile( weatherModFilePath.c_str() );
+        bHDRWeather = true;
+        parseIniFile( weatherModFilePath.c_str() );
+    }
+
+    // OTDU_ADDITION: night light models (OTDU_LIGHTMODEL)
+    std::string lightsModFilePath = pResPath;
+    lightsModFilePath += kLightsModIniFilename;
+    if ( gpFile->findMapEntriesForFile( lightsModFilePath.c_str(), &pModEntry,
+                                        &pModMap ) ) {
+        parseIniFile( lightsModFilePath.c_str() );
+    }
 
     std::string fxFilePath = pResPath;
     fxFilePath += "FX/FX.ini";

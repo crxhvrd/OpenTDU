@@ -56,6 +56,18 @@
         <po>Nielimitowane</po>
         <ru>Неограниченная</ru>
     </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000008">
+        <us>NIGHT LIGHTS</us>
+        <fr>ÉCLAIRAGE NOCTURNE</fr>
+        <po>Oświetlenie nocne</po>
+        <ru>Ночные огни</ru>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000009">
+        <us>ULTRA</us>
+        <fr>ULTRA</fr>
+        <po>Ultra</po>
+        <ru>Ультра</ru>
+    </ACTION>
 
     <!-- Mod manager -->
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000100">

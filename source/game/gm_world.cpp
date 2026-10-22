@@ -32,6 +32,7 @@
 #include "player_data/achievement_checks.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
+#include "world/otdu_lights.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "database/gs_database.h"
@@ -656,7 +657,10 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
 
     pCfg->bCarReset = false;
     pBody->bBackOnTrackRequest = IsActionPressed( pCfg->pBotPad );
-    pBody->bHeadlightsOn = IsActionDown( pCfg->pCarLight );
+    // OTDU_ADDITION: at night the headlights are on by default and the light
+    // key switches to high beams
+    gbOTDUPlayerHighBeams = IsActionDown( pCfg->pCarLight );
+    pBody->bHeadlightsOn = gbOTDUPlayerHighBeams || AreOTDUHeadlightsOn();
     pBody->bHonking = IsActionDown( pCfg->pCarHorn );
 
     const bool bViewSwitchAllowed = IsVehicleViewSwitchAllowed();

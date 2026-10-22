@@ -11,6 +11,7 @@
 #include "system/system_shared.h"
 #include "tdu_instance.h"
 #include "gs_world_streaming.h"
+#include "otdu_lights.h"
 #include "world/gs_world.h"
 #include "world/streaming_manager.h"
 #include "mng_electrical_network.h"
@@ -389,6 +390,67 @@ static void DecodeImpostorInstance( const uint16_t *pInst,
     outAngle = rotY;
 }
 
+void ForEachPMIInstance(
+    const void *pPMI,
+    uint32_t pmiSize,
+    uint32_t gridIndex,
+    const Eigen::Vector4f &worldCorner,
+    const std::function<bool( uint64_t )> &acceptType,
+    const std::function<void( uint64_t, const Matrix4x4f_t & )> &callback ) {
+    const uint16_t *pHeader = static_cast<const uint16_t *>( pPMI );
+    if ( pHeader == nullptr || pmiSize < 0x1d0 || pHeader[0] != 0 ||
+         pHeader[1] != 6 ||
+         *reinterpret_cast<const uint32_t *>( pHeader + 6 ) != kPMIMagic ) {
+        return;
+    }
+
+    const uint16_t *pEnd = pHeader + pmiSize / 2;
+    const float originY = *reinterpret_cast<const float *>( pHeader + 0x12 );
+    const float cellSizeY =
+        ( *reinterpret_cast<const float *>( pHeader + 0x14 ) - originY ) *
+        kCellMetricFactor;
+    const uint32_t numTypes =
+        *reinterpret_cast<const uint32_t *>( pHeader + 0x10 );
+
+    const uint16_t *pType = pHeader + 0xe8;
+    for ( uint32_t t = 0; t < numTypes && pType + 0x10 <= pEnd; t++ ) {
+        const uint64_t hashcode =
+            static_cast<uint64_t>(
+                *reinterpret_cast<const uint32_t *>( pType + 8 ) ) |
+            ( static_cast<uint64_t>(
+                  *reinterpret_cast<const uint32_t *>( pType + 0xa ) )
+              << 32 );
+        const uint16_t instanceCount = pType[0xc];
+        const uint32_t instanceStride =
+            Align( static_cast<uint32_t>( pType[0xd] ) + 0x20, 16 );
+        const uint8_t kind = static_cast<uint8_t>( pType[0xf] );
+        const uint16_t *pInstance = pType + 0x10;
+        const uint16_t *pNextType = reinterpret_cast<const uint16_t *>(
+            reinterpret_cast<const uint8_t *>( pInstance ) +
+            static_cast<size_t>( instanceStride ) * instanceCount );
+
+        if ( kind != 0 && kind != 2 && acceptType( hashcode ) ) {
+            for ( uint16_t n = 0; n < instanceCount; n++ ) {
+                const uint16_t *pCurrent = reinterpret_cast<const uint16_t *>(
+                    reinterpret_cast<const uint8_t *>( pInstance ) +
+                    static_cast<size_t>( instanceStride ) * n );
+                if ( pCurrent + 0x0b > pEnd ) {
+                    break;
+                }
+                Matrix4x4f_t m;
+                ColorRGBA color;
+                uint16_t tileIndex = 0;
+                float scaleY = 0.0f, angleY = 0.0f;
+                DecodeImpostorInstance( pCurrent, gridIndex, originY, cellSizeY,
+                                        worldCorner, m, color, tileIndex,
+                                        scaleY, angleY );
+                callback( hashcode, m );
+            }
+        }
+        pType = pNextType;
+    }
+}
+
 static Matrix4x4f_t OrthonormalizeInstanceMatrix( const Matrix4x4f_t &param_1,
                                                   const float param_2,
                                                   Eigen::Vector3f &param_3 ) {
@@ -704,6 +766,9 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
             continue;
         }
 
+        int32_t lightModelIndex = -1;
+        FindOTDULightModel( hashcode, &lightModelIndex );
+
         for ( uint16_t n = 0; n < instanceCount; n++ ) {
             if ( pInstance + 0x0b > pEnd ) {
                 break;
@@ -719,6 +784,11 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
             DecodeImpostorInstance( pInstance, gridIndex, originY, cellSizeY,
                                     gridOrigin, m, color, tileIndex, scaleY,
                                     angleY );
+
+            // OTDU_ADDITION: night lights attached to this model.
+            if ( lightModelIndex >= 0 ) {
+                PlaceOTDULight( grid, lightModelIndex, m, buildOrigin );
+            }
 
             Instance *pInst = set.collection.instantiate(
                 reinterpret_cast<InstanceEntry *>( pDef + 1 ), hashcode );

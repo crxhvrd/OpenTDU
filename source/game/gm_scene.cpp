@@ -36,6 +36,7 @@
 #include "game/scenaric/local_player.h"
 #include "input/input_device.h"
 #include "input/gs_device.h"
+#include "core/arg_parser.h"
 #include "core/maths_helper.h"
 #include "flash/audio/flash_sounds.h"
 #include "flash/movie_player.h"
@@ -45,6 +46,18 @@
 #include "render/gs_render.h"
 #include "world/details/gs_details.h"
 #include "game/shop/gm_shop.h"
+
+static bool gbStartTimeOverride = false;
+static TimeOfDay gStartTimeOverride = {};
+static CmdLineArg CmdLineArgStartTime( "tod", []( const char *pArg ) {
+    int hours = 0;
+    int minutes = 0;
+    if ( sscanf( pArg, "%d:%d", &hours, &minutes ) >= 1 ) {
+        gStartTimeOverride.Hours = (float)hours;
+        gStartTimeOverride.Minutes = (float)minutes;
+        gbStartTimeOverride = true;
+    }
+} );
 
 GameModeScene *gpActiveGMScene = nullptr; // DAT_010e7c80
 
@@ -224,6 +237,12 @@ void GameModeScene::reset() {
     if ( gpPlayerData != nullptr && gpPlayerData->isOnline() ) {
         OTDU_UNIMPLEMENTED; // TODO: ONLINE (P2P clock sync ->
                             // GSWeather::setTime)
+    }
+
+    // OTDU_ADDITION: -tod HH:MM, start time for testing the weather periods.
+    if ( gbStartTimeOverride ) {
+        gbStartTimeOverride = false;
+        gpWeather->setTime( true, &gStartTimeOverride );
     }
 
     // HDR / radial-blur enable state for the current game mode.
@@ -456,6 +475,14 @@ bool GameModeScene::updatePostFX() {
                 pHDRI->getStarModulate()->setCoefficient0(
                     pHDRConfig->BrightThresholdStar );
             }
+
+            // OTDU_ADDITION: per weather exposure offset (tone mapped scene
+            // and bloom sources).
+            const float middleGray =
+                gFXHDRIMiddleGray * exp2f( weather.getLampParams().y() );
+            pNode->setMiddleGray( middleGray );
+            pHDRI->getGlowModulate()->setCoefficient1( middleGray );
+            pHDRI->getStarModulate()->setCoefficient1( middleGray );
         }
     }
 

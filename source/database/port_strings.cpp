@@ -22,6 +22,9 @@ static constexpr PortStringDesc kPortStrings[PS_Count] = {
     {2026000007ull, "UNLIMITED"                },
     {63275810ull,   "HIGH"                     },
     {63075810ull,   "DEFAULT"                  },
+    {2026000008ull, "NIGHT LIGHTS"             },
+    {57385810ull,   "LOW"                      },
+    {2026000009ull, "ULTRA"                    },
 
     {2026000100ull, "'./Mods' folder is empty!"},
     {2026000101ull, "Enabled"                  },

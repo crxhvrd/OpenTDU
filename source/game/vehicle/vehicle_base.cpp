@@ -819,6 +819,12 @@ void VehicleBase::updateRendering( float param_2, float param_3 ) {
         fVar2 = pCarState->isReversing() ? 1.0f : 0.0f;
         setFlareValue( eFlareType::FT_Reverse, fVar2 );
 
+        // OTDU_ADDITION: at night the brake lights glow dimly as tail lights
+        // (retail player cars have no tail light state; their rear channel
+        // masks are unreliable).
+        fVar2 = pCarState->isBraking()  ? 1.0f
+                : AreOTDUHeadlightsOn() ? GetOTDUTailLightLevel()
+                                        : 0.0f;
         setFlareValue( eFlareType::FT_Brake, fVar2 );
 
         fVar2 = pCarState->isIndicatingLeft() ? 1.0f : 0.0f;
@@ -3373,6 +3379,27 @@ void VehicleBase::FUN_008ba190() {
         flares[iVar9 * 4 + 3] =
             flaresFR[iVar9] != nullptr ? flaresFR[iVar9]->pInstance : nullptr;
     }
+}
+
+int32_t
+VehicleBase::getHeadlightNodes( const int32_t side,
+                                const HiearchyNode **ppOutNodes ) const {
+    // Slots 0..2 of the front flare arrays are the headlight ('L') flares.
+    const std::array<HiearchyNode *, 15> &flares =
+        ( side == 0 ) ? flaresFL : flaresFR;
+    int32_t numNodes = 0;
+    for ( int32_t i = 0; i < kNumHeadlightNodes; i++ ) {
+        if ( flares[i] != nullptr ) {
+            ppOutNodes[numNodes++] = flares[i];
+        }
+    }
+    if ( numNodes == 0 && !displayInstances.empty() &&
+         displayInstances[0].pNode != nullptr ) {
+        ppOutNodes[0] = displayInstances[0].pNode->findChild(
+            GetIdentifier64bit( ( side == 0 ) ? "LGT_FL" : "LGT_FR" ) );
+        numNodes = ( ppOutNodes[0] != nullptr ) ? 1 : 0;
+    }
+    return numNodes;
 }
 
 void VehicleBase::bindFlareUniforms() {

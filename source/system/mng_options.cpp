@@ -28,6 +28,7 @@
 #include "system/ed_sys.h"
 
 #include "tdu_instance.h"
+#include "world/otdu_lights.h"
 
 static constexpr const char *kSpeakerModes[2] = {
     "stereo", // DAT_00f3d784
@@ -79,6 +80,7 @@ enum eExtraVideoRow : int32_t {
     EVR_FrameRateCap = 1,
     EVR_Reflections = 2,
     EVR_VSync = 3,
+    EVR_NightLights = 4,
 
     EVR_Count
 };
@@ -95,6 +97,7 @@ static constexpr ExtraVideoRowDesc kExtraVideoRows[EVR_Count] = {
     {PS_FrameRate,   "prfc",  "nefc",  false},
     {PS_Reflections, "prdr",  "nedr",  false},
     {PS_VSync,       nullptr, nullptr, true },
+    {PS_NightLights, "prnl",  "nenl",  false},
 };
 static constexpr int32_t kFrameRateCaps[] = { 0, 30, 60, 120, 144, 240 };
 
@@ -467,6 +470,14 @@ bool MngOptions::onMessage( FlashMessage *pMessage,
     case 0x6e656472: // "nedr" — next reflection quality
     case 0x70726472: // "prdr" — previous reflection quality
         toggleDenseReflections();
+        return false;
+
+    case 0x6e656e6c: // "nenl" — next night lights quality
+        showNextNightLightsQuality( 1 );
+        return false;
+
+    case 0x70726e6c: // "prnl" — previous night lights quality
+        showNextNightLightsQuality( -1 );
         return false;
 
     case 0x6e656c67: // "nelg" — next language
@@ -2352,6 +2363,13 @@ void MngOptions::showExtraVideoRowValue( const int32_t row,
                                                              : PS_Default ),
                  sizeof( label ) - 1 );
         break;
+    case EVR_NightLights: {
+        static constexpr ePortString kQualityLabels[GQ_Count] = {
+            PS_Low, PS_Default, PS_High, PS_Ultra };
+        strncpy( label, GetPortString( kQualityLabels[GetOTDUGlowQuality()] ),
+                 sizeof( label ) - 1 );
+        break;
+    }
     default:
         return;
     }
@@ -2378,6 +2396,15 @@ void MngOptions::showNextFrameRateCap( const int32_t direction ) {
 void MngOptions::toggleDenseReflections() {
     gbDebugEnvMapDenseReflection = !gbDebugEnvMapDenseReflection;
     showExtraVideoRowValue( EVR_Reflections, true );
+    OpenTDUSettings::Save();
+}
+
+void MngOptions::showNextNightLightsQuality( const int32_t direction ) {
+    const int32_t numQualities = int32_t( GQ_Count );
+    SetOTDUGlowQuality( eOTDUGlowQuality(
+        ( int32_t( GetOTDUGlowQuality() ) + direction + numQualities ) %
+        numQualities ) );
+    showExtraVideoRowValue( EVR_NightLights, true );
     OpenTDUSettings::Save();
 }
 

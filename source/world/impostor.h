@@ -44,6 +44,9 @@ struct ImpostorGrid {
     std::list<std::vector<uint8_t>> materialCopies;
     std::vector<Material *> uvOriginMaterials;
 
+    // OTDU_ADDITION: lights of the light model instances (otdu_lights.h).
+    std::vector<Eigen::Vector4f> lights;
+
     void reset() {
         instances.clear();
         for ( std::vector<MassInstanceImpostor *> &cell : cells ) {
@@ -52,6 +55,7 @@ struct ImpostorGrid {
         materialBankCopies.clear();
         materialCopies.clear();
         uvOriginMaterials.clear();
+        lights.clear();
         bBuilt = false;
     }
 };

@@ -49,6 +49,19 @@ Spot::Spot() : Bank(), StreamedResource(), StreamingCallback() {
 
 Spot::~Spot() { unload(); }
 
+bool SpotStream::isInLoadedSpot( const void *pAddress ) const {
+    const uint8_t *pByte = static_cast<const uint8_t *>( pAddress );
+    for ( const SpotCell &cell : cells ) {
+        const uint8_t *pBegin =
+            static_cast<const uint8_t *>( cell.spot.getBankFile() );
+        if ( pBegin != nullptr && pByte >= pBegin &&
+             pByte < pBegin + cell.spot.getBankFileSize() ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void Spot::unload() {
     // FUN_006fcb60
     if ( isLoaded() ) {
@@ -97,7 +110,8 @@ void Spot::instanciate() {
                     }
                 }
 
-                if ( pWorld != nullptr && pWorld->Type == eSpotType::ST_House ) {
+                if ( pWorld != nullptr &&
+                     pWorld->Type == eSpotType::ST_House ) {
                     launchHouseGateCine( pWorld );
                 }
 
@@ -137,7 +151,7 @@ void Spot::launchHouseGateCine( SpotMap *pWorld ) {
     pCine->launchSpotCine( pWorld, 0.0f );
 
     OTDU_LOG_DEBUG( "House gate cinematic '%s' launched for spot 0x%016llx\n",
-                   pCineName, (unsigned long long)pWorld->Hashcode );
+                    pCineName, (unsigned long long)pWorld->Hashcode );
 }
 
 void Spot::setupGroundMaterials() {

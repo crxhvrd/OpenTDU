@@ -62,6 +62,8 @@ WeatherConfig::WeatherConfig( const char *pName, const bool bHDR )
       carReflectionFactor( 0.0f ),
       carReflectionLuminosity( 1.2f ),
       carCloudsFactor( 0.2f ),
+      nightParams( 1.0f, 1.0f, 0.0f, 0.0f ),
+      lampParams( Eigen::Vector4f::Zero() ),
       pHDRIConfig( nullptr ),
       bHDRIEnabled( bHDR ) {}
 
@@ -178,6 +180,8 @@ void WeatherConfig::scaleBy( float t ) {
     carReflectionFactor *= t;
     carReflectionLuminosity *= t;
     carCloudsFactor *= t;
+    nightParams *= t;
+    lampParams *= t;
 }
 
 void WeatherConfig::addFrom( const WeatherConfig &other ) {
@@ -230,6 +234,8 @@ void WeatherConfig::addFrom( const WeatherConfig &other ) {
     carReflectionFactor += other.carReflectionFactor;
     carReflectionLuminosity += other.carReflectionLuminosity;
     carCloudsFactor += other.carCloudsFactor;
+    nightParams += other.nightParams;
+    lampParams += other.lampParams;
 }
 
 Eigen::Vector4f WeatherConfig::computeGlobalAmbientColor() const {

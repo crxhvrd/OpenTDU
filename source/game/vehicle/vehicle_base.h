@@ -151,6 +151,12 @@ public:
         return interiorResource;
     }
     inline const DirectionalLight &getMainLight() const { return mainLight; }
+    // OTDU_ADDITION: night headlights (FA_L_FL, FA_L_FL1, FA_L_FL2..., traffic;
+    // LGT_FL / LGT_FR, player cars)
+    static constexpr int32_t kNumHeadlightNodes = 3;
+    int32_t getHeadlightNodes( const int32_t side,
+                               const HiearchyNode **ppOutNodes ) const;
+    inline bool isDisplayed() const { return bVisible && bValidPosition; }
     inline float getCurrentEnvFactor() const { return currentEnvFactor; }
     inline float getCurrentEnvFactorBackFace() const {
         return currentEnvFactorBackFace;

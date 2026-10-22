@@ -111,6 +111,27 @@ public:
     float Time;
     edRenderConfig Config;
     Eigen::Vector4f Uniforms[kMaxNumCustomUniforms];
+    // OTDU_ADDITION: active weather night parameters, written to registers no
+    // retail shader uses (kNightParamsRegisterVS / PS).
+    Eigen::Vector4f NightParams = Eigen::Vector4f( 1.0f, 1.0f, 0.0f, 0.0f );
+    // OTDU_ADDITION: night lamps (otdu_lights.h): render space position +
+    // radius, color + fade weight; lamp intensity comes from the weather
+    // (LampParams.x).
+    static constexpr uint32_t kMaxNumLamps = 32;
+    Eigen::Vector4f LampPositions[kMaxNumLamps];
+    Eigen::Vector4f LampColors[kMaxNumLamps];
+    uint32_t NumLamps = 0;
+    Eigen::Vector4f LampParams = Eigen::Vector4f::Zero();
+    // OTDU_ADDITION: car headlights (spot lights): render space position +
+    // range, direction + cos(outer half angle), color + cos(inner half angle).
+    static constexpr uint32_t kMaxNumHeadlights = 8;
+    Eigen::Vector4f HeadlightPositions[kMaxNumHeadlights];
+    Eigen::Vector4f HeadlightDirections[kMaxNumHeadlights];
+    Eigen::Vector4f HeadlightColors[kMaxNumHeadlights];
+    uint32_t NumHeadlights = 0;
+    float HeadlightIntensity = 0.0f;
+    // OTDU_ADDITION: direction toward the moon (the night "sun"), world space.
+    Eigen::Vector4f MoonDirection = Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f );
 
 public:
     edRender();

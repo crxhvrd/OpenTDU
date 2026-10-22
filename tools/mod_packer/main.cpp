@@ -124,6 +124,11 @@ static bool CollectEntries( const std::filesystem::path &inputPath,
             continue;
         }
 
+        // Skip hidden files
+        if ( it->path().filename().string().rfind( '.', 0 ) == 0 ) {
+            continue;
+        }
+
         const std::string relativePath =
             MakeRelativePath( inputPath, it->path() );
         if ( IsPackerOutput( relativePath ) ) {

@@ -2,12 +2,14 @@
 #include "opentdu_settings.h"
 
 #include "filesystem/gs_file.h"
+#include "game/vehicle/vehicle_base.h"
 #include "gs_timer.h"
 #include "player_data/user_profile.h"
 #include "render/gs_render.h"
 #include "render/mng_env_map.h"
 #include "system/ed_sys.h"
 #include "system/mng_options.h"
+#include "world/otdu_lights.h"
 
 #include "config/gs_config.h"
 
@@ -19,6 +21,8 @@ static int32_t gProfileMaxFrameRate = 0;
 
 static constexpr const char *kDisplayModeNames[int32_t(
     eDisplayMode::DM_Count )] = { "Windowed", "Fullscreen", "Borderless" };
+static constexpr const char *kGlowQualityNames[GQ_Count] = { "Low", "Default",
+                                                             "High", "Ultra" };
 
 static bool GetSettingsPath( std::filesystem::path &outPath ) {
     const std::string &profileName =
@@ -61,6 +65,17 @@ static void ApplySetting( const std::string &key, const std::string &value ) {
         }
     } else if ( StringCmpI( key.c_str(), "DenseReflections" ) == 0 ) {
         gbDebugEnvMapDenseReflection = atoi( value.c_str() ) != 0;
+    } else if ( StringCmpI( key.c_str(), "NightLights" ) == 0 ) {
+        for ( int32_t i = 0; i < int32_t( GQ_Count ); i++ ) {
+            if ( StringCmpI( value.c_str(), kGlowQualityNames[i] ) == 0 ) {
+                SetOTDUGlowQuality( eOTDUGlowQuality( i ) );
+                return;
+            }
+        }
+        OTDU_LOG_WARN( "%s: unknown night lights quality '%s'\n",
+                       kSettingsFilename, value.c_str() );
+    } else if ( StringCmpI( key.c_str(), "CalibratedCustomPaint" ) == 0 ) {
+        VehicleBase::bCalibratedDeluxePaint = atoi( value.c_str() ) != 0;
     } else if ( StringCmpI( key.c_str(), "VSync" ) == 0 ) {
         if ( gpRender != nullptr && gpConfig != nullptr ) {
             gpRender->setVSyncMode(
@@ -79,6 +94,8 @@ namespace OpenTDUSettings {
         }
 
         gProfileMaxFrameRate = IsMaxFrameRateForced() ? 0 : GetMaxFrameRate();
+        SetOTDUGlowQuality( GQ_Default );
+        VehicleBase::bCalibratedDeluxePaint = false;
 
         std::ifstream stream( settingsPath );
         if ( !stream.is_open() ) {
@@ -138,6 +155,10 @@ namespace OpenTDUSettings {
                << "\n";
         stream << "DenseReflections = "
                << ( gbDebugEnvMapDenseReflection ? 1 : 0 ) << "\n";
+        stream << "NightLights = " << kGlowQualityNames[GetOTDUGlowQuality()]
+               << "\n";
+        stream << "CalibratedCustomPaint = "
+               << ( VehicleBase::bCalibratedDeluxePaint ? 1 : 0 ) << "\n";
         if ( gpRender != nullptr ) {
             stream << "VSync = "
                    << ( gpRender->getVSyncMode() != eVSyncMode::VSM_Immediate

@@ -12,6 +12,9 @@ enum ePortString : uint32_t {
     PS_Unlimited,
     PS_High,
     PS_Default,
+    PS_NightLights,
+    PS_Low,
+    PS_Ultra,
 
     // Mods Manager
     PS_ModsFolderEmpty,

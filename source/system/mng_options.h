@@ -218,6 +218,7 @@ private:
     void showExtraVideoRowValue( const int32_t row, const bool bHighlighted );
     void showNextFrameRateCap( const int32_t direction );
     void toggleDenseReflections();
+    void showNextNightLightsQuality( const int32_t direction );
     void showExtraVideoPanelFocus();
     void updateExtraVideoRowsHover();
     bool isMouseOverVideoRow( const int32_t rowIndex );

@@ -16,6 +16,7 @@
 #include "game/vehicle/gs_car_state.h"
 #include "gs_timer.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "world/otdu_lights.h"
 
 static constexpr float kKmhToMs = 0.27777779f;     // FLOAT_00f41868
 static constexpr float kDefaultMaxSpeed = 45.0f;   // FLOAT_00f41808
@@ -173,7 +174,8 @@ void AiVehSignals::apply() {
 
     CarBodyState *pBody = pCarState->getBody();
     pBody->bHonking = bHornOn;
-    pBody->bHeadlightsOn = bHeadlightOn;
+    // OTDU_ADDITION: headlights stay on at night
+    pBody->bHeadlightsOn = bHeadlightOn || AreOTDUHeadlightsOn();
     pBody->bIndicatingLeft = bWarningLeftOn;
     pBody->bIndicatingRight = bWarningRightOn;
     pBody->bPoliceGyroEnabled = bFlashlightOn;
