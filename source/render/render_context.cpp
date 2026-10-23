@@ -2307,10 +2307,8 @@ Shader *RenderContext::registerShader( const ShaderTableEntry *pTableEntry,
         // OTDU_ADDITION: the rebuilt avatar and vehicle interior shaders light
         // the night lamps in view space; always request the world view matrix
         // (bit 0x10, c20).
-        if ( ( strcmp( pTableEntry->pShaderCategory, "Avatar" ) == 0 ||
-               strcmp( pTableEntry->pShaderCategory, "VehicleInterior" ) ==
-                   0 ) &&
-             gShaderBinaryCache.isRebuilt( pTableEntry ) ) {
+        if ( strcmp( pTableEntry->pShaderCategory, "Avatar" ) == 0 ||
+             strcmp( pTableEntry->pShaderCategory, "VehicleInterior" ) == 0 ) {
             vsFlags |= 0x10;
         }
         pShader->setShaderInfos( vsFlags, pTableEntry->Flag1 );

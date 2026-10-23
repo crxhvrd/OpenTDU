@@ -28,6 +28,7 @@ set( OTDU_USE_SDL ON CACHE BOOL "Use SDL for window management" )
 set( OTDU_USE_IMGUI ON CACHE BOOL "Use imgui for debug gui" )
 set( OTDU_USE_JOLT ON CACHE BOOL "Use Jolt for physics" )
 set( OTDU_TARGET_WIN7 OFF CACHE BOOL "Target legacy Windows 7 (Win32/x64) API level" )
+set( OTDU_EXTRACTOR_DXVK OFF CACHE BOOL "D3D9 bytecode to SPIR-V (for validation sake; unused by the game client)" )
 
 set( OTDU_GFX_API "OTDU_VULKAN" CACHE STRING "Graphics backend to target" )
 set_property(CACHE OTDU_GFX_API PROPERTY STRINGS OTDU_VULKAN )
@@ -1378,8 +1379,6 @@ if (${OTDU_GFX_API} STREQUAL "OTDU_VULKAN")
     target_include_directories( opentdu PUBLIC ${Vulkan_INCLUDE_DIRS} )
     target_link_libraries( opentdu Vulkan::Vulkan )
 
-    # Retail shaders rebuilt from source (resources/shaders/manifest.txt);
-    # used in place of the dxvk translation with -rebuilt_shaders.
     find_program( OTDU_GLSLANG_VALIDATOR
                   NAMES glslangValidator
                   HINTS "${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}" "$ENV{VULKAN_SDK}/bin" "$ENV{VULKAN_SDK}/Bin" )
@@ -1390,7 +1389,9 @@ if (${OTDU_GFX_API} STREQUAL "OTDU_VULKAN")
         file( GLOB OTDU_SHADER_INCLUDES "${OTDU_SHADER_SRC_FOLDER}/include/*.glsl" )
         file( STRINGS "${OTDU_SHADER_MANIFEST}" OTDU_SHADER_MANIFEST_LINES )
 
-        set( OTDU_REBUILT_SHADERS "" )
+        set( OTDU_SHADER_BUILD_FOLDER "${CMAKE_BINARY_DIR}/shaders" )
+        set( OTDU_SHADER_LIST "" )
+        set( OTDU_SHADER_MODULES "" )
         foreach( OTDU_LINE ${OTDU_SHADER_MANIFEST_LINES} )
             string( REGEX REPLACE "#.*" "" OTDU_LINE "${OTDU_LINE}" )
             string( STRIP "${OTDU_LINE}" OTDU_LINE )
@@ -1402,27 +1403,52 @@ if (${OTDU_GFX_API} STREQUAL "OTDU_VULKAN")
             list( GET OTDU_FIELDS 1 OTDU_SOURCE )
             set( OTDU_DEFINES ${OTDU_FIELDS} )
             list( REMOVE_AT OTDU_DEFINES 0 1 )
-            list( TRANSFORM OTDU_DEFINES PREPEND "-D" )
             get_filename_component( OTDU_STAGE "${OTDU_SOURCE}" LAST_EXT )
 
-            set( OTDU_OUTPUT "${OTDU_BIN_FOLDER}/EURO/Shaders/rebuilt/${OTDU_HASHCODE}${OTDU_STAGE}.spv" )
-            add_custom_command(
-                OUTPUT "${OTDU_OUTPUT}"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_BIN_FOLDER}/EURO/Shaders/rebuilt"
-                COMMAND "${OTDU_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 --quiet
-                        "-I${OTDU_SHADER_SRC_FOLDER}/include" ${OTDU_DEFINES}
-                        -o "${OTDU_OUTPUT}" "${OTDU_SHADER_SRC_FOLDER}/${OTDU_SOURCE}"
-                DEPENDS "${OTDU_SHADER_SRC_FOLDER}/${OTDU_SOURCE}" ${OTDU_SHADER_INCLUDES}
-                COMMENT "Compiling ${OTDU_SOURCE} (${OTDU_HASHCODE})"
-                VERBATIM )
-            list( APPEND OTDU_REBUILT_SHADERS "${OTDU_OUTPUT}" )
-        endforeach()
+            string( MD5 OTDU_PERMUTATION "${OTDU_SOURCE} ${OTDU_DEFINES}" )
+            string( SUBSTRING "${OTDU_PERMUTATION}" 0 16 OTDU_PERMUTATION )
+            set( OTDU_MODULE "${OTDU_PERMUTATION}${OTDU_STAGE}.spv" )
+            string( APPEND OTDU_SHADER_LIST "${OTDU_HASHCODE} ${OTDU_MODULE}\n" )
 
-        add_custom_target( opentdu_rebuilt_shaders ALL DEPENDS ${OTDU_REBUILT_SHADERS} )
+            if ( NOT DEFINED OTDU_SHADER_PERMUTATION_${OTDU_PERMUTATION} )
+                set( OTDU_SHADER_PERMUTATION_${OTDU_PERMUTATION} ON )
+                list( TRANSFORM OTDU_DEFINES PREPEND "-D" )
+                set( OTDU_OUTPUT "${OTDU_SHADER_BUILD_FOLDER}/${OTDU_MODULE}" )
+                add_custom_command(
+                    OUTPUT "${OTDU_OUTPUT}"
+                    COMMAND "${OTDU_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 --quiet
+                            "-I${OTDU_SHADER_SRC_FOLDER}/include" ${OTDU_DEFINES}
+                            -o "${OTDU_OUTPUT}" "${OTDU_SHADER_SRC_FOLDER}/${OTDU_SOURCE}"
+                    DEPENDS "${OTDU_SHADER_SRC_FOLDER}/${OTDU_SOURCE}" ${OTDU_SHADER_INCLUDES}
+                    COMMENT "Compiling ${OTDU_SOURCE} ${OTDU_DEFINES}"
+                    VERBATIM )
+                list( APPEND OTDU_SHADER_MODULES "${OTDU_OUTPUT}" )
+            endif()
+        endforeach()
+        file( MAKE_DIRECTORY "${OTDU_SHADER_BUILD_FOLDER}" )
+
+        # Only touched when the content changes (no repack on every configure).
+        file( WRITE "${OTDU_SHADER_BUILD_FOLDER}/shaders.txt.tmp" "${OTDU_SHADER_LIST}" )
+        configure_file( "${OTDU_SHADER_BUILD_FOLDER}/shaders.txt.tmp"
+                        "${OTDU_SHADER_BUILD_FOLDER}/shaders.txt" COPYONLY )
+
+        set( OTDU_SHADER_PACK "${OTDU_BIN_FOLDER}/EURO/Shaders/rebuilt.bin" )
+        add_custom_command(
+            OUTPUT "${OTDU_SHADER_PACK}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_BIN_FOLDER}/EURO/Shaders"
+            COMMAND $<TARGET_FILE:opentdu_shaderPacker>
+                    -list "${OTDU_SHADER_BUILD_FOLDER}/shaders.txt"
+                    -input "${OTDU_SHADER_BUILD_FOLDER}"
+                    -output "${OTDU_SHADER_PACK}"
+            DEPENDS ${OTDU_SHADER_MODULES} "${OTDU_SHADER_BUILD_FOLDER}/shaders.txt" opentdu_shaderPacker
+            COMMENT "Packing shaders..."
+            VERBATIM )
+
+        add_custom_target( opentdu_rebuilt_shaders ALL DEPENDS "${OTDU_SHADER_PACK}" )
         set_property( TARGET opentdu_rebuilt_shaders PROPERTY FOLDER "Shaders" )
         add_dependencies( opentdu opentdu_rebuilt_shaders )
     else()
-        message( WARNING "glslangValidator not found: shaders rebuilt from source will not be available." )
+        message( FATAL_ERROR "glslangValidator not found" )
     endif()
 
     include_directories( "${OTDU_THIRDPARTY_FOLDER}/Vulkan-Headers/include/" )
@@ -1568,6 +1594,7 @@ endif()
 # Tools subprojects
 add_subdirectory( tools/asset_extractor )
 add_subdirectory( tools/mod_packer )
+add_subdirectory( tools/shader_packer )
 
 # OpenTDU Mod Packs (TODO: add cmake option to enable mod packing)
 set( OTDU_NIGHT_PACK_FOLDER "${OTDU_BIN_FOLDER}/Mods/OpenTDU_Night-Time" )
@@ -1582,6 +1609,7 @@ add_custom_target( opentdu_night_pack ALL
     DEPENDS opentdu_modPacker
     COMMENT "Packing night time mod..."
     VERBATIM )
+add_dependencies( opentdu opentdu_night_pack )
 add_subdirectory( tools/save_decryptor )
 add_subdirectory( tools/zc_uncompressor )
 

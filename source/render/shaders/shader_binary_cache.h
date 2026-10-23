@@ -1,7 +1,6 @@
 #pragma once
 
 #include <unordered_map>
-#include <unordered_set>
 
 #include "render/gs_render_helper.h"
 #include "render/material.h"
@@ -21,9 +20,11 @@ struct ShaderTableHeaderEntry {
                              // kInvalidMetadataOffset if unavailable/unused
 };
 
-// Infos extracted from DxvkShaderCreateInfo (only relevant infos for D3D9 are
-// stored). NOTE: This struct does not include the binding reflection (stored
-// right after NumBindings). During parsing, you must make sure to read
+// Shader interface metadata. The runtime builds it from the SPIR-V module and
+// the retail DXSO declarations; the asset extractor serializes it (as a dxvk
+// DxvkShaderCreateInfo subset) in the optional dxvk translated tables. NOTE:
+// This struct does not include the binding reflection (stored right after
+// NumBindings). During parsing, you must make sure to read
 // 'sizeof(DxvkBindingInfo) * NumBindings' before reading the next metadata
 // entry.
 struct ShaderMetadataSPIRV {
@@ -38,8 +39,7 @@ struct ShaderMetadataSPIRV {
 };
 
 #if OTDU_VULKAN
-// Copy of DxvkBindingInfo (w/o struct/enum from dxvk; to avoid introducing
-// an extra dependency for the runtime).
+// Layout of DxvkBindingInfo (the dxvk translated tables serialize it as-is).
 struct SPIRVBindingInfo {
     uint32_t set = 0u;
     uint32_t binding = 0u;
@@ -113,7 +113,7 @@ static constexpr const char *kShadersRootFolder = "EURO/Shaders/";
 static constexpr const char *kShadersD3D9Folder = "d3d9/";
 static constexpr const char *kShadersOpenGLFolder = "gl330/";
 static constexpr const char *kShadersVulkanFolder = "vulkan/";
-static constexpr const char *kShadersRebuiltFolder = "rebuilt/";
+static constexpr const char *kShadersRebuiltPack = "rebuilt.bin";
 static constexpr const char *kShaderTableExtension = ".bin";
 static constexpr const char *kShaderTableSourceExtension = ".glsl";
 
@@ -127,23 +127,28 @@ public:
     ShaderBytecode_t getOrLoadBytecode( const ShaderTableEntry *pTableEntry );
     ShaderMetadataSPIRVRuntime *
     getMetadataSPIRV( const ShaderTableEntry *pTableEntry );
-    bool isRebuilt( const ShaderTableEntry *pTableEntry ) const;
 
 private:
+    // Loaded shader tables (keyed by path).
     std::unordered_map<std::string, void *> shaderTableBinary;
-    std::unordered_map<uint64_t, std::tuple<void *, uint64_t>> shaderBinaries;
-
-    // Rebuilt modules replacing the dxvk ones (nullptr when there is none).
-    std::unordered_map<uint64_t, std::tuple<void *, uint64_t>> rebuiltBinaries;
-    // TODO: FIXME: HACK: Remove once dxvk is removed
-    std::unordered_set<std::string> rebuiltFilenames;
-    bool bRebuiltFolderListed = false;
+    // Retail (DXSO) shaders extracted from the game executable.
+    std::unordered_map<uint64_t, ShaderBytecode_t> shaderBinaries;
 
 private:
-    ShaderBytecode_t getRebuiltBytecode( const ShaderTableEntry *pTableEntry );
+    bool loadShaderTable(
+        const std::string &shaderTablePath,
+        std::unordered_map<uint64_t, ShaderBytecode_t> &outBinaries );
 
-    // Pointer to shader metadata/reflection. Only valid for SPIRV (for now).
+#if OTDU_VULKAN
+    // Shaders rebuilt from source (resources/shaders), compiled to SPIR-V and
+    // packed by the build (EURO/Shaders/rebuilt.bin).
+    std::unordered_map<uint64_t, ShaderBytecode_t> spirvBinaries;
     std::unordered_map<uint64_t, ShaderMetadataSPIRVRuntime> shaderMetadata;
+
+private:
+    ShaderBytecode_t loadSPIRV( const ShaderTableEntry *pTableEntry,
+                                const ShaderBytecode_t &dxso );
+#endif
 };
 
 extern ShaderBinaryCache gShaderBinaryCache;

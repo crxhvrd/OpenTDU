@@ -14,11 +14,13 @@
 #include <fstream>
 #include <vector>
 
+#if OTDU_EXTRACTOR_DXVK
 #include "dxvk/src/d3d9/d3d9_constant_layout.h"
 #include "dxvk/src/dxso/dxso_analysis.h"
 #include "dxvk/src/dxso/dxso_compiler.h"
 #include "dxvk/src/dxso/dxso_module.h"
 #include "dxvk/src/dxso/dxso_reader.h"
+#endif
 
 namespace {
 
@@ -475,6 +477,7 @@ namespace {
             shaderExtractedCount++;
         }
 
+#if OTDU_EXTRACTOR_DXVK
         fileOutputPath =
             GetShaderOutputPath( ctx ) + kShadersVulkanFolder + filename;
         bWroteToDisk =
@@ -482,6 +485,7 @@ namespace {
         if ( bWroteToDisk ) {
             shaderExtractedCount++;
         }
+#endif
 
         if ( ctx.pSourceGenerator != nullptr ) {
             OTDU_LOG_INFO( "Writing GLSL to disk (shader source generation "
@@ -529,10 +533,12 @@ namespace AssetExtractor {
         CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) );
         CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
                                     kShadersD3D9Folder );
+#if OTDU_EXTRACTOR_DXVK
         CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
                                     kShadersOpenGLFolder );
         CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
                                     kShadersVulkanFolder );
+#endif
 
         uint32_t shaderExtractedCount = 0;
         uint32_t iniExtractedCount = 0;
@@ -549,6 +555,7 @@ namespace AssetExtractor {
         constexpr uint32_t kNumShaderEntries =
             sizeof( kMasterShaderTable ) / sizeof( kMasterShaderTable[0] );
 
+#if OTDU_EXTRACTOR_DXVK
         dxvk::D3D9ConstantLayout vertexConstantLayout;
         vertexConstantLayout.floatCount = 256;
         vertexConstantLayout.intCount = 1;
@@ -562,6 +569,7 @@ namespace AssetExtractor {
         pixelConstantLayout.boolCount = 1;
         pixelConstantLayout.bitmaskCount =
             Align( pixelConstantLayout.boolCount, 32 ) / 32;
+#endif
 
         ShaderTable tableDXSO = {};
         ShaderTable tableSPIRV = {};
@@ -665,7 +673,9 @@ namespace AssetExtractor {
                                       shaderBytecode.begin(),
                                       shaderBytecode.end() );
 
-            // DXSO to SPIRV (using DXVK)
+#if OTDU_EXTRACTOR_DXVK
+            // DXSO to SPIRV (using DXVK); reference for the shader lifter
+            // tools only, the client runs the shaders rebuilt from source.
             dxvk::DxsoReader reader(
                 reinterpret_cast<const char *>( shaderBytecode.data() ) );
             dxvk::DxsoModule dxvkModule( reader );
@@ -753,6 +763,7 @@ namespace AssetExtractor {
             }
 
             delete pSpirvBC;
+#endif
         }
 
         // Write current shader table to disk.

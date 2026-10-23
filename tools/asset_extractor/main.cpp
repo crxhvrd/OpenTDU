@@ -11,7 +11,9 @@
 #include <cstring>
 #include <filesystem>
 
+#if OTDU_EXTRACTOR_DXVK
 #include "spirv_cross/spirv_glsl.hpp"
+#endif
 
 #if OTDU_DEVBUILD
 bool gBreakOnAssertFailure = true; // DAT_00f47931
@@ -55,6 +57,7 @@ static CmdLineArg CmdLineArgsForce( "force", []( const char *pArg ) {
     gbForceExtraction = true;
 } );
 
+#if OTDU_EXTRACTOR_DXVK
 // SPIRV-Cross-backed GLSL generator. Lives in the standalone tool only so the
 // game client never has to depend on SPIRV-Cross (see asset_extractor.h).
 struct SpirvCrossGLSLGenerator final : public AssetExtractor::ShaderSourceGenerator {
@@ -81,6 +84,7 @@ struct SpirvCrossGLSLGenerator final : public AssetExtractor::ShaderSourceGenera
         outTableSource += "\n#endif // ifdef COMPILE_" + entryHashcode + "\n";
     }
 };
+#endif
 
 [[noreturn]] static void PrintUsage() {
     OTDU_LOG_ALWAYS(
@@ -139,14 +143,18 @@ int main( int argc, char *argv[] ) {
     SanitizePath( gpPathToExecutable );
     SanitizePath( gpOutputPath );
 
+#if OTDU_EXTRACTOR_DXVK
     SpirvCrossGLSLGenerator glslGenerator;
+#endif
 
     AssetExtractor::ExtractionParams params;
     params.pExecutablePath = gpPathToExecutable;
     params.pOutputPath = gpOutputPath;
     params.bForceExtraction = gbForceExtraction;
+#if OTDU_EXTRACTOR_DXVK
     params.pSourceGenerator =
         gbGenerateShaderSource ? &glslGenerator : nullptr;
+#endif
 
     AssetExtractor::ExtractionResult result = AssetExtractor::Run( params );
     return result.bSuccess ? 0 : 1;
