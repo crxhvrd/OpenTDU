@@ -80,7 +80,7 @@ void EntitySpotMesh::unloadResources() {
     }
 }
 
-void EntitySpotMesh::tick( PlayerGameMech *pGameMech,
+void EntitySpotMesh::tick( GameMechanism *pGameMech,
                            float deltaTime,
                            float totalTime ) {
     // FUN_009d9c10

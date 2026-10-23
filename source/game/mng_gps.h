@@ -23,6 +23,16 @@ public:
 
 public:
     inline const AiPath &getRoute() const { return route; }
+    inline bool isVoiceEnabled() const { return bVoiceEnabled; }
+    inline void setVoiceEnabled( const bool bEnabled ) {
+        bVoiceEnabled = bEnabled;
+    }
+    inline bool isDistanceCalloutsEnabled() const {
+        return bDistanceCalloutsEnabled;
+    }
+    inline void setDistanceCalloutsEnabled( const bool bEnabled ) {
+        bDistanceCalloutsEnabled = bEnabled;
+    }
 
 public:
     MngGPS();

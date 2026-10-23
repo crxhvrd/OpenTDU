@@ -4,7 +4,7 @@
 #include "core/maths_helper.h"
 #include "game/cinematic/cin_res_collection.h"
 #include "game/cinematic/mng_cinematics.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "game/scenaric/entity/entity_avatar.h"
@@ -200,7 +200,7 @@ void EntityActor::unloadResources() {
     animation.terminate();
 }
 
-void EntityActor::tick( PlayerGameMech *pGameMech,
+void EntityActor::tick( GameMechanism *pGameMech,
                         float deltaTime,
                         float totalTime ) {
     // FUN_007facb0

@@ -7,7 +7,7 @@
 #include "filesystem/binary.h"
 #include "flash/gs_flash.h"
 #include "game/cinematic/cin_res_collection.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "world/gs_world_streaming.h"
@@ -160,7 +160,7 @@ void EntitySoundEmitter::unloadResources() {
     pSample = nullptr;
 }
 
-void EntitySoundEmitter::tick( PlayerGameMech *pGameMech,
+void EntitySoundEmitter::tick( GameMechanism *pGameMech,
                                float deltaTime,
                                float totalTime ) {
     // FUN_007e01c0

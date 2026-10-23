@@ -285,7 +285,8 @@ void GMFreeride::reset() {
     mngActor.preparePlayerSpawnStreaming( spawnMode );
     GameModeWorld::reset();
 
-    pGameMech->setSpawnFrame( mngActor.placePlayerVehicle( spawnMode, true ) );
+    getPlayerGameMech()->setSpawnFrame(
+        mngActor.placePlayerVehicle( spawnMode, true ) );
 
     CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
     if ( !nextIntro.bIsActive ) {
@@ -666,8 +667,9 @@ void GMFreeride::draw( float /*deltaTime*/, float /*totalTime*/ ) {
     clip.setProperty( eFlashProperty::FP_Visible, true );
 
     pPlayer->setVariableValue( "/:WhatSpotType",
-                               pGameMech->getDisplayTypeName() );
-    pPlayer->setVariableValue( "/:WhatSpot", pGameMech->getDisplayName() );
+                               getPlayerGameMech()->getDisplayTypeName() );
+    pPlayer->setVariableValue( "/:WhatSpot",
+                               getPlayerGameMech()->getDisplayName() );
 
     populateEnterSpotPrompt( pPlayer );
     markCurrentSpotDiscovered();
@@ -686,8 +688,9 @@ void GMFreeride::populateEnterSpotPrompt( FlashPlayer *pPlayer ) {
     pPlayer->setVariableValue( "/:IsChaLocked", 0 );
     pPlayer->setVariableValue( "/:IsSpotLocked", 0 );
 
-    SpotMap *pSpot =
-        ( pGameMech != nullptr ) ? pGameMech->getCurrentSpot() : nullptr;
+    SpotMap *pSpot = ( pGameMech != nullptr )
+                         ? getPlayerGameMech()->getCurrentSpot()
+                         : nullptr;
     if ( pSpot == nullptr ) {
         refreshChallengeLockState( pPlayer );
         return;
@@ -825,8 +828,9 @@ void GMFreeride::refreshChallengeLockState( FlashPlayer *pPlayer ) {
     // FUN_00792f30
     const EntityExtraChallenge *pChallenge =
         static_cast<const EntityExtraChallenge *>(
-            ( pGameMech != nullptr ) ? pGameMech->getCurrentExtraChallenge()
-                                     : nullptr );
+            ( pGameMech != nullptr )
+                ? getPlayerGameMech()->getCurrentExtraChallenge()
+                : nullptr );
     if ( pChallenge == nullptr ) {
         return;
     }
@@ -856,8 +860,9 @@ void GMFreeride::refreshChallengeLockState( FlashPlayer *pPlayer ) {
 
 void GMFreeride::markCurrentSpotDiscovered() {
     // FUN_007941c0
-    SpotMap *pSpot =
-        ( pGameMech != nullptr ) ? pGameMech->getCurrentSpot() : nullptr;
+    SpotMap *pSpot = ( pGameMech != nullptr )
+                         ? getPlayerGameMech()->getCurrentSpot()
+                         : nullptr;
     if ( pSpot != nullptr ) {
         DiscoverSpotRoad( pSpot );
     }
@@ -1244,7 +1249,7 @@ bool GMFreeride::requestEnterActivity() {
 
 void GMFreeride::enterCurrentActivity() {
     // FUN_00796e10
-    if ( pGameMech->enterCurrentActivity() ) {
+    if ( getPlayerGameMech()->enterCurrentActivity() ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
     }
 }
@@ -1388,7 +1393,7 @@ static bool GoHome() {
 
 bool GMFreeride::enterCurrentHouseSpot() {
     // FUN_007947c0
-    SpotMap *pSpot = pGameMech->getCurrentSpot();
+    SpotMap *pSpot = getPlayerGameMech()->getCurrentSpot();
     if ( pSpot == nullptr || pSpot->Type != ST_House ) {
         return false;
     }
@@ -1417,7 +1422,7 @@ bool GMFreeride::goToSelectedSpot() {
 
 bool GMFreeride::launchCurrentSpotInfo() {
     // FUN_00794820
-    SpotMap *pSpot = pGameMech->getCurrentSpot();
+    SpotMap *pSpot = getPlayerGameMech()->getCurrentSpot();
     if ( pSpot == nullptr ) {
         return false;
     }

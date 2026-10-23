@@ -60,10 +60,25 @@ public:
         return databaseDescription;
     }
     inline GameParameterBool &getStartChallenge() { return startChallenge; }
+    inline GameParameterBool &getCountdownMode() { return countdownMode; }
+    inline GameParameterTime &getCountdown() { return countdown; }
+    inline GameParameterBool &getTraffic() { return traffic; }
+    inline GameParameterBool &getOffRoad() { return offRoad; }
+    inline GameParameterBool &getCockpitView() { return cockpitView; }
+    inline GameParameterBool &getGps() { return gps; }
+    inline GameParameterBool &getNextChallenge() { return nextChallenge; }
+    inline GameParameterTime &getCheckpointBonus() { return checkpointBonus; }
+    inline GameParameterDBString &getDatabaseName() { return databaseName; }
+    inline GameParameterBool &getCollisions() { return collisions; }
+    inline GameParameterBool &getCops() { return cops; }
+    inline GameParameterLevel &getTrafficDensity() { return trafficDensity; }
+    inline GameParameterLevel &getCopsDensity() { return copsDensity; }
+    inline GameParameterNumber &getPenaltyCredits() { return penaltyCredits; }
     inline GameParameterTime &getGoldTime() { return goldTime; }
     inline GameParameterTime &getSilverTime() { return silverTime; }
     inline GameParameterTime &getBronzeTime() { return bronzeTime; }
     inline GameParameterSpeed &getGoldSpeed() { return goldSpeed; }
+    inline GameParameterSpeed &getTrapSpeed() { return trapSpeed; }
     inline GameParameterSpeed &getSilverSpeed() { return silverSpeed; }
     inline GameParameterSpeed &getBronzeSpeed() { return bronzeSpeed; }
 

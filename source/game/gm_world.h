@@ -21,6 +21,7 @@
 
 class EventParameters;
 class PhysicsVehicle;
+class GameMechanism;
 class PlayerGameMech;
 
 // Game Mode running with the world active.
@@ -63,12 +64,17 @@ public:
     }
 
     inline bool isPauseMenuActive() const { return bPauseMenuActive; }
+    inline bool isPauseMenuLocked() const { return bPauseMenuLocked; }
     inline void setPauseMenuLocked( const bool bLocked ) {
         bPauseMenuLocked = bLocked;
     }
     virtual bool usesFrontEndDirections() const { return false; }
-    inline PlayerGameMech *getGameMech() const { return pGameMech; }
+    inline GameMechanism *getGameMech() const { return pGameMech; }
+    PlayerGameMech *getPlayerGameMech() const;
     inline int32_t getGameMechType() const { return gameMechType; }
+    inline uint32_t getGameMechID() const { return gameMechID; }
+    inline uint32_t getGameModeFlags() const { return flags; }
+    inline MngHudChallenge &getHudChallenge() { return mngHudChallenge; }
 
 public:
     // gameModeFlags:
@@ -88,7 +94,7 @@ public:
     void onResourceStreamed() override;
     bool onMessage( FlashMessage *pMessage ) override;
 
-    virtual bool isLoaded() {
+    virtual bool restart() {
         // FUN_0042df00
         return true;
     }
@@ -121,8 +127,12 @@ protected:
     void destroyGameMech();
     void updatePauseMenuTrigger();
     void updatePauseFade();
+
+public:
     void updateOdometerAutosave();
     void updateOdometer();
+
+protected:
     void uninstallLocalPlayerCar();
     void updateLocalPlayerDrivingInput( float deltaTime );
     void resetAutomaticGearbox();
@@ -133,7 +143,7 @@ protected:
 protected:
     MngHudChallenge mngHudChallenge;
 
-    PlayerGameMech *pGameMech;
+    GameMechanism *pGameMech;
     int32_t
         gameMechType; // field4272_0x1031f4 — -1 default; 4: player car; 5: none
     uint32_t

@@ -6,6 +6,10 @@
 #include "ai/ai_road_buckets.h"
 #include "ai/ai_sim_bubble.h"
 #include "ai/gs_ai.h"
+#include "ai/ai_road_map.h"
+#include "player_data/gs_playerdata.h"
+#include "ai/ai_veh_nav_opponent.h"
+#include "ai/ai_road_query.h"
 #include "core/arg_parser.h"
 #include "database/gs_database.h"
 #include "game/game_object.h"
@@ -487,6 +491,97 @@ void AiPool::queueRemoval( AiVehicle *pVehicle, const char *pReason ) {
     removalReasons[index][AiVehicle::kRemovalReasonLength - 1] = '\0';
     removalQueue[index] = pVehicle;
     numRemovals++;
+}
+
+bool AiPool::togglePlayerAutopilot( const bool bOpponent ) {
+    // FUN_0091f0b0
+    CarState *pCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pCar == nullptr ||
+         pCar->getSimulationType() != CarState::eSimulationType::CSST_Local ||
+         pCar->getOwner() != CarState::eOwner::CSO_LocalPlayer ) {
+        return false;
+    }
+
+    AiVehicle *pVehicle = static_cast<AiVehicle *>( pCar->getAIController() );
+    if ( pVehicle != nullptr ) {
+        pVehicle->setPlayerCar( false );
+        removeFromLists( pVehicle );
+        pVehicle->release();
+        pVehicle->getSignals().reset();
+        pVehicle->getSignals().pCarState = nullptr;
+        pVehicle->getSignals().reset();
+        releaseVehicleSlot( pVehicle );
+        pCar->setAIController( nullptr );
+
+        gpPlayerData->applyDrivingOptions();
+        OTDU_UNIMPLEMENTED; // TODO: GSCamera (shake / radial blur intensity
+                            // from the local player data)
+        PhysicsVehicle *pPhysics = pCar->getPhysicsVehicle();
+        pPhysics->setDrivingControl( gpPhysics ); // +0x4388
+        OTDU_UNIMPLEMENTED; // TODO: PHYSICS (+0xe40 = +0xa3c, GSPhysics +0x20 =
+                            // 1, +0xd34 = 0, +0xdd4 = 0)
+        pPhysics->setAutoReverseAllowed( true ); // +0x335
+        {
+            PhysicsLock lock;
+            pPhysics->setPostponedPause( 2 );
+        }
+        gpCarState->setPoliceStateJob(
+            pCar, &gpScenaric->getLocalPlayer().getInfringementCheck() );
+        return false;
+    }
+
+    pVehicle = allocVehicleSlot();
+    if ( pVehicle == nullptr ) {
+        return false;
+    }
+    addVehicle( pVehicle );
+    OTDU_UNIMPLEMENTED; // TODO: PHYSICS (FUN_00968d10 AI driving setup of the
+                        // physics vehicle: +0x4388 control = null, +0xe54 = 4,
+                        // +0x41b4 / +0x4258 = 1, +0x431c / +0x558 = 1.0,
+                        // +0xd34 = 1, +0xe94 = 2, ...)
+    pCar->setAIController( pVehicle );
+
+    CarBodyState *pBody = pCar->getBody();
+    AiRoadMap &roadMap = gpAI->getRoadMap();
+    AiRoadMap::Road *pRoad =
+        ( pBody->ActiveRoadID != 0 )
+            ? roadMap.getRoad( uint32_t( pBody->ActiveRoadID ) )
+            : roadMap.findNearestRoad( pBody->WorldMatrix.row( 3 ).transpose(),
+                                       true );
+    AiRoadIt location;
+    ProjectOnRoadShape( pBody->WorldMatrix, location, nullptr, false,
+                        pRoad->getShape() );
+
+    Eigen::Vector4f side = location.computeSideDirection();
+    Eigen::Vector4f offset = location.computeOffsetPosition( 0.0f, 0.0f ) -
+                             pBody->WorldMatrix.row( 3 ).transpose();
+    side.w() = 0.0f;
+    offset.w() = 0.0f;
+    side.normalize();
+    const AiRoadProfile *pProfile = location.getEntity()->pProfile;
+    const float widthRatio = std::clamp(
+        side.dot( offset ) / ( pProfile->InnerWidth * 0.5f ), -1.0f, 1.0f );
+    const int32_t lane =
+        pProfile->computeLaneFromWidthRatio( location.bWay, widthRatio );
+
+    if ( bOpponent ) {
+        // FUN_009288f0
+        pVehicle->initialize( eAiVehicleCategory::AVC_Opponent, pCar, location,
+                              lane, AiVehicle::kBehaviourNone, 7, 1, 1, true );
+    } else {
+        // FUN_00928930
+        pVehicle->initialize( eAiVehicleCategory::AVC_Autopilot, pCar, location,
+                              lane, AiVehicle::kBehaviourNone, 8, 1, 1, true );
+    }
+    OTDU_UNIMPLEMENTED; // TODO: GSAI (AiVehicle +0xc2 = GSAI config +0xe2,
+                        // +0x200 = 0)
+    pVehicle->setRemovable( false ); // +0x22e4
+    pVehicle->setPlayerCar( true );  // +0x22f2
+    if ( pVehicle->getNavigationType() == 1 ) {
+        pVehicle->getOpponentNavigation().requestState(
+            AiVehNavOpponent::NS_LineEnded );
+    }
+    return true;
 }
 
 void AiPool::removeVehicle( AiVehicle *pVehicle,

@@ -71,6 +71,7 @@ GSAI::GSAI()
       bLocationsFromCarState( false ),
       pSignalSyncTime( &gSignalSyncTime ),
       pRace( nullptr ),
+      gameSession( this ),
       pPathOptimiser( nullptr ),
       pCullingShape( &gAiCullingShape ),
       pDebugDraw( &gAiDebugDraw ) {
@@ -365,6 +366,25 @@ void GSAI::resumeTraffic( const Eigen::Vector4f *pBubblePosition ) {
     if ( pBubblePosition != nullptr ) {
         pSimBubble->setPosition( *pBubblePosition );
     }
+}
+
+void GSAI::setCopsLevel( const float scale,
+                         const bool bHighLevel,
+                         const bool bMaxLevel ) {
+    // FUN_00969540
+    if ( scale <= 0.0f ) {
+        bDisableCops = true;
+        bCopsActive = false;
+        pAIPool->removeCops();
+    } else {
+        bDisableCops = false;
+    }
+    pAIPool->setPoliceScale( scale );
+    pAIPool->setForceDensity( true );
+    OTDU_UNIMPLEMENTED; // TODO: AI (cop manager GSAI+0x2a984 +0x44 / +0x45 =
+                        // bHighLevel / bMaxLevel)
+    (void)bHighLevel;
+    (void)bMaxLevel;
 }
 
 void GSAI::setTrafficCategories( const bool bResetPool,

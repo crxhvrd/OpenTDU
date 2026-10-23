@@ -29,7 +29,7 @@ EntityPassengerGoodies::~EntityPassengerGoodies() {
     // FUN_00424120
 }
 
-void EntityPassengerGoodies::tick( PlayerGameMech *pGameMech,
+void EntityPassengerGoodies::tick( GameMechanism *pGameMech,
                                    float deltaTime,
                                    float totalTime ) {
     // FUN_007ebba0

@@ -998,7 +998,7 @@ bool EntityDriver::placeInLocalPlayerCar() {
     return false;
 }
 
-void EntityDriver::tick( PlayerGameMech *pGameMech,
+void EntityDriver::tick( GameMechanism *pGameMech,
                          float deltaTime,
                          float totalTime ) {
     // FUN_007f29c0

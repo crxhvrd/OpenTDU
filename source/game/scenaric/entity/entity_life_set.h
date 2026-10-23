@@ -34,9 +34,8 @@ public:
     void loadResources( ScenaricBank *pBank ) override;
     void unknownFunc() override;
     void unloadResources() override;
-    void tick( PlayerGameMech *pGameMech,
-               float deltaTime,
-               float totalTime ) override;
+    void
+    tick( GameMechanism *pGameMech, float deltaTime, float totalTime ) override;
     void deserialize( BinaryReader *pReader ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
     void deinstanciate() override;

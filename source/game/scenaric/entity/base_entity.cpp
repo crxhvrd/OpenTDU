@@ -4,7 +4,7 @@
 #include "core/binary_helpers.h"
 
 #include "game/cinematic/cin_res_collection.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "filesystem/binary.h"
@@ -154,7 +154,7 @@ void Entity::unloadResources() {
     }
 }
 
-void Entity::tick( PlayerGameMech *pGameMech,
+void Entity::tick( GameMechanism *pGameMech,
                    float deltaTime,
                    float totalTime ) {
     // FUN_007fb8a0
@@ -192,7 +192,7 @@ void Entity::deserialize( BinaryReader *pReader ) {
         pReader->pCursor += sizeof( uint32_t );
 
         if ( hasMechanism == 0 ) {
-            pMechanism = new GameMechanism();
+            pMechanism = new EntityMechanism();
             pMechanism->setPureDynamicControllerDesc(
                 reinterpret_cast<SerializedPureDynamicController *>(
                     pReader->pCursor ) );
@@ -341,7 +341,7 @@ void Entity::instanciate( MngActor *, Entity *param_1 ) {
     param_1->pParent = this;
 
     if ( pMechanism != nullptr ) {
-        param_1->pMechanism = new GameMechanism();
+        param_1->pMechanism = new EntityMechanism();
         pMechanism->instanciate( param_1->pMechanism );
     }
 }

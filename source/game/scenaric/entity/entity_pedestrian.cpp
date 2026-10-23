@@ -5,7 +5,7 @@
 #include "world/gs_world_streaming.h"
 #include "render/instance.h"
 #include "core/color.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "filesystem/binary.h"
 
 #include <cstdlib>
@@ -55,7 +55,7 @@ void EntityPedestrian::initialize() {
     // TODO: REMOVEME: TEST
 }
 
-void EntityPedestrian::tick( PlayerGameMech *pGameMech,
+void EntityPedestrian::tick( GameMechanism *pGameMech,
                              float deltaTime,
                              float totalTime ) {
     // FUN_007dc410

@@ -1,14 +1,14 @@
 #pragma once
 
-class Entity;
-class GameModeWorld;
+#include "game_mechanism.h"
+
 struct SpotMap;
 
 // Player game mechanic.
-class PlayerGameMech {
+class PlayerGameMech : public GameMechanism {
 public:
     enum eMechEvent : int32_t {
-        ME_Reset = 3,
+        ME_CheckpointPassed = 3,
         ME_SpotEntered = 4,
         ME_ExtraChallengeEntered = 6,
         ME_SpotLeft = 7,
@@ -52,14 +52,7 @@ public:
         SDN_Count
     };
 
-    enum eStateProcess : int32_t {
-        SP_Init = 0xc0c0,
-        SP_Update = 0xc0c1,
-        SP_Term = 0xc0c2,
-    };
-
-    enum eMechState : int32_t {
-        MS_None = -1,
+    enum eFreeRideState : int32_t {
         MS_FR_LoadingMap = 0xf200,
         MS_FR_Playing = 0xf201,
         MS_FR_LogginIn = 0xf202,
@@ -67,10 +60,6 @@ public:
     };
 
 public:
-    inline int32_t getMechType() const { return mechType; }
-    inline uint32_t getMechID() const { return mechID; }
-    inline void setOwner( GameModeWorld *pGameMode ) { pOwner = pGameMode; }
-    inline GameModeWorld *getOwner() const { return pOwner; }
     inline bool hasCurrentActivity() const {
         return spotDisplayNameIndex != -1;
     }
@@ -79,50 +68,38 @@ public:
     inline Entity *getCurrentExtraChallenge() const {
         return pCurrentExtraChallenge;
     }
-    inline bool getUnknown75C() const { return bUnknown75C; }
-    inline int32_t getCurrentState() const { return curState; }
     inline void setSpawnFrame( const Matrix4x4f_t &frame ) {
         spawnFrame = frame;
     }
 
 public:
-    PlayerGameMech( int32_t type, uint32_t id );
-    ~PlayerGameMech();
+    PlayerGameMech();
+    ~PlayerGameMech() override;
 
-    bool onMessage( Entity *pSender, int32_t eventCode, void *pParam );
+    bool onMessage( Entity *pSender,
+                    const int32_t eventCode,
+                    void *pParam ) override;
+    bool stateProcess( const int32_t state,
+                       const float deltaTime,
+                       const eStateProcess process ) override;
+    bool terminate() override;
     bool enterCurrentActivity();
 
     const char *getDisplayTypeName() const;
     const char *getDisplayName() const;
 
-    bool stateChange( const int32_t state );
-    void tick( const float deltaTime );
-
 private:
     void clearCurrentActivity();
-    bool stateProcess( const int32_t state,
-                       const float deltaTime,
-                       const eStateProcess process );
     bool processLoadingMap( const eStateProcess process );
     bool processPlaying( const eStateProcess process );
 
 private:
-    int32_t mechType;
-    uint32_t mechID;
-    GameModeWorld *pOwner;
-
     uint64_t currentActivityHashcode;
     SpotMap *pCurrentSpot;
     Entity *pCurrentSpotEntity;
     int32_t spotDisplayTypeIndex;
     int32_t spotDisplayNameIndex;
     Entity *pCurrentExtraChallenge;
-    bool bUnknown75C;
-
-    int32_t curState;
-    int32_t prevState;
-    int32_t nextState;
-    float stateInitTime;
 
     Matrix4x4f_t spawnFrame;
     float loadingMapStartTime;

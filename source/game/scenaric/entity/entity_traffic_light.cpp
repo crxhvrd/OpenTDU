@@ -100,7 +100,7 @@ void EntityTrafficLight::loadResources( ScenaricBank *param_2 ) {
     }
 }
 
-void EntityTrafficLight::tick( PlayerGameMech *pGameMech,
+void EntityTrafficLight::tick( GameMechanism *pGameMech,
                                float deltaTime,
                                float totalTime ) {
     // FUN_009c8ac0

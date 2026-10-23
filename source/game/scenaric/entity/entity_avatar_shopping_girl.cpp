@@ -15,7 +15,7 @@ EntityAvatarShoppingGirl::~EntityAvatarShoppingGirl() {
     OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO
 }
 
-void EntityAvatarShoppingGirl::tick( PlayerGameMech *pGameMech,
+void EntityAvatarShoppingGirl::tick( GameMechanism *pGameMech,
                                      float deltaTime,
                                      float totalTime ) {
     // FUN_007f3af0

@@ -18,9 +18,8 @@ public:
     ~EntityPedestrian();
 
     void initialize() override;
-    void tick( PlayerGameMech *pGameMech,
-               float deltaTime,
-               float totalTime ) override;
+    void
+    tick( GameMechanism *pGameMech, float deltaTime, float totalTime ) override;
     bool draw( RenderScene *pScene ) override;
     void deserialize( BinaryReader *param_2 ) override;
     void setTransform( Matrix4x4f_t &transformMatrix, bool param_1 ) override;

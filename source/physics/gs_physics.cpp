@@ -3641,7 +3641,13 @@ void GSPhysics::forwardInput( PhysicsVehicle &vehicle, float /*deltaTime*/ ) {
         return;
     }
 
-    vehicle.setDrivingMode( PhysicsVehicle::DM_Player );
+    uint8_t drivingMode = PhysicsVehicle::DM_Player;
+    if ( bForcePlayerSlowDown ) {
+        drivingMode = PhysicsVehicle::DM_SlowDown;
+    } else if ( bForcePlayerParked ) {
+        drivingMode = PhysicsVehicle::DM_Parked;
+    }
+    vehicle.setDrivingMode( drivingMode );
 }
 
 float GSPhysics::castWorldRay( const Eigen::Vector4f &origin,

@@ -182,7 +182,7 @@ AIConfig::AIConfig()
       Unknown0xB9( false ),
       Unknown0xBA( false ),
       Unknown0xBB( false ),
-      Unknown0xBC( 1.0f ),
+      CollisionRepeatDelay( 1.0f ),
       GInfMaxValue( 100.0f ),
       GInfLoweringFactor( 0.1f ),
       GInfDestroyCar( 20.0f ),

@@ -1,7 +1,7 @@
 #include "shared.h"
 #include "entity_zone.h"
 
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "filesystem/binary.h"
 

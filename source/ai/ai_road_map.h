@@ -39,6 +39,7 @@ struct AiRoadProfile {
                             float &outLateralEnd,
                             float &outHeightStart,
                             float &outHeightEnd ) const;
+    float computeCenterLineRatio() const;
     void computeLaneWidthRatios( const int32_t lane,
                                  const bool bWay,
                                  float &outRatioStart,

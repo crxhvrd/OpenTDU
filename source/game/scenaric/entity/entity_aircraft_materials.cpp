@@ -1,7 +1,7 @@
 #include "shared.h"
 #include "entity_aircraft_materials.h"
 
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "render/serialized_skinned_model.h"
 #include "filesystem/binary.h"
 
@@ -50,7 +50,7 @@ void EntityAircraftMaterials::unloadResources() {
     Entity::unloadResources();
 }
 
-void EntityAircraftMaterials::tick( PlayerGameMech *pGameMech,
+void EntityAircraftMaterials::tick( GameMechanism *pGameMech,
                                     float deltaTime,
                                     float totalTime ) {
     // FUN_009c6eb0

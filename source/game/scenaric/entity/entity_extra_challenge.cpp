@@ -7,7 +7,7 @@
 #include "entity_transporter.h"
 #include "ai/ai_path.h"
 #include "ai/ai_road_query.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/game_mechanism_player.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
@@ -73,7 +73,7 @@ void EntityExtraChallenge::initializeInstance( void *param_2, void *param_3 ) {
     Entity::initializeInstance( param_2, param_3 );
 }
 
-void EntityExtraChallenge::tick( PlayerGameMech *pGameMech,
+void EntityExtraChallenge::tick( GameMechanism *pGameMech,
                                  float deltaTime,
                                  float totalTime ) {
     // FUN_007dd8d0

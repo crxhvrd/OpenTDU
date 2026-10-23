@@ -17,7 +17,7 @@
 
 class CarState;
 class FlashPlayer;
-class PlayerGameMech;
+class GameMechanism;
 class Render2DB;
 class FlashResource;
 struct FlashRECT;
@@ -154,7 +154,7 @@ public:
     FlashPlayer *pPlayer = nullptr;
     char pClipPath[64] = { '\0' };
     MngGPS *pGps = nullptr;
-    PlayerGameMech *pGameMech = nullptr;
+    GameMechanism *pGameMech = nullptr;
     int32_t MapMode = 3;
     int32_t MapModeTarget = 3;
     float RotationBlend = 1.0f;
@@ -320,7 +320,7 @@ public:
     inline void setEnabled( const bool value ) { bEnabled = value; }
     inline void setGPSRotation( const bool value ) { bGPSRotation = value; }
     inline FlashPlayer *getHudPlayer() { return pHudPlayer; }
-    inline void setGameMech( PlayerGameMech *pMech ) {
+    inline void setGameMech( GameMechanism *pMech ) {
         minimap.pGameMech = pMech;
     }
 
@@ -346,6 +346,10 @@ public:
     void setObjectiveMarker( const int32_t slot,
                              const Eigen::Vector4f &pPosition,
                              const char *pType );
+    inline void setObjectiveMarkerType( const int32_t slot,
+                                        const char *pType ) {
+        objectiveMarkers[slot].Type = pType;
+    }
 
     virtual void initializeFlash();
 
@@ -436,6 +440,13 @@ public:
     ~MngHudChallenge();
 
     void initializeFlash() override;
+
+    inline HudFlashNumber &getTimerMinutes() { return timerMinutes; }
+    inline HudFlashNumber &getTimerSeconds() { return timerSeconds; }
+    inline HudFlashNumber &getTimerCents() { return timerCents; }
+    inline HudFlashNumber &getCountdownMinutes() { return countdownMinutes; }
+    inline HudFlashNumber &getCountdownSeconds() { return countdownSeconds; }
+    inline HudFlashNumber &getCountdownCents() { return countdownCents; }
 
 private:
     HudFlashNumber timerMinutes;

@@ -10,7 +10,7 @@ class Render3DG;
 class Render2DM;
 class Render2DB;
 class RenderUVA;
-class GameMechanism;
+class EntityMechanism;
 class ScenaricBank;
 struct EntityDesc;
 struct BinaryReader;
@@ -30,7 +30,7 @@ public:
     void instanciate( FileCollection3D *p3DFiles, bool bShared );
     void uninstanciate();
     void draw( RenderScene *pScene );
-    void updateLOD( GameMechanism *pMechanism, EntityDesc *pDesc );
+    void updateLOD( EntityMechanism *pMechanism, EntityDesc *pDesc );
     void updateLODImpostor();
     void initImpostorLODToInstance();
 

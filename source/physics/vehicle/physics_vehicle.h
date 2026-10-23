@@ -491,7 +491,7 @@ public:
     void pushCollisionEvent( const CollisionEvent &event );
     void flushCollisionEvents( std::vector<CollisionEvent> &outEvents );
     float getChassisSpeed() const;
-    float getReportedSpeed() const;
+    float getReportedSpeed( const bool bPlanar = false ) const;
     Eigen::Vector4f getChassisVelocity() const;
     Eigen::Vector4f getChassisAngularVelocity() const;
 

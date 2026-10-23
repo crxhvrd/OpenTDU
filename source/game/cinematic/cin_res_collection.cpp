@@ -26,6 +26,9 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/gm_scene.h"
+#include "game/gm_world.h"
+#include "game/game_mechanism.h"
+#include "game/mng_hud.h"
 #include "game/intro/gm_intro.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_traffic.h"
@@ -1508,7 +1511,19 @@ bool CinResCollection::onCinematicMessage( const void *pKey,
         }
     } else if ( message == FlashMessage( "321g" ) ) {
         if ( !isMessageFired( pKey ) ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: HUD ("/3_2_1_go" countdown clip)
+            FlashPlayer *pHudPlayer = gpMngHud->getHudPlayer();
+            const char *pPath = "/3_2_1_go";
+            if ( gpActiveGM->getGameMech()->getMechType() ==
+                 GameMechanism::MT_ExtraChallenge ) {
+                pPath = "/go_extra";
+            }
+            if ( pMessage[5] == '2' ) {
+                pHudPlayer->showFrame( "2_go", pPath, true );
+            } else if ( pMessage[5] == '3' ) {
+                pHudPlayer->showFrame( "3_go", pPath, true );
+            } else {
+                pHudPlayer->showFrame( "1_go", pPath, true );
+            }
         }
     } else if ( message == FlashMessage( "chmi" ) ) {
         pCurrentMicro = findMicroByName( pMessage + 5 );

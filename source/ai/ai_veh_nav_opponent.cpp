@@ -15,6 +15,10 @@
 #include "gs_timer.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "game/mission/gm_mission.h"
+#include "game/mission/game_mech_race_hud.h"
+#include "game/game_mechanism.h"
+#include "ai/ai_game_session.h"
 
 static constexpr float kNoValue = -1000.0f;             // DAT_00f419c4
 static constexpr float kRouteTolerance = 1.1f;          // DAT_00f4174c
@@ -1104,9 +1108,36 @@ void AiVehNavOpponent::enterPostFinish() {
     pOwner->applyBotPersonality( 0, 0, 2 );
     finishSpeed = situation.CurSpeed;
     stopTime = gpTimer->GameTotalTime + kPostFinishStopDelay;
-    if ( gpActiveGameMode != nullptr &&
-         gpActiveGameMode->getCurrentGameMode() == eGameMode::GM_Mission ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission rank-staggered stop time
+    if ( gpActiveGameMode == nullptr ||
+         gpActiveGameMode->getCurrentGameMode() != eGameMode::GM_Mission ) {
+        return;
+    }
+
+    GMMission *pMission = static_cast<GMMission *>( gpActiveGameMode );
+    GameMechanism *pMech = pMission->getGameMech();
+    const int32_t numSlots = GetNumOpponents( &pMission->getMissionInfo() ) + 1;
+    if ( pMission->getGameMechType() == GameMechanism::MT_Race &&
+         pMech != nullptr ) {
+        const GameMechRaceHUD *pRaceHUD = static_cast<const GameMechRaceHUD *>(
+            pMech->getComponent( GameMechanism::CS_RaceHUD ) );
+        GameParticipant *pParticipant =
+            ( pRaceHUD != nullptr ) ? pRaceHUD->getRankingHead() : nullptr;
+        for ( int32_t rank = 1; pParticipant != nullptr && rank <= numSlots;
+              rank++ ) {
+            if ( pParticipant->getCarState() == pOwner->getCarState() ) {
+                stopTime = gpTimer->GameTotalTime +
+                           float( ( numSlots - rank ) * 2 + 4 );
+                break;
+            }
+            pParticipant = pParticipant->getSessionParams().pRankNextPlayer;
+        }
+    }
+
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar != nullptr && pMech != nullptr &&
+         ( pOwner->getCarState() == pLocalCar ||
+           gpScenaric->isInstantChallenge() ) ) {
+        pMech->requestAutopilotCinematic(); // +0x7ee
     }
 }
 

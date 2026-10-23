@@ -94,6 +94,7 @@
 #include "game/shop/gm_shop.h"
 #include "game/ai_trainer/gm_ai_trainer.h"
 #include "game/lobby/gm_lobby.h"
+#include "game/mission/gm_mission.h"
 #include "game/test_car/gm_test_car.h"
 #include "game/scene_interior.h"
 
@@ -650,6 +651,11 @@ void TestDriveGameInstance::mainLoop() {
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMAITrainer ),
                                                       alignof( GMAITrainer ) );
             pGVar6 = new ( pGameModeAlloc ) GMAITrainer();
+            break;
+        case GM_Mission:
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMMission ),
+                                                      alignof( GMMission ) );
+            pGVar6 = new ( pGameModeAlloc ) GMMission();
             break;
         case GM_Lobby:
             pGameModeAlloc =

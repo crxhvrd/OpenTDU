@@ -2,7 +2,7 @@
 #include "entity_flag.h"
 
 #include "filesystem/binary.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "physics/gs_cloth_system.h"
 #include "render/2dm.h"
 #include "render/serialized_skinned_model.h"
@@ -170,7 +170,7 @@ void EntityFlag::unloadResources() {
     pCloth = nullptr;
 }
 
-void EntityFlag::tick( PlayerGameMech *pGameMech,
+void EntityFlag::tick( GameMechanism *pGameMech,
                        float deltaTime,
                        float totalTime ) {
     // FUN_009c7580

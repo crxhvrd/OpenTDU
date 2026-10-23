@@ -341,7 +341,7 @@ void SerializedSkinnedModel::draw( RenderScene *pScene ) {
     }
 }
 
-void SerializedSkinnedModel::updateLOD( GameMechanism *pMechanism,
+void SerializedSkinnedModel::updateLOD( EntityMechanism *pMechanism,
                                         EntityDesc *pDesc ) {
     // FUN_00808e90
     if ( MIInpostor.pInstance != nullptr ) {

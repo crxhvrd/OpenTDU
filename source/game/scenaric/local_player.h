@@ -16,6 +16,9 @@ class LocalPlayer : public CarStateEventListener {
 public:
     inline CarState *getCarState() const { return pCarState; }
     inline Driver *getDriver() const { return pDriver; }
+    inline LocalPlayerInfringementCheck &getInfringementCheck() {
+        return checkInfringement;
+    }
     inline void setDriver( Driver *pNewDriver ) { pDriver = pNewDriver; }
     inline void setGameID( int32_t id ) { gameID = id; }
     inline int32_t getGameID() const { return gameID; }

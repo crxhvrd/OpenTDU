@@ -19,7 +19,7 @@
 #include "game/scenaric/entity/entity_life_set.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/base_entity.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/mng_life_set.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -416,7 +416,7 @@ namespace {
         if ( pTemplate == nullptr ) {
             return false;
         }
-        GameMechanism *pMech = pTemplate->getMechanism();
+        EntityMechanism *pMech = pTemplate->getMechanism();
         return pMech != nullptr && pMech->hasDynamicController() &&
                !pMech->isStaticController();
     }

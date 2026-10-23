@@ -184,7 +184,7 @@ void EntityAvatarPassenger::unloadResources() {
     EntityAvatar::unloadResources();
 }
 
-void EntityAvatarPassenger::tick( PlayerGameMech *pGameMech,
+void EntityAvatarPassenger::tick( GameMechanism *pGameMech,
                                   float deltaTime,
                                   float totalTime ) {
     // FUN_007f5680

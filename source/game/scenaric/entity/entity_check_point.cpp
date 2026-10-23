@@ -4,6 +4,33 @@
 #include "filesystem/binary.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_actor.h"
+#include "ai/ai_game_session.h"
+#include "entity_volume.h"
+#include "game/game_mechanism.h"
+#include "game/gm_world.h"
+#include "game/mission/game_mech_race_hud.h"
+#include "game/scenaric/event_parameters.h"
+#include "game/vehicle/car_state.h"
+#include "ai/ai_road_map.h"
+#include "ai/ai_road_query.h"
+#include "core/maths_helper.h"
+#include "game/entity_mechanism.h"
+#include "render/hiearchy_node.h"
+#include "render/serialized_skinned_model.h"
+
+static constexpr float kGateRoadEdgeMargin = 0.6f; // DAT_00f416c8
+static constexpr float kZoneRoadEdgeMargin = 3.0f; // DAT_00f416b4
+
+static bool IsCarRaceEligible( CarState *pCarState ) {
+    // FUN_008aeb20
+    if ( pCarState->getSimulationType() !=
+         CarState::eSimulationType::CSST_ReplicatedFromNetwork ) {
+        return true;
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (CarState +0x39d4 == local P2P
+                             // player)
+    return true;
+}
 
 static Entity *InstanciateEntity( MngActor *pMngActor, Entity *pTemplate ) {
     // FUN_006def70
@@ -131,7 +158,7 @@ void EntityCheckPoint::unloadResources() {
     animation.terminate();
 }
 
-void EntityCheckPoint::tick( PlayerGameMech *pGameMech,
+void EntityCheckPoint::tick( GameMechanism *pGameMech,
                              float deltaTime,
                              float totalTime ) {
     // FUN_007f9ef0
@@ -146,8 +173,103 @@ void EntityCheckPoint::tick( PlayerGameMech *pGameMech,
     }
 
     EntityActor::tick( pGameMech, deltaTime, totalTime );
+    if ( pGameMech == nullptr ) {
+        return;
+    }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
+    GameModeWorld *pOwner = pGameMech->getOwner();
+    if ( pOwner == nullptr || ( pOwner->getGameModeFlags() & 1 ) != 0 ) {
+        return;
+    }
+
+    const EntityVolume *pZone =
+        static_cast<const EntityVolume *>( pZoneTrigger );
+    switch ( pOwner->getGameMechType() ) {
+    case 4: {
+        CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+        if ( pLocalCar == nullptr || pZone == nullptr ) {
+            return;
+        }
+        const Eigen::Vector4f position =
+            pLocalCar->getBody()->WorldMatrix.row( 3 ).transpose();
+        const Eigen::Vector4f previousPosition =
+            pLocalCar->getBody()->PreviousWorldMatrix.row( 3 ).transpose();
+        if ( pZone->isPointInside( position, &previousPosition ) ) {
+            CheckpointPassedParam param{ Index, 0u, 0 };
+            pGameMech->onMessage( this, GameMechanism::kMsgCheckpointPassed,
+                                  &param );
+        }
+        return;
+    }
+    case -1:
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+    case 6: {
+        GameSession *pSession = pGameMech->getGameSession();
+        if ( Index < 0 || pSession == nullptr ) {
+            return;
+        }
+        const int32_t capacity = pSession->getCapacity();
+        for ( int32_t slot = 0; slot < capacity; slot++ ) {
+            GameParticipant *pParticipant = pSession->getParticipant( slot );
+            if ( pParticipant == nullptr || !pParticipant->isActive() ||
+                 pParticipant->getCarState() == nullptr ||
+                 isAlreadyPassed( pGameMech, slot ) ) {
+                continue;
+            }
+
+            CarState *pCarState = pParticipant->getCarState();
+            if ( !IsCarRaceEligible( pCarState ) || pZone == nullptr ) {
+                continue;
+            }
+            const Eigen::Vector4f position =
+                pCarState->getBody()->WorldMatrix.row( 3 ).transpose();
+            const Eigen::Vector4f previousPosition =
+                pCarState->getBody()->PreviousWorldMatrix.row( 3 ).transpose();
+            if ( pZone->isPointInside( position, &previousPosition ) ) {
+                CheckpointPassedParam param{ Index, pCarState->getID(), slot };
+                pGameMech->onMessage( this, GameMechanism::kMsgCheckpointPassed,
+                                      &param );
+            }
+        }
+        return;
+    }
+    default:
+        return;
+    }
+}
+
+bool EntityCheckPoint::isAlreadyPassed( GameMechanism *pGameMech,
+                                        const int32_t slot ) const {
+    // FUN_007f95b0
+    GameMechRaceHUD *pRaceHUD = static_cast<GameMechRaceHUD *>(
+        pGameMech->getComponent( GameMechanism::CS_RaceHUD ) );
+    if ( pRaceHUD == nullptr ) {
+        return false;
+    }
+
+    GameParticipant *pParticipant =
+        pGameMech->getGameSession()->getParticipant( slot );
+    const int32_t lap = ( pParticipant != nullptr )
+                            ? pParticipant->getSessionParams().CurrentLap
+                            : 0;
+    if ( lap == 0 ) {
+        return NbTimesEventReached[slot] > 0;
+    }
+
+    const int32_t loopCheckpointIndex =
+        int32_t( gpActiveGM->getMissionDescription()
+                     ->getLoopCheckpointIndex()
+                     .getValue() );
+    if ( Index == loopCheckpointIndex ) {
+        return !pRaceHUD->isOnLapCheckpoint( slot );
+    }
+    if ( Index > loopCheckpointIndex ) {
+        return NbTimesEventReached[slot] >= lap;
+    }
+    return true;
 }
 
 bool EntityCheckPoint::draw( RenderScene *pScene ) {
@@ -194,18 +316,73 @@ void EntityCheckPoint::deserialize( BinaryReader *param_2 ) {
 void EntityCheckPoint::propagateTransform( Matrix4x4f_t &transformMatrix,
                                            bool param_1 ) {
     // FUN_007f9c40
-    Matrix4x4f_t gateMatrix = transformMatrix;
+    Matrix4x4f_t checkpointMatrix = transformMatrix;
+    AiRoadProfile *pProfile = nullptr;
 
-    if ( pInstanciatedActors[0] != nullptr ||
-         pInstanciatedActors[1] != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (AiRoadMap)
+    if ( ( pInstanciatedActors[0] != nullptr ||
+           pInstanciatedActors[1] != nullptr ) &&
+         ProjectFrameOnRoad( transformMatrix, checkpointMatrix, &pProfile,
+                             true ) &&
+         pProfile != nullptr ) {
+        const Eigen::Vector4f up( 0.0f, 1.0f, 0.0f, 0.0f );
+        checkpointMatrix.row( 1 ) = up.transpose();
+        checkpointMatrix.row( 2 ) =
+            Vector4DCross( checkpointMatrix.row( 0 ).transpose(), up )
+                .transpose();
+
+        const float gateOffset =
+            ( pProfile->OuterWidth + pProfile->InnerWidth ) * 0.5f * 0.5f -
+            kGateRoadEdgeMargin;
+        const Eigen::Vector4f lateral =
+            checkpointMatrix.row( 0 ).transpose() * gateOffset;
+
+        for ( int32_t i = 0; i < kNumGateActors; i++ ) {
+            Entity *pGate = pInstanciatedActors[i];
+            if ( pGate == nullptr ) {
+                continue;
+            }
+
+            Matrix4x4f_t gateMatrix = checkpointMatrix;
+            if ( i == 0 ) {
+                gateMatrix.row( 3 ) -= lateral.transpose();
+            } else {
+                gateMatrix.row( 3 ) += lateral.transpose();
+            }
+            pGate->propagateTransform( gateMatrix, param_1 );
+
+            if ( pGate->getMechanism() != nullptr ) {
+                pGate->getMechanism()->setInitialTransformMatrix( gateMatrix );
+            }
+
+            HiearchyNode *pRootNode = static_cast<SerializedSkinnedModel *>(
+                                          pGate->getGeometryData() )
+                                          ->pHiearchNode;
+            if ( pRootNode == nullptr ) {
+                continue;
+            }
+            HiearchyNode *pHiddenNode =
+                pRootNode->findChild( GetIdentifier64bit( "R_D" ) );
+            if ( pHiddenNode == nullptr ) {
+                pHiddenNode =
+                    pRootNode->findChild( GetIdentifier64bit( "R_G" ) );
+            }
+            if ( pHiddenNode != nullptr ) {
+                pHiddenNode->setAndPropagateFlags( 4 );
+            }
+        }
     }
 
     if ( pZoneTrigger != nullptr ) {
-        PropagateTransformToChild( pZoneTrigger, this, gateMatrix, true );
+        if ( pProfile != nullptr ) {
+            EntityVolume *pZone = static_cast<EntityVolume *>( pZoneTrigger );
+            Matrix4x4f_t zoneMatrix = pZone->getLocalTransform().inverse();
+            zoneMatrix( 0, 0 ) = pProfile->OuterWidth + kZoneRoadEdgeMargin;
+            pZone->setTransform( zoneMatrix, true );
+        }
+        PropagateTransformToChild( pZoneTrigger, this, checkpointMatrix, true );
     }
 
-    Entity::propagateTransform( gateMatrix, param_1 );
+    Entity::propagateTransform( checkpointMatrix, param_1 );
     unknownActorFunc();
 }
 

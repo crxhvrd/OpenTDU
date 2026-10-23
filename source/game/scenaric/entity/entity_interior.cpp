@@ -11,7 +11,7 @@ EntityInterior::~EntityInterior() {
     // FUN_00424120
 }
 
-void EntityInterior::tick( PlayerGameMech *pGameMech,
+void EntityInterior::tick( GameMechanism *pGameMech,
                            float deltaTime,
                            float totalTime ) {
     // FUN_007e9b90

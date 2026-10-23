@@ -158,7 +158,7 @@ void EntityItac::unloadResources() {
     EntityActor::unloadResources();
 }
 
-void EntityItac::tick( PlayerGameMech *pGameMech,
+void EntityItac::tick( GameMechanism *pGameMech,
                        float deltaTime,
                        float totalTime ) {
     // FUN_009c8800

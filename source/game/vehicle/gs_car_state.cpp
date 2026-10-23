@@ -222,6 +222,21 @@ namespace {
     }
 } // namespace
 
+// DAT_010e7870 / DAT_010e7960: local player speed sample windows, never reset
+static float gSustainedSpeedSamples[60];
+static float gShortSustainedSpeedSamples[16];
+
+template <size_t N>
+static float PushSpeedSample( float ( &samples )[N], const float sample ) {
+    float minSpeed = samples[0];
+    for ( size_t i = 0; i < N - 1; i++ ) {
+        samples[i] = samples[i + 1];
+        minSpeed = std::min( minSpeed, samples[i] );
+    }
+    samples[N - 1] = sample;
+    return minSpeed;
+}
+
 static bool GetBodyShiftedPose( const JPH::Body *pBody,
                                 Matrix4x4f_t &outPose ) {
     bool bActive = false;
@@ -584,6 +599,23 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             }
             body.NumWheelsGrounded = numGrounded;
             body.NumWheelsOnRoad = numOnRoad;
+
+            // FUN_0083bbd0 (inlined)
+            if ( carState.getSimulationType() ==
+                     CarState::eSimulationType::CSST_Local &&
+                 carState.getOwner() == CarState::eOwner::CSO_LocalPlayer ) {
+                if ( numGrounded >= 2 ) {
+                    const float sample =
+                        pPhysicsVehicle->getReportedSpeed( true );
+                    body.SustainedSpeed =
+                        PushSpeedSample( gSustainedSpeedSamples, sample );
+                    body.ShortSustainedSpeed =
+                        PushSpeedSample( gShortSustainedSpeedSamples, sample );
+                }
+            } else {
+                body.SustainedSpeed = body.SpeedInKmh;
+                body.ShortSustainedSpeed = body.SpeedInKmh;
+            }
 
             if ( gpScenaric != nullptr &&
                  &carState == gpScenaric->getLocalPlayer().getCarState() &&

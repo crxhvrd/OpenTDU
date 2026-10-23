@@ -4,7 +4,7 @@
 #include "core/maths_helper.h"
 #include "core/random/bcpl.h"
 #include "filesystem/binary.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/mng_life_set.h"
@@ -116,7 +116,7 @@ void EntityLifeSet::loadResources( ScenaricBank *pBank ) {
     bank.prepare( pBank );
 }
 
-void EntityLifeSet::tick( PlayerGameMech *, float, float ) {
+void EntityLifeSet::tick( GameMechanism *, float, float ) {
     // FUN_007de810
     if ( bLoaded && !bPlaying ) {
         if ( gpMngLifeSet != nullptr ) {

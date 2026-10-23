@@ -14,7 +14,7 @@ MngDebugScenaric *gpMngDbgScnrc = nullptr; // DAT_010e7f3c
 
 static bool gDisplayVolumes = false;               // DAT_010e7f35
 static bool BOOL_010e7f36 = false;                 // DAT_010e7f36
-static bool gGameMechsDebug = false;               // DAT_010e7f37
+bool gGameMechsDebug = false;                      // DAT_010e7f37
 static bool gGMECPTChanges = false;                // DAT_010e7f38
 static bool gDisplayActorsPMIMemoryNeeded = false; // DAT_010e7f39
 

@@ -115,7 +115,7 @@ struct AIConfig {
     bool Unknown0xB9;
     bool Unknown0xBA;
     bool Unknown0xBB;
-    float Unknown0xBC;
+    float CollisionRepeatDelay; // before a car/object collision counts again
     float GInfMaxValue;
     float GInfLoweringFactor;
     float GInfDestroyCar;

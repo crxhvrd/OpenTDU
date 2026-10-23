@@ -43,6 +43,7 @@ public:
     void pause() override;
     bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer = nullptr );
 
+    inline void setEnabled( const bool bValue ) { bEnabled = bValue; }
     inline void setFlashPlayer( FlashPlayer *pPlayer ) {
         pFlashVariable = pPlayer;
     }

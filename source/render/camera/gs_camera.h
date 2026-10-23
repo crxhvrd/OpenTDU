@@ -109,6 +109,18 @@ public:
         activeModeVehicleOverride = -1;
     }
 
+    inline void resetVehicleCameraSelection() {
+        timer = 99.0f; // DAT_00f417e8
+        bReplayMode = false;
+        bDisableInteriorView = false;
+        bNeedSwitch = true;
+        activeModeVehicle = -1;
+        activeMode = -1;
+        timerToSwitch = 0.0f;
+        activeModeOverride = -1;
+        activeModeVehicleOverride = -1;
+    }
+
     inline void setActiveCameraAsDefault() {
         defaultCamera = pActiveVehicleCamera;
         applyCinematicOverride( defaultCamera );

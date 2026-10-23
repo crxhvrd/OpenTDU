@@ -15,6 +15,7 @@
 #include "gs_timer.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "render/camera/gs_camera.h"
 #include "world/gs_world.h"
 #include "world/mng_world.h"
 #include "game/scenaric/entity/entity_driver.h"
@@ -184,21 +185,14 @@ void GetExtraChallengeDisplayIndices( const Entity *pEntity,
     }
 }
 
-PlayerGameMech::PlayerGameMech( int32_t type, uint32_t id )
-    : mechType( type ),
-      mechID( id ),
-      pOwner( nullptr ),
+PlayerGameMech::PlayerGameMech()
+    : GameMechanism( 4, 0xc0c3 ),
       currentActivityHashcode( 0ull ),
       pCurrentSpot( nullptr ),
       pCurrentSpotEntity( nullptr ),
       spotDisplayTypeIndex( -1 ),
       spotDisplayNameIndex( -1 ),
       pCurrentExtraChallenge( nullptr ),
-      bUnknown75C( false ),
-      curState( MS_None ),
-      prevState( MS_None ),
-      nextState( MS_None ),
-      stateInitTime( 0.0f ),
       spawnFrame( Matrix4x4f_t::Identity() ),
       loadingMapStartTime( 0.0f ),
       botsReenableCountdown( -1 ) {
@@ -217,11 +211,11 @@ void PlayerGameMech::clearCurrentActivity() {
 }
 
 bool PlayerGameMech::onMessage( Entity *pSender,
-                                int32_t eventCode,
-                                void * /*pParam*/ ) {
+                                const int32_t eventCode,
+                                void *pParam ) {
     // FUN_00738220
     switch ( eventCode ) {
-    case ME_Reset:
+    case ME_CheckpointPassed:
         return true;
 
     case ME_SpotEntered: {
@@ -281,37 +275,20 @@ bool PlayerGameMech::onMessage( Entity *pSender,
         return true;
 
     default:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
-        return false;
+        return GameMechanism::onMessage( pSender, eventCode, pParam );
     }
-}
-
-bool PlayerGameMech::stateChange( const int32_t state ) {
-    // FUN_00801470
-    nextState = state;
-    if ( curState != MS_None ) {
-        stateProcess( curState, 0.0f, SP_Term );
-    }
-    prevState = curState;
-    curState = state;
-    stateInitTime = gpTimer->GameTotalTime;
-    if ( state != MS_None ) {
-        stateProcess( state, 0.0f, SP_Init );
-    }
-    return true;
-}
-
-void PlayerGameMech::tick( const float deltaTime ) {
-    // FUN_00733020
-    stateProcess( curState, deltaTime, SP_Update );
 }
 
 static constexpr int32_t kBotsReenableDelay = 210;
 
 bool PlayerGameMech::stateProcess( const int32_t state,
-                                   const float /*deltaTime*/,
+                                   const float deltaTime,
                                    const eStateProcess process ) {
     // FUN_00737d50
+    if ( pComponents[CS_Player] != nullptr ) {
+        pComponents[CS_Player]->onMechStateProcess( state, deltaTime, process );
+    }
+
     if ( !gpPlayerData->isOnline() || !gpPlayerData->getOnlineOp( 0 ) ) {
         if ( botsReenableCountdown >= 0 ) {
             if ( botsReenableCountdown == 0 ) {
@@ -411,6 +388,16 @@ bool PlayerGameMech::processPlaying( const eStateProcess process ) {
     default:
         return false;
     }
+}
+
+bool PlayerGameMech::terminate() {
+    // FUN_00737970
+    gpCamera->resetVehicleCameraSelection();
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (driver avatar +0x1c18 counter)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (spectator reset, free ride
+                             // session scan, unregister the P2P listener)
+    gpCamera->setMouseCam( true );
+    return GameMechanism::terminate();
 }
 
 const char *PlayerGameMech::getDisplayTypeName() const {

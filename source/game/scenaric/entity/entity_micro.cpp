@@ -2,7 +2,7 @@
 #include "entity_micro.h"
 
 #include "game/cinematic/cin_res_collection.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "filesystem/binary.h"
 #include "audio/gs_audio.h"
 #include "core/maths_helper.h"
@@ -38,7 +38,7 @@ void EntityMicro::unloadResources() {
     // FUN_007e0270
 }
 
-void EntityMicro::tick( PlayerGameMech *pGameMech,
+void EntityMicro::tick( GameMechanism *pGameMech,
                         float deltaTime,
                         float totalTime ) {
     // FUN_007e05c0

@@ -12,13 +12,13 @@
 
 class Spot;
 class SoundBinary;
-class GameMechanism;
+class EntityMechanism;
 class ScenaricBank;
 class SerializedEntity;
 struct BinaryReader;
 class RenderScene;
 class MngActor;
-class PlayerGameMech;
+class GameMechanism;
 class SectorHeightmap;
 
 struct SoundScene {
@@ -117,7 +117,7 @@ public:
     inline const std::string &getInstanceName() const { return name; }
     inline const EntityDesc *getDesc() const { return pDesc; }
     inline Entity *getParent() const { return pParent; }
-    inline GameMechanism *getMechanism() const { return pMechanism; }
+    inline EntityMechanism *getMechanism() const { return pMechanism; }
     inline Spot *getSpot() const { return pSpot; }
     inline void setSpot( Spot *pNewSpot ) { pSpot = pNewSpot; }
     inline bool isStreamManaged() const { return bStreamManaged; }
@@ -129,6 +129,10 @@ public:
     inline bool isVisible() const { return ( flags & 1u ) != 0; }
     inline void setVisible( const bool b ) {
         flags = b ? ( flags | 1u ) : ( flags & ~1u );
+    }
+    inline bool isTickEnabled() const { return ( flags & 2u ) != 0; }
+    inline void setTickEnabled( const bool b ) {
+        flags = b ? ( flags | 2u ) : ( flags & ~2u );
     }
     inline void setTileVisible( bool b ) {
         flags = b ? ( flags | 4u ) : ( flags & ~4u );
@@ -170,7 +174,7 @@ public:
     virtual void unknownFunc() { /* NOP */ }
     virtual void unloadResources();
     virtual void
-    tick( PlayerGameMech *pGameMech, float deltaTime, float totalTime );
+    tick( GameMechanism *pGameMech, float deltaTime, float totalTime );
     virtual bool draw( RenderScene *pScene );
     virtual void deserialize( BinaryReader *param_2 );
     virtual void unknownFunc2( void *param_2 ) { /* NOP */ }
@@ -218,7 +222,7 @@ protected:
     Entity *pParent;
     Spot *pSpot;
     SoundScene *pSound;
-    GameMechanism *pMechanism;
+    EntityMechanism *pMechanism;
 
     uint8_t bPrimaryInstance : 1;
     uint8_t bShifted : 1;

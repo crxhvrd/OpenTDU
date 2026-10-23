@@ -9,8 +9,9 @@
 #include "audio/gs_audio.h"
 #include "audio/radio/gs_radio.h"
 #include "audio/vehicle/gs_vehicle_sound.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/gm_scene.h"
+#include "game/gm_world.h"
 #include "game/cinematic/gs_cinematics.h"
 #include "game/cinematic/mng_cinematics.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -161,6 +162,7 @@ EntityCinematic::EntityCinematic()
       bRestoreCineMix( true ),
       savedMutedVehicleCategories( 0 ),
       bDetachPlayerCarInput( true ),
+      bPauseMenuLockedBefore( false ),
       bPlayerCarInputWasAttached( false ),
       bDisableStreamingOnCarBefore( false ),
       pStreamCenterBefore( nullptr ),
@@ -288,6 +290,11 @@ void EntityCinematic::applyForegroundCine() {
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
 
+    if ( gpActiveGM != nullptr ) {
+        bPauseMenuLockedBefore = gpActiveGM->isPauseMenuLocked(); // +0x26e5
+        gpActiveGM->setBlockPauseByStart( true );
+    }
+
     PhysicsVehicle *pLocalVehicle = GetLocalPlayerPhysicsVehicle();
     if ( pLocalVehicle != nullptr && bDetachPlayerCarInput ) {
         bPlayerCarInputWasAttached = pLocalVehicle->isInputControllerAttached();
@@ -366,6 +373,10 @@ void EntityCinematic::restoreForegroundCine() {
         if ( pGeneralPlayer != nullptr ) {
             pGeneralPlayer->showFrame( "off", "/black_stripes", false );
         }
+    }
+
+    if ( gpActiveGM != nullptr ) {
+        gpActiveGM->setBlockPauseByStart( bPauseMenuLockedBefore );
     }
 
     if ( gpMngWorld != nullptr ) {
@@ -542,7 +553,7 @@ void EntityCinematic::unloadResources() {
     }
 }
 
-void EntityCinematic::tick( PlayerGameMech *pGameMech,
+void EntityCinematic::tick( GameMechanism *pGameMech,
                             float deltaTime,
                             float totalTime ) {
     // FUN_007e9320

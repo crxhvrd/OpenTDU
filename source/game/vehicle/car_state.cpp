@@ -21,6 +21,9 @@
 #include "game/mng_gps.h"
 #include "ai/gs_ai.h"
 #include "ai/ai_road_shape.h"
+#include "ai/ai_config.h"
+#include "gs_timer.h"
+#include "player_data/gs_playerdata.h"
 #include "physics/gs_physicsfx.h"
 #include "player_data/saved_road_discovery.h"
 #include "render/camera/gs_camera.h"
@@ -525,6 +528,14 @@ void CarState::updateBackOnTrack( float deltaTime ) {
     }
 }
 
+static constexpr float kMinBlameSpeed = 0.5f;        // FLOAT_00f41674
+static constexpr float kTwoOverPi = 0.63661975f;     // DAT_00f41a30
+static constexpr float kLaneBlameWeight = 0.33f;     // DAT_00f41a0c
+static constexpr float kOverspeedBlameWeight = 0.1f; // FLOAT_00f41668
+static constexpr float kSpeedLimitScale = 1.0f;      // DAT_00faa990
+static constexpr float kContactBoundsScale = 1.5f;   // DAT_00f416b8
+static constexpr float kAtFaultBlameRatio = 0.5f;    // FLOAT_00f41674
+
 static void DispatchAICollision( const CollisionEvent &event,
                                  CarState *pCarState,
                                  CarState *pOther ) {
@@ -563,17 +574,204 @@ struct PostponedVelocityScale {
     }
 };
 
+static float ComputeImpactAngleFactor( const CollisionEvent &event ) {
+    // FUN_008af840
+    const float speed = std::sqrt( event.Velocity.dot( event.Velocity ) );
+    if ( kMinBlameSpeed > speed ) {
+        return 0.0f;
+    }
+
+    Eigen::Vector2f contact( event.ContactPosition.x(),
+                             event.ContactPosition.z() );
+    Eigen::Vector2f velocity( event.Velocity.x(), event.Velocity.z() );
+    if ( contact.squaredNorm() == 0.0f || velocity.squaredNorm() == 0.0f ) {
+        return 0.0f;
+    }
+
+    contact.normalize();
+    velocity.normalize();
+
+    const float cosAngle = std::clamp( velocity.dot( contact ), -1.0f, 1.0f );
+    const float factor = 1.0f - std::acos( cosAngle ) * kTwoOverPi;
+    return ( 0.0f > factor ) ? 0.0f : factor;
+}
+
+static void ComputeRoadBehaviourScore( const CollisionEvent &event,
+                                       int32_t &outLaneScore,
+                                       float &outOverspeed ) {
+    // FUN_008afae0
+    const ObjectLocationRoad &location = event.Location.LocationRoad;
+    const float speed = std::sqrt( event.Velocity.dot( event.Velocity ) );
+    const float lateral = ( location.LateralMax + location.LateralMin ) * 0.5f;
+    const float fraction =
+        ( location.FractionMax + location.FractionMin ) * 0.5f;
+
+    const AiRoadMap &roadMap = gpAI->getRoadMap();
+    AiRoadMap::Road *pRoad = roadMap.getRoad( location.RoadID );
+    AiRoadShape *pShape = ( pRoad != nullptr ) ? pRoad->getShape() : nullptr;
+
+    if ( pShape == nullptr ) {
+        return;
+    }
+    AiRoadIt it;
+    pShape->computeIt( fraction, it );
+    if ( it.pRoad == nullptr ) {
+        return;
+    }
+
+    const AiRoadMap::Entity *pEntity = it.getEntity();
+    int32_t speedLimitIndex = pEntity->SpeedLimitIndice;
+    if ( speedLimitIndex >= roadMap.getNumSpeedLimits() ) {
+        speedLimitIndex = 0;
+    }
+    outOverspeed =
+        speed - roadMap.getSpeedLimit( speedLimitIndex ) * kSpeedLimitScale;
+    if ( 0.0f > outOverspeed ) {
+        outOverspeed = 0.0f;
+    }
+
+    if ( kMinBlameSpeed > speed ) {
+        outLaneScore = 0;
+        return;
+    }
+
+    const float centerLine = pEntity->pProfile->computeCenterLineRatio();
+    const float direction = event.Location.VelocityX;
+    if ( direction > 0.0f ) {
+        if ( centerLine > location.LateralMin ) {
+            if ( centerLine <= lateral ) {
+                outLaneScore = 1;
+            } else {
+                outLaneScore = ( centerLine > location.LateralMax ) ? 3 : 2;
+            }
+        }
+    } else if ( 0.0f > direction ) {
+        if ( location.LateralMax > centerLine ) {
+            if ( lateral <= centerLine ) {
+                outLaneScore = 1;
+            } else {
+                outLaneScore = ( location.LateralMin > centerLine ) ? 3 : 2;
+            }
+        }
+    } else if ( centerLine > location.LateralMin &&
+                location.LateralMax > centerLine ) {
+        outLaneScore = 1;
+    }
+}
+
+static bool ComputeLocationBlame( const CollisionEvent &event,
+                                  const CarState *pCarState,
+                                  int32_t &outLaneScore,
+                                  float &outOverspeed,
+                                  float &outJunction ) {
+    // FUN_008afcb0 (inlined)
+    switch ( event.Location.LocationType ) {
+    case ObjectWorldLocation::OWL_Road:
+        ComputeRoadBehaviourScore( event, outLaneScore, outOverspeed );
+        return true;
+    case ObjectWorldLocation::OWL_Junction:
+        if ( uint32_t(
+                 pCarState->getPoliceState().getJunctionNotRespected() ) ==
+             event.Location.LocationOther.RoadID ) {
+            outJunction = 1.0f;
+        }
+        return true;
+    case ObjectWorldLocation::OWL_OffRoad:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void ComputeCollisionBlame( const CollisionEvent &event,
+                                   const CarState *pCarState,
+                                   const CarState *pOther,
+                                   const CollisionEvent &otherEvent,
+                                   float &outBlame,
+                                   float &outOtherBlame ) {
+    // FUN_008afcb0
+    int32_t laneScore = 0;
+    int32_t otherLaneScore = 0;
+    float overspeed = 0.0f;
+    float otherOverspeed = 0.0f;
+    float junction = 0.0f;
+    float otherJunction = 0.0f;
+    const float angle = ComputeImpactAngleFactor( event );
+    const float otherAngle = ComputeImpactAngleFactor( otherEvent );
+    if ( !ComputeLocationBlame( event, pCarState, laneScore, overspeed,
+                                junction ) ||
+         !ComputeLocationBlame( otherEvent, pOther, otherLaneScore,
+                                otherOverspeed, otherJunction ) ) {
+        outBlame = 0.0f;
+        outOtherBlame = 0.0f;
+        return;
+    }
+
+    outBlame = float( laneScore ) * kLaneBlameWeight +
+               overspeed * kOverspeedBlameWeight + junction;
+    outOtherBlame = float( otherLaneScore ) * kLaneBlameWeight +
+                    otherOverspeed * kOverspeedBlameWeight + otherJunction;
+
+    bool bNormalize = false;
+    if ( outBlame == outOtherBlame && outBlame == 0.0f ) {
+        if ( angle > otherAngle ) {
+            outBlame = 1.0f;
+            bNormalize = true;
+        } else if ( otherAngle > angle ) {
+            outOtherBlame = 1.0f;
+        } else {
+            outBlame = angle;
+            outOtherBlame = otherAngle;
+        }
+    } else {
+        outBlame *= angle;
+        outOtherBlame *= otherAngle;
+    }
+
+    if ( bNormalize || outBlame != 0.0f ) {
+        outBlame = outBlame / ( outBlame + outOtherBlame );
+        outOtherBlame = outOtherBlame / ( outBlame + outOtherBlame );
+    } else if ( outOtherBlame != 0.0f ) {
+        outOtherBlame = 1.0f;
+    }
+
+    const float now = gpTimer->GameTotalTime;
+    if ( now - pCarState->getPoliceState().getWasHitLastTime() <
+         gAIConfig.InfGracePeriod ) {
+        outBlame = 0.0f;
+    }
+    if ( now - pOther->getPoliceState().getWasHitLastTime() <
+         gAIConfig.InfGracePeriod ) {
+        outOtherBlame = 0.0f;
+    }
+}
+
+static bool IsContactOutsideBounds( const CollisionEvent &event,
+                                    CarState *pCarState ) {
+    // FUN_008af770
+    const float distance =
+        std::sqrt( event.ContactPosition.dot( event.ContactPosition ) );
+    Eigen::Vector4f spherePosition;
+    float sphereRadius = 0.0f;
+    pCarState->retrieveBoundingSphere( &spherePosition, &sphereRadius );
+    return distance > sphereRadius * kContactBoundsScale;
+}
+
 void CarState::resolveCollisionEvents() {
     // FUN_008aff60
     PostponedVelocityScale softCollision;
-    for ( const CollisionEvent &event : body.CollisionEvents ) {
+    const int32_t numEvents = int32_t( body.CollisionEvents.size() );
+    for ( int32_t i = 0; i < numEvents; i++ ) {
+        const CollisionEvent &event = body.CollisionEvents[i];
+        void *pOtherObject = nullptr;
         if ( event.Type == eCollisionType::CT_Vehicle ) {
             if ( event.pOtherVehicle == nullptr ) {
                 continue;
             }
         } else if ( event.Type == eCollisionType::CT_DynamicBody &&
                     event.pOtherObject != nullptr ) {
-            gpCarState->registerCollidedObject( event.pOtherObject );
+            pOtherObject = event.pOtherObject;
+            gpCarState->registerCollidedObject( pOtherObject );
         } else {
             continue;
         }
@@ -601,7 +799,66 @@ void CarState::resolveCollisionEvents() {
             softCollision.request( pOther->getPhysicsVehicle(), 0.5f );
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: Police
+        if ( gAIConfig.InfGracePeriod >
+             gpTimer->GameTotalTime - gpPlayerData->getLastArrestedTime() ) {
+            continue;
+        }
+
+        float energy = event.Energy;
+        bool bHandled = false;
+        for ( int32_t j = 0; j < numEvents; j++ ) {
+            const CollisionEvent &sibling = body.CollisionEvents[j];
+            if ( j == i || sibling.pOtherObject != event.pOtherObject ) {
+                continue;
+            }
+            if ( j < i ) {
+                bHandled = true;
+                break;
+            }
+            energy += sibling.Energy;
+        }
+        if ( bHandled || energy == 0.0f ) {
+            continue;
+        }
+
+        bool bAtFault = true;
+        if ( pOther != nullptr ) {
+            if ( policeState.isRecentCarCollision( pOther ) ) {
+                continue;
+            }
+
+            const CollisionEvent *pOtherEvent = nullptr;
+            for ( const CollisionEvent &otherEvent :
+                  pOther->body.CollisionEvents ) {
+                if ( otherEvent.EventID == event.EventID ) {
+                    pOtherEvent = &otherEvent;
+                    break;
+                }
+            }
+            if ( pOtherEvent == nullptr ||
+                 IsContactOutsideBounds( *pOtherEvent, pOther ) ) {
+                continue;
+            }
+
+            float blame = 0.0f;
+            float otherBlame = 0.0f;
+            ComputeCollisionBlame( event, this, pOther, *pOtherEvent, blame,
+                                   otherBlame );
+            bAtFault = blame > otherBlame * kAtFaultBlameRatio;
+        }
+
+        const bool bRecent =
+            policeState.checkRecentCollision( pOther, pOtherObject );
+        if ( !bAtFault || bRecent ) {
+            continue;
+        }
+
+        for ( const CollisionCallback &callback : collisionCallbacks ) {
+            if ( callback.pCallback != nullptr ) {
+                callback.pCallback( uint8_t( event.Type ), pOther, pOtherObject,
+                                    callback.pUserData );
+            }
+        }
     }
 }
 

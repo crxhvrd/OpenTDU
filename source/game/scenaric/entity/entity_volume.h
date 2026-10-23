@@ -21,6 +21,9 @@ public:
     inline const Matrix4x4f_t &getInverseTransform() const {
         return InverseTransform;
     }
+    inline const Matrix4x4f_t &getLocalTransform() const {
+        return LocalTransform;
+    }
 
 public:
     EntityVolume();

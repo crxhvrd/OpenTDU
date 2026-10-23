@@ -60,3 +60,16 @@ char *FormatRaceTime( char *pOutText, const float seconds ) {
              minuteRemainder / 1000, subSecond / 10 );
     return pOutText;
 }
+
+char *FormatCentiseconds( char *pOutText, const uint32_t centiseconds ) {
+    // FUN_00730800
+    if ( pOutText == nullptr ) {
+        return nullptr;
+    }
+
+    const uint32_t cents = centiseconds % 100;
+    const uint32_t seconds = ( ( centiseconds - cents ) % 6000 ) / 100;
+    const uint32_t minutes = ( centiseconds - seconds * 100 - cents ) / 6000;
+    sprintf( pOutText, "%d'%02d\"%02d", minutes, seconds, cents );
+    return pOutText;
+}

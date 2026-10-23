@@ -28,9 +28,8 @@ public:
     void initialize() override;
     void loadResources( ScenaricBank *param_2 ) override;
     void unloadResources() override;
-    void tick( PlayerGameMech *pGameMech,
-               float deltaTime,
-               float totalTime ) override;
+    void
+    tick( GameMechanism *pGameMech, float deltaTime, float totalTime ) override;
     void deserialize( BinaryReader *param_2 ) override;
     void setTransform( Matrix4x4f_t &transformMatrix, bool param_1 ) override;
     void setPosition( Eigen::Vector4f &position, bool param_1 ) override;

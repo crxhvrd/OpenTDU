@@ -2,7 +2,7 @@
 #include "entity_locked_barrier.h"
 
 #include "game/gm_base.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "filesystem/binary.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
@@ -37,7 +37,7 @@ EntityLockedBarrier::~EntityLockedBarrier() {
     // FUN_00424120
 }
 
-void EntityLockedBarrier::tick( PlayerGameMech *pGameMech,
+void EntityLockedBarrier::tick( GameMechanism *pGameMech,
                                 float deltaTime,
                                 float totalTime ) {
     // FUN_009c8070

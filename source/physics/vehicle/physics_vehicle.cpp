@@ -5286,14 +5286,17 @@ float PhysicsVehicle::getChassisSpeed() const {
     return JPH::Vec3( v.GetX(), 0.0f, v.GetZ() ).Length();
 }
 
-float PhysicsVehicle::getReportedSpeed() const {
+float PhysicsVehicle::getReportedSpeed( const bool bPlanar ) const {
     // FUN_0083bbd0
     if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
         return 0.0f;
     }
 
-    const JPH::Vec3 v = pPhysicsSystem->GetBodyInterface().GetLinearVelocity(
+    JPH::Vec3 v = pPhysicsSystem->GetBodyInterface().GetLinearVelocity(
         pChassisBody->GetID() );
+    if ( bPlanar ) {
+        v.SetY( 0.0f );
+    }
     const float chassisSpeed = v.Length();
 
     if ( vehicle.NumWheels <= 0 ) {

@@ -5,6 +5,7 @@
 #include "ai/ai_bot_manager.h"
 #include "ai/ai_bot_personality.h"
 #include "ai/ai_config.h"
+#include "ai/ai_game_session.h"
 #include "ai/ai_path.h"
 #include "ai/ai_race.h"
 #include "ai/ai_pedestrians.h"
@@ -47,6 +48,9 @@ public:
     }
     inline void setPauseTraffic( const bool bPause ) { bPauseTraffic = bPause; }
     inline void setCopsActive( const bool bActive ) { bCopsActive = bActive; }
+    void setCopsLevel( const float scale,
+                       const bool bHighLevel,
+                       const bool bMaxLevel );
     inline void setBotsActive( const bool bActive ) {
         pBotManager->setActive( bActive );
     }
@@ -68,6 +72,7 @@ public:
     }
     inline RandomGen &getRandom() const { return *pRandom; }
     inline AiRaceDescriptor *getRace() const { return pRace; }
+    inline GameSessionOffline &getGameSession() { return gameSession; }
     inline void setRace( AiRaceDescriptor *pNewRace ) { pRace = pNewRace; }
     inline AiDebugDraw *getDebugDraw() const { return pDebugDraw; }
     inline const AiCullingShape &getCullingShape() const {
@@ -125,6 +130,7 @@ private:
                                  // instead
     float *pSignalSyncTime;
     AiRaceDescriptor *pRace;
+    GameSessionOffline gameSession;
     AiPathOptimiser *pPathOptimiser;
     AiCullingShape *pCullingShape;
     AiDebugDraw *pDebugDraw;

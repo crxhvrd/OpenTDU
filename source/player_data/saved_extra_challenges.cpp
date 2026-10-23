@@ -265,6 +265,29 @@ void SavedExtraChallenges::addCounter( const int32_t index,
     writeCounter( index, readCounter( index ) + value );
 }
 
+void SavedExtraChallenges::countChallengeResult( const uint32_t spotType,
+                                                 const bool bWon,
+                                                 const bool bOnlineRanked ) {
+    // FUN_008881b0
+    switch ( spotType ) {
+    case 0xc0c0:
+        addCounter( CounterIndex( bWon ? 0xf1b0 : 0xf1b4 ), 1 );
+        break;
+    case 0xc0c1:
+        if ( !bOnlineRanked ) {
+            addCounter( CounterIndex( bWon ? 0xf1b8 : 0xf1bc ), 1 );
+        } else {
+            addCounter( CounterIndex( bWon ? 0xf1c0 : 0xf1c4 ), 1 );
+        }
+        break;
+    case 0xc0c2:
+        addCounter( CounterIndex( bWon ? 0xf1c8 : 0xf1cc ), 1 );
+        break;
+    default:
+        break;
+    }
+}
+
 void SavedExtraChallenges::countCarPainted( const bool bBike ) {
     // FUN_00887d30
     addCounter( CounterIndex( bBike ? 0xf120 : 0xf11c ), 1 );

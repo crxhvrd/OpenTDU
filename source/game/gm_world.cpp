@@ -942,7 +942,7 @@ void GameModeWorld::loadHotReloadedCar() {
 void GameModeWorld::draw( float /*deltaTime*/, float /*totalTime*/ ) {
     // FUN_007bdc10
     if ( pGameMech != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
+        pGameMech->draw();
     }
 }
 
@@ -1144,28 +1144,32 @@ bool GameModeWorld::createGameMech( uint32_t mechID, int32_t mechType ) {
     gameMechID = mechID;
     gameMechType = mechType;
 
-    if ( mechType == 5 ) {
+    if ( mechType == GameMechanism::MT_Player ) {
+        pGameMech = new PlayerGameMech();
+    } else if ( mechType == GameMechanism::MT_None ) {
         pGameMech = nullptr;
         return true;
-    }
-
-    if ( mechType == 4 ) {
-        pGameMech = new PlayerGameMech( mechType, mechID );
     } else {
-        OTDU_UNIMPLEMENTED; // TODO: GameLogic
-        pGameMech = nullptr;
-        return true;
+        pGameMech = new GameMechanism( mechType, mechID );
     }
 
     pGameMech->setOwner( this );
-
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
+    if ( ( flags & 1 ) != 0 ) {
+        pGameMech->initializeDriven();
+    } else {
+        pGameMech->initialize();
+    }
     return true;
+}
+
+PlayerGameMech *GameModeWorld::getPlayerGameMech() const {
+    return static_cast<PlayerGameMech *>( pGameMech );
 }
 
 void GameModeWorld::destroyGameMech() {
     // FUN_007bdc30 (inlined)
     if ( pGameMech != nullptr ) {
+        pGameMech->terminate();
         delete pGameMech;
         pGameMech = nullptr;
     }
@@ -1184,7 +1188,7 @@ bool GameModeWorld::canEnterSpot() const {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
     }
 
-    return pGameMech != nullptr && pGameMech->hasCurrentActivity() &&
+    return pGameMech != nullptr && getPlayerGameMech()->hasCurrentActivity() &&
            !bVehicleBusy;
 }
 

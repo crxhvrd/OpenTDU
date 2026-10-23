@@ -95,6 +95,10 @@ public:
     inline void setField0x7C( const bool bValue ) { field_0x7c = bValue; }
     inline void setField0x85( const bool bValue ) { field_0x85 = bValue; }
     inline void setPoliceScale( const float value ) { policeScale = value; }
+    inline void setTrafficScale( const float value ) { trafficScale = value; }
+    inline void setIgnoreZoneDensity( const bool bValue ) {
+        bIgnoreZoneDensity = bValue;
+    }
     inline void setForceDensity( const bool bValue ) { bForceDensity = bValue; }
     inline bool isZoneDensityIgnored() const { return bIgnoreZoneDensity; }
     inline bool isForceDensity() const;
@@ -151,6 +155,7 @@ public:
     void addVehicle( AiVehicle *pVehicle );
     void releaseVehicleSlot( AiVehicle *pVehicle );
     void queueRemoval( AiVehicle *pVehicle, const char *pReason );
+    bool togglePlayerAutopilot( const bool bOpponent );
     void removeVehicle( AiVehicle *pVehicle,
                         const char *pReason,
                         const bool bReleaseCar );

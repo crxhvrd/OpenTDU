@@ -69,6 +69,9 @@ public:
     inline CinematicPlayer *getGameModeInterface() const {
         return pGMInterface;
     }
+    inline void setDetachPlayerCarInput( const bool bDetach ) {
+        bDetachPlayerCarInput = bDetach;
+    }
     inline void setTransformOffset( const Matrix4x4f_t &offset ) {
         cinematicPlayer.setBaseMatrix( offset );
     }
@@ -125,9 +128,8 @@ public:
     void loadResources( ScenaricBank *param_2 ) override;
     void initializeInstance( void *param_2, void *param_3 ) override;
     void unloadResources() override;
-    void tick( PlayerGameMech *pGameMech,
-               float deltaTime,
-               float totalTime ) override;
+    void
+    tick( GameMechanism *pGameMech, float deltaTime, float totalTime ) override;
     void deserialize( BinaryReader *param_2 ) override;
     void reset() override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
@@ -210,6 +212,7 @@ private:
     bool bRestoreCineMix;
     uint32_t savedMutedVehicleCategories;
     bool bDetachPlayerCarInput;
+    bool bPauseMenuLockedBefore;
     bool bPlayerCarInputWasAttached;
     bool bDisableStreamingOnCarBefore;
     Eigen::Vector4f *pStreamCenterBefore;

@@ -2,7 +2,7 @@
 #include "entity_aircraft.h"
 
 #include "entity_aircraft_materials.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "filesystem/binary.h"
@@ -203,7 +203,7 @@ void EntityAircraft::unloadResources() {
     Model.uninstanciate();
 }
 
-void EntityAircraft::tick( PlayerGameMech *pGameMech,
+void EntityAircraft::tick( GameMechanism *pGameMech,
                            float deltaTime,
                            float totalTime ) {
     // FUN_007eb7e0

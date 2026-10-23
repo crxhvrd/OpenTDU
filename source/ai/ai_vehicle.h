@@ -119,6 +119,7 @@ public:
     inline AiVehBehaviour *getBehaviour() const { return pBehaviour; }
     inline bool isSoftCollision() const { return bSoftCollision; }
     inline bool isPlayerCar() const { return bPlayerCar; }
+    inline void setPlayerCar( const bool bValue ) { bPlayerCar = bValue; }
     inline void setFlashFade( const bool bEnabled ) { bFlashFade = bEnabled; }
     inline AiVehIndDPC &getDPC() { return dpc; }
     inline const AiVehIndDPC &getDPC() const { return dpc; }

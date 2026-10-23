@@ -76,6 +76,8 @@ struct CarBodyState {
     float Omega;
     float Torque;
     float SpeedInKmh;
+    float SustainedSpeed = 0.0f;
+    float ShortSustainedSpeed = 0.0f;
     float EngineRPM;      // omega * 60/2pi
     float EnginePowerPS;  // torque * Omega / 735.5
     float EngineTorqueNm; // the SMOOTHED net torque / FakeCoef(1)
@@ -228,6 +230,7 @@ public:
     inline CarBodyState *getBody() { return &body; }
     inline const CarBodyState *getBody() const { return &body; }
     inline const PoliceState &getPoliceState() const { return policeState; }
+    inline PoliceState &getPoliceState() { return policeState; }
     inline VehicleBaseResources *getResource() const { return pResource; };
 
     inline bool isInstanceAlive() const { return bInstanceAlive; }

@@ -38,8 +38,9 @@ void EntityVolume::deserialize( BinaryReader *param_2 ) {
     // FUN_007e9f20
     Entity::deserialize( param_2 );
 
-    std::memcpy( InverseTransform.data(), param_2->pCursor,
+    std::memcpy( LocalTransform.data(), param_2->pCursor,
                  sizeof( float ) * 16 );
+    InverseTransform = LocalTransform;
     param_2->pCursor += sizeof( float ) * 16;
 
     Type = *reinterpret_cast<int32_t *>( param_2->pCursor );

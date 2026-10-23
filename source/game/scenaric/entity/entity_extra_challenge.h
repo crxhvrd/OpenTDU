@@ -28,9 +28,8 @@ public:
     void initialize() override;
     void loadResources( ScenaricBank *param_2 ) override;
     void initializeInstance( void *param_2, void *param_3 ) override;
-    void tick( PlayerGameMech *pGameMech,
-               float deltaTime,
-               float totalTime ) override;
+    void
+    tick( GameMechanism *pGameMech, float deltaTime, float totalTime ) override;
     void deserialize( BinaryReader *param_2 ) override;
 
     virtual const char *getChallengeName() const { return nullptr; }

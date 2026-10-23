@@ -165,6 +165,20 @@ void AiRoadProfile::computeLaneWidthRatios( const int32_t lane,
     outRatioEnd = std::clamp( lateralEnd / halfWidth, -1.0f, 1.0f );
 }
 
+float AiRoadProfile::computeCenterLineRatio() const {
+    // FUN_0092ece0
+    float ratioStart = 0.0f;
+    float ratioEnd = 0.0f;
+    if ( NumLeftLanes != 0 ) {
+        computeLaneWidthRatios( int32_t( NumLeftLanes ) - 1, false, ratioStart,
+                                ratioEnd );
+        return ratioEnd;
+    }
+    computeLaneWidthRatios( int32_t( NumRightLanes ) - 1, true, ratioStart,
+                            ratioEnd );
+    return ratioStart;
+}
+
 bool AiRoadProfile::isTunnel() const {
     // FUN_0092e910
     float minHeight = std::numeric_limits<float>::max();

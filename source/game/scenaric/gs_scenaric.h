@@ -210,6 +210,7 @@ public:
         return &worldExtraChallengesBank;
     }
     inline ScenaricBank *getWorldScenaricBank() { return &worldScenaricBank; }
+    inline ScenaricBank &getCinematicPackBank() { return cinematicPackBank; }
     inline ScenaricBank *getWorldScenaricBank() const {
         return const_cast<ScenaricBank *>( &worldScenaricBank );
     }
@@ -245,9 +246,12 @@ public:
     inline bool isFromDriveIn() const { return bIsFromDriveIn; }
     inline void setFromDriveIn( const bool value ) { bIsFromDriveIn = value; }
     inline void setTrainingLevel( const bool value ) { bTrainingLevel = value; }
+    inline bool isTrainingLevel() const { return bTrainingLevel; }
+    inline bool isInstantChallenge() const { return bInstantChallenge; }
     inline void setInstantChallenge( const bool value ) {
         bInstantChallenge = value;
     }
+    inline bool isFromGameInvite() const { return bFromGameInvite; }
     inline void setFromGameInvite( const bool value ) {
         bFromGameInvite = value;
     }

@@ -91,6 +91,9 @@ public:
     void countCarTuned( const bool bBike );
     void countCarPainted( const bool bBike );
     void countCarRented();
+    void countChallengeResult( const uint32_t spotType,
+                               const bool bWon,
+                               const bool bOnlineRanked );
     void countClotheBought();
     void addCouponsSpent( const uint32_t numCoupons );
     void countCarTransaction( const uint32_t carID,

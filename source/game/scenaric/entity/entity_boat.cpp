@@ -3,7 +3,7 @@
 
 #include "audio/implementation/ed_audio_sample.h"
 #include "core/maths_helper.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "filesystem/binary.h"
@@ -100,7 +100,7 @@ void EntityBoat::unloadResources() {
     Ecume3DModel.uninstanciate();
 }
 
-void EntityBoat::tick( PlayerGameMech *, float, float ) {
+void EntityBoat::tick( GameMechanism *, float, float ) {
     // FUN_007eabe0
 }
 

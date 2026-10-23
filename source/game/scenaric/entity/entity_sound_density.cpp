@@ -6,7 +6,7 @@
 #include "config/gs_config.h"
 #include "filesystem/binary.h"
 #include "filesystem/gs_file.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "system/system_shared.h"
 
 EntitySoundDensity::DensitySlot

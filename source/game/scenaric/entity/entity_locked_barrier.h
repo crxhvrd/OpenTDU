@@ -7,9 +7,8 @@ public:
     EntityLockedBarrier();
     ~EntityLockedBarrier();
 
-    void tick( PlayerGameMech *pGameMech,
-               float deltaTime,
-               float totalTime ) override;
+    void
+    tick( GameMechanism *pGameMech, float deltaTime, float totalTime ) override;
     void deserialize( BinaryReader *param_2 ) override;
     void unknownFunc2( void *param_2 ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;

@@ -28,3 +28,4 @@ inline float StringToFloat( const char *inparam_1 ) {
 
 const char *FormatMoneyString( char *param_1, int32_t param_2 );
 char *FormatRaceTime( char *pOutText, const float seconds );
+char *FormatCentiseconds( char *pOutText, const uint32_t centiseconds );

@@ -4,7 +4,7 @@
 #include "core/maths_helper.h"
 #include "game/cinematic/cin_res_collection.h"
 #include "game/cinematic/mng_cinematics.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_anm_set.h"
 #include "game/scenaric/entity/entity_avatar_passenger.h"
@@ -256,7 +256,7 @@ void EntityAvatar::unloadResources() {
     Entity::unloadResources();
 }
 
-void EntityAvatar::tick( PlayerGameMech *pGameMech,
+void EntityAvatar::tick( GameMechanism *pGameMech,
                          float deltaTime,
                          float totalTime ) {
     // FUN_007f90a0

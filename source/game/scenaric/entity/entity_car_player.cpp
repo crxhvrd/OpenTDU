@@ -7,7 +7,7 @@
 #include "database/gs_database.h"
 #include "filesystem/binary.h"
 #include "game/scenaric/gs_scenaric.h"
-#include "game/game_mechanism.h"
+#include "game/entity_mechanism.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_brand_car.h"
 #include "game/freeride/mng_map_screenshot.h"
@@ -139,7 +139,7 @@ void EntityCarPlayer::unloadResources() {
     pParkedVehicle = nullptr;
 }
 
-void EntityCarPlayer::tick( PlayerGameMech *pGameMech,
+void EntityCarPlayer::tick( GameMechanism *pGameMech,
                             float deltaTime,
                             float totalTime ) {
     // FUN_009c7dc0

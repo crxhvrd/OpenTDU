@@ -163,6 +163,14 @@ public:
     inline void setForceFeedbackAllowed( bool bState ) {
         bForceFeedbackAllowed = bState;
     }
+    inline bool isPlayerSlowDownForced() const { return bForcePlayerSlowDown; }
+    inline void setPlayerSlowDownForced( bool bState ) {
+        bForcePlayerSlowDown = bState;
+    }
+    inline bool isPlayerParkedForced() const { return bForcePlayerParked; }
+    inline void setPlayerParkedForced( bool bState ) {
+        bForcePlayerParked = bState;
+    }
     inline bool isPropFactoryReady() const { return !propFactories.empty(); }
 
     inline int32_t getNumTireProfiles() const { return numTires; }
@@ -444,7 +452,9 @@ private:
     uint8_t bHavokDebugEnabled : 1;
     uint8_t bDrawDebugInfos : 1;
 
-    bool bForceFeedbackAllowed = false;
+    bool bForcePlayerSlowDown = false;  // +0x8674
+    bool bForcePlayerParked = false;    // +0x8675
+    bool bForceFeedbackAllowed = false; // +0x8679
     uint32_t debugDrawFlags;
 
     // Jolt physics runtime objects — only valid after initializeJolt()

@@ -1663,7 +1663,7 @@ void HudMinimap::tick( float deltaTime ) {
 
         const SpotMap *pSpot =
             ( pGameMech != nullptr && pGameMech->getMechType() == 4 )
-                ? pGameMech->getCurrentSpot()
+                ? static_cast<PlayerGameMech *>( pGameMech )->getCurrentSpot()
                 : nullptr;
         if ( pSpot == nullptr ||
              ( pSpot->Type != ST_CarDealer && pSpot->Type != ST_BikeDealer ) ) {
