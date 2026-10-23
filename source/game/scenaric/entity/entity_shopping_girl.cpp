@@ -7,7 +7,7 @@
 EntityShoppingGirl::EntityShoppingGirl()
     : EntityExtraChallenge(),
       pGirlName( nullptr ),
-      Reward( 0 ),
+      OffRoad( 0 ),
       Coupon( 0 ),
       ConditionType( 0 ),
       Condition{ 0 },
@@ -30,7 +30,7 @@ void EntityShoppingGirl::deserialize( BinaryReader *param_2 ) {
     // FUN_007dd660
     EntityExtraChallenge::deserialize( param_2 );
 
-    Reward = *reinterpret_cast<uint32_t *>( param_2->pCursor );
+    OffRoad = *reinterpret_cast<uint32_t *>( param_2->pCursor );
     param_2->pCursor += sizeof( uint32_t );
 
     pGirlName = reinterpret_cast<const char *>( param_2->pCursor );

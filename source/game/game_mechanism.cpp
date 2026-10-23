@@ -31,7 +31,9 @@
 #include "game/mng_hud.h"
 #include "game/mng_ingame_menu.h"
 #include "game/scenaric/entity/entity_cinematic.h"
+#include "game/scenaric/entity/entity_convoy.h"
 #include "game/scenaric/entity/entity_driver.h"
+#include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
@@ -46,6 +48,7 @@
 #include "core/time.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_extra_challenges.h"
+#include "player_data/saved_item_table.h"
 #include "player_data/saved_ranking.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
@@ -159,7 +162,7 @@ GameMechanism::GameMechanism( const int32_t type, const uint32_t id )
       bRaceWon( false ),
       waitingForPlayersText{},
       pOffroadWarningEntry( nullptr ),
-      field_0x7b0( 0 ),
+      pPenaltyListener( nullptr ),
       numParticipantsAtStart( 0 ),
       numOnlineParticipants( 8 ),
       finishTime( 0.0f ),
@@ -335,7 +338,9 @@ void GameMechanism::reset() {
     bAutopilotPending = false;
     bAutopilotRequested = false;
     if ( mechType == MT_ExtraChallenge ) {
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (FUN_0073d9d0)
+        static_cast<GMMission *>( pOwner )
+            ->getExtraChallenge()
+            .stopCinematics(); // FUN_0073d9d0
     }
 
     for ( GameMechComponent *pComponent : pComponents ) {
@@ -422,7 +427,10 @@ void GameMechanism::restart() {
     OTDU_UNIMPLEMENTED; // TODO: GMMission (MngNavPathDisplay +0x7a8..+0x7c0,
                         // +0x890/+0x894 reset)
     if ( mechType == MT_ExtraChallenge ) {
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (FUN_0073d9d0, FUN_0073ee20)
+        MissionExtraChallenge &extraChallenge =
+            static_cast<GMMission *>( pOwner )->getExtraChallenge();
+        extraChallenge.stopCinematics(); // FUN_0073d9d0
+        extraChallenge.start();          // FUN_0073ee20
     }
     for ( GameMechComponent *pComponent : pComponents ) {
         if ( pComponent != nullptr ) {
@@ -628,6 +636,12 @@ static constexpr uint64_t kQuitHostHashcode = 0x364c582;
 static constexpr uint64_t kWaitingForPlayersHashcode = 0x36c66a2;
 static constexpr uint64_t kPauseQuitEditorHashcode = 0x3ab89bf;
 static constexpr uint64_t kPauseQuitHashcode = 0x39c477f;
+static constexpr uint64_t kShoppingGirlNameHashcode = 0x3725a12;
+static constexpr uint64_t kConvoyNameHashcode = 0x390de92;
+static constexpr uint64_t kHitchHikerNameHashcode = 0x3819c52;
+static constexpr uint64_t kTransporterNameHashcode = 0x3a020d2;
+static constexpr uint64_t kExtraChallengeFailedHashcode = 0x38fcd22;
+static constexpr uint64_t kExtraChallengeSucceededHashcode = 0x394d632;
 
 struct RacePlayerFinishedMessage : public AiRaceMessage {
     float Score = 0.0f;
@@ -900,7 +914,7 @@ void GameMechanism::startCountdown() {
     // FUN_00730ac0
     CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
     PhysicsVehicle *pVehicle = pLocalCar->getPhysicsVehicle();
-    countdownFrame = pVehicle->getInvChassisMatrix();
+    countdownFrame = pVehicle->getPhysicsMatrix();
 
     const char *pCinematicName = nullptr;
     if ( mechType == MT_Race ||
@@ -1065,12 +1079,142 @@ void GameMechanism::gotoResultsFrame() {
         }
         break;
     case MT_ExtraChallenge:
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (FUN_00733f90 extra challenge
-                            // results)
+        showExtraChallengeResults();
         break;
     default:
         break;
     }
+}
+
+void GameMechanism::showExtraChallengeResults() {
+    // FUN_00733f90
+    static constexpr float kPerfectRatioEpsilon = 1e-4f; // DAT_00f41760
+    static constexpr float kPerfectBonusRatio = 0.5f;    // FLOAT_00f41674
+
+    FlashPlayer *pHud = GetHudPlayer();
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI (DAT_013d1a54 +0x290 flag)
+    const bool bBotFlag = false;
+    pHud->setVariableValue( "/:IsRetry", int32_t( !bBotFlag ) );
+    pHud->setVariableValue( "/:IsReward", 0 );
+    pHud->setVariableValue( "/:IsPerfect", 0 );
+
+    EntityExtraChallenge *pChallenge = static_cast<EntityExtraChallenge *>(
+        gpScenaric->getActiveExtraChallenge() );
+    int32_t typeIndex = 0;
+    int32_t nameIndex = -1;
+    GetExtraChallengeDisplayIndices( pChallenge, &typeIndex, &nameIndex );
+
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    switch ( nameIndex ) {
+    case PlayerGameMech::SDN_ShoppingGirl:
+        pHud->setVariableValueNonLinked( "/:cur_gm", "sgirl" );
+        pHud->setVariableValueNonLinked( "/:extra_reward", "--" );
+        if ( bRaceWon ) {
+            OTDU_UNIMPLEMENTED; // TODO: SCENARIC (coupon reward +0x178, save
+                                // flags 0x2000 / 0x1000, FUN_00893b40)
+        }
+        break;
+    case PlayerGameMech::SDN_Hiker:
+        pHud->setVariableValueNonLinked( "/:cur_gm", "hiker" );
+        pHud->setVariableValueNonLinked( "/:extra_reward", "--" );
+        if ( bRaceWon ) {
+            OTDU_UNIMPLEMENTED; // TODO: SCENARIC (coupon reward +0x188, save
+                                // flags 0x2000 / 0x1000, FUN_00893b40)
+        }
+        break;
+    case PlayerGameMech::SDN_Transporter:
+        pHud->setVariableValueNonLinked( "/:cur_gm", "transporter" );
+        OTDU_UNIMPLEMENTED; // TODO: SCENARIC (fare refund +0x174 * 0.1)
+        break;
+    case PlayerGameMech::SDN_Convoy: {
+        pHud->setVariableValueNonLinked( "/:cur_gm", "convoy" );
+        const GameMechPenalty *pPenalty =
+            static_cast<const GameMechPenalty *>( pComponents[CS_Penalty] );
+        const float ratio =
+            std::clamp( pPenalty->getPenaltyRatio(), 0.0f, 1.0f );
+        const uint32_t reward = uint32_t(
+            float( static_cast<EntityConvoy *>( pChallenge )->getReward() ) *
+            ( 1.0f - ratio ) );
+        pHud->setVariableValue( "/:extra_reward", int32_t( reward ) );
+        if ( !bRaceWon ) {
+            break;
+        }
+
+        pHud->setVariableValue( "/:IsRetry", 0 );
+        pHud->setVariableValue( "/:IsReward", 1 );
+        char moneyText[0x40];
+        uint32_t perfectBonus = 0u;
+        if ( fabsf( pPenalty->getPenaltyRatio() ) <= kPerfectRatioEpsilon ) {
+            perfectBonus = uint32_t( float( reward ) * kPerfectBonusRatio );
+            pSave->getExtraChallenges()->countExtraChallengePerfect();
+            pHud->setVariableValue( "/:IsPerfect", 1 );
+            pHud->setVariableValueNonLinked(
+                "/:base_reward",
+                FormatMoneyString( moneyText, int32_t( reward ) ) );
+            pHud->setVariableValueNonLinked(
+                "/:perfect_reward",
+                FormatMoneyString( moneyText, int32_t( perfectBonus ) ) );
+        }
+
+        const int32_t totalReward = int32_t( reward + perfectBonus );
+        pSave->getExtraChallenges()->addCounter( CounterIndex( 0xf098 ),
+                                                 totalReward );
+        Driver *pDriver = pSave->getDriver();
+        pDriver->setPendingMoneyOperation( pDriver->getPendingMoneyOperation() +
+                                           totalReward ); // FUN_00430c00
+        pHud->setVariableValue( "/:IsRewardMoney", 1 );
+        char totalText[0x40];
+        pHud->setVariableValueNonLinked(
+            "/:MoneyTransfert", FormatMoneyString( totalText, totalReward ) );
+
+        SavedItemTable *pChallengeStates = pSave->getItemTable();
+        uint16_t &kind = pChallengeStates->Kinds[pChallenge->getIndex()];
+        kind = ( kind & 0xff00u ) | SavedItemTable::ECS_Done;
+        pChallengeStates->notify( 0u );
+        break;
+    }
+    default:
+        break;
+    }
+
+    pHud->setVariableValueNonLinked( "/:Message2", " " );
+    if ( !bRaceWon ) {
+        const char *pMessage =
+            gpDatabase->getStringByHashcode( 0, kExtraChallengeFailedHashcode );
+        if ( pMessage == nullptr ) {
+            pHud->setVariableValueNonLinked( "/:Message", " " );
+        } else {
+            pHud->setVariableValue( "/:Message", pMessage );
+        }
+        pHud->showFrame( "failed", "/", true );
+    } else {
+        SavedItemTable *pChallengeStates = pSave->getItemTable();
+        const int32_t index = pChallenge->getIndex();
+        pChallengeStates->Kinds[index] |=
+            SavedItemTable::kExtraChallengeGoldFlag;
+        // NOTE: Retail reads the garage slot of the current car without a
+        // null check.
+        CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+        pChallengeStates->Values[index] =
+            ( pCurrentCar != nullptr ) ? pCurrentCar->getCarConfigID() : 0u;
+        pChallengeStates->notify( 0u );
+
+        const eEntityType kind = pChallenge->getType();
+        pHud->setVariableValue( "/:nb_done",
+                                gpScenaric->countGoldExtraChallenges( kind ) );
+        pHud->setVariableValue( "/:nb_total",
+                                gpScenaric->countExtraChallenges( kind ) );
+        const char *pMessage = gpDatabase->getStringByHashcode(
+            0, kExtraChallengeSucceededHashcode );
+        if ( pMessage == nullptr ) {
+            pHud->setVariableValueNonLinked( "/:Message", " " );
+        } else {
+            pHud->setVariableValue( "/:Message", pMessage );
+        }
+        pHud->showFrame( "success", "/", true );
+        gpPlayerData->requestSave( 2 );
+    }
+    pSave->getExtraChallenges()->countExtraChallengeResult( bRaceWon );
 }
 
 int32_t GameMechanism::sortParticipantsByScore( const bool bHighestFirst ) {
@@ -1570,9 +1714,37 @@ bool GameMechanism::setupHUD() {
     if ( mechType != MT_ExtraChallenge ) {
         pHud->goToFrameAndPlay( 0, "/3_2_1_go", false );
     } else {
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (extra challenge name per type
-                            // 0x3725a12 / 0x390de92 / 0x3819c52 / 0x3a020d2,
-                            // convoy FUN_0072ff00)
+        Entity *pChallenge = gpScenaric->getActiveExtraChallenge();
+        if ( pChallenge != nullptr ) {
+            uint64_t nameHashcode = 0ull;
+            switch ( pChallenge->getType() ) {
+            case eEntityType::ET_SHOG:
+                nameHashcode = kShoppingGirlNameHashcode;
+                break;
+            case eEntityType::ET_CVOY:
+                nameHashcode = kConvoyNameHashcode;
+                break;
+            case eEntityType::ET_HIHI:
+                nameHashcode = kHitchHikerNameHashcode;
+                break;
+            case eEntityType::ET_TRAN:
+                nameHashcode = kTransporterNameHashcode;
+                break;
+            default:
+                break;
+            }
+            const char *pExtraChallengeName =
+                ( nameHashcode != 0ull )
+                    ? gpDatabase->getStringByHashcode( 0, nameHashcode )
+                    : nullptr;
+            if ( pExtraChallengeName != nullptr ) {
+                pHud->setVariableValue( "/:ChallengeName",
+                                        pExtraChallengeName );
+            }
+            if ( pChallenge->getType() == eEntityType::ET_CVOY ) {
+                getTimeComponent()->setTimeVisible( false ); // FUN_0072ff00
+            }
+        }
         pHud->goToFrameAndPlay( 0, "/go_extra", false );
     }
     pOwner->setBlockPauseByStart( true );
@@ -2145,7 +2317,7 @@ bool GameMechanism::processExtraChallengeOutro( const eStateProcess process ) {
     }
     case SP_Update:
         if ( !static_cast<GMMission *>( pOwner )
-                  ->isExtraChallengeActive() ) { // +0x106780
+                  ->isExtraChallengeOutroPending() ) {
             stateChange( MS_Ranking );
         }
         return true;

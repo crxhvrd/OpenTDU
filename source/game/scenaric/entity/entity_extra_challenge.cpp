@@ -9,6 +9,10 @@
 #include "ai/ai_road_query.h"
 #include "game/entity_mechanism.h"
 #include "game/game_mechanism_player.h"
+#include "game/gm_base.h"
+#include "game/gs_tutorial.h"
+#include "game/scenaric/event_parameters.h"
+#include "game/scenaric/game_intro_tutorial.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/spots.h"
 #include "game/scenaric/local_player.h"
@@ -20,6 +24,7 @@
 #include "game/vehicle/car_desc.h"
 #include "filesystem/binary.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "tdu_instance.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_item_table.h"
@@ -274,6 +279,22 @@ bool EntityExtraChallenge::isCarAllowed(
     default:
         return true;
     }
+}
+
+void EntityExtraChallenge::launch() {
+    // FUN_007dcc70
+    EventParameters &eventParameters = gpScenaric->getSelectedEventParameters();
+    eventParameters.setRequestedName( "SHOPING" );
+    eventParameters.setSource( EventParameters::ES_IGEFile );
+    eventParameters.setField124( 0x1020304 );
+    if ( gpTestDriveInstance->getActiveGameMode() == GM_FreeRide &&
+         !gpScenaric->getIntroTutorial().isActive() ) {
+        gpTutorial->cancelDisplayedMessages(); // FUN_009816d0
+    }
+
+    gpScenaric->setActiveExtraChallenge( this );
+    gpTestDriveInstance->setNextGameMode( GM_Mission );
+    gpActiveGameMode->requestExit();
 }
 
 bool EntityExtraChallenge::isAvailable() const {

@@ -5,6 +5,7 @@
 
 EntityAvatarHitchHiker::EntityAvatarHitchHiker()
     : EntityAvatarPassenger(),
+      bVoicePlaying( false ),
       RandomSeed( 0x3039 ),
       CumulatedProba( 0.0f ),
       CurrentFreerideAnim( -1 ),
@@ -52,4 +53,23 @@ void EntityAvatarHitchHiker::instanciate( MngActor *pMngActor,
     pTarget->AnimPeepin.ID = AnimPeepin.ID;
     pTarget->AnimPeepin.File = AnimPeepin.File;
     pTarget->AnimPeepin.pRefBas = AnimPeepin.pRefBas;
+}
+
+void EntityAvatarHitchHiker::resetVoice() {
+    // FUN_007f65a0
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (stop the voice instance, reset the
+                             // pending voice line)
+    bVoicePlaying = false;
+}
+
+void EntityAvatarHitchHiker::initializeVoice( const uint32_t /*voiceType*/ ) {
+    // FUN_007f6e70
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (voice bank for the voice type,
+                             // audio client and stream entry)
+    bVoicePlaying = false;
+}
+
+void EntityAvatarHitchHiker::reactToPenalty( const float /*pendingRatio*/ ) {
+    // FUN_007f6880
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (random penalty voice line)
 }

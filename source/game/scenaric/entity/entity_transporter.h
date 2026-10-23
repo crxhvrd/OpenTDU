@@ -22,6 +22,9 @@ public:
     inline uint32_t getConditionValue() const { return Condition.Value; }
     inline const ChallengeCondition &getCondition() const { return Condition; }
     inline uint32_t getReward() const { return Reward; }
+    inline const AvatarConfiguration &getEndAvatarConfig() const {
+        return EndAvatarConfig;
+    }
 
 private:
     static constexpr float kSpotMeshForwardOffset = 2.0f; // DAT_00f416b0

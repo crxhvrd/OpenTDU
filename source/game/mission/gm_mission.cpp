@@ -21,6 +21,7 @@
 #include "ai/ai_race.h"
 #include "game/mng_gps.h"
 #include "game/scenaric/entity/entity_cinematic.h"
+#include "game/scenaric/entity/entity_extra_challenge.h"
 #include "game/scenaric/event_parameters.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/ige_file.h"
@@ -97,11 +98,11 @@ GMMission::GMMission()
       bLastPlayerPromptShown( false ),
       bRankingShown( false ),
       field_0x107098( false ),
-      bRelockChallengeRoads( false ) {
+      bRelockChallengeRoads( false ),
+      extraChallenge( this ) {
     // FUN_0073eb10
     OTDU_UNIMPLEMENTED; // TODO: GMMission (MngBlckRds 0x727620,
-                        // MngNavPathDisplay 0x6b3230, extra challenge
-                        // sub-object 0xf37298)
+                        // MngNavPathDisplay 0x6b3230)
     registerManager( &mngFontPlayers );
     registerManager( &mngInGameMenu );
     registerManager( &mngChat );
@@ -162,21 +163,19 @@ void GMMission::setCheckpointRoadLocation( const int32_t index,
     pCheckpoint->setComputedRoadIt( it );
 }
 
-void GMMission::endExtraChallenge( const bool /*bWon*/ ) {
+void GMMission::endExtraChallenge( const bool bWon ) {
     // FUN_007408d0 / FUN_007408b0
-    OTDU_UNIMPLEMENTED; // TODO: GMMission (extra challenge sub-object end)
+    extraChallenge.end( bWon );
 }
 
-bool GMMission::isExtraChallengeActive() const {
-    // +0x106780
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission (extra challenge sub-object)
-    return false;
+bool GMMission::isExtraChallengeOutroPending() const {
+    // GM +0x106780 (inlined)
+    return extraChallenge.isOutroCinematicPending();
 }
 
 bool GMMission::isExtraChallengeSucceeded() const {
     // FUN_0073d220
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission (extra challenge sub-object)
-    return false;
+    return extraChallenge.isSucceeded();
 }
 
 void GMMission::initialize() {
@@ -192,11 +191,12 @@ void GMMission::initialize() {
         pCheckpointBank = new ( TestDrive::AllocAligned(
             sizeof( ScenaricBank ), alignof( ScenaricBank ) ) ) ScenaricBank();
         gpScenaric->setCheckpointBank( pCheckpointBank );
-        gpScenaric->loadPackBank( "Scenarics/Packs",
-                                  ( gpScenaric->getNumExtraChallenges() == 0 )
-                                      ? "pack_cp_virtual"
-                                      : "pack_cp_extra",
-                                  pCheckpointBank );
+        gpScenaric->loadPackBank(
+            "Scenarics/Packs",
+            ( gpScenaric->getActiveExtraChallenge() == nullptr )
+                ? "pack_cp_virtual"
+                : "pack_cp_extra",
+            pCheckpointBank );
     }
 
     EventParameters &eventParameters = gpScenaric->getSelectedEventParameters();
@@ -216,9 +216,10 @@ void GMMission::initialize() {
 
         gameMechType = getMissionDescription()->getGameType();
         gameMechID = uint32_t( getMissionDescription()->getSpotType() );
-        if ( gpScenaric->getNumExtraChallenges() != 0 ) {
-            OTDU_UNIMPLEMENTED; // TODO: GMMission (FUN_0073fe80 extra
-                                // challenge setup)
+        if ( gpScenaric->getActiveExtraChallenge() != nullptr ) {
+            extraChallenge.setup( &mngActor,
+                                  static_cast<EntityExtraChallenge *>(
+                                      gpScenaric->getActiveExtraChallenge() ) );
         }
         if ( gpScenaric->isFromDriveIn() || bFromLobby ) {
             OTDU_UNIMPLEMENTED; // TODO: ONLINE (ChangeSessionMode(8))
@@ -314,8 +315,8 @@ void GMMission::reset() {
     if ( pGameMech != nullptr ) {
         pGameMech->reset();
     }
-    if ( gpScenaric->getNumExtraChallenges() != 0 ) {
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (FUN_0073ee20)
+    if ( gpScenaric->getActiveExtraChallenge() != nullptr ) {
+        extraChallenge.start();
     }
 
     FlashPlayer *pHudPlayer =
@@ -392,8 +393,8 @@ void GMMission::pause() {
     OTDU_UNIMPLEMENTED; // TODO: GMMission (DAT_00fa9818 = 0, FUN_0041f8f0,
                         // DAT_00fa97b4 / DAT_00fa97b8 = 0, GSAI +0x2a98d = 0,
                         // AiPool +0xc/+0x78/+0x7c/+0x7d/+0x85, pause traffic)
-    if ( gpScenaric->getNumExtraChallenges() != 0 ) {
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (FUN_0073fdf0)
+    if ( gpScenaric->getActiveExtraChallenge() != nullptr ) {
+        extraChallenge.terminate();
     }
 
     GameModeWorld::pause();
@@ -441,8 +442,10 @@ void GMMission::destroy() {
     pGameSession = nullptr;
     bLastPlayerPromptShown = false;
 
-    if ( gpScenaric->getNumExtraChallenges() != 0 ) {
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (FUN_007dc590(1))
+    if ( gpScenaric->getActiveExtraChallenge() != nullptr ) {
+        gpScenaric->getExtraChallengesCineBank().load(
+            ExtraChallengeCineBank::ECBM_Intro );
+        gpScenaric->setActiveExtraChallenge( nullptr );
     }
 
     const EventParameters::eSource source =

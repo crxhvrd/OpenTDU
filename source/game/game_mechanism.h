@@ -115,6 +115,13 @@ protected:
     int32_t resultReason;
 };
 
+// Extra challenge penalty listener (mech +0x7b0)
+class GameMechPenaltyListener {
+public:
+    virtual bool onPenalty( const float remainingRatio,
+                            const float pendingRatio ) = 0;
+};
+
 // Race rules
 class GameMechanism : public StateMachine, public CinematicPlayer {
 public:
@@ -193,6 +200,12 @@ public:
     inline void setOffroadWarningEntry( edAudioStreamEntry *pEntry ) {
         pOffroadWarningEntry = pEntry;
     }
+    inline GameMechPenaltyListener *getPenaltyListener() const {
+        return pPenaltyListener;
+    }
+    inline void setPenaltyListener( GameMechPenaltyListener *pListener ) {
+        pPenaltyListener = pListener;
+    }
     inline bool hasRaceHUD() const {
         // FUN_007311a0 / FUN_00731170
         return pComponents[CS_RaceHUD] != nullptr;
@@ -241,6 +254,7 @@ protected:
     void updateWaitingForPlayersText( const int32_t numFinished );
     void sendPlayerFinished();
     void gotoResultsFrame();
+    void showExtraChallengeResults();
     void showResults();
     void startEndCinematic( const Matrix4x4f_t &pose );
     void startEndCinematicAtPlayerCar();
@@ -276,7 +290,7 @@ protected:
     bool bRaceWon;
     char waitingForPlayersText[0x43];
     edAudioStreamEntry *pOffroadWarningEntry;
-    int32_t field_0x7b0;
+    GameMechPenaltyListener *pPenaltyListener;
     int32_t numParticipantsAtStart;
     int32_t numOnlineParticipants;
     float finishTime;

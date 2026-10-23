@@ -16,6 +16,14 @@ public:
     }
 
     inline uint32_t getReward() const { return Reward; }
+    inline uint32_t getOffRoad() const { return OffRoad; }
+    inline uint32_t getCarID() const { return CarID; }
+    inline uint32_t getCarColorID() const { return CarColorID; }
+    inline uint32_t getCarRimID() const { return CarRimID; }
+    inline uint32_t getCarInteriorColorID() const { return CarInteriorColorID; }
+    inline const AvatarConfiguration &getEndAvatarConfig() const {
+        return EndAvatarConfig;
+    }
 
 protected:
     const char *pMapName;

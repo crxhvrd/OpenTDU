@@ -294,10 +294,11 @@ void GameMechPenalty::updatePendingPenalty( const float deltaTime ) {
     }
 
     pendingDisplayTimer = 0.0f;
-    if ( result != CR_Failure ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission (extra challenge listener
-                                 // at mech +0x7b0, set by FUN_0073ee20: slot 0
-                                 // ((max - penalty) / max, pending / max))
+    if ( result != CR_Failure && pMech->getPenaltyListener() != nullptr ) {
+        const float invMaxPenalty = 1.0f / maxPenalty;
+        pMech->getPenaltyListener()->onPenalty(
+            ( maxPenalty - penalty ) * invMaxPenalty,
+            pendingPenalty * invMaxPenalty );
     }
 
     FlashPlayer *pPlayer = gpMngHud->getHudPlayer();

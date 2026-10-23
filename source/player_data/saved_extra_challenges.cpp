@@ -288,6 +288,28 @@ void SavedExtraChallenges::countChallengeResult( const uint32_t spotType,
     }
 }
 
+void SavedExtraChallenges::incrementEncryptedDword(
+    const int32_t retailOffset ) {
+    const int32_t byteOffset = retailOffset - kFirstCounterOffset;
+    uint32_t *pBlock = reinterpret_cast<uint32_t *>(
+        reinterpret_cast<uint8_t *>( Counters ) + ( byteOffset & ~7 ) );
+
+    uint32_t pPlainText[2] = {};
+    TestDriveTEADecrypt( pPlainText, pBlock );
+    pPlainText[( byteOffset & 7 ) / 4]++;
+    TestDriveTEAEncrypt( pBlock, pPlainText );
+}
+
+void SavedExtraChallenges::countExtraChallengePerfect() {
+    // FUN_00887c30
+    incrementEncryptedDword( 0xf194 );
+}
+
+void SavedExtraChallenges::countExtraChallengeResult( const bool bWon ) {
+    // FUN_00888070
+    incrementEncryptedDword( bWon ? 0xf1e0 : 0xf1e4 );
+}
+
 void SavedExtraChallenges::countCarPainted( const bool bBike ) {
     // FUN_00887d30
     addCounter( CounterIndex( bBike ? 0xf120 : 0xf11c ), 1 );

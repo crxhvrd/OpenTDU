@@ -5,7 +5,9 @@
 #include "audio/implementation/ed_audio_object.h"
 #include "audio/implementation/ed_audio_stream_entry.h"
 #include "config/gs_config.h"
+#include "game/game_mechanism.h"
 #include "game/gm_scene.h"
+#include "game/mng_hud.h"
 #include "game/mng_music.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "render/camera/camera_gps.h"
@@ -303,9 +305,12 @@ const char *FlashSounds::ResolveGameModeMusicKey() {
     }
 
     case GM_Mission:
-        // Only on the rewards screen.
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: HUD ("RANKING")
-        return nullptr;
+        if ( gpMngHud == nullptr || gpMngHud->getGameMech() == nullptr ||
+             gpMngHud->getGameMech()->getCurrentState() !=
+                 GameMechanism::MS_Ranking ) {
+            return nullptr;
+        }
+        return "RANKING";
 
     case GM_GameModeEdit:
         return "GMEDITOR";

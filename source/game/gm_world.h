@@ -73,6 +73,8 @@ public:
     PlayerGameMech *getPlayerGameMech() const;
     inline int32_t getGameMechType() const { return gameMechType; }
     inline uint32_t getGameMechID() const { return gameMechID; }
+    inline void setGameMechType( const int32_t type ) { gameMechType = type; }
+    inline void setGameMechID( const uint32_t id ) { gameMechID = id; }
     inline uint32_t getGameModeFlags() const { return flags; }
     inline MngHudChallenge &getHudChallenge() { return mngHudChallenge; }
 

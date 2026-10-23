@@ -30,6 +30,7 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_extra_challenges.h"
+#include "player_data/saved_item_table.h"
 #include "render/gs_render.h"
 #include "render/heightmap_renderer.h"
 #include "render/hiearchy_node.h"
@@ -656,6 +657,34 @@ Entity *GSScenaric::findExtraChallenge( int32_t index ) {
     return nullptr;
 }
 
+int32_t GSScenaric::countExtraChallenges( const eEntityType kind ) const {
+    // FUN_00804350
+    int32_t numChallenges = 0;
+    for ( int32_t i = 0; i < worldExtraChallengesBank.getEntityCount(); i++ ) {
+        if ( worldExtraChallengesBank.getEntity( i )->getType() == kind ) {
+            numChallenges++;
+        }
+    }
+    return numChallenges;
+}
+
+int32_t GSScenaric::countGoldExtraChallenges( const eEntityType kind ) const {
+    // FUN_008043f0
+    const SavedItemTable *pChallengeStates =
+        gpPlayerData->getLoadedSave()->getItemTable();
+    int32_t numGold = 0;
+    for ( int32_t i = 0; i < worldExtraChallengesBank.getEntityCount(); i++ ) {
+        Entity *pEntity = worldExtraChallengesBank.getEntity( i );
+        if ( pEntity->getType() == kind &&
+             pChallengeStates->isExtraChallengeGold(
+                 static_cast<EntityExtraChallenge *>( pEntity )
+                     ->getIndex() ) ) {
+            numGold++;
+        }
+    }
+    return numGold;
+}
+
 void GSScenaric::clearObjectives() {
     // FUN_0074ecc0 (inlined)
     for ( ObjectiveMarker &objective : objectives ) {
@@ -764,17 +793,19 @@ void GSScenaric::LoadScenaricBank( const char *pBankFolder,
     uint32_t bankSize = 0;
     void *pCachedData = gpBootDatas->findInCache( bankPath.c_str(), &bankSize );
 
+    // FUN_008061f0 / FUN_00806250: the bank is registered before it loads, so
+    // its entities resolve volumes from their own bank.
+    if ( gpScenaric != nullptr &&
+         pOutBank != gpScenaric->getWorldScenaricBank() ) {
+        gpScenaric->registerBank( pOutBank );
+    }
+
     if ( pCachedData == nullptr ) {
         pOutBank->loadFromFile( bankPath.c_str(), nullptr, bNoCopy );
         pOutBank->forceLoad();
     } else {
         pOutBank->load( pCachedData, 0, 0, nullptr, bNoCopy );
         pOutBank->forceLoad();
-    }
-
-    if ( gpScenaric != nullptr &&
-         pOutBank != gpScenaric->getWorldScenaricBank() ) {
-        gpScenaric->registerBank( pOutBank );
     }
 }
 

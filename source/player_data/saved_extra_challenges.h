@@ -95,6 +95,8 @@ public:
                                const bool bWon,
                                const bool bOnlineRanked );
     void countClotheBought();
+    void countExtraChallengePerfect();
+    void countExtraChallengeResult( const bool bWon );
     void addCouponsSpent( const uint32_t numCoupons );
     void countCarTransaction( const uint32_t carID,
                               const bool bBought,
@@ -115,6 +117,7 @@ public:
 private:
     int32_t readCounter( const int32_t index ) const;
     void writeCounter( const int32_t index, const int32_t value );
+    void incrementEncryptedDword( const int32_t retailOffset );
     uint32_t readTailDword( const int32_t *pBlock, const bool bHighHalf ) const;
     void writeTailDword( int32_t *pBlock,
                          const bool bHighHalf,

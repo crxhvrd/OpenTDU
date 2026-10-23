@@ -47,6 +47,8 @@ public:
     void relightFromWeather( DirectionalLight *pLight ) override;
     bool isShadowCaster() override;
 
+    virtual void resetVoice() { /* NOP */ }
+
     void setCarState( CarState *pNewCarState );
     void seatInCar();
     void unseat();

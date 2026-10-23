@@ -323,6 +323,7 @@ public:
     inline void setGameMech( GameMechanism *pMech ) {
         minimap.pGameMech = pMech;
     }
+    inline GameMechanism *getGameMech() const { return minimap.pGameMech; }
 
     inline float getMinimapViewportU() const { return minimap.ViewportU; }
     inline float getMinimapViewportV() const { return minimap.ViewportV; }

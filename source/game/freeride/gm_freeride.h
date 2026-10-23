@@ -49,6 +49,7 @@ public:
     void onMenuPauseExit( bool bRestoreState ) override;
 
     bool enterSpot( struct SpotMap *pSpot );
+    bool enterExtraChallenge( EntityExtraChallenge *pChallenge );
     inline bool isNextIntroActive() const { return nextIntro.bIsActive; }
 
     static void OnGPSFlyUpEnd( void *pUnused, void *pTargetGameMode );
@@ -78,6 +79,12 @@ private:
     Entity *spawnExtraChallengeMarker( const int32_t subType );
     void releaseExtraChallengeProp();
     void releaseExtraChallenges();
+    bool spawnConvoyCar( EntityExtraChallenge *pChallenge );
+    void resolveExtraChallengeAnswer();
+    bool onExtraChallengeCineMessage( EntityCinematic *pCinematic,
+                                      const char *pMessage );
+    static void OnExtraChallengeIntroFadeOut( void *pData, void *pSource );
+    static void OnExtraChallengeCancelFadeOut( void *pData, void *pSource );
     void resolveNextIntroCine( const struct SpotSector *pSector );
 
     bool requestEnterActivity();
@@ -117,12 +124,20 @@ private:
     bool bIntroLevelLaunched;
     bool bIntroCineDone;
 
-    Entity *pExtraChallenges[kMaxNumExtraChallenges];
-    int32_t numExtraChallenges;
+    Entity *pExtraChallengeAvatar;
     int32_t extraChallengeKind;
     ExtraChallengeProp extraChallengeProp;
+    bool bCanAcceptExtraChallenge;
+    const char *pExtraChallengeRefusal;
+    const char *pExtraChallengeRefusal2;
+    char vehicleRestrictionText[0x100];
+    Entity *pExtraChallenges[kMaxNumExtraChallenges];
+    int32_t numExtraChallenges;
     EntityExtraChallenge *pNearestExtraChallenge;
     Entity *pExtraChallengeMarker;
+    EntityCinematic *pExtraChallengeIntroCine;
+    EntityCinematic *pExtraChallengeLoopCine;
+    bool bExtraChallengeLaunched;
     struct SpotMap *pPendingSpot;
     uint32_t activityReentryTick;
 };

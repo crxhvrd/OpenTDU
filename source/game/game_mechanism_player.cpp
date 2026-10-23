@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "game_mechanism_player.h"
 
+#include "game/scenaric/entity/entity_extra_challenge.h"
+
 #include "game/freeride/gm_freeride.h"
 #include "game/scenaric/entity/base_entity.h"
 #include "game/scenaric/entity/entity_factory.h"
@@ -427,7 +429,8 @@ bool PlayerGameMech::enterCurrentActivity() {
 
     if ( pCurrentExtraChallenge != nullptr ) {
         if ( pOwner != nullptr && pOwner->getGameMechType() == 4 ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+            static_cast<GMFreeride *>( pOwner )->enterExtraChallenge(
+                static_cast<EntityExtraChallenge *>( pCurrentExtraChallenge ) );
         }
         return true;
     }

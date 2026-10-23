@@ -342,6 +342,8 @@ private:
                             CinematicActor::eKind &outKind );
     void *spawnPedestrian( int32_t gender );
     void *spawnAvatar( eEntityType type, uint64_t hashcode, const char *pName );
+    void *spawnExtraChallengeAvatar( const int32_t avatarType,
+                                     const bool bEndAvatar );
     void *spawnNamedAvatar( const struct AvatarConfiguration *pConfig,
                             uint64_t hashcode,
                             bool bBikeClothes );

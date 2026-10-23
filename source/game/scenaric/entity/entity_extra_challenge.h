@@ -40,6 +40,7 @@ public:
     }
 
     bool isAvailable() const;
+    void launch();
     Eigen::Vector4f getGoalPosition() const;
     void buildVehicleRestrictionText( uint32_t conditionType,
                                       const ChallengeCondition &condition,
@@ -56,6 +57,11 @@ public:
                            float *pOutDistance );
 
     inline int32_t getIndex() const { return Index; }
+    inline float getTimeLimit() const { return TimeLimit; }
+    inline uint32_t getAvatarVoiceType() const { return AvatarVoiceType; }
+    inline const AvatarConfiguration &getAvatarConfig() const {
+        return AvatarConfig;
+    }
     inline void setIndex( int32_t index ) { Index = index; }
     inline int32_t getRoadID() const { return RoadID; }
     inline int32_t getRoadSegment() const { return RoadEntityID; }

@@ -5,7 +5,7 @@
 #include "render/camera/gs_camera.h"
 
 EntityAvatarShoppingGirl::EntityAvatarShoppingGirl()
-    : EntityAvatarPassenger(), RandomSeed( 0x3039 ) {
+    : EntityAvatarPassenger(), bVoicePlaying( false ), RandomSeed( 0x3039 ) {
     // FUN_007f38f0
     OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO
 }
@@ -78,4 +78,23 @@ void EntityAvatarShoppingGirl::instanciate( MngActor *pMngActor,
     pTarget->AnimPeepin.ID = AnimPeepin.ID;
     pTarget->AnimPeepin.File = AnimPeepin.File;
     pTarget->AnimPeepin.pRefBas = AnimPeepin.pRefBas;
+}
+
+void EntityAvatarShoppingGirl::resetVoice() {
+    // FUN_007f34a0
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (stop the voice instance, reset the
+                             // pending voice line)
+    bVoicePlaying = false;
+}
+
+void EntityAvatarShoppingGirl::initializeVoice( const uint32_t /*voiceType*/ ) {
+    // FUN_007f3c00
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (voice bank for the voice type,
+                             // audio client and stream entry)
+    bVoicePlaying = false;
+}
+
+void EntityAvatarShoppingGirl::reactToPenalty( const float /*pendingRatio*/ ) {
+    // FUN_007f33f0
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (random penalty voice line)
 }

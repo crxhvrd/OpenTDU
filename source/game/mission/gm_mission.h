@@ -3,6 +3,7 @@
 #include "game/gm_world.h"
 
 #include "ai/ai_race.h"
+#include "game/mission/mission_extra_challenge.h"
 #include "game/mng_ingame_menu.h"
 #include "online/mng_chat.h"
 #include "render/mng_font_players.h"
@@ -48,8 +49,9 @@ public:
 
     Matrix4x4f_t computeGridMatrix( const int32_t slotIndex,
                                     const int32_t numSlots );
+    inline MissionExtraChallenge &getExtraChallenge() { return extraChallenge; }
     void endExtraChallenge( const bool bWon );
-    bool isExtraChallengeActive() const;
+    bool isExtraChallengeOutroPending() const;
     bool isExtraChallengeSucceeded() const;
 
     void initialize() override;
@@ -92,4 +94,5 @@ private:
     bool bRankingShown;
     bool field_0x107098;
     bool bRelockChallengeRoads;
+    MissionExtraChallenge extraChallenge;
 };

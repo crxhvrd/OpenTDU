@@ -13,6 +13,8 @@
 #include "physics/gs_physics.h"
 
 #include "database/gs_database.h"
+#include "database/db_brand.h"
+#include "database/db_car_physics_data.h"
 #include "game/game_mechanism_player.h"
 #include "game/gs_tutorial.h"
 #include "game/cinematic/mng_cinematics.h"
@@ -20,7 +22,9 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_driver.h"
+#include "game/scenaric/entity/entity_convoy.h"
 #include "game/scenaric/entity/entity_extra_challenge.h"
+#include "game/scenaric/entity/entity_shopping_girl.h"
 #include "game/scenaric/entity/entity_spot_mesh.h"
 #include "game/scenaric/entity/entity_transporter.h"
 #include "game/scenaric/game_intro_tutorial.h"
@@ -43,6 +47,7 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_garage.h"
+#include "player_data/saved_item_table.h"
 #include "player_data/driver.h"
 #include "player_data/achievements_data.h"
 #include "render/camera/gs_camera.h"
@@ -64,6 +69,24 @@ static constexpr uint32_t kAchievementDBIndex = 0xfu;
 static constexpr float kSpotIntroFadeDuration = 0.5f;   // FLOAT_00f41674
 static constexpr float kSpotIntroFadeInDuration = 0.2f; // DAT_00f41730
 static constexpr float kTransporterFareRatio = 0.1f;    // DAT_00f41668
+static constexpr uint32_t kActivityReentryDelay = 5000u;
+static constexpr uint64_t kRefusalNoPassengerHashcode = 0x560449;
+static constexpr uint64_t kRefusalNoPassenger2Hashcode = 0x3c3ae62;
+static constexpr uint64_t kRefusalRestrictionHashcode = 0x578ae9;
+static constexpr uint64_t kBikeCategoryHashcode = 0x35da5b5;
+static constexpr uint64_t kShoppingGirlQuestionHashcode = 0x52f709;
+static constexpr uint64_t kHitchHikerQuestionHashcode = 0x9de2b9;
+static constexpr uint64_t kConvoyQuestionHashcode = 0x5a9829;
+static constexpr uint64_t kTransporterQuestionHashcode = 0x591189;
+static constexpr uint64_t kExtraChallengeQuestionHashcode = 0x547da9;
+static constexpr uint64_t kNoPassengerBrandHashcode = 0x3540681;
+
+static Eigen::Vector4f GetWorldShift() {
+    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+        return gpWorldStreaming->getPosition();
+    }
+    return Eigen::Vector4f::Zero();
+}
 
 static bool IsMapScreenshotCapturing() {
     return gpMngMapScreenshot != nullptr && gpMngMapScreenshot->isCapturing();
@@ -95,12 +118,20 @@ GMFreeride::GMFreeride()
       pSavedVehicleCamera( nullptr ),
       bIntroLevelLaunched( false ),
       bIntroCineDone( false ),
-      pExtraChallenges{},
-      numExtraChallenges( 0 ),
+      pExtraChallengeAvatar( nullptr ),
       extraChallengeKind( -1 ),
       extraChallengeProp{ nullptr },
+      bCanAcceptExtraChallenge( false ),
+      pExtraChallengeRefusal( nullptr ),
+      pExtraChallengeRefusal2( nullptr ),
+      vehicleRestrictionText{},
+      pExtraChallenges{},
+      numExtraChallenges( 0 ),
       pNearestExtraChallenge( nullptr ),
       pExtraChallengeMarker( nullptr ),
+      pExtraChallengeIntroCine( nullptr ),
+      pExtraChallengeLoopCine( nullptr ),
+      bExtraChallengeLaunched( false ),
       pPendingSpot( nullptr ),
       activityReentryTick( 0u ) {
     // FUN_00793880
@@ -965,18 +996,46 @@ void GMFreeride::onResourceStreamed() {
     mngPhotoMode.setFlashPlayer( pPlayer );
 }
 
-bool GMFreeride::executeAction( int32_t param_2,
-                                void *param_3,
-                                void * /*pData*/ ) {
+bool GMFreeride::executeAction( int32_t param_2, void *param_3, void *pData ) {
     // FUN_00794ff0
     if ( param_2 == CE_Started ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
-        if ( pIntroCine != nullptr && pIntroCine == param_3 &&
-             !nextIntro.bIsActive ) {
+        if ( pExtraChallengeIntroCine == param_3 ||
+             ( pIntroCine == param_3 && !nextIntro.bIsActive ) ) {
             gpMngFade->setRenderLogo( false );
             gpMngFade->startTransition(
                 ( gpMngFade->getTransitionFlags() & ~0xau ) | 5u,
                 kSpotIntroFadeInDuration );
+        }
+        if ( pExtraChallengeIntroCine == param_3 ) {
+            if ( pExtraChallengeMarker != nullptr ) {
+                pExtraChallengeMarker->setVisible( false );
+            }
+            CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+            if ( pLocalCar != nullptr ) {
+                Matrix4x4f_t startFrame;
+                Matrix4x4f_t endFrame;
+                Matrix4x4f_t startFrameCopy;
+                pNearestExtraChallenge->computeRoadRoute(
+                    startFrame, endFrame, startFrameCopy, nullptr );
+                PhysicsLock lock; // FUN_0083d900
+                pLocalCar->getPhysicsVehicle()->resetToTransform(
+                    startFrameCopy, true );
+            }
+            if ( pNearestExtraChallenge->getType() == eEntityType::ET_CVOY ) {
+                spawnConvoyCar( pNearestExtraChallenge );
+                // NOTE: Retail dereferences a missing convoy car.
+                PhysicsVehicle *pConvoyVehicle =
+                    ( extraChallengeProp.pConvoyCar != nullptr )
+                        ? extraChallengeProp.pConvoyCar->getPhysicsVehicle()
+                        : nullptr;
+                if ( pConvoyVehicle != nullptr ) {
+                    Matrix4x4f_t goodiesMatrix =
+                        pNearestExtraChallenge->getGoodiesMatrix();
+                    PhysicsLock lock;
+                    pConvoyVehicle->resetToTransform( goodiesMatrix, true );
+                    pConvoyVehicle->setPostponedPause( 1 );
+                }
+            }
         }
         return true;
     }
@@ -994,17 +1053,43 @@ bool GMFreeride::executeAction( int32_t param_2,
             return true;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+        if ( pExtraChallengeIntroCine != nullptr &&
+             pExtraChallengeIntroCine == param_3 && !nextIntro.bIsActive ) {
+            if ( pExtraChallengeLoopCine == nullptr ) {
+                pExtraChallengeIntroCine->setRestoreCineMix( false );
+                if ( bCanAcceptExtraChallenge && !bExtraChallengeLaunched ) {
+                    resolveExtraChallengeAnswer();
+                    bExtraChallengeLaunched = true;
+                }
+            } else {
+                pExtraChallengeLoopCine->createTDUInterface();
+            }
+        }
         return true;
     }
 
     if ( param_2 == CE_FlashMessage ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
-        return false;
+        return onExtraChallengeCineMessage(
+            static_cast<EntityCinematic *>( param_3 ),
+            static_cast<const char *>( pData ) );
     }
 
     if ( param_2 != CE_Ended ) {
         return false;
+    }
+
+    if ( pExtraChallengeIntroCine != nullptr &&
+         pExtraChallengeIntroCine == param_3 && !nextIntro.bIsActive ) {
+        pExtraChallengeIntroCine = nullptr;
+        if ( pExtraChallengeLoopCine != nullptr ) {
+            pExtraChallengeLoopCine->start( true );
+            OTDU_UNIMPLEMENTED; // TODO: CINEMATIC (+0x26b0 = 0)
+        } else if ( !bCanAcceptExtraChallenge ) {
+            resolveExtraChallengeAnswer();
+        }
+        pIntroCine = nullptr;
+        bIntroLevelLaunched = false;
+        return true;
     }
 
     if ( nextIntro.bIsActive ) {
@@ -1027,6 +1112,107 @@ bool GMFreeride::executeAction( int32_t param_2,
 
     pIntroCine = nullptr;
     bIntroLevelLaunched = false;
+    return true;
+}
+
+bool GMFreeride::onExtraChallengeCineMessage( EntityCinematic * /*pCinematic*/,
+                                              const char *pMessage ) {
+    // FUN_00794ff0 (CE_FlashMessage)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (ignored when cine +0x2597 is
+                             // set and there is no loop cinematic)
+    const FlashMessage message( pMessage );
+    if ( message == FlashMessage( "stfe" ) ) {
+        gpFlash->enablePlayer( "GENERAL", ModalMessageBox::MMBDS_Closing, true,
+                               1 );
+        FlashPlayer *pGeneral = gpFlash->getFlashPlayer( "GENERAL" );
+        if ( pMessage[4] != ':' || pMessage[5] == '\0' ) {
+            return false;
+        }
+
+        const char *pKind = pMessage + 5;
+        const char *pSpotType = nullptr;
+        uint64_t messageHashcode = 0ull;
+        bool bQuestion = false;
+        if ( strncmp( pKind, "sgirl", 5 ) == 0 ) {
+            pSpotType = "sgirl";
+            messageHashcode = kShoppingGirlQuestionHashcode;
+        } else if ( strncmp( pKind, "hiker", 5 ) == 0 ) {
+            pSpotType = "hiker";
+            messageHashcode = kHitchHikerQuestionHashcode;
+        } else if ( strncmp( pKind, "convoy", 6 ) == 0 ) {
+            pSpotType = "convoy";
+            messageHashcode = kConvoyQuestionHashcode;
+            bQuestion = true;
+        } else if ( strncmp( pKind, "transporter", 11 ) == 0 ) {
+            pSpotType = "transporter";
+            messageHashcode = kTransporterQuestionHashcode;
+            bQuestion = true;
+        } else {
+            return true;
+        }
+
+        pGeneral->setVariableValueNonLinked( "/:CurrentSpotType", pSpotType );
+        FlashClip clip;
+        if ( pGeneral->getClipPlayer( "/sgirl", &clip ) ) {
+            clip.setProperty( eFlashProperty::FP_Visible, true );
+        }
+        const char *pMsgShopGirl =
+            gpDatabase->getStringByHashcode( 0, messageHashcode );
+        if ( pMsgShopGirl != nullptr ) {
+            pGeneral->setVariableValue( "/:MsgShopGirl", pMsgShopGirl );
+        }
+        const char *pMsgShopGirl2 = gpDatabase->getStringByHashcode(
+            0, kExtraChallengeQuestionHashcode );
+        if ( pMsgShopGirl2 != nullptr ) {
+            pGeneral->setVariableValue( "/:MsgShopGirl2", pMsgShopGirl2 );
+        }
+        if ( bQuestion ) {
+            pGeneral->showFrame( "extra_q", "/msgCinematik", true );
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH (FUN_0099fc40 on
+                                     // gGSFlash +0xf88)
+        } else {
+            pGeneral->showFrame( "sgirl", "/msgCinematik", true );
+        }
+        return true;
+    }
+
+    if ( message != FlashMessage( "sgfe" ) ) {
+        return false;
+    }
+
+    gpFlash->enablePlayer( "GENERAL", ModalMessageBox::MMBDS_Closing, true, 1 );
+    FlashPlayer *pGeneral = gpFlash->getFlashPlayer( "GENERAL" );
+    const char *pSpotType = nullptr;
+    switch ( extraChallengeKind ) {
+    case PlayerGameMech::SDN_ShoppingGirl:
+        pSpotType = "sgirl";
+        break;
+    case PlayerGameMech::SDN_Hiker:
+        pSpotType = "hiker";
+        break;
+    case PlayerGameMech::SDN_Transporter:
+        pSpotType = "transporter";
+        break;
+    case PlayerGameMech::SDN_Convoy:
+        pSpotType = "convoy";
+        break;
+    default:
+        break;
+    }
+    if ( pSpotType != nullptr ) {
+        pGeneral->setVariableValueNonLinked( "/:CurrentSpotType", pSpotType );
+    }
+    FlashClip clip;
+    if ( pGeneral->getClipPlayer( "/sgirl", &clip ) ) {
+        clip.setProperty( eFlashProperty::FP_Visible, true );
+    }
+    if ( pExtraChallengeRefusal != nullptr ) {
+        pGeneral->setVariableValue( "/:MsgShopGirl", pExtraChallengeRefusal );
+    }
+    if ( pExtraChallengeRefusal2 != nullptr ) {
+        pGeneral->setVariableValue( "/:MsgShopGirl2", pExtraChallengeRefusal2 );
+    }
+    pGeneral->showFrame( "sgirl", "/msgCinematik", true );
     return true;
 }
 
@@ -1228,6 +1414,311 @@ void GMFreeride::releaseExtraChallengeProp() {
     }
 
     extraChallengeKind = -1;
+}
+
+bool GMFreeride::spawnConvoyCar( EntityExtraChallenge *pChallenge ) {
+    // FUN_00794a70
+    if ( extraChallengeProp.pConvoyCar != nullptr ) {
+        return true;
+    }
+
+    const EntityConvoy *pConvoy =
+        static_cast<const EntityConvoy *>( pChallenge );
+    const int32_t carID = int32_t( pConvoy->getCarID() );
+    VehicleSpawnParams params;
+    params.Transform = pChallenge->getGoodiesMatrix();
+    params.bSetPosition = true;
+    params.bCastToGround = true;
+    params.bResetCar = true;
+    params.PhantomMode = 1;
+
+    VehicleBaseResources *pResource = gpCarState->loadVehicleResources(
+        carID, 0, -1, ~0ull, 0, 0x10, eVehicleResourceType::VRT_Traffic );
+    CarState *pConvoyCar =
+        gpCarState->installVehicle( pResource, params, VIT_AI, -1 );
+    // NOTE: Retail keeps the loaded resource when no car state slot is free.
+    if ( pConvoyCar == nullptr && pResource != nullptr ) {
+        pResource->unload();
+        gpCarState->releaseResourceEntry( pResource );
+    }
+
+    VehicleBase *pVehicle =
+        ( pConvoyCar != nullptr ) ? pConvoyCar->getVehicleInstance() : nullptr;
+    if ( pVehicle != nullptr &&
+         ( pVehicle->getType() == VehicleBase::eType::VBT_Car ||
+           pVehicle->getType() == VehicleBase::eType::VBT_Bike ) ) {
+        pVehicle->setPaintColorFromDB( int32_t( pConvoy->getCarColorID() ) );
+        DBEntryCarColor *pColor = gpDatabase->getColorByIndex(
+            carID, int32_t( pConvoy->getCarColorID() ) );
+        if ( pColor != nullptr ) {
+            DBEntryInterior *pInterior = gpDatabase->getInteriorByIndex(
+                pColor, int32_t( pConvoy->getCarInteriorColorID() ) );
+            if ( pInterior != nullptr ) {
+                pVehicle->setInteriorColorsFromDB( pInterior );
+            }
+        }
+        DBEntryRim *pRim =
+            gpDatabase->getRim( carID, int32_t( pConvoy->getCarRimID() ) );
+        if ( pRim != nullptr ) {
+            pVehicle->setRimsFromDB( pRim );
+        }
+    }
+
+    extraChallengeProp.pConvoyCar = pConvoyCar;
+    return true;
+}
+
+bool GMFreeride::enterExtraChallenge( EntityExtraChallenge *pChallenge ) {
+    // FUN_00795b80
+    if ( pExtraChallengeIntroCine != nullptr ) {
+        return false;
+    }
+    bExtraChallengeLaunched = false;
+    pExtraChallengeRefusal = nullptr;
+    pExtraChallengeRefusal2 = nullptr;
+
+    const eEntityType type = pChallenge->getType();
+    const char *pTag = nullptr;
+    bool bHasLoopCine = false;
+    switch ( type ) {
+    case eEntityType::ET_SHOG:
+        pTag = "SG";
+        break;
+    case eEntityType::ET_CVOY:
+        pTag = "CONVOY";
+        bHasLoopCine = true;
+        break;
+    case eEntityType::ET_HIHI:
+        pTag = "HH";
+        break;
+    case eEntityType::ET_TRAN:
+        pTag = "TRANS";
+        bHasLoopCine = true;
+        break;
+    default:
+        break;
+    }
+
+    bool bCanAccept = true;
+    bool bRestrictionRefusal = false;
+    auto RefuseNoPassenger = [&]() {
+        bCanAccept = false;
+        pExtraChallengeRefusal =
+            gpDatabase->getStringByHashcode( 0, kRefusalNoPassengerHashcode );
+        pExtraChallengeRefusal2 =
+            gpDatabase->getStringByHashcode( 0, kRefusalNoPassenger2Hashcode );
+    };
+
+    const DBEntryCarPhysicsData *pLocalCarEntry = gpDatabase->getCarDBEntry(
+        gpScenaric->getLocalPlayer().getCarState()->getResource()->CarID );
+    if ( pLocalCarEntry != nullptr &&
+         ( gpDatabase->getStringByHashcode( 1, kBikeCategoryHashcode ) ==
+               pLocalCarEntry->Category.pAsString ||
+           gpDatabase->getStringByHashcode( 6, kNoPassengerBrandHashcode ) ==
+               pLocalCarEntry->Brand->BrandID.pAsString ) &&
+         type != eEntityType::ET_CVOY ) {
+        RefuseNoPassenger();
+    } else {
+        CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
+        const DBEntryCarPhysicsData *pCarEntry =
+            ( pCurrentCar != nullptr ) ? gpDatabase->getCarDBEntry( int32_t(
+                                             pCurrentCar->getCarConfigID() ) )
+                                       : nullptr;
+        const char *pNumSeats =
+            ( pCarEntry != nullptr && type != eEntityType::ET_CVOY )
+                ? pCarEntry->NumSeats.pAsString
+                : nullptr;
+        if ( pNumSeats != nullptr && pNumSeats[0] != '\0' &&
+             ( pNumSeats[0] == '1' || pNumSeats[0] == '3' ) ) {
+            RefuseNoPassenger();
+        } else if ( type == eEntityType::ET_CVOY ) {
+            if ( extraChallengeProp.pConvoyCar == nullptr ) {
+                extraChallengeKind = PlayerGameMech::SDN_Convoy;
+            }
+        } else if ( type == eEntityType::ET_TRAN ) {
+            const EntityTransporter *pTransporter =
+                static_cast<const EntityTransporter *>( pChallenge );
+            const uint32_t fare = uint32_t( float( pTransporter->getReward() ) *
+                                            kTransporterFareRatio );
+            bCanAccept =
+                fare < gpPlayerData->getLoadedSave()->getDriver()->getMoney();
+        } else if ( type == eEntityType::ET_SHOG ) {
+            const EntityShoppingGirl *pShoppingGirl =
+                static_cast<const EntityShoppingGirl *>( pChallenge );
+            pShoppingGirl->buildVehicleRestrictionText(
+                pShoppingGirl->getConditionType(),
+                pShoppingGirl->getCondition(), vehicleRestrictionText,
+                sizeof( vehicleRestrictionText ), true );
+            pExtraChallengeRefusal2 = vehicleRestrictionText;
+            bCanAccept =
+                pShoppingGirl->isCarAllowed( pShoppingGirl->getConditionType(),
+                                             pShoppingGirl->getCondition() );
+            if ( !bCanAccept ) {
+                const uint32_t conditionType =
+                    pShoppingGirl->getConditionType();
+                if ( conditionType == 1 || conditionType == 2 ) {
+                    pExtraChallengeRefusal = gpDatabase->getStringByHashcode(
+                        0, kRefusalNoPassengerHashcode );
+                } else if ( conditionType == 3 ) {
+                    pExtraChallengeRefusal = gpDatabase->getStringByHashcode(
+                        0, kRefusalRestrictionHashcode );
+                }
+                bRestrictionRefusal = true;
+            }
+        }
+    }
+
+    SavedItemTable *pChallengeStates =
+        gpPlayerData->getLoadedSave()->getItemTable();
+    uint16_t &state = pChallengeStates->Kinds[pChallenge->getIndex()];
+    state = ( state & 0xff00u ) | SavedItemTable::ECS_Available;
+    pChallengeStates->notify( 0u );
+
+    gpScenaric->setActiveExtraChallenge( pChallenge );
+    bCanAcceptExtraChallenge = bCanAccept;
+    pExtraChallengeIntroCine = nullptr;
+    pExtraChallengeLoopCine = nullptr;
+
+    ScenaricBank &cineBank = gpScenaric->getExtraChallengesCineBank().getBank();
+    char cineName[0x40];
+    if ( !bCanAccept ) {
+        snprintf( cineName, sizeof( cineName ), "C_REFUSE_%s", pTag );
+        pExtraChallengeIntroCine = static_cast<EntityCinematic *>(
+            cineBank.findEntity( eEntityType::ET_CINE, cineName ) );
+    } else {
+        snprintf( cineName, sizeof( cineName ), "C_INTRO_%s", pTag );
+        pExtraChallengeIntroCine = static_cast<EntityCinematic *>(
+            cineBank.findEntity( eEntityType::ET_CINE, cineName ) );
+        if ( bHasLoopCine ) {
+            strncat( cineName, "_L",
+                     sizeof( cineName ) - strlen( cineName ) - 1 );
+            pExtraChallengeLoopCine = static_cast<EntityCinematic *>(
+                cineBank.findEntity( eEntityType::ET_CINE, cineName ) );
+        }
+    }
+
+    if ( pExtraChallengeIntroCine == nullptr ) {
+        if ( bCanAccept ) {
+            gpScenaric->setActiveExtraChallenge( pChallenge );
+            transitionFlags |= 0x20;
+            pChallenge->launch();
+        }
+        gpScenaric->getAvatarManager().setUnknownBoolean( true );
+        return true;
+    }
+
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar != nullptr ) {
+        gpCarState->setPoliceStateJob( pLocalCar, nullptr );
+    }
+    Matrix4x4f_t frame = pNearestExtraChallenge->getModelMatrix();
+    gpPhysics->setPlayerSlowDownForced( true );
+    pExtraChallengeIntroCine->setGameModeInterface( this );
+    OTDU_UNIMPLEMENTED; // TODO: CINEMATIC (+0x26dc = 1 for CVOY / TRAN and a
+                        // SHOG restriction refusal, else 0)
+    pExtraChallengeIntroCine->setAsyncActorLoad( true );
+    frame.row( 3 ).head<3>() -= GetWorldShift().head<3>().transpose();
+    pExtraChallengeIntroCine->setTransformOffset( frame );
+    pExtraChallengeIntroCine->setRestoreCineMix( false );
+    if ( ( gpMngFade->getTransitionFlags() & 1u ) == 0 ) {
+        gpMngFade->startTransition(
+            ( gpMngFade->getTransitionFlags() & ~0xeu ) | 1u,
+            kSpotIntroFadeDuration, &GMFreeride::OnExtraChallengeIntroFadeOut,
+            nullptr, this );
+    }
+    if ( bRestrictionRefusal ) {
+        OTDU_UNIMPLEMENTED; // TODO: CINEMATIC (+0x26b0 = 0)
+    }
+    if ( pExtraChallengeLoopCine != nullptr ) {
+        pExtraChallengeLoopCine->setGameModeInterface( this );
+        pExtraChallengeLoopCine->setTransformOffset( frame );
+        OTDU_UNIMPLEMENTED; // TODO: CINEMATIC (+0x26dc = 1)
+    }
+    gpScenaric->getAvatarManager().setUnknownBoolean( true );
+    return true;
+}
+
+void GMFreeride::OnExtraChallengeIntroFadeOut( void *pData,
+                                               void * /*pSource*/ ) {
+    // LAB_00795b00
+    GMFreeride *pFreeride = static_cast<GMFreeride *>( pData );
+    if ( pFreeride->pExtraChallengeIntroCine == nullptr ) {
+        return;
+    }
+
+    gpMngFade->setTransitionFlags( gpMngFade->getTransitionFlags() | 8u );
+    gpMngFade->setRenderLogo( true );
+    gpAI->setTrafficCategories( false, 2u );
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FreeRideMgr scanning reset,
+                             // ChangeSessionMode(-1))
+    pFreeride->pExtraChallengeIntroCine->start( true );
+}
+
+void GMFreeride::resolveExtraChallengeAnswer() {
+    // FUN_007944d0
+    gpPhysics->setPlayerSlowDownForced( false );
+    LocalPlayer &localPlayer = gpScenaric->getLocalPlayer();
+    if ( localPlayer.getCarState() != nullptr ) {
+        gpCarState->setPoliceStateJob( localPlayer.getCarState(),
+                                       &localPlayer.getInfringementCheck() );
+    }
+
+    if ( !bCanAcceptExtraChallenge ) {
+        gpScenaric->setActiveExtraChallenge( nullptr );
+        gpCamera->restoreCamera();
+        if ( pExtraChallengeMarker != nullptr ) {
+            pExtraChallengeMarker->setVisible( true );
+        }
+        if ( pExtraChallengeAvatar != nullptr &&
+             pNearestExtraChallenge != nullptr ) {
+            OTDU_UNIMPLEMENTED; // TODO: AVATAR (spot avatar vtbl +0xcc, pose
+                                // reset to the challenge matrix)
+        }
+        releaseExtraChallengeProp();
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_00737ca0)
+    } else {
+        gpScenaric->setActiveExtraChallenge( pNearestExtraChallenge );
+        transitionFlags |= 0x30;
+        pNearestExtraChallenge->launch();
+    }
+
+    bIntroLevelLaunched = false;
+    AiPool *pAIPool = gpAI->getAIPool();
+    pAIPool->setTrafficPaused( false );
+    pAIPool->setField0x7C( true );
+    pAIPool->setField0x85( true );
+    gpAI->setPauseTraffic( false );
+}
+
+void GMFreeride::OnExtraChallengeCancelFadeOut( void *pData,
+                                                void * /*pSource*/ ) {
+    // FUN_007943c0
+    GMFreeride *pFreeride = static_cast<GMFreeride *>( pData );
+    if ( pFreeride->pExtraChallengeLoopCine != nullptr ) {
+        pFreeride->pExtraChallengeLoopCine->stop( true );
+    }
+    if ( !IsMapScreenshotCapturing() ) {
+        pFreeride->releaseExtraChallengeProp();
+    }
+    LocalPlayer &localPlayer = gpScenaric->getLocalPlayer();
+    if ( localPlayer.getCarState() != nullptr ) {
+        gpCarState->setPoliceStateJob( localPlayer.getCarState(),
+                                       &localPlayer.getInfringementCheck() );
+    }
+    gpPhysics->setPlayerSlowDownForced( false );
+    AiPool *pAIPool = gpAI->getAIPool();
+    pAIPool->setTrafficPaused( false );
+    pAIPool->setField0x7C( true );
+    pAIPool->setField0x85( true );
+    gpAI->setPauseTraffic( false );
+    if ( pFreeride->pExtraChallengeMarker != nullptr ) {
+        pFreeride->pExtraChallengeMarker->setVisible( true );
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_00737ca0)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (bMixStateTransitionSync = true)
+    MngFade &fade = pFreeride->mngFade;
+    fade.startTransition( ( ( fade.getTransitionFlags() | 4u ) & ~8u ) | 1u,
+                          kSpotIntroFadeDuration );
 }
 
 bool GMFreeride::requestEnterActivity() {
@@ -1492,12 +1983,28 @@ bool GMFreeride::onMessage( FlashMessage *pMessage ) {
         if ( DeferActionWhileChased( *pMessage ) ) {
             return true;
         }
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC / GSCarState / GSAI (pool
-                                 // resume)
+        resolveExtraChallengeAnswer();
         return true;
-    case FlashMessage( "caex" ):
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC / GSAI
+    case FlashMessage( "caex" ): {
+        gpScenaric->getAvatarManager().setUnknownBoolean( false );
+        activityReentryTick = GetTickCountMs() + kActivityReentryDelay;
+        bCanAcceptExtraChallenge = false;
+        gpScenaric->setActiveExtraChallenge( nullptr );
+        if ( pExtraChallengeAvatar != nullptr &&
+             pNearestExtraChallenge != nullptr ) {
+            OTDU_UNIMPLEMENTED; // TODO: AVATAR (spot avatar vtbl +0xcc, pose
+                                // reset to the challenge matrix)
+        }
+        FlashPlayer *pHudPlayer = mngHudChallenge.getHudPlayer();
+        if ( pHudPlayer != nullptr ) {
+            pHudPlayer->showFrame( "stop", "/HUD/enter", false );
+        }
+        mngFade.startTransition( ( mngFade.getTransitionFlags() & ~0xcu ) | 1u,
+                                 kSpotIntroFadeDuration,
+                                 &GMFreeride::OnExtraChallengeCancelFadeOut,
+                                 nullptr, this );
         return true;
+    }
     case FlashMessage( "acti" ):
         mngHudChallenge.updateActivityStatus();
         return true;

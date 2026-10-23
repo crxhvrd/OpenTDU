@@ -8,42 +8,21 @@
 #include "input/input_device.h"
 #include "input/gs_device.h"
 #include "flash/modal_message_box.h"
+#include "physics/gs_physics.h"
 #include "world/gs_world.h"
+#include "world/gs_world_streaming.h"
 #include "world/sector_manager.h"
 #include "world/streaming_manager.h"
 
 MngCinematics *gpMngCinematics = nullptr; // DAT_010e7fd0
 
-static constexpr float kNoGroundHeight = -99999.99f;     // DAT_00f418fc
-static constexpr float kHeightmapMissHeight = 100000.0f; // DAT_00f418e0
-static constexpr float kProbeLift = 1.0f;                // FLOAT_00f4165c
+static constexpr float kProbeLift = 1.0f; // FLOAT_00f4165c
 
-static Eigen::Vector3f GetWorldShiftOrigin() { return Eigen::Vector3f::Zero(); }
-
-static float SampleWorldGroundHeight( const Eigen::Vector4f &probe ) {
-    // FUN_00843dd0
-    if ( gpWorld == nullptr ) {
-        return kNoGroundHeight;
+static Eigen::Vector3f GetWorldShiftOrigin() {
+    if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+        return gpWorldStreaming->getPosition().head<3>();
     }
-
-    StreamingManager *pStreaming = gpWorld->getStreamingManager();
-    if ( pStreaming == nullptr ) {
-        return kNoGroundHeight;
-    }
-
-    Eigen::Vector4f local = probe;
-    local.head<3>() -= GetWorldShiftOrigin();
-
-    Sector *pSector = pStreaming->sectorManager.getSectorAtPosition( local );
-    if ( pSector == nullptr || pSector->state != 1 ||
-         pSector->geometry.pHeightmapInstance == nullptr ) {
-        return kNoGroundHeight;
-    }
-
-    const float height =
-        SampleGroundHeight( pSector->geometry.pHeightmapInstance,
-                            pSector->heightmap, local.x(), local.z() );
-    return height >= kHeightmapMissHeight ? kNoGroundHeight : height;
+    return Eigen::Vector3f::Zero();
 }
 
 void ProjectActorOnGround( Entity *pActor,
@@ -55,28 +34,33 @@ void ProjectActorOnGround( Entity *pActor,
     }
 
     Matrix4x4f_t matrix = pActor->getModelMatrix();
-
     if ( bRebaseOnWorldShift ) {
         matrix.row( 3 ).head<3>() += GetWorldShiftOrigin();
     }
-
     matrix( 3, 1 ) += kProbeLift;
-    const Eigen::Vector4f probe( matrix( 3, 0 ), matrix( 3, 1 ), matrix( 3, 2 ),
-                                 matrix( 3, 3 ) );
+    const Eigen::Vector4f probe = matrix.row( 3 ).transpose();
 
-    float groundHeight = SampleWorldGroundHeight( probe );
-
+    float groundHeight = kNoSurfaceSentinel;
     if ( bQueryPhysics ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+        Eigen::Vector4f normal;
+        gpPhysics->probeSurface( probe, false, groundHeight, normal, true );
+        const float heightmapHeight = SampleHeightmapSurface( probe, &normal );
+        if ( heightmapHeight != kNoSurfaceSentinel &&
+             groundHeight < heightmapHeight &&
+             heightmapHeight < probe.y() + kProbeLift ) {
+            groundHeight = heightmapHeight;
+        }
+    } else {
+        groundHeight = SampleHeightmapSurface( probe, nullptr );
     }
 
-    if ( groundHeight <= kNoGroundHeight ) {
+    if ( groundHeight <= kNoSurfaceSentinel ) {
         return;
     }
 
     matrix.row( 3 ).head<3>() -= GetWorldShiftOrigin();
-    matrix.row( 3 ) << matrix( 3, 0 ), groundHeight, matrix( 3, 2 ), 1.0f;
-
+    matrix( 3, 1 ) = groundHeight;
+    matrix( 3, 3 ) = 1.0f;
     pActor->setTransform( matrix, false );
 }
 

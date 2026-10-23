@@ -22,6 +22,9 @@
 #include "database/gs_database.h"
 #include "database/db_aftermarket_pack.h"
 #include "game/avatar/gs_avatar.h"
+#include "game/scenaric/entity/entity_convoy.h"
+#include "game/scenaric/entity/entity_extra_challenge.h"
+#include "game/scenaric/entity/entity_transporter.h"
 #include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_actor.h"
@@ -96,6 +99,12 @@ static void StepCameraShakeAngle( float &angle,
 static constexpr float kDefaultRadialBlurIntensity = 20.0f; // DAT_00f03ee0
 static constexpr float kEndTimeEpsilon = 1e-6f;             // FLOAT_00f41888
 static constexpr int32_t kMaxCinematicAvatars = 8;
+static constexpr int32_t kMaxExtraChallengeAvatars = 7;
+static constexpr uint64_t kExtraChallengeAvatarHashcode = 0xffa1845bfa4713bcull;
+static constexpr int32_t kShoppingGirlAvatarType = 5;
+static constexpr int32_t kHitchHikerAvatarType = 7;
+static constexpr int32_t kConvoyAvatarType = 8;
+static constexpr int32_t kTransporterAvatarType = 9;
 
 static void SetPlayerCarCinematicMode( bool bCinematic ) {
     if ( gpScenaric == nullptr ) {
@@ -2642,6 +2651,20 @@ void *CinResCollection::spawnActorEntity( const char *pName,
             return spawnNamedAvatar( pStyleConfig,
                                      GetIdentifier64bit( avatarName ), false );
         }
+        if ( std::strstr( pName, "ShopGirl" ) != nullptr ) {
+            return spawnExtraChallengeAvatar( kShoppingGirlAvatarType, false );
+        }
+        if ( std::strstr( pName, "hitch" ) != nullptr ) {
+            return spawnExtraChallengeAvatar( kHitchHikerAvatarType, false );
+        }
+        if ( StringNCmpI( pName, "Convoy", 6 ) == 0 ) {
+            return spawnExtraChallengeAvatar(
+                kConvoyAvatarType, std::strstr( pName, "02" ) != nullptr );
+        }
+        if ( StringNCmpI( pName, "Transport", 9 ) == 0 ) {
+            return spawnExtraChallengeAvatar(
+                kTransporterAvatarType, std::strstr( pName, "02" ) != nullptr );
+        }
         if ( std::strncmp( pName, "Seller", 6 ) == 0 ) {
             return spawnAvatar( eEntityType::ET_AVAT, hashcode, pName );
         }
@@ -3141,6 +3164,44 @@ void ReadAvatarConfigFromPNJ( AvatarConfiguration &outConfig,
     }
 
     outConfig = gpAvatar->getDefaultConfiguration( 0 );
+}
+
+void *CinResCollection::spawnExtraChallengeAvatar( const int32_t avatarType,
+                                                   const bool bEndAvatar ) {
+    // FUN_007e4f30
+    if ( numAvatars >= kMaxExtraChallengeAvatars ) {
+        return nullptr;
+    }
+
+    AvatarConfiguration defaultConfig;
+    const AvatarConfiguration *pConfig = &defaultConfig;
+    Entity *pChallenge = gpScenaric->getActiveExtraChallenge();
+    if ( pChallenge == nullptr ) {
+        defaultConfig = gpAvatar->getDefaultConfiguration( 0 );
+    } else {
+        pConfig = &static_cast<EntityExtraChallenge *>( pChallenge )
+                       ->getAvatarConfig();
+        if ( bEndAvatar ) {
+            if ( pChallenge->getType() == eEntityType::ET_CVOY ) {
+                pConfig = &static_cast<EntityConvoy *>( pChallenge )
+                               ->getEndAvatarConfig();
+            } else if ( pChallenge->getType() == eEntityType::ET_TRAN ) {
+                pConfig = &static_cast<EntityTransporter *>( pChallenge )
+                               ->getEndAvatarConfig();
+            }
+        }
+    }
+
+    EntityAvatar *pAvatar = gpScenaric->getAvatarManager().createAvatar(
+        pConfig, 0, bAsyncActorLoad, kExtraChallengeAvatarHashcode, false,
+        avatarType );
+    numHostesses++;
+    numAvatars++;
+    if ( pAvatar != nullptr ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (+0x120 = avatar, avatar
+                                 // +0x1c34 = 0)
+    }
+    return pAvatar;
 }
 
 void *CinResCollection::spawnNamedAvatar( const AvatarConfiguration *pConfig,

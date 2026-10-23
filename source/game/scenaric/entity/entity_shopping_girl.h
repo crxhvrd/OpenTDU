@@ -17,13 +17,14 @@ public:
     }
 
 public:
+    inline uint32_t getOffRoad() const { return OffRoad; }
     inline uint32_t getConditionType() const { return ConditionType; }
     inline uint32_t getConditionValue() const { return Condition.Value; }
     inline const ChallengeCondition &getCondition() const { return Condition; }
 
 protected:
     const char *pGirlName;
-    uint32_t Reward;
+    uint32_t OffRoad;
     uint32_t Coupon;
     uint32_t ConditionType;
     ChallengeCondition Condition;

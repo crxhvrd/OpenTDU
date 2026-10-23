@@ -206,6 +206,8 @@ public:
         pActiveExtraChallenge = pChallenge;
     }
     Entity *findExtraChallenge( int32_t index );
+    int32_t countExtraChallenges( const eEntityType kind ) const;
+    int32_t countGoldExtraChallenges( const eEntityType kind ) const;
     inline ScenaricBank *getWorldExtraChallengesBank() {
         return &worldExtraChallengesBank;
     }
