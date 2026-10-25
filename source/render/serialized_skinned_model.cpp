@@ -9,6 +9,10 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "world/gs_world.h"
+#include "game/entity_mechanism.h"
+#include "game/scenaric/entity/base_entity.h"
+#include "game/scenaric/entity/entity_factory.h"
+#include "world/mng_impostor.h"
 
 static constexpr float kDefaultMaxLODDist = 9999872.0f; // DAT_00f419b4
 
@@ -313,7 +317,9 @@ void SerializedSkinnedModel::uninstanciate() {
     }
 
     if ( MIInpostor.pInstance != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: WORLD
+        if ( gpWorld != nullptr && gpWorld->getStreamingManager() != nullptr ) {
+            gpWorld->getCollection3D().uninstantiate( MIInpostor.pInstance );
+        }
         MIInpostor.pInstance = nullptr;
     }
 
@@ -344,9 +350,16 @@ void SerializedSkinnedModel::draw( RenderScene *pScene ) {
 void SerializedSkinnedModel::updateLOD( EntityMechanism *pMechanism,
                                         EntityDesc *pDesc ) {
     // FUN_00808e90
-    if ( MIInpostor.pInstance != nullptr ) {
+    if ( ( pMechanism == nullptr || !pMechanism->isCreated() ) &&
+         MIInpostor.pInstance != nullptr &&
+         ( pDesc == nullptr || pDesc->Type != eEntityType::ET_TRLI ) ) {
         bFullActorMesh = false;
-        OTDU_UNIMPLEMENTED; // TODO: IMPOSTOR
+        if ( !bSimplifiedMeshIsImpostor ) {
+            bDrawSimplifiedMesh = true;
+        } else if ( gpMngImpostor != nullptr ) {
+            bDrawSimplifiedMesh =
+                ComputeImpostorBillboardVisible( gpMngImpostor, MIInpostor );
+        }
     } else {
         bDrawSimplifiedMesh = false;
         bFullActorMesh = true;

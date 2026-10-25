@@ -22,6 +22,10 @@ public:
     void beginPass();
     void endPass();
 
+    inline RenderTarget *getBoundRenderTarget( const uint32_t index ) const {
+        return renderTargets[index];
+    }
+
 private:
     std::array<RenderTarget *, kMaxSimultaneousRT> renderTargets;
     std::vector<PostFX *> effects;

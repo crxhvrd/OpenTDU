@@ -33,6 +33,11 @@ GSWorld::~GSWorld() {
     // FUN_009ea780
 }
 
+FileCollection3D &GSWorld::getCollection3D() {
+    OTDU_ASSERT( pStreamingManager != nullptr );
+    return pStreamingManager->getLevel().getGlobalCollection();
+}
+
 bool GSWorld::isWorldLoaded() const {
     return pStreamingManager != nullptr && pStreamingManager->isFirstInitDone();
 }

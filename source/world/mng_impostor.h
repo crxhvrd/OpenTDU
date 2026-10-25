@@ -189,5 +189,9 @@ private:
 };
 
 extern MngImpostor *gpMngImpostor;
+
+struct MassInstanceImpostor;
+bool ComputeImpostorBillboardVisible( MngImpostor *pMng,
+                                      MassInstanceImpostor &inst );
 extern float gHideDistanceForUnitBSphere;
 extern MngImpostorSimple *gpMngImpostorSimple;

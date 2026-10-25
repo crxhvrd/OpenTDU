@@ -841,8 +841,8 @@ void StreamingManager::tickSector( Sector &sector,
     }
 }
 
-static bool ComputeImpostorBillboardVisible( MngImpostor *pMng,
-                                             MassInstanceImpostor &inst ) {
+bool ComputeImpostorBillboardVisible( MngImpostor *pMng,
+                                      MassInstanceImpostor &inst ) {
     // FUN_0070ee60
     Instance *pInstance = inst.pInstance;
     if ( pInstance == nullptr ) {

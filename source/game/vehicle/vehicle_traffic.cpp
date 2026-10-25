@@ -157,7 +157,7 @@ void VehicleTraffic::onEvent( CarState *param_1,
                               float param_2,
                               void *param_3 ) {
     // FUN_008c4250
-    if ( displayInstances[0].pNode == nullptr ) {
+    if ( displayInstances.empty() || displayInstances[0].pNode == nullptr ) {
         return;
     }
 
@@ -321,7 +321,7 @@ void VehicleTraffic::applyLOD() {
 void VehicleTraffic::draw() {
     // FUN_008c3310
     if ( !bShouldDraw || !bVisible || !bValidPosition || bNeedToUnstream ||
-         displayInstances[0].pNode == nullptr ||
+         displayInstances.empty() || displayInstances[0].pNode == nullptr ||
          ( ( gpCamera->getActiveCamera()->getFlags() & 1 ) == 0 &&
            pCarState->FUN_00406ce0() ) ) {
         return;
@@ -1268,7 +1268,8 @@ void VehicleTraffic::updateAttachments() {
 void VehicleTraffic::updateBodyAndWheelsTransform( CarState *param_2,
                                                    float param_3 ) {
     // FUN_008c3b90
-    if ( displayInstances[0].pNode == nullptr || bNeedToUnstream ) {
+    if ( displayInstances.empty() || displayInstances[0].pNode == nullptr ||
+         bNeedToUnstream ) {
         return;
     }
 

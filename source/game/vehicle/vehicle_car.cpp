@@ -144,7 +144,7 @@ void VehicleCar::instantiate( CarState *pCarState,
 
 void VehicleCar::onEvent( CarState *param_1, float deltaTime, void *param_3 ) {
     // FUN_008c83b0
-    if ( displayInstances[0].pNode == nullptr ) {
+    if ( displayInstances.empty() || displayInstances[0].pNode == nullptr ) {
         return;
     }
 
@@ -1323,7 +1323,8 @@ Material *VehicleCar::copyTireMaterial( Material *param_1 ) {
 void VehicleCar::updateBodyAndWheelsTransform( CarState *param_2,
                                                const float param_3 ) {
     // FUN_008c6ec0
-    if ( displayInstances[0].pNode == nullptr || bNeedToUnstream ) {
+    if ( displayInstances.empty() || displayInstances[0].pNode == nullptr ||
+         bNeedToUnstream ) {
         return;
     }
 

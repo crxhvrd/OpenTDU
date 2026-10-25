@@ -6,6 +6,7 @@
 #include "render/gs_render_helper.h"
 #include "render/material.h"
 #include "render/postfx/postfx_renderer.h"
+#include "render/postfx/postfx_stack.h"
 #include "render/render_context.h"
 #include "render/render_target.h"
 
@@ -46,7 +47,7 @@ bool PostFXEnvMapScene::execute() {
         pInput = peVar5->getOutput( uVar6 );
     }
 
-    RenderTarget *pBoundRT = gEdRender.getBoundRenderTargetAtIndex( 0 );
+    RenderTarget *pBoundRT = gPostFXStack.getBoundRenderTarget( 0 );
     gEdRender.bindRenderTargetAndSetViewport( pBoundRT, 0 );
 
     gPostFXRenderer.bindShaders( nullptr, nullptr );

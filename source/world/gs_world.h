@@ -50,7 +50,7 @@ public:
         bDirtyStreaming = value;
     }
 
-    inline FileCollection3D &getCollection3D() { return collection3D; }
+    FileCollection3D &getCollection3D();
 
 public:
     GSWorld();
@@ -99,7 +99,6 @@ private:
     StreamingManager *pStreamingManager;
 
     FileCollection2D collection2D;
-    FileCollection3D collection3D;
 
     Eigen::Vector4f *pStreamPosition;
     Eigen::Vector4f staticStreamPosition;

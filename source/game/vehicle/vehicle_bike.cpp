@@ -127,7 +127,7 @@ void VehicleBike::tick( float param_2, float param_3 ) {
 
 void VehicleBike::onEvent( CarState *param_1, float param_2, void *param_3 ) {
     // FUN_008ca1e0
-    if ( displayInstances[0].pNode == nullptr ) {
+    if ( displayInstances.empty() || displayInstances[0].pNode == nullptr ) {
         return;
     }
 
@@ -719,7 +719,8 @@ void VehicleBike::findAndSetupCockpitChildNode( const char *pName,
 void VehicleBike::updateBodyAndWheelsTransform( CarState *param_2,
                                                 const float param_3 ) {
     // FUN_008c9350
-    if ( displayInstances[0].pNode == nullptr || bNeedToUnstream ) {
+    if ( displayInstances.empty() || displayInstances[0].pNode == nullptr ||
+         bNeedToUnstream ) {
         return;
     }
 
