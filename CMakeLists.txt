@@ -1565,7 +1565,7 @@ add_subdirectory( tools/save_decryptor )
 add_subdirectory( tools/zc_uncompressor )
 
 if( MSVC AND OTDU_TARGET_WIN7 )
-    foreach( OTDU_WIN7_TOOL opentdu_assetExtractor opentdu_modPacker opentdu_savedecryptor opentdu_zcuncompressor )
+    foreach( OTDU_WIN7_TOOL opentdu_assetExtractor opentdu_modPacker opentdu_shaderPacker opentdu_savedecryptor opentdu_zcuncompressor )
         target_sources( ${OTDU_WIN7_TOOL} PRIVATE $<TARGET_OBJECTS:otdu_win7thunks> )
     endforeach()
 endif()
