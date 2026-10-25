@@ -70,3 +70,49 @@ size_t FilePathRegister::getFiler( const char *param_1 ) {
     // } while (cVar1 != '\0');
     // return pcVar3 + (-1 - (int)pcVar2);
 }
+
+void FilePathRegister::mountUnit( const std::string &unitName,
+                                  const std::string &folder ) {
+    unmountUnit( unitName );
+
+    MountedUnit unit;
+    unit.Name = unitName;
+    unit.Folder = folder;
+    mountedUnits.push_back( unit );
+}
+
+void FilePathRegister::unmountUnit( const std::string &unitName ) {
+    for ( auto it = mountedUnits.begin(); it != mountedUnits.end(); it++ ) {
+        if ( StringCmpI( it->Name.c_str(), unitName.c_str() ) == 0 ) {
+            mountedUnits.erase( it );
+            return;
+        }
+    }
+}
+
+bool FilePathRegister::resolveMountedUnit( std::string &path ) const {
+    const size_t separator = path.find( ':' );
+    if ( separator == std::string::npos || mountedUnits.empty() ) {
+        return false;
+    }
+
+    const std::string unitName = path.substr( 0, separator );
+    for ( const MountedUnit &unit : mountedUnits ) {
+        if ( StringCmpI( unit.Name.c_str(), unitName.c_str() ) != 0 ) {
+            continue;
+        }
+
+        std::string relativePath = path.substr( separator + 1 );
+        std::replace( relativePath.begin(), relativePath.end(), '\\', '/' );
+        const size_t start = relativePath.find_first_not_of( '/' );
+        relativePath =
+            ( start == std::string::npos ) ? "" : relativePath.substr( start );
+
+        path = unit.Folder;
+        path += "/";
+        path += relativePath;
+        return true;
+    }
+
+    return false;
+}

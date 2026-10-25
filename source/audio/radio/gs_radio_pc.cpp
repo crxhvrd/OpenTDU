@@ -67,7 +67,7 @@ bool GSRadioPC::initialize( TestDriveGameInstance *pGameInstance ) {
 
     // FUN_0042b000
     pUserStationPool = new AmbiancePool<RadioStation>();
-    pUserStationPool->create( kStationPoolCapacity );
+    pUserStationPool->create( kUserStationPoolCapacity );
 
     return true;
 }
@@ -164,6 +164,10 @@ void GSRadioPC::reset() {
 RadioStation *GSRadioPC::addStation( const char *pStationFile,
                                      const char *pWorkingDir ) {
     // FUN_007c88a0
+    if ( pStationPool == nullptr ) {
+        return nullptr;
+    }
+
     if ( pStationPool->getAllocatedCount() == pStationPool->getCapacity() ) {
         return nullptr;
     }

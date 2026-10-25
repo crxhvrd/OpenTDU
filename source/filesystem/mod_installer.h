@@ -8,6 +8,10 @@ static constexpr uint32_t kMaxFoundCars = 0x180;
 static constexpr uint32_t kMaxInstalledContent = 0x7f;
 static constexpr uint32_t kMaxContentDescriptionLength = 0x100;
 static constexpr const char *kContentDescFilename = "contentdesc.xml";
+static constexpr int32_t kMaxRadioSlots = 0x40;
+static constexpr int32_t kMaxStationsPerRadioSlot = 4;
+
+class RadioStation;
 
 struct FoundCar {
     uint32_t DatabaseID = 0;
@@ -27,6 +31,11 @@ enum eContentDescResult : int32_t {
     CDR_Invalid = 0,
     CDR_Valid = 1,
     CDR_NoVehicle = 2,
+};
+
+struct ModRadioSlot {
+    std::string UnitName;
+    RadioStation *pStations[kMaxStationsPerRadioSlot] = {};
 };
 
 struct InstalledContent {
@@ -100,8 +109,9 @@ private:
     void onPostNews( const char *pEnvName,
                      const char *pText,
                      const int32_t moneyReward );
-    void onAddRadioStation( const char *pEnvName,
-                            const EnumerateContextItem &item );
+    int32_t onAddRadioStation( const char *pEnvName,
+                               const EnumerateContextItem &item,
+                               int32_t radioSlot );
 
     void onAddDBRow( const EnumerateContextItem &item,
                      const char *pTable,
@@ -124,6 +134,9 @@ private:
     FoundCar foundCars[kMaxFoundCars];
     std::vector<InstalledContent> installedContent;
     std::vector<ModDBInjection> dbInjections;
+
+    ModRadioSlot radioSlots[kMaxRadioSlots];
+    int32_t numRadioSlots;
 
     char pDescription[kMaxContentDescriptionLength];
 

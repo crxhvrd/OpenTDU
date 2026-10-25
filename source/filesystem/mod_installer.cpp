@@ -1,8 +1,10 @@
 #include "shared.h"
 #include "mod_installer.h"
 
+#include "audio/radio/gs_radio.h"
 #include "database/gs_database.h"
 #include "file_direct_access.h"
+#include "file_path_register.h"
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
@@ -32,7 +34,8 @@ static bool IsValidDBStringValue( const std::string &value ) {
     return value.find_first_of( "{}\r\n" ) == std::string::npos;
 }
 
-ModInstaller::ModInstaller() : contentDescSize( 0 ), reader( nullptr, true ) {
+ModInstaller::ModInstaller()
+    : contentDescSize( 0 ), numRadioSlots( 0 ), reader( nullptr, true ) {
     pDescription[0] = '\0';
 }
 
@@ -43,6 +46,19 @@ void ModInstaller::reset() {
     for ( FoundCar &car : foundCars ) {
         car = FoundCar();
     }
+
+    for ( int32_t i = 0; i < numRadioSlots; i++ ) {
+        ModRadioSlot &slot = radioSlots[i];
+        for ( RadioStation *&pStation : slot.pStations ) {
+            if ( pStation != nullptr && gpRadio != nullptr ) {
+                gpRadio->removeStation( pStation );
+                pStation = nullptr;
+            }
+        }
+        gFilePathRegister.unmountUnit( slot.UnitName );
+        slot.UnitName.clear();
+    }
+    numRadioSlots = 0;
 
     installedContent.clear();
     dbInjections.clear();
@@ -228,13 +244,54 @@ void ModInstaller::onPostNews( const char *pEnvName,
     gpPlayerData->requestSave( 2 );
 }
 
-void ModInstaller::onAddRadioStation( const char *pEnvName,
-                                      const EnumerateContextItem &item ) {
-    // CXmlInstaller::AddRadioStation
-    OTDU_LOG_INFO( "OnAddRadioStation(env=%s,pack=%S)\n", pEnvName,
-                   item.DisplayName.c_str() );
+int32_t ModInstaller::onAddRadioStation( const char *pEnvName,
+                                         const EnumerateContextItem &item,
+                                         int32_t radioSlot ) {
+    // FUN_008a3d90
+    if ( pEnvName == nullptr ) {
+        return radioSlot;
+    }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: RADIO
+    if ( radioSlot == -1 ) {
+        if ( kMaxRadioSlots - 1 < numRadioSlots + 1 ) {
+            OTDU_LOG_WARN( "**WARNING** ==>no more Radio Slot Available\n" );
+            return -1;
+        }
+
+        char unitName[16];
+        snprintf( unitName, sizeof( unitName ), "radio%d", numRadioSlots );
+
+        std::error_code errorCode;
+        if ( !std::filesystem::is_directory( item.Filename, errorCode ) ) {
+            return -1;
+        }
+        gFilePathRegister.mountUnit( unitName, item.Filename );
+        radioSlots[numRadioSlots].UnitName = unitName;
+
+        radioSlot = numRadioSlots++;
+    }
+
+    char workingDir[16];
+    snprintf( workingDir, sizeof( workingDir ), "radio%d:\\", radioSlot );
+
+    char stationFile[512];
+    snprintf( stationFile, sizeof( stationFile ), "%s%s.station", workingDir,
+              pEnvName );
+
+    if ( gpRadio == nullptr ) {
+        return radioSlot;
+    }
+
+    for ( RadioStation *&pStation : radioSlots[radioSlot].pStations ) {
+        if ( pStation == nullptr ) {
+            pStation = gpRadio->addStation( stationFile, workingDir );
+            OTDU_LOG_INFO( "OnAddRadioStation(%s) => %s\n", stationFile,
+                           ( pStation != nullptr ) ? "OK" : "FAILED" );
+            return radioSlot;
+        }
+    }
+
+    return radioSlot;
 }
 
 ModDBInjection &
@@ -387,6 +444,7 @@ eContentDescResult ModInstaller::loadFromMem( const uint32_t licenceFlags,
         "=====In CXmlInstaller::LoadFromMem(licence_flags_in=%u)=======\n",
         licenceFlags );
 
+    int32_t radioSlot = -1;
     reader.intoElem();
     while ( reader.findElem( "ACTION" ) ) {
         const std::string actionName = reader.getAttrib( "name" );
@@ -460,7 +518,8 @@ eContentDescResult ModInstaller::loadFromMem( const uint32_t licenceFlags,
                 }
             }
         } else if ( StringCmpI( pActionName, "ADDRADIOSTATION" ) == 0 ) {
-            onAddRadioStation( bHasEnvName ? pEnvName : nullptr, item );
+            radioSlot = onAddRadioStation( bHasEnvName ? pEnvName : nullptr,
+                                           item, radioSlot );
             actionMask |= CA_AddRadioStation;
         } else if ( StringCmpI( pActionName, "ADDDBSTRING" ) == 0 ) {
             onAddDBString( item, pTable, pHashcodeText, pActionBody );

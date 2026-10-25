@@ -6,11 +6,13 @@
 #include "file_direct_access.h"
 #include "file_map.h"
 #include "file_path_register.h"
+#include "flash/implementation/flash_player.h"
 #include "flash/modal_message_box.h"
 #include "gs_dirty_disk.h"
 #include "mod_installer.h"
 #include "mod_manager.h"
 #include "player_data/user_profile.h"
+#include "system/gs_pc_options.h"
 #include "tdu_instance.h"
 
 #include "gs_boot_datas.h"
@@ -35,6 +37,7 @@ static constexpr uint64_t kSaveQueueNoProfileHashcode = 0x33d6b4a;
 static constexpr uint64_t kSaveQueueNotEnoughSpaceHashcode = 0x236d9b92;
 static constexpr uint64_t kSaveQueueCorruptedFileHashcode = 0x55aff4;
 static constexpr uint64_t kSaveQueueWriteFailedHashcode = 0x24063212;
+static constexpr uint64_t kSaveQueueDeviceErrorHashcode = 0x36b320a;
 static constexpr int32_t kSaveQueuePromptWriteFailed = 0;
 static constexpr int32_t kSaveQueuePromptCorruptedFile = 1;
 static constexpr int32_t kSaveQueuePromptNotEnoughSpace = 2;
@@ -1072,7 +1075,20 @@ void GSFile::tickSaveQueue() {
     // FUN_009a5090
     ScopedMutexLock lock( saveQueue.pMutex );
     if ( bSaveDeviceError ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: device error prompt
+        FlashPlayer *pMessageBoxPlayer = gpFlashMessageBox->getFlashPlayer();
+        if ( !saveQueue.bErrorDisplayed &&
+             gpFlashMessageBox->getNumOpenMsgBox() == 0 &&
+             !gpFlashMessageBox->getUnknownFlag() &&
+             pMessageBoxPlayer != nullptr &&
+             pMessageBoxPlayer->spriteExists( "/avert" ) &&
+             gpFlashMessageBox->getDisplayState() ==
+                 ModalMessageBox::MMBDS_Closed &&
+             !gpPCOptions->isMainMenuOpened() ) {
+            displaySaveQueuePrompt( false, kSaveQueueDeviceErrorHashcode, 0,
+                                    kSaveQueuePromptDeviceError );
+            saveQueue.bErrorDisplayed = true;
+            bSaveDeviceError = false;
+        }
         return;
     }
 
@@ -1536,16 +1552,4 @@ uint32_t SaveQueue::getNumPendingFiles() const {
         }
     }
     return numPending;
-}
-
-bool FUN_009a6d50( Bank *param_1,
-                   FileHandle *param_2,
-                   int32_t *param_3,
-                   bool param_4 ) {
-    // FUN_009a6d50
-    if ( ( *param_3 == 4 ) && ( param_4 ) ) {
-        OTDU_UNIMPLEMENTED;
-    }
-
-    return true;
 }

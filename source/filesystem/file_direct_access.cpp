@@ -2,6 +2,7 @@
 #include "file_direct_access.h"
 
 #include "core/mutex.h"
+#include "file_path_register.h"
 #include "gs_file.h"
 #include "player_data/user_profile.h"
 #include "virtual_file_system.h"
@@ -515,9 +516,16 @@ bool FileDirectAccess::openFile( const char *pFilename,
     OTDU_ASSERT( !Stream.is_open() && !StreamWrite.is_open() );
 
     // Once a context has been opened every filename is relative to it.
+    std::string filename = pFilename;
+#ifndef OTDU_FILE_NO_CONTEXT_SUPPORT
+    if ( !bIsOpen ) {
+        gFilePathRegister.resolveMountedUnit( filename );
+    }
+#endif
+
     std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
     std::wstring fullPath = bIsOpen ? FolderName : std::wstring();
-    fullPath += converter.from_bytes( pFilename );
+    fullPath += converter.from_bytes( filename );
 
     AbsoluteFilename = converter.to_bytes( fullPath );
 
@@ -538,10 +546,14 @@ bool FileDirectAccess::openFile( const char *pFilename,
 
 bool FileDirectAccess::fileExists( const char *pFilename ) {
     // FUN_00607b80
+#ifndef OTDU_FILE_NO_CONTEXT_SUPPORT
     if ( bNeedName ) {
-        OTDU_UNIMPLEMENTED; // TODO: FILESYSTEM (VFS filename resolution)
-        return false;
+        FileIterator iterator;
+        const bool bFound = iterator.findFirstMatch( pFilename );
+        iterator.closeHandle();
+        return bFound;
     }
+#endif
 
     std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
     std::wstring fullPath = bIsOpen ? FolderName : std::wstring();

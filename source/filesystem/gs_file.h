@@ -256,8 +256,3 @@ private:
 };
 
 extern GSFile *gpFile;
-
-bool FUN_009a6d50( Bank *param_1,
-                   FileHandle *param_2,
-                   int32_t *param_3,
-                   bool param_4 );

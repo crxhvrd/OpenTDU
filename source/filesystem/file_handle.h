@@ -88,6 +88,7 @@ struct FileIterator {
     FileFindInfos ItInfos;
     std::string SearchPattern;
     std::string SearchDirectory;
+    std::vector<std::string> Matches;
 
     FileIterator();
 

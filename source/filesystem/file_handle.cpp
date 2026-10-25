@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "file_handle.h"
 
+#include "file_path_register.h"
 #include "virtual_file_system.h"
 
 FileIterator::FileIterator()
@@ -8,7 +9,8 @@ FileIterator::FileIterator()
       ItHandle( 0 ),
       ItInfos(),
       SearchPattern( "" ),
-      SearchDirectory( "" ) {}
+      SearchDirectory( "" ),
+      Matches() {}
 
 bool FileIterator::findFirstMatch( const char *pPattern ) {
     // FUN_00609800
@@ -20,8 +22,10 @@ bool FileIterator::findFirstMatch( const char *pPattern ) {
     ItInfos = FileFindInfos();
     SearchPattern.clear();
     SearchDirectory.clear();
+    Matches.clear();
 
     SearchPattern = pPattern;
+    gFilePathRegister.resolveMountedUnit( SearchPattern );
     pVFS =
         gVirtualFileSystemRegister.get( SearchDirectory, SearchPattern, false );
     if ( pVFS != nullptr ) {

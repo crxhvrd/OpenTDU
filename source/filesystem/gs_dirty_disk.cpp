@@ -3,6 +3,7 @@
 
 #include "core/thread.h"
 #include "flash/modal_message_box.h"
+#include "game/gm_base.h"
 
 GSDirtyDisk *gpDirtyDisk = nullptr;
 
@@ -31,5 +32,6 @@ void GSDirtyDisk::onDataLoadFailure() {
 }
 
 void GSDirtyDisk::onClose( ePopupAnswer, void *, int32_t ) {
-    OTDU_UNIMPLEMENTED_ONCE;
+    // FUN_007c6bb0
+    TestDrive::RequestGameExit();
 }

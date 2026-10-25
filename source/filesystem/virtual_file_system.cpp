@@ -173,19 +173,54 @@ void VirtualFileSystem::initialize() {
     gFilePathRegister.registerPath( path );
 }
 
+static bool MatchesWildcard( const char *pName, const char *pPattern ) {
+    if ( *pPattern == '\0' ) {
+        return *pName == '\0';
+    }
+
+    if ( *pPattern == '*' ) {
+        for ( const char *pSuffix = pName;; pSuffix++ ) {
+            if ( MatchesWildcard( pSuffix, pPattern + 1 ) ) {
+                return true;
+            }
+            if ( *pSuffix == '\0' ) {
+                return false;
+            }
+        }
+    }
+
+    if ( *pName == '\0' ) {
+        return false;
+    }
+
+    if ( *pPattern != '?' && tolower( (unsigned char)*pName ) !=
+                                 tolower( (unsigned char)*pPattern ) ) {
+        return false;
+    }
+
+    return MatchesWildcard( pName + 1, pPattern + 1 );
+}
+
 bool VirtualFileSystem::findFile( FileIterator *pIterator,
                                   const FileIterator::eOpenMode mode ) {
-    // TODO: Remove me (original game was using the crappy WinAPI for directory
-    // it)
+    // FUN_0060b360
     if ( mode == FileIterator::eOpenMode::FIOM_Close ) {
+        pIterator->Matches.clear();
+        pIterator->ItHandle = 0;
         return true;
     }
 
-    auto it = pIterator->SearchPattern.find( '>' );
-    std::string searchPath = pIterator->SearchPattern;
-    if ( it != std::string::npos ) {
-        searchPath = searchPath.substr( it + 1 );
+    if ( mode == FileIterator::eOpenMode::FIOM_FindNext ) {
+        if ( pIterator->ItHandle < 0 ||
+             pIterator->ItHandle >= (int32_t)pIterator->Matches.size() ) {
+            return false;
+        }
+        return FileExists( pIterator,
+                           pIterator->Matches[pIterator->ItHandle++] );
     }
+
+    pIterator->Matches.clear();
+    pIterator->ItHandle = 0;
 
     // YOLO: Check for direct access (we're on PC and don't really need to check
     // disk or other kind of external devices)
@@ -212,18 +247,43 @@ bool VirtualFileSystem::findFile( FileIterator *pIterator,
     }
 #endif
 
-    // TODO: Re-implement old iterative search TDU1 uses (enumerate directory
-    // content and walk the list until we have a match) AFAIK it's pretty much
-    // useless to reimplement (as we have direct access to HDD on PC)
-    OTDU_UNIMPLEMENTED;
-    return false;
+    if ( pIterator->SearchPattern.find_first_of( "*?" ) == std::string::npos ) {
+        return false;
+    }
 
-    // for (const auto& fileEntry :
-    // std::filesystem::directory_iterator(searchPath.c_str())) {
-    //     return true;
-    // }
+    const std::filesystem::path searchPath( completeResourcePath );
+    std::filesystem::path searchFolder = searchPath.parent_path();
+    std::string namePattern = searchPath.filename().string();
+    if ( namePattern == "*.*" ) {
+        namePattern = "*";
+    }
 
-    // return false;
+    std::error_code errorCode;
+#ifdef OTDU_UNIX
+    if ( !std::filesystem::is_directory( searchFolder, errorCode ) ) {
+        searchFolder = ResolvePathInsensitive( searchFolder );
+    }
+#endif
+    if ( searchFolder.empty() ||
+         !std::filesystem::is_directory( searchFolder, errorCode ) ) {
+        return false;
+    }
+
+    for ( const auto &entry :
+          std::filesystem::directory_iterator( searchFolder, errorCode ) ) {
+        const std::string entryName = entry.path().filename().string();
+        if ( MatchesWildcard( entryName.c_str(), namePattern.c_str() ) ) {
+            pIterator->Matches.push_back( entry.path().string() );
+        }
+    }
+
+    if ( pIterator->Matches.empty() ) {
+        return false;
+    }
+
+    std::sort( pIterator->Matches.begin(), pIterator->Matches.end() );
+    pIterator->ItHandle = 1;
+    return FileExists( pIterator, pIterator->Matches[0] );
 }
 
 void VirtualFileSystem::setDefaultPath( const char *param_1 ) {

@@ -8,8 +8,10 @@ class RadioStreamPlayer;
 
 class GSRadioPC : public GSRadio, public edAudioStreamEntryListener {
 public:
-    static constexpr int32_t kMaxStations = 8;
-    static constexpr int32_t kStationPoolCapacity = 4;
+    static constexpr int32_t kMaxStations =
+        8; // Bumped to 8 to allow radio mods
+    static constexpr int32_t kStationPoolCapacity = kMaxStations;
+    static constexpr int32_t kUserStationPoolCapacity = 4;
 
 public:
     inline const char *getStationName() override { /* FUN_007c8250 */
