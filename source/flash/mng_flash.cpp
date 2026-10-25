@@ -217,7 +217,7 @@ MngFlash::~MngFlash() { flashWidgets.clear(); }
 bool MngFlash::initialize( TestDriveGameInstance * ) {
     // FUN_00718ee0
     gpFlash->initGameMode( gpActiveGameMode->getCurrentGameMode(), this,
-                           false );
+                           bWantAsyncInstall );
     return true;
 }
 

@@ -1922,20 +1922,15 @@ void MngHud::tick( float deltaTime, float totalTime ) {
             return;
         }
 
-        initializeFlash();
-
-        if ( pHudPlayer == nullptr ) {
-            const int32_t numMovies = gpFlash->getNumMovies( 1 );
-            for ( int32_t movieIndex = 0; movieIndex < numMovies;
-                  movieIndex++ ) {
-                MoviePlayer *pMoviePlayer =
-                    gpFlash->getMoviePlayer( 1, movieIndex );
-                if ( pMoviePlayer != nullptr ) {
-                    pMoviePlayer->IsMoviePaused |= 2;
-                }
+        const int32_t numMovies = gpFlash->getNumMovies( 1 );
+        for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+            MoviePlayer *pMoviePlayer =
+                gpFlash->getMoviePlayer( 1, movieIndex );
+            if ( pMoviePlayer != nullptr ) {
+                pMoviePlayer->IsMoviePaused |= 2;
             }
-            return;
         }
+        return;
     }
 
     if ( pCarState == nullptr ) {

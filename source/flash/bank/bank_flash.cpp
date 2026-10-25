@@ -643,8 +643,14 @@ bool BankFlash::loadIntoMemory( const char *param_3,
 
     bExternalMemoryAlloc = false;
     if ( param_4 ) {
-        bool bVar1 = gpFile->loadBank( param_3, &pBankFile, &bankFileSize,
-                                       param_8 ); // TODO: FIXME:
+        bool bVar1 =
+            gpFile->loadBank( param_3, &pBankFile, &bankFileSize, this,
+                              [this]( int32_t type, int32_t bSuccess ) {
+                                  // FUN_009a6d50
+                                  if ( type == 4 && bSuccess ) {
+                                      loadContentAsync();
+                                  }
+                              } );
         if ( bVar1 ) {
             return true;
         }
