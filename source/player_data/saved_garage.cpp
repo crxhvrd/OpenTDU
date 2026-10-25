@@ -3,6 +3,8 @@
 
 #include "core/crypto/tea.h"
 #include "core/ed_store.h"
+#include "core/random/bcpl.h"
+#include "core/time.h"
 #include "database/gs_database.h"
 #include "driver.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -324,6 +326,20 @@ void Garage::beginTestDrive( const uint32_t carID,
     notify( 0u );
 }
 
+static void RandomizeRentalOdometer( GarageSlot &rentalSlot ) {
+    // TODO: Make those values data-driven
+    static constexpr uint32_t kRentalMinOdometerKms = 500u;
+    static constexpr uint32_t kRentalMaxOdometerKms = 30000u;
+
+    RandomGen random;
+    random.setSeed( uint32_t( MonotonicToMs( GetTimeMonotonic() ) ) );
+    rentalSlot.odometerKms =
+        float( kRentalMinOdometerKms +
+               RandomBelow( random,
+                            kRentalMaxOdometerKms - kRentalMinOdometerKms ) ) +
+        RandomUnit( random );
+}
+
 void Garage::beginRental( const uint32_t carID,
                           const int32_t rentalTime,
                           const int32_t paintIndex,
@@ -336,6 +352,7 @@ void Garage::beginRental( const uint32_t carID,
     }
 
     rentalSlot.setup( carID, paintIndex, rimID, interiorID, 0u );
+    RandomizeRentalOdometer( rentalSlot );
     if ( rentalSlot.state != CarDesc::eState::CDS_Rental ) {
         rentalSlot.state = CarDesc::eState::CDS_Rental;
         rentalSlot.notify( 0u );
