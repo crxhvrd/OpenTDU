@@ -281,6 +281,8 @@ public:
     void clear();
     void setStart( const AiRoadIt &it, const int32_t side );
     void setEnd( const AiRoadIt &it );
+    void setStartFromFrame( const Matrix4x4f_t &frame );
+    void setEndFromFrame( const Matrix4x4f_t &frame );
     int32_t solve( const bool bReversePenalty );
     void computeBounds();
     void append( AiPath &leg, const bool bMergeJoint );

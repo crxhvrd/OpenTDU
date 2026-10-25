@@ -24,6 +24,8 @@ public:
         NS_LineEnded = 0xf,
         NS_BotCruise = 0x10,
         NS_BotFollow = 0x11,
+        NS_TrainingStart = 0x12,
+        NS_TrainingFollow = 0x13,
         NS_PostFinish = 0x14,
         NS_Halt = 0x15,
     };
@@ -147,11 +149,15 @@ private:
     void enterRelocate();
     void updateRelocate();
     void updateGrid();
+    bool seedPathFromRoute();
     void exitLineEnded();
     void enterPostFinish();
     float computeRubberBand() const;
     void updatePostFinish();
     void updateRace();
+    void advanceRouteOnProgress();
+    bool isRouteEnded() const;
+    void updateTrainingFollow();
     void updateLine( const bool bNoOptim );
     void updateLineFinished();
     void updateBotCruise();

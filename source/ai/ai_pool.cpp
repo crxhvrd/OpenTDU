@@ -917,6 +917,18 @@ AiVehicle *AiPool::addOpponent( CarState *pCar,
     return pVehicle;
 }
 
+AiVehicle *AiPool::addTrainingDriver( const Matrix4x4f_t &startFrame,
+                                      const AiRoadIt &startHint ) {
+    // FUN_0091f070
+    AiVehicle *pVehicle = allocVehicleSlot();
+    if ( pVehicle == nullptr ) {
+        return nullptr;
+    }
+    pVehicle->initializeTrainingDriver( startFrame, startHint );
+    addVehicle( pVehicle );
+    return pVehicle;
+}
+
 bool AiPool::requestBot( const AiRoadIt &candidate ) {
     // FUN_0091fa40
     static constexpr float kSplitEntryWidthRatio = 0.5f;    // DAT_00f41674

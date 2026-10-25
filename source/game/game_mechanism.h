@@ -162,7 +162,7 @@ public:
         CS_Penalty = 7,
         CS_Unknown8 = 8,
         CS_InstantChallenge = 9,
-        CS_Unknown10 = 10,
+        CS_Eliminator = 10,
         CS_Player = 11,
 
         CS_Count
@@ -321,5 +321,6 @@ protected:
 void SetClipVisible( FlashPlayer *pPlayer,
                      const char *pClipPath,
                      const bool bVisible );
+bool ShowHudClip( FlashPlayer *pPlayer, const char *pClipPath );
 
 extern bool gGameMechsDebug; // DAT_010e7f37

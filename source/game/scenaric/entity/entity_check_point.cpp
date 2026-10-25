@@ -32,27 +32,6 @@ static bool IsCarRaceEligible( CarState *pCarState ) {
     return true;
 }
 
-static Entity *InstanciateEntity( MngActor *pMngActor, Entity *pTemplate ) {
-    // FUN_006def70
-    if ( pTemplate == nullptr ) {
-        return nullptr;
-    }
-
-    const eEntityType type = pTemplate->getType();
-    EntityAllocation allocation = EntityFactory::DoAction(
-        nullptr, type, nullptr, eInstantiationFlag::IF_CreateEntity );
-
-    Entity *pInstance = allocation.pEntity;
-    if ( pInstance == nullptr ) {
-        return nullptr;
-    }
-
-    pTemplate->instanciate( pMngActor, pInstance );
-    pInstance->initializeInstance( pMngActor, pTemplate );
-    pInstance->initialize();
-    return pInstance;
-}
-
 static uint8_t *ReadOptionalWavRef( BinaryReader *pReader ) {
     // FUN_007f9930 (inlined)
     if ( ReadStreamU32( pReader ) == 0 ) {
@@ -405,7 +384,8 @@ void EntityCheckPoint::instanciate( MngActor *pMngActor, Entity *param_1 ) {
     pInstance->pLEDData = pLEDData;
 
     if ( pZoneTrigger != nullptr ) {
-        pInstance->pZoneTrigger = InstanciateEntity( pMngActor, pZoneTrigger );
+        pInstance->pZoneTrigger =
+            MngActor::InstanciateEntity( pMngActor, pZoneTrigger );
     }
 
     for ( int32_t i = 0; i < kNumGateActors; i++ ) {
@@ -415,7 +395,7 @@ void EntityCheckPoint::instanciate( MngActor *pMngActor, Entity *param_1 ) {
                                 ? *reinterpret_cast<Entity **>( pBinActors[i] )
                                 : nullptr;
         pInstance->pInstanciatedActors[i] =
-            InstanciateEntity( nullptr, pTemplate );
+            MngActor::InstanciateEntity( nullptr, pTemplate );
     }
 
     pInstance->pSoundGood = pSoundGood;

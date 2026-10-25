@@ -164,6 +164,8 @@ public:
                              const Matrix4x4f_t &startFrame,
                              const int32_t newControllerType,
                              const AiRoadIt &startHint );
+    void initializeTrainingDriver( const Matrix4x4f_t &startFrame,
+                                   const AiRoadIt &startHint );
     void reset( const bool bFull, const bool bKeepSecondary );
     void startFade( const bool bByDistance );
     void applyBotPersonality( const int32_t context,
@@ -245,6 +247,7 @@ private:
     AiVehBhvOpponent bhvOpponent;
     AiVehBhvTraffic bhvTraffic;
     AiVehBhvBot bhvBot;
+    AiVehBhvPassive bhvPassive;
     AiVehBehaviour *pBehaviour;
     int32_t behaviourType;
 

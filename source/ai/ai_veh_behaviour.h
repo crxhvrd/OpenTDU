@@ -71,6 +71,24 @@ private:
     void applyCatchUp();
 };
 
+// Behaviour type 4: no behaviour logic (training driver on the player car)
+class AiVehBhvPassive : public AiVehBehaviour {
+public:
+    AiVehBhvPassive();
+
+    void attach( AiVehicle *pOwner ) override;
+    void reset( const bool bFull ) override {}
+    void tick( const float deltaTime, const float totalTime ) override {}
+    void release() override {}
+    void onCollision( CarState *pCarA,
+                      CarState *pCarB,
+                      const CollisionEvent &event ) override {}
+    void onRaceMessage( const AiRaceMessage &message ) override;
+
+private:
+    AiVehicle *pVehicle;
+};
+
 // Behaviour type 3: free ride bot, cruises and chases the local player
 class AiVehBhvBot : public AiVehBehaviour, private AiFsm {
 public:

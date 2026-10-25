@@ -320,6 +320,9 @@ public:
 public:
     inline int32_t getNumRoads() const { return NumRoads; }
     inline int32_t getNumJunctions() const { return NumJunction; }
+    inline Junction *getJunctionByIndex( const int32_t index ) const {
+        return ( index < NumJunction ) ? ppJunctions[index] : nullptr;
+    }
     inline Road *getRoads() const { return pRoads; }
     inline int32_t getNumSpeedLimits() const { return NumSpeedLimits; }
     inline int32_t getNumTrafficSignalTypes() const {

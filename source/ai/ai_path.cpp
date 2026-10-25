@@ -1239,6 +1239,32 @@ void AiPath::setEnd( const AiRoadIt &it ) {
     EndFrameSaved = EndFrame;
 }
 
+void AiPath::setStartFromFrame( const Matrix4x4f_t &frame ) {
+    // FUN_00966670
+    StartFrameSaved = frame;
+    AiRoadMap::Road *pRoad =
+        gpAI->getRoadMap().findNearestRoadExhaustive( StartFrameSaved, true );
+    if ( pRoad->pDetail == nullptr ) {
+        Status = 1;
+        return;
+    }
+    ProjectOnRoadShape( StartFrameSaved, Start, &StartFrame, false,
+                        pRoad->getShape() );
+}
+
+void AiPath::setEndFromFrame( const Matrix4x4f_t &frame ) {
+    // FUN_00966530
+    EndFrameSaved = frame;
+    AiRoadMap::Road *pRoad =
+        gpAI->getRoadMap().findNearestRoadExhaustive( EndFrameSaved, true );
+    if ( pRoad->pDetail == nullptr ) {
+        Status = 1;
+        return;
+    }
+    ProjectOnRoadShape( EndFrameSaved, End, &EndFrame, false,
+                        pRoad->getShape() );
+}
+
 static void ClampPathT( AiRoadIt &it ) {
     if ( it.T < kMinPathT ) {
         it.T = 0.0f;

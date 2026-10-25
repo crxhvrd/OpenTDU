@@ -858,6 +858,23 @@ bool AiVehNavOpponent::handle( const int32_t event, const int32_t state ) {
         }
         return event == FE_Exit;
 
+    case NS_TrainingStart:
+        if ( event == FE_Update ) {
+            seedPathFromRoute();
+        }
+        return event <= FE_Exit;
+
+    case NS_TrainingFollow:
+        if ( event == FE_Enter ) {
+            bGridRevHold = false;
+            return true;
+        }
+        if ( event == FE_Update ) {
+            updateTrainingFollow();
+            return true;
+        }
+        return event == FE_Exit;
+
     case NS_Stopped:
         if ( event == FE_Enter ) {
             gGameObjectDico.locate( pOwner->getCarState(), nullptr, false );
@@ -1045,35 +1062,44 @@ void AiVehNavOpponent::updateRelocate() {
     }
 }
 
+bool AiVehNavOpponent::seedPathFromRoute() {
+    // FUN_00958f70 (states 2 and 0x12 update, inlined)
+    AiVehController *pController = pOwner->getController();
+    if ( pController == nullptr || pController->getCount() == 0 ) {
+        return false;
+    }
+    AiRoadIt from;
+    AiRoadIt to;
+    pController->getAt( 0, from, to );
+    if ( from.pRoad == nullptr || to.pRoad == nullptr ) {
+        return false;
+    }
+
+    situation.updateRoute();
+    if ( path.getNumPoints() != 0 ) {
+        if ( !gbForceOpponentRebuild && !isMyRoundRobinTurn() ) {
+            return false;
+        }
+        situation.updateLineIndex();
+        rebuildPath();
+        builder.optimise();
+        return true;
+    }
+
+    updateRouteIts();
+    gGameObjectDico.locate( pOwner->getCarState(), nullptr, false );
+    situation.updateLocation();
+    lineA.seed( from, 0, situation.V, false );
+    path.pushRoadPoint( from, situation.V, kDefaultSpeedCap, false );
+    situation.refreshLast();
+    situation.refreshLastPathPoint();
+    return false;
+}
+
 void AiVehNavOpponent::updateGrid() {
     // FUN_00958f70 (state 2 update)
-    AiVehController *pController = pOwner->getController();
-    if ( pController != nullptr && pController->getCount() != 0 ) {
-        AiRoadIt from;
-        AiRoadIt to;
-        pController->getAt( 0, from, to );
-        if ( from.pRoad != nullptr && to.pRoad != nullptr ) {
-            situation.updateRoute();
-            if ( path.getNumPoints() != 0 ) {
-                if ( gbForceOpponentRebuild || isMyRoundRobinTurn() ) {
-                    situation.updateLineIndex();
-                    rebuildPath();
-                    builder.optimise();
-                    if ( pOwner->isPlayerCar() ) {
-                        goTo( NS_BotCruise );
-                    }
-                }
-            } else {
-                updateRouteIts();
-                gGameObjectDico.locate( pOwner->getCarState(), nullptr, false );
-                situation.updateLocation();
-                lineA.seed( from, 0, situation.V, false );
-                path.pushRoadPoint( from, situation.V, kDefaultSpeedCap,
-                                    false );
-                situation.refreshLast();
-                situation.refreshLastPathPoint();
-            }
-        }
+    if ( seedPathFromRoute() && pOwner->isPlayerCar() ) {
+        goTo( NS_BotCruise );
     }
 
     AiVehLocomotion *pLoco = pOwner->getLocomotion();
@@ -1262,9 +1288,8 @@ void AiVehNavOpponent::updatePostFinish() {
     }
 }
 
-void AiVehNavOpponent::updateRace() {
-    // FUN_00957be0
-    situation.updateLocation();
+void AiVehNavOpponent::advanceRouteOnProgress() {
+    // FUN_00957be0 / FUN_00958f70 state 0x13 (inlined)
     if ( situation.Loc.LocationType == ObjectWorldLocation::OWL_Road ) {
         if ( situation.RoadIt.pRoad != nullptr &&
              situation.RouteFrom.pRoad != nullptr ) {
@@ -1297,22 +1322,39 @@ void AiVehNavOpponent::updateRace() {
             }
         }
     }
+}
 
-    bool bRouteEnd = false;
-    if ( !pOwner->isPlayerCar() ) {
-        const NavPath::ePointType lastType = situation.LastPathPoint.Type;
-        if ( lastType == NavPath::PT_End ) {
-            bRouteEnd = true;
-        } else if ( situation.NextTo.pRoad == nullptr &&
-                    lastType == NavPath::PT_Road &&
-                    ( situation.RouteTo.pRoad == nullptr ||
-                      situation.LastPathPoint.It.isSamePosition(
-                          situation.RouteTo, kRouteEndTolerance ) ) ) {
-            bRouteEnd = true;
-        }
+bool AiVehNavOpponent::isRouteEnded() const {
+    // FUN_00957be0 / FUN_00958f70 state 0x13 (inlined)
+    if ( pOwner->isPlayerCar() ) {
+        return false;
     }
+    const NavPath::ePointType lastType = situation.LastPathPoint.Type;
+    if ( lastType == NavPath::PT_End ) {
+        return true;
+    }
+    return situation.NextTo.pRoad == nullptr && lastType == NavPath::PT_Road &&
+           ( situation.RouteTo.pRoad == nullptr ||
+             situation.LastPathPoint.It.isSamePosition( situation.RouteTo,
+                                                        kRouteEndTolerance ) );
+}
 
-    if ( situation.RouteFrom.pRoad != nullptr && !bRouteEnd ) {
+void AiVehNavOpponent::updateTrainingFollow() {
+    // FUN_00958f70 (state 0x13 update)
+    situation.updateLocation();
+    advanceRouteOnProgress();
+    if ( situation.RouteFrom.pRoad != nullptr && !isRouteEnded() ) {
+        updateLine( false );
+        situation.updateLineIndex();
+        situation.refreshLast();
+    }
+}
+
+void AiVehNavOpponent::updateRace() {
+    // FUN_00957be0
+    situation.updateLocation();
+    advanceRouteOnProgress();
+    if ( situation.RouteFrom.pRoad != nullptr && !isRouteEnded() ) {
         if ( checkCheckpointMissed() ) {
             checkpointMissTicks++;
             if ( checkpointMissTicks > kMaxCheckpointMissTicks ) {

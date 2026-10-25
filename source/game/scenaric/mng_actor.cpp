@@ -351,15 +351,23 @@ void MngActor::applyPlayerVehicleFrame( const Matrix4x4f_t &frame,
 }
 
 Entity *MngActor::instanciateActor( Entity *pEntity ) {
+    return InstanciateEntity( this, pEntity );
+}
+
+Entity *MngActor::InstanciateEntity( MngActor *pMngActor, Entity *pTemplate ) {
     // FUN_006def70
-    const eEntityType type = pEntity->getType();
+    if ( pTemplate == nullptr ) {
+        return nullptr;
+    }
+
+    const eEntityType type = pTemplate->getType();
     EntityAllocation allocation = EntityFactory::DoAction(
         nullptr, type, nullptr, eInstantiationFlag::IF_CreateEntity );
 
     Entity *pInstance = allocation.pEntity;
     if ( pInstance != nullptr ) {
-        pEntity->instanciate( this, pInstance );
-        pInstance->initializeInstance( this, pEntity );
+        pTemplate->instanciate( pMngActor, pInstance );
+        pInstance->initializeInstance( pMngActor, pTemplate );
         pInstance->initialize();
     }
     return pInstance;

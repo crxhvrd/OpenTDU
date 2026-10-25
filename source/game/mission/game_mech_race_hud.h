@@ -21,6 +21,10 @@ public:
     inline GameParticipant *getRankingHead() const { return pRankingHead; }
     inline const uint32_t *getCurrentTimes() const { return pCurrentTimes; }
     inline int32_t getNumLaps() const { return numLaps; }
+    inline void setNumLaps( const int32_t laps ) { numLaps = laps; }
+    inline void setNumSteps( const int32_t steps ) { numSteps = steps; }
+    inline int32_t getLoopStartIndex() const { return loopStartIndex; }
+    inline int32_t getCheckpointsPerLap() const { return checkpointsPerLap; }
 
     bool onMessage( Entity *pSender,
                     const int32_t messageID,
@@ -45,6 +49,8 @@ public:
                                  const int32_t lap ) const;
     int32_t getParticipantLap( const int32_t slot ) const;
     EntityCheckPoint *findCheckpointForStep( int32_t step ) const;
+    int32_t sortRanking( const bool bUseDistance );
+    void updateCountersHud();
 
 protected:
     void resetCheckpoints();
@@ -54,7 +60,6 @@ private:
                                               const uint32_t ledType );
     void computeCheckpointCounts();
     void updateLoopCheckpointTemplate();
-    int32_t sortRanking( const bool bUseDistance );
     void assignRanks();
     bool isRivalOnSameStep( const int32_t step,
                             GameParticipant *pParticipant,
@@ -65,7 +70,6 @@ private:
                             const uint32_t time,
                             const bool bShowGap );
     void showBottomGap( const int32_t gap );
-    void updateCountersHud();
     static void UpdatePositionHud( FlashPlayer *pPlayer,
                                    const int32_t rank,
                                    const uint32_t numPlayers );

@@ -67,17 +67,6 @@ static char *FormatCentisecondsGap( char *pOutText, int32_t gap ) {
     return pOutText;
 }
 
-static bool ShowHudClip( FlashPlayer *pPlayer, const char *pClipPath ) {
-    FlashClip clip;
-    if ( !pPlayer->getClipPlayer( pClipPath, &clip ) ) {
-        return false;
-    }
-
-    ScopedMutexLock lock = gpFlash->scopedLock();
-    clip.pSprite->getDisplayList()->getFlagsRW() |= 1;
-    return true;
-}
-
 static void SetHudClipVisible( FlashPlayer *pPlayer, const char *pClipPath ) {
     FlashClip clip;
     if ( pPlayer->getClipPlayer( pClipPath, &clip ) ) {
@@ -288,7 +277,7 @@ void GameMechRaceHUD::computeCheckpointCounts() {
         numLaps = 0;
     } else {
         numLaps = int32_t( pEventParameters->getNumLaps().getValue() );
-        if ( pMech->getComponent( GameMechanism::CS_Unknown10 ) != nullptr ) {
+        if ( pMech->getComponent( GameMechanism::CS_Eliminator ) != nullptr ) {
             numLaps = 8;
         } else if ( gpScenaric->isTrainingLevel() ) {
             numLaps = 1;

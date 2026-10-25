@@ -5,6 +5,8 @@
 #include "ai/ai_race.h"
 #include "core/random/bcpl.h"
 #include "game/mission/mission_extra_challenge.h"
+#include "game/mission/mng_blck_rds.h"
+#include "game/mission/mng_nav_path_display.h"
 #include "game/mng_ingame_menu.h"
 #include "online/mng_chat.h"
 #include "render/mng_font_players.h"
@@ -98,6 +100,7 @@ public:
     Matrix4x4f_t computeGridMatrix( const int32_t slotIndex,
                                     const int32_t numSlots );
     inline MissionExtraChallenge &getExtraChallenge() { return extraChallenge; }
+    inline MngBlckRds &getBlockedRoads() { return mngBlckRds; }
     void endExtraChallenge( const bool bWon );
     bool isExtraChallengeOutroPending() const;
     bool isExtraChallengeSucceeded() const;
@@ -124,7 +127,9 @@ private:
     static void OnRestartFadedOut( void *pData, void *pSource );
 
 private:
+    MngBlckRds mngBlckRds;
     MngInGameMenu mngInGameMenu;
+    MngNavPathDisplay mngNavPathDisplay;
     MngChat mngChat;
     MngFontPlayers mngFontPlayers;
 

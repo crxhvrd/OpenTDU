@@ -1121,6 +1121,27 @@ void AiVehicle::initializeOpponent( CarState *pCar,
     signals.bHeadlightActivated = false;
 }
 
+void AiVehicle::initializeTrainingDriver( const Matrix4x4f_t &startFrame,
+                                          const AiRoadIt &startHint ) {
+    // FUN_00928520
+    CarState *pCar = gpScenaric->getLocalPlayer().getCarState();
+    AiRoadIt location;
+    AiRoadMap::Road *pRoad = gpAI->getRoadMap().findNearestRoad(
+        startFrame.row( 3 ).transpose(), true );
+    Matrix4x4f_t projectedFrame = Matrix4x4f_t::Identity();
+    ProjectOnRoadShape( startFrame, location, &projectedFrame, false,
+                        pRoad->getShape() );
+    if ( startHint.pRoad != nullptr && location.pRoad != startHint.pRoad ) {
+        location = startHint;
+    }
+
+    pCar->getBody()->WorldMatrix = startFrame;
+    initialize( eAiVehicleCategory::AVC_Network, pCar, location, 0, 4, 2, 1,
+                kLocomotionNone, true );
+    bRemovable = false;
+    signals.bHeadlightActivated = false;
+}
+
 void AiVehicle::reset( const bool bFull, const bool bKeepSecondary ) {
     // FUN_00924e40
     removalTime = -1.0f;
@@ -1297,6 +1318,8 @@ void AiVehicle::setBehaviour( const int32_t type ) {
         pBehaviour = &bhvTraffic;
     } else if ( type == 3 ) {
         pBehaviour = &bhvBot;
+    } else if ( type == 4 ) {
+        pBehaviour = &bhvPassive;
     } else {
         OTDU_UNIMPLEMENTED_ONCE;
         pBehaviour = nullptr;

@@ -232,8 +232,11 @@ bool GameParticipantOffline::instantiate( const int32_t missionType ) {
             } else {
                 bPhysicsInstanciated = true;
                 if ( gpScenaric->isTrainingLevel() && gAIConfig.Unknown0xE4 ) {
-                    OTDU_UNIMPLEMENTED; // TODO: GSAI (FUN_0091f070 training
-                                        // AI driver)
+                    AiRoadIt startHint;
+                    gpAI->getRace()->getCheckpointRoadLocation( 1, startHint );
+                    pCarState->setAIController(
+                        gpAI->getAIPool()->addTrainingDriver( StartPositionMat,
+                                                              startHint ) );
                 } else if ( gAIConfig.bAIReplacePlayer ) {
                     OTDU_UNIMPLEMENTED; // TODO: GSAI (AddOpponent on the
                                         // player car, IAREPLACEPLAYER)

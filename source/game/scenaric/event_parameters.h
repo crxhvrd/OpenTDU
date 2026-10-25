@@ -77,6 +77,7 @@ public:
     inline GameParameterDBString &getDatabaseName() { return databaseName; }
     inline GameParameterBool &getCollisions() { return collisions; }
     inline GameParameterBool &getCops() { return cops; }
+    inline GameParameterBool &getForc() { return forc; }
     inline GameParameterLevel &getTrafficDensity() { return trafficDensity; }
     inline GameParameterLevel &getCopsDensity() { return copsDensity; }
     inline GameParameterNumber &getPenaltyCredits() { return penaltyCredits; }

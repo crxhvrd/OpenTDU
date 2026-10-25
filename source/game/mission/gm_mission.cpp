@@ -100,10 +100,10 @@ GMMission::GMMission()
       bRelockChallengeRoads( false ),
       extraChallenge( this ) {
     // FUN_0073eb10
-    OTDU_UNIMPLEMENTED; // TODO: GMMission (MngBlckRds 0x727620,
-                        // MngNavPathDisplay 0x6b3230)
+    registerManager( &mngBlckRds );
     registerManager( &mngFontPlayers );
     registerManager( &mngInGameMenu );
+    registerManager( &mngNavPathDisplay );
     registerManager( &mngChat );
 
     gpMissionInfo = &missionInfo;
@@ -284,8 +284,17 @@ void GMMission::initialize() {
         attachOffroadWarningSample();
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: GMMission (MngBlckRds enabled when the event
-                        // "forc" parameter is set, FUN_007283c0)
+    EventParameters *pMissionDescription = getMissionDescription();
+    if ( pMissionDescription != nullptr &&
+         pMissionDescription->getForc().getValue() != 0 ) {
+        mngBlckRds.setEnabled( true );
+        mngBlckRds.enable();
+        if ( mngBlckRds.isEnabled() ) {
+            registerManager( mngBlckRds.getMngActor() );
+        }
+    } else {
+        mngBlckRds.setEnabled( false );
+    }
     OTDU_UNIMPLEMENTED; // TODO: HUD (MngHud +0x851 = 0 for game types 0, 3
                         // and 6)
 }

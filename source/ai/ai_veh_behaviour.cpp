@@ -26,6 +26,48 @@
 
 static constexpr float kMaxBlockedTime = 6.0f; // DAT_00f41840
 
+AiVehBhvPassive::AiVehBhvPassive() : pVehicle( nullptr ) {}
+
+void AiVehBhvPassive::attach( AiVehicle *pOwner ) {
+    // FUN_004adc30
+    pVehicle = pOwner;
+}
+
+void AiVehBhvPassive::onRaceMessage( const AiRaceMessage &message ) {
+    // FUN_009d74d0
+    if ( message.Type != 0 ) {
+        return;
+    }
+
+    AiVehNavOpponent *pNav = ( pVehicle->getNavigationType() == 1 )
+                                 ? &pVehicle->getOpponentNavigation()
+                                 : nullptr;
+    switch ( message.ID ) {
+    case ARM_Prepare:
+        if ( pNav != nullptr ) {
+            pNav->requestState( AiVehNavOpponent::NS_TrainingStart );
+        }
+        pVehicle->applyBotPersonality( 2, 2, 2 );
+        break;
+    case ARM_Go:
+        if ( pNav != nullptr ) {
+            pNav->requestState( AiVehNavOpponent::NS_TrainingFollow );
+        }
+        break;
+    case ARM_Restart:
+        pVehicle->setController( 2 );
+        pVehicle->reset( true, true );
+        pVehicle->setRemovable( false );
+        if ( pVehicle->getNavigationType() == 1 ) {
+            pVehicle->getOpponentNavigation().requestState(
+                AiVehNavOpponent::NS_RaceOver );
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 AiVehBhvTraffic::AiVehBhvTraffic() : pVehicle( nullptr ) {}
 
 void AiVehBhvTraffic::attach( AiVehicle *pOwner ) {

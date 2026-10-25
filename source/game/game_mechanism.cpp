@@ -19,6 +19,7 @@
 #include "flash/implementation/flash_player.h"
 #include "flash/implementation/flash_sprite.h"
 #include "game/mission/game_mech_penalty.h"
+#include "game/mission/game_mech_eliminator.h"
 #include "game/mission/game_mech_race_hud.h"
 #include "game/mission/game_mech_speed_gauge.h"
 #include "game/mission/game_mech_speed_radar.h"
@@ -125,6 +126,17 @@ void SetClipVisible( FlashPlayer *pPlayer,
     if ( pPlayer->getClipPlayer( pClipPath, &clip ) ) {
         clip.setProperty( eFlashProperty::FP_Visible, bVisible );
     }
+}
+
+bool ShowHudClip( FlashPlayer *pPlayer, const char *pClipPath ) {
+    FlashClip clip;
+    if ( !pPlayer->getClipPlayer( pClipPath, &clip ) ) {
+        return false;
+    }
+
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    clip.pSprite->getDisplayList()->getFlagsRW() |= 1;
+    return true;
 }
 
 GameMechComponent::GameMechComponent( GameMechanism *pOwnerMech )
@@ -284,8 +296,7 @@ bool GameMechanism::initialize() {
         }
 
         if ( isEndlessLoopRace() && !gpScenaric->isTrainingLevel() ) {
-            OTDU_UNIMPLEMENTED; // TODO: GMMission (component FUN_009bd180,
-                                // slot 10)
+            pComponents[CS_Eliminator] = new GameMechEliminator( this );
         }
         if ( isEndlessLoopRace() ) {
             pEventParameters->getOffRoad().setValue( 0, false );    // +0x920
@@ -427,8 +438,9 @@ void GameMechanism::restart() {
     }
     bAutopilotPending = false;
     bAutopilotRequested = false;
-    OTDU_UNIMPLEMENTED; // TODO: GMMission (MngNavPathDisplay +0x7a8..+0x7c0,
-                        // +0x890/+0x894 reset)
+    if ( gpMngNavPathDisplay != nullptr ) {
+        gpMngNavPathDisplay->reset();
+    }
     if ( mechType == MT_ExtraChallenge ) {
         MissionExtraChallenge &extraChallenge =
             static_cast<GMMission *>( pOwner )->getExtraChallenge();
@@ -1598,10 +1610,10 @@ void GameMechanism::showResults() {
                     bDuel = true;
                 }
             } else {
-                OTDU_UNIMPLEMENTED; // TODO: GMMission (endless loop component
-                                    // FUN_009bd180 results)
-                cup = 0;
-                rewardMoney = 0;
+                cup = pComponents[CS_Eliminator]->fillResults( pPlayer );
+                if ( cup != 1 ) {
+                    rewardMoney = 0;
+                }
             }
             if ( pTime->getFinalTime() > 0.0f &&
                  !gpScenaric->isInstantChallenge() ) {
@@ -2343,9 +2355,13 @@ bool GameMechanism::executeAction( const int32_t action,
             pAIPool->setTrafficPaused( false ); // +0xc
             pAIPool->setField0x7C( true );
             pAIPool->setField0x85( true );
-            OTDU_UNIMPLEMENTED; // TODO: GMMission (MngBlckRds entries flag
-                                // |= 1)
             gpAI->setOpponentsHidden( false );
+            if ( gpActiveGameMode->getCurrentGameMode() ==
+                 eGameMode::GM_Mission ) {
+                static_cast<GMMission *>( pOwner )
+                    ->getBlockedRoads()
+                    .setBlockersVisible( true );
+            }
         }
     } else if ( action == CE_Started && pSource == pCinematic ) {
         GetHudPlayer()->setVariableValue( "/:IsCineLoading", 0 );
@@ -2398,7 +2414,11 @@ void GameMechanism::startEndCinematic( const Matrix4x4f_t &pose ) {
 
     gpAI->setTrafficCategories( false, 1 );
     gpAI->setOpponentsHidden( true );
-    OTDU_UNIMPLEMENTED; // TODO: GMMission (MngBlckRds entries flag &= ~1)
+    if ( gpActiveGameMode->getCurrentGameMode() == eGameMode::GM_Mission ) {
+        static_cast<GMMission *>( pOwner )
+            ->getBlockedRoads()
+            .setBlockersVisible( false );
+    }
     frame.row( 3 ).head<3>() -= GetWorldShift().head<3>().transpose();
     pCinematic->setTransformOffset( frame );  // +0x180, bCineOffset (+0x173)
     pCinematic->setGameModeInterface( this ); // +0x2598 = CGameMech +0x18

@@ -46,6 +46,7 @@ public:
                           Eigen::Vector4f *param_3 ) override;
 
     Entity *instanciateActor( Entity *pEntity );
+    static Entity *InstanciateEntity( MngActor *pMngActor, Entity *pTemplate );
     void preparePlayerSpawnStreaming( const int32_t spawnMode );
     Matrix4x4f_t placePlayerVehicle( int32_t spawnMode, bool bApply );
     static void applyPlayerVehicleFrame( const Matrix4x4f_t &frame,
