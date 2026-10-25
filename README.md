@@ -17,7 +17,7 @@ Regular updates/screenshots can be found in this [thread](https://github.com/ope
 Nightly binaries are available here: [https://github.com/opentestdriveunlimited/opentestdriveunlimited/releases](https://github.com/opentestdriveunlimited/opentestdriveunlimited/releases). 
 
 ## Installation
-Extract the archive content inside your TestDriveUnlimited folder (the OpenTDU binary and opentdu_data folder should sit next to your TestDriveUnlimited executable).
+Extract the archive to your TestDriveUnlimited folder.
 
 ## Dependencies
 * CMake (3.15 or newer)
@@ -90,7 +90,7 @@ Progress is tracked on a game mode basis:
 | 23| Lobby|**Done**|
 | 24| Login|**Done**|
 | 25| OnlineReplay|**In Progress**|
-| 26| Intro|**In Progress**|
+| 26| Intro|**Done**|
 | 27| OutroDemo|**Done**|
 | 28| BoatTour|**Done**|
 | 29| Jail|**Done**|
