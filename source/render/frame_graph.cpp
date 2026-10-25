@@ -62,6 +62,20 @@ void FrameGraph::initialize( FrameGraphConfig *param_2 ) {
     bRemoveDynamicDrawCmds = true;
 }
 
+void FrameGraph::clear() {
+    // FUN_0050e9c0
+    renderNodeAllocator = edStdAllocator<RenderObjectBase *>();
+    drawListAllocator = edStdAllocator<DrawList *>();
+    instanceAllocator = edStdAllocator<Instance *>();
+    hiearchyNodeAllocator = edStdAllocator<HiearchyNode *>();
+    instanceWithCustomMatAllocator =
+        edStdAllocator<InstanceWithCustomMaterial>();
+    instanceArrayAllocator = edStdAllocator<std::vector<Instance *> *>();
+    sceneCommandsAllocator = edStdAllocator<RenderSceneCommands>();
+    renderNodes.clear();
+    numClearCommands = 0;
+}
+
 void FrameGraph::pushObject( RenderObjectBase *param_2, bool param_3 ) {
     // FUN_0050b340
     if ( param_3 ) {

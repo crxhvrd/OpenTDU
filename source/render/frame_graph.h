@@ -26,6 +26,7 @@ public:
     ~FrameGraph();
 
     void initialize( FrameGraphConfig *param_2 );
+    void clear();
 
     void pushObject( RenderObjectBase *pObject, bool bPushBack );
     void insertAfterObject( RenderObjectBase *pObject,

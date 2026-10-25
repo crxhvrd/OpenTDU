@@ -139,6 +139,7 @@ public:
 
     virtual int32_t initialize() override;
     virtual void destroy() override;
+    void clearDevice();
 
     int32_t getRequiredMem();
     bool doPoolReallocations();

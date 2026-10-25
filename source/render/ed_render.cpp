@@ -52,6 +52,7 @@ static constexpr FrameGraphConfig kDefaultSceneConfiguration = { // DAT_00f471fc
     0x14, 0x14, 0x64, 0x3E8, 0x32, 0x32, 0x64 };
 
 static bool DAT_00faccc0 = false; // DAT_00faccc0
+static constexpr bool kReleasePooledResourcesOnReset = false;
 static Eigen::Vector4f DAT_00f476a0 =
     Eigen::Vector4f::Zero();                // DAT_DAT_00f476a0
 static DirectionalLight DAT_00f476b0;       // DAT_00f476b0
@@ -337,7 +338,23 @@ int32_t edRender::initialize() {
     return 1;
 }
 
-void edRender::destroy() { OTDU_UNIMPLEMENTED; }
+void edRender::destroy() {
+    // FUN_005066c0
+    if ( pFrameGraph != nullptr ) {
+        pFrameGraph->clear();
+    }
+    clearDevice();
+}
+
+void edRender::clearDevice() {
+    // FUN_00506270
+    gpRenderContext->destroy();
+
+    if ( pRenderDevice != nullptr ) {
+        delete pRenderDevice;
+        pRenderDevice = nullptr;
+    }
+}
 
 int32_t edRender::getRequiredMem() {
     // FUN_00506790
@@ -366,6 +383,10 @@ int32_t edRender::getRequiredMem() {
 
 bool edRender::doPoolReallocations() {
     // FUN_00512390
+    if ( !kReleasePooledResourcesOnReset ) {
+        return true;
+    }
+
     if ( DAT_00faccc0 ) {
         gBitmapPool.flushPendingAllocs( Render2DB::UploadBitmap );
         gPrimitivePool.flushPendingAllocs( Render3DG::Upload );
@@ -379,6 +400,10 @@ bool edRender::doPoolReallocations() {
 
 void edRender::doPoolDeallocations() {
     // FUN_00512350
+    if ( !kReleasePooledResourcesOnReset ) {
+        return;
+    }
+
     if ( !DAT_00faccc0 ) {
         gBitmapPool.flushPendingAllocs( Render2DB::ReleaseUploadedBitmap );
         gPrimitivePool.flushPendingAllocs(
