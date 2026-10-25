@@ -8,7 +8,6 @@
 #include "render_context.h"
 #include "shaders/shader_types.h"
 
-#include "config/gs_config.h"
 #include "filesystem/gs_file.h"
 
 static constexpr uint64_t kDbgFontVSHashcode = 0xa5c7e2f1b3d40981ull;
@@ -297,8 +296,7 @@ void TextRenderer::submitCommands() {
 
 bool TextRenderer::loadFont() {
     // FUN_005f30e0
-    std::string resPath = gpConfig->getResRootPath();
-    resPath += "OpenTDU/dbg_font_courier.2db";
+    std::string resPath = "opentdu_data/dbg_font_courier.2db";
 
     bool bVar1 =
         gpFile->loadFile( resPath.c_str(), &pFontAtlasResource, nullptr );

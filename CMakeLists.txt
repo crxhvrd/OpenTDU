@@ -1260,49 +1260,20 @@ foreach(sourcefile ${OTDU_INC})
 endforeach()
 
 # Post-build commands
+set( OTDU_DATA_FOLDER "${OTDU_BIN_FOLDER}/opentdu_data" )
 add_custom_command(
     TARGET opentdu
     POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_DATA_FOLDER}"
     COMMAND ${CMAKE_COMMAND} -E copy
             "${OTDU_RSC_FOLDER}/dbg_font_courier.2db"
-            "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/dbg_font_courier.2db"
-    COMMENT "Copying debug font atlas 2DB to bin output..."
-)
-
-add_custom_command(
-    TARGET opentdu
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
             "${OTDU_RSC_FOLDER}/boattour.bnk"
-            "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/boattour.bnk"
-    COMMENT "Copying BOPA boattour bank..."
-)
-
-add_custom_command(
-    TARGET opentdu
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
             "${OTDU_RSC_FOLDER}/first_person_pointer.2db"
-            "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/first_person_pointer.2b"
-    COMMENT "Copying first person cursor 2DB..."
-)
-
-add_custom_command(
-    TARGET opentdu
-    POST_BUILD
+            "${OTDU_DATA_FOLDER}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${OTDU_RSC_FOLDER}/localization"
-            "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/Localization"
-    COMMENT "Copying OpenTDU localization pack..."
-)
-
-add_custom_command(
-    TARGET opentdu
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${OTDU_RSC_FOLDER}/pedestrians_nav"
-            "${OTDU_BIN_FOLDER}/EURO/BNK/OpenTDU/Pedestrians"
-    COMMENT "Copying OpenTDU pedestrians navigation..."
+            "${OTDU_DATA_FOLDER}/localization"
+    COMMENT "Copying OpenTDU built-in resources..."
 )
 
 # Third-Party includes
@@ -1428,9 +1399,9 @@ if (${OTDU_GFX_API} STREQUAL "OTDU_VULKAN")
     include_directories( SYSTEM PRIVATE "${OTDU_THIRDPARTY_FOLDER}/VulkanMemoryAllocator/include" ) # clang spawns a shiton of warnings because of VMA so we'll turn it off for now
 
     if ( WIN32 )
-        set_target_properties( opentdu PROPERTIES OUTPUT_NAME "opentdu_${CMAKE_GENERATOR_PLATFORM}_vulkan")
+        set_target_properties( opentdu PROPERTIES OUTPUT_NAME "OpenTDU_${CMAKE_GENERATOR_PLATFORM}")
     elseif ( APPLE )
-        set_target_properties( opentdu PROPERTIES OUTPUT_NAME "opentdu_darwin_vulkan")
+        set_target_properties( opentdu PROPERTIES OUTPUT_NAME "OpenTDU")
 
         set_target_properties( opentdu PROPERTIES
                                BUILD_WITH_INSTALL_RPATH TRUE
@@ -1497,7 +1468,7 @@ if (${OTDU_GFX_API} STREQUAL "OTDU_VULKAN")
             message( WARNING "libMoltenVK.dylib was not found next to the Vulkan loader: the resulting build will only run on a machine that has the Vulkan SDK installed." )
         endif()
     else()
-        set_target_properties( opentdu PROPERTIES OUTPUT_NAME "opentdu_unix_vulkan")
+        set_target_properties( opentdu PROPERTIES OUTPUT_NAME "OpenTDU")
         set_target_properties( opentdu PROPERTIES SKIP_BUILD_RPATH TRUE )
     endif()
 endif()
@@ -1569,19 +1540,24 @@ add_subdirectory( tools/mod_packer )
 add_subdirectory( tools/shader_packer )
 
 # OpenTDU Mod Packs (TODO: add cmake option to enable mod packing)
-set( OTDU_NIGHT_PACK_FOLDER "${OTDU_BIN_FOLDER}/Mods/OpenTDU_Night-Time" )
-add_custom_target( opentdu_night_pack ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_NIGHT_PACK_FOLDER}"
-    COMMAND $<TARGET_FILE:opentdu_modPacker>
-            -input "${OTDU_RSC_FOLDER}/mods/night_time/Files"
-            -output "${OTDU_NIGHT_PACK_FOLDER}"
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${OTDU_RSC_FOLDER}/mods/night_time/contentdesc.xml"
-            "${OTDU_NIGHT_PACK_FOLDER}/contentdesc.xml"
-    DEPENDS opentdu_modPacker
-    COMMENT "Packing night time mod..."
-    VERBATIM )
-add_dependencies( opentdu opentdu_night_pack )
+function( otdu_add_mod_pack OTDU_PACK_TARGET OTDU_PACK_SOURCE OTDU_PACK_NAME )
+    set( OTDU_PACK_FOLDER "${OTDU_DATA_FOLDER}/mods/${OTDU_PACK_NAME}" )
+    add_custom_target( ${OTDU_PACK_TARGET} ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_PACK_FOLDER}"
+        COMMAND $<TARGET_FILE:opentdu_modPacker>
+                -input "${OTDU_RSC_FOLDER}/mods/${OTDU_PACK_SOURCE}/Files"
+                -output "${OTDU_PACK_FOLDER}"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${OTDU_RSC_FOLDER}/mods/${OTDU_PACK_SOURCE}/contentdesc.xml"
+                "${OTDU_PACK_FOLDER}/contentdesc.xml"
+        DEPENDS opentdu_modPacker
+        COMMENT "Packing ${OTDU_PACK_NAME} mod..."
+        VERBATIM )
+    add_dependencies( opentdu ${OTDU_PACK_TARGET} )
+endfunction()
+
+otdu_add_mod_pack( opentdu_night_pack night_time OpenTDU_Night-Time )
+otdu_add_mod_pack( opentdu_pedestrians_pack pedestrians OpenTDU_Pedestrians )
 add_subdirectory( tools/save_decryptor )
 add_subdirectory( tools/zc_uncompressor )
 

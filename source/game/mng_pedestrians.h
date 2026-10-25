@@ -61,12 +61,13 @@ private:
 };
 
 extern MngPedestrians *gpMngPedestrians;
-extern bool gbPedestriansEnabled;
+
+bool ArePedestriansEnabled();
 
 // Tennis court prefab of the sectors .PMI (S_TNS).
 static constexpr uint64_t kTennisCourtHashcode = 0x000000534e545f53;
 
 // The tennis life set (HoteE) of the world life sets bank is never placed:
-// instanciate it on a court (gbPedestriansEnabled only).
+// instanciate it on a court (ArePedestriansEnabled() only).
 Entity *CreateCourtLifeSet( MngActor &mngActor,
                             const Matrix4x4f_t &courtTransform );

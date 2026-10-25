@@ -305,10 +305,10 @@ bool ShaderBinaryCache::loadShaderTable(
 
     if ( header.NumEntries == 0ull || headerSizeInBytes > tableSizeInBytes ) {
         OTDU_LOG_ERROR(
-            "Shader table '%s' is corrupt or was extracted by another "
-            "build: its header claims %llu entries (%llu bytes) but the "
-            "file is only %u bytes. Delete 'EURO/Shaders' and "
-            "'opentdu.txt', then relaunch to force a re-extraction.\n",
+            "Shader table '%s' is corrupt or was built by another build: "
+            "its header claims %llu entries (%llu bytes) but the file is "
+            "only %u bytes. Copy the opentdu_data folder of your OpenTDU "
+            "build next to this executable.\n",
             shaderTablePath.c_str(), header.NumEntries, headerSizeInBytes,
             contentSize );
         return false;

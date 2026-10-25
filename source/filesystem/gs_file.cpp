@@ -25,7 +25,7 @@ TestDriveMutex *gpFilemapMutex = nullptr; // TODO: Define the thread routine in
 static constexpr const char *kCameraBinPath = "Euro/BNK/DataBase/Cameras.bin";
 static constexpr uint32_t kMaxFilemapCount = 0x80;
 static constexpr uint32_t kFirstPackFilemapIndex = 2;
-static constexpr const char *kModsFolderPath = "Mods";
+static constexpr const char *kModsFolderPath = "opentdu_data/mods";
 static constexpr const char *kPackMapFilename = "CarPack.map";
 static constexpr const char *kPackBigFilename = "CarPack.big";
 

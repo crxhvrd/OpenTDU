@@ -44,4 +44,5 @@ namespace AssetExtractor {
     // shader tables). Both pExecutablePath and pOutputPath must be valid;
     // output folders are created on demand.
     ExtractionResult Run( const ExtractionParams &params );
+    bool AreIniFilesExtracted( const char *pOutputPath );
 } // namespace AssetExtractor

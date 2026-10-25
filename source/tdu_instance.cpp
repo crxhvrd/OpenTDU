@@ -831,46 +831,12 @@ bool TestDriveGameInstance::initializeBaseServices() {
     OTDU_INIT_SERVICE( registerService<GSSystem>() );
     OTDU_INIT_SERVICE( registerService<GSFile>() );
 
-// TODO: Might want to use a dummy file to track the state of shader
-// extraction instead of checking folder...
-#ifdef OTDU_VULKAN
-    static constexpr const char *kOpenTDUAssetsStamp = "opentdu.txt";
-#else
-#error "Not Implemented!"
-#endif
-    bool bNeedToRunExtractor = !gpFile->fileExists( kOpenTDUAssetsStamp );
-    if ( bNeedToRunExtractor ) {
-        OTDU_LOG_ALWAYS( "Asset stamp '%s' not found; assets will be "
-                         "(re)extracted for build '%s'\n",
-                         kOpenTDUAssetsStamp, OTDU_COMMIT_HASH );
-    } else {
-        char *pStamp = nullptr;
-        uint32_t stampLength = 0;
-        bool bLoaded = gpFile->loadFile( kOpenTDUAssetsStamp, (void **)&pStamp,
-                                         &stampLength );
-        if ( bLoaded ) {
-            bNeedToRunExtractor =
-                ( strncmp( pStamp, OTDU_COMMIT_HASH,
-                           strlen( OTDU_COMMIT_HASH ) ) != 0 );
+    char pWorkingDir[OTDU_MAX_PATH];
+    TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
 
-            const uint32_t hashLength =
-                static_cast<uint32_t>( strlen( OTDU_COMMIT_HASH ) );
-            std::string stampOnDisk( pStamp, ( stampLength < hashLength )
-                                                 ? stampLength
-                                                 : hashLength );
-            OTDU_LOG_ALWAYS(
-                "Asset stamp: on disk '%s', this build '%s' => assets are %s\n",
-                stampOnDisk.c_str(), OTDU_COMMIT_HASH,
-                bNeedToRunExtractor ? "STALE (re-extracting)" : "up to date" );
-
-            TestDrive::Free( pStamp );
-        }
-    }
-
-    if ( bNeedToRunExtractor ) {
-        // Assets were never extracted; attempt a one-shot in-process extraction
-        // (packed .ini) so users don't have to run the standalone
-        // opentdu_assetExtractor tool first.
+    if ( !AssetExtractor::AreIniFilesExtracted( pWorkingDir ) ) {
+        // Extract the packed .ini files in-process so users don't have to run
+        // the standalone opentdu_assetExtractor tool first.
         bool bExtracted = OnFirstTimeRun();
         if ( !bExtracted ) {
             std::string messageError =
@@ -883,25 +849,15 @@ bool TestDriveGameInstance::initializeBaseServices() {
             TestDrive::DisplayMessageBox( messageError.c_str() );
             return false;
         }
-
-        // TODO: IMPLEMENT NATIVE GSFILE Save func
-        std::ofstream stampStream( kOpenTDUAssetsStamp,
-                                   std::ios::trunc | std::ios::out );
-        stampStream.write( OTDU_COMMIT_HASH, strlen( OTDU_COMMIT_HASH ) );
-        stampStream.close();
     }
 
     if ( !gpFile->fileExists( "/opentdu_data/shader_cache.bin" ) ) {
-        char pWorkingDir[OTDU_MAX_PATH];
-        TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
-
         std::string messageError = "Fatal: Could not locate shaders ('";
         messageError += pWorkingDir;
         messageError +=
             "./opentdu_data/shader_cache.bin' does not exist).\n"
-            "The shader pack ships with OpenTDU (built by the "
-            "opentdu_rebuilt_shaders target); copy the EURO folder of your "
-            "OpenTDU build next to this executable";
+            "Make sure the opentdu_rebuilt_shaders target is built and/or "
+            "you've extracted your nightly build in the right folder.";
 
         TestDrive::DisplayMessageBox( messageError.c_str() );
         return false;

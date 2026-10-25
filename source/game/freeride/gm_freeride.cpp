@@ -152,7 +152,7 @@ GMFreeride::GMFreeride()
     registerManager( &mngInGameMenu );
     registerManager( &mngCamGPS );
     registerManager( &mngChat );
-    if ( gbPedestriansEnabled ) {
+    if ( ArePedestriansEnabled() ) {
         registerManagerFirst( &mngPedestrians );
     }
 

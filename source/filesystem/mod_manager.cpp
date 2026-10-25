@@ -8,8 +8,8 @@
 static ModManager gModManager = {};
 ModManager *gpModManager = &gModManager;
 
-static constexpr const char *kModsFolderPath = "Mods";
-static constexpr const char *kModsStateFilename = "Mods/mods.ini";
+static constexpr const char *kModsFolderPath = "opentdu_data/mods";
+static constexpr const char *kModsStateFilename = "opentdu_data/mods/mods.ini";
 static constexpr const char *kPackMapFilename = "CarPack.map";
 static constexpr const char *kPackBigFilename = "CarPack.big";
 static constexpr const char *kPackSidecarFilename = "files.txt";
@@ -20,7 +20,7 @@ struct BuiltInPackDesc {
 };
 
 static constexpr BuiltInPackDesc kBuiltInPacks[] = {
-    { "OpenTDU Localization", "EURO/BNK/OpenTDU/Localization" },
+    { "OpenTDU Localization", "opentdu_data/Localization" },
 };
 
 ModManager::ModManager() : bPendingChanges( false ) {}

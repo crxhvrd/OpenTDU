@@ -202,8 +202,8 @@ static void InstanciateCourtLifeSets( SectorGeometry &geometry,
                                       float offsetX,
                                       float offsetZ ) {
     const uint16_t *pHeader = static_cast<const uint16_t *>( pResource );
-    if ( !gbPedestriansEnabled || pHeader == nullptr || resourceSize < 0x1d0 ||
-         !geometry.entityGrid.bValid ) {
+    if ( pHeader == nullptr || resourceSize < 0x1d0 ||
+         !geometry.entityGrid.bValid || !ArePedestriansEnabled() ) {
         return;
     }
     if ( pHeader[0] != 0 || pHeader[1] != 6 ||

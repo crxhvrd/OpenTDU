@@ -1,7 +1,6 @@
 #include "shared.h"
 #include "gm_boat_tour.h"
 
-#include "config/gs_config.h"
 #include "core/arg_parser.h"
 #include "core/maths_helper.h"
 #include "core/tcb_spline.h"
@@ -21,7 +20,7 @@ static constexpr int32_t kTourCameraMode = 0xc;
 static constexpr float kTourSpeed = 50.0f; // DAT_00f41848
 static constexpr float kCameraTransitionTime = 1.0f;
 static constexpr const char *kBoatTourBankName =
-    "OpenTDU/boattour";            //"scenarics/boattour"
+    "opentdu_data/boattour";       //"scenarics/boattour"
 static int32_t gBoatTourIndex = 3; // BOPA path index (3 = catamaran; 0 = ferry)
 
 static float ComputeCameraYaw( const Matrix4x4f_t &transform ) {
@@ -80,8 +79,7 @@ void GMBoatTour::initialize() {
     // FUN_009d8770
     GameModeWorldBase::initialize();
 
-    std::string bankPath = gpConfig->getResRootPath();
-    bankPath += kBoatTourBankName;
+    std::string bankPath = kBoatTourBankName;
     bankPath += ".bnk";
 
     boatTourBank.loadFromFile( bankPath.c_str(), nullptr, false );

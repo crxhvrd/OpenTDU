@@ -17,7 +17,7 @@ Regular updates/screenshots can be found in this [thread](https://github.com/ope
 Nightly binaries are available here: [https://github.com/opentestdriveunlimited/opentestdriveunlimited/releases](https://github.com/opentestdriveunlimited/opentestdriveunlimited/releases). 
 
 ## Installation
-Copy the opentdu binary and EURO folder content (**must be merged with your original EURO folder; THIS IS NOT A REPLACEMENT FOR YOUR ORIGINAL EURO FOLDER**) to your TestDriveUnlimited folder.
+Extract the archive content inside your TestDriveUnlimited folder (the OpenTDU binary and opentdu_data folder should sit next to your TestDriveUnlimited executable).
 
 ## Dependencies
 * CMake (3.15 or newer)

@@ -826,4 +826,19 @@ namespace AssetExtractor {
         return result;
     }
 
+    bool AreIniFilesExtracted( const char *pOutputPath ) {
+        ExtractorContext ctx;
+        ctx.OutputPath = pOutputPath;
+
+        for ( const TestDrivePackedIniEntry &packedIni : kPackedIniFiles ) {
+            const std::string filePath =
+                GetIniOutputPath( ctx ) + packedIni.Name;
+            if ( !std::filesystem::exists( filePath ) ) {
+                OTDU_LOG_ALWAYS( "'%s' not found\n", filePath.c_str() );
+                return false;
+            }
+        }
+        return true;
+    }
+
 } // namespace AssetExtractor

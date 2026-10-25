@@ -1,7 +1,6 @@
 #include "shared.h"
 #include "first_person_pointer.h"
 
-#include "config/gs_config.h"
 #include "core/maths_helper.h"
 #include "filesystem/gs_file.h"
 #include "render/gs_render.h"
@@ -9,7 +8,7 @@
 #include "render/render_scene.h"
 
 static constexpr const char *kPointerBitmapPath =
-    "OpenTDU/first_person_pointer.2db"; // TODO: PLACEHODLER
+    "opentdu_data/first_person_pointer.2db"; // TODO: PLACEHODLER
 
 static constexpr uint64_t kPointerMaterialHashcode = 0x230588678a67836dull;
 static constexpr uint8_t kFlashOrderTable = 0x2a;
@@ -39,10 +38,7 @@ FirstPersonPointer::FirstPersonPointer()
 FirstPersonPointer::~FirstPersonPointer() { destroy(); }
 
 bool FirstPersonPointer::loadBitmap() {
-    std::string resPath = gpConfig->getResRootPath();
-    resPath += kPointerBitmapPath;
-
-    if ( !gpFile->loadFile( resPath.c_str(), &pBitmapResource, nullptr ) ) {
+    if ( !gpFile->loadFile( kPointerBitmapPath, &pBitmapResource, nullptr ) ) {
         return false;
     }
 

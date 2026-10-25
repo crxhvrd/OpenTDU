@@ -2,7 +2,8 @@
 #include "mng_pedestrians.h"
 
 #include "ai/gs_ai.h"
-#include "core/arg_parser.h"
+#include "config/gs_config.h"
+#include "filesystem/gs_file.h"
 #include "game/gm_scene.h"
 #include "game/scenaric/entity/entity_pedestrian.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -12,16 +13,23 @@
 #include "world/sector_manager.h"
 #include "world/streaming_manager.h"
 
-#include <fstream>
-
 MngPedestrians *gpMngPedestrians = nullptr; // DAT_010e7ff8
-bool gbPedestriansEnabled = false;
 
-static constexpr const char *kNavigationFolder = "Euro/BNK/OpenTDU/Pedestrians";
+static constexpr const char *kNavigationFolder = "OpenTDU/Pedestrians/";
+static constexpr const char *kModMarkerFilename = "Pedestrians.ini";
 
-static CmdLineArg CmdLineArgPedestrians( "pedestrians", []( const char *pArg ) {
-    gbPedestriansEnabled = true;
-} );
+static bool IsServedByModPack( const char *pFilename ) {
+    FileMapEntry *pEntry = nullptr;
+    FileMap *pMap = nullptr;
+    return gpFile->findMapEntriesForFile( pFilename, &pEntry, &pMap );
+}
+
+bool ArePedestriansEnabled() {
+    std::string markerPath = gpConfig->getResRootPath();
+    markerPath += kNavigationFolder;
+    markerPath += kModMarkerFilename;
+    return IsServedByModPack( markerPath.c_str() );
+}
 
 static constexpr int32_t kAiPedestrianVariant = 1;
 
@@ -251,19 +259,21 @@ void MngPedestrians::releaseNavigation() {
 
 void MngPedestrians::loadNavigation( StreamedNav &nav ) {
     char path[256];
-    snprintf( path, sizeof( path ), "%s/pednav_%d_%d.pnav", kNavigationFolder,
-              nav.OriginX, nav.OriginZ );
+    snprintf( path, sizeof( path ), "%s%spednav_%d_%d.pnav",
+              gpConfig->getResRootPath(), kNavigationFolder, nav.OriginX,
+              nav.OriginZ );
 
-    std::ifstream file( path, std::ios::binary | std::ios::ate );
-    if ( !file.is_open() ) {
+    void *pContent = nullptr;
+    uint32_t size = 0;
+    if ( !IsServedByModPack( path ) ||
+         !gpFile->loadFile( path, &pContent, &size ) ) {
         BuildEmptyNavigation( nav.Blob );
         return;
     }
 
-    const std::streamsize size = file.tellg();
-    file.seekg( 0, std::ios::beg );
-    nav.Blob.resize( static_cast<size_t>( size ) );
-    file.read( reinterpret_cast<char *>( nav.Blob.data() ), size );
+    const uint8_t *pBytes = static_cast<const uint8_t *>( pContent );
+    nav.Blob.assign( pBytes, pBytes + size );
+    TestDrive::Free( pContent );
 
     OTDU_LOG_INFO(
         "Pedestrian nav '%s' registered (%u quads)\n", path,
@@ -289,7 +299,7 @@ static Entity *FindCourtLifeSetTemplate() {
 
 Entity *CreateCourtLifeSet( MngActor &mngActor,
                             const Matrix4x4f_t &courtTransform ) {
-    if ( !gbPedestriansEnabled || gpScenaric == nullptr ) {
+    if ( gpScenaric == nullptr || !ArePedestriansEnabled() ) {
         return nullptr;
     }
 
