@@ -12,7 +12,9 @@
 
 #include "game/gm_scene.h"
 #include "game/vehicle/car_state.h"
+#include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
+#include "world/streaming_manager.h"
 
 #include "tdu_instance.h"
 
@@ -92,6 +94,19 @@ void MngDebugHUD::draw() {
             posY += kLineHeight;
         }
 
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS
+        StreamingManager *pStreamingManager =
+            ( gpWorld != nullptr ) ? gpWorld->getStreamingManager() : nullptr;
+        Sector *pCurrentSector =
+            ( pStreamingManager != nullptr )
+                ? pStreamingManager->sectorManager.pCurrentSector
+                : nullptr;
+        if ( pCurrentSector != nullptr ) {
+            snprintf( buffer, sizeof( buffer ), "CUR_SECTOR......%d-%d-%d-%d",
+                      pCurrentSector->installedArea.posX,
+                      pCurrentSector->installedArea.posY,
+                      pCurrentSector->installedSector.posX,
+                      pCurrentSector->installedSector.posY );
+            DrawDebugText( 100, posY, buffer );
+        }
     }
 }
