@@ -51,6 +51,13 @@ static CmdLineArg CmdLineArgsGenGLSL( "gen_shader_source",
                                           gbGenerateShaderSource = true;
                                       } );
 
+static bool gbExtractShaders =
+    false; // If true, extract the retail shader tables (default: false)
+static CmdLineArg CmdLineArgsExtractShaders( "extract_shaders",
+                                             []( const char *pArg ) {
+                                                 gbExtractShaders = true;
+                                             } );
+
 static bool gbForceExtraction =
     false; // If true, ignore previously extracted assets
 static CmdLineArg CmdLineArgsForce( "force", []( const char *pArg ) {
@@ -60,8 +67,10 @@ static CmdLineArg CmdLineArgsForce( "force", []( const char *pArg ) {
 #if OTDU_EXTRACTOR_DXVK
 // SPIRV-Cross-backed GLSL generator. Lives in the standalone tool only so the
 // game client never has to depend on SPIRV-Cross (see asset_extractor.h).
-struct SpirvCrossGLSLGenerator final : public AssetExtractor::ShaderSourceGenerator {
-    void appendShaderSource( uint64_t hashcode, bool bIsVertexShader,
+struct SpirvCrossGLSLGenerator final
+    : public AssetExtractor::ShaderSourceGenerator {
+    void appendShaderSource( uint64_t hashcode,
+                             bool bIsVertexShader,
                              const uint32_t *pSpirvBytecode,
                              size_t spirvDwordCount,
                              std::string &outTableSource ) override {
@@ -89,15 +98,15 @@ struct SpirvCrossGLSLGenerator final : public AssetExtractor::ShaderSourceGenera
 [[noreturn]] static void PrintUsage() {
     OTDU_LOG_ALWAYS(
         "USAGE: opentdu_assetExtractor [-executable <pathToExe> "
-        "-asset_output_path <pathToOutput> -skip_glsl -force]\n"
+        "-asset_output_path <pathToOutput> -extract_shaders -force]\n"
         "\n"
         "-executable:            Path to your TestDriveUnlimited.exe "
         "executable (optional) (default: executable in current working "
         "directory)\n"
         "-asset_output_path:     Path used to write extracted assets "
         "(optional) (default: current working directory)\n"
-        "-skip_glsl:             Do not generate shader tables for OpenGL3.3 "
-        "(optional) (default: false)\n"
+        "-extract_shaders:       Extract the retail shader tables (shader "
+        "lifter tools only) (optional) (default: false)\n"
         "-force:                 Force asset extraction and ignore previously "
         "extracted assets (optional) (default: false)\n" );
     exit( 1 );
@@ -151,9 +160,9 @@ int main( int argc, char *argv[] ) {
     params.pExecutablePath = gpPathToExecutable;
     params.pOutputPath = gpOutputPath;
     params.bForceExtraction = gbForceExtraction;
+    params.bExtractShaders = gbExtractShaders || gbGenerateShaderSource;
 #if OTDU_EXTRACTOR_DXVK
-    params.pSourceGenerator =
-        gbGenerateShaderSource ? &glslGenerator : nullptr;
+    params.pSourceGenerator = gbGenerateShaderSource ? &glslGenerator : nullptr;
 #endif
 
     AssetExtractor::ExtractionResult result = AssetExtractor::Run( params );

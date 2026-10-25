@@ -22,17 +22,14 @@
 #define gVSCamPosInObj c.f[119]
 #define gVSReflWorldViewProj( i ) c.f[125 + ( i )]
 
-layout( location = 0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef OCEAN_VERTEX_COLOR
-layout( location = 1 ) in vec4 in_Color0;
-#define UV_LOCATION( n ) ( 2 + ( n ) )
-#else
-#define UV_LOCATION( n ) ( 1 + ( n ) )
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #endif
-layout( location = UV_LOCATION( 0 ) ) in vec4 in_Texcoord0;
-layout( location = UV_LOCATION( 1 ) ) in vec4 in_Texcoord1;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 1 ) ) in vec4 in_Texcoord1;
 #ifdef OCEAN_DETAIL_UV
-layout( location = UV_LOCATION( 2 ) ) in vec4 in_Texcoord2;
+layout( location = D3D9_IN_TEXCOORD( 2 ) ) in vec4 in_Texcoord2;
 #endif
 
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;

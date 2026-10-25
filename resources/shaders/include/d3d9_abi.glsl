@@ -1,10 +1,10 @@
 // D3D9 shader ABI for lifted retail shaders.
 //
-// Lifted shaders are drop-in replacements for the SPIR-V that dxvk's DXSO
-// compiler produces from the retail bytecode: the runtime keeps using the
-// metadata (bindings, ISGN, push constant size) extracted from the dxvk
-// module, so every resource, push constant, spec constant and interface
-// location declared here MUST match what dxvk emits.
+// The resources, push constants, spec constants and interface locations
+// declared here keep the layout dxvk's DXSO compiler emitted for the retail
+// bytecode (the render device binds them that way). The runtime reflects the
+// bindings from the SPIR-V module and derives each vertex input semantic from
+// its location (D3D9_IN_*).
 //
 // Define D3D9_VERTEX_SHADER or D3D9_PIXEL_SHADER before including this file.
 //
@@ -131,6 +131,19 @@ render_state;
 #define OTDU_SLOT_VIEW_BASIS 12
 // Buildings: object space position (lit window cells).
 #define OTDU_SLOT_OBJECT_POSITION 13
+
+// Vertex input locations: one fixed location per D3D9 vertex declaration
+// semantic (D3DDECLUSAGE + usage index). The runtime maps a location back to
+// its semantic to fetch the matching vertex layout element; keep in sync with
+// GetVertexInputSemantic (render/shaders/shader_binary_cache.cpp).
+#define D3D9_IN_POSITION0 0
+#define D3D9_IN_BLENDWEIGHT0 1
+#define D3D9_IN_BLENDINDICES0 2
+#define D3D9_IN_NORMAL0 3
+#define D3D9_IN_TANGENT0 4
+#define D3D9_IN_BINORMAL0 5
+#define D3D9_IN_COLOR( n ) ( 6 + ( n ) )    // COLOR0..1
+#define D3D9_IN_TEXCOORD( n ) ( 8 + ( n ) ) // TEXCOORD0..7
 
 #ifdef D3D9_VERTEX_SHADER
 

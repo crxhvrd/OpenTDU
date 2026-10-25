@@ -306,7 +306,6 @@ static bool OnFirstTimeRun() {
     AssetExtractor::ExtractionParams params;
     params.pExecutablePath = gExecutablePath;
     params.pOutputPath = pWorkingDir;
-    params.bForceShaderExtraction = true;
 
     AssetExtractor::ExtractionResult result = AssetExtractor::Run( params );
     return result.bSuccess;
@@ -658,8 +657,8 @@ void TestDriveGameInstance::mainLoop() {
             pGVar6 = new ( pGameModeAlloc ) GMMission();
             break;
         case GM_Lobby:
-            pGameModeAlloc =
-                TestDrive::AllocAligned( sizeof( GMLobby ), alignof( GMLobby ) );
+            pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLobby ),
+                                                      alignof( GMLobby ) );
             pGVar6 = new ( pGameModeAlloc ) GMLobby();
             break;
         case GM_Living:
@@ -870,19 +869,12 @@ bool TestDriveGameInstance::initializeBaseServices() {
 
     if ( bNeedToRunExtractor ) {
         // Assets were never extracted; attempt a one-shot in-process extraction
-        // (shaders + packed .ini) so users don't have to run the standalone
+        // (packed .ini) so users don't have to run the standalone
         // opentdu_assetExtractor tool first.
         bool bExtracted = OnFirstTimeRun();
-        if ( !bExtracted || !gpFile->fileExists( "EURO/Shaders" ) ) {
-            char pWorkingDir[OTDU_MAX_PATH];
-            TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
-
+        if ( !bExtracted ) {
             std::string messageError =
-                "Fatal: Could not locate shaders (folder '";
-            messageError += pWorkingDir;
-            messageError +=
-                "/EURO/Shaders' does not exist) and automatic asset extraction "
-                "failed.\n"
+                "Fatal: Automatic asset extraction failed.\n"
                 "Make sure TestDriveUnlimited.exe is present in the working "
                 "directory (or pass -executable <path>), or run "
                 "opentdu_assetextractor manually before running this "
@@ -897,6 +889,22 @@ bool TestDriveGameInstance::initializeBaseServices() {
                                    std::ios::trunc | std::ios::out );
         stampStream.write( OTDU_COMMIT_HASH, strlen( OTDU_COMMIT_HASH ) );
         stampStream.close();
+    }
+
+    if ( !gpFile->fileExists( "/opentdu_data/shader_cache.bin" ) ) {
+        char pWorkingDir[OTDU_MAX_PATH];
+        TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
+
+        std::string messageError = "Fatal: Could not locate shaders ('";
+        messageError += pWorkingDir;
+        messageError +=
+            "./opentdu_data/shader_cache.bin' does not exist).\n"
+            "The shader pack ships with OpenTDU (built by the "
+            "opentdu_rebuilt_shaders target); copy the EURO folder of your "
+            "OpenTDU build next to this executable";
+
+        TestDrive::DisplayMessageBox( messageError.c_str() );
+        return false;
     }
 
     OTDU_INIT_SERVICE( registerService<GSBootDatas>() );

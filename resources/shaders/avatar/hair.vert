@@ -20,21 +20,18 @@
 #define gVSLightDir c.f[93]
 #define gVSCamPosInObj c.f[119]
 
-layout( location = 0 ) in vec4 in_Position0;
-layout( location = 1 ) in vec4 in_Normal0;
-layout( location = 2 ) in vec4 in_Tangent0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
+layout( location = D3D9_IN_TANGENT0 ) in vec4 in_Tangent0;
 #ifdef HAIR_VERTEX_COLOR
-layout( location = 3 ) in vec4 in_Color0;
-#define SKIN_LOCATION 4
-#else
-#define SKIN_LOCATION 3
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #endif
 #ifdef HAIR_SKINNED
-layout( location = SKIN_LOCATION ) in vec4 in_BlendIndices0;
-layout( location = SKIN_LOCATION + 1 ) in vec4 in_BlendWeight0;
-layout( location = SKIN_LOCATION + 2 ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_BLENDINDICES0 ) in vec4 in_BlendIndices0;
+layout( location = D3D9_IN_BLENDWEIGHT0 ) in vec4 in_BlendWeight0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #else
-layout( location = SKIN_LOCATION ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;

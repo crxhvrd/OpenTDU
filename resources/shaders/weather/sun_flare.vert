@@ -12,11 +12,11 @@
 #define gVSM4Proj( i ) c.f[12 + ( i )]
 #define gVSM4WorldView( i ) c.f[20 + ( i )]
 
-layout( location = 0 ) in vec4 in_Position0;
-layout( location = 1 ) in vec4 in_Normal0; // xy: view space corner offset
-layout( location = 2 ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0; // xy: view space corner offset
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #ifdef FLARE_VERTEX_COLOR
-layout( location = 3 ) in vec4 in_Color0;
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;

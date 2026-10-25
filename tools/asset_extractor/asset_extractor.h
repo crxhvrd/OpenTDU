@@ -4,8 +4,8 @@
 #include <cstdint>
 #include <string>
 
-// Shared asset-extraction core. Reconstructs the shader tables (DXSO -> SPIRV)
-// and the packed .ini files from TestDriveUnlimited.exe (MC 1.66A)
+// Shared asset-extraction core. Unpacks the packed .ini files and, on request,
+// the retail shader tables from TestDriveUnlimited.exe (MC 1.66A)
 namespace AssetExtractor {
     // Optional hook used to translate a compiled SPIR-V module into GLSL
     // source. Implemented by the standalone tool (via SPIRV-Cross); the game
@@ -26,8 +26,9 @@ namespace AssetExtractor {
         const char *pOutputPath = nullptr; // Base output path (parent of EURO/)
         bool bForceExtraction =
             false; // Re-extract everything even if assets already exist
-        bool bForceShaderExtraction =
-            false; // Re-extract the shader tables only
+        bool bExtractShaders =
+            false; // Extract the retail shader tables (shader lifter tools
+                   // only; the client runs EURO/Shaders/rebuilt.bin)
         ShaderSourceGenerator *pSourceGenerator =
             nullptr; // Optional GLSL generator (nullptr disables
                      // -gen_shader_source)
@@ -39,8 +40,8 @@ namespace AssetExtractor {
         uint32_t IniFilesExtracted = 0;
     };
 
-    // Performs the one-shot asset extraction (shader tables + packed .ini
-    // files). Both pExecutablePath and pOutputPath must be valid; output
-    // folders are created on demand.
+    // Performs the one-shot asset extraction (packed .ini files + optional
+    // shader tables). Both pExecutablePath and pOutputPath must be valid;
+    // output folders are created on demand.
     ExtractionResult Run( const ExtractionParams &params );
 } // namespace AssetExtractor

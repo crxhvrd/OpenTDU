@@ -23,21 +23,15 @@
 #define gVSLightAmbient0 c.f[94]
 #define gVSLightAmbient1 c.f[247]
 
-layout( location = 0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef UNLIT_BILLBOARD
-layout( location = 1 ) in vec4 in_Normal0;
-#define COLOR_LOCATION 2
-#else
-#define COLOR_LOCATION 1
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
 #endif
 #ifdef UNLIT_VERTEX_COLOR
-layout( location = COLOR_LOCATION ) in vec4 in_Color0;
-#define TEXCOORD_LOCATION ( COLOR_LOCATION + 1 )
-#else
-#define TEXCOORD_LOCATION COLOR_LOCATION
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #endif
 #ifdef UNLIT_TEXCOORD
-layout( location = TEXCOORD_LOCATION ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;

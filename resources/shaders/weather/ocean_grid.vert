@@ -13,7 +13,7 @@
 #define gVSReflWorldViewProj( i ) c.f[125 + ( i )]
 #define gVSTweakParams( i ) c.f[234 + ( i )]
 
-layout( location = 0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;
 layout( location = D3D9_SLOT_TEXCOORD0 ) out vec4 out_Texcoord0;

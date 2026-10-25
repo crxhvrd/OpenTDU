@@ -16,16 +16,13 @@
 #define gWorldViewProject( i ) c.f[8 + ( i )]
 #define gVSShadowColor c.f[117]
 
-layout( location = 0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef SHADOW_SKINNED
-layout( location = 1 ) in vec4 in_BlendIndices0;
-layout( location = 2 ) in vec4 in_BlendWeight0;
-#define TEXCOORD_LOCATION 3
-#else
-#define TEXCOORD_LOCATION 1
+layout( location = D3D9_IN_BLENDINDICES0 ) in vec4 in_BlendIndices0;
+layout( location = D3D9_IN_BLENDWEIGHT0 ) in vec4 in_BlendWeight0;
 #endif
 #ifdef SHADOW_TEXTURED
-layout( location = TEXCOORD_LOCATION ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;

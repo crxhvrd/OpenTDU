@@ -53,12 +53,7 @@ namespace {
     struct ExtractorContext {
         std::string OutputPath;
         bool bForceExtraction = false;
-        bool bForceShaderExtraction = false;
         AssetExtractor::ShaderSourceGenerator *pSourceGenerator = nullptr;
-
-        inline bool shouldOverwriteShaderTables() const {
-            return bForceExtraction || bForceShaderExtraction;
-        }
     };
 
     constexpr uint32_t kTangentReflectionPS[] = { 0x00d95b18, 0x00d95f48 };
@@ -411,8 +406,7 @@ namespace {
                                  const std::string &fileOutputPath ) {
         std::filesystem::path folderFS =
             std::filesystem::path( fileOutputPath );
-        if ( !ctx.shouldOverwriteShaderTables() &&
-             std::filesystem::exists( folderFS ) ) {
+        if ( !ctx.bForceExtraction && std::filesystem::exists( folderFS ) ) {
             OTDU_LOG_INFO( "'%s' already exists; skipping...\n",
                            fileOutputPath.c_str() );
             return false;
@@ -439,8 +433,7 @@ namespace {
                                        const std::string &fileOutputPath ) {
         std::filesystem::path folderFS =
             std::filesystem::path( fileOutputPath );
-        if ( !ctx.shouldOverwriteShaderTables() &&
-             std::filesystem::exists( folderFS ) ) {
+        if ( !ctx.bForceExtraction && std::filesystem::exists( folderFS ) ) {
             OTDU_LOG_INFO( "'%s' already exists; skipping...\n",
                            fileOutputPath.c_str() );
             return false;
@@ -505,53 +498,12 @@ namespace {
         tableSource.clear();
     }
 
-} // namespace
-
-namespace AssetExtractor {
-
-    ExtractionResult Run( const ExtractionParams &params ) {
-        ExtractionResult result = {};
-
-        OTDU_ASSERT( params.pExecutablePath != nullptr );
-        OTDU_ASSERT( params.pOutputPath != nullptr );
-        if ( params.pExecutablePath == nullptr ||
-             params.pOutputPath == nullptr ) {
-            return result;
-        }
-
-        ExtractorContext ctx;
-        ctx.OutputPath = params.pOutputPath;
-        ctx.bForceExtraction = params.bForceExtraction;
-        ctx.bForceShaderExtraction = params.bForceShaderExtraction;
-        ctx.pSourceGenerator = params.pSourceGenerator;
-
-        OTDU_LOG_DEBUG( "executable: '%s'\n", params.pExecutablePath );
-        OTDU_LOG_DEBUG( "asset_output_path: '%s'\n", ctx.OutputPath.c_str() );
-
-        // Prepare output
-        CheckAndCreateOutputFolder( GetIniOutputPath( ctx ) );
-        CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) );
-        CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
-                                    kShadersD3D9Folder );
-#if OTDU_EXTRACTOR_DXVK
-        CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
-                                    kShadersOpenGLFolder );
-        CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
-                                    kShadersVulkanFolder );
-#endif
-
-        uint32_t shaderExtractedCount = 0;
-        uint32_t iniExtractedCount = 0;
-
-        std::ifstream fileStream;
-        fileStream.open( params.pExecutablePath,
-                         std::ios_base::binary | std::ios_base::in );
-        if ( !fileStream.is_open() || !fileStream.good() ) {
-            OTDU_LOG_ALWAYS( "Failed to open executable '%s' for read!\n",
-                             params.pExecutablePath );
-            return result;
-        }
-
+    // Retail shader tables (DXSO and, with OTDU_EXTRACTOR_DXVK, dxvk's SPIR-V
+    // translation). The client runs the shaders rebuilt from source; these
+    // are the reference for the shader lifter tools.
+    void ExtractShaderTables( const ExtractorContext &ctx,
+                              std::ifstream &fileStream,
+                              uint32_t &shaderExtractedCount ) {
         constexpr uint32_t kNumShaderEntries =
             sizeof( kMasterShaderTable ) / sizeof( kMasterShaderTable[0] );
 
@@ -769,6 +721,58 @@ namespace AssetExtractor {
         // Write current shader table to disk.
         WriteShaderTablesToDisk( ctx, currentTableName, tableDXSO, tableSPIRV,
                                  tableSource, shaderExtractedCount );
+    }
+
+} // namespace
+
+namespace AssetExtractor {
+
+    ExtractionResult Run( const ExtractionParams &params ) {
+        ExtractionResult result = {};
+
+        OTDU_ASSERT( params.pExecutablePath != nullptr );
+        OTDU_ASSERT( params.pOutputPath != nullptr );
+        if ( params.pExecutablePath == nullptr ||
+             params.pOutputPath == nullptr ) {
+            return result;
+        }
+
+        ExtractorContext ctx;
+        ctx.OutputPath = params.pOutputPath;
+        ctx.bForceExtraction = params.bForceExtraction;
+        ctx.pSourceGenerator = params.pSourceGenerator;
+
+        OTDU_LOG_DEBUG( "executable: '%s'\n", params.pExecutablePath );
+        OTDU_LOG_DEBUG( "asset_output_path: '%s'\n", ctx.OutputPath.c_str() );
+
+        // Prepare output
+        CheckAndCreateOutputFolder( GetIniOutputPath( ctx ) );
+        if ( params.bExtractShaders ) {
+            CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
+                                        kShadersD3D9Folder );
+#if OTDU_EXTRACTOR_DXVK
+            CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
+                                        kShadersOpenGLFolder );
+            CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
+                                        kShadersVulkanFolder );
+#endif
+        }
+
+        uint32_t shaderExtractedCount = 0;
+        uint32_t iniExtractedCount = 0;
+
+        std::ifstream fileStream;
+        fileStream.open( params.pExecutablePath,
+                         std::ios_base::binary | std::ios_base::in );
+        if ( !fileStream.is_open() || !fileStream.good() ) {
+            OTDU_LOG_ALWAYS( "Failed to open executable '%s' for read!\n",
+                             params.pExecutablePath );
+            return result;
+        }
+
+        if ( params.bExtractShaders ) {
+            ExtractShaderTables( ctx, fileStream, shaderExtractedCount );
+        }
 
         // .ini files
         for ( uint32_t i = 0; i < kPackedIniFileCount; i++ ) {

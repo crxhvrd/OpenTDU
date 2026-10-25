@@ -24,19 +24,16 @@
 #define gVSCamPosInObj c.f[119]
 #define gEnvMapCoeff c.f[239]
 
-layout( location = 0 ) in vec4 in_Position0;
-layout( location = 1 ) in vec4 in_Color0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #ifdef WORLD_TANGENT_SPACE
-layout( location = 2 ) in vec4 in_Normal0;
-layout( location = 3 ) in vec4 in_Binormal0;
-layout( location = 4 ) in vec4 in_Tangent0;
-#define UV_LOCATION 5
-#else
-#define UV_LOCATION 2
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
+layout( location = D3D9_IN_BINORMAL0 ) in vec4 in_Binormal0;
+layout( location = D3D9_IN_TANGENT0 ) in vec4 in_Tangent0;
 #endif
-layout( location = UV_LOCATION ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #ifdef WORLD_UV2
-layout( location = UV_LOCATION + 1 ) in vec4 in_Texcoord1;
+layout( location = D3D9_IN_TEXCOORD( 1 ) ) in vec4 in_Texcoord1;
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;

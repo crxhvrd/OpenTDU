@@ -23,20 +23,20 @@
 #define gVSCamPosInObj c.f[119]
 #define gVSNoiseScale c.f[98]
 
-layout( location = 0 ) in vec4 in_Position0;
-layout( location = 1 ) in vec4 in_Color0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #ifdef INTERIOR_OBJECT_SPACE
-layout( location = 2 ) in vec4 in_Binormal0;
-layout( location = 3 ) in vec4 in_Tangent0;
-layout( location = 4 ) in vec4 in_Texcoord0;
-layout( location = 5 ) in vec4 in_Texcoord1;
+layout( location = D3D9_IN_BINORMAL0 ) in vec4 in_Binormal0;
+layout( location = D3D9_IN_TANGENT0 ) in vec4 in_Tangent0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 1 ) ) in vec4 in_Texcoord1;
 #else
-layout( location = 2 ) in vec4 in_Normal0;
-layout( location = 3 ) in vec4 in_Binormal0;
-layout( location = 4 ) in vec4 in_Tangent0;
-layout( location = 5 ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
+layout( location = D3D9_IN_BINORMAL0 ) in vec4 in_Binormal0;
+layout( location = D3D9_IN_TANGENT0 ) in vec4 in_Tangent0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #if defined( INTERIOR_UV1 ) || defined( INTERIOR_TANGENT_LIGHTS )
-layout( location = 6 ) in vec4 in_Texcoord1;
+layout( location = D3D9_IN_TEXCOORD( 1 ) ) in vec4 in_Texcoord1;
 #endif
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;

@@ -8,7 +8,7 @@
 
 #define gVSM4WorldViewProj( i ) c.f[8 + ( i )]
 
-layout( location = 0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;
 

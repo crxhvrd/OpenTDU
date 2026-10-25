@@ -18,64 +18,53 @@ ShaderBinaryCache gShaderBinaryCache = {};
 
 #if OTDU_VULKAN
 namespace {
-    // D3D9 shader bytecode (DXSO) tokens
-    constexpr uint32_t kDxsoVertexShaderVersion = 0xfffe;
-    constexpr uint32_t kDxsoOpDcl = 0x1f;
-    constexpr uint32_t kDxsoOpComment = 0xfffe;
-    constexpr uint32_t kDxsoOpEnd = 0xffff;
-    constexpr uint32_t kDxsoRegInput = 1;
+    // D3DDECLUSAGE
+    constexpr uint8_t kDeclUsagePosition = 0;
+    constexpr uint8_t kDeclUsageBlendWeight = 1;
+    constexpr uint8_t kDeclUsageBlendIndices = 2;
+    constexpr uint8_t kDeclUsageNormal = 3;
+    constexpr uint8_t kDeclUsageTexcoord = 5;
+    constexpr uint8_t kDeclUsageTangent = 6;
+    constexpr uint8_t kDeclUsageBinormal = 7;
+    constexpr uint8_t kDeclUsageColor = 10;
 
-    inline uint32_t DxsoRegType( uint32_t token ) {
-        return ( ( token >> 28 ) & 0x7 ) | ( ( token >> 8 ) & 0x18 );
-    }
+    // Vertex input semantic of a fixed location (D3D9_IN_* in
+    // resources/shaders/include/d3d9_abi.glsl).
+    bool GetVertexInputSemantic( const uint32_t location,
+                                 SPIRVInputElement &element ) {
+        static constexpr uint8_t kFixedUsages[] = {
+            kDeclUsagePosition, kDeclUsageBlendWeight, kDeclUsageBlendIndices,
+            kDeclUsageNormal,   kDeclUsageTangent,     kDeclUsageBinormal };
+        constexpr uint32_t kNumFixedUsages =
+            sizeof( kFixedUsages ) / sizeof( kFixedUsages[0] );
+        constexpr uint32_t kColorLocation = kNumFixedUsages;
+        constexpr uint32_t kNumColors = 2;
+        constexpr uint32_t kTexcoordLocation = kColorLocation + kNumColors;
+        constexpr uint32_t kNumTexcoords = 8;
 
-    // Vertex shader input signature: one entry per 'dcl_<usage> v#'. The
-    // rebuilt modules declare input v# at location #, as dxvk does.
-    void ParseDxsoInputSignature( const ShaderBytecode_t &dxso,
-                                  ShaderMetadataSPIRVRuntime &metadata ) {
-        const uint32_t *pTokens = (const uint32_t *)std::get<0>( dxso );
-        const size_t numTokens = std::get<1>( dxso ) / sizeof( uint32_t );
-        if ( numTokens == 0 ||
-             ( pTokens[0] >> 16 ) != kDxsoVertexShaderVersion ) {
-            return;
+        element.Location = location;
+        if ( location < kNumFixedUsages ) {
+            element.Usage = kFixedUsages[location];
+            element.UsageIndex = 0;
+        } else if ( location < kTexcoordLocation ) {
+            element.Usage = kDeclUsageColor;
+            element.UsageIndex =
+                static_cast<uint8_t>( location - kColorLocation );
+        } else if ( location < kTexcoordLocation + kNumTexcoords ) {
+            element.Usage = kDeclUsageTexcoord;
+            element.UsageIndex =
+                static_cast<uint8_t>( location - kTexcoordLocation );
+        } else {
+            return false;
         }
-
-        size_t offset = 1;
-        while ( offset < numTokens ) {
-            const uint32_t token = pTokens[offset];
-            const uint32_t opcode = token & 0xffff;
-            if ( opcode == kDxsoOpEnd ) {
-                break;
-            }
-            if ( opcode == kDxsoOpComment ) {
-                offset += 1 + ( ( token >> 16 ) & 0x7fff );
-                continue;
-            }
-
-            const uint32_t numParams = ( token >> 24 ) & 0xf;
-            if ( opcode == kDxsoOpDcl && numParams == 2 &&
-                 offset + 2 < numTokens ) {
-                const uint32_t usage = pTokens[offset + 1];
-                const uint32_t dst = pTokens[offset + 2];
-                if ( DxsoRegType( dst ) == kDxsoRegInput ) {
-                    SPIRVInputElement element = {};
-                    element.Location = dst & 0x7ff;
-                    element.Usage = static_cast<uint8_t>( usage & 0x1f );
-                    element.UsageIndex =
-                        static_cast<uint8_t>( ( usage >> 16 ) & 0xf );
-                    metadata.InputElements.push_back( element );
-                }
-            }
-            offset += 1 + numParams;
-        }
-        metadata.NumInputElements =
-            static_cast<uint32_t>( metadata.InputElements.size() );
+        return true;
     }
 
     // SPIR-V module reflection (the subset the D3D9 ABI uses, see
     // resources/shaders/include/d3d9_abi.glsl)
     constexpr uint32_t kSpirvMagic = 0x07230203;
     constexpr uint32_t kSpirvHeaderSize = 5;
+    constexpr uint32_t kSpirvOpEntryPoint = 15;
     constexpr uint32_t kSpirvOpTypeImage = 25;
     constexpr uint32_t kSpirvOpTypeArray = 28;
     constexpr uint32_t kSpirvOpTypeRuntimeArray = 29;
@@ -93,6 +82,7 @@ namespace {
     constexpr uint32_t kSpirvStorageClassOutput = 3;
     constexpr uint32_t kSpirvDim3D = 2;
     constexpr uint32_t kSpirvDimCube = 3;
+    constexpr uint32_t kSpirvExecutionModelVertex = 0;
     constexpr uint32_t kSpirvUnset = 0xffffffffu;
 
     // Descriptor set 0 (constants, clip planes, spec state, textures). Set 1
@@ -122,6 +112,7 @@ namespace {
 
         std::vector<SpirvId> ids( pWords[3] );
         std::vector<uint32_t> variables;
+        bool bVertexShader = false;
         size_t offset = kSpirvHeaderSize;
         while ( offset < numWords ) {
             const uint32_t opcode = pWords[offset] & 0xffff;
@@ -132,6 +123,10 @@ namespace {
             const uint32_t *pOperands = pWords + offset + 1;
 
             switch ( opcode ) {
+            case kSpirvOpEntryPoint:
+                bVertexShader = ( numWordsOp >= 2 &&
+                                  pOperands[0] == kSpirvExecutionModelVertex );
+                break;
             case kSpirvOpDecorate:
                 if ( numWordsOp >= 3 && pOperands[0] < ids.size() ) {
                     SpirvId &target = ids[pOperands[0]];
@@ -202,6 +197,15 @@ namespace {
                 if ( variable.bFlat ) {
                     metadata.FlatShadingInputs |= locationBit;
                 }
+
+                if ( bVertexShader ) {
+                    SPIRVInputElement element = {};
+                    if ( !GetVertexInputSemantic( variable.Location,
+                                                  element ) ) {
+                        return false;
+                    }
+                    metadata.InputElements.push_back( element );
+                }
                 continue;
             }
 
@@ -250,6 +254,8 @@ namespace {
                    } );
         metadata.NumBindings =
             static_cast<uint32_t>( metadata.Bindings.size() );
+        metadata.NumInputElements =
+            static_cast<uint32_t>( metadata.InputElements.size() );
         metadata.SamplerPushConstantsSize = kSamplerPushConstantsSize;
 
         return true;
@@ -270,7 +276,6 @@ ShaderBinaryCache::~ShaderBinaryCache() {
 
 #if OTDU_VULKAN
     shaderMetadata.clear();
-    spirvBinaries.clear();
 #endif
 }
 
@@ -339,49 +344,20 @@ bool ShaderBinaryCache::loadShaderTable(
 
 ShaderBytecode_t
 ShaderBinaryCache::getOrLoadBytecode( const ShaderTableEntry *pTableEntry ) {
-    std::string shaderTablePath = kShadersRootFolder;
-    shaderTablePath += kShadersD3D9Folder;
-    shaderTablePath += pTableEntry->pShaderCategory;
-    shaderTablePath += kShaderTableExtension;
-    if ( shaderTableBinary.find( shaderTablePath ) == shaderTableBinary.end() &&
-         !loadShaderTable( shaderTablePath, shaderBinaries ) ) {
-        OTDU_LOG_ERROR( "Failed to register shader 0x%016llx: shader table "
-                        "'%s' could not be loaded\n",
-                        pTableEntry->Hashcode, pTableEntry->pShaderCategory );
-        return std::make_tuple( nullptr, 0ull );
-    }
-
-    // Cache shader (note that we do not create the shader yet; this will be
-    // done on its first use)
-    auto shaderBinIt = shaderBinaries.find( pTableEntry->Hashcode );
-    if ( shaderBinIt == shaderBinaries.end() ) {
-        OTDU_LOG_ERROR( "Failed to register shader 0x%016llx from shader table "
-                        "'%s': shader not found in hashtable!\n",
-                        pTableEntry->Hashcode, pTableEntry->pShaderCategory );
-        return std::make_tuple( nullptr, 0ull );
-    }
-
-#if OTDU_VULKAN
-    return loadSPIRV( pTableEntry, shaderBinIt->second );
-#else
-    return shaderBinIt->second;
-#endif
-}
-
-#if OTDU_VULKAN
-ShaderBytecode_t
-ShaderBinaryCache::loadSPIRV( const ShaderTableEntry *pTableEntry,
-                              const ShaderBytecode_t &dxso ) {
     std::string packPath = kShadersRootFolder;
     packPath += kShadersRebuiltPack;
+    packPath += kShaderTableExtension;
+
     if ( shaderTableBinary.find( packPath ) == shaderTableBinary.end() &&
-         !loadShaderTable( packPath, spirvBinaries ) ) {
+         !loadShaderTable( packPath, shaderBinaries ) ) {
         // Keeps the failed load from being retried for every shader.
         shaderTableBinary.insert( std::make_pair( packPath, nullptr ) );
     }
 
-    auto it = spirvBinaries.find( pTableEntry->Hashcode );
-    if ( it == spirvBinaries.end() ) {
+    // Cache shader (note that we do not create the shader yet; this will be
+    // done on its first use)
+    auto it = shaderBinaries.find( pTableEntry->Hashcode );
+    if ( it == shaderBinaries.end() ) {
         OTDU_LOG_ERROR( "Failed to load shader 0x%016llx (shader table '%s'): "
                         "missing from '%s'\n",
                         pTableEntry->Hashcode, pTableEntry->pShaderCategory,
@@ -389,21 +365,22 @@ ShaderBinaryCache::loadSPIRV( const ShaderTableEntry *pTableEntry,
         return std::make_tuple( nullptr, 0ull );
     }
 
+#if OTDU_VULKAN
     if ( shaderMetadata.find( pTableEntry->Hashcode ) ==
          shaderMetadata.end() ) {
         ShaderMetadataSPIRVRuntime metadata = {};
         if ( !ReflectSPIRV( it->second, metadata ) ) {
-            OTDU_LOG_ERROR( "Failed to load shader 0x%016llx: invalid SPIR-V\n",
+            OTDU_LOG_ERROR( "Failed to load shader 0x%016llx: invalid SPIR-V "
+                            "or vertex input location\n",
                             pTableEntry->Hashcode );
             return std::make_tuple( nullptr, 0ull );
         }
-        ParseDxsoInputSignature( dxso, metadata );
         shaderMetadata.insert(
             std::make_pair( pTableEntry->Hashcode, metadata ) );
     }
+#endif
     return it->second;
 }
-#endif
 
 #if OTDU_VULKAN
 ShaderMetadataSPIRVRuntime *

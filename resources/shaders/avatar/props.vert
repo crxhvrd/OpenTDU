@@ -29,26 +29,20 @@
 #define gVSLightDir c.f[93]
 #define gVSCamPosInObj c.f[119]
 
-layout( location = 0 ) in vec4 in_Position0;
-layout( location = 1 ) in vec4 in_Normal0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
 #ifdef AVATAR_SKINNED
-layout( location = 2 ) in vec4 in_BlendIndices0;
-layout( location = 3 ) in vec4 in_BlendWeight0;
-#define COLOR_LOCATION 4
-#else
-#define COLOR_LOCATION 2
+layout( location = D3D9_IN_BLENDINDICES0 ) in vec4 in_BlendIndices0;
+layout( location = D3D9_IN_BLENDWEIGHT0 ) in vec4 in_BlendWeight0;
 #endif
 #ifdef AVATAR_VERTEX_COLOR
-layout( location = COLOR_LOCATION ) in vec4 in_Color0;
-#define UV_LOCATION ( COLOR_LOCATION + 1 )
-#else
-#define UV_LOCATION COLOR_LOCATION
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #endif
 #ifdef AVATAR_UV0
-layout( location = UV_LOCATION ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #endif
 #ifdef AVATAR_UV1
-layout( location = UV_LOCATION + 1 ) in vec4 in_Texcoord1;
+layout( location = D3D9_IN_TEXCOORD( 1 ) ) in vec4 in_Texcoord1;
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;

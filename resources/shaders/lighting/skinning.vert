@@ -24,28 +24,19 @@
 #define gVSLightAmbient c.f[94]
 #define gVSLightDiffuse c.f[95]
 
-layout( location = 0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef SKIN_DIFFUSE
-layout( location = 1 ) in vec4 in_Normal0;
-#define SKIN_LOCATION 2
-#else
-#define SKIN_LOCATION 1
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
 #endif
 #ifdef SKIN_SKINNED
-layout( location = SKIN_LOCATION ) in vec4 in_BlendIndices0;
-layout( location = SKIN_LOCATION + 1 ) in vec4 in_BlendWeight0;
-#define COLOR_LOCATION ( SKIN_LOCATION + 2 )
-#else
-#define COLOR_LOCATION SKIN_LOCATION
+layout( location = D3D9_IN_BLENDINDICES0 ) in vec4 in_BlendIndices0;
+layout( location = D3D9_IN_BLENDWEIGHT0 ) in vec4 in_BlendWeight0;
 #endif
 #ifdef SKIN_VERTEX_COLOR
-layout( location = COLOR_LOCATION ) in vec4 in_Color0;
-#define TEXCOORD_LOCATION ( COLOR_LOCATION + 1 )
-#else
-#define TEXCOORD_LOCATION COLOR_LOCATION
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #endif
 #ifdef SKIN_TEXCOORD
-layout( location = TEXCOORD_LOCATION ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;

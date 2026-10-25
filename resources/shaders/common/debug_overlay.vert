@@ -20,13 +20,13 @@
 #define gDebugTextColor c.f[0]
 #define gScaleTransition c.f[225]
 
-layout( location = 0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef DEBUG_OVERLAY_TEXT
-layout( location = 1 ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #else
-layout( location = 1 ) in vec4 in_Color0;
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #ifdef DEBUG_OVERLAY_TEXCOORD
-layout( location = 2 ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #endif
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;

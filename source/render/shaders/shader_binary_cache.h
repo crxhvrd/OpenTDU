@@ -20,9 +20,9 @@ struct ShaderTableHeaderEntry {
                              // kInvalidMetadataOffset if unavailable/unused
 };
 
-// Shader interface metadata. The runtime builds it from the SPIR-V module and
-// the retail DXSO declarations; the asset extractor serializes it (as a dxvk
-// DxvkShaderCreateInfo subset) in the optional dxvk translated tables. NOTE:
+// Shader interface metadata. The runtime reflects it from the SPIR-V module;
+// the asset extractor serializes it (as a dxvk DxvkShaderCreateInfo subset) in
+// the optional dxvk translated tables. NOTE:
 // This struct does not include the binding reflection (stored right after
 // NumBindings). During parsing, you must make sure to read
 // 'sizeof(DxvkBindingInfo) * NumBindings' before reading the next metadata
@@ -58,7 +58,7 @@ OTDU_SIZE_MUST_MATCH( SPIRVBindingInfo, 0x24 );
 // to its D3D9 Usage semantic so the runtime can match vertex declaration
 // elements to shader inputs by semantic instead of by sequential stream index.
 struct SPIRVInputElement {
-    uint32_t Location; // SPIRV layout(location=N) — ISGN sequential slot
+    uint32_t Location; // SPIRV layout(location=N) (D3D9_IN_*)
     uint8_t Usage;     // D3DDECLUSAGE value (matches dxvk::DxsoUsage)
     uint8_t UsageIndex;
     uint8_t _pad[2];
@@ -109,11 +109,11 @@ struct ShaderTable {
     }
 };
 
-static constexpr const char *kShadersRootFolder = "EURO/Shaders/";
+static constexpr const char *kShadersRootFolder = "opentdu_data/";
 static constexpr const char *kShadersD3D9Folder = "d3d9/";
 static constexpr const char *kShadersOpenGLFolder = "gl330/";
 static constexpr const char *kShadersVulkanFolder = "vulkan/";
-static constexpr const char *kShadersRebuiltPack = "rebuilt.bin";
+static constexpr const char *kShadersRebuiltPack = "shader_cache";
 static constexpr const char *kShaderTableExtension = ".bin";
 static constexpr const char *kShaderTableSourceExtension = ".glsl";
 
@@ -131,7 +131,6 @@ public:
 private:
     // Loaded shader tables (keyed by path).
     std::unordered_map<std::string, void *> shaderTableBinary;
-    // Retail (DXSO) shaders extracted from the game executable.
     std::unordered_map<uint64_t, ShaderBytecode_t> shaderBinaries;
 
 private:
@@ -140,14 +139,7 @@ private:
         std::unordered_map<uint64_t, ShaderBytecode_t> &outBinaries );
 
 #if OTDU_VULKAN
-    // Shaders rebuilt from source (resources/shaders), compiled to SPIR-V and
-    // packed by the build (EURO/Shaders/rebuilt.bin).
-    std::unordered_map<uint64_t, ShaderBytecode_t> spirvBinaries;
     std::unordered_map<uint64_t, ShaderMetadataSPIRVRuntime> shaderMetadata;
-
-private:
-    ShaderBytecode_t loadSPIRV( const ShaderTableEntry *pTableEntry,
-                                const ShaderBytecode_t &dxso );
 #endif
 };
 

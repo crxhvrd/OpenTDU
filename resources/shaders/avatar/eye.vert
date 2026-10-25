@@ -25,12 +25,12 @@
 #define gVSHeadUp c.f[244]
 #define gVSHeadRight c.f[245]
 
-layout( location = 0 ) in vec4 in_Position0;
-layout( location = 1 ) in vec4 in_Normal0;
-layout( location = 2 ) in vec4 in_BlendIndices0;
-layout( location = 3 ) in vec4 in_BlendWeight0;
-layout( location = 4 ) in vec4 in_Texcoord0;
-layout( location = 5 ) in vec4 in_Texcoord1;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
+layout( location = D3D9_IN_BLENDINDICES0 ) in vec4 in_BlendIndices0;
+layout( location = D3D9_IN_BLENDWEIGHT0 ) in vec4 in_BlendWeight0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 1 ) ) in vec4 in_Texcoord1;
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;
 layout( location = D3D9_SLOT_TEXCOORD0 ) out vec4 out_Texcoord0;

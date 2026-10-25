@@ -26,11 +26,11 @@
 #define gVSRampColorPow c.f[116]
 #define gUserVector3 c.f[3]
 
-layout( location = 0 ) in vec4 in_Position0;
-layout( location = 1 ) in vec4 in_Color0;
-layout( location = 2 ) in vec4 in_Normal0;
-layout( location = 3 ) in vec4 in_Texcoord0;
-layout( location = 4 ) in vec4 in_Texcoord1;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 1 ) ) in vec4 in_Texcoord1;
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;
 #ifdef DIRT_RAMP

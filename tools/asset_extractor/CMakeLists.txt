@@ -52,36 +52,3 @@ elseif ( APPLE )
 else()
     set_target_properties( opentdu_assetExtractor PROPERTIES OUTPUT_NAME "opentdu_assetextractor_unix")
 endif()
-
-add_custom_command(
-    TARGET opentdu_assetExtractor
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${OTDU_RSC_FOLDER}/imgui_vs.bin"
-            "${OTDU_BIN_FOLDER}/EURO/Shaders/d3d9/imgui_vs.bin"
-    COMMENT "Copying imgui vertex shader binary..."
-)
-add_custom_command(
-    TARGET opentdu_assetExtractor
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${OTDU_RSC_FOLDER}/imgui_ps.bin"
-            "${OTDU_BIN_FOLDER}/EURO/Shaders/d3d9/imgui_ps.bin"
-    COMMENT "Copying imgui pixel shader binary..."
-)
-add_custom_command(
-    TARGET opentdu_assetExtractor
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${OTDU_RSC_FOLDER}/dbg_font_vs.bin"
-            "${OTDU_BIN_FOLDER}/EURO/Shaders/d3d9/dbg_font_vs.bin"
-    COMMENT "Copying dbg_font vertex shader binary..."
-)
-add_custom_command(
-    TARGET opentdu_assetExtractor
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${OTDU_RSC_FOLDER}/dbg_font_ps.bin"
-            "${OTDU_BIN_FOLDER}/EURO/Shaders/d3d9/dbg_font_ps.bin"
-    COMMENT "Copying dbg_font pixel shader binary..."
-)

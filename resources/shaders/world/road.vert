@@ -23,28 +23,25 @@
 
 const float kSectorSize = 768.0;
 
-layout( location = 0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef ROAD_NORMAL
-layout( location = 1 ) in vec4 in_Normal0;
-#define UV_LOCATION( n ) ( 2 + ( n ) )
-#else
-#define UV_LOCATION( n ) ( 1 + ( n ) )
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
 #endif
-layout( location = UV_LOCATION( 0 ) ) in vec4 in_TexcoordColor;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_TexcoordColor;
 #ifdef ROAD_MARKS
-layout( location = UV_LOCATION( 1 ) ) in vec4 in_TexcoordMarks;
+layout( location = D3D9_IN_TEXCOORD( 1 ) ) in vec4 in_TexcoordMarks;
 #define MARKS2_UV 2
 #else
 #define MARKS2_UV 1
 #endif
 #ifdef ROAD_MARKS2
-layout( location = UV_LOCATION( MARKS2_UV ) ) in vec4 in_TexcoordMarks2;
+layout( location = D3D9_IN_TEXCOORD( MARKS2_UV ) ) in vec4 in_TexcoordMarks2;
 #define DETAIL_UV ( MARKS2_UV + 1 )
 #else
 #define DETAIL_UV MARKS2_UV
 #endif
 #ifdef ROAD_DETAIL
-layout( location = UV_LOCATION( DETAIL_UV ) ) in vec4 in_TexcoordDetail;
+layout( location = D3D9_IN_TEXCOORD( DETAIL_UV ) ) in vec4 in_TexcoordDetail;
 #endif
 
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;

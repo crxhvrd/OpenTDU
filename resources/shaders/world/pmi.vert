@@ -18,24 +18,24 @@
 #define gVSLightDiffuse c.f[95]
 #define gVSLODDist c.f[118]
 
-layout( location = 0 ) in vec4 in_Position0;
-layout( location = 1 ) in vec4 in_Normal0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
 #ifdef PMI_VERTEX_COLOR
-layout( location = 2 ) in vec4 in_VertexColor;
-#define ATTRIBUTE_LOCATION( n ) ( 3 + ( n ) )
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_VertexColor;
+#define INSTANCE_COLOR 1
 #else
-#define ATTRIBUTE_LOCATION( n ) ( 2 + ( n ) )
+#define INSTANCE_COLOR 0
 #endif
 #ifdef PMI_TEXTURED
-layout( location = ATTRIBUTE_LOCATION( 0 ) ) in vec4 in_Texcoord0;
-#define MATRIX_LOCATION( n ) ATTRIBUTE_LOCATION( 1 + ( n ) )
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
+#define INSTANCE_UV 1
 #else
-#define MATRIX_LOCATION( n ) ATTRIBUTE_LOCATION( n )
+#define INSTANCE_UV 0
 #endif
-layout( location = MATRIX_LOCATION( 0 ) ) in vec4 in_InstanceRow0;
-layout( location = MATRIX_LOCATION( 1 ) ) in vec4 in_InstanceRow1;
-layout( location = MATRIX_LOCATION( 2 ) ) in vec4 in_InstanceRow2;
-layout( location = MATRIX_LOCATION( 3 ) ) in vec4 in_InstanceColor;
+layout( location = D3D9_IN_TEXCOORD( INSTANCE_UV + 0 ) ) in vec4 in_InstanceRow0;
+layout( location = D3D9_IN_TEXCOORD( INSTANCE_UV + 1 ) ) in vec4 in_InstanceRow1;
+layout( location = D3D9_IN_TEXCOORD( INSTANCE_UV + 2 ) ) in vec4 in_InstanceRow2;
+layout( location = D3D9_IN_COLOR( INSTANCE_COLOR ) ) in vec4 in_InstanceColor;
 
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;

@@ -20,17 +20,14 @@
 #define gVSCamPosInObj c.f[119]
 #define gVSUVScale c.f[124]
 
-layout( location = 0 ) in vec4 in_Position0;
-layout( location = 1 ) in vec4 in_Normal0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
 #ifdef SKIN_VERTEX_COLOR
-layout( location = 2 ) in vec4 in_Color0;
-#define SKIN_LOCATION 3
-#else
-#define SKIN_LOCATION 2
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #endif
-layout( location = SKIN_LOCATION ) in vec4 in_BlendIndices0;
-layout( location = SKIN_LOCATION + 1 ) in vec4 in_BlendWeight0;
-layout( location = SKIN_LOCATION + 2 ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_BLENDINDICES0 ) in vec4 in_BlendIndices0;
+layout( location = D3D9_IN_BLENDWEIGHT0 ) in vec4 in_BlendWeight0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;
 layout( location = D3D9_SLOT_TEXCOORD0 ) out vec4 out_Texcoord0;

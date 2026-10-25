@@ -1305,39 +1305,6 @@ add_custom_command(
     COMMENT "Copying OpenTDU pedestrians navigation..."
 )
 
-add_custom_command(
-    TARGET opentdu
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${OTDU_RSC_FOLDER}/imgui_vs.bin"
-            "${OTDU_BIN_FOLDER}/EURO/Shaders/d3d9/imgui_vs.bin"
-    COMMENT "Copying imgui vertex shader binary..."
-)
-add_custom_command(
-    TARGET opentdu
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${OTDU_RSC_FOLDER}/imgui_ps.bin"
-            "${OTDU_BIN_FOLDER}/EURO/Shaders/d3d9/imgui_ps.bin"
-    COMMENT "Copying imgui pixel shader binary..."
-)
-add_custom_command(
-    TARGET opentdu
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${OTDU_RSC_FOLDER}/dbg_font_vs.bin"
-            "${OTDU_BIN_FOLDER}/EURO/Shaders/d3d9/dbg_font_vs.bin"
-    COMMENT "Copying dbg_font vertex shader binary..."
-)
-add_custom_command(
-    TARGET opentdu
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${OTDU_RSC_FOLDER}/dbg_font_ps.bin"
-            "${OTDU_BIN_FOLDER}/EURO/Shaders/d3d9/dbg_font_ps.bin"
-    COMMENT "Copying dbg_font pixel shader binary..."
-)
-
 # Third-Party includes
 include_directories( "${OTDU_SRC_FOLDER}" )
 include_directories( "${OTDU_THIRDPARTY_FOLDER}" )
@@ -1437,10 +1404,10 @@ if (${OTDU_GFX_API} STREQUAL "OTDU_VULKAN")
         configure_file( "${OTDU_SHADER_BUILD_FOLDER}/shaders.txt.tmp"
                         "${OTDU_SHADER_BUILD_FOLDER}/shaders.txt" COPYONLY )
 
-        set( OTDU_SHADER_PACK "${OTDU_BIN_FOLDER}/EURO/Shaders/rebuilt.bin" )
+        set( OTDU_SHADER_PACK "${OTDU_BIN_FOLDER}/opentdu_data/shader_cache.bin" )
         add_custom_command(
             OUTPUT "${OTDU_SHADER_PACK}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_BIN_FOLDER}/EURO/Shaders"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_BIN_FOLDER}/opentdu_data"
             COMMAND $<TARGET_FILE:opentdu_shaderPacker>
                     -list "${OTDU_SHADER_BUILD_FOLDER}/shaders.txt"
                     -input "${OTDU_SHADER_BUILD_FOLDER}"

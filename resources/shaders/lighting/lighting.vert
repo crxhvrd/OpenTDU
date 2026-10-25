@@ -35,21 +35,15 @@
 #define LIGHTING_FADE
 #endif
 
-layout( location = 0 ) in vec4 in_Position0;
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef LIGHTING_VERTEX_COLOR
-layout( location = 1 ) in vec4 in_Color0;
-#define NORMAL_LOCATION 2
-#else
-#define NORMAL_LOCATION 1
+layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #endif
 #ifdef LIGHTING_DIFFUSE
-layout( location = NORMAL_LOCATION ) in vec4 in_Normal0;
-#define TEXCOORD_LOCATION ( NORMAL_LOCATION + 1 )
-#else
-#define TEXCOORD_LOCATION NORMAL_LOCATION
+layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
 #endif
 #ifdef LIGHTING_TEXCOORD
-layout( location = TEXCOORD_LOCATION ) in vec4 in_Texcoord0;
+layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;
