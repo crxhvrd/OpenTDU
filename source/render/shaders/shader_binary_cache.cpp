@@ -105,7 +105,8 @@ namespace {
     bool ReflectSPIRV( const ShaderBytecode_t &spirv,
                        ShaderMetadataSPIRVRuntime &metadata ) {
         const uint32_t *pWords = (const uint32_t *)std::get<0>( spirv );
-        const size_t numWords = std::get<1>( spirv ) / sizeof( uint32_t );
+        const size_t numWords =
+            static_cast<size_t>( std::get<1>( spirv ) ) / sizeof( uint32_t );
         if ( numWords < kSpirvHeaderSize || pWords[0] != kSpirvMagic ) {
             return false;
         }
