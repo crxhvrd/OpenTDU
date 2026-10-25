@@ -77,6 +77,7 @@ void edAudioFader::startFadeOut( float duration ) {
 edAudioStreamEntry::edAudioStreamEntry()
     : edAudioObject( 0, 0 ),
       Name{},
+      SubtitleKey{},
       SourceChannelCount( 0 ),
       SourcePlaneStride( 0 ),
       SourceSampleRate( kAudioOutputSampleRate ),
@@ -320,6 +321,17 @@ void edAudioStreamEntry::play( float fadeTime ) {
     }
 
     FadeTarget = ( fadeTime == 0.0f ) ? APEFT_None : APEFT_Play;
+}
+
+void edAudioStreamEntry::playSubtitled( const char *pSoundName,
+                                        float fadeTime ) {
+    // FUN_00405a70
+    play( fadeTime );
+    strncpy( SubtitleKey, pSoundName, kSubtitleKeyLength - 1 );
+    char *pExtension = strchr( SubtitleKey, '.' );
+    if ( pExtension != nullptr ) {
+        *pExtension = '\0';
+    }
 }
 
 void edAudioStreamEntry::stop( float fadeTime ) {

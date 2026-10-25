@@ -94,6 +94,7 @@ public:
     };
 
     static constexpr int32_t kMaxListeners = 4;
+    static constexpr int32_t kSubtitleKeyLength = 0x80;
     static constexpr int32_t kMaxSourceChannels = 8;
     static constexpr int32_t kPositionShift = 15;
     static constexpr int32_t kPitchShift = 11;
@@ -113,6 +114,7 @@ public:
         return PlayingState == APES_Pause;
     }
     inline const char *getName() const { return Name; }
+    inline const char *getSubtitleKey() const { return SubtitleKey; }
     inline int32_t getLoopCount() const {
         // FUN_006138a0
         return LoopCount;
@@ -145,6 +147,7 @@ public:
     bool setReader( std::unique_ptr<edAudioStreamReader> pInReader );
 
     void play( float fadeTime = 0.0f );
+    void playSubtitled( const char *pSoundName, float fadeTime = 0.0f );
     void stop( float fadeTime = 0.0f );
     void pause( float fadeTime = 0.0f );
     void setLoopCount( int32_t loopCount );
@@ -185,6 +188,7 @@ private:
 
 private:
     char Name[32];
+    char SubtitleKey[kSubtitleKeyLength];
     int32_t SourceChannelCount;
     int32_t SourcePlaneStride;
     int32_t SourceSampleRate;

@@ -19,6 +19,7 @@
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_spot_mesh.h"
 #include "game/game_cheats.h"
+#include "game/gs_tutorial.h"
 #include "game/game_mechanism_player.h"
 #include "database/gs_database.h"
 #include "debug/mng_debug_hud.h"
@@ -722,7 +723,7 @@ bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
     const eGameMode previousGM = gpTestDriveInstance->getActiveGameMode();
     bool bJoiningLobby = false;
     if ( previousGM == GM_FreeRide ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
+        gpTutorial->onSpotLaunched( pSpot );
     }
 
     switch ( pSpot->Type ) {
@@ -736,7 +737,7 @@ bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
     case ST_CarDealer:
     case ST_BikeDealer:
         gpTestDriveInstance->setNextGameMode( GM_Shop );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
+        gpScenaric->getIntroTutorial().onCarDealershipEntered();
         break;
     case ST_Goodies:
         gpTestDriveInstance->setNextGameMode( GM_Goodies );
@@ -794,7 +795,7 @@ bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
             break;
         case 4:
             gpTestDriveInstance->setNextGameMode( GM_Estates );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL (FUN_007fba70)
+            gpScenaric->getIntroTutorial().onEstateEntered();
             break;
         default:
             return false;

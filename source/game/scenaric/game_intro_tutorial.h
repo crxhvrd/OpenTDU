@@ -47,6 +47,9 @@ public:
     void onCarBought();
     void onHouseBought( SpotMap *pHouse );
     void onChallengeEntered();
+    void onCarDealershipEntered();
+    void onEstateEntered();
+    void onDressingFinished();
     void onHouseEntered();
     void onMissionQuit();
     void setModalHintVisible( const bool bVisible );
@@ -60,6 +63,7 @@ private:
     void showFlashTutorialDialog( const char *pDialogID );
     void setStep( const int32_t step );
     void beginStep( const int32_t step, const int32_t previousStep );
+    void teleportToCarRental();
     void endStep( const int32_t step );
 
 private:

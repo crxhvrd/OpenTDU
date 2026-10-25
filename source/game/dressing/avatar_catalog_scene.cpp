@@ -262,7 +262,7 @@ bool AvatarCatalogScene::onMessage( FlashMessage *pMessage ) {
     // FUN_008f96f0
     switch ( *pMessage ) {
     case FlashMessage( "enav" ):
-        OTDU_UNIMPLEMENTED; // TODO: Tutorial (FUN_007fc760)
+        gpScenaric->getIntroTutorial().onDressingFinished();
         return true;
     case FlashMessage( "drhe" ):
         updateHelpVariable( getCurrentCategory() );

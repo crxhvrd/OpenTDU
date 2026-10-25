@@ -251,9 +251,8 @@ void PassengerVoicePlayer::tick() {
         pEntry->setSample( pPendingSound );
         pEntry->setLoopCount( 0 );
         pEntry->Pitch = 1.0f;
-        pEntry->play( 0.0f );    // FUN_00405a70
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (subtitle key = sound name
-                                 // without extension, subtitled pipeline)
+        pEntry->playSubtitled(
+            ( pPendingSoundName != nullptr ) ? pPendingSoundName : "", 0.0f );
         bPlaying = true;
         return;
     }

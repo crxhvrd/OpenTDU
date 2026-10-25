@@ -184,7 +184,7 @@ bool RequestMapGameMode( FlashPlayer *param_1 ) {
                                   gpFlash->getContactTypeRW() );
 
     if ( gpTestDriveInstance->getActiveGameMode() == GM_FreeRide ) {
-        gpTutorial->cancelDisplayedMessages();
+        gpTutorial->onMapRequested();
         TransitionFromFreerideToMap( 2 );
         return true;
     }
@@ -449,7 +449,7 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
 
         if ( bNeedDatabaseInit ) {
             gpScenaric->getIntroTutorial().sendFlashVariables( pPlayer );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: GSTutorial
+            gpTutorial->displayHelp( pPlayer, 0 );
             bNeedDatabaseInit = false;
         }
         return true;

@@ -32,6 +32,7 @@ public:
 public:
     const char *getName() const override { return "Camera"; }
     inline void setDeadZone( const float value ) { deadZone = value; }
+    inline float getDeadZone() const { return deadZone; }
 
     inline void setNearPlane( const float value ) { nearPlane = value; }
     inline void setFarPlane( const float value ) { farPlane = value; }

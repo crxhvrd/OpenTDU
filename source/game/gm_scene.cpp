@@ -11,6 +11,7 @@
 #include "world/gs_boat.h"
 
 #include "gs_timer.h"
+#include "game/gs_tutorial.h"
 #include "tdu_instance.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
@@ -318,7 +319,9 @@ void GameModeScene::pause() {
         DisablePostFXNode( gpPostFX->getEffect<ePostFXStep::PFXS_HDRI>() );
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
+    if ( gpTutorial != nullptr ) {
+        gpTutorial->stopVoice();
+    }
 
     // Stop the intro / loop spot cinematics if still playing.
     if ( pCinematicIntroE != nullptr ) {

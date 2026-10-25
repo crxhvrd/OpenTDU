@@ -287,9 +287,8 @@ void EntityExtraChallenge::launch() {
     eventParameters.setRequestedName( "SHOPING" );
     eventParameters.setSource( EventParameters::ES_IGEFile );
     eventParameters.setField124( 0x1020304 );
-    if ( gpTestDriveInstance->getActiveGameMode() == GM_FreeRide &&
-         !gpScenaric->getIntroTutorial().isActive() ) {
-        gpTutorial->cancelDisplayedMessages(); // FUN_009816d0
+    if ( gpTestDriveInstance->getActiveGameMode() == GM_FreeRide ) {
+        gpTutorial->onExtraChallengeLaunched( this );
     }
 
     gpScenaric->setActiveExtraChallenge( this );

@@ -247,7 +247,8 @@ void CinematicVoiceEmitter::createInstance() {
     pInstance->setSample( pSample.get() );
     pInstance->setVolume( Volume );
     pInstance->setDopplerFactor( 0.0f );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (FUN_00613800, subtitle listener)
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (FUN_00613800, emitter listens to
+                             // its instance: Stopped/Ended -> uninstall)
 }
 
 void CinematicVoiceEmitter::play() {
@@ -260,8 +261,7 @@ void CinematicVoiceEmitter::play() {
     pInstance->setPosition(
         kVoicePosition,
         AudioDispatcherPlaybackInstanceValues::ADPCS_ListenerRelative );
-    pInstance->play( 0.0f );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (subtitle)
+    pInstance->playSubtitled( Name, 0.0f );
 }
 
 void CinematicVoiceEmitter::playFrom( EntityAvatar *pAvatar ) {
@@ -273,8 +273,7 @@ void CinematicVoiceEmitter::playFrom( EntityAvatar *pAvatar ) {
 
     pInstance->setSample( pSample.get() );
     pInstance->debugSetDescription( "Voice Instance" );
-    pInstance->play( 0.0f );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (subtitle)
+    pInstance->playSubtitled( Name, 0.0f );
 }
 
 void CinematicVoiceEmitter::setPosition( const Eigen::Vector3f &position ) {

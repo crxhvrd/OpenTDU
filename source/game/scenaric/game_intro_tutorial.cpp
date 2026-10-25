@@ -12,11 +12,14 @@
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/spots.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/mng_fade.h"
 #include "flash/modal_message_box.h"
 #include "database/gs_database.h"
 #include "game/gm_scene.h"
 #include "game/gm_world.h"
+#include "game/vehicle/car_state.h"
 #include "physics/gs_physics.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "system/gs_pc_options.h"
 #include "player_data/achievements_data.h"
 #include "player_data/driver.h"
@@ -26,6 +29,7 @@
 #include "player_data/saved_garage.h"
 #include "player_data/player_data_interface.h"
 #include "world/gs_world.h"
+#include "world/mng_world.h"
 
 #include "tdu_instance.h"
 
@@ -33,6 +37,8 @@ static const Eigen::Vector4f kTutorialDefaultMapFocus( 48389.043f,
                                                        20.90166f,
                                                        48200.7f,
                                                        1.0f ); // DAT_00f421cc
+static constexpr float kCarRentalTeleportDistance = 10.0f;
+static bool gbSkipTutorialAirplane = true; // DAT_00fab8c0
 
 GameIntroTutorial::GameIntroTutorial()
     : tutorialStep( 0 ),
@@ -115,7 +121,7 @@ void GameIntroTutorial::tick() {
 
     if ( tutorialStep != kTutorialStatePending ) {
         if ( tutorialStep == kTutorialStateFirstDrive && bMustTeleport ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (tutorial teleport)
+            teleportToCarRental();
         }
         return;
     }
@@ -152,6 +158,41 @@ void GameIntroTutorial::tick() {
     pDriver->notify( 0u );
 
     beginStep( tutorialStep, previousStep );
+}
+
+void GameIntroTutorial::teleportToCarRental() {
+    // FUN_007fcaf0 (inlined)
+    Matrix4x4f_t frame;
+    ComputeRoadApproachFrame(
+        Eigen::Vector4f( pCarRental->X, pCarRental->Y, pCarRental->Z, 1.0f ),
+        frame, kCarRentalTeleportDistance );
+    MatrixPreRotateY( frame, kPI );
+    Eigen::Vector4f position = frame.row( 3 );
+
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    PhysicsVehicle *pPhysicsVehicle =
+        ( pLocalCar != nullptr ) ? pLocalCar->getPhysicsVehicle() : nullptr;
+    if ( pPhysicsVehicle != nullptr ) {
+        gpWorld->setStreamingPosition( &position );
+        if ( gpWorld->isStreamedAround( &position, true, true ) ) {
+            bMustTeleport = false;
+            {
+                PhysicsLock lock;
+                pPhysicsVehicle->resetToTransform( frame, true );
+            }
+            gpMngWorld->setDisableStreamingOnCar( false );
+
+            PhysicsLock lock;
+            pPhysicsVehicle->setPostponedPause( 2 );
+        }
+    }
+
+    if ( bMustTeleport ) {
+        gpMngFade->setTransitionFlags( gpMngFade->getTransitionFlags() | 8u );
+    } else {
+        gpMngFade->setTransitionFlags(
+            ( gpMngFade->getTransitionFlags() & ~8u ) | 4u );
+    }
 }
 
 void GameIntroTutorial::onCarRented( const int32_t carID,
@@ -191,6 +232,30 @@ void GameIntroTutorial::onChallengeEntered() {
     if ( isActive() && tutorialStep != kTutorialStateChallenge ) {
         setStep( kTutorialStateChallenge );
     }
+}
+
+void GameIntroTutorial::onCarDealershipEntered() {
+    // FUN_007fba50
+    if ( isActive() && tutorialStep != kTutorialStateBuyCar ) {
+        setStep( kTutorialStateBuyCar );
+    }
+}
+
+void GameIntroTutorial::onEstateEntered() {
+    // FUN_007fba70
+    if ( isActive() && tutorialStep != kTutorialStateBuyHouse ) {
+        setStep( kTutorialStateBuyHouse );
+    }
+}
+
+void GameIntroTutorial::onDressingFinished() {
+    // FUN_007fc760
+    if ( !isActive() ) {
+        return;
+    }
+
+    setStep( gbSkipTutorialAirplane ? kTutorialStateCarRental
+                                    : kTutorialStateAirplane );
 }
 
 void GameIntroTutorial::onHouseEntered() {

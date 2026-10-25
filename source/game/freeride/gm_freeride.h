@@ -51,6 +51,9 @@ public:
     bool enterSpot( struct SpotMap *pSpot );
     bool enterExtraChallenge( EntityExtraChallenge *pChallenge );
     inline bool isNextIntroActive() const { return nextIntro.bIsActive; }
+    inline EntityExtraChallenge *getNearestExtraChallenge() const {
+        return pNearestExtraChallenge;
+    }
 
     static void OnGPSFlyUpEnd( void *pUnused, void *pTargetGameMode );
 
