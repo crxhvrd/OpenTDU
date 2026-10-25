@@ -13,6 +13,7 @@
 #include "game/scenaric/entity/entity_avatar_passenger.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "game/scenaric/entity/entity_extra_challenge.h"
+#include "game/scenaric/entity/entity_passenger_goodies.h"
 #include "database/gs_database.h"
 #include "game/avatar/gs_avatar.h"
 #include "game/vehicle/car_desc.h"
@@ -179,6 +180,7 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
 
     initWoosh();
 
+    installLevelWorldSpots();
     introTutorial.initialize( spotList );
 
     avatarManager.initialize();
@@ -630,6 +632,40 @@ bool GSScenaric::unloadPassenger( CarState *pCarState,
     return true;
 }
 
+bool GSScenaric::placeCargo( CarState *pCarState,
+                             EntityPassengerGoodies *pCargo ) {
+    // FUN_008051f0
+    if ( pCarState == nullptr || pCargo == nullptr || gpCarState == nullptr ) {
+        return false;
+    }
+
+    VehicleBaseResources *pResource = pCarState->getResource();
+    DBEntryCarPhysicsData *pCarData = gpDatabase->getCarDBEntry(
+        pResource != nullptr ? pResource->CarID : -1 );
+    if ( !gpDatabase->isBike( pCarData ) &&
+         gpDatabase->isTraffic( pCarData ) ) {
+        return false;
+    }
+
+    pCargo->setCarState( pCarState );
+    pCarState->pCargo = pCargo;
+    pCargo->setBehavior( PG_MovementInCar );
+    return true;
+}
+
+bool GSScenaric::unloadCargo( CarState *pCarState,
+                              EntityPassengerGoodies *pCargo ) {
+    // FUN_008051b0
+    if ( pCarState == nullptr || pCargo == nullptr ) {
+        return false;
+    }
+
+    pCargo->setCarState( pCarState );
+    pCarState->pCargo = nullptr;
+    pCargo->setBehavior( PG_MovementFree );
+    return true;
+}
+
 void GSScenaric::reset() {
     // FUN_00805c30
     EntityAvatar *pDriver = avatarManager.allocateAvatar( ~0ull, 1 );
@@ -825,6 +861,19 @@ void GSScenaric::unloadPacks() {
     unloadBank( &worldLifeSetBank );
 }
 
+void GSScenaric::installLevelWorldSpots() {
+    // FUN_00709e80 (partial)
+    if ( gpWorld == nullptr || gpWorld->getStreamingManager() == nullptr ) {
+        return;
+    }
+
+    Bank &spotsBank = gpWorld->getStreamingManager()->getLevel().spotsBank;
+    void *pSpotResource =
+        spotsBank.getFirstEntry( static_cast<eAssetGroup>( 8 ),
+                                 static_cast<eAssetType>( 0x13 ), nullptr );
+    spotList.installWorldSpots( pSpotResource );
+}
+
 void GSScenaric::prepareWorldEntityTemplates() {
     if ( worldScenaricBank.isLoaded() ) {
         worldScenaricBank.activate( nullptr );
@@ -836,11 +885,7 @@ void GSScenaric::prepareWorldEntityTemplates() {
         pBank->activate( nullptr );
     }
     if ( gpWorld != nullptr && gpWorld->getStreamingManager() != nullptr ) {
-        Bank &spotsBank = gpWorld->getStreamingManager()->getLevel().spotsBank;
-        void *pSpotResource =
-            spotsBank.getFirstEntry( static_cast<eAssetGroup>( 8 ),
-                                     static_cast<eAssetType>( 0x13 ), nullptr );
-        spotList.installWorldSpots( pSpotResource );
+        installLevelWorldSpots();
         introTutorial.resolveSpots( spotList );
 
         // The initial sectors streamed in before gpScenaric existed, so they

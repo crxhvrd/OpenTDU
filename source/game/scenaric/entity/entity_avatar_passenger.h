@@ -2,11 +2,91 @@
 
 #include "entity_avatar.h"
 #include "entity_driver.h"
+#include "core/random/bcpl.h"
+#include "filesystem/bank.h"
 #include "render/animation/animation.h"
 #include "render/animation/anim_expression.h"
 
+#include <memory>
+
+class AudioClient;
 class CarState;
+class edAudioSample;
+class edAudioStreamEntry;
 struct HiearchyNode;
+
+// Voice lines of a hitch-hiker / shopping girl
+// ("Sound/Voices/<language>/<prefix>_<voice>.bnk")
+class PassengerVoiceBank : public Bank {
+public:
+    enum eStatus : int32_t {
+        PVBS_None = 0,
+        PVBS_Loading = 1,
+        PVBS_Ready = 2,
+    };
+
+    static constexpr int32_t kMaxSounds = 6;
+    static constexpr int32_t kSoundNameLength = 0x80;
+    static constexpr int32_t kVoiceNameLength = 0x40;
+
+public:
+    inline bool isReady() const { return Status == PVBS_Ready; }
+    inline const edAudioSample *getSound( const int32_t index ) const {
+        return pSounds[index].get();
+    }
+    inline const char *getSoundName( const int32_t index ) const {
+        return SoundNames[index];
+    }
+
+public:
+    PassengerVoiceBank( const char *pInBankPrefix,
+                        const char *pInSoundNameFormat,
+                        const int32_t numSounds );
+    ~PassengerVoiceBank();
+
+    bool load( const char *pVoiceName );
+    void loadContent() override;
+    void release();
+
+private:
+    const char *pBankPrefix;
+    const char *pSoundNameFormat;
+    int32_t NumSounds;
+    eStatus Status;
+    char VoiceName[kVoiceNameLength];
+    std::unique_ptr<edAudioSample> pSounds[kMaxSounds];
+    char SoundNames[kMaxSounds][kSoundNameLength];
+};
+
+// Voice line playback shared by the hitch-hiker and shopping girl
+class PassengerVoicePlayer {
+public:
+    inline bool isPlaying() const { return bPlaying; }
+    inline bool hasPendingSound() const { return pPendingSound != nullptr; }
+
+public:
+    PassengerVoicePlayer();
+    ~PassengerVoicePlayer();
+
+    void create( const char *pDescription );
+    void destroy();
+    void requestStop();
+    void clear();
+    void queue( const edAudioSample *pSound, const char *pSoundName );
+    void tick();
+
+private:
+    AudioClient *pClient;
+    edAudioStreamEntry *pEntry;
+    const edAudioSample *pPendingSound;
+    const char *pPendingSoundName;
+    bool bPlaying;
+};
+
+static constexpr int32_t kNumPassengerDrivingSounds = 4;
+
+int32_t PickLeastPlayedDrivingSound(
+    uint32_t ( &playCounts )[kNumPassengerDrivingSounds], RandomGen &random );
 
 // Base class for passenger
 class EntityAvatarPassenger : public EntityAvatar {
@@ -50,6 +130,7 @@ public:
     virtual void resetVoice() { /* NOP */ }
 
     void setCarState( CarState *pNewCarState );
+    void requestStandAnim( RenderAnm *pAnim );
     void seatInCar();
     void unseat();
     int32_t setBehavior( const int32_t behavior );
@@ -66,6 +147,10 @@ private:
     void playCarAnimState( RenderAnm &anim,
                            const AnimStateBlendEntry *pRatio,
                            const uint32_t clipID );
+    void playCarAnimStateFromPosture( RenderAnm &anim,
+                                      const AnimStateBlendEntry *pRatio,
+                                      const uint32_t clipID,
+                                      const bool bLooped );
     void setSeatBeltVisible( const bool bVisible );
 
 protected:
@@ -102,6 +187,7 @@ protected:
     bool bMustPlayPassengerStandAnim;
     bool bIsPlayingPassengerStandAnim;
     bool bForceNotUpdatePos;
+    RenderAnm *pStandAnim;
     RenderAnm AnimHi;
     RenderAnm AnimPeepin;
 };

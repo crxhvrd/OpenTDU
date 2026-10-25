@@ -199,9 +199,9 @@ AIConfig::AIConfig()
       BotsWantedDifficulty( 2 ),
       BotsWantedBehavior( 2 ),
       bBotBehaviorOverride( false ),
-      Unknown0xF4( 100.0f ),
-      Unknown0xF8( 300.0f ),
-      Unknown0xFC( 0.8f ),
+      RubberBandMinDistance( 100.0f ),
+      RubberBandMaxDistance( 300.0f ),
+      RubberBandMaxSlowDown( 0.8f ),
       bPathOptFixedNormals( true ),
       PathOptMinAngle( 0.1f ),
       PathOptTrackDistance( 20.0f ),
@@ -676,9 +676,9 @@ int32_t GetNextAvailableCarID( const int32_t carID ) {
     return gameDB.DBCarData[index].CarID;
 }
 
-static float ComputeTurningRadius( const float coef1,
-                                   const float coef2,
-                                   const float speed ) {
+float ComputeTurningRadius( const float coef1,
+                            const float coef2,
+                            const float speed ) {
     // FUN_00924280
     float root0 = 0.0f;
     float root1 = 0.0f;

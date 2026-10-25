@@ -231,12 +231,18 @@ public:
         return ( bPausePhysics || postponedPause == 1 ) && postponedPause != 2;
     }
     bool isVirtual() const { return bVirtual; }
+    void setVirtualFlag( const bool bInVirtual ) { bVirtual = bInVirtual; }
+    void setElectronicMode( const int32_t mode ) {
+        vehicle.ElectronicMode = mode;
+    }
+    void setAIDriven( const bool bAIDriven ) { bIsAI = bAIDriven; }
     bool areWheelsActive() const { return bWheelsActive; }
     bool isBike() const { return bIsBike; }
     float getVirtualSpeed() const { return virtualSpeed; }
     void setVirtualSpeed( float speed ) { virtualSpeed = speed; }
     void resetAutomaticGearbox();
     void applyDrivingOptions( const DrivingOptions &options );
+    void applyAIDrivingOptions();
     bool isActive() const { return pChassisBody != nullptr; }
     void setAutoReverseAllowed( const bool bAllowed ) {
         bAutoReverseAllowed = bAllowed;

@@ -215,6 +215,7 @@ public:
 
     Eigen::Vector4f computeCenterPosition() const;
     void setGroundMatrixFromCenter( const Matrix4x4f_t &center );
+    void teleport( const Matrix4x4f_t &frame, const bool bSnapToRoad );
 
 private:
     AiVehIndDPC dpc;

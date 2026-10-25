@@ -2,7 +2,13 @@
 #include "entity_avatar_passenger.h"
 
 #include "entity_bytecode.h"
+#include "audio/gs_audio.h"
+#include "audio/implementation/ed_audio_sample.h"
+#include "audio/implementation/ed_audio_stream_entry.h"
+#include "config/gs_config.h"
 #include "core/maths_helper.h"
+#include "filesystem/gs_file.h"
+#include "player_data/gs_playerdata.h"
 #include "database/gs_database.h"
 #include "filesystem/binary.h"
 #include "game/avatar/gs_avatar.h"
@@ -28,8 +34,8 @@ static constexpr uint32_t kShowFlagViewCockpit = 1u << 18;
 static constexpr float kAccelSlewUp = 2.5f;    // DAT_00f416c0
 static constexpr float kAccelSlewDown = -2.5f; // _DAT_00f41dd8
 static constexpr float kAccelToNormalised =
-    0.49999749660491943f;                             // _DAT_00f420c0
-static constexpr float kStandAnimEndEpsilon = 1e-05f; // DAT_00f41710
+    0.49999749660491943f;                           // _DAT_00f420c0
+static constexpr float kStandAnimTransition = 0.2f; // DAT_00f41730
 
 static constexpr uint64_t kConvertibleBodyHashcode0 = 0x56760d;
 static constexpr uint64_t kConvertibleBodyHashcode1 = 0x57fcad;
@@ -50,6 +56,212 @@ static Eigen::Vector4f RotateIKOffset( const Matrix4x4f_t &nodeWorld,
     const Eigen::Vector4f offset( pOffset->Offset.x(), pOffset->Offset.y(),
                                   pOffset->Offset.z(), 0.0f );
     return TDUMat4x4MulVec( nodeWorld, offset );
+}
+
+static AnimStateInstance *ResolveCarAnimState( RenderAnm &anim ) {
+    if ( anim.pAnimState == nullptr && anim.pRefBas != nullptr ) {
+        anim.pAnimState = gpScenaric->resolveAnimState( nullptr, anim.pRefBas );
+    }
+    return anim.pAnimState;
+}
+
+static constexpr const char *kVoiceClientName =
+    "ClientVoicePassenger"; // DAT_00f2b834
+static constexpr int32_t kVoiceSampleEntryType = 10;
+static constexpr int32_t kVoiceSampleEntrySubType = 6;
+static constexpr int32_t kFirstVoiceSoundNumber = 2;
+
+PassengerVoiceBank::PassengerVoiceBank( const char *pInBankPrefix,
+                                        const char *pInSoundNameFormat,
+                                        const int32_t numSounds )
+    : Bank(),
+      pBankPrefix( pInBankPrefix ),
+      pSoundNameFormat( pInSoundNameFormat ),
+      NumSounds( std::min( numSounds, kMaxSounds ) ),
+      Status( PVBS_None ),
+      VoiceName{},
+      SoundNames{} {}
+
+PassengerVoiceBank::~PassengerVoiceBank() { release(); }
+
+bool PassengerVoiceBank::load( const char *pVoiceName ) {
+    // FUN_007f6d90 / FUN_007f3b20
+    if ( Status != PVBS_None ) {
+        return true;
+    }
+
+    strncpy( VoiceName, pVoiceName, kVoiceNameLength - 1 );
+    VoiceName[kVoiceNameLength - 1] = '\0';
+
+    char bankPath[0x200];
+    snprintf( bankPath, sizeof( bankPath ), "%sSound/Voices/%s/%s_%s.bnk",
+              gpConfig->getResRootPath(), gpPlayerData->getLanguage(),
+              pBankPrefix, VoiceName );
+
+    Status = PVBS_Loading;
+    if ( !loadBankWithMemory( gpFile, bankPath, nullptr, 0, true ) ) {
+        Status = PVBS_None;
+        return false;
+    }
+    return true;
+}
+
+void PassengerVoiceBank::loadContent() {
+    // FUN_007f6630 / FUN_007f3000
+    for ( int32_t i = 0; i < NumSounds; i++ ) {
+        pSounds[i].reset();
+        SoundNames[i][0] = '\0';
+    }
+
+    ParsedBankEntry entry;
+    const int32_t numElements = getNumElements();
+    for ( int32_t i = 0; i < numElements; i++ ) {
+        if ( getEntry( i, entry ) != 0 || entry.Type != kVoiceSampleEntryType ||
+             entry.SubType != kVoiceSampleEntrySubType ) {
+            continue;
+        }
+
+        const size_t separator = entry.Filename.find_last_of( "\\/" );
+        const std::string fileName =
+            ( separator == std::string::npos )
+                ? entry.Filename
+                : entry.Filename.substr( separator + 1 );
+
+        int32_t soundIndex = -1;
+        for ( int32_t j = 0; j < NumSounds; j++ ) {
+            char expectedName[kSoundNameLength];
+            snprintf( expectedName, sizeof( expectedName ), pSoundNameFormat,
+                      VoiceName, j + kFirstVoiceSoundNumber );
+            if ( StringCmpI( fileName.c_str(), expectedName ) == 0 ) {
+                soundIndex = j;
+                break;
+            }
+        }
+
+        if ( soundIndex == -1 ) {
+            break;
+        }
+
+        auto pSound = std::make_unique<edAudioSample>();
+        if ( pSound->loadFromMemory( entry.pData, entry.Size ) ) {
+            pSounds[soundIndex] = std::move( pSound );
+        }
+        strncpy( SoundNames[soundIndex], fileName.c_str(),
+                 kSoundNameLength - 1 );
+        SoundNames[soundIndex][kSoundNameLength - 1] = '\0';
+    }
+
+    Status = PVBS_Ready;
+}
+
+void PassengerVoiceBank::release() {
+    for ( int32_t i = 0; i < NumSounds; i++ ) {
+        pSounds[i].reset();
+    }
+    unload();
+    Status = PVBS_None;
+}
+
+int32_t PickLeastPlayedDrivingSound(
+    uint32_t ( &playCounts )[kNumPassengerDrivingSounds], RandomGen &random ) {
+    // FUN_007f6530 / FUN_007f2f70
+    uint32_t leastPlayed = 0xffffffffu;
+    for ( const uint32_t playCount : playCounts ) {
+        leastPlayed = std::min( leastPlayed, playCount );
+    }
+
+    int32_t soundIndex = 0;
+    do {
+        soundIndex = int32_t( random.getRandomUint32() & 3u );
+    } while ( playCounts[soundIndex] != leastPlayed );
+    playCounts[soundIndex]++;
+    return soundIndex;
+}
+
+PassengerVoicePlayer::PassengerVoicePlayer()
+    : pClient( nullptr ),
+      pEntry( nullptr ),
+      pPendingSound( nullptr ),
+      pPendingSoundName( nullptr ),
+      bPlaying( false ) {}
+
+PassengerVoicePlayer::~PassengerVoicePlayer() { destroy(); }
+
+void PassengerVoicePlayer::create( const char *pDescription ) {
+    // FUN_007f6e70 / FUN_007f3c00 (inlined)
+    if ( pEntry == nullptr ) {
+        pClient = ( gpAudio != nullptr )
+                      ? gpAudio->createClient( kVoiceClientName )
+                      : nullptr;
+        if ( pClient != nullptr && pClient->getStereoPipeline() != nullptr ) {
+            pEntry = new edAudioStreamEntry();
+            pClient->getStereoPipeline()->addStereoEntry( pEntry );
+            pEntry->debugSetDescription( pDescription );
+        }
+    }
+    clear();
+}
+
+void PassengerVoicePlayer::destroy() {
+    // FUN_007f6af0 / FUN_007f37c0
+    if ( pEntry != nullptr ) {
+        pEntry->stop( 0.0f );
+        if ( pClient != nullptr && pClient->getStereoPipeline() != nullptr ) {
+            pClient->getStereoPipeline()->removeStereoEntry( pEntry );
+        }
+        delete pEntry;
+        pEntry = nullptr;
+    }
+    if ( pClient != nullptr && gpAudio != nullptr ) {
+        gpAudio->releaseClient( pClient );
+    }
+    pClient = nullptr;
+    clear();
+}
+
+void PassengerVoicePlayer::requestStop() {
+    if ( pEntry != nullptr ) {
+        pEntry->stop( 0.0f );
+    }
+}
+
+void PassengerVoicePlayer::clear() {
+    pPendingSound = nullptr;
+    pPendingSoundName = nullptr;
+    bPlaying = false;
+}
+
+void PassengerVoicePlayer::queue( const edAudioSample *pSound,
+                                  const char *pSoundName ) {
+    pPendingSound = pSound;
+    pPendingSoundName = pSoundName;
+}
+
+void PassengerVoicePlayer::tick() {
+    // FUN_007f6930
+    if ( pPendingSound == nullptr ) {
+        return;
+    }
+
+    if ( !bPlaying ) {
+        if ( pEntry == nullptr ) {
+            pPendingSound = nullptr;
+            return;
+        }
+        pEntry->setSample( pPendingSound );
+        pEntry->setLoopCount( 0 );
+        pEntry->Pitch = 1.0f;
+        pEntry->play( 0.0f );    // FUN_00405a70
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (subtitle key = sound name
+                                 // without extension, subtitled pipeline)
+        bPlaying = true;
+        return;
+    }
+
+    if ( pEntry->isStopped() ) {
+        pPendingSound = nullptr;
+        bPlaying = false;
+    }
 }
 
 EntityAvatarPassenger::EntityAvatarPassenger()
@@ -74,6 +286,7 @@ EntityAvatarPassenger::EntityAvatarPassenger()
       bMustPlayPassengerStandAnim( false ),
       bIsPlayingPassengerStandAnim( false ),
       bForceNotUpdatePos( false ),
+      pStandAnim( nullptr ),
       AnimHi(),
       AnimPeepin() {
     // FUN_007f4bd0
@@ -402,6 +615,12 @@ void EntityAvatarPassenger::unseat() {
     updateIKTargets();
 }
 
+void EntityAvatarPassenger::requestStandAnim( RenderAnm *pAnim ) {
+    // FUN_007f3650 (inlined)
+    bMustPlayPassengerStandAnim = true;
+    pStandAnim = pAnim;
+}
+
 int32_t EntityAvatarPassenger::setBehavior( const int32_t behavior ) {
     // FUN_007f44a0
     const int32_t previousBehavior = CurrentBehavior;
@@ -542,11 +761,17 @@ void EntityAvatarPassenger::updateCarAnims( float deltaTime ) {
     AnimCarStand.Weight = kAnimWeightFull;
     AnimCarStand.Ratio = kAnimRatioFollowCurve;
 
-    if ( bMustPlayPassengerStandAnim || bIsPlayingPassengerStandAnim ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (stand anim, only requested
-                                 // by the ShoppingGirl voice FUN_007f3650)
+    if ( bMustPlayPassengerStandAnim ) {
+        if ( pStandAnim != nullptr ) {
+            playCarAnimStateFromPosture( *pStandAnim, nullptr, 1u, false );
+        }
         bMustPlayPassengerStandAnim = false;
+        bIsPlayingPassengerStandAnim = true;
+    }
+
+    if ( bIsPlayingPassengerStandAnim && animation.isChannelAtEnd( 0 ) ) {
         bIsPlayingPassengerStandAnim = false;
+        playCarAnimStateFromPosture( pAnimCar[0], &AnimCarStand, 0u, true );
     }
 
     if ( pAnimCar[0].File != 0 && bMustPlayCarAnims &&
@@ -577,7 +802,8 @@ void EntityAvatarPassenger::updateCarAnims( float deltaTime ) {
 
         updateIKTargets();
 
-        if ( bMustPlayCarAnims && pAnimCar[1].pAnimState != nullptr ) {
+        if ( bMustPlayCarAnims &&
+             ResolveCarAnimState( pAnimCar[1] ) != nullptr ) {
             const AnimStateRecord *pExpressions =
                 pAnimCar[1].pAnimState->getRecordAtIndex( 1 );
             if ( pExpressions != nullptr ) {
@@ -683,32 +909,55 @@ void EntityAvatarPassenger::updateLightingAttenuation() {
                                : gAvatarInCarLightFactor;
 }
 
-void EntityAvatarPassenger::playCarAnimState( RenderAnm &anim,
-                                              const AnimStateBlendEntry *pRatio,
-                                              const uint32_t clipID ) {
-    if ( anim.pAnimState == nullptr && anim.pRefBas != nullptr ) {
-        anim.pAnimState = gpScenaric->resolveAnimState( nullptr, anim.pRefBas );
-    }
-
-    const AnimStateInstance *pState = anim.pAnimState;
+static bool
+CollectCarAnimBlendSet( const AnimStateInstance *pState,
+                        std::vector<AnimStateBlendEntry> &blendSet ) {
     if ( pState == nullptr ) {
-        return;
+        return false;
     }
 
-    std::vector<AnimStateBlendEntry> blendSet;
     pState->getBlendSet( blendSet );
     blendSet.erase( std::remove_if( blendSet.begin(), blendSet.end(),
                                     []( const AnimStateBlendEntry &entry ) {
                                         return entry.pClip == nullptr;
                                     } ),
                     blendSet.end() );
-    if ( blendSet.empty() ) {
+    return !blendSet.empty();
+}
+
+void EntityAvatarPassenger::playCarAnimState( RenderAnm &anim,
+                                              const AnimStateBlendEntry *pRatio,
+                                              const uint32_t clipID ) {
+    const AnimStateInstance *pState = ResolveCarAnimState( anim );
+    std::vector<AnimStateBlendEntry> blendSet;
+    if ( !CollectCarAnimBlendSet( pState, blendSet ) ) {
         return;
     }
 
     const int32_t matchID = static_cast<int32_t>( pState->getMatchID() );
     animation.playChannel( matchID, clipID, blendSet.data(),
                            static_cast<int32_t>( blendSet.size() ) );
+    if ( pRatio != nullptr ) {
+        animation.setChannelBlendRatios( matchID, pRatio, 1 );
+    }
+}
+
+void EntityAvatarPassenger::playCarAnimStateFromPosture(
+    RenderAnm &anim,
+    const AnimStateBlendEntry *pRatio,
+    const uint32_t clipID,
+    const bool bLooped ) {
+    // FUN_00401400
+    const AnimStateInstance *pState = ResolveCarAnimState( anim );
+    std::vector<AnimStateBlendEntry> blendSet;
+    if ( !CollectCarAnimBlendSet( pState, blendSet ) ) {
+        return;
+    }
+
+    const int32_t matchID = static_cast<int32_t>( pState->getMatchID() );
+    animation.playChannelFromPosture( matchID, clipID, blendSet.data(),
+                                      static_cast<int32_t>( blendSet.size() ),
+                                      kStandAnimTransition, bLooped );
     if ( pRatio != nullptr ) {
         animation.setChannelBlendRatios( matchID, pRatio, 1 );
     }

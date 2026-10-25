@@ -42,6 +42,9 @@ private:
 int32_t GetBotSectorIndex( const GridPos2D &area );
 const DBEntryBot *GetBotDBEntry( const int32_t botIndex );
 int32_t GetBotColorIndex( const int32_t botIndex );
+int32_t GetBotCarID( const int32_t botIndex );
+int32_t GetBotTier( const int32_t botIndex );
+int32_t FindBotOwningCar( const int32_t carID );
 int32_t PickRandomBotInZone( const int32_t zone );
 
 extern AiBotManager gAiBotManager;

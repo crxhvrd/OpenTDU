@@ -1083,7 +1083,7 @@ bool GMFreeride::executeAction( int32_t param_2, void *param_3, void *pData ) {
         pExtraChallengeIntroCine = nullptr;
         if ( pExtraChallengeLoopCine != nullptr ) {
             pExtraChallengeLoopCine->start( true );
-            OTDU_UNIMPLEMENTED; // TODO: CINEMATIC (+0x26b0 = 0)
+            pExtraChallengeLoopCine->setFadeTime( 0.0f );
         } else if ( !bCanAcceptExtraChallenge ) {
             resolveExtraChallengeAnswer();
         }
@@ -1115,11 +1115,12 @@ bool GMFreeride::executeAction( int32_t param_2, void *param_3, void *pData ) {
     return true;
 }
 
-bool GMFreeride::onExtraChallengeCineMessage( EntityCinematic * /*pCinematic*/,
+bool GMFreeride::onExtraChallengeCineMessage( EntityCinematic *pCinematic,
                                               const char *pMessage ) {
     // FUN_00794ff0 (CE_FlashMessage)
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (ignored when cine +0x2597 is
-                             // set and there is no loop cinematic)
+    if ( pCinematic->wasSkipped() && pExtraChallengeLoopCine == nullptr ) {
+        return true;
+    }
     const FlashMessage message( pMessage );
     if ( message == FlashMessage( "stfe" ) ) {
         gpFlash->enablePlayer( "GENERAL", ModalMessageBox::MMBDS_Closing, true,
@@ -1500,6 +1501,7 @@ bool GMFreeride::enterExtraChallenge( EntityExtraChallenge *pChallenge ) {
     }
 
     bool bCanAccept = true;
+    bool bStopWhenSkipped = false;
     bool bRestrictionRefusal = false;
     auto RefuseNoPassenger = [&]() {
         bCanAccept = false;
@@ -1532,6 +1534,7 @@ bool GMFreeride::enterExtraChallenge( EntityExtraChallenge *pChallenge ) {
              ( pNumSeats[0] == '1' || pNumSeats[0] == '3' ) ) {
             RefuseNoPassenger();
         } else if ( type == eEntityType::ET_CVOY ) {
+            bStopWhenSkipped = true;
             if ( extraChallengeProp.pConvoyCar == nullptr ) {
                 extraChallengeKind = PlayerGameMech::SDN_Convoy;
             }
@@ -1542,6 +1545,7 @@ bool GMFreeride::enterExtraChallenge( EntityExtraChallenge *pChallenge ) {
                                             kTransporterFareRatio );
             bCanAccept =
                 fare < gpPlayerData->getLoadedSave()->getDriver()->getMoney();
+            bStopWhenSkipped = true;
         } else if ( type == eEntityType::ET_SHOG ) {
             const EntityShoppingGirl *pShoppingGirl =
                 static_cast<const EntityShoppingGirl *>( pChallenge );
@@ -1563,6 +1567,7 @@ bool GMFreeride::enterExtraChallenge( EntityExtraChallenge *pChallenge ) {
                     pExtraChallengeRefusal = gpDatabase->getStringByHashcode(
                         0, kRefusalRestrictionHashcode );
                 }
+                bStopWhenSkipped = true;
                 bRestrictionRefusal = true;
             }
         }
@@ -1614,8 +1619,7 @@ bool GMFreeride::enterExtraChallenge( EntityExtraChallenge *pChallenge ) {
     Matrix4x4f_t frame = pNearestExtraChallenge->getModelMatrix();
     gpPhysics->setPlayerSlowDownForced( true );
     pExtraChallengeIntroCine->setGameModeInterface( this );
-    OTDU_UNIMPLEMENTED; // TODO: CINEMATIC (+0x26dc = 1 for CVOY / TRAN and a
-                        // SHOG restriction refusal, else 0)
+    pExtraChallengeIntroCine->setStopWhenSkipped( bStopWhenSkipped );
     pExtraChallengeIntroCine->setAsyncActorLoad( true );
     frame.row( 3 ).head<3>() -= GetWorldShift().head<3>().transpose();
     pExtraChallengeIntroCine->setTransformOffset( frame );
@@ -1627,12 +1631,12 @@ bool GMFreeride::enterExtraChallenge( EntityExtraChallenge *pChallenge ) {
             nullptr, this );
     }
     if ( bRestrictionRefusal ) {
-        OTDU_UNIMPLEMENTED; // TODO: CINEMATIC (+0x26b0 = 0)
+        pExtraChallengeIntroCine->setFadeTime( 0.0f );
     }
     if ( pExtraChallengeLoopCine != nullptr ) {
         pExtraChallengeLoopCine->setGameModeInterface( this );
         pExtraChallengeLoopCine->setTransformOffset( frame );
-        OTDU_UNIMPLEMENTED; // TODO: CINEMATIC (+0x26dc = 1)
+        pExtraChallengeLoopCine->setStopWhenSkipped( true );
     }
     gpScenaric->getAvatarManager().setUnknownBoolean( true );
     return true;

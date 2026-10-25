@@ -98,6 +98,7 @@ public:
     void countExtraChallengePerfect();
     void countExtraChallengeResult( const bool bWon );
     void addCouponsSpent( const uint32_t numCoupons );
+    void addCouponsEarned( const uint32_t numCoupons );
     void countCarTransaction( const uint32_t carID,
                               const bool bBought,
                               const bool bETrade );

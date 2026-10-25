@@ -153,6 +153,56 @@ int32_t GetBotColorIndex( const int32_t botIndex ) {
     return ( pBot != nullptr ) ? pBot->ColorIndex : -1;
 }
 
+int32_t GetBotCarID( const int32_t botIndex ) {
+    // FUN_0090c3d0
+    const DBEntryBot *pBot = GetBotDBEntry( botIndex );
+    if ( pBot == nullptr || pBot->BotCar.pAsRawPointer == nullptr ) {
+        return -1;
+    }
+    return static_cast<const DBEntryCarPhysicsData *>(
+               pBot->BotCar.pAsRawPointer )
+        ->CarID;
+}
+
+int32_t GetBotTier( const int32_t botIndex ) {
+    // FUN_0090c2e0
+    static constexpr uint64_t kRookieBehaviours[] = { 0x34e7468, 0x35c3008,
+                                                      0x389f6c8, 0x3b7bd88 };
+    static constexpr uint64_t kExpertBehaviours[] = { 0x32fefe8, 0x33dab88,
+                                                      0x36b7248, 0x3993908 };
+
+    const DBEntryBot *pBot = GetBotDBEntry( botIndex );
+    if ( pBot == nullptr ) {
+        return 1;
+    }
+    const uint64_t behaviour =
+        gpDatabase->getGameDB().Databases[0xe].getHashcodeForString(
+            pBot->Behaviour.pAsString );
+    for ( const uint64_t hashcode : kRookieBehaviours ) {
+        if ( hashcode == behaviour ) {
+            return 0;
+        }
+    }
+    for ( const uint64_t hashcode : kExpertBehaviours ) {
+        if ( hashcode == behaviour ) {
+            return 2;
+        }
+    }
+    return 1;
+}
+
+int32_t FindBotOwningCar( const int32_t carID ) {
+    // FUN_0090c140
+    const GameDatabase &database = gpDatabase->getGameDB();
+    const int32_t numBots = static_cast<int32_t>( database.pNumItems[0xe] );
+    for ( int32_t i = 0; i < numBots; i++ ) {
+        if ( GetBotCarID( i ) == carID ) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 static bool IsBotSpawned( const int32_t botIndex ) {
     AiVehicleList &bots = gpAI->getAIPool()->getList(
         AiPool::AVL_FirstCategory +

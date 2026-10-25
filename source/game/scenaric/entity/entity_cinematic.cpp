@@ -543,6 +543,7 @@ void EntityCinematic::unloadResources() {
     releaseMusicEmitter();
     cinematicPlayer.reset();
     cinematicBuffer.clear();
+    cinematicPlayer.uninstallVoiceEmitters();
     pCinData = nullptr;
     cinDataSize = 0;
     bInitialized = false;
@@ -1126,6 +1127,9 @@ void EntityCinematic::end() {
 
     if ( cinematicPlayer.isCreated() ) {
         cinematicPlayer.reset();
+    }
+    if ( bSkipped ) {
+        cinematicPlayer.stopVoiceEmitters();
     }
 
     cinematicFlags = ( cinematicFlags & 0xfffffff8u ) | 0x10u;

@@ -18,7 +18,9 @@
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_convoy.h"
 #include "game/scenaric/entity/entity_hitch_hiker.h"
+#include "game/scenaric/entity/entity_passenger_goodies.h"
 #include "game/scenaric/entity/entity_shopping_girl.h"
+#include "game/scenaric/entity/entity_transporter.h"
 #include "game/scenaric/event_parameters.h"
 #include "game/scenaric/extra_challenge_cine_bank.h"
 #include "game/scenaric/mng_actor.h"
@@ -26,8 +28,10 @@
 #include "game/vehicle/gs_car_state.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
+#include "player_data/saved_extra_challenges.h"
 #include "player_data/saved_garage.h"
 #include "render/camera/gs_camera.h"
 #include "world/gs_world.h"
@@ -289,10 +293,16 @@ void MissionExtraChallenge::setup( MngActor *pActorManager,
         bInfAllButCollision = true;
         return;
     }
-    case eEntityType::ET_TRAN:
-        OTDU_UNIMPLEMENTED; // TODO: SCENARIC (cargo = instanciateActor(+0x188))
+    case eEntityType::ET_TRAN: {
+        Entity *pGoodies =
+            static_cast<EntityTransporter *>( pChallenge )->getGoodies();
+        if ( pGoodies != nullptr ) {
+            pCargo = static_cast<EntityPassengerGoodies *>(
+                pMngActor->instanciateActor( pGoodies ) );
+        }
         bInfAllButCollision = true;
         return;
+    }
     default:
         bInfAllButCollision = true;
         return;
@@ -312,7 +322,7 @@ void MissionExtraChallenge::start() {
         pPassenger->resetVoice();
         gpScenaric->placePassenger( localPlayer.getCarState(), pPassenger );
     } else if ( pCargo != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: SCENARIC (FUN_008051f0 attach the cargo)
+        gpScenaric->placeCargo( localPlayer.getCarState(), pCargo );
     }
 
     gAIConfig.bInfAllButCollision = bInfAllButCollision;
@@ -322,8 +332,13 @@ void MissionExtraChallenge::start() {
     gpAI->getAIPool()->removeBots();
 
     if ( pChallenge->getType() == eEntityType::ET_TRAN ) {
-        OTDU_UNIMPLEMENTED; // TODO: SCENARIC (transporter fare = +0x174 * 0.1:
-                            // counter 0xf0dc, player money)
+        IPlayerData *pSave = gpPlayerData->getLoadedSave();
+        Driver *pDriver = pSave->getDriver();
+        const uint32_t deposit =
+            static_cast<EntityTransporter *>( pChallenge )->getDeposit();
+        pSave->getExtraChallenges()->addCounter( CounterIndex( 0xf0dc ),
+                                                 int32_t( deposit ) );
+        pDriver->setMoneyAndNotify( int32_t( pDriver->getMoney() - deposit ) );
     }
 }
 
@@ -531,8 +546,8 @@ void MissionExtraChallenge::cleanup() {
     }
     case eEntityType::ET_TRAN:
         if ( pCargo != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: SCENARIC (FUN_008051b0 detach the
-                                // cargo)
+            gpScenaric->unloadCargo( gpScenaric->getLocalPlayer().getCarState(),
+                                     pCargo );
             MngActor::Uninstanciate( pMngActor, pCargo );
             pCargo = nullptr;
         }

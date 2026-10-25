@@ -1512,6 +1512,22 @@ void PhysicsVehicle::applyDrivingOptions( const DrivingOptions &options ) {
     bManualClutch = options.bManualClutch;
 }
 
+void PhysicsVehicle::applyAIDrivingOptions() {
+    // FUN_00968d10
+    bUseSteerControl = false;
+    pDrivingControl = nullptr;
+    autoGearboxState = AGS_Forward;
+    vehicle.GearBox.ShiftTimer = 0.0f;
+    vehicle.GearBox.bAutomatic = true;
+    vehicle.GearBox.ShiftState = 1;
+    vehicle.Clutch.Engagement = 1.0f;
+    vehicle.Clutch.State = 0;
+    steerSensitivity = 1.0f;
+    bIsAI = true;
+    bAutoReverseAllowed = false;
+    vehicle.ElectronicMode = 2;
+}
+
 static float PedalResponseCurve( float x, float k ) {
     // FUN_00824730
     if ( k < 0.0f ) {

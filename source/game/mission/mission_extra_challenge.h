@@ -7,6 +7,7 @@ class Entity;
 class EntityAvatarPassenger;
 class EntityCheckPoint;
 class EntityCinematic;
+class EntityPassengerGoodies;
 class EntityExtraChallenge;
 class GMMission;
 class MngActor;
@@ -55,7 +56,7 @@ private:
     Matrix4x4f_t outroFrame;
     bool field_0x70;
     EntityAvatarPassenger *pPassenger;
-    Entity *pCargo;
+    EntityPassengerGoodies *pCargo;
     bool bTeleportToStart;
     bool field_0x7d;
     bool bSavedInfAllButCollision;

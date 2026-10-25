@@ -417,6 +417,16 @@ void Animation::refreshBlendDuration( AnimChannel &channel ) {
     channel.Duration = ComputeBlendDuration( channel.BlendSet );
 }
 
+bool Animation::isChannelAtEnd( int32_t matchID ) const {
+    for ( const AnimChannel &channel : channels ) {
+        if ( channel.MatchID == matchID ) {
+            return channel.State != AnimChannel::ACS_Free &&
+                   channel.Progress >= kAnimHoldLastFrame;
+        }
+    }
+    return false;
+}
+
 void Animation::playStatesAtTime( const AnimStateInstance *pStateA,
                                   float timeA,
                                   const AnimStateInstance *pStateB,

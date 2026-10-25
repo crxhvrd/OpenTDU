@@ -1,6 +1,7 @@
 #pragma once
 
 #include "entity_actor.h"
+#include "game/cinematic/cinematic_voice_emitter.h"
 #include "game/vehicle/mng_car_alpha.h"
 #include "game/avatar/avatar_clothes.h"
 #include "render/animation/skeleton.h"
@@ -58,6 +59,7 @@ public:
 
     // Entity / EntityActor overrides
     bool onMessage( FlashMessage *pMessage ) override;
+    bool playCinematicVoice( CinematicVoiceEmitter *pEmitter );
     void initializeForCinematic( void *param_2, void *param_3 ) override;
     void initializeForCinematicKeyframed( void *param_2,
                                           void *param_3 ) override;
@@ -122,7 +124,7 @@ protected:
     PooledAvatarEntry *pPooledAvatarEntry;
     int32_t FaceParams[kNumFaceParams];
     AvatarLayer *pLayers;
-    void *pVoiceEmitter;
+    CinematicVoiceEmitter *pVoiceEmitter;
     void *pCineInterface;
     float Alpha;
     int32_t RenderLOD;

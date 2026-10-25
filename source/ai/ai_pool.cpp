@@ -518,8 +518,10 @@ bool AiPool::togglePlayerAutopilot( const bool bOpponent ) {
                             // from the local player data)
         PhysicsVehicle *pPhysics = pCar->getPhysicsVehicle();
         pPhysics->setDrivingControl( gpPhysics ); // +0x4388
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS (+0xe40 = +0xa3c, GSPhysics +0x20 =
-                            // 1, +0xd34 = 0, +0xdd4 = 0)
+        OTDU_UNIMPLEMENTED; // TODO: PHYSICS (driving control index +0xe40 =
+                            // +0xa3c, GSPhysics control flag +0x20 = 1)
+        pPhysics->setAIDriven( false ); // +0xd34
+        pPhysics->setVirtualFlag( false );
         pPhysics->setAutoReverseAllowed( true ); // +0x335
         {
             PhysicsLock lock;
@@ -535,10 +537,10 @@ bool AiPool::togglePlayerAutopilot( const bool bOpponent ) {
         return false;
     }
     addVehicle( pVehicle );
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS (FUN_00968d10 AI driving setup of the
-                        // physics vehicle: +0x4388 control = null, +0xe54 = 4,
-                        // +0x41b4 / +0x4258 = 1, +0x431c / +0x558 = 1.0,
-                        // +0xd34 = 1, +0xe94 = 2, ...)
+    if ( PhysicsVehicle *pPhysics = pCar->getPhysicsVehicle();
+         pPhysics != nullptr ) {
+        pPhysics->applyAIDrivingOptions();
+    }
     pCar->setAIController( pVehicle );
 
     CarBodyState *pBody = pCar->getBody();

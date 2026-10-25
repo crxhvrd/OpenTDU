@@ -137,6 +137,7 @@ public:
     void stopChannel( int32_t matchID );
     void stopChannelsWithClipID( uint32_t clipID );
     float getChannelDuration( int32_t matchID ) const;
+    bool isChannelAtEnd( int32_t matchID ) const;
     void resetChannel( int32_t index );
     void setChannelLayer( int32_t matchID, int32_t layerMode, float weight );
     void setChannelBlendRatios( int32_t matchID,

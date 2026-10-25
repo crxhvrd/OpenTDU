@@ -22,6 +22,7 @@ public:
     void terminate() override;
     PipelineStereo *getMusicPipeline() const;
     ClientConfig *getMusicClientConfig() const;
+    inline AudioClient *getVoiceClient() const { return pVoiceClient; }
 
     bool isCinematicPlaying( eCinematicType type,
                              bool bRequireAudio,
@@ -29,6 +30,7 @@ public:
 
 private:
     AudioClient *pMusicClient;
+    AudioClient *pVoiceClient;
 
     int32_t field_0x138;
     int32_t field_0x13c;

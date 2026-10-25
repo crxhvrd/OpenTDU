@@ -468,6 +468,22 @@ void GSAudio::registerClient( AudioClient *pClient ) {
     ClientHandlerPool.push_back( handler );
 }
 
+void GSAudio::releaseClient( AudioClient *pClient ) {
+    // FUN_009b2a60
+    ClientHandler *pHandler = findClientHandler( pClient );
+    if ( pHandler == nullptr || --pHandler->RefCount != 0 ) {
+        return;
+    }
+
+    ClientHandlerPool.erase( ClientHandlerPool.begin() +
+                             ( pHandler - ClientHandlerPool.data() ) );
+    Clients.erase( std::remove_if( Clients.begin(), Clients.end(),
+                                   [pClient]( const auto &client ) {
+                                       return client.get() == pClient;
+                                   } ),
+                   Clients.end() );
+}
+
 AudioClient *GSAudio::createClient( const char *pName ) {
     // FUN_0040cab0
     if ( pName == nullptr ) {

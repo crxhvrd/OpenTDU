@@ -18,6 +18,7 @@ public:
 
 public:
     inline uint32_t getOffRoad() const { return OffRoad; }
+    inline uint32_t getCoupon() const { return Coupon; }
     inline uint32_t getConditionType() const { return ConditionType; }
     inline uint32_t getConditionValue() const { return Condition.Value; }
     inline const ChallengeCondition &getCondition() const { return Condition; }

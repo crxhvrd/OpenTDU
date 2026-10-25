@@ -299,6 +299,7 @@ public:
     ClientConfig *getClientConfig( const char *pName );
     AudioClient *createClient( const char *pName );
     void registerClient( AudioClient *pClient );
+    void releaseClient( AudioClient *pClient );
     ClientHandler *findClientHandler( const char *pName );
     ClientHandler *findClientHandler( const AudioClient *pClient );
 

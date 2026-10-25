@@ -6,7 +6,7 @@ class CarState;
 class GameMechanism;
 class GSAI;
 struct MissionInfo;
-struct VehicleRsc;
+struct VehicleBaseResources;
 
 // Race message posted through GameSession::onRaceMessage (type 2 = checkpoint
 // split).
@@ -85,6 +85,7 @@ public:
     CarState *getCarState() const override { return pCarState; }
 
     bool instantiate( const int32_t missionType );
+    void installDriver();
     bool release();
 
 public:
@@ -93,13 +94,13 @@ public:
     int32_t CarDBID;
     int32_t CarPaintIndex;
     int32_t BotID;
-    char pAvatarConfig[64];
+    char pPNJName[64];
     int32_t OpponentIndex;
     int32_t AILevel;
     bool bActive;
     bool bMaster;
     bool bAddedToWorld;
-    VehicleRsc *pVehicleRsc;
+    VehicleBaseResources *pVehicleRsc;
     CarState *pCarState;
     bool bPhysicsInstanciated;
     char pName[kNameLength];

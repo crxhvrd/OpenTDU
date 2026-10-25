@@ -1427,7 +1427,7 @@ bool UnknownEntity::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
              gpActiveGameMode->getCurrentGameMode() == GM_Lobby ) {
             OTDU_UNIMPLEMENTED; // TODO: ONLINE (GMLobby)
         }
-        gpScenaric->getIntroTutorial().FUN_007fbd80( false );
+        gpScenaric->getIntroTutorial().setModalHintVisible( false );
         gpFlash->getMouse()->field12_0x30 = bSavedMouseFlag;
         return true;
     }
@@ -1440,7 +1440,7 @@ bool UnknownEntity::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     case ModalMessageBox::kTutorialIn: {
         bSavedMouseFlag = gpFlash->getMouse()->field12_0x30;
         gpFlash->getMouse()->field12_0x30 = false;
-        gpScenaric->getIntroTutorial().FUN_007fbd80( true );
+        gpScenaric->getIntroTutorial().setModalHintVisible( true );
         gpTutorial->bPopupDisplayed = true;
         if ( gpActiveGameMode != nullptr &&
              gpActiveGameMode->getCurrentGameMode() == GM_Lobby ) {

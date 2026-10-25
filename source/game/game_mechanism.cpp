@@ -33,6 +33,9 @@
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_convoy.h"
 #include "game/scenaric/entity/entity_driver.h"
+#include "game/scenaric/entity/entity_hitch_hiker.h"
+#include "game/scenaric/entity/entity_shopping_girl.h"
+#include "game/scenaric/entity/entity_transporter.h"
 #include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
 #include "physics/gs_physics.h"
@@ -845,7 +848,8 @@ void GameMechanism::placeParticipantsOnGrid( const bool bPausePhysics ) {
         if ( pVehicle != nullptr && pVehicle->isSimulated() ) {
             OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (+0xbd8 / +0xbdc = 0)
             if ( pCarState->getAIController() != nullptr ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI (FUN_00924b40)
+                static_cast<AiVehicle *>( pCarState->getAIController() )
+                    ->setGroundMatrixFromCenter( gridFrame );
             }
             if ( bPausePhysics && !pVehicle->isPaused() ) {
                 PhysicsLock lock;
@@ -856,7 +860,7 @@ void GameMechanism::placeParticipantsOnGrid( const bool bPausePhysics ) {
             OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
 
             if ( !bPausePhysics && pVehicle->isPaused() ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (+0xdd4 = 0)
+                pVehicle->setVirtualFlag( false );
                 PhysicsLock lock;
                 pVehicle->setPostponedPause( 2 );
             }
@@ -1105,27 +1109,119 @@ void GameMechanism::showExtraChallengeResults() {
     GetExtraChallengeDisplayIndices( pChallenge, &typeIndex, &nameIndex );
 
     IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    const auto rewardPassengerCoupons = [&]( const uint32_t numCoupons,
+                                             const bool bShowCoupons ) {
+        SavedItemTable *pChallengeStates = pSave->getItemTable();
+        uint16_t &kind = pChallengeStates->Kinds[pChallenge->getIndex()];
+        bool bPerfect = false;
+        if ( ( kind & SavedItemTable::kExtraChallengePerfectFlag ) == 0 ) {
+            const GameMechPenalty *pPenalty =
+                static_cast<const GameMechPenalty *>( pComponents[CS_Penalty] );
+            if ( fabsf( pPenalty->getPenaltyRatio() ) <=
+                 kPerfectRatioEpsilon ) {
+                bPerfect = true;
+                pSave->getExtraChallenges()->countExtraChallengePerfect();
+                pHud->setVariableValue( "/:IsPerfect", 1 );
+                pHud->setVariableValue( "/:base_reward", 0 );
+                pHud->setVariableValue( "/:perfect_reward", 1 );
+                kind |= SavedItemTable::kExtraChallengePerfectFlag;
+                pChallengeStates->notify( 0u );
+            }
+        }
+
+        uint32_t numEarned = 0u;
+        if ( ( kind & SavedItemTable::kExtraChallengeGoldFlag ) == 0 ) {
+            pHud->setVariableValue( "/:IsReward", 1 );
+            if ( bShowCoupons ) {
+                pHud->setVariableValue( "/:extra_reward",
+                                        int32_t( numCoupons ) );
+            }
+            pHud->setVariableValue( "/:IsRewardCoupon", 1 );
+            numEarned = numCoupons;
+            if ( bPerfect ) {
+                pHud->setVariableValue( "/:base_reward", int32_t( numEarned ) );
+                numEarned++;
+            } else {
+                pHud->setVariableValue( "/:base_reward", 0 );
+            }
+        } else {
+            if ( !bPerfect ) {
+                return;
+            }
+            pHud->setVariableValue( "/:IsReward", 1 );
+            pHud->setVariableValue( "/:base_reward", 0 );
+            pHud->setVariableValue( "/:IsRewardCoupon", 1 );
+            numEarned = 1u;
+        }
+        pHud->setVariableValue( "/:CouponReward", int32_t( numEarned ) );
+        pSave->getDriver()->earnCoupons( numEarned );
+    };
+
     switch ( nameIndex ) {
     case PlayerGameMech::SDN_ShoppingGirl:
         pHud->setVariableValueNonLinked( "/:cur_gm", "sgirl" );
         pHud->setVariableValueNonLinked( "/:extra_reward", "--" );
         if ( bRaceWon ) {
-            OTDU_UNIMPLEMENTED; // TODO: SCENARIC (coupon reward +0x178, save
-                                // flags 0x2000 / 0x1000, FUN_00893b40)
+            rewardPassengerCoupons(
+                static_cast<EntityShoppingGirl *>( pChallenge )->getCoupon(),
+                false );
         }
         break;
     case PlayerGameMech::SDN_Hiker:
         pHud->setVariableValueNonLinked( "/:cur_gm", "hiker" );
         pHud->setVariableValueNonLinked( "/:extra_reward", "--" );
         if ( bRaceWon ) {
-            OTDU_UNIMPLEMENTED; // TODO: SCENARIC (coupon reward +0x188, save
-                                // flags 0x2000 / 0x1000, FUN_00893b40)
+            rewardPassengerCoupons(
+                static_cast<EntityHitchHiker *>( pChallenge )->getCoupon(),
+                true );
         }
         break;
-    case PlayerGameMech::SDN_Transporter:
+    case PlayerGameMech::SDN_Transporter: {
         pHud->setVariableValueNonLinked( "/:cur_gm", "transporter" );
-        OTDU_UNIMPLEMENTED; // TODO: SCENARIC (fare refund +0x174 * 0.1)
+        Driver *pDriver = pSave->getDriver();
+        SavedExtraChallenges *pCounters = pSave->getExtraChallenges();
+        const EntityTransporter *pTransporter =
+            static_cast<EntityTransporter *>( pChallenge );
+        const uint32_t fare = pTransporter->getReward();
+        const uint32_t deposit = pTransporter->getDeposit();
+        pHud->setVariableValue( "/:extra_reward", int32_t( fare ) );
+        char moneyText[0x40];
+        if ( !bRaceWon ) {
+            pHud->setVariableValue( "/:IsRewardMoney", 1 );
+            pHud->setVariableValueNonLinked(
+                "/:MoneyTransfert",
+                FormatMoneyString( moneyText, int32_t( deposit ) ) );
+            pCounters->addCounter( CounterIndex( 0xf098 ), int32_t( deposit ) );
+            pDriver->setMoneyAndNotify(
+                int32_t( pDriver->getMoney() + deposit ) );
+            pCounters->addCounter( CounterIndex( 0xf0dc ), int32_t( deposit ) );
+            pDriver->setPendingMoneyOperation(
+                pDriver->getPendingMoneyOperation() -
+                int32_t( deposit ) ); // FUN_00430c50
+            if ( pDriver->getMoney() < deposit || bBotFlag ) {
+                pHud->setVariableValue( "/:IsRetry", 0 );
+            }
+            break;
+        }
+
+        pHud->setVariableValue( "/:IsReward", 1 );
+        pHud->setVariableValue( "/:IsRetry", 0 );
+        pCounters->addCounter( CounterIndex( 0xf098 ), int32_t( deposit ) );
+        pDriver->setMoneyAndNotify( int32_t( pDriver->getMoney() + deposit ) );
+        pCounters->addCounter( CounterIndex( 0xf098 ), int32_t( fare ) );
+        pDriver->setPendingMoneyOperation( pDriver->getPendingMoneyOperation() +
+                                           int32_t( fare ) ); // FUN_00430c00
+        pHud->setVariableValue( "/:IsRewardMoney", 1 );
+        pHud->setVariableValueNonLinked(
+            "/:MoneyTransfert",
+            FormatMoneyString( moneyText, int32_t( fare ) ) );
+
+        SavedItemTable *pChallengeStates = pSave->getItemTable();
+        uint16_t &kind = pChallengeStates->Kinds[pChallenge->getIndex()];
+        kind = ( kind & 0xff00u ) | SavedItemTable::ECS_Done;
+        pChallengeStates->notify( 0u );
         break;
+    }
     case PlayerGameMech::SDN_Convoy: {
         pHud->setVariableValueNonLinked( "/:cur_gm", "convoy" );
         const GameMechPenalty *pPenalty =
@@ -2046,8 +2142,13 @@ bool GameMechanism::processRunning( const eStateProcess process ) {
         if ( gpMngInGameMenu != nullptr ) {
             gpMngInGameMenu->setEnabled( true ); // +0x24
         }
-        OTDU_UNIMPLEMENTED; // TODO: GSAI (AiPool +0xc = 0, field_0x7c = 1,
-                            // field_0x85 = 1), DAT_013d1a77 = 0
+        {
+            AiPool *pAIPool = gpAI->getAIPool();
+            pAIPool->setTrafficPaused( false ); // +0xc
+            pAIPool->setField0x7C( true );
+            pAIPool->setField0x85( true );
+        }
+        OTDU_UNIMPLEMENTED; // TODO: GSAI (DAT_013d1a77 = 0)
         pGameSession->onRaceStarted();
         if ( mechType == MT_ExtraChallenge ) {
             OTDU_UNIMPLEMENTED; // TODO: GMMission (DAT_013d1a75 = 0)
@@ -2238,10 +2339,13 @@ bool GameMechanism::executeAction( const int32_t action,
         if ( pSource == pCinematic ) {
             pCinematic = nullptr;
             bAutopilotFadeStarted = false;
-            OTDU_UNIMPLEMENTED; // TODO: GSAI (AiPool +0xc = 0, +0x7c = 1,
-                                // +0x85 = 1, traffic unpaused,
-                                // FUN_00968f60(0) shows the opponents again),
-                                // GMMission (MngBlckRds entries flag |= 1)
+            AiPool *pAIPool = gpAI->getAIPool();
+            pAIPool->setTrafficPaused( false ); // +0xc
+            pAIPool->setField0x7C( true );
+            pAIPool->setField0x85( true );
+            OTDU_UNIMPLEMENTED; // TODO: GMMission (MngBlckRds entries flag
+                                // |= 1)
+            gpAI->setOpponentsHidden( false );
         }
     } else if ( action == CE_Started && pSource == pCinematic ) {
         GetHudPlayer()->setVariableValue( "/:IsCineLoading", 0 );
@@ -2293,8 +2397,8 @@ void GameMechanism::startEndCinematic( const Matrix4x4f_t &pose ) {
     }
 
     gpAI->setTrafficCategories( false, 1 );
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (FUN_00968f60(1) hides the opponents),
-                        // GMMission (MngBlckRds entries flag &= ~1)
+    gpAI->setOpponentsHidden( true );
+    OTDU_UNIMPLEMENTED; // TODO: GMMission (MngBlckRds entries flag &= ~1)
     frame.row( 3 ).head<3>() -= GetWorldShift().head<3>().transpose();
     pCinematic->setTransformOffset( frame );  // +0x180, bCineOffset (+0x173)
     pCinematic->setGameModeInterface( this ); // +0x2598 = CGameMech +0x18

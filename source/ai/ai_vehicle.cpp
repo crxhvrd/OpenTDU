@@ -1633,9 +1633,30 @@ Eigen::Vector4f AiVehicle::computeCenterPosition() const {
            infos.GroundMatrix.row( 1 ) * halfHeight;
 }
 
+static float GetFrontWheelRadius( CarState *pCarState ) {
+    PhysicsVehicle *pPhysics = pCarState->getPhysicsVehicle();
+    return ( pPhysics != nullptr ) ? pPhysics->getWheelState( 0 ).Radius : 0.0f;
+}
+
 void AiVehicle::setGroundMatrixFromCenter( const Matrix4x4f_t &center ) {
     // FUN_00924b40
-    const float halfHeight = pCarState->getBody()->BodyDimensions.y() * 0.5f;
+    const float height = pCarState->getBody()->BodyDimensions.y() * 0.5f +
+                         GetFrontWheelRadius( pCarState );
     infos.GroundMatrix = center;
-    infos.GroundMatrix.row( 3 ) -= center.row( 1 ) * halfHeight;
+    infos.GroundMatrix.row( 3 ) -= center.row( 1 ) * height;
+}
+
+void AiVehicle::teleport( const Matrix4x4f_t &frame, const bool bSnapToRoad ) {
+    // FUN_00927850
+    infos.GroundMatrix = frame;
+    infos.GroundMatrix( 3, 1 ) -= GetFrontWheelRadius( pCarState );
+    if ( !bSnapToRoad ) {
+        return;
+    }
+
+    AiRoadMap::Road *pRoad =
+        gpAI->getRoadMap().findNearestRoadExhaustive( frame, true );
+    ProjectOnRoadShape( frame, infos.LastRoadPos, nullptr, false,
+                        pRoad->getShape() );
+    infos.LastRoadLane = 0;
 }

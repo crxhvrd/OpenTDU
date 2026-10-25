@@ -22,12 +22,18 @@ public:
     inline uint32_t getConditionValue() const { return Condition.Value; }
     inline const ChallengeCondition &getCondition() const { return Condition; }
     inline uint32_t getReward() const { return Reward; }
+    inline Entity *getGoodies() const { return pGoodies; }
+    // Charged at the start, refunded on the results screen
+    inline uint32_t getDeposit() const {
+        return uint32_t( double( Reward ) * double( kDepositRatio ) );
+    }
     inline const AvatarConfiguration &getEndAvatarConfig() const {
         return EndAvatarConfig;
     }
 
 private:
     static constexpr float kSpotMeshForwardOffset = 2.0f; // DAT_00f416b0
+    static constexpr float kDepositRatio = 0.1f;          // FLOAT_00f41668
 
 private:
     const char *pMapName;

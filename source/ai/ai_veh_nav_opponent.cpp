@@ -20,6 +20,7 @@
 #include "game/game_mechanism.h"
 #include "ai/ai_game_session.h"
 
+static constexpr int32_t kOpponentBehaviourType = 1;
 static constexpr float kNoValue = -1000.0f;             // DAT_00f419c4
 static constexpr float kRouteTolerance = 1.1f;          // DAT_00f4174c
 static constexpr float kDefaultSpeedCap = 100.0f;       // DAT_00f41708
@@ -461,7 +462,7 @@ void AiVehNavOpponent::tick( const float deltaTime, const float totalTime ) {
         float rubberBand = 1.0f;
         if ( getCurrentState() == NS_Race && gpActiveGameMode != nullptr &&
              gpActiveGameMode->getCurrentGameMode() == eGameMode::GM_Mission ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission ranking rubber band
+            rubberBand = computeRubberBand();
         }
         targetSpeed = gAIConfig.OpponentDifficulty * targetSpeed * rubberBand;
     }
@@ -469,6 +470,53 @@ void AiVehNavOpponent::tick( const float deltaTime, const float totalTime ) {
         targetSpeed = speedCap;
     }
     situation.update();
+}
+
+float AiVehNavOpponent::computeRubberBand() const {
+    // FUN_00957420 (inlined)
+    GMMission *pMission = static_cast<GMMission *>( gpActiveGameMode );
+    GameMechanism *pMech = pMission->getGameMech();
+    const GameMechRaceHUD *pRaceHUD =
+        ( pMech != nullptr )
+            ? static_cast<const GameMechRaceHUD *>(
+                  pMech->getComponent( GameMechanism::CS_RaceHUD ) )
+            : nullptr;
+    if ( pRaceHUD == nullptr ) {
+        return 1.0f;
+    }
+
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    const int32_t numSlots = GetNumOpponents( &pMission->getMissionInfo() ) + 1;
+    int32_t playerRank = -1;
+    int32_t ownRank = -1;
+    GameParticipant *pParticipant = pRaceHUD->getRankingHead();
+    for ( int32_t rank = 1; pParticipant != nullptr && rank <= numSlots;
+          rank++ ) {
+        if ( pParticipant->getCarState() == pLocalCar ) {
+            playerRank = rank;
+        }
+        if ( pParticipant->getCarState() == pOwner->getCarState() ) {
+            ownRank = rank;
+        }
+        if ( playerRank != -1 && ownRank != -1 ) {
+            break;
+        }
+        pParticipant = pParticipant->getSessionParams().pRankNextPlayer;
+    }
+    if ( playerRank <= ownRank || pLocalCar == nullptr ) {
+        return 1.0f;
+    }
+
+    const float distance =
+        ( pLocalCar->getWorldPosition() - situation.Position ).norm();
+    if ( distance <= gAIConfig.RubberBandMinDistance ) {
+        return 1.0f;
+    }
+    return 1.0f - ( std::min( distance, gAIConfig.RubberBandMaxDistance ) -
+                    gAIConfig.RubberBandMinDistance ) *
+                      gAIConfig.RubberBandMaxSlowDown /
+                      ( gAIConfig.RubberBandMaxDistance -
+                        gAIConfig.RubberBandMinDistance );
 }
 
 void AiVehNavOpponent::detach() {
@@ -1696,8 +1744,67 @@ bool AiVehNavOpponent::checkCheckpointMissed() {
          gpActiveGameMode->getCurrentGameMode() != eGameMode::GM_Mission ) {
         return false;
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission race type + opponent checkpoint
-    return false;
+    situation.updateLocation();
+    if ( gpMissionInfo == nullptr ||
+         gpMissionInfo->pOwner->getGameMechType() != GameMechanism::MT_Race ||
+         pOwner->getBehaviourType() != kOpponentBehaviourType ) {
+        return false;
+    }
+    const int32_t opponentIndex =
+        pOwner->getOpponentBehaviour().getOpponentIndex();
+    if ( opponentIndex == -1 ) {
+        return false;
+    }
+
+    // FUN_00800fe0
+    GMMission *pMission = gpMissionInfo->pOwner;
+    const int32_t lastCheckpoint = pMission->getGameSession()
+                                       ->getParticipant( opponentIndex )
+                                       ->getSessionParams()
+                                       .LastCheckpoint;
+    if ( lastCheckpoint >= pMission->getNumCheckpoints() ) {
+        return false;
+    }
+
+    AiRoadIt nextCheckpointIt;
+    pMission->getCheckpointRoadLocation( lastCheckpoint + 1, nextCheckpointIt );
+    if ( nextCheckpointIt.pRoad == nullptr ) {
+        return false;
+    }
+    if ( checkpointIt.pRoad != nullptr &&
+         checkpointIt.pRoad->ID != nextCheckpointIt.pRoad->ID ) {
+        checkpointIt = AiRoadIt();
+    }
+
+    const AiRoadIt &carIt = situation.LastValidRoadIt;
+    if ( carIt.pRoad == nullptr ) {
+        return false;
+    }
+    if ( carIt.pRoad->ID != nextCheckpointIt.pRoad->ID ) {
+        return checkpointIt.pRoad != nullptr;
+    }
+    if ( IsBeforeInWay( carIt, nextCheckpointIt, nextCheckpointIt.bWay ) ) {
+        checkpointIt = carIt;
+        return false;
+    }
+    if ( !nextCheckpointIt.isBefore( carIt ) ) {
+        return false;
+    }
+
+    if ( checkpointIt.pRoad == nullptr ) {
+        const AiRoadIt &routeFrom = situation.RouteFrom;
+        if ( routeFrom.pRoad != nullptr &&
+             routeFrom.pRoad == nextCheckpointIt.pRoad &&
+             routeFrom.bWay == nextCheckpointIt.bWay &&
+             routeFrom.isBefore( nextCheckpointIt ) ) {
+            checkpointIt = routeFrom;
+        }
+        if ( checkpointIt.pRoad == nullptr ) {
+            checkpointIt.setRoadEntry( nextCheckpointIt.pRoad,
+                                       nextCheckpointIt.bWay );
+        }
+    }
+    return true;
 }
 
 void AiVehNavOpponent::resetOnCheckpointRoad() {

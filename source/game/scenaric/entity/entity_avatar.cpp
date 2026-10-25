@@ -76,11 +76,21 @@ EntityAvatar::~EntityAvatar() {
 bool EntityAvatar::onMessage( FlashMessage *pMessage ) {
     // FUN_007f8130
     if ( *pMessage == kAvatarPlayVoice ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
-        return true;
+        // NOTE: Cinematic keys carry their voice emitter ref and go through
+        // playCinematicVoice instead.
+        return playCinematicVoice( nullptr );
     }
 
     return EntityActor::onMessage( pMessage );
+}
+
+bool EntityAvatar::playCinematicVoice( CinematicVoiceEmitter *pEmitter ) {
+    // FUN_007f8130 ("plvo")
+    pVoiceEmitter = pEmitter;
+    if ( pEmitter != nullptr ) {
+        pEmitter->playFrom( this );
+    }
+    return true;
 }
 
 void EntityAvatar::initializeForCinematic( void *param_2, void *param_3 ) {
@@ -182,6 +192,7 @@ void EntityAvatar::endCinematic( bool bStillReferenced,
                                  EntityCinematic *pLifeCinematic ) {
     // FUN_007e5f70 (inlined)
     pCineInterface = nullptr;
+    pVoiceEmitter = nullptr;
 
     EntityDriver *pDriver = getDriver();
     if ( avatarType == 1 ) {
@@ -217,6 +228,7 @@ void EntityAvatar::endCinematic( bool bStillReferenced,
 
 void EntityAvatar::endLifeSetCinematic() {
     // FUN_007e5f70 (inlined, life-set branch)
+    pVoiceEmitter = nullptr;
     if ( avatarType != 1 ) {
         return;
     }
@@ -845,7 +857,15 @@ void EntityAvatar::onHeadUpdate( Matrix4x4f_t &headTransform ) {
     if ( pPooledAvatarEntry != nullptr ) {
         pPooledAvatarEntry->Slots[AC_Helmet].setMatrix( headTransform );
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - voice position (+0x1c3c)
+
+    if ( pVoiceEmitter != nullptr ) {
+        Eigen::Vector3f position( headTransform( 3, 0 ), headTransform( 3, 1 ),
+                                  headTransform( 3, 2 ) );
+        if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
+            position += gpWorldStreaming->getPosition().head<3>();
+        }
+        pVoiceEmitter->setPosition( position );
+    }
 }
 
 void EntityAvatar::updateCarAlpha() {

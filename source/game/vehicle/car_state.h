@@ -254,6 +254,7 @@ public:
     inline class EntityAvatarPassenger *getPassenger() const {
         return pPassenger;
     }
+    inline class EntityPassengerGoodies *getCargo() const { return pCargo; }
     inline struct VehicleSoundInstance *getVehicleSound() const {
         return pVehicleSound;
     }
@@ -346,6 +347,7 @@ private:
     struct VehicleSoundInstance *pVehicleSound;
     class EntityDriver *pDriver;
     class EntityAvatarPassenger *pPassenger;
+    class EntityPassengerGoodies *pCargo;
     void *field_0x39cc;
     void *field_0x39d4;
     void *field_0x39d8;

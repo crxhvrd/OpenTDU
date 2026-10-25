@@ -17,9 +17,25 @@ public:
 
     void initializeVoice( const uint32_t voiceType );
     void reactToPenalty( const float pendingRatio );
-    inline bool isVoicePlaying() const { return bVoicePlaying; }
+    inline bool isVoicePlaying() const { return voice.isPlaying(); }
 
 protected:
-    bool bVoicePlaying;
-    uint32_t RandomSeed;
+    static constexpr int32_t kNumChatterSounds = 2;
+
+protected:
+    void tickVoice( const float deltaTime );
+    void rollChatter();
+    Eigen::Vector4f computeChatterPosition() const;
+
+protected:
+    float ChatterTimer;
+    PassengerVoiceBank SoundsBank;
+    PassengerVoicePlayer voice;
+    uint32_t DrivingSoundPlayCounts[kNumPassengerDrivingSounds];
+    bool bPlayingChatter;
+    RandomGen Random;
+    float CumulatedProba;
+    int32_t ChatterSoundIndex;
+    bool bLastChatterPlayed;
+    int32_t DrivingSoundIndex;
 };

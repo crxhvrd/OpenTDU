@@ -98,6 +98,7 @@ public:
     void resumeTraffic( const Eigen::Vector4f *pBubblePosition );
     void drawDebug( float deltaTime ) override;
     void broadcastRaceMessage( const AiRaceMessage &message );
+    void setOpponentsHidden( const bool bHidden );
     bool spawnDebugTraffic();
     void spawnDebugParked();
 

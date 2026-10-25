@@ -20,6 +20,7 @@ static constexpr int32_t kTutorialStateBuyCar = 8;
 static constexpr int32_t kTutorialStateCarBought = 9;
 static constexpr int32_t kTutorialStateChallenge = 10;
 static constexpr int32_t kTutorialStateHome = 11;
+static constexpr int32_t kTutorialStateHomeReached = 12;
 static constexpr int32_t kTutorialStateRunning = 13;
 
 class GameIntroTutorial {
@@ -45,13 +46,18 @@ public:
     void onDealerGoToMap();
     void onCarBought();
     void onHouseBought( SpotMap *pHouse );
-    void FUN_007fbd80( bool param_2 );
+    void onChallengeEntered();
+    void onHouseEntered();
+    void onMissionQuit();
+    void setModalHintVisible( const bool bVisible );
+    void launchCurrentStateDialog();
     void computeMapFocus( GMMap *pMap,
                           Eigen::Vector4f *pOutFocus,
                           const bool bSelectSpot );
     void sendFlashVariables( FlashPlayer *pPlayer );
 
 private:
+    void showFlashTutorialDialog( const char *pDialogID );
     void setStep( const int32_t step );
     void beginStep( const int32_t step, const int32_t previousStep );
     void endStep( const int32_t step );

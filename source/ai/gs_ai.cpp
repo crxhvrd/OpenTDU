@@ -5,6 +5,11 @@
 #include "ai/ai_debug_race.h"
 #include "ai/ai_path_optimiser.h"
 #include "ai/ai_pool.h"
+#include "ai/ai_veh_locomotion.h"
+#include "ai/ai_vehicle.h"
+#include "audio/vehicle/gs_vehicle_sound.h"
+#include "game/scenaric/entity/entity_driver.h"
+#include "game/vehicle/vehicle_base.h"
 #include "ai/ai_road_query.h"
 #include "ai/roadmap_upgrader.h"
 #include "config/gs_config.h"
@@ -239,6 +244,54 @@ void GSAI::broadcastRaceMessage( const AiRaceMessage &message ) {
         static_cast<int32_t>( eAiVehicleCategory::AVC_Network ) );
     if ( network.Count != 0 ) {
         dispatch( network.Items[0] );
+    }
+}
+
+void GSAI::setOpponentsHidden( const bool bHidden ) {
+    // FUN_00968f60
+    pLODSorter->bNoOpponentPhysics = bHidden;
+
+    AiVehicleList &opponents = pAIPool->getList(
+        AiPool::AVL_FirstCategory +
+        static_cast<int32_t>( eAiVehicleCategory::AVC_Opponent ) );
+    for ( int32_t i = 0; i < opponents.Count; i++ ) {
+        AiVehicle *pOpponent = opponents.Items[i];
+        if ( pOpponent == nullptr ) {
+            continue;
+        }
+        CarState *pCarState = pOpponent->getCarState();
+        VehicleBase *pVehicle = ( pCarState != nullptr )
+                                    ? pCarState->getVehicleInstance()
+                                    : nullptr;
+        EntityDriver *pDriver =
+            ( pCarState != nullptr ) ? pCarState->getDriver() : nullptr;
+        VehicleSoundInstance *pSound =
+            ( pCarState != nullptr ) ? pCarState->getVehicleSound() : nullptr;
+
+        if ( bHidden ) {
+            if ( pOpponent->getLocomotion() != nullptr ) {
+                pOpponent->getLocomotion()->setPhysicsActive( false, false );
+            }
+            if ( pVehicle != nullptr ) {
+                pVehicle->setShouldDraw( false );
+            }
+            if ( pDriver != nullptr ) {
+                pDriver->removeInstanceReference();
+            }
+            if ( pSound != nullptr ) {
+                pSound->Model.pause();
+            }
+        } else {
+            if ( pVehicle != nullptr ) {
+                pVehicle->setShouldDraw( true );
+            }
+            if ( pDriver != nullptr ) {
+                pDriver->addInstanceReference();
+            }
+            if ( pSound != nullptr ) {
+                pSound->Model.resume();
+            }
+        }
     }
 }
 

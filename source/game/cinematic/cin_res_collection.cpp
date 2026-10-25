@@ -34,6 +34,7 @@
 #include "game/mng_hud.h"
 #include "game/intro/gm_intro.h"
 #include "game/vehicle/gs_car_state.h"
+#include "game/vehicle/vehicle_base.h"
 #include "game/vehicle/vehicle_traffic.h"
 #include "game/vehicle/gs_car_display.h"
 #include "game/vehicle/vehicle_controller.h"
@@ -661,7 +662,7 @@ void CinResCollection::processCinematicMessages( const uint16_t *pTrack,
         return;
     }
 
-    onCinematicMessage( pValues + lower * 2, pMsg );
+    onCinematicMessage( pValues + lower * 2, pMsg, pRefTable[refIdx].pHandle );
 }
 
 uint32_t ExtractBufferSize( const void *pData, uint32_t size ) {
@@ -927,6 +928,14 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
     dispatchActor( pActor, state, scale, bHasTransformTrack );
 }
 
+static void ApplyCarActorVisibility( CarState *pCarState,
+                                     const bool bVisible ) {
+    // FUN_007e5610 (inlined)
+    if ( pCarState != nullptr && pCarState->getVehicleInstance() != nullptr ) {
+        pCarState->getVehicleInstance()->setShouldDraw( bVisible );
+    }
+}
+
 void CinResCollection::dispatchActor( CinematicActor *pActor,
                                       CinActorState &state,
                                       const Eigen::Vector3f &scale,
@@ -966,7 +975,15 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
 
             FlashMessage *pMessage = reinterpret_cast<FlashMessage *>(
                 const_cast<char *>( message.pString ) );
-            if ( pEntity->onMessage( pMessage ) ) {
+            const bool bConsumed =
+                ( *pMessage == FlashMessage( "plvo" ) &&
+                  Entity::IsAvatarEntityType( pEntity ) )
+                    ? static_cast<EntityAvatar *>( pEntity )
+                          ->playCinematicVoice(
+                              static_cast<CinematicVoiceEmitter *>(
+                                  message.pRef ) )
+                    : pEntity->onMessage( pMessage );
+            if ( bConsumed ) {
                 recordFiredMessage( message.pString, message.pKey );
                 OTDU_LOG_DEBUG(
                     "Cinematic '%s' actor '%s' consumed message '%s'\n",
@@ -1004,6 +1021,7 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
     }
 
     if ( pActor->Kind == CinematicActor::CAK_TrafficCar ) {
+        ApplyCarActorVisibility( pActor->pCarState, state.bVisible );
         if ( bHasTransformTrack ) {
             applyCarTransform( pActor->pCarState, transform,
                                pActor->bCarTeleport );
@@ -1020,6 +1038,7 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
     }
 
     if ( pActor->Kind == CinematicActor::CAK_PlayerCar ) {
+        ApplyCarActorVisibility( pActor->pCarState, state.bVisible );
         if ( bHasTransformTrack ) {
             applyCarTransform( pActor->pCarState, transform,
                                bPlayerCarTeleport );
@@ -1143,6 +1162,8 @@ void CinResCollection::applyIntroCarPose( CinematicActor *pActor,
             return;
         }
     }
+
+    ApplyCarActorVisibility( pActor->pCarState, state.bVisible );
 
     Matrix4x4f_t transform = BuildScaledActorMatrix( state, scale );
     if ( bHasBaseMatrix ) {
@@ -1335,6 +1356,21 @@ void CinResCollection::collectActorClips( const CinMediaContext *pCtx,
     state.Ratio = ratio;
 }
 
+void CinResCollection::stopVoiceEmitters() {
+    // FUN_007e0d70
+    for ( int32_t i = 0; i < numVoiceEmitters; i++ ) {
+        voiceEmitters[i].stop();
+    }
+}
+
+void CinResCollection::uninstallVoiceEmitters() {
+    // FUN_007e0db0
+    for ( int32_t i = 0; i < numVoiceEmitters; i++ ) {
+        voiceEmitters[i].uninstall();
+    }
+    numVoiceEmitters = 0;
+}
+
 bool CinResCollection::isMessageFired( const void *pKey ) const {
     // FUN_007e7860
     for ( const FiredMessage &fired : firedMessages ) {
@@ -1456,7 +1492,8 @@ void CinResCollection::onShotEvaluated( int32_t shotIndex,
 }
 
 bool CinResCollection::onCinematicMessage( const void *pKey,
-                                           const char *pMessage ) {
+                                           const char *pMessage,
+                                           void *pRef ) {
     // FUN_007e1dc0
     EntityDriver *pDriver =
         ( pPlayerAvatar != nullptr ) ? pPlayerAvatar->getDriver() : nullptr;
@@ -1577,9 +1614,8 @@ bool CinResCollection::onCinematicMessage( const void *pKey,
             }
         }
     } else if ( message == FlashMessage( "plvo" ) ) {
-        if ( !isMessageFired( pKey ) ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (voice emitters,
-                                     // FUN_007debc0)
+        if ( !isMessageFired( pKey ) && pRef != nullptr ) {
+            static_cast<CinematicVoiceEmitter *>( pRef )->play();
         }
     } else if ( message == FlashMessage( "zcne" ) ) {
         applyZConfig( zConfigNear );
@@ -2060,6 +2096,7 @@ bool CinResCollection::createInterface( const void *pBankData,
     if ( pBankData == nullptr ) {
         return false;
     }
+    uninstallVoiceEmitters();
     if ( pBufferIn == nullptr ) {
         return false;
     }
@@ -2159,9 +2196,23 @@ void *CinResCollection::buildRefMedia( const uint8_t *pRefEntry ) {
             if ( gpActiveGMScene != nullptr ) {
                 bMustCloseWindowsAndDoors = true;
             }
-        } else if ( message == FlashMessage( "plvo" ) ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (voice emitters,
-                                     // FUN_007dee40)
+        } else if ( message == FlashMessage( "plvo" ) &&
+                    numVoiceEmitters <
+                        CinematicVoiceEmitter::kMaxEmittersPerCinematic ) {
+            float volume = 1.0f; // FLOAT_00f4165c
+            char voiceName[0x80] = {};
+            strncpy( voiceName, pPayload + 5, sizeof( voiceName ) - 1 );
+            char *pVolume = strchr( voiceName, ':' );
+            if ( pVolume != nullptr ) {
+                if ( pVolume[1] != '\0' ) {
+                    sscanf( pVolume + 1, "%f", &volume );
+                }
+                *pVolume = '\0';
+            }
+            CinematicVoiceEmitter *pEmitter =
+                &voiceEmitters[numVoiceEmitters++];
+            pEmitter->install( voiceName, volume, this );
+            return pEmitter;
         }
         return nullptr;
     }

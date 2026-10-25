@@ -799,8 +799,10 @@ bool GameModeScene::executeAction( int32_t param_2,
 
         pCinematicIntroI = nullptr;
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL (relaunch the STS_CarRental
-                                 // dialog)
+        if ( gpScenaric->getIntroTutorial().getStep() ==
+             kTutorialStateCarRental ) {
+            gpScenaric->getIntroTutorial().launchCurrentStateDialog();
+        }
 
         if ( pCinematicLoop != nullptr && !pCinematicLoop->isPlaying() ) {
             pCinematicLoop->setGameModeInterface( this );

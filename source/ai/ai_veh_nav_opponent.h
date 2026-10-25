@@ -149,6 +149,7 @@ private:
     void updateGrid();
     void exitLineEnded();
     void enterPostFinish();
+    float computeRubberBand() const;
     void updatePostFinish();
     void updateRace();
     void updateLine( const bool bNoOptim );

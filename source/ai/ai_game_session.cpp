@@ -1,14 +1,28 @@
 #include "shared.h"
 #include "ai_game_session.h"
 
+#include "ai_bot_manager.h"
 #include "ai_config.h"
+#include "ai_pool.h"
+#include "ai_vehicle.h"
+#include "ai_veh_behaviour.h"
 #include "ai_race.h"
 #include "gs_ai.h"
 #include "game/game_mechanism.h"
 #include "game/mission/gm_mission.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/local_player.h"
+#include "game/scenaric/avatar_manager.h"
+#include "game/scenaric/entity/entity_avatar.h"
+#include "game/scenaric/entity/entity_driver.h"
+#include "game/avatar/gs_avatar.h"
+#include "game/vehicle/gs_car_state.h"
+#include "game/vehicle/vehicle_base.h"
+#include "audio/vehicle/gs_vehicle_sound.h"
+#include "database/gs_database.h"
+#include "database/db_bot.h"
 #include "game/vehicle/car_state.h"
+#include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/driver.h"
 
@@ -16,6 +30,8 @@ static constexpr int32_t kRaceGameType = 3;
 static constexpr int32_t kOpponentMissionType = 5;
 static constexpr int32_t kOpponentAILevel = 100;
 static constexpr int32_t kRaceMessageStartPositions = 6;
+static constexpr int32_t kOpponentAvatarType = 3;
+static constexpr int32_t kBikeClotheSet = 1;
 
 int32_t GetNumOpponents( MissionInfo *pMissionInfo ) {
     // FUN_00801260
@@ -26,9 +42,9 @@ int32_t GetNumOpponents( MissionInfo *pMissionInfo ) {
     if ( gAIConfig.NumOpponentsOverride >= 0 ) {
         return gAIConfig.NumOpponentsOverride;
     }
-    if ( gpScenaric->isInstantChallenge() ) {
-        OTDU_UNIMPLEMENTED; // TODO: ONLINE (instant challenge against a bot:
-                            // DAT_01214860 -> 1 opponent)
+    if ( gpScenaric->isInstantChallenge() &&
+         gpScenaric->getICEChallengers()[0].bBot ) {
+        return 1;
     }
     return int32_t( pMissionInfo->pOwner->getMissionDescription()
                         ->getNumOpponents()
@@ -37,8 +53,8 @@ int32_t GetNumOpponents( MissionInfo *pMissionInfo ) {
 
 static const MissionInfo::Participant &
 GetMissionParticipant( MissionInfo *pMissionInfo, const int32_t index ) {
-    return pMissionInfo->Participants[std::clamp(
-        index, 0, pMissionInfo->NumParticipants - 1 )];
+    const int32_t lastIndex = std::max( pMissionInfo->NumEntries - 1, 0 );
+    return pMissionInfo->Participants[std::clamp( index, 0, lastIndex )];
 }
 
 static void GetParticipantName( MissionInfo *pMissionInfo,
@@ -53,10 +69,16 @@ static void GetParticipantName( MissionInfo *pMissionInfo,
         return;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (bot nickname FUN_0090c1d0 from
-                        // GetMissionParticipant( index ).BotID)
-    (void)GetMissionParticipant( pMissionInfo, index );
-    snprintf( pOutName, nameLength, "%d", index ); // DAT_00f2a8d8
+    // FUN_0090c1d0
+    const DBEntryBot *pBot =
+        GetBotDBEntry( GetMissionParticipant( pMissionInfo, index ).BotID );
+    if ( nameLength >= GameParticipantOffline::kNameLength &&
+         pBot != nullptr ) {
+        strncpy( pOutName, pBot->FirstName.pAsString,
+                 GameParticipantOffline::kNameLength );
+        return;
+    }
+    snprintf( pOutName, nameLength, "Opponent %02d", index ); // DAT_00f2a8d8
 }
 
 GameParticipantOffline::GameParticipantOffline()
@@ -66,7 +88,7 @@ GameParticipantOffline::GameParticipantOffline()
       CarDBID( -1 ),
       CarPaintIndex( -1 ),
       BotID( -1 ),
-      pAvatarConfig{},
+      pPNJName{},
       OpponentIndex( -1 ),
       AILevel( 0 ),
       bActive( false ),
@@ -77,6 +99,26 @@ GameParticipantOffline::GameParticipantOffline()
       bPhysicsInstanciated( false ),
       pName{} {
     // FUN_00807650
+    strncpy( pName, "not initialised", kNameLength - 1 );
+}
+
+static void ApplyOpponentPaint( CarState *pCarState,
+                                const int32_t paintIndex ) {
+    // FUN_00807d90 (inlined)
+    VehicleBase *pVehicle = pCarState->getVehicleInstance();
+    if ( pVehicle != nullptr ) {
+        pVehicle->applyPaint( pCarState->getCarID(), ePaintType::PT_Default,
+                              paintIndex, 0, 0, nullptr, nullptr, nullptr,
+                              nullptr );
+    }
+}
+
+static void SetOpponentVisible( CarState *pCarState, const bool bVisible ) {
+    VehicleBase *pVehicle = pCarState->getVehicleInstance();
+    if ( pVehicle != nullptr ) {
+        pVehicle->setShouldDraw( bVisible );
+        pVehicle->setAlpha( 0.0f );
+    }
 }
 
 void GameParticipantOffline::addToWorld() {
@@ -84,12 +126,96 @@ void GameParticipantOffline::addToWorld() {
     if ( pCarState == nullptr || bAddedToWorld || bIsLocalPlayer ) {
         return;
     }
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (opponent re-added after elimination)
+
+    {
+        PhysicsLock lock;
+        pCarState->getPhysicsVehicle()->setPostponedPause( 2 );
+    }
+    if ( pCarState->getAIController() == nullptr ) {
+        AiRoadIt startHint;
+        gpAI->getRace()->getCheckpointRoadLocation( 1, startHint );
+        AiVehicle *pAI = gpAI->getAIPool()->addOpponent(
+            pCarState, StartPositionMat, startHint, kOpponentMissionType );
+        pCarState->setAIController( pAI );
+
+        if ( pAI != nullptr ) {
+            pAI->getDPC().BotID = BotID;
+            pAI->getOpponentBehaviour().setOpponentIndex( OpponentIndex );
+        }
+    }
+    if ( pCarState->getVehicleInstance() != nullptr ) {
+        pCarState->getVehicleInstance()->setShouldDraw( true );
+    }
+    if ( pCarState->getDriver() != nullptr ) {
+        pCarState->getDriver()->addInstanceReference();
+    }
+    if ( pCarState->getVehicleSound() != nullptr ) {
+        pCarState->getVehicleSound()->Model.resume();
+    }
+    bAddedToWorld = true;
 }
 
 void GameParticipantOffline::removeFromWorld() {
     // FUN_008079b0
-    OTDU_UNIMPLEMENTED; // TODO: GSAI ("Opponent Eliminated")
+    if ( pCarState == nullptr || !bAddedToWorld || bIsLocalPlayer ) {
+        return;
+    }
+
+    pCarState->getPhysicsVehicle()->setVirtualFlag( false );
+    {
+        PhysicsLock lock;
+        pCarState->getPhysicsVehicle()->setPostponedPause( 1 );
+    }
+    AiVehicle *pAI = static_cast<AiVehicle *>( pCarState->getAIController() );
+    if ( pAI != nullptr ) {
+        gpAI->getAIPool()->removeVehicle( pAI, "Opponent Eliminated", false );
+    }
+    if ( pCarState->getVehicleInstance() != nullptr ) {
+        pCarState->getVehicleInstance()->setShouldDraw( false );
+    }
+    if ( pCarState->getDriver() != nullptr ) {
+        pCarState->getDriver()->removeInstanceReference();
+    }
+    if ( pCarState->getVehicleSound() != nullptr ) {
+        pCarState->getVehicleSound()->Model.pause();
+    }
+    bAddedToWorld = false;
+}
+
+void GameParticipantOffline::installDriver() {
+    // FUN_00807d90 (inlined)
+    const DBEntryBot *pBot = GetBotDBEntry( BotID );
+    const DBEntryPNJ *pPNJ =
+        ( pBot != nullptr )
+            ? static_cast<const DBEntryPNJ *>( pBot->PNJ.pAsRawPointer )
+            : nullptr;
+
+    int32_t clotheSet = 0;
+    VehicleBaseResources *pResource = pCarState->getResource();
+    if ( pResource != nullptr ) {
+        DBEntryCarPhysicsData *pCarData =
+            gpDatabase->getCarDBEntry( pResource->CarID );
+        if ( pCarData != nullptr && gpDatabase->isBike( pCarData ) ) {
+            clotheSet = kBikeClotheSet;
+        }
+    }
+
+    AvatarConfiguration config;
+    if ( pPNJ == nullptr ||
+         !gpAvatar->applyPNJConfiguration( config, *pPNJ ) ) {
+        config = gpAvatar->getDefaultConfiguration( 0 );
+    }
+    if ( pPNJName[0] != '\0' ) {
+        OTDU_UNIMPLEMENTED; // TODO: AVATAR (FUN_008f61d0 PNJ configuration
+                            // by name; never set offline)
+    }
+
+    EntityAvatar *pAvatar = gpScenaric->getAvatarManager().createAvatar(
+        &config, clotheSet, true, ~0ull, false, kOpponentAvatarType );
+    if ( pAvatar != nullptr &&
+         !gpScenaric->placeDriver( pCarState, pAvatar->getDriver() ) ) {
+        gpScenaric->getAvatarManager().releaseAvatar( pAvatar );
+    }
 }
 
 bool GameParticipantOffline::instantiate( const int32_t missionType ) {
@@ -117,13 +243,64 @@ bool GameParticipantOffline::instantiate( const int32_t missionType ) {
             bPhysicsInstanciated = true;
         }
     } else {
-        OTDU_UNIMPLEMENTED; // TODO: GSAI (opponent car load, GSCarState
-                            // instantiate, driver avatar, AddOpponent)
-        (void)missionType;
-        // NOTE: Opponents are not spawned yet; they report as installed (and
-        // inactive) so the race start does not wait for them forever.
-        bActive = false;
-        return true;
+        if ( pVehicleRsc == nullptr ) {
+            VehicleBaseResources *pResource =
+                gpCarState->grabFreeResourceEntry();
+            if ( !pResource->load( CarDBID, 0, 0, 0, ~0ull, 1,
+                                   eVehicleResourceType::VRT_Traffic ) ) {
+                gpCarState->releaseResourceEntry( pResource );
+                pResource = nullptr;
+            }
+            pVehicleRsc = pResource;
+            if ( pVehicleRsc == nullptr ) {
+                return false;
+            }
+        }
+
+        if ( pCarState == nullptr && pVehicleRsc->isLoaded() ) {
+            VehicleSpawnParams params;
+            params.bAddPhysicsPaused = true;
+            params.PhantomMode = 1;
+            pCarState = gpCarState->installVehicle( pVehicleRsc, params,
+                                                    VIT_Opponent, -1 );
+            if ( pCarState == nullptr ) {
+                return false;
+            }
+            SetOpponentVisible( pCarState, false );
+            ApplyOpponentPaint( pCarState, CarPaintIndex );
+        }
+
+        if ( pCarState != nullptr && !bPhysicsInstanciated &&
+             pCarState->getPhysicsVehicle()->isActive() ) {
+            PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
+            pVehicle->resetSimulationState();
+            pVehicle->setDrivingMode( PhysicsVehicle::DM_Parked );
+            SetOpponentVisible( pCarState, true );
+            ApplyOpponentPaint( pCarState, CarPaintIndex );
+
+            installDriver();
+
+            {
+                PhysicsLock lock;
+                pVehicle->resetToTransform( StartPositionMat, true );
+            }
+            pCarState->getWorldMatrix() = StartPositionMat;
+
+            AiRoadIt startHint;
+            gpAI->getRace()->getCheckpointRoadLocation( 1, startHint );
+            AiVehicle *pAI = gpAI->getAIPool()->addOpponent(
+                pCarState, StartPositionMat, startHint, missionType );
+            pCarState->setAIController( pAI );
+            if ( pAI != nullptr ) {
+                pAI->getDPC().BotID = BotID;
+                pAI->getOpponentBehaviour().setOpponentIndex( OpponentIndex );
+                pAI->startFade( false );
+            } else if ( pCarState->getVehicleInstance() != nullptr ) {
+                pCarState->getVehicleInstance()->setAlpha( 1.0f );
+            }
+            bAddedToWorld = true;
+            bPhysicsInstanciated = true;
+        }
     }
 
     if ( bPhysicsInstanciated ) {
@@ -153,14 +330,25 @@ bool GameParticipantOffline::release() {
     }
 
     if ( pCarState != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: GSAI (remove the opponent AI, unload the
-                            // driver and the vehicle)
+        AiVehicle *pAI =
+            static_cast<AiVehicle *>( pCarState->getAIController() );
+        if ( pAI != nullptr ) {
+            gpAI->getAIPool()->removeVehicle( pAI, "RemoveOpponent", false );
+        }
+        pCarState->setAIController( nullptr );
+        EntityDriver *pDriver = pCarState->getDriver();
+        if ( pDriver != nullptr ) {
+            pCarState->unloadDriver();
+            gpScenaric->getAvatarManager().releaseAvatar( pDriver );
+        }
+        gpCarState->releaseCarState( pCarState, false );
         bPhysicsInstanciated = false;
         pCarState = nullptr;
         bActive = false;
     }
     if ( pVehicleRsc != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: GSAI (release the vehicle resource)
+        pVehicleRsc->unload();
+        gpCarState->releaseResourceEntry( pVehicleRsc );
         pVehicleRsc = nullptr;
     }
     return pVehicleRsc == nullptr;
@@ -311,8 +499,9 @@ void GameSessionOffline::computeStartGrid() {
         if ( pParticipant->isActive() &&
              pParticipant->getCarState() != nullptr &&
              pParticipant->getCarState()->getAIController() != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: GSAI (AiVehicle::teleport
-                                // FUN_00927850)
+            static_cast<AiVehicle *>(
+                pParticipant->getCarState()->getAIController() )
+                ->teleport( pParticipant->StartPositionMat, true );
         }
     }
 }

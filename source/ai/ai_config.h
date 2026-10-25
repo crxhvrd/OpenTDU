@@ -132,9 +132,9 @@ struct AIConfig {
     int32_t BotsWantedDifficulty;
     int32_t BotsWantedBehavior;
     bool bBotBehaviorOverride;
-    float Unknown0xF4;
-    float Unknown0xF8;
-    float Unknown0xFC;
+    float RubberBandMinDistance;
+    float RubberBandMaxDistance;
+    float RubberBandMaxSlowDown;
     bool bPathOptFixedNormals;
     float PathOptMinAngle;
     float PathOptTrackDistance;
@@ -206,8 +206,6 @@ struct AIConfig {
     float computeMinBrakingDistance() const;
     float computeHandlingMark( const int32_t carID,
                                AIHandlingReference &reference ) const;
-
-private:
     const AIVehiclePhysics *findVehiclePhysics( const int32_t carID ) const;
 };
 OTDU_SIZE_MUST_MATCH( AIConfig, 0x2ef8 );
@@ -223,6 +221,9 @@ extern AIConfig gAIConfig;
 extern AIHandlingReference gAIHandlingReference; // DAT_00fa9210
 
 int32_t GetNextAvailableCarID( const int32_t carID );
+float ComputeTurningRadius( const float coef1,
+                            const float coef2,
+                            const float speed );
 float ComputeMaxTopSpeed();
 float ComputeMinAcceleration();
 

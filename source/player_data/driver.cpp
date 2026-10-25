@@ -198,6 +198,14 @@ void Driver::spendCoupons( const uint32_t numCoupons ) {
     notify( 0u );
 }
 
+void Driver::earnCoupons( const uint32_t numCoupons ) {
+    // FUN_00893b40
+    gpPlayerData->getLoadedSave()->getExtraChallenges()->addCouponsEarned(
+        numCoupons );
+    setNumCoupons( getNumCoupons() + numCoupons );
+    notify( 0u );
+}
+
 int32_t Driver::getPendingMoneyOperation() const {
     return int32_t( TestDriveTEAReadDword( pMoneyOP ) );
 }

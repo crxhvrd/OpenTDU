@@ -3,6 +3,7 @@
 #include <array>
 
 #include "cinematic_format.h"
+#include "cinematic_voice_emitter.h"
 #include "game/scenaric/entity/entity_factory.h"
 
 struct AvatarConfiguration;
@@ -184,6 +185,9 @@ public:
     }
     inline void clearFiredMessages() { firedMessages.clear(); }
 
+    void stopVoiceEmitters();
+    void uninstallVoiceEmitters();
+
     inline static bool bQuiet = false; // TODO: REMOVE ME: Verbose debug flag
 
 public:
@@ -251,7 +255,9 @@ private:
     Eigen::Vector3f tickCameraShake( CameraCinematic *pCamera,
                                      float deltaTime );
 
-    bool onCinematicMessage( const void *pKey, const char *pMessage );
+    bool onCinematicMessage( const void *pKey,
+                             const char *pMessage,
+                             void *pRef );
     void processCinematicMessages( const uint16_t *pTrack, float time );
     void initializePlayerCarForCinematic();
     Entity *findMicroByName( const char *pName ) const;
@@ -406,6 +412,9 @@ private:
     bool bAvatarShadowTarget = false;
     EntityActor *pPlane = nullptr;
     std::vector<FiredMessage> firedMessages;
+    CinematicVoiceEmitter
+        voiceEmitters[CinematicVoiceEmitter::kMaxEmittersPerCinematic];
+    int32_t numVoiceEmitters = 0;
     bool bFirstShotPending = true;
     bool bFirstShotConsumed = false;
     int32_t currentShot = -1;

@@ -53,6 +53,7 @@ CarState::CarState()
       pVehicleSound( nullptr ),
       pDriver( nullptr ),
       pPassenger( nullptr ),
+      pCargo( nullptr ),
       field_0x39cc( nullptr ),
       field_0x39d4( nullptr ),
       field_0x39d8( nullptr ),

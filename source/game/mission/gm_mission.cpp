@@ -42,7 +42,6 @@
 
 MissionInfo *gpMissionInfo = nullptr; // DAT_013d1a68
 
-static constexpr uint32_t kRandomSeed = 0x3039;
 static constexpr uint32_t kSoloSpotType = 0xc0c0;
 static constexpr uint32_t kMultiSpotType = 0xc0c1;
 static constexpr uint32_t kClubSpotType = 0xc0c2;
@@ -89,7 +88,7 @@ GMMission::GMMission()
       bFromLobby( false ),
       spawnFrame( Matrix4x4f_t::Identity() ),
       pGameSession( nullptr ),
-      missionInfo{ this, { { kRandomSeed, 0, 0, 0 } }, 0 },
+      missionInfo( this ),
       bOnlineSession( false ),
       pOffroadWarningClient( nullptr ),
       pOffroadWarningEntry( nullptr ),
@@ -258,8 +257,9 @@ void GMMission::initialize() {
     GameModeWorld::initialize();
 
     if ( gameMechID == kSoloSpotType ) {
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (FUN_0073cd90 mission info from
-                            // IAVT / IAS0)
+        EventParameters *pDescription = getMissionDescription();
+        missionInfo.selectOpponents( &pDescription->getOpponentVehicleType(),
+                                     &pDescription->getOpponentRestriction() );
     }
     if ( gpScenaric->isFromDriveIn() ) {
         OTDU_UNIMPLEMENTED; // TODO: SCENARIC (drive-in stats FUN_00883860)
@@ -391,8 +391,14 @@ void GMMission::pause() {
     }
 
     OTDU_UNIMPLEMENTED; // TODO: GMMission (DAT_00fa9818 = 0, FUN_0041f8f0,
-                        // DAT_00fa97b4 / DAT_00fa97b8 = 0, GSAI +0x2a98d = 0,
-                        // AiPool +0xc/+0x78/+0x7c/+0x7d/+0x85, pause traffic)
+                        // DAT_00fa97b4 / DAT_00fa97b8 = 0, DAT_013d1a5d = 0,
+                        // DAT_013d1a77 = 0)
+    AiPool *pAIPool = gpAI->getAIPool();
+    pAIPool->setTrafficPaused( false ); // +0xc
+    pAIPool->setField0x7C( true );
+    pAIPool->setField0x85( true );
+    pAIPool->setTrafficScale( 1.0f );       // +0x78
+    pAIPool->setIgnoreZoneDensity( false ); // +0x7d
     if ( gpScenaric->getActiveExtraChallenge() != nullptr ) {
         extraChallenge.terminate();
     }
@@ -412,7 +418,7 @@ void GMMission::destroy() {
     OTDU_UNIMPLEMENTED; // TODO: GSCamera, ONLINE (lobby
                         // network service listener = null)
     if ( pGameSession != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: GSAI
+        pGameSession->onEvent( GameSession::E_Release );
     }
     if ( bRelockChallengeRoads ) {
         gpScenaric->delockChallengeRoads( true );
@@ -693,8 +699,7 @@ void GMMission::quitMission() {
     // FUN_0073f350 (inlined)
     bQuitRequested = true;
     exitMission();
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC (FUN_007fc6f0 tutorial back to
-                        // STS_Home)
+    gpScenaric->getIntroTutorial().onMissionQuit();
 }
 
 bool GMMission::attachOffroadWarningSample() {

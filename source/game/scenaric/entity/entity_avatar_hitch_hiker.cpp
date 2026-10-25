@@ -3,20 +3,41 @@
 
 #include "game/scenaric/gs_scenaric.h"
 
+static constexpr const char *kHitchHikerVoiceNames[] = {
+    "standard", "idiot", "hippy" }; // PTR_s_standard_00f97020
+static constexpr const char *kHitchHikerSoundNameFormat =
+    "V_M_HitchHiker_%s_%03d.wav";
+static constexpr uint32_t kVoiceRandomSeed = 0x3039;
+
 EntityAvatarHitchHiker::EntityAvatarHitchHiker()
     : EntityAvatarPassenger(),
-      bVoicePlaying( false ),
-      RandomSeed( 0x3039 ),
+      SoundsBank(
+          "hh", kHitchHikerSoundNameFormat, kNumPassengerDrivingSounds ),
+      voice(),
+      DrivingSoundPlayCounts{},
+      CurrentSoundIndex( -1 ),
+      Random(),
       CumulatedProba( 0.0f ),
       CurrentFreerideAnim( -1 ),
       bPlaySound( false ) {
     // FUN_007f6bd0
-    OTDU_UNIMPLEMENTED;
+    Random.setSeed( kVoiceRandomSeed );
 }
 
 EntityAvatarHitchHiker::~EntityAvatarHitchHiker() {
     // FUN_00424930
-    OTDU_UNIMPLEMENTED;
+    voice.destroy();
+    SoundsBank.release();
+}
+
+void EntityAvatarHitchHiker::tick( GameMechanism *pGameMech,
+                                   float deltaTime,
+                                   float totalTime ) {
+    // FUN_007f6d60
+    EntityAvatarPassenger::tick( pGameMech, deltaTime, totalTime );
+    if ( CurrentBehavior == PB_Passenger ) {
+        voice.tick();
+    }
 }
 
 void EntityAvatarHitchHiker::loadResources( ScenaricBank *param_2 ) {
@@ -57,19 +78,43 @@ void EntityAvatarHitchHiker::instanciate( MngActor *pMngActor,
 
 void EntityAvatarHitchHiker::resetVoice() {
     // FUN_007f65a0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (stop the voice instance, reset the
-                             // pending voice line)
-    bVoicePlaying = false;
+    voice.requestStop();
+    voice.clear();
+    CurrentSoundIndex = -1;
+    for ( uint32_t &playCount : DrivingSoundPlayCounts ) {
+        playCount = 0u;
+    }
 }
 
-void EntityAvatarHitchHiker::initializeVoice( const uint32_t /*voiceType*/ ) {
+void EntityAvatarHitchHiker::initializeVoice( const uint32_t voiceType ) {
     // FUN_007f6e70
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (voice bank for the voice type,
-                             // audio client and stream entry)
-    bVoicePlaying = false;
+    const uint32_t numVoices =
+        sizeof( kHitchHikerVoiceNames ) / sizeof( kHitchHikerVoiceNames[0] );
+    SoundsBank.load(
+        kHitchHikerVoiceNames[voiceType < numVoices ? voiceType : 0] );
+    voice.create( "SCAvatarHitchHiker" );
+    CurrentSoundIndex = -1;
 }
 
-void EntityAvatarHitchHiker::reactToPenalty( const float /*pendingRatio*/ ) {
+void EntityAvatarHitchHiker::reactToPenalty( const float pendingRatio ) {
     // FUN_007f6880
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (random penalty voice line)
+    static constexpr float kAlwaysReactRatio = 1.0f; // FLOAT_00f4165c
+    if ( voice.hasPendingSound() ) {
+        return;
+    }
+
+    const float proba = RandomUnit( Random ) + CumulatedProba;
+    if ( kAlwaysReactRatio - pendingRatio < proba ) {
+        const int32_t soundIndex =
+            PickLeastPlayedDrivingSound( DrivingSoundPlayCounts, Random );
+        if ( SoundsBank.isReady() ) {
+            voice.queue( SoundsBank.getSound( soundIndex ),
+                         SoundsBank.getSoundName( soundIndex ) );
+        }
+        CurrentSoundIndex = soundIndex;
+        CumulatedProba = 0.0f;
+        return;
+    }
+
+    CumulatedProba += proba;
 }

@@ -20,6 +20,7 @@ class MngHud;
 class CarState;
 class EntityDriver;
 class EntityAvatarPassenger;
+class EntityPassengerGoodies;
 class AudioClient;
 class AudioDispatcherPlaybackSoundInstance;
 class edAudioSample;
@@ -164,12 +165,15 @@ public:
     }
 
     void prepareWorldEntityTemplates();
+    void installLevelWorldSpots();
 
     bool placeDriver( CarState *pCarState, EntityDriver *pDriver );
     bool placePassenger( CarState *pCarState,
                          EntityAvatarPassenger *pPassenger );
     bool unloadPassenger( CarState *pCarState,
                           EntityAvatarPassenger *pPassenger );
+    bool placeCargo( CarState *pCarState, EntityPassengerGoodies *pCargo );
+    bool unloadCargo( CarState *pCarState, EntityPassengerGoodies *pCargo );
 
     void loadPacks();
     void unloadPacks();

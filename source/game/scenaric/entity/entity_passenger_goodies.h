@@ -1,20 +1,14 @@
 #pragma once
 
 #include "entity_actor.h"
+#include "entity_driver.h"
 
 class CarState;
 struct HiearchyNode;
-struct IKOffset;
 
 enum ePassengerGoodies : int32_t {
     PG_MovementFree = 0,
     PG_MovementInCar = 1,
-};
-
-// One car-relative IK point
-struct IKPoint {
-    HiearchyNode *pHiearchNode;
-    IKOffset *pOffset;
 };
 
 class EntityPassengerGoodies : public EntityActor {
@@ -32,14 +26,22 @@ public:
     bool draw( RenderScene *pScene ) override;
     void deserialize( BinaryReader *param_2 ) override;
 
+    void setCarState( CarState *pNewCarState );
+    void setSeatModel( HiearchyNode *pNode );
+    void updateTranslation();
+
+    inline void setBehavior( const ePassengerGoodies behavior ) {
+        CurrentBehavior = behavior;
+    }
+
 protected:
-    static constexpr int32_t kNumCarIKPoints = 27;
+    static constexpr int32_t kCarIKPointCargo = 14; // "PsgSeat_HR"
 
 protected:
     ePassengerGoodies CurrentBehavior;
     CarState *pCarState;
     Eigen::Vector4f Translation;
-    IKPoint CarIKPoints[kNumCarIKPoints];
+    SCIKPoint CarIKPoints[kNumCarIKPoints];
     float *pCarPsgSeatHeight;
     float *pCarPsgSeatFrontBack;
     Matrix4x4f_t PsgSeatModelInitMatrix;

@@ -12,6 +12,12 @@
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/spots.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/modal_message_box.h"
+#include "database/gs_database.h"
+#include "game/gm_scene.h"
+#include "game/gm_world.h"
+#include "physics/gs_physics.h"
+#include "system/gs_pc_options.h"
 #include "player_data/achievements_data.h"
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
@@ -180,21 +186,52 @@ void GameIntroTutorial::onHouseBought( SpotMap *pHouse ) {
     setStep( kTutorialStateHouseBought );
 }
 
-void GameIntroTutorial::onIntroFinished() {
-    // FUN_007fc670
-    AchievementsData *pAchievements =
-        gpPlayerData->getLoadedSave()->getAchievements();
-    if ( !pAchievements->getField516_0x204() ) {
-        pAchievements->setField516_0x204( true );
-        if ( pAchievements->isReady() ) {
-            pAchievements->setCurrentGameMode(
-                gpTestDriveInstance->getActiveGameMode() );
-        }
+void GameIntroTutorial::onChallengeEntered() {
+    // FUN_007fba90
+    if ( isActive() && tutorialStep != kTutorialStateChallenge ) {
+        setStep( kTutorialStateChallenge );
+    }
+}
 
-        pAchievements->notify( ACF_Challenge | ACF_Road | ACF_Collection,
-                               false );
+void GameIntroTutorial::onHouseEntered() {
+    // FUN_007fbe80
+    if ( !isActive() || tutorialStep == kTutorialStateHomeReached ) {
+        return;
     }
 
+    setStep( kTutorialStateHomeReached );
+    gpPlayerData->requestSave( 2 );
+}
+
+void GameIntroTutorial::onMissionQuit() {
+    // FUN_007fc6f0
+    if ( !isActive() ) {
+        return;
+    }
+
+    setStep( kTutorialStateHome );
+    gpPlayerData->requestSave( 2 );
+}
+
+static void UnlockTutorialAchievement() {
+    AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    if ( pAchievements->getField516_0x204() ) {
+        return;
+    }
+
+    pAchievements->setField516_0x204( true );
+    if ( pAchievements->isReady() ) {
+        pAchievements->setCurrentGameMode(
+            gpTestDriveInstance->getActiveGameMode() );
+    }
+
+    pAchievements->notify( ACF_Challenge | ACF_Road | ACF_Collection, false );
+}
+
+void GameIntroTutorial::onIntroFinished() {
+    // FUN_007fc670
+    UnlockTutorialAchievement();
     setStep( kTutorialStateCarRental );
 }
 
@@ -401,7 +438,7 @@ void GameIntroTutorial::sendFlashVariables( FlashPlayer *pPlayer ) {
     if ( tutorialStep != kTutorialStateFirstDrive &&
          tutorialStep != kTutorialStateCarBought &&
          tutorialStep != kTutorialStateCarRental ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_007fc7f0 (current step dialog)
+        launchCurrentStateDialog();
     }
 }
 
@@ -450,7 +487,7 @@ void GameIntroTutorial::onIntroCinematicEnded() {
     }
 
     if ( isActive() ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_007fc7f0 (current step dialog)
+        launchCurrentStateDialog();
     }
 }
 
@@ -482,7 +519,102 @@ EntityCinematic *GameIntroTutorial::loadLandingCinematic() {
         eEntityType::ET_CINE, nextIntro.pCinematicName ) );
 }
 
-void GameIntroTutorial::FUN_007fbd80( bool param_2 ) {
+void GameIntroTutorial::setModalHintVisible( const bool bVisible ) {
     // FUN_007fbd80
-    OTDU_UNIMPLEMENTED;
+    if ( tutorialStep == kTutorialStateIntro ) {
+        return;
+    }
+
+    bModalHintVisible = bVisible;
+
+    bool bUpdateHudMovies = true;
+    if ( gpActiveGameMode != nullptr ) {
+        switch ( gpActiveGameMode->getCurrentGameMode() ) {
+        case GM_FreeRide:
+            bUpdateHudMovies = false;
+            break;
+        case GM_Shop:
+        case GM_Goodies:
+        case GM_DriveIn:
+        case GM_Estates:
+            bUpdateHudMovies =
+                gpActiveGMScene != nullptr &&
+                gpActiveGMScene->mustScenarioTutorialReactivateFlash();
+            break;
+        default:
+            break;
+        }
+    }
+
+    if ( bUpdateHudMovies ) {
+        SetHUDMoviesPaused( bVisible );
+    }
+
+    if ( gpActiveGM != nullptr && isActive() ) {
+        gpActiveGM->setBlockPauseByStart( bVisible );
+    }
+    gpPhysics->setPlayerSlowDownForced( bVisible );
+}
+
+void GameIntroTutorial::showFlashTutorialDialog( const char *pDialogID ) {
+    // FUN_007fbef0
+    if ( pDialogID == nullptr || bModalHintVisible ) {
+        return;
+    }
+
+    ModalMessageBox *pMessageBox = gpFlashMessageBox;
+    FlashPlayer *pPlayer = pMessageBox->getFlashPlayer();
+    if ( pPlayer == nullptr || !pPlayer->spriteExists( "/avert" ) ||
+         pMessageBox->getDisplayState() !=
+             ModalMessageBox::eDisplayState::MMBDS_Closed ||
+         gpPCOptions->isMainMenuOpened() ) {
+        return;
+    }
+
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    if ( gameDB.DBTutorial == nullptr ) {
+        return;
+    }
+
+    const char *pEmptyLabel = gpDatabase->getStringByHashcode(
+        GSTutorial::kTutorialDatabaseIndex, 0x51fd96 );
+    const uint32_t numEntries =
+        gameDB.pNumItems[GSTutorial::kTutorialDatabaseIndex];
+    for ( uint32_t i = 0u; i < numEntries; i++ ) {
+        const DBEntryTutorial &entry = gameDB.DBTutorial[i];
+        if ( strcmp( entry.TextID.pAsString, pDialogID ) != 0 ||
+             entry.Libelle.pAsString == pEmptyLabel ) {
+            continue;
+        }
+
+        TestDrive::DisplayModalPrompt(
+            false, 0ull, GSTutorial::kTutorialDatabaseIndex, nullptr, nullptr,
+            nullptr, 0, entry.Libelle.pAsString, true, false, MPT_Tutorial,
+            pMessageBox );
+        return;
+    }
+}
+
+void GameIntroTutorial::launchCurrentStateDialog() {
+    // FUN_007fc7f0
+    if ( !isActive() || gpTestDriveInstance->getActiveGameMode() == GM_Login ) {
+        return;
+    }
+
+    static constexpr const char *kStepDialogs[] = {
+        nullptr,         nullptr,   nullptr,         nullptr,
+        "tut_rental_pc", "tut_fr1", "tut_realtor",   "tut_map",
+        "tut_cardeal",   "tut_fr2", "tut_challenge", "tut_fr3",
+        "tut_home" };
+    showFlashTutorialDialog( kStepDialogs[tutorialStep] );
+
+    if ( tutorialStep != kTutorialStateHomeReached ) {
+        return;
+    }
+
+    setStep( kTutorialStateRunning );
+    gpScenaric->getSpotList().setUseOnlyValid( false );
+    gpScenaric->getSpotList().updateSpotMeshValidity();
+    EntityCinematic::ShowSpots( true );
+    UnlockTutorialAchievement();
 }

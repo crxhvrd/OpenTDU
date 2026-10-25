@@ -56,6 +56,12 @@ public:
     }
     inline GameParameterBool &getLoop() { return loop; }
     inline GameParameterNumber &getNumOpponents() { return numOpponents; }
+    inline GameParameterChoice &getOpponentVehicleType() {
+        return opponentVehicleType;
+    }
+    inline GameParameterVehicleRestriction &getOpponentRestriction() {
+        return opponentRestriction;
+    }
     inline GameParameterDBString &getDatabaseDescription() {
         return databaseDescription;
     }

@@ -306,6 +306,7 @@ void MngOptions::terminate() {
         TestDrive::Free( pAudioOptions );
     }
     pAudioOptions = nullptr;
+    pPlayer = nullptr;
 }
 
 bool MngOptions::onMessage( FlashMessage *pMessage,

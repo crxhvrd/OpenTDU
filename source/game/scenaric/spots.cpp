@@ -730,7 +730,7 @@ bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
         Garage *pGarage = gpPlayerData->getLoadedSave()->getGarage();
         const bool bOwned = pGarage->isHouseOwned( pSpot->Hashcode );
         gpTestDriveInstance->setNextGameMode( bOwned ? GM_Living : GM_Estates );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL (FUN_007fbe80)
+        gpScenaric->getIntroTutorial().onHouseEntered();
         break;
     }
     case ST_CarDealer:
@@ -773,7 +773,7 @@ bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
                  bJoiningLobby ) {
                 gpTestDriveInstance->setNextGameMode( GM_Lobby );
             } else {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: TUTORIAL
+                gpScenaric->getIntroTutorial().onChallengeEntered();
                 gpTestDriveInstance->setNextGameMode( GM_Mission );
             }
         }

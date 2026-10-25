@@ -10,6 +10,7 @@ GSCinematics *gpCinematics = nullptr;
 GSCinematics::GSCinematics()
     : GameSystem(),
       pMusicClient( nullptr ),
+      pVoiceClient( nullptr ),
       field_0x138( 0 ),
       field_0x13c( 0 ),
       bInitialized( false ) {
@@ -51,6 +52,8 @@ bool GSCinematics::initialize( TestDriveGameInstance * ) {
 
     if ( gpAudio != nullptr ) {
         pMusicClient = gpAudio->createClient( "ClientCinematicMusic" );
+        // FUN_007dee00
+        pVoiceClient = gpAudio->createClient( "ClientCinematicVoice" );
     }
 
     if ( pMusicClient == nullptr ) {
@@ -64,6 +67,7 @@ bool GSCinematics::initialize( TestDriveGameInstance * ) {
 void GSCinematics::terminate() {
     // FUN_009afdd0
     pMusicClient = nullptr;
+    pVoiceClient = nullptr;
     bInitialized = false;
 }
 

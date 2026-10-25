@@ -249,12 +249,10 @@ bool PlayerGameMech::onMessage( Entity *pSender,
         CarState *pLocalCar = ( gpScenaric != nullptr )
                                   ? gpScenaric->getLocalPlayer().getCarState()
                                   : nullptr;
-        if ( pLocalCar == nullptr ||
+        if ( pLocalCar == nullptr || pLocalCar->getPoliceState().isChased() ||
              pLocalCar->getPoliceState().isArrested() ) {
             return true;
         }
-
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI/Police
 
         const uint64_t challengeKey =
             static_cast<uint64_t>( reinterpret_cast<uintptr_t>( pSender ) );

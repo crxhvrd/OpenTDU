@@ -62,6 +62,9 @@ public:
         weatherDesc[sizeof( weatherDesc ) - 1] = '\0';
         bNeedWeatherUpdate = true;
     }
+    inline bool mustScenarioTutorialReactivateFlash() const {
+        return bScenarioTutorialMustReactivateFlash;
+    }
     inline const char *getMusicDesc() const { return musicDesc; }
     inline void setMusicDesc( const char *pDesc ) {
         strncpy( musicDesc, pDesc, sizeof( musicDesc ) - 1 );

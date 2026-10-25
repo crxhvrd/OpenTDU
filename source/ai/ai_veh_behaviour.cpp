@@ -11,6 +11,7 @@
 #include "ai/gs_ai.h"
 #include "core/random/bcpl.h"
 #include "game/gm_base.h"
+#include "game/mission/gm_mission.h"
 #include "game/scenaric/game_intro_tutorial.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
@@ -18,6 +19,9 @@
 #include "gs_timer.h"
 #include "physics/collision_event.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "player_data/achievements_data.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
 #include "player_data/saved_road_discovery.h"
 
 static constexpr float kMaxBlockedTime = 6.0f; // DAT_00f41840
@@ -212,7 +216,7 @@ void AiVehBhvOpponent::prepareRace() {
         pVehicle->applyBotPersonality( 2, bMissionFlag ? 0 : 2, 2 );
     }
 
-    if ( !gpScenaric->isICEnabled() ) {
+    if ( !gpScenaric->isInstantChallenge() ) { // DAT_01214750
         applyCatchUp();
     }
 }
@@ -223,7 +227,64 @@ void AiVehBhvOpponent::applyCatchUp() {
          gpActiveGameMode->getCurrentGameMode() != eGameMode::GM_Mission ) {
         return;
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission participant scores
+
+    static constexpr double kCatchUpExponent = 1.3;     // DAT_00f41ab8
+    static constexpr float kRookieCatchUpScale = 0.75f; // DAT_00f416a4
+    static constexpr float kRookieCatchUpMin = 0.5f;    // DAT_00f41674
+    static constexpr float kNoviceCatchUpScale = 0.88f; // DAT_00f41ab4
+    static constexpr float kNoviceCatchUpMin = 0.75f;   // DAT_00f416a4
+    static constexpr float kInvalidRating = -1.0f;      // DAT_00f41664
+
+    const MissionInfo &missionInfo =
+        static_cast<GMMission *>( gpActiveGameMode )->getMissionInfo();
+    const float playerRating = missionInfo.Participants[0].Rating;
+    const float opponentRating =
+        ( opponentIndex >= 0 && opponentIndex < missionInfo.NumEntries &&
+          opponentIndex < MissionInfo::kMaxNumParticipants )
+            ? missionInfo.Participants[opponentIndex].Rating
+            : kInvalidRating;
+
+    AiVehIndDPC &dpc = pVehicle->getDPC();
+    const int32_t playerLevel =
+        gpPlayerData->getLoadedSave()->getAchievements()->getPlayerLevel();
+    if ( playerLevel == 0 ) {
+        if ( dpc.Difficulty == 0 ) {
+            CarState *pCarState = pVehicle->getCarState();
+            if ( pCarState != nullptr &&
+                 pCarState->getPhysicsVehicle() != nullptr ) {
+                pCarState->getPhysicsVehicle()->setElectronicMode( 0 );
+            }
+            if ( dpc.Personality == 2 ) {
+                dpc.NumOutsideWanted = 1;
+            } else if ( dpc.Personality == 1 ) {
+                dpc.NumOutsideWanted = 2;
+            }
+        }
+        const float catchUp =
+            static_cast<float>(
+                pow( playerRating / opponentRating, kCatchUpExponent ) ) *
+            kRookieCatchUpScale;
+        dpc.DPCPattern.MaxAccel = ( catchUp < kRookieCatchUpMin )
+                                      ? kRookieCatchUpMin
+                                      : std::min( catchUp, 1.0f );
+    } else if ( playerLevel == 1 ) {
+        if ( dpc.Difficulty == 0 ) {
+            if ( dpc.Personality == 2 ) {
+                dpc.NumOutsideWanted = 0;
+            } else if ( dpc.Personality == 1 ) {
+                dpc.NumOutsideWanted = 1;
+            }
+        }
+        if ( opponentRating > playerRating ) {
+            const float catchUp =
+                static_cast<float>(
+                    pow( playerRating / opponentRating, kCatchUpExponent ) ) *
+                kNoviceCatchUpScale;
+            dpc.DPCPattern.MaxAccel = ( catchUp < kNoviceCatchUpMin )
+                                          ? kNoviceCatchUpMin
+                                          : std::min( catchUp, 1.0f );
+        }
+    }
 }
 
 static constexpr float kBotFarDistance = 100000.0f; // DAT_00f418e0

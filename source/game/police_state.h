@@ -13,6 +13,7 @@ public:
 
 public:
     inline bool isArrested() const { return bArrested; }
+    inline bool isChased() const { return bIsChased; }
     inline float getWasHitLastTime() const { return WasHitLastTime; }
     inline int32_t getJunctionNotRespected() const {
         return JunctionNotRespected;

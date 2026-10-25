@@ -335,6 +335,11 @@ void SavedExtraChallenges::addCouponsSpent( const uint32_t numCoupons ) {
     addCounter( CounterIndex( 0xf108 ), int32_t( numCoupons ) );
 }
 
+void SavedExtraChallenges::addCouponsEarned( const uint32_t numCoupons ) {
+    // FUN_00887fb0
+    addCounter( CounterIndex( 0xf104 ), int32_t( numCoupons ) );
+}
+
 void SavedExtraChallenges::countCarTransaction( const uint32_t carID,
                                                 const bool bBought,
                                                 const bool bETrade ) {
