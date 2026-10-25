@@ -460,7 +460,7 @@ void edRender::releaseRendererResources() {
 
 void edRender::FUN_005129b0() {
     // FUN_005129b0
-    OTDU_UNIMPLEMENTED;
+    // NOP
 }
 
 void edRender::popDefaultLight() {
@@ -559,7 +559,8 @@ uint32_t edRender::getRequiredMemRenderPoolAndShaderReg() {
 
 uint32_t edRender::getRequiredMemPoolUsage( uint32_t *param_1 ) {
     // FUN_00512150
-    return ( param_1[2] + param_1[1] + *param_1 ) * 0xc;
+    return ( param_1[2] + param_1[1] + *param_1 ) *
+           sizeof( RenderPool<void>::Node );
 }
 
 uint32_t edRender::getRequiredMemShaderBinaryCache() {

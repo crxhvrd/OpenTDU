@@ -2,6 +2,8 @@
 
 #include "camera_game.h"
 
+class PhysicsCharacter;
+
 class CameraSteadyCam : public CameraGame {
 public:
     inline Eigen::Vector4f *getRootPositionRW() { return &rootPosition; }
@@ -23,8 +25,11 @@ public:
     bool tick( float deltaTime, bool param_1, bool param_2 ) override;
     void destroy() override;
 
+private:
+    void releaseFPSBody();
+
 protected:
-    void *pBody;
+    PhysicsCharacter *pBody;
     Eigen::Vector4f rootPosition;
     Eigen::Vector4f rootTarget;
     uint32_t mousePort;

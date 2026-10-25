@@ -49,6 +49,8 @@ constexpr float kImpostorDefaultMaxLODDist = 1.0e8f; // DAT_00f41a50
 constexpr float kImpostorDefaultRadius = 40.0f;      // DAT_00f41b70
 constexpr float kSkinnedImpostorRadius = 25.0f;      // DAT_00f41834
 
+constexpr uint64_t kImpostorMaterialHashcode = 0x83078865caca336d;
+
 // Per-sector / per-area streaming pool sizes (AlignedMalloc(size, 0x10)).
 static constexpr size_t kSectorPoolSize = 0x480000; // 4.5 MiB
 static constexpr size_t kAreaPoolSize = 0x180000;   // 1.5 MiB
@@ -502,94 +504,102 @@ static void OverrideSkinnedImpostorRadius( Instance *pInstance ) {
     }
 }
 
-static void PreComputeImpostorLOD( MassInstanceImpostor &inst,
-                                   Instance *pInstance ) {
-    // FUN_00423330
-    inst.MaxLODDist = kImpostorDefaultMaxLODDist;
-    inst.Radius = kImpostorDefaultRadius;
-    inst.SpherePos = pInstance->getModelMatrix().row( 3 ).transpose();
+bool InstallImpostorMaterial( MassInstanceImpostor &mi ) {
+    // FUN_00700240
+    Instance *pInstance = mi.pInstance;
+    mi.pMaterial = nullptr;
 
+    const uint32_t numLOD = pInstance->getNumLODs();
+    if ( numLOD <= 1 ) {
+        return false;
+    }
+    RenderObject *pObject = GetLODRenderObject( pInstance, numLOD - 1 );
+    if ( pObject == nullptr ) {
+        return false;
+    }
+    RenderFile::Section *pPrimitiveSection = pObject->PrimitiveSection;
+    if ( pPrimitiveSection == nullptr ) {
+        return false;
+    }
+    const Primitive *pPrimitive =
+        reinterpret_cast<const Primitive *>( pPrimitiveSection + 1 );
+
+    RenderFile::Section *pBank = pInstance->getMaterialBank();
+    if ( pBank == nullptr ) {
+        return false;
+    }
+    const uint32_t numMaterials =
+        ( pBank->DataSize - 0x10 ) / (uint32_t)sizeof( Render3DDHashEntry );
+    if ( numMaterials <= pPrimitive->MaterialID ) {
+        return false;
+    }
+    Render3DDHashEntry *pEntries =
+        reinterpret_cast<Render3DDHashEntry *>( pBank + 1 );
+    RenderFile::Section *pMaterialSection =
+        pEntries[pPrimitive->MaterialID].pEntry;
+    if ( pMaterialSection == nullptr ) {
+        return false;
+    }
+
+    Material *pMaterial = reinterpret_cast<Material *>( pMaterialSection + 1 );
+    mi.pMaterial = pMaterial;
+    pMaterial->BackfaceCullingMode = eCullMode::CM_Disabled;
+    pInstance->getFlagsWrite() |= 0x30;
+
+    MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+    return pParameter != nullptr &&
+           pParameter->Hashcode == kImpostorMaterialHashcode;
+}
+
+void PreComputeImpostorLODAndSphere( MassInstanceImpostor &mi,
+                                     float biggerScale ) {
+    // FUN_00423330
+    mi.MaxLODDist = kImpostorDefaultMaxLODDist;
+    mi.Radius = kImpostorDefaultRadius;
+
+    Instance *pInstance = mi.pInstance;
     const uint32_t numLOD = pInstance->getNumLODs();
     if ( numLOD == 0 ) {
         return;
     }
 
-    const float scale = pInstance->getBoundingScale();
-    const float lastDist = pInstance->getLOD( numLOD - 1 ).Distances[0];
-    if ( lastDist > 0.0f ) { // FLOAT_00f41660
-        inst.MaxLODDist = lastDist * scale * scale;
+    const float lastLODDist = pInstance->getLOD( numLOD - 1 ).Distances[0];
+    if ( 0.0f < lastLODDist ) {
+        mi.MaxLODDist = lastLODDist * biggerScale * biggerScale;
     }
 
+    RenderObject *pObject = GetLODRenderObject( pInstance, 0 );
+    if ( pObject != nullptr ) {
+        mi.Radius = pObject->BoundingSphere.w();
+        mi.SpherePos = Mat4x4fTransform( pInstance->getModelMatrix(),
+                                         pObject->BoundingSphere );
+    }
+}
+
+void PreComputeImpostorDeltaXZ( MassInstanceImpostor &mi ) {
+    // FUN_00700310
+    Instance *pInstance = mi.pInstance;
     RenderObject *pObject = GetLODRenderObject( pInstance, 0 );
     if ( pObject == nullptr ) {
         return;
     }
 
-    inst.Radius = pObject->BoundingSphere.w();
-    inst.SpherePos = Mat4x4fTransform( pInstance->getModelMatrix(),
-                                       pObject->BoundingSphere );
-}
-
-static void InstallImpostorMaterial( MassInstanceImpostor &inst ) {
-    // FUN_00700240
-    inst.pMaterial = nullptr;
-    Instance *pInstance = inst.pInstance;
-    const uint32_t numLOD = pInstance->getNumLODs();
-    if ( numLOD <= 1 ) {
+    const RenderPSTEntry *pSprite = nullptr;
+    if ( gpWorld != nullptr && gpWorld->getStreamingManager() != nullptr ) {
+        pSprite =
+            gpWorld->getStreamingManager()->getLevel().getRenderPST().find(
+                pInstance->getHashcode() );
+    }
+    if ( pSprite != nullptr ) {
+        mi.SpriteSizeDelta = pSprite->SpriteSizeDelta;
+        pObject->BoundingSphere = pSprite->BoundingSphere;
+        mi.StretchUV = pSprite->StretchUV;
         return;
-    }
-    Render3DDHashEntry *pHashcode = pInstance->getLOD( numLOD - 1 ).pHashcode;
-    if ( pHashcode == nullptr ) {
-        return;
-    }
-    uint8_t *pEntry = (uint8_t *)pHashcode->pEntry;
-    if ( pEntry == nullptr ) {
-        return;
-    }
-    RenderObject *pObject = (RenderObject *)( pEntry + 0x10 );
-    RenderFile::Section *pPrimSection = pObject->PrimitiveSection;
-    if ( pPrimSection == nullptr ) {
-        return;
-    }
-    Primitive *pPrim = (Primitive *)( (uint8_t *)pPrimSection + 0x10 );
-    Material *pMat = pInstance->getMaterial( pPrim->MaterialID );
-    inst.pMaterial = pMat;
-    if ( pMat != nullptr ) {
-        pMat->BackfaceCullingMode = eCullMode::CM_Disabled;
-        pInstance->getFlagsWrite() |= 0x30;
-    }
-}
-
-static void PreComputeImpostorDeltaUV( MassInstanceImpostor &inst,
-                                       const RenderPST *pTable ) {
-    // FUN_00700310
-    inst.SpriteSizeDelta = 0.0f;
-    Instance *pInstance = inst.pInstance;
-    Render3DDHashEntry *pHashcode = pInstance->getLOD( 0 ).pHashcode;
-    if ( pHashcode == nullptr ) {
-        return;
-    }
-    uint8_t *pEntry = (uint8_t *)pHashcode->pEntry;
-    if ( pEntry == nullptr ) {
-        return;
-    }
-    RenderObject *pObject = (RenderObject *)( pEntry + 0x10 );
-
-    if ( pTable != nullptr ) {
-        const RenderPSTEntry *pSprite =
-            pTable->find( pInstance->getHashcode() );
-        if ( pSprite != nullptr ) {
-            inst.SpriteSizeDelta = pSprite->SpriteSizeDelta;
-            inst.StretchUV = pSprite->StretchUV;
-            // Override the LOD0 render object's bounding sphere so the sprite
-            // is sized from the impostor silhouette, not the full HQ mesh.
-            pObject->BoundingSphere = pSprite->BoundingSphere;
-            return;
-        }
     }
 
-    const Eigen::Vector4f &bs = pObject->BoundingSphere;
-    inst.SpriteSizeDelta = sqrtf( bs.x() * bs.x() + bs.z() * bs.z() );
+    const Eigen::Vector4f &boundingSphere = pObject->BoundingSphere;
+    mi.SpriteSizeDelta = sqrtf( boundingSphere.z() * boundingSphere.z() +
+                                boundingSphere.x() * boundingSphere.x() );
 }
 
 static constexpr uint64_t kImpostorDetail2Hash = 0xb0f1234b0f123473ull;
@@ -840,14 +850,16 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
                 // the MngImpostor crossfade can render them (FUN_00700c80 gates
                 // these on the grid index too).
                 if ( gridIndex == 0 ) {
-                    PreComputeImpostorDeltaUV( inst, geometry.pImpostorTable );
+                    PreComputeImpostorDeltaXZ( inst );
                     InstallImpostorMaterial( inst );
                 }
                 if ( gridIndex == 1 ) {
                     SetupImpostorGrid1Materials(
                         grid, inst, uvDedup, gridOrigin.x(), gridOrigin.z() );
                 }
-                PreComputeImpostorLOD( inst, pInst );
+                inst.SpherePos = pInst->getModelMatrix().row( 3 ).transpose();
+                PreComputeImpostorLODAndSphere( inst,
+                                                pInst->getBoundingScale() );
                 inst.SphereAbsPos = Eigen::Vector4f(
                     inst.SpherePos.x() + buildOrigin.x(),
                     inst.SpherePos.y() + buildOrigin.y(),

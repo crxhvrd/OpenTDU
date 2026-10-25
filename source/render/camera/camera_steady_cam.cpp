@@ -105,6 +105,17 @@ static constexpr float kCarSnapSide = 0.5f;
 static constexpr float kCarBehindDistance = 20.0f; // DAT_00f03ee0
 static constexpr float kCarBehindSide = 5.0f;      // DAT_00f41750
 
+// FPS walk body (FUN_0081d500): an 80 kg capsule, segment +-0.9 m, radius 0.5.
+static constexpr float kFpsBodyRadius = 0.5f;           // 0x3f000000
+static constexpr float kFpsBodyCylinderHeight = 1.8f;   // DAT_00f41a04
+static constexpr float kFpsBodyCenterToFeet = 1.4f;     // DAT_00f41f2c
+static constexpr float kFpsBodySpawnLift = 1.0f;        // FLOAT_00f4165c
+static constexpr float kFpsBodyMaxSlopeCos = 0.75f;     // DAT_00f416a4
+static constexpr float kFpsBodyTargetSpeedScale = 0.1f; // FLOAT_00f41668
+static constexpr float kFpsBodySpeedGain = 5000.0f;     // DAT_00fab434
+static constexpr float kFpsBodyDownForceScale = 2.0f;   // DAT_00fab430
+static constexpr float kFpsBodyJumpForce = 25000.0f;    // DAT_00fab42c
+
 static float gToggleTimer = -1.0f; // DAT_00fab484
 
 // Smoothed axes. All of these live in the .bss in the original, so they are
@@ -316,7 +327,7 @@ CameraSteadyCam::CameraSteadyCam()
     // FUN_008ca3f0
 }
 
-CameraSteadyCam::~CameraSteadyCam() {}
+CameraSteadyCam::~CameraSteadyCam() { releaseFPSBody(); }
 
 void CameraSteadyCam::initialize() {
     // FUN_008ccbf0
@@ -569,7 +580,38 @@ bool CameraSteadyCam::tick( float deltaTime, bool param_1, bool param_2 ) {
             rootPosition.w() = kOne;
         }
     } else {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (FPS body velocity update)
+        const Eigen::Vector3f bodyVelocity =
+            gpPhysics->getCharacterVelocity( pBody );
+        const float forwardForce =
+            ( forwardSpeed * kFpsBodyTargetSpeedScale -
+              forwardVector.head<3>().dot( bodyVelocity ) ) *
+            kFpsBodySpeedGain;
+        const float strafeForce = ( strafeSpeed * kFpsBodyTargetSpeedScale -
+                                    sideVector.head<3>().dot( bodyVelocity ) ) *
+                                  kFpsBodySpeedGain;
+        const float downForce =
+            gpPhysics->getCharacterMass( pBody ) * kFpsBodyDownForceScale;
+
+        Eigen::Vector3f force = forwardVector.head<3>() * forwardForce +
+                                sideVector.head<3>() * strafeForce +
+                                Eigen::Vector3f( 0.0f, -downForce, 0.0f );
+        if ( input.bJump &&
+             worldUp.head<3>().dot( bodyVelocity ) < kGroundedSpeed &&
+             modeCrouch == 0 ) {
+            force += worldUp.head<3>() * kFpsBodyJumpForce;
+        }
+        gpPhysics->integrateCharacterForce( pBody, force, deltaTime );
+
+        if ( !bBlockPosition ) {
+            const Eigen::Vector4f bodyCenter =
+                gpPhysics->getCharacterPosition( pBody ) +
+                Eigen::Vector4f( 0.0f, kFpsBodyCenterToFeet, 0.0f, 0.0f );
+            rootPosition =
+                bodyCenter + Eigen::Vector4f( 0.0f,
+                                              clearance - kFpsBodyCenterToFeet,
+                                              0.0f, 0.0f );
+            rootPosition.w() = kOne;
+        }
     }
 
     float newAngleX = kAngleFromInput * gPitchInput;
@@ -618,11 +660,15 @@ bool CameraSteadyCam::tick( float deltaTime, bool param_1, bool param_2 ) {
     }
 
     if ( modeFPS == 0 ) {
-        if ( pBody != nullptr ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (release the FPS body)
-        }
-    } else if ( pBody == nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (create the FPS body)
+        releaseFPSBody();
+    } else if ( pBody == nullptr && gpPhysics != nullptr ) {
+        const Eigen::Vector4f bodyFeet =
+            worldPosition +
+            Eigen::Vector4f( 0.0f, kFpsBodySpawnLift - kFpsBodyCenterToFeet,
+                             0.0f, 0.0f );
+        pBody = gpPhysics->createCharacter( bodyFeet, kFpsBodyRadius,
+                                            kFpsBodyCylinderHeight,
+                                            acosf( kFpsBodyMaxSlopeCos ) );
     }
 
     Matrix4x4f_t viewBasis = Matrix4x4f_t::Identity();
@@ -728,6 +774,8 @@ bool CameraSteadyCam::tick( float deltaTime, bool param_1, bool param_2 ) {
 
 void CameraSteadyCam::destroy() {
     // FUN_008ccb90
+    releaseFPSBody();
+
     if ( gpMngWorld != nullptr ) {
         gpMngWorld->setDisableStreamingOnCar( false );
     }
@@ -740,4 +788,15 @@ void CameraSteadyCam::destroy() {
     gpAI->setCullFromCamera( false );
 
     gEdSys.setRelativeMouseMode( false );
+}
+
+void CameraSteadyCam::releaseFPSBody() {
+    // FUN_008ca620 (inlined)
+    if ( pBody == nullptr ) {
+        return;
+    }
+    if ( gpPhysics != nullptr ) {
+        gpPhysics->destroyCharacter( pBody );
+    }
+    pBody = nullptr;
 }

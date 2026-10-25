@@ -11,6 +11,28 @@
 
 static constexpr float kAnimExpressionEpsilon = 1e-6f; // FLOAT_00f41888
 
+static constexpr float kAnimExpressionAngleEpsilon = 1e-5f; // DAT_00f41710
+static constexpr float kPi = 3.1415927f;
+static const Eigen::Vector4f kAnimExpressionAxisY( 0.0f,
+                                                   1.0f,
+                                                   0.0f,
+                                                   0.0f ); // DAT_00fac2e0
+static const Eigen::Vector4f kAnimExpressionAxisZ( 0.0f,
+                                                   0.0f,
+                                                   1.0f,
+                                                   0.0f ); // DAT_00fac340
+
+static inline Eigen::Vector4f
+NormalizeOrFallback( const Eigen::Vector4f &vector,
+                     const Eigen::Vector4f &fallback ) {
+    // FUN_00679020
+    const float length = vector.head<3>().norm();
+    if ( length < kAnimExpressionEpsilon ) {
+        return fallback;
+    }
+    return vector / length;
+}
+
 static bool InvertSoft( const Matrix4x4f_t &in, Matrix4x4f_t &out ) {
     // FUN_00502410
     const float determinant = in.determinant();
@@ -81,7 +103,38 @@ void AnimTargetParams::timeslice( Animation &animation, float deltaTime ) {
     }
 
     if ( AngularSpeed != 0.0f ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ANIM - angular target approach
+        const Eigen::Vector4f currentDir =
+            NormalizeOrFallback( Target, kAnimExpressionAxisZ );
+        const Eigen::Vector4f nextDir =
+            NormalizeOrFallback( NextTarget, kAnimExpressionAxisZ );
+        const Eigen::Vector3f cross =
+            currentDir.head<3>().cross( nextDir.head<3>() );
+        const Eigen::Vector4f axis = NormalizeOrFallback(
+            Eigen::Vector4f( cross.x(), cross.y(), cross.z(), 0.0f ),
+            kAnimExpressionAxisY );
+
+        const float dot = currentDir.head<3>().dot( nextDir.head<3>() );
+        float angle = 0.0f;
+        if ( dot < -1.0f ) {
+            angle = kPi;
+        } else if ( dot <= 1.0f ) {
+            angle = std::acos( dot );
+        }
+
+        const float step = deltaTime * AngularSpeed;
+        if ( angle > step && angle > kAnimExpressionAngleEpsilon ) {
+            const float ratio = step / angle;
+            const Eigen::Vector3f direction =
+                Eigen::AngleAxisf( angle, axis.head<3>() ) *
+                currentDir.head<3>();
+            const float length = NextTarget.head<3>().norm() * ratio +
+                                 ( 1.0f - ratio ) * Target.head<3>().norm();
+            Target = Eigen::Vector4f( direction.x(), direction.y(),
+                                      direction.z(), 0.0f ) *
+                     length;
+            return;
+        }
+
         Target = NextTarget;
         return;
     }

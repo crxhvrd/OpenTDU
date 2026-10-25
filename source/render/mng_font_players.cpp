@@ -11,8 +11,15 @@
 #include "material.h"
 #include "render_scene.h"
 
+#include "ai/ai_pool.h"
+#include "ai/ai_vehicle.h"
+#include "ai/gs_ai.h"
 #include "config/gs_config.h"
 #include "core/maths_helper.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/vehicle/car_state.h"
+#include "game/vehicle/vehicle_base.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "player_data/gs_playerdata.h"
 #include "world/gs_mng_resources.h"
 #include "world/mng_sector_name.h"
@@ -114,9 +121,12 @@ void MngFontPlayers::draw() {
             fontResources.getRender2DM()->getMaterialAtIndex( 0 ) );
 
         if ( gpPlayerData->isOnline() ) {
-            drawPlayerNames();
-            drawBotNames();
-        } else {
+            if ( gpPlayerData->getOnlineOp( 3 ) ) {
+                drawPlayerNames();
+                drawBotNames();
+            }
+        } else if ( gpPlayerData->getLocalPlayerData().bDispOP1 ) {
+            // TODO: ONLINE (also requires !gGSAI.bOnlineSession)
             drawBotNames();
         }
 
@@ -124,7 +134,8 @@ void MngFontPlayers::draw() {
             gpMngSectorName->drawNames( gpTimer->SystemDeltaTime );
         }
 
-        OTDU_UNIMPLEMENTED; // TODO: GM_DEMO
+        // TODO: CGMCompOutOfZone::DrawMessage (gCGMCompOutOfZone)
+        OTDU_UNIMPLEMENTED_ONCE;
     }
 
     if ( pDrawList->getNumPrimitives() != 0 ) {
@@ -352,7 +363,234 @@ void MngFontPlayers::drawPlayerNames() {
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
 }
 
+// CP2PGameService FreeRideMgr+0x4be0
+struct BotNameLabel {
+    float X;
+    float Y;
+    float Width;
+    float Height;
+    float Distance;
+    int32_t Index;
+};
+
+static std::array<BotNameLabel, AiVehicleList::kCapacity> gBotNameLabels = {};
+
+static constexpr float kBotNameHeightOffset = 2.0f; // DAT_00f416b0
+static constexpr float kBotNameLowResScale = 1.3f;  // DAT_00f41dfc
+static constexpr uint32_t kBotNameLowResHeight = 720;
+static constexpr float kBotNameLineHeight = 16.0f;        // DAT_00f418d8
+static constexpr float kBotNameHalfLineHeight = 8.0f;     // DAT_00f41ac4
+static constexpr float kBotNameScreenOffset = 0.0694444f; // DAT_00f41ea8
+static constexpr float kBotNameFadeDistance = 10.0f;      // FLOAT_00f4166c
+static constexpr float kBotNameFadeSlope = 20.4f;         // DAT_00f41ea4
+static constexpr float kBotNameFadeMin = 51.0f;           // DAT_00f41ea0
+static constexpr int32_t kBotNameMaxLengthWithDistance = 20;
+static constexpr uint8_t kBotNameOverlapAlpha = 0x33;
+
+static inline AiVehicle *GetListVehicle( AiVehicleList &list,
+                                         const int32_t index ) {
+    return ( index < list.Count ) ? list.Items[index] : list.Items[0];
+}
+
+static inline bool IsBotNameVisible( const CarState *pCarState,
+                                     const CarState *pLocalCarState ) {
+    if ( pCarState == pLocalCarState || pCarState == nullptr ) {
+        return false;
+    }
+    const PhysicsVehicle *pPhysics = pCarState->getPhysicsVehicle();
+    return pPhysics != nullptr && pPhysics->isActive();
+}
+
 void MngFontPlayers::drawBotNames() {
     // FUN_006ca580
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+    FontResources &fontResources = gpMngResources->getFontResources();
+    CarState *pLocalCarState = gpScenaric->getLocalPlayer().getCarState();
+    if ( !fontResources.areFontsLoaded() || pLocalCarState == nullptr ||
+         pLocalCarState->getPhysicsVehicle() == nullptr ||
+         !pLocalCarState->getPhysicsVehicle()->isActive() ) {
+        return;
+    }
+    fontResources.setActiveFont( fontResources.getDefaultFont() );
+
+    Eigen::Vector4f referencePosition =
+        pLocalCarState->getWorldMatrix().row( 3 ).transpose();
+    referencePosition.w() = 1.0f;
+
+    AiPool *pPool = gpAI->getAIPool();
+    const int32_t botList = AiPool::AVL_FirstCategory +
+                            static_cast<int32_t>( eAiVehicleCategory::AVC_Bot );
+    const int32_t opponentList =
+        AiPool::AVL_FirstCategory +
+        static_cast<int32_t>( eAiVehicleCategory::AVC_Opponent );
+    AiVehicleList *pList = nullptr;
+    if ( pPool->getList( botList ).Count != 0 ) {
+        pList = &pPool->getList( botList );
+    } else if ( pPool->getList( opponentList ).Count != 0 ) {
+        pList = &pPool->getList( opponentList );
+    } else {
+        return;
+    }
+
+    for ( BotNameLabel &label : gBotNameLabels ) {
+        label.Index = -1;
+    }
+
+    const Matrix4x4f_t &worldToCam =
+        gpCamera->getActiveVehicleCamera()->getWorldToCam();
+    const Matrix4x4f_t &projection =
+        gpRender->getRenderPass<eRenderPass::RP_Near>()
+            .pScene->getFrustumWrite()
+            .getProjectionMatrix();
+
+    for ( int32_t i = 0; i < pList->Count; i++ ) {
+        CarState *pCarState = GetListVehicle( *pList, i )->getCarState();
+        if ( !IsBotNameVisible( pCarState, pLocalCarState ) ) {
+            continue;
+        }
+
+        const Eigen::Vector4f position = pCarState->getPhysicsVehicle()
+                                             ->getChassisWorldMatrix()
+                                             .row( 3 )
+                                             .transpose();
+        const Eigen::Vector4f viewPosition = TDUMat4x4MulVec(
+            worldToCam,
+            Eigen::Vector4f( position.x(), position.y() + kBotNameHeightOffset,
+                             position.z(), 1.0f ) );
+        if ( viewPosition.z() < 0.0f ) {
+            const Eigen::Vector4f delta =
+                Eigen::Vector4f( position.x(), position.y(), position.z(),
+                                 1.0f ) -
+                referencePosition;
+            gBotNameLabels[i].Distance = delta.norm();
+            gBotNameLabels[i].Index = i;
+        }
+    }
+
+    for ( int32_t i = 0; i < AiVehicleList::kCapacity - 1; i++ ) {
+        for ( int32_t j = i + 1; j < AiVehicleList::kCapacity; j++ ) {
+            const int32_t index = gBotNameLabels[i].Index;
+            if ( index != -1 && gBotNameLabels[j].Index != -1 &&
+                 gBotNameLabels[i].Distance > gBotNameLabels[j].Distance ) {
+                gBotNameLabels[i].Index = gBotNameLabels[j].Index;
+                gBotNameLabels[j].Index = index;
+            }
+        }
+    }
+
+    const float screenWidth = (float)gpRender->getWidth();
+    const float screenHeight = (float)gpRender->getHeight();
+    char pText[256];
+
+    for ( int32_t i = 0; i < pList->Count; i++ ) {
+        const int32_t index = gBotNameLabels[i].Index;
+        if ( index == -1 ) {
+            continue;
+        }
+
+        AiVehicle *pVehicle = GetListVehicle( *pList, index );
+        CarState *pCarState = pVehicle->getCarState();
+        if ( !IsBotNameVisible( pCarState, pLocalCarState ) ) {
+            continue;
+        }
+        const char *pName = pVehicle->getDPC().pName;
+
+        const Eigen::Vector4f position = pCarState->getPhysicsVehicle()
+                                             ->getChassisWorldMatrix()
+                                             .row( 3 )
+                                             .transpose();
+        const Eigen::Vector4f viewPosition = TDUMat4x4MulVec(
+            worldToCam,
+            Eigen::Vector4f( position.x(), position.y() + kBotNameHeightOffset,
+                             position.z(), 1.0f ) );
+        const Eigen::Vector4f clipPosition =
+            TDUMat4x4MulVec( projection, viewPosition );
+        const Eigen::Vector4f screenPosition = clipPosition / clipPosition.w();
+        if ( !( viewPosition.z() < 0.0f ) ) {
+            continue;
+        }
+
+        const int32_t nameLength = (int32_t)strlen( pName );
+        const float screenX =
+            ( screenPosition.x() + 1.0f ) * 0.5f * screenWidth;
+        const float screenY =
+            ( 1.0f - screenPosition.y() ) * 0.5f * screenHeight;
+        const Eigen::Vector4f delta =
+            Eigen::Vector4f( position.x(), position.y(), position.z(), 1.0f ) -
+            referencePosition;
+
+        const float scale = ( gpRender->getHeight() < kBotNameLowResHeight )
+                                ? kBotNameLowResScale
+                                : 1.0f;
+
+        char pDistance[12];
+        FormatDistance( pDistance, sizeof( pDistance ), delta.norm() );
+
+        float width =
+            getTextWidthFormatted( scale, "(%s)%s", pDistance, pName );
+        float x = screenX - width * 0.5f;
+        float y = screenY - kBotNameLineHeight;
+        const bool bShowDistance = nameLength < kBotNameMaxLengthWithDistance;
+        if ( x < 0.0f ) {
+            x = 0.0f;
+            if ( bShowDistance ) {
+                snprintf( pText, sizeof( pText ), "\xbc%s(%s)", pName,
+                          pDistance );
+            } else {
+                snprintf( pText, sizeof( pText ), "\xbc%s", pName );
+            }
+        } else if ( x + width > screenWidth ) {
+            if ( bShowDistance ) {
+                snprintf( pText, sizeof( pText ), "(%s)%s\xbe", pDistance,
+                          pName );
+            } else {
+                snprintf( pText, sizeof( pText ), "%s\xbe", pName );
+            }
+            width = getTextWidth( scale, pText );
+            x = screenWidth - width;
+        } else if ( bShowDistance ) {
+            snprintf( pText, sizeof( pText ), "(%s)%s", pDistance, pName );
+        } else {
+            snprintf( pText, sizeof( pText ), "%s", pName );
+        }
+
+        float screenOffset = screenHeight * kBotNameScreenOffset;
+        if ( !gpConfig->b169Ratio ) {
+            screenOffset *= k43AspectCorrection;
+        }
+        y -= screenOffset;
+
+        uint8_t alpha = 0xff;
+        float numOverlaps = 0.0f;
+        for ( int32_t j = 0; j < i; j++ ) {
+            const int32_t otherIndex = gBotNameLabels[j].Index;
+            if ( otherIndex == -1 ) {
+                continue;
+            }
+            const BotNameLabel &other = gBotNameLabels[otherIndex];
+            const float gapX =
+                std::abs( other.X - x ) - width * 0.5f - other.Width * 0.5f;
+            const float gapY = std::abs( other.Y - y ) -
+                               kBotNameHalfLineHeight - other.Height * 0.5f;
+            const float gap = std::max( gapX, gapY );
+            if ( gap <= 0.0f ) {
+                y -= numOverlaps * kBotNameLineHeight;
+                numOverlaps += 1.0f;
+                alpha = kBotNameOverlapAlpha;
+            } else if ( gap <= kBotNameFadeDistance ) {
+                const float fade = gap * kBotNameFadeSlope + kBotNameFadeMin;
+                alpha = (uint8_t)std::min( fade, (float)alpha );
+            }
+        }
+
+        BotNameLabel &label = gBotNameLabels[index];
+        label.X = x;
+        label.Y = y;
+        label.Width = width;
+        label.Height = kBotNameLineHeight;
+
+        const uint8_t vehicleAlpha =
+            (uint8_t)( (float)alpha *
+                       pCarState->getVehicleInstance()->getAlpha() );
+        drawText( x, y, scale, 0xff, 0xff, 0xff, vehicleAlpha, "%s", pText );
+    }
 }

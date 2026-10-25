@@ -17,6 +17,8 @@
 #include "render/postfx/effects/postfx_envmap_scene.h"
 #include "render/postfx/effects/postfx_texture_sample.h"
 
+#include "game/avatar/avatar_clothes.h"
+#include "game/scenaric/entity/entity_driver.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_base.h"
@@ -451,7 +453,11 @@ void MngEnvMap::draw() {
 
             if ( pVehicle->getType() == VehicleBase::eType::VBT_Bike &&
                  entry.second->hasAvatar() ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+                PooledAvatarEntry *pAvatarEntry =
+                    entry.second->getDriver()->getPooledEntry();
+                if ( pAvatarEntry != nullptr ) {
+                    pAvatarEntry->drawLowRes( pScene );
+                }
             }
         }
     }

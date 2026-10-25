@@ -413,8 +413,8 @@ void GSRender::terminate() {
     gEdRender.Config.MemoryPoolSize = 0;
     gEdRender.destroy();
 
-    if ( gEdRender.Config.pMemoryPool != nullptr ) {
-        TestDrive::FreeAligned( gEdRender.Config.pMemoryPool );
+    if ( _Memory != nullptr ) {
+        TestDrive::Free( _Memory );
     }
 }
 

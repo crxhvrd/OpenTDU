@@ -317,7 +317,8 @@ public:
     void removeStaticMesh( const void *pKey );
     CharacterController_t createCharacter( const Eigen::Vector4f &worldPosition,
                                            float radius,
-                                           float cylinderHeight );
+                                           float cylinderHeight,
+                                           float maxSlopeAngle = 0.87266463f );
     void destroyCharacter( CharacterController_t pCharacter );
     void setCharacterCollisionRestriction( CharacterController_t pCharacter,
                                            RigidBody_t pOnlyBody );
@@ -339,6 +340,10 @@ public:
     const char *getCharacterGroundState( CharacterController_t pCharacter,
                                          Eigen::Vector3f &outGroundNormal );
     Eigen::Vector3f getCharacterVelocity( CharacterController_t pCharacter );
+    float getCharacterMass( CharacterController_t pCharacter );
+    void integrateCharacterForce( CharacterController_t pCharacter,
+                                  const Eigen::Vector3f &force,
+                                  float deltaTime );
 
     void destroyRigidBody( RigidBody_t pRigidBody );
 
@@ -500,6 +505,7 @@ private:
 
     std::vector<std::pair<const void *, RigidBody_t>> sceneryInstanceBodies;
     std::vector<std::pair<const void *, RigidBody_t>> staticMeshBodies;
+    std::vector<PhysicsCharacter *> characters;
     std::vector<PendingSceneryInstance> pendingSceneryInstances;
 
 private:

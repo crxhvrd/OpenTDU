@@ -38,6 +38,7 @@
 
 #include "imgui.h"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -1504,6 +1505,11 @@ void GSPhysics::terminate() {
         }
 
         pPhysicsSystem->SetContactListener( nullptr );
+
+        for ( PhysicsCharacter *pCharacter : characters ) {
+            delete pCharacter;
+        }
+        characters.clear();
 
         delete pPhysicsSystem;
         pPhysicsSystem = nullptr;
@@ -3137,8 +3143,11 @@ void GSPhysics::removeStaticMesh( const void *pKey ) {
     }
 }
 
-CharacterController_t GSPhysics::createCharacter(
-    const Eigen::Vector4f &worldPosition, float radius, float cylinderHeight ) {
+CharacterController_t
+GSPhysics::createCharacter( const Eigen::Vector4f &worldPosition,
+                            float radius,
+                            float cylinderHeight,
+                            float maxSlopeAngle ) {
     if ( pPhysicsSystem == nullptr ) {
         return nullptr;
     }
@@ -3155,7 +3164,7 @@ CharacterController_t GSPhysics::createCharacter(
 
     JPH::CharacterVirtualSettings settings;
     settings.mShape = shapeResult.Get();
-    settings.mMaxSlopeAngle = JPH::DegreesToRadians( 50.0f );
+    settings.mMaxSlopeAngle = maxSlopeAngle;
     settings.mMass = 80.0f;
     settings.mBackFaceMode = JPH::EBackFaceMode::IgnoreBackFaces;
     settings.mSupportingVolume = JPH::Plane( JPH::Vec3::sAxisY(), -radius );
@@ -3170,6 +3179,7 @@ CharacterController_t GSPhysics::createCharacter(
     PhysicsCharacter *pCharacter = new PhysicsCharacter();
     pCharacter->pCharacter = new JPH::CharacterVirtual(
         &settings, position, JPH::Quat::sIdentity(), 0, pPhysicsSystem );
+    characters.push_back( pCharacter );
 
     return pCharacter;
 }
@@ -3262,6 +3272,13 @@ void GSPhysics::destroyCharacter( CharacterController_t pCharacter ) {
     }
 
     PhysicsLock lock;
+    // Characters still alive at terminate() are freed there; their owners may
+    // release them afterwards.
+    auto it = std::find( characters.begin(), characters.end(), pCharacter );
+    if ( it == characters.end() ) {
+        return;
+    }
+    characters.erase( it );
     pCharacter->pCharacter = nullptr;
     delete pCharacter;
 }
@@ -3381,6 +3398,51 @@ GSPhysics::getCharacterVelocity( CharacterController_t pCharacter ) {
     }
     const JPH::Vec3 velocity = pCharacter->pCharacter->GetLinearVelocity();
     return Eigen::Vector3f( velocity.GetX(), velocity.GetY(), velocity.GetZ() );
+}
+
+float GSPhysics::getCharacterMass( CharacterController_t pCharacter ) {
+    if ( pCharacter == nullptr || pCharacter->pCharacter == nullptr ) {
+        return 0.0f;
+    }
+    return pCharacter->pCharacter->GetMass();
+}
+
+void GSPhysics::integrateCharacterForce( CharacterController_t pCharacter,
+                                         const Eigen::Vector3f &force,
+                                         float deltaTime ) {
+    // Rigid body step of a character: hkpMotion::applyForce (vtable +0x68)
+    // followed by the world integration. The velocity left on the character
+    // is the displacement actually achieved, like a body after its contacts
+    // are solved.
+    if ( pCharacter == nullptr || pCharacter->pCharacter == nullptr ||
+         pPhysicsSystem == nullptr || deltaTime <= 0.0f ) {
+        return;
+    }
+
+    PhysicsLock lock;
+
+    JPH::CharacterVirtual *pCV = pCharacter->pCharacter;
+    const JPH::Vec3 gravity = pPhysicsSystem->GetGravity();
+    const JPH::Vec3 acceleration =
+        JPH::Vec3( force.x(), force.y(), force.z() ) / pCV->GetMass() + gravity;
+    pCV->SetLinearVelocity( pCV->GetLinearVelocity() +
+                            acceleration * deltaTime );
+
+    const AllowListBodyFilter restrictFilter( *pCharacter );
+    const JPH::BodyFilter defaultFilter;
+    const JPH::BodyFilter &bodyFilter =
+        pCharacter->RestrictToBody.IsInvalid()
+            ? defaultFilter
+            : static_cast<const JPH::BodyFilter &>( restrictFilter );
+
+    const JPH::RVec3 previousPosition = pCV->GetPosition();
+    pCV->Update( deltaTime, gravity,
+                 pPhysicsSystem->GetDefaultBroadPhaseLayerFilter(
+                     TDUPhysLayers::MOVING ),
+                 pPhysicsSystem->GetDefaultLayerFilter( TDUPhysLayers::MOVING ),
+                 bodyFilter, {}, *pTempAllocator );
+    pCV->SetLinearVelocity( JPH::Vec3( pCV->GetPosition() - previousPosition ) /
+                            deltaTime );
 }
 
 bool GSPhysics::isCharacterOnGround( CharacterController_t pCharacter ) {
@@ -5525,6 +5587,16 @@ bool GSPhysics::onWorldStreamed( Eigen::Vector4f *pOffset,
     for ( const JPH::BodyID id : bodyIDs ) {
         bodyInterface.SetPosition( id, bodyInterface.GetPosition( id ) + shift,
                                    JPH::EActivation::DontActivate );
+    }
+
+    if ( !characters.empty() ) {
+        PhysicsLock lock;
+        for ( PhysicsCharacter *pCharacter : characters ) {
+            JPH::CharacterVirtual *pCV = pCharacter->pCharacter;
+            if ( pCV != nullptr ) {
+                pCV->SetPosition( pCV->GetPosition() + shift );
+            }
+        }
     }
 
     if ( pPhysicsVehiclesBegin != nullptr ) {

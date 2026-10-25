@@ -202,8 +202,7 @@ static bool QueryBikeFirstPersonCatchUp( PhysicsVehicle *pPhys ) {
     if ( pPhys == nullptr ) {
         return false;
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
-    return false;
+    return pPhys->isBike() && !pPhys->isVirtual() && pPhys->hasBikeRider();
 }
 
 static float QuerySlipShakeRate( PhysicsVehicle *pPhys ) {
@@ -226,8 +225,7 @@ static float QueryLookLeadInput( PhysicsVehicle *pPhys ) {
     if ( pPhys == nullptr || !pPhys->isActive() ) {
         return 0.0f;
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
-    return 0.0f;
+    return pPhys->getChassisAngularVelocity().y();
 }
 
 void ToggleFreeLookLock( CameraVehicle *pCamera ) {

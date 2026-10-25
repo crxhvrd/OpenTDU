@@ -19,49 +19,71 @@ public:
 
     void allocate( int32_t param_2 ) {
         // FUN_00511f90
-        uint32_t uVar2 = param_2 * 0xc + 0xfU & 0xfffffff0;
-        pMemoryPool = AllocateFromRenderPool( uVar2 );
-        int32_t iVar3 = param_2 + -1;
+        if ( param_2 == 0 ) {
+            return;
+        }
 
-        RenderPool::Node *puVar1 = (RenderPool::Node *)pMemoryPool;
-        for ( ; iVar3 != 0; iVar3 = iVar3 + -1 ) {
+        uint32_t uVar2 = param_2 * sizeof( Node ) + 0xfU & 0xfffffff0;
+        pMemoryPool = AllocateFromRenderPool( uVar2 );
+
+        Node *puVar1 = (Node *)pMemoryPool;
+        for ( int32_t iVar3 = param_2 - 1; iVar3 != 0; iVar3-- ) {
             puVar1->pNext = puVar1 + 1;
             puVar1 = puVar1 + 1;
         }
 
         puVar1->pNext = nullptr;
-        for ( iVar3 = kMaxCapacity; iVar3 != 0; iVar3 = iVar3 + -1 ) {
-            nodes[iVar3] = nullptr;
+        for ( Node *&pBucket : nodes ) {
+            pBucket = nullptr;
         }
     }
 
-    RenderPool::Node *addToPool( T *param_2 ) {
+    Node *addToPool( T *param_2 ) {
         // FUN_00512040
-        if ( pMemoryPool == nullptr ) {
+        Node *pNode = (Node *)pMemoryPool;
+        if ( pNode == nullptr || param_2 == nullptr ) {
             return nullptr;
         }
 
-        OTDU_UNIMPLEMENTED;
+        pMemoryPool = pNode->pNext;
 
-        // if (param_2 != nullptr) {
-        //     param_1_00->pAllocationsMemoryPool = &peVar1->pNext->pPrevious;
-        //     uVar1 = (uint)param_2 >> 4 & 0xff;
-        //     peVar1->pPrevious = (CachedPendingAlloc *)0x0;
-        //     peVar1->pNext = param_1_00->pAllocations[uVar1];
-        //     peVar1->pContent = param_2;
-        //     if (param_1_00->pAllocations[uVar1] != (CachedPendingAlloc *)0x0)
-        //     {
-        //         param_1_00->pAllocations[uVar1]->pPrevious = peVar1;
-        //     }
-        //     param_1_00->pAllocations[uVar1] = peVar1;
-        //     return peVar1;
-        // }
-        return nullptr;
+        Node *&pBucket = nodes[GetBucketIndex( param_2 )];
+        pNode->pPrevious = nullptr;
+        pNode->pNext = pBucket;
+        pNode->pContent = param_2;
+        if ( pBucket != nullptr ) {
+            pBucket->pPrevious = pNode;
+        }
+        pBucket = pNode;
+        return pNode;
     }
 
     void removeFromPool( T *param_2 ) {
         // FUN_005120a0
-        OTDU_UNIMPLEMENTED;
+        if ( param_2 == nullptr ) {
+            return;
+        }
+
+        Node *&pBucket = nodes[GetBucketIndex( param_2 )];
+        Node *pNode = pBucket;
+        while ( pNode != nullptr && pNode->pContent != param_2 ) {
+            pNode = pNode->pNext;
+        }
+        if ( pNode == nullptr ) {
+            return;
+        }
+
+        if ( pNode->pPrevious == nullptr ) {
+            pBucket = pNode->pNext;
+        } else {
+            pNode->pPrevious->pNext = pNode->pNext;
+        }
+        if ( pNode->pNext != nullptr ) {
+            pNode->pNext->pPrevious = pNode->pPrevious;
+        }
+
+        pNode->pNext = (Node *)pMemoryPool;
+        pMemoryPool = pNode;
     }
 
     void flushPendingAllocs( TAllocFun_t allocFun ) {
@@ -82,6 +104,10 @@ public:
 
 private:
     static constexpr uint32_t kMaxCapacity = 0x100;
+
+    static inline uint32_t GetBucketIndex( const T *pContent ) {
+        return ( reinterpret_cast<uintptr_t>( pContent ) >> 4 ) & 0xff;
+    }
 
 private:
     Node *nodes[kMaxCapacity];

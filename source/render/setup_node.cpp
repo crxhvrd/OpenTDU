@@ -196,13 +196,8 @@ bool SetupGraph::ExecuteCached( uint32_t param_1 ) {
     if ( uVar1 != 0xffffffff &&
          std::get<0>( gNodeCache[param_1].Nodes.back() ) != nullptr ) {
         SetupNode *puVar2 = std::get<0>( gNodeCache[param_1].Nodes.back() );
-        if ( ( puVar2->getFlags() >> 9 & 1 ) != 0 ) {
-            // TODO: This is supposed to call the first function in the vtable.
-            // This function is not implemented in any child class so I have no
-            // idea if it's used or not...
-            OTDU_UNIMPLEMENTED;
-        }
-
+        // Flag bit 9 calls vtable slot 0 first, which is TestDrive::NOP
+        // (FUN_00614df0) in every retail setup class.
         puVar2->execute();
         return true;
     }

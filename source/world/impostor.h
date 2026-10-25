@@ -28,6 +28,11 @@ struct MassInstanceImpostor : public Impostor {
     Matrix4x4f_t BuildMatrix = Matrix4x4f_t::Identity();
 };
 
+bool InstallImpostorMaterial( MassInstanceImpostor &mi );
+void PreComputeImpostorLODAndSphere( MassInstanceImpostor &mi,
+                                     float biggerScale );
+void PreComputeImpostorDeltaXZ( MassInstanceImpostor &mi );
+
 struct ImpostorGrid {
     static constexpr uint32_t kNumCells = 0x199; // 409 (the .PMI cell grid)
 

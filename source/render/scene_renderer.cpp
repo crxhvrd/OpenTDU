@@ -199,7 +199,6 @@ void SceneRenderer::uploadLightsToCbuffer() {
             break;
         }
         default:
-            OTDU_UNIMPLEMENTED;
             break;
         }
     }

@@ -13,6 +13,7 @@
 #include "game/scenaric/entity/base_entity.h"
 #include "game/scenaric/entity/entity_factory.h"
 #include "world/mng_impostor.h"
+#include "world/impostor.h"
 
 static constexpr float kDefaultMaxLODDist = 9999872.0f; // DAT_00f419b4
 
@@ -78,28 +79,6 @@ Render2DB *ResolveRender2DB( ScenaricBank *pBank, uint64_t hashcode ) {
         pResult = gpScenaric->findRender2DB( hashcode );
     }
     return pResult;
-}
-
-bool installImpostorMaterial( MassInstanceImpostor &mi, Instance *pInstance ) {
-    // FUN_00700240
-    (void)mi;
-    (void)pInstance;
-    OTDU_UNIMPLEMENTED; // TODO: IMPOSTOR — raw render-chunk material walk
-    return false;
-}
-
-void preComputeImpostorLODAndSphere( MassInstanceImpostor &mi,
-                                     float biggerScale ) {
-    // FUN_00423330
-    (void)mi;
-    (void)biggerScale;
-    OTDU_UNIMPLEMENTED; // TODO: IMPOSTOR — LOD0 geometry sphere/radius
-}
-
-void preComputeImpostorDeltaXZ( MassInstanceImpostor &mi ) {
-    // FUN_00700310
-    (void)mi;
-    OTDU_UNIMPLEMENTED; // TODO: IMPOSTOR — WorldStreaming impostor data
 }
 
 SerializedSkinnedModel::SerializedSkinnedModel()
@@ -278,13 +257,13 @@ void SerializedSkinnedModel::instanciate( FileCollection3D *p3DFiles_,
         return;
     }
 
-    if ( !installImpostorMaterial( MIInpostor, pImpostor ) ) {
+    if ( !InstallImpostorMaterial( MIInpostor ) ) {
         bSimplifiedMeshIsImpostor = false;
         return;
     }
     bSimplifiedMeshIsImpostor = true;
-    preComputeImpostorLODAndSphere( MIInpostor, pImpostor->getBoundingScale() );
-    preComputeImpostorDeltaXZ( MIInpostor );
+    PreComputeImpostorLODAndSphere( MIInpostor, pImpostor->getBoundingScale() );
+    PreComputeImpostorDeltaXZ( MIInpostor );
 
     if ( MIInpostor.pInstance != nullptr &&
          MIInpostor.pInstance->getNumLODs() != 0 ) {

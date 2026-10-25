@@ -958,7 +958,7 @@ void RenderContext::FUN_00515000() {
 
 void RenderContext::resetCachedStates() {
     // FUN_00513cd0
-    OTDU_UNIMPLEMENTED;
+    gEdRender.pRenderDevice->resetCachedStates();
 }
 
 void RenderContext::present() {
@@ -2104,17 +2104,17 @@ void RenderContext::FUN_00516b00() {
     uint32_t iVar1 = 0;
     if ( 0 < maxNumVertexShaders ) {
         do {
-            pVertexShaders[iVar1].~VertexShader();
+            pVertexShaders->~VertexShader();
             iVar1++;
-            pVertexShaders++; // NOTE: Deliberate (same as the original game)
+            pVertexShaders++;
         } while ( iVar1 < maxNumVertexShaders );
     }
     iVar1 = 0;
     if ( 0 < maxNumPixelShaders ) {
         do {
-            pPixelShaders[iVar1].~PixelShader();
+            pPixelShaders->~PixelShader();
             iVar1++;
-            pPixelShaders++; // NOTE: Deliberate (same as the original game)
+            pPixelShaders++;
         } while ( iVar1 < maxNumPixelShaders );
     }
     maxNumVertexShaders = 0;
