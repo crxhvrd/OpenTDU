@@ -83,11 +83,11 @@ Progress is tracked on a game mode basis:
 | 16| Dressing|**Done**|
 | 17| Aftermarket|**Done**|
 | 18| VideoBumper|**Done**|
-| 19| AITrainer|**In Progress**|
+| 19| AITrainer|**Done**|
 | 20| CinViewer|**Done**|
 | 21| Estates|**Done**|
 | 22| Club|**In Progress**|
-| 23| Lobby|**In Progress**|
+| 23| Lobby|**Done**|
 | 24| Login|**Done**|
 | 25| OnlineReplay|**In Progress**|
 | 26| Intro|**In Progress**|
