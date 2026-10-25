@@ -524,7 +524,8 @@ void TestDriveGameInstance::mainLoop() {
     gpFlash->setLocalizedStrings();
 
     // gpOnGSFileInit = &LAB_009a3360;
-    if ( activeGameMode != eGameMode::GM_Login ) {
+    if ( gGameModeOverride != GM_Invalid && gGameModeOverride != GM_Login &&
+         gGameModeOverride != GM_Intro ) {
         EnableWorldSpotStreaming();
     }
 
