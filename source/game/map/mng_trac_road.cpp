@@ -163,8 +163,8 @@ void MngTracRoad::reset() {
 
 void MngTracRoad::draw() {
     // FUN_00783850
-    if ( gpTestDriveInstance->getActiveGameMode() == GM_Lobby ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMLobby
+    if ( gpTestDriveInstance->getActiveGameMode() == GM_Lobby &&
+         !gpScenaric->isLobbyMapOpened() ) {
         return;
     }
     gpRender->getRenderPass<RP_Near>().pScene->enqueueDynamicDrawList(

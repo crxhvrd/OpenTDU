@@ -32,7 +32,7 @@ public:
 private:
     void scanContentBanks( const char *pSubDir );
     void positionAtSpot( const char *pBankName );
-    void loadBankCinematics( const char *pBankName );
+    void loadBankCinematics( const char *pBankFolder, const char *pBankName );
     void playCine( const char *pCineName );
     void releaseCurrentCine();
     void stopCine();
@@ -62,6 +62,7 @@ private:
     ScenaricBank playbackBank;
     bool bPlaybackBankActive = false;
     float playbackSpeed = 1.0f;
+    Matrix4x4f_t freeCineFrame;
     Bank interiorBank;
     std::unique_ptr<SceneInterior> pInteriorScene;
 };

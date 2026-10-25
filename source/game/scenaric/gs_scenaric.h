@@ -137,6 +137,7 @@ public:
     inline ScenaricBank &getPedestrianBank() { return pedestrianBank; }
     inline ScenaricBank &getSpotMeshBank() { return spotMeshBank; }
     inline ScenaricBank &getWorldLifeSetBank() { return worldLifeSetBank; }
+    inline ScenaricBank &getWorldActorsBank() { return worldActorsBank; }
 
 public:
     GSScenaric();

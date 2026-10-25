@@ -163,6 +163,9 @@ public:
     inline void setForceFeedbackAllowed( bool bState ) {
         bForceFeedbackAllowed = bState;
     }
+    inline void setPhysicsThreadPaused( bool bState ) {
+        bPausePhysicsThread = bState;
+    }
     inline bool isPlayerSlowDownForced() const { return bForcePlayerSlowDown; }
     inline void setPlayerSlowDownForced( bool bState ) {
         bForcePlayerSlowDown = bState;

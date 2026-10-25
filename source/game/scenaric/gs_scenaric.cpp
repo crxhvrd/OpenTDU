@@ -821,8 +821,10 @@ void GSScenaric::LoadScenaricBank( const char *pBankFolder,
                                    bool bNoCopy ) {
     // FUN_00806470
     std::string bankPath = gpConfig->getResRootPath();
-    bankPath += pBankFolder;
-    bankPath += '/';
+    if ( pBankFolder != nullptr ) {
+        bankPath += pBankFolder;
+        bankPath += '/';
+    }
     bankPath += pBankName;
     bankPath += ".bnk";
 

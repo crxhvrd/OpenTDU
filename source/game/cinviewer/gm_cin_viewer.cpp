@@ -12,6 +12,7 @@
 #include "flash/implementation/flash_player.h"
 #include "flash/implementation/flash_sprite.h"
 #include "gs_timer.h"
+#include "physics/gs_physics.h"
 #include "game/cinematic/mng_cinematics.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
@@ -69,7 +70,8 @@ GMCinViewer::GMCinViewer()
       flashListBank( &contentBanks ),
       flashListCine( &contentCine ) {
     // FUN_007b3720
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC (BANK)
+    freeCineFrame = Matrix4x4f_t::Identity();
+    freeCineFrame.row( 3 ) << 9200.0f, 0.01f, 9300.0f, 1.0f;
 }
 
 GMCinViewer::~GMCinViewer() {
@@ -86,6 +88,14 @@ void GMCinViewer::initialize() {
     scanContentBanks( "Level/Hawai/Spots/" );
     scanContentBanks( "Interior/" );
 
+    if ( gpScenaric != nullptr ) {
+        const CinematicViewerConfig &cfg =
+            gpScenaric->getCinematicViewerDefault();
+        if ( !cfg.BankName.empty() ) {
+            loadBankCinematics( nullptr, cfg.BankName.c_str() );
+        }
+    }
+
     GameModeWorld::initialize();
 
     if ( gpScenaric != nullptr ) {
@@ -100,8 +110,6 @@ void GMCinViewer::initialize() {
             selectedCineName = cfg.CinematicName;
         }
     }
-
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
 }
 
 void GMCinViewer::scanContentBanks( const char *pSubDir ) {
@@ -125,6 +133,7 @@ void GMCinViewer::reset() {
     positionAtSpot( selectedBankName.c_str() );
 
     gpCamera->setCameraMode( 10, 0, 0.0f );
+    gpPhysics->setPlayerSlowDownForced( true );
 
     FlashPlayer *pViewer = gpFlash->getFlashPlayer( "VIEWER" );
     if ( pViewer != nullptr ) {
@@ -138,8 +147,6 @@ void GMCinViewer::reset() {
 
         gpFlash->bindPlayerEntity( &mngFlash, "VIEWER" );
     }
-
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
 }
 
 void GMCinViewer::tick( float deltaTime, float totalTime ) {
@@ -185,19 +192,18 @@ void GMCinViewer::tick( float deltaTime, float totalTime ) {
             pViewer->setVariableValue( "/:cur_time", curTime );
         }
     }
-
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
 }
 
 void GMCinViewer::pause() {
     // FUN_007b39b0
+    gpPhysics->setPhysicsThreadPaused( false );
     GameModeWorld::pause();
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
+    mngFlash.removeWidget( &flashListBank );
+    mngFlash.removeWidget( &flashListCine );
 }
 
 void GMCinViewer::destroy() {
     // FUN_007b3980
-    OTDU_UNIMPLEMENTED; // TODO: SCENARIC
     stopCine();
     leaveInteriorPreview();
     GameModeWorld::destroy();
@@ -354,17 +360,16 @@ void GMCinViewer::leaveInteriorPreview() {
     }
 }
 
-void GMCinViewer::loadBankCinematics( const char *pBankName ) {
+void GMCinViewer::loadBankCinematics( const char *pBankFolder,
+                                      const char *pBankName ) {
     // FUN_007b39e0
     contentCine.clear();
     if ( pBankName == nullptr || gpScenaric == nullptr ) {
         return;
     }
 
-    const char *pFolder = GetBankFolder( pBankName );
-
     ScenaricBank tempBank;
-    GSScenaric::LoadScenaricBank( pFolder, pBankName, &tempBank );
+    GSScenaric::LoadScenaricBank( pBankFolder, pBankName, &tempBank );
 
     const int32_t count = tempBank.getEntityCount();
     for ( int32_t i = 0; i < count; i++ ) {
@@ -389,7 +394,8 @@ bool GMCinViewer::onMessage( FlashMessage *pMessage ) {
         if ( dot != std::string::npos ) {
             selectedBankName.resize( dot );
         }
-        loadBankCinematics( selectedBankName.c_str() );
+        loadBankCinematics( GetBankFolder( selectedBankName.c_str() ),
+                            selectedBankName.c_str() );
         selectedCineName = contentCine.empty() ? std::string() : contentCine[0];
 
         positionAtSpot( selectedBankName.c_str() );
@@ -536,8 +542,9 @@ void GMCinViewer::playCine( const char *pCineName ) {
     if ( pInteriorScene != nullptr && pInteriorScene->getBank().isLoaded() ) {
         pCineBank = &pInteriorScene->getBank();
     } else {
-        Matrix4x4f_t bankTransform = Matrix4x4f_t::Identity();
+        Matrix4x4f_t bankTransform = freeCineFrame;
         if ( pCurrentSpot != nullptr ) {
+            bankTransform = Matrix4x4f_t::Identity();
             if ( pSpotSector != nullptr ) {
                 bankTransform = BuildSpotSectorRotation( pSpotSector );
             }
@@ -561,6 +568,9 @@ void GMCinViewer::playCine( const char *pCineName ) {
     pCurrentCine->setCutsceneName( cinName.c_str() );
     pCurrentCine->initialize();
 
+    // FUN_007b4120
+    gpPhysics->setPhysicsThreadPaused( false );
+
     const bool bUseInteriorFrame = pInteriorScene != nullptr &&
                                    pInteriorScene->getBank().isLoaded() &&
                                    pInteriorScene->getSourceSpot() != nullptr;
@@ -573,7 +583,9 @@ void GMCinViewer::playCine( const char *pCineName ) {
         pCurrentCine->launchSpotCine( pCurrentSpot, 0.0f );
     } else {
         Eigen::Vector3f anchor = -streamOrigin.head<3>();
-        if ( pCurrentSpot != nullptr ) {
+        if ( pCurrentSpot == nullptr ) {
+            freeCineFrame.row( 3 ).head<3>() = anchor;
+        } else {
             anchor = Eigen::Vector3f( pCurrentSpot->X, pCurrentSpot->Y,
                                       pCurrentSpot->Z ) -
                      streamOrigin.head<3>();
