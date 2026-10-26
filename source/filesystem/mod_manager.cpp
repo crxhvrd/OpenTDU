@@ -20,7 +20,7 @@ struct BuiltInPackDesc {
 };
 
 static constexpr BuiltInPackDesc kBuiltInPacks[] = {
-    { "OpenTDU Localization", "opentdu_data/Localization" },
+    { "OpenTDU Localization", "opentdu_data/localization" },
 };
 
 ModManager::ModManager() : bPendingChanges( false ) {}
