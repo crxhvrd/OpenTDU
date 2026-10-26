@@ -179,6 +179,8 @@ private:
     int32_t focusedVideoRow;
     bool bVSyncEnabled;
     bool bActiveVSyncEnabled;
+    bool bHDRDisplayEnabled;
+    bool bActiveHDRDisplayEnabled;
     bool bVideoPanelPieceTinted[kNumVideoPanelPieces];
     CXForm videoPanelPieceTints[kNumVideoPanelPieces];
     AudioOptions *pAudioOptions;
@@ -231,7 +233,8 @@ private:
     void highlightCheckboxRow( const int32_t rowIndex );
     bool isVideoModeLocked() const;
     void showVideoModeRowsLock();
-    void toggleVSyncCheckbox( const int32_t rowIndex );
+    bool *getCheckboxRowValue( const int32_t rowIndex );
+    void toggleCheckboxRow( const int32_t rowIndex );
     void showNextDisplayMode();
     void showPreviousDisplayMode();
     void FUN_006c7b80();

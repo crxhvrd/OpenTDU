@@ -3,6 +3,7 @@
 
 #include "config/gs_config.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/opentdu_settings.h"
 #include "render_target.h"
 #include "system/ed_sys.h"
 #include "world/weather/gs_weather.h"
@@ -18,6 +19,7 @@
 
 #include "postfx/effects/postfx_blit.h"
 #include "postfx/effects/postfx_downscale.h"
+#include "postfx/effects/postfx_hdri.h"
 #include "postfx/effects/postfx_texture_sample.h"
 #include "postfx/postfx_renderer.h"
 #include "postfx/postfx_stack.h"
@@ -106,6 +108,7 @@ GSRender::GSRender()
       bWasHDREnabled( false ),
       bFovVsLodOn( true ),
       bInitialized( false ),
+      bTargetsForHDROutput( false ),
       mainRTwM(),
       scnDown4(),
       mainRT(),
@@ -369,6 +372,15 @@ void GSRender::tick( float totalTime, float deltaTime ) {
     // FUN_00998710
     gEdRender.Time = totalTime;
     gEdRender.pRenderDevice->setTime( totalTime );
+
+    // OTDU_ADDITION: HDR output toggled outside of the video settings (debug
+    // menu, profile settings): reallocate the post process targets
+    if ( bInitialized && bHDREnabled &&
+         gEdRender.pRenderDevice->isHDROutputRequested() !=
+             bool( bTargetsForHDROutput ) ) {
+        resize( gWindowWidth, gWindowHeight, uint32_t( gPickedRefreshRate ),
+                activeAA, bHDREnabled );
+    }
 
     if ( gpWeather->isConfigDirty() ) {
         gpWeather->updateActiveConfig();
@@ -708,6 +720,73 @@ void GSRender::drawDebug( float deltaTime ) {
                  gEdRender.pRenderDevice->getInternalFrameIndex() );
     ImGui::Checkbox( "Enable Gamma Ramp",
                      &gEdRender.pRenderDevice->getGammaRampPass().bEnabled );
+
+    RenderDevice *pDevice = gEdRender.pRenderDevice;
+    bool bHDROutput = pDevice->isHDROutputEnabled();
+    float paperWhite = pDevice->getHDRPaperWhiteNits();
+    const bool bHDRToggled =
+        ImGui::Checkbox( "HDR output (OpenTDU)", &bHDROutput );
+    ImGui::SameLine();
+    ImGui::TextUnformatted( pDevice->isHDROutputActive() ? "(active)"
+                                                         : "(inactive)" );
+    const bool bPaperWhiteEdited = ImGui::SliderFloat(
+        "HDR paper white (nits)", &paperWhite, kMinHDRPaperWhiteNits,
+        kMaxHDRPaperWhiteNits, "%.0f" );
+    if ( bHDRToggled || bPaperWhiteEdited ) {
+        pDevice->setHDROutput( bHDROutput, paperWhite );
+    }
+    if ( bHDRToggled || ImGui::IsItemDeactivatedAfterEdit() ) {
+        OpenTDUSettings::Save();
+    }
+    bool bAutoPeak = pDevice->isHDRPeakAuto();
+    if ( ImGui::Checkbox( "Auto HDR peak", &bAutoPeak ) ) {
+        pDevice->setHDRPeakNits(
+            bAutoPeak ? kAutoHDRPeakNits : pDevice->getEffectiveHDRPeakNits() );
+        OpenTDUSettings::Save();
+    }
+    ImGui::SameLine();
+    if ( pDevice->getDetectedHDRPeakNits() > 0.0f ) {
+        ImGui::Text( "(display: %.0f nits)",
+                     pDevice->getDetectedHDRPeakNits() );
+    } else {
+        ImGui::TextUnformatted( "(display: unknown)" );
+    }
+    float peak = pDevice->getEffectiveHDRPeakNits();
+    ImGui::BeginDisabled( bAutoPeak );
+    if ( ImGui::SliderFloat( "HDR peak (nits)", &peak, kMinHDRPeakNits,
+                             kMaxHDRPeakNits, "%.0f",
+                             ImGuiSliderFlags_Logarithmic ) ) {
+        pDevice->setHDRPeakNits( peak );
+    }
+    if ( ImGui::IsItemDeactivatedAfterEdit() ) {
+        OpenTDUSettings::Save();
+    }
+    ImGui::EndDisabled();
+    float highlightStrength = pDevice->getHDRHighlightStrength();
+    if ( ImGui::SliderFloat( "HDR highlight strength", &highlightStrength, 0.0f,
+                             kMaxHDRHighlightStrength, "%.2f" ) ) {
+        pDevice->setHDRHighlightStrength( highlightStrength );
+    }
+    if ( ImGui::IsItemDeactivatedAfterEdit() ) {
+        OpenTDUSettings::Save();
+    }
+    if ( ImGui::Checkbox( "Soft highlights (SDR)", &gbSoftHighlights ) ) {
+        OpenTDUSettings::Save();
+    }
+    ImGui::Checkbox( "HDR output test pattern",
+                     &pDevice->getGammaRampPass().bTestPattern );
+#if OTDU_DEVBUILD
+    ImGui::Checkbox( "HDR scene reference patches",
+                     &gbDebugHDRReferencePatches );
+    static char hdrCaptureName[32] = "capture";
+    ImGui::InputText( "##HDRCaptureName", hdrCaptureName,
+                      sizeof( hdrCaptureName ) );
+    ImGui::SameLine();
+    if ( ImGui::Button( "Capture HDR composition" ) ) {
+        RequestHDRCompositionCapture(
+            ( std::string( "hdr_" ) + hdrCaptureName ).c_str() );
+    }
+#endif
 
     ImGui::SeparatorText( "Geometry" );
     ImGui::SliderFloat( "LOD factor", &DebugLODFactor, 0.01f, 1.0f, "%.2f" );
@@ -1384,6 +1463,7 @@ void GSRender::updateFovVsLOD( float param_2 ) {
 
 bool GSRender::allocateRenderTargets() {
     // FUN_00994490
+    bTargetsForHDROutput = gEdRender.pRenderDevice->isHDROutputRequested();
     uint32_t height = renderHeight;
     uint32_t width = renderWidth;
 

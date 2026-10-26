@@ -5,6 +5,15 @@
 #include "render_device.h"
 #include "shaders/gamma_ramp_spirv.h"
 
+struct OutputConstants {
+    eOutputTransfer Transfer;
+    uint32_t bApplyRamp;
+    float Scale;
+    uint32_t bTestPattern;
+    float Peak;
+    float HighlightStrength;
+};
+
 static VkShaderModule CreateShaderModule( VkDevice device,
                                           const uint32_t *pSPIRV,
                                           const size_t size ) {
@@ -47,10 +56,16 @@ void GammaRampPass::initialize( VkDevice device, VmaAllocator allocator ) {
         device, &setLayoutInfo, nullptr, &descriptorSetLayout );
     OTDU_ASSERT( result == VK_SUCCESS );
 
+    VkPushConstantRange pushConstantRange = {};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.size = sizeof( OutputConstants );
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
     result = vkCreatePipelineLayout( device, &pipelineLayoutInfo, nullptr,
                                      &pipelineLayout );
@@ -128,11 +143,14 @@ void GammaRampPass::destroy( VkDevice device, VmaAllocator allocator ) {
 void GammaRampPass::createSwapchainResources(
     VkDevice device,
     const GPUTexture *pBackbuffer,
+    const VkFormat swapchainFormat,
+    const eOutputTransfer transfer,
     const std::vector<VkImageView> &swapchainViews ) {
     extent = { pBackbuffer->Width, pBackbuffer->Height };
+    outputTransfer = transfer;
 
     VkAttachmentDescription attachment = {};
-    attachment.format = pBackbuffer->ViewFormat;
+    attachment.format = swapchainFormat;
     attachment.samples = VK_SAMPLE_COUNT_1_BIT;
     attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -187,7 +205,7 @@ void GammaRampPass::createSwapchainResources(
         OTDU_ASSERT( result == VK_SUCCESS );
     }
 
-    createPipeline( device, pBackbuffer->ViewFormat );
+    createPipeline( device, swapchainFormat );
 
     VkDescriptorImageInfo backbufferInfos[PendingFrameCount] = {};
     VkWriteDescriptorSet backbufferWrites[PendingFrameCount] = {};
@@ -279,6 +297,12 @@ void GammaRampPass::draw( VkCommandBuffer cmdBuffer,
     vkCmdBindDescriptorSets( cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                              pipelineLayout, 0, 1, &descriptorSets[frameIndex],
                              0, nullptr );
+
+    const OutputConstants constants = {
+        outputTransfer,         bEnabled ? 1u : 0u, outputScale,
+        bTestPattern ? 1u : 0u, outputPeak,         outputHighlightStrength };
+    vkCmdPushConstants( cmdBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                        0, sizeof( constants ), &constants );
     vkCmdDraw( cmdBuffer, 3, 1, 0, 0 );
 
     vkCmdEndRenderPass( cmdBuffer );

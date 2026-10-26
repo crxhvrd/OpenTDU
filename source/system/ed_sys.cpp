@@ -33,6 +33,7 @@ int32_t gPickedRefreshRate = 0; // DAT_00fac8ec
 DisplayMode gBootDisplayMode = {};
 
 bool gWindowSizeDirty = false;
+bool gWindowHDRDirty = false;
 bool gbIgnoreFocusLoss = false;
 
 edSys::edSys()
@@ -143,6 +144,11 @@ void edSys::pollEvents() {
         }
         case SDL_EVENT_JOYSTICK_REMOVED: {
             gEdDev.queueJoystickEvent( event.jdevice.which, false );
+            break;
+        }
+        case SDL_EVENT_WINDOW_HDR_STATE_CHANGED:
+        case SDL_EVENT_WINDOW_DISPLAY_CHANGED: {
+            gWindowHDRDirty = true;
             break;
         }
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:

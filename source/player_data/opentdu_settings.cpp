@@ -6,8 +6,10 @@
 #include "input/input_templates.h"
 #include "gs_timer.h"
 #include "player_data/user_profile.h"
+#include "render/ed_render.h"
 #include "render/gs_render.h"
 #include "render/mng_env_map.h"
+#include "render/postfx/effects/postfx_hdri.h"
 #include "system/ed_sys.h"
 #include "system/mng_options.h"
 #include "world/otdu_lights.h"
@@ -19,6 +21,11 @@ static constexpr const char *kSettingsFilename = "OpenTDU.ini";
 // Profile value kept while -maxfps overrides it, so saving does not persist the
 // command line value
 static int32_t gProfileMaxFrameRate = 0;
+
+static bool gbHDROutput = false;
+static float gHDRPaperWhiteNits = kDefaultHDRPaperWhiteNits;
+static float gHDRPeakNits = kAutoHDRPeakNits;
+static float gHDRHighlightStrength = kDefaultHDRHighlightStrength;
 
 static constexpr const char *kDisplayModeNames[int32_t(
     eDisplayMode::DM_Count )] = { "Windowed", "Fullscreen", "Borderless" };
@@ -77,6 +84,18 @@ static void ApplySetting( const std::string &key, const std::string &value ) {
                        kSettingsFilename, value.c_str() );
     } else if ( StringCmpI( key.c_str(), "CalibratedCustomPaint" ) == 0 ) {
         VehicleBase::bCalibratedDeluxePaint = atoi( value.c_str() ) != 0;
+    } else if ( StringCmpI( key.c_str(), "SoftHighlights" ) == 0 ) {
+        gbSoftHighlights = atoi( value.c_str() ) != 0;
+    } else if ( StringCmpI( key.c_str(), "HDRHighlights" ) == 0 ) {
+        gHDRHighlightStrength = float( atof( value.c_str() ) );
+    } else if ( StringCmpI( key.c_str(), "HDRPeak" ) == 0 ) {
+        gHDRPeakNits = ( StringCmpI( value.c_str(), "Auto" ) == 0 )
+                           ? kAutoHDRPeakNits
+                           : float( atof( value.c_str() ) );
+    } else if ( StringCmpI( key.c_str(), "HDROutput" ) == 0 ) {
+        gbHDROutput = atoi( value.c_str() ) != 0;
+    } else if ( StringCmpI( key.c_str(), "HDRPaperWhite" ) == 0 ) {
+        gHDRPaperWhiteNits = float( atof( value.c_str() ) );
     } else if ( StringCmpI( key.c_str(), "VSync" ) == 0 ) {
         if ( gpRender != nullptr && gpConfig != nullptr ) {
             gpRender->setVSyncMode(
@@ -100,9 +119,19 @@ namespace OpenTDUSettings {
         SetOTDUGlowQuality( GQ_Default );
         VehicleBase::bCalibratedDeluxePaint = false;
         InputTemplates::ResetSettings();
+        gbHDROutput = false;
+        gHDRPaperWhiteNits = kDefaultHDRPaperWhiteNits;
+        gHDRPeakNits = kAutoHDRPeakNits;
+        gHDRHighlightStrength = kDefaultHDRHighlightStrength;
+        gbSoftHighlights = false;
 
         std::ifstream stream( settingsPath );
         if ( !stream.is_open() ) {
+            gEdRender.pRenderDevice->setHDROutput( gbHDROutput,
+                                                   gHDRPaperWhiteNits );
+            gEdRender.pRenderDevice->setHDRPeakNits( gHDRPeakNits );
+            gEdRender.pRenderDevice->setHDRHighlightStrength(
+                gHDRHighlightStrength );
             return;
         }
 
@@ -125,6 +154,14 @@ namespace OpenTDUSettings {
             ApplySetting( Trim( line.substr( 0, equals ) ),
                           Trim( line.substr( equals + 1 ) ) );
         }
+
+        // Applied once so that resetting the defaults does not recreate the
+        // swapchain
+        gEdRender.pRenderDevice->setHDROutput( gbHDROutput,
+                                               gHDRPaperWhiteNits );
+        gEdRender.pRenderDevice->setHDRPeakNits( gHDRPeakNits );
+        gEdRender.pRenderDevice->setHDRHighlightStrength(
+            gHDRHighlightStrength );
 
         if ( gpRender != nullptr && gpRender->isInitialized() &&
              gpConfig != nullptr &&
@@ -174,6 +211,21 @@ namespace OpenTDUSettings {
                             : 0 )
                    << "\n";
         }
+
+        stream << "HDROutput = "
+               << ( gEdRender.pRenderDevice->isHDROutputEnabled() ? 1 : 0 )
+               << "\n";
+        stream << "HDRPaperWhite = "
+               << gEdRender.pRenderDevice->getHDRPaperWhiteNits() << "\n";
+        stream << "HDRPeak = ";
+        if ( gEdRender.pRenderDevice->isHDRPeakAuto() ) {
+            stream << "Auto\n";
+        } else {
+            stream << gEdRender.pRenderDevice->getHDRPeakNits() << "\n";
+        }
+        stream << "HDRHighlights = "
+               << gEdRender.pRenderDevice->getHDRHighlightStrength() << "\n";
+        stream << "SoftHighlights = " << ( gbSoftHighlights ? 1 : 0 ) << "\n";
 
         InputTemplates::WriteSettings( stream );
     }

@@ -71,6 +71,8 @@ extern uint32_t gWindowHeight;
 extern int32_t gPickedRefreshRate;
 extern DisplayMode gBootDisplayMode;
 extern bool gWindowSizeDirty;
+// OTDU_ADDITION: display HDR headroom changed (brightness, display move)
+extern bool gWindowHDRDirty;
 extern bool gbIgnoreFocusLoss;
 
 static inline float GetScreenAspectRatio() {

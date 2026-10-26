@@ -286,6 +286,8 @@ private:
     uint8_t bWasHDREnabled : 1;
     uint8_t bFovVsLodOn : 1;
     uint8_t bInitialized : 1;
+    // OTDU_ADDITION: render targets allocated for HDR output (FP16 bloom)
+    uint8_t bTargetsForHDROutput : 1;
 
     RuntimeRender2DB mainRTwM;
     RuntimeRender2DB scnDown4;

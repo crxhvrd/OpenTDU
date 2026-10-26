@@ -25,6 +25,7 @@ static constexpr PortStringDesc kPortStrings[PS_Count] = {
     {2026000008ull, "NIGHT LIGHTS"                                          },
     {57385810ull,   "LOW"                                                   },
     {2026000009ull, "ULTRA"                                                 },
+    {2026000010ull, "HDR DISPLAY"                                           },
 
     {2026000100ull, "'./opentdu_data/mods' folder is empty!"                },
     {2026000101ull, "Enabled"                                               },

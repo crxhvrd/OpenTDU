@@ -48,6 +48,7 @@
 #include "physics/gs_physicsfx.h"
 #include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/opentdu_settings.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/user_profile.h"
 #include "audio/radio/gs_radio_pc.h"
@@ -226,6 +227,8 @@ static void LoadProfileOverride() {
     if ( gpPlayerData->getLoadedSave()->getAvatar() != nullptr ) {
         TestDrive::RebakePlayerAvatar();
     }
+
+    OpenTDUSettings::Load();
 
     OTDU_LOG_INFO( "Loaded profile '%s'\n", gProfileOverride );
 }

@@ -73,6 +73,8 @@ static constexpr int32_t kApplyTimeoutInSeconds = 10;
 
 static void PatchVideoPageUpNavigation( FlashPlayer *pPlayer );
 static void ApplyVSync( const bool bEnabled );
+static void ApplyHDRDisplay( const bool bEnabled );
+static bool IsHDRDisplaySupported();
 
 // OpenTDU Advanced Video Settings
 enum eExtraVideoRow : int32_t {
@@ -81,6 +83,7 @@ enum eExtraVideoRow : int32_t {
     EVR_Reflections = 2,
     EVR_VSync = 3,
     EVR_NightLights = 4,
+    EVR_HDRDisplay = 5,
 
     EVR_Count
 };
@@ -98,6 +101,7 @@ static constexpr ExtraVideoRowDesc kExtraVideoRows[EVR_Count] = {
     {PS_Reflections, "prdr",  "nedr",  false},
     {PS_VSync,       nullptr, nullptr, true },
     {PS_NightLights, "prnl",  "nenl",  false},
+    {PS_HDRDisplay,  nullptr, nullptr, true },
 };
 static constexpr int32_t kFrameRateCaps[] = { 0, 30, 60, 120, 144, 240 };
 
@@ -170,6 +174,8 @@ MngOptions::MngOptions()
       focusedVideoRow( -1 ),
       bVSyncEnabled( false ),
       bActiveVSyncEnabled( false ),
+      bHDRDisplayEnabled( false ),
+      bActiveHDRDisplayEnabled( false ),
       bVideoPanelPieceTinted(),
       videoPanelPieceTints(),
       pAudioOptions( nullptr ),
@@ -774,6 +780,7 @@ void MngOptions::FUN_006c6030() {
 
     ApplyDisplayMode( activeDisplayMode );
     ApplyVSync( bActiveVSyncEnabled );
+    ApplyHDRDisplay( bActiveHDRDisplayEnabled );
 
     gpRender->resize( videoWidth, videoHeight, refreshRate,
                       activeAntiAliasingMode, bActiveHDREnabled );
@@ -1709,6 +1716,15 @@ static void ApplyVSync( const bool bEnabled ) {
                                 : eVSyncMode::VSM_Immediate );
 }
 
+static void ApplyHDRDisplay( const bool bEnabled ) {
+    RenderDevice *pDevice = gEdRender.pRenderDevice;
+    pDevice->setHDROutput( bEnabled, pDevice->getHDRPaperWhiteNits() );
+}
+
+static bool IsHDRDisplaySupported() {
+    return gEdRender.pRenderDevice->isHDROutputSupported();
+}
+
 void ApplyDisplayMode( const eDisplayMode displayMode ) {
     if ( gpConfig == nullptr ) {
         return;
@@ -1745,6 +1761,8 @@ void MngOptions::buildVideoModeList() {
     bActiveVSyncEnabled = ( gpRender != nullptr ) &&
                           gpRender->getVSyncMode() != eVSyncMode::VSM_Immediate;
     bVSyncEnabled = bActiveVSyncEnabled;
+    bActiveHDRDisplayEnabled = gEdRender.pRenderDevice->isHDROutputEnabled();
+    bHDRDisplayEnabled = bActiveHDRDisplayEnabled;
     lodQuality =
         ( gpRender != nullptr ) ? int32_t( gpRender->getLODQuality() ) : 0;
 
@@ -1873,6 +1891,7 @@ static bool CloneExtraVideoPanel( FlashPlayer *pPlayer ) {
         if ( kExtraVideoRows[i].bCheckbox ) {
             row.pSourceName = "sur4";
             row.Mirror = eFlashCloneMirror::FCM_Geometry;
+            row.OffsetY = float( i - ( kHDRRow - 1 ) ) * kVideoRowSpacing;
         } else {
             row.pSourceName = "sur1";
             row.Mirror = eFlashCloneMirror::FCM_Position;
@@ -1942,8 +1961,10 @@ void MngOptions::updateExtraVideoRows() {
             const int32_t previousRow = focusedVideoRow;
             focusedVideoRow = focusedRow;
             highlightCheckboxRow( focusedRow );
-            if ( isVideoModeLocked() ) {
+            if ( isVideoModeLocked() || !IsHDRDisplaySupported() ) {
                 skipLockedVideoRow( focusedRow, previousRow );
+            }
+            if ( isVideoModeLocked() ) {
                 showVideoModeRowsLock();
             }
         }
@@ -2004,8 +2025,12 @@ void MngOptions::setupExtraVideoRows() {
 
             snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath,
                       rowIndex );
-            pPlayer->showFrame( bVSyncEnabled ? "set_on" : "off_lock", path,
-                                false );
+            pPlayer->showFrame( *getCheckboxRowValue( rowIndex ) ? "set_on"
+                                                                 : "off_lock",
+                                path, false );
+            pPlayer->setClipProperty(
+                path, eFlashProperty::FP_Alpha,
+                isVideoRowSelectable( rowIndex ) ? 100.0f : 20.0f );
             continue;
         }
 
@@ -2046,7 +2071,7 @@ void MngOptions::updateExtraVideoRowsHover() {
     bExtraVideoMouseDown = bMouseDown;
     if ( bClicked && hoveredRow > 0 &&
          kExtraVideoRows[hoveredRow - kNumRetailVideoRows - 1].bCheckbox ) {
-        toggleVSyncCheckbox( hoveredRow );
+        toggleCheckboxRow( hoveredRow );
     }
 
     if ( hoveredRow == hoveredExtraVideoRow ) {
@@ -2092,6 +2117,8 @@ bool MngOptions::isVideoRowSelectable( const int32_t rowIndex ) {
         return pPlayer->getVariableAsInt( "/:IsAAAvailable" ) == 1;
     case kHDRRow:
         return pPlayer->getVariableAsInt( "/:IsHDRAvailable" ) == 1;
+    case kNumRetailVideoRows + 1 + EVR_HDRDisplay:
+        return IsHDRDisplaySupported();
     default:
         return true;
     }
@@ -2260,7 +2287,23 @@ void MngOptions::highlightCheckboxRow( const int32_t rowIndex ) {
     pPlayer->showFrame( bChecked ? "change" : "change_lock", path, true );
 }
 
-void MngOptions::toggleVSyncCheckbox( const int32_t rowIndex ) {
+bool *MngOptions::getCheckboxRowValue( const int32_t rowIndex ) {
+    switch ( rowIndex - kNumRetailVideoRows - 1 ) {
+    case EVR_VSync:
+        return &bVSyncEnabled;
+    case EVR_HDRDisplay:
+        return &bHDRDisplayEnabled;
+    default:
+        OTDU_ASSERT( false );
+        return &bVSyncEnabled;
+    }
+}
+
+void MngOptions::toggleCheckboxRow( const int32_t rowIndex ) {
+    if ( !isVideoRowSelectable( rowIndex ) ) {
+        return;
+    }
+
     char path[64];
     snprintf( path, sizeof( path ), "%s/sur%d:display", kVideoMenuPath,
               rowIndex );
@@ -2269,7 +2312,7 @@ void MngOptions::toggleVSyncCheckbox( const int32_t rowIndex ) {
     snprintf( path, sizeof( path ), "%s/sur%d", kVideoMenuPath, rowIndex );
     pPlayer->showFrame( bChecked ? "disable" : "enable", path, true );
 
-    bVSyncEnabled = !bChecked;
+    *getCheckboxRowValue( rowIndex ) = !bChecked;
 }
 
 bool MngOptions::onVideoPageInvalidAction() {
@@ -2287,7 +2330,7 @@ bool MngOptions::onVideoPageInvalidAction() {
         return false;
     }
 
-    toggleVSyncCheckbox( rowIndex );
+    toggleCheckboxRow( rowIndex );
     return true;
 }
 
@@ -2506,7 +2549,8 @@ void MngOptions::applySystemParameters() {
         ( refreshRate == hz ) && ( activeDisplayMode == displayMode ) &&
         ( activeAntiAliasingMode == antiAliasingMode ) &&
         ( bActiveHDREnabled == bHDREnabled ) &&
-        ( bActiveVSyncEnabled == bVSyncEnabled );
+        ( bActiveVSyncEnabled == bVSyncEnabled ) &&
+        ( bActiveHDRDisplayEnabled == bHDRDisplayEnabled );
     if ( bUnchanged ) {
         FUN_006c59d0();
         pPlayer->showFrame( "valid_apply", "/menus/ss_menus/choice", true );
@@ -2515,6 +2559,7 @@ void MngOptions::applySystemParameters() {
 
     ApplyDisplayMode( displayMode );
     ApplyVSync( bVSyncEnabled );
+    ApplyHDRDisplay( bHDRDisplayEnabled );
 
     if ( gpRender != nullptr &&
          gpRender->resize( width, height, hz, antiAliasingMode,
@@ -2533,6 +2578,7 @@ void MngOptions::applySystemParameters() {
 
     ApplyDisplayMode( activeDisplayMode );
     ApplyVSync( bActiveVSyncEnabled );
+    ApplyHDRDisplay( bActiveHDRDisplayEnabled );
 
     if ( gpRender != nullptr &&
          gpRender->resize( videoWidth, videoHeight, refreshRate,

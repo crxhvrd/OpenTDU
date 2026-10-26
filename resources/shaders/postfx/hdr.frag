@@ -15,6 +15,9 @@
 //                      (s2) and the light streaks (s3), then saturation,
 //                      color balance and contrast
 //   HDR_POISSON_BLUR   8 tap poisson disk scaled by gScale
+//
+// OTDU_ADDITION: HDR_COMPOSE rolls the highlights off below 1.0 instead of
+// clipping them when gSoftHighlights.x (the knee) is set (SDR option)
 
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
@@ -25,6 +28,8 @@
 #define gBalanceCoeff( i ) c.f[8 + ( i )]
 #define lumThreshold c.f[14]
 #define gSatThreshold c.f[14]
+// OTDU_ADDITION: kSoftHighlightsRegister (retail PS constants stop at c30)
+#define gSoftHighlights c.f[221]
 
 D3D9_DECLARE_SAMPLER_2D( 0 )
 #if defined( HDR_BRIGHT_SCALE ) || defined( HDR_COMPOSE )
@@ -40,6 +45,19 @@ layout( location = 0 ) out vec4 oC0;
 vec3 saturation( vec3 color, float amount ) {
     float grey = ( -amount + 1.0 ) * d3d9_dot( color, TDU_LUMINANCE );
     return color * vec3( amount ) + vec3( grey );
+}
+
+// Identity up to the knee, then an exponential shoulder (unit slope at the
+// knee) approaching 1.0. Per channel like the clip it replaces: very bright
+// colors still bleach to white (a hue preserving curve reveals the tint of the
+// light streaks, which retail always clips)
+vec3 softHighlights( vec3 color, float knee ) {
+    float range = 1.0 - knee;
+    vec3 rolled = vec3( knee ) +
+                  range * ( vec3( 1.0 ) -
+                            exp( -max( color - vec3( knee ), vec3( 0.0 ) ) /
+                                 range ) );
+    return mix( color, rolled, step( vec3( knee ), color ) );
 }
 
 vec3 colorBalance(
@@ -83,9 +101,12 @@ void main() {
     color.xyz = color.xyz * vec3( exposure ) + bloom;
     color.xyz = gCoeff( 1 ).yyy * tex2D_s3( uv ).xyz + color.xyz;
     color.xyz = saturation( color.xyz, gCoeff( 0 ).y );
-    oC0 = vec4( colorBalance( color.xyz, gCoeff( 2 ), gCoeff( 3 ),
-                              gCoeff( 0 ).w, gCoeff( 0 ).z ),
-                color.w );
+    color.xyz = colorBalance( color.xyz, gCoeff( 2 ), gCoeff( 3 ),
+                              gCoeff( 0 ).w, gCoeff( 0 ).z );
+    if ( gSoftHighlights.x > 0.0 ) {
+        color.xyz = softHighlights( color.xyz, gSoftHighlights.x );
+    }
+    oC0 = color;
 #elif defined( HDR_POISSON_BLUR )
     const vec2 kPoisson[7] =
         vec2[]( vec2( 0.527837, -0.085868 ), vec2( -0.040088, 0.536087 ),

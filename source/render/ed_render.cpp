@@ -416,6 +416,10 @@ void edRender::doPoolDeallocations() {
 
 int32_t edRender::flushDrawCommands( bool param_1 ) {
     // FUN_005066e0
+    if ( gWindowHDRDirty && pRenderDevice != nullptr ) {
+        gWindowHDRDirty = false;
+        pRenderDevice->updateDisplayPeak();
+    }
     if ( gWindowSizeDirty ) {
         static uint32_t sLastWidth = 0;
         static uint32_t sLastHeight = 0;

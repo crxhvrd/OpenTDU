@@ -15,6 +15,8 @@
 #include "render/postfx/gs_postfx.h"
 #include "render/postfx/postfx_renderer.h"
 #include "render/render_context.h"
+#include "render/ed_render.h"
+#include "render/vulkan/render_device.h"
 #include "render/state_cache.h"
 #include "render/shaders/shader_constant_map.h"
 #include "render/shaders/shader_types.h"
@@ -37,6 +39,92 @@ float FLOAT_00fa9c80 = 1.5f;          // DAT_00fa9c80
 float FLOAT_00fa9c74 = 1.0f;          // DAT_00fa9c74
 float FLOAT_00fa9c78 = 1.0f;          // DAT_00fa9c78
 bool gHDRIGameMode[GM_Count] = {};    // DAT_00fa9c8c
+bool gbSoftHighlights = false;
+
+// Composition output below which the soft highlights leave the image untouched
+static constexpr float kSoftHighlightsKnee = 0.8f;
+// Above every retail PS constant (c30), next to the other port registers
+// (render_context.cpp)
+static constexpr uint32_t kSoftHighlightsRegister = 221;
+
+#if OTDU_DEVBUILD
+bool gbDebugHDRReferencePatches = false;
+static std::string gDebugHDRCapturePrefix;
+
+void RequestHDRCompositionCapture( const char *pFilePrefix ) {
+    gDebugHDRCapturePrefix = pFilePrefix;
+}
+
+// Scene (pre-exposure) values; row 0 = greys, row 1 = primaries at 1 and 4
+static constexpr uint32_t kReferencePatchSize = 48;
+static constexpr uint32_t kReferencePatchStride = 56;
+static constexpr int32_t kReferencePatchOrigin = 32;
+static constexpr float kReferencePatches[2][8][3] = {
+    {{ 0.05f, 0.05f, 0.05f },
+     { 0.18f, 0.18f, 0.18f },
+     { 0.5f, 0.5f, 0.5f },
+     { 1.0f, 1.0f, 1.0f },
+     { 2.0f, 2.0f, 2.0f },
+     { 4.0f, 4.0f, 4.0f },
+     { 8.0f, 8.0f, 8.0f },
+     { 16.0f, 16.0f, 16.0f }},
+    {{ 1.0f, 0.0f, 0.0f },
+     { 0.0f, 1.0f, 0.0f },
+     { 0.0f, 0.0f, 1.0f },
+     { 1.0f, 0.5f, 0.25f },
+     { 4.0f, 0.0f, 0.0f },
+     { 0.0f, 4.0f, 0.0f },
+     { 0.0f, 0.0f, 4.0f },
+     { 4.0f, 2.0f, 1.0f }   }
+};
+
+// The texture the composition samples (the resolved copy when using MSAA)
+static GPUTexture *GetSampledTexture( RenderTarget *pRenderTarget ) {
+    Render2DB *p2DB = pRenderTarget->getBound2DB();
+    if ( p2DB == nullptr || p2DB->getFirstBitmap() == nullptr ) {
+        return pRenderTarget->getTextureColor();
+    }
+    return p2DB->getFirstBitmap()->pTexture;
+}
+
+static void WriteReferencePatches( RenderTarget *pScene ) {
+    GPUTexture *pTexture = GetSampledTexture( pScene );
+    for ( uint32_t row = 0; row < 2; row++ ) {
+        for ( uint32_t column = 0; column < 8; column++ ) {
+            const float *pValue = kReferencePatches[row][column];
+            const float color[4] = { pValue[0], pValue[1], pValue[2], 1.0f };
+            gEdRender.pRenderDevice->fillRenderTargetRegion(
+                pTexture,
+                { int32_t( kReferencePatchOrigin +
+                           column * kReferencePatchStride ),
+                  int32_t( kReferencePatchOrigin +
+                           row * kReferencePatchStride ) },
+                { kReferencePatchSize, kReferencePatchSize }, color );
+        }
+    }
+}
+
+static void SnapshotCompositionTexture( GPUTexture *pTexture,
+                                        const char *pSuffix ) {
+    const std::string path = gDebugHDRCapturePrefix + "_" + pSuffix;
+    gEdRender.pRenderDevice->snapshotRenderTarget( pTexture, path.c_str() );
+}
+
+static void WriteCompositionParameters( const float constants[16] ) {
+    const std::string path = gDebugHDRCapturePrefix + "_params.txt";
+    std::ofstream stream( path );
+    stream << "middle_gray " << constants[0] << "\n"
+           << "saturation " << constants[1] << "\n"
+           << "brightness " << constants[2] << "\n"
+           << "contrast " << constants[3] << "\n"
+           << "glow_mod " << constants[4] << "\n"
+           << "star_mod " << constants[5] << "\n"
+           << "balance_scale " << constants[8] << " " << constants[9] << " "
+           << constants[10] << "\n"
+           << "balance_bias " << constants[12] << " " << constants[13] << " "
+           << constants[14] << "\n";
+}
+#endif
 
 inline bool IsPooledRTValid( PooledPostFXRT *param_1 ) {
     // FUN_00431820
@@ -140,6 +228,19 @@ bool PostFXHDR::execute() {
         peStack_9c = peVar10->getOutput( uVar11 );
     }
 
+#if OTDU_DEVBUILD
+    // OTDU_ADDITION: HDR output measurement tools
+    if ( gbDebugHDRReferencePatches ) {
+        WriteReferencePatches( peStack_90 );
+    }
+    if ( !gDebugHDRCapturePrefix.empty() ) {
+        SnapshotCompositionTexture( GetSampledTexture( peStack_90 ), "scene" );
+        SnapshotCompositionTexture( GetSampledTexture( peStack_98 ), "lum" );
+        SnapshotCompositionTexture( GetSampledTexture( peStack_94 ), "bloom" );
+        SnapshotCompositionTexture( GetSampledTexture( peStack_9c ), "streak" );
+    }
+#endif
+
     gPostFXRenderer.bindShaders( nullptr, pPixelShader );
 
     RenderTarget *peVar3 = pRenderTargets[0];
@@ -186,6 +287,15 @@ bool PostFXHDR::execute() {
     UploadConstant( &pPixelShader->getConstantMap()->FloatPS, 0x250, fStack_70,
                     4 );
 
+    // OTDU_ADDITION: see gbSoftHighlights
+    float softHighlights[4] = {
+        ( gbSoftHighlights && !gEdRender.pRenderDevice->isHDROutputActive() )
+            ? kSoftHighlightsKnee
+            : 0.0f,
+        0.0f, 0.0f, 0.0f };
+    gEdRender.pRenderDevice->setFloatConstants(
+        eShaderType::ST_Pixel, softHighlights, kSoftHighlightsRegister, 1 );
+
     gEdRender.bindRenderTargetAndSetViewport( pRenderTargets[0], 0 );
 
     Render2DB *peVar12 = peStack_94->getBound2DB();
@@ -229,6 +339,17 @@ bool PostFXHDR::execute() {
     if ( ( pOwner->getFlags() & 1 ) != 0 ) {
         gEdRender.pRenderDevice->resolveMSAA( pRenderTargets[0], 0 );
     }
+
+#if OTDU_DEVBUILD
+    if ( !gDebugHDRCapturePrefix.empty() ) {
+        SnapshotCompositionTexture( pRenderTargets[0]->getTextureColor(),
+                                    "compose" );
+        WriteCompositionParameters( fStack_70 );
+        OTDU_LOG_INFO( "HDR composition captured to '%s_*'\n",
+                       gDebugHDRCapturePrefix.c_str() );
+        gDebugHDRCapturePrefix.clear();
+    }
+#endif
 
     return true;
 }
@@ -592,10 +713,15 @@ bool PostFXStepHDRI::allocateRenderTargets() {
     pSceneDownsampleQuarterRT =
         CreateRenderTargetFrom2DB( &sceneDownsampleQuarter, 0x13 );
 
+    // OTDU_ADDITION: HDR output keeps the bloom above 1.0 (8-bit in retail)
+    const eViewFormat bloomFormat =
+        gEdRender.pRenderDevice->isHDROutputRequested() ? VF_A16B16G16R16F
+                                                        : VF_X8R8G8B8;
+
     for ( uint32_t local_8 = 0; local_8 < kNumGlowStarRenderTarget;
           local_8++ ) {
         pGlowStar2DB[local_8].allocateAndCreate(
-            width, height, 1, 1, VF_X8R8G8B8, 0x600,
+            width, height, 1, 1, bloomFormat, 0x600,
             "HDR_GlowStar" /* DAT_00f3ca14 */ );
 
         pGlowStarRT[local_8] =
@@ -605,7 +731,7 @@ bool PostFXStepHDRI::allocateRenderTargets() {
     for ( uint32_t local_8 = 0; local_8 < kNumScnBrightRenderTarget;
           local_8++ ) {
         pScnBright2DB[local_8].allocateAndCreate(
-            width, height, 1, 1, VF_X8R8G8B8, 0x600,
+            width, height, 1, 1, bloomFormat, 0x600,
             "FXHDRI_ScnBright" /* DAT_00f3c9f4 */ );
 
         pScnBrightRT[local_8] =

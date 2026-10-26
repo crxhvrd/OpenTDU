@@ -122,7 +122,32 @@ static constexpr const VkFormat kViewFormatLUT[eViewFormat::VF_Count] = {
     VK_FORMAT_R8G8B8A8_UNORM,  // VF_R8G8B8A8_UINT
 };
 
-#if OTDU_DEVBUILD
+static float HalfToFloat( const uint16_t value ) {
+    const uint32_t sign = uint32_t( value & 0x8000u ) << 16;
+    const uint32_t exponent = ( value >> 10 ) & 0x1fu;
+    const uint32_t mantissa = value & 0x3ffu;
+
+    uint32_t bits = sign;
+    if ( exponent == 0x1fu ) {
+        bits |= 0x7f800000u | ( mantissa << 13 );
+    } else if ( exponent != 0 ) {
+        bits |= ( ( exponent + 127 - 15 ) << 23 ) | ( mantissa << 13 );
+    } else if ( mantissa != 0 ) {
+        // Denormal: renormalize
+        uint32_t shift = 0;
+        uint32_t m = mantissa;
+        while ( ( m & 0x400u ) == 0 ) {
+            m <<= 1;
+            shift++;
+        }
+        bits |= ( ( 127 - 15 + 1 - shift ) << 23 ) | ( ( m & 0x3ffu ) << 13 );
+    }
+
+    float result = 0.0f;
+    memcpy( &result, &bits, sizeof( result ) );
+    return result;
+}
+
 static uint32_t GetVulkanFormatTexelSize( const VkFormat format ) {
     switch ( format ) {
     case VK_FORMAT_R8_UNORM:
@@ -152,7 +177,6 @@ static uint32_t GetVulkanFormatTexelSize( const VkFormat format ) {
         return 0;
     }
 }
-#endif
 
 static constexpr const VkFormat
     kVertexAttributeFormats[eVertexAttributeFormat::VAF_Count] = {
@@ -300,9 +324,11 @@ RenderDevice::RenderDevice()
       surface( VK_NULL_HANDLE ),
       frameIndex( 0 ),
       absoluteFrameIndex( 0 ),
+      lastSubmittedFrameIndex( 0 ),
       bufferFormatSupport( 0u ),
       framebufferInfos{
 },
+      swapchainImageFormat( VK_FORMAT_UNDEFINED ),
       time( 0.0f ),
       activeColorMask( VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT ),
@@ -326,6 +352,15 @@ RenderDevice::RenderDevice()
       bNeedRecreateSwapchain( false ),
       bVSyncEnabled( false ),
       bNeedBackbufferClear( false ),
+      bHDROutputEnabled( false ),
+      bSwapchainColorSpaceSupported( false ),
+      bHDRMetadataSupported( false ),
+      bHDROutputSupported( false ),
+      hdrPaperWhiteNits( kDefaultHDRPaperWhiteNits ),
+      hdrPeakNits( kAutoHDRPeakNits ),
+      detectedPeakNits( 0.0f ),
+      hdrHighlightStrength( kDefaultHDRHighlightStrength ),
+      activeOutputTransfer( eOutputTransfer::OT_SDR ),
       activeClearColor( gColorBlackNoAlpha ),
       activeRenderRegion{ { 0, 0 }, { 0, 0 } },
       boundPSO( VK_NULL_HANDLE ),
@@ -372,10 +407,6 @@ RenderDevice::~RenderDevice() {
 
     for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
         vkDestroySemaphore( device, nextImageSemaphore[i], nullptr );
-    }
-
-    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        vkDestroySemaphore( device, frameSubmissionSemaphore[i], nullptr );
     }
 
     for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
@@ -488,12 +519,6 @@ void RenderDevice::initialize() {
         OTDU_ASSERT( semaphoreCreation == VK_SUCCESS );
     }
 
-    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        VkResult semaphoreCreation = vkCreateSemaphore(
-            device, &semaphoreInfo, nullptr, &frameSubmissionSemaphore[i] );
-        OTDU_ASSERT( semaphoreCreation == VK_SUCCESS );
-    }
-
     renderPassManager.initialize();
     samplerHeap.initialize( device );
     VkDeviceSize uboAlignment =
@@ -501,8 +526,7 @@ void RenderDevice::initialize() {
     resourceBinder.initialize( device, allocator, uboAlignment );
     psoFactory.initialize( device, samplerHeap, resourceBinder );
     gammaRampPass.initialize( device, allocator );
-    gammaRampPass.createSwapchainResources( device, backbuffer.pTexture,
-                                            swapchainImageViews );
+    createOutputPassResources();
 
     VkCommandPoolCreateInfo texUploadPoolInfos = {};
     texUploadPoolInfos.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -1110,12 +1134,17 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
+uint32_t RenderDevice::getSharedResourceDeletionSlot() const {
+    // A slot queue is drained once its fence is waited, i.e. after the last
+    // frame that may reference the resource (the frame being recorded, or the
+    // last submitted one) completes
+    return bRecordingCommands ? frameIndex : lastSubmittedFrameIndex;
+}
+
 void RenderDevice::destroyTexture( GPUTexture *pTexture ) {
     if ( pTexture->NumResources == 1 ) {
         // Static texture: Image[0] is shared across all frame CBs.
-        // Defer to the slot processed last, ensuring all 3 fences are waited.
-        const uint32_t safeSlot =
-            ( frameIndex + PendingFrameCount - 1 ) % PendingFrameCount;
+        const uint32_t safeSlot = getSharedResourceDeletionSlot();
         deferredDeletionQueueTexture[safeSlot].push(
             { pTexture->Image[0], pTexture->Allocation[0],
               pTexture->ImageView[0] } );
@@ -1132,9 +1161,7 @@ void RenderDevice::destroyTexture( GPUTexture *pTexture ) {
 void RenderDevice::destroyBuffer( GPUBuffer *pBuffer ) {
     if ( pBuffer->NumResources == 1 ) {
         // Static buffer: NativeBuffer[0] is shared across all frame CBs.
-        // Defer to the slot processed last, ensuring all 3 fences are waited.
-        const uint32_t safeSlot =
-            ( frameIndex + PendingFrameCount - 1 ) % PendingFrameCount;
+        const uint32_t safeSlot = getSharedResourceDeletionSlot();
         deferredDeletionQueue[safeSlot].push(
             { pBuffer->NativeBuffer[0], pBuffer->Allocation[0] } );
     } else {
@@ -1166,6 +1193,123 @@ void RenderDevice::setVSyncEnabled( const bool bEnabled ) {
 
     bVSyncEnabled = bEnabled;
     bNeedRecreateSwapchain = true;
+}
+
+struct HDRSurfaceFormat {
+    VkFormat Format;
+    VkColorSpaceKHR ColorSpace;
+    eOutputTransfer Transfer;
+};
+
+// Ordered by preference. macOS favors EDR (extended linear) as it follows the
+// system brightness.
+static constexpr HDRSurfaceFormat kHDRSurfaceFormats[] = {
+#if OTDU_MACOS
+    {VK_FORMAT_R16G16B16A16_SFLOAT,      VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT,
+                  eOutputTransfer::OT_ExtendedLinear},
+#endif
+    {VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT,
+                  eOutputTransfer::OT_PQ            },
+    {VK_FORMAT_A2R10G10B10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT,
+                  eOutputTransfer::OT_PQ            },
+#if !OTDU_MACOS
+    {VK_FORMAT_R16G16B16A16_SFLOAT,      VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT,
+                  eOutputTransfer::OT_ExtendedLinear},
+#endif
+};
+
+// Luminance of 1.0 in the extended linear color space (scRGB on Windows/Linux;
+// on macOS 1.0 is the SDR white, which we map to the BT.2408 reference white)
+#if OTDU_MACOS
+static constexpr float kExtendedLinearWhiteNits = kDefaultHDRPaperWhiteNits;
+#else
+static constexpr float kExtendedLinearWhiteNits = 80.0f;
+#endif
+static constexpr float kPQMaxNits = 10000.0f;
+
+static float GetOutputScale( const eOutputTransfer transfer,
+                             const float paperWhiteNits ) {
+    switch ( transfer ) {
+    case eOutputTransfer::OT_PQ:
+        return paperWhiteNits / kPQMaxNits;
+    case eOutputTransfer::OT_ExtendedLinear:
+        return paperWhiteNits / kExtendedLinearWhiteNits;
+    default:
+        return 1.0f;
+    }
+}
+
+void RenderDevice::setHDROutput( const bool bEnabled,
+                                 const float paperWhiteNits ) {
+    hdrPaperWhiteNits =
+        Clamp( paperWhiteNits, kMinHDRPaperWhiteNits, kMaxHDRPaperWhiteNits );
+    updateOutputParameters();
+
+    if ( bHDROutputEnabled != bEnabled ) {
+        bHDROutputEnabled = bEnabled;
+        bNeedRecreateSwapchain = true;
+    }
+}
+
+void RenderDevice::setHDRPeakNits( const float peakNits ) {
+    hdrPeakNits = ( peakNits <= kAutoHDRPeakNits )
+                      ? kAutoHDRPeakNits
+                      : Clamp( peakNits, kMinHDRPeakNits, kMaxHDRPeakNits );
+    updateOutputParameters();
+}
+
+void RenderDevice::updateDisplayPeak() {
+    float peakNits = 0.0f;
+#if defined( OTDU_USE_SDL )
+    // Headroom and SDR white are relative to 1.0 in the extended linear color
+    // space (Windows: the display MaxLuminance; macOS: the current EDR range)
+    SDL_PropertiesID properties =
+        SDL_GetWindowProperties( (SDL_Window *)gEdSys.getWindow() );
+    const float headroom = SDL_GetFloatProperty(
+        properties, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 1.0f );
+    const float sdrWhite = SDL_GetFloatProperty(
+        properties, SDL_PROP_WINDOW_SDR_WHITE_LEVEL_FLOAT, 1.0f );
+    if ( headroom > 1.0f ) {
+        peakNits = Min( headroom * sdrWhite * kExtendedLinearWhiteNits,
+                        kMaxHDRPeakNits );
+    }
+#endif
+
+    if ( peakNits != detectedPeakNits ) {
+        OTDU_LOG_INFO( "Display HDR peak: %.0f nits\n", peakNits );
+        detectedPeakNits = peakNits;
+        updateOutputParameters();
+    }
+}
+
+void RenderDevice::setHDRHighlightStrength( const float strength ) {
+    hdrHighlightStrength = Clamp( strength, 0.0f, kMaxHDRHighlightStrength );
+    updateOutputParameters();
+}
+
+void RenderDevice::updateOutputParameters() {
+    // Highlights above the paper white roll off towards the display peak
+    gammaRampPass.setOutputParameters(
+        GetOutputScale( activeOutputTransfer, hdrPaperWhiteNits ),
+        Max( getEffectiveHDRPeakNits() / hdrPaperWhiteNits, 1.0f ),
+        hdrHighlightStrength );
+
+    if ( activeOutputTransfer != eOutputTransfer::OT_PQ ||
+         !bHDRMetadataSupported || swapchain == VK_NULL_HANDLE ) {
+        return;
+    }
+
+    VkHdrMetadataEXT metadata = {};
+    metadata.sType = VK_STRUCTURE_TYPE_HDR_METADATA_EXT;
+    metadata.displayPrimaryRed = { 0.640f, 0.330f };
+    metadata.displayPrimaryGreen = { 0.300f, 0.600f };
+    metadata.displayPrimaryBlue = { 0.150f, 0.060f };
+    metadata.whitePoint = { 0.3127f, 0.3290f };
+    metadata.maxLuminance = Max( getEffectiveHDRPeakNits(), hdrPaperWhiteNits );
+    metadata.minLuminance = 0.0f;
+    metadata.maxContentLightLevel = metadata.maxLuminance;
+    metadata.maxFrameAverageLightLevel = hdrPaperWhiteNits;
+    vkSetHdrMetadataEXT( device, 1, &swapchain, &metadata );
 }
 
 void RenderDevice::waitForIdle() { vkDeviceWaitIdle( device ); }
@@ -1631,6 +1775,8 @@ void RenderDevice::resetCachedStates() {
 
 void RenderDevice::present() {
     // FUN_005f16b0
+    // The swapchain image is only acquired when recording starts
+    const bool bImageAcquired = bRecordingCommands;
     if ( bRecordingCommands ) {
         if ( activeRenderPass != VK_NULL_HANDLE ) {
             vkCmdEndRenderPass( commandBuffer );
@@ -1650,16 +1796,19 @@ void RenderDevice::present() {
     processPendingRenderTargetDumps();
 #endif
 
-    VkPresentInfoKHR presentInfo = {};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &frameSubmissionSemaphore[frameIndex];
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &swapchain;
-    presentInfo.pImageIndices = &imageIndex;
+    VkResult presentResult = VK_SUCCESS;
+    if ( bImageAcquired ) {
+        VkPresentInfoKHR presentInfo = {};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = &presentSemaphores[imageIndex];
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &swapchain;
+        presentInfo.pImageIndices = &imageIndex;
 
-    VkResult presentResult = vkQueuePresentKHR( queues[0].queue, &presentInfo );
-    bDeviceLost = ( presentResult == VK_ERROR_DEVICE_LOST );
+        presentResult = vkQueuePresentKHR( queues[0].queue, &presentInfo );
+        bDeviceLost = ( presentResult == VK_ERROR_DEVICE_LOST );
+    }
 
     if ( presentResult == VK_ERROR_OUT_OF_DATE_KHR ||
          presentResult == VK_SUBOPTIMAL_KHR || bNeedRecreateSwapchain ) {
@@ -2795,6 +2944,14 @@ bool RenderDevice::createVulkanInstance() {
         instanceExtensions.push_back( VK_KHR_MAINTENANCE1_EXTENSION_NAME );
     }
 
+    bSwapchainColorSpaceSupported =
+        extensionIsAvailable( VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME,
+                              instanceExtensionsAvailable );
+    if ( bSwapchainColorSpaceSupported ) {
+        instanceExtensions.push_back(
+            VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME );
+    }
+
 #if OTDU_MACOS
     if ( extensionIsAvailable( VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
                                instanceExtensionsAvailable ) ) {
@@ -2952,6 +3109,11 @@ bool RenderDevice::createDevice() {
                                availableDeviceExtensions ) ) {
         deviceExtensions.push_back(
             VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME );
+    }
+    bHDRMetadataSupported = extensionIsAvailable(
+        VK_EXT_HDR_METADATA_EXTENSION_NAME, availableDeviceExtensions );
+    if ( bHDRMetadataSupported ) {
+        deviceExtensions.push_back( VK_EXT_HDR_METADATA_EXTENSION_NAME );
     }
 #if OTDU_MACOS
     if ( extensionIsAvailable( VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
@@ -3133,6 +3295,42 @@ bool RenderDevice::createSwapchain() {
     OTDU_ASSERT_FATAL( pickedFormatIndex !=
                        std::numeric_limits<uint32_t>::max() );
 
+    VkSurfaceFormatKHR swapchainFormat = formats[pickedFormatIndex];
+    VkFormat backbufferFormat = swapchainFormat.format;
+    activeOutputTransfer = eOutputTransfer::OT_SDR;
+
+    const HDRSurfaceFormat *pHDRFormat = nullptr;
+    for ( const HDRSurfaceFormat &hdrFormat : kHDRSurfaceFormats ) {
+        for ( const VkSurfaceFormatKHR &surfaceFormat : formats ) {
+            if ( surfaceFormat.format == hdrFormat.Format &&
+                 surfaceFormat.colorSpace == hdrFormat.ColorSpace ) {
+                pHDRFormat = &hdrFormat;
+                break;
+            }
+        }
+        if ( pHDRFormat != nullptr ) {
+            break;
+        }
+    }
+    bHDROutputSupported = ( pHDRFormat != nullptr );
+
+    if ( bHDROutputEnabled ) {
+        if ( pHDRFormat != nullptr ) {
+            swapchainFormat = { pHDRFormat->Format, pHDRFormat->ColorSpace };
+            activeOutputTransfer = pHDRFormat->Transfer;
+            // Keeps what the composition writes above 1.0 (highlights)
+            backbufferFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+            OTDU_LOG_INFO( "HDR output: format %u, color space %u\n",
+                           swapchainFormat.format, swapchainFormat.colorSpace );
+        } else {
+            OTDU_LOG_WARN( "HDR output requested but the display surface does "
+                           "not expose an HDR color space%s; using SDR\n",
+                           bSwapchainColorSpaceSupported
+                               ? ""
+                               : " (VK_EXT_swapchain_colorspace missing)" );
+        }
+    }
+
     // Select Present Mode (FIFO is the only mode the spec guarantees)
     auto isPresentModeSupported = [&]( const VkPresentModeKHR mode ) {
         return std::find( presentModes.begin(), presentModes.end(), mode ) !=
@@ -3148,7 +3346,6 @@ bool RenderDevice::createSwapchain() {
         }
     }
 
-    VkSurfaceFormatKHR swapchainFormat = formats[pickedFormatIndex];
     VkExtent2D swapchainDimension = capabilities.currentExtent;
 
     uint32_t imageCount = PendingFrameCount;
@@ -3161,6 +3358,7 @@ bool RenderDevice::createSwapchain() {
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     createInfo.surface = surface;
     createInfo.minImageCount = imageCount;
+    swapchainImageFormat = swapchainFormat.format;
     createInfo.imageFormat = swapchainFormat.format;
     createInfo.imageColorSpace = swapchainFormat.colorSpace;
     createInfo.imageExtent = swapchainDimension;
@@ -3203,6 +3401,15 @@ bool RenderDevice::createSwapchain() {
     viewInfos.subresourceRange.baseArrayLayer = 0;
     viewInfos.subresourceRange.layerCount = 1;
 
+    VkSemaphoreCreateInfo semaphoreInfo = {};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    presentSemaphores.resize( swapchainImages.size(), VK_NULL_HANDLE );
+    for ( VkSemaphore &semaphore : presentSemaphores ) {
+        VkResult semaphoreCreation =
+            vkCreateSemaphore( device, &semaphoreInfo, nullptr, &semaphore );
+        OTDU_ASSERT( semaphoreCreation == VK_SUCCESS );
+    }
+
     swapchainImageViews.resize( swapchainImages.size(), VK_NULL_HANDLE );
     for ( size_t i = 0; i < swapchainImages.size(); i++ ) {
         viewInfos.image = swapchainImages[i];
@@ -3211,8 +3418,7 @@ bool RenderDevice::createSwapchain() {
         OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
     }
 
-    if ( !createBackbufferTexture( swapchainFormat.format,
-                                   swapchainDimension ) ) {
+    if ( !createBackbufferTexture( backbufferFormat, swapchainDimension ) ) {
         return false;
     }
 
@@ -3221,7 +3427,7 @@ bool RenderDevice::createSwapchain() {
 
     // NOTE: Only maps to what the original game support for now (in
     // the future this could be extended to support HW HDR)
-    switch ( swapchainFormat.format ) {
+    switch ( backbufferFormat ) {
     case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
         backbuffer.Format = eViewFormat::VF_A2R10G10B10;
         break;
@@ -3235,9 +3441,13 @@ bool RenderDevice::createSwapchain() {
         backbuffer.Format = eViewFormat::VF_R5G6B5;
         break;
 
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+        backbuffer.Format = eViewFormat::VF_A16B16G16R16F;
+        break;
+
     default:
         OTDU_FATAL_ERROR( "Unsupported/invalid swapchain format %x",
-                          swapchainFormat.format );
+                          backbufferFormat );
         backbuffer.Format = eViewFormat::VF_Invalid;
         break;
     }
@@ -3406,11 +3616,12 @@ void RenderDevice::submitPendingCommandBuffer() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
     submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &frameSubmissionSemaphore[frameIndex];
+    submitInfo.pSignalSemaphores = &presentSemaphores[imageIndex];
 
     VkResult submitResult = vkQueueSubmit( queues[0].queue, 1, &submitInfo,
                                            inFlightFence[frameIndex] );
     OTDU_ASSERT( submitResult == VK_SUCCESS );
+    lastSubmittedFrameIndex = frameIndex;
     commandBuffer = VK_NULL_HANDLE;
 }
 
@@ -3899,9 +4110,16 @@ void RenderDevice::recreateSwapchain() {
     releaseSwapchain();
     releaseFramebufferCache();
     if ( createSwapchain() ) {
-        gammaRampPass.createSwapchainResources( device, backbuffer.pTexture,
-                                                swapchainImageViews );
+        createOutputPassResources();
     }
+}
+
+void RenderDevice::createOutputPassResources() {
+    gammaRampPass.createSwapchainResources(
+        device, backbuffer.pTexture, swapchainImageFormat, activeOutputTransfer,
+        swapchainImageViews );
+    updateDisplayPeak();
+    updateOutputParameters();
 }
 
 void RenderDevice::releaseSwapchain() {
@@ -3928,6 +4146,11 @@ void RenderDevice::releaseSwapchain() {
 
     vkDestroySwapchainKHR( device, swapchain, nullptr );
     swapchain = VK_NULL_HANDLE;
+
+    for ( VkSemaphore &semaphore : presentSemaphores ) {
+        vkDestroySemaphore( device, semaphore, nullptr );
+    }
+    presentSemaphores.clear();
 }
 
 void RenderDevice::releaseFramebufferCache() {
@@ -4027,6 +4250,25 @@ bool RenderDevice::copyBackbufferToHost( std::vector<uint8_t> &texels,
     outWidth = backbuffer.Width;
     outHeight = backbuffer.Height;
     outFormat = backbuffer.Format;
+
+    if ( backbuffer.Format == eViewFormat::VF_A16B16G16R16F ) {
+        // HDR output: hand out the SDR rendition (clipped, BGRA8)
+        const size_t texelCount = size_t( outWidth ) * outHeight;
+        std::vector<uint8_t> converted( texelCount * 4 );
+        const uint16_t *pHalves = (const uint16_t *)texels.data();
+        for ( size_t i = 0; i < texelCount; i++ ) {
+            for ( uint32_t channel = 0; channel < 4; channel++ ) {
+                const float value = HalfToFloat( pHalves[i * 4 + channel] );
+                // RGBA -> BGRA
+                const uint32_t target =
+                    ( channel < 3 ) ? ( 2 - channel ) : channel;
+                converted[i * 4 + target] =
+                    uint8_t( Clamp( value, 0.0f, 1.0f ) * 255.0f + 0.5f );
+            }
+        }
+        texels = std::move( converted );
+        outFormat = eViewFormat::VF_A8R8G8B8;
+    }
     return true;
 }
 
@@ -4166,12 +4408,202 @@ bool RenderDevice::copyRenderTargetToHost( GPUTexture *pTexture,
 }
 
 #if OTDU_DEVBUILD
+// Normal range only (denormals flush to zero, overflow saturates to infinity)
+static uint16_t FloatToHalf( const float value ) {
+    uint32_t bits = 0;
+    memcpy( &bits, &value, sizeof( bits ) );
+
+    const uint16_t sign = uint16_t( ( bits >> 16 ) & 0x8000u );
+    const int32_t exponent = int32_t( ( bits >> 23 ) & 0xffu ) - 127 + 15;
+    const uint32_t mantissa = bits & 0x7fffffu;
+    if ( exponent <= 0 ) {
+        return sign;
+    }
+    if ( exponent >= 31 ) {
+        return uint16_t( sign | 0x7c00u );
+    }
+    return uint16_t( sign | ( uint32_t( exponent ) << 10 ) |
+                     ( mantissa >> 13 ) );
+}
+
+VkBuffer RenderDevice::createHostVisibleBuffer( const VkDeviceSize size,
+                                                const VkBufferUsageFlags usage,
+                                                VmaAllocation &outAllocation ) {
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+
+    VkBuffer buffer = VK_NULL_HANDLE;
+    outAllocation = nullptr;
+    if ( vmaCreateBuffer( allocator, &bufferInfo, &allocInfo, &buffer,
+                          &outAllocation, nullptr ) != VK_SUCCESS ) {
+        OTDU_LOG_ERROR( "Failed to allocate a %llu bytes host buffer\n",
+                        (unsigned long long)size );
+        return VK_NULL_HANDLE;
+    }
+    return buffer;
+}
+
+void RenderDevice::snapshotRenderTarget( GPUTexture *pTexture,
+                                         const char *pFilePath ) {
+    if ( pTexture == nullptr || pFilePath == nullptr || !bRecordingCommands ) {
+        return;
+    }
+
+    const uint32_t bytesPerTexel =
+        GetVulkanFormatTexelSize( pTexture->ViewFormat );
+    if ( bytesPerTexel == 0 ) {
+        OTDU_LOG_ERROR( "Unsupported render target format 0x%x\n",
+                        (uint32_t)pTexture->ViewFormat );
+        return;
+    }
+
+    if ( pTexture->SampleCount != VK_SAMPLE_COUNT_1_BIT ) {
+        OTDU_LOG_WARN( "Cannot snapshot a multisampled render target\n" );
+        return;
+    }
+
+    PendingRenderTargetSnapshot snapshot = {};
+    snapshot.Size =
+        VkDeviceSize( pTexture->Width ) * pTexture->Height * bytesPerTexel;
+    snapshot.Buffer = createHostVisibleBuffer(
+        snapshot.Size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, snapshot.Allocation );
+    if ( snapshot.Buffer == VK_NULL_HANDLE ) {
+        return;
+    }
+    snapshot.FilePath =
+        std::string( pFilePath ) + "_" + std::to_string( pTexture->Width ) +
+        "x" + std::to_string( pTexture->Height ) + "_" +
+        std::to_string( uint32_t( pTexture->ViewFormat ) ) + ".raw";
+
+    const uint32_t resourceIndex = pTexture->getResourceIndex( frameIndex );
+    const VkImageLayout previousLayout = pTexture->CurrentLayout[resourceIndex];
+    insertImageBarrier(
+        pTexture, resourceIndex, previousLayout,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT );
+
+    VkBufferImageCopy region = {};
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.layerCount = 1;
+    region.imageExtent = { pTexture->Width, pTexture->Height, 1 };
+    vkCmdCopyImageToBuffer( commandBuffer, pTexture->Image[resourceIndex],
+                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            snapshot.Buffer, 1, &region );
+
+    if ( previousLayout != VK_IMAGE_LAYOUT_UNDEFINED ) {
+        insertImageBarrier(
+            pTexture, resourceIndex, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            previousLayout, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT );
+    }
+
+    pendingRenderTargetSnapshots.push_back( snapshot );
+}
+
+void RenderDevice::fillRenderTargetRegion( GPUTexture *pTexture,
+                                           const VkOffset2D offset,
+                                           const VkExtent2D extent,
+                                           const float color[4] ) {
+    if ( pTexture == nullptr || !bRecordingCommands ) {
+        return;
+    }
+    if ( pTexture->ViewFormat != VK_FORMAT_R16G16B16A16_SFLOAT ||
+         pTexture->SampleCount != VK_SAMPLE_COUNT_1_BIT ) {
+        OTDU_LOG_WARN( "fillRenderTargetRegion: only single sampled RGBA16F "
+                       "targets are supported (format 0x%x)\n",
+                       (uint32_t)pTexture->ViewFormat );
+        return;
+    }
+
+    const VkExtent2D clipped = {
+        Min( extent.width, pTexture->Width - uint32_t( offset.x ) ),
+        Min( extent.height, pTexture->Height - uint32_t( offset.y ) ) };
+
+    PendingRenderTargetSnapshot upload = {};
+    upload.Size = VkDeviceSize( clipped.width ) * clipped.height * 8u;
+    upload.Buffer = createHostVisibleBuffer(
+        upload.Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, upload.Allocation );
+    if ( upload.Buffer == VK_NULL_HANDLE ) {
+        return;
+    }
+
+    const uint16_t texel[4] = {
+        FloatToHalf( color[0] ), FloatToHalf( color[1] ),
+        FloatToHalf( color[2] ), FloatToHalf( color[3] ) };
+    uint16_t *pTexels = nullptr;
+    vmaMapMemory( allocator, upload.Allocation, (void **)&pTexels );
+    for ( VkDeviceSize i = 0; i < upload.Size / 8u; i++ ) {
+        memcpy( pTexels + i * 4, texel, sizeof( texel ) );
+    }
+    vmaUnmapMemory( allocator, upload.Allocation );
+
+    const uint32_t resourceIndex = pTexture->getResourceIndex( frameIndex );
+    const VkImageLayout previousLayout = pTexture->CurrentLayout[resourceIndex];
+    insertImageBarrier( pTexture, resourceIndex, previousLayout,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_ACCESS_TRANSFER_WRITE_BIT );
+
+    VkBufferImageCopy region = {};
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = { offset.x, offset.y, 0 };
+    region.imageExtent = { clipped.width, clipped.height, 1 };
+    vkCmdCopyBufferToImage( commandBuffer, upload.Buffer,
+                            pTexture->Image[resourceIndex],
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
+
+    insertImageBarrier(
+        pTexture, resourceIndex, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        ( previousLayout != VK_IMAGE_LAYOUT_UNDEFINED )
+            ? previousLayout
+            : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT );
+
+    pendingRenderTargetSnapshots.push_back( upload );
+}
+
 void RenderDevice::processPendingRenderTargetDumps() {
-    if ( pendingRenderTargetDumps.empty() ) {
+    if ( pendingRenderTargetDumps.empty() &&
+         pendingRenderTargetSnapshots.empty() ) {
         return;
     }
 
     vkDeviceWaitIdle( device );
+
+    for ( const PendingRenderTargetSnapshot &snapshot :
+          pendingRenderTargetSnapshots ) {
+        if ( !snapshot.FilePath.empty() ) {
+            void *pData = nullptr;
+            vmaMapMemory( allocator, snapshot.Allocation, &pData );
+            std::ofstream stream( snapshot.FilePath.c_str(),
+                                  std::ofstream::out | std::ofstream::binary );
+            if ( stream.is_open() ) {
+                stream.write( (const char *)pData,
+                              std::streamsize( snapshot.Size ) );
+                OTDU_LOG_INFO( "Wrote render target snapshot '%s'\n",
+                               snapshot.FilePath.c_str() );
+            } else {
+                OTDU_LOG_ERROR( "Failed to open '%s' for writing\n",
+                                snapshot.FilePath.c_str() );
+            }
+            vmaUnmapMemory( allocator, snapshot.Allocation );
+        }
+        vmaDestroyBuffer( allocator, snapshot.Buffer, snapshot.Allocation );
+    }
+    pendingRenderTargetSnapshots.clear();
 
     for ( const PendingRenderTargetDump &dump : pendingRenderTargetDumps ) {
         GPUTexture *pTexture = dump.pTexture;

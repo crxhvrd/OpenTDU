@@ -123,3 +123,18 @@ extern float gFXHDRIMaxAvgLum;
 extern float gFXHDRIMinAvgLum;
 extern bool gFXHDRIDoAdaptation;
 extern float gFXHDRIGlowBlurKernelSZ;
+
+// OTDU_ADDITION: SDR only, rolls the composition highlights off instead of
+// clipping them (HDR output keeps them, see gamma_ramp.frag)
+extern bool gbSoftHighlights;
+
+#if OTDU_DEVBUILD
+// OTDU_ADDITION: HDR output measurement tools
+// Reference patches written into the scene before the HDR composition
+extern bool gbDebugHDRReferencePatches;
+// Snapshots the composition inputs/output of the next frame to
+// '<pFilePrefix>_{scene,lum,bloom,streak,compose}_<w>x<h>_<VkFormat>.raw'
+// and its constants to '<pFilePrefix>_params.txt'
+// (see tools/hdr_capture_stats.py)
+void RequestHDRCompositionCapture( const char *pFilePrefix );
+#endif

@@ -137,6 +137,18 @@ struct GPUVertexLayout {
         InputBindings; // per-binding desc
 };
 
+// ITU-R BT.2408 reference (graphics) white
+static constexpr float kDefaultHDRPaperWhiteNits = 203.0f;
+static constexpr float kMinHDRPaperWhiteNits = 80.0f;
+static constexpr float kMaxHDRPaperWhiteNits = 500.0f;
+static constexpr float kDefaultHDRPeakNits = 1000.0f;
+static constexpr float kMinHDRPeakNits = 400.0f;
+static constexpr float kMaxHDRPeakNits = 10000.0f;
+// Peak setting that follows the display headroom reported by the OS
+static constexpr float kAutoHDRPeakNits = 0.0f;
+static constexpr float kDefaultHDRHighlightStrength = 1.0f;
+static constexpr float kMaxHDRHighlightStrength = 2.0f;
+
 class RenderDevice {
 public:
     inline uint32_t getInternalFrameIndex() const {
@@ -148,6 +160,32 @@ public:
     inline bool isDeviceLost() const { return bDeviceLost; }
 
     inline GammaRampPass &getGammaRampPass() { return gammaRampPass; }
+
+    inline bool isHDROutputEnabled() const { return bHDROutputEnabled; }
+    inline bool isHDROutputSupported() const { return bHDROutputSupported; }
+    // True as soon as HDR output is enabled on a capable display, before the
+    // swapchain is recreated (resources sized for it can be allocated early)
+    inline bool isHDROutputRequested() const {
+        return bHDROutputEnabled && bHDROutputSupported;
+    }
+    inline bool isHDROutputActive() const {
+        return activeOutputTransfer != eOutputTransfer::OT_SDR;
+    }
+    inline float getHDRPaperWhiteNits() const { return hdrPaperWhiteNits; }
+    inline float getHDRPeakNits() const { return hdrPeakNits; }
+    inline bool isHDRPeakAuto() const { return hdrPeakNits <= 0.0f; }
+    // 0 when the OS reports no headroom above the SDR white
+    inline float getDetectedHDRPeakNits() const { return detectedPeakNits; }
+    inline float getEffectiveHDRPeakNits() const {
+        if ( !isHDRPeakAuto() ) {
+            return hdrPeakNits;
+        }
+        return ( detectedPeakNits > 0.0f ) ? detectedPeakNits
+                                           : kDefaultHDRPeakNits;
+    }
+    inline float getHDRHighlightStrength() const {
+        return hdrHighlightStrength;
+    }
 
 public:
     RenderDevice();
@@ -192,6 +230,10 @@ public:
 
     bool resize( uint32_t width, uint32_t height );
     void setVSyncEnabled( const bool bEnabled );
+    void setHDROutput( const bool bEnabled, const float paperWhiteNits );
+    void setHDRPeakNits( const float peakNits );
+    void setHDRHighlightStrength( const float strength );
+    void updateDisplayPeak();
     void waitForIdle();
     void flushAndWaitForIdle();
 
@@ -347,6 +389,15 @@ public:
 
 #if OTDU_DEVBUILD
     void requestRenderTargetDump( GPUTexture *pTexture, const char *pFilePath );
+    // Copies the render target as it is at this point of the frame; written to
+    // '<pFilePath>_<width>x<height>_<VkFormat>.raw' once the frame completed
+    void snapshotRenderTarget( GPUTexture *pTexture, const char *pFilePath );
+    // Fills a region of an RGBA16F render target with a solid color at this
+    // point of the frame
+    void fillRenderTargetRegion( GPUTexture *pTexture,
+                                 const VkOffset2D offset,
+                                 const VkExtent2D extent,
+                                 const float color[4] );
 #endif
 
 #if OTDU_DEVBUILD
@@ -355,6 +406,18 @@ private:
         GPUTexture *pTexture;
         std::string FilePath;
     };
+
+    struct PendingRenderTargetSnapshot {
+        VkBuffer Buffer;
+        VmaAllocation Allocation;
+        VkDeviceSize Size;
+        // Empty for an upload buffer (only released)
+        std::string FilePath;
+    };
+
+    VkBuffer createHostVisibleBuffer( const VkDeviceSize size,
+                                      const VkBufferUsageFlags usage,
+                                      VmaAllocation &outAllocation );
 #endif
 
 private:
@@ -382,6 +445,7 @@ private:
 
     uint32_t frameIndex;
     uint32_t absoluteFrameIndex;
+    uint32_t lastSubmittedFrameIndex;
 
     FormatCapabilities formatCaps[eViewFormat::VF_Count];
     uint32_t bufferFormatSupport; // DAT_00fada5c
@@ -389,11 +453,14 @@ private:
     VkFramebufferCreateInfo framebufferInfos;
 
     VkSwapchainKHR swapchain;
+    VkFormat swapchainImageFormat;
     std::vector<VkImage> swapchainImages;
     std::vector<VkImageView> swapchainImageViews;
     VkSemaphore nextImageSemaphore[PendingFrameCount];
 
-    VkSemaphore frameSubmissionSemaphore[PendingFrameCount];
+    // One per swapchain image: the presentation engine may still hold the
+    // semaphore of an image after its frame fence signaled
+    std::vector<VkSemaphore> presentSemaphores;
     VkFence inFlightFence[PendingFrameCount];
 
     float time;
@@ -448,6 +515,16 @@ private:
     uint8_t bNeedRecreateSwapchain : 1;
     uint8_t bVSyncEnabled : 1;
     uint8_t bNeedBackbufferClear : 1;
+    uint8_t bHDROutputEnabled : 1;
+    uint8_t bSwapchainColorSpaceSupported : 1;
+    uint8_t bHDRMetadataSupported : 1;
+    uint8_t bHDROutputSupported : 1;
+
+    float hdrPaperWhiteNits;
+    float hdrPeakNits;
+    float detectedPeakNits;
+    float hdrHighlightStrength;
+    eOutputTransfer activeOutputTransfer;
 
     VkPipelineCache psoCache;
 
@@ -487,6 +564,7 @@ private:
 
 #if OTDU_DEVBUILD
     std::vector<PendingRenderTargetDump> pendingRenderTargetDumps;
+    std::vector<PendingRenderTargetSnapshot> pendingRenderTargetSnapshots;
 #endif
 
 private:
@@ -503,6 +581,9 @@ private:
     void submitPendingCommandBuffer();
 
     void presentBackbuffer();
+    uint32_t getSharedResourceDeletionSlot() const;
+    void updateOutputParameters();
+    void createOutputPassResources();
     bool createBackbufferTexture( const VkFormat format,
                                   const VkExtent2D extent );
 

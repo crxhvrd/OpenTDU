@@ -15,6 +15,7 @@ enum ePortString : uint32_t {
     PS_NightLights,
     PS_Low,
     PS_Ultra,
+    PS_HDRDisplay,
 
     // Mods Manager
     PS_ModsFolderEmpty,
