@@ -10,6 +10,9 @@
 #include "world/gs_world_streaming.h"
 
 #include "database/gs_database.h"
+#include "config/gs_config.h"
+#include "filesystem/file_handle.h"
+#include "car_desc.h"
 #include "gs_timer.h"
 #include "render/camera/gs_camera.h"
 #include "gs_car_display.h"
@@ -2855,6 +2858,24 @@ HiearchyNode *VehicleBase::getShadowDummyNode() {
     return ( !bNeedToUnstream ) ? displayInstances[1].pNode : nullptr;
 }
 
+static bool GetVehicleBankSize( const std::string &bankName,
+                                uint32_t *pOutSize ) {
+    // TODO: This is GetVehiculeBankPath()...
+    std::string bankPath = gpConfig->getResRootPath();
+    bankPath += "Vehicules/";
+    bankPath += bankName;
+    bankPath += ".bnk";
+
+    FileIterator it;
+    if ( !it.findFirstMatch( bankPath.c_str() ) ) {
+        return false;
+    }
+
+    *pOutSize = it.getSize();
+    it.closeHandle();
+    return true;
+}
+
 bool VehicleBaseResources::load( int32_t carID,
                                  int32_t rimID,
                                  int32_t tireID,
@@ -2961,6 +2982,34 @@ bool VehicleBaseResources::load( int32_t carID,
                 bInitialized = false;
             }
             return false;
+        }
+    }
+
+    uint32_t bankSize = 0;
+    if ( local_484 != nullptr &&
+         GetVehicleBankSize( local_484->BankGeometryName, &bankSize ) &&
+         bankSize == 0 ) {
+        const int32_t defaultCarID = bIsBike ? 666 : 999;
+        OTDU_LOG_ERROR( "Vehicle bank '%s' (ID %d) is empty; falling back to "
+                        "default vehicle (ID %d)\n",
+                        local_484->BankGeometryName.c_str(), CarID,
+                        defaultCarID );
+
+        carID = defaultCarID;
+        CarID = defaultCarID;
+        RimID = -1;
+        TireID = -1;
+        bDefault = true;
+
+        local_488 = gpDatabase->getCarDBEntry( CarID );
+        local_484 = FindCarConfig( CarID );
+        if ( local_488 == nullptr || local_484 == nullptr ||
+             !GetVehicleBankSize( local_484->BankGeometryName, &bankSize ) ||
+             bankSize == 0 ) {
+            OTDU_FATAL_ERROR(
+                "Default vehicle (ID %d) is missing or its bank is "
+                "empty; please check your game installation\n",
+                defaultCarID );
         }
     }
 

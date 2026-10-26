@@ -2,6 +2,8 @@
 #include "virtual_file_system.h"
 #include "file_path_register.h"
 
+#include <mutex>
+
 VirtualFileSystemRegister gVirtualFileSystemRegister = {};
 
 void PathSplit( char *param_1,
@@ -96,25 +98,50 @@ std::filesystem::path ResolvePathInsensitive(const std::filesystem::path& target
 
     for (const auto& component : targetPath.relative_path()) {
         std::string targetComponentStr = component.string();
-        bool bMatchFound = false;
 
         if (!std::filesystem::exists(currentResolved) || !std::filesystem::is_directory(currentResolved)) {
             return std::filesystem::path{};
         }
 
         // Scan the directory for a case-insensitive match
+        std::vector<std::string> matches;
         for (const auto& entry : std::filesystem::directory_iterator(currentResolved)) {
             std::string entryName = entry.path().filename().string();
             if (IsCharEqualInsensitive(entryName, targetComponentStr)) {
-                currentResolved /= entry.path().filename();
-                bMatchFound = true;
-                break;
+                matches.push_back(entryName);
             }
         }
 
-        if (!bMatchFound) {
+        if (matches.empty()) {
             return std::filesystem::path{};
         }
+
+        std::sort(matches.begin(), matches.end());
+        auto exactMatch = std::find(matches.begin(), matches.end(), targetComponentStr);
+        const std::string& selectedMatch = (exactMatch != matches.end()) ? *exactMatch : matches.front();
+
+        // Only possible on case-sensitive filesystems (e.g. a partially renamed install)
+        if (matches.size() > 1) {
+            static std::mutex sReportedLock;
+            static std::set<std::string> sReportedPaths;
+
+            const std::filesystem::path duplicatePath = currentResolved / targetComponentStr;
+            std::lock_guard<std::mutex> lock(sReportedLock);
+            if (sReportedPaths.insert(duplicatePath.string()).second) {
+                std::string candidates;
+                for (const std::string& match : matches) {
+                    candidates += candidates.empty() ? "'" : ", '";
+                    candidates += match;
+                    candidates += "'";
+                }
+                OTDU_LOG_WARN("Path '%s' matches %zu entries with different casing (%s); using '%s'. "
+                              "Merge them into a single folder to avoid loading mismatched files!\n",
+                              duplicatePath.string().c_str(), matches.size(), candidates.c_str(),
+                              selectedMatch.c_str());
+            }
+        }
+
+        currentResolved /= selectedMatch;
     }
 
     return currentResolved;
