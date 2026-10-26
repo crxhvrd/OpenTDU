@@ -31,6 +31,22 @@ enum ePortString : uint32_t {
     PS_InputTemplatePrompt,
     PS_InputTemplateDefaultsPrompt,
 
+    // OpenTDU options
+    PS_OpenTDUOptions,
+    PS_OpenTDUControlsHelp,
+    PS_OpenTDUGameSettingsHelp,
+    PS_OpenTDUVideoHelp,
+    PS_Quality,
+    PS_HDR,
+    PS_HDRPaperWhite,
+    PS_HDRPeakBrightness,
+    PS_HDRHighlights,
+    PS_SoftHighlights,
+    PS_Auto,
+    PS_Mods,
+    PS_OpenTDUModsHelp,
+    PS_ModStatus,
+
     PS_Count
 };
 

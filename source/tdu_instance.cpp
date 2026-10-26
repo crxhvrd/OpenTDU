@@ -855,6 +855,13 @@ bool TestDriveGameInstance::initializeBaseServices() {
         }
     }
 
+    if ( !gpFile->fileExists( "/opentdu_data/flash/" ) ) {
+        if ( !AssetExtractor::BuildGeneratedMovies( pWorkingDir ) ) {
+            OTDU_LOG_WARN(
+                "Failed to generate the OpenTDU front-end movies\n" );
+        }
+    }
+
     if ( !gpFile->fileExists( "/opentdu_data/shader_cache.bin" ) ) {
         std::string messageError = "Fatal: Could not locate shaders ('";
         messageError += pWorkingDir;

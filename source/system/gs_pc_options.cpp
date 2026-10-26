@@ -23,6 +23,7 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/save_game_manager.h"
 #include "player_data/user_profile.h"
+#include "system/mng_opentdu_options.h"
 #include "tdu_instance.h"
 #include "world/weather/gs_weather.h"
 
@@ -113,6 +114,8 @@ void GSPCOptions::tick( float totalTime, float deltaTime ) {
         mngOptions.refreshOptionsScreen();
     }
 
+    gpOpenTDUOptions->tick( totalTime, deltaTime ); // OTDU_ADDITION
+
     if ( bPendingPopupAnswer ) {
         handlePendingPopupAnswer();
         return;
@@ -129,8 +132,10 @@ void GSPCOptions::tick( float totalTime, float deltaTime ) {
         bMoviesNeedReenable = false;
     }
 
+    // OTDU_ADDITION: the OpenTDU options page handles its own way back
     const bool bMenuQuitPressed = ( pInputActions != nullptr ) &&
-                                  IsActionPressed( pInputActions->pMenuQuit );
+                                  IsActionPressed( pInputActions->pMenuQuit ) &&
+                                  !gpOpenTDUOptions->isOpen();
 
     if ( bMenuQuitPressed ) {
         bool bHandled = false;
@@ -208,6 +213,7 @@ void GSPCOptions::terminate() {
 void GSPCOptions::pause() {
     // FUN_007c4830
     mngOptions.terminate();
+    gpOpenTDUOptions->unbind(); // OTDU_ADDITION
     exitCountdown = -1;
     pFlashPlayer = nullptr;
 }
@@ -274,11 +280,6 @@ bool GSPCOptions::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         return FlashSlider::OnMessage( pMessage + 1 );
 
     case 0x736e6470: // "sndp"
-        if ( gpMngOptions != nullptr &&
-             strcmp( pMessage[1].pAsChar, "wrong" ) == 0 &&
-             gpMngOptions->onVideoPageInvalidAction() ) {
-            return true;
-        }
         return gpFlash->getFlashSound()->playFrontEndSound( pMessage[1].pAsChar,
                                                             0, false );
 

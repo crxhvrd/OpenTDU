@@ -34,6 +34,9 @@ struct FlashMovie {
     int32_t MaxNumVars;
     int32_t NumDrawListStrips;
     int32_t NumDrawListVertices;
+    // OTDU_ADDITION: loaded from '<RootPath><asset quality folder>/' instead
+    // of the front-end folder when set
+    std::string RootPath;
 
     FlashMovie()
         : Filename( "" ),

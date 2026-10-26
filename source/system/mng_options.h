@@ -23,14 +23,10 @@ enum class eDisplayMode : int32_t {
 
 eDisplayMode GetActiveDisplayMode();
 void ApplyDisplayMode( const eDisplayMode displayMode );
-
-// Port-specific rows appended to the retail video page
-enum class eExtraVideoRowsState : int32_t {
-    EVRS_Closed = 0,
-    // "syin" received; waiting for the page setup script to run
-    EVRS_Opening = 1,
-    EVRS_Open = 2,
-};
+const char *GetDisplayModeLabel( const eDisplayMode displayMode );
+void ApplyVSync( const bool bEnabled );
+void ApplyHDRDisplay( const bool bEnabled );
+bool IsHDRDisplaySupported();
 
 struct VideoResolutionOption {
     uint32_t Width = 0u;
@@ -83,9 +79,6 @@ private:
 
 class MngOptions : public Manager, public PopupCallback, public FlashEntity {
 public:
-    static constexpr int32_t kNumVideoPanelPieces = 8;
-
-public:
     const char *getName() const override { /* FUN_00431fd0 */
         return "Options";
     }
@@ -98,7 +91,6 @@ public:
     virtual void tick( float, float ) override;
     virtual void terminate() override;
 
-    bool onVideoPageInvalidAction();
     bool onMessage( FlashMessage *pMessage,
                     class FlashPlayer *pPlayer ) override;
     void
@@ -114,6 +106,27 @@ public:
     void FUN_006c67b0();
 
     void FUN_006c6650();
+
+    // OTDU_ADDITION: the retail video rows, edited from the OpenTDU video
+    // settings (OpenTDUVideoSettings) instead of the CONFIGPC video page.
+    // Applying goes through the retail path (resize, keep prompt, revert).
+    void beginVideoEdit();
+    std::string getResolutionLabel() const;
+    std::string getRefreshRateLabel() const;
+    const char *getAntiAliasingLabel() const;
+    std::string getLODQualityLabel() const;
+    inline bool isHDRRenderingEnabled() const { return bHDREnabled; }
+    void stepResolution( const int32_t direction );
+    void stepRefreshRate( const int32_t direction );
+    void stepAntiAliasing( const int32_t direction );
+    void toggleHDRRendering();
+    void stepLODQuality( const int32_t direction );
+    void applyVideoEdit( const eDisplayMode newDisplayMode,
+                         const bool bNewVSyncEnabled,
+                         const bool bNewHDRDisplayEnabled );
+
+private:
+    void showVideoPageFrame( const char *pLabel );
 
 private:
     static constexpr size_t kNumLocalizedStrings = 9;
@@ -172,17 +185,10 @@ private:
     eAntiAliasingMethod activeAntiAliasingMode;
     eDisplayMode activeDisplayMode;
     bool bActiveHDREnabled;
-    eExtraVideoRowsState extraVideoRowsState;
-    bool bExtraVideoPanelFocused;
-    int32_t hoveredExtraVideoRow;
-    bool bExtraVideoMouseDown;
-    int32_t focusedVideoRow;
     bool bVSyncEnabled;
     bool bActiveVSyncEnabled;
     bool bHDRDisplayEnabled;
     bool bActiveHDRDisplayEnabled;
-    bool bVideoPanelPieceTinted[kNumVideoPanelPieces];
-    CXForm videoPanelPieceTints[kNumVideoPanelPieces];
     AudioOptions *pAudioOptions;
 
     VideoRevertedCallback videoRevertedCallback;
@@ -191,6 +197,9 @@ private:
     char pLocalizedStrings[kNumLocalizedStrings][kLocalizedStringLength];
     bool field30_0x80c;
     bool bHDREnabled;
+    // OTDU_ADDITION: applied from the OpenTDU video settings, whose page is
+    // not the CONFIGPC one
+    bool bExternalVideoEdit;
     bool bHDRSupported;
 
 private:
@@ -212,31 +221,9 @@ private:
     void showAntiAliasingMode();
     void showAntiAliasingLabel();
     bool isAntiAliasingSupported( const eAntiAliasingMethod method ) const;
-    const char *getAntiAliasingLabel() const;
     void showLODQualityLabel();
 
-    void updateExtraVideoRows();
-    void setupExtraVideoRows();
-    void showExtraVideoRowValue( const int32_t row, const bool bHighlighted );
-    void showNextFrameRateCap( const int32_t direction );
-    void toggleDenseReflections();
-    void showNextNightLightsQuality( const int32_t direction );
-    void showExtraVideoPanelFocus();
-    void updateExtraVideoRowsHover();
-    bool isMouseOverVideoRow( const int32_t rowIndex );
-    bool isVideoRowSelectable( const int32_t rowIndex );
-    void skipLockedVideoRow( const int32_t focusedRow,
-                             const int32_t previousRow );
-    void selectVideoRow( const int32_t rowIndex, const bool bPlaySound );
-    void resetIdleRowWidgets();
-    void updateCheckboxRowsOrientation();
-    void highlightCheckboxRow( const int32_t rowIndex );
     bool isVideoModeLocked() const;
-    void showVideoModeRowsLock();
-    bool *getCheckboxRowValue( const int32_t rowIndex );
-    void toggleCheckboxRow( const int32_t rowIndex );
-    void showNextDisplayMode();
-    void showPreviousDisplayMode();
     void FUN_006c7b80();
     void FUN_006c7950( bool param_1 );
     void startLanguageChange( const eLocale locale );

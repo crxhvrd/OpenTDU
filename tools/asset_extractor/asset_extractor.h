@@ -45,4 +45,9 @@ namespace AssetExtractor {
     // output folders are created on demand.
     ExtractionResult Run( const ExtractionParams &params );
     bool AreIniFilesExtracted( const char *pOutputPath );
+
+    // OpenTDU front-end movies, generated from the user's own retail banks
+    // (see flash/vmf/vmf_movie_builder.h). A bank is only rewritten when its
+    // content changed. Returns false if a source bank could not be used.
+    bool BuildGeneratedMovies( const char *pOutputPath );
 } // namespace AssetExtractor

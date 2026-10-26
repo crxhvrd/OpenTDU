@@ -1,7 +1,7 @@
 #include "shared.h"
 #include "gs_flash.h"
 
-#include "game/mods/mng_mods_ui.h"
+#include "system/mng_opentdu_options.h"
 
 #include "movie_player.h"
 
@@ -376,7 +376,7 @@ void GSFlash::initGameMode( const eGameMode gameMode,
                             FlashEntity *pEntity,
                             const bool param_4 ) {
     // FUN_0099c9a0
-    MngModsUI::RegisterMovie();
+    MngOpenTDUOptions::RegisterMovie();
 
     if ( currentLevel == 0 ) {
         initLevel( nullptr );
@@ -660,7 +660,13 @@ void GSFlash::addMovie( FlashMovie &movie, FlashEntity *pEntity ) {
             BankFlash::eBankFlashInit bankState = player.MovieBank.getState();
             if ( bankState != BankFlash::eBankFlashInit::BFI_Loaded ) {
                 player.MovieBank.setUsed();
-                player.MovieBank.updateFilePaths( rootPath.c_str(),
+                // OTDU_ADDITION
+                const std::string moviePath =
+                    movie.RootPath.empty()
+                        ? rootPath
+                        : movie.RootPath + gpConfig->getAssetQualityFolder() +
+                              "/";
+                player.MovieBank.updateFilePaths( moviePath.c_str(),
                                                   movie.Filename.c_str() );
                 player.MovieBank.setCommonBankRef( &commonResources );
             }

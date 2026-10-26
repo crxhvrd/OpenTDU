@@ -166,5 +166,7 @@ int main( int argc, char *argv[] ) {
 #endif
 
     AssetExtractor::ExtractionResult result = AssetExtractor::Run( params );
-    return result.bSuccess ? 0 : 1;
+    const bool bMoviesBuilt =
+        AssetExtractor::BuildGeneratedMovies( gpOutputPath );
+    return ( result.bSuccess && bMoviesBuilt ) ? 0 : 1;
 }

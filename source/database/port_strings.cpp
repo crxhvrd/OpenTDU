@@ -38,6 +38,21 @@ static constexpr PortStringDesc kPortStrings[PS_Count] = {
 
     {2026000201ull, "§DEVICE§ detected. Use the §TEMPLATE§ controls preset?"},
     {2026000202ull, "Also use the §TEMPLATE§ controls preset for §DEVICE§?" },
+
+    {2026000301ull, "OPENTDU"                                               },
+    {2026000302ull, "Controls for OpenTDU actions"                          },
+    {2026000303ull, "OpenTDU gameplay options"                              },
+    {2026000304ull, "OpenTDU video options"                                 },
+    {2026000305ull, "QUALITY"                                               },
+    {2026000306ull, "HDR"                                                   },
+    {2026000307ull, "PAPER WHITE"                                           },
+    {2026000308ull, "PEAK BRIGHTNESS"                                       },
+    {2026000309ull, "HIGHLIGHTS"                                            },
+    {2026000310ull, "SOFT HIGHLIGHTS"                                       },
+    {2026000311ull, "AUTO"                                                  },
+    {2026000312ull, "MODS"                                                  },
+    {2026000313ull, "Enable or disable mod packs"                           },
+    {2026000314ull, "Status"                                                },
 };
 
 const char *GetPortString( const ePortString id ) {

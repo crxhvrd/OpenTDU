@@ -1,5 +1,8 @@
 file( GLOB OTDU_EXTRACTOR_CORE_SRC "${OTDU_BASE_FOLDER}/tools/asset_extractor/asset_extractor.cpp"
-                                   "${OTDU_BASE_FOLDER}/tools/asset_extractor/asset_extractor.h" )
+                                   "${OTDU_BASE_FOLDER}/tools/asset_extractor/asset_extractor.h"
+                                   "${OTDU_SRC_FOLDER}/filesystem/bank_writer.cpp"
+                                   "${OTDU_SRC_FOLDER}/flash/vmf/vmf_document.cpp"
+                                   "${OTDU_SRC_FOLDER}/flash/vmf/vmf_movie_builder.cpp" )
 
 if ( ${OTDU_EXTRACTOR_DXVK} )
     file( GLOB OTDU_DXVK_SRC "${OTDU_THIRDPARTY_FOLDER}/dxvk/src/dxso/*.cpp"

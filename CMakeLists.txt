@@ -385,8 +385,6 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/debug/debug_object_picker.cpp"
                     "${OTDU_SRC_FOLDER}/debug/debug_graph.cpp"
                     "${OTDU_SRC_FOLDER}/debug/ed_debug_text.cpp"
-                    "${OTDU_SRC_FOLDER}/game/mods/flash_list_mods.cpp"
-                    "${OTDU_SRC_FOLDER}/game/mods/mng_mods_ui.cpp"
                     "${OTDU_SRC_FOLDER}/config/gs_config.cpp"
                     "${OTDU_SRC_FOLDER}/config/audio.cpp"
                     "${OTDU_SRC_FOLDER}/config/device.cpp"
@@ -606,6 +604,10 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/flash/entities/flash_panel.cpp"
                     "${OTDU_SRC_FOLDER}/flash/entities/flash_slider.cpp"
                     "${OTDU_SRC_FOLDER}/system/mng_options.cpp"
+                    "${OTDU_SRC_FOLDER}/system/mng_opentdu_options.cpp"
+                    "${OTDU_SRC_FOLDER}/system/opentdu_video_settings.cpp"
+                    "${OTDU_SRC_FOLDER}/system/opentdu_mods_settings.cpp"
+                    "${OTDU_SRC_FOLDER}/system/options_widget_page.cpp"
                     "${OTDU_SRC_FOLDER}/config/weather.cpp"
                     "${OTDU_SRC_FOLDER}/word/weather/weather_desc.cpp"
                     "${OTDU_SRC_FOLDER}/config/leaderboards.cpp"
@@ -980,8 +982,6 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/debug/debug_object_picker.h"
                     "${OTDU_SRC_FOLDER}/debug/debug_graph.h"
                     "${OTDU_SRC_FOLDER}/debug/ed_debug_text.h"
-                    "${OTDU_SRC_FOLDER}/game/mods/flash_list_mods.h"
-                    "${OTDU_SRC_FOLDER}/game/mods/mng_mods_ui.h"
                     "${OTDU_SRC_FOLDER}/config/gs_config.h"
                     "${OTDU_SRC_FOLDER}/online/gs_online.h"
                     "${OTDU_SRC_FOLDER}/online/packets_crc.h"
@@ -1178,7 +1178,14 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/flash/entities/flash_panel.h"
                     "${OTDU_SRC_FOLDER}/flash/entities/flash_slider.h"
                     "${OTDU_SRC_FOLDER}/system/mng_options.h"
+                    "${OTDU_SRC_FOLDER}/system/mng_opentdu_options.h"
+                    "${OTDU_SRC_FOLDER}/system/opentdu_video_settings.h"
+                    "${OTDU_SRC_FOLDER}/system/opentdu_mods_settings.h"
+                    "${OTDU_SRC_FOLDER}/system/options_widget_page.h"
                     "${OTDU_SRC_FOLDER}/flash/implementation/flash_resource.h"
+                    "${OTDU_SRC_FOLDER}/flash/vmf/vmf_document.h"
+                    "${OTDU_SRC_FOLDER}/flash/vmf/vmf_movie_builder.h"
+                    "${OTDU_SRC_FOLDER}/filesystem/bank_writer.h"
                     "${OTDU_SRC_FOLDER}/flash/implementation/ed_flash.h"
                     "${OTDU_SRC_FOLDER}/flash/implementation/flash_sprite.h"
                     "${OTDU_SRC_FOLDER}/flash/implementation/flash_display_list.h"
@@ -1545,6 +1552,7 @@ endif()
 # Tools subprojects
 add_subdirectory( tools/asset_extractor )
 add_subdirectory( tools/mod_packer )
+add_subdirectory( tools/vmf_tool )
 add_subdirectory( tools/shader_packer )
 
 # OpenTDU Mod Packs (TODO: add cmake option to enable mod packing)
@@ -1564,13 +1572,14 @@ function( otdu_add_mod_pack OTDU_PACK_TARGET OTDU_PACK_SOURCE OTDU_PACK_NAME )
     add_dependencies( opentdu ${OTDU_PACK_TARGET} )
 endfunction()
 
-otdu_add_mod_pack( opentdu_night_pack night_time OpenTDU_Night-Time )
-otdu_add_mod_pack( opentdu_pedestrians_pack pedestrians OpenTDU_Pedestrians )
+otdu_add_mod_pack( opentdu_night_pack night_time night_time )
+otdu_add_mod_pack( opentdu_pedestrians_pack pedestrians pedestrians )
+
 add_subdirectory( tools/save_decryptor )
 add_subdirectory( tools/zc_uncompressor )
 
 if( MSVC AND OTDU_TARGET_WIN7 )
-    foreach( OTDU_WIN7_TOOL opentdu_assetExtractor opentdu_modPacker opentdu_shaderPacker opentdu_savedecryptor opentdu_zcuncompressor )
+    foreach( OTDU_WIN7_TOOL opentdu_assetExtractor opentdu_modPacker opentdu_shaderPacker opentdu_savedecryptor opentdu_zcuncompressor opentdu_vmfTool )
         target_sources( ${OTDU_WIN7_TOOL} PRIVATE $<TARGET_OBJECTS:otdu_win7thunks> )
     endforeach()
 endif()

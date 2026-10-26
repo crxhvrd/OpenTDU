@@ -5,6 +5,9 @@
 #include "core/assert.h"
 #include "core/logger.h"
 
+#include "filesystem/bank.h"
+#include "filesystem/bank_writer.h"
+#include "flash/vmf/vmf_movie_builder.h"
 #include "render/shaders/shader_binary_cache.h"
 #include "render/shaders/shader_table_master.h"
 
@@ -23,6 +26,315 @@
 #endif
 
 namespace {
+
+    // Labels '<prefix><first>'..'<prefix><last>' on the frame 'FrameOffset'
+    // frames past the one of an existing label
+    struct GeneratedFrameLabels {
+        const char *pSpritePath;
+        const char *pExistingLabel;
+        int32_t FrameOffset;
+        const char *pLabelPrefix;
+        int32_t First;
+        int32_t Last;
+    };
+
+    // Front-end movies built from characters of a retail movie (ids kept, so
+    // the copied bank keeps serving the same materials and sounds)
+    struct GeneratedMovie {
+        const char *pSourceBank;
+        const char *pBankName;
+        std::vector<const char *> RootInstances;
+        std::vector<uint16_t> RootScriptFrames; // variable defaults, etc.
+        std::vector<GeneratedFrameLabels> FrameLabels;
+        // Movie specific additions, run last
+        bool ( *pBuildExtras )( VMFMovieBuilder &builder );
+    };
+
+    // OPENTDU settings page: the controls page shell (panel, tabs, scrollbar,
+    // open/close animation) with pools of the arrow, checkbox and gauge
+    // widgets of its OPTIONS tab in place of its lines.
+    // OptionsWidgetPage lays the pools out and drives them; the shell's
+    // buttons go, their key handling is hardcoded for the retail layout.
+    constexpr int32_t kSettingsWidgetPoolSize = 10;
+
+    struct SettingsWidgetPool {
+        const char *pTemplate; // instance of the OPTIONS tab
+        const char *pPrefix;
+    };
+
+    constexpr SettingsWidgetPool kSettingsWidgetPools[] = {
+        {"sur5", "arr"}, // arrows
+        {"sur3", "chk"}, // checkbox
+        {"sur1", "gau"}, // gauge
+    };
+
+    constexpr int32_t kSettingsDetailPoolSize = 8;
+    // OPTIONS tab: right column widgets minus left column ones (sur9 - sur1)
+    constexpr float kSettingsSplitColumnOffsetX = 9592.0f;
+
+    // OPTIONS tab depths of its two columns background and of their divider
+    constexpr uint16_t kSettingsSplitPieceDepths[] = { 0, 1 };
+
+    // A placement at 'depth' of a new sprite placing 'pieces' as they are
+    VMFPlacement WrapInSprite( VMFMovieBuilder &builder,
+                               const std::vector<VMFPlacement> &pieces,
+                               const uint16_t depth,
+                               const char *pName ) {
+        VMFPlacement wrapper;
+        wrapper.Depth = depth;
+        wrapper.Flags = VMFPlacement::PF_HasCharacter |
+                        VMFPlacement::PF_HasMatrix | VMFPlacement::PF_HasName;
+        wrapper.CharacterIndex = builder.addSprite( pieces );
+        wrapper.Name = pName;
+        return wrapper;
+    }
+
+    // The scrollbar arrows: they send 'widg:<list msg>:scru' / ':scrd'
+    constexpr uint16_t kSettingsShellKeptButtons[] = { 245, 246 };
+
+    constexpr const char *kSettingsShellDroppedInstances[] = {
+        "sur", "line", "barre", "avert", "test", "change_line" };
+
+    bool BuildOpenTDUSettingsPage( VMFMovieBuilder &builder ) {
+        // The list tabs' single panel, and the OPTIONS tab's widgets
+        std::vector<VMFPlacement> shell;
+        std::vector<VMFPlacement> optionsTab;
+        if ( !builder.snapshotFrame( "keymap/list", "list", 0, shell ) ||
+             !builder.snapshotFrame( "keymap/list", "close_options", -1,
+                                     optionsTab ) ) {
+            return false;
+        }
+
+        std::vector<VMFPlacement> placements;
+        uint16_t depth = 0;
+        for ( const VMFPlacement &placement : shell ) {
+            depth = std::max<uint16_t>( depth, placement.Depth + 1 );
+            const bool bKeptButton =
+                std::find( std::begin( kSettingsShellKeptButtons ),
+                           std::end( kSettingsShellKeptButtons ),
+                           placement.CharacterIndex ) !=
+                std::end( kSettingsShellKeptButtons );
+            if ( builder.getDefinitionTagId( placement.CharacterIndex ) ==
+                     0x07 && // DefineButton
+                 !bKeptButton ) {
+                continue;
+            }
+            const bool bDropped =
+                std::any_of( std::begin( kSettingsShellDroppedInstances ),
+                             std::end( kSettingsShellDroppedInstances ),
+                             [&]( const char *pPrefix ) {
+                                 return placement.Name.rfind( pPrefix, 0 ) == 0;
+                             } );
+            if ( bDropped ) {
+                continue;
+            }
+
+            if ( placement.Depth == 0 ) {
+                // Shapes cannot be hidden by name: wrapped in a sprite
+                placements.push_back(
+                    WrapInSprite( builder, { placement }, 0, "bg_list" ) );
+                continue;
+            }
+            placements.push_back( placement );
+        }
+
+        // The OPTIONS tab's two columns, for the split layout (list on the
+        // left, details on the right); OptionsWidgetPage shows one
+        // background or the other
+        std::vector<VMFPlacement> splitPieces;
+        for ( const uint16_t pieceDepth : kSettingsSplitPieceDepths ) {
+            auto it = std::find_if( optionsTab.begin(), optionsTab.end(),
+                                    [&]( const VMFPlacement &placement ) {
+                                        return placement.Depth == pieceDepth;
+                                    } );
+            if ( it == optionsTab.end() ) {
+                OTDU_LOG_ALWAYS(
+                    "The controls page has no split background\n" );
+                return false;
+            }
+            splitPieces.push_back( *it );
+        }
+        placements.push_back(
+            WrapInSprite( builder, splitPieces, 1, "bg_split" ) );
+
+        for ( const SettingsWidgetPool &pool : kSettingsWidgetPools ) {
+            auto it = std::find_if( optionsTab.begin(), optionsTab.end(),
+                                    [&]( const VMFPlacement &placement ) {
+                                        return placement.Name == pool.pTemplate;
+                                    } );
+            if ( it == optionsTab.end() ) {
+                OTDU_LOG_ALWAYS( "The controls page has no '%s' widget\n",
+                                 pool.pTemplate );
+                return false;
+            }
+
+            for ( int32_t i = 1; i <= kSettingsWidgetPoolSize; i++ ) {
+                VMFPlacement widget = *it;
+                widget.Name = pool.pPrefix + std::to_string( i );
+                widget.Depth = depth++;
+                placements.push_back( widget );
+            }
+
+            // Read-only arrow widgets in the right column
+            if ( strcmp( pool.pPrefix, "arr" ) == 0 ) {
+                for ( int32_t i = 1; i <= kSettingsDetailPoolSize; i++ ) {
+                    VMFPlacement widget = *it;
+                    widget.Name = "inf" + std::to_string( i );
+                    widget.Depth = depth++;
+                    widget.Translate[0] += kSettingsSplitColumnOffsetX;
+                    placements.push_back( widget );
+                }
+            }
+        }
+
+        VMFPlacement list;
+        if ( !builder.findPlacement( "keymap", "open", "list", list ) ) {
+            return false;
+        }
+        list.CharacterIndex = builder.addSprite( placements );
+        return builder.setPlacement( "keymap", "open", list.Depth, &list );
+    }
+
+    // OPENTDU (see MngOpenTDUOptions): a validated options list entry sends
+    // 'ss_menus' and 'help' to the label '<list owner>_<entry>' (and plays).
+    // The OpenTDU list owner gets labels that leave the list in place and
+    // show a generic help line (select + back); they sit one frame before
+    // 'options_stop', where the list rests: a goto to the current frame would
+    // play on into the next page. Entries 3 and 4 (VIDEO, MODS) open the
+    // controls page, which holds the settings page.
+    const GeneratedMovie kGeneratedMovies[] = {
+        { "ConfigPC.bnk",
+         "OPENTDU.bnk", { "fond", "menus", "help", "keymap", "mouse" },
+         { 1 },
+         { { "menus/ss_menus", "options_stop", -1, "opentdu_", 1, 2 },
+            { "menus/ss_menus", "options_3", 0, "opentdu_", 3, 4 },
+            { "menus/ss_menus", "options_stop", -1, "opentdu_", 5, 12 },
+            { "help", "options_2", 0, "opentdu_", 1, 12 } },
+         BuildOpenTDUSettingsPage },
+    };
+
+    // Generated movies go to OpenTDU's own data, never next to the retail
+    // files (see MngOpenTDUOptions::RegisterMovie)
+    struct GeneratedMovieFolders {
+        const char *pSourceFolder;
+        const char *pOutputFolder;
+    };
+
+    constexpr GeneratedMovieFolders kGeneratedMovieFolders[] = {
+        {"EURO/BNK/FrontEnd/HiRes/",  "opentdu_data/flash/HiRes/" },
+        {"EURO/BNK/FrontEnd/LowRes/", "opentdu_data/flash/LowRes/"},
+    };
+
+    bool ReadBinaryFile( const std::string &path,
+                         std::vector<uint8_t> &outData ) {
+        std::ifstream file( path, std::ios::binary );
+        if ( !file ) {
+            return false;
+        }
+        outData.assign( std::istreambuf_iterator<char>( file ),
+                        std::istreambuf_iterator<char>() );
+        return true;
+    }
+
+    bool BuildGeneratedMovie( const std::string &sourceFolder,
+                              const std::string &outputFolder,
+                              const GeneratedMovie &movie ) {
+        const std::string sourcePath = sourceFolder + movie.pSourceBank;
+        std::vector<uint8_t> sourceBank;
+        if ( !ReadBinaryFile( sourcePath, sourceBank ) ) {
+            OTDU_LOG_ALWAYS( "Cannot read '%s'\n", sourcePath.c_str() );
+            return false;
+        }
+
+        const int32_t entryIndex =
+            FindBankEntryByMagic( sourceBank, kVMFMagic );
+        if ( entryIndex < 0 ) {
+            OTDU_LOG_ALWAYS( "'%s' holds no movie\n", sourcePath.c_str() );
+            return false;
+        }
+
+        BankHeader header;
+        BankSection entry;
+        std::memcpy( &header, sourceBank.data() + 8, sizeof( header ) );
+        std::memcpy( &entry,
+                     sourceBank.data() + header.SectionOffsetTable + 8 +
+                         entryIndex * sizeof( BankSection ),
+                     sizeof( entry ) );
+
+        VMFDocument sourceMovie;
+        if ( !sourceMovie.parse( sourceBank.data() + entry.Offset,
+                                 entry.Size ) ) {
+            OTDU_LOG_ALWAYS( "Cannot parse the movie of '%s': %s\n",
+                             sourcePath.c_str(),
+                             sourceMovie.getError().c_str() );
+            return false;
+        }
+
+        VMFMovieBuilder builder( sourceMovie );
+        for ( const char *pInstance : movie.RootInstances ) {
+            if ( !builder.addRootInstance( pInstance ) ) {
+                OTDU_LOG_ALWAYS( "'%s': %s\n", sourcePath.c_str(),
+                                 builder.getError().c_str() );
+                return false;
+            }
+        }
+
+        for ( const uint16_t frame : movie.RootScriptFrames ) {
+            builder.addRootFrameActions( frame );
+        }
+
+        for ( const GeneratedFrameLabels &labels : movie.FrameLabels ) {
+            for ( int32_t i = labels.First; i <= labels.Last; i++ ) {
+                const std::string label =
+                    labels.pLabelPrefix + std::to_string( i );
+                if ( !builder.addFrameLabel(
+                         labels.pSpritePath, labels.pExistingLabel,
+                         labels.FrameOffset, label.c_str() ) ) {
+                    OTDU_LOG_ALWAYS( "'%s': %s\n", sourcePath.c_str(),
+                                     builder.getError().c_str() );
+                    return false;
+                }
+            }
+        }
+
+        if ( movie.pBuildExtras != nullptr && !movie.pBuildExtras( builder ) ) {
+            OTDU_LOG_ALWAYS( "'%s': %s\n", sourcePath.c_str(),
+                             builder.getError().c_str() );
+            return false;
+        }
+
+        std::vector<uint8_t> bank;
+        std::string error;
+        if ( !ReplaceBankEntry( sourceBank, entryIndex,
+                                builder.build().serialize(), bank, error ) ) {
+            OTDU_LOG_ALWAYS( "Cannot rewrite '%s': %s\n", sourcePath.c_str(),
+                             error.c_str() );
+            return false;
+        }
+
+        // Written next to the retail banks by earlier builds
+        std::error_code errorCode;
+        std::filesystem::remove( sourceFolder + movie.pBankName, errorCode );
+
+        const std::string outputPath = outputFolder + movie.pBankName;
+        std::filesystem::create_directories( outputFolder, errorCode );
+        std::vector<uint8_t> existingBank;
+        if ( ReadBinaryFile( outputPath, existingBank ) &&
+             existingBank == bank ) {
+            return true;
+        }
+
+        std::ofstream file( outputPath, std::ios::binary );
+        file.write( (const char *)bank.data(), bank.size() );
+        if ( !file ) {
+            OTDU_LOG_ALWAYS( "Cannot write '%s'\n", outputPath.c_str() );
+            return false;
+        }
+
+        OTDU_LOG_ALWAYS( "Generated '%s' (%zu bytes)\n", outputPath.c_str(),
+                         bank.size() );
+        return true;
+    }
 
     struct TestDrivePackedIniEntry {
         uint32_t OffsetInBytes =
@@ -824,6 +1136,19 @@ namespace AssetExtractor {
         result.ShaderTablesExtracted = shaderExtractedCount;
         result.IniFilesExtracted = iniExtractedCount;
         return result;
+    }
+
+    bool BuildGeneratedMovies( const char *pOutputPath ) {
+        bool bSuccess = true;
+        for ( const GeneratedMovieFolders &folders : kGeneratedMovieFolders ) {
+            const std::string root = std::string( pOutputPath ) + "/";
+            for ( const GeneratedMovie &movie : kGeneratedMovies ) {
+                bSuccess &=
+                    BuildGeneratedMovie( root + folders.pSourceFolder,
+                                         root + folders.pOutputFolder, movie );
+            }
+        }
+        return bSuccess;
     }
 
     bool AreIniFilesExtracted( const char *pOutputPath ) {

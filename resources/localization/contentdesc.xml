@@ -118,4 +118,62 @@
         <us>Also use the §TEMPLATE§ controls preset for §DEVICE§?</us>
         <fr>Utiliser aussi le préréglage de commandes §TEMPLATE§ pour §DEVICE§ ?</fr>
     </ACTION>
+
+    <!-- OpenTDU options -->
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000301">
+        <us>OPENTDU</us>
+        <fr>OPENTDU</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000302">
+        <us>Controls for OpenTDU actions</us>
+        <fr>Commandes des actions OpenTDU</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000303">
+        <us>OpenTDU gameplay options</us>
+        <fr>Options de jeu OpenTDU</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000304">
+        <us>OpenTDU video options</us>
+        <fr>Options vidéo OpenTDU</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000305">
+        <us>QUALITY</us>
+        <fr>QUALITÉ</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000306">
+        <us>HDR</us>
+        <fr>HDR</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000307">
+        <us>PAPER WHITE</us>
+        <fr>BLANC DE RÉFÉRENCE</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000308">
+        <us>PEAK BRIGHTNESS</us>
+        <fr>LUMINOSITÉ MAX.</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000309">
+        <us>HIGHLIGHTS</us>
+        <fr>HAUTES LUMIÈRES</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000310">
+        <us>SOFT HIGHLIGHTS</us>
+        <fr>HAUTES LUMIÈRES DOUCES</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000311">
+        <us>AUTO</us>
+        <fr>AUTO</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000312">
+        <us>MODS</us>
+        <fr>MODS</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000313">
+        <us>Enable or disable mod packs</us>
+        <fr>Activer ou désactiver les mods</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000314">
+        <us>Status</us>
+        <fr>État</fr>
+    </ACTION>
 </CONTENTDESC>
