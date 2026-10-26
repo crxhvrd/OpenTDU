@@ -16,6 +16,7 @@
 //                      color balance and contrast
 //   HDR_POISSON_BLUR   8 tap poisson disk scaled by gScale
 //
+// OTDU_ADDITION: HDR_BRIGHT_SCALE clips to 1.0 like its retail 8-bit target
 // OTDU_ADDITION: HDR_COMPOSE rolls the highlights off below 1.0 instead of
 // clipping them when gSoftHighlights.x (the knee) is set (SDR option)
 
@@ -82,7 +83,9 @@ void main() {
         ( 1.0 / ( tex2D_s1( vec2( 0.5 ) ).x + 0.001 ) ) * gCoeff( 0 ).y;
     vec4 color = tex2D_s0( uv );
     color = max( vec4( color.xyz + -gCoeff( 0 ).xxx, color.w ), vec4( -0.0 ) );
-    oC0 = vec4( vec3( scale ) * color.xyz, color.w );
+    // OTDU_ADDITION: the retail 8-bit target clips here; FP16 targets (HDR
+    // output) would feed the blur and the streaks with unbounded highlights
+    oC0 = vec4( min( vec3( scale ) * color.xyz, vec3( 1.0 ) ), color.w );
 #elif defined( HDR_SATURATION )
     vec4 color = tex2D_s0( uv );
     oC0 = vec4( saturation( color.xyz, gSatThreshold.x ) * gSatThreshold.yyy,
