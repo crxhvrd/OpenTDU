@@ -5,6 +5,7 @@
 #include "core/ed_store.h"
 #include "database/gs_database.h"
 #include "input/ed_dev.h"
+#include "input/input_templates.h"
 
 static constexpr uint32_t kInputBindingsMagic = 0x4b4d4150; // 'KMAP'
 
@@ -407,4 +408,7 @@ void SavedInputBindings::applyToActions( PlayerConfiguration &playerConfig ) {
 
         ApplyBindingToAction( &action, *this );
     }
+
+    // OTDU_ADDITION: per-device input templates
+    InputTemplates::ApplyToActions( playerConfig );
 }

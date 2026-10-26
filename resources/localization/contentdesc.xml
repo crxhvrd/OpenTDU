@@ -102,4 +102,14 @@
         <us>string(s)</us>
         <fr>texte(s)</fr>
     </ACTION>
+
+    <!-- Input templates -->
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000201">
+        <us>§DEVICE§ detected. Use the §TEMPLATE§ controls preset?</us>
+        <fr>§DEVICE§ détecté. Utiliser le préréglage de commandes §TEMPLATE§ ?</fr>
+    </ACTION>
+    <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000202">
+        <us>Also use the §TEMPLATE§ controls preset for §DEVICE§?</us>
+        <fr>Utiliser aussi le préréglage de commandes §TEMPLATE§ pour §DEVICE§ ?</fr>
+    </ACTION>
 </CONTENTDESC>

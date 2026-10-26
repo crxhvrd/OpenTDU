@@ -624,6 +624,7 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/flash/flash_global_materials.cpp"
                     "${OTDU_SRC_FOLDER}/online/ed_net_gamespy_manager.cpp"
                     "${OTDU_SRC_FOLDER}/input/input_device.cpp"
+                    "${OTDU_SRC_FOLDER}/input/input_templates.cpp"
                     "${OTDU_SRC_FOLDER}/input/devices/mouse.cpp"
                     "${OTDU_SRC_FOLDER}/input/devices/keyboard.cpp" 
                     "${OTDU_SRC_FOLDER}/input/devices/joystick.cpp"
@@ -1191,6 +1192,7 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/flash/flash_global_materials.h"
                     "${OTDU_SRC_FOLDER}/online/ed_net_gamespy_manager.h"
                     "${OTDU_SRC_FOLDER}/input/input_device.h"
+                    "${OTDU_SRC_FOLDER}/input/input_templates.h"
                     "${OTDU_SRC_FOLDER}/input/devices/mouse.h"
                     "${OTDU_SRC_FOLDER}/input/devices/keyboard.h"
                     "${OTDU_SRC_FOLDER}/input/devices/joystick.h"
@@ -1276,6 +1278,9 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${OTDU_RSC_FOLDER}/localization"
             "${OTDU_DATA_FOLDER}/localization"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${OTDU_RSC_FOLDER}/controllers"
+            "${OTDU_DATA_FOLDER}/controllers"
     COMMENT "Copying OpenTDU built-in resources..."
 )
 

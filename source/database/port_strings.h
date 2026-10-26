@@ -26,7 +26,12 @@ enum ePortString : uint32_t {
     PS_ModRows,
     PS_ModStrings,
 
+    // Input templates
+    PS_InputTemplatePrompt,
+    PS_InputTemplateDefaultsPrompt,
+
     PS_Count
 };
 
 const char *GetPortString( const ePortString id );
+uint64_t GetPortStringHashcode( const ePortString id );

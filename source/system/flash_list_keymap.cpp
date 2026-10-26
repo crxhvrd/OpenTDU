@@ -10,6 +10,8 @@
 #include "flash/movie_player.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
+#include "input/input_templates.h"
+#include "player_data/opentdu_settings.h"
 
 static constexpr const char *kKeymapPath = "/keymap";           // DAT_00f2e81c
 static constexpr const char *kKeymapListPath = "/keymap/list";  // DAT_00f2e85c
@@ -348,7 +350,8 @@ FlashListKeymap::FlashListKeymap()
       bCalibrating( false ),
       capture(),
       currentTab( 0 ),
-      numTabs( SavedInputBindings::kNumCategories ) {
+      numTabs( SavedInputBindings::kNumCategories ),
+      backupTemplateSelection() {
     // FUN_007c6320
     field16_0x67 = true;
 }
@@ -378,12 +381,15 @@ bool FlashListKeymap::onMessage( FlashMessage *pMessage,
     if ( *pMessage == kCancel ) {
         pConfigPlayer->showFrame( "close", kKeymapPath, true );
         *pBindings = backupBindings;
+        // OTDU_ADDITION
+        InputTemplates::SetSelection( backupTemplateSelection );
         return true;
     }
 
     if ( *pMessage == kDefaults ) {
         pBindings->resetToDefaults();
         reset();
+        InputTemplates::PromptFromDefaults(); // OTDU_ADDITION
         return true;
     }
 
@@ -401,6 +407,11 @@ bool FlashListKeymap::onMessage( FlashMessage *pMessage,
         pConfigPlayer->showFrame( "close", kKeymapPath, true );
         if ( pPlayerConfig != nullptr ) {
             pBindings->applyToActions( *pPlayerConfig );
+        }
+
+        // OTDU_ADDITION
+        if ( InputTemplates::GetSelection() != backupTemplateSelection ) {
+            OpenTDUSettings::Save();
         }
         return true;
     }
@@ -448,6 +459,7 @@ void FlashListKeymap::open() {
     }
 
     backupBindings = *pBindings;
+    backupTemplateSelection = InputTemplates::GetSelection(); // OTDU_ADDITION
     currentTab = 0;
     FlashList::open();
     field16_0x67 = true;

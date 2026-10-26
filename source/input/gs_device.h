@@ -99,6 +99,7 @@ public:
                                     const int32_t param_5 );
 
 private:
+    void processJoystickHotplug();
     void createForceFeedbackEffects( DeviceJoystick *pDevice );
     void updateForceFeedbackEffects();
     void releaseForceFeedbackEffects();

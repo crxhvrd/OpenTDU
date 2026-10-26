@@ -4,6 +4,7 @@
 #include "ed_dev.h"
 #include "input_device.h"
 #include "devices/joystick.h"
+#include "input_templates.h"
 #include "system/ed_sys.h"
 
 #include "debug/mng_debug_hud.h"
@@ -16,6 +17,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "player_data/gs_playerdata.h"
 
 #include "tdu_instance.h"
 
@@ -80,6 +82,65 @@ static Uint16 ToSDLRumbleStrength( const float value ) {
     return Uint16( std::clamp( value, 0.0f, 1.0f ) * 65535.0f );
 }
 
+static void SetAxisChannelThresholds( Device *pDevice ) {
+    // FUN_00980af0 (inlined)
+    float fVar19 = 0.8f;
+    for ( uint32_t iVar2 = 0; iVar2 < pDevice->getNumAxis(); iVar2++ ) {
+        InputChannel *peVar10 = pDevice->getChannels();
+
+        uint32_t iVar17 = 0;
+        for ( uint32_t iVar15 = 0; iVar15 < pDevice->getNumChannels();
+              iVar15++, peVar10++ ) {
+            if ( peVar10 != nullptr && peVar10->Unknown == 1 ) {
+                if ( iVar17 == iVar2 ) {
+                    peVar10 = &pDevice->getChannels()[iVar15];
+                    peVar10->Unknown4 = fVar19;
+                    peVar10->Unknown5 = fVar19;
+                    break;
+                }
+                iVar17++;
+            }
+        }
+    }
+}
+
+static void UnbindDeviceChannels( DeviceAction &action,
+                                  const Device *pDevice ) {
+    int32_t numKeptChannels = 0;
+    for ( int32_t i = 0; i < action.NumAddedChannels; i++ ) {
+        const InputChannel *pChannel = action.pChannel[i].pChannel;
+        if ( pChannel != nullptr && pChannel->pParent != pDevice ) {
+            action.pChannel[numKeptChannels++] = action.pChannel[i];
+        }
+    }
+
+    for ( int32_t i = numKeptChannels; i < action.NumAddedChannels; i++ ) {
+        action.pChannel[i] = InputChanneMapping();
+    }
+    action.NumAddedChannels = numKeptChannels;
+}
+
+static void UnbindDeviceChannels( const Device *pDevice ) {
+    for ( uint32_t i = 0; i < gEdDev.MaxNumActions; i++ ) {
+        if ( gEdDev.pActions[i].pChannel != nullptr ) {
+            UnbindDeviceChannels( gEdDev.pActions[i], pDevice );
+        }
+    }
+
+    if ( gpConfig == nullptr || gpConfig->pPlayerConfig == nullptr ) {
+        return;
+    }
+
+    for ( int32_t i = 0; i < gpConfig->NbMaxPlayers; i++ ) {
+        PlayerConfiguration &player = gpConfig->pPlayerConfig[i];
+        for ( uint32_t j = 0; j < player.NumActions; j++ ) {
+            if ( player.pActions[j].pChannel != nullptr ) {
+                UnbindDeviceChannels( player.pActions[j], pDevice );
+            }
+        }
+    }
+}
+
 GSDevice gDevice = {}; /* FUN_009ddeb0 */ // DAT_00fa3ff0
 GSDevice *gpDevice = nullptr;
 
@@ -112,28 +173,10 @@ bool GSDevice::initialize( TestDriveGameInstance *param_1 ) {
     gEdDev.initialize();
     gEdDev.pReplayBufferPtr = gEdDev.pReplayBuffer;
 
-    float fVar19 = 0.8f;
     for ( uint32_t iVar13 = 0; iVar13 < gEdDev.MaxNumJoystick; iVar13++ ) {
         Device *peVar3 = gEdDev.getDevice( eDeviceType::DT_Other, iVar13 );
-
         if ( peVar3 != nullptr ) {
-            for ( uint32_t iVar2 = 0; iVar2 < peVar3->getNumAxis(); iVar2++ ) {
-                InputChannel *peVar10 = peVar3->getChannels();
-
-                uint32_t iVar17 = 0;
-                for ( uint32_t iVar15 = 0; iVar15 < peVar3->getNumChannels();
-                      iVar15++, peVar10++ ) {
-                    if ( peVar10 != nullptr && peVar10->Unknown == 1 ) {
-                        if ( iVar17 == iVar2 ) {
-                            peVar10 = &peVar3->getChannels()[iVar15];
-                            peVar10->Unknown4 = fVar19;
-                            peVar10->Unknown5 = fVar19;
-                            break;
-                        }
-                        iVar17++;
-                    }
-                }
-            }
+            SetAxisChannelThresholds( peVar3 );
         }
     }
 
@@ -180,11 +223,60 @@ bool GSDevice::initialize( TestDriveGameInstance *param_1 ) {
 
     mouseState.initialize();
 
+    // OTDU_ADDITION: per-device input templates
+    InputTemplates::Load();
+    for ( uint32_t i = 0; i < gEdDev.MaxNumJoystick; i++ ) {
+        DeviceJoystick *pJoystick = gEdDev.getConnectedJoystick( i );
+        if ( pJoystick != nullptr ) {
+            InputTemplates::OnDeviceConnected( *pJoystick );
+        }
+    }
+
     return true;
+}
+
+void GSDevice::processJoystickHotplug() {
+    // OTDU_ADDITION
+    uint32_t joystickID = 0;
+    bool bConnected = false;
+    while ( gEdDev.popJoystickEvent( joystickID, bConnected ) ) {
+        if ( bConnected ) {
+            DeviceJoystick *pJoystick = gEdDev.connectJoystick( joystickID );
+            if ( pJoystick == nullptr ) {
+                continue;
+            }
+
+            SetAxisChannelThresholds( pJoystick );
+            InputTemplates::OnDeviceConnected( *pJoystick );
+        } else {
+            DeviceJoystick *pJoystick = gEdDev.findJoystick( joystickID );
+            if ( pJoystick == nullptr ) {
+                continue;
+            }
+
+            if ( gbFFBEffectsCreated && gpFFBDevice == pJoystick ) {
+                releaseForceFeedbackEffects();
+            }
+
+            UnbindDeviceChannels( pJoystick );
+            InputTemplates::OnDeviceDisconnected( *pJoystick );
+            gEdDev.disconnectJoystick( pJoystick );
+        }
+
+        InputTemplates::RequestRebind();
+    }
+
+    if ( InputTemplates::ConsumeRebindRequest() && gpPlayerData != nullptr ) {
+        gpPlayerData->reapplyInputBindings();
+    }
+
+    InputTemplates::TickPrompt();
 }
 
 void GSDevice::tick( float totalTime, float deltaTime ) {
     // FUN_00980700
+    processJoystickHotplug();
+
     bool bSuppressInput = !gEdSys.bWindowActivated;
 #ifdef OTDU_USE_IMGUI
     // Keep device input from reaching the game while the imgui debug overlay is

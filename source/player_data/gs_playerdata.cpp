@@ -316,6 +316,15 @@ void GSPlayerData::terminate() {
     bInitialized = false;
 }
 
+void GSPlayerData::reapplyInputBindings() {
+    ScopedMutexLock lock( pMutex );
+
+    PlayerConfiguration *pPlayerConfig = GetPlayerConfig();
+    if ( pPlayerConfig != nullptr ) {
+        localPlayerData.InputBindings.applyToActions( *pPlayerConfig );
+    }
+}
+
 void GSPlayerData::resetPlayerData( const bool bApplyDefaults,
                                     const bool bClear ) {
     // FUN_00898a20

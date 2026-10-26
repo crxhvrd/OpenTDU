@@ -142,6 +142,15 @@ public:
 
     void tick( float param_1 );
 
+    // OTDU_ADDITION: joystick hotplug (DirectInput devices were only
+    // enumerated at boot)
+    void queueJoystickEvent( const uint32_t joystickID, const bool bConnected );
+    bool popJoystickEvent( uint32_t &outJoystickID, bool &bOutConnected );
+    DeviceJoystick *connectJoystick( const uint32_t joystickID );
+    DeviceJoystick *findJoystick( const uint32_t joystickID );
+    DeviceJoystick *getConnectedJoystick( const uint32_t index );
+    void disconnectJoystick( DeviceJoystick *pJoystick );
+
 public:
     uint32_t NumMouse;
     uint32_t NumKeyboard;
@@ -166,6 +175,16 @@ public:
     DeviceJoystick *pDevicesJoystick;
 
 private:
+    struct JoystickEvent {
+        uint32_t JoystickID;
+        bool bConnected;
+    };
+
+    std::vector<JoystickEvent> pendingJoystickEvents;
+
+private:
+    int32_t getJoystickSlot( const DeviceJoystick *pJoystick ) const;
+
     DeviceMouse *allocateMouse( int32_t param_1 );
     DeviceKeyboard *allocateKeyboard( int32_t param_1 );
     DeviceJoystick *allocateJoystick( int32_t param_1 );

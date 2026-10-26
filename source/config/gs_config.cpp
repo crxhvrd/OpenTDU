@@ -497,8 +497,6 @@ void GSConfig::parseDeviceIni() {
     InitializeDeviceMapping();
     parseIniFile( deviceIniPath.c_str() );
 
-    applyDefaultPadMapping();
-
     for ( int32_t iVar13 = 0; iVar13 < NbMaxPlayers; iVar13++ ) {
         PlayerConfiguration &peVar2 = pPlayerConfig[iVar13];
         DeviceAction **ppDeviceActionList = (DeviceAction **)&peVar2;

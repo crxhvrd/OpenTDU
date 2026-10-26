@@ -127,7 +127,10 @@ DeviceJoystick::DeviceJoystick()
       joystickID( 0 ),
       pJoystick( nullptr ),
       pGamepad( nullptr ),
-      pHaptic( nullptr ) {}
+      pHaptic( nullptr ),
+      vendorID( 0 ),
+      productID( 0 ),
+      productName{} {}
 
 DeviceJoystick::~DeviceJoystick() {
     if ( pHaptic != nullptr ) {
@@ -139,12 +142,22 @@ DeviceJoystick::~DeviceJoystick() {
 
 bool DeviceJoystick::initialize( SDL_JoystickID param_1 ) {
     // FUN_004363b0
+    // NOTE: a hotplugged joystick may reuse the slot of an unplugged one
+    freeChannels();
+
     joystickID = param_1;
 
     pJoystick = SDL_OpenJoystick( joystickID );
     if ( pJoystick == nullptr ) {
         return false;
     }
+
+    vendorID = SDL_GetJoystickVendor( pJoystick );
+    productID = SDL_GetJoystickProduct( pJoystick );
+    const char *pProductName = SDL_GetJoystickName( pJoystick );
+    strncpy( productName, ( pProductName != nullptr ) ? pProductName : "",
+             sizeof( productName ) - 1 );
+    productName[sizeof( productName ) - 1] = '\0';
 
     if ( SDL_IsGamepad( joystickID ) ) {
         pGamepad = SDL_OpenGamepad( joystickID );
@@ -203,6 +216,33 @@ bool DeviceJoystick::initialize( SDL_JoystickID param_1 ) {
     setEnabled();
 
     return true;
+}
+
+void DeviceJoystick::shutdown() {
+    // NOTE: the channels stay allocated until the slot is reused, so a binding
+    // that was not cleared yet reads a released channel instead of freed memory
+    if ( pChannels != nullptr ) {
+        FUN_00434ab0();
+    }
+
+    if ( pHaptic != nullptr ) {
+        SDL_CloseHaptic( pHaptic );
+        pHaptic = nullptr;
+    }
+    if ( pGamepad != nullptr ) {
+        SDL_CloseGamepad( pGamepad );
+        pGamepad = nullptr;
+    }
+    if ( pJoystick != nullptr ) {
+        SDL_CloseJoystick( pJoystick );
+        pJoystick = nullptr;
+    }
+
+    joystickID = 0;
+    vendorID = 0;
+    productID = 0;
+    productName[0] = '\0';
+    flags = 2;
 }
 
 bool DeviceJoystick::createChannels() {

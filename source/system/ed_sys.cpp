@@ -136,6 +136,15 @@ void edSys::pollEvents() {
             }
             break;
         }
+        // OTDU_ADDITION: joystick hotplug (processed by GSDevice::tick)
+        case SDL_EVENT_JOYSTICK_ADDED: {
+            gEdDev.queueJoystickEvent( event.jdevice.which, true );
+            break;
+        }
+        case SDL_EVENT_JOYSTICK_REMOVED: {
+            gEdDev.queueJoystickEvent( event.jdevice.which, false );
+            break;
+        }
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         case SDL_EVENT_WINDOW_RESIZED:
         case SDL_EVENT_WINDOW_MAXIMIZED:

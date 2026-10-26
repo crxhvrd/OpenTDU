@@ -11,6 +11,14 @@ public:
 
     inline SDL_Joystick *getSDLJoystick() const { return pJoystick; }
     inline SDL_Haptic *getSDLHaptic() const { return pHaptic; }
+    inline SDL_JoystickID getJoystickID() const { return joystickID; }
+    inline uint16_t getVendorID() const { return vendorID; }
+    inline uint16_t getProductID() const { return productID; }
+    inline const char *getProductName() const { return productName; }
+    inline bool isGamepad() const { return pGamepad != nullptr; }
+
+    // OTDU_ADDITION: hot unplug
+    void shutdown();
 
     void setEnabled() override;
     void setDisabled() override;
@@ -39,4 +47,8 @@ private:
     SDL_Joystick *pJoystick;
     SDL_Gamepad *pGamepad;
     SDL_Haptic *pHaptic;
+
+    uint16_t vendorID;
+    uint16_t productID;
+    char productName[64];
 };

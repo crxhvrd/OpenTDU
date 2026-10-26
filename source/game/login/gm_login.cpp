@@ -804,6 +804,9 @@ void GMLogin::startNewGame() {
         gUserProfileRegister.getActiveProfileHashcode(),
         eContextSource::CS_Savegame );
 
+    // OTDU_ADDITION: OpenTDU.ini lives in the folder deleted above
+    OpenTDUSettings::Save();
+
     AchievementsData *pAchievements =
         gpPlayerData->getLoadedSave()->getAchievements();
     if ( !pAchievements->isReady() ) {

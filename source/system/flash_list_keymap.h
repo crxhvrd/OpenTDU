@@ -1,6 +1,7 @@
 #pragma once
 
 #include "flash/entities/flash_list.h"
+#include "input/input_templates.h"
 #include "player_data/saved_input_bindings.h"
 
 class Device;
@@ -98,4 +99,5 @@ private:
     KeyBindCapture capture;
     int32_t currentTab;
     int32_t numTabs;
+    InputTemplates::Selection backupTemplateSelection; // OTDU_ADDITION
 };

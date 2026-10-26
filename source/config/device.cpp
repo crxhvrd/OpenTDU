@@ -1,7 +1,6 @@
 #include "shared.h"
 #include "gs_config.h"
 
-#include "core/arg_parser.h"
 #include "core/logger.h"
 
 #include "input/ed_dev.h"
@@ -12,97 +11,6 @@
 #include "render/camera/gs_camera.h"
 
 static constexpr float kMphToMs = 0.44694445f; // DAT_00f41860
-
-// TODO: REMOVE ME: Remove when control mapping is implemented in game.
-static bool gUseDefaultPadMapping = false;
-static CmdLineArg CmdLineGamepad( "gamepad", []( const char *pArg ) {
-    gUseDefaultPadMapping = true;
-} );
-
-struct DefaultPadBinding {
-    const char *pActionName;
-    int32_t Category;
-    char ExclusionGroup;
-    const char *pChannelName;
-};
-
-static constexpr DefaultPadBinding kDefaultPadBindings[] = {
-    {"CAR_ACCEL",          1, 'A', "WHEEL_DOWN"   },
-    {"CAR_BRAKE",          1, 'A', "WHEEL_UP"     },
-    {"CAR_LEFT",           1, 'A', "LEFT"         },
-    {"CAR_RIGHT",          1, 'A', "RIGHT"        },
-    {"CAR_HBRAKE",         1, 'A', "BUTTON_0"     },
-
-    {"BIKE_ACCEL",         1, 'B', "WHEEL_DOWN"   },
-    {"BIKE_BRAKE",         1, 'B', "WHEEL_UP"     },
-    {"BIKE_LEFT",          1, 'B', "LEFT"         },
-    {"BIKE_RIGHT",         1, 'B', "RIGHT"        },
-
-    {"CAR_GUP",            2, 'A', "BUTTON_5"     },
-    {"CAR_GDOWN",          2, 'A', "BUTTON_4"     },
-    {"BIKE_GUP",           2, 'B', "BUTTON_5"     },
-    {"BIKE_GDOWN",         2, 'B', "BUTTON_4"     },
-
-    {"CAR_CAMERA",         5, 'C', "BUTTON_3"     },
-    {"CAR_BACKVIEW",       5, 'C', "BUTTON_1"     },
-    {"CAR_HORN",           5, 'C', "BUTTON_8"     },
-    {"BOT_PAD",            5, 'C', "BUTTON_2"     },
-    {"MAP",                5, 'D', "BUTTON_6"     },
-
-    {"CAR_HEAD_LEFT",      5, 'C', "STICK_1_LEFT" },
-    {"CAR_HEAD_RIGHT",     5, 'C', "STICK_1_RIGHT"},
-    {"CAR_HEAD_UP",        5, 'C', "STICK_1_UP"   },
-    {"CAR_HEAD_DOWN",      5, 'C', "STICK_1_DOWN" },
-    {"CAR_HEAD_CENTER",    5, 'C', "BUTTON_9"     },
-
-    {"IN_GAME_MENU_UP",    5, 'E', "POV_0_UP"     },
-    {"IN_GAME_MENU_DOWN",  5, 'E', "POV_0_DOWN"   },
-    {"IN_GAME_MENU_LEFT",  5, 'E', "POV_0_LEFT"   },
-    {"IN_GAME_MENU_RIGHT", 5, 'E', "POV_0_RIGHT"  },
-
-    {"MENU_UP",            3, 'G', "POV_0_UP"     },
-    {"MENU_DOWN",          3, 'G', "POV_0_DOWN"   },
-    {"MENU_LEFT",          3, 'G', "POV_0_LEFT"   },
-    {"MENU_RIGHT",         3, 'G', "POV_0_RIGHT"  },
-    {"MENU_VALIDATE",      3, 'I', "BUTTON_0"     },
-    {"MENU_BACK",          3, 'I', "BUTTON_1"     },
-    {"MENU_PAUSE",         3, 'F', "BUTTON_7"     },
-    {"MENU_SORT_LEFT",     3, 'H', "BUTTON_4"     },
-    {"MENU_SORT_RIGHT",    3, 'H', "BUTTON_5"     },
-
-    {"MENU_UP",            3, 'G', "UP"           },
-    {"MENU_DOWN",          3, 'G', "DOWN"         },
-    {"MENU_LEFT",          3, 'G', "LEFT"         },
-    {"MENU_RIGHT",         3, 'G', "RIGHT"        },
-};
-
-void GSConfig::applyDefaultPadMapping() {
-    if ( !gUseDefaultPadMapping ) {
-        return;
-    }
-
-    Device *pDevice = gEdDev.getDevice( eDeviceType::DT_Other, 0 );
-    if ( pDevice == nullptr ) {
-        OTDU_LOG_WARN( "-gamepad in cmdline but no controller found...\n" );
-        return;
-    }
-
-    OTDU_LOG_INFO( "Applying default pad mapping to device '%s'\n",
-                   pDevice->getName() );
-
-    for ( const DefaultPadBinding &binding : kDefaultPadBindings ) {
-        char actionArgs[192];
-        snprintf( actionArgs, sizeof( actionArgs ),
-                  "\"%s\" \"ALL\" %d \"%c\" \"%s\" \"0\" \"%s\"",
-                  binding.pActionName, binding.Category, binding.ExclusionGroup,
-                  pDevice->getName(), binding.pChannelName );
-
-        if ( !executeCommand( "ADDACTION", actionArgs ) ) {
-            OTDU_LOG_ERROR( "ADDACTION is not a registered config command\n" );
-            return;
-        }
-    }
-}
 
 void GSConfig::registerDeviceCommands() {
     registerCommand( "USEAUTOMATIC", [&]( const char *pArg ) {

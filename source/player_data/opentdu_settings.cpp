@@ -3,6 +3,7 @@
 
 #include "filesystem/gs_file.h"
 #include "game/vehicle/vehicle_base.h"
+#include "input/input_templates.h"
 #include "gs_timer.h"
 #include "player_data/user_profile.h"
 #include "render/gs_render.h"
@@ -83,6 +84,8 @@ static void ApplySetting( const std::string &key, const std::string &value ) {
                     ? eVSyncMode( Clamp( gpConfig->NbVBL, 1, 4 ) )
                     : eVSyncMode::VSM_Immediate );
         }
+    } else {
+        InputTemplates::ParseSetting( key, value );
     }
 }
 
@@ -96,6 +99,7 @@ namespace OpenTDUSettings {
         gProfileMaxFrameRate = IsMaxFrameRateForced() ? 0 : GetMaxFrameRate();
         SetOTDUGlowQuality( GQ_Default );
         VehicleBase::bCalibratedDeluxePaint = false;
+        InputTemplates::ResetSettings();
 
         std::ifstream stream( settingsPath );
         if ( !stream.is_open() ) {
@@ -139,6 +143,10 @@ namespace OpenTDUSettings {
             return;
         }
 
+        std::error_code errorCode;
+        std::filesystem::create_directories( settingsPath.parent_path(),
+                                             errorCode );
+
         std::ofstream stream( settingsPath, std::ofstream::trunc );
         if ( !stream.is_open() ) {
             OTDU_LOG_ERROR( "Failed to write '%s'\n",
@@ -166,5 +174,7 @@ namespace OpenTDUSettings {
                             : 0 )
                    << "\n";
         }
+
+        InputTemplates::WriteSettings( stream );
     }
 } // namespace OpenTDUSettings

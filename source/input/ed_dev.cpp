@@ -84,7 +84,8 @@ edDev::edDev()
       pReplayBufferPtr( nullptr ),
       pDevicesMouse( nullptr ),
       pDevicesKeyboard( nullptr ),
-      pDevicesJoystick( nullptr ) {
+      pDevicesJoystick( nullptr ),
+      pendingJoystickEvents() {
     // FUN_009e4310
     buildDate = kEdDevBuildDate;
     buildTime = kEdDevBuildTime;
@@ -333,6 +334,98 @@ void edDev::tick( float param_1 ) {
             pActions[i].tick( param_1 );
         }
     }
+}
+
+void edDev::queueJoystickEvent( const uint32_t joystickID,
+                                const bool bConnected ) {
+    pendingJoystickEvents.push_back( { joystickID, bConnected } );
+}
+
+bool edDev::popJoystickEvent( uint32_t &outJoystickID, bool &bOutConnected ) {
+    if ( pendingJoystickEvents.empty() ) {
+        return false;
+    }
+
+    outJoystickID = pendingJoystickEvents.front().JoystickID;
+    bOutConnected = pendingJoystickEvents.front().bConnected;
+    pendingJoystickEvents.erase( pendingJoystickEvents.begin() );
+    return true;
+}
+
+int32_t edDev::getJoystickSlot( const DeviceJoystick *pJoystick ) const {
+    if ( pDevicesJoystick == nullptr || pJoystick < pDevicesJoystick ||
+         pJoystick >= pDevicesJoystick + MaxNumJoystick ) {
+        return -1;
+    }
+
+    // Joysticks come after the mice and keyboards (see createDevices)
+    return int32_t( MaxNumMouse + MaxNumKeyboard ) +
+           int32_t( pJoystick - pDevicesJoystick );
+}
+
+DeviceJoystick *edDev::connectJoystick( const uint32_t joystickID ) {
+    // SDL also reports the joysticks enumerated by createDevices
+    if ( ppDevices == nullptr || findJoystick( joystickID ) != nullptr ) {
+        return nullptr;
+    }
+
+    for ( uint32_t i = 0; i < MaxNumJoystick; i++ ) {
+        DeviceJoystick &joystick = pDevicesJoystick[i];
+        const int32_t slot = getJoystickSlot( &joystick );
+        if ( ppDevices[slot] != nullptr ) {
+            continue;
+        }
+
+        if ( !joystick.initialize( SDL_JoystickID( joystickID ) ) ) {
+            joystick.shutdown();
+            return nullptr;
+        }
+
+        joystick.postDeviceCreation();
+        ppDevices[slot] = &joystick;
+        return &joystick;
+    }
+
+    OTDU_LOG_WARN( "No free joystick slot for '%s' (NbMaxJoysticks = %u)\n",
+                   SDL_GetJoystickNameForID( SDL_JoystickID( joystickID ) ),
+                   MaxNumJoystick );
+    return nullptr;
+}
+
+DeviceJoystick *edDev::findJoystick( const uint32_t joystickID ) {
+    if ( ppDevices == nullptr ) {
+        return nullptr;
+    }
+
+    for ( uint32_t i = 0; i < MaxNumJoystick; i++ ) {
+        DeviceJoystick *pJoystick = getConnectedJoystick( i );
+        if ( pJoystick != nullptr &&
+             pJoystick->getJoystickID() == SDL_JoystickID( joystickID ) ) {
+            return pJoystick;
+        }
+    }
+
+    return nullptr;
+}
+
+DeviceJoystick *edDev::getConnectedJoystick( const uint32_t index ) {
+    if ( ppDevices == nullptr || index >= MaxNumJoystick ) {
+        return nullptr;
+    }
+
+    DeviceJoystick &joystick = pDevicesJoystick[index];
+    return ( ppDevices[getJoystickSlot( &joystick )] == &joystick ) ? &joystick
+                                                                    : nullptr;
+}
+
+void edDev::disconnectJoystick( DeviceJoystick *pJoystick ) {
+    const int32_t slot = getJoystickSlot( pJoystick );
+    if ( slot < 0 ) {
+        return;
+    }
+
+    ppDevices[slot] = nullptr;
+    pJoystick->shutdown();
 }
 
 DeviceMouse *edDev::allocateMouse( int32_t param_1 ) {

@@ -259,8 +259,6 @@ private:
     bool parseIniFile( const char *pPath );
 
     void parseAudioIni();
-    void applyDefaultPadMapping(); // TODO: REMOVEME: Remove once PCOptions
-                                   // control mapping lands
 
     bool loadIniFromBootData( const char *pIniPath,
                               char **ppOutIni,
