@@ -138,7 +138,6 @@ private:
     int32_t userData;
     int32_t numOpenMessageBox;
 
-    uint8_t bGameMessageBox : 2;
     uint8_t bUnknownFlag : 1;
     uint8_t bMouseActive : 1;
     uint8_t bVisible : 1;

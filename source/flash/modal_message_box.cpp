@@ -33,7 +33,6 @@ ModalMessageBox::ModalMessageBox()
       answer( ePopupAnswer::PA_Unknown ),
       userData( 0 ),
       numOpenMessageBox( 0 ),
-      bGameMessageBox( 0 ),
       bUnknownFlag( false ),
       bVisible( false ),
       bUnknownFlag2( false ) {
@@ -277,8 +276,8 @@ void ModalMessageBox::FUN_0099fcc0() {
     numOpenMessageBox = iVar1;
     if ( iVar1 == 0 ) {
         bUnknownFlag = true;
-        if ( ( bGameMessageBox == 2 ) &&
-             ( displayState == eDisplayState::MMBDS_Opened ) ) {
+        if ( promptType == MPT_Tutorial &&
+             displayState == eDisplayState::MMBDS_Opened ) {
             displayState = eDisplayState::MMBDS_Closing;
             return;
         }
