@@ -2,8 +2,8 @@
 
 #include "game/mng_base.h"
 #include "render/draw_list.h"
+#include "render/camera/camera_base.h"
 
-class Camera;
 class Instance;
 class RenderScene;
 struct Material;
@@ -59,6 +59,7 @@ public:
         return frustumTestForSprite != 0;
     }
     inline bool isForceTopImpostor() const { return bForceTopImpostor; }
+    inline Camera &getBillboardCamera() { return billboardCamera; }
     inline void setForceTopView( const bool bForce ) {
         bForceTopIndex = bForce;
         bForceTopImpostor = bForce;
@@ -87,6 +88,7 @@ private:
 
 private:
     DrawList drawList;
+    Camera billboardCamera;
     Material *pUsedMaterials;
     MaterialBatches MaterialBatches;
 

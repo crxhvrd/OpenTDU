@@ -38,6 +38,9 @@ static constexpr float kImpostorFadeStartFactor = 0.33f; // DAT_00f41a0c
 static constexpr float kImpostorFadeThresholdFactor = 0.66f; // DAT_00f03f00
 static constexpr float kImpostorFadeFullValue = 2.0f;        // DAT_00f416b0
 
+static constexpr float kImpostorFlattenFactor = 0.99f; // DAT_00f41a44
+static constexpr float kImpostorNumSideViews = 15.0f;  // DAT_00f41700
+
 // Upper bound on the number of impostor billboards submitted per sector each
 // frame (FUN_006fe580 caps the gathered instance-pointer array at 1000).
 static constexpr uint32_t kImpostorSubmitCap = 1000;
@@ -841,6 +844,42 @@ void StreamingManager::tickSector( Sector &sector,
     }
 }
 
+static void ComputeImpostorBillboardCamera( Camera &activeCamera,
+                                            Camera &billboardCamera,
+                                            const Eigen::Vector4f &position,
+                                            const float ratio ) {
+    // FUN_0070dfa0
+    const Eigen::Vector4f camPos = activeCamera.getCamToWorld().row( 3 );
+    const Eigen::Vector4f view = position - camPos;
+
+    float angle = atan2f( view.z(), view.x() );
+    if ( angle > kTwoPI ) {
+        do {
+            angle -= kTwoPI;
+        } while ( angle > kTwoPI );
+    } else {
+        while ( angle < 0.0f ) {
+            angle += kTwoPI;
+        }
+    }
+
+    const float snappedAngle =
+        ( static_cast<float>( static_cast<int32_t>( angle * ( 1.0f / kTwoPI ) *
+                                                    kImpostorNumSideViews ) ) +
+          0.5f ) *
+        ( kTwoPI / kImpostorNumSideViews );
+    const float billboardAngle = ( snappedAngle - angle ) * ratio + angle;
+
+    Eigen::Vector3f eye( cosf( billboardAngle ) + position.x(), position.y(),
+                         sinf( billboardAngle ) + position.z() );
+    if ( view.z() * view.z() + view.x() * view.x() < view.y() * view.y() ) {
+        eye = camPos.head<3>();
+    }
+
+    billboardCamera.updateMatrix( eye, Eigen::Vector3f::UnitY(),
+                                  position.head<3>() );
+}
+
 bool ComputeImpostorBillboardVisible( MngImpostor *pMng,
                                       MassInstanceImpostor &inst ) {
     // FUN_0070ee60
@@ -860,6 +899,7 @@ bool ComputeImpostorBillboardVisible( MngImpostor *pMng,
     const float projectedSize =
         ( view.x() * view.x() + view.y() * view.y() + view.z() * view.z() ) *
         pMng->getHideDistanceUnit() / ( scale * scale );
+    pInstance->setCurrentLODDistance( projectedSize );
 
     if ( !pMng->isFrustumTestForSprite() ) {
         return true; // projected-size culling disabled -> always a billboard
@@ -876,8 +916,28 @@ bool ComputeImpostorBillboardVisible( MngImpostor *pMng,
 
     if ( fadeLow < projectedSize || bForceTop ) {
         if ( projectedSize <= fadeStart && !bForceTop ) {
-            // Near band: rendered as the full-detail scene instance (the
-            // per-instance billboard basis FUN_00406f70 is deferred).
+            // Near band: flatten the simplified mesh towards the atlas view it
+            // is about to be swapped with.
+            const float ratio =
+                ( projectedSize - fadeLow ) / ( fadeStart - fadeLow );
+            Camera &billboardCamera = pMng->getBillboardCamera();
+            ComputeImpostorBillboardCamera( *gpCamera->getRenderCamera(),
+                                            billboardCamera, inst.SpherePos,
+                                            ratio );
+
+            Eigen::Vector3f scaleVec( scale, scale, scale );
+            Eigen::Vector3f flattenVec( 1.0f, 1.0f,
+                                        1.0f - ratio * kImpostorFlattenFactor );
+            Matrix4x4f_t basis = MakeScaleMatrix( scaleVec );
+            MatrixRotateY( basis, inst.Angle );
+            basis = basis * billboardCamera.getWorldToCam() *
+                    MakeScaleMatrix( flattenVec ) *
+                    billboardCamera.getCamToWorld();
+
+            Matrix4x4f_t m = pInstance->getModelMatrix();
+            m.topRows<3>() = basis.topRows<3>();
+            pInstance->setModelMatrix( m );
+
             inst.Flags |= 1;
             return true;
         }
@@ -912,7 +972,18 @@ bool ComputeImpostorBillboardVisible( MngImpostor *pMng,
         pMng->addInstance( pInstance, inst.pMaterial, fade < 1.0f );
         return false;
     }
-    return true; // very near band
+
+    if ( ( inst.Flags & 1 ) != 0 ) {
+        // Restore the basis the near/fade bands overwrote.
+        Matrix4x4f_t m = pInstance->getModelMatrix();
+        m.row( 0 ) = Eigen::Vector4f( scale, 0.0f, 0.0f, 0.0f );
+        m.row( 1 ) = Eigen::Vector4f( 0.0f, scale, 0.0f, 0.0f );
+        m.row( 2 ) = Eigen::Vector4f( 0.0f, 0.0f, scale, 0.0f );
+        MatrixPreRotateY( m, inst.Angle );
+        pInstance->setModelMatrix( m );
+        inst.Flags |= 1;
+    }
+    return true;
 }
 
 void StreamingManager::updateSectorImpostors( Sector &sector,

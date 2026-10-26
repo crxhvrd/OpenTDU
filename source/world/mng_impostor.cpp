@@ -115,6 +115,7 @@ void MngImpostor::addInstance( Instance *pInstance,
 MngImpostor::MngImpostor()
     : Manager(),
       drawList(),
+      billboardCamera(),
       pUsedMaterials( nullptr ),
       MaterialBatches(),
       pPosition( nullptr ),
