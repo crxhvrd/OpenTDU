@@ -1,9 +1,12 @@
 #pragma once
 
+#include "mod_installer.h"
+
 struct ModPack {
     std::string Id;   // folder name, and the mods.ini section name
     std::string Path; // pack folder, relative to the working directory
     std::wstring DisplayName;
+    ModDBString Description; // contentdesc.xml DESC; Value = Id fallback
 
     uint32_t NumEntries = 0;   // records in the pack's .map
     int32_t FilemapIndex = -1; // slot it mounted on, -1 when it did not

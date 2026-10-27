@@ -307,6 +307,9 @@ static void DetectPackContent( ModPack &pack ) {
     std::error_code errorCode;
     const std::filesystem::path packPath( pack.Path );
 
+    pack.Description.Value = pack.Id;
+    ModInstaller::ReadPackDescription( pack.Path, pack.Description );
+
     const bool bHasMap = std::filesystem::is_regular_file(
         packPath / kPackMapFilename, errorCode );
     const bool bHasBig = std::filesystem::is_regular_file(

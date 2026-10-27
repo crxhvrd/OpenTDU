@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    OpenTDU night time (see docs/night_time_plan.md). Adds dark night periods to
-    the free ride weather cycle. Disable the pack to restore retail.
--->
 <CONTENTDESC>
     <ACTION name="DESC">
         <us>OpenTDU Night Time</us>
         <fr>OpenTDU Nuit</fr>
+        <it>OpenTDU Notte</it>
+        <ge>OpenTDU Nacht</ge>
+        <sp>OpenTDU Noche</sp>
+        <ja>OpenTDU 夜間</ja>
+        <ko>OpenTDU 야간</ko>
+        <ch>OpenTDU 夜間</ch>
+        <ru>OpenTDU Ночь</ru>
+        <po>OpenTDU Noc</po>
     </ACTION>
 </CONTENTDESC>

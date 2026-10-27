@@ -11,169 +11,430 @@
 <CONTENTDESC>
     <ACTION name="DESC">
         <us>OpenTDU Localization</us>
+        <fr>Localisation OpenTDU</fr>
+        <it>Localizzazione OpenTDU</it>
+        <ge>OpenTDU-Lokalisierung</ge>
+        <sp>Localización de OpenTDU</sp>
+        <ja>OpenTDU ローカライズ</ja>
+        <ko>OpenTDU 현지화</ko>
+        <ch>OpenTDU 在地化</ch>
+        <ru>Локализация OpenTDU</ru>
+        <po>Lokalizacja OpenTDU</po>
     </ACTION>
 
     <!-- Video page -->
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000001">
         <us>DISPLAY MODE</us>
         <fr>MODE D'AFFICHAGE</fr>
-        <po>Tryb wyświetlania</po>
+        <it>MODALITÀ SCHERMO</it>
+        <ge>ANZEIGEMODUS</ge>
+        <sp>MODO DE PANTALLA</sp>
+        <ja>表示モード</ja>
+        <ko>디스플레이 모드</ko>
+        <ch>顯示模式</ch>
         <ru>Режим Отображения</ru>
+        <po>Tryb wyświetlania</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000002">
         <us>FRAME RATE</us>
         <fr>IMAGES PAR SECONDE</fr>
-        <po>Klatek na sekundę</po>
+        <it>FREQUENZA FOTOGRAMMI</it>
+        <ge>BILDRATE</ge>
+        <sp>FOTOGRAMAS POR SEGUNDO</sp>
+        <ja>フレームレート</ja>
+        <ko>프레임 레이트</ko>
+        <ch>幀率</ch>
         <ru>Частота кадров</ru>
+        <po>Klatek na sekundę</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000003">
         <us>REFLECTIONS</us>
         <fr>REFLETS</fr>
-        <po>ODBICIA</po>
+        <it>RIFLESSI</it>
+        <ge>REFLEXIONEN</ge>
+        <sp>REFLEJOS</sp>
+        <ja>反射</ja>
+        <ko>반사</ko>
+        <ch>反射</ch>
         <ru>Отражения</ru>
+        <po>ODBICIA</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000004">
         <us>VSYNC</us>
         <fr>SYNCHRO VERTICALE</fr>
-        <po>Synchronizacja Pionowa</po>
+        <it>SINCRONIZZAZIONE VERTICALE</it>
+        <ge>VERTIKALE SYNCHRONISATION</ge>
+        <sp>SINCRONIZACIÓN VERTICAL</sp>
+        <ja>垂直同期</ja>
+        <ko>수직 동기화</ko>
+        <ch>垂直同步</ch>
         <ru>Вертикальная Синхронизация</ru>
+        <po>Synchronizacja Pionowa</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000005">
         <us>BORDERLESS</us>
         <fr>FENÊTRÉ SANS BORDURE</fr>
-        <po>Bez ramek</po>
+        <it>SENZA BORDI</it>
+        <ge>RAHMENLOS</ge>
+        <sp>SIN BORDES</sp>
+        <ja>ボーダーレス</ja>
+        <ko>테두리 없음</ko>
+        <ch>無邊框</ch>
         <ru>Безрамочный</ru>
+        <po>Bez ramek</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000006">
         <us>WINDOWED</us>
         <fr>FENÊTRÉ</fr>
-        <po>W oknie</po>
+        <it>IN FINESTRA</it>
+        <ge>FENSTERMODUS</ge>
+        <sp>EN VENTANA</sp>
+        <ja>ウィンドウ</ja>
+        <ko>창 모드</ko>
+        <ch>視窗化</ch>
         <ru>Оконный</ru>
+        <po>W oknie</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000007">
         <us>UNLIMITED</us>
         <fr>ILLIMITÉ</fr>
-        <po>Nielimitowane</po>
+        <it>ILLIMITATO</it>
+        <ge>UNBEGRENZT</ge>
+        <sp>ILIMITADO</sp>
+        <ja>無制限</ja>
+        <ko>무제한</ko>
+        <ch>無限制</ch>
         <ru>Неограниченная</ru>
+        <po>Nielimitowane</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000008">
         <us>NIGHT LIGHTS</us>
         <fr>ÉCLAIRAGE NOCTURNE</fr>
-        <po>Oświetlenie nocne</po>
+        <it>LUCI NOTTURNE</it>
+        <ge>NACHTBELEUCHTUNG</ge>
+        <sp>LUCES NOCTURNAS</sp>
+        <ja>夜間照明</ja>
+        <ko>야간 조명</ko>
+        <ch>夜間照明</ch>
         <ru>Ночные огни</ru>
+        <po>Oświetlenie nocne</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000009">
         <us>ULTRA</us>
         <fr>ULTRA</fr>
-        <po>Ultra</po>
+        <it>ULTRA</it>
+        <ge>ULTRA</ge>
+        <sp>ULTRA</sp>
+        <ja>ウルトラ</ja>
+        <ko>울트라</ko>
+        <ch>極高</ch>
         <ru>Ультра</ru>
+        <po>Ultra</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000010">
         <us>HDR DISPLAY</us>
         <fr>AFFICHAGE HDR</fr>
-        <po>Wyświetlacz HDR</po>
+        <it>DISPLAY HDR</it>
+        <ge>HDR-ANZEIGE</ge>
+        <sp>PANTALLA HDR</sp>
+        <ja>HDRディスプレイ</ja>
+        <ko>HDR 디스플레이</ko>
+        <ch>HDR 顯示</ch>
         <ru>HDR-дисплей</ru>
+        <po>Wyświetlacz HDR</po>
     </ACTION>
 
     <!-- Mod manager -->
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000100">
         <us>'./Mods' folder is empty!</us>
         <fr>Le dossier './Mods' est vide !</fr>
+        <it>La cartella './Mods' è vuota!</it>
+        <ge>Der Ordner './Mods' ist leer!</ge>
+        <sp>¡La carpeta './Mods' está vacía!</sp>
+        <ja>'./Mods' フォルダーは空です！</ja>
+        <ko>'./Mods' 폴더가 비어 있습니다!</ko>
+        <ch>'./Mods' 資料夾是空的！</ch>
+        <ru>Папка './Mods' пуста!</ru>
+        <po>Folder './Mods' jest pusty!</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000101">
         <us>Enabled</us>
         <fr>Activé</fr>
+        <it>Attivato</it>
+        <ge>Aktiviert</ge>
+        <sp>Activado</sp>
+        <ja>有効</ja>
+        <ko>활성화됨</ko>
+        <ch>已啟用</ch>
+        <ru>Включено</ru>
+        <po>Włączony</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000102">
         <us>Disabled</us>
         <fr>Désactivé</fr>
+        <it>Disattivato</it>
+        <ge>Deaktiviert</ge>
+        <sp>Desactivado</sp>
+        <ja>無効</ja>
+        <ko>비활성화됨</ko>
+        <ch>已停用</ch>
+        <ru>Выключено</ru>
+        <po>Wyłączony</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000103">
         <us>Built-in (always on)</us>
         <fr>Intégré (toujours actif)</fr>
+        <it>Integrato (sempre attivo)</it>
+        <ge>Integriert (immer aktiv)</ge>
+        <sp>Integrado (siempre activo)</sp>
+        <ja>内蔵（常に有効）</ja>
+        <ko>내장 (항상 켜짐)</ko>
+        <ch>內建（永遠啟用）</ch>
+        <ru>Встроенный (всегда включён)</ru>
+        <po>Wbudowany (zawsze włączony)</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000104">
         <us>Files</us>
         <fr>Fichiers</fr>
+        <it>File</it>
+        <ge>Dateien</ge>
+        <sp>Archivos</sp>
+        <ja>ファイル</ja>
+        <ko>파일</ko>
+        <ch>檔案</ch>
+        <ru>Файлы</ru>
+        <po>Pliki</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000105">
         <us>Mounted on map</us>
         <fr>Monté sur l'emplacement</fr>
+        <it>Montato sulla mappa file</it>
+        <ge>In Dateizuordnung eingebunden</ge>
+        <sp>Montado en el mapa de archivos</sp>
+        <ja>ファイルマップにマウント</ja>
+        <ko>파일 맵에 마운트됨</ko>
+        <ch>已掛載至檔案映射</ch>
+        <ru>Подключён к карте файлов</ru>
+        <po>Zamontowany w mapie plików</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000106">
         <us>row(s)</us>
         <fr>ligne(s)</fr>
+        <it>riga/e</it>
+        <ge>Zeile(n)</ge>
+        <sp>fila(s)</sp>
+        <ja>行</ja>
+        <ko>행</ko>
+        <ch>列</ch>
+        <ru>строк(и)</ru>
+        <po>wiersz(e)</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000107">
         <us>string(s)</us>
         <fr>texte(s)</fr>
+        <it>testo/i</it>
+        <ge>Text(e)</ge>
+        <sp>texto(s)</sp>
+        <ja>文字列</ja>
+        <ko>문자열</ko>
+        <ch>字串</ch>
+        <ru>строк(и) текста</ru>
+        <po>tekst(y)</po>
     </ACTION>
 
     <!-- Input templates -->
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000201">
         <us>§DEVICE§ detected. Use the §TEMPLATE§ controls preset?</us>
         <fr>§DEVICE§ détecté. Utiliser le préréglage de commandes §TEMPLATE§ ?</fr>
+        <it>§DEVICE§ rilevato. Usare il preset di comandi §TEMPLATE§?</it>
+        <ge>§DEVICE§ erkannt. Steuerungsvorlage §TEMPLATE§ verwenden?</ge>
+        <sp>§DEVICE§ detectado. ¿Usar el perfil de controles §TEMPLATE§?</sp>
+        <ja>§DEVICE§ を検出しました。§TEMPLATE§ 操作プリセットを使用しますか？</ja>
+        <ko>§DEVICE§ 감지됨. §TEMPLATE§ 조작 프리셋을 사용하시겠습니까?</ko>
+        <ch>偵測到 §DEVICE§。要使用 §TEMPLATE§ 控制預設嗎？</ch>
+        <ru>Обнаружено устройство §DEVICE§. Использовать пресет управления §TEMPLATE§?</ru>
+        <po>Wykryto §DEVICE§. Użyć ustawień sterowania §TEMPLATE§?</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000202">
         <us>Also use the §TEMPLATE§ controls preset for §DEVICE§?</us>
         <fr>Utiliser aussi le préréglage de commandes §TEMPLATE§ pour §DEVICE§ ?</fr>
+        <it>Usare il preset di comandi §TEMPLATE§ anche per §DEVICE§?</it>
+        <ge>Steuerungsvorlage §TEMPLATE§ auch für §DEVICE§ verwenden?</ge>
+        <sp>¿Usar también el perfil de controles §TEMPLATE§ para §DEVICE§?</sp>
+        <ja>§DEVICE§ にも §TEMPLATE§ 操作プリセットを使用しますか？</ja>
+        <ko>§DEVICE§에도 §TEMPLATE§ 조작 프리셋을 사용하시겠습니까?</ko>
+        <ch>§DEVICE§ 也要使用 §TEMPLATE§ 控制預設嗎？</ch>
+        <ru>Использовать пресет управления §TEMPLATE§ также для §DEVICE§?</ru>
+        <po>Użyć ustawień sterowania §TEMPLATE§ również dla §DEVICE§?</po>
     </ACTION>
 
     <!-- OpenTDU options -->
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000301">
         <us>OPENTDU</us>
         <fr>OPENTDU</fr>
+        <it>OPENTDU</it>
+        <ge>OPENTDU</ge>
+        <sp>OPENTDU</sp>
+        <ja>OPENTDU</ja>
+        <ko>OPENTDU</ko>
+        <ch>OPENTDU</ch>
+        <ru>OPENTDU</ru>
+        <po>OPENTDU</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000302">
         <us>Controls for OpenTDU actions</us>
         <fr>Commandes des actions OpenTDU</fr>
+        <it>Comandi delle azioni OpenTDU</it>
+        <ge>Steuerung für OpenTDU-Aktionen</ge>
+        <sp>Controles de las acciones de OpenTDU</sp>
+        <ja>OpenTDU アクションの操作</ja>
+        <ko>OpenTDU 동작 조작</ko>
+        <ch>OpenTDU 動作控制</ch>
+        <ru>Управление действиями OpenTDU</ru>
+        <po>Sterowanie akcjami OpenTDU</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000303">
         <us>OpenTDU gameplay options</us>
         <fr>Options de jeu OpenTDU</fr>
+        <it>Opzioni di gioco OpenTDU</it>
+        <ge>OpenTDU-Spieloptionen</ge>
+        <sp>Opciones de juego de OpenTDU</sp>
+        <ja>OpenTDU ゲームプレイ設定</ja>
+        <ko>OpenTDU 게임플레이 옵션</ko>
+        <ch>OpenTDU 遊戲選項</ch>
+        <ru>Игровые настройки OpenTDU</ru>
+        <po>Opcje rozgrywki OpenTDU</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000304">
         <us>OpenTDU video options</us>
         <fr>Options vidéo OpenTDU</fr>
+        <it>Opzioni video OpenTDU</it>
+        <ge>OpenTDU-Grafikoptionen</ge>
+        <sp>Opciones de vídeo de OpenTDU</sp>
+        <ja>OpenTDU ビデオ設定</ja>
+        <ko>OpenTDU 비디오 옵션</ko>
+        <ch>OpenTDU 影像選項</ch>
+        <ru>Настройки видео OpenTDU</ru>
+        <po>Opcje grafiki OpenTDU</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000305">
         <us>QUALITY</us>
         <fr>QUALITÉ</fr>
+        <it>QUALITÀ</it>
+        <ge>QUALITÄT</ge>
+        <sp>CALIDAD</sp>
+        <ja>品質</ja>
+        <ko>품질</ko>
+        <ch>品質</ch>
+        <ru>КАЧЕСТВО</ru>
+        <po>JAKOŚĆ</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000306">
         <us>HDR</us>
         <fr>HDR</fr>
+        <it>HDR</it>
+        <ge>HDR</ge>
+        <sp>HDR</sp>
+        <ja>HDR</ja>
+        <ko>HDR</ko>
+        <ch>HDR</ch>
+        <ru>HDR</ru>
+        <po>HDR</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000307">
         <us>PAPER WHITE</us>
         <fr>BLANC DE RÉFÉRENCE</fr>
+        <it>BIANCO DI RIFERIMENTO</it>
+        <ge>PAPIERWEISS</ge>
+        <sp>BLANCO DE REFERENCIA</sp>
+        <ja>基準白</ja>
+        <ko>기준 화이트</ko>
+        <ch>參考白</ch>
+        <ru>БЕЛЫЙ ЭТАЛОН</ru>
+        <po>BIEL ODNIESIENIA</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000308">
         <us>PEAK BRIGHTNESS</us>
         <fr>LUMINOSITÉ MAX.</fr>
+        <it>LUMINOSITÀ MASSIMA</it>
+        <ge>SPITZENHELLIGKEIT</ge>
+        <sp>BRILLO MÁXIMO</sp>
+        <ja>最大輝度</ja>
+        <ko>최대 밝기</ko>
+        <ch>峰值亮度</ch>
+        <ru>ПИКОВАЯ ЯРКОСТЬ</ru>
+        <po>JASNOŚĆ SZCZYTOWA</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000309">
         <us>HIGHLIGHTS</us>
         <fr>HAUTES LUMIÈRES</fr>
+        <it>ALTE LUCI</it>
+        <ge>SPITZLICHTER</ge>
+        <sp>LUCES ALTAS</sp>
+        <ja>ハイライト</ja>
+        <ko>하이라이트</ko>
+        <ch>高光</ch>
+        <ru>СВЕТА</ru>
+        <po>ŚWIATŁA</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000310">
         <us>SOFT HIGHLIGHTS</us>
         <fr>HAUTES LUMIÈRES DOUCES</fr>
+        <it>ALTE LUCI MORBIDE</it>
+        <ge>WEICHE SPITZLICHTER</ge>
+        <sp>LUCES ALTAS SUAVES</sp>
+        <ja>ソフトハイライト</ja>
+        <ko>부드러운 하이라이트</ko>
+        <ch>柔和高光</ch>
+        <ru>МЯГКИЕ СВЕТА</ru>
+        <po>MIĘKKIE ŚWIATŁA</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000311">
         <us>AUTO</us>
         <fr>AUTO</fr>
+        <it>AUTO</it>
+        <ge>AUTO</ge>
+        <sp>AUTO</sp>
+        <ja>自動</ja>
+        <ko>자동</ko>
+        <ch>自動</ch>
+        <ru>АВТО</ru>
+        <po>AUTO</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000312">
         <us>MODS</us>
         <fr>MODS</fr>
+        <it>MOD</it>
+        <ge>MODS</ge>
+        <sp>MODS</sp>
+        <ja>MOD</ja>
+        <ko>모드</ko>
+        <ch>模組</ch>
+        <ru>МОДЫ</ru>
+        <po>MODY</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000313">
         <us>Enable or disable mod packs</us>
         <fr>Activer ou désactiver les mods</fr>
+        <it>Attiva o disattiva i pacchetti mod</it>
+        <ge>Mod-Pakete aktivieren oder deaktivieren</ge>
+        <sp>Activar o desactivar paquetes de mods</sp>
+        <ja>MOD パックの有効化・無効化</ja>
+        <ko>모드 팩 활성화 또는 비활성화</ko>
+        <ch>啟用或停用模組包</ch>
+        <ru>Включение и отключение модов</ru>
+        <po>Włącz lub wyłącz paczki modów</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000314">
         <us>Status</us>
         <fr>État</fr>
+        <it>Stato</it>
+        <ge>Status</ge>
+        <sp>Estado</sp>
+        <ja>状態</ja>
+        <ko>상태</ko>
+        <ch>狀態</ch>
+        <ru>Статус</ru>
+        <po>Status</po>
     </ACTION>
 </CONTENTDESC>

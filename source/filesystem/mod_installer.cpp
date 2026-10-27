@@ -357,6 +357,56 @@ void ModInstaller::readDBStringTranslations( ModDBString &string ) {
     }
 }
 
+bool ModInstaller::ReadPackDescription( const std::string &packPath,
+                                        ModDBString &outDescription ) {
+    std::filesystem::path descPath( packPath );
+    descPath /= kContentDescFilename;
+
+    std::ifstream stream( descPath, std::ifstream::in | std::ifstream::binary );
+    if ( !stream.is_open() ) {
+        return false;
+    }
+
+    std::string contentDesc( ( std::istreambuf_iterator<char>( stream ) ),
+                             std::istreambuf_iterator<char>() );
+    if ( contentDesc.empty() || contentDesc.size() >= kMaxContentDescSize ) {
+        return false;
+    }
+
+    CMarkup descReader( nullptr, true );
+    if ( !descReader.setDoc( contentDesc.c_str() ) ||
+         !descReader.findElem( "CONTENTDESC" ) ) {
+        return false;
+    }
+
+    descReader.intoElem();
+    while ( descReader.findElem( "ACTION" ) ) {
+        if ( StringCmpI( descReader.getAttrib( "name" ).c_str(), "DESC" ) !=
+             0 ) {
+            continue;
+        }
+
+        descReader.intoElem();
+        while ( descReader.findElem( nullptr ) ) {
+            const std::string language = descReader.getTagName();
+            if ( language.size() != 2 ) {
+                continue;
+            }
+
+            ModDBStringTranslation translation;
+            translation.Language[0] = (char)tolower( language[0] );
+            translation.Language[1] = (char)tolower( language[1] );
+            translation.Value = GetTrimmedData( descReader );
+            if ( !translation.Value.empty() ) {
+                outDescription.Translations.push_back( translation );
+            }
+        }
+        descReader.outOfElem();
+    }
+
+    return !outDescription.Translations.empty();
+}
+
 void ModInstaller::onAddDBString( const EnumerateContextItem &item,
                                   const char *pTable,
                                   const char *pHashcode,

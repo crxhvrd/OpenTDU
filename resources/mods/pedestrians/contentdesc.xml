@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    OpenTDU ambient pedestrians: restores retail's unused AI pedestrian manager
-    (walkable areas generated from the road map sidewalks) and places the hotel
-    tennis life sets on the island courts. Disable the pack to restore retail.
--->
 <CONTENTDESC>
     <ACTION name="DESC">
         <us>OpenTDU Pedestrians</us>
         <fr>OpenTDU Piétons</fr>
+        <it>OpenTDU Pedoni</it>
+        <ge>OpenTDU Fußgänger</ge>
+        <sp>OpenTDU Peatones</sp>
+        <ja>OpenTDU 歩行者</ja>
+        <ko>OpenTDU 보행자</ko>
+        <ch>OpenTDU 行人</ch>
+        <ru>OpenTDU Пешеходы</ru>
+        <po>OpenTDU Piesi</po>
     </ACTION>
 </CONTENTDESC>

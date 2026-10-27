@@ -84,6 +84,8 @@ public:
     void markInjectionsMandatory( const std::wstring &packName );
 
     static bool HasContentDesc( const EnumerateContextItem &item );
+    static bool ReadPackDescription( const std::string &packPath,
+                                     ModDBString &outDescription );
 
     eContentDescResult loadContentDesc( const EnumerateContextItem &item,
                                         const bool bApplyContent );
