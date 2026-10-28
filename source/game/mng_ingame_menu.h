@@ -82,6 +82,7 @@ private:
     void close();
     void toggleWindows( bool bPlayAnim );
     void changeDrivingMode( bool bNext, bool bPlayAnim );
+    void updatePlayersMenu( FlashPlayer *pPlayer );
     void updateChronoMenu();
     void setChronoTime( float time );
     void setChronoAccelerateMessage();

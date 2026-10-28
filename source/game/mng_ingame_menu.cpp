@@ -16,6 +16,8 @@
 #include "flash/entities/flash_entity.h"
 #include "flash/implementation/flash_player.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/driver.h"
 #include "flash/mng_fade.h"
 #include "game/mng_rental.h"
 #include "game/cinematic/gs_cinematics.h"
@@ -55,6 +57,8 @@ constexpr int32_t kNumDrivingHelpLevels =
              sizeof( kDrivingHelpLevelHashcodes[0] ) );
 
 constexpr float kMenuNavigationTimeout = 5.0f; // DAT_00f41750
+
+constexpr int32_t kNumPlayerSlots = 10;
 
 constexpr float kChronoBrakeTestSpeedMph = 60.0f;             // FLOAT_00f41744
 constexpr float kMetersPerSecToMph = 2.2374146f;              // DAT_00f419f4
@@ -120,12 +124,6 @@ void MngInGameMenu::tick( float, float ) {
         LockStateMenu = IGMS_Closed;
     }
 
-    const float now = ( gpTimer != nullptr ) ? gpTimer->SystemTotalTime : 0.0f;
-    if ( OpenedMenu != IGM_None && now > MenuCloseTimeLeft &&
-         StateMenu != IGMS_Opening && StateMenu != IGMS_Closed ) {
-        close();
-    }
-
     FlashPlayer *pHudPlayer = nullptr;
     if ( gpActiveGameMode != nullptr && gpFlash != nullptr ) {
         const eGameMode gm = gpActiveGameMode->getCurrentGameMode();
@@ -141,8 +139,44 @@ void MngInGameMenu::tick( float, float ) {
 
     if ( StateMenu == IGMS_Open && pHudPlayer != nullptr &&
          OpenedMenu == IGM_Players ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P (Players page population)
+        updatePlayersMenu( pHudPlayer );
     }
+
+    if ( CurrentAskingLockPlayer != -1 || CurrentAskingToIsolate != -1 ||
+         TimeoutAskingToIsolate != 0.0f ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P (lock/isolate timeouts)
+    }
+
+    const float now = ( gpTimer != nullptr ) ? gpTimer->SystemTotalTime : 0.0f;
+    if ( OpenedMenu != IGM_None && now > MenuCloseTimeLeft &&
+         StateMenu != IGMS_Opening && StateMenu != IGMS_Closed ) {
+        close();
+    }
+}
+
+static int32_t FindSessionPlayer( const int32_t menuSlot ) {
+    // FUN_006b67a0
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P (no connected session player)
+    return -1;
+}
+
+void MngInGameMenu::updatePlayersMenu( FlashPlayer *pPlayer ) {
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P (session player list)
+
+    char pVarName[28];
+    for ( int32_t i = 2; i < kNumPlayerSlots; ++i ) {
+        snprintf( pVarName, sizeof( pVarName ), "/:player_name%01d", i );
+        pPlayer->setVariableValueNonLinked( pVarName, "" );
+        snprintf( pVarName, sizeof( pVarName ), "/HUD/menu_ig/player_%02d", i );
+        pPlayer->showFrame( "empty", pVarName, false );
+    }
+    pPlayer->setVariableValue( "/:NbPlayers", 0 );
+    pPlayer->setVariableValue( "/:IsDisabled", 1 );
+    pPlayer->setVariableValue( "/:IsSessionLocked", 1 );
+
+    const Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+    pPlayer->setVariableValueNonLinked( "/:player_name1", pDriver->Nickname );
+    pPlayer->showFrame( "grey", "/HUD/menu_ig/player_01", false );
 }
 
 static PhysicsVehicle *GetLocalPlayerPhysVehicle() {
@@ -241,13 +275,31 @@ bool MngInGameMenu::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     case FlashMessage( "vgcd" ):
         return true;
 
-    case FlashMessage( "frre" ): // freeride player page / lock / isolate
-    case FlashMessage( "lopl" ):
-    case FlashMessage( "igpl" ):
-    case FlashMessage( "isse" ):
-    case FlashMessage( "nean" ):
-    case FlashMessage( "poan" ):
-    case FlashMessage( "quse" ):
+    case FlashMessage( "frre" ): { // friend request to the selected player
+        CurrentPlayer = ( pPlayer != nullptr )
+                            ? FindSessionPlayer(
+                                  pPlayer->getVariableAsInt( "/:NumPlayer" ) )
+                            : -1;
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P (FUN_008683b0)
+        if ( gpFlash != nullptr && gpFlash->getFlashSound() != nullptr ) {
+            gpFlash->getFlashSound()->playFrontEndSound( "wrong", 0, false );
+        }
+        return true;
+    }
+
+    case FlashMessage( "lopl" ): // lock the session with the selected player
+        CurrentPlayer = ( pPlayer != nullptr )
+                            ? FindSessionPlayer(
+                                  pPlayer->getVariableAsInt( "/:NumPlayer" ) )
+                            : -1;
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P
+        return true;
+
+    case FlashMessage( "igpl" ): // ignore the selected player
+    case FlashMessage( "isse" ): // isolate the session
+    case FlashMessage( "nean" ): // lock/isolate prompt answer: no
+    case FlashMessage( "poan" ): // lock/isolate prompt answer: yes
+    case FlashMessage( "quse" ): // quit the isolated session
         OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE/P2P
         return true;
 
