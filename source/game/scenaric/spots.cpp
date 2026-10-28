@@ -1174,9 +1174,7 @@ void Spots::spawnSectorSpotMeshes( Sector *pSector, SpotsList &slot ) {
             continue;
         }
 
-        // Skip removed spots
-        if ( std::find( gRemovedSpots.begin(), gRemovedSpots.end(),
-                        pWorld->Hashcode ) != gRemovedSpots.end() ) {
+        if ( IsSpotHidden( pWorld->Hashcode ) ) {
             continue;
         }
 
