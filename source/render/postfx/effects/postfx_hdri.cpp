@@ -307,6 +307,11 @@ bool PostFXHDR::execute() {
     SetSamplerFilter( pTexVar12, 3, 5, TF_Linear );
     SetSamplerFilter( pTexVar12, 3, 6, TF_Linear );
 
+    const SamplerDesc inheritedGlowSampler = gStateCache.SamplerStates[2];
+    const SamplerDesc inheritedStreakSampler = gStateCache.SamplerStates[3];
+    gStateCache.setSamplerStateTexAddress( 2, TA_Clamp, TA_Clamp );
+    gStateCache.setSamplerStateTexAddress( 3, TA_Clamp, TA_Clamp );
+
     peVar12 = peStack_90->getBound2DB();
     gpRenderContext->bindTexture( peVar12->getFirstBitmap(), 0 );
 
@@ -330,6 +335,10 @@ bool PostFXHDR::execute() {
     gPostFXRenderer.drawFullscreenQuad( uVar9 != 0xffffffff, false, false,
                                         uVar10 );
 
+    gStateCache.setSamplerStateTexAddress( 2, inheritedGlowSampler.AddressU,
+                                           inheritedGlowSampler.AddressV );
+    gStateCache.setSamplerStateTexAddress( 3, inheritedStreakSampler.AddressU,
+                                           inheritedStreakSampler.AddressV );
     gStateCache.setSamplerStateMipFilter( 2, TF_Point );
     gStateCache.setSamplerStateMinMagFilter( 2, TF_Point );
     gStateCache.setSamplerStateMipFilter( 3, TF_Point );

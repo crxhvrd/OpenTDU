@@ -38,6 +38,9 @@ bool PostFXBlur::execute() {
     SetSamplerFilter( pRenderTargetTex, 0, 5, getFilter() );
     SetSamplerFilter( pRenderTargetTex, 0, 6, getFilter() );
 
+    const SamplerDesc inheritedSampler = gStateCache.SamplerStates[0];
+    gStateCache.setSamplerStateTexAddress( 0, TA_Clamp, TA_Clamp );
+
     PostFXNodeBlur *pNode = (PostFXNodeBlur *)pOwner;
 
     int32_t puStack_38 = 0;
@@ -113,6 +116,8 @@ bool PostFXBlur::execute() {
         }
     }
 
+    gStateCache.setSamplerStateTexAddress( 0, inheritedSampler.AddressU,
+                                           inheritedSampler.AddressV );
     gStateCache.setSamplerStateMinMagFilter( 0, eTextureFiltering::TF_Point );
     gPostFXRenderer.bindShaders();
 
