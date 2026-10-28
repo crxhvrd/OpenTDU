@@ -26,8 +26,7 @@
 #endif
 
 #ifdef OTDU_UNIX
-std::filesystem::path
-ResolvePathInsensitive( const std::filesystem::path &targetPath );
+#include "filesystem/virtual_file_system.h"
 #endif
 
 namespace {
