@@ -140,7 +140,7 @@ void MngCinematics::pause() {
     bIsValid = false;
     for ( EntityCinematic *pCinematic : pCinematics ) {
         if ( pCinematic != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: SCENARIC
+            pCinematic->setPaused( false );
             pCinematic->stop( true );
         }
     }
@@ -225,8 +225,8 @@ bool MngCinematics::isCinematicPlaying( eCinematicType type,
     }
 
     if ( pFound != nullptr && bRequireAudio ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (sound density count)
-        return pFound->hasMusicEmitter();
+        return pFound->hasMusicEmitter() ||
+               pFound->getCinResCollection().getNumVoiceEmitters() > 0;
     }
 
     return pFound != nullptr;
@@ -250,10 +250,19 @@ void MngCinematics::removeCinematic( EntityCinematic *pCinematic ) {
     }
 }
 
-bool MngCinematics::onWorldStreamed( Eigen::Vector4f *param_1,
-                                     Eigen::Vector4f *param_2,
-                                     Eigen::Vector4f *param_3 ) {
+bool MngCinematics::onWorldStreamed( Eigen::Vector4f *pOffset,
+                                     Eigen::Vector4f *,
+                                     Eigen::Vector4f * ) {
     // FUN_006de580
-    OTDU_UNIMPLEMENTED;
-    return false;
+    for ( EntityCinematic *pCinematic : pCinematics ) {
+        if ( pCinematic == nullptr ) {
+            continue;
+        }
+
+        CinResCollection &player = pCinematic->getCinResCollection();
+        if ( player.hasBaseMatrix() ) {
+            player.translateBaseMatrix( -pOffset->head<3>() );
+        }
+    }
+    return true;
 }

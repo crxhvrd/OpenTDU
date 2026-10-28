@@ -1830,10 +1830,6 @@ void GMFreeride::acquireSpotIntroCine( SpotMap *pSpot ) {
 
     pIntroCine->setGameModeInterface( this );
     pIntroCine->setStopWhenSkipped( false );
-
-    if ( pBank != nullptr && pBank->getMngActor() != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
-    }
 }
 
 void GMFreeride::OnSpotIntroFadeOut( void *pData, void * /*pSource*/ ) {

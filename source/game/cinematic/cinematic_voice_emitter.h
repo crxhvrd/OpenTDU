@@ -1,12 +1,14 @@
 #pragma once
 
+#include "audio/implementation/ed_audio_stream_entry.h"
+
 class AudioDispatcherPlaybackSoundInstance;
 class CinResCollection;
 class EntityAvatar;
 class edAudioSample;
 
 // Cinematic voice line ("Sound/Voices/<language>/<name>.wav") ("plvo")
-class CinematicVoiceEmitter {
+class CinematicVoiceEmitter : public edAudioStreamEntryListener {
 public:
     static constexpr int32_t kMaxEmittersPerCinematic = 20; // 0x14
     static constexpr int32_t kNameLength = 0x20;
@@ -30,6 +32,9 @@ public:
     void setPosition( const Eigen::Vector3f &position );
     void stop();
     void uninstall();
+
+    void onPipeEntryStopped( edAudioStreamEntry *pEntry ) override;
+    void onPipeEntryEnded( edAudioStreamEntry *pEntry ) override;
 
 private:
     bool loadSample( const char *pPath );

@@ -195,6 +195,7 @@ AiVehicle::AiVehicle()
       locoType( kLocomotionNone ),
       navTraffic(),
       navOpponent(),
+      navCinematic(),
       navTrainer(),
       pNav( nullptr ),
       navType( kNavigationNone ),
@@ -1091,6 +1092,18 @@ void AiVehicle::initializeParked( CarState *pCar ) {
     signals.bHeadlightActivated = false;
 }
 
+void AiVehicle::initializeCinematic( CarState *pCar ) {
+    // FUN_009284a0
+    static constexpr float kCinematicSmoothSteerCoef = 0.25f; // DAT_00faa9c4
+
+    initialize( eAiVehicleCategory::AVC_Cinematic, pCar, AiRoadIt(), 0,
+                kBehaviourNone, kControllerNone, 2, 0, false );
+    locoTraffic.setSmoothSteering( true, kCinematicSmoothSteerCoef );
+    if ( pLoco != nullptr ) {
+        pLoco->setPhysicsActive( true, false );
+    }
+}
+
 void AiVehicle::initializeOpponent( CarState *pCar,
                                     const Matrix4x4f_t &startFrame,
                                     const int32_t newControllerType,
@@ -1231,12 +1244,11 @@ void AiVehicle::setNavigation( const int32_t type ) {
 
     if ( type == 1 ) {
         pNav = &navOpponent;
+    } else if ( type == 2 ) {
+        pNav = &navCinematic;
     } else if ( type == 3 ) {
         pNav = &navTrainer;
     } else {
-        if ( type != 0 ) {
-            OTDU_UNIMPLEMENTED_ONCE;
-        }
         pNav = &navTraffic;
     }
     pNav->attach( this );

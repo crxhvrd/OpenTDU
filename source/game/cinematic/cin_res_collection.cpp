@@ -435,6 +435,11 @@ void CinResCollection::reset() {
     numAvatars = 0;
     numHostesses = 0;
 
+    for ( int32_t i = 0; i < numActors; i++ ) {
+        if ( actors[i].Kind == CinematicActor::CAK_PlayerCar ) {
+            releasePlayerCarActor( i );
+        }
+    }
     releasePlayerCarActors();
     releaseTrafficCarActors();
     releaseCinematicCamera();
@@ -581,7 +586,8 @@ bool CinResCollection::load( const void *pData,
 
 bool CinResCollection::initialize() {
     // FUN_0067b500
-    OTDU_UNIMPLEMENTED;
+    // Retail walks every type 1 source and calls FUN_0042df00, an empty
+    // stub returning true.
     return true;
 }
 
@@ -750,13 +756,6 @@ void CinResCollection::tickController( const uint8_t *pController,
                                        float time ) {
     // FUN_0067b560
     const uint8_t *pTrack = pController + 0xc;
-    const uint16_t numKeys = *reinterpret_cast<const uint16_t *>( pTrack );
-    const uint16_t flags = *reinterpret_cast<const uint16_t *>( pTrack + 2 );
-
-    if ( ( flags & 1 ) != 0 ) {
-        OTDU_UNIMPLEMENTED; // relocated keytime-pointer layout
-        return;
-    }
 
     int32_t lower = 0;
     int32_t upper = 0;
@@ -767,7 +766,7 @@ void CinResCollection::tickController( const uint8_t *pController,
     const float frac = time - pKeyTimes[lower];
 
     const float *pKeyframes =
-        reinterpret_cast<const float *>( pTrack ) + ( numKeys + 1 );
+        TrackKeyframeBase( reinterpret_cast<const uint16_t *>( pTrack ) );
     const float *kf = pKeyframes + static_cast<size_t>( lower ) * 0xf;
 
     const float duration = kf[0];
@@ -903,8 +902,10 @@ void CinResCollection::tickActorMedia( const CinMediaContext *pCtx,
         case 0xdcd2e210u: // anim clip keys
             collectActorClips( pCtx, pTrack, time, state );
             break;
+        case 0x7846u: // FX keys
+            // NOP in original pcode
+            break;
         default:
-            OTDU_UNIMPLEMENTED; // TODO: FX keys
             break;
         }
 
@@ -1009,7 +1010,7 @@ void CinResCollection::dispatchActor( CinematicActor *pActor,
         for ( int32_t i = 0; i < state.NumMessages; i++ ) {
             const CinActorMessage &message = state.Messages[i];
             if ( !isMessageFired( message.pKey ) &&
-                 onPlayerCarMessage( pActor->pCarState, message.pString ) ) {
+                 onPlayerCarMessage( pActor, message.pString ) ) {
                 recordFiredMessage( message.pString, message.pKey );
             }
         }
@@ -1821,6 +1822,7 @@ static const Eigen::Vector4f *FindCarRefOffset( const char *pName,
 }
 
 static bool FindCarRefNodePoint( CarState *pCarState,
+                                 HiearchyNode *pGhostBikeNode,
                                  const char *pName,
                                  Eigen::Vector4f &outPoint ) {
     // FUN_007e35a0
@@ -1836,7 +1838,9 @@ static bool FindCarRefNodePoint( CarState *pCarState,
             ? gpDatabase->getCarDBEntry( pCarState->getCarID() )
             : nullptr;
     if ( pCarData != nullptr && gpDatabase->isBike( pCarData ) ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+        if ( pGhostBikeNode != nullptr ) {
+            pNode = pGhostBikeNode->findChild( hashcode );
+        }
     } else {
         VehicleBase *pDisplay = pCarState->getVehicleInstance();
         if ( pDisplay != nullptr &&
@@ -1903,11 +1907,13 @@ bool CinResCollection::resolveActorRefPoint( const CinematicActor *pActor,
     case CinematicActor::CAK_TrafficCar:
     case CinematicActor::CAK_IntroCar:
         bOutDeferred = true;
-        if ( !FindCarRefNodePoint( pActor->pCarState, pName, refPoint ) ) {
+        if ( !FindCarRefNodePoint( pActor->pCarState, pGhostBikeNode, pName,
+                                   refPoint ) ) {
             return false;
         }
         break;
-    case CinematicActor::CAK_Entity: {
+    case CinematicActor::CAK_Entity:
+    case CinematicActor::CAK_Plane: {
         const Entity *pEntity = static_cast<const Entity *>( pActor->pEntity );
         if ( pEntity == nullptr ) {
             return false;
@@ -1916,7 +1922,6 @@ bool CinResCollection::resolveActorRefPoint( const CinematicActor *pActor,
         break;
     }
     default:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (plane ref)
         return false;
     }
 
@@ -2048,8 +2053,8 @@ void CinResCollection::applyCameraTransform( const CinMediaContext *pCtx,
         return;
     }
 
+    bRefCameraArmed = false;
     if ( transformType != 1 ) {
-        OTDU_UNIMPLEMENTED;
         return;
     }
 
@@ -2251,6 +2256,18 @@ void *CinResCollection::loadSourceByName( const char *pName,
     bActorPoolActive = true;
     if ( pPendingPlayerCar != nullptr ) {
         bindPlayerCar( pPendingPlayerCar );
+    }
+
+    pGhostBikeNode = nullptr;
+    Entity *pGhostBike = gpScenaric->getCinematicPackBank().findEntity(
+        eEntityType::ET__ACT, "GHOST_BIKE" );
+    if ( pGhostBike != nullptr &&
+         pGhostBike->getType() == eEntityType::ET__ACT ) {
+        SerializedSkinnedModel *pModel = static_cast<SerializedSkinnedModel *>(
+            pGhostBike->getGeometryData() );
+        if ( pModel != nullptr ) {
+            pGhostBikeNode = pModel->pHiearchNode;
+        }
     }
 
     ParsedBankEntry entry;
@@ -2683,9 +2700,17 @@ void *CinResCollection::spawnActorEntity( const char *pName,
 
                 EntityAvatar *pIntroAvatar =
                     gpGMIntro->addIntroAvatarReference( introAvatarIndex );
-                if ( pIntroAvatar != nullptr ) {
-                    OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO (driver setup,
-                                             // FUN_007ebe50 / FUN_007ebe80)
+                EntityDriver *pDriver = ( pIntroAvatar != nullptr )
+                                            ? pIntroAvatar->getDriver()
+                                            : nullptr;
+                if ( pDriver != nullptr ) {
+                    pDriver->setFreeMovement( true );
+                    pDriver->resetAnimationChannels();
+                    pDriver->requestSeatRefresh();
+                    pDriver->setSeating( false );
+                    pDriver->setUsedIK( false );
+                    pDriver->resetAnimationChannels();
+                    pDriver->requestSeatRefresh();
                 }
                 return pIntroAvatar;
             }
@@ -2716,8 +2741,9 @@ void *CinResCollection::spawnActorEntity( const char *pName,
             return spawnExtraChallengeAvatar(
                 kTransporterAvatarType, std::strstr( pName, "02" ) != nullptr );
         }
-        if ( std::strncmp( pName, "Seller", 6 ) == 0 ) {
-            return spawnAvatar( eEntityType::ET_AVAT, hashcode, pName );
+        if ( bIsLifeSetCinematic ? StringNCmpI( pName, "Seller", 6 ) == 0
+                                 : std::strstr( pName, "Seller" ) != nullptr ) {
+            return spawnSeller( hashcode );
         }
 
         if ( std::strncmp( pName, "glass", 6 ) == 0 ) {
@@ -2922,10 +2948,24 @@ void CinResCollection::releasePlayerCarActor( const int32_t index ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+    actors[index].pCarState = nullptr;
+
+    pPlayerAvatar = nullptr;
+    if ( actors[index].pAIVehicle != nullptr ) {
+        gpAI->getAIPool()->removeVehicle( actors[index].pAIVehicle,
+                                          "RemoveCinematic", false );
+        pCarState->setAIController( nullptr );
+        actors[index].pAIVehicle = nullptr;
+    }
+
+    PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
+    const bool bEngineOn = pVehicle != nullptr &&
+                           pVehicle->getEngineState() != eEngineState::ES_Off;
     SetPlayerCarCinematicMode( false );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+    if ( bEngineOn ) {
+        pVehicle->setEngineState( eEngineState::ES_Running );
+    }
+    bPlayerCarTeleport = true;
 
     if ( gpActiveGMScene != nullptr ) {
         MngShowCaseCarControl &showcase =
@@ -3019,32 +3059,50 @@ void CinResCollection::initializePlayerCarForCinematic() {
     }
 }
 
-bool CinResCollection::onPlayerCarMessage( CarState *pCarState,
+bool CinResCollection::onPlayerCarMessage( CinematicActor *pActor,
                                            const char *pMessage ) {
     // FUN_007e26a0
+    CarState *pCarState = pActor->pCarState;
     if ( pCarState == nullptr ) {
         return false;
     }
     PhysicsVehicle *pVehicle = pCarState->getPhysicsVehicle();
 
     const FlashMessage message( pMessage );
-    if ( message == FlashMessage( "moof" ) ||
-         message == FlashMessage( "moon" ) ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+    if ( message == FlashMessage( "moof" ) ) {
+        if ( pVehicle != nullptr ) {
+            pVehicle->setEngineState( eEngineState::ES_Off );
+        }
+        return true;
+    }
+    if ( message == FlashMessage( "moon" ) ) {
+        if ( pVehicle != nullptr ) {
+            pVehicle->setEngineState( eEngineState::ES_Crank );
+        }
         return true;
     }
     if ( message == FlashMessage( "ctci" ) ) {
         if ( pVehicle != nullptr ) {
             SetPlayerCarCinematicMode( true );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI / PHYSICS
+            if ( pActor->pAIVehicle != nullptr ) {
+                gpAI->getAIPool()->removeVehicle( pActor->pAIVehicle,
+                                                  "RemoveCinematic", false );
+            }
+            {
+                PhysicsLock lock;
+                pVehicle->setPostponedPause( 2 );
+            }
+            pCarState->setAIController( nullptr );
+            pActor->pAIVehicle = nullptr;
         }
         return true;
     }
     if ( message == FlashMessage( "ctia" ) ) {
         if ( pVehicle != nullptr ) {
             SetPlayerCarCinematicMode( false );
+            pActor->pAIVehicle =
+                gpAI->getAIPool()->addCinematicVehicle( pCarState );
             bPlayerCarTeleport = true;
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
         }
         return true;
     }
@@ -3057,19 +3115,22 @@ bool CinResCollection::onPlayerCarMessage( CarState *pCarState,
         ( gpDatabase != nullptr )
             ? gpDatabase->getCarDBEntry( pCarState->getCarID() )
             : nullptr;
+    MngShowCaseCarControl *pControl =
+        ( gpActiveGMScene != nullptr )
+            ? &gpActiveGMScene->getShowcaseCarControl()
+            : nullptr;
+    const bool bIntro = gpGMIntro != nullptr;
+    if ( bIntro && pActor->pIntroCarSlot != nullptr ) {
+        pControl = static_cast<GMIntro::IntroCarSlot *>( pActor->pIntroCarSlot )
+                       ->pShowcaseControl;
+    }
     if ( pCarData != nullptr && gpDatabase->isBike( pCarData ) ) {
         return false;
     }
-    if ( gpActiveGMScene == nullptr ) {
+    if ( pControl == nullptr ) {
         return false;
     }
-
-    const bool bIntro = gpGMIntro != nullptr;
-    if ( bIntro ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GM_INTRO (IntroCarSlot showcase
-                                 // control, car actor +0xb0)
-    }
-    MngShowCaseCarControl &control = gpActiveGMScene->getShowcaseCarControl();
+    MngShowCaseCarControl &control = *pControl;
 
     float duration = 0.0f;
     sscanf( pMessage + 5, "%f", &duration );
@@ -3249,8 +3310,8 @@ void *CinResCollection::spawnExtraChallengeAvatar( const int32_t avatarType,
     numHostesses++;
     numAvatars++;
     if ( pAvatar != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (+0x120 = avatar, avatar
-                                 // +0x1c34 = 0)
+        // Retail also stores the avatar at +0x120, a slot nothing ever reads.
+        pAvatar->resetCineAvatarMode();
     }
     return pAvatar;
 }
@@ -3315,6 +3376,51 @@ void *CinResCollection::spawnPnjAvatar( const char *pPnjName,
         pAvatar->resetCineAvatarMode();
     }
     return pAvatar;
+}
+
+void *CinResCollection::spawnSeller( uint64_t hashcode ) {
+    // FUN_007e6cb0 (inlined)
+    static constexpr int32_t kMaxSellers = 7;
+
+    EntityAvatar *pSeller = nullptr;
+    if ( bIsLifeSetCinematic || numHostesses < kMaxSellers ) {
+        AvatarConfiguration config;
+        ReadAvatarConfigFromPNJ( config, "Seller" );
+
+        pSeller = gpScenaric->getAvatarManager().createAvatar(
+            &config, 0, bAsyncActorLoad, ~0ull, false, 0 );
+        if ( pSeller != nullptr &&
+             pSeller->getType() == eEntityType::ET_AVPL ) {
+            if ( bIsLifeSetCinematic ) {
+                EntityDriver *pDriver = pSeller->getDriver();
+                if ( pDriver != nullptr ) {
+                    pDriver->setSeating( false );
+                    pDriver->setFreeMovement( true );
+                    pDriver->resetAnimationChannels();
+                    pDriver->requestSeatRefresh();
+                    pDriver->setUsedIK( false );
+                    pDriver->resetAnimationChannels();
+                    pDriver->requestSeatRefresh();
+                }
+            } else {
+                pSeller->resetCineAvatarMode();
+                gpAvatar->bakeAvatar( pSeller, &config, 0, false, true );
+            }
+        }
+
+        if ( !bIsLifeSetCinematic ) {
+            numHostesses++;
+        }
+    }
+
+    if ( !bIsLifeSetCinematic && gpActiveGMScene != nullptr ) {
+        EntityCinematic *pLifeCinematic =
+            gpActiveGMScene->getLifeSetManager().findActorCinematic( hashcode );
+        if ( pLifeCinematic != nullptr ) {
+            pLifeCinematic->stop( true );
+        }
+    }
+    return pSeller;
 }
 
 void CinResCollection::registerLifeSetActor( uint64_t hashcode ) {

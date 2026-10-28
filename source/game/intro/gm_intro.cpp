@@ -1194,8 +1194,7 @@ bool GMIntro::isBanksReady( const int32_t newState ) {
             pIntroSc02->setGameModeInterface( this );
             pIntroSc03 = FindIntroCinematic( bank, "C_INTRO_SC_03" );
             pIntroSc03->setGameModeInterface( this );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: clear SC_03's unidentified byte
-                                     // +0x2338.
+            pIntroSc03->setActorsDriveStreaming( false );
             pAvatarChoiceCine = FindIntroCinematic( bank, "C_AVATAR_CHOICE" );
             pAvatarChoiceCine->setGameModeInterface( this );
 
@@ -1229,8 +1228,7 @@ bool GMIntro::isBanksReady( const int32_t newState ) {
 
             pInplaneSc02 = FindIntroCinematic( bank, "C_SC_02" );
             pInplaneSc02->setGameModeInterface( this );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: clear C_SC_02's unidentified byte
-                                     // +0x2338.
+            pInplaneSc02->setActorsDriveStreaming( false );
             pInplaneSc04 = FindIntroCinematic( bank, "C_SC_04" );
             pInplaneSc04->setGameModeInterface( this );
             bankSlot.State = BSS_Installed;

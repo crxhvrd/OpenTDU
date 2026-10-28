@@ -497,8 +497,6 @@ void EntityCinematic::loadResources( ScenaricBank *param_2 ) {
     // FUN_007e9cc0
     ResolveVolumeBlock( MutableRef( pZoneRef ), param_2 );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
-
     bStopWhenSkipped = true;
 }
 
@@ -1097,7 +1095,8 @@ void EntityCinematic::end() {
                                     cinematicPlayer.getActorHashcode( i ) );
                         if ( bLifeSet ) {
                             if ( pLifeCinematic == nullptr ) {
-                                OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC
+                                // FUN_007e4ec0
+                                MngActor::Uninstanciate( &sceneActors, pActor );
                             } else {
                                 pAvatar->endLifeSetCinematic();
                                 if ( pAvatar->getAvatarType() == 1 ) {

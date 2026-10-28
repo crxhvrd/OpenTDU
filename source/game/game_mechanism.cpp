@@ -983,9 +983,7 @@ void GameMechanism::startCountdown() {
         pCountdownCinematic->getCinResCollection().bindPlayerCar(
             pLocalCar ); // FUN_007e1bb0 (+0x110)
         pCountdownCinematic->setDetachPlayerCarInput( false ); // +0x26e4
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CINEMATIC (+0x2338 = 0,
-                                 // CinResCollection +0x2228: car streaming
-                                 // during the cine)
+        pCountdownCinematic->setActorsDriveStreaming( false ); // +0x2338
         pCountdownCinematic->start( true );
         return;
     }
@@ -2422,7 +2420,7 @@ void GameMechanism::startEndCinematic( const Matrix4x4f_t &pose ) {
     frame.row( 3 ).head<3>() -= GetWorldShift().head<3>().transpose();
     pCinematic->setTransformOffset( frame );  // +0x180, bCineOffset (+0x173)
     pCinematic->setGameModeInterface( this ); // +0x2598 = CGameMech +0x18
-    OTDU_UNIMPLEMENTED_ONCE;                  // TODO: CINEMATIC (+0x2338 = 0)
+    pCinematic->setActorsDriveStreaming( false ); // +0x2338
     pCinematic->start( true );
 }
 

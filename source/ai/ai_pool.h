@@ -133,6 +133,7 @@ public:
                             const Matrix4x4f_t &startFrame,
                             const AiRoadIt &startHint,
                             const int32_t missionType );
+    AiVehicle *addCinematicVehicle( CarState *pCar );
     AiVehicle *addTrainingDriver( const Matrix4x4f_t &startFrame,
                                   const AiRoadIt &startHint );
     bool requestBot( const AiRoadIt &candidate );

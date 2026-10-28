@@ -917,6 +917,17 @@ AiVehicle *AiPool::addOpponent( CarState *pCar,
     return pVehicle;
 }
 
+AiVehicle *AiPool::addCinematicVehicle( CarState *pCar ) {
+    // FUN_0091efe0
+    AiVehicle *pVehicle = allocVehicleSlot();
+    if ( pVehicle == nullptr ) {
+        return nullptr;
+    }
+    pVehicle->initializeCinematic( pCar );
+    addVehicle( pVehicle );
+    return pVehicle;
+}
+
 AiVehicle *AiPool::addTrainingDriver( const Matrix4x4f_t &startFrame,
                                       const AiRoadIt &startHint ) {
     // FUN_0091f070

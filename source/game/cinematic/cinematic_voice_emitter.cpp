@@ -6,6 +6,7 @@
 #include "ai/ai_pool_traffic.h"
 #include "audio/gs_audio.h"
 #include "audio/implementation/audio_dispatcher_playback.h"
+#include "audio/implementation/ed_audio_object.h"
 #include "audio/implementation/ed_audio_sample.h"
 #include "config/gs_config.h"
 #include "filesystem/gs_file.h"
@@ -247,13 +248,14 @@ void CinematicVoiceEmitter::createInstance() {
     pInstance->setSample( pSample.get() );
     pInstance->setVolume( Volume );
     pInstance->setDopplerFactor( 0.0f );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (FUN_00613800, emitter listens to
-                             // its instance: Stopped/Ended -> uninstall)
+    pInstance->addListener( this );
 }
 
 void CinematicVoiceEmitter::play() {
     // FUN_007debc0
     static const Eigen::Vector3f kVoicePosition( 0.0f, 5.0f, 0.0f );
+    // The audio thread uninstalls the emitter from its Stopped/Ended callbacks.
+    ScopedMutexLock lock( &GetAudioGraphMutex() );
     if ( pInstance == nullptr ) {
         return;
     }
@@ -266,6 +268,7 @@ void CinematicVoiceEmitter::play() {
 
 void CinematicVoiceEmitter::playFrom( EntityAvatar *pAvatar ) {
     // FUN_007de880
+    ScopedMutexLock lock( &GetAudioGraphMutex() );
     pOwnerAvatar = pAvatar;
     if ( pInstance == nullptr ) {
         return;
@@ -278,6 +281,7 @@ void CinematicVoiceEmitter::playFrom( EntityAvatar *pAvatar ) {
 
 void CinematicVoiceEmitter::setPosition( const Eigen::Vector3f &position ) {
     // FUN_007de870
+    ScopedMutexLock lock( &GetAudioGraphMutex() );
     if ( pInstance != nullptr ) {
         pInstance->setPosition(
             position, AudioDispatcherPlaybackInstanceValues::ADPCS_World );
@@ -286,6 +290,7 @@ void CinematicVoiceEmitter::setPosition( const Eigen::Vector3f &position ) {
 
 void CinematicVoiceEmitter::stop() {
     // FUN_007de860
+    ScopedMutexLock lock( &GetAudioGraphMutex() );
     if ( pInstance != nullptr ) {
         pInstance->stop( 0.0f );
     }
@@ -293,11 +298,13 @@ void CinematicVoiceEmitter::stop() {
 
 void CinematicVoiceEmitter::uninstall() {
     // FUN_007de8e0
+    ScopedMutexLock lock( &GetAudioGraphMutex() );
     if ( State == CVES_None ) {
         return;
     }
 
     if ( pInstance != nullptr ) {
+        pInstance->removeListener( this );
         pInstance->stop( 0.0f );
         pInstance->setSample( nullptr );
         pInstance->release();
@@ -305,4 +312,14 @@ void CinematicVoiceEmitter::uninstall() {
     }
     pSample.reset();
     State = CVES_None;
+}
+
+void CinematicVoiceEmitter::onPipeEntryStopped( edAudioStreamEntry * ) {
+    // FUN_007deae0
+    uninstall();
+}
+
+void CinematicVoiceEmitter::onPipeEntryEnded( edAudioStreamEntry * ) {
+    // FUN_007deaf0
+    uninstall();
 }

@@ -5,6 +5,7 @@
 #include "ai/ai_veh_behaviour.h"
 #include "ai/ai_veh_controller.h"
 #include "ai/ai_veh_locomotion.h"
+#include "ai/ai_veh_nav_cinematic.h"
 #include "ai/ai_veh_nav_opponent.h"
 #include "ai/ai_veh_nav_traffic.h"
 #include "ai/ai_veh_nav_trainer.h"
@@ -160,6 +161,7 @@ public:
     bool isJunctionOccupied( const uint32_t junctionID ) const;
     bool isCopInPursuit() const;
     void initializeParked( CarState *pCar );
+    void initializeCinematic( CarState *pCar );
     void initializeOpponent( CarState *pCar,
                              const Matrix4x4f_t &startFrame,
                              const int32_t newControllerType,
@@ -235,6 +237,7 @@ private:
     int32_t locoType;
     AiVehNavTraffic navTraffic;
     AiVehNavOpponent navOpponent;
+    AiVehNavCinematic navCinematic;
     AiVehNavTrainer navTrainer;
     AiVehNavigation *pNav;
     int32_t navType;

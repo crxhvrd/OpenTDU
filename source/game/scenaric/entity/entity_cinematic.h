@@ -75,6 +75,9 @@ public:
     inline void setTransformOffset( const Matrix4x4f_t &offset ) {
         cinematicPlayer.setBaseMatrix( offset );
     }
+    inline void setActorsDriveStreaming( bool bEnabled ) {
+        cinematicPlayer.setActorsDriveStreaming( bEnabled );
+    }
     inline void setLifeSetCinematic( bool bEnabled ) {
         cinematicPlayer.setLifeSetCinematic( bEnabled );
     }
@@ -104,6 +107,9 @@ public:
     inline void setTime( float time ) { Time = time; }
     inline float getDuration() const { return CineTotalTime; }
     inline CinResCollection &getCinResCollection() { return cinematicPlayer; }
+    inline const CinResCollection &getCinResCollection() const {
+        return cinematicPlayer;
+    }
     const CinResCollection::CameraView &getCameraView() const {
         return cinematicPlayer.getCameraView();
     }

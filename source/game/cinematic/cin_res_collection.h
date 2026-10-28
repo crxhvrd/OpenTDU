@@ -7,6 +7,7 @@
 #include "game/scenaric/entity/entity_factory.h"
 
 struct AvatarConfiguration;
+class AiVehicle;
 class BankInstance;
 class ClipInstance;
 class CameraCinematic;
@@ -15,6 +16,7 @@ class Entity;
 class EntityActor;
 class EntityAvatar;
 class EntityCinematic;
+struct HiearchyNode;
 
 struct CinematicActor {
     enum eKind : int32_t {
@@ -34,7 +36,8 @@ struct CinematicActor {
     void *pEntity; // the bound EntityActor / avatar (null until spawned)
     CarState *pCarState = nullptr; // CAK_PlayerCar / CAK_TrafficCar: the car
                                    // driven (+0x1c)
-    const void *pSceneData;        // this actor's CinScene media descriptor
+    AiVehicle *pAIVehicle = nullptr;
+    const void *pSceneData; // this actor's CinScene media descriptor
     eKind Kind = CAK_Entity;
     bool bInstanced = false;
     bool bCarTeleport = true;
@@ -116,12 +119,19 @@ public:
         bHasBaseMatrix = false;
     }
     inline bool hasBaseMatrix() const { return bHasBaseMatrix; }
+    inline void translateBaseMatrix( const Eigen::Vector3f &t ) {
+        baseMatrix.row( 3 ).head<3>() += t.transpose();
+    }
     inline const Matrix4x4f_t &getBaseMatrix() const { return baseMatrix; }
     inline bool isLifeSetCinematic() const { return bIsLifeSetCinematic; }
     inline EntityCinematic *getOwner() const { return pOwner; }
     inline bool canActorsDriveStreaming() const {
         return bActorsDriveStreaming;
     }
+    inline void setActorsDriveStreaming( bool bEnabled ) {
+        bActorsDriveStreaming = bEnabled;
+    }
+    inline int32_t getNumVoiceEmitters() const { return numVoiceEmitters; }
     inline bool isStreamTarget() const { return bStreamTarget; }
     inline void setStreamTarget( bool bEnabled ) { bStreamTarget = bEnabled; }
     inline Entity *getCurrentMicro() const { return pCurrentMicro; }
@@ -255,13 +265,12 @@ private:
     Eigen::Vector3f tickCameraShake( CameraCinematic *pCamera,
                                      float deltaTime );
 
-    bool onCinematicMessage( const void *pKey,
-                             const char *pMessage,
-                             void *pRef );
+    bool
+    onCinematicMessage( const void *pKey, const char *pMessage, void *pRef );
     void processCinematicMessages( const uint16_t *pTrack, float time );
     void initializePlayerCarForCinematic();
     Entity *findMicroByName( const char *pName ) const;
-    bool onPlayerCarMessage( CarState *pCarState, const char *pMessage );
+    bool onPlayerCarMessage( CinematicActor *pActor, const char *pMessage );
     void collectActorClips( const CinMediaContext *pCtx,
                             const uint16_t *pTrack,
                             float time,
@@ -348,6 +357,7 @@ private:
                             CinematicActor::eKind &outKind );
     void *spawnPedestrian( int32_t gender );
     void *spawnAvatar( eEntityType type, uint64_t hashcode, const char *pName );
+    void *spawnSeller( uint64_t hashcode );
     void *spawnExtraChallengeAvatar( const int32_t avatarType,
                                      const bool bEndAvatar );
     void *spawnNamedAvatar( const struct AvatarConfiguration *pConfig,
@@ -411,6 +421,7 @@ private:
     bool bAsyncActorLoad = false;
     bool bAvatarShadowTarget = false;
     EntityActor *pPlane = nullptr;
+    HiearchyNode *pGhostBikeNode = nullptr;
     std::vector<FiredMessage> firedMessages;
     CinematicVoiceEmitter
         voiceEmitters[CinematicVoiceEmitter::kMaxEmittersPerCinematic];
