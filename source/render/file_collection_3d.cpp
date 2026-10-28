@@ -1,8 +1,13 @@
 #include "shared.h"
 #include "file_collection_3d.h"
 
+#include "core/mutex.h"
+
+static TestDriveMutex gCollectionMutex;
+
 HiearchyNode *FileCollection3D::instantiate( uint64_t objectHashcode ) {
     // FUN_0050ad00
+    ScopedMutexLock lock( &gCollectionMutex );
     Render3DD *local_4 = nullptr;
     RenderFile::Section *peVar1 = findNode( objectHashcode, &local_4 );
     if ( peVar1 != nullptr ) {
@@ -76,6 +81,7 @@ FileCollection3D::instantiate( Render3DD *p3DD,
 HiearchyNode *FileCollection3D::instantiate( Render3DD *p3DD,
                                              HiearchyNodeEntry *pNode ) {
     // FUN_0050aae0
+    ScopedMutexLock lock( &gCollectionMutex );
     HiearchyNode *peVar2 = gHiearchyNodeAllocator.allocate( 1 );
     peVar2->collectionLink.attach( HiearchyNodes, peVar2 );
 
@@ -95,6 +101,7 @@ HiearchyNode *FileCollection3D::instantiate( Render3DD *p3DD,
 Instance *FileCollection3D::instantiate( InstanceEntry *param_1,
                                          uint64_t param_2 ) {
     // FUN_0050a7f0
+    ScopedMutexLock lock( &gCollectionMutex );
     Instance *this_00 = gInstanceAllocator.allocate( 1 );
     this_00->collectionLink.attach( Instances, this_00 );
     this_00->initialize( param_1, param_2 );
@@ -103,6 +110,7 @@ Instance *FileCollection3D::instantiate( InstanceEntry *param_1,
 
 Instance *FileCollection3D::findAndInstantiate( uint64_t param_2 ) {
     // FUN_0050aa90
+    ScopedMutexLock lock( &gCollectionMutex );
     Render3DD *p3DD = nullptr;
 
     RenderFile::Section *peVar2 = findInstance( param_2, &p3DD );
@@ -130,6 +138,7 @@ static inline void UnlinkFromCollection( std::list<T *> &param_1, T *param_2 ) {
 
 void FileCollection3D::uninstantiate( HiearchyNode *param_1 ) {
     // FUN_0050a870
+    ScopedMutexLock lock( &gCollectionMutex );
     HiearchyNode *peVar3 = param_1->pNext;
     while ( peVar3 != nullptr ) {
         Instance *peVar1 = peVar3->pInstance;
@@ -159,6 +168,7 @@ void FileCollection3D::uninstantiate( HiearchyNode *param_1 ) {
 
 void FileCollection3D::uninstantiate( Instance *param_1 ) {
     // FUN_0050a820
+    ScopedMutexLock lock( &gCollectionMutex );
     param_1->markAsFree();
     UnlinkFromCollection( Instances, param_1 );
     gInstanceAllocator.deallocate( param_1, 1 );
@@ -166,11 +176,13 @@ void FileCollection3D::uninstantiate( Instance *param_1 ) {
 
 void FileCollection3D::register3DG( Render3DG *render3DG ) {
     // FUN_0050a9f0
+    ScopedMutexLock lock( &gCollectionMutex );
     Render3DGs.push_front( render3DG );
 }
 
 void FileCollection3D::register3DD( Render3DD *render3DD ) {
     // FUN_0050a900
+    ScopedMutexLock lock( &gCollectionMutex );
     Render3DDs.push_front( render3DD );
 
     for ( Render3DG *pRender3DG : Render3DGs ) {
@@ -180,17 +192,20 @@ void FileCollection3D::register3DD( Render3DD *render3DD ) {
 
 void FileCollection3D::unregister3DG( Render3DG *render3DG ) {
     // FUN_0050aa50
+    ScopedMutexLock lock( &gCollectionMutex );
     Render3DGs.remove( render3DG );
 }
 
 void FileCollection3D::unregister3DD( Render3DD *render3DD ) {
     // FUN_0050a9a0
+    ScopedMutexLock lock( &gCollectionMutex );
     Render3DDs.remove( render3DD );
 }
 
 RenderFile::Section *FileCollection3D::findNode( uint64_t objectHashcode,
                                                  Render3DD **ppRender3DD ) {
     // FUN_0050a600
+    ScopedMutexLock lock( &gCollectionMutex );
     for ( Render3DD *p3DD : Render3DDs ) {
         RenderFile::Section *peVar6 = p3DD->findHiearchyNode( objectHashcode );
         if ( peVar6 != nullptr ) {
@@ -204,6 +219,7 @@ RenderFile::Section *FileCollection3D::findNode( uint64_t objectHashcode,
 RenderFile::Section *FileCollection3D::findInstance( uint64_t objectHashcode,
                                                      Render3DD **ppRender3DD ) {
     // FUN_0050a590
+    ScopedMutexLock lock( &gCollectionMutex );
     for ( Render3DD *p3DD : Render3DDs ) {
         RenderFile::Section *peVar6 = p3DD->findInstance( objectHashcode );
         if ( peVar6 != nullptr ) {
