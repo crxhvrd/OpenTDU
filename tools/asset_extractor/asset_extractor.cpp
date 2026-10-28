@@ -25,6 +25,11 @@
 #include "dxvk/src/dxso/dxso_reader.h"
 #endif
 
+#ifdef OTDU_UNIX
+std::filesystem::path
+ResolvePathInsensitive( const std::filesystem::path &targetPath );
+#endif
+
 namespace {
 
     // Labels '<prefix><first>'..'<prefix><last>' on the frame 'FrameOffset'
@@ -239,7 +244,14 @@ namespace {
     bool BuildGeneratedMovie( const std::string &sourceFolder,
                               const std::string &outputFolder,
                               const GeneratedMovie &movie ) {
-        const std::string sourcePath = sourceFolder + movie.pSourceBank;
+        std::string sourcePath = sourceFolder + movie.pSourceBank;
+#ifdef OTDU_UNIX
+        std::filesystem::path insensitivePath =
+            ResolvePathInsensitive( sourcePath );
+        if ( !insensitivePath.empty() ) {
+            sourcePath = insensitivePath.string();
+        }
+#endif
         std::vector<uint8_t> sourceBank;
         if ( !ReadBinaryFile( sourcePath, sourceBank ) ) {
             OTDU_LOG_ALWAYS( "Cannot read '%s'\n", sourcePath.c_str() );
