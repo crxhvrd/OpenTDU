@@ -26,6 +26,7 @@
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/impostor.h"
+#include "world/mng_panel.h"
 #include "world/sector_manager.h"
 #include "world/spot_stream.h"
 #include "world/streaming_manager.h"
@@ -1146,8 +1147,12 @@ void BindOTDUWindowConstants( const Instance *pInstance ) {
         eShaderType::ST_Pixel, constants[0].data(), kWindowRegisterPS, 3 );
 }
 
-// OTDU_ADDITION: c250 = (emissive scale, -, -, -), see lighting/lighting.vert.
+// OTDU_ADDITION: c250 = (emissive scale, lamp tint, -, -), see
+// lighting/lighting.vert.
 static constexpr uint32_t kEmissiveRegisterVS = 250;
+// Panel text is unlit: without a lamp tint the night unlit scale turns it
+// black in front of a sign lit by the headlights.
+static constexpr float kPanelLampTint = 1.0f;
 
 static std::vector<uint64_t> gEmissiveTextures;
 static bool gbEmissiveUploaded = false;
@@ -1182,12 +1187,21 @@ static bool IsEmissiveMaterial( const Material *pMaterial ) {
 }
 
 void BindOTDUEmissiveConstants() {
+    const Material *pMaterial = gSceneRenderer.pActiveMaterial;
     const float scale = gEdRender.LampParams.z();
-    if ( scale <= 0.0f ||
-         !IsEmissiveMaterial( gSceneRenderer.pActiveMaterial ) ) {
+    const float emissive =
+        ( scale > 0.0f && IsEmissiveMaterial( pMaterial ) ) ? scale : 0.0f;
+    const bool bLights =
+        gEdRender.LampParams.x() > 0.0f || gEdRender.NumHeadlights > 0;
+    const float lampTint =
+        ( bLights && pMaterial != nullptr && gpMngPanel != nullptr &&
+          pMaterial == gpMngPanel->getOverlayMaterial() )
+            ? kPanelLampTint
+            : 0.0f;
+    if ( emissive <= 0.0f && lampTint <= 0.0f ) {
         return;
     }
-    Eigen::Vector4f constants( scale, 0.0f, 0.0f, 0.0f );
+    Eigen::Vector4f constants( emissive, lampTint, 0.0f, 0.0f );
     gEdRender.pRenderDevice->setFloatConstants(
         eShaderType::ST_Vertex, constants.data(), kEmissiveRegisterVS, 1 );
     gbEmissiveUploaded = true;

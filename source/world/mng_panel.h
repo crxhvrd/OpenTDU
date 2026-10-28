@@ -39,6 +39,9 @@ public:
     void terminate() override;
     void addInstance( MassInstanceImpostor *pInstance );
 
+    // OTDU_ADDITION: the glyph overlay material (night lamps light the text).
+    Material *getOverlayMaterial() const { return pMaterialOverlay; }
+
 private:
     bool initResources();
     void unloadResources();

@@ -2304,11 +2304,12 @@ Shader *RenderContext::registerShader( const ShaderTableEntry *pTableEntry,
         pShader->setConstantMap(
             getConstantMapByIndex( pTableEntry->ConstantMapIndex ) );
         uint32_t vsFlags = pTableEntry->Flag0;
-        // OTDU_ADDITION: the rebuilt avatar and vehicle interior shaders light
-        // the night lamps in view space; always request the world view matrix
-        // (bit 0x10, c20).
+        // OTDU_ADDITION: the rebuilt avatar, vehicle interior and lighting
+        // (panel text) shaders light the night lamps in view space; always
+        // request the world view matrix (bit 0x10, c20).
         if ( strcmp( pTableEntry->pShaderCategory, "Avatar" ) == 0 ||
-             strcmp( pTableEntry->pShaderCategory, "VehicleInterior" ) == 0 ) {
+             strcmp( pTableEntry->pShaderCategory, "VehicleInterior" ) == 0 ||
+             strcmp( pTableEntry->pShaderCategory, "Lighting" ) == 0 ) {
             vsFlags |= 0x10;
         }
         pShader->setShaderInfos( vsFlags, pTableEntry->Flag1 );

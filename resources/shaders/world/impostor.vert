@@ -42,6 +42,8 @@ layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;
 layout( location = D3D9_SLOT_TEXCOORD0 ) out vec4 out_Texcoord0;
 layout( location = D3D9_SLOT_TEXCOORD1 ) out vec4 out_Texcoord1;
 layout( location = D3D9_SLOT_TEXCOORD3 ) out vec4 out_Texcoord3;
+layout( location = OTDU_SLOT_VIEW_POSITION ) out vec4 out_ViewPosition; // OTDU
+layout( location = OTDU_SLOT_VIEW_NORMAL ) out vec4 out_ViewNormal;     // OTDU
 
 float wrapAngle( float angle ) {
     return fract( angle * 0.15915494 + 0.5 ) * ( 2.0 * kPi ) + -kPi;
@@ -99,6 +101,17 @@ void main() {
     out_Texcoord1 = vec4( light * in_Color0.rgb, in_Color0.a );
     out_Texcoord3 =
         vec4( tdu_vertex_fog( length( viewCenter ) ), 0.0, 0.0, 0.0 );
+    // OTDU_ADDITION: night lamps, lit with the spherical normal.
+    bool bLamps = tdu_lamps_enabled();
+    out_ViewPosition =
+        bLamps ? vec4( viewPosition.xyz,
+                       dot( in_Color0.rgb, vec3( 0.299, 0.587, 0.114 ) ) )
+               : vec4( 0.0 );
+    out_ViewNormal = bLamps
+                         ? vec4( d3d9_dot( normal, gWorldView( 0 ).xyz ),
+                                 d3d9_dot( normal, gWorldView( 1 ).xyz ),
+                                 d3d9_dot( normal, gWorldView( 2 ).xyz ), 0.0 )
+                         : vec4( 0.0 );
 #ifdef IMPOSTOR_FADE
     float fade = -0.5 + gVSLODDist.y;
     out_Texcoord3.y = -max( fade + fade, 0.0 ) + 1.0;

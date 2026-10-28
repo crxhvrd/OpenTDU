@@ -15,6 +15,8 @@ D3D9_DECLARE_SAMPLER_2D( 0 )
 layout( location = D3D9_SLOT_TEXCOORD0 ) in vec4 in_Texcoord0;
 layout( location = D3D9_SLOT_TEXCOORD1 ) in vec4 in_Texcoord1;
 layout( location = D3D9_SLOT_TEXCOORD3 ) in vec4 in_Texcoord3;
+layout( location = OTDU_SLOT_VIEW_POSITION ) in vec4 in_ViewPosition; // OTDU
+layout( location = OTDU_SLOT_VIEW_NORMAL ) in vec4 in_ViewNormal;     // OTDU
 layout( location = 0 ) out vec4 oC0;
 
 void main() {
@@ -27,6 +29,10 @@ void main() {
     alpha *= fogFade.y;
 #endif
 
-    oC0 = vec4( tdu_apply_fog( light.rgb * color.rgb, fogFade.x ), alpha );
+    // OTDU_ADDITION: night lamps.
+    vec3 lit = light.rgb * color.rgb +
+               color.rgb * tdu_lamp_pixel( in_ViewPosition, in_ViewNormal );
+
+    oC0 = vec4( tdu_apply_fog( lit, fogFade.x ), alpha );
     d3d9_ps_alpha_test( oC0 );
 }

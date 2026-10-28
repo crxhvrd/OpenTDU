@@ -16,7 +16,8 @@
 //
 // OTDU_ADDITION: unlit variants (no ambient, no diffuse: particles, shore
 // foam) are scaled by the night unlit scale (1 = retail), emissive signs by
-// the emissive scale.
+// the emissive scale. Draws with a lamp tint (panel text) pass their view
+// position to the night lamps.
 
 #define D3D9_VERTEX_SHADER
 #include "d3d9_abi.glsl"
@@ -57,6 +58,7 @@ layout( location = D3D9_SLOT_TEXCOORD2 ) out vec4 out_Texcoord2;
 #ifdef LIGHTING_FADE
 layout( location = D3D9_SLOT_TEXCOORD3 ) out vec4 out_Texcoord3;
 #endif
+layout( location = OTDU_SLOT_VIEW_POSITION ) out vec4 out_ViewPosition; // OTDU
 
 void main() {
     gl_Position = vec4( d3d9_dot( in_Position0, gWorldViewProject( 0 ) ),
@@ -112,6 +114,15 @@ void main() {
 #elif defined( LIGHTING_FADE_ALPHA )
     out_Texcoord3 = vec4( gVSFadeAlpha.x, 0.0, 0.0, 0.0 );
 #endif
+
+    // OTDU_ADDITION: night lamps (w = lamp tint).
+    out_ViewPosition = vec4( 0.0 );
+    if ( tdu_emissive_params.y > 0.0 && tdu_lamps_enabled() ) {
+        out_ViewPosition = vec4( d3d9_dot( in_Position0, gWorldView( 0 ) ),
+                                 d3d9_dot( in_Position0, gWorldView( 1 ) ),
+                                 d3d9_dot( in_Position0, gWorldView( 2 ) ),
+                                 tdu_emissive_params.y );
+    }
 
     out_Color0 = vec4( 1.0 );
     out_Color1 = vec4( 0.0 );
