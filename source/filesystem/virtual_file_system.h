@@ -42,3 +42,8 @@ private:
 };
 
 extern VirtualFileSystemRegister gVirtualFileSystemRegister;
+
+#ifdef OTDU_UNIX
+std::filesystem::path
+ResolvePathInsensitive( const std::filesystem::path &targetPath );
+#endif

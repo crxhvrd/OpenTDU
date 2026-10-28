@@ -322,9 +322,13 @@ bool GSFile::loadBank( const char *pFilename,
     if ( pFilemap == nullptr || pEntry == nullptr ) {
         FileIterator it;
         it.findFirstMatch( pFilename );
+#ifdef OTDU_UNIX
+        resolvedName = it.ItInfos.Filename;
+#else
         resolvedName = it.SearchDirectory;
         resolvedName += "/";
         resolvedName += it.SearchPattern;
+#endif
     } else {
         bCompressed = pEntry->bCompressed;
         if ( !pFilemap->bUseBigFile ) {

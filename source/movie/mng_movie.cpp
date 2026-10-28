@@ -136,6 +136,14 @@ bool MngMovie::loadMovie( const char *param_1 ) {
     std::string pathToVideo =
         vfsAbsPath + "/" + resRootPath + "/Video/" + param_1;
 
+#ifdef OTDU_UNIX
+    std::filesystem::path insensitivePath =
+        ResolvePathInsensitive( pathToVideo );
+    if ( !insensitivePath.empty() ) {
+        pathToVideo = insensitivePath.string();
+    }
+#endif
+
     OTDU_LOG_INFO( "Starting loading movie '%s'...\n", pathToVideo.c_str() );
 
     BinkFramePointer *pBVar5 = gEdMovie.openBik( pathToVideo.c_str() );
