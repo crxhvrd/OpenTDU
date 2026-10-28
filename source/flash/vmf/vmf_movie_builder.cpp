@@ -529,5 +529,9 @@ VMFDocument VMFMovieBuilder::build() const {
     showFrame.TagId = kVMFTagShowFrame;
     children.push_back( std::move( showFrame ) );
 
+    // Added sprites are indexed past the source's last character
+    movie.NumCharacters =
+        std::max( movie.NumCharacters, movie.computeNumCharacters() );
+
     return movie;
 }
