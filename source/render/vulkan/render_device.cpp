@@ -3445,7 +3445,7 @@ void RenderDevice::createPipelineCache() {
         char pWorkingDir[OTDU_MAX_PATH];
         TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
         psoSeed.load( std::filesystem::path( pWorkingDir ) / "opentdu_data" /
-                      "pso_seed.bin" );
+                      "pso_library.bin" );
 
         std::ifstream file( psoCachePath, std::ios::binary | std::ios::ate );
         if ( file.is_open() ) {
