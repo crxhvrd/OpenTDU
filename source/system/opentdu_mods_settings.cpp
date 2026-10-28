@@ -17,7 +17,12 @@ static std::string GetPackStateLabel( const ModPack &pack ) {
 }
 
 static std::string ToNarrow( const std::wstring &text ) {
-    return std::string( text.begin(), text.end() );
+    std::string narrow;
+    narrow.reserve( text.size() );
+    for ( const wchar_t character : text ) {
+        narrow.push_back( static_cast<char>( character ) );
+    }
+    return narrow;
 }
 
 static std::vector<OptionsDetail> GetPackDetails( const ModPack &pack ) {
@@ -75,7 +80,14 @@ std::vector<OptionsTab> OpenTDUModsSettings::buildTabs() {
         const std::string id = pack.Id;
         OptionsRow row;
         row.Type = eOptionsRowType::ORT_Checkbox;
-        row.GetLabel = [id]() { return id; };
+        row.GetLabel = [id]() {
+            const ModPack *pPack = gpModManager->findPack( id.c_str() );
+            if ( pPack == nullptr ) {
+                return id;
+            }
+            return pPack->Description.resolve(
+                gpPlayerData != nullptr ? gpPlayerData->getLanguage() : "us" );
+        };
         row.IsChecked = [id]() {
             const ModPack *pPack = gpModManager->findPack( id.c_str() );
             return pPack != nullptr && pPack->bEnabled;
