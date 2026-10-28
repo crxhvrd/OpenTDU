@@ -7,18 +7,9 @@
 [submodule "third_party/VulkanMemoryAllocator"]
 	path = third_party/VulkanMemoryAllocator
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-[submodule "third_party/Vulkan-Headers"]
-	path = third_party/Vulkan-Headers
-	url = https://github.com/KhronosGroup/Vulkan-Headers.git
 [submodule "third_party/eigen"]
 	path = third_party/eigen
 	url = https://gitlab.com/libeigen/eigen.git
-[submodule "third_party/spirv"]
-	path = third_party/spirv
-	url = https://github.com/KhronosGroup/SPIRV-Headers.git
-[submodule "third_party/spirv_cross"]
-	path = third_party/spirv_cross
-	url = https://github.com/KhronosGroup/SPIRV-Cross
 [submodule "third_party/zlib"]
 	path = third_party/zlib
 	url = https://github.com/madler/zlib.git

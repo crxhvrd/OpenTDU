@@ -7,20 +7,6 @@
 // Shared asset-extraction core. Unpacks the packed .ini files and, on request,
 // the retail shader tables from TestDriveUnlimited.exe (MC 1.66A)
 namespace AssetExtractor {
-    // Optional hook used to translate a compiled SPIR-V module into GLSL
-    // source. Implemented by the standalone tool (via SPIRV-Cross); the game
-    // client passes nullptr since it never needs the OpenGL3.3 shader sources.
-    struct ShaderSourceGenerator {
-        virtual ~ShaderSourceGenerator() = default;
-
-        // Appends the GLSL translation of one shader to outTableSource.
-        virtual void appendShaderSource( uint64_t hashcode,
-                                         bool bIsVertexShader,
-                                         const uint32_t *pSpirvBytecode,
-                                         size_t spirvDwordCount,
-                                         std::string &outTableSource ) = 0;
-    };
-
     struct ExtractionParams {
         const char *pExecutablePath = nullptr; // Path to TestDriveUnlimited.exe
         const char *pOutputPath = nullptr; // Base output path (parent of EURO/)
@@ -29,9 +15,6 @@ namespace AssetExtractor {
         bool bExtractShaders =
             false; // Extract the retail shader tables (shader lifter tools
                    // only; the client runs EURO/Shaders/rebuilt.bin)
-        ShaderSourceGenerator *pSourceGenerator =
-            nullptr; // Optional GLSL generator (nullptr disables
-                     // -gen_shader_source)
     };
 
     struct ExtractionResult {

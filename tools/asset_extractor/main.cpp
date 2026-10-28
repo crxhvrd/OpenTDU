@@ -11,10 +11,6 @@
 #include <cstring>
 #include <filesystem>
 
-#if OTDU_EXTRACTOR_DXVK
-#include "spirv_cross/spirv_glsl.hpp"
-#endif
-
 #if OTDU_DEVBUILD
 bool gBreakOnAssertFailure = true; // DAT_00f47931
 static CmdLineArg CmdLineArgDbgBreakOnAssertFailure( "break_on_assert_failure",
@@ -44,13 +40,6 @@ static CmdLineArg CmdLineArgsOutputPath( "asset_output_path",
                                              strcpy( gpOutputPath, pArg );
                                          } );
 
-static bool gbGenerateShaderSource =
-    false; // If true, generate shader source (default: false)
-static CmdLineArg CmdLineArgsGenGLSL( "gen_shader_source",
-                                      []( const char *pArg ) {
-                                          gbGenerateShaderSource = true;
-                                      } );
-
 static bool gbExtractShaders =
     false; // If true, extract the retail shader tables (default: false)
 static CmdLineArg CmdLineArgsExtractShaders( "extract_shaders",
@@ -63,37 +52,6 @@ static bool gbForceExtraction =
 static CmdLineArg CmdLineArgsForce( "force", []( const char *pArg ) {
     gbForceExtraction = true;
 } );
-
-#if OTDU_EXTRACTOR_DXVK
-// SPIRV-Cross-backed GLSL generator. Lives in the standalone tool only so the
-// game client never has to depend on SPIRV-Cross (see asset_extractor.h).
-struct SpirvCrossGLSLGenerator final
-    : public AssetExtractor::ShaderSourceGenerator {
-    void appendShaderSource( uint64_t hashcode,
-                             bool bIsVertexShader,
-                             const uint32_t *pSpirvBytecode,
-                             size_t spirvDwordCount,
-                             std::string &outTableSource ) override {
-        spirv_cross::CompilerGLSL glsl( pSpirvBytecode, spirvDwordCount );
-
-        // Set some options.
-        spirv_cross::CompilerGLSL::Options options;
-        options.vulkan_semantics = true;
-        glsl.set_common_options( options );
-
-        spv::ExecutionModel entryPointType =
-            bIsVertexShader ? spv::ExecutionModel::ExecutionModelVertex
-                            : spv::ExecutionModel::ExecutionModelFragment;
-        std::string entryHashcode = IntegerToHexString( hashcode );
-        std::string entryPointName = "main_" + entryHashcode;
-        glsl.rename_entry_point( "main", entryPointName, entryPointType );
-        std::string sourceCode = glsl.compile();
-        outTableSource += "\n#ifdef COMPILE_" + entryHashcode + "\n";
-        outTableSource += sourceCode;
-        outTableSource += "\n#endif // ifdef COMPILE_" + entryHashcode + "\n";
-    }
-};
-#endif
 
 [[noreturn]] static void PrintUsage() {
     OTDU_LOG_ALWAYS(
@@ -152,18 +110,11 @@ int main( int argc, char *argv[] ) {
     SanitizePath( gpPathToExecutable );
     SanitizePath( gpOutputPath );
 
-#if OTDU_EXTRACTOR_DXVK
-    SpirvCrossGLSLGenerator glslGenerator;
-#endif
-
     AssetExtractor::ExtractionParams params;
     params.pExecutablePath = gpPathToExecutable;
     params.pOutputPath = gpOutputPath;
     params.bForceExtraction = gbForceExtraction;
-    params.bExtractShaders = gbExtractShaders || gbGenerateShaderSource;
-#if OTDU_EXTRACTOR_DXVK
-    params.pSourceGenerator = gbGenerateShaderSource ? &glslGenerator : nullptr;
-#endif
+    params.bExtractShaders = gbExtractShaders;
 
     AssetExtractor::ExtractionResult result = AssetExtractor::Run( params );
     const bool bMoviesBuilt =

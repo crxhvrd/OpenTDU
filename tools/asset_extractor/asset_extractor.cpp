@@ -17,14 +17,6 @@
 #include <fstream>
 #include <vector>
 
-#if OTDU_EXTRACTOR_DXVK
-#include "dxvk/src/d3d9/d3d9_constant_layout.h"
-#include "dxvk/src/dxso/dxso_analysis.h"
-#include "dxvk/src/dxso/dxso_compiler.h"
-#include "dxvk/src/dxso/dxso_module.h"
-#include "dxvk/src/dxso/dxso_reader.h"
-#endif
-
 #ifdef OTDU_UNIX
 #include "filesystem/virtual_file_system.h"
 #endif
@@ -376,7 +368,6 @@ namespace {
     struct ExtractorContext {
         std::string OutputPath;
         bool bForceExtraction = false;
-        AssetExtractor::ShaderSourceGenerator *pSourceGenerator = nullptr;
     };
 
     constexpr uint32_t kTangentReflectionPS[] = { 0x00d95b18, 0x00d95f48 };
@@ -751,33 +742,9 @@ namespace {
         return true;
     }
 
-    bool WriteShaderTableSourceToDisk( const ExtractorContext &ctx,
-                                       const std::string &shaderTable,
-                                       const std::string &fileOutputPath ) {
-        std::filesystem::path folderFS =
-            std::filesystem::path( fileOutputPath );
-        if ( !ctx.bForceExtraction && std::filesystem::exists( folderFS ) ) {
-            OTDU_LOG_INFO( "'%s' already exists; skipping...\n",
-                           fileOutputPath.c_str() );
-            return false;
-        }
-
-        std::ofstream outputFileStream;
-        outputFileStream.open( fileOutputPath.c_str(), std::ios_base::out );
-        outputFileStream.write( shaderTable.data(),
-                                sizeof( char ) * shaderTable.size() );
-        outputFileStream.close();
-
-        OTDU_LOG_INFO( "Wrote shader table source '%s'\n",
-                       fileOutputPath.c_str() );
-        return true;
-    }
-
     void WriteShaderTablesToDisk( const ExtractorContext &ctx,
                                   const std::string &currentTableName,
                                   ShaderTable &tableDXSO,
-                                  ShaderTable &tableSPIRV,
-                                  std::string &tableSource,
                                   uint32_t &shaderExtractedCount ) {
         if ( tableDXSO.Header.Empty() ) {
             return;
@@ -793,62 +760,18 @@ namespace {
             shaderExtractedCount++;
         }
 
-#if OTDU_EXTRACTOR_DXVK
-        fileOutputPath =
-            GetShaderOutputPath( ctx ) + kShadersVulkanFolder + filename;
-        bWroteToDisk =
-            WriteShaderTableToDisk( ctx, tableSPIRV, fileOutputPath );
-        if ( bWroteToDisk ) {
-            shaderExtractedCount++;
-        }
-#endif
-
-        if ( ctx.pSourceGenerator != nullptr ) {
-            OTDU_LOG_INFO( "Writing GLSL to disk (shader source generation "
-                           "enabled)\n" );
-            fileOutputPath = GetShaderOutputPath( ctx ) + kShadersOpenGLFolder +
-                             currentTableName + kShaderTableSourceExtension;
-
-            bWroteToDisk = WriteShaderTableSourceToDisk( ctx, tableSource,
-                                                         fileOutputPath );
-            if ( bWroteToDisk ) {
-                shaderExtractedCount++;
-            }
-        }
-
         tableDXSO.Clear();
-        tableSPIRV.Clear();
-        tableSource.clear();
     }
 
-    // Retail shader tables (DXSO and, with OTDU_EXTRACTOR_DXVK, dxvk's SPIR-V
-    // translation). The client runs the shaders rebuilt from source; these
-    // are the reference for the shader lifter tools.
+    // Retail shader tables (DXSO). The client runs the shaders rebuilt from
+    // source; these are the reference for the shader lifter tools.
     void ExtractShaderTables( const ExtractorContext &ctx,
                               std::ifstream &fileStream,
                               uint32_t &shaderExtractedCount ) {
         constexpr uint32_t kNumShaderEntries =
             sizeof( kMasterShaderTable ) / sizeof( kMasterShaderTable[0] );
 
-#if OTDU_EXTRACTOR_DXVK
-        dxvk::D3D9ConstantLayout vertexConstantLayout;
-        vertexConstantLayout.floatCount = 256;
-        vertexConstantLayout.intCount = 1;
-        vertexConstantLayout.boolCount = 1;
-        vertexConstantLayout.bitmaskCount =
-            Align( vertexConstantLayout.boolCount, 32 ) / 32;
-
-        dxvk::D3D9ConstantLayout pixelConstantLayout;
-        pixelConstantLayout.floatCount = 224;
-        pixelConstantLayout.intCount = 1;
-        pixelConstantLayout.boolCount = 1;
-        pixelConstantLayout.bitmaskCount =
-            Align( pixelConstantLayout.boolCount, 32 ) / 32;
-#endif
-
         ShaderTable tableDXSO = {};
-        ShaderTable tableSPIRV = {};
-        std::string tableSource = "";
 
         std::string currentTableName = "";
         for ( uint32_t i = 0; i < kNumShaderEntries; i++ ) {
@@ -861,7 +784,6 @@ namespace {
 
             if ( currentTableName != entry.pShaderCategory ) {
                 WriteShaderTablesToDisk( ctx, currentTableName, tableDXSO,
-                                         tableSPIRV, tableSource,
                                          shaderExtractedCount );
                 currentTableName = entry.pShaderCategory;
             }
@@ -870,9 +792,9 @@ namespace {
 
             if ( currentTableName == "imgui" ||
                  currentTableName == "dbg_font" ) {
-                // Load precompiled .dxso binaries from disk for SPIRV
-                // translation (this way we can avoid runtime hacks and
-                // streamline shader binary management)
+                // Load precompiled .dxso binaries from disk (this way we can
+                // avoid runtime hacks and streamline shader binary
+                // management)
                 std::string shaderBinPath =
                     GetShaderOutputPath( ctx ) + kShadersD3D9Folder;
 
@@ -947,103 +869,11 @@ namespace {
             tableDXSO.Shaders.insert( tableDXSO.Shaders.end(),
                                       shaderBytecode.begin(),
                                       shaderBytecode.end() );
-
-#if OTDU_EXTRACTOR_DXVK
-            // DXSO to SPIRV (using DXVK); reference for the shader lifter
-            // tools only, the client runs the shaders rebuilt from source.
-            dxvk::DxsoReader reader(
-                reinterpret_cast<const char *>( shaderBytecode.data() ) );
-            dxvk::DxsoModule dxvkModule( reader );
-            dxvk::DxsoAnalysisInfo info = dxvkModule.analyze();
-
-            const dxvk::D3D9ConstantLayout &constantLayout =
-                entry.ShaderStage == eShaderType::ST_Vertex
-                    ? vertexConstantLayout
-                    : pixelConstantLayout;
-
-            dxvk::DxsoModuleInfo dxsoModuleInfo;
-            dxvk::OpenTDUOutput *pSpirvBC = dxvkModule.compile(
-                dxsoModuleInfo, std::to_string( entry.Hashcode ), info,
-                constantLayout );
-
-            headerEntry.Offset = tableSPIRV.Shaders.size();
-            headerEntry.Size = pSpirvBC->Code.size();
-            headerEntry.MetadataOffset = tableSPIRV.Metadata.size();
-            tableSPIRV.Header.Add( headerEntry );
-
-            for ( uint32_t j = 0; j < pSpirvBC->Code.dwords(); j++ ) {
-                uint32_t dword = pSpirvBC->Code.data()[j];
-
-                tableSPIRV.Shaders.push_back( (uint8_t)( dword & 0xff ) );
-                tableSPIRV.Shaders.push_back( (uint8_t)( dword >> 8 ) & 0xff );
-                tableSPIRV.Shaders.push_back( (uint8_t)( dword >> 16 ) & 0xff );
-                tableSPIRV.Shaders.push_back( (uint8_t)( dword >> 24 ) & 0xff );
-            }
-
-            // Collect ISGN for vertex shaders (pixel shaders have no VS inputs)
-            const dxvk::DxsoIsgn *pIsgn = nullptr;
-            if ( entry.ShaderStage == eShaderType::ST_Vertex ) {
-                pIsgn = &dxvkModule.isgn();
-            }
-
-            ShaderMetadataSPIRV infos;
-            infos.FlatShadingInputs = pSpirvBC->Infos.flatShadingInputs;
-            infos.InputMask = pSpirvBC->Infos.inputMask;
-            infos.OutputMask = pSpirvBC->Infos.outputMask;
-            // NOTE: We only retrieve the size since the binding points are
-            // hardcoded in dxvk
-            infos.SamplerPushConstantsSize =
-                pSpirvBC->Infos.localPushData.getSize();
-            infos.NumBindings = pSpirvBC->Infos.bindingCount;
-            infos.NumInputElements = pIsgn ? pIsgn->elemCount : 0u;
-
-            const int8_t *infosBegin = (const int8_t *)&infos;
-            std::copy( infosBegin, infosBegin + sizeof( ShaderMetadataSPIRV ),
-                       std::back_inserter( tableSPIRV.Metadata ) );
-
-            for ( uint32_t j = 0; j < infos.NumBindings; j++ ) {
-                const int8_t *bindingBeg =
-                    (const int8_t *)&pSpirvBC->Infos.bindingsCopy[j];
-                const int8_t *bindingEnd =
-                    bindingBeg + sizeof( dxvk::DxvkBindingInfo );
-                std::copy( bindingBeg, bindingEnd,
-                           std::back_inserter( tableSPIRV.Metadata ) );
-            }
-
-            // Serialize ISGN elements: each maps a SPIRV location to a D3D9
-            // semantic
-            if ( pIsgn ) {
-                for ( uint32_t j = 0; j < pIsgn->elemCount; j++ ) {
-                    const dxvk::DxsoIsgnEntry &isgnElem = pIsgn->elems[j];
-                    SPIRVInputElement elem = {};
-                    elem.Location = isgnElem.slot;
-                    elem.Usage =
-                        static_cast<uint8_t>( isgnElem.semantic.usage );
-                    elem.UsageIndex =
-                        static_cast<uint8_t>( isgnElem.semantic.usageIndex );
-                    const int8_t *elemBeg = (const int8_t *)&elem;
-                    std::copy( elemBeg, elemBeg + sizeof( SPIRVInputElement ),
-                               std::back_inserter( tableSPIRV.Metadata ) );
-                }
-            }
-
-            if ( ctx.pSourceGenerator != nullptr ) {
-                // SPIRV to GLSL is delegated to the caller-provided generator
-                // so the core (and the game client) never has to depend on
-                // SPIRV-Cross.
-                ctx.pSourceGenerator->appendShaderSource(
-                    entry.Hashcode, entry.ShaderStage == eShaderType::ST_Vertex,
-                    pSpirvBC->Code.data(), pSpirvBC->Code.dwords(),
-                    tableSource );
-            }
-
-            delete pSpirvBC;
-#endif
         }
 
         // Write current shader table to disk.
-        WriteShaderTablesToDisk( ctx, currentTableName, tableDXSO, tableSPIRV,
-                                 tableSource, shaderExtractedCount );
+        WriteShaderTablesToDisk( ctx, currentTableName, tableDXSO,
+                                 shaderExtractedCount );
     }
 
 } // namespace
@@ -1063,7 +893,6 @@ namespace AssetExtractor {
         ExtractorContext ctx;
         ctx.OutputPath = params.pOutputPath;
         ctx.bForceExtraction = params.bForceExtraction;
-        ctx.pSourceGenerator = params.pSourceGenerator;
 
         OTDU_LOG_DEBUG( "executable: '%s'\n", params.pExecutablePath );
         OTDU_LOG_DEBUG( "asset_output_path: '%s'\n", ctx.OutputPath.c_str() );
@@ -1073,12 +902,6 @@ namespace AssetExtractor {
         if ( params.bExtractShaders ) {
             CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
                                         kShadersD3D9Folder );
-#if OTDU_EXTRACTOR_DXVK
-            CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
-                                        kShadersOpenGLFolder );
-            CheckAndCreateOutputFolder( GetShaderOutputPath( ctx ) +
-                                        kShadersVulkanFolder );
-#endif
         }
 
         uint32_t shaderExtractedCount = 0;

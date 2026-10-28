@@ -28,7 +28,6 @@ set( OTDU_USE_SDL ON CACHE BOOL "Use SDL for window management" )
 set( OTDU_USE_IMGUI ON CACHE BOOL "Use imgui for debug gui" )
 set( OTDU_USE_JOLT ON CACHE BOOL "Use Jolt for physics" )
 set( OTDU_TARGET_WIN7 OFF CACHE BOOL "Target legacy Windows 7 (Win32/x64) API level" )
-set( OTDU_EXTRACTOR_DXVK OFF CACHE BOOL "D3D9 bytecode to SPIR-V (for validation sake; unused by the game client)" )
 
 set( OTDU_GFX_API "OTDU_VULKAN" CACHE STRING "Graphics backend to target" )
 set_property(CACHE OTDU_GFX_API PROPERTY STRINGS OTDU_VULKAN )
@@ -1416,7 +1415,6 @@ if (${OTDU_GFX_API} STREQUAL "OTDU_VULKAN")
         message( FATAL_ERROR "glslangValidator not found" )
     endif()
 
-    include_directories( "${OTDU_THIRDPARTY_FOLDER}/Vulkan-Headers/include/" )
     include_directories( "${OTDU_THIRDPARTY_FOLDER}/volk/" )
     include_directories( SYSTEM PRIVATE "${OTDU_THIRDPARTY_FOLDER}/VulkanMemoryAllocator/include" ) # clang spawns a shiton of warnings because of VMA so we'll turn it off for now
 

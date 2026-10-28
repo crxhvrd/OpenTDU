@@ -111,11 +111,8 @@ struct ShaderTable {
 
 static constexpr const char *kShadersRootFolder = "opentdu_data/";
 static constexpr const char *kShadersD3D9Folder = "d3d9/";
-static constexpr const char *kShadersOpenGLFolder = "gl330/";
-static constexpr const char *kShadersVulkanFolder = "vulkan/";
 static constexpr const char *kShadersRebuiltPack = "shader_cache";
 static constexpr const char *kShaderTableExtension = ".bin";
-static constexpr const char *kShaderTableSourceExtension = ".glsl";
 
 using ShaderBytecode_t = std::tuple<void *, uint64_t>;
 
