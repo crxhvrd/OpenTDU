@@ -52,15 +52,25 @@ struct PSOFactory {
     VkPipelineLayout PipelineLayout;
 
     uint8_t bDirty : 1;
+    uint8_t bDirtyStencilDynamicState : 1;
+    uint8_t bDirtyExtendedDynamicState : 1;
     uint8_t bTwoSidedStencil : 1;
 
     bool bIsStageBound[2];
+
+    bool bExtendedDynamicState = false;
+    PSOFactory *pParentFactory = nullptr;
 
     void initialize( VkDevice device,
                      SamplerHeapManager &samplerHeap,
                      ResourceBinder &resourceBinder );
     CachedPSO &getOrBuildPSO( VkDevice device, VkPipelineCache psoCache );
     void releaseCachedPSOs( VkDevice device );
+    inline size_t getNumCachedPSOs() const { return cache.size(); }
+    inline bool hasCachedPSO( const uint64_t hashcode ) const {
+        return cache.find( hashcode ) != cache.end();
+    }
+    void adoptCachedPSOs( VkDevice device, PSOFactory &other );
     void setShader( eShaderType stage, struct GPUShader *pShader );
     void reset();
 
@@ -70,6 +80,11 @@ private:
     VkSpecializationInfo vsSpecInfo;
 
     std::unordered_map<uint64_t, CachedPSO> cache;
+    std::vector<uint32_t> hashKey; // Reused between PSO lookups
+#if OTDU_DEVBUILD
+    std::unordered_map<uint64_t, std::vector<uint32_t>>
+        hashKeys; // Used to detect hashcode collisions
+#endif
     CachedPSO *latestPSO; // Latest PSO created or found in the cache
 
 private:

@@ -32,7 +32,9 @@ public:
     }
 
 public:
-    void initialize( VkDevice device, VmaAllocator allocator );
+    void initialize( VkDevice device,
+                     VmaAllocator allocator,
+                     VkPipelineCache psoCache );
     void destroy( VkDevice device, VmaAllocator allocator );
 
     void
@@ -80,6 +82,7 @@ private:
 
     VkRenderPass renderPass = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineCache pipelineCache = VK_NULL_HANDLE;
 
     std::vector<VkFramebuffer> framebuffers;
     VkExtent2D extent = { 0u, 0u };

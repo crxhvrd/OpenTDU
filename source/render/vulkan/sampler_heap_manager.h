@@ -5,13 +5,16 @@
 #include "render/render_api.h"
 #include "volk.h"
 
+static constexpr uint32_t kSamplerHeapCapacity = 32u;
+
 struct SamplerHeapManager {
     struct SamplerEntry {
         VkSampler Object = VK_NULL_HANDLE;
         uint32_t HeapIndex = 0u;
     };
 
-    void initialize( VkDevice device );
+    // maxAnisotropy = 1 if anisotropic filtering is not supported
+    void initialize( VkDevice device, const float maxAnisotropy );
     void destroy( VkDevice device );
 
     void createAndUploadCommonSamplers( VkDevice device );
@@ -20,6 +23,7 @@ struct SamplerHeapManager {
     SamplerEntry &createSampler( VkDevice device, SamplerDesc sampler );
 
     VkDevice Device = VK_NULL_HANDLE;
+    float MaxAnisotropy = 1.0f;
     VkDescriptorPool DescriptorSetPool;
     VkDescriptorSet DescriptorSet;
     VkDescriptorSetLayout DescriptorLayout;

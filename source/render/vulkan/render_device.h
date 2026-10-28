@@ -11,12 +11,15 @@
 #define VK_USE_PLATFORM_MACOS_MVK 1
 #endif
 
+#include <chrono>
+
 #include "render/gs_render_helper.h"
 #include "vk_mem_alloc.h"
 #include "volk.h"
 
 #include "gamma_ramp_pass.h"
 #include "pso_factory.h"
+#include "pso_library.h"
 #include "render_pass_manager.h"
 #include "sampler_heap_manager.h"
 
@@ -149,6 +152,20 @@ static constexpr float kAutoHDRPeakNits = 0.0f;
 static constexpr float kDefaultHDRHighlightStrength = 1.0f;
 static constexpr float kMaxHDRHighlightStrength = 2.0f;
 
+struct VulkanDeviceCaps {
+    uint32_t ApiVersion = 0;
+    bool bDemoteExtension = false; // VK_EXT_shader_demote_to_helper_invocation
+    bool bExtendedDynamicState = false; // Core 1.3 or extension
+    bool bExtendedDynamicStateExtension = false;
+    bool bDepthClamp = false;
+    bool bFillModeNonSolid = false;
+    bool bSamplerAnisotropy = false;
+    float MaxSamplerAnisotropy = 1.0f;
+    bool bMaintenance4 = false;
+    bool bHDRMetadata = false;
+    bool bPortabilitySubset = false;
+};
+
 class RenderDevice {
 public:
     inline uint32_t getInternalFrameIndex() const {
@@ -224,6 +241,18 @@ private:
                                    VkCommandBuffer cmdBuffer );
 
 public:
+    size_t prebuildRecordedPSOs( const size_t maxCount );
+    inline void flushPSOCaches() {
+        savePipelineCache();
+        savePSOLibrary();
+    }
+    inline size_t getNumCachedPSOs() const {
+        return psoFactory.getNumCachedPSOs();
+    }
+    inline size_t getNumRecordedPSOs() const {
+        return psoLibrary.getRecords().size() + psoSeed.getRecords().size();
+    }
+
     void destroyBuffer( GPUBuffer *pBuffer );
     void destroyShader( GPUShader *pShader );
     void destroyVertexLayout( GPUVertexLayout *pVertexLayout );
@@ -432,6 +461,13 @@ private:
     uint32_t physicalDeviceIndex;
     std::vector<const char *> deviceExtensions;
     VkPhysicalDeviceProperties2 deviceProperties;
+    VulkanDeviceCaps deviceCaps;
+    PFN_vkCmdSetCullMode cmdSetCullMode = nullptr;
+    PFN_vkCmdSetDepthTestEnable cmdSetDepthTestEnable = nullptr;
+    PFN_vkCmdSetDepthWriteEnable cmdSetDepthWriteEnable = nullptr;
+    PFN_vkCmdSetDepthCompareOp cmdSetDepthCompareOp = nullptr;
+    PFN_vkCmdSetStencilTestEnable cmdSetStencilTestEnable = nullptr;
+    PFN_vkCmdSetStencilOp cmdSetStencilOp = nullptr;
 
     VkDevice device;
     std::vector<QueueInfo> queues;
@@ -526,7 +562,24 @@ private:
     float hdrHighlightStrength;
     eOutputTransfer activeOutputTransfer;
 
-    VkPipelineCache psoCache;
+    VkPipelineCache psoCache = VK_NULL_HANDLE;
+    std::filesystem::path psoCachePath;
+    size_t numPSOsAtLastCacheSave = 0;
+    size_t psoCacheSizeOnDisk = 0;
+    size_t numPSOsAtLastCheck = 0;
+    std::chrono::steady_clock::time_point lastPSOCreationTime;
+
+    PSOLibrary psoLibrary;
+    std::filesystem::path psoLibraryPath;
+    PSOFactory prebuildFactory;
+    bool bPrebuildFactoryInitialized = false;
+    size_t nextPrebuildRecord = 0;
+    PSOLibrary psoSeed;
+    size_t nextPrebuildSeedRecord = 0;
+    size_t numSkippedSeedRecords = 0;
+    std::unordered_map<uint64_t, GPUShader *> prebuildShaders;
+    std::vector<uint64_t> stalePSORecords;
+    std::vector<std::pair<uint64_t, uint64_t>> rehashedPSORecords;
 
     ColorRGBA activeClearColor;
     VkRect2D activeRenderRegion;
@@ -569,13 +622,24 @@ private:
 
 private:
     QueueInfo getQueue( VkQueueFlagBits flags ) const;
-    std::vector<VkExtensionProperties> getAvailableDeviceExtensions();
 
     bool createVulkanInstance();
     bool selectPhysicalDevice();
     bool createDevice();
     void createDebugCallback();
     void createVMAAllocator();
+    void createPipelineCache();
+    void savePipelineCache();
+    void savePipelineCacheWhenIdle();
+    void bindStencilDynamicState();
+    void bindExtendedDynamicState();
+    void markExtendedDynamicStateDirty();
+    void savePSOLibrary();
+    bool prebuildPSO( const PSORecord &record, uint64_t &outHashcode );
+    bool isPSORecordSupported( const PSORecord &record ) const;
+    GPUShader *getOrCreatePrebuildShader( const uint64_t hashcode,
+                                          const eShaderType stage );
+    void releasePrebuildResources();
     bool createSwapchain();
 
     void submitPendingCommandBuffer();
@@ -619,4 +683,7 @@ private:
 };
 
 bool HasStencilBits( VkFormat fmt );
+
+VkFormat GetPortableAttachmentFormat( const VkFormat format );
+VkFormat GetNativeAttachmentFormat( const VkFormat format );
 #endif

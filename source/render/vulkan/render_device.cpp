@@ -6,9 +6,11 @@
 #include <unordered_set>
 #include "render_device.h"
 #include "core/arg_parser.h"
+#include "filesystem/gs_file.h"
 #include "render/2db.h"
 #include "render/render_target.h"
 #include "render/shaders/shader_binary_cache.h"
+#include "render/shaders/shader_table_entry.h"
 #include "render/state_cache.h"
 #include "system/ed_sys.h"
 
@@ -306,6 +308,16 @@ bool HasStencilBits( VkFormat fmt ) {
     return fmt == kDepth24Stencil8 || fmt == kDepth24Stencil8Float;
 }
 
+VkFormat GetPortableAttachmentFormat( const VkFormat format ) {
+    return ( format == kDepth24Stencil8 ) ? VK_FORMAT_D24_UNORM_S8_UINT
+                                          : format;
+}
+
+VkFormat GetNativeAttachmentFormat( const VkFormat format ) {
+    return ( format == VK_FORMAT_D24_UNORM_S8_UINT ) ? kDepth24Stencil8
+                                                     : format;
+}
+
 inline bool IsVulkanDepthStencilFormat( VkFormat fmt ) {
     return fmt == kDepth16 || fmt == kDepth24Stencil8 ||
            fmt == kDepth24Stencil8Float;
@@ -398,7 +410,11 @@ RenderDevice::~RenderDevice() {
     vkDestroyCommandPool( device, mipMapGenCmdPool, nullptr );
     vkDestroyFence( device, mipMapGenFence, nullptr );
 
+    savePipelineCache();
+    savePSOLibrary();
+    releasePrebuildResources();
     psoFactory.releaseCachedPSOs( device );
+    vkDestroyPipelineCache( device, psoCache, nullptr );
     renderPassManager.releaseCachedRenderPass( device );
     samplerHeap.destroy( device );
     resourceBinder.destroy( device, allocator );
@@ -459,8 +475,8 @@ QueueInfo RenderDevice::getQueue( VkQueueFlagBits flags ) const {
     return queueInfo;
 }
 
-std::vector<VkExtensionProperties>
-RenderDevice::getAvailableDeviceExtensions() {
+static std::vector<VkExtensionProperties>
+EnumerateDeviceExtensions( VkPhysicalDevice physicalDevice ) {
     std::vector<VkExtensionProperties> availableDeviceExtensions;
     uint32_t count = 0u;
     vkEnumerateDeviceExtensionProperties( physicalDevice, nullptr, &count,
@@ -469,6 +485,129 @@ RenderDevice::getAvailableDeviceExtensions() {
     vkEnumerateDeviceExtensionProperties( physicalDevice, nullptr, &count,
                                           availableDeviceExtensions.data() );
     return availableDeviceExtensions;
+}
+
+static constexpr uint32_t kMinRequiredClipDistances = 6u; // d3d9_abi.glsl
+
+static bool QueryDeviceCaps( VkPhysicalDevice physicalDevice,
+                             VulkanDeviceCaps &outCaps,
+                             std::string &outMissing ) {
+    outCaps = {};
+
+    VkPhysicalDeviceProperties properties = {};
+    vkGetPhysicalDeviceProperties( physicalDevice, &properties );
+    outCaps.ApiVersion = properties.apiVersion;
+    if ( properties.apiVersion < VK_API_VERSION_1_2 ) {
+        outMissing = "Vulkan 1.2";
+        return false;
+    }
+
+    const std::vector<VkExtensionProperties> extensions =
+        EnumerateDeviceExtensions( physicalDevice );
+    if ( !extensionIsAvailable( VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                                extensions ) ) {
+        outMissing = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+        return false;
+    }
+
+    const bool bVulkan13 = properties.apiVersion >= VK_API_VERSION_1_3;
+
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT demoteFeatures =
+        {};
+    demoteFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT;
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT edsFeatures = {};
+    edsFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT;
+    VkPhysicalDeviceVulkan13Features features13 = {};
+    features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    VkPhysicalDeviceVulkan12Features features12 = {};
+    features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    VkPhysicalDeviceFeatures2 features = {};
+    features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features.pNext = &features12;
+
+    const bool bDemoteExtension = extensionIsAvailable(
+        VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME, extensions );
+    const bool bEDSExtension = extensionIsAvailable(
+        VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME, extensions );
+    if ( bVulkan13 ) {
+        features12.pNext = &features13;
+    } else {
+        void **ppNext = &features12.pNext;
+        if ( bDemoteExtension ) {
+            *ppNext = &demoteFeatures;
+            ppNext = &demoteFeatures.pNext;
+        }
+        if ( bEDSExtension ) {
+            *ppNext = &edsFeatures;
+        }
+    }
+    vkGetPhysicalDeviceFeatures2( physicalDevice, &features );
+
+    VkPhysicalDeviceVulkan12Properties properties12 = {};
+    properties12.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
+    VkPhysicalDeviceProperties2 properties2 = {};
+    properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    properties2.pNext = &properties12;
+    vkGetPhysicalDeviceProperties2( physicalDevice, &properties2 );
+
+    // Required
+    if ( !features.features.shaderClipDistance ||
+         properties.limits.maxClipDistances < kMinRequiredClipDistances ) {
+        outMissing = "shaderClipDistance";
+        return false;
+    }
+    if ( !features12.runtimeDescriptorArray ||
+         !features12.descriptorBindingPartiallyBound ||
+         !features12.descriptorBindingSampledImageUpdateAfterBind ||
+         properties12.maxPerStageDescriptorUpdateAfterBindSamplers <
+             kSamplerHeapCapacity ) {
+        outMissing = "descriptor indexing (update after bind samplers)";
+        return false;
+    }
+    const bool bDemote = bVulkan13
+                             ? features13.shaderDemoteToHelperInvocation
+                             : demoteFeatures.shaderDemoteToHelperInvocation;
+    if ( !bDemote ) {
+        outMissing = "shaderDemoteToHelperInvocation";
+        return false;
+    }
+    outCaps.bDemoteExtension = !bVulkan13;
+
+    // Optional
+    outCaps.bExtendedDynamicState =
+        bVulkan13 || ( bEDSExtension && edsFeatures.extendedDynamicState );
+    outCaps.bExtendedDynamicStateExtension =
+        !bVulkan13 && outCaps.bExtendedDynamicState;
+    outCaps.bDepthClamp = features.features.depthClamp;
+    outCaps.bFillModeNonSolid = features.features.fillModeNonSolid;
+    outCaps.bSamplerAnisotropy = features.features.samplerAnisotropy;
+    outCaps.MaxSamplerAnisotropy = outCaps.bSamplerAnisotropy
+                                       ? properties.limits.maxSamplerAnisotropy
+                                       : 1.0f;
+    outCaps.bMaintenance4 = bVulkan13 && features13.maintenance4;
+    outCaps.bHDRMetadata =
+        extensionIsAvailable( VK_EXT_HDR_METADATA_EXTENSION_NAME, extensions );
+    outCaps.bPortabilitySubset =
+        extensionIsAvailable( "VK_KHR_portability_subset", extensions );
+    return true;
+}
+
+static int32_t GetDeviceTypeScore( const VkPhysicalDeviceType type ) {
+    switch ( type ) {
+    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+        return 4;
+    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+        return 3;
+    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+        return 2;
+    case VK_PHYSICAL_DEVICE_TYPE_CPU:
+        return 1;
+    default:
+        return 0;
+    }
 }
 
 #if defined( OTDU_MACOS ) && defined( OTDU_USE_SDL )
@@ -509,6 +648,7 @@ void RenderDevice::initialize() {
     OTDU_ASSERT_FATAL( selectPhysicalDevice() );
     OTDU_ASSERT_FATAL( createDevice() );
     createVMAAllocator();
+    createPipelineCache();
     OTDU_ASSERT_FATAL( createSwapchain() );
 
     VkSemaphoreCreateInfo semaphoreInfo = {};
@@ -520,12 +660,13 @@ void RenderDevice::initialize() {
     }
 
     renderPassManager.initialize();
-    samplerHeap.initialize( device );
+    samplerHeap.initialize( device, deviceCaps.MaxSamplerAnisotropy );
     VkDeviceSize uboAlignment =
         deviceProperties.properties.limits.minUniformBufferOffsetAlignment;
     resourceBinder.initialize( device, allocator, uboAlignment );
+    psoFactory.bExtendedDynamicState = deviceCaps.bExtendedDynamicState;
     psoFactory.initialize( device, samplerHeap, resourceBinder );
-    gammaRampPass.initialize( device, allocator );
+    gammaRampPass.initialize( device, allocator, psoCache );
     createOutputPassResources();
 
     VkCommandPoolCreateInfo texUploadPoolInfos = {};
@@ -1773,6 +1914,55 @@ void RenderDevice::resetCachedStates() {
     gStateCache.resetBoundShaders();
 }
 
+void RenderDevice::bindStencilDynamicState() {
+    const VkStencilOpState &front = psoFactory.DepthStencil.front;
+    const VkStencilOpState &back = psoFactory.DepthStencil.back;
+
+    vkCmdSetStencilReference( commandBuffer, VK_STENCIL_FACE_FRONT_BIT,
+                              front.reference );
+    vkCmdSetStencilReference( commandBuffer, VK_STENCIL_FACE_BACK_BIT,
+                              back.reference );
+    vkCmdSetStencilCompareMask( commandBuffer, VK_STENCIL_FACE_FRONT_BIT,
+                                front.compareMask );
+    vkCmdSetStencilCompareMask( commandBuffer, VK_STENCIL_FACE_BACK_BIT,
+                                back.compareMask );
+    vkCmdSetStencilWriteMask( commandBuffer, VK_STENCIL_FACE_FRONT_BIT,
+                              front.writeMask );
+    vkCmdSetStencilWriteMask( commandBuffer, VK_STENCIL_FACE_BACK_BIT,
+                              back.writeMask );
+
+    psoFactory.bDirtyStencilDynamicState = false;
+}
+
+void RenderDevice::bindExtendedDynamicState() {
+    const VkPipelineDepthStencilStateCreateInfo &depthStencil =
+        psoFactory.DepthStencil;
+
+    cmdSetCullMode( commandBuffer, psoFactory.RasterState.cullMode );
+    cmdSetDepthTestEnable( commandBuffer, depthStencil.depthTestEnable );
+    cmdSetDepthWriteEnable( commandBuffer, depthStencil.depthWriteEnable );
+    cmdSetDepthCompareOp( commandBuffer, depthStencil.depthCompareOp );
+    cmdSetStencilTestEnable( commandBuffer, depthStencil.stencilTestEnable );
+    cmdSetStencilOp( commandBuffer, VK_STENCIL_FACE_FRONT_BIT,
+                     depthStencil.front.failOp, depthStencil.front.passOp,
+                     depthStencil.front.depthFailOp,
+                     depthStencil.front.compareOp );
+    cmdSetStencilOp( commandBuffer, VK_STENCIL_FACE_BACK_BIT,
+                     depthStencil.back.failOp, depthStencil.back.passOp,
+                     depthStencil.back.depthFailOp,
+                     depthStencil.back.compareOp );
+
+    psoFactory.bDirtyExtendedDynamicState = false;
+}
+
+void RenderDevice::markExtendedDynamicStateDirty() {
+    if ( deviceCaps.bExtendedDynamicState ) {
+        psoFactory.bDirtyExtendedDynamicState = true;
+    } else {
+        psoFactory.bDirty = true;
+    }
+}
+
 void RenderDevice::present() {
     // FUN_005f16b0
     // The swapchain image is only acquired when recording starts
@@ -1831,6 +2021,8 @@ void RenderDevice::bumpInternalFrameIndex() {
     if ( !bRecordingCommands ) {
         absoluteFrameIndex++;
         frameIndex = ( absoluteFrameIndex % PendingFrameCount );
+
+        savePipelineCacheWhenIdle();
     }
 }
 
@@ -1844,7 +2036,7 @@ void RenderDevice::setCullMode( eCullMode param_1 ) {
     };
 
     psoFactory.RasterState.cullMode = kCullModeLUT[param_1];
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 bool RenderDevice::isVertexAttributeFormatSupported(
@@ -1889,7 +2081,8 @@ void RenderDevice::setColorWriteChannels( bool bWriteRed,
 
 void RenderDevice::setClipPlaneEnabled( uint32_t param_1 ) {
     const uint32_t clipPlaneCount = resourceBinder.setClipPlaneMask( param_1 );
-    psoFactory.RasterState.depthClampEnable = param_1 != 0;
+    psoFactory.RasterState.depthClampEnable =
+        param_1 != 0 && deviceCaps.bDepthClamp;
     resourceBinder.setShaderSpecBits( 5, 21, 3, clipPlaneCount );
     psoFactory.VSClipPlaneCount = clipPlaneCount;
     psoFactory.bDirty = true;
@@ -1994,7 +2187,9 @@ void RenderDevice::setFillMode( eFillMode param_1 ) {
         VK_POLYGON_MODE_FILL, VK_POLYGON_MODE_POINT, VK_POLYGON_MODE_LINE,
         VK_POLYGON_MODE_FILL };
 
-    psoFactory.RasterState.polygonMode = kFillModeLUT[param_1];
+    psoFactory.RasterState.polygonMode = deviceCaps.bFillModeNonSolid
+                                             ? kFillModeLUT[param_1]
+                                             : VK_POLYGON_MODE_FILL;
     psoFactory.bDirty = true;
 }
 
@@ -2023,7 +2218,7 @@ void RenderDevice::setAlphaTestFunc( eComparisonFunction param_1 ) {
 
 void RenderDevice::setStencilEnabled( bool param_1 ) {
     psoFactory.DepthStencil.stencilTestEnable = param_1;
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 void RenderDevice::setTwoSidedStencilEnabled( bool param_1 ) {
@@ -2031,7 +2226,8 @@ void RenderDevice::setTwoSidedStencilEnabled( bool param_1 ) {
     if ( !param_1 ) {
         // D3D9 single-sided mode: back face uses the same ops as front.
         psoFactory.DepthStencil.back = psoFactory.DepthStencil.front;
-        psoFactory.bDirty = true;
+        markExtendedDynamicStateDirty();
+        psoFactory.bDirtyStencilDynamicState = true;
     }
 }
 
@@ -2062,7 +2258,7 @@ void RenderDevice::setStencilFail( eStencilFunction param_1 ) {
     if ( !psoFactory.bTwoSidedStencil )
         psoFactory.DepthStencil.back.failOp =
             psoFactory.DepthStencil.front.failOp;
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 void RenderDevice::setStencilZFail( eStencilFunction param_1 ) {
@@ -2070,7 +2266,7 @@ void RenderDevice::setStencilZFail( eStencilFunction param_1 ) {
     if ( !psoFactory.bTwoSidedStencil )
         psoFactory.DepthStencil.back.depthFailOp =
             psoFactory.DepthStencil.front.depthFailOp;
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 void RenderDevice::setStencilPass( eStencilFunction param_1 ) {
@@ -2078,7 +2274,7 @@ void RenderDevice::setStencilPass( eStencilFunction param_1 ) {
     if ( !psoFactory.bTwoSidedStencil )
         psoFactory.DepthStencil.back.passOp =
             psoFactory.DepthStencil.front.passOp;
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 void RenderDevice::setStencilFunc( eComparisonFunction param_1 ) {
@@ -2086,7 +2282,7 @@ void RenderDevice::setStencilFunc( eComparisonFunction param_1 ) {
     if ( !psoFactory.bTwoSidedStencil )
         psoFactory.DepthStencil.back.compareOp =
             psoFactory.DepthStencil.front.compareOp;
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 void RenderDevice::setStencilRef( uint32_t param_1 ) {
@@ -2094,7 +2290,7 @@ void RenderDevice::setStencilRef( uint32_t param_1 ) {
     if ( !psoFactory.bTwoSidedStencil )
         psoFactory.DepthStencil.back.reference =
             psoFactory.DepthStencil.front.reference;
-    psoFactory.bDirty = true;
+    psoFactory.bDirtyStencilDynamicState = true;
 }
 
 void RenderDevice::setStencilMask( uint32_t param_1 ) {
@@ -2102,7 +2298,7 @@ void RenderDevice::setStencilMask( uint32_t param_1 ) {
     if ( !psoFactory.bTwoSidedStencil )
         psoFactory.DepthStencil.back.compareMask =
             psoFactory.DepthStencil.front.compareMask;
-    psoFactory.bDirty = true;
+    psoFactory.bDirtyStencilDynamicState = true;
 }
 
 void RenderDevice::setStencilWriteMask( uint32_t param_1 ) {
@@ -2110,27 +2306,27 @@ void RenderDevice::setStencilWriteMask( uint32_t param_1 ) {
     if ( !psoFactory.bTwoSidedStencil )
         psoFactory.DepthStencil.back.writeMask =
             psoFactory.DepthStencil.front.writeMask;
-    psoFactory.bDirty = true;
+    psoFactory.bDirtyStencilDynamicState = true;
 }
 
 void RenderDevice::setCCWStencilFail( eStencilFunction param_1 ) {
     psoFactory.DepthStencil.back.failOp = kStencilFunctionLUT[param_1];
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 void RenderDevice::setCCWStencilZFail( eStencilFunction param_1 ) {
     psoFactory.DepthStencil.back.depthFailOp = kStencilFunctionLUT[param_1];
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 void RenderDevice::setCCWStencilPass( eStencilFunction param_1 ) {
     psoFactory.DepthStencil.back.passOp = kStencilFunctionLUT[param_1];
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 void RenderDevice::setCCWStencilFunc( eComparisonFunction param_1 ) {
     psoFactory.DepthStencil.back.compareOp = kComparisonFunLUT[param_1];
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 void RenderDevice::setDepthWrite( bool param_1 ) {
@@ -2139,7 +2335,7 @@ void RenderDevice::setDepthWrite( bool param_1 ) {
     // (VUID-vkCmdDraw-None-09552), so gate writes on attachment presence.
     psoFactory.DepthStencil.depthWriteEnable =
         param_1 && bDepthStencilAttachmentValid;
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 bool RenderDevice::uploadTexture( Texture *pTexture ) {
@@ -2487,7 +2683,7 @@ void RenderDevice::bindDepthStencil( GPUTexture *param_1 ) {
     if ( !bDepthStencilAttachmentValid ) {
         psoFactory.DepthStencil.depthTestEnable = VK_FALSE;
         psoFactory.DepthStencil.depthWriteEnable = VK_FALSE;
-        psoFactory.bDirty = true;
+        markExtendedDynamicStateDirty();
     }
 
     renderPassManager.setDepthStencilAttachment( param_1 );
@@ -2608,13 +2804,13 @@ void RenderDevice::resolveMSAA( RenderTarget *param_1, uint32_t param_2 ) {
 
 void RenderDevice::setDepthCompareFunc( eComparisonFunction param_1 ) {
     psoFactory.DepthStencil.depthCompareOp = kComparisonFunLUT[param_1];
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 }
 
 void RenderDevice::setDepthStencilEnabled( bool param_1 ) {
     psoFactory.DepthStencil.depthTestEnable =
         param_1 && bDepthStencilAttachmentValid;
-    psoFactory.bDirty = true;
+    markExtendedDynamicStateDirty();
 
     bDepthStencilEnabled = param_1;
 }
@@ -2933,17 +3129,6 @@ bool RenderDevice::createVulkanInstance() {
                                                  // objects)
     }
 
-    if ( extensionIsAvailable( VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME,
-                               instanceExtensionsAvailable ) ) {
-        instanceExtensions.push_back(
-            VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME );
-    }
-
-    if ( extensionIsAvailable( VK_KHR_MAINTENANCE1_EXTENSION_NAME,
-                               instanceExtensionsAvailable ) ) {
-        instanceExtensions.push_back( VK_KHR_MAINTENANCE1_EXTENSION_NAME );
-    }
-
     bSwapchainColorSpaceSupported =
         extensionIsAvailable( VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME,
                               instanceExtensionsAvailable );
@@ -3006,37 +3191,41 @@ bool RenderDevice::selectPhysicalDevice() {
 
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices( instance, &deviceCount, nullptr );
-    OTDU_ASSERT( deviceCount != 0 );
     OTDU_LOG_DEBUG( "Found %u devices\n", deviceCount );
 
     physicalDevices.resize( deviceCount );
     vkEnumeratePhysicalDevices( instance, &deviceCount,
                                 physicalDevices.data() );
 
-    VkPhysicalDeviceProperties2 properties2 = {};
-    memset( &properties2, 0, sizeof( VkPhysicalDeviceProperties2 ) );
-    properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    // Prefer discrete GPUs, then the most recent Vulkan version
+    int32_t bestScore = -1;
+    uint32_t bestApiVersion = 0;
     for ( uint32_t i = 0; i < physicalDevices.size(); i++ ) {
-        OTDU_LOG_DEBUG( "Checking device %u...\n", i );
-        vkGetPhysicalDeviceProperties2( physicalDevices[i], &properties2 );
+        VkPhysicalDeviceProperties properties = {};
+        vkGetPhysicalDeviceProperties( physicalDevices[i], &properties );
 
-        if ( properties2.properties.deviceType ==
-             VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ) {
-            OTDU_LOG_DEBUG( "Chose device %u\n", i );
+        VulkanDeviceCaps caps;
+        std::string missing;
+        if ( !QueryDeviceCaps( physicalDevices[i], caps, missing ) ) {
+            OTDU_LOG_WARN( "Skipping '%s': %s is not supported\n",
+                           properties.deviceName, missing.c_str() );
+            continue;
+        }
+
+        const int32_t score = GetDeviceTypeScore( properties.deviceType );
+        if ( score > bestScore ||
+             ( score == bestScore && caps.ApiVersion > bestApiVersion ) ) {
+            bestScore = score;
+            bestApiVersion = caps.ApiVersion;
             physicalDeviceIndex = i;
-            break;
+            deviceCaps = caps;
         }
     }
 
     if ( physicalDeviceIndex == std::numeric_limits<uint32_t>::max() ) {
-        if ( !physicalDevices.empty() ) {
-            OTDU_LOG_WARN( "Could not find dedicated GPU on this system; will "
-                           "use the first one available...\n" );
-            physicalDeviceIndex = 0;
-        } else {
-            OTDU_LOG_ERROR( "Could not find compatible GPU!\n" );
-            return false;
-        }
+        OTDU_LOG_ERROR( "Could not find a GPU supporting the required Vulkan "
+                        "1.2 features (see above)!\n" );
+        return false;
     }
 
     physicalDevice = physicalDevices[physicalDeviceIndex];
@@ -3058,6 +3247,12 @@ bool RenderDevice::selectPhysicalDevice() {
         VK_VERSION_MAJOR( deviceProperties.properties.apiVersion ),
         VK_VERSION_MINOR( deviceProperties.properties.apiVersion ),
         VK_VERSION_PATCH( deviceProperties.properties.apiVersion ) );
+    OTDU_LOG_INFO( "Device capabilities: extended dynamic state %d, depth "
+                   "clamp %d, non solid fill %d, anisotropy %d (max %.0f), "
+                   "maintenance4 %d\n",
+                   deviceCaps.bExtendedDynamicState, deviceCaps.bDepthClamp,
+                   deviceCaps.bFillModeNonSolid, deviceCaps.bSamplerAnisotropy,
+                   deviceCaps.MaxSamplerAnisotropy, deviceCaps.bMaintenance4 );
 
     return true;
 }
@@ -3076,78 +3271,61 @@ bool RenderDevice::createDevice() {
     queueCreateInfo.queueCount = 1;
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
-    std::vector<VkExtensionProperties> availableDeviceExtensions =
-        getAvailableDeviceExtensions();
-    // if ( extensionIsAvailable( VK_KHR_MAINTENANCE_5_EXTENSION_NAME,
-    // availableDeviceExtensions ) ) {
-    //     deviceExtensions.push_back( VK_KHR_MAINTENANCE_5_EXTENSION_NAME );
-    // }
-    // if ( extensionIsAvailable( VK_KHR_MAINTENANCE_6_EXTENSION_NAME,
-    // availableDeviceExtensions ) ) {
-    //     deviceExtensions.push_back( VK_KHR_MAINTENANCE_6_EXTENSION_NAME );
-    // }
-    if ( extensionIsAvailable( VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
-                               availableDeviceExtensions ) ) {
-        deviceExtensions.push_back( VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME );
+    if ( deviceCaps.bDemoteExtension ) {
+        deviceExtensions.push_back(
+            VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME );
     }
-    if ( extensionIsAvailable( VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
-                               availableDeviceExtensions ) ) {
+    if ( deviceCaps.bExtendedDynamicStateExtension ) {
         deviceExtensions.push_back(
             VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME );
     }
-    if ( extensionIsAvailable( VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME,
-                               availableDeviceExtensions ) ) {
-        deviceExtensions.push_back(
-            VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME );
-    }
-    if ( extensionIsAvailable( VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
-                               availableDeviceExtensions ) ) {
-        deviceExtensions.push_back(
-            VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME );
-    }
-    if ( extensionIsAvailable( VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME,
-                               availableDeviceExtensions ) ) {
-        deviceExtensions.push_back(
-            VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME );
-    }
-    bHDRMetadataSupported = extensionIsAvailable(
-        VK_EXT_HDR_METADATA_EXTENSION_NAME, availableDeviceExtensions );
+    bHDRMetadataSupported = deviceCaps.bHDRMetadata;
     if ( bHDRMetadataSupported ) {
         deviceExtensions.push_back( VK_EXT_HDR_METADATA_EXTENSION_NAME );
     }
-#if OTDU_MACOS
-    if ( extensionIsAvailable( VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
-                               availableDeviceExtensions ) ) {
-        deviceExtensions.push_back(
-            VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME );
+    if ( deviceCaps.bPortabilitySubset ) {
+        deviceExtensions.push_back( "VK_KHR_portability_subset" );
     }
-    deviceExtensions.push_back( "VK_KHR_portability_subset" );
-#endif
+
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT demoteFeatures =
+        {};
+    demoteFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT;
+    demoteFeatures.shaderDemoteToHelperInvocation = VK_TRUE;
+
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT edsFeatures = {};
+    edsFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT;
+    edsFeatures.extendedDynamicState = VK_TRUE;
 
     VkPhysicalDeviceVulkan13Features deviceFeatures13 = {};
     deviceFeatures13.sType =
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-    deviceFeatures13.pNext = nullptr;
     deviceFeatures13.shaderDemoteToHelperInvocation = VK_TRUE;
+    deviceFeatures13.maintenance4 = deviceCaps.bMaintenance4;
 
     VkPhysicalDeviceVulkan12Features deviceFeatures12 = {};
     deviceFeatures12.sType =
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    deviceFeatures12.pNext = &deviceFeatures13;
     deviceFeatures12.runtimeDescriptorArray = VK_TRUE;
     deviceFeatures12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
     deviceFeatures12.descriptorBindingPartiallyBound = VK_TRUE;
+    if ( deviceCaps.ApiVersion >= VK_API_VERSION_1_3 ) {
+        deviceFeatures12.pNext = &deviceFeatures13;
+    } else {
+        deviceFeatures12.pNext = &demoteFeatures;
+        if ( deviceCaps.bExtendedDynamicStateExtension ) {
+            demoteFeatures.pNext = &edsFeatures;
+        }
+    }
 
     VkPhysicalDeviceFeatures2 deviceFeatures = {};
     deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     deviceFeatures.pNext = &deviceFeatures12;
-    deviceFeatures.features.shaderClipDistance =
-        VK_TRUE; // TODO: QUERY FEATURE AVAILABILITY!!!
-    deviceFeatures.features.sampleRateShading =
-        VK_TRUE; // TODO: QUERY FEATURE AVAILABILITY!!!
-    deviceFeatures.features.depthClamp =
-        VK_TRUE; // TODO: QUERY FEATURE AVAILABILITY!!!
-    deviceFeatures.features.samplerAnisotropy = VK_TRUE;
+    deviceFeatures.features.shaderClipDistance = VK_TRUE;
+    deviceFeatures.features.depthClamp = deviceCaps.bDepthClamp;
+    deviceFeatures.features.fillModeNonSolid = deviceCaps.bFillModeNonSolid;
+    deviceFeatures.features.samplerAnisotropy = deviceCaps.bSamplerAnisotropy;
 
     // Create the logical device
     VkDeviceCreateInfo deviceCreateInfo = {};
@@ -3167,6 +3345,22 @@ bool RenderDevice::createDevice() {
     }
 
     volkLoadDevice( device ); // Load all Vulkan device functions
+
+    if ( deviceCaps.bExtendedDynamicStateExtension ) {
+        cmdSetCullMode = vkCmdSetCullModeEXT;
+        cmdSetDepthTestEnable = vkCmdSetDepthTestEnableEXT;
+        cmdSetDepthWriteEnable = vkCmdSetDepthWriteEnableEXT;
+        cmdSetDepthCompareOp = vkCmdSetDepthCompareOpEXT;
+        cmdSetStencilTestEnable = vkCmdSetStencilTestEnableEXT;
+        cmdSetStencilOp = vkCmdSetStencilOpEXT;
+    } else if ( deviceCaps.bExtendedDynamicState ) {
+        cmdSetCullMode = vkCmdSetCullMode;
+        cmdSetDepthTestEnable = vkCmdSetDepthTestEnable;
+        cmdSetDepthWriteEnable = vkCmdSetDepthWriteEnable;
+        cmdSetDepthCompareOp = vkCmdSetDepthCompareOp;
+        cmdSetStencilTestEnable = vkCmdSetStencilTestEnable;
+        cmdSetStencilOp = vkCmdSetStencilOp;
+    }
 
     // Get the requested queues
     vkGetDeviceQueue( device, queues[0].familyIndex, queues[0].queueIndex,
@@ -3203,10 +3397,12 @@ void RenderDevice::createVMAAllocator() {
     infos.instance = instance;
     // infos.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;  // allow
     // querying for the GPU address of a buffer
-    infos.flags |= VMA_ALLOCATOR_CREATE_KHR_MAINTENANCE4_BIT;
-    infos.flags |=
-        VMA_ALLOCATOR_CREATE_KHR_MAINTENANCE5_BIT; // allow using
-                                                   // VkBufferUsageFlags2CreateInfoKHR
+    infos.vulkanApiVersion = ( deviceCaps.ApiVersion >= VK_API_VERSION_1_3 )
+                                 ? VK_API_VERSION_1_3
+                                 : VK_API_VERSION_1_2;
+    if ( deviceCaps.bMaintenance4 ) {
+        infos.flags |= VMA_ALLOCATOR_CREATE_KHR_MAINTENANCE4_BIT;
+    }
 
     VmaVulkanFunctions functions = {};
     memset( &functions, 0, sizeof( VmaVulkanFunctions ) );
@@ -3217,6 +3413,351 @@ void RenderDevice::createVMAAllocator() {
     vmaCreateAllocator( &infos, &allocator );
 
     resourceBinder.allocator = allocator;
+}
+
+static bool
+IsPipelineCacheCompatible( const std::vector<char> &blob,
+                           const VkPhysicalDeviceProperties &properties ) {
+    VkPipelineCacheHeaderVersionOne header = {};
+    if ( blob.size() < sizeof( VkPipelineCacheHeaderVersionOne ) ) {
+        return false;
+    }
+    memcpy( &header, blob.data(), sizeof( VkPipelineCacheHeaderVersionOne ) );
+
+    return header.headerSize >= sizeof( VkPipelineCacheHeaderVersionOne ) &&
+           header.headerVersion == VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
+           header.vendorID == properties.vendorID &&
+           header.deviceID == properties.deviceID &&
+           memcmp( header.pipelineCacheUUID, properties.pipelineCacheUUID,
+                   VK_UUID_SIZE ) == 0;
+}
+
+void RenderDevice::createPipelineCache() {
+    std::vector<char> blob;
+
+    if ( gpFile != nullptr ) {
+        const std::filesystem::path cacheFolder =
+            std::filesystem::path( gpFile->getSaveFolder() ) / "cache";
+        psoCachePath = cacheFolder / "pso_cache.bin";
+        psoLibraryPath = cacheFolder / "pso_library.bin";
+        psoLibrary.load( psoLibraryPath );
+
+        char pWorkingDir[OTDU_MAX_PATH];
+        TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
+        psoSeed.load( std::filesystem::path( pWorkingDir ) / "opentdu_data" /
+                      "pso_seed.bin" );
+
+        std::ifstream file( psoCachePath, std::ios::binary | std::ios::ate );
+        if ( file.is_open() ) {
+            blob.resize( static_cast<size_t>( file.tellg() ) );
+            file.seekg( 0 );
+            file.read( blob.data(), blob.size() );
+            if ( !file ) {
+                blob.clear();
+            }
+        }
+    }
+
+    if ( !blob.empty() &&
+         !IsPipelineCacheCompatible( blob, deviceProperties.properties ) ) {
+        OTDU_LOG_INFO( "Pipeline cache '%s' was created for another "
+                       "device/driver; discarding it\n",
+                       psoCachePath.string().c_str() );
+        blob.clear();
+    }
+
+    VkPipelineCacheCreateInfo cacheInfos = {};
+    cacheInfos.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    cacheInfos.initialDataSize = blob.size();
+    cacheInfos.pInitialData = blob.empty() ? nullptr : blob.data();
+
+    VkResult result =
+        vkCreatePipelineCache( device, &cacheInfos, nullptr, &psoCache );
+    if ( result != VK_SUCCESS && !blob.empty() ) {
+        OTDU_LOG_WARN( "Failed to load pipeline cache '%s' (error %d); "
+                       "starting from an empty cache\n",
+                       psoCachePath.string().c_str(), result );
+        cacheInfos.initialDataSize = 0;
+        cacheInfos.pInitialData = nullptr;
+        result =
+            vkCreatePipelineCache( device, &cacheInfos, nullptr, &psoCache );
+    }
+
+    if ( result != VK_SUCCESS ) {
+        psoCache = VK_NULL_HANDLE;
+        OTDU_LOG_WARN( "Failed to create pipeline cache (error %d)\n", result );
+        return;
+    }
+
+    psoCacheSizeOnDisk = blob.size();
+    OTDU_LOG_INFO( "Pipeline cache ready (%zu bytes loaded)\n", blob.size() );
+}
+
+void RenderDevice::savePipelineCache() {
+    if ( psoCache == VK_NULL_HANDLE || psoCachePath.empty() ) {
+        return;
+    }
+
+    const std::chrono::steady_clock::time_point saveStart =
+        std::chrono::steady_clock::now();
+
+    size_t dataSize = 0;
+    if ( vkGetPipelineCacheData( device, psoCache, &dataSize, nullptr ) !=
+             VK_SUCCESS ||
+         dataSize == 0 || dataSize == psoCacheSizeOnDisk ) {
+        return;
+    }
+
+    std::vector<char> blob( dataSize );
+    if ( vkGetPipelineCacheData( device, psoCache, &dataSize, blob.data() ) !=
+         VK_SUCCESS ) {
+        return;
+    }
+
+    std::error_code errorCode;
+    std::filesystem::create_directories( psoCachePath.parent_path(),
+                                         errorCode );
+
+    // Write to a temporary file first so an interrupted save never leaves a
+    // truncated cache behind
+    std::filesystem::path tmpPath = psoCachePath;
+    tmpPath += ".tmp";
+    {
+        std::ofstream file( tmpPath, std::ios::binary | std::ios::trunc );
+        file.write( blob.data(), dataSize );
+        if ( !file ) {
+            OTDU_LOG_WARN( "Failed to write pipeline cache '%s'\n",
+                           tmpPath.string().c_str() );
+            return;
+        }
+    }
+
+    std::filesystem::rename( tmpPath, psoCachePath, errorCode );
+    if ( errorCode ) {
+        OTDU_LOG_WARN( "Failed to save pipeline cache '%s': %s\n",
+                       psoCachePath.string().c_str(),
+                       errorCode.message().c_str() );
+        std::filesystem::remove( tmpPath, errorCode );
+        return;
+    }
+
+    psoCacheSizeOnDisk = dataSize;
+
+    const std::chrono::duration<double, std::milli> saveDuration =
+        std::chrono::steady_clock::now() - saveStart;
+    OTDU_LOG_INFO( "Saved pipeline cache (%zu bytes, %zu PSOs, %.2f ms)\n",
+                   dataSize, psoFactory.getNumCachedPSOs(),
+                   saveDuration.count() );
+}
+
+void RenderDevice::savePipelineCacheWhenIdle() {
+    static constexpr std::chrono::seconds kPSOIdleDelay( 10 );
+
+    const size_t numPSOs = psoFactory.getNumCachedPSOs();
+    const std::chrono::steady_clock::time_point now =
+        std::chrono::steady_clock::now();
+    if ( numPSOs != numPSOsAtLastCheck ) {
+        numPSOsAtLastCheck = numPSOs;
+        lastPSOCreationTime = now;
+        return;
+    }
+
+    if ( numPSOs != numPSOsAtLastCacheSave &&
+         now - lastPSOCreationTime >= kPSOIdleDelay ) {
+        numPSOsAtLastCacheSave = numPSOs;
+        savePipelineCache();
+        savePSOLibrary();
+    }
+}
+
+void RenderDevice::savePSOLibrary() {
+    if ( psoLibrary.isDirty() && !psoLibraryPath.empty() ) {
+        psoLibrary.save( psoLibraryPath );
+    }
+}
+
+bool RenderDevice::isPSORecordSupported( const PSORecord &record ) const {
+    const VkPhysicalDeviceLimits &limits = deviceProperties.properties.limits;
+
+    for ( const PSORecord::Semantic &semantic : record.Semantics ) {
+        VkFormatProperties properties = {};
+        vkGetPhysicalDeviceFormatProperties( physicalDevice, semantic.Format,
+                                             &properties );
+        if ( ( properties.bufferFeatures &
+               VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT ) == 0 ) {
+            return false;
+        }
+    }
+
+    const RenderPassDesc &renderPass = record.RenderPass;
+    for ( uint32_t i = 0; i < renderPass.getNumAttachments(); i++ ) {
+        const VkAttachmentDescription &attachment = renderPass.Attachments[i];
+        const bool bIsDepthStencil = ( i == renderPass.NumColorAttachments );
+
+        VkFormatProperties properties = {};
+        vkGetPhysicalDeviceFormatProperties( physicalDevice, attachment.format,
+                                             &properties );
+        const VkFormatFeatureFlags requiredFeature =
+            bIsDepthStencil ? VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+                            : VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+        const VkSampleCountFlags supportedSampleCounts =
+            bIsDepthStencil ? limits.framebufferDepthSampleCounts
+                            : limits.framebufferColorSampleCounts;
+        if ( ( properties.optimalTilingFeatures & requiredFeature ) == 0 ||
+             ( supportedSampleCounts & attachment.samples ) == 0 ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+GPUShader *RenderDevice::getOrCreatePrebuildShader( const uint64_t hashcode,
+                                                    const eShaderType stage ) {
+    auto it = prebuildShaders.find( hashcode );
+    if ( it != prebuildShaders.end() ) {
+        return it->second;
+    }
+
+    ShaderTableEntry entry;
+    entry.Hashcode = hashcode;
+    entry.ShaderStage = stage;
+    entry.pShaderCategory = "PSO library";
+
+    GPUShader *pShader = nullptr;
+    const ShaderBytecode_t bytecode =
+        gShaderBinaryCache.getOrLoadBytecode( &entry );
+    const ShaderMetadataSPIRVRuntime *pMetadata =
+        gShaderBinaryCache.getMetadataSPIRV( &entry );
+    if ( std::get<0>( bytecode ) != nullptr && pMetadata != nullptr ) {
+        pShader = createShader( stage, std::get<0>( bytecode ),
+                                static_cast<size_t>( std::get<1>( bytecode ) ),
+                                pMetadata, hashcode );
+    }
+
+    prebuildShaders.insert( std::make_pair( hashcode, pShader ) );
+    return pShader;
+}
+
+void RenderDevice::releasePrebuildResources() {
+    for ( auto &entry : prebuildShaders ) {
+        if ( entry.second != nullptr ) {
+            destroyShader( entry.second );
+        }
+    }
+    prebuildShaders.clear();
+}
+
+size_t RenderDevice::prebuildRecordedPSOs( const size_t maxCount ) {
+    if ( !bPrebuildFactoryInitialized ) {
+        prebuildFactory.bExtendedDynamicState =
+            psoFactory.bExtendedDynamicState;
+        prebuildFactory.reset();
+        prebuildFactory.PipelineLayout = psoFactory.PipelineLayout;
+        prebuildFactory.pParentFactory = &psoFactory;
+        bPrebuildFactoryInitialized = true;
+    }
+
+    const std::vector<PSORecord> &records = psoLibrary.getRecords();
+    const std::vector<PSORecord> &seedRecords = psoSeed.getRecords();
+    size_t numProcessed = 0;
+    while ( numProcessed < maxCount ) {
+        const bool bIsSeedRecord = nextPrebuildRecord >= records.size();
+        if ( bIsSeedRecord && nextPrebuildSeedRecord >= seedRecords.size() ) {
+            break;
+        }
+
+        const PSORecord &record = bIsSeedRecord
+                                      ? seedRecords[nextPrebuildSeedRecord++]
+                                      : records[nextPrebuildRecord++];
+        if ( psoFactory.hasCachedPSO( record.Hashcode ) ) {
+            continue;
+        }
+        numProcessed++;
+
+        uint64_t hashcode = 0ull;
+        if ( !prebuildPSO( record, hashcode ) ) {
+            if ( bIsSeedRecord ) {
+                numSkippedSeedRecords++;
+            } else {
+                stalePSORecords.push_back( record.Hashcode );
+            }
+        } else if ( hashcode != record.Hashcode && !bIsSeedRecord ) {
+            rehashedPSORecords.emplace_back( record.Hashcode, hashcode );
+        }
+    }
+
+    const size_t numRemaining = ( records.size() - nextPrebuildRecord ) +
+                                ( seedRecords.size() - nextPrebuildSeedRecord );
+    if ( numRemaining == 0 ) {
+        releasePrebuildResources();
+
+        if ( numSkippedSeedRecords != 0 ) {
+            OTDU_LOG_INFO( "Skipped %zu stale/unsupported PSO seed record(s)\n",
+                           numSkippedSeedRecords );
+            numSkippedSeedRecords = 0;
+        }
+
+        if ( !rehashedPSORecords.empty() ) {
+            OTDU_LOG_INFO( "Rehashed %zu PSO record(s)\n",
+                           rehashedPSORecords.size() );
+            for ( const auto &hashcodes : rehashedPSORecords ) {
+                psoLibrary.rehash( hashcodes.first, hashcodes.second );
+            }
+            rehashedPSORecords.clear();
+            nextPrebuildRecord = psoLibrary.getRecords().size();
+        }
+
+        if ( !stalePSORecords.empty() ) {
+            OTDU_LOG_INFO( "Discarded %zu stale/unsupported PSO record(s)\n",
+                           stalePSORecords.size() );
+            for ( const uint64_t hashcode : stalePSORecords ) {
+                psoLibrary.discard( hashcode );
+            }
+            stalePSORecords.clear();
+            nextPrebuildRecord = psoLibrary.getRecords().size();
+        }
+    }
+
+    return numRemaining;
+}
+
+bool RenderDevice::prebuildPSO( const PSORecord &record,
+                                uint64_t &outHashcode ) {
+    if ( !isPSORecordSupported( record ) ) {
+        return false;
+    }
+
+    GPUShader *pVertexShader =
+        getOrCreatePrebuildShader( record.VSHashcode, eShaderType::ST_Vertex );
+    GPUShader *pPixelShader = nullptr;
+    if ( record.PSHashcode != 0ull ) {
+        pPixelShader = getOrCreatePrebuildShader( record.PSHashcode,
+                                                  eShaderType::ST_Pixel );
+    }
+
+    if ( pVertexShader == nullptr ||
+         ( record.PSHashcode != 0ull && pPixelShader == nullptr ) ) {
+        return false;
+    }
+
+    GPUVertexLayout vertexLayout;
+    vertexLayout.InputBindings = record.InputBindings;
+    for ( const PSORecord::Semantic &semantic : record.Semantics ) {
+        vertexLayout.Semantics.push_back(
+            { semantic.Binding, semantic.Offset, semantic.Format,
+              static_cast<uint8_t>( semantic.Usage ),
+              static_cast<uint8_t>( semantic.UsageIndex ) } );
+    }
+
+    const CachedRenderPass renderPass =
+        renderPassManager.getOrCreateRenderPass( device, record.RenderPass );
+    PSOLibrary::ApplyRecord( record, prebuildFactory, pVertexShader,
+                             pPixelShader, &vertexLayout, renderPass );
+    const CachedPSO &pso = prebuildFactory.getOrBuildPSO( device, psoCache );
+    outHashcode = pso.Hashcode;
+    psoFactory.adoptCachedPSOs( device, prebuildFactory );
+    return true;
 }
 
 // DAT_00f471d0
@@ -3925,12 +4466,29 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
 
     bool bDirtyDescriptorSets = bNeedRestartRenderPass;
 
+    const size_t numCachedPSOs = psoFactory.getNumCachedPSOs();
     CachedPSO &pso = psoFactory.getOrBuildPSO( device, psoCache );
+    if ( psoFactory.getNumCachedPSOs() != numCachedPSOs ) {
+        RenderPassDesc renderPassDesc;
+        renderPassManager.captureDesc( renderPassDesc );
+        psoLibrary.record( psoFactory, pso.Hashcode, renderPassDesc );
+    }
+
     if ( boundPSO != pso.Instance || bNeedRestartRenderPass ) {
         vkCmdBindPipeline( commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                            pso.Instance );
         boundPSO = pso.Instance;
         bDirtyDescriptorSets = true;
+        psoFactory.bDirtyStencilDynamicState = true;
+        psoFactory.bDirtyExtendedDynamicState = true;
+    }
+
+    if ( psoFactory.bDirtyStencilDynamicState ) {
+        bindStencilDynamicState();
+    }
+    if ( psoFactory.bDirtyExtendedDynamicState &&
+         deviceCaps.bExtendedDynamicState ) {
+        bindExtendedDynamicState();
     }
 
     vkCmdBindVertexBuffers( commandBuffer, 0, numVertexBuffers, vertexBuffers,

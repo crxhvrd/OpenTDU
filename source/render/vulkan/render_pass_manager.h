@@ -12,6 +12,17 @@ struct CachedRenderPass {
     uint64_t Hashcode;
 };
 
+struct RenderPassDesc {
+    std::array<VkAttachmentDescription, kMaxSimultaneousRT + 1> Attachments;
+    std::array<VkAttachmentReference, kMaxSimultaneousRT + 1> References;
+    uint32_t NumColorAttachments;
+    bool bUseDepthStencil;
+
+    inline uint32_t getNumAttachments() const {
+        return NumColorAttachments + ( bUseDepthStencil ? 1u : 0u );
+    }
+};
+
 struct RenderPassManager {
     void initialize();
     void releaseCachedRenderPass( VkDevice device );
@@ -20,6 +31,9 @@ struct RenderPassManager {
     void setDepthStencilAttachment( GPUTexture *pTexture );
 
     CachedRenderPass getOrCreateRenderPass( VkDevice device );
+    CachedRenderPass getOrCreateRenderPass( VkDevice device,
+                                            const RenderPassDesc &desc );
+    void captureDesc( RenderPassDesc &outDesc ) const;
 
     VkRenderPassCreateInfo PassDesc;
     std::array<GPUTexture *, kMaxSimultaneousRT> pBoundRTs;
@@ -33,5 +47,13 @@ struct RenderPassManager {
 
 private:
     std::unordered_map<uint64_t, VkRenderPass> cache;
+
+private:
+    CachedRenderPass
+    getOrCreateRenderPass( VkDevice device,
+                           const VkAttachmentDescription *pAttachments,
+                           const VkAttachmentReference *pReferences,
+                           const uint32_t numColorAttachments,
+                           const bool bDepthStencil );
 };
 #endif

@@ -479,6 +479,45 @@ void GameModeWorld::respawnLocalPlayerCar( const Matrix4x4f_t &transform ) {
     pLocalCar->openConvertibleWindows();
 }
 
+#if OTDU_DEVBUILD
+bool GameModeWorld::respawnLocalPlayerCarWithID( const Matrix4x4f_t &transform,
+                                                 const int32_t carConfigID,
+                                                 const int32_t rimID ) {
+    VehicleSpawnParams params;
+    params.Transform = transform;
+    params.bSetPosition = true;
+    params.bCastToGround = true;
+    params.bResetCar = true;
+    params.PhantomMode = 1;
+
+    CarState *pLocalCar = nullptr;
+    VehicleBaseResources *pResource = gpCarState->loadVehicleResources(
+        carConfigID, 0, rimID, 0, 0, 0, eVehicleResourceType::VRT_Exterior );
+    if ( pResource != nullptr ) {
+        pLocalCar =
+            gpCarState->installVehicle( pResource, params, VIT_Player, 0 );
+        if ( pLocalCar != nullptr ) {
+            PlaceLocalPlayerDriver( pLocalCar, true );
+        }
+    }
+    gpScenaric->getLocalPlayer().setCarState( pLocalCar );
+    pPlayerPhysicsVehicle =
+        ( pLocalCar != nullptr ) ? pLocalCar->getPhysicsVehicle() : nullptr;
+
+    if ( gpMngHud != nullptr ) {
+        gpMngHud->FUN_006e6a00( pLocalCar );
+    }
+
+    if ( pLocalCar == nullptr ) {
+        return false;
+    }
+
+    gpPlayerData->applyDrivingOptions();
+    pLocalCar->openConvertibleWindows();
+    return true;
+}
+#endif
+
 void GameModeWorld::teleportLocalPlayerCar( const Eigen::Vector3f &worldPos ) {
     if ( gpScenaric == nullptr ) {
         return;
@@ -498,6 +537,18 @@ void GameModeWorld::teleportLocalPlayerCar( const Eigen::Vector3f &worldPos ) {
     pose( 3, 0 ) = worldPos.x();
     pose( 3, 1 ) = worldPos.y();
     pose( 3, 2 ) = worldPos.z();
+    teleportLocalPlayerCarToPose( pose );
+}
+
+void GameModeWorld::teleportLocalPlayerCarToPose( const Matrix4x4f_t &pose ) {
+    if ( gpScenaric == nullptr ) {
+        return;
+    }
+    CarState *pCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pCar == nullptr ) {
+        return;
+    }
+    const Eigen::Vector4f worldPos = pose.row( 3 ).transpose();
 
     if ( gpWorld != nullptr ) {
         Eigen::Vector4f center( worldPos.x(), 0.0f, worldPos.z(), 0.0f );

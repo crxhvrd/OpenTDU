@@ -5,19 +5,59 @@
 #include "city.h"
 #include "render_device.h"
 
+static uint64_t
+HashAttachmentReferences( uint64_t hashcode,
+                          const VkAttachmentReference *pReferences,
+                          const uint32_t count ) {
+    hashcode =
+        CombineCityHash64( hashcode, (const char *)&count, sizeof( uint32_t ) );
+    if ( pReferences != nullptr && count != 0 ) {
+        hashcode = CombineCityHash64( hashcode, (const char *)pReferences,
+                                      sizeof( VkAttachmentReference ) * count );
+    }
+    return hashcode;
+}
+
 uint64_t CalculateRenderPassHashcode( const VkRenderPassCreateInfo &desc ) {
     uint64_t hashcode = 0;
 
     for ( uint32_t i = 0; i < desc.attachmentCount; i++ ) {
-        hashcode =
-            CombineCityHash64( hashcode, (const char *)&desc.pAttachments[i],
-                               sizeof( VkAttachmentDescription ) );
+        VkAttachmentDescription attachment = desc.pAttachments[i];
+        attachment.format = GetPortableAttachmentFormat( attachment.format );
+        hashcode = CombineCityHash64( hashcode, (const char *)&attachment,
+                                      sizeof( VkAttachmentDescription ) );
     }
 
     for ( uint32_t i = 0; i < desc.subpassCount; i++ ) {
+        const VkSubpassDescription &subpass = desc.pSubpasses[i];
+        const uint32_t subpassInfos[2] = {
+            static_cast<uint32_t>( subpass.flags ),
+            static_cast<uint32_t>( subpass.pipelineBindPoint ) };
+        hashcode = CombineCityHash64( hashcode, (const char *)subpassInfos,
+                                      sizeof( subpassInfos ) );
+
+        hashcode = HashAttachmentReferences(
+            hashcode, subpass.pInputAttachments, subpass.inputAttachmentCount );
+        hashcode = HashAttachmentReferences(
+            hashcode, subpass.pColorAttachments, subpass.colorAttachmentCount );
         hashcode =
-            CombineCityHash64( hashcode, (const char *)&desc.pSubpasses[i],
-                               sizeof( VkSubpassDescription ) );
+            HashAttachmentReferences( hashcode, subpass.pResolveAttachments,
+                                      ( subpass.pResolveAttachments != nullptr )
+                                          ? subpass.colorAttachmentCount
+                                          : 0u );
+        hashcode = HashAttachmentReferences(
+            hashcode, subpass.pDepthStencilAttachment,
+            ( subpass.pDepthStencilAttachment != nullptr ) ? 1u : 0u );
+
+        hashcode = CombineCityHash64(
+            hashcode, (const char *)&subpass.preserveAttachmentCount,
+            sizeof( uint32_t ) );
+        if ( subpass.pPreserveAttachments != nullptr &&
+             subpass.preserveAttachmentCount != 0 ) {
+            hashcode = CombineCityHash64(
+                hashcode, (const char *)subpass.pPreserveAttachments,
+                sizeof( uint32_t ) * subpass.preserveAttachmentCount );
+        }
     }
 
     for ( uint32_t i = 0; i < desc.dependencyCount; i++ ) {
@@ -86,20 +126,53 @@ void RenderPassManager::setAttachment( GPUTexture *pTexture,
 }
 
 CachedRenderPass RenderPassManager::getOrCreateRenderPass( VkDevice device ) {
+    return getOrCreateRenderPass( device, PassAttachments.data(),
+                                  SubPassReferences.data(), NumAttachments,
+                                  bUseDepthStencil );
+}
+
+CachedRenderPass
+RenderPassManager::getOrCreateRenderPass( VkDevice device,
+                                          const RenderPassDesc &desc ) {
+    return getOrCreateRenderPass(
+        device, desc.Attachments.data(), desc.References.data(),
+        desc.NumColorAttachments, desc.bUseDepthStencil );
+}
+
+void RenderPassManager::captureDesc( RenderPassDesc &outDesc ) const {
+    outDesc.Attachments.fill( {} );
+    outDesc.References.fill( {} );
+    outDesc.NumColorAttachments = NumAttachments;
+    outDesc.bUseDepthStencil = bUseDepthStencil;
+
+    const uint32_t numAttachments = outDesc.getNumAttachments();
+    for ( uint32_t i = 0; i < numAttachments; i++ ) {
+        outDesc.Attachments[i] = PassAttachments[i];
+        if ( i < SubPassReferences.size() ) {
+            outDesc.References[i] = SubPassReferences[i];
+        }
+    }
+}
+
+CachedRenderPass RenderPassManager::getOrCreateRenderPass(
+    VkDevice device,
+    const VkAttachmentDescription *pAttachments,
+    const VkAttachmentReference *pReferences,
+    const uint32_t numColorAttachments,
+    const bool bDepthStencil ) {
     VkSubpassDescription subpassDesc = {};
     subpassDesc.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpassDesc.colorAttachmentCount = NumAttachments;
-    subpassDesc.pColorAttachments = SubPassReferences.data();
+    subpassDesc.colorAttachmentCount = numColorAttachments;
+    subpassDesc.pColorAttachments = pReferences;
     subpassDesc.inputAttachmentCount = 0;
     subpassDesc.preserveAttachmentCount = 0;
-    if ( bUseDepthStencil ) {
-        subpassDesc.pDepthStencilAttachment =
-            &SubPassReferences[NumAttachments];
+    if ( bDepthStencil ) {
+        subpassDesc.pDepthStencilAttachment = &pReferences[numColorAttachments];
     }
 
     PassDesc.attachmentCount =
-        ( bUseDepthStencil ) ? ( NumAttachments + 1 ) : NumAttachments;
-    PassDesc.pAttachments = PassAttachments.data();
+        ( bDepthStencil ) ? ( numColorAttachments + 1 ) : numColorAttachments;
+    PassDesc.pAttachments = pAttachments;
     PassDesc.subpassCount = 1;
     PassDesc.pSubpasses = &subpassDesc;
 

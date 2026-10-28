@@ -10,6 +10,7 @@
 #include "game/mng_logo_display.h"
 #include "game/mng_ingame_menu.h"
 #include "game/mng_pedestrians.h"
+#include "game/pso_collector/mng_pso_collector.h"
 
 #include "game/scenaric/gs_scenaric.h"
 #include "online/mng_chat.h"
@@ -114,6 +115,9 @@ private:
     MngInGameMenu mngInGameMenu;
     MngChat mngChat;
     MngPedestrians mngPedestrians;
+#if OTDU_DEVBUILD
+    MngPSOCollector mngPSOCollector;
+#endif
 
     FlashListSpots flashListSpots;
     bool bResumedFromPauseMenu;

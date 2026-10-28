@@ -155,6 +155,11 @@ GMFreeride::GMFreeride()
     if ( ArePedestriansEnabled() ) {
         registerManagerFirst( &mngPedestrians );
     }
+#if OTDU_DEVBUILD
+    if ( gbPSOCollectorEnabled ) {
+        registerManager( &mngPSOCollector );
+    }
+#endif
 
     mngFlash.setWantsAsyncInstall( true );
     mngBookmark.setMngFlash( &mngFlash );

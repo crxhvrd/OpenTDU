@@ -76,6 +76,7 @@
 #include "game/car_showcase/gm_car_showcase.h"
 #include "game/avatar_showcase/gm_avatar_showcase.h"
 #include "game/dressing/gm_dressing.h"
+#include "game/first_run_setup/gm_first_run_setup.h"
 #include "game/video_bumper/gm_video_bumper.h"
 #include "game/freeride/gm_freeride.h"
 #include "game/sandbox/gm_sandbox.h"
@@ -290,8 +291,8 @@ static void StartLogFile() {
     OTDU_LOG_ALWAYS( "Command line: %s\n\n", cmdLine.c_str() );
 }
 
-// Runs the asset extractor in-process
-// TODO: Add PSOs precompilation in the future
+// Runs the asset extractor in-process (the remaining first time actions are run
+// by GMFirstRunSetup)
 static bool OnFirstTimeRun() {
     if ( !std::filesystem::exists( gExecutablePath ) ) {
         OTDU_LOG_ERROR( "Cannot auto-extract assets: executable '%s' not found "
@@ -729,6 +730,17 @@ bool TestDriveGameInstance::initialize() {
         return false;
     }
 
+    if ( GMFirstRunSetup::IsRequired() ) {
+        GMFirstRunSetup *pFirstRunSetup = new ( TestDrive::AllocAligned(
+            sizeof( GMFirstRunSetup ), alignof( GMFirstRunSetup ) ) )
+            GMFirstRunSetup();
+        pFirstRunSetup->setTransitionFlags( 0x0 );
+        pFirstRunSetup->mainLoop( this );
+
+        pFirstRunSetup->~GMFirstRunSetup();
+        TestDrive::FreeAligned( pFirstRunSetup );
+    }
+
     if ( gpConfig->bEnableMainMenu && wishedGameMode != GM_AITrainer ) {
         gameInitStep = 2;
         setNextGameMode( GM_VideoBumper );
@@ -852,13 +864,6 @@ bool TestDriveGameInstance::initializeBaseServices() {
 
             TestDrive::DisplayMessageBox( messageError.c_str() );
             return false;
-        }
-    }
-
-    if ( !gpFile->fileExists( "/opentdu_data/flash/" ) ) {
-        if ( !AssetExtractor::BuildGeneratedMovies( pWorkingDir ) ) {
-            OTDU_LOG_WARN(
-                "Failed to generate the OpenTDU front-end movies\n" );
         }
     }
 

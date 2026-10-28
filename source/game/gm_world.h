@@ -110,6 +110,12 @@ public:
     bool canEnterSpot() const;
     void unloadLocalPlayerCar();
     void respawnLocalPlayerCar( const Matrix4x4f_t &transform );
+#if OTDU_DEVBUILD
+    bool respawnLocalPlayerCarWithID( const Matrix4x4f_t &transform,
+                                      const int32_t carConfigID,
+                                      const int32_t rimID );
+#endif
+    void teleportLocalPlayerCarToPose( const Matrix4x4f_t &pose );
 
     // Pause-menu flow: onPauseMenuRequested (flash clip flag or focus loss)
     // -> pauseMenuActivated -> "pain" (pause in) -> "afok" (fade anim over)

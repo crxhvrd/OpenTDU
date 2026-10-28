@@ -24,7 +24,6 @@ static constexpr VkSamplerMipmapMode
 };
 
 // Arbitrary (can grow if we hit the limit).
-static constexpr uint32_t kSamplerHeapCapacity = 32u;
 
 // Common samplers pre-warmed at init time so they keep stable, well-known heap
 // indices. Any sampler not listed here is created on demand by
@@ -192,7 +191,8 @@ static constexpr SamplerDesc kSamplers[kNumSamplers] = {
 };
 
 inline void FillDescriptor( const SamplerDesc &desc,
-                            VkSamplerCreateInfo &samplerDesc ) {
+                            VkSamplerCreateInfo &samplerDesc,
+                            const float maxAnisotropy ) {
     samplerDesc.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerDesc.pNext = nullptr;
     samplerDesc.flags = 0;
@@ -203,10 +203,11 @@ inline void FillDescriptor( const SamplerDesc &desc,
     samplerDesc.magFilter = kSamplerFilter[desc.MagFilter];
     samplerDesc.mipmapMode = kMipSamplerFilter[desc.MipFilter];
 
-    if ( desc.MipFilter == eTextureFiltering::TF_Anisotropic ) {
+    if ( desc.MipFilter == eTextureFiltering::TF_Anisotropic &&
+         maxAnisotropy > 1.0f ) {
         samplerDesc.anisotropyEnable = VK_TRUE;
-        samplerDesc.maxAnisotropy =
-            16.0f; // TODO: Figure out anisotropy on PC (quality based I guess?)
+        // TODO: Figure out anisotropy on PC (quality based I guess?)
+        samplerDesc.maxAnisotropy = std::min( 16.0f, maxAnisotropy );
     } else {
         samplerDesc.anisotropyEnable = VK_FALSE;
         samplerDesc.maxAnisotropy = 1.0f;
@@ -236,8 +237,10 @@ inline void PatchDescriptor( SamplerDesc &sampler ) {
     }
 }
 
-void SamplerHeapManager::initialize( VkDevice device ) {
+void SamplerHeapManager::initialize( VkDevice device,
+                                     const float maxAnisotropy ) {
     Device = device;
+    MaxAnisotropy = maxAnisotropy;
 
     VkDescriptorSetLayoutBinding setLayoutEntry = {};
     setLayoutEntry.binding = 0;
@@ -342,7 +345,7 @@ SamplerHeapManager::createSampler( VkDevice device, SamplerDesc sampler ) {
     OTDU_ASSERT( cache.size() < kSamplerHeapCapacity ); // sampler heap is full
 
     VkSamplerCreateInfo desc = {};
-    FillDescriptor( sampler, desc );
+    FillDescriptor( sampler, desc, MaxAnisotropy );
 
     VkSampler samplerInstance;
     VkResult op = vkCreateSampler( device, &desc, nullptr, &samplerInstance );

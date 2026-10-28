@@ -30,7 +30,10 @@ static VkShaderModule CreateShaderModule( VkDevice device,
     return shaderModule;
 }
 
-void GammaRampPass::initialize( VkDevice device, VmaAllocator allocator ) {
+void GammaRampPass::initialize( VkDevice device,
+                                VmaAllocator allocator,
+                                VkPipelineCache psoCache ) {
+    pipelineCache = psoCache;
     vertexShader = CreateShaderModule( device, kGammaRampVertexShaderSPIRV,
                                        sizeof( kGammaRampVertexShaderSPIRV ) );
     fragmentShader =
@@ -381,7 +384,7 @@ void GammaRampPass::createPipeline( VkDevice device, const VkFormat format ) {
     pipelineInfo.subpass = 0;
 
     VkResult result = vkCreateGraphicsPipelines(
-        device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline );
+        device, pipelineCache, 1, &pipelineInfo, nullptr, &pipeline );
     OTDU_ASSERT( result == VK_SUCCESS );
 }
 #endif

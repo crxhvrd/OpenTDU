@@ -6,13 +6,31 @@
 #include "render/shaders/shader_binary_cache.h"
 #include "render_device.h"
 
-// TODO: I suspect we could make those static (and recompile PSOs whenever the
-// screen resolution changes). For now (and for simplicity sake), we'll
-// dynamically bind those.
-static constexpr uint32_t kVulkanNumPSODynamicState = 2;
+// Stencil reference/masks are dynamic to avoid building a PSO per stencil
+// reference value.
+static constexpr uint32_t kVulkanNumPSODynamicState = 5;
 static constexpr const VkDynamicState
     kVulkanPSODynamicStates[kVulkanNumPSODynamicState] = {
-        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+        VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
+        VK_DYNAMIC_STATE_STENCIL_WRITE_MASK };
+
+// Extended dynamic state (Vulkan 1.3 or VK_EXT_extended_dynamic_state)
+static constexpr uint32_t kVulkanNumPSOExtendedDynamicState = 11;
+static constexpr const VkDynamicState
+    kVulkanPSOExtendedDynamicStates[kVulkanNumPSOExtendedDynamicState] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+        VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
+        VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
+        VK_DYNAMIC_STATE_CULL_MODE,
+        VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE,
+        VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
+        VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
+        VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE,
+        VK_DYNAMIC_STATE_STENCIL_OP };
 
 #if defined( OTDU_MACOS ) && defined( OTDU_DEVBUILD )
 static const char *DeclUsageToString( uint8_t usage ) {
@@ -36,97 +54,205 @@ static constexpr const VkPrimitiveTopology
         VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
         VK_PRIMITIVE_TOPOLOGY_MAX_ENUM };
 
-inline uint64_t CalculatePSOHashcode(
+// Builds the PSO hash key from values only
+struct PSOHashKeyWriter {
+    std::vector<uint32_t> &Key;
+
+    inline void push( const uint32_t value ) { Key.push_back( value ); }
+    inline void push64( const uint64_t value ) {
+        Key.push_back( static_cast<uint32_t>( value ) );
+        Key.push_back( static_cast<uint32_t>( value >> 32 ) );
+    }
+    inline void pushFloat( const float value ) {
+        uint32_t bits = 0;
+        memcpy( &bits, &value, sizeof( uint32_t ) );
+        Key.push_back( bits );
+    }
+    // compareMask/writeMask/reference are dynamic states
+    inline void pushStencilOp( const VkStencilOpState &state ) {
+        push( state.failOp );
+        push( state.passOp );
+        push( state.depthFailOp );
+        push( state.compareOp );
+    }
+};
+
+static void BuildPSOHashKey(
+    std::vector<uint32_t> &key,
     const VkGraphicsPipelineCreateInfo &psoDesc,
+    const GPUShader *const pShaderStages[2],
     const std::vector<VkVertexInputBindingDescription> &inputBindings,
     const std::vector<VkVertexInputAttributeDescription> &inputAttribs,
-    uint64_t psoLayoutHashcode,
-    uint64_t renderPassHashcode ) {
-    uint64_t hashcode = 0;
+    const uint64_t psoLayoutHashcode,
+    const uint64_t renderPassHashcode,
+    const uint32_t vsClipPlaneCount,
+    const bool bExtendedDynamicState ) {
+    key.clear();
+    PSOHashKeyWriter writer{ key };
 
+    writer.push( psoDesc.stageCount );
     for ( uint32_t i = 0; i < psoDesc.stageCount; i++ ) {
-        hashcode =
-            CombineCityHash64( hashcode, (const char *)&psoDesc.pStages[i],
-                               sizeof( VkPipelineShaderStageCreateInfo ) );
+        const VkPipelineShaderStageCreateInfo &stage = psoDesc.pStages[i];
+        writer.push( stage.stage );
+        writer.push64( pShaderStages[i]->Hashcode );
+
+        const VkSpecializationInfo *pSpecInfo = stage.pSpecializationInfo;
+        writer.push( ( pSpecInfo != nullptr ) ? pSpecInfo->mapEntryCount : 0u );
+        if ( pSpecInfo != nullptr ) {
+            for ( uint32_t j = 0; j < pSpecInfo->mapEntryCount; j++ ) {
+                const VkSpecializationMapEntry &entry =
+                    pSpecInfo->pMapEntries[j];
+                writer.push( entry.constantID );
+                writer.push( entry.offset );
+                writer.push( static_cast<uint32_t>( entry.size ) );
+            }
+
+            const uint32_t *pSpecData =
+                static_cast<const uint32_t *>( pSpecInfo->pData );
+            for ( size_t j = 0; j < pSpecInfo->dataSize / sizeof( uint32_t );
+                  j++ ) {
+                writer.push( pSpecData[j] );
+            }
+        }
+    }
+    writer.push( vsClipPlaneCount );
+
+    writer.push( static_cast<uint32_t>( inputBindings.size() ) );
+    for ( const VkVertexInputBindingDescription &binding : inputBindings ) {
+        writer.push( binding.binding );
+        writer.push( binding.stride );
+        writer.push( binding.inputRate );
     }
 
-    // Hash the actual binding/attribute data (not the struct's pointer fields,
-    // which change for every local vector).
-    if ( !inputBindings.empty() ) {
-        hashcode = CombineCityHash64(
-            hashcode, (const char *)inputBindings.data(),
-            sizeof( VkVertexInputBindingDescription ) * inputBindings.size() );
-    }
-    if ( !inputAttribs.empty() ) {
-        hashcode = CombineCityHash64(
-            hashcode, (const char *)inputAttribs.data(),
-            sizeof( VkVertexInputAttributeDescription ) * inputAttribs.size() );
+    writer.push( static_cast<uint32_t>( inputAttribs.size() ) );
+    for ( const VkVertexInputAttributeDescription &attrib : inputAttribs ) {
+        writer.push( attrib.location );
+        writer.push( attrib.binding );
+        writer.push( attrib.format );
+        writer.push( attrib.offset );
     }
 
-    if ( psoDesc.pInputAssemblyState != nullptr ) {
-        hashcode = CombineCityHash64(
-            hashcode, (const char *)psoDesc.pInputAssemblyState,
-            sizeof( VkPipelineInputAssemblyStateCreateInfo ) );
+    const VkPipelineInputAssemblyStateCreateInfo *pInputAssembly =
+        psoDesc.pInputAssemblyState;
+    writer.push( pInputAssembly != nullptr );
+    if ( pInputAssembly != nullptr ) {
+        writer.push( pInputAssembly->flags );
+        writer.push( pInputAssembly->topology );
+        writer.push( pInputAssembly->primitiveRestartEnable );
     }
 
-    if ( psoDesc.pTessellationState != nullptr ) {
-        hashcode = CombineCityHash64(
-            hashcode, (const char *)psoDesc.pTessellationState,
-            sizeof( VkPipelineTessellationStateCreateInfo ) );
+    const VkPipelineTessellationStateCreateInfo *pTessellation =
+        psoDesc.pTessellationState;
+    writer.push( pTessellation != nullptr );
+    if ( pTessellation != nullptr ) {
+        writer.push( pTessellation->flags );
+        writer.push( pTessellation->patchControlPoints );
     }
 
-    if ( psoDesc.pViewportState != nullptr ) {
-        hashcode =
-            CombineCityHash64( hashcode, (const char *)psoDesc.pViewportState,
-                               sizeof( VkPipelineViewportStateCreateInfo ) );
+    const VkPipelineViewportStateCreateInfo *pViewport = psoDesc.pViewportState;
+    writer.push( pViewport != nullptr );
+    if ( pViewport != nullptr ) {
+        // Viewports and scissors are dynamic; only the counts matter
+        writer.push( pViewport->flags );
+        writer.push( pViewport->viewportCount );
+        writer.push( pViewport->scissorCount );
     }
 
-    if ( psoDesc.pRasterizationState != nullptr ) {
-        hashcode = CombineCityHash64(
-            hashcode, (const char *)psoDesc.pRasterizationState,
-            sizeof( VkPipelineRasterizationStateCreateInfo ) );
+    const VkPipelineRasterizationStateCreateInfo *pRaster =
+        psoDesc.pRasterizationState;
+    writer.push( pRaster != nullptr );
+    if ( pRaster != nullptr ) {
+        writer.push( pRaster->flags );
+        writer.push( pRaster->depthClampEnable );
+        writer.push( pRaster->rasterizerDiscardEnable );
+        writer.push( pRaster->polygonMode );
+        if ( !bExtendedDynamicState ) {
+            writer.push( pRaster->cullMode );
+        }
+        writer.push( pRaster->frontFace );
+        writer.push( pRaster->depthBiasEnable );
+        writer.pushFloat( pRaster->depthBiasConstantFactor );
+        writer.pushFloat( pRaster->depthBiasClamp );
+        writer.pushFloat( pRaster->depthBiasSlopeFactor );
+        writer.pushFloat( pRaster->lineWidth );
     }
 
-    if ( psoDesc.pMultisampleState != nullptr ) {
-        hashcode = CombineCityHash64(
-            hashcode, (const char *)psoDesc.pMultisampleState,
-            sizeof( VkPipelineMultisampleStateCreateInfo ) );
+    const VkPipelineMultisampleStateCreateInfo *pMultisample =
+        psoDesc.pMultisampleState;
+    writer.push( pMultisample != nullptr );
+    if ( pMultisample != nullptr ) {
+        writer.push( pMultisample->flags );
+        writer.push( pMultisample->rasterizationSamples );
+        writer.push( pMultisample->sampleShadingEnable );
+        writer.pushFloat( pMultisample->minSampleShading );
+        writer.push( pMultisample->pSampleMask != nullptr );
+        if ( pMultisample->pSampleMask != nullptr ) {
+            const uint32_t numMaskWords =
+                ( pMultisample->rasterizationSamples + 31u ) / 32u;
+            for ( uint32_t i = 0; i < numMaskWords; i++ ) {
+                writer.push( pMultisample->pSampleMask[i] );
+            }
+        }
+        writer.push( pMultisample->alphaToCoverageEnable );
+        writer.push( pMultisample->alphaToOneEnable );
     }
 
-    if ( psoDesc.pDepthStencilState != nullptr ) {
-        hashcode = CombineCityHash64(
-            hashcode, (const char *)psoDesc.pDepthStencilState,
-            sizeof( VkPipelineDepthStencilStateCreateInfo ) );
+    const VkPipelineDepthStencilStateCreateInfo *pDepthStencil =
+        psoDesc.pDepthStencilState;
+    writer.push( pDepthStencil != nullptr );
+    if ( pDepthStencil != nullptr ) {
+        writer.push( pDepthStencil->flags );
+        writer.push( pDepthStencil->depthBoundsTestEnable );
+        if ( !bExtendedDynamicState ) {
+            writer.push( pDepthStencil->depthTestEnable );
+            writer.push( pDepthStencil->depthWriteEnable );
+            writer.push( pDepthStencil->depthCompareOp );
+            writer.push( pDepthStencil->stencilTestEnable );
+            writer.pushStencilOp( pDepthStencil->front );
+            writer.pushStencilOp( pDepthStencil->back );
+        }
+        writer.pushFloat( pDepthStencil->minDepthBounds );
+        writer.pushFloat( pDepthStencil->maxDepthBounds );
     }
 
-    if ( psoDesc.pColorBlendState != nullptr ) {
-        hashcode =
-            CombineCityHash64( hashcode, (const char *)psoDesc.pColorBlendState,
-                               sizeof( VkPipelineColorBlendStateCreateInfo ) );
-        // Hash attachment data separately: pAttachments is a pointer inside the
-        // struct above (fixed address, never changes) so the struct hash alone
-        // does not cover per-attachment blend settings.
-        if ( psoDesc.pColorBlendState->pAttachments != nullptr &&
-             psoDesc.pColorBlendState->attachmentCount > 0 ) {
-            hashcode = CombineCityHash64(
-                hashcode, (const char *)psoDesc.pColorBlendState->pAttachments,
-                sizeof( VkPipelineColorBlendAttachmentState ) *
-                    psoDesc.pColorBlendState->attachmentCount );
+    const VkPipelineColorBlendStateCreateInfo *pColorBlend =
+        psoDesc.pColorBlendState;
+    writer.push( pColorBlend != nullptr );
+    if ( pColorBlend != nullptr ) {
+        writer.push( pColorBlend->flags );
+        writer.push( pColorBlend->logicOpEnable );
+        writer.push( pColorBlend->logicOp );
+        writer.push( pColorBlend->attachmentCount );
+        for ( uint32_t i = 0; i < pColorBlend->attachmentCount; i++ ) {
+            const VkPipelineColorBlendAttachmentState &attachment =
+                pColorBlend->pAttachments[i];
+            writer.push( attachment.blendEnable );
+            writer.push( attachment.srcColorBlendFactor );
+            writer.push( attachment.dstColorBlendFactor );
+            writer.push( attachment.colorBlendOp );
+            writer.push( attachment.srcAlphaBlendFactor );
+            writer.push( attachment.dstAlphaBlendFactor );
+            writer.push( attachment.alphaBlendOp );
+            writer.push( attachment.colorWriteMask );
+        }
+        for ( const float blendConstant : pColorBlend->blendConstants ) {
+            writer.pushFloat( blendConstant );
         }
     }
 
-    if ( psoDesc.pDynamicState != nullptr ) {
-        hashcode =
-            CombineCityHash64( hashcode, (const char *)psoDesc.pDynamicState,
-                               sizeof( VkPipelineDynamicStateCreateInfo ) );
+    const VkPipelineDynamicStateCreateInfo *pDynamic = psoDesc.pDynamicState;
+    writer.push( pDynamic != nullptr );
+    if ( pDynamic != nullptr ) {
+        writer.push( pDynamic->flags );
+        writer.push( pDynamic->dynamicStateCount );
+        for ( uint32_t i = 0; i < pDynamic->dynamicStateCount; i++ ) {
+            writer.push( pDynamic->pDynamicStates[i] );
+        }
     }
 
-    hashcode ^=
-        psoLayoutHashcode + 0x9e3779b9 + ( hashcode << 6 ) + ( hashcode >> 2 );
-    hashcode ^=
-        renderPassHashcode + 0x9e3779b9 + ( hashcode << 6 ) + ( hashcode >> 2 );
-
-    return hashcode;
+    writer.push( psoDesc.subpass );
+    writer.push64( psoLayoutHashcode );
+    writer.push64( renderPassHashcode );
 }
 
 inline void
@@ -329,16 +455,32 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
 
     psoInfos.pStages = graphicsShaderStages.data();
 
-    uint64_t psoHashcode = CalculatePSOHashcode(
-        psoInfos, pVertexLayout->InputBindings, inputAttribs, psoLayoutHashcode,
-        renderPassHashcode );
-    psoHashcode = CombineCityHash64(
-        psoHashcode, (const char *)&VSClipPlaneCount, sizeof( uint32_t ) );
+    BuildPSOHashKey( hashKey, psoInfos, pGraphicsShaderStages,
+                     pVertexLayout->InputBindings, inputAttribs,
+                     psoLayoutHashcode, renderPassHashcode, VSClipPlaneCount,
+                     bExtendedDynamicState );
+    const uint64_t psoHashcode = CityHash64(
+        (const char *)hashKey.data(), hashKey.size() * sizeof( uint32_t ) );
 
     auto cacheIt = cache.find( psoHashcode );
     if ( cacheIt != cache.end() ) {
+#if OTDU_DEVBUILD
+        if ( hashKeys[psoHashcode] != hashKey ) {
+            OTDU_LOG_ERROR( "PSO hashcode collision (%016llx)!\n",
+                            (unsigned long long)psoHashcode );
+            OTDU_TRIGGER_BREAKPOINT;
+        }
+#endif
         latestPSO = &cacheIt->second;
         return cacheIt->second;
+    }
+
+    if ( pParentFactory != nullptr ) {
+        auto parentIt = pParentFactory->cache.find( psoHashcode );
+        if ( parentIt != pParentFactory->cache.end() ) {
+            latestPSO = &parentIt->second;
+            return parentIt->second;
+        }
     }
 
     // TODO: This is synchronous for now; ideally we should have an async thread
@@ -346,7 +488,7 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
     VkPipeline pso = VK_NULL_HANDLE;
 
     VkResult psoCreationResult = vkCreateGraphicsPipelines(
-        device, VK_NULL_HANDLE, 1, &psoInfos, nullptr, &pso );
+        device, psoCache, 1, &psoInfos, nullptr, &pso );
     OTDU_ASSERT( psoCreationResult == VK_SUCCESS );
 
 #if OTDU_DEVBUILD
@@ -382,6 +524,9 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
     }
 
     cache.insert( std::make_pair( psoHashcode, psoCached ) );
+#if OTDU_DEVBUILD
+    hashKeys[psoHashcode] = hashKey;
+#endif
 
     CachedPSO &cachedPso = cache[psoHashcode];
     latestPSO = &cachedPso;
@@ -395,6 +540,29 @@ void PSOFactory::releaseCachedPSOs( VkDevice device ) {
         vkDestroyPipeline( device, entry.second.Instance, nullptr );
     }
     cache.clear();
+#if OTDU_DEVBUILD
+    hashKeys.clear();
+#endif
+}
+
+void PSOFactory::adoptCachedPSOs( VkDevice device, PSOFactory &other ) {
+    OTDU_ASSERT( PipelineLayout == other.PipelineLayout );
+
+    for ( auto &entry : other.cache ) {
+        if ( !cache.insert( entry ).second ) {
+            vkDestroyPipeline( device, entry.second.Instance, nullptr );
+        }
+    }
+    other.cache.clear();
+    other.latestPSO = nullptr;
+    other.bDirty = true;
+
+#if OTDU_DEVBUILD
+    for ( auto &entry : other.hashKeys ) {
+        hashKeys.insert( entry );
+    }
+    other.hashKeys.clear();
+#endif
 }
 
 void PSOFactory::setShader( eShaderType stage, GPUShader *pShader ) {
@@ -449,8 +617,12 @@ void PSOFactory::reset() {
     // Viewport and scissors are always set at runtime.
     DynamicState = {};
     DynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    DynamicState.dynamicStateCount = kVulkanNumPSODynamicState;
-    DynamicState.pDynamicStates = kVulkanPSODynamicStates;
+    DynamicState.dynamicStateCount = bExtendedDynamicState
+                                         ? kVulkanNumPSOExtendedDynamicState
+                                         : kVulkanNumPSODynamicState;
+    DynamicState.pDynamicStates = bExtendedDynamicState
+                                      ? kVulkanPSOExtendedDynamicStates
+                                      : kVulkanPSODynamicStates;
 
     InputAssembly = {};
     InputAssembly.sType =
@@ -474,6 +646,8 @@ void PSOFactory::reset() {
 
     latestPSO = nullptr;
     bDirty = true;
+    bDirtyStencilDynamicState = true;
+    bDirtyExtendedDynamicState = true;
     bTwoSidedStencil = false;
     bIsStageBound[0] = false;
     bIsStageBound[1] = false;
@@ -499,8 +673,11 @@ void PSOFactory::fillGraphicsDescriptor(
     // TODO: Vulkan validation complains if this is disabled on Mac (even though
     // it doesn't break visual correctness). Do we really need this? Or is the
     // validation layer wrong?
+    // Restart on list topologies requires primitiveTopologyListRestart
     InputAssembly.primitiveRestartEnable =
-        PrimitiveType != ePrimitiveType::PT_Triangle;
+        PrimitiveType == ePrimitiveType::PT_LineStrip ||
+        PrimitiveType == ePrimitiveType::PT_TriangleStrip ||
+        PrimitiveType == ePrimitiveType::PT_TriangleFan;
 #endif
 
     psoInfos = {};

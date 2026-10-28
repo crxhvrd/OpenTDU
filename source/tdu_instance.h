@@ -74,6 +74,9 @@ public:
     }
     inline void setGMChangeInProgressFlag() { bPendingGameModeChange = true; }
     inline bool isUsingDVDVFS() { return bUseDVDVFS; }
+    inline bool hasPendingInstanciation() const {
+        return !pendingStreamedResources.empty() || !fileInstanciation.bDone;
+    }
     inline bool
     isInstanciatingResource( const StreamedResource *param_1 ) const {
         return !fileInstanciation.bDone &&
