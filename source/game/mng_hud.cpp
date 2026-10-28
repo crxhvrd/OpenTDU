@@ -22,6 +22,8 @@
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
 #include "ai/gs_ai.h"
+#include "ai/ai_vehicle.h"
+#include "game/vehicle/gs_car_state.h"
 #include "player_data/driver.h"
 #include "player_data/player_save.h"
 #include "player_data/saved_item_table.h"
@@ -359,6 +361,14 @@ static constexpr float kSpotIconScale = 0.00125f;     // DAT_00f41d78
 static constexpr float kSpotIconHalfWidth = 22.5f;    // DAT_00f41988
 static constexpr float kSpotIconHalfHeight = 29.925f; // DAT_00f42154
 static constexpr float kSpotIconAlpha = 191.0f;       // DAT_00f41838
+static constexpr float kMarkerHalfWidth = 16.0f;      // DAT_00f418d8
+static constexpr float kMarkerHalfHeight = 21.28f;    // DAT_00f41eac
+
+static constexpr int32_t kNumNetPlayerMarkerColors = 12;
+static constexpr uint32_t kNetPlayerMarkerColors[kNumNetPlayerMarkerColors] = {
+    0xffffffffu, 0xff66e0ffu, 0xffddaf51u, 0xff93e754u,
+    0xffa4afc1u, 0xfffd7b68u, 0xffffba75u, 0xfffbf999u,
+    0xff00007fu, 0xff7f007fu, 0xff7f7f00u, 0xff007f7fu }; // DAT_00fabe58
 
 static constexpr float kMapModeHalfExtent[] = { 0.0f, 16384.0f, 3072.0f,
                                                 800.0f }; // DAT_00f41d74
@@ -1300,12 +1310,138 @@ void HudMinimap::buildMapDrawList() {
         pGps->drawRoute( WorldToMap, drawList );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AI/ONLINE (FUN_006e6bc0 vehicle blips)
+    drawVehicleMarkers();
 
     if ( gpTestDriveInstance != nullptr &&
          gpTestDriveInstance->getActiveGameMode() == GM_FreeRide ) {
         drawSpotIcons();
     }
+}
+
+void HudMinimap::drawVehicleMarkers() {
+    // FUN_006e6bc0
+    drawList.setActiveTransformMatrix( WorldToMap );
+
+    float fromHalfExtentX = 0.0f;
+    float fromHalfExtentY = 0.0f;
+    float toHalfExtentX = 0.0f;
+    float toHalfExtentY = 0.0f;
+    GetMapModeHalfExtent( MapModeTarget, fromHalfExtentX, fromHalfExtentY );
+    GetMapModeHalfExtent( MapMode, toHalfExtentX, toHalfExtentY );
+
+    const float fromHalfWidth =
+        fromHalfExtentX * kSpotIconScale * kMarkerHalfWidth;
+    const float halfWidth =
+        ( toHalfExtentX * kSpotIconScale * kMarkerHalfWidth - fromHalfWidth ) *
+            RotationBlend +
+        fromHalfWidth;
+    const float fromHalfHeight =
+        fromHalfExtentY * kSpotIconScale * kMarkerHalfHeight;
+    const float halfHeight =
+        ( toHalfExtentY * kSpotIconScale * kMarkerHalfHeight -
+          fromHalfHeight ) *
+            RotationBlend +
+        fromHalfHeight;
+
+    if ( gpCarState == nullptr ) {
+        return;
+    }
+
+    drawList.setActiveMaterial( nullptr );
+
+    struct VehicleMarker {
+        float X;
+        float Z;
+        uint32_t Color;
+    };
+    VehicleMarker Markers[kMaxNumVehicles];
+    int32_t numMarkers = 0;
+
+    CarState *pCarStates = gpCarState->getCarStates();
+    for ( int32_t slot = 0; slot < (int32_t)kMaxNumVehicles; slot++ ) {
+        CarState &carState = pCarStates[slot];
+        const Eigen::Vector4f &position =
+            carState.getBody()->WorldMatrix.row( 3 );
+
+        const float deltaX = position.x() - ViewCenter.x();
+        const float deltaZ = position.z() - ViewCenter.y();
+        if ( ViewRadiusSq < deltaX * deltaX + deltaZ * deltaZ ||
+             !gpCarState->isCarStateUsed( slot ) ) {
+            continue;
+        }
+
+        const CarState::eSimulationType simulationType =
+            carState.getSimulationType();
+        const CarState::eOwner owner = carState.getOwner();
+        if ( simulationType == CarState::eSimulationType::CSST_Local &&
+             owner == CarState::eOwner::CSO_LocalPlayer ) {
+            continue;
+        }
+
+        VehicleBase *pVehicle = carState.getVehicleInstance();
+        if ( pVehicle == nullptr || !pVehicle->shouldDraw() ) {
+            continue;
+        }
+
+        uint32_t color = 0;
+        if ( simulationType ==
+             CarState::eSimulationType::CSST_ReplicatedFromNetwork ) {
+            if ( !gEnableMinimapNetPlayers ) {
+                continue;
+            }
+            int32_t colorIndex = slot % kNumNetPlayerMarkerColors;
+            if ( carState.getP2POwner() != nullptr ) {
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+            }
+            color = kNetPlayerMarkerColors[colorIndex];
+        } else if ( owner == CarState::eOwner::CSO_NetPlayer ) {
+            color = 0xff00007fu;
+        } else {
+            const AiVehicle *pAiVehicle =
+                static_cast<const AiVehicle *>( carState.getAIController() );
+            if ( pAiVehicle == nullptr ) {
+                continue;
+            }
+
+            if ( pAiVehicle->getBehaviourType() == 0 ) {
+                if ( pAiVehicle->getBehaviour() == nullptr ) {
+                    continue;
+                }
+                OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (cops)
+                continue;
+            }
+
+            if ( !gEnableMinimapAI ) {
+                continue;
+            }
+            color = pAiVehicle->getInfos().bVisible ? 0xff00ff00u : 0xff000000u;
+        }
+
+        Markers[numMarkers].X = position.x();
+        Markers[numMarkers].Z = position.z();
+        Markers[numMarkers].Color = color;
+        numMarkers++;
+    }
+
+    if ( numMarkers <= 0 ||
+         !drawList.beginPrimitive( PT_TriangleStrip, numMarkers * 4 ) ) {
+        return;
+    }
+
+    for ( int32_t i = 0; i < numMarkers; i++ ) {
+        const VehicleMarker &Marker = Markers[i];
+        drawList.setDiffuse( 0, ColorRGBA( Marker.Color ) );
+        drawList.pushVertex( Marker.X, Marker.Z - halfHeight, 0.0f );
+        drawList.pushVertex( Marker.X - halfWidth, Marker.Z, 0.0f );
+        drawList.pushVertex( Marker.X + halfWidth, Marker.Z, 0.0f );
+        drawList.pushVertex( Marker.X, Marker.Z + halfHeight, 0.0f );
+
+        if ( i + 1 < numMarkers ) {
+            drawList.breakPrimitive();
+        }
+    }
+
+    drawList.commitPrimitive();
 }
 
 void HudMinimap::refreshLureRect() {
@@ -2153,11 +2289,11 @@ void MngHud::tick( float deltaTime, float totalTime ) {
 void MngHud::drawSimulationOverlay() {
     // FUN_006ec8c0
     //
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMISSION (DAT_00fa97dc)
-    constexpr int32_t kMissionStateRemote = 5;
-    const int32_t missionState = 0;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc)
+    constexpr int32_t kReplayStatePlayback = 5;
+    const int32_t replayState = 0;
     const char *pBasePath =
-        ( missionState == kMissionStateRemote ) ? "remote/simu" : "/hud/simu";
+        ( replayState == kReplayStatePlayback ) ? "remote/simu" : "/hud/simu";
 
     FlashClip clip;
     if ( pHudPlayer != nullptr &&

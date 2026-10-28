@@ -232,6 +232,7 @@ private:
     void drawRoadNetwork();
     void buildSpotIcons();
     void drawSpotIcons();
+    void drawVehicleMarkers();
     void buildMapDrawList();
     void updateViewTransform( float &cursorU, float &cursorV );
     void buildViewMatrix( Matrix4x4f_t &out, bool bWorldSpace );

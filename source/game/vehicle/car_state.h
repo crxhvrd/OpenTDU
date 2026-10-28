@@ -244,6 +244,8 @@ public:
     }
     void setPhysicsVehicle( PhysicsVehicle *pVehicle );
 
+    inline void *getP2POwner() const { return field_0x39d4; }
+
     inline eOwner getOwner() const { return owner; }
     inline eSimulationType getSimulationType() const { return simulationType; }
     inline eActiveMode getActiveMode() const { return activeMode; }
