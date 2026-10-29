@@ -11,7 +11,7 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define lightStreakModulator( i ) c.f[8 + ( i )]
+#define lightStreakModulator( i ) D3D9_CR( 8, i )
 
 D3D9_DECLARE_SAMPLER_2D( 0 )
 #ifdef STREAK_MERGE

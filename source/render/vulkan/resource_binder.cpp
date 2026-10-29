@@ -8,10 +8,7 @@
 #include "render/shaders/shader_binary_cache.h"
 #include "render_device.h"
 
-static constexpr uint32_t kVulkanBindingSlotVSUniforms = 0;
 static constexpr uint32_t kVulkanBindingSlotVSClipPlanes = 3;
-static constexpr uint32_t kVulkanBindingSlotPSUniforms = 10;
-static constexpr uint32_t kVulkanBindingSlotPSShared = 12;
 static constexpr uint32_t kVulkanBindingSlotPSTextures = 13;
 static constexpr uint32_t kVulkanBindingSlotShaderSpec = 31;
 
@@ -26,13 +23,44 @@ static constexpr uint32_t kNumFramesUnusedBeforeSetDestroyed =
         // be released
 
 enum eDirtyStates : uint32_t {
-    DS_VSConstants = 1 << 1,
-    DS_PSConstants = 1 << 2,
     DS_VSClipPlanes = 1 << 3,
     DS_ShaderSpecs = 1 << 4,
-    DS_PSShared = 1 << 5,
     DS_PSTextures = 1 << 6,
+    DS_ConstantBlocks = 1 << 8, // One bit per eShaderConstantBlock
 };
+
+inline static uint32_t GetConstantBlockDirtyBit( const uint32_t block ) {
+    return eDirtyStates::DS_ConstantBlocks << block;
+}
+
+// Dynamic offsets are ordered by binding number
+static constexpr uint32_t GetUBOIndex( const uint32_t binding ) {
+    uint32_t index = 0;
+    for ( uint32_t i = 0; i < SCB_Count; i++ ) {
+        if ( kShaderConstantBlocks[i].Binding < binding ) {
+            index++;
+        }
+    }
+    if ( kVulkanBindingSlotVSClipPlanes < binding ) {
+        index++;
+    }
+    if ( kVulkanBindingSlotShaderSpec < binding ) {
+        index++;
+    }
+    return index;
+}
+
+inline static VkShaderStageFlags
+GetConstantBlockStages( const ShaderConstantBlockDesc &block ) {
+    VkShaderStageFlags stages = 0;
+    if ( block.bVertexStage ) {
+        stages |= VK_SHADER_STAGE_VERTEX_BIT;
+    }
+    if ( block.bPixelStage ) {
+        stages |= VK_SHADER_STAGE_FRAGMENT_BIT;
+    }
+    return stages;
+}
 
 inline static void FillGlobalDescriptorLayout(
     std::vector<VkDescriptorSetLayoutBinding> &bindings ) {
@@ -40,28 +68,18 @@ inline static void FillGlobalDescriptorLayout(
     binding.descriptorCount = 1;
     binding.pImmutableSamplers = nullptr;
 
-    // 0: Uniforms (VS)
-    binding.binding = kVulkanBindingSlotVSUniforms;
+    // Float constant blocks
     binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    bindings.push_back( binding );
+    for ( const ShaderConstantBlockDesc &block : kShaderConstantBlocks ) {
+        binding.binding = block.Binding;
+        binding.stageFlags = GetConstantBlockStages( block );
+        bindings.push_back( binding );
+    }
 
     // 3: Clip Planes (VS)
     binding.binding = kVulkanBindingSlotVSClipPlanes;
     binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    bindings.push_back( binding );
-
-    // 10: Uniforms (PS)
-    binding.binding = kVulkanBindingSlotPSUniforms;
-    binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    bindings.push_back( binding );
-
-    // 12: Shared Scalars (PS)
-    binding.binding = kVulkanBindingSlotPSShared;
-    binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings.push_back( binding );
 
     // 13 .. 20: texture resource views
@@ -129,8 +147,10 @@ void ResourceBinder::initialize( VkDevice device,
         pBoundSRVs[i] = nullptr;
     }
 
-    numConstantVectorsUsed[0] = 1;
-    numConstantVectorsUsed[1] = 1;
+    for ( uint32_t i = 0; i < SCB_Count; i++ ) {
+        constantBlocks[i].assign( kShaderConstantBlocks[i].NumVectors * 4,
+                                  0.0f );
+    }
 
     dirtyStates = 0xffffffff;
     uboOffsets.fill( 0 );
@@ -154,9 +174,10 @@ void ResourceBinder::initializeAllocators( VkDevice device,
                                            VmaAllocator allocator,
                                            VkDeviceSize uboAlignment ) {
     for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        for ( uint32_t j = 0; j < 2; j++ ) {
-            constantsAllocator[j][i].create(
-                device, allocator, sizeof( ShaderConstants ),
+        for ( uint32_t j = 0; j < SCB_Count; j++ ) {
+            constantBlockAllocator[j][i].create(
+                device, allocator,
+                kShaderConstantBlocks[j].NumVectors * 4 * sizeof( float ),
                 kVulkanNumAllocsPerFrame, uboAlignment );
         }
         clipPlanesAllocator[i].create( device, allocator, kVulkanClipInfosSize,
@@ -164,21 +185,17 @@ void ResourceBinder::initializeAllocators( VkDevice device,
         shaderSpecsAllocator[i].create(
             device, allocator, kVulkanShaderSpecsUBOSize,
             kVulkanNumAllocsPerFrame, uboAlignment );
-        psSharedAllocator[i].create( device, allocator,
-                                     kVulkanShaderSpecsUBOSize,
-                                     kVulkanNumAllocsPerFrame, uboAlignment );
     }
 }
 
 void ResourceBinder::destroyAllocators( VkDevice device,
                                         VmaAllocator allocator ) {
     for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        for ( uint32_t j = 0; j < 2; j++ ) {
-            constantsAllocator[j][i].destroy( device, allocator );
+        for ( uint32_t j = 0; j < SCB_Count; j++ ) {
+            constantBlockAllocator[j][i].destroy( device, allocator );
         }
         clipPlanesAllocator[i].destroy( device, allocator );
         shaderSpecsAllocator[i].destroy( device, allocator );
-        psSharedAllocator[i].destroy( device, allocator );
     }
 }
 
@@ -186,12 +203,11 @@ void ResourceBinder::onFrameBegin( VkDevice device, uint32_t frameIndex ) {
     DescriptorSet = VK_NULL_HANDLE;
     dirtyStates = 0xffffffff;
 
-    for ( uint32_t j = 0; j < 2; j++ ) {
-        constantsAllocator[j][frameIndex].onFrameBegin();
+    for ( uint32_t j = 0; j < SCB_Count; j++ ) {
+        constantBlockAllocator[j][frameIndex].onFrameBegin();
     }
     clipPlanesAllocator[frameIndex].onFrameBegin();
     shaderSpecsAllocator[frameIndex].onFrameBegin();
-    psSharedAllocator[frameIndex].onFrameBegin();
 
     std::vector<CachedDescriptorSet> &sets = allocatedSets[frameIndex];
     for ( uint32_t i = 0; i < sets.size(); i++ ) {
@@ -235,42 +251,37 @@ VkDescriptorSet ResourceBinder::getOrAllocateSet( VkDevice device,
         DescriptorSet = descSet.DescriptorSet;
     }
 
-    if ( ( dirtyStates & eDirtyStates::DS_VSConstants ) != 0 ) {
-        uploadConstants( 0, frameIndex, 0 );
+    for ( uint32_t i = 0; i < SCB_Count; i++ ) {
+        if ( ( dirtyStates & GetConstantBlockDirtyBit( i ) ) != 0 ) {
+            uploadConstantBlock( static_cast<eShaderConstantBlock>( i ),
+                                 frameIndex );
+        }
     }
 
     if ( ( dirtyStates & eDirtyStates::DS_VSClipPlanes ) != 0 ) {
-        uboOffsets[1] = clipPlanesAllocator[frameIndex].allocate();
-        memcpy( clipPlanesAllocator[frameIndex].pCPUMapping + uboOffsets[1],
+        constexpr uint32_t uboIndex =
+            GetUBOIndex( kVulkanBindingSlotVSClipPlanes );
+        uboOffsets[uboIndex] = clipPlanesAllocator[frameIndex].allocate();
+        memcpy( clipPlanesAllocator[frameIndex].pCPUMapping +
+                    uboOffsets[uboIndex],
                 clipPlanes, kVulkanClipInfosSize );
 
         vmaFlushAllocation( allocator,
                             clipPlanesAllocator[frameIndex].Allocations,
-                            uboOffsets[1], kVulkanClipInfosSize );
-    }
-
-    if ( ( dirtyStates & eDirtyStates::DS_PSConstants ) != 0 ) {
-        uploadConstants( 1, frameIndex, 2 );
-    }
-
-    if ( ( dirtyStates & eDirtyStates::DS_PSShared ) != 0 ) {
-        uboOffsets[3] = psSharedAllocator[frameIndex].allocate();
-        memcpy( psSharedAllocator[frameIndex].pCPUMapping + uboOffsets[3],
-                &shaderSpecs, sizeof( uint32_t ) * 6 );
-
-        vmaFlushAllocation( allocator,
-                            psSharedAllocator[frameIndex].Allocations,
-                            uboOffsets[3], sizeof( uint32_t ) * 6 );
+                            uboOffsets[uboIndex], kVulkanClipInfosSize );
     }
 
     if ( ( dirtyStates & eDirtyStates::DS_ShaderSpecs ) != 0 ) {
-        uboOffsets[4] = shaderSpecsAllocator[frameIndex].allocate();
-        memcpy( shaderSpecsAllocator[frameIndex].pCPUMapping + uboOffsets[4],
+        constexpr uint32_t uboIndex =
+            GetUBOIndex( kVulkanBindingSlotShaderSpec );
+        uboOffsets[uboIndex] = shaderSpecsAllocator[frameIndex].allocate();
+        memcpy( shaderSpecsAllocator[frameIndex].pCPUMapping +
+                    uboOffsets[uboIndex],
                 &shaderSpecs, sizeof( uint32_t ) * 6 );
 
         vmaFlushAllocation( allocator,
                             shaderSpecsAllocator[frameIndex].Allocations,
-                            uboOffsets[4], sizeof( uint32_t ) * 6 );
+                            uboOffsets[uboIndex], sizeof( uint32_t ) * 6 );
     }
 
     dirtyStates = 0;
@@ -278,26 +289,17 @@ VkDescriptorSet ResourceBinder::getOrAllocateSet( VkDevice device,
     return DescriptorSet;
 }
 
-void ResourceBinder::uploadConstants( const uint32_t stageIndex,
-                                      const uint32_t frameIndex,
-                                      const uint32_t uboIndex ) {
-    LinearAllocator &constantsAlloc =
-        constantsAllocator[stageIndex][frameIndex];
+void ResourceBinder::uploadConstantBlock( const eShaderConstantBlock block,
+                                          const uint32_t frameIndex ) {
+    LinearAllocator &blockAlloc = constantBlockAllocator[block][frameIndex];
 
-    const uint32_t zeroedSize = constantsAlloc.ZeroedSize;
-    const uint32_t offset = constantsAlloc.allocate();
-    const uint32_t uploadSize =
-        numConstantVectorsUsed[stageIndex] * 4 * sizeof( float );
-    memcpy( constantsAlloc.pCPUMapping + offset, constants[stageIndex].Vectors,
-            uploadSize );
+    const uint32_t offset = blockAlloc.allocate();
+    memcpy( blockAlloc.pCPUMapping + offset, constantBlocks[block].data(),
+            blockAlloc.ElementSize );
+    vmaFlushAllocation( allocator, blockAlloc.Allocations, offset,
+                        blockAlloc.ElementSize );
 
-    // A slot used for the first time was just zero-filled; flush all of it.
-    const bool bFreshSlot =
-        ( offset + constantsAlloc.ElementSize ) > zeroedSize;
-    vmaFlushAllocation( allocator, constantsAlloc.Allocations, offset,
-                        bFreshSlot ? constantsAlloc.ElementSize : uploadSize );
-
-    uboOffsets[uboIndex] = offset;
+    uboOffsets[GetUBOIndex( kShaderConstantBlocks[block].Binding )] = offset;
 }
 
 void ResourceBinder::setFloatConstants( eShaderType stage,
@@ -307,19 +309,23 @@ void ResourceBinder::setFloatConstants( eShaderType stage,
     OTDU_ASSERT( stage == eShaderType::ST_Vertex ||
                  stage == eShaderType::ST_Pixel );
 
-    uint32_t numScalars = ( numVectors * 4 );
     OTDU_ASSERT_FATAL( offset + numVectors <= kNumShaderConstants );
     uint32_t stageIndex = ( stage == eShaderType::ST_Vertex ) ? 0 : 1;
-    float *pDst = &constants[stageIndex].Vectors[( offset + 1 ) * 4];
-    if ( memcmp( pDst, pFloats, numScalars * sizeof( float ) ) == 0 ) {
-        return;
-    }
-    memcpy( pDst, pFloats, numScalars * sizeof( float ) );
-    numConstantVectorsUsed[stageIndex] =
-        Max( numConstantVectorsUsed[stageIndex], offset + 1 + numVectors );
+    for ( uint32_t i = 0; i < numVectors; i++ ) {
+        const ShaderConstantLocation &location =
+            kShaderConstantLocations[stageIndex][offset + i];
+        if ( location.Block == SCB_Count ) {
+            continue;
+        }
 
-    dirtyStates |= ( ( stageIndex == 0 ) ? eDirtyStates::DS_VSConstants
-                                         : eDirtyStates::DS_PSConstants );
+        float *pDst = &constantBlocks[location.Block][location.Slot * 4];
+        const float *pSrc = &pFloats[i * 4];
+        if ( memcmp( pDst, pSrc, 4 * sizeof( float ) ) == 0 ) {
+            continue;
+        }
+        memcpy( pDst, pSrc, 4 * sizeof( float ) );
+        dirtyStates |= GetConstantBlockDirtyBit( location.Block );
+    }
 }
 
 void ResourceBinder::setClipPlane( int32_t param_1, float *param_2 ) {
@@ -447,68 +453,34 @@ ResourceBinder::CachedDescriptorSet &ResourceBinder::findOrAllocateSet(
     cachedSet.DescriptorSet = acquireDescriptorSet( device, frameIndex );
 
     // Write new descriptor set
-    VkDescriptorBufferInfo shaderSpecDesc =
-        shaderSpecsAllocator[frameIndex].getCurrentBufferInfo();
+    std::array<VkDescriptorBufferInfo, kVulkanNumUBOPerSet> uboDescs;
+    std::array<uint32_t, kVulkanNumUBOPerSet> uboBindings;
+    uint32_t numUBOs = 0;
+    for ( uint32_t i = 0; i < SCB_Count; i++ ) {
+        uboDescs[numUBOs] =
+            constantBlockAllocator[i][frameIndex].getCurrentBufferInfo();
+        uboBindings[numUBOs++] = kShaderConstantBlocks[i].Binding;
+    }
+    uboDescs[numUBOs] = clipPlanesAllocator[frameIndex].getCurrentBufferInfo();
+    uboBindings[numUBOs++] = kVulkanBindingSlotVSClipPlanes;
+    uboDescs[numUBOs] = shaderSpecsAllocator[frameIndex].getCurrentBufferInfo();
+    uboBindings[numUBOs++] = kVulkanBindingSlotShaderSpec;
 
-    VkDescriptorBufferInfo clipInfosDesc =
-        clipPlanesAllocator[frameIndex].getCurrentBufferInfo();
+    std::array<VkWriteDescriptorSet, kVulkanMaxNumSRV + kVulkanNumUBOPerSet>
+        descWrites;
+    for ( uint32_t i = 0; i < numUBOs; i++ ) {
+        descWrites[i] = {};
+        descWrites[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descWrites[i].dstSet = cachedSet.DescriptorSet;
+        descWrites[i].dstBinding = uboBindings[i];
+        descWrites[i].dstArrayElement = 0;
+        descWrites[i].descriptorCount = 1;
+        descWrites[i].descriptorType =
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        descWrites[i].pBufferInfo = &uboDescs[i];
+    }
 
-    VkDescriptorBufferInfo vsConstantsDesc =
-        constantsAllocator[0][frameIndex].getCurrentBufferInfo();
-
-    VkDescriptorBufferInfo psConstantsDesc =
-        constantsAllocator[1][frameIndex].getCurrentBufferInfo();
-
-    VkDescriptorBufferInfo psSharedDesc =
-        psSharedAllocator[frameIndex].getCurrentBufferInfo();
-
-    std::array<VkWriteDescriptorSet, kVulkanMaxNumSRV + 5> descWrites;
-    descWrites[0] = {};
-    descWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descWrites[0].dstSet = cachedSet.DescriptorSet;
-    descWrites[0].dstBinding = kVulkanBindingSlotShaderSpec;
-    descWrites[0].dstArrayElement = 0;
-    descWrites[0].descriptorCount = 1;
-    descWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    descWrites[0].pBufferInfo = &shaderSpecDesc;
-
-    descWrites[1] = {};
-    descWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descWrites[1].dstSet = cachedSet.DescriptorSet;
-    descWrites[1].dstBinding = kVulkanBindingSlotVSClipPlanes;
-    descWrites[1].dstArrayElement = 0;
-    descWrites[1].descriptorCount = 1;
-    descWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    descWrites[1].pBufferInfo = &clipInfosDesc;
-
-    descWrites[2] = {};
-    descWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descWrites[2].dstSet = cachedSet.DescriptorSet;
-    descWrites[2].dstBinding = kVulkanBindingSlotVSUniforms;
-    descWrites[2].dstArrayElement = 0;
-    descWrites[2].descriptorCount = 1;
-    descWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    descWrites[2].pBufferInfo = &vsConstantsDesc;
-
-    descWrites[3] = {};
-    descWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descWrites[3].dstSet = cachedSet.DescriptorSet;
-    descWrites[3].dstBinding = kVulkanBindingSlotPSUniforms;
-    descWrites[3].dstArrayElement = 0;
-    descWrites[3].descriptorCount = 1;
-    descWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    descWrites[3].pBufferInfo = &psConstantsDesc;
-
-    descWrites[4] = {};
-    descWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descWrites[4].dstSet = cachedSet.DescriptorSet;
-    descWrites[4].dstBinding = kVulkanBindingSlotPSShared;
-    descWrites[4].dstArrayElement = 0;
-    descWrites[4].descriptorCount = 1;
-    descWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    descWrites[4].pBufferInfo = &psSharedDesc;
-
-    uint32_t numUpdates = 5;
+    uint32_t numUpdates = numUBOs;
     std::array<VkDescriptorImageInfo, kVulkanMaxNumSRV> srvHeapInitImageInfos;
     for ( uint32_t i = 0; i < kVulkanMaxNumSRV; i++ ) {
         if ( boundSRVs[i] == VK_NULL_HANDLE ) {
@@ -590,7 +562,6 @@ bool LinearAllocator::create( VkDevice device,
     Capacity = elementSize * maxNumElements;
     ElementSize = elementSize;
     Usage = 0;
-    ZeroedSize = 0;
     Alignment = uboAlignment;
 
     VkBufferCreateInfo bufferInfo = {};
@@ -624,13 +595,6 @@ uint32_t LinearAllocator::allocate() {
 
     uint32_t offset = Usage;
     Usage += ElementSize;
-
-    // Uploads may only cover part of a slot; never leave uninitialized
-    // memory behind the uploaded range.
-    if ( offset + ElementSize > ZeroedSize ) {
-        memset( pCPUMapping + offset, 0, ElementSize );
-        ZeroedSize = offset + ElementSize;
-    }
 
     // Align offset to match device minUniformBufferOffsetAlignment
     Usage = Align( Usage, (uint32_t)Alignment );

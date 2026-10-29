@@ -11,7 +11,7 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSLightDiffuse c.f[1]
+#define gPSLightDiffuse D3D9_C( 1 )
 
 #ifdef VEHICLE_SHADOW_TEXTURED
 D3D9_DECLARE_SAMPLER_2D( 0 ) // blob

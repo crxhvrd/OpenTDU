@@ -14,9 +14,9 @@
 #include "tdu_common.glsl"
 #include "tdu_avatar.glsl"
 
-#define gPSExpParam c.f[3]
-#define gPSHairPrimaryColor c.f[18]
-#define gPSHairSecondaryColor c.f[19]
+#define gPSExpParam D3D9_C( 3 )
+#define gPSHairPrimaryColor D3D9_C( 18 )
+#define gPSHairSecondaryColor D3D9_C( 19 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // gHairSampler
 

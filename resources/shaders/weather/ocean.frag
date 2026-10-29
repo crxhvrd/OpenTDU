@@ -15,14 +15,14 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSLightAmbient c.f[0]
-#define gPSLightDiffuse c.f[1]
-#define gPSLightSpecular c.f[2]
-#define gPSLightSpecularParam c.f[3]
-#define gPSWorld( i ) c.f[8 + ( i )]
-#define gPSSeaParams c.f[23]
-#define gPSDiffuseFix c.f[24]
-#define gPSReflectionBluriness c.f[26]
+#define gPSLightAmbient D3D9_C( 0 )
+#define gPSLightDiffuse D3D9_C( 1 )
+#define gPSLightSpecular D3D9_C( 2 )
+#define gPSLightSpecularParam D3D9_C( 3 )
+#define gPSWorld( i ) D3D9_CR( 8, i )
+#define gPSSeaParams D3D9_C( 23 )
+#define gPSDiffuseFix D3D9_C( 24 )
+#define gPSReflectionBluriness D3D9_C( 26 )
 
 #if defined( OCEAN_ENVMAP ) || defined( OCEAN_PLANAR_REFLECTION )
 #define OCEAN_REFLECTION

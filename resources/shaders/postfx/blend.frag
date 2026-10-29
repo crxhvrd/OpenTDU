@@ -14,8 +14,8 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define interpo_coeff c.f[8]
-#define gBlendingParams c.f[8]
+#define interpo_coeff D3D9_C( 8 )
+#define gBlendingParams D3D9_C( 8 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 )
 #if !defined( BLEND_INVERT )

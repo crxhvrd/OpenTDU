@@ -6,19 +6,19 @@
 
 #ifdef D3D9_VERTEX_SHADER
 
-#define gFogParametersVS c.f[107]
-#define gFogColorVS c.f[123]
+#define gFogParametersVS D3D9_C( 107 )
+#define gFogColorVS D3D9_C( 123 )
 // OTDU_ADDITION: night parameters (RenderContext, kNightParamsRegisterVS):
 // x = unlit/emissive scale, y = baked shadow strength (retail 1), z = star
 // brightness, w = moon brightness (retail 0).
-#define tdu_night_params c.f[255]
+#define tdu_night_params D3D9_C( 255 )
 // OTDU_ADDITION: camera to world rotation columns (kCamToWorldRegisterVS).
-#define tdu_cam_to_world( i ) c.f[252 + ( i )]
+#define tdu_cam_to_world( i ) D3D9_CR( 252, i )
 // OTDU_ADDITION: night lamps (kLampParamsRegisterVS): x = lamp count.
-#define tdu_lamp_params c.f[251]
+#define tdu_lamp_params D3D9_C( 251 )
 bool tdu_lamps_enabled() { return tdu_lamp_params.x > 0.0; }
 // OTDU_ADDITION: per draw emissive scale (kEmissiveRegisterVS, 0 = none).
-#define tdu_emissive_params c.f[250]
+#define tdu_emissive_params D3D9_C( 250 )
 // Unlit materials: the night unlit scale, or the emissive scale for signs.
 float tdu_unlit_scale() {
     return max( tdu_night_params.x, tdu_emissive_params.x );
@@ -43,7 +43,7 @@ float tdu_vertex_fog( float viewDistance ) {
 // 4 bone skinning (3 rows per bone, the last weight is 1 - the others), in
 // retail's operation order: shadow receivers redraw skinned meshes and must
 // land on the exact same positions.
-#define gVSWorldMatrixArray( i ) c.f[129 + ( i )]
+#define gVSWorldMatrixArray( i ) D3D9_CR( 129, i )
 
 ivec4 tdu_skin_bones( vec4 blendIndices ) {
     return ivec4( round( blendIndices * vec4( 3.0 ) ) );
@@ -86,26 +86,26 @@ vec3 tdu_skin_normal( vec3 normal, ivec4 bones, vec4 weights ) {
 
 #ifdef D3D9_PIXEL_SHADER
 
-#define gFogParametersPS c.f[12]
-#define gFogColorPS c.f[13]
+#define gFogParametersPS D3D9_C( 12 )
+#define gFogColorPS D3D9_C( 13 )
 // OTDU_ADDITION: see the VS definition (kNightParamsRegisterPS).
-#define tdu_night_params c.f[223]
+#define tdu_night_params D3D9_C( 223 )
 // OTDU_ADDITION: night lamps (kLampRegisterPS): c31 = (count, intensity),
 // c32 = view space up, c33 + 2i = (view position, radius), c34 + 2i = (color,
 // fade weight).
 #define TDU_MAX_NUM_LAMPS 32
-#define tdu_lamp_params c.f[31]
-#define tdu_view_up c.f[32]
-#define tdu_lamp_position( i ) c.f[33 + 2 * ( i )]
-#define tdu_lamp_color( i ) c.f[34 + 2 * ( i )]
+#define tdu_lamp_params D3D9_C( 31 )
+#define tdu_view_up D3D9_C( 32 )
+#define tdu_lamp_position( i ) D3D9_CR( 33, 2 * ( i ) )
+#define tdu_lamp_color( i ) D3D9_CR( 34, 2 * ( i ) )
 // OTDU_ADDITION: car headlights (kHeadlightRegisterPS): c100 = (count,
 // intensity), c101 + 3i = (view position, range), c102 + 3i = (view
 // direction, cos outer), c103 + 3i = (color, cos inner).
 #define TDU_MAX_NUM_HEADLIGHTS 8
-#define tdu_headlight_params c.f[100]
-#define tdu_headlight_position( i ) c.f[101 + 3 * ( i )]
-#define tdu_headlight_direction( i ) c.f[102 + 3 * ( i )]
-#define tdu_headlight_color( i ) c.f[103 + 3 * ( i )]
+#define tdu_headlight_params D3D9_C( 100 )
+#define tdu_headlight_position( i ) D3D9_CR( 101, 3 * ( i ) )
+#define tdu_headlight_direction( i ) D3D9_CR( 102, 3 * ( i ) )
+#define tdu_headlight_color( i ) D3D9_CR( 103, 3 * ( i ) )
 
 bool tdu_lamps_enabled() {
     return tdu_lamp_params.x > 0.0 || tdu_headlight_params.x > 0.0;
@@ -113,9 +113,9 @@ bool tdu_lamps_enabled() {
 
 // OTDU_ADDITION: lit windows (kWindowRegisterPS): c125 = (warm color, lit
 // fraction), c126 = (cool color, cool ratio), c127 = (intensity, seed).
-#define tdu_window_warm c.f[125]
-#define tdu_window_cool c.f[126]
-#define tdu_window_params c.f[127]
+#define tdu_window_warm D3D9_C( 125 )
+#define tdu_window_cool D3D9_C( 126 )
+#define tdu_window_params D3D9_C( 127 )
 
 vec3 tdu_hash3( vec3 p ) {
     uvec3 v = uvec3( ivec3( p ) ) * 1664525u + 1013904223u;
@@ -216,7 +216,7 @@ vec3 tdu_lamp_pixel_mapped(
 }
 
 // OTDU_ADDITION: world direction toward the moon (kMoonDirectionRegisterPS).
-#define tdu_moon_direction c.f[222]
+#define tdu_moon_direction D3D9_C( 222 )
 
 // OTDU_ADDITION: fades a baked sun shadow factor (1 = lit) toward 1 as the
 // baked shadow strength drops; exact at strength 1.

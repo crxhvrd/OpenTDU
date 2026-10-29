@@ -7,7 +7,7 @@
 #include "d3d9_abi.glsl"
 #include "tdu_postfx.glsl"
 
-#define texelInterval c.f[58]
+#define texelInterval D3D9_C( 58 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;

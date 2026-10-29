@@ -12,11 +12,11 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gColorContrast c.f[1]
-#define gFadeAlpha c.f[5]
-#define gWorldViewProject( i ) c.f[8 + ( i )]
-#define gWorldView( i ) c.f[20 + ( i )]
-#define gHeightMapConst c.f[122]
+#define gColorContrast D3D9_C( 1 )
+#define gFadeAlpha D3D9_C( 5 )
+#define gWorldViewProject( i ) D3D9_CR( 8, i )
+#define gWorldView( i ) D3D9_CR( 20, i )
+#define gHeightMapConst D3D9_C( 122 )
 
 // Shadow map coordinates fade out over this distance (in meters).
 const float kShadowFadeDistance = 768.0;

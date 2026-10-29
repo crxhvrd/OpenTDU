@@ -11,9 +11,9 @@
 #define D3D9_VERTEX_SHADER
 #include "d3d9_abi.glsl"
 
-#define gVSM4WorldViewProj( i ) c.f[8 + ( i )]
-#define gVSMaterialParam( i ) c.f[88 + ( i )]
-#define gVSScale c.f[234]
+#define gVSM4WorldViewProj( i ) D3D9_CR( 8, i )
+#define gVSMaterialParam( i ) D3D9_CR( 88, i )
+#define gVSScale D3D9_C( 234 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;

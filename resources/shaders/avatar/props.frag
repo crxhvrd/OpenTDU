@@ -20,11 +20,11 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSSpecularPower c.f[3]
-#define gPSMaterialParam c.f[4]
-#define gPSBaseColor c.f[18]
-#define gPSLayer1Color c.f[19]
-#define gPSSpecularCoeff c.f[22]
+#define gPSSpecularPower D3D9_C( 3 )
+#define gPSMaterialParam D3D9_C( 4 )
+#define gPSBaseColor D3D9_C( 18 )
+#define gPSLayer1Color D3D9_C( 19 )
+#define gPSSpecularCoeff D3D9_C( 22 )
 
 #ifdef AVATAR_OCCLUSION
 D3D9_DECLARE_SAMPLER_2D( 0 ) // gOcclusionSampler

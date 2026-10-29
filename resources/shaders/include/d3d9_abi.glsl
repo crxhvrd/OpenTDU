@@ -2,7 +2,8 @@
 //
 // The resources, push constants, spec constants and interface locations
 // declared here keep the layout dxvk's DXSO compiler emitted for the retail
-// bytecode (the render device binds them that way). The runtime reflects the
+// bytecode (the render device binds them that way), except the float constant
+// registers (see tdu_constants.glsl). The runtime reflects the
 // bindings from the SPIR-V module and derives each vertex input semantic from
 // its location (D3D9_IN_*).
 //
@@ -147,12 +148,6 @@ render_state;
 
 #ifdef D3D9_VERTEX_SHADER
 
-layout( set = 0, binding = 0, std140 ) uniform D3D9VSConstants {
-    ivec4 i[1];
-    vec4 f[256];
-}
-c;
-
 layout( set = 0, binding = 3, std140 ) uniform D3D9ClipPlanes {
     vec4 clip_planes[6];
 }
@@ -177,12 +172,6 @@ void d3d9_vs_epilogue() {
 #endif // D3D9_VERTEX_SHADER
 
 #ifdef D3D9_PIXEL_SHADER
-
-layout( set = 0, binding = 10, std140 ) uniform D3D9PSConstants {
-    ivec4 i[1];
-    vec4 f[224];
-}
-c;
 
 layout( set = 1, binding = 0 ) uniform sampler d3d9_sampler_heap[];
 
@@ -292,5 +281,10 @@ void d3d9_ps_alpha_test( vec4 color ) {
 }
 
 #endif // D3D9_PIXEL_SHADER
+
+// Float constant registers c0..c255 (VS) / c0..c223 (PS): access them
+// through D3D9_C( n ) / D3D9_CR( k, i ). The blocks holding them are generated
+// from constant_registers.txt (split by update frequency).
+#include "tdu_constants.glsl"
 
 #endif // D3D9_ABI_GLSL

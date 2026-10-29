@@ -17,7 +17,7 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSMaterialParam c.f[4]
+#define gPSMaterialParam D3D9_C( 4 )
 
 #if defined( BUILDING_ENVMAP ) || defined( BUILDING_SPHEREMAP )
 #define BUILDING_REFLECTION

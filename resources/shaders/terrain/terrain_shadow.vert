@@ -6,8 +6,8 @@
 #define D3D9_VERTEX_SHADER
 #include "d3d9_abi.glsl"
 
-#define gShadowContrast c.f[2]
-#define gWorldViewProject( i ) c.f[8 + ( i )]
+#define gShadowContrast D3D9_C( 2 )
+#define gWorldViewProject( i ) D3D9_CR( 8, i )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;

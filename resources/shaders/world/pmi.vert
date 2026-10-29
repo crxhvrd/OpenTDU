@@ -11,12 +11,12 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gProj( i ) c.f[12 + ( i )]
-#define gView( i ) c.f[24 + ( i )]
-#define gVSLightDir c.f[93]
-#define gVSLightAmbient c.f[94]
-#define gVSLightDiffuse c.f[95]
-#define gVSLODDist c.f[118]
+#define gProj( i ) D3D9_CR( 12, i )
+#define gView( i ) D3D9_CR( 24, i )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSLightAmbient D3D9_C( 94 )
+#define gVSLightDiffuse D3D9_C( 95 )
+#define gVSLODDist D3D9_C( 118 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;

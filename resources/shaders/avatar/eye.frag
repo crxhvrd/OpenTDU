@@ -14,7 +14,7 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSSpecEnvParam c.f[3]
+#define gPSSpecEnvParam D3D9_C( 3 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // gTextureSampler
 D3D9_DECLARE_SAMPLER_2D( 1 ) // gGlossSampler

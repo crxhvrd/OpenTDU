@@ -10,7 +10,7 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define uvOffset( i ) c.f[8 + ( i )]
+#define uvOffset( i ) D3D9_CR( 8, i )
 
 D3D9_DECLARE_SAMPLER_2D( 0 )
 layout( location = D3D9_SLOT_TEXCOORD0 ) in vec4 in_Texcoord0;

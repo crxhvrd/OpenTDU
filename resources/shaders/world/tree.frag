@@ -15,12 +15,12 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSLightAmbient c.f[0]
-#define gPSLightDiffuse c.f[1]
-#define gPSLightSpecular c.f[2]
-#define gPSLightSpecularParam c.f[3]
-#define gPSInstanceColor c.f[27]
-#define gPSLightAmbient1 c.f[29]
+#define gPSLightAmbient D3D9_C( 0 )
+#define gPSLightDiffuse D3D9_C( 1 )
+#define gPSLightSpecular D3D9_C( 2 )
+#define gPSLightSpecularParam D3D9_C( 3 )
+#define gPSInstanceColor D3D9_C( 27 )
+#define gPSLightAmbient1 D3D9_C( 29 )
 
 const vec3 kLuminance = vec3( 0.299, 0.587, 0.114 );
 

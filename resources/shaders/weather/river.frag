@@ -16,12 +16,12 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSLightAmbient c.f[0]
-#define gPSLightSpecular c.f[2]
-#define gPSLightSpecularParam c.f[3]
-#define gPSWorld( i ) c.f[8 + ( i )]
-#define gPSParams c.f[23]
-#define gPSDiffuseFix c.f[24]
+#define gPSLightAmbient D3D9_C( 0 )
+#define gPSLightSpecular D3D9_C( 2 )
+#define gPSLightSpecularParam D3D9_C( 3 )
+#define gPSWorld( i ) D3D9_CR( 8, i )
+#define gPSParams D3D9_C( 23 )
+#define gPSDiffuseFix D3D9_C( 24 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // normal map 0
 D3D9_DECLARE_SAMPLER_2D( 1 ) // normal map 1

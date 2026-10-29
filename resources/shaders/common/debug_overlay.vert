@@ -17,8 +17,8 @@
 #define D3D9_VERTEX_SHADER
 #include "d3d9_abi.glsl"
 
-#define gDebugTextColor c.f[0]
-#define gScaleTransition c.f[225]
+#define gDebugTextColor D3D9_C( 0 )
+#define gScaleTransition D3D9_C( 225 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef DEBUG_OVERLAY_TEXT

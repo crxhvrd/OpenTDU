@@ -13,14 +13,14 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gColorContrast c.f[1]
-#define gWorldViewProject( i ) c.f[8 + ( i )]
-#define gWorld( i ) c.f[16 + ( i )]
-#define gWorldView( i ) c.f[20 + ( i )]
-#define gVSM4InvView( i ) c.f[48 + ( i )]
-#define gVSParam c.f[114]
-#define gVSScaleDist c.f[115]
-#define gVSSectorOffset c.f[121]
+#define gColorContrast D3D9_C( 1 )
+#define gWorldViewProject( i ) D3D9_CR( 8, i )
+#define gWorld( i ) D3D9_CR( 16, i )
+#define gWorldView( i ) D3D9_CR( 20, i )
+#define gVSM4InvView( i ) D3D9_CR( 48, i )
+#define gVSParam D3D9_C( 114 )
+#define gVSScaleDist D3D9_C( 115 )
+#define gVSSectorOffset D3D9_C( 121 )
 
 const float kPi = 3.1415927;
 const float kSectorSize = 768.0;

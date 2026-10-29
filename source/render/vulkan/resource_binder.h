@@ -13,10 +13,15 @@
 #include "vk_mem_alloc.h"
 #include "volk.h"
 
+#include "shader_constant_layout.h"
+
 struct Texture;
 struct GPUTexture;
 
-static constexpr uint32_t kVulkanNumUBOPerSet = 5;
+// Constant blocks + clip planes + spec state
+static constexpr uint32_t kVulkanNumUBOPerSet = SCB_Count + 2;
+static_assert( kVulkanNumUBOPerSet <= 8,
+               "Vulkan only guarantees 8 dynamic uniform buffers per layout" );
 
 struct LinearAllocator {
     VkBuffer Buffers;
@@ -26,8 +31,6 @@ struct LinearAllocator {
     uint32_t Usage;
     uint32_t Capacity;
     uint32_t ElementSize;
-    // Every slot below this offset has been zero-filled once
-    uint32_t ZeroedSize;
 
     VkDeviceSize Alignment;
 
@@ -89,27 +92,14 @@ struct ResourceBinder {
     // Shared layout across all shaders
     VkDescriptorSetLayout DescriptorLayout;
 
-    LinearAllocator constantsAllocator[2][PendingFrameCount];
+    LinearAllocator constantBlockAllocator[SCB_Count][PendingFrameCount];
     LinearAllocator clipPlanesAllocator[PendingFrameCount];
     LinearAllocator shaderSpecsAllocator[PendingFrameCount];
-    LinearAllocator psSharedAllocator[PendingFrameCount];
 
     std::array<uint32_t, kVulkanNumUBOPerSet> uboOffsets;
 
-    struct ShaderConstants {
-        // NOTE: +1 is deliberate (to match the UBO layout from dxvk; and match
-        // the CPU binding logic from TDU1).
-        float Vectors[( kNumShaderConstants + 1 ) * 4];
-
-        ShaderConstants() {
-            memset( Vectors, 0,
-                    sizeof( float ) * ( kNumShaderConstants + 1 ) * 4 );
-        }
-    };
-    ShaderConstants constants[2];
-    // Highest vector written so far (per stage, including the padding vector);
-    // only this range is uploaded
-    uint32_t numConstantVectorsUsed[2];
+    // CPU copy of each constant block (see shader_constant_layout.h)
+    std::vector<float> constantBlocks[SCB_Count];
     float clipPlanes[6][4];
     uint32_t shaderSpecs[6];
 
@@ -147,9 +137,8 @@ private:
     void eraseFromLookup( uint32_t frameIndex,
                           const uint64_t hashcode,
                           const uint32_t slotIndex );
-    void uploadConstants( const uint32_t stageIndex,
-                          const uint32_t frameIndex,
-                          const uint32_t uboIndex );
+    void uploadConstantBlock( const eShaderConstantBlock block,
+                              const uint32_t frameIndex );
     VkDescriptorSet acquireDescriptorSet( VkDevice device,
                                           uint32_t frameIndex );
 };

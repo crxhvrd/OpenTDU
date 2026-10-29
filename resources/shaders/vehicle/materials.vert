@@ -18,19 +18,19 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gVSWorldViewProject( i ) c.f[8 + ( i )]
-#define gVSWorld( i ) c.f[16 + ( i )]
-#define gVSWorldView( i ) c.f[20 + ( i )]
-#define gVSMaterialParam c.f[88]
-#define gVSLightDir c.f[93]
-#define gVSLightAmbient c.f[94]
-#define gVSLightDiffuse c.f[95]
-#define gVSLightSpecular c.f[96]
-#define gVSLightSpecularParam c.f[98]
-#define gVSLightDir1 c.f[101]
-#define gVSLightSpecular1 c.f[104]
-#define gVSCamPosInObj c.f[119]
-#define gEnvMapCoeff c.f[239]
+#define gVSWorldViewProject( i ) D3D9_CR( 8, i )
+#define gVSWorld( i ) D3D9_CR( 16, i )
+#define gVSWorldView( i ) D3D9_CR( 20, i )
+#define gVSMaterialParam D3D9_C( 88 )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSLightAmbient D3D9_C( 94 )
+#define gVSLightDiffuse D3D9_C( 95 )
+#define gVSLightSpecular D3D9_C( 96 )
+#define gVSLightSpecularParam D3D9_C( 98 )
+#define gVSLightDir1 D3D9_C( 101 )
+#define gVSLightSpecular1 D3D9_C( 104 )
+#define gVSCamPosInObj D3D9_C( 119 )
+#define gEnvMapCoeff D3D9_C( 239 )
 
 #if defined( MATERIALS_REFLECTION_CUBE ) ||                                    \
     defined( MATERIALS_REFLECTION_SPHERE )

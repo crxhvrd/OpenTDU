@@ -14,7 +14,7 @@
 #include "tdu_common.glsl"
 #include "tdu_vehicle.glsl"
 
-#define gRampCarLights c.f[14]
+#define gRampCarLights D3D9_C( 14 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // color map
 #ifdef TRAFFIC_DECAL

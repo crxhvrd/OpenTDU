@@ -8,9 +8,9 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gWorldViewProject( i ) c.f[8 + ( i )]
-#define gWorldView( i ) c.f[20 + ( i )]
-#define gVSMaterialEmissive c.f[241]
+#define gWorldViewProject( i ) D3D9_CR( 8, i )
+#define gWorldView( i ) D3D9_CR( 20, i )
+#define gVSMaterialEmissive D3D9_C( 241 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;

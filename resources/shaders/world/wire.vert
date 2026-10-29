@@ -7,9 +7,9 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gWorldViewProject( i ) c.f[8 + ( i )]
-#define gVSWorldView( i ) c.f[20 + ( i )]
-#define gWireFadeAlpha c.f[240]
+#define gWorldViewProject( i ) D3D9_CR( 8, i )
+#define gVSWorldView( i ) D3D9_CR( 20, i )
+#define gWireFadeAlpha D3D9_C( 240 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;

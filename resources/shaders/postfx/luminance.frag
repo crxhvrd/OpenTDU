@@ -14,8 +14,8 @@
 #include "d3d9_abi.glsl"
 #include "tdu_postfx.glsl"
 
-#define coeff c.f[8]
-#define sampleOffset( i ) c.f[15 + ( i )]
+#define coeff D3D9_C( 8 )
+#define sampleOffset( i ) D3D9_CR( 15, i )
 
 D3D9_DECLARE_SAMPLER_2D( 0 )
 #ifdef LUMINANCE_ADAPT

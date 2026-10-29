@@ -6,8 +6,8 @@
 #define D3D9_VERTEX_SHADER
 #include "d3d9_abi.glsl"
 
-#define gVSM4WorldViewProj( i ) c.f[8 + ( i )]
-#define gVSMaterialEmissive c.f[241]
+#define gVSM4WorldViewProj( i ) D3D9_CR( 8, i )
+#define gVSMaterialEmissive D3D9_C( 241 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;

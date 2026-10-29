@@ -6,12 +6,12 @@
 #define D3D9_VERTEX_SHADER
 #include "d3d9_abi.glsl"
 
-#define gVSView( i ) c.f[24 + ( i )]
-#define gVSViewProject( i ) c.f[28 + ( i )]
-#define gVSInvView( i ) c.f[48 + ( i )]
-#define gVSLightDir c.f[93]
-#define gVSReflWorldViewProj( i ) c.f[125 + ( i )]
-#define gVSTweakParams( i ) c.f[234 + ( i )]
+#define gVSView( i ) D3D9_CR( 24, i )
+#define gVSViewProject( i ) D3D9_CR( 28, i )
+#define gVSInvView( i ) D3D9_CR( 48, i )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSReflWorldViewProj( i ) D3D9_CR( 125, i )
+#define gVSTweakParams( i ) D3D9_CR( 234, i )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;

@@ -14,17 +14,17 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gVSFadeAlpha c.f[5]
-#define gVSWorldViewProject( i ) c.f[8 + ( i )]
-#define gVSWorld( i ) c.f[16 + ( i )]
-#define gVSWorldView( i ) c.f[20 + ( i )]
-#define gUVMatrix2( i ) c.f[76 + ( i )]
-#define gUVMatrix1( i ) c.f[80 + ( i )]
-#define gUVMatrix0( i ) c.f[84 + ( i )]
-#define gVSLightDir c.f[93]
-#define gVSCamPosInObj c.f[119]
-#define gVSReflViewProjUV( i ) c.f[125 + ( i )]
-#define gVSTweak( i ) c.f[234 + ( i )]
+#define gVSFadeAlpha D3D9_C( 5 )
+#define gVSWorldViewProject( i ) D3D9_CR( 8, i )
+#define gVSWorld( i ) D3D9_CR( 16, i )
+#define gVSWorldView( i ) D3D9_CR( 20, i )
+#define gUVMatrix2( i ) D3D9_CR( 76, i )
+#define gUVMatrix1( i ) D3D9_CR( 80, i )
+#define gUVMatrix0( i ) D3D9_CR( 84, i )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSCamPosInObj D3D9_C( 119 )
+#define gVSReflViewProjUV( i ) D3D9_CR( 125, i )
+#define gVSTweak( i ) D3D9_CR( 234, i )
 
 const float kLog2E = 1.442695;
 

@@ -11,7 +11,7 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define gPSMaterialParam( i ) c.f[4 + ( i )]
+#define gPSMaterialParam( i ) D3D9_CR( 4, i )
 
 #ifdef NOISE_COMPOSITION
 D3D9_DECLARE_SAMPLER_3D( 0 ) // gNoiseSlice

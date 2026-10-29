@@ -16,10 +16,10 @@
 #include "tdu_common.glsl"
 #include "tdu_avatar.glsl"
 
-#define gPSBaseColor c.f[18]
-#define gPSLayer1Color c.f[19]
-#define gPSLayer2Color c.f[20]
-#define gPSLayer3Color c.f[21]
+#define gPSBaseColor D3D9_C( 18 )
+#define gPSLayer1Color D3D9_C( 19 )
+#define gPSLayer2Color D3D9_C( 20 )
+#define gPSLayer3Color D3D9_C( 21 )
 
 #if defined( CLOTHES_DETAIL ) || defined( CLOTHES_DETAIL_SPECULAR )
 #define CLOTHES_DETAIL_MAP

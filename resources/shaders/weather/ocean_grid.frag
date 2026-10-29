@@ -11,8 +11,8 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define gPSLightSpecular c.f[2]
-#define gPSShadingParams( i ) c.f[23 + ( i )]
+#define gPSLightSpecular D3D9_C( 2 )
+#define gPSShadingParams( i ) D3D9_CR( 23, i )
 
 #ifdef OCEAN_GRID_REFLECTION
 D3D9_DECLARE_SAMPLER_2D( 0 ) // samplerReflection

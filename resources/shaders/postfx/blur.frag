@@ -10,8 +10,8 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define blur_params c.f[3]
-#define blur_params2 c.f[4]
+#define blur_params D3D9_C( 3 )
+#define blur_params2 D3D9_C( 4 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 )
 layout( location = D3D9_SLOT_TEXCOORD0 ) in vec4 in_Texcoord0;

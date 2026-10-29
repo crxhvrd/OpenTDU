@@ -22,20 +22,20 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gVSWorldViewProject( i ) c.f[8 + ( i )]
-#define gVSWorld( i ) c.f[16 + ( i )]
-#define gVSWorldView( i ) c.f[20 + ( i )]
-#define gUVMatrix1( i ) c.f[80 + ( i )]
-#define gUVMatrix0( i ) c.f[84 + ( i )]
-#define gVSLightDir c.f[93]
-#define gVSLightAmbient c.f[94]
-#define gVSLightDiffuse c.f[95]
-#define gVSLightSpecular c.f[96]
-#define gVSLightSpecularParam c.f[98]
-#define gVSLODDist c.f[118]
-#define gVSCamPosInObj c.f[119]
-#define gVSInstanceColor c.f[238]
-#define gVSLightAmbient1 c.f[247]
+#define gVSWorldViewProject( i ) D3D9_CR( 8, i )
+#define gVSWorld( i ) D3D9_CR( 16, i )
+#define gVSWorldView( i ) D3D9_CR( 20, i )
+#define gUVMatrix1( i ) D3D9_CR( 80, i )
+#define gUVMatrix0( i ) D3D9_CR( 84, i )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSLightAmbient D3D9_C( 94 )
+#define gVSLightDiffuse D3D9_C( 95 )
+#define gVSLightSpecular D3D9_C( 96 )
+#define gVSLightSpecularParam D3D9_C( 98 )
+#define gVSLODDist D3D9_C( 118 )
+#define gVSCamPosInObj D3D9_C( 119 )
+#define gVSInstanceColor D3D9_C( 238 )
+#define gVSLightAmbient1 D3D9_C( 247 )
 
 #ifndef BUILDING_LOD_SCALE
 #define BUILDING_LOD_SCALE 1

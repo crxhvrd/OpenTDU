@@ -8,7 +8,7 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSBaseColor c.f[18]
+#define gPSBaseColor D3D9_C( 18 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // gTextureSampler
 layout( location = D3D9_SLOT_COLOR0 ) centroid in vec4 in_Color0;

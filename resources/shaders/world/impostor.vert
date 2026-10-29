@@ -17,19 +17,19 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define v_windparam c.f[0]
-#define gWorld( i ) c.f[16 + ( i )]
-#define gWorldView( i ) c.f[20 + ( i )]
-#define gViewProject( i ) c.f[28 + ( i )]
-#define gInvView( i ) c.f[48 + ( i )]
-#define gVSLightDir c.f[93]
-#define gVSLightAmbient c.f[94]
-#define gVSLightDiffuse c.f[95]
-#define gVSParam c.f[114]
-#define gVSLODDist c.f[118]
-#define material_rigidity c.f[120]
-#define gVSInstanceColor c.f[238]
-#define gVSLightAmbient1 c.f[247]
+#define v_windparam D3D9_C( 0 )
+#define gWorld( i ) D3D9_CR( 16, i )
+#define gWorldView( i ) D3D9_CR( 20, i )
+#define gViewProject( i ) D3D9_CR( 28, i )
+#define gInvView( i ) D3D9_CR( 48, i )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSLightAmbient D3D9_C( 94 )
+#define gVSLightDiffuse D3D9_C( 95 )
+#define gVSParam D3D9_C( 114 )
+#define gVSLODDist D3D9_C( 118 )
+#define material_rigidity D3D9_C( 120 )
+#define gVSInstanceColor D3D9_C( 238 )
+#define gVSLightAmbient1 D3D9_C( 247 )
 
 const float kPi = 3.1415927;
 

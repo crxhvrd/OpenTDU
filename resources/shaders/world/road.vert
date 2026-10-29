@@ -14,12 +14,12 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gColorContrast c.f[1]
-#define gTDU_DiffuseFixedSun c.f[4]
-#define gWorldViewProject( i ) c.f[8 + ( i )]
-#define gWorldView( i ) c.f[20 + ( i )]
-#define gVSLightDir c.f[93]
-#define gVSCamPosInObj c.f[119]
+#define gColorContrast D3D9_C( 1 )
+#define gTDU_DiffuseFixedSun D3D9_C( 4 )
+#define gWorldViewProject( i ) D3D9_CR( 8, i )
+#define gWorldView( i ) D3D9_CR( 20, i )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSCamPosInObj D3D9_C( 119 )
 
 const float kSectorSize = 768.0;
 

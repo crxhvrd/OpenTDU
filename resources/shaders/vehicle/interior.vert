@@ -16,12 +16,12 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gVSWorldViewProject( i ) c.f[8 + ( i )]
-#define gVSWorldView( i ) c.f[20 + ( i )]
-#define gVSLightDir c.f[93]
-#define gVSLightDir1 c.f[101]
-#define gVSCamPosInObj c.f[119]
-#define gVSNoiseScale c.f[98]
+#define gVSWorldViewProject( i ) D3D9_CR( 8, i )
+#define gVSWorldView( i ) D3D9_CR( 20, i )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSLightDir1 D3D9_C( 101 )
+#define gVSCamPosInObj D3D9_C( 119 )
+#define gVSNoiseScale D3D9_C( 98 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;

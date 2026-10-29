@@ -16,13 +16,13 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSLightAmbient c.f[0]
-#define gPSLightDiffuse c.f[1]
-#define gPSLightSpecular c.f[2]
-#define gPSBaseColor c.f[15]
-#define gPSGlossColor c.f[16]
-#define gPSNoiseRate c.f[17]
-#define gPSSpecularParam c.f[22]
+#define gPSLightAmbient D3D9_C( 0 )
+#define gPSLightDiffuse D3D9_C( 1 )
+#define gPSLightSpecular D3D9_C( 2 )
+#define gPSBaseColor D3D9_C( 15 )
+#define gPSGlossColor D3D9_C( 16 )
+#define gPSNoiseRate D3D9_C( 17 )
+#define gPSSpecularParam D3D9_C( 22 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // noise map
 #ifdef INTERIOR_DETAIL

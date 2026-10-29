@@ -11,7 +11,7 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define dof_params_after c.f[2]
+#define dof_params_after D3D9_C( 2 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // sharp
 D3D9_DECLARE_SAMPLER_2D( 1 ) // blurred

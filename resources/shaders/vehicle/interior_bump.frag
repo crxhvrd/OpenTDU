@@ -14,9 +14,9 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSLightAmbient c.f[0]
-#define gPSLightDiffuse c.f[1]
-#define gPSBaseColor c.f[15]
+#define gPSLightAmbient D3D9_C( 0 )
+#define gPSLightDiffuse D3D9_C( 1 )
+#define gPSBaseColor D3D9_C( 15 )
 
 #ifdef INTERIOR_DETAIL
 D3D9_DECLARE_SAMPLER_2D( 1 ) // detail map

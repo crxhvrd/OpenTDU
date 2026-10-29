@@ -23,14 +23,14 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gVSFadeAlpha c.f[5]
-#define gWorldViewProject( i ) c.f[8 + ( i )]
-#define gWorldView( i ) c.f[20 + ( i )]
-#define gUVMatrix0( i ) c.f[84 + ( i )]
-#define gVSLightDir c.f[93]
-#define gVSLightAmbient c.f[94]
-#define gVSLightDiffuse c.f[95]
-#define gVSLODDist c.f[118]
+#define gVSFadeAlpha D3D9_C( 5 )
+#define gWorldViewProject( i ) D3D9_CR( 8, i )
+#define gWorldView( i ) D3D9_CR( 20, i )
+#define gUVMatrix0( i ) D3D9_CR( 84, i )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSLightAmbient D3D9_C( 94 )
+#define gVSLightDiffuse D3D9_C( 95 )
+#define gVSLODDist D3D9_C( 118 )
 
 #if defined( LIGHTING_LOD_FADE ) || defined( LIGHTING_FADE_ALPHA )
 #define LIGHTING_FADE

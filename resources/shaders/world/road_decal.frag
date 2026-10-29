@@ -10,7 +10,7 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSLightSpecular c.f[2]
+#define gPSLightSpecular D3D9_C( 2 )
 
 #ifdef ROAD_SHADOW_CHANNEL_Y
 #define SHADOW_CHANNEL y

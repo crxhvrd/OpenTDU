@@ -13,18 +13,18 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gVSWorldViewProject( i ) c.f[8 + ( i )]
-#define gVSWorld( i ) c.f[16 + ( i )]
-#define gVSWorldView( i ) c.f[20 + ( i )]
-#define gVSMaterialParam c.f[88]
-#define gVSLightDir c.f[93]
-#define gVSLightAmbient c.f[94]
-#define gVSLightDiffuse c.f[95]
-#define gVSRampColor1 c.f[114]
-#define gVSRampColor2 c.f[115]
-#define gVSCamPosInObj c.f[119]
-#define gVSRampColorPow c.f[116]
-#define gUserVector3 c.f[3]
+#define gVSWorldViewProject( i ) D3D9_CR( 8, i )
+#define gVSWorld( i ) D3D9_CR( 16, i )
+#define gVSWorldView( i ) D3D9_CR( 20, i )
+#define gVSMaterialParam D3D9_C( 88 )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSLightAmbient D3D9_C( 94 )
+#define gVSLightDiffuse D3D9_C( 95 )
+#define gVSRampColor1 D3D9_C( 114 )
+#define gVSRampColor2 D3D9_C( 115 )
+#define gVSCamPosInObj D3D9_C( 119 )
+#define gVSRampColorPow D3D9_C( 116 )
+#define gUserVector3 D3D9_C( 3 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;

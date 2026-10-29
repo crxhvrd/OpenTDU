@@ -18,12 +18,12 @@
 #include "tdu_common.glsl"
 #include "tdu_avatar.glsl"
 
-#define gWorldViewProj( i ) c.f[8 + ( i )]
-#define gWorldView( i ) c.f[20 + ( i )]
-#define gVSLightDir c.f[93]
-#define gVSLightSpecularParam c.f[98]
-#define gVSCamPosInObj c.f[119]
-#define gVSUVScale c.f[124]
+#define gWorldViewProj( i ) D3D9_CR( 8, i )
+#define gWorldView( i ) D3D9_CR( 20, i )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSLightSpecularParam D3D9_C( 98 )
+#define gVSCamPosInObj D3D9_C( 119 )
+#define gVSUVScale D3D9_C( 124 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;

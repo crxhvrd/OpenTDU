@@ -24,8 +24,8 @@
 #include "tdu_common.glsl"
 #include "tdu_vehicle.glsl"
 
-#define gRampCarLights c.f[14]
-#define gPSDetailColor c.f[19]
+#define gRampCarLights D3D9_C( 14 )
+#define gPSDetailColor D3D9_C( 19 )
 
 #if defined( PAINT_REFLECTION_CUBE ) || defined( PAINT_REFLECTION_SPHERE )
 #define PAINT_REFLECTION

@@ -17,14 +17,14 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gWorldViewProject( i ) c.f[8 + ( i )]
-#define gWorld( i ) c.f[16 + ( i )]
-#define gWorldView( i ) c.f[20 + ( i )]
-#define gInvWorld( i ) c.f[40 + ( i )]
-#define gVSLightDir c.f[109]
-#define gVSShadowColor c.f[117]
-#define gUVMat( i ) c.f[226 + ( i )]
-#define gLightMat( i ) c.f[230 + ( i )]
+#define gWorldViewProject( i ) D3D9_CR( 8, i )
+#define gWorld( i ) D3D9_CR( 16, i )
+#define gWorldView( i ) D3D9_CR( 20, i )
+#define gInvWorld( i ) D3D9_CR( 40, i )
+#define gVSLightDir D3D9_C( 109 )
+#define gVSShadowColor D3D9_C( 117 )
+#define gUVMat( i ) D3D9_CR( 226, i )
+#define gLightMat( i ) D3D9_CR( 230, i )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef RECEIVER_NORMAL

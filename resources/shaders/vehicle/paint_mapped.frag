@@ -23,16 +23,16 @@
 #include "tdu_common.glsl"
 #include "tdu_vehicle.glsl"
 
-#define gPSLightAmbient c.f[0]
-#define gPSLightDiffuse c.f[1]
-#define gPSLightSpecular c.f[2]
-#define gPSLightSpecularParam c.f[3]
-#define gPSWorld( i ) c.f[8 + ( i )]
-#define gPSWorldView( i ) c.f[8 + ( i )]
-#define gRampCarLights c.f[14]
-#define gPSRampColor1 c.f[15]
-#define gPSRampColor2 c.f[16]
-#define gPSRampColorPow c.f[17]
+#define gPSLightAmbient D3D9_C( 0 )
+#define gPSLightDiffuse D3D9_C( 1 )
+#define gPSLightSpecular D3D9_C( 2 )
+#define gPSLightSpecularParam D3D9_C( 3 )
+#define gPSWorld( i ) D3D9_CR( 8, i )
+#define gPSWorldView( i ) D3D9_CR( 8, i )
+#define gRampCarLights D3D9_C( 14 )
+#define gPSRampColor1 D3D9_C( 15 )
+#define gPSRampColor2 D3D9_C( 16 )
+#define gPSRampColorPow D3D9_C( 17 )
 
 #if defined( PAINTMAP_REFLECTION_CUBE ) || defined( PAINTMAP_REFLECTION_SPHERE )
 #define PAINTMAP_REFLECTION

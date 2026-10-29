@@ -15,16 +15,16 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gVSColorContrast c.f[1]
-#define gVSWorldViewProject( i ) c.f[8 + ( i )]
-#define gVSWorld( i ) c.f[16 + ( i )]
-#define gVSWorldView( i ) c.f[20 + ( i )]
-#define gVSLightDir c.f[93]
-#define gVSLightSpecularParam c.f[98]
-#define gVSLODDist c.f[118]
-#define gVSCamPosInObj c.f[119]
-#define gVSSectorOffset c.f[121]
-#define gVSInstanceColor c.f[238]
+#define gVSColorContrast D3D9_C( 1 )
+#define gVSWorldViewProject( i ) D3D9_CR( 8, i )
+#define gVSWorld( i ) D3D9_CR( 16, i )
+#define gVSWorldView( i ) D3D9_CR( 20, i )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSLightSpecularParam D3D9_C( 98 )
+#define gVSLODDist D3D9_C( 118 )
+#define gVSCamPosInObj D3D9_C( 119 )
+#define gVSSectorOffset D3D9_C( 121 )
+#define gVSInstanceColor D3D9_C( 238 )
 
 const float kSectorSize = 768.0;
 

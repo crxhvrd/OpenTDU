@@ -8,7 +8,7 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define gPSMaterialParam c.f[4]
+#define gPSMaterialParam D3D9_C( 4 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // eye luminance
 D3D9_DECLARE_SAMPLER_2D( 1 ) // previous eye luminance

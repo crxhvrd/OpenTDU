@@ -6,7 +6,7 @@
 #define TDU_LUMINANCE vec3( 0.299, 0.587, 0.114 )
 
 #ifdef D3D9_VERTEX_SHADER
-#define gPostFXScreenDim c.f[56]
+#define gPostFXScreenDim D3D9_C( 56 )
 
 // Clip space quad shifted by half a pixel (D3D9 texel centers).
 vec4 tdu_postfx_position( vec4 position ) {

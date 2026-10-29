@@ -15,13 +15,13 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gWorldViewProject( i ) c.f[8 + ( i )]
-#define gVSM4World( i ) c.f[16 + ( i )]
-#define gWorldView( i ) c.f[20 + ( i )]
-#define gVSM4ViewProj( i ) c.f[28 + ( i )]
-#define gVSM4InvView( i ) c.f[48 + ( i )]
-#define gVSLightAmbient0 c.f[94]
-#define gVSLightAmbient1 c.f[247]
+#define gWorldViewProject( i ) D3D9_CR( 8, i )
+#define gVSM4World( i ) D3D9_CR( 16, i )
+#define gWorldView( i ) D3D9_CR( 20, i )
+#define gVSM4ViewProj( i ) D3D9_CR( 28, i )
+#define gVSM4InvView( i ) D3D9_CR( 48, i )
+#define gVSLightAmbient0 D3D9_C( 94 )
+#define gVSLightAmbient1 D3D9_C( 247 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef UNLIT_BILLBOARD

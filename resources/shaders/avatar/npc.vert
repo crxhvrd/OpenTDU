@@ -9,9 +9,9 @@
 #include "tdu_common.glsl"
 #include "tdu_avatar.glsl"
 
-#define gWorldViewProj( i ) c.f[8 + ( i )]
-#define gVSWorldView( i ) c.f[20 + ( i )]
-#define gVSLightDir c.f[93]
+#define gWorldViewProj( i ) D3D9_CR( 8, i )
+#define gVSWorldView( i ) D3D9_CR( 20, i )
+#define gVSLightDir D3D9_C( 93 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;

@@ -13,7 +13,7 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define gPSMaterialParam c.f[4]
+#define gPSMaterialParam D3D9_C( 4 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 )
 layout( location = D3D9_SLOT_TEXCOORD0 ) in vec4 in_Texcoord0;

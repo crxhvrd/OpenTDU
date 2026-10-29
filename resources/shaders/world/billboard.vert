@@ -17,15 +17,15 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gVSM4World( i ) c.f[16 + ( i )]
-#define gVSM4WorldView( i ) c.f[20 + ( i )]
-#define gVSM4ViewProj( i ) c.f[28 + ( i )]
-#define gVSM4InvView( i ) c.f[48 + ( i )]
-#define gVSLightDiffuse c.f[95]
-#define gFogParametersVS c.f[107]
-#define gVSParam c.f[114]
-#define gVSCamPosInObj c.f[119]
-#define gFogColorVS c.f[123]
+#define gVSM4World( i ) D3D9_CR( 16, i )
+#define gVSM4WorldView( i ) D3D9_CR( 20, i )
+#define gVSM4ViewProj( i ) D3D9_CR( 28, i )
+#define gVSM4InvView( i ) D3D9_CR( 48, i )
+#define gVSLightDiffuse D3D9_C( 95 )
+#define gFogParametersVS D3D9_C( 107 )
+#define gVSParam D3D9_C( 114 )
+#define gVSCamPosInObj D3D9_C( 119 )
+#define gFogColorVS D3D9_C( 123 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;

@@ -16,7 +16,7 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gLightSpecularPS c.f[2]
+#define gLightSpecularPS D3D9_C( 2 )
 
 #ifdef ROAD_SHADOW_CHANNEL_Y
 #define SHADOW_CHANNEL y

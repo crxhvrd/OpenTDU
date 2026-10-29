@@ -4,11 +4,11 @@
 // Avatar shaders (retail avatar table).
 
 #ifdef D3D9_VERTEX_SHADER
-#define gVSLightAmbient c.f[94]
-#define gVSLightDiffuse c.f[95]
-#define gVSLightSpecular c.f[96]
-#define gVSCarIntegratorFactor c.f[242]
-#define gVSAttenuationFactor c.f[243]
+#define gVSLightAmbient D3D9_C( 94 )
+#define gVSLightDiffuse D3D9_C( 95 )
+#define gVSLightSpecular D3D9_C( 96 )
+#define gVSCarIntegratorFactor D3D9_C( 242 )
+#define gVSAttenuationFactor D3D9_C( 243 )
 
 // 0 below the car interior height range (gVSCarIntegratorFactor.xy, object
 // space), 1 above.
@@ -28,7 +28,7 @@ vec3 tdu_avatar_car_light( vec3 light, float attenuation, float factor ) {
 // OTDU_ADDITION: night lamps. The rebuilt avatar shaders always get the world
 // view matrix (RenderContext::registerShader); the view position w tints the
 // lamps (the car interior attenuation). Zero while the lamps are off.
-#define gAvatarWorldView( i ) c.f[20 + ( i )]
+#define gAvatarWorldView( i ) D3D9_CR( 20, i )
 
 void tdu_avatar_lamp_varyings( vec4 position,
                                vec3 normal,

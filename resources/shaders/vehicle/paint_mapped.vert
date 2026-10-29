@@ -13,12 +13,12 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gVSWorldViewProject( i ) c.f[8 + ( i )]
-#define gVSWorldView( i ) c.f[20 + ( i )]
-#define gVSMaterialParam c.f[88]
-#define gVSLightDir c.f[93]
-#define gVSCamPosInObj c.f[119]
-#define gEnvMapCoeff c.f[239]
+#define gVSWorldViewProject( i ) D3D9_CR( 8, i )
+#define gVSWorldView( i ) D3D9_CR( 20, i )
+#define gVSMaterialParam D3D9_C( 88 )
+#define gVSLightDir D3D9_C( 93 )
+#define gVSCamPosInObj D3D9_C( 119 )
+#define gEnvMapCoeff D3D9_C( 239 )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef PAINTMAP_TANGENT_SPACE

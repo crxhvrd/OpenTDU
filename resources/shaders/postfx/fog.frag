@@ -7,8 +7,8 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define fog_params c.f[5]
-#define fog_color c.f[6]
+#define fog_params D3D9_C( 5 )
+#define fog_color D3D9_C( 6 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 )
 layout( location = D3D9_SLOT_TEXCOORD0 ) in vec4 in_Texcoord0;

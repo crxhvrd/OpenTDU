@@ -8,7 +8,7 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gMorphTexCoef c.f[14]
+#define gMorphTexCoef D3D9_C( 14 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // morph target
 D3D9_DECLARE_SAMPLER_2D( 1 ) // morph source

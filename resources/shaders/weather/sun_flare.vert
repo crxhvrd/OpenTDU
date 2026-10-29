@@ -9,8 +9,8 @@
 #define D3D9_VERTEX_SHADER
 #include "d3d9_abi.glsl"
 
-#define gVSM4Proj( i ) c.f[12 + ( i )]
-#define gVSM4WorldView( i ) c.f[20 + ( i )]
+#define gVSM4Proj( i ) D3D9_CR( 12, i )
+#define gVSM4WorldView( i ) D3D9_CR( 20, i )
 
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0; // xy: view space corner offset

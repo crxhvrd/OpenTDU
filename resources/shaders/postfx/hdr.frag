@@ -24,13 +24,13 @@
 #include "d3d9_abi.glsl"
 #include "tdu_postfx.glsl"
 
-#define gScale c.f[3]
-#define gCoeff( i ) c.f[8 + ( i )]
-#define gBalanceCoeff( i ) c.f[8 + ( i )]
-#define lumThreshold c.f[14]
-#define gSatThreshold c.f[14]
+#define gScale D3D9_C( 3 )
+#define gCoeff( i ) D3D9_CR( 8, i )
+#define gBalanceCoeff( i ) D3D9_CR( 8, i )
+#define lumThreshold D3D9_C( 14 )
+#define gSatThreshold D3D9_C( 14 )
 // OTDU_ADDITION: kSoftHighlightsRegister (retail PS constants stop at c30)
-#define gSoftHighlights c.f[221]
+#define gSoftHighlights D3D9_C( 221 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 )
 #if defined( HDR_BRIGHT_SCALE ) || defined( HDR_COMPOSE )

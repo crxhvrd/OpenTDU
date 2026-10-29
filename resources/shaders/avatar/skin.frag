@@ -13,8 +13,8 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSCoeffExpParam c.f[3]
-#define gPSBlendFactor c.f[18]
+#define gPSCoeffExpParam D3D9_C( 3 )
+#define gPSBlendFactor D3D9_C( 18 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // gSkinTargetBeginSampler
 D3D9_DECLARE_SAMPLER_2D( 1 ) // gSkinTargetEndSampler

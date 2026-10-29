@@ -25,13 +25,13 @@
 #include "d3d9_abi.glsl"
 #include "tdu_common.glsl"
 
-#define gPSLightAmbient c.f[0]
-#define gPSLightDiffuse c.f[1]
-#define gPSLightSpecular c.f[2]
-#define gPSLightSpecularParam c.f[3]
-#define gPSLightSpecular1 c.f[7]
-#define gPSWorld( i ) c.f[8 + ( i )]
-#define gPSWorldView( i ) c.f[8 + ( i )]
+#define gPSLightAmbient D3D9_C( 0 )
+#define gPSLightDiffuse D3D9_C( 1 )
+#define gPSLightSpecular D3D9_C( 2 )
+#define gPSLightSpecularParam D3D9_C( 3 )
+#define gPSLightSpecular1 D3D9_C( 7 )
+#define gPSWorld( i ) D3D9_CR( 8, i )
+#define gPSWorldView( i ) D3D9_CR( 8, i )
 
 #if defined( WORLD_REFLECTION_CUBE ) || defined( WORLD_REFLECTION_SPHERE )
 #define WORLD_REFLECTION

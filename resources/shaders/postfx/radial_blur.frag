@@ -7,7 +7,7 @@
 #define D3D9_PIXEL_SHADER
 #include "d3d9_abi.glsl"
 
-#define radialBlurParams c.f[7]
+#define radialBlurParams D3D9_C( 7 )
 
 D3D9_DECLARE_SAMPLER_2D( 0 ) // scene
 D3D9_DECLARE_SAMPLER_2D( 1 ) // radial mask
