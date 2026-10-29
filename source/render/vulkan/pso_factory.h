@@ -75,12 +75,20 @@ struct PSOFactory {
     void reset();
 
 private:
+    struct StateCacheEntry {
+        std::vector<uint32_t> StateKey;
+        CachedPSO *pPSO;
+    };
+
+private:
     uint32_t vsSpecData[2];
     VkSpecializationMapEntry vsSpecEntries[2];
     VkSpecializationInfo vsSpecInfo;
 
     std::unordered_map<uint64_t, CachedPSO> cache;
     std::vector<uint32_t> hashKey; // Reused between PSO lookups
+    std::unordered_map<uint64_t, StateCacheEntry> stateCache;
+    std::vector<uint32_t> stateKey; // Reused between PSO lookups
 #if OTDU_DEVBUILD
     std::unordered_map<uint64_t, std::vector<uint32_t>>
         hashKeys; // Used to detect hashcode collisions
@@ -89,5 +97,7 @@ private:
 
 private:
     void fillGraphicsDescriptor( VkGraphicsPipelineCreateInfo &psoInfos );
+    void buildStateKey( std::vector<uint32_t> &key ) const;
+    CachedPSO &cacheStateKey( const uint64_t stateHashcode, CachedPSO &pso );
 };
 #endif

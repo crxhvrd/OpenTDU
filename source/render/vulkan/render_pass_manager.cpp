@@ -82,6 +82,9 @@ void RenderPassManager::initialize() {
 
     bUseDepthStencil = false;
     pDepthStencil = nullptr;
+
+    activePass = {};
+    bDirty = true;
 }
 
 void RenderPassManager::releaseCachedRenderPass( VkDevice device ) {
@@ -89,6 +92,7 @@ void RenderPassManager::releaseCachedRenderPass( VkDevice device ) {
         vkDestroyRenderPass( device, entry.second, nullptr );
     }
     cache.clear();
+    bDirty = true;
 }
 
 void RenderPassManager::setAttachment( GPUTexture *pTexture,
@@ -102,6 +106,7 @@ void RenderPassManager::setAttachment( GPUTexture *pTexture,
     }
     bool bNewAttachment = ( pBoundRTs[index] == nullptr );
     pBoundRTs[index] = pTexture;
+    bDirty = true;
 
     OTDU_ASSERT( VK_FORMAT_UNDEFINED != pTexture->ViewFormat );
 
@@ -126,9 +131,13 @@ void RenderPassManager::setAttachment( GPUTexture *pTexture,
 }
 
 CachedRenderPass RenderPassManager::getOrCreateRenderPass( VkDevice device ) {
-    return getOrCreateRenderPass( device, PassAttachments.data(),
-                                  SubPassReferences.data(), NumAttachments,
-                                  bUseDepthStencil );
+    if ( bDirty ) {
+        activePass = getOrCreateRenderPass( device, PassAttachments.data(),
+                                            SubPassReferences.data(),
+                                            NumAttachments, bUseDepthStencil );
+        bDirty = false;
+    }
+    return activePass;
 }
 
 CachedRenderPass
@@ -201,6 +210,9 @@ CachedRenderPass RenderPassManager::getOrCreateRenderPass(
 
 void RenderPassManager::setDepthStencilAttachment( GPUTexture *pTexture ) {
     if ( pTexture == nullptr ) {
+        if ( pDepthStencil != nullptr || bUseDepthStencil ) {
+            bDirty = true;
+        }
         pDepthStencil = nullptr;
         bUseDepthStencil = false;
         return;
@@ -210,6 +222,7 @@ void RenderPassManager::setDepthStencilAttachment( GPUTexture *pTexture ) {
         return;
     }
     pDepthStencil = pTexture;
+    bDirty = true;
 
     OTDU_ASSERT( VK_FORMAT_UNDEFINED != pTexture->ViewFormat );
 

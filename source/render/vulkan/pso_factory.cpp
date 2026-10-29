@@ -306,12 +306,106 @@ void PSOFactory::initialize( VkDevice device,
     reset();
 }
 
+void PSOFactory::buildStateKey( std::vector<uint32_t> &key ) const {
+    key.clear();
+    PSOHashKeyWriter writer{ key };
+
+    writer.push64( pGraphicsShaderStages[0]->Hashcode );
+    writer.push( bIsStageBound[1] );
+    writer.push64( bIsStageBound[1] ? pGraphicsShaderStages[1]->Hashcode
+                                    : 0ull );
+    writer.push64( pVertexLayout->Hashcode );
+    writer.push( VSClipPlaneCount );
+    writer.push( PrimitiveType );
+
+    writer.push( RasterState.flags );
+    writer.push( RasterState.depthClampEnable );
+    writer.push( RasterState.rasterizerDiscardEnable );
+    writer.push( RasterState.polygonMode );
+    if ( !bExtendedDynamicState ) {
+        writer.push( RasterState.cullMode );
+    }
+    writer.push( RasterState.frontFace );
+    writer.push( RasterState.depthBiasEnable );
+    writer.pushFloat( RasterState.depthBiasConstantFactor );
+    writer.pushFloat( RasterState.depthBiasClamp );
+    writer.pushFloat( RasterState.depthBiasSlopeFactor );
+    writer.pushFloat( RasterState.lineWidth );
+
+    writer.push( MultisampleState.flags );
+    writer.push( MultisampleState.rasterizationSamples );
+    writer.push( MultisampleState.sampleShadingEnable );
+    writer.pushFloat( MultisampleState.minSampleShading );
+    writer.push( MultisampleState.pSampleMask != nullptr );
+    writer.push( MultisampleState.alphaToCoverageEnable );
+    writer.push( MultisampleState.alphaToOneEnable );
+
+    writer.push( DepthStencil.flags );
+    writer.push( DepthStencil.depthBoundsTestEnable );
+    if ( !bExtendedDynamicState ) {
+        writer.push( DepthStencil.depthTestEnable );
+        writer.push( DepthStencil.depthWriteEnable );
+        writer.push( DepthStencil.depthCompareOp );
+        writer.push( DepthStencil.stencilTestEnable );
+        writer.pushStencilOp( DepthStencil.front );
+        writer.pushStencilOp( DepthStencil.back );
+    }
+    writer.pushFloat( DepthStencil.minDepthBounds );
+    writer.pushFloat( DepthStencil.maxDepthBounds );
+
+    writer.push( BlendState.flags );
+    writer.push( BlendState.logicOpEnable );
+    writer.push( BlendState.logicOp );
+    writer.push( BlendState.attachmentCount );
+    for ( uint32_t i = 0; i < BlendState.attachmentCount; i++ ) {
+        const VkPipelineColorBlendAttachmentState &attachment =
+            BlendState.pAttachments[i];
+        writer.push( attachment.blendEnable );
+        writer.push( attachment.srcColorBlendFactor );
+        writer.push( attachment.dstColorBlendFactor );
+        writer.push( attachment.colorBlendOp );
+        writer.push( attachment.srcAlphaBlendFactor );
+        writer.push( attachment.dstAlphaBlendFactor );
+        writer.push( attachment.alphaBlendOp );
+        writer.push( attachment.colorWriteMask );
+    }
+    for ( const float blendConstant : BlendState.blendConstants ) {
+        writer.pushFloat( blendConstant );
+    }
+
+    writer.push( bExtendedDynamicState );
+    writer.push64( psoLayoutHashcode );
+    writer.push64( renderPassHashcode );
+}
+
+CachedPSO &PSOFactory::cacheStateKey( const uint64_t stateHashcode,
+                                      CachedPSO &pso ) {
+    StateCacheEntry &entry = stateCache[stateHashcode];
+    entry.StateKey = stateKey;
+    entry.pPSO = &pso;
+
+    latestPSO = &pso;
+    return pso;
+}
+
 CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
                                       VkPipelineCache psoCache ) {
     if ( !bDirty ) {
         return *latestPSO;
     }
     bDirty = false;
+
+    OTDU_ASSERT( pVertexLayout != nullptr );
+    OTDU_ASSERT( pGraphicsShaderStages[0] != nullptr );
+
+    buildStateKey( stateKey );
+    const uint64_t stateHashcode = CityHash64(
+        (const char *)stateKey.data(), stateKey.size() * sizeof( uint32_t ) );
+    auto stateIt = stateCache.find( stateHashcode );
+    if ( stateIt != stateCache.end() && stateIt->second.StateKey == stateKey ) {
+        latestPSO = stateIt->second.pPSO;
+        return *latestPSO;
+    }
 
     VkGraphicsPipelineCreateInfo psoInfos;
     fillGraphicsDescriptor( psoInfos );
@@ -471,8 +565,7 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
             OTDU_TRIGGER_BREAKPOINT;
         }
 #endif
-        latestPSO = &cacheIt->second;
-        return cacheIt->second;
+        return cacheStateKey( stateHashcode, cacheIt->second );
     }
 
     if ( pParentFactory != nullptr ) {
@@ -528,9 +621,7 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
     hashKeys[psoHashcode] = hashKey;
 #endif
 
-    CachedPSO &cachedPso = cache[psoHashcode];
-    latestPSO = &cachedPso;
-    return cachedPso;
+    return cacheStateKey( stateHashcode, cache[psoHashcode] );
 }
 
 void PSOFactory::releaseCachedPSOs( VkDevice device ) {
@@ -540,6 +631,9 @@ void PSOFactory::releaseCachedPSOs( VkDevice device ) {
         vkDestroyPipeline( device, entry.second.Instance, nullptr );
     }
     cache.clear();
+    stateCache.clear();
+    latestPSO = nullptr;
+    bDirty = true;
 #if OTDU_DEVBUILD
     hashKeys.clear();
 #endif
@@ -554,6 +648,7 @@ void PSOFactory::adoptCachedPSOs( VkDevice device, PSOFactory &other ) {
         }
     }
     other.cache.clear();
+    other.stateCache.clear();
     other.latestPSO = nullptr;
     other.bDirty = true;
 
@@ -567,6 +662,10 @@ void PSOFactory::adoptCachedPSOs( VkDevice device, PSOFactory &other ) {
 
 void PSOFactory::setShader( eShaderType stage, GPUShader *pShader ) {
     uint32_t stageIndex = ( stage == eShaderType::ST_Vertex ) ? 0 : 1;
+    if ( pGraphicsShaderStages[stageIndex] == pShader &&
+         bIsStageBound[stageIndex] == ( pShader != nullptr ) ) {
+        return;
+    }
 
     if ( pShader != nullptr ) {
         pGraphicsShaderStages[stageIndex] = pShader;

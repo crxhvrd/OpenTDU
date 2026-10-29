@@ -129,6 +129,9 @@ void ResourceBinder::initialize( VkDevice device,
         pBoundSRVs[i] = nullptr;
     }
 
+    numConstantVectorsUsed[0] = 1;
+    numConstantVectorsUsed[1] = 1;
+
     dirtyStates = 0xffffffff;
     uboOffsets.fill( 0 );
 }
@@ -141,6 +144,8 @@ void ResourceBinder::destroy( VkDevice device, VmaAllocator allocator ) {
 
     for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
         allocatedSets[i].clear();
+        setLookup[i].clear();
+        freeSetSlots[i].clear();
         recycledSets[i].clear();
     }
 }
@@ -188,12 +193,16 @@ void ResourceBinder::onFrameBegin( VkDevice device, uint32_t frameIndex ) {
     shaderSpecsAllocator[frameIndex].onFrameBegin();
     psSharedAllocator[frameIndex].onFrameBegin();
 
-    for ( auto &set : allocatedSets[frameIndex] ) {
+    std::vector<CachedDescriptorSet> &sets = allocatedSets[frameIndex];
+    for ( uint32_t i = 0; i < sets.size(); i++ ) {
+        CachedDescriptorSet &set = sets[i];
         set.NumFramesUnused++;
 
         if ( set.DescriptorSet != VK_NULL_HANDLE &&
              set.NumFramesUnused >= kNumFramesUnusedBeforeSetDestroyed ) {
+            eraseFromLookup( frameIndex, set.SRVBindingHashcode, i );
             recycledSets[frameIndex].push_back( set.DescriptorSet );
+            freeSetSlots[frameIndex].push_back( i );
             set.DescriptorSet = VK_NULL_HANDLE;
             set.SRVBindingHashcode = 0;
         }
@@ -227,13 +236,7 @@ VkDescriptorSet ResourceBinder::getOrAllocateSet( VkDevice device,
     }
 
     if ( ( dirtyStates & eDirtyStates::DS_VSConstants ) != 0 ) {
-        uboOffsets[0] = constantsAllocator[0][frameIndex].allocate();
-        memcpy( constantsAllocator[0][frameIndex].pCPUMapping + uboOffsets[0],
-                constants[0].Vectors, sizeof( ShaderConstants ) );
-
-        vmaFlushAllocation( allocator,
-                            constantsAllocator[0][frameIndex].Allocations,
-                            uboOffsets[0], sizeof( ShaderConstants ) );
+        uploadConstants( 0, frameIndex, 0 );
     }
 
     if ( ( dirtyStates & eDirtyStates::DS_VSClipPlanes ) != 0 ) {
@@ -247,13 +250,7 @@ VkDescriptorSet ResourceBinder::getOrAllocateSet( VkDevice device,
     }
 
     if ( ( dirtyStates & eDirtyStates::DS_PSConstants ) != 0 ) {
-        uboOffsets[2] = constantsAllocator[1][frameIndex].allocate();
-        memcpy( constantsAllocator[1][frameIndex].pCPUMapping + uboOffsets[2],
-                constants[1].Vectors, sizeof( ShaderConstants ) );
-
-        vmaFlushAllocation( allocator,
-                            constantsAllocator[1][frameIndex].Allocations,
-                            uboOffsets[2], sizeof( ShaderConstants ) );
+        uploadConstants( 1, frameIndex, 2 );
     }
 
     if ( ( dirtyStates & eDirtyStates::DS_PSShared ) != 0 ) {
@@ -281,6 +278,28 @@ VkDescriptorSet ResourceBinder::getOrAllocateSet( VkDevice device,
     return DescriptorSet;
 }
 
+void ResourceBinder::uploadConstants( const uint32_t stageIndex,
+                                      const uint32_t frameIndex,
+                                      const uint32_t uboIndex ) {
+    LinearAllocator &constantsAlloc =
+        constantsAllocator[stageIndex][frameIndex];
+
+    const uint32_t zeroedSize = constantsAlloc.ZeroedSize;
+    const uint32_t offset = constantsAlloc.allocate();
+    const uint32_t uploadSize =
+        numConstantVectorsUsed[stageIndex] * 4 * sizeof( float );
+    memcpy( constantsAlloc.pCPUMapping + offset, constants[stageIndex].Vectors,
+            uploadSize );
+
+    // A slot used for the first time was just zero-filled; flush all of it.
+    const bool bFreshSlot =
+        ( offset + constantsAlloc.ElementSize ) > zeroedSize;
+    vmaFlushAllocation( allocator, constantsAlloc.Allocations, offset,
+                        bFreshSlot ? constantsAlloc.ElementSize : uploadSize );
+
+    uboOffsets[uboIndex] = offset;
+}
+
 void ResourceBinder::setFloatConstants( eShaderType stage,
                                         float *pFloats,
                                         const uint32_t offset,
@@ -291,9 +310,13 @@ void ResourceBinder::setFloatConstants( eShaderType stage,
     uint32_t numScalars = ( numVectors * 4 );
     OTDU_ASSERT_FATAL( offset + numVectors <= kNumShaderConstants );
     uint32_t stageIndex = ( stage == eShaderType::ST_Vertex ) ? 0 : 1;
-    for ( uint32_t i = 0; i < numScalars; i++ ) {
-        constants[stageIndex].Vectors[( offset + 1 ) * 4 + i] = pFloats[i];
+    float *pDst = &constants[stageIndex].Vectors[( offset + 1 ) * 4];
+    if ( memcmp( pDst, pFloats, numScalars * sizeof( float ) ) == 0 ) {
+        return;
     }
+    memcpy( pDst, pFloats, numScalars * sizeof( float ) );
+    numConstantVectorsUsed[stageIndex] =
+        Max( numConstantVectorsUsed[stageIndex], offset + 1 + numVectors );
 
     dirtyStates |= ( ( stageIndex == 0 ) ? eDirtyStates::DS_VSConstants
                                          : eDirtyStates::DS_PSConstants );
@@ -365,9 +388,13 @@ void ResourceBinder::setShaderSpecBits( uint32_t dwordIndex,
 
     // Yoinked from dxvk (d3d9_spec_constants.h)
     uint32_t mask = uint32_t( ( 1u << numBits ) - 1 ) << bitIndex;
-    shaderSpecs[dwordIndex] &= ~mask;
-    shaderSpecs[dwordIndex] |= ( value << bitIndex ) & mask;
+    const uint32_t newSpecs =
+        ( shaderSpecs[dwordIndex] & ~mask ) | ( ( value << bitIndex ) & mask );
+    if ( newSpecs == shaderSpecs[dwordIndex] ) {
+        return;
+    }
 
+    shaderSpecs[dwordIndex] = newSpecs;
     dirtyStates |= eDirtyStates::DS_ShaderSpecs;
 }
 
@@ -398,19 +425,21 @@ void ResourceBinder::validateSRVBindings( GPUShader *pPixelShader ) {
 
 ResourceBinder::CachedDescriptorSet &ResourceBinder::findOrAllocateSet(
     VkDevice device, const uint64_t hashcode, uint32_t frameIndex ) {
-    for ( CachedDescriptorSet &set : allocatedSets[frameIndex] ) {
-        if ( set.SRVBindingHashcode == hashcode &&
-             memcmp( set.BoundSRVs, boundSRVs, sizeof( VkImageView ) * 0x10 ) ==
-                 0 ) {
-            if ( set.DescriptorSet != VK_NULL_HANDLE ) {
-                set.NumFramesUnused = 0;
-                return set;
-            }
+    auto range = setLookup[frameIndex].equal_range( hashcode );
+    for ( auto it = range.first; it != range.second; it++ ) {
+        CachedDescriptorSet &set = allocatedSets[frameIndex][it->second];
+        if ( memcmp( set.BoundSRVs, boundSRVs, sizeof( VkImageView ) * 0x10 ) ==
+             0 ) {
+            set.NumFramesUnused = 0;
+            return set;
         }
     }
 
     // No matching set; need to allocate a new one
-    CachedDescriptorSet &cachedSet = findFreeOrEmplace( frameIndex );
+    const uint32_t slotIndex = findFreeOrEmplace( frameIndex );
+    setLookup[frameIndex].emplace( hashcode, slotIndex );
+
+    CachedDescriptorSet &cachedSet = allocatedSets[frameIndex][slotIndex];
     cachedSet.SRVBindingHashcode = hashcode;
     cachedSet.NumFramesUnused = 0;
     memcpy( cachedSet.BoundSRVs, boundSRVs, sizeof( VkImageView ) * 0x10 );
@@ -508,15 +537,27 @@ ResourceBinder::CachedDescriptorSet &ResourceBinder::findOrAllocateSet(
     return cachedSet;
 }
 
-ResourceBinder::CachedDescriptorSet &
-ResourceBinder::findFreeOrEmplace( uint32_t frameIndex ) {
-    for ( auto &set : allocatedSets[frameIndex] ) {
-        if ( set.DescriptorSet == VK_NULL_HANDLE ) {
-            return set;
-        }
+uint32_t ResourceBinder::findFreeOrEmplace( uint32_t frameIndex ) {
+    if ( !freeSetSlots[frameIndex].empty() ) {
+        const uint32_t slotIndex = freeSetSlots[frameIndex].back();
+        freeSetSlots[frameIndex].pop_back();
+        return slotIndex;
     }
 
-    return allocatedSets[frameIndex].emplace_back();
+    allocatedSets[frameIndex].emplace_back();
+    return static_cast<uint32_t>( allocatedSets[frameIndex].size() - 1 );
+}
+
+void ResourceBinder::eraseFromLookup( uint32_t frameIndex,
+                                      const uint64_t hashcode,
+                                      const uint32_t slotIndex ) {
+    auto range = setLookup[frameIndex].equal_range( hashcode );
+    for ( auto it = range.first; it != range.second; it++ ) {
+        if ( it->second == slotIndex ) {
+            setLookup[frameIndex].erase( it );
+            return;
+        }
+    }
 }
 
 VkDescriptorSet ResourceBinder::acquireDescriptorSet( VkDevice device,
@@ -549,6 +590,7 @@ bool LinearAllocator::create( VkDevice device,
     Capacity = elementSize * maxNumElements;
     ElementSize = elementSize;
     Usage = 0;
+    ZeroedSize = 0;
     Alignment = uboAlignment;
 
     VkBufferCreateInfo bufferInfo = {};
@@ -582,6 +624,13 @@ uint32_t LinearAllocator::allocate() {
 
     uint32_t offset = Usage;
     Usage += ElementSize;
+
+    // Uploads may only cover part of a slot; never leave uninitialized
+    // memory behind the uploaded range.
+    if ( offset + ElementSize > ZeroedSize ) {
+        memset( pCPUMapping + offset, 0, ElementSize );
+        ZeroedSize = offset + ElementSize;
+    }
 
     // Align offset to match device minUniformBufferOffsetAlignment
     Usage = Align( Usage, (uint32_t)Alignment );

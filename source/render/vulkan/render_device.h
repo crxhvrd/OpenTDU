@@ -137,7 +137,11 @@ struct GPUVertexLayoutSemantic {
 struct GPUVertexLayout {
     std::vector<GPUVertexLayoutSemantic> Semantics; // per-attribute info
     std::vector<VkVertexInputBindingDescription>
-        InputBindings; // per-binding desc
+        InputBindings;        // per-binding desc
+    uint64_t Hashcode = 0ull; // Content hash (see updateHashcode)
+
+    // Must be called once Semantics/InputBindings are filled
+    void updateHashcode();
 };
 
 // ITU-R BT.2408 reference (graphics) white
@@ -522,6 +526,39 @@ private:
     VkBuffer vertexBuffers[0x10];
     VkDeviceSize vertexBufferOffsets[0x10];
 
+    // Bindings last recorded into the active command buffer (redundant binds
+    // are skipped)
+    struct CommandBufferBindings {
+        VkBuffer VertexBuffers[0x10];
+        VkDeviceSize VertexBufferOffsets[0x10];
+        int32_t NumVertexBuffers;
+
+        VkBuffer IndexBuffer;
+        VkIndexType IndexType;
+
+        D3D9RenderStateInfo RenderStates;
+        bool bRenderStatesValid;
+        uint32_t Samplers[8];
+        uint32_t SamplersSize;
+    };
+    CommandBufferBindings recordedBindings;
+
+    struct FramebufferKey {
+        std::array<VkImageView, kMaxSimultaneousRT> Attachments;
+        uint32_t NumAttachments;
+        VkRenderPass RenderPass;
+        uint32_t Width;
+        uint32_t Height;
+
+        inline bool operator==( const FramebufferKey &other ) const {
+            return Attachments == other.Attachments &&
+                   NumAttachments == other.NumAttachments &&
+                   RenderPass == other.RenderPass && Width == other.Width &&
+                   Height == other.Height;
+        }
+    };
+    FramebufferKey activeFramebufferKey;
+
     GPUBackbuffer backbuffer;
 
     VkFence textureUploadFence;
@@ -652,6 +689,9 @@ private:
                                   const VkExtent2D extent );
 
     bool prepareDrawCall( ePrimitiveType primitiveType );
+    VkFramebuffer getOrCreateFramebuffer( const FramebufferKey &key );
+    void resetRecordedBindings();
+    void bindIndexBufferToCmdBuffer( VkBuffer buffer, VkIndexType indexType );
     void insertMemoryBarrier( GPUTexture *pTexture,
                               const VkImageLayout prevLayout,
                               const VkImageLayout nextLayout,

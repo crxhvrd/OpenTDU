@@ -397,6 +397,9 @@ RenderDevice::RenderDevice()
             sizeof( bool ) * kMaxSimultaneousRT );
 
     memset( boundSamplers, 0, sizeof( int32_t ) * 0x8 );
+
+    resetRecordedBindings();
+    activeFramebufferKey = {};
 }
 
 RenderDevice::~RenderDevice() {
@@ -1667,6 +1670,9 @@ void RenderDevice::clearColorRenderTarget( GPUTexture *pTexture,
 }
 
 void RenderDevice::bindVertexLayout( GPUVertexLayout *pLayout ) {
+    if ( psoFactory.pVertexLayout == pLayout ) {
+        return;
+    }
     psoFactory.pVertexLayout = pLayout;
     psoFactory.bDirty = true;
 }
@@ -1746,9 +1752,8 @@ void RenderDevice::drawIndexedPrimitive( ePrimitiveType primitiveType,
     uint32_t resourceIndex =
         ( pIndexBuffer->NumResources == 1 ) ? 0 : frameIndex;
     syncDynamicBuffer( pIndexBuffer, resourceIndex );
-    vkCmdBindIndexBuffer( commandBuffer,
-                          pIndexBuffer->NativeBuffer[resourceIndex], 0,
-                          pIndexBuffer->IndexType );
+    bindIndexBufferToCmdBuffer( pIndexBuffer->NativeBuffer[resourceIndex],
+                                pIndexBuffer->IndexType );
 
     uint32_t indexCount = GetVertexCount( primitiveType, primitiveCount );
     uint32_t instanceCount = activeInstanceCount;
@@ -1796,9 +1801,8 @@ void RenderDevice::drawTriangleFanAsList( int32_t baseVertexIndex,
         return;
     }
 
-    vkCmdBindIndexBuffer( commandBuffer,
-                          pFanEmulationIndexBuffer->NativeBuffer[0], 0,
-                          pFanEmulationIndexBuffer->IndexType );
+    bindIndexBufferToCmdBuffer( pFanEmulationIndexBuffer->NativeBuffer[0],
+                                pFanEmulationIndexBuffer->IndexType );
 
     uint32_t instanceCount = activeInstanceCount;
     activeInstanceCount = 1; // reset to 1 (non-instanced default)
@@ -2081,9 +2085,13 @@ void RenderDevice::setColorWriteChannels( bool bWriteRed,
 
 void RenderDevice::setClipPlaneEnabled( uint32_t param_1 ) {
     const uint32_t clipPlaneCount = resourceBinder.setClipPlaneMask( param_1 );
-    psoFactory.RasterState.depthClampEnable =
-        param_1 != 0 && deviceCaps.bDepthClamp;
+    const VkBool32 bDepthClamp = param_1 != 0 && deviceCaps.bDepthClamp;
     resourceBinder.setShaderSpecBits( 5, 21, 3, clipPlaneCount );
+    if ( psoFactory.RasterState.depthClampEnable == bDepthClamp &&
+         psoFactory.VSClipPlaneCount == clipPlaneCount ) {
+        return;
+    }
+    psoFactory.RasterState.depthClampEnable = bDepthClamp;
     psoFactory.VSClipPlaneCount = clipPlaneCount;
     psoFactory.bDirty = true;
 }
@@ -2187,13 +2195,20 @@ void RenderDevice::setFillMode( eFillMode param_1 ) {
         VK_POLYGON_MODE_FILL, VK_POLYGON_MODE_POINT, VK_POLYGON_MODE_LINE,
         VK_POLYGON_MODE_FILL };
 
-    psoFactory.RasterState.polygonMode = deviceCaps.bFillModeNonSolid
-                                             ? kFillModeLUT[param_1]
-                                             : VK_POLYGON_MODE_FILL;
+    const VkPolygonMode polygonMode = deviceCaps.bFillModeNonSolid
+                                          ? kFillModeLUT[param_1]
+                                          : VK_POLYGON_MODE_FILL;
+    if ( psoFactory.RasterState.polygonMode == polygonMode ) {
+        return;
+    }
+    psoFactory.RasterState.polygonMode = polygonMode;
     psoFactory.bDirty = true;
 }
 
 void RenderDevice::setAlphaBlendingEnabled( bool param_1 ) {
+    if ( psoFactory.AlphaBlending.blendEnable == (VkBool32)param_1 ) {
+        return;
+    }
     psoFactory.AlphaBlending.blendEnable = param_1;
     psoFactory.bDirty = true;
 }
@@ -2646,6 +2661,7 @@ void RenderDevice::beginScene() {
             vkBeginCommandBuffer( commandBuffer, &beginInfo );
         OTDU_ASSERT( beginResult == VK_SUCCESS );
         bRecordingCommands = true;
+        resetRecordedBindings();
 
         if ( bNeedBackbufferClear ) {
             clearColorRenderTarget( backbuffer.pTexture, gColorBlack,
@@ -2839,16 +2855,25 @@ static constexpr VkBlendOp kBlendOP[eBlendOP::BO_Count] = {
     VkBlendOp::VK_BLEND_OP_MAX_ENUM };
 
 void RenderDevice::setBlendSrc( eBlendMode param_1 ) {
+    if ( psoFactory.srcBlendFactor == kBlendModes[param_1] ) {
+        return;
+    }
     psoFactory.srcBlendFactor = kBlendModes[param_1];
     psoFactory.bDirty = true;
 }
 
 void RenderDevice::setBlendDst( eBlendMode param_1 ) {
+    if ( psoFactory.dstBlendFactor == kBlendModes[param_1] ) {
+        return;
+    }
     psoFactory.dstBlendFactor = kBlendModes[param_1];
     psoFactory.bDirty = true;
 }
 
 void RenderDevice::setBlendOP( eBlendOP param_1 ) {
+    if ( psoFactory.blendOP == kBlendOP[param_1] ) {
+        return;
+    }
     psoFactory.blendOP = kBlendOP[param_1];
     psoFactory.bDirty = true;
 }
@@ -3064,7 +3089,27 @@ RenderDevice::createVertexLayout( VertexLayoutAttribute *pAttributes,
         pAttributeIt++;
     }
 
+    pLayout->updateHashcode();
     return pLayout;
+}
+
+void GPUVertexLayout::updateHashcode() {
+    std::vector<uint32_t> words;
+    words.reserve( Semantics.size() * 5 + InputBindings.size() * 3 );
+    for ( const GPUVertexLayoutSemantic &semantic : Semantics ) {
+        words.push_back( semantic.Binding );
+        words.push_back( semantic.Offset );
+        words.push_back( semantic.Format );
+        words.push_back( semantic.Usage );
+        words.push_back( semantic.UsageIndex );
+    }
+    for ( const VkVertexInputBindingDescription &binding : InputBindings ) {
+        words.push_back( binding.binding );
+        words.push_back( binding.stride );
+        words.push_back( binding.inputRate );
+    }
+    Hashcode = CityHash64( (const char *)words.data(),
+                           words.size() * sizeof( uint32_t ) );
 }
 
 void RenderDevice::destroyShader( GPUShader *pShader ) {
@@ -3749,6 +3794,7 @@ bool RenderDevice::prebuildPSO( const PSORecord &record,
               static_cast<uint8_t>( semantic.Usage ),
               static_cast<uint8_t>( semantic.UsageIndex ) } );
     }
+    vertexLayout.updateHashcode();
 
     const CachedRenderPass renderPass =
         renderPassManager.getOrCreateRenderPass( device, record.RenderPass );
@@ -4100,6 +4146,7 @@ void RenderDevice::presentBackbuffer() {
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT );
 
         gammaRampPass.draw( commandBuffer, frameIndex, imageIndex );
+        resetRecordedBindings();
     } else {
         insertImageBarrier(
             pBackbuffer, resourceIndex,
@@ -4164,6 +4211,73 @@ void RenderDevice::submitPendingCommandBuffer() {
     OTDU_ASSERT( submitResult == VK_SUCCESS );
     lastSubmittedFrameIndex = frameIndex;
     commandBuffer = VK_NULL_HANDLE;
+}
+
+VkFramebuffer
+RenderDevice::getOrCreateFramebuffer( const FramebufferKey &key ) {
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = key.RenderPass;
+    framebufferInfo.attachmentCount = key.NumAttachments;
+    framebufferInfo.pAttachments = key.Attachments.data();
+    framebufferInfo.width = key.Width;
+    framebufferInfo.height = key.Height;
+    framebufferInfo.layers = 1;
+
+    uint64_t framebufferHash = 0ull;
+    for ( uint32_t i = 0; i < key.NumAttachments; i++ ) {
+        framebufferHash = CombineCityHash64( framebufferHash,
+                                             (const char *)&key.Attachments[i],
+                                             sizeof( VkImageView ) );
+    }
+    framebufferHash = CombineCityHash64(
+        framebufferHash, (const char *)&framebufferInfo.renderPass,
+        sizeof( VkRenderPass ) );
+    framebufferHash = CombineCityHash64( framebufferHash,
+                                         (const char *)&framebufferInfo.width,
+                                         sizeof( uint32_t ) );
+    framebufferHash = CombineCityHash64( framebufferHash,
+                                         (const char *)&framebufferInfo.height,
+                                         sizeof( uint32_t ) );
+
+    auto fbCacheIt = framebufferCache.find( framebufferHash );
+    if ( fbCacheIt != framebufferCache.end() ) {
+        return fbCacheIt->second;
+    }
+
+    VkFramebuffer framebuffer = VK_NULL_HANDLE;
+    VkResult fbCreationResult =
+        vkCreateFramebuffer( device, &framebufferInfo, nullptr, &framebuffer );
+    OTDU_ASSERT( fbCreationResult == VK_SUCCESS );
+
+    framebufferCache.insert( std::make_pair( framebufferHash, framebuffer ) );
+    return framebuffer;
+}
+
+void RenderDevice::resetRecordedBindings() {
+    for ( uint32_t i = 0; i < 0x10; i++ ) {
+        recordedBindings.VertexBuffers[i] = VK_NULL_HANDLE;
+        recordedBindings.VertexBufferOffsets[i] = 0;
+    }
+    recordedBindings.NumVertexBuffers = -1;
+
+    recordedBindings.IndexBuffer = VK_NULL_HANDLE;
+    recordedBindings.IndexType = VK_INDEX_TYPE_UINT16;
+
+    recordedBindings.bRenderStatesValid = false;
+    recordedBindings.SamplersSize = 0;
+}
+
+void RenderDevice::bindIndexBufferToCmdBuffer( VkBuffer buffer,
+                                               VkIndexType indexType ) {
+    if ( recordedBindings.IndexBuffer == buffer &&
+         recordedBindings.IndexType == indexType ) {
+        return;
+    }
+
+    vkCmdBindIndexBuffer( commandBuffer, buffer, 0, indexType );
+    recordedBindings.IndexBuffer = buffer;
+    recordedBindings.IndexType = indexType;
 }
 
 bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
@@ -4298,12 +4412,16 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
             }
         }
     }
-    psoFactory.BlendState.attachmentCount = numAttachments;
+    if ( psoFactory.BlendState.attachmentCount != numAttachments ) {
+        psoFactory.BlendState.attachmentCount = numAttachments;
+        psoFactory.bDirty = true;
+    }
 
-    blendOpAttachments.fill( {} );
+    std::array<VkPipelineColorBlendAttachmentState, kMaxSimultaneousRT>
+        blendAttachments;
+    blendAttachments.fill( {} );
 
-    for ( VkPipelineColorBlendAttachmentState &attachment :
-          blendOpAttachments ) {
+    for ( VkPipelineColorBlendAttachmentState &attachment : blendAttachments ) {
         attachment.blendEnable = psoFactory.AlphaBlending.blendEnable;
 
         attachment.srcColorBlendFactor = psoFactory.srcBlendFactor;
@@ -4317,6 +4435,13 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
             attachment.blendEnable ? psoFactory.blendOP : VK_BLEND_OP_ADD;
 
         attachment.colorWriteMask = activeColorMask;
+    }
+
+    if ( memcmp( blendAttachments.data(), blendOpAttachments.data(),
+                 sizeof( VkPipelineColorBlendAttachmentState ) *
+                     kMaxSimultaneousRT ) != 0 ) {
+        blendOpAttachments = blendAttachments;
+        psoFactory.bDirty = true;
     }
 
     if ( bDepthStencilAttachmentValid && numAttachments < kMaxSimultaneousRT ) {
@@ -4375,45 +4500,16 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
         psoFactory.bDirty = true;
     }
 
-    VkFramebufferCreateInfo framebufferInfo{};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = renderPass.Instance;
-    framebufferInfo.attachmentCount = numAttachments;
-    framebufferInfo.pAttachments = attachments.data();
-    framebufferInfo.width = fbWidth;
-    framebufferInfo.height = fbHeight;
-    framebufferInfo.layers = 1;
-
-    uint64_t framebufferHash = 0ull;
-    for ( uint32_t i = 0; i < numAttachments; i++ ) {
-        framebufferHash =
-            CombineCityHash64( framebufferHash, (const char *)&attachments[i],
-                               sizeof( VkImageView ) );
+    FramebufferKey framebufferKey;
+    framebufferKey.Attachments = attachments;
+    framebufferKey.NumAttachments = numAttachments;
+    framebufferKey.RenderPass = renderPass.Instance;
+    framebufferKey.Width = fbWidth;
+    framebufferKey.Height = fbHeight;
+    if ( !( framebufferKey == activeFramebufferKey ) ) {
+        activeFramebuffer = getOrCreateFramebuffer( framebufferKey );
+        activeFramebufferKey = framebufferKey;
     }
-    framebufferHash = CombineCityHash64(
-        framebufferHash, (const char *)&framebufferInfo.renderPass,
-        sizeof( VkRenderPass ) );
-    framebufferHash = CombineCityHash64( framebufferHash,
-                                         (const char *)&framebufferInfo.width,
-                                         sizeof( uint32_t ) );
-    framebufferHash = CombineCityHash64( framebufferHash,
-                                         (const char *)&framebufferInfo.height,
-                                         sizeof( uint32_t ) );
-
-    VkFramebuffer framebuffer = VK_NULL_HANDLE;
-    auto fbCacheIt = framebufferCache.find( framebufferHash );
-    if ( fbCacheIt != framebufferCache.end() ) {
-        framebuffer = fbCacheIt->second;
-    } else {
-        VkResult fbCreationResult = vkCreateFramebuffer(
-            device, &framebufferInfo, nullptr, &framebuffer );
-        OTDU_ASSERT( fbCreationResult == VK_SUCCESS );
-
-        framebufferCache.insert(
-            std::make_pair( framebufferHash, framebuffer ) );
-    }
-
-    activeFramebuffer = framebuffer;
 
     // Mem barrier SRVs (if required)
     for ( uint32_t i = 0; i < 0x10; i++ ) {
@@ -4450,7 +4546,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     VkRenderPassBeginInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass.Instance;
-    renderPassInfo.framebuffer = framebuffer;
+    renderPassInfo.framebuffer = activeFramebuffer;
     renderPassInfo.renderArea = activeRenderRegion;
     renderPassInfo.clearValueCount = 0;
     renderPassInfo.pClearValues = nullptr;
@@ -4491,8 +4587,19 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
         bindExtendedDynamicState();
     }
 
-    vkCmdBindVertexBuffers( commandBuffer, 0, numVertexBuffers, vertexBuffers,
-                            vertexBufferOffsets );
+    if ( recordedBindings.NumVertexBuffers != numVertexBuffers ||
+         memcmp( recordedBindings.VertexBuffers, vertexBuffers,
+                 sizeof( VkBuffer ) * numVertexBuffers ) != 0 ||
+         memcmp( recordedBindings.VertexBufferOffsets, vertexBufferOffsets,
+                 sizeof( VkDeviceSize ) * numVertexBuffers ) != 0 ) {
+        vkCmdBindVertexBuffers( commandBuffer, 0, numVertexBuffers,
+                                vertexBuffers, vertexBufferOffsets );
+        memcpy( recordedBindings.VertexBuffers, vertexBuffers,
+                sizeof( VkBuffer ) * numVertexBuffers );
+        memcpy( recordedBindings.VertexBufferOffsets, vertexBufferOffsets,
+                sizeof( VkDeviceSize ) * numVertexBuffers );
+        recordedBindings.NumVertexBuffers = numVertexBuffers;
+    }
 
     VkDescriptorSet activeSet = resourceBinder.DescriptorSet;
 #ifdef OTDU_DEVBUILD
@@ -4518,10 +4625,16 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
                                  resourceBinder.uboOffsets.data() );
     }
 
-    vkCmdPushConstants( commandBuffer, psoFactory.PipelineLayout,
-                        VK_SHADER_STAGE_VERTEX_BIT |
-                            VK_SHADER_STAGE_FRAGMENT_BIT,
-                        0, sizeof( D3D9RenderStateInfo ), &renderStates );
+    if ( !recordedBindings.bRenderStatesValid ||
+         memcmp( &recordedBindings.RenderStates, &renderStates,
+                 sizeof( D3D9RenderStateInfo ) ) != 0 ) {
+        vkCmdPushConstants( commandBuffer, psoFactory.PipelineLayout,
+                            VK_SHADER_STAGE_VERTEX_BIT |
+                                VK_SHADER_STAGE_FRAGMENT_BIT,
+                            0, sizeof( D3D9RenderStateInfo ), &renderStates );
+        recordedBindings.RenderStates = renderStates;
+        recordedBindings.bRenderStatesValid = true;
+    }
 
     uint32_t samplerIndexes = psoFactory.pGraphicsShaderStages[0]
                                   ->pMetadata->SamplerPushConstantsSize;
@@ -4530,7 +4643,10 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
             Max( samplerIndexes, psoFactory.pGraphicsShaderStages[1]
                                      ->pMetadata->SamplerPushConstantsSize );
     }
-    if ( samplerIndexes > 0 ) {
+    if ( samplerIndexes > 0 &&
+         ( samplerIndexes > recordedBindings.SamplersSize ||
+           memcmp( recordedBindings.Samplers, boundSamplers, samplerIndexes ) !=
+               0 ) ) {
         // Samplers start at GetPushSamplerOffset(0) = MaxSharedPushDataSize =
         // 64, NOT at sizeof(D3D9RenderStateInfo) = 52. The 12-byte gap is
         // intentional padding in DXVK's push constant layout.
@@ -4538,6 +4654,10 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
             commandBuffer, psoFactory.PipelineLayout,
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
             kDxvkMaxSharedPushDataSize, samplerIndexes, boundSamplers );
+        OTDU_ASSERT( samplerIndexes <= sizeof( recordedBindings.Samplers ) );
+        memcpy( recordedBindings.Samplers, boundSamplers, samplerIndexes );
+        recordedBindings.SamplersSize =
+            Max( recordedBindings.SamplersSize, samplerIndexes );
     }
 
     return true;
@@ -4716,6 +4836,9 @@ void RenderDevice::releaseFramebufferCache() {
         vkDestroyFramebuffer( device, entry.second, nullptr );
     }
     framebufferCache.clear();
+
+    activeFramebuffer = VK_NULL_HANDLE;
+    activeFramebufferKey = {};
 }
 
 void RenderDevice::flushPendingTextureUploads() {

@@ -48,6 +48,10 @@ struct RenderPassManager {
 private:
     std::unordered_map<uint64_t, VkRenderPass> cache;
 
+    // Render pass matching the current attachments (valid if !bDirty)
+    CachedRenderPass activePass;
+    bool bDirty;
+
 private:
     CachedRenderPass
     getOrCreateRenderPass( VkDevice device,

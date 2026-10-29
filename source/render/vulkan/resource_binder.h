@@ -8,6 +8,8 @@
 
 #include "render/render_api.h"
 
+#include <unordered_map>
+
 #include "vk_mem_alloc.h"
 #include "volk.h"
 
@@ -24,6 +26,8 @@ struct LinearAllocator {
     uint32_t Usage;
     uint32_t Capacity;
     uint32_t ElementSize;
+    // Every slot below this offset has been zero-filled once
+    uint32_t ZeroedSize;
 
     VkDeviceSize Alignment;
 
@@ -103,6 +107,9 @@ struct ResourceBinder {
         }
     };
     ShaderConstants constants[2];
+    // Highest vector written so far (per stage, including the padding vector);
+    // only this range is uploaded
+    uint32_t numConstantVectorsUsed[2];
     float clipPlanes[6][4];
     uint32_t shaderSpecs[6];
 
@@ -124,7 +131,9 @@ struct ResourceBinder {
               NumFramesUnused( 0 ),
               BoundSRVs{} {}
     };
-    std::list<CachedDescriptorSet> allocatedSets[PendingFrameCount];
+    std::vector<CachedDescriptorSet> allocatedSets[PendingFrameCount];
+    std::unordered_multimap<uint64_t, uint32_t> setLookup[PendingFrameCount];
+    std::vector<uint32_t> freeSetSlots[PendingFrameCount];
     std::vector<VkDescriptorSet> recycledSets[PendingFrameCount];
 
     VmaAllocator allocator;
@@ -134,7 +143,13 @@ struct ResourceBinder {
                                             uint32_t frameIndex );
 
 private:
-    CachedDescriptorSet &findFreeOrEmplace( uint32_t frameIndex );
+    uint32_t findFreeOrEmplace( uint32_t frameIndex );
+    void eraseFromLookup( uint32_t frameIndex,
+                          const uint64_t hashcode,
+                          const uint32_t slotIndex );
+    void uploadConstants( const uint32_t stageIndex,
+                          const uint32_t frameIndex,
+                          const uint32_t uboIndex );
     VkDescriptorSet acquireDescriptorSet( VkDevice device,
                                           uint32_t frameIndex );
 };
