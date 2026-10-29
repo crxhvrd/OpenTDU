@@ -1,0 +1,2 @@
+Vendored subset of Eigen (Eigen/ and unsupported/Eigen/ only).
+Upstream: https://gitlab.com/libeigen/eigen.git @ d81aa18f4dc56264b2cd7e2f230807d776a2d385
