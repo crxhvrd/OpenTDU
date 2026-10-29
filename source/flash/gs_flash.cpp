@@ -137,7 +137,8 @@ bool GSFlash::initialize( TestDriveGameInstance * ) {
 
     mutex.initialize( "Flash" );
 
-    void *pAudioPool = TestDrive::AllocAligned( 0x120002, 0x10 );
+    void *pAudioPool =
+        TestDrive::AllocAligned( GPSVoice::kMemoryPoolSize, 0x10 );
     audio.initialize( pAudioPool );
 
     mouse.initialize();

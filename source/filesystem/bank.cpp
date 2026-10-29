@@ -704,7 +704,8 @@ bool Bank::loadBankWithMemory( GSFile *pGSFile,
                                   if ( type == 4 && bSuccess ) {
                                       loadContentAsync();
                                   }
-                              } );
+                              },
+                              memorySize );
         if ( bVar1 ) {
             return true;
         }

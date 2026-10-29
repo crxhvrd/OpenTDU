@@ -283,7 +283,8 @@ bool GSFile::loadBank( const char *pFilename,
                        void **pOutContent,
                        uint32_t *pOutContentSize,
                        void *pUserData,
-                       AsyncFileOpen::CompletionCallback_t onComplete ) {
+                       AsyncFileOpen::CompletionCallback_t onComplete,
+                       uint32_t bufferSize ) {
     // FUN_009a4d40
     if ( pOutContentSize != nullptr ) {
         *pOutContentSize = 0;
@@ -309,6 +310,11 @@ bool GSFile::loadBank( const char *pFilename,
         if ( *pOutContent == nullptr ) {
             return false;
         }
+    } else if ( bufferSize != 0 && bufferSize <= fileSize + 0x1a1 ) {
+        OTDU_LOG_ERROR( "Failed to load bank '%s': input buffer is too small "
+                        "(%u bytes, needs %u)!\n",
+                        pFilename, bufferSize, fileSize + 0x1a1 );
+        return false;
     }
     if ( pOutContentSize != nullptr ) {
         *pOutContentSize = fileSize;

@@ -25,6 +25,7 @@ FlashSounds::~FlashSounds() {
 
 bool FlashSounds::initialize( void *pMemory ) {
     pMemoryPool = pMemory;
+    gpsVoice.setMemoryPool( pMemory );
     bInitialized = true;
     return true;
 }
@@ -51,12 +52,14 @@ void FlashSounds::terminate() {
 
     samples.clear();
 
+    gpsVoice.terminate();
+    gpsVoice.setMemoryPool( nullptr );
+
     if ( pMemoryPool != nullptr ) {
         TestDrive::FreeAligned( pMemoryPool );
         pMemoryPool = nullptr;
     }
 
-    gpsVoice.terminate();
     pipeline.destroy();
     pAudioClient = nullptr;
 
@@ -116,6 +119,7 @@ void FlashSounds::loadFrontEndSounds() {
     }
 
     parseSoundList();
+    gpsVoice.initialize();
 
     OTDU_LOG_INFO( "Front end sounds loaded ('%s', %d entries, %zu messages, "
                    "%d music tracks)\n",

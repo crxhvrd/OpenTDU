@@ -129,7 +129,8 @@ public:
                    void **pOutContent,
                    uint32_t *pOutContentSize,
                    void *pUserData,
-                   AsyncFileOpen::CompletionCallback_t onComplete );
+                   AsyncFileOpen::CompletionCallback_t onComplete,
+                   uint32_t bufferSize = 0 );
 
     bool findMapEntriesForFile( const char *pEntryName,
                                 FileMapEntry **ppOutMapEntry,
