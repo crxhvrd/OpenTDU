@@ -336,7 +336,6 @@ RenderDevice::RenderDevice()
       surface( VK_NULL_HANDLE ),
       frameIndex( 0 ),
       absoluteFrameIndex( 0 ),
-      lastSubmittedFrameIndex( 0 ),
       bufferFormatSupport( 0u ),
       framebufferInfos{
 },
@@ -345,22 +344,12 @@ RenderDevice::RenderDevice()
       activeColorMask( VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT ),
       pIndexBuffer( nullptr ),
-      textureUploadFence( VK_NULL_HANDLE ),
-      textureUploadCmdPool( VK_NULL_HANDLE ),
-      textureUploadCmdBuffer( VK_NULL_HANDLE ),
-      mipMapGenFence( VK_NULL_HANDLE ),
-      mipMapGenCmdPool( VK_NULL_HANDLE ),
-      mipMapGenCmdBuffer( VK_NULL_HANDLE ),
-      commandPool( VK_NULL_HANDLE ),
       commandBuffer( VK_NULL_HANDLE ),
       pDepthStencilAttachment( nullptr ),
       bDepthStencilAttachmentValid( false ),
-      bDeviceLost( false ),
       bIsMainRTUsingMSAA( false ),
       bDepthStencilEnabled( true ),
       bRecordingCommands( false ),
-      bPendingTexelsUpload( false ),
-      bPendingMipGen( false ),
       bNeedRecreateSwapchain( false ),
       bVSyncEnabled( false ),
       bNeedBackbufferClear( false ),
@@ -377,7 +366,6 @@ RenderDevice::RenderDevice()
       activeRenderRegion{ { 0, 0 }, { 0, 0 } },
       boundPSO( VK_NULL_HANDLE ),
       activeRenderPass( VK_NULL_HANDLE ),
-      imageIndex( 0 ),
       activeFramebuffer( VK_NULL_HANDLE ) {
     deviceExtensions.push_back( VK_KHR_SWAPCHAIN_EXTENSION_NAME );
     instanceExtensions.push_back(
@@ -398,20 +386,28 @@ RenderDevice::RenderDevice()
 
     memset( boundSamplers, 0, sizeof( int32_t ) * 0x8 );
 
+    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
+        framePools[i] = VK_NULL_HANDLE;
+        commandBuffers[i] = VK_NULL_HANDLE;
+        presentPools[i] = VK_NULL_HANDLE;
+        presentCommandBuffers[i] = VK_NULL_HANDLE;
+    }
+
     resetRecordedBindings();
     activeFramebufferKey = {};
 }
 
 RenderDevice::~RenderDevice() {
-    vkDeviceWaitIdle( device );
+    waitForIdle();
+    stopSubmitThread();
 
-    vkDestroyCommandPool( device, commandPool, nullptr );
-
-    vkDestroyCommandPool( device, textureUploadCmdPool, nullptr );
-    vkDestroyFence( device, textureUploadFence, nullptr );
-
-    vkDestroyCommandPool( device, mipMapGenCmdPool, nullptr );
-    vkDestroyFence( device, mipMapGenFence, nullptr );
+    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
+        vkDestroyCommandPool( device, framePools[i], nullptr );
+        vkDestroyCommandPool( device, presentPools[i], nullptr );
+    }
+    for ( PreFrameCommands &commands : preFrameCommands ) {
+        vkDestroyCommandPool( device, commands.Pool, nullptr );
+    }
 
     savePipelineCache();
     savePSOLibrary();
@@ -441,6 +437,8 @@ RenderDevice::~RenderDevice() {
         pFanEmulationIndexBuffer = nullptr;
     }
 #endif
+    releaseRetireList( pendingRetire );
+    releaseRetireList( nextFrameRetire );
 
     vmaDestroyAllocator( allocator );
     vkDestroyDevice( device, nullptr );
@@ -595,6 +593,8 @@ static bool QueryDeviceCaps( VkPhysicalDevice physicalDevice,
         extensionIsAvailable( VK_EXT_HDR_METADATA_EXTENSION_NAME, extensions );
     outCaps.bPortabilitySubset =
         extensionIsAvailable( "VK_KHR_portability_subset", extensions );
+    outCaps.bUpdateUnusedWhilePending =
+        features12.descriptorBindingUpdateUnusedWhilePending;
     return true;
 }
 
@@ -663,7 +663,8 @@ void RenderDevice::initialize() {
     }
 
     renderPassManager.initialize();
-    samplerHeap.initialize( device, deviceCaps.MaxSamplerAnisotropy );
+    samplerHeap.initialize( device, deviceCaps.MaxSamplerAnisotropy,
+                            deviceCaps.bUpdateUnusedWhilePending );
     VkDeviceSize uboAlignment =
         deviceProperties.properties.limits.minUniformBufferOffsetAlignment;
     resourceBinder.initialize( device, allocator, uboAlignment );
@@ -672,47 +673,47 @@ void RenderDevice::initialize() {
     gammaRampPass.initialize( device, allocator, psoCache );
     createOutputPassResources();
 
-    VkCommandPoolCreateInfo texUploadPoolInfos = {};
-    texUploadPoolInfos.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    texUploadPoolInfos.pNext = nullptr;
-    texUploadPoolInfos.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-
-    VkResult poolCreation = vkCreateCommandPool(
-        device, &texUploadPoolInfos, nullptr, &textureUploadCmdPool );
-    OTDU_ASSERT( poolCreation == VK_SUCCESS );
-
-    poolCreation = vkCreateCommandPool( device, &texUploadPoolInfos, nullptr,
-                                        &commandPool );
-    OTDU_ASSERT( poolCreation == VK_SUCCESS );
-
-    poolCreation = vkCreateCommandPool( device, &texUploadPoolInfos, nullptr,
-                                        &mipMapGenCmdPool );
-    OTDU_ASSERT( poolCreation == VK_SUCCESS );
-
-    VkFenceCreateInfo fenceInfo = {};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.pNext = nullptr;
-    fenceInfo.flags = 0;
-    vkCreateFence( device, &fenceInfo, nullptr, &textureUploadFence );
-
-    vkCreateFence( device, &fenceInfo, nullptr, &mipMapGenFence );
+    VkCommandPoolCreateInfo poolInfos = {};
+    poolInfos.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfos.pNext = nullptr;
+    poolInfos.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfos.queueFamilyIndex = queues[0].familyIndex;
 
     VkCommandBufferAllocateInfo cmdAllocInfo = {};
     cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     cmdAllocInfo.pNext = nullptr;
     cmdAllocInfo.commandBufferCount = 1;
-    cmdAllocInfo.commandPool = textureUploadCmdPool;
     cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    vkAllocateCommandBuffers( device, &cmdAllocInfo, &textureUploadCmdBuffer );
 
-    cmdAllocInfo.commandPool = mipMapGenCmdPool;
-    vkAllocateCommandBuffers( device, &cmdAllocInfo, &mipMapGenCmdBuffer );
+    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
+        VkResult poolCreation =
+            vkCreateCommandPool( device, &poolInfos, nullptr, &framePools[i] );
+        OTDU_ASSERT( poolCreation == VK_SUCCESS );
+        cmdAllocInfo.commandPool = framePools[i];
+        vkAllocateCommandBuffers( device, &cmdAllocInfo, &commandBuffers[i] );
 
-    cmdAllocInfo.commandBufferCount = PendingFrameCount;
-    cmdAllocInfo.commandPool = commandPool;
-    vkAllocateCommandBuffers( device, &cmdAllocInfo, commandBuffers );
+        poolCreation = vkCreateCommandPool( device, &poolInfos, nullptr,
+                                            &presentPools[i] );
+        OTDU_ASSERT( poolCreation == VK_SUCCESS );
+        cmdAllocInfo.commandPool = presentPools[i];
+        vkAllocateCommandBuffers( device, &cmdAllocInfo,
+                                  &presentCommandBuffers[i] );
+    }
 
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    for ( PreFrameCommands &commands : preFrameCommands ) {
+        VkResult poolCreation =
+            vkCreateCommandPool( device, &poolInfos, nullptr, &commands.Pool );
+        OTDU_ASSERT( poolCreation == VK_SUCCESS );
+        cmdAllocInfo.commandPool = commands.Pool;
+        cmdAllocInfo.commandBufferCount = PFCL_Count;
+        vkAllocateCommandBuffers( device, &cmdAllocInfo,
+                                  commands.CommandBuffers );
+    }
+
+    VkFenceCreateInfo fenceInfo = {};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.pNext = nullptr;
+    fenceInfo.flags = 0;
     for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
         VkResult fenceResult =
             vkCreateFence( device, &fenceInfo, nullptr, &inFlightFence[i] );
@@ -732,6 +733,8 @@ void RenderDevice::initialize() {
     // take the hardware path instead of the CPU fallback.
     gHWInstancingSupport = 3;
 #endif
+
+    startSubmitThread();
 }
 
 GPUTexture *RenderDevice::createTexture( Texture *pTexture ) {
@@ -1136,18 +1139,8 @@ void RenderDevice::syncDynamicBuffer( GPUBuffer *pBuffer,
 void RenderDevice::generateMipchain( Texture *pTexture ) {
     OTDU_ASSERT( pTexture->NumMipmap > 1 );
 
-    if ( !bPendingMipGen ) {
-        VkCommandBufferBeginInfo cmdBeginInfo = {};
-        cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        cmdBeginInfo.pNext = nullptr;
-        cmdBeginInfo.pInheritanceInfo = nullptr;
-        cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        vkBeginCommandBuffer( mipMapGenCmdBuffer, &cmdBeginInfo );
-        bPendingMipGen = true;
-    }
-
-    recordMipchainGeneration( pTexture, mipMapGenCmdBuffer );
+    recordMipchainGeneration( pTexture,
+                              getPreFrameCommandBuffer( PFCL_MipchainGen ) );
 }
 
 void RenderDevice::generateMipchainInline( Texture *pTexture ) {
@@ -1278,43 +1271,51 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
-uint32_t RenderDevice::getSharedResourceDeletionSlot() const {
-    // A slot queue is drained once its fence is waited, i.e. after the last
-    // frame that may reference the resource (the frame being recorded, or the
-    // last submitted one) completes
-    return bRecordingCommands ? frameIndex : lastSubmittedFrameIndex;
-}
-
 void RenderDevice::destroyTexture( GPUTexture *pTexture ) {
-    if ( pTexture->NumResources == 1 ) {
-        // Static texture: Image[0] is shared across all frame CBs.
-        const uint32_t safeSlot = getSharedResourceDeletionSlot();
-        deferredDeletionQueueTexture[safeSlot].push(
-            { pTexture->Image[0], pTexture->Allocation[0],
-              pTexture->ImageView[0] } );
-    } else {
-        for ( uint32_t i = 0; i < pTexture->NumResources; i++ ) {
-            deferredDeletionQueueTexture[i].push( { pTexture->Image[i],
-                                                    pTexture->Allocation[i],
-                                                    pTexture->ImageView[i] } );
-        }
+    RetireList &retireList = getRetireList();
+    for ( uint32_t i = 0; i < pTexture->NumResources; i++ ) {
+        retireList.Textures.push_back( { pTexture->Image[i],
+                                         pTexture->Allocation[i],
+                                         pTexture->ImageView[i] } );
     }
     delete pTexture;
 }
 
 void RenderDevice::destroyBuffer( GPUBuffer *pBuffer ) {
-    if ( pBuffer->NumResources == 1 ) {
-        // Static buffer: NativeBuffer[0] is shared across all frame CBs.
-        const uint32_t safeSlot = getSharedResourceDeletionSlot();
-        deferredDeletionQueue[safeSlot].push(
-            { pBuffer->NativeBuffer[0], pBuffer->Allocation[0] } );
-    } else {
-        for ( uint32_t i = 0; i < pBuffer->NumResources; i++ ) {
-            deferredDeletionQueue[i].push(
-                { pBuffer->NativeBuffer[i], pBuffer->Allocation[i] } );
-        }
+    RetireList &retireList = getRetireList();
+    for ( uint32_t i = 0; i < pBuffer->NumResources; i++ ) {
+        retireList.Buffers.push_back(
+            { pBuffer->NativeBuffer[i], pBuffer->Allocation[i] } );
     }
     delete pBuffer;
+}
+
+RenderDevice::RetireList &RenderDevice::getRetireList() {
+    // e.g. mipchain generation requested while binding a texture mid-frame
+    const PreFrameCommands &commands = preFrameCommands[activePreFrameCommands];
+    const bool bPreFrameCommandsRecording =
+        commands.bRecording[PFCL_TextureUpload] ||
+        commands.bRecording[PFCL_MipchainGen];
+    return ( bRecordingCommands && bPreFrameCommandsRecording )
+               ? nextFrameRetire
+               : pendingRetire;
+}
+
+void RenderDevice::releaseRetireList( RetireList &list ) {
+    for ( const GPUBufferDeletion &entry : list.Buffers ) {
+        vmaDestroyBuffer( allocator, entry.buffer, entry.allocation );
+    }
+    list.Buffers.clear();
+
+    for ( const GPUTextureDeletion &entry : list.Textures ) {
+        if ( entry.allocation == nullptr ) {
+            vkDestroyImage( device, entry.image, nullptr );
+        } else {
+            vmaDestroyImage( allocator, entry.image, entry.allocation );
+        }
+        vkDestroyImageView( device, entry.imageView, nullptr );
+    }
+    list.Textures.clear();
 }
 
 bool RenderDevice::resize( uint32_t width, uint32_t height ) {
@@ -1443,7 +1444,9 @@ void RenderDevice::updateOutputParameters() {
         return;
     }
 
-    VkHdrMetadataEXT metadata = {};
+    // The swapchain belongs to the submit thread: applied with the next frame
+    VkHdrMetadataEXT &metadata = pendingHDRMetadata;
+    metadata = {};
     metadata.sType = VK_STRUCTURE_TYPE_HDR_METADATA_EXT;
     metadata.displayPrimaryRed = { 0.640f, 0.330f };
     metadata.displayPrimaryGreen = { 0.300f, 0.600f };
@@ -1453,10 +1456,21 @@ void RenderDevice::updateOutputParameters() {
     metadata.minLuminance = 0.0f;
     metadata.maxContentLightLevel = metadata.maxLuminance;
     metadata.maxFrameAverageLightLevel = hdrPaperWhiteNits;
-    vkSetHdrMetadataEXT( device, 1, &swapchain, &metadata );
+    bHDRMetadataDirty = true;
 }
 
-void RenderDevice::waitForIdle() { vkDeviceWaitIdle( device ); }
+void RenderDevice::waitForIdle() {
+    waitForSubmissionsRetired();
+    submitPreFrameCommandsNow();
+    vkDeviceWaitIdle( device );
+
+    // Resources destroyed while recording may still be referenced by the
+    // frame commands
+    if ( !bRecordingCommands ) {
+        releaseRetireList( pendingRetire );
+        releaseRetireList( nextFrameRetire );
+    }
+}
 
 void RenderDevice::flushAndWaitForIdle() {
     if ( bRecordingCommands ) {
@@ -1969,20 +1983,39 @@ void RenderDevice::markExtendedDynamicStateDirty() {
 
 void RenderDevice::present() {
     // FUN_005f16b0
-    // The swapchain image is only acquired when recording starts
-    const bool bImageAcquired = bRecordingCommands;
     if ( bRecordingCommands ) {
         if ( activeRenderPass != VK_NULL_HANDLE ) {
             vkCmdEndRenderPass( commandBuffer );
             activeRenderPass = VK_NULL_HANDLE;
         }
 
-        presentBackbuffer();
+        FrameSubmission submission;
+        submission.Serial = recordingSerial;
+        submission.Slot = frameIndex;
+        for ( uint32_t i = 0; i < numRecordingPreFrameCommands; i++ ) {
+            submission.CommandBuffers[submission.NumCommandBuffers++] =
+                recordingPreFrameCommands[i];
+        }
+        numRecordingPreFrameCommands = 0u;
+
+        presentBackbuffer( submission );
 
         VkResult opResult = vkEndCommandBuffer( commandBuffer );
         OTDU_ASSERT( opResult == VK_SUCCESS );
-        submitPendingCommandBuffer();
+        submission.CommandBuffers[submission.NumCommandBuffers++] =
+            commandBuffer;
+        commandBuffer = VK_NULL_HANDLE;
 
+        submission.bUpdateHDRMetadata = bHDRMetadataDirty;
+        submission.HDRMetadata = pendingHDRMetadata;
+        bHDRMetadataDirty = false;
+
+        std::swap( submission.Retire, pendingRetire );
+        std::swap( pendingRetire, nextFrameRetire );
+
+        queueSubmission( std::move( submission ) );
+
+        recordingSerial = 0ull;
         bRecordingCommands = false;
     }
 
@@ -1990,22 +2023,8 @@ void RenderDevice::present() {
     processPendingRenderTargetDumps();
 #endif
 
-    VkResult presentResult = VK_SUCCESS;
-    if ( bImageAcquired ) {
-        VkPresentInfoKHR presentInfo = {};
-        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = &presentSemaphores[imageIndex];
-        presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = &swapchain;
-        presentInfo.pImageIndices = &imageIndex;
-
-        presentResult = vkQueuePresentKHR( queues[0].queue, &presentInfo );
-        bDeviceLost = ( presentResult == VK_ERROR_DEVICE_LOST );
-    }
-
-    if ( presentResult == VK_ERROR_OUT_OF_DATE_KHR ||
-         presentResult == VK_SUBOPTIMAL_KHR || bNeedRecreateSwapchain ) {
+    if ( bSwapchainOutOfDate.load( std::memory_order_acquire ) ||
+         bNeedRecreateSwapchain ) {
         bNeedRecreateSwapchain = false;
         recreateSwapchain();
     }
@@ -2374,7 +2393,6 @@ bool RenderDevice::uploadTexture( Texture *pTexture ) {
                                          &pBuffer->NativeBuffer[0],
                                          &pBuffer->Allocation[0], nullptr );
     OTDU_ASSERT( opResult == VK_SUCCESS );
-    texelUploadStagingBuffers.push( pBuffer );
 
     // Upload mips to staging buffer
     void *pMappedMemory = nullptr;
@@ -2406,21 +2424,11 @@ bool RenderDevice::uploadTexture( Texture *pTexture ) {
     }
     vmaUnmapMemory( allocator, pBuffer->Allocation[0] );
 
-    if ( !bPendingTexelsUpload ) {
-        VkCommandBufferBeginInfo cmdBeginInfo = {};
-        cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        cmdBeginInfo.pNext = nullptr;
-        cmdBeginInfo.pInheritanceInfo = nullptr;
-        cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        vkBeginCommandBuffer( textureUploadCmdBuffer, &cmdBeginInfo );
-        bPendingTexelsUpload = true;
-    }
-
     // FIXME: Implement proper async texture upload (so that we do not have to
     // insert upload inside main pending cmdbuffer).
-    auto &cmdBuffer =
-        ( bRecordingCommands ) ? commandBuffer : textureUploadCmdBuffer;
+    VkCommandBuffer cmdBuffer =
+        ( bRecordingCommands ) ? commandBuffer
+                               : getPreFrameCommandBuffer( PFCL_TextureUpload );
 
     if ( bRecordingCommands && activeRenderPass != VK_NULL_HANDLE ) {
         vkCmdEndRenderPass( commandBuffer );
@@ -2507,6 +2515,9 @@ bool RenderDevice::uploadTexture( Texture *pTexture ) {
 
     pVulkanTex->CurrentLayout[0] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+    // Released once the frame submitting the copy completed
+    destroyBuffer( pBuffer );
+
     return true;
 }
 
@@ -2535,7 +2546,6 @@ void RenderDevice::uploadTexels( Texture *pTexture,
                                          &pBuffer->NativeBuffer[0],
                                          &pBuffer->Allocation[0], nullptr );
     OTDU_ASSERT( opResult == VK_SUCCESS );
-    texelUploadStagingBuffers.push( pBuffer );
 
     void *pMappedMemory = nullptr;
     opResult =
@@ -2544,16 +2554,7 @@ void RenderDevice::uploadTexels( Texture *pTexture,
     memcpy( pMappedMemory, pTexels, texelsSize );
     vmaUnmapMemory( allocator, pBuffer->Allocation[0] );
 
-    if ( !bPendingTexelsUpload ) {
-        VkCommandBufferBeginInfo cmdBeginInfo = {};
-        cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        cmdBeginInfo.pNext = nullptr;
-        cmdBeginInfo.pInheritanceInfo = nullptr;
-        cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        vkBeginCommandBuffer( textureUploadCmdBuffer, &cmdBeginInfo );
-        bPendingTexelsUpload = true;
-    }
+    VkCommandBuffer cmdBuffer = getPreFrameCommandBuffer( PFCL_TextureUpload );
 
     GPUTexture *pVulkanTex = pTexture->pTexture;
 
@@ -2572,8 +2573,7 @@ void RenderDevice::uploadTexels( Texture *pTexture,
     barrier.subresourceRange = range;
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    vkCmdPipelineBarrier( textureUploadCmdBuffer,
-                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
                           nullptr, 1, &barrier );
 
@@ -2589,73 +2589,47 @@ void RenderDevice::uploadTexels( Texture *pTexture,
     copyRegion.imageExtent.height = pTexture->Height;
     copyRegion.imageExtent.depth = pTexture->Depth;
     vkCmdCopyBufferToImage(
-        textureUploadCmdBuffer, pBuffer->NativeBuffer[0], pVulkanTex->Image[0],
+        cmdBuffer, pBuffer->NativeBuffer[0], pVulkanTex->Image[0],
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion );
 
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    vkCmdPipelineBarrier( textureUploadCmdBuffer,
-                          VK_PIPELINE_STAGE_TRANSFER_BIT,
+    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
                           0, nullptr, 1, &barrier );
 
     pVulkanTex->CurrentLayout[0] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    destroyBuffer( pBuffer );
 }
 
 void RenderDevice::beginScene() {
     // TODO: Split cmdbuffer to avoid submitting a big ass one (e.g. after
     // loading screen)
     if ( !bRecordingCommands ) {
-        flushPendingTextureUploads();
-        flushPendingMipchainGens();
-
-        commandBuffer = commandBuffers[frameIndex];
-
-        vkWaitForFences( device, 1, &inFlightFence[frameIndex], VK_TRUE,
-                         UINT64_MAX );
-        vkResetFences( device, 1, &inFlightFence[frameIndex] );
-
-        VkResult nextImageResult = vkAcquireNextImageKHR(
-            device, swapchain, UINT64_MAX, nextImageSemaphore[frameIndex],
-            VK_NULL_HANDLE, &imageIndex );
-        if ( nextImageResult == VK_ERROR_OUT_OF_DATE_KHR ) {
+        if ( bSwapchainOutOfDate.load( std::memory_order_acquire ) ) {
             recreateSwapchain();
-            nextImageResult = vkAcquireNextImageKHR(
-                device, swapchain, UINT64_MAX, nextImageSemaphore[frameIndex],
-                VK_NULL_HANDLE, &imageIndex );
         }
-        OTDU_ASSERT( nextImageResult == VK_SUCCESS ||
-                     nextImageResult == VK_SUBOPTIMAL_KHR );
 
-        vkResetCommandBuffer( commandBuffer, 0 );
+        recordingSerial = ++lastSerial;
+        collectPreFrameCommands( recordingSerial );
+
+        // The submit thread resets the slot pool and fence once the frame
+        // previously recorded in this slot retired
+        waitForRetiredSubmission( slotSerials[frameIndex] );
+        slotSerials[frameIndex] = recordingSerial;
+        commandBuffer = commandBuffers[frameIndex];
 
         psoFactory.reset();
         resourceBinder.onFrameBegin( device, frameIndex );
 
         vmaSetCurrentFrameIndex( allocator, absoluteFrameIndex );
 
-        while ( !deferredDeletionQueue[frameIndex].empty() ) {
-            const auto &entry = deferredDeletionQueue[frameIndex].front();
-            vmaDestroyBuffer( allocator, entry.buffer, entry.allocation );
-            deferredDeletionQueue[frameIndex].pop();
-        }
-
-        while ( !deferredDeletionQueueTexture[frameIndex].empty() ) {
-            const auto &entry =
-                deferredDeletionQueueTexture[frameIndex].front();
-            if ( entry.allocation == nullptr ) {
-                vkDestroyImage( device, entry.image, nullptr );
-            } else {
-                vmaDestroyImage( allocator, entry.image, entry.allocation );
-            }
-            vkDestroyImageView( device, entry.imageView, nullptr );
-            deferredDeletionQueueTexture[frameIndex].pop();
-        }
-
         VkCommandBufferBeginInfo beginInfo = {};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
         VkResult beginResult =
             vkBeginCommandBuffer( commandBuffer, &beginInfo );
@@ -3355,6 +3329,8 @@ bool RenderDevice::createDevice() {
     deviceFeatures12.runtimeDescriptorArray = VK_TRUE;
     deviceFeatures12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
     deviceFeatures12.descriptorBindingPartiallyBound = VK_TRUE;
+    deviceFeatures12.descriptorBindingUpdateUnusedWhilePending =
+        deviceCaps.bUpdateUnusedWhilePending;
     if ( deviceCaps.ApiVersion >= VK_API_VERSION_1_3 ) {
         deviceFeatures12.pNext = &deviceFeatures13;
     } else {
@@ -4118,24 +4094,16 @@ bool RenderDevice::createBackbufferTexture( const VkFormat format,
     return true;
 }
 
-void RenderDevice::presentBackbuffer() {
-    pushDebugLabel( "Present" );
-
+void RenderDevice::presentBackbuffer( FrameSubmission &submission ) {
     GPUTexture *pBackbuffer = backbuffer.pTexture;
     const uint32_t resourceIndex = pBackbuffer->getResourceIndex( frameIndex );
 
-    VkImageMemoryBarrier barrier = {};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = swapchainImages[imageIndex];
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.layerCount = 1;
+    submission.bGammaRampPass = gammaRampPass.isActive();
+    submission.Backbuffer = pBackbuffer->Image[resourceIndex];
+    submission.BackbufferExtent = { backbuffer.Width, backbuffer.Height };
+    gammaRampPass.captureFrameParameters( submission.GammaRamp );
 
-    if ( gammaRampPass.isActive() ) {
-        gammaRampPass.uploadRamp( commandBuffer );
-
+    if ( submission.bGammaRampPass ) {
         insertImageBarrier(
             pBackbuffer, resourceIndex,
             pBackbuffer->CurrentLayout[resourceIndex],
@@ -4144,9 +4112,6 @@ void RenderDevice::presentBackbuffer() {
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT );
-
-        gammaRampPass.draw( commandBuffer, frameIndex, imageIndex );
-        resetRecordedBindings();
     } else {
         insertImageBarrier(
             pBackbuffer, resourceIndex,
@@ -4156,61 +4121,332 @@ void RenderDevice::presentBackbuffer() {
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT );
-
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        vkCmdPipelineBarrier( commandBuffer,
-                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
-                              nullptr, 1, &barrier );
-
-        VkImageCopy region = {};
-        region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.srcSubresource.layerCount = 1;
-        region.dstSubresource = region.srcSubresource;
-        region.extent = { backbuffer.Width, backbuffer.Height, 1 };
-        vkCmdCopyImage( commandBuffer, pBackbuffer->Image[resourceIndex],
-                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                        swapchainImages[imageIndex],
-                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
-
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = 0;
-        vkCmdPipelineBarrier( commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                              VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
-                              nullptr, 0, nullptr, 1, &barrier );
     }
-
-    popDebugLabel();
 }
 
-void RenderDevice::submitPendingCommandBuffer() {
-    // NOTE: Currently assumes that the whole frame is encoded using a single
-    // CB. In the future, if we want to use multiple CBs, this function will
-    // have to be refactored.
-    VkPipelineStageFlags pWaitStages[1] = {
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+void RenderDevice::recordPresentPass( VkCommandBuffer cmdBuffer,
+                                      const FrameSubmission &submission,
+                                      const uint32_t imageIndex ) {
+    gammaRampPass.uploadRamp( cmdBuffer, submission.GammaRamp );
+
+    if ( imageIndex == ~0u ) {
+        return;
+    }
+
+    if ( submission.bGammaRampPass ) {
+        gammaRampPass.draw( cmdBuffer, submission.Slot, imageIndex,
+                            submission.GammaRamp );
+        return;
+    }
+
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = swapchainImages[imageIndex];
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier( cmdBuffer,
+                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                          nullptr, 1, &barrier );
+
+    VkImageCopy region = {};
+    region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.srcSubresource.layerCount = 1;
+    region.dstSubresource = region.srcSubresource;
+    region.extent = { submission.BackbufferExtent.width,
+                      submission.BackbufferExtent.height, 1 };
+    vkCmdCopyImage( cmdBuffer, submission.Backbuffer,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    swapchainImages[imageIndex],
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = 0;
+    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                          VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr,
+                          0, nullptr, 1, &barrier );
+}
+
+void RenderDevice::startSubmitThread() {
+    bStopSubmitThread = false;
+    submitThread = std::thread( [this]() { submitThreadMain(); } );
+}
+
+void RenderDevice::stopSubmitThread() {
+    if ( !submitThread.joinable() ) {
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock( submitMutex );
+        bStopSubmitThread = true;
+    }
+    submitCondition.notify_all();
+    submitThread.join();
+}
+
+void RenderDevice::submitThreadMain() {
+#if defined( OTDU_MACOS )
+    pthread_setname_np( "OpenTDU Submit" );
+#elif defined( OTDU_UNIX )
+    pthread_setname_np( pthread_self(), "OpenTDU Submit" );
+#endif
+
+    std::unique_lock<std::mutex> lock( submitMutex );
+    while ( true ) {
+        submitCondition.wait( lock, [this]() {
+            return bStopSubmitThread || !queuedSubmissions.empty() ||
+                   ( retireRequestSerial > retiredSerial &&
+                     !inFlightSubmissions.empty() );
+        } );
+
+        if ( !queuedSubmissions.empty() ) {
+            FrameSubmission submission = std::move( queuedSubmissions.front() );
+            queuedSubmissions.pop_front();
+            bProcessingSubmission = true;
+            lock.unlock();
+            submitCondition.notify_all();
+
+            processSubmission( submission );
+
+            lock.lock();
+            inFlightSubmissions.push_back( std::move( submission ) );
+            bProcessingSubmission = false;
+
+            // Keep only the latest frame in flight: the main thread can then
+            // reuse the slot of the previous one without waiting
+            while ( inFlightSubmissions.size() > 1 ) {
+                retireOldestSubmission( lock );
+            }
+            submitCondition.notify_all();
+        } else if ( retireRequestSerial > retiredSerial &&
+                    !inFlightSubmissions.empty() ) {
+            retireOldestSubmission( lock );
+            submitCondition.notify_all();
+        } else if ( bStopSubmitThread ) {
+            break;
+        }
+    }
+}
+
+void RenderDevice::queueSubmission( FrameSubmission &&submission ) {
+    std::unique_lock<std::mutex> lock( submitMutex );
+
+    submitCondition.wait( lock,
+                          [this]() { return queuedSubmissions.empty(); } );
+    lastQueuedSerial = submission.Serial;
+    queuedSubmissions.push_back( std::move( submission ) );
+    lock.unlock();
+    submitCondition.notify_all();
+}
+
+void RenderDevice::processSubmission( FrameSubmission &submission ) {
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = submission.NumCommandBuffers;
+    submitInfo.pCommandBuffers = submission.CommandBuffers;
+    VkResult result =
+        vkQueueSubmit( queues[0].queue, 1, &submitInfo, VK_NULL_HANDLE );
+    if ( result == VK_ERROR_DEVICE_LOST ) {
+        bDeviceLost.store( true, std::memory_order_release );
+    }
+    OTDU_ASSERT( result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST );
+
+    const uint32_t slot = submission.Slot;
+    uint32_t imageIndex = ~0u;
+    if ( swapchain != VK_NULL_HANDLE ) {
+        result = vkAcquireNextImageKHR( device, swapchain, UINT64_MAX,
+                                        nextImageSemaphore[slot],
+                                        VK_NULL_HANDLE, &imageIndex );
+        if ( result == VK_SUBOPTIMAL_KHR ) {
+            bSwapchainOutOfDate.store( true, std::memory_order_release );
+        } else if ( result != VK_SUCCESS ) {
+            // Frame dropped; the main thread recreates the swapchain
+            bSwapchainOutOfDate.store( true, std::memory_order_release );
+            imageIndex = ~0u;
+        }
+    }
+
+    if ( submission.bUpdateHDRMetadata && bHDRMetadataSupported &&
+         swapchain != VK_NULL_HANDLE ) {
+        vkSetHdrMetadataEXT( device, 1, &swapchain, &submission.HDRMetadata );
+    }
+
+    VkCommandBuffer presentCmdBuffer = presentCommandBuffers[slot];
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer( presentCmdBuffer, &beginInfo );
+    recordPresentPass( presentCmdBuffer, submission, imageIndex );
+    vkEndCommandBuffer( presentCmdBuffer );
+
+    const bool bImageAcquired = ( imageIndex != ~0u );
+    VkPipelineStageFlags waitStage =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+    submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount = bImageAcquired ? 1u : 0u;
+    submitInfo.pWaitSemaphores = &nextImageSemaphore[slot];
+    submitInfo.pWaitDstStageMask = &waitStage;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &presentCmdBuffer;
+    submitInfo.signalSemaphoreCount = bImageAcquired ? 1u : 0u;
+    submitInfo.pSignalSemaphores =
+        bImageAcquired ? &presentSemaphores[imageIndex] : nullptr;
+    result =
+        vkQueueSubmit( queues[0].queue, 1, &submitInfo, inFlightFence[slot] );
+    if ( result == VK_ERROR_DEVICE_LOST ) {
+        bDeviceLost.store( true, std::memory_order_release );
+    }
+    OTDU_ASSERT( result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST );
+
+    if ( !bImageAcquired ) {
+        return;
+    }
+
+    VkPresentInfoKHR presentInfo = {};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = &presentSemaphores[imageIndex];
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &swapchain;
+    presentInfo.pImageIndices = &imageIndex;
+
+    result = vkQueuePresentKHR( queues[0].queue, &presentInfo );
+    if ( result == VK_ERROR_DEVICE_LOST ) {
+        bDeviceLost.store( true, std::memory_order_release );
+    } else if ( result == VK_ERROR_OUT_OF_DATE_KHR ||
+                result == VK_SUBOPTIMAL_KHR ) {
+        bSwapchainOutOfDate.store( true, std::memory_order_release );
+    }
+}
+
+void RenderDevice::retireOldestSubmission(
+    std::unique_lock<std::mutex> &lock ) {
+    // Only the submit thread mutates inFlightSubmissions
+    FrameSubmission &submission = inFlightSubmissions.front();
+    const uint32_t slot = submission.Slot;
+
+    lock.unlock();
+    vkWaitForFences( device, 1, &inFlightFence[slot], VK_TRUE, UINT64_MAX );
+    vkResetFences( device, 1, &inFlightFence[slot] );
+    vkResetCommandPool( device, framePools[slot], 0 );
+    vkResetCommandPool( device, presentPools[slot], 0 );
+    releaseRetireList( submission.Retire );
+    lock.lock();
+
+    retiredSerial = submission.Serial;
+    inFlightSubmissions.pop_front();
+}
+
+void RenderDevice::waitForRetiredSubmission( const uint64_t serial ) {
+    std::unique_lock<std::mutex> lock( submitMutex );
+    OTDU_ASSERT( serial <= lastQueuedSerial );
+    if ( retiredSerial >= serial ) {
+        return;
+    }
+
+    retireRequestSerial = Max( retireRequestSerial, serial );
+    submitCondition.notify_all();
+    submitCondition.wait(
+        lock, [this, serial]() { return retiredSerial >= serial; } );
+}
+
+void RenderDevice::waitForSubmissionsRetired() {
+    std::unique_lock<std::mutex> lock( submitMutex );
+    retireRequestSerial = Max( retireRequestSerial, lastQueuedSerial );
+    submitCondition.notify_all();
+    submitCondition.wait( lock, [this]() {
+        return queuedSubmissions.empty() && !bProcessingSubmission &&
+               retiredSerial >= lastQueuedSerial;
+    } );
+}
+
+VkCommandBuffer RenderDevice::getPreFrameCommandBuffer(
+    const ePreFrameCommandList commandList ) {
+    PreFrameCommands &commands = preFrameCommands[activePreFrameCommands];
+    if ( commands.bRecording[commandList] ) {
+        return commands.CommandBuffers[commandList];
+    }
+
+    if ( commands.Serial != 0ull ) {
+        // First list recorded since the pool was last submitted
+        waitForRetiredSubmission( commands.Serial );
+        vkResetCommandPool( device, commands.Pool, 0 );
+        commands.Serial = 0ull;
+    }
+
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer( commands.CommandBuffers[commandList], &beginInfo );
+    commands.bRecording[commandList] = true;
+
+    return commands.CommandBuffers[commandList];
+}
+
+void RenderDevice::collectPreFrameCommands( const uint64_t serial ) {
+    // Same submission order as the former immediate flush (uploads, then mip
+    // generation)
+    PreFrameCommands &commands = preFrameCommands[activePreFrameCommands];
+    numRecordingPreFrameCommands = 0u;
+    for ( uint32_t i = 0; i < PFCL_Count; i++ ) {
+        if ( commands.bRecording[i] ) {
+            vkEndCommandBuffer( commands.CommandBuffers[i] );
+            commands.bRecording[i] = false;
+            recordingPreFrameCommands[numRecordingPreFrameCommands++] =
+                commands.CommandBuffers[i];
+        }
+    }
+
+    if ( numRecordingPreFrameCommands != 0u ) {
+        commands.Serial = serial;
+        activePreFrameCommands =
+            ( activePreFrameCommands + 1 ) % kNumPreFrameCommands;
+    }
+}
+
+void RenderDevice::submitPreFrameCommandsNow() {
+    // Only called once the submit thread is idle (owns the queue otherwise).
+    // Commands collected for the frame being recorded go first to keep the
+    // recording order.
+    PreFrameCommands &commands = preFrameCommands[activePreFrameCommands];
+    VkCommandBuffer cmdBuffers[PFCL_Count * 2];
+    uint32_t numCmdBuffers = 0u;
+    for ( uint32_t i = 0; i < numRecordingPreFrameCommands; i++ ) {
+        cmdBuffers[numCmdBuffers++] = recordingPreFrameCommands[i];
+    }
+    numRecordingPreFrameCommands = 0u;
+
+    for ( uint32_t i = 0; i < PFCL_Count; i++ ) {
+        if ( commands.bRecording[i] ) {
+            vkEndCommandBuffer( commands.CommandBuffers[i] );
+            commands.bRecording[i] = false;
+            cmdBuffers[numCmdBuffers++] = commands.CommandBuffers[i];
+        }
+    }
+
+    if ( numCmdBuffers == 0u ) {
+        return;
+    }
 
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.pNext = nullptr;
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &nextImageSemaphore[frameIndex];
-    submitInfo.pWaitDstStageMask = pWaitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &presentSemaphores[imageIndex];
-
-    VkResult submitResult = vkQueueSubmit( queues[0].queue, 1, &submitInfo,
-                                           inFlightFence[frameIndex] );
-    OTDU_ASSERT( submitResult == VK_SUCCESS );
-    lastSubmittedFrameIndex = frameIndex;
-    commandBuffer = VK_NULL_HANDLE;
+    submitInfo.commandBufferCount = numCmdBuffers;
+    submitInfo.pCommandBuffers = cmdBuffers;
+    vkQueueSubmit( queues[0].queue, 1, &submitInfo, VK_NULL_HANDLE );
+    vkQueueWaitIdle( queues[0].queue );
+    vkResetCommandPool( device, commands.Pool, 0 );
 }
 
 VkFramebuffer
@@ -4782,7 +5018,8 @@ void RenderDevice::recreateSwapchain() {
     SDL_GetWindowSize( (SDL_Window *)gEdSys.getWindow(), &width, &height );
 #endif
 
-    vkDeviceWaitIdle( device );
+    waitForIdle();
+    bSwapchainOutOfDate.store( false, std::memory_order_release );
 
     gammaRampPass.releaseSwapchainResources( device );
     releaseSwapchain();
@@ -4839,62 +5076,6 @@ void RenderDevice::releaseFramebufferCache() {
 
     activeFramebuffer = VK_NULL_HANDLE;
     activeFramebufferKey = {};
-}
-
-void RenderDevice::flushPendingTextureUploads() {
-    // Flush pending texture uploads
-    if ( bPendingTexelsUpload ) {
-        vkEndCommandBuffer( textureUploadCmdBuffer );
-
-        VkSubmitInfo submitInfos = {};
-        submitInfos.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfos.pNext = nullptr;
-        submitInfos.waitSemaphoreCount = 0;
-        submitInfos.pWaitSemaphores = nullptr;
-        submitInfos.pWaitDstStageMask = nullptr;
-        submitInfos.commandBufferCount = 1;
-        submitInfos.pCommandBuffers = &textureUploadCmdBuffer;
-        submitInfos.signalSemaphoreCount = 0;
-        submitInfos.pSignalSemaphores = nullptr;
-        vkQueueSubmit( queues[0].queue, 1, &submitInfos, textureUploadFence );
-
-        vkWaitForFences( device, 1, &textureUploadFence, true, 9999999999 );
-        vkResetFences( device, 1, &textureUploadFence );
-        vkResetCommandPool( device, textureUploadCmdPool, 0 );
-
-        while ( !texelUploadStagingBuffers.empty() ) {
-            GPUBuffer *buffer = texelUploadStagingBuffers.front();
-            destroyBuffer( buffer );
-            texelUploadStagingBuffers.pop();
-        }
-
-        bPendingTexelsUpload = false;
-    }
-}
-
-void RenderDevice::flushPendingMipchainGens() {
-    // Flush pending mipmap gen requests
-    if ( bPendingMipGen ) {
-        vkEndCommandBuffer( mipMapGenCmdBuffer );
-
-        VkSubmitInfo submitInfos = {};
-        submitInfos.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfos.pNext = nullptr;
-        submitInfos.waitSemaphoreCount = 0;
-        submitInfos.pWaitSemaphores = nullptr;
-        submitInfos.pWaitDstStageMask = nullptr;
-        submitInfos.commandBufferCount = 1;
-        submitInfos.pCommandBuffers = &mipMapGenCmdBuffer;
-        submitInfos.signalSemaphoreCount = 0;
-        submitInfos.pSignalSemaphores = nullptr;
-        vkQueueSubmit( queues[0].queue, 1, &submitInfos, mipMapGenFence );
-
-        vkWaitForFences( device, 1, &mipMapGenFence, true, 9999999999 );
-        vkResetFences( device, 1, &mipMapGenFence );
-        vkResetCommandPool( device, mipMapGenCmdPool, 0 );
-
-        bPendingMipGen = false;
-    }
 }
 
 #if OTDU_DEVBUILD
@@ -5262,7 +5443,7 @@ void RenderDevice::processPendingRenderTargetDumps() {
         return;
     }
 
-    vkDeviceWaitIdle( device );
+    waitForIdle();
 
     for ( const PendingRenderTargetSnapshot &snapshot :
           pendingRenderTargetSnapshots ) {

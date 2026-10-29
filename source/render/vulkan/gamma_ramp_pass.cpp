@@ -5,15 +5,6 @@
 #include "render_device.h"
 #include "shaders/gamma_ramp_spirv.h"
 
-struct OutputConstants {
-    eOutputTransfer Transfer;
-    uint32_t bApplyRamp;
-    float Scale;
-    uint32_t bTestPattern;
-    float Peak;
-    float HighlightStrength;
-};
-
 static VkShaderModule CreateShaderModule( VkDevice device,
                                           const uint32_t *pSPIRV,
                                           const size_t size ) {
@@ -259,18 +250,32 @@ void GammaRampPass::setRamp( const GammaRamp &ramp ) {
     bRampDirty = true;
 }
 
-void GammaRampPass::uploadRamp( VkCommandBuffer cmdBuffer ) {
-    if ( !bRampDirty ) {
+void GammaRampPass::captureFrameParameters( FrameParameters &outParameters ) {
+    outParameters.bUploadRamp = bRampDirty;
+    if ( bRampDirty ) {
+        memcpy( outParameters.ControlPoints, controlPoints,
+                sizeof( controlPoints ) );
+        bRampDirty = false;
+    }
+
+    outParameters.Constants = { outputTransfer, bEnabled ? 1u : 0u,
+                                outputScale,    bTestPattern ? 1u : 0u,
+                                outputPeak,     outputHighlightStrength };
+}
+
+void GammaRampPass::uploadRamp( VkCommandBuffer cmdBuffer,
+                                const FrameParameters &parameters ) {
+    if ( !parameters.bUploadRamp ) {
         return;
     }
-    bRampDirty = false;
 
     vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
                           nullptr, 0, nullptr );
 
-    vkCmdUpdateBuffer( cmdBuffer, rampBuffer, 0, sizeof( controlPoints ),
-                       controlPoints );
+    vkCmdUpdateBuffer( cmdBuffer, rampBuffer, 0,
+                       sizeof( parameters.ControlPoints ),
+                       parameters.ControlPoints );
 
     VkBufferMemoryBarrier barrier = {};
     barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -288,7 +293,8 @@ void GammaRampPass::uploadRamp( VkCommandBuffer cmdBuffer ) {
 
 void GammaRampPass::draw( VkCommandBuffer cmdBuffer,
                           const uint32_t frameIndex,
-                          const uint32_t imageIndex ) {
+                          const uint32_t imageIndex,
+                          const FrameParameters &parameters ) {
     VkRenderPassBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     beginInfo.renderPass = renderPass;
@@ -301,11 +307,9 @@ void GammaRampPass::draw( VkCommandBuffer cmdBuffer,
                              pipelineLayout, 0, 1, &descriptorSets[frameIndex],
                              0, nullptr );
 
-    const OutputConstants constants = {
-        outputTransfer,         bEnabled ? 1u : 0u, outputScale,
-        bTestPattern ? 1u : 0u, outputPeak,         outputHighlightStrength };
     vkCmdPushConstants( cmdBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
-                        0, sizeof( constants ), &constants );
+                        0, sizeof( parameters.Constants ),
+                        &parameters.Constants );
     vkCmdDraw( cmdBuffer, 3, 1, 0, 0 );
 
     vkCmdEndRenderPass( cmdBuffer );

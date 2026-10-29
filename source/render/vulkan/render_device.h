@@ -11,7 +11,12 @@
 #define VK_USE_PLATFORM_MACOS_MVK 1
 #endif
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <mutex>
+#include <thread>
 
 #include "render/gs_render_helper.h"
 #include "vk_mem_alloc.h"
@@ -168,6 +173,7 @@ struct VulkanDeviceCaps {
     bool bMaintenance4 = false;
     bool bHDRMetadata = false;
     bool bPortabilitySubset = false;
+    bool bUpdateUnusedWhilePending = false;
 };
 
 class RenderDevice {
@@ -178,7 +184,9 @@ public:
     inline void setTime( float param_2 ) { time = param_2; }
 
     inline bool isInitialized() const { return device != VK_NULL_HANDLE; }
-    inline bool isDeviceLost() const { return bDeviceLost; }
+    inline bool isDeviceLost() const {
+        return bDeviceLost.load( std::memory_order_acquire );
+    }
 
     inline GammaRampPass &getGammaRampPass() { return gammaRampPass; }
 
@@ -485,7 +493,6 @@ private:
 
     uint32_t frameIndex;
     uint32_t absoluteFrameIndex;
-    uint32_t lastSubmittedFrameIndex;
 
     FormatCapabilities formatCaps[eViewFormat::VF_Count];
     uint32_t bufferFormatSupport; // DAT_00fada5c
@@ -561,17 +568,29 @@ private:
 
     GPUBackbuffer backbuffer;
 
-    VkFence textureUploadFence;
-    VkCommandPool textureUploadCmdPool;
-    VkCommandBuffer textureUploadCmdBuffer;
+    enum ePreFrameCommandList : uint32_t {
+        PFCL_TextureUpload = 0,
+        PFCL_MipchainGen = 1,
+        PFCL_Count
+    };
+    struct PreFrameCommands {
+        VkCommandPool Pool = VK_NULL_HANDLE;
+        VkCommandBuffer CommandBuffers[PFCL_Count] = { VK_NULL_HANDLE,
+                                                       VK_NULL_HANDLE };
+        bool bRecording[PFCL_Count] = { false, false };
+        // Submission which consumed the commands (0 if the pool is free)
+        uint64_t Serial = 0ull;
+    };
+    static constexpr uint32_t kNumPreFrameCommands = PendingFrameCount + 1;
+    PreFrameCommands preFrameCommands[kNumPreFrameCommands];
+    uint32_t activePreFrameCommands = 0;
 
-    VkFence mipMapGenFence;
-    VkCommandPool mipMapGenCmdPool;
-    VkCommandBuffer mipMapGenCmdBuffer;
-
-    VkCommandPool commandPool;
+    VkCommandPool framePools[PendingFrameCount];
     VkCommandBuffer commandBuffer;
     VkCommandBuffer commandBuffers[PendingFrameCount];
+
+    VkCommandPool presentPools[PendingFrameCount];
+    VkCommandBuffer presentCommandBuffers[PendingFrameCount];
 
     GPUTexture *pFramebufferAttachments[kMaxSimultaneousRT];
     GPUTexture *pDepthStencilAttachment;
@@ -579,12 +598,9 @@ private:
     bool bFramebufferAttachmentValid[kMaxSimultaneousRT];
     bool bDepthStencilAttachmentValid;
 
-    uint8_t bDeviceLost : 1;
     uint8_t bIsMainRTUsingMSAA : 1;
     uint8_t bDepthStencilEnabled : 1;
     uint8_t bRecordingCommands : 1;
-    uint8_t bPendingTexelsUpload : 1;
-    uint8_t bPendingMipGen : 1;
     uint8_t bNeedRecreateSwapchain : 1;
     uint8_t bVSyncEnabled : 1;
     uint8_t bNeedBackbufferClear : 1;
@@ -629,10 +645,6 @@ private:
     ResourceBinder resourceBinder;
     D3D9RenderStateInfo renderStates;
 
-    std::queue<GPUBuffer *> texelUploadStagingBuffers;
-
-    uint32_t imageIndex;
-
     struct GPUBufferDeletion {
         VkBuffer buffer;
         VmaAllocation allocation;
@@ -642,9 +654,55 @@ private:
         VmaAllocation allocation; // nullptr if not VMA-allocated
         VkImageView imageView;
     };
-    std::queue<GPUBufferDeletion> deferredDeletionQueue[PendingFrameCount];
-    std::queue<GPUTextureDeletion>
-        deferredDeletionQueueTexture[PendingFrameCount];
+    struct RetireList {
+        std::vector<GPUBufferDeletion> Buffers;
+        std::vector<GPUTextureDeletion> Textures;
+    };
+    RetireList pendingRetire;
+    RetireList nextFrameRetire;
+
+    // Everything the submit thread needs to submit and present a frame
+    struct FrameSubmission {
+        uint64_t Serial = 0ull;
+        uint32_t Slot = 0u;
+
+        VkCommandBuffer CommandBuffers[PFCL_Count + 1];
+        uint32_t NumCommandBuffers = 0u;
+
+        bool bGammaRampPass = false;
+        GammaRampPass::FrameParameters GammaRamp;
+        VkImage Backbuffer = VK_NULL_HANDLE;
+        VkExtent2D BackbufferExtent = { 0u, 0u };
+
+        bool bUpdateHDRMetadata = false;
+        VkHdrMetadataEXT HDRMetadata = {};
+
+        RetireList Retire;
+    };
+
+    uint64_t recordingSerial = 0ull;
+    uint64_t lastSerial = 0ull;
+    uint64_t slotSerials[PendingFrameCount] = { 0ull, 0ull, 0ull };
+    VkCommandBuffer recordingPreFrameCommands[PFCL_Count];
+    uint32_t numRecordingPreFrameCommands = 0u;
+
+    bool bHDRMetadataDirty = false;
+    VkHdrMetadataEXT pendingHDRMetadata = {};
+
+    // Submit thread
+    std::thread submitThread;
+    std::mutex submitMutex;
+    std::condition_variable submitCondition;
+    std::deque<FrameSubmission> queuedSubmissions;
+    std::deque<FrameSubmission> inFlightSubmissions; // Submit thread only
+    uint64_t lastQueuedSerial = 0ull;
+    uint64_t retiredSerial = 0ull;
+    uint64_t retireRequestSerial = 0ull;
+    bool bProcessingSubmission = false;
+    bool bStopSubmitThread = false;
+
+    std::atomic<bool> bDeviceLost{ false };
+    std::atomic<bool> bSwapchainOutOfDate{ false };
 
     VkFramebuffer activeFramebuffer;
 
@@ -679,10 +737,7 @@ private:
     void releasePrebuildResources();
     bool createSwapchain();
 
-    void submitPendingCommandBuffer();
-
-    void presentBackbuffer();
-    uint32_t getSharedResourceDeletionSlot() const;
+    void presentBackbuffer( FrameSubmission &submission );
     void updateOutputParameters();
     void createOutputPassResources();
     bool createBackbufferTexture( const VkFormat format,
@@ -709,8 +764,24 @@ private:
     void recreateSwapchain();
     void releaseSwapchain();
     void releaseFramebufferCache();
-    void flushPendingTextureUploads();
-    void flushPendingMipchainGens();
+    VkCommandBuffer
+    getPreFrameCommandBuffer( const ePreFrameCommandList commandList );
+    void collectPreFrameCommands( const uint64_t serial );
+    void submitPreFrameCommandsNow();
+    RetireList &getRetireList();
+    void releaseRetireList( RetireList &list );
+
+    void startSubmitThread();
+    void stopSubmitThread();
+    void submitThreadMain();
+    void queueSubmission( FrameSubmission &&submission );
+    void processSubmission( FrameSubmission &submission );
+    void recordPresentPass( VkCommandBuffer cmdBuffer,
+                            const FrameSubmission &submission,
+                            const uint32_t imageIndex );
+    void retireOldestSubmission( std::unique_lock<std::mutex> &lock );
+    void waitForRetiredSubmission( const uint64_t serial );
+    void waitForSubmissionsRetired();
     void syncDynamicBuffer( GPUBuffer *pBuffer, const uint32_t resourceIndex );
 
     bool copyRenderTargetToHost( GPUTexture *pTexture,

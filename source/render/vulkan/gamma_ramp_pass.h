@@ -20,6 +20,15 @@ enum class eOutputTransfer : uint32_t {
     OT_ExtendedLinear = 2
 };
 
+struct OutputConstants {
+    eOutputTransfer Transfer;
+    uint32_t bApplyRamp;
+    float Scale;
+    uint32_t bTestPattern;
+    float Peak;
+    float HighlightStrength;
+};
+
 // D3D9 Gamma ramp emulation (based on dxvk implementation)
 // Also converts the SDR backbuffer to the swapchain color space when HDR
 // output is enabled
@@ -30,6 +39,13 @@ public:
                  outputTransfer != eOutputTransfer::OT_SDR ) &&
                pipeline != VK_NULL_HANDLE;
     }
+
+    // Snapshot of the main thread state, consumed by the submit thread
+    struct FrameParameters {
+        float ControlPoints[GammaRamp::kNumControlPoints][4];
+        bool bUploadRamp;
+        OutputConstants Constants;
+    };
 
 public:
     void initialize( VkDevice device,
@@ -56,10 +72,13 @@ public:
         outputPeak = peak;
         outputHighlightStrength = highlightStrength;
     }
-    void uploadRamp( VkCommandBuffer cmdBuffer );
+    void captureFrameParameters( FrameParameters &outParameters );
+    void uploadRamp( VkCommandBuffer cmdBuffer,
+                     const FrameParameters &parameters );
     void draw( VkCommandBuffer cmdBuffer,
                const uint32_t frameIndex,
-               const uint32_t imageIndex );
+               const uint32_t imageIndex,
+               const FrameParameters &parameters );
 
     // TODO: Only exposed for ImGui dbg (should be moved to private)
     bool bEnabled = false;

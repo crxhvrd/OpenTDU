@@ -14,7 +14,9 @@ struct SamplerHeapManager {
     };
 
     // maxAnisotropy = 1 if anisotropic filtering is not supported
-    void initialize( VkDevice device, const float maxAnisotropy );
+    void initialize( VkDevice device,
+                     const float maxAnisotropy,
+                     const bool bUpdateUnusedWhilePending );
     void destroy( VkDevice device );
 
     void createAndUploadCommonSamplers( VkDevice device );

@@ -238,7 +238,8 @@ inline void PatchDescriptor( SamplerDesc &sampler ) {
 }
 
 void SamplerHeapManager::initialize( VkDevice device,
-                                     const float maxAnisotropy ) {
+                                     const float maxAnisotropy,
+                                     const bool bUpdateUnusedWhilePending ) {
     Device = device;
     MaxAnisotropy = maxAnisotropy;
 
@@ -252,6 +253,9 @@ void SamplerHeapManager::initialize( VkDevice device,
     VkDescriptorBindingFlags bindingFlags =
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
         VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+    if ( bUpdateUnusedWhilePending ) {
+        bindingFlags |= VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT;
+    }
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo = {};
     bindingFlagsInfo.sType =
