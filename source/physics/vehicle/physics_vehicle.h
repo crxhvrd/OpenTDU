@@ -242,10 +242,6 @@ public:
     }
     void setCinematicMode( bool bCinematic ) { bCinematicMode = bCinematic; }
     bool isInCinematicMode() const { return bCinematicMode; }
-    void setInputControllerAttached( bool bAttached ) {
-        bInputControllerAttached = bAttached;
-    }
-    bool isInputControllerAttached() const { return bInputControllerAttached; }
     bool isKeyframed() const { return bKeyframed; }
     void setPhysicsPaused( bool bPaused ) { bPausePhysics = bPaused; }
     bool isPhysicsPaused() const { return bPausePhysics; }
@@ -797,7 +793,6 @@ private:
     bool bIsAI;
     bool bIsNetwork;
     bool bCinematicMode;
-    bool bInputControllerAttached;
     bool bPausePhysics;
     bool bVirtual;
     bool bWheelsActive;

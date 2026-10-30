@@ -13,6 +13,7 @@ class AnimStateInstance;
 
 class CarState;
 class CinematicPlayer;
+class PhysicsDrivingControl;
 
 enum eCinematicEvent : int32_t {
     CE_Requested = 0,
@@ -220,7 +221,7 @@ private:
     bool bDetachPlayerCarInput;
     bool bPauseMenuLockedBefore;
     bool bFreeRideBool2Before;
-    bool bPlayerCarInputWasAttached;
+    PhysicsDrivingControl *pSavedPlayerDrivingControl;
     bool bDisableStreamingOnCarBefore;
     Eigen::Vector4f *pStreamCenterBefore;
     bool bStopGuard;

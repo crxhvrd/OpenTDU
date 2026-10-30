@@ -596,7 +596,7 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         return;
     }
     if ( pPlayerPhysicsVehicle->isInCinematicMode() ||
-         !pPlayerPhysicsVehicle->isInputControllerAttached() ) {
+         pPlayerPhysicsVehicle->getDrivingControl() == nullptr ) {
         return;
     }
     if ( gReplay.isPlayingBack() ) {

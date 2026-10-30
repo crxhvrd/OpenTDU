@@ -34,6 +34,7 @@
 #include "flash/implementation/flash_player.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_display.h"
+#include "physics/gs_physics.h"
 #include "physics/gs_physicsfx.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "world/gs_world.h"
@@ -165,7 +166,7 @@ EntityCinematic::EntityCinematic()
       bDetachPlayerCarInput( true ),
       bPauseMenuLockedBefore( false ),
       bFreeRideBool2Before( true ),
-      bPlayerCarInputWasAttached( false ),
+      pSavedPlayerDrivingControl( nullptr ),
       bDisableStreamingOnCarBefore( false ),
       pStreamCenterBefore( nullptr ),
       bStopGuard( false ),
@@ -304,8 +305,10 @@ void EntityCinematic::applyForegroundCine() {
 
     PhysicsVehicle *pLocalVehicle = GetLocalPlayerPhysicsVehicle();
     if ( pLocalVehicle != nullptr && bDetachPlayerCarInput ) {
-        bPlayerCarInputWasAttached = pLocalVehicle->isInputControllerAttached();
-        pLocalVehicle->setInputControllerAttached( false );
+        PhysicsLock lock;
+        pSavedPlayerDrivingControl = pLocalVehicle->getDrivingControl();
+        pLocalVehicle->setHonkRequest( false );
+        pLocalVehicle->setDrivingControl( nullptr );
     }
 
     if ( gpMngWorld != nullptr ) {
@@ -370,9 +373,10 @@ void EntityCinematic::restoreForegroundCine() {
     // FUN_007e8650
     PhysicsVehicle *pLocalVehicle = GetLocalPlayerPhysicsVehicle();
     if ( pLocalVehicle != nullptr && bDetachPlayerCarInput &&
-         bPlayerCarInputWasAttached ) {
-        pLocalVehicle->setInputControllerAttached( true );
-        bPlayerCarInputWasAttached = false;
+         pSavedPlayerDrivingControl != nullptr ) {
+        PhysicsLock lock;
+        pLocalVehicle->setDrivingControl( pSavedPlayerDrivingControl );
+        pSavedPlayerDrivingControl = nullptr;
     }
 
     if ( gpConfig != nullptr && !gpConfig->b169Ratio && gpFlash != nullptr ) {

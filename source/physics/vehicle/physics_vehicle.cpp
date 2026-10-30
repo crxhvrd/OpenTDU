@@ -503,7 +503,6 @@ PhysicsVehicle::PhysicsVehicle()
       bIsAI( false ),
       bIsNetwork( false ),
       bCinematicMode( false ),
-      bInputControllerAttached( true ),
       bPausePhysics( false ),
       bVirtual( false ),
       bWheelsActive( true ),
@@ -720,7 +719,6 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     resetAutomaticGearbox();
     bDrivingInputScripted = false;
     bCinematicMode = false;
-    bInputControllerAttached = true;
     bPausePhysics = false;
     bVirtual = false;
     bWheelsActive = true;
@@ -5006,6 +5004,9 @@ void PhysicsVehicle::resetSimulationState() {
     vehicle.GearBox.CurrentGear = 1;
     vehicle.GearBox.ReportedGear = 1;
     vehicle.Clutch.bManualControl = false;
+
+    filteredSteer = 0.0f;
+    inputBrake = 0.0f;
 
     prevWorldVelocity[0] = prevWorldVelocity[1] = prevWorldVelocity[2] = 0.0f;
     worldAcceleration = Eigen::Vector4f::Zero();
