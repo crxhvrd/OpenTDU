@@ -1,0 +1,6 @@
+If:
+  PathMatch: third_party/.*
+Index:
+  Background: Skip
+Diagnostics:
+  Suppress: "*"

@@ -1,0 +1,48 @@
+name: Format_Check
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Install clang-format
+      run: pip install clang-format==21.1.8
+
+    - name: Check formatting of changed lines
+      shell: bash
+      env:
+        PUSH_BEFORE: ${{ github.event.before }}
+      run: |
+        base=HEAD^1
+        if [ "${{ github.event_name }}" = "push" ] && [ -n "$PUSH_BEFORE" ] \
+          && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ] \
+          && git fetch --quiet --depth=1 origin "$PUSH_BEFORE"; then
+          base=$PUSH_BEFORE
+        fi
+        echo "Checking changes against $base"
+        set +e
+        git clang-format --binary clang-format --diff "$base" -- \
+          ':!third_party' ':!build' ':!resources' ':!screenshots' > format.diff
+        status=$?
+        set -e
+        cat format.diff
+        if [ $status -ne 0 ]; then
+          echo "::error::Changed lines do not match .clang-format! Run 'git clang-format origin/main' with clang-format (21.1.8)"
+          exit 1
+        fi
