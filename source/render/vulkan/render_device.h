@@ -105,6 +105,7 @@ struct GPUTexture {
     VkImageLayout CurrentLayout[PendingFrameCount] = {
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_UNDEFINED };
+    uint64_t ViewIds[PendingFrameCount] = { 0ull, 0ull, 0ull };
 
     VkFormat ViewFormat;
     VkSampleCountFlagBits SampleCount;
@@ -144,6 +145,7 @@ struct GPUVertexLayout {
     std::vector<VkVertexInputBindingDescription>
         InputBindings;        // per-binding desc
     uint64_t Hashcode = 0ull; // Content hash (see updateHashcode)
+    bool bHasInstanceRateBinding = false;
 
     // Must be called once Semantics/InputBindings are filled
     void updateHashcode();
@@ -174,6 +176,8 @@ struct VulkanDeviceCaps {
     bool bHDRMetadata = false;
     bool bPortabilitySubset = false;
     bool bUpdateUnusedWhilePending = false;
+    bool bMultiDrawIndirect = false;
+    uint32_t MaxDrawIndirectCount = 1;
 };
 
 class RenderDevice {
@@ -319,8 +323,7 @@ public:
     void draw( ePrimitiveType primitiveType,
                uint32_t numVertex,
                uint32_t numInstance,
-               uint32_t firstVertex = 0,
-               uint32_t firstInstance = 0 );
+               uint32_t firstVertex = 0 );
     void drawIndexedPrimitive( ePrimitiveType primitiveType,
                                int32_t baseVertexIndex,
                                uint32_t minVertexIndex,
@@ -547,6 +550,17 @@ private:
         bool bRenderStatesValid;
         uint32_t Samplers[8];
         uint32_t SamplersSize;
+
+        bool bStencilDynamicStateValid;
+        VkStencilOpState StencilFront;
+        VkStencilOpState StencilBack;
+
+        bool bExtendedDynamicStateValid;
+        VkCullModeFlags CullMode;
+        VkBool32 DepthTestEnable;
+        VkBool32 DepthWriteEnable;
+        VkCompareOp DepthCompareOp;
+        VkBool32 StencilTestEnable;
     };
     CommandBufferBindings recordedBindings;
 
@@ -568,6 +582,14 @@ private:
 
     GPUBackbuffer backbuffer;
 
+    uint64_t nextViewId = 1ull;
+    inline uint64_t allocateViewId() { return nextViewId++; }
+
+    VkImage fallbackSRVImage = VK_NULL_HANDLE;
+    VmaAllocation fallbackSRVAllocation = nullptr;
+    VkImageView fallbackSRVView = VK_NULL_HANDLE;
+    void createFallbackSRV();
+
     enum ePreFrameCommandList : uint32_t {
         PFCL_TextureUpload = 0,
         PFCL_MipchainGen = 1,
@@ -588,6 +610,23 @@ private:
     VkCommandPool framePools[PendingFrameCount];
     VkCommandBuffer commandBuffer;
     VkCommandBuffer commandBuffers[PendingFrameCount];
+
+    struct DrawBatch {
+        VkDrawIndexedIndirectCommand First; // emitted directly if alone
+        uint32_t Count = 0u;
+        uint32_t FirstIndirectCommand = 0u;
+    };
+    DrawBatch pendingDrawBatch;
+
+    struct IndirectDrawBuffer {
+        VkBuffer Buffer = VK_NULL_HANDLE;
+        VmaAllocation Allocation = nullptr;
+        VkDrawIndexedIndirectCommand *pCommands = nullptr;
+        uint32_t NumCommands = 0u;
+    };
+    IndirectDrawBuffer indirectDrawBuffers[PendingFrameCount];
+    bool bDrawBatching = false;
+    bool bMultiDrawBatching = false;
 
     VkCommandPool presentPools[PendingFrameCount];
     VkCommandBuffer presentCommandBuffers[PendingFrameCount];
@@ -713,6 +752,9 @@ private:
 #if OTDU_DEVBUILD
     std::vector<PendingRenderTargetDump> pendingRenderTargetDumps;
     std::vector<PendingRenderTargetSnapshot> pendingRenderTargetSnapshots;
+
+    VkViewport activeViewport = {};
+    VkRect2D activeScissor = {};
 #endif
 
 private:
@@ -743,7 +785,40 @@ private:
     bool createBackbufferTexture( const VkFormat format,
                                   const VkExtent2D extent );
 
+    inline VkCommandBuffer getCommandBuffer() {
+        if ( pendingClear.bActive && !bPreparingDrawCall ) {
+            flushPendingClear();
+        }
+        if ( pendingDrawBatch.Count != 0u ) {
+            flushDrawBatch();
+        }
+        return commandBuffer;
+    }
+
+    struct PendingClear {
+        bool bActive = false;
+        bool bColor = false;
+        bool bDepth = false;
+        bool bStencil = false;
+        VkClearColorValue Color = {};
+        VkClearDepthStencilValue DepthStencil = {};
+        GPUTexture *pColorTargets[kMaxSimultaneousRT] = {};
+        GPUTexture *pDepthStencil = nullptr;
+    };
+    PendingClear pendingClear;
+    bool bPreparingDrawCall = false;
+    bool isPendingClearForBoundAttachments() const;
+    void flushPendingClear();
+    void recordImageClear( const PendingClear &clear );
+
+    void endActiveRenderPass();
+    void recordIndexedDraw( const VkDrawIndexedIndirectCommand &command );
+    void flushDrawBatch();
+    void createIndirectDrawBuffers();
+    void destroyIndirectDrawBuffers();
+
     bool prepareDrawCall( ePrimitiveType primitiveType );
+    uint32_t getDrawFirstInstance( const uint32_t instanceCount ) const;
     VkFramebuffer getOrCreateFramebuffer( const FramebufferKey &key );
     void resetRecordedBindings();
     void bindIndexBufferToCmdBuffer( VkBuffer buffer, VkIndexType indexType );

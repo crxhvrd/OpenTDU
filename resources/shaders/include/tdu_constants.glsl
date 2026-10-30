@@ -12,10 +12,12 @@ tdu_pass;
 
 #ifdef D3D9_VERTEX_SHADER
 
-layout( set = 0, binding = 1, std140 ) uniform TDUDrawVSConstants {
-    vec4 f[32];
+// One copy per draw, selected by the draw first instance
+layout( set = 0, binding = 1, std430 ) readonly buffer TDUDrawVSConstants {
+    vec4 f[];
 }
 tdu_draw_vs;
+#define TDU_DRAWVS_BASE ( uint( gl_InstanceIndex ) * 32u )
 
 layout( set = 0, binding = 2, std140 ) uniform TDUMaterialConstants {
     vec4 f[49];
@@ -130,86 +132,86 @@ tdu_bones;
 #define D3D9_CR_255( i ) tdu_pass.f[40 + ( i )]
 
 // DrawVS c8..c11
-#define D3D9_C_8 tdu_draw_vs.f[0]
-#define D3D9_CR_8( i ) tdu_draw_vs.f[0 + ( i )]
-#define D3D9_C_9 tdu_draw_vs.f[1]
-#define D3D9_CR_9( i ) tdu_draw_vs.f[1 + ( i )]
-#define D3D9_C_10 tdu_draw_vs.f[2]
-#define D3D9_CR_10( i ) tdu_draw_vs.f[2 + ( i )]
-#define D3D9_C_11 tdu_draw_vs.f[3]
-#define D3D9_CR_11( i ) tdu_draw_vs.f[3 + ( i )]
+#define D3D9_C_8 tdu_draw_vs.f[TDU_DRAWVS_BASE + 0]
+#define D3D9_CR_8( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 0 + ( i )]
+#define D3D9_C_9 tdu_draw_vs.f[TDU_DRAWVS_BASE + 1]
+#define D3D9_CR_9( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 1 + ( i )]
+#define D3D9_C_10 tdu_draw_vs.f[TDU_DRAWVS_BASE + 2]
+#define D3D9_CR_10( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 2 + ( i )]
+#define D3D9_C_11 tdu_draw_vs.f[TDU_DRAWVS_BASE + 3]
+#define D3D9_CR_11( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 3 + ( i )]
 
 // DrawVS c16..c23
-#define D3D9_C_16 tdu_draw_vs.f[4]
-#define D3D9_CR_16( i ) tdu_draw_vs.f[4 + ( i )]
-#define D3D9_C_17 tdu_draw_vs.f[5]
-#define D3D9_CR_17( i ) tdu_draw_vs.f[5 + ( i )]
-#define D3D9_C_18 tdu_draw_vs.f[6]
-#define D3D9_CR_18( i ) tdu_draw_vs.f[6 + ( i )]
-#define D3D9_C_19 tdu_draw_vs.f[7]
-#define D3D9_CR_19( i ) tdu_draw_vs.f[7 + ( i )]
-#define D3D9_C_20 tdu_draw_vs.f[8]
-#define D3D9_CR_20( i ) tdu_draw_vs.f[8 + ( i )]
-#define D3D9_C_21 tdu_draw_vs.f[9]
-#define D3D9_CR_21( i ) tdu_draw_vs.f[9 + ( i )]
-#define D3D9_C_22 tdu_draw_vs.f[10]
-#define D3D9_CR_22( i ) tdu_draw_vs.f[10 + ( i )]
-#define D3D9_C_23 tdu_draw_vs.f[11]
-#define D3D9_CR_23( i ) tdu_draw_vs.f[11 + ( i )]
+#define D3D9_C_16 tdu_draw_vs.f[TDU_DRAWVS_BASE + 4]
+#define D3D9_CR_16( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 4 + ( i )]
+#define D3D9_C_17 tdu_draw_vs.f[TDU_DRAWVS_BASE + 5]
+#define D3D9_CR_17( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 5 + ( i )]
+#define D3D9_C_18 tdu_draw_vs.f[TDU_DRAWVS_BASE + 6]
+#define D3D9_CR_18( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 6 + ( i )]
+#define D3D9_C_19 tdu_draw_vs.f[TDU_DRAWVS_BASE + 7]
+#define D3D9_CR_19( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 7 + ( i )]
+#define D3D9_C_20 tdu_draw_vs.f[TDU_DRAWVS_BASE + 8]
+#define D3D9_CR_20( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 8 + ( i )]
+#define D3D9_C_21 tdu_draw_vs.f[TDU_DRAWVS_BASE + 9]
+#define D3D9_CR_21( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 9 + ( i )]
+#define D3D9_C_22 tdu_draw_vs.f[TDU_DRAWVS_BASE + 10]
+#define D3D9_CR_22( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 10 + ( i )]
+#define D3D9_C_23 tdu_draw_vs.f[TDU_DRAWVS_BASE + 11]
+#define D3D9_CR_23( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 11 + ( i )]
 
 // DrawVS c40..c43
-#define D3D9_C_40 tdu_draw_vs.f[12]
-#define D3D9_CR_40( i ) tdu_draw_vs.f[12 + ( i )]
-#define D3D9_C_41 tdu_draw_vs.f[13]
-#define D3D9_CR_41( i ) tdu_draw_vs.f[13 + ( i )]
-#define D3D9_C_42 tdu_draw_vs.f[14]
-#define D3D9_CR_42( i ) tdu_draw_vs.f[14 + ( i )]
-#define D3D9_C_43 tdu_draw_vs.f[15]
-#define D3D9_CR_43( i ) tdu_draw_vs.f[15 + ( i )]
+#define D3D9_C_40 tdu_draw_vs.f[TDU_DRAWVS_BASE + 12]
+#define D3D9_CR_40( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 12 + ( i )]
+#define D3D9_C_41 tdu_draw_vs.f[TDU_DRAWVS_BASE + 13]
+#define D3D9_CR_41( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 13 + ( i )]
+#define D3D9_C_42 tdu_draw_vs.f[TDU_DRAWVS_BASE + 14]
+#define D3D9_CR_42( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 14 + ( i )]
+#define D3D9_C_43 tdu_draw_vs.f[TDU_DRAWVS_BASE + 15]
+#define D3D9_CR_43( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 15 + ( i )]
 
 // DrawVS c84..c87
-#define D3D9_C_84 tdu_draw_vs.f[16]
-#define D3D9_CR_84( i ) tdu_draw_vs.f[16 + ( i )]
-#define D3D9_C_85 tdu_draw_vs.f[17]
-#define D3D9_CR_85( i ) tdu_draw_vs.f[17 + ( i )]
-#define D3D9_C_86 tdu_draw_vs.f[18]
-#define D3D9_CR_86( i ) tdu_draw_vs.f[18 + ( i )]
-#define D3D9_C_87 tdu_draw_vs.f[19]
-#define D3D9_CR_87( i ) tdu_draw_vs.f[19 + ( i )]
+#define D3D9_C_84 tdu_draw_vs.f[TDU_DRAWVS_BASE + 16]
+#define D3D9_CR_84( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 16 + ( i )]
+#define D3D9_C_85 tdu_draw_vs.f[TDU_DRAWVS_BASE + 17]
+#define D3D9_CR_85( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 17 + ( i )]
+#define D3D9_C_86 tdu_draw_vs.f[TDU_DRAWVS_BASE + 18]
+#define D3D9_CR_86( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 18 + ( i )]
+#define D3D9_C_87 tdu_draw_vs.f[TDU_DRAWVS_BASE + 19]
+#define D3D9_CR_87( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 19 + ( i )]
 
 // DrawVS c93..c96
-#define D3D9_C_93 tdu_draw_vs.f[20]
-#define D3D9_CR_93( i ) tdu_draw_vs.f[20 + ( i )]
-#define D3D9_C_94 tdu_draw_vs.f[21]
-#define D3D9_CR_94( i ) tdu_draw_vs.f[21 + ( i )]
-#define D3D9_C_95 tdu_draw_vs.f[22]
-#define D3D9_CR_95( i ) tdu_draw_vs.f[22 + ( i )]
-#define D3D9_C_96 tdu_draw_vs.f[23]
-#define D3D9_CR_96( i ) tdu_draw_vs.f[23 + ( i )]
+#define D3D9_C_93 tdu_draw_vs.f[TDU_DRAWVS_BASE + 20]
+#define D3D9_CR_93( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 20 + ( i )]
+#define D3D9_C_94 tdu_draw_vs.f[TDU_DRAWVS_BASE + 21]
+#define D3D9_CR_94( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 21 + ( i )]
+#define D3D9_C_95 tdu_draw_vs.f[TDU_DRAWVS_BASE + 22]
+#define D3D9_CR_95( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 22 + ( i )]
+#define D3D9_C_96 tdu_draw_vs.f[TDU_DRAWVS_BASE + 23]
+#define D3D9_CR_96( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 23 + ( i )]
 
 // DrawVS c101..c104
-#define D3D9_C_101 tdu_draw_vs.f[24]
-#define D3D9_CR_101( i ) tdu_draw_vs.f[24 + ( i )]
-#define D3D9_C_102 tdu_draw_vs.f[25]
-#define D3D9_CR_102( i ) tdu_draw_vs.f[25 + ( i )]
-#define D3D9_C_103 tdu_draw_vs.f[26]
-#define D3D9_CR_103( i ) tdu_draw_vs.f[26 + ( i )]
-#define D3D9_C_104 tdu_draw_vs.f[27]
-#define D3D9_CR_104( i ) tdu_draw_vs.f[27 + ( i )]
+#define D3D9_C_101 tdu_draw_vs.f[TDU_DRAWVS_BASE + 24]
+#define D3D9_CR_101( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 24 + ( i )]
+#define D3D9_C_102 tdu_draw_vs.f[TDU_DRAWVS_BASE + 25]
+#define D3D9_CR_102( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 25 + ( i )]
+#define D3D9_C_103 tdu_draw_vs.f[TDU_DRAWVS_BASE + 26]
+#define D3D9_CR_103( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 26 + ( i )]
+#define D3D9_C_104 tdu_draw_vs.f[TDU_DRAWVS_BASE + 27]
+#define D3D9_CR_104( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 27 + ( i )]
 
 // DrawVS c118..c119
-#define D3D9_C_118 tdu_draw_vs.f[28]
-#define D3D9_CR_118( i ) tdu_draw_vs.f[28 + ( i )]
-#define D3D9_C_119 tdu_draw_vs.f[29]
-#define D3D9_CR_119( i ) tdu_draw_vs.f[29 + ( i )]
+#define D3D9_C_118 tdu_draw_vs.f[TDU_DRAWVS_BASE + 28]
+#define D3D9_CR_118( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 28 + ( i )]
+#define D3D9_C_119 tdu_draw_vs.f[TDU_DRAWVS_BASE + 29]
+#define D3D9_CR_119( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 29 + ( i )]
 
 // DrawVS c238..c238
-#define D3D9_C_238 tdu_draw_vs.f[30]
-#define D3D9_CR_238( i ) tdu_draw_vs.f[30 + ( i )]
+#define D3D9_C_238 tdu_draw_vs.f[TDU_DRAWVS_BASE + 30]
+#define D3D9_CR_238( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 30 + ( i )]
 
 // DrawVS c250..c250
-#define D3D9_C_250 tdu_draw_vs.f[31]
-#define D3D9_CR_250( i ) tdu_draw_vs.f[31 + ( i )]
+#define D3D9_C_250 tdu_draw_vs.f[TDU_DRAWVS_BASE + 31]
+#define D3D9_CR_250( i ) tdu_draw_vs.f[TDU_DRAWVS_BASE + 31 + ( i )]
 
 // Bones c129..c224
 #define D3D9_C_129 tdu_bones.f[0]

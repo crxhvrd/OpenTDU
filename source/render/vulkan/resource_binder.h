@@ -18,8 +18,19 @@
 struct Texture;
 struct GPUTexture;
 
-// Constant blocks + clip planes + spec state
-static constexpr uint32_t kVulkanNumUBOPerSet = SCB_Count + 2;
+static constexpr uint32_t GetNumPerDrawStorageBlocks() {
+    uint32_t count = 0;
+    for ( const ShaderConstantBlockDesc &block : kShaderConstantBlocks ) {
+        count += block.bPerDrawStorage ? 1 : 0;
+    }
+    return count;
+}
+
+static_assert( GetNumPerDrawStorageBlocks() == 1 &&
+                   kShaderConstantBlocks[SCB_DrawVS].bPerDrawStorage,
+               "Only DrawVS can be a per draw storage block" );
+static constexpr uint32_t kVulkanNumUBOPerSet =
+    SCB_Count - GetNumPerDrawStorageBlocks() + 2;
 static_assert( kVulkanNumUBOPerSet <= 8,
                "Vulkan only guarantees 8 dynamic uniform buffers per layout" );
 
@@ -34,11 +45,13 @@ struct LinearAllocator {
 
     VkDeviceSize Alignment;
 
-    bool create( VkDevice device,
-                 VmaAllocator allocator,
-                 uint32_t elementSize,
-                 uint32_t maxNumElements,
-                 VkDeviceSize uboAlignment );
+    bool
+    create( VkDevice device,
+            VmaAllocator allocator,
+            uint32_t elementSize,
+            uint32_t maxNumElements,
+            VkDeviceSize uboAlignment,
+            VkBufferUsageFlags usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT );
     void destroy( VkDevice device, VmaAllocator allocator );
 
     uint32_t allocate();
@@ -72,6 +85,8 @@ struct ResourceBinder {
                       const uint32_t frameIndex,
                       const uint32_t index );
 
+    bool isDescriptorSetDirty() const;
+
     void setShaderSpecBits( uint32_t dwordIndex,
                             uint32_t bitIndex,
                             uint32_t numBits,
@@ -97,6 +112,7 @@ struct ResourceBinder {
     LinearAllocator shaderSpecsAllocator[PendingFrameCount];
 
     std::array<uint32_t, kVulkanNumUBOPerSet> uboOffsets;
+    uint32_t drawVSIndex;
 
     // CPU copy of each constant block (see shader_constant_layout.h)
     std::vector<float> constantBlocks[SCB_Count];
@@ -105,6 +121,13 @@ struct ResourceBinder {
 
     VkImageView boundSRVs[0x10];
     GPUTexture *pBoundSRVs[0x10];
+    uint64_t boundSRVIds[0x10];
+    VkImageView FallbackSRV = VK_NULL_HANDLE;
+
+#if OTDU_DEVBUILD
+    // Registers whose value changed since the last draw (see DrawCallStats)
+    uint64_t changedConstants[2][4] = {};
+#endif
 
     // True if we need to update the descriptor set
     uint32_t dirtyStates;
@@ -113,13 +136,13 @@ struct ResourceBinder {
         uint64_t SRVBindingHashcode;
         VkDescriptorSet DescriptorSet;
         uint32_t NumFramesUnused;
-        VkImageView BoundSRVs[0x10];
+        uint64_t BoundSRVIds[0x10];
 
         CachedDescriptorSet()
             : SRVBindingHashcode( 0 ),
               DescriptorSet( VK_NULL_HANDLE ),
               NumFramesUnused( 0 ),
-              BoundSRVs{} {}
+              BoundSRVIds{} {}
     };
     std::vector<CachedDescriptorSet> allocatedSets[PendingFrameCount];
     std::unordered_multimap<uint64_t, uint32_t> setLookup[PendingFrameCount];

@@ -29,15 +29,27 @@ enum eDirtyStates : uint32_t {
     DS_ConstantBlocks = 1 << 8, // One bit per eShaderConstantBlock
 };
 
-inline static uint32_t GetConstantBlockDirtyBit( const uint32_t block ) {
+inline static constexpr uint32_t
+GetConstantBlockDirtyBit( const uint32_t block ) {
     return eDirtyStates::DS_ConstantBlocks << block;
+}
+
+static constexpr uint32_t GetPerDrawStorageDirtyBits() {
+    uint32_t bits = 0;
+    for ( uint32_t i = 0; i < SCB_Count; i++ ) {
+        if ( kShaderConstantBlocks[i].bPerDrawStorage ) {
+            bits |= GetConstantBlockDirtyBit( i );
+        }
+    }
+    return bits;
 }
 
 // Dynamic offsets are ordered by binding number
 static constexpr uint32_t GetUBOIndex( const uint32_t binding ) {
     uint32_t index = 0;
     for ( uint32_t i = 0; i < SCB_Count; i++ ) {
-        if ( kShaderConstantBlocks[i].Binding < binding ) {
+        if ( !kShaderConstantBlocks[i].bPerDrawStorage &&
+             kShaderConstantBlocks[i].Binding < binding ) {
             index++;
         }
     }
@@ -69,9 +81,11 @@ inline static void FillGlobalDescriptorLayout(
     binding.pImmutableSamplers = nullptr;
 
     // Float constant blocks
-    binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     for ( const ShaderConstantBlockDesc &block : kShaderConstantBlocks ) {
         binding.binding = block.Binding;
+        binding.descriptorType =
+            block.bPerDrawStorage ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                  : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
         binding.stageFlags = GetConstantBlockStages( block );
         bindings.push_back( binding );
     }
@@ -117,20 +131,23 @@ void ResourceBinder::initialize( VkDevice device,
     OTDU_ASSERT( op == VK_SUCCESS );
 
     // Descriptor pools
-    VkDescriptorPoolSize poolSize[2] = {};
+    VkDescriptorPoolSize poolSize[3] = {};
     poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     poolSize[0].descriptorCount =
         kVulkanNumUBOPerSet * kVulkanNumSetPerPool * PendingFrameCount;
     poolSize[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     poolSize[1].descriptorCount =
         kVulkanMaxNumSRV * kVulkanNumSetPerPool * PendingFrameCount;
+    poolSize[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSize[2].descriptorCount =
+        GetNumPerDrawStorageBlocks() * kVulkanNumSetPerPool * PendingFrameCount;
 
     VkDescriptorPoolCreateInfo poolInfo;
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.pNext = nullptr;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
     poolInfo.maxSets = kVulkanNumSetPerPool * PendingFrameCount;
-    poolInfo.poolSizeCount = 2u;
+    poolInfo.poolSizeCount = 3u;
     poolInfo.pPoolSizes = poolSize;
 
     op = vkCreateDescriptorPool( device, &poolInfo, nullptr,
@@ -145,6 +162,7 @@ void ResourceBinder::initialize( VkDevice device,
     for ( uint32_t i = 0; i < 0x10; i++ ) {
         boundSRVs[i] = VK_NULL_HANDLE;
         pBoundSRVs[i] = nullptr;
+        boundSRVIds[i] = 0ull;
     }
 
     for ( uint32_t i = 0; i < SCB_Count; i++ ) {
@@ -154,6 +172,7 @@ void ResourceBinder::initialize( VkDevice device,
 
     dirtyStates = 0xffffffff;
     uboOffsets.fill( 0 );
+    drawVSIndex = 0;
 }
 
 void ResourceBinder::destroy( VkDevice device, VmaAllocator allocator ) {
@@ -175,10 +194,14 @@ void ResourceBinder::initializeAllocators( VkDevice device,
                                            VkDeviceSize uboAlignment ) {
     for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
         for ( uint32_t j = 0; j < SCB_Count; j++ ) {
+            const bool bStorage = kShaderConstantBlocks[j].bPerDrawStorage;
             constantBlockAllocator[j][i].create(
                 device, allocator,
                 kShaderConstantBlocks[j].NumVectors * 4 * sizeof( float ),
-                kVulkanNumAllocsPerFrame, uboAlignment );
+                kVulkanNumAllocsPerFrame,
+                bStorage ? 4 * sizeof( float ) : uboAlignment,
+                bStorage ? VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                         : VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT );
         }
         clipPlanesAllocator[i].create( device, allocator, kVulkanClipInfosSize,
                                        kVulkanNumAllocsPerFrame, uboAlignment );
@@ -230,6 +253,7 @@ void ResourceBinder::onFrameBegin( VkDevice device, uint32_t frameIndex ) {
     for ( uint32_t i = 0; i < 0x10; i++ ) {
         boundSRVs[i] = VK_NULL_HANDLE;
         pBoundSRVs[i] = nullptr;
+        boundSRVIds[i] = 0ull;
     }
 
     uboOffsets.fill( 0 );
@@ -244,7 +268,7 @@ VkDescriptorSet ResourceBinder::getOrAllocateSet( VkDevice device,
         // Note that we only hash SRVs; as the UBOs are guaranteed to be the
         // same (always emitted by dxvk).
         uint64_t hashcode =
-            CityHash64( (const char *)boundSRVs, sizeof( VkImageView ) * 0x10 );
+            CityHash64( (const char *)boundSRVIds, sizeof( boundSRVIds ) );
 
         CachedDescriptorSet &descSet =
             findOrAllocateSet( device, hashcode, frameIndex );
@@ -299,7 +323,15 @@ void ResourceBinder::uploadConstantBlock( const eShaderConstantBlock block,
     vmaFlushAllocation( allocator, blockAlloc.Allocations, offset,
                         blockAlloc.ElementSize );
 
+    if ( kShaderConstantBlocks[block].bPerDrawStorage ) {
+        drawVSIndex = offset / blockAlloc.ElementSize;
+        return;
+    }
     uboOffsets[GetUBOIndex( kShaderConstantBlocks[block].Binding )] = offset;
+}
+
+bool ResourceBinder::isDescriptorSetDirty() const {
+    return ( dirtyStates & ~GetPerDrawStorageDirtyBits() ) != 0;
 }
 
 void ResourceBinder::setFloatConstants( eShaderType stage,
@@ -325,6 +357,10 @@ void ResourceBinder::setFloatConstants( eShaderType stage,
         }
         memcpy( pDst, pSrc, 4 * sizeof( float ) );
         dirtyStates |= GetConstantBlockDirtyBit( location.Block );
+#if OTDU_DEVBUILD
+        const uint32_t reg = offset + i;
+        changedConstants[stageIndex][reg >> 6] |= 1ull << ( reg & 63 );
+#endif
     }
 }
 
@@ -357,6 +393,7 @@ void ResourceBinder::bindTexture( Texture *pTexture,
                                   const uint32_t frameIndex,
                                   const uint32_t index ) {
     VkImageView newView = VK_NULL_HANDLE;
+    uint64_t newViewId = 0ull;
     GPUTexture *pVulkanTex = nullptr;
 
     // Set constant to bind the right sampler type (required by dxvk pipeline)
@@ -369,6 +406,7 @@ void ResourceBinder::bindTexture( Texture *pTexture,
         }
         OTDU_ASSERT( pVulkanTex->ImageView[resourceIndex] != VK_NULL_HANDLE );
         newView = pVulkanTex->ImageView[resourceIndex];
+        newViewId = pVulkanTex->ViewIds[resourceIndex];
 
         const bool bIs3D = ( ( pTexture->Flags >> 0xb ) & 1u ) != 0;
         const bool bIsCube = !bIs3D && ( ( pTexture->Flags >> 6 ) & 1u ) != 0;
@@ -377,11 +415,12 @@ void ResourceBinder::bindTexture( Texture *pTexture,
 
     setShaderSpecBits( 0, index * 2u, 2u, samplerType );
 
-    if ( boundSRVs[index] == newView ) {
+    if ( boundSRVIds[index] == newViewId ) {
         return;
     }
 
     boundSRVs[index] = newView;
+    boundSRVIds[index] = newViewId;
     pBoundSRVs[index] = pVulkanTex;
     dirtyStates |= eDirtyStates::DS_PSTextures;
 }
@@ -434,7 +473,7 @@ ResourceBinder::CachedDescriptorSet &ResourceBinder::findOrAllocateSet(
     auto range = setLookup[frameIndex].equal_range( hashcode );
     for ( auto it = range.first; it != range.second; it++ ) {
         CachedDescriptorSet &set = allocatedSets[frameIndex][it->second];
-        if ( memcmp( set.BoundSRVs, boundSRVs, sizeof( VkImageView ) * 0x10 ) ==
+        if ( memcmp( set.BoundSRVIds, boundSRVIds, sizeof( boundSRVIds ) ) ==
              0 ) {
             set.NumFramesUnused = 0;
             return set;
@@ -448,15 +487,26 @@ ResourceBinder::CachedDescriptorSet &ResourceBinder::findOrAllocateSet(
     CachedDescriptorSet &cachedSet = allocatedSets[frameIndex][slotIndex];
     cachedSet.SRVBindingHashcode = hashcode;
     cachedSet.NumFramesUnused = 0;
-    memcpy( cachedSet.BoundSRVs, boundSRVs, sizeof( VkImageView ) * 0x10 );
+    memcpy( cachedSet.BoundSRVIds, boundSRVIds, sizeof( boundSRVIds ) );
 
     cachedSet.DescriptorSet = acquireDescriptorSet( device, frameIndex );
 
     // Write new descriptor set
     std::array<VkDescriptorBufferInfo, kVulkanNumUBOPerSet> uboDescs;
     std::array<uint32_t, kVulkanNumUBOPerSet> uboBindings;
+    std::array<VkDescriptorBufferInfo, SCB_Count> storageDescs;
+    std::array<uint32_t, SCB_Count> storageBindings;
     uint32_t numUBOs = 0;
+    uint32_t numStorageBuffers = 0;
     for ( uint32_t i = 0; i < SCB_Count; i++ ) {
+        if ( kShaderConstantBlocks[i].bPerDrawStorage ) {
+            storageDescs[numStorageBuffers] =
+                constantBlockAllocator[i][frameIndex].getCurrentBufferInfo();
+            storageDescs[numStorageBuffers].range = VK_WHOLE_SIZE;
+            storageBindings[numStorageBuffers++] =
+                kShaderConstantBlocks[i].Binding;
+            continue;
+        }
         uboDescs[numUBOs] =
             constantBlockAllocator[i][frameIndex].getCurrentBufferInfo();
         uboBindings[numUBOs++] = kShaderConstantBlocks[i].Binding;
@@ -466,7 +516,8 @@ ResourceBinder::CachedDescriptorSet &ResourceBinder::findOrAllocateSet(
     uboDescs[numUBOs] = shaderSpecsAllocator[frameIndex].getCurrentBufferInfo();
     uboBindings[numUBOs++] = kVulkanBindingSlotShaderSpec;
 
-    std::array<VkWriteDescriptorSet, kVulkanMaxNumSRV + kVulkanNumUBOPerSet>
+    std::array<VkWriteDescriptorSet,
+               kVulkanMaxNumSRV + kVulkanNumUBOPerSet + SCB_Count>
         descWrites;
     for ( uint32_t i = 0; i < numUBOs; i++ ) {
         descWrites[i] = {};
@@ -481,14 +532,22 @@ ResourceBinder::CachedDescriptorSet &ResourceBinder::findOrAllocateSet(
     }
 
     uint32_t numUpdates = numUBOs;
+    for ( uint32_t i = 0; i < numStorageBuffers; i++ ) {
+        VkWriteDescriptorSet &descriptorWrite = descWrites[numUpdates++];
+        descriptorWrite = {};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = cachedSet.DescriptorSet;
+        descriptorWrite.dstBinding = storageBindings[i];
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrite.pBufferInfo = &storageDescs[i];
+    }
     std::array<VkDescriptorImageInfo, kVulkanMaxNumSRV> srvHeapInitImageInfos;
     for ( uint32_t i = 0; i < kVulkanMaxNumSRV; i++ ) {
-        if ( boundSRVs[i] == VK_NULL_HANDLE ) {
-            continue;
-        }
-
         srvHeapInitImageInfos[i] = {};
-        srvHeapInitImageInfos[i].imageView = boundSRVs[i];
+        srvHeapInitImageInfos[i].imageView =
+            ( boundSRVs[i] != VK_NULL_HANDLE ) ? boundSRVs[i] : FallbackSRV;
         srvHeapInitImageInfos[i].imageLayout =
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -558,7 +617,8 @@ bool LinearAllocator::create( VkDevice device,
                               VmaAllocator allocator,
                               uint32_t elementSize,
                               uint32_t maxNumElements,
-                              VkDeviceSize uboAlignment ) {
+                              VkDeviceSize uboAlignment,
+                              VkBufferUsageFlags usage ) {
     Capacity = elementSize * maxNumElements;
     ElementSize = elementSize;
     Usage = 0;
@@ -568,7 +628,7 @@ bool LinearAllocator::create( VkDevice device,
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.pNext = nullptr;
     bufferInfo.size = Capacity;
-    bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    bufferInfo.usage = usage;
     bufferInfo.flags = 0;
 
     VmaAllocationCreateInfo allocInfo = {};

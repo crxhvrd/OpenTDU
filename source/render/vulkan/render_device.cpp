@@ -35,6 +35,16 @@
 #define VMA_IMPLEMENTATION 1
 #include "vk_mem_alloc.h"
 
+// TODO: FIXME: Remove once A/B testing for draw batching is done
+static bool gDisableDrawBatching = false;
+static CmdLineArg CmdLineArgNoDrawBatching( "nodrawbatching",
+                                            []( const char *pArg ) {
+                                                gDisableDrawBatching = true;
+                                            } );
+
+// Per frame slot (VkDrawIndexedIndirectCommand)
+static constexpr uint32_t kMaxIndirectDrawsPerFrame = 32768u;
+
 static bool gVulkanEnableValidationLayer = false;
 static CmdLineArg CmdLineArgVulkanValidationLayer(
     "vk_enable_validation_layer",
@@ -408,6 +418,9 @@ RenderDevice::~RenderDevice() {
     for ( PreFrameCommands &commands : preFrameCommands ) {
         vkDestroyCommandPool( device, commands.Pool, nullptr );
     }
+    destroyIndirectDrawBuffers();
+    vkDestroyImageView( device, fallbackSRVView, nullptr );
+    vmaDestroyImage( allocator, fallbackSRVImage, fallbackSRVAllocation );
 
     savePipelineCache();
     savePSOLibrary();
@@ -595,6 +608,9 @@ static bool QueryDeviceCaps( VkPhysicalDevice physicalDevice,
         extensionIsAvailable( "VK_KHR_portability_subset", extensions );
     outCaps.bUpdateUnusedWhilePending =
         features12.descriptorBindingUpdateUnusedWhilePending;
+    outCaps.bMultiDrawIndirect = features.features.multiDrawIndirect &&
+                                 features.features.drawIndirectFirstInstance;
+    outCaps.MaxDrawIndirectCount = properties.limits.maxDrawIndirectCount;
     return true;
 }
 
@@ -734,6 +750,19 @@ void RenderDevice::initialize() {
     gHWInstancingSupport = 3;
 #endif
 
+    bDrawBatching = !gDisableDrawBatching;
+    bMultiDrawBatching = bDrawBatching && deviceCaps.bMultiDrawIndirect &&
+                         deviceCaps.MaxDrawIndirectCount > 1;
+    if ( bMultiDrawBatching ) {
+        createIndirectDrawBuffers();
+    }
+    OTDU_LOG_DEBUG( "Draw batching: %s (multi draw indirect: %s)\n",
+                    bDrawBatching ? "on" : "off",
+                    bMultiDrawBatching ? "on" : "off" );
+
+    createFallbackSRV();
+    resourceBinder.FallbackSRV = fallbackSRVView;
+
     startSubmitThread();
 }
 
@@ -783,6 +812,7 @@ GPUTexture *RenderDevice::createTexture( Texture *pTexture ) {
         VK_IMAGE_USAGE_TRANSFER_SRC_BIT; // Textures are assumed to be read only
     imgCreateInfo.samples =
         VK_SAMPLE_COUNT_1_BIT; // Regular textures are always single-sampled
+
     imgCreateInfo.flags = 0;
     if ( bTexture2DOrCube && !bTexture2D ) {
         imgCreateInfo.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
@@ -858,6 +888,7 @@ GPUTexture *RenderDevice::createTexture( Texture *pTexture ) {
     VkResult imageViewCreationResult = vkCreateImageView(
         device, &viewInfos, nullptr, &renderTarget->ImageView[0] );
     OTDU_ASSERT( imageViewCreationResult == VK_SUCCESS );
+    renderTarget->ViewIds[0] = allocateViewId();
 
     pTexture->bUploaded = false;
     return renderTarget;
@@ -983,6 +1014,7 @@ RenderDevice::createRenderTarget( const uint32_t width,
         VkResult imageCreationResult = vkCreateImageView(
             device, &viewInfos, nullptr, &renderTarget->ImageView[i] );
         OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
+        renderTarget->ViewIds[i] = allocateViewId();
     }
 
     return renderTarget;
@@ -1149,12 +1181,9 @@ void RenderDevice::generateMipchainInline( Texture *pTexture ) {
         return;
     }
 
-    if ( activeRenderPass != VK_NULL_HANDLE ) {
-        vkCmdEndRenderPass( commandBuffer );
-        activeRenderPass = VK_NULL_HANDLE;
-    }
+    endActiveRenderPass();
 
-    recordMipchainGeneration( pTexture, commandBuffer );
+    recordMipchainGeneration( pTexture, getCommandBuffer() );
 }
 
 void RenderDevice::recordMipchainGeneration( Texture *pTexture,
@@ -1526,7 +1555,10 @@ void RenderDevice::setViewport( Viewport &vp ) {
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
-    vkCmdSetViewport( commandBuffer, 0, 1, &viewport );
+    vkCmdSetViewport( getCommandBuffer(), 0, 1, &viewport );
+#if OTDU_DEVBUILD
+    activeViewport = viewport;
+#endif
 
     // Set scissor region (required by Vulkan standard but never set by the game
     // so far)
@@ -1536,7 +1568,10 @@ void RenderDevice::setViewport( Viewport &vp ) {
     scissor.extent.width = (int32_t)vp.Width;
     scissor.extent.height = (int32_t)vp.Height;
 
-    vkCmdSetScissor( commandBuffer, 0, 1, &scissor );
+    vkCmdSetScissor( getCommandBuffer(), 0, 1, &scissor );
+#if OTDU_DEVBUILD
+    activeScissor = scissor;
+#endif
 
     // Clear color will be set when the framebuffer is cleared
     if ( vp.Flags & 1 ) {
@@ -1558,7 +1593,10 @@ void RenderDevice::setScissor( Scissor &scissor ) {
     vkScissor.extent.width = scissor.Width;
     vkScissor.extent.height = scissor.Height;
 
-    vkCmdSetScissor( commandBuffer, 0, 1, &vkScissor );
+    vkCmdSetScissor( getCommandBuffer(), 0, 1, &vkScissor );
+#if OTDU_DEVBUILD
+    activeScissor = vkScissor;
+#endif
 }
 
 void RenderDevice::setFloatConstants( eShaderType stage,
@@ -1578,7 +1616,57 @@ void RenderDevice::clearFramebuffer( const ColorRGBA clearColor,
                                      const bool bClearColor,
                                      const bool bClearDepth,
                                      const bool bClearStencil ) {
-    // TODO: Use render pass Load OP instead?
+    if ( !bClearColor && !bClearDepth && !bClearStencil ) {
+        return;
+    }
+
+    PendingClear clear;
+    clear.bActive = true;
+    clear.bColor = bClearColor;
+    clear.bDepth = bClearDepth;
+    clear.bStencil = bClearStencil;
+    clear.Color.float32[0] = clearColor.R / 255.0f;
+    clear.Color.float32[1] = clearColor.G / 255.0f;
+    clear.Color.float32[2] = clearColor.B / 255.0f;
+    clear.Color.float32[3] = clearColor.A / 255.0f;
+    clear.DepthStencil.depth = clearDepth;
+    clear.DepthStencil.stencil = clearStencil;
+    for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
+        clear.pColorTargets[i] = bFramebufferAttachmentValid[i]
+                                     ? pFramebufferAttachments[i]
+                                     : nullptr;
+    }
+    clear.pDepthStencil =
+        bDepthStencilAttachmentValid ? pDepthStencilAttachment : nullptr;
+
+    if ( pendingClear.bActive ) {
+        flushPendingClear();
+    }
+    pendingClear = clear;
+}
+
+bool RenderDevice::isPendingClearForBoundAttachments() const {
+    for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
+        GPUTexture *pBound = bFramebufferAttachmentValid[i]
+                                 ? pFramebufferAttachments[i]
+                                 : nullptr;
+        if ( pBound != pendingClear.pColorTargets[i] ) {
+            return false;
+        }
+    }
+    GPUTexture *pBoundDepth =
+        bDepthStencilAttachmentValid ? pDepthStencilAttachment : nullptr;
+    return pBoundDepth == pendingClear.pDepthStencil;
+}
+
+void RenderDevice::flushPendingClear() {
+    const PendingClear clear = pendingClear;
+    pendingClear.bActive = false;
+    recordImageClear( clear );
+}
+
+void RenderDevice::recordImageClear( const PendingClear &clear ) {
+    endActiveRenderPass();
 
     // Assume 2D non-array for now
     VkImageSubresourceRange subresourceRange{};
@@ -1588,59 +1676,41 @@ void RenderDevice::clearFramebuffer( const ColorRGBA clearColor,
     subresourceRange.baseArrayLayer = 0;
     subresourceRange.layerCount = 1;
 
-    if ( bClearColor || bClearDepth || bClearStencil ) {
-        if ( activeRenderPass != VK_NULL_HANDLE ) {
-            vkCmdEndRenderPass( commandBuffer );
-            activeRenderPass = VK_NULL_HANDLE;
-        }
-    }
-
-    if ( bClearColor ) {
-        VkClearColorValue clearColorValue;
-        clearColorValue.float32[0] = clearColor.R / 255.0f;
-        clearColorValue.float32[1] = clearColor.G / 255.0f;
-        clearColorValue.float32[2] = clearColor.B / 255.0f;
-        clearColorValue.float32[3] = clearColor.A / 255.0f;
-
-        for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
-            if ( bFramebufferAttachmentValid[i] ) {
-                GPUTexture *pAttachment = pFramebufferAttachments[i];
-                const uint32_t resourceIndex =
-                    pAttachment->getResourceIndex( frameIndex );
-                insertMemoryBarrier(
-                    pAttachment, pAttachment->CurrentLayout[resourceIndex],
-                    VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                    resourceIndex );
-                vkCmdClearColorImage( commandBuffer,
-                                      pAttachment->Image[resourceIndex],
-                                      pAttachment->CurrentLayout[resourceIndex],
-                                      &clearColorValue, 1, &subresourceRange );
+    if ( clear.bColor ) {
+        for ( GPUTexture *pAttachment : clear.pColorTargets ) {
+            if ( pAttachment == nullptr ) {
+                continue;
             }
+            const uint32_t resourceIndex =
+                pAttachment->getResourceIndex( frameIndex );
+            insertMemoryBarrier(
+                pAttachment, pAttachment->CurrentLayout[resourceIndex],
+                VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                resourceIndex );
+            vkCmdClearColorImage( getCommandBuffer(),
+                                  pAttachment->Image[resourceIndex],
+                                  pAttachment->CurrentLayout[resourceIndex],
+                                  &clear.Color, 1, &subresourceRange );
         }
     }
 
     subresourceRange.aspectMask = 0;
-    if ( bClearDepth || bClearStencil ) {
-        if ( bClearDepth )
-            subresourceRange.aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
-        if ( bClearStencil )
-            subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-
-        VkClearDepthStencilValue clearDepthStencilValue;
-        clearDepthStencilValue.depth = clearDepth;
-        clearDepthStencilValue.stencil = clearStencil;
-
-        if ( bDepthStencilAttachmentValid ) {
-            insertMemoryBarrier(
-                pDepthStencilAttachment,
-                pDepthStencilAttachment->CurrentLayout[frameIndex],
-                VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                frameIndex );
-            vkCmdClearDepthStencilImage(
-                commandBuffer, pDepthStencilAttachment->Image[frameIndex],
-                pDepthStencilAttachment->CurrentLayout[frameIndex],
-                &clearDepthStencilValue, 1, &subresourceRange );
-        }
+    if ( clear.bDepth ) {
+        subresourceRange.aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+    }
+    if ( clear.bStencil ) {
+        subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
+    GPUTexture *pDepthStencil = clear.pDepthStencil;
+    if ( subresourceRange.aspectMask != 0 && pDepthStencil != nullptr ) {
+        insertMemoryBarrier( pDepthStencil,
+                             pDepthStencil->CurrentLayout[frameIndex],
+                             VK_IMAGE_LAYOUT_GENERAL,
+                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, frameIndex );
+        vkCmdClearDepthStencilImage(
+            getCommandBuffer(), pDepthStencil->Image[frameIndex],
+            pDepthStencil->CurrentLayout[frameIndex], &clear.DepthStencil, 1,
+            &subresourceRange );
     }
 }
 
@@ -1678,7 +1748,7 @@ void RenderDevice::clearColorRenderTarget( GPUTexture *pTexture,
                          VK_IMAGE_LAYOUT_GENERAL,
                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, resourceIndex );
 
-    vkCmdClearColorImage( commandBuffer, pTexture->Image[resourceIndex],
+    vkCmdClearColorImage( getCommandBuffer(), pTexture->Image[resourceIndex],
                           pTexture->CurrentLayout[resourceIndex],
                           &clearColorValue, 1, &subresourceRange );
 }
@@ -1709,17 +1779,197 @@ void RenderDevice::bindVertexBuffer( GPUBuffer *pBuffer,
     }
 }
 
-void RenderDevice::draw( ePrimitiveType primitiveType,
-                         uint32_t numVertex,
-                         uint32_t numInstance,
-                         uint32_t firstVertex,
-                         uint32_t firstInstance ) {
-    if ( !prepareDrawCall( primitiveType ) ) {
+void RenderDevice::recordIndexedDraw(
+    const VkDrawIndexedIndirectCommand &command ) {
+    if ( !bDrawBatching || command.instanceCount > 1 ) {
+        vkCmdDrawIndexed( getCommandBuffer(), command.indexCount,
+                          command.instanceCount, command.firstIndex,
+                          command.vertexOffset, command.firstInstance );
         return;
     }
 
+    if ( pendingDrawBatch.Count == 0u ) {
+        pendingDrawBatch.First = command;
+        pendingDrawBatch.Count = 1u;
+        return;
+    }
+
+    IndirectDrawBuffer &indirect = indirectDrawBuffers[frameIndex];
+    VkDrawIndexedIndirectCommand &last =
+        ( pendingDrawBatch.Count == 1u )
+            ? pendingDrawBatch.First
+            : indirect.pCommands[indirect.NumCommands - 1u];
+    if ( command.indexCount == last.indexCount &&
+         command.firstIndex == last.firstIndex &&
+         command.vertexOffset == last.vertexOffset &&
+         command.firstInstance == last.firstInstance + last.instanceCount ) {
+        // Instance i reads DrawVS block firstInstance + i
+        last.instanceCount++;
+        return;
+    }
+
+    const uint32_t numNewCommands = ( pendingDrawBatch.Count == 1u ) ? 2u : 1u;
+    if ( !bMultiDrawBatching ||
+         indirect.NumCommands + numNewCommands > kMaxIndirectDrawsPerFrame ||
+         pendingDrawBatch.Count >= deviceCaps.MaxDrawIndirectCount ) {
+        flushDrawBatch();
+        pendingDrawBatch.First = command;
+        pendingDrawBatch.Count = 1u;
+        return;
+    }
+
+    if ( pendingDrawBatch.Count == 1u ) {
+        pendingDrawBatch.FirstIndirectCommand = indirect.NumCommands;
+        indirect.pCommands[indirect.NumCommands++] = pendingDrawBatch.First;
+    }
+    indirect.pCommands[indirect.NumCommands++] = command;
+    pendingDrawBatch.Count++;
+}
+
+void RenderDevice::flushDrawBatch() {
+    const uint32_t count = pendingDrawBatch.Count;
+    pendingDrawBatch.Count = 0u;
+
+    if ( count == 1u ) {
+        const VkDrawIndexedIndirectCommand &command = pendingDrawBatch.First;
+        vkCmdDrawIndexed( commandBuffer, command.indexCount,
+                          command.instanceCount, command.firstIndex,
+                          command.vertexOffset, command.firstInstance );
+        return;
+    }
+
+    const IndirectDrawBuffer &indirect = indirectDrawBuffers[frameIndex];
+    const VkDeviceSize offset =
+        VkDeviceSize( pendingDrawBatch.FirstIndirectCommand ) *
+        sizeof( VkDrawIndexedIndirectCommand );
+    const VkDeviceSize size =
+        VkDeviceSize( count ) * sizeof( VkDrawIndexedIndirectCommand );
+    vmaFlushAllocation( allocator, indirect.Allocation, offset, size );
+    vkCmdDrawIndexedIndirect( commandBuffer, indirect.Buffer, offset, count,
+                              sizeof( VkDrawIndexedIndirectCommand ) );
+}
+
+void RenderDevice::endActiveRenderPass() {
+    if ( activeRenderPass == VK_NULL_HANDLE ) {
+        return;
+    }
+
+    if ( pendingDrawBatch.Count != 0u ) {
+        flushDrawBatch();
+    }
+    vkCmdEndRenderPass( commandBuffer );
+    activeRenderPass = VK_NULL_HANDLE;
+}
+
+void RenderDevice::createFallbackSRV() {
+    VkImageCreateInfo imageInfo = {};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.extent = { 1u, 1u, 1u };
+    imageInfo.mipLevels = 1u;
+    imageInfo.arrayLayers = 1u;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage =
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    VkResult result =
+        vmaCreateImage( allocator, &imageInfo, &allocInfo, &fallbackSRVImage,
+                        &fallbackSRVAllocation, nullptr );
+    OTDU_ASSERT_FATAL( result == VK_SUCCESS );
+
+    VkImageViewCreateInfo viewInfo = {};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = fallbackSRVImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u };
+    result = vkCreateImageView( device, &viewInfo, nullptr, &fallbackSRVView );
+    OTDU_ASSERT_FATAL( result == VK_SUCCESS );
+
+    VkCommandBuffer cmdBuffer = getPreFrameCommandBuffer( PFCL_TextureUpload );
+
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = fallbackSRVImage;
+    barrier.subresourceRange = viewInfo.subresourceRange;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                          nullptr, 1, &barrier );
+
+    const VkClearColorValue black = {};
+    vkCmdClearColorImage( cmdBuffer, fallbackSRVImage,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1u,
+                          &viewInfo.subresourceRange );
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                          VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0, 0, nullptr, 0,
+                          nullptr, 1, &barrier );
+    submitPreFrameCommandsNow();
+}
+
+void RenderDevice::createIndirectDrawBuffers() {
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = VkDeviceSize( kMaxIndirectDrawsPerFrame ) *
+                      sizeof( VkDrawIndexedIndirectCommand );
+    bufferInfo.usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                      VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    for ( IndirectDrawBuffer &indirect : indirectDrawBuffers ) {
+        VmaAllocationInfo info = {};
+        VkResult result =
+            vmaCreateBuffer( allocator, &bufferInfo, &allocInfo,
+                             &indirect.Buffer, &indirect.Allocation, &info );
+        OTDU_ASSERT_FATAL( result == VK_SUCCESS );
+        indirect.pCommands =
+            static_cast<VkDrawIndexedIndirectCommand *>( info.pMappedData );
+        indirect.NumCommands = 0u;
+    }
+}
+
+void RenderDevice::destroyIndirectDrawBuffers() {
+    for ( IndirectDrawBuffer &indirect : indirectDrawBuffers ) {
+        if ( indirect.Buffer != VK_NULL_HANDLE ) {
+            vmaDestroyBuffer( allocator, indirect.Buffer, indirect.Allocation );
+            indirect = {};
+        }
+    }
+}
+
+uint32_t
+RenderDevice::getDrawFirstInstance( const uint32_t instanceCount ) const {
+    return resourceBinder.drawVSIndex;
+}
+
+void RenderDevice::draw( ePrimitiveType primitiveType,
+                         uint32_t numVertex,
+                         uint32_t numInstance,
+                         uint32_t firstVertex ) {
+    if ( !prepareDrawCall( primitiveType ) ) {
+        return;
+    }
+    const uint32_t firstInstance = getDrawFirstInstance( numInstance );
+
     // Actual draw cmd
-    vkCmdDraw( commandBuffer, numVertex, numInstance, firstVertex,
+    vkCmdDraw( getCommandBuffer(), numVertex, numInstance, firstVertex,
                firstInstance );
 }
 
@@ -1772,11 +2022,16 @@ void RenderDevice::drawIndexedPrimitive( ePrimitiveType primitiveType,
     uint32_t indexCount = GetVertexCount( primitiveType, primitiveCount );
     uint32_t instanceCount = activeInstanceCount;
     activeInstanceCount = 1; // reset to 1 (non-instanced default)
-    uint32_t firstInstance = 0;
+    const uint32_t firstInstance = getDrawFirstInstance( instanceCount );
 
     // Actual draw cmd
-    vkCmdDrawIndexed( commandBuffer, indexCount, instanceCount, startIndex,
-                      baseVertexIndex, firstInstance );
+    VkDrawIndexedIndirectCommand command;
+    command.indexCount = indexCount;
+    command.instanceCount = instanceCount;
+    command.firstIndex = startIndex;
+    command.vertexOffset = baseVertexIndex;
+    command.firstInstance = firstInstance;
+    recordIndexedDraw( command );
 }
 
 #if defined( OTDU_MACOS )
@@ -1820,8 +2075,8 @@ void RenderDevice::drawTriangleFanAsList( int32_t baseVertexIndex,
 
     uint32_t instanceCount = activeInstanceCount;
     activeInstanceCount = 1; // reset to 1 (non-instanced default)
-    vkCmdDrawIndexed( commandBuffer, primitiveCount * 3, instanceCount, 0,
-                      baseVertexIndex, 0 );
+    vkCmdDrawIndexed( getCommandBuffer(), primitiveCount * 3, instanceCount, 0,
+                      baseVertexIndex, getDrawFirstInstance( instanceCount ) );
 }
 #endif
 
@@ -1840,10 +2095,7 @@ void RenderDevice::blit( GPUTexture *pSrc,
     OTDU_ASSERT( pSrc != nullptr );
     OTDU_ASSERT( pDst != nullptr );
 
-    if ( activeRenderPass != VK_NULL_HANDLE ) {
-        vkCmdEndRenderPass( commandBuffer );
-        activeRenderPass = VK_NULL_HANDLE;
-    }
+    endActiveRenderPass();
 
     GPUTexture *pTextureRT = pDst->getTextureColor();
 
@@ -1890,7 +2142,7 @@ void RenderDevice::blit( GPUTexture *pSrc,
         region.dstOffsets[1].y = pDst->getHeight();
         region.dstOffsets[1].z = 1;
 
-        vkCmdBlitImage( commandBuffer, srcImage,
+        vkCmdBlitImage( getCommandBuffer(), srcImage,
                         pSrc->CurrentLayout[srcFrameIndex], dstImage,
                         pTextureRT->CurrentLayout[dstFrameIndex], 1, &region,
                         VK_FILTER_NEAREST );
@@ -1904,7 +2156,7 @@ void RenderDevice::blit( GPUTexture *pSrc,
         region.extent = { copyWidth, copyHeight, 1 };
 
         vkCmdResolveImage(
-            commandBuffer, srcImage, pSrc->CurrentLayout[srcFrameIndex],
+            getCommandBuffer(), srcImage, pSrc->CurrentLayout[srcFrameIndex],
             dstImage, pTextureRT->CurrentLayout[dstFrameIndex], 1, &region );
     } else if ( pSrc->SampleCount == pTextureRT->SampleCount ) {
         // Matching multisampled source and destination: blit/resolve can't
@@ -1917,7 +2169,7 @@ void RenderDevice::blit( GPUTexture *pSrc,
         region.dstSubresource.layerCount = 1;
         region.extent = { copyWidth, copyHeight, 1 };
 
-        vkCmdCopyImage( commandBuffer, srcImage,
+        vkCmdCopyImage( getCommandBuffer(), srcImage,
                         pSrc->CurrentLayout[srcFrameIndex], dstImage,
                         pTextureRT->CurrentLayout[dstFrameIndex], 1, &region );
     } else {
@@ -1935,41 +2187,110 @@ void RenderDevice::resetCachedStates() {
 void RenderDevice::bindStencilDynamicState() {
     const VkStencilOpState &front = psoFactory.DepthStencil.front;
     const VkStencilOpState &back = psoFactory.DepthStencil.back;
+    VkStencilOpState &recordedFront = recordedBindings.StencilFront;
+    VkStencilOpState &recordedBack = recordedBindings.StencilBack;
+    const bool bValid = recordedBindings.bStencilDynamicStateValid;
 
-    vkCmdSetStencilReference( commandBuffer, VK_STENCIL_FACE_FRONT_BIT,
-                              front.reference );
-    vkCmdSetStencilReference( commandBuffer, VK_STENCIL_FACE_BACK_BIT,
-                              back.reference );
-    vkCmdSetStencilCompareMask( commandBuffer, VK_STENCIL_FACE_FRONT_BIT,
-                                front.compareMask );
-    vkCmdSetStencilCompareMask( commandBuffer, VK_STENCIL_FACE_BACK_BIT,
-                                back.compareMask );
-    vkCmdSetStencilWriteMask( commandBuffer, VK_STENCIL_FACE_FRONT_BIT,
-                              front.writeMask );
-    vkCmdSetStencilWriteMask( commandBuffer, VK_STENCIL_FACE_BACK_BIT,
-                              back.writeMask );
+    if ( !bValid || front.reference != recordedFront.reference ) {
+        vkCmdSetStencilReference( getCommandBuffer(), VK_STENCIL_FACE_FRONT_BIT,
+                                  front.reference );
+    }
+    if ( !bValid || back.reference != recordedBack.reference ) {
+        vkCmdSetStencilReference( getCommandBuffer(), VK_STENCIL_FACE_BACK_BIT,
+                                  back.reference );
+    }
+    if ( !bValid || front.compareMask != recordedFront.compareMask ) {
+        vkCmdSetStencilCompareMask(
+            getCommandBuffer(), VK_STENCIL_FACE_FRONT_BIT, front.compareMask );
+    }
+    if ( !bValid || back.compareMask != recordedBack.compareMask ) {
+        vkCmdSetStencilCompareMask(
+            getCommandBuffer(), VK_STENCIL_FACE_BACK_BIT, back.compareMask );
+    }
+    if ( !bValid || front.writeMask != recordedFront.writeMask ) {
+        vkCmdSetStencilWriteMask( getCommandBuffer(), VK_STENCIL_FACE_FRONT_BIT,
+                                  front.writeMask );
+    }
+    if ( !bValid || back.writeMask != recordedBack.writeMask ) {
+        vkCmdSetStencilWriteMask( getCommandBuffer(), VK_STENCIL_FACE_BACK_BIT,
+                                  back.writeMask );
+    }
 
+    recordedFront.reference = front.reference;
+    recordedFront.compareMask = front.compareMask;
+    recordedFront.writeMask = front.writeMask;
+    recordedBack.reference = back.reference;
+    recordedBack.compareMask = back.compareMask;
+    recordedBack.writeMask = back.writeMask;
+    recordedBindings.bStencilDynamicStateValid = true;
     psoFactory.bDirtyStencilDynamicState = false;
+}
+
+static bool IsSameStencilOp( const VkStencilOpState &a,
+                             const VkStencilOpState &b ) {
+    return a.failOp == b.failOp && a.passOp == b.passOp &&
+           a.depthFailOp == b.depthFailOp && a.compareOp == b.compareOp;
 }
 
 void RenderDevice::bindExtendedDynamicState() {
     const VkPipelineDepthStencilStateCreateInfo &depthStencil =
         psoFactory.DepthStencil;
+    const VkCullModeFlags cullMode = psoFactory.RasterState.cullMode;
+    CommandBufferBindings &recorded = recordedBindings;
+    const bool bValid = recorded.bExtendedDynamicStateValid;
 
-    cmdSetCullMode( commandBuffer, psoFactory.RasterState.cullMode );
-    cmdSetDepthTestEnable( commandBuffer, depthStencil.depthTestEnable );
-    cmdSetDepthWriteEnable( commandBuffer, depthStencil.depthWriteEnable );
-    cmdSetDepthCompareOp( commandBuffer, depthStencil.depthCompareOp );
-    cmdSetStencilTestEnable( commandBuffer, depthStencil.stencilTestEnable );
-    cmdSetStencilOp( commandBuffer, VK_STENCIL_FACE_FRONT_BIT,
-                     depthStencil.front.failOp, depthStencil.front.passOp,
-                     depthStencil.front.depthFailOp,
-                     depthStencil.front.compareOp );
-    cmdSetStencilOp( commandBuffer, VK_STENCIL_FACE_BACK_BIT,
-                     depthStencil.back.failOp, depthStencil.back.passOp,
-                     depthStencil.back.depthFailOp,
-                     depthStencil.back.compareOp );
+    if ( !bValid || cullMode != recorded.CullMode ) {
+        cmdSetCullMode( getCommandBuffer(), cullMode );
+        recorded.CullMode = cullMode;
+    }
+    if ( !bValid || depthStencil.depthTestEnable != recorded.DepthTestEnable ) {
+        cmdSetDepthTestEnable( getCommandBuffer(),
+                               depthStencil.depthTestEnable );
+        recorded.DepthTestEnable = depthStencil.depthTestEnable;
+    }
+    if ( !bValid ||
+         depthStencil.depthWriteEnable != recorded.DepthWriteEnable ) {
+        cmdSetDepthWriteEnable( getCommandBuffer(),
+                                depthStencil.depthWriteEnable );
+        recorded.DepthWriteEnable = depthStencil.depthWriteEnable;
+    }
+    if ( !bValid || depthStencil.depthCompareOp != recorded.DepthCompareOp ) {
+        cmdSetDepthCompareOp( getCommandBuffer(), depthStencil.depthCompareOp );
+        recorded.DepthCompareOp = depthStencil.depthCompareOp;
+    }
+    if ( !bValid ||
+         depthStencil.stencilTestEnable != recorded.StencilTestEnable ) {
+        cmdSetStencilTestEnable( getCommandBuffer(),
+                                 depthStencil.stencilTestEnable );
+        recorded.StencilTestEnable = depthStencil.stencilTestEnable;
+    }
 
+    if ( !bValid ||
+         !IsSameStencilOp( depthStencil.front, recorded.StencilFront ) ) {
+        cmdSetStencilOp( getCommandBuffer(), VK_STENCIL_FACE_FRONT_BIT,
+                         depthStencil.front.failOp, depthStencil.front.passOp,
+                         depthStencil.front.depthFailOp,
+                         depthStencil.front.compareOp );
+    }
+    if ( !bValid ||
+         !IsSameStencilOp( depthStencil.back, recorded.StencilBack ) ) {
+        cmdSetStencilOp( getCommandBuffer(), VK_STENCIL_FACE_BACK_BIT,
+                         depthStencil.back.failOp, depthStencil.back.passOp,
+                         depthStencil.back.depthFailOp,
+                         depthStencil.back.compareOp );
+    }
+
+    VkStencilOpState &recordedFront = recorded.StencilFront;
+    VkStencilOpState &recordedBack = recorded.StencilBack;
+    recordedFront.failOp = depthStencil.front.failOp;
+    recordedFront.passOp = depthStencil.front.passOp;
+    recordedFront.depthFailOp = depthStencil.front.depthFailOp;
+    recordedFront.compareOp = depthStencil.front.compareOp;
+    recordedBack.failOp = depthStencil.back.failOp;
+    recordedBack.passOp = depthStencil.back.passOp;
+    recordedBack.depthFailOp = depthStencil.back.depthFailOp;
+    recordedBack.compareOp = depthStencil.back.compareOp;
+    recorded.bExtendedDynamicStateValid = true;
     psoFactory.bDirtyExtendedDynamicState = false;
 }
 
@@ -1984,10 +2305,7 @@ void RenderDevice::markExtendedDynamicStateDirty() {
 void RenderDevice::present() {
     // FUN_005f16b0
     if ( bRecordingCommands ) {
-        if ( activeRenderPass != VK_NULL_HANDLE ) {
-            vkCmdEndRenderPass( commandBuffer );
-            activeRenderPass = VK_NULL_HANDLE;
-        }
+        endActiveRenderPass();
 
         FrameSubmission submission;
         submission.Serial = recordingSerial;
@@ -2000,7 +2318,7 @@ void RenderDevice::present() {
 
         presentBackbuffer( submission );
 
-        VkResult opResult = vkEndCommandBuffer( commandBuffer );
+        VkResult opResult = vkEndCommandBuffer( getCommandBuffer() );
         OTDU_ASSERT( opResult == VK_SUCCESS );
         submission.CommandBuffers[submission.NumCommandBuffers++] =
             commandBuffer;
@@ -2426,14 +2744,13 @@ bool RenderDevice::uploadTexture( Texture *pTexture ) {
 
     // FIXME: Implement proper async texture upload (so that we do not have to
     // insert upload inside main pending cmdbuffer).
-    VkCommandBuffer cmdBuffer =
-        ( bRecordingCommands ) ? commandBuffer
-                               : getPreFrameCommandBuffer( PFCL_TextureUpload );
-
-    if ( bRecordingCommands && activeRenderPass != VK_NULL_HANDLE ) {
-        vkCmdEndRenderPass( commandBuffer );
-        activeRenderPass = VK_NULL_HANDLE;
+    if ( bRecordingCommands ) {
+        endActiveRenderPass();
     }
+
+    VkCommandBuffer cmdBuffer =
+        ( bRecordingCommands ) ? getCommandBuffer()
+                               : getPreFrameCommandBuffer( PFCL_TextureUpload );
 
     GPUTexture *pVulkanTex = pTexture->pTexture;
 
@@ -2624,6 +2941,8 @@ void RenderDevice::beginScene() {
 
         psoFactory.reset();
         resourceBinder.onFrameBegin( device, frameIndex );
+        OTDU_ASSERT( pendingDrawBatch.Count == 0u );
+        indirectDrawBuffers[frameIndex].NumCommands = 0u;
 
         vmaSetCurrentFrameIndex( allocator, absoluteFrameIndex );
 
@@ -2706,10 +3025,7 @@ void RenderDevice::resolveMSAA( RenderTarget *param_1, uint32_t param_2 ) {
         return;
     }
 
-    if ( activeRenderPass != VK_NULL_HANDLE ) {
-        vkCmdEndRenderPass( commandBuffer );
-        activeRenderPass = VK_NULL_HANDLE;
-    }
+    endActiveRenderPass();
 
     uint32_t srcFrameIndex = frameIndex;
     if ( srcFrameIndex >= pSrc->NumResources ) {
@@ -2754,7 +3070,7 @@ void RenderDevice::resolveMSAA( RenderTarget *param_1, uint32_t param_2 ) {
         region.extent.height = Min( pSrc->Height, dstHeight );
         region.extent.depth = 1;
 
-        vkCmdResolveImage( commandBuffer, srcImage,
+        vkCmdResolveImage( getCommandBuffer(), srcImage,
                            pSrc->CurrentLayout[srcFrameIndex], dstImage,
                            pDst->CurrentLayout[dstFrameIndex], 1, &region );
     } else {
@@ -2778,7 +3094,7 @@ void RenderDevice::resolveMSAA( RenderTarget *param_1, uint32_t param_2 ) {
         region.dstOffsets[1].z = 1;
 
         // D3DTEXF_POINT in the original StretchRect
-        vkCmdBlitImage( commandBuffer, srcImage,
+        vkCmdBlitImage( getCommandBuffer(), srcImage,
                         pSrc->CurrentLayout[srcFrameIndex], dstImage,
                         pDst->CurrentLayout[dstFrameIndex], 1, &region,
                         VK_FILTER_NEAREST );
@@ -2863,13 +3179,13 @@ void RenderDevice::pushDebugLabel( const char *pLabel ) {
     debugLabel.color[2] = 0.0f;
     debugLabel.color[3] = 0.0f;
 
-    vkCmdBeginDebugUtilsLabelEXT( commandBuffer, &debugLabel );
+    vkCmdBeginDebugUtilsLabelEXT( getCommandBuffer(), &debugLabel );
 #endif
 }
 
 void RenderDevice::popDebugLabel() {
 #if OTDU_DEVBUILD
-    vkCmdEndDebugUtilsLabelEXT( commandBuffer );
+    vkCmdEndDebugUtilsLabelEXT( getCommandBuffer() );
 #endif
 }
 
@@ -3058,6 +3374,7 @@ RenderDevice::createVertexLayout( VertexLayoutAttribute *pAttributes,
                                         ? VK_VERTEX_INPUT_RATE_INSTANCE
                                         : VK_VERTEX_INPUT_RATE_VERTEX;
             pLayout->InputBindings.push_back( bindingDesc );
+            pLayout->bHasInstanceRateBinding |= info.hasInstanceData;
         }
 
         pAttributeIt++;
@@ -3347,6 +3664,9 @@ bool RenderDevice::createDevice() {
     deviceFeatures.features.depthClamp = deviceCaps.bDepthClamp;
     deviceFeatures.features.fillModeNonSolid = deviceCaps.bFillModeNonSolid;
     deviceFeatures.features.samplerAnisotropy = deviceCaps.bSamplerAnisotropy;
+    deviceFeatures.features.multiDrawIndirect = deviceCaps.bMultiDrawIndirect;
+    deviceFeatures.features.drawIndirectFirstInstance =
+        deviceCaps.bMultiDrawIndirect;
 
     // Create the logical device
     VkDeviceCreateInfo deviceCreateInfo = {};
@@ -4079,6 +4399,7 @@ bool RenderDevice::createBackbufferTexture( const VkFormat format,
         imageCreationResult = vkCreateImageView(
             device, &viewInfos, nullptr, &backbuffer.pTexture->ImageView[i] );
         OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
+        backbuffer.pTexture->ViewIds[i] = allocateViewId();
 
 #if OTDU_DEVBUILD
         std::string objName = "Backbuffer[" + std::to_string( i ) + "]";
@@ -4501,6 +4822,8 @@ void RenderDevice::resetRecordedBindings() {
     recordedBindings.IndexType = VK_INDEX_TYPE_UINT16;
 
     recordedBindings.bRenderStatesValid = false;
+    recordedBindings.bStencilDynamicStateValid = false;
+    recordedBindings.bExtendedDynamicStateValid = false;
     recordedBindings.SamplersSize = 0;
 }
 
@@ -4511,7 +4834,7 @@ void RenderDevice::bindIndexBufferToCmdBuffer( VkBuffer buffer,
         return;
     }
 
-    vkCmdBindIndexBuffer( commandBuffer, buffer, 0, indexType );
+    vkCmdBindIndexBuffer( getCommandBuffer(), buffer, 0, indexType );
     recordedBindings.IndexBuffer = buffer;
     recordedBindings.IndexType = indexType;
 }
@@ -4570,9 +4893,47 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
         psoFactory.bDirty = true;
     }
 
+    // Commands recorded until the render pass begins keep the pending clear
+    struct PreparingDrawCallScope {
+        bool &bPreparing;
+        explicit PreparingDrawCallScope( bool &bValue ) : bPreparing( bValue ) {
+            bPreparing = true;
+        }
+        ~PreparingDrawCallScope() { bPreparing = false; }
+    } preparingScope( bPreparingDrawCall );
+
+    bool bClearOnLoad = false;
+    if ( pendingClear.bActive ) {
+        uint32_t targetWidth = 0;
+        uint32_t targetHeight = 0;
+        for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
+            if ( bFramebufferAttachmentValid[i] ) {
+                targetWidth = pFramebufferAttachments[i]->Width;
+                targetHeight = pFramebufferAttachments[i]->Height;
+                break;
+            }
+        }
+        if ( targetWidth == 0 && bDepthStencilAttachmentValid ) {
+            targetWidth = pDepthStencilAttachment->Width;
+            targetHeight = pDepthStencilAttachment->Height;
+        }
+        const bool bFullRenderArea =
+            activeRenderRegion.offset.x == 0 &&
+            activeRenderRegion.offset.y == 0 &&
+            activeRenderRegion.extent.width == targetWidth &&
+            activeRenderRegion.extent.height == targetHeight;
+
+        if ( bFullRenderArea && isPendingClearForBoundAttachments() ) {
+            bClearOnLoad = true;
+        } else {
+            flushPendingClear();
+        }
+    }
+
     // Create or retrieve cached renderpass for incoming drawcall (do this as
     // late as possible to make sure to capture all framebuffer cmds)
-    bool bNeedRestartRenderPass = ( activeRenderPass == VK_NULL_HANDLE );
+    bool bNeedRestartRenderPass =
+        ( activeRenderPass == VK_NULL_HANDLE ) || bClearOnLoad;
     if ( bDepthStencilAttachmentValid ) {
         if ( pDepthStencilAttachment->CurrentLayout[frameIndex] !=
              VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ) {
@@ -4745,6 +5106,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     if ( !( framebufferKey == activeFramebufferKey ) ) {
         activeFramebuffer = getOrCreateFramebuffer( framebufferKey );
         activeFramebufferKey = framebufferKey;
+        bNeedRestartRenderPass = true;
     }
 
     // Mem barrier SRVs (if required)
@@ -4787,11 +5149,42 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     renderPassInfo.clearValueCount = 0;
     renderPassInfo.pClearValues = nullptr;
 
-    if ( bNeedRestartRenderPass ) {
-        if ( activeRenderPass != VK_NULL_HANDLE ) {
-            vkCmdEndRenderPass( commandBuffer );
+    std::array<VkClearValue, kMaxSimultaneousRT + 1> clearValues;
+    if ( bClearOnLoad ) {
+        RenderPassDesc clearDesc;
+        renderPassManager.captureDesc( clearDesc );
+        for ( uint32_t i = 0; i < clearDesc.NumColorAttachments; i++ ) {
+            if ( pendingClear.bColor ) {
+                clearDesc.Attachments[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            }
+            clearValues[i].color = pendingClear.Color;
         }
-        vkCmdBeginRenderPass( commandBuffer, &renderPassInfo,
+        if ( clearDesc.bUseDepthStencil ) {
+            VkAttachmentDescription &depthStencil =
+                clearDesc.Attachments[clearDesc.NumColorAttachments];
+            if ( pendingClear.bDepth ) {
+                depthStencil.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            }
+            if ( pendingClear.bStencil &&
+                 depthStencil.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD ) {
+                depthStencil.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            }
+            clearValues[clearDesc.NumColorAttachments].depthStencil =
+                pendingClear.DepthStencil;
+        }
+
+        renderPassInfo.renderPass =
+            renderPassManager.getOrCreateRenderPass( device, clearDesc )
+                .Instance;
+        renderPassInfo.clearValueCount = clearDesc.getNumAttachments();
+        renderPassInfo.pClearValues = clearValues.data();
+        pendingClear.bActive = false;
+    }
+
+    if ( bNeedRestartRenderPass ) {
+        endActiveRenderPass();
+
+        vkCmdBeginRenderPass( getCommandBuffer(), &renderPassInfo,
                               VK_SUBPASS_CONTENTS_INLINE );
         activeRenderPass = renderPass.Instance;
     }
@@ -4807,7 +5200,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     }
 
     if ( boundPSO != pso.Instance || bNeedRestartRenderPass ) {
-        vkCmdBindPipeline( commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        vkCmdBindPipeline( getCommandBuffer(), VK_PIPELINE_BIND_POINT_GRAPHICS,
                            pso.Instance );
         boundPSO = pso.Instance;
         bDirtyDescriptorSets = true;
@@ -4828,7 +5221,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
                  sizeof( VkBuffer ) * numVertexBuffers ) != 0 ||
          memcmp( recordedBindings.VertexBufferOffsets, vertexBufferOffsets,
                  sizeof( VkDeviceSize ) * numVertexBuffers ) != 0 ) {
-        vkCmdBindVertexBuffers( commandBuffer, 0, numVertexBuffers,
+        vkCmdBindVertexBuffers( getCommandBuffer(), 0, numVertexBuffers,
                                 vertexBuffers, vertexBufferOffsets );
         memcpy( recordedBindings.VertexBuffers, vertexBuffers,
                 sizeof( VkBuffer ) * numVertexBuffers );
@@ -4845,7 +5238,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     }
 #endif
     // Invalidate if UBOs offsets are dirty
-    bDirtyDescriptorSets |= resourceBinder.dirtyStates != 0;
+    bDirtyDescriptorSets |= resourceBinder.isDescriptorSetDirty();
 
     VkDescriptorSet resourceSet = resourceBinder.getOrAllocateSet(
         device, pso.TextureBindingMask, frameIndex );
@@ -4855,7 +5248,8 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
         VkDescriptorSet pBoundSet[2] = { resourceSet,
                                          samplerHeap.DescriptorSet };
 
-        vkCmdBindDescriptorSets( commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        vkCmdBindDescriptorSets( getCommandBuffer(),
+                                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                                  psoFactory.PipelineLayout, 0, 2, pBoundSet,
                                  (uint32_t)resourceBinder.uboOffsets.size(),
                                  resourceBinder.uboOffsets.data() );
@@ -4864,7 +5258,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     if ( !recordedBindings.bRenderStatesValid ||
          memcmp( &recordedBindings.RenderStates, &renderStates,
                  sizeof( D3D9RenderStateInfo ) ) != 0 ) {
-        vkCmdPushConstants( commandBuffer, psoFactory.PipelineLayout,
+        vkCmdPushConstants( getCommandBuffer(), psoFactory.PipelineLayout,
                             VK_SHADER_STAGE_VERTEX_BIT |
                                 VK_SHADER_STAGE_FRAGMENT_BIT,
                             0, sizeof( D3D9RenderStateInfo ), &renderStates );
@@ -4887,7 +5281,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
         // 64, NOT at sizeof(D3D9RenderStateInfo) = 52. The 12-byte gap is
         // intentional padding in DXVK's push constant layout.
         vkCmdPushConstants(
-            commandBuffer, psoFactory.PipelineLayout,
+            getCommandBuffer(), psoFactory.PipelineLayout,
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
             kDxvkMaxSharedPushDataSize, samplerIndexes, boundSamplers );
         OTDU_ASSERT( samplerIndexes <= sizeof( recordedBindings.Samplers ) );
@@ -4900,7 +5294,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
 }
 
 void RenderDevice::insertMemoryBarrier( GPUTexture *pTexture,
-                                        const VkImageLayout prevLayout,
+                                        const VkImageLayout callerPrevLayout,
                                         const VkImageLayout nextLayout,
                                         const VkPipelineStageFlagBits stageSync,
                                         uint32_t imageIndex ) {
@@ -4910,11 +5304,14 @@ void RenderDevice::insertMemoryBarrier( GPUTexture *pTexture,
         imageIndex = ( pTexture->NumResources - 1 );
     }
 
+    VkImageLayout prevLayout = callerPrevLayout;
+    if ( pendingClear.bActive && !bPreparingDrawCall ) {
+        flushPendingClear();
+        prevLayout = pTexture->CurrentLayout[imageIndex];
+    }
+
     if ( pTexture->CurrentLayout[imageIndex] != nextLayout ) {
-        if ( activeRenderPass != VK_NULL_HANDLE ) {
-            vkCmdEndRenderPass( commandBuffer );
-            activeRenderPass = VK_NULL_HANDLE;
-        }
+        endActiveRenderPass();
 
         bool bIsDepthStencil =
             IsVulkanDepthStencilFormat( pTexture->ViewFormat );
@@ -4951,7 +5348,7 @@ void RenderDevice::insertMemoryBarrier( GPUTexture *pTexture,
         }
 
         vkCmdPipelineBarrier(
-            commandBuffer, srcStage,
+            getCommandBuffer(), srcStage,
             !bIsDepthStencil ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
                              : VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
                                    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
@@ -4963,7 +5360,7 @@ void RenderDevice::insertMemoryBarrier( GPUTexture *pTexture,
 
 void RenderDevice::insertImageBarrier( GPUTexture *pTexture,
                                        uint32_t imageIndex,
-                                       const VkImageLayout prevLayout,
+                                       const VkImageLayout callerPrevLayout,
                                        const VkImageLayout nextLayout,
                                        const VkPipelineStageFlags srcStage,
                                        const VkAccessFlags srcAccess,
@@ -4975,10 +5372,13 @@ void RenderDevice::insertImageBarrier( GPUTexture *pTexture,
         imageIndex = ( pTexture->NumResources - 1 );
     }
 
-    if ( activeRenderPass != VK_NULL_HANDLE ) {
-        vkCmdEndRenderPass( commandBuffer );
-        activeRenderPass = VK_NULL_HANDLE;
+    VkImageLayout prevLayout = callerPrevLayout;
+    if ( pendingClear.bActive && !bPreparingDrawCall ) {
+        flushPendingClear();
+        prevLayout = pTexture->CurrentLayout[imageIndex];
     }
+
+    endActiveRenderPass();
 
     bool bIsDepthStencil = IsVulkanDepthStencilFormat( pTexture->ViewFormat );
     bool bHasStencilBits = HasStencilBits( pTexture->ViewFormat );
@@ -5004,8 +5404,8 @@ void RenderDevice::insertImageBarrier( GPUTexture *pTexture,
     barrier.subresourceRange = range;
     barrier.srcAccessMask = srcAccess;
     barrier.dstAccessMask = dstAccess;
-    vkCmdPipelineBarrier( commandBuffer, srcStage, dstStage, 0, 0, nullptr, 0,
-                          nullptr, 1, &barrier );
+    vkCmdPipelineBarrier( getCommandBuffer(), srcStage, dstStage, 0, 0, nullptr,
+                          0, nullptr, 1, &barrier );
 
     pTexture->CurrentLayout[imageIndex] = nextLayout;
 }
@@ -5355,7 +5755,7 @@ void RenderDevice::snapshotRenderTarget( GPUTexture *pTexture,
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.layerCount = 1;
     region.imageExtent = { pTexture->Width, pTexture->Height, 1 };
-    vkCmdCopyImageToBuffer( commandBuffer, pTexture->Image[resourceIndex],
+    vkCmdCopyImageToBuffer( getCommandBuffer(), pTexture->Image[resourceIndex],
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                             snapshot.Buffer, 1, &region );
 
@@ -5421,7 +5821,7 @@ void RenderDevice::fillRenderTargetRegion( GPUTexture *pTexture,
     region.imageSubresource.layerCount = 1;
     region.imageOffset = { offset.x, offset.y, 0 };
     region.imageExtent = { clipped.width, clipped.height, 1 };
-    vkCmdCopyBufferToImage( commandBuffer, upload.Buffer,
+    vkCmdCopyBufferToImage( getCommandBuffer(), upload.Buffer,
                             pTexture->Image[resourceIndex],
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
 

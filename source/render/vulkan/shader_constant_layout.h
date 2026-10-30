@@ -15,14 +15,15 @@ struct ShaderConstantBlockDesc {
     uint32_t NumVectors;
     bool bVertexStage;
     bool bPixelStage;
+    bool bPerDrawStorage;
 };
 
 static constexpr ShaderConstantBlockDesc kShaderConstantBlocks[SCB_Count] = {
-    { 0, 136, true, true }, // Pass
-    { 1, 32, true, false }, // DrawVS
-    { 2, 49, true, false }, // Material
-    { 4, 96, true, false }, // Bones
-    { 10, 36, false, true }, // DrawPS
+    { 0, 136, true, true, false }, // Pass
+    { 1, 32, true, false, true }, // DrawVS
+    { 2, 49, true, false, false }, // Material
+    { 4, 96, true, false, false }, // Bones
+    { 10, 36, false, true, false }, // DrawPS
 };
 
 // Register -> vector of a block. Block = SCB_Count for registers no
