@@ -17,7 +17,7 @@ static constexpr uint32_t kVulkanNumSetPerPool = 4096;
 static constexpr uint32_t kVulkanClipInfosSize = 6 * 4 * sizeof( float );
 static constexpr uint32_t kVulkanShaderSpecsUBOSize = 15 * sizeof( uint32_t );
 
-static constexpr uint32_t kVulkanNumAllocsPerFrame = 32768;
+static constexpr uint32_t kVulkanNumAllocsPerFrame = 4096;
 static constexpr uint32_t kNumFramesUnusedBeforeSetDestroyed =
     32; // Num of frames before a descriptor set is considered unused and can
         // be released
@@ -619,7 +619,7 @@ bool LinearAllocator::create( VkDevice device,
                               uint32_t maxNumElements,
                               VkDeviceSize uboAlignment,
                               VkBufferUsageFlags usage ) {
-    Capacity = elementSize * maxNumElements;
+    Capacity = Align( elementSize, (uint32_t)uboAlignment ) * maxNumElements;
     ElementSize = elementSize;
     Usage = 0;
     Alignment = uboAlignment;
@@ -632,7 +632,7 @@ bool LinearAllocator::create( VkDevice device,
     bufferInfo.flags = 0;
 
     VmaAllocationCreateInfo allocInfo = {};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.usage = GetPerFrameBufferMemoryUsage();
     allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
     VkResult opResult = vmaCreateBuffer( allocator, &bufferInfo, &allocInfo,
@@ -641,6 +641,7 @@ bool LinearAllocator::create( VkDevice device,
         OTDU_ASSERT( false );
         return false;
     }
+    LogBufferPlacement( allocator, Allocations, "Constant ring" );
     opResult = vmaMapMemory( allocator, Allocations, (void **)&pCPUMapping );
     return true;
 }
