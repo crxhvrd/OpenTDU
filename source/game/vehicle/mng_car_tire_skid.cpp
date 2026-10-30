@@ -220,12 +220,13 @@ void MngCarTireSkid::updateSkids( float /*deltaTime*/ ) {
 
         PhysicsVehicle *pPhysicsVehicle = carState.getPhysicsVehicle();
         if ( pPhysicsVehicle == nullptr || !pPhysicsVehicle->isActive() ||
-             carState.getActiveMode() == CarState::eActiveMode::CSAM_Paused ) {
+             pPhysicsVehicle->isPaused() ) {
             continue;
         }
 
         if ( !carState.FUN_00406ce0() &&
-             carState.getOwner() != CarState::eOwner::CSO_NetPlayer ) {
+             carState.getSimulationType() !=
+                 CarState::eSimulationType::CSST_ReplicatedFromNetwork ) {
             continue;
         }
 

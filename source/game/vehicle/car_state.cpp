@@ -152,7 +152,8 @@ void CarState::reset() {
     tireID = -1;
     rimID = -1;
     owner = eOwner::CSO_NetPlayer;
-    activeMode = eActiveMode::CSAM_Freeride;
+    simulationType = eSimulationType::CSST_Local;
+    activeMode = eActiveMode::CSAM_Paused;
     numWheels = 0;
     bInstanceAlive = false;
     bUseShowcaseControl = false;

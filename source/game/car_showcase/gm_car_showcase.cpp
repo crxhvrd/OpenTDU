@@ -441,8 +441,8 @@ bool GMCarShowcase::loadCar() {
     VehicleController *local_d0 = nullptr;
     CarState &state = gpCarState->grabNextFreeCarState();
     state.reset();
-    state.activeMode = CarState::eActiveMode::CSAM_Paused;
-    state.owner = CarState::eOwner::CSO_NetPlayer;
+    state.owner = CarState::eOwner::CSO_LocalPlayer;
+    state.simulationType = CarState::eSimulationType::CSST_Local;
     state.bUseShowcaseControl = false;
     state.carID = pCarState->CarID;
     state.tireID = pCarState->TireID;

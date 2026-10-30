@@ -167,8 +167,8 @@ void BrandCar::instanciate() {
          gpDatabase != nullptr ) {
         CarState &carState = gpCarState->grabNextFreeCarState();
         carState.reset();
-        carState.owner = CarState::eOwner::CSO_NetPlayer;
-        carState.activeMode = CarState::eActiveMode::CSAM_Paused;
+        carState.owner = CarState::eOwner::CSO_Bot;
+        carState.simulationType = CarState::eSimulationType::CSST_Local;
         carState.bUseShowcaseControl = false;
         carState.carID = pRes->CarID;
         carState.tireID = pRes->TireID;
