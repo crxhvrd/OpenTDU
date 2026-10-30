@@ -33,7 +33,8 @@ bool WeatherDesc::registerStaticConfigs( const char *param_1,
                                          const char *param_2 ) {
     WeatherConfig *pConfig = registerStaticConfig( param_1 );
     WeatherConfig *pHDRConfig = registerHDRStaticConfig( param_1, param_2 );
-    if ( pConfig != nullptr && pHDRConfig != nullptr ) {
+    if ( pConfig != nullptr && pHDRConfig != nullptr &&
+         numRegisteredCfgs < kMaxNumConfig ) {
         numRegisteredCfgs++;
         return true;
     }

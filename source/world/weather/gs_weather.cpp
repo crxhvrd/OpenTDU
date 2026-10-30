@@ -424,7 +424,7 @@ void GSWeather::computePeriodsStart() {
     if ( numPeriods <= 0 ) {
         return;
     }
-    OTDU_ASSERT( numPeriods <= 48 );
+    OTDU_ASSERT( numPeriods <= (int32_t)kMaxNumConfig );
 
     // FUN_007d08e0 (inlined)
     TimeOfDay periodDuration;

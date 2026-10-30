@@ -117,7 +117,7 @@ private:
     TimeOfDay currentTOD;
     TimeOfDay nextTOD;
     TimeOfDay timeRefreshInterval;
-    TimeOfDay periodsStart[48];
+    TimeOfDay periodsStart[kMaxNumConfig];
 
     HDRIConfig activeHDRIConfig;
     WeatherConfig activeWeatherConfig;
