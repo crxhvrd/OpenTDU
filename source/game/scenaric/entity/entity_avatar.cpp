@@ -62,7 +62,8 @@ EntityAvatar::EntityAvatar()
       bForceShowHelmet( false ),
       bLastShowHead( true ),
       bIsToUpdate( false ),
-      bLowResShadow( true ) {
+      bLowResShadow( true ),
+      bDisableShadows( false ) {
     // FUN_007f8240
     gAvatarLODDistances[0] = LODDistances[0];
     gAvatarLODDistances[1] = LODDistances[1];
@@ -328,7 +329,7 @@ void EntityAvatar::tick( GameMechanism *pGameMech,
             pLayer->onPoseComputed();
         }
 
-        if ( isShadowCaster() ) {
+        if ( isShadowCaster() && !bDisableShadows ) {
             pPooledAvatarEntry->addShadowCasters( bLowResShadow,
                                                   ShadowIntensity );
         }

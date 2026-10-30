@@ -8,6 +8,8 @@ class FlashPlayer;
 class FlashSprite;
 struct MoviePlayer;
 class CameraGame;
+class Entity;
+class EntityAvatar;
 class EntityCinematic;
 class PhysicsCharacter;
 class SceneCarPark;
@@ -57,6 +59,8 @@ public:
 
 private:
     bool installCollision( SceneInterior *pScene );
+    void hideAvatars( std::vector<EntityAvatar *> &avatars );
+    void restoreHiddenAvatars();
     float measureOpenSpace( const Eigen::Vector4f &from );
     void removeCollision();
 
@@ -77,6 +81,7 @@ private:
 
     MoviePlayer *pPanelMovie;
     std::vector<std::pair<FlashSprite *, bool>> panelClipsVisibility;
+    std::vector<std::pair<EntityAvatar *, bool>> hiddenAvatars;
 
     Eigen::Vector4f spawnPosition;
     Eigen::Vector4f hullMin;

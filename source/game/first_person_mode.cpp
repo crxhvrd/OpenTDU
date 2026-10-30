@@ -8,11 +8,14 @@
 #include "flash/implementation/flash_sprite.h"
 #include "flash/movie_player.h"
 #include "gs_timer.h"
+#include "game/cinematic/cin_res_collection.h"
 #include "game/gm_scene.h"
 #include "game/scene_car_park.h"
 #include "game/scene_interior.h"
 #include "game/vehicle/car_state.h"
+#include "game/scenaric/entity/entity_avatar.h"
 #include "game/scenaric/entity/entity_cinematic.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
 #include "physics/gs_physics.h"
@@ -48,6 +51,20 @@ static constexpr int32_t kMobilitySteps = 10;
 static constexpr float kMobilityTestSpeed = 2.4f;
 static constexpr float kOpenSpaceGoodEnough = 1.2f;
 
+static bool IsAvatarEntity( const Entity *pEntity ) {
+    switch ( pEntity->getType() ) {
+    case eEntityType::ET_AVAT:
+    case eEntityType::ET_AVCO:
+    case eEntityType::ET_AVHI:
+    case eEntityType::ET_AVPL:
+    case eEntityType::ET_AVSG:
+    case eEntityType::ET_AVTR:
+        return true;
+    default:
+        return false;
+    }
+}
+
 FirstPersonMode::FirstPersonMode()
     : pCamera( nullptr ),
       pCharacter( nullptr ),
@@ -63,6 +80,7 @@ FirstPersonMode::FirstPersonMode()
       clickedCar( -1 ),
       pPanelMovie( nullptr ),
       panelClipsVisibility(),
+      hiddenAvatars(),
       spawnPosition( 0.0f, 0.0f, 0.0f, 1.0f ),
       hullMin( 0.0f, 0.0f, 0.0f, 1.0f ),
       hullMax( 0.0f, 0.0f, 0.0f, 1.0f ),
@@ -185,9 +203,36 @@ void FirstPersonMode::enter( SceneInterior *pScene,
         viewDirection = pRenderCamera->getTarget() - position;
     }
     pLoopCinematic = pLoopCine;
+
+    std::vector<EntityAvatar *> avatarsToHide;
+    if ( pLoopCinematic != nullptr ) {
+        const CinResCollection &actors = pLoopCinematic->getCinResCollection();
+        for ( int32_t i = 0; i < actors.getActorCount(); i++ ) {
+            if ( actors.getActorKind( i ) != CinematicActor::CAK_Entity ) {
+                continue;
+            }
+
+            Entity *pEntity =
+                static_cast<Entity *>( actors.getActorEntity( i ) );
+            if ( pEntity != nullptr && IsAvatarEntity( pEntity ) ) {
+                avatarsToHide.push_back(
+                    static_cast<EntityAvatar *>( pEntity ) );
+            }
+        }
+    }
+
+    EntityAvatar *pPlayerAvatar =
+        gpScenaric->getAvatarManager().getDriverAvatar();
+    if ( pPlayerAvatar != nullptr &&
+         std::find( avatarsToHide.begin(), avatarsToHide.end(),
+                    pPlayerAvatar ) == avatarsToHide.end() ) {
+        avatarsToHide.push_back( pPlayerAvatar );
+    }
+
     if ( pLoopCinematic != nullptr && pLoopCinematic->isPlaying() ) {
         pLoopCinematic->stop( true );
     }
+    hideAvatars( avatarsToHide );
     gpCamera->clearCinematicCameraOverride();
 
 #if 1
@@ -359,6 +404,27 @@ void FirstPersonMode::setExtraCollisionBodies(
     }
 }
 
+void FirstPersonMode::hideAvatars( std::vector<EntityAvatar *> &avatars ) {
+    for ( EntityAvatar *pAvatar : avatars ) {
+        hiddenAvatars.emplace_back( pAvatar, pAvatar->isVisible() );
+        pAvatar->setVisible( false );
+        pAvatar->setShadowsSuppressed( true );
+    }
+
+    if ( !hiddenAvatars.empty() ) {
+        OTDU_LOG_INFO( "First person: hid %zu avatar(s)\n",
+                       hiddenAvatars.size() );
+    }
+}
+
+void FirstPersonMode::restoreHiddenAvatars() {
+    for ( const std::pair<EntityAvatar *, bool> &avatar : hiddenAvatars ) {
+        avatar.first->setVisible( avatar.second );
+        avatar.first->setShadowsSuppressed( false );
+    }
+    hiddenAvatars.clear();
+}
+
 void FirstPersonMode::leave() {
     if ( !bActive ) {
         return;
@@ -392,6 +458,7 @@ void FirstPersonMode::leave() {
     pCharacter = nullptr;
 
     removeCollision();
+    restoreHiddenAvatars();
 
     // Clearing the ended flag lets GameModeScene::launchCine pick the loop
     // cinematic back up on its next tick.

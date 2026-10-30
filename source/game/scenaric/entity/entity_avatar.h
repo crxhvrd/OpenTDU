@@ -44,6 +44,9 @@ public:
     inline void setLowResShadow( const bool bEnabled ) {
         bLowResShadow = bEnabled;
     }
+    inline void setShadowsSuppressed( const bool bEnabled ) {
+        bDisableShadows = bEnabled;
+    }
     inline void requestFaceRefresh() { bNeedToRefreshFace = true; }
     inline int32_t getFaceParam( const int32_t index ) const {
         return FaceParams[index];
@@ -143,4 +146,5 @@ protected:
     bool bLastShowHead;
     bool bIsToUpdate;
     bool bLowResShadow;
+    bool bDisableShadows; // OTDU_ADDITION
 };
