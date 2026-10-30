@@ -186,8 +186,13 @@ bool RenderTarget::createFrom2DB( Render2DB *param_2, uint32_t uStack_4 ) {
     antiAliasing = eAntiAliasingMethod::AAM_Disabled;
     bind2DB( param_2 );
 
-    pTexture = gEdRender.pRenderDevice->createRenderTarget(
-        (uint32_t)width, (uint32_t)height, format, antiAliasing );
+    pTexture = gEdRender.pRenderDevice->getSurfaceLevel( pUnderlyingTexture );
+    if ( pTexture != nullptr ) {
+        bOwnTexture = false;
+    } else {
+        pTexture = gEdRender.pRenderDevice->createRenderTarget(
+            (uint32_t)width, (uint32_t)height, format, antiAliasing );
+    }
 
     if ( pTexture == nullptr ) {
         return false;

@@ -92,7 +92,7 @@ void GSConfig::registerDeviceCommands() {
                     iVar13 = local_134;
                 }
 
-                if ( actionName.length() < 0x20 ) {
+                if ( iVar13 >= 0 && actionName.length() < 0x20 ) {
                     strncpy( pPVar4.pActions[iVar13].pName, actionName.c_str(),
                              actionName.length() + 1 );
                 }
@@ -101,7 +101,7 @@ void GSConfig::registerDeviceCommands() {
                 Device *peVar5 = nullptr;
                 if ( ( iVar10 < 0 ) || ( peVar5 = gEdDev.ppDevices[iVar10],
                                          peVar5 == nullptr ) ) {
-                    if ( actionName.length() < 0x20 ) {
+                    if ( local_134 >= 0 && actionName.length() < 0x20 ) {
                         strncpy( pPVar4.pActions[local_134].pName,
                                  actionName.c_str(), actionName.length() + 1 );
                     }
@@ -111,7 +111,7 @@ void GSConfig::registerDeviceCommands() {
                     iVar10 = peVar5->getChannelIndex( unk2 );
 
                     InputChannel *peVar9 = nullptr;
-                    if ( ( -1 < iVar10 ) &&
+                    if ( ( -1 < iVar13 ) && ( -1 < iVar10 ) &&
                          iVar10 < (int32_t)peVar5->getNumChannels() ) {
                         peVar9 = &peVar5->getChannels()[iVar10];
                         // (**(code **)(peVar5->lpVtbl +

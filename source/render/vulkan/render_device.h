@@ -90,6 +90,14 @@ struct QueueInfo {
     VkQueue queue{};           // The queue object
 };
 
+// Memory usage for buffers written by the CPU every frame (dynamic VB/IB,
+// constant rings, indirect draws)
+VmaMemoryUsage GetPerFrameBufferMemoryUsage();
+// Logs the memory type an allocation landed in (once per category)
+void LogBufferPlacement( VmaAllocator allocator,
+                         VmaAllocation allocation,
+                         const char *pCategory );
+
 struct GPUTexture {
     // Allocations for this render target. To get access to the image used for
     // the current frame, retrieve the internal frame index using
@@ -231,6 +239,10 @@ public:
                                     const uint32_t height,
                                     const eViewFormat format,
                                     const eAntiAliasingMethod msaaSampleCount );
+    // Equivalent of IDirect3DTexture9::GetSurfaceLevel(0). Returns the 2DB
+    // texture itself if it can be bound as a color attachment, nullptr
+    // otherwise.
+    GPUTexture *getSurfaceLevel( const struct Texture *pTexture );
     GPUBuffer *createBuffer( const struct GPUBufferDesc *desc );
     GPUShader *createShader( eShaderType type,
                              const void *pBytecode,

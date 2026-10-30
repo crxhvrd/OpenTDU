@@ -3,6 +3,7 @@
 #if OTDU_VULKAN
 #include "shared.h"
 #include <unordered_map>
+#include <mutex>
 #include <unordered_set>
 #include "render_device.h"
 #include "core/arg_parser.h"
@@ -41,6 +42,48 @@ static CmdLineArg CmdLineArgNoDrawBatching( "nodrawbatching",
                                             []( const char *pArg ) {
                                                 gDisableDrawBatching = true;
                                             } );
+
+// TODO: FIXME: Remove once placement has been validated on other
+// configurations (Mac, AMD/Intel, UMA)
+static bool gAutoBufferPlacement = false;
+static CmdLineArg CmdLineArgAutoBufferPlacement( "vk_auto_buffer_placement",
+                                                 []( const char *pArg ) {
+                                                     gAutoBufferPlacement =
+                                                         true;
+                                                 } );
+
+VmaMemoryUsage GetPerFrameBufferMemoryUsage() {
+    return gAutoBufferPlacement ? VMA_MEMORY_USAGE_AUTO
+                                : VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+}
+
+void LogBufferPlacement( VmaAllocator allocator,
+                         VmaAllocation allocation,
+                         const char *pCategory ) {
+    static std::mutex loggedCategoriesLock;
+    static std::unordered_set<std::string> loggedCategories;
+    {
+        std::lock_guard<std::mutex> lock( loggedCategoriesLock );
+        if ( !loggedCategories.insert( pCategory ).second ) {
+            return;
+        }
+    }
+
+    VmaAllocationInfo info = {};
+    vmaGetAllocationInfo( allocator, allocation, &info );
+
+    VkMemoryPropertyFlags flags = 0;
+    vmaGetMemoryTypeProperties( allocator, info.memoryType, &flags );
+
+    OTDU_LOG_DEBUG( "%s buffers placed in memory type %u (%s%s%s)\n", pCategory,
+                   info.memoryType,
+                   ( flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ) ? "device "
+                                                                   : "",
+                   ( flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ) ? "host "
+                                                                   : "",
+                   ( flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT ) ? "cached"
+                                                                  : "" );
+}
 
 // Per frame slot (VkDrawIndexedIndirectCommand)
 static constexpr uint32_t kMaxIndirectDrawsPerFrame = 32768u;
@@ -188,6 +231,22 @@ static uint32_t GetVulkanFormatTexelSize( const VkFormat format ) {
     default:
         return 0;
     }
+}
+
+// True if a 2DB texture can be rendered to directly (i.e. without going
+// through a dedicated render target + resolveMSAA copy). Restricted to the
+// single mip 2D case so that the default image view can be bound as a
+// framebuffer attachment.
+static bool IsRenderableSurface( const Texture *pTexture,
+                                 const FormatCapabilities &caps ) {
+    const bool bRenderTarget = ( pTexture->Flags >> 9 & 1 ) != 0;
+    const bool bCubemap = ( pTexture->Flags >> 6 & 1 ) != 0;
+    const bool bVolume = ( pTexture->Flags >> 0xb & 1 ) != 0;
+    const bool bAutoGenMips = ( pTexture->Flags >> 0xe & 1 ) != 0;
+
+    return bRenderTarget && !bCubemap && !bVolume && !bAutoGenMips &&
+           pTexture->NumMipmap <= 1 && pTexture->Depth <= 1 &&
+           !IsDepthStencilFormat( pTexture->Format ) && caps.bSupported;
 }
 
 static constexpr const VkFormat
@@ -810,6 +869,9 @@ GPUTexture *RenderDevice::createTexture( Texture *pTexture ) {
     imgCreateInfo.usage =
         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
         VK_IMAGE_USAGE_TRANSFER_SRC_BIT; // Textures are assumed to be read only
+    if ( IsRenderableSurface( pTexture, formatCaps[pTexture->Format] ) ) {
+        imgCreateInfo.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    }
     imgCreateInfo.samples =
         VK_SAMPLE_COUNT_1_BIT; // Regular textures are always single-sampled
 
@@ -892,6 +954,15 @@ GPUTexture *RenderDevice::createTexture( Texture *pTexture ) {
 
     pTexture->bUploaded = false;
     return renderTarget;
+}
+
+GPUTexture *RenderDevice::getSurfaceLevel( const Texture *pTexture ) {
+    if ( pTexture == nullptr || pTexture->pTexture == nullptr ||
+         !IsRenderableSurface( pTexture, formatCaps[pTexture->Format] ) ) {
+        return nullptr;
+    }
+
+    return pTexture->pTexture;
 }
 
 GPUTexture *
@@ -1044,10 +1115,10 @@ GPUBuffer *RenderDevice::createBuffer( const struct GPUBufferDesc *desc ) {
     };
 
     VmaAllocationCreateInfo allocInfo = {};
-    allocInfo.usage =
-        VMA_MEMORY_USAGE_AUTO; // TODO: For now since buffers can only be VB or
-                               // IB it's safe to assume it'll bound on the CPU
-                               // at some point...
+    // TODO: Static buffers should live in device local memory (uploaded
+    // through a staging buffer on unlock)
+    allocInfo.usage = desc->bDynamic ? GetPerFrameBufferMemoryUsage()
+                                     : VMA_MEMORY_USAGE_AUTO;
     allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
     VkBuffer buffer;
@@ -1065,6 +1136,7 @@ GPUBuffer *RenderDevice::createBuffer( const struct GPUBufferDesc *desc ) {
             pBuffer->NativeBuffer[i] = buffer;
             pBuffer->Allocation[i] = allocation;
         }
+        LogBufferPlacement( allocator, allocation, "Dynamic VB/IB" );
 
         pBuffer->NumResources = PendingFrameCount;
         pBuffer->ShadowCopy.resize( desc->Size, 0u );
@@ -1076,6 +1148,7 @@ GPUBuffer *RenderDevice::createBuffer( const struct GPUBufferDesc *desc ) {
         pBuffer->NativeBuffer[0] = buffer;
         pBuffer->Allocation[0] = allocation;
         pBuffer->NumResources = 1;
+        LogBufferPlacement( allocator, allocation, "Static VB/IB" );
     }
     pBuffer->ByteSize = desc->Size;
 
@@ -1929,7 +2002,7 @@ void RenderDevice::createIndirectDrawBuffers() {
     bufferInfo.usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
 
     VmaAllocationCreateInfo allocInfo = {};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.usage = GetPerFrameBufferMemoryUsage();
     allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                       VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
@@ -1939,6 +2012,7 @@ void RenderDevice::createIndirectDrawBuffers() {
             vmaCreateBuffer( allocator, &bufferInfo, &allocInfo,
                              &indirect.Buffer, &indirect.Allocation, &info );
         OTDU_ASSERT_FATAL( result == VK_SUCCESS );
+        LogBufferPlacement( allocator, indirect.Allocation, "Indirect draw" );
         indirect.pCommands =
             static_cast<VkDrawIndexedIndirectCommand *>( info.pMappedData );
         indirect.NumCommands = 0u;
@@ -2095,9 +2169,12 @@ void RenderDevice::blit( GPUTexture *pSrc,
     OTDU_ASSERT( pSrc != nullptr );
     OTDU_ASSERT( pDst != nullptr );
 
-    endActiveRenderPass();
-
     GPUTexture *pTextureRT = pDst->getTextureColor();
+    if ( pSrc == pTextureRT ) {
+        return;
+    }
+
+    endActiveRenderPass();
 
     uint32_t srcFrameIndex = frameIndex;
     if ( srcFrameIndex >= pSrc->NumResources ) {
