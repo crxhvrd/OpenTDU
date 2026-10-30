@@ -140,6 +140,7 @@ public:
     EntityDriver *getDriver() override;
     void getCarAlphaScreenRect( Eigen::Vector4f &outRect ) override;
     void onHeadUpdate( Matrix4x4f_t &headTransform ) override;
+    void relightFromWeather( DirectionalLight *pLight ) override;
 
     void
     onEvent( class CarState *param_1, float param_2, void *param_3 ) override;

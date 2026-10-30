@@ -294,6 +294,29 @@ void EntityDriver::computeRiderScreenRect( Eigen::Vector4f &outRect ) {
                                     pScene->getFrustumWrite() );
 }
 
+void EntityDriver::relightFromWeather( DirectionalLight *pLight ) {
+    // FUN_007efb30
+    if ( !bIsSeating || pCarState == nullptr ) {
+        EntityAvatar::relightFromWeather( pLight );
+        return;
+    }
+
+    const VehicleBase *pDisplay = pCarState->getVehicleInstance();
+    if ( pDisplay == nullptr ) {
+        return;
+    }
+
+    const DirectionalLight &carLight = pDisplay->getMainLight();
+    const float lightModulator = pLightingAttenuation[ALF_LightModulator];
+    pLight->Ambient = carLight.Ambient * lightModulator;
+    pLight->Diffuse = carLight.Diffuse * lightModulator;
+    pLight->Specular = carLight.Specular * lightModulator;
+    pLight->Direction = carLight.Direction;
+
+    currentEnvFactor = pDisplay->getCurrentEnvFactor();
+    currentEnvFactorBackFace = pDisplay->getCurrentEnvFactorBackFace();
+}
+
 void EntityDriver::onHeadUpdate( Matrix4x4f_t &headTransform ) {
     // FUN_007f2200
     EntityAvatar::onHeadUpdate( headTransform );
