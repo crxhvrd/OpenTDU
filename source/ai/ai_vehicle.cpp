@@ -1638,7 +1638,30 @@ void AiVehicle::updateFlashFade() {
          pCarState->getVehicleInstance() == nullptr ) {
         return;
     }
-    OTDU_UNIMPLEMENTED_ONCE;
+    static constexpr float kFlashAlphaMin = 0.5f; // FLOAT_00f41674
+
+    const PhysicsVehicle *pPhysics = pCarState->getPhysicsVehicle();
+    if ( pPhysics == nullptr || pPhysics->getPhantomMode() != 1 ) {
+        return;
+    }
+    const float now = gpTimer->GameTotalTime;
+    if ( !bFlashStarted ) {
+        bFlashStarted = true;
+        flashStartTime = now;
+        return;
+    }
+
+    float alpha = 1.0f;
+    if ( now >= flashStartTime ) {
+        alpha = ( now - flashStartTime + 1.0f ) * kFlashAlphaMin;
+    }
+    if ( now < flashStartTime || alpha > 1.0f ) {
+        alpha = 1.0f;
+        bFlashStarted = false;
+        bFlashFade = false;
+        flashStartTime = 0.0f;
+    }
+    pCarState->getVehicleInstance()->setAlpha( alpha );
 }
 
 void AiVehicle::onEvent( CarState *pCar, float deltaTime, void *pData ) {
