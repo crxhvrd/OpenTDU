@@ -180,7 +180,7 @@ bool CameraReplayRoad::tick( float deltaTime, bool param_1, bool param_2 ) {
         return false;
     }
 
-    const Matrix4x4f_t carMatrix = pVehicle->getChassisShiftedMatrix();
+    const Matrix4x4f_t carMatrix = pVehicle->getReplaySourceMatrix();
     const Eigen::Vector4f carPosition = carMatrix.row( 3 ).transpose();
     const float carDistance =
         ( carPosition - worldPositionWithUnknownOffset ).norm();

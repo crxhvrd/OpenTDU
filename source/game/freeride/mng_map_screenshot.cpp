@@ -15,6 +15,7 @@
 #include "game/scenaric/spots.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
+#include "online/p2p_game_service.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "render/camera/camera_game.h"
@@ -231,7 +232,7 @@ void MngMapScreenshot::tick( float deltaTime, float ) {
 
         CurrentWaitTime = 0.0f;
         EntityCinematic::ShowSpots( false );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (CP2PFreeRideMgr flag)
+        gpCP2PGameService->FreeRideMgr.bUnknownBool1 = false;
         ShowPlayerCar( false );
         State = MSS_Screenshot;
         return;
@@ -277,7 +278,7 @@ void MngMapScreenshot::finishScreenshots() {
     gpCamera->setNextCamera( pOldCamera, 0, kCameraTransitionTime );
     SetHudMoviesHidden( false );
     SetSectorNamesEnabled( true );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (restore CP2PFreeRideMgr flag)
+    gpCP2PGameService->FreeRideMgr.bUnknownBool1 = bSavedFreeRideFlag;
     mngScreenshots.destroy();
     gpCamera->setUseBlur( false );
     EntityCinematic::ShowSpots( true );
@@ -357,7 +358,8 @@ bool MngMapScreenshot::buildScreenshots( const int32_t category,
     ShowPlayerCar( false );
     SetHudMoviesHidden( true );
     SetSectorNamesEnabled( false );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (save/clear CP2PFreeRideMgr flag)
+    bSavedFreeRideFlag = gpCP2PGameService->FreeRideMgr.bUnknownBool1;
+    gpCP2PGameService->FreeRideMgr.bUnknownBool1 = false;
     gpAI->setTrafficCategories( false, 2u );
     SetPapersDetailEnabled( false );
 

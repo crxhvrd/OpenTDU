@@ -41,6 +41,7 @@
 #include "input/ed_dev.h"
 
 #include "physics/gs_physics.h"
+#include "physics/replay.h"
 
 #include "flash/gs_flash.h"
 
@@ -104,6 +105,7 @@ GSCamera::GSCamera()
       bViewBackOnTrigger( false ),
       bViewBackOffTrigger( false ),
       bChangeCamTrigger( false ),
+      bForceSwitch( false ),
       bUpdatedView( false ),
       field_0x954( false ),
       bHeadTracking( false ),
@@ -825,9 +827,7 @@ bool GSCamera::updateActiveCamera( float deltaTime, float accTime ) {
         return false;
     }
 
-    if ( bReplayMode || pActiveVehicleCamera->getType() == 9 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_008e4230 (replay camera switch)
-    }
+    updateReplayCameraSwitch( deltaTime );
     (void)accTime;
 
     if ( pActiveVehicleCamera == nullptr || bLocked ) {
@@ -1455,6 +1455,169 @@ void GSCamera::FUN_008e4840( int32_t param_1, float param_2 ) {
     }
 
     findAndSetCameraMode( pTransitionIndices[field83_0x92c], param_1, param_2 );
+}
+
+bool GSCamera::cycleReplayModeOverride() {
+    // FUN_008e1d90
+    const float switchTime = timerToSwitch + 1.0f;
+    bool bCycled = true;
+    do {
+        bCycled = true;
+        if ( activeModeOverride == 5 ) {
+            activeModeVehicleOverride++;
+            if ( activeModeVehicleOverride >= 4 ) {
+                activeModeVehicleOverride = 0;
+                activeModeOverride = 0;
+                bCycled = false;
+            }
+        } else {
+            activeModeOverride++;
+            activeModeVehicleOverride = 0;
+            if ( activeModeOverride > 5 ) {
+                activeModeOverride = 0;
+                bCycled = false;
+            }
+        }
+        timer = switchTime;
+        bForceSwitch = true;
+    } while ( activeModeOverride == 2 );
+    return bCycled;
+}
+
+void GSCamera::lockReplayModeOverride( const bool bLock ) {
+    // FUN_008e1e20
+    if ( bLock ) {
+        activeModeVehicleOverride = activeModeVehicle;
+        bForceSwitch = true;
+        activeModeOverride = activeMode;
+        return;
+    }
+    bForceSwitch = false;
+    activeModeVehicleOverride = -1;
+    activeModeOverride = -1;
+}
+
+static inline int32_t CRTRand() {
+    return static_cast<int32_t>( rand() & 0x7fff );
+}
+
+static int32_t gReplayRoadShotCount = 0; // DAT_016a2c64
+static int32_t gReplayCarShotCount = 0;  // DAT_016a2c60
+
+void GSCamera::updateReplayCameraSwitch( const float deltaTime ) {
+    // FUN_008e4230
+    if ( !bReplayMode && pActiveVehicleCamera->getType() != 9 ) {
+        return;
+    }
+
+    CameraGame *pActiveCamera = pActiveVehicleCamera;
+    CameraReplayRoad *pRoadCamera =
+        static_cast<CameraReplayRoad *>( findCameraWithMode( 9, pTarget ) );
+
+    bNeedSwitch = bForceSwitch;
+    if ( pActiveCamera->getType() == 9 ) {
+        const bool bSwapRequested =
+            pRoadCamera == pActiveCamera && pRoadCamera->isSwapRequested();
+        const bool bTimedShot =
+            activeMode == 5 || ( activeMode == 4 && activeModeOverride != 4 ) ||
+            ( activeMode == 2 && activeModeOverride != 2 );
+        if ( bSwapRequested || ( bTimedShot && timerToSwitch < timer ) ) {
+            bNeedSwitch = true;
+        }
+    } else if ( timerToSwitch < timer ) {
+        bNeedSwitch = true;
+    }
+
+    timer += gReplay.getTimeScale() * deltaTime;
+    if ( !bNeedSwitch ) {
+        return;
+    }
+
+    const int32_t previousMode = activeMode;
+    bForceSwitch = false;
+    timer = 0.0f;
+    timerToSwitch =
+        ( gRPLMaxTimeToSwap - gRPLMinTimeToSwap ) * CameraRandom01() +
+        gRPLMinTimeToSwap;
+    do {
+        activeMode = CRTRand() % 6;
+    } while ( activeMode == previousMode );
+    while ( activeMode == 2 ) {
+        activeMode = CRTRand() % 6;
+    }
+    if ( activeModeOverride >= 0 ) {
+        activeMode = activeModeOverride;
+        gReplayRoadShotCount = 0;
+    }
+
+    bool bRoadShot = false;
+    if ( activeMode != 5 && gReplayRoadShotCount <= gRPLRatioCamOutCamOnCar ) {
+        gReplayRoadShotCount++;
+        bRoadShot = true;
+    } else {
+        const int32_t previousModeVehicle = activeModeVehicle;
+        gReplayRoadShotCount = 0;
+        do {
+            activeModeVehicle = CRTRand() % 4;
+        } while ( activeModeVehicle == previousModeVehicle );
+        if ( activeModeVehicleOverride >= 0 ) {
+            activeModeVehicle = activeModeVehicleOverride;
+            gReplayCarShotCount = 0;
+        }
+        if ( bDisableInteriorView ) {
+            while ( activeModeVehicle == 3 ) {
+                activeModeVehicle = CRTRand() % 4;
+            }
+        }
+        if ( activeModeVehicle != 2 && activeModeVehicle != 3 &&
+             gReplayCarShotCount <= gRPLRatioCamCarOutInGame ) {
+            gReplayCarShotCount++;
+            bRoadShot = true;
+        }
+    }
+
+    if ( bRoadShot ) {
+        if ( pRoadCamera == nullptr ) {
+            return;
+        }
+        pRoadCamera->setShot(
+            static_cast<eReplayRoadShot>( activeMode ),
+            static_cast<eReplayRoadCarShot>( activeModeVehicle ) );
+        if ( pActiveCamera->getType() != 9 ) {
+            findAndSetCameraMode( 9, 0, 1.0f );
+        }
+        return;
+    }
+
+    if ( activeModeVehicle == 3 ) {
+        gReplayCarShotCount = 0;
+        const int32_t mode = findFirstSeatAdjustableTransitionMode();
+        if ( findCameraWithMode( mode, pTarget ) != nullptr ) {
+            findAndSetCameraMode( mode, 0, 1.0f );
+        }
+        return;
+    }
+
+    activeModeVehicle = 2;
+    gReplayCarShotCount = 0;
+    if ( numTransition == 0 ) {
+        return;
+    }
+
+    int32_t mode = -1;
+    CameraGame *pCamera = nullptr;
+    do {
+        const int32_t index = CRTRand() % static_cast<int32_t>( numTransition );
+        mode = pTransitionIndices[index];
+        pCamera = findCameraWithMode( mode, pTarget );
+    } while ( pCamera == nullptr ||
+              ( bDisableInteriorView &&
+                ( pCamera->getFlags() & kSeatAdjustableFlag ) != 0 ) );
+
+    if ( CRTRand() % 100 > 50 ) {
+        mode = static_cast<CameraVehicle *>( pCamera )->getBackivewType();
+    }
+    findAndSetCameraMode( mode, 0, 1.0f );
 }
 
 bool GSCamera::FUN_008e1e80( bool param_1, bool param_3 ) {

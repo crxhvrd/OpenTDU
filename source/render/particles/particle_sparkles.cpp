@@ -6,6 +6,7 @@
 
 #include "core/maths_helper.h"
 #include "physics/gs_physics.h"
+#include "physics/replay.h"
 #include "render/camera/gs_camera.h"
 #include "render/gs_render.h"
 #include "render/material.h"
@@ -509,8 +510,7 @@ void InitializeSparkles( Particle *pParticle,
 
 void SimulateSparkles( Particle *pParticle, float deltaTime ) {
     // FUN_0080c760
-    OTDU_UNIMPLEMENTED_ONCE;      // TODO: REPLAY
-    const float timeScale = 1.0f; // TODO: Read time scale for replay!
+    const float timeScale = gReplay.getTimeScale();
 
     if ( !pParticle->drawList.isInitialized() ) {
         return;

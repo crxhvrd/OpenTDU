@@ -1921,7 +1921,7 @@ void CameraVehicle::updateMotionBlur( PhysicsVehicle *pPhys ) {
     }
 
     const float forwardSpeed = pPhys->getForwardSpeed();
-    const Matrix4x4f_t carMatrix = pPhys->getPhysicsMatrix();
+    const Matrix4x4f_t carMatrix = pPhys->getReplaySourceMatrix();
 
     Matrix4x4f_t camToWorld;
     MakeWorldToCamMatrix( camToWorld, worldPosition.head<3>(),

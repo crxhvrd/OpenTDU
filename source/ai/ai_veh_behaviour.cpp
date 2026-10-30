@@ -229,8 +229,7 @@ void AiVehBhvOpponent::prepareRace() {
 
     AiVehIndDPC &dpc = pVehicle->getDPC();
     if ( dpc.BotID != -1 && !gAIConfig.bBotBehaviorOverride ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: bot nickname + personality
-                                 // (FUN_0090c1d0, FUN_0090bfa0)
+        pVehicle->assignBotPersonality( dpc.BotID );
         pVehicle->applyBotPersonality( 2, bMissionFlag ? 0 : dpc.Personality,
                                        dpc.Difficulty );
     } else {

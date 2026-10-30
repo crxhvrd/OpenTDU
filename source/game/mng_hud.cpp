@@ -24,6 +24,7 @@
 #include "ai/gs_ai.h"
 #include "ai/ai_vehicle.h"
 #include "game/vehicle/gs_car_state.h"
+#include "physics/replay.h"
 #include "player_data/driver.h"
 #include "player_data/player_save.h"
 #include "player_data/saved_item_table.h"
@@ -2288,12 +2289,8 @@ void MngHud::tick( float deltaTime, float totalTime ) {
 
 void MngHud::drawSimulationOverlay() {
     // FUN_006ec8c0
-    //
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc)
-    constexpr int32_t kReplayStatePlayback = 5;
-    const int32_t replayState = 0;
     const char *pBasePath =
-        ( replayState == kReplayStatePlayback ) ? "remote/simu" : "/hud/simu";
+        gReplay.isPlayingBack() ? "remote/simu" : "/hud/simu";
 
     FlashClip clip;
     if ( pHudPlayer != nullptr &&

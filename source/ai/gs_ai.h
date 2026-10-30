@@ -58,6 +58,12 @@ public:
     inline AiPathFloodSolver &getFloodSolver() { return floodSolver; }
     inline bool areBotsDisabled() const { return bDisableBots; }
     inline bool isTrafficPaused() const { return bPauseTraffic; }
+    inline bool areLocationsFromCarState() const {
+        return bLocationsFromCarState;
+    }
+    inline void setLocationsFromCarState( const bool bEnabled ) {
+        bLocationsFromCarState = bEnabled;
+    }
     inline void setCullFromCamera( const bool bEnabled ) {
         pSimBubble->setCullFromCamera( bEnabled );
     }

@@ -39,7 +39,9 @@
 #include "game/scenaric/entity/entity_transporter.h"
 #include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
+#include "online/p2p_game_service.h"
 #include "physics/gs_physics.h"
+#include "physics/replay.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/achievement_checks.h"
 #include "player_data/achievements_data.h"
@@ -196,7 +198,7 @@ GameMechanism::GameMechanism( const int32_t type, const uint32_t id )
       pScoreRankingHead( nullptr ),
       pCinematic( nullptr ),
       bAutopilotFadeStarted( false ),
-      bAutopilotPending( false ),
+      bReplayExitPending( false ),
       bAutopilotRequested( false ),
       field_0x7ef( false ),
       rankingStartTick( 0u ),
@@ -349,7 +351,7 @@ void GameMechanism::reset() {
     resetRaceState();
     pCinematic = nullptr;
     bAutopilotFadeStarted = false;
-    bAutopilotPending = false;
+    bReplayExitPending = false;
     bAutopilotRequested = false;
     if ( mechType == MT_ExtraChallenge ) {
         static_cast<GMMission *>( pOwner )
@@ -436,7 +438,7 @@ void GameMechanism::restart() {
     if ( pCinematic != nullptr ) {
         pCinematic->stop( true );
     }
-    bAutopilotPending = false;
+    bReplayExitPending = false;
     bAutopilotRequested = false;
     if ( gpMngNavPathDisplay != nullptr ) {
         gpMngNavPathDisplay->reset();
@@ -2060,9 +2062,9 @@ bool GameMechanism::processLoadingMap( const eStateProcess process ) {
                 ( gpMngFade->getTransitionFlags() & ~0xau ) | 5u,
                 kFadeDuration );
             gpMngFade->setRenderLogo( false ); // +0xec
-            OTDU_UNIMPLEMENTED_ONCE;           // TODO: ONLINE (CP2PGameService
-                                               // +0x2e5de = GM +0xffa50)
-            SetHUDMoviesPaused( false );       // level 1 movies, +0xad0 &= ~2
+            gpCP2PGameService->FreeRideMgr.bUnknownBool3 =
+                static_cast<GMMission *>( pOwner )->getSavedFreeRideBool3();
+            SetHUDMoviesPaused( false ); // level 1 movies, +0xad0 &= ~2
         }
 
         const bool bStatsRead = ( pUnknown1C == nullptr );
@@ -2280,9 +2282,10 @@ bool GameMechanism::processRanking( const eStateProcess process ) {
         }
         if ( mechID == kSoloSpotType && !bAutopilotFadeStarted &&
              mechType != MT_ExtraChallenge ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc)
-            const int32_t replayState = 0;
-            if ( bAutopilotRequested && replayState != 2 && replayState != 5 ) {
+            const eReplayState replayState = gReplay.getState();
+            if ( bAutopilotRequested &&
+                 replayState != eReplayState::RS_StartPlayback &&
+                 replayState != eReplayState::RS_Playback ) {
                 if ( gpMngFade != nullptr ) {
                     gpMngFade->startTransition(
                         ( gpMngFade->getTransitionFlags() & ~0xeu ) | 1u,
@@ -2291,9 +2294,9 @@ bool GameMechanism::processRanking( const eStateProcess process ) {
                     bAutopilotFadeStarted = true;
                 }
                 bAutopilotRequested = false;
-            } else if ( bAutopilotPending ) {
+            } else if ( bReplayExitPending ) {
                 startEndCinematicAtPlayerCar();
-                bAutopilotPending = false;
+                bReplayExitPending = false;
             }
         }
         if ( pGameSession->isOnline() ) {
@@ -2325,8 +2328,10 @@ void GameMechanism::OnRankingFadedOut( void *pData, void * /*pSource*/ ) {
             ( gpMngFade->getTransitionFlags() & ~0xau ) | 5u, kFadeDuration,
             nullptr /* LAB_00731850 */, nullptr, pMech );
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc 2 / 5 skips the
-                             // cinematic)
+    if ( gReplay.getState() == eReplayState::RS_StartPlayback ||
+         gReplay.isPlayingBack() ) {
+        return;
+    }
     CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
     if ( pLocalCar == nullptr ) {
         return;

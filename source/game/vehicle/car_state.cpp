@@ -258,6 +258,7 @@ static void PlaceAtBackOnTrackPose( CarBodyState &body,
                                     PhysicsVehicle &vehicle ) {
     // FUN_008b0b10
     vehicle.resetToTransform( body.BackOnTrackWorldMatrix, true );
+    vehicle.getReplayPlayback().bTeleported = true;
     vehicle.requestRollLimitRestore();
     if ( body.BackOnTrackVelocity.norm() > 1.0f ) { // FLOAT_00f4165c
         vehicle.setVelocity( body.BackOnTrackVelocity.head<3>(), true, -1 );

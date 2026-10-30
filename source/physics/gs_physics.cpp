@@ -27,7 +27,10 @@
 #include "input/gs_device.h"
 #include "player_data/gs_playerdata.h"
 
+#include "render/camera/camera_replay_road.h"
 #include "render/camera/gs_camera.h"
+#include "replay.h"
+#include "ai/ai_vehicle.h"
 #include "render/draw_list.h"
 #include "render/gs_render.h"
 #include "render/2dm.h"
@@ -1167,6 +1170,7 @@ GSPhysics::GSPhysics()
       pPhysicsVehicles( nullptr ),
       pPhysicsVehiclesBegin( nullptr ),
       pPhysicsVehiclesEnd( nullptr ),
+      numVehiclesInInstantReplay( 0 ),
       field_0x2cc( nullptr ),
       numFreeSectors( 0 ),
       maxNumSectors( 0 ),
@@ -1369,6 +1373,10 @@ bool GSPhysics::initialize( TestDriveGameInstance *param_2 ) {
         OTDU_UNIMPLEMENTED;
     }
 
+    if ( gRPLRatioCamOutCamOnCar != 0 && gRPLRatioCamCarOutInGame != 0 ) {
+        gReplay.initialize( gRPLConfig[0] );
+    }
+
     bFreezeSimulation = false;
     BOOL_010e7644 = true;
 
@@ -1391,6 +1399,8 @@ void GSPhysics::terminate() {
         }
         simulationThread.terminate();
     }
+
+    gReplay.release();
 
     gPhysicsGraph.release();
     if ( pGraphDrawList != nullptr ) {
@@ -2713,6 +2723,46 @@ eFadeRequest GSPhysics::popFadeRequest() {
         gLastFadeRequest--;
     }
     return peekFadeRequest();
+}
+
+void GSPhysics::ClearFadeRequests() {
+    // FUN_0041f8f0 (inlined)
+    gLastFadeRequest = -1;
+}
+
+void GSPhysics::markInstantReplayVehicles() {
+    // FUN_00842ea0
+    numVehiclesInInstantReplay = 0;
+    for ( PhysicsVehicle *it = pPhysicsVehiclesBegin; it < pPhysicsVehiclesEnd;
+          ++it ) {
+        if ( !it->isActive() || it->isPaused() ) {
+            continue;
+        }
+        if ( it->isTrafficBody() ) {
+            continue;
+        }
+        const CarState *pCar = gpCarState->findCarState( it );
+        if ( pCar == nullptr ||
+             pCar->getOwner() == CarState::eOwner::CSO_Bot ) {
+            continue;
+        }
+        const AiVehicle *pAI =
+            static_cast<const AiVehicle *>( pCar->getAIController() );
+        if ( pAI != nullptr && pAI->getLocomotionType() == 2 ) {
+            continue;
+        }
+        it->setInInstantReplay( true );
+        numVehiclesInInstantReplay++;
+    }
+}
+
+void GSPhysics::clearInstantReplayVehicles() {
+    // FUN_00841810
+    numVehiclesInInstantReplay = 0;
+    for ( PhysicsVehicle *it = pPhysicsVehiclesBegin; it < pPhysicsVehiclesEnd;
+          ++it ) {
+        it->setInInstantReplay( false );
+    }
 }
 
 PhysicsVehicle *GSPhysics::findVehicle( const JPH::Body &chassis ) const {
@@ -5229,9 +5279,29 @@ bool GSPhysics::getBodyPose( RigidBody_t body,
     return true;
 }
 
+static bool IsLocalPlayerStreamedUnder( PhysicsVehicle *pBegin,
+                                        PhysicsVehicle *pEnd ) {
+    // FUN_00829ee0
+    CarState *pLocalCar = ( gpScenaric != nullptr )
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    PhysicsVehicle *pVehicle =
+        ( pLocalCar != nullptr ) ? pLocalCar->getPhysicsVehicle() : nullptr;
+    if ( pVehicle == nullptr || pVehicle < pBegin || pEnd <= pVehicle ||
+         !pVehicle->isActive() || gpWorld == nullptr ) {
+        return true;
+    }
+    const Eigen::Vector4f position =
+        pVehicle->getPhysicsMatrix().row( 3 ).transpose() +
+        GSPhysics::GetShiftOrigin();
+    return gpWorld->isStreamedAround( &position, true, false ) &&
+           -2.0f < position.y(); // DAT_00f41c1c
+}
+
 void GSPhysics::physicsStep( float dt, float accTime ) {
     // FUN_0081dfd0
-    // Equivalent of one Havok world step + per-vehicle integration pass.
+    static bool sbWasStreamedUnder = false; // DAT_00fab81c
+
     lockMutex();
 
     // Clamp runaway delta times (e.g. after a breakpoint / window focus loss).
@@ -5243,50 +5313,115 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
 
     buildProcessPendingProps();
 
-    if ( pPhysicsSystem != nullptr && !bPauseJoltTick && !bFreezeSimulation &&
-         dt > 0.0f ) {
-        // Original: hkpWorld::stepDelta (Havok) — Jolt equivalent.
-        // numCollisionSteps=1 matches the original single-pass Havok
-        // broadphase.
-        pPhysicsSystem->Update( dt, 1, pTempAllocator, pJobSystem );
+    if ( gReplay.isPlayingBack() && gReplay.getSlowDownFactor() > 1 ) {
+        dt /= static_cast<float>( gReplay.getSlowDownFactor() );
+    }
+    int32_t numSubSteps = 1;
+    if ( gReplay.isPlayingBack() && gReplay.getSpeedUpFactor() > 1 ) {
+        numSubSteps = gReplay.getSpeedUpFactor();
+    }
 
-        if ( !gPropConstraints.empty() ) {
-            JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
-            for ( auto it = gPropConstraints.begin();
-                  it != gPropConstraints.end(); ) {
-                if ( it->bBreakable && it->pConstraint != nullptr ) {
-                    const float impulse =
-                        it->pConstraint->GetTotalLambdaPosition().Length();
-                    if ( impulse > it->Threshold * kBreakThresholdScale ) {
-                        pPhysicsSystem->RemoveConstraint( it->pConstraint );
-                        it->pConstraint = nullptr;
-                        it->bBroken = true;
-                        // Wake the freed pieces so they respond to gravity.
-                        bi.ActivateBody( it->BodyA );
-                        bi.ActivateBody( it->BodyB );
-                    }
-                }
-                ++it;
+    for ( int32_t subStep = 0; subStep < numSubSteps; subStep++ ) {
+        if ( gReplay.isPlayingBack() ) {
+            gReplay.advanceSlowDownSubStep();
+        }
+        const bool bCanStep =
+            gReplay.playback( dt <= 0.0f || bFreezeSimulation );
+
+        const bool bStreamedUnder = IsLocalPlayerStreamedUnder(
+            pPhysicsVehiclesBegin, pPhysicsVehiclesEnd );
+        bool bReplayHold = !bCanStep;
+        const eReplayState replayState = gReplay.getState();
+        if ( replayState == eReplayState::RS_WaitForRecording ||
+             replayState == eReplayState::RS_Playback ) {
+            if ( !bStreamedUnder ) {
+                bReplayHold = true;
+            } else if ( !sbWasStreamedUnder && gpCamera != nullptr ) {
+                gpCamera->forceReplayCameraSwitch();
             }
         }
-    }
+        sbWasStreamedUnder = bStreamedUnder;
 
-    // Tick PhysicsVehicle vehicle dynamics (pushes driver input; the Jolt
-    for ( PhysicsVehicle *it = pPhysicsVehiclesBegin; it != pPhysicsVehiclesEnd;
-          ++it ) {
-        it->tick( dt );
-        if ( it->isActive() ) {
-            it->publishStepPose();
+        const bool bStep = pPhysicsSystem != nullptr && !bPauseJoltTick &&
+                           !bFreezeSimulation && dt > 0.0f && !bReplayHold;
+        gReplay.record( bStep );
+
+        if ( bStep ) {
+            if ( gReplay.isPlayingBack() ) {
+                updateReplayVehicleModes();
+            }
+
+            // Original: hkpWorld::stepDelta (Havok) — Jolt equivalent.
+            // numCollisionSteps=1 matches the original single-pass Havok
+            // broadphase.
+            pPhysicsSystem->Update( dt, 1, pTempAllocator, pJobSystem );
+
+            if ( !gPropConstraints.empty() ) {
+                JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+                for ( auto it = gPropConstraints.begin();
+                      it != gPropConstraints.end(); ) {
+                    if ( it->bBreakable && it->pConstraint != nullptr ) {
+                        const float impulse =
+                            it->pConstraint->GetTotalLambdaPosition().Length();
+                        if ( impulse > it->Threshold * kBreakThresholdScale ) {
+                            pPhysicsSystem->RemoveConstraint( it->pConstraint );
+                            it->pConstraint = nullptr;
+                            it->bBroken = true;
+                            // Wake the freed pieces so they respond to
+                            // gravity.
+                            bi.ActivateBody( it->BodyA );
+                            bi.ActivateBody( it->BodyB );
+                        }
+                    }
+                    ++it;
+                }
+            }
         }
-    }
 
-    if ( gpCamera != nullptr ) {
-        gpCamera->updateActiveCamera( dt, accTime );
+        if ( !bReplayHold ) {
+            for ( PhysicsVehicle *it = pPhysicsVehiclesBegin;
+                  it != pPhysicsVehiclesEnd; ++it ) {
+                it->tick( dt );
+                if ( it->isActive() ) {
+                    it->publishStepPose( bStep );
+                }
+            }
+        }
+
+        if ( gpCamera != nullptr ) {
+            gpCamera->updateActiveCamera( dt, accTime );
+        }
+        accTime += dt;
     }
 
     updateForceFeedback( dt );
 
     unlockMutex();
+}
+
+void GSPhysics::updateReplayVehicleModes() {
+    // FUN_0081dfd0 (inlined)
+    for ( PhysicsVehicle *it = pPhysicsVehiclesBegin; it != pPhysicsVehiclesEnd;
+          ++it ) {
+        if ( !it->isActive() ) {
+            continue;
+        }
+        PhysicsVehicle::ReplayPlayback &replay = it->getReplayPlayback();
+        replay.Mode = 2;
+        if ( replay.PoseFlags[1] == 1 ) {
+            replay.Mode = 3;
+        }
+        if ( replay.PoseFlags[1] == 2 ) {
+            replay.Mode = 1;
+        }
+        if ( replay.Mode == 3 ) {
+            if ( !it->isPhysicsPaused() ) {
+                it->setPostponedPause( 1 );
+            }
+        } else if ( !gReplay.isExitRequested() && it->isPhysicsPaused() ) {
+            it->setPostponedPause( 2 );
+        }
+    }
 }
 
 static float RemapClamped( const float value,
@@ -5362,11 +5497,9 @@ void GSPhysics::updateForceFeedback( float dt ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc == 5 disables FFB)
-
     float strength = 0.0f;
-    if ( !bPauseJoltTick && !bPausePhysicsThread && bForceFeedbackAllowed &&
-         IsForceFeedbackGameMode() ) {
+    if ( !gReplay.isPlayingBack() && !bPauseJoltTick && !bPausePhysicsThread &&
+         bForceFeedbackAllowed && IsForceFeedbackGameMode() ) {
         strength = pVehicle->getRumbleMax();
     }
 

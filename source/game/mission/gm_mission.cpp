@@ -30,7 +30,9 @@
 #include "audio/gs_audio.h"
 #include "audio/implementation/ed_audio_stream_entry.h"
 #include "game/scenaric/entity/entity_sound_emitter.h"
+#include "online/p2p_game_service.h"
 #include "physics/gs_physics.h"
+#include "physics/replay.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "render/particles/gs_particles.h"
 #include "tdu_instance.h"
@@ -93,6 +95,7 @@ GMMission::GMMission()
       pOffroadWarningClient( nullptr ),
       pOffroadWarningEntry( nullptr ),
       bRestartRequested( false ),
+      bSavedFreeRideBool3( true ),
       bQuitRequested( false ),
       bLastPlayerPromptShown( false ),
       bRankingShown( false ),
@@ -330,7 +333,7 @@ void GMMission::reset() {
 
     FlashPlayer *pHudPlayer =
         ( gpMngHud != nullptr ) ? gpMngHud->getHudPlayer() : nullptr;
-    OTDU_UNIMPLEMENTED; // TODO: GMMission (DAT_00fa9818 = HUD player)
+    gReplay.setRemotePlayer( pHudPlayer );
     mngInGameMenu.setFlashPlayer( pHudPlayer );
     mngInGameMenu.refreshDrivingHelpLabel();
 
@@ -370,6 +373,31 @@ void GMMission::tick( float deltaTime, float totalTime ) {
                                      ( ( fadeFlags >> 3 ) & 1 ) == 0 );
 }
 
+static bool HasMissionCops( MissionInfo &missionInfo ) {
+    // FUN_00801180
+    if ( gpScenaric->isInstantChallenge() ) {
+        return true;
+    }
+    EventParameters *pDescription = missionInfo.pOwner->getMissionDescription();
+    return pDescription->getCops().getValue() != 0 &&
+           pDescription->getCopsDensity().getValue() != 0;
+}
+
+static bool HasMissionTraffic( MissionInfo &missionInfo ) {
+    // FUN_00801130
+    if ( gpScenaric->isInstantChallenge() ) {
+        return true;
+    }
+    EventParameters *pDescription = missionInfo.pOwner->getMissionDescription();
+    return pDescription->getTraffic().getValue() != 0 &&
+           pDescription->getTrafficDensity().getValue() != 0;
+}
+
+static bool IsInstantReplayAllowed( MissionInfo &missionInfo ) {
+    // FUN_0042df50
+    return !HasMissionCops( missionInfo ) && !HasMissionTraffic( missionInfo );
+}
+
 static void ReleasePlayerAutopilot() {
     // FUN_00740440 / FUN_00740d80 (inlined)
     CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
@@ -399,9 +427,8 @@ void GMMission::pause() {
         ReleasePlayerAutopilot();
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: GMMission (DAT_00fa9818 = 0, FUN_0041f8f0,
-                        // DAT_00fa97b4 / DAT_00fa97b8 = 0, DAT_013d1a5d = 0,
-                        // DAT_013d1a77 = 0)
+    gReplay.resetSession();
+    OTDU_UNIMPLEMENTED; // TODO: AI (DAT_013d1a77 = 0)
     AiPool *pAIPool = gpAI->getAIPool();
     pAIPool->setTrafficPaused( false ); // +0xc
     pAIPool->setField0x7C( true );
@@ -493,7 +520,9 @@ bool GMMission::onMessage( FlashMessage *pMessage ) {
     if ( *pMessage == kMsgRequestRestart ) {
         gpPCOptions->setMainMenuAllowed( false );
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission (FUN_0081b490 message filter)
+    if ( gReplay.onFlashMessage( *pMessage ) ) {
+        return true;
+    }
 
     if ( *pMessage == kMsgPauseIn ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC ("/:state_club")
@@ -550,8 +579,17 @@ bool GMMission::onMessage( FlashMessage *pMessage ) {
             }
             if ( pGameMech == nullptr || ( !pGameMech->getUnknown75C() &&
                                            !pGameMech->isEndlessLoopRace() ) ) {
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY ("/:IsReplay" = 1,
-                                         // instant replay recording)
+                if ( IsInstantReplayAllowed( missionInfo ) &&
+                     pGameMech != nullptr &&
+                     !pGameMech->getGameSession()->isOnline() ) {
+                    if ( pHudPlayer != nullptr ) {
+                        pHudPlayer->setVariableValue( "/:IsReplay", 1 );
+                    }
+                    gpPhysics->markInstantReplayVehicles();
+                    gReplay.setupRings(
+                        gpPhysics->getNumVehiclesInInstantReplay() );
+                    gReplay.setState( eReplayState::RS_Recording );
+                }
             } else if ( pHudPlayer != nullptr ) {
                 pHudPlayer->setVariableValue( "/:IsReplay", 0 );
             }
@@ -602,10 +640,16 @@ bool GMMission::onMessage( FlashMessage *pMessage ) {
         if ( pHudPlayer == nullptr ) {
             return false;
         }
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97b8 recorded frames:
-                                 // /:IsReplay = 1 offline outside editor
-                                 // tests, UNK_00fa980b = 1)
-        pHudPlayer->setVariableValue( "/:IsReplay", 0 );
+        const bool bEndlessLoop =
+            pGameMech != nullptr && pGameMech->getUnknown75C();
+        if ( 0 < gReplay.getNumFrames() && pGameMech != nullptr &&
+             !pGameMech->getGameSession()->isOnline() &&
+             IsInstantReplayAllowed( missionInfo ) && !bEndlessLoop ) {
+            gReplay.requestStop();
+            pHudPlayer->setVariableValue( "/:IsReplay", 1 );
+        } else {
+            pHudPlayer->setVariableValue( "/:IsReplay", 0 );
+        }
         return false;
     }
     if ( *pMessage == kMsgUnknownRfhd ) {
@@ -631,7 +675,8 @@ bool GMMission::restart() {
          ( !gpScenaric->isTrainingLevel() || !gAIConfig.Unknown0xE4 ) ) {
         ReleasePlayerAutopilot();
     }
-    OTDU_UNIMPLEMENTED; // TODO: REPLAY (DAT_00fa97dc = 0, FUN_00841810)
+    gReplay.setState( eReplayState::RS_Off );
+    gpPhysics->clearInstantReplayVehicles();
 
     FlashPlayer *pHudPlayer =
         ( gpMngHud != nullptr ) ? gpMngHud->getHudPlayer() : nullptr;
@@ -736,7 +781,8 @@ bool GMMission::attachOffroadWarningSample() {
 
 void GMMission::exitMission() {
     // FUN_0073f150
-    OTDU_UNIMPLEMENTED; // TODO: REPLAY (DAT_00fa97dc = 0, FUN_00841810)
+    gReplay.setState( eReplayState::RS_Off );
+    gpPhysics->clearInstantReplayVehicles();
     OTDU_UNIMPLEMENTED; // TODO: ONLINE (ChangeSessionMode(-1) on a challenge
                         // spot)
     if ( pGameMech != nullptr ) {
@@ -771,8 +817,9 @@ void GMMission::exitMission() {
 void GMMission::startRestartFade() {
     // FUN_0073d530
     bRestartRequested = false;
-    OTDU_UNIMPLEMENTED; // TODO: ONLINE (save and clear FreeRideMgr
-                        // bUnknownBool3), FLASH (movie draw mode |= 2)
+    OTDU_UNIMPLEMENTED; // TODO: FLASH (movie draw mode |= 2)
+    bSavedFreeRideBool3 = gpCP2PGameService->FreeRideMgr.bUnknownBool3;
+    gpCP2PGameService->FreeRideMgr.bUnknownBool3 = false;
     mngFade.startTransition(
         ( ( mngFade.getTransitionFlags() | 2u ) & ~0xcu ) | 1u,
         kRestartFadeDuration, &GMMission::OnRestartFadedOut, nullptr, this );

@@ -59,6 +59,8 @@ public:
                           Eigen::Vector4f *param_2,
                           Eigen::Vector4f *param_3 ) override;
 
+    void clearSkids();
+
 private:
     // Per-frame skid-point generation from the physics wheel state.
     void updateSkids( float deltaTime );

@@ -219,6 +219,7 @@ private:
     uint32_t savedMutedVehicleCategories;
     bool bDetachPlayerCarInput;
     bool bPauseMenuLockedBefore;
+    bool bFreeRideBool2Before;
     bool bPlayerCarInputWasAttached;
     bool bDisableStreamingOnCarBefore;
     Eigen::Vector4f *pStreamCenterBefore;

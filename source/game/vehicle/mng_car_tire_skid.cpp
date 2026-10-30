@@ -613,3 +613,25 @@ bool MngCarTireSkid::onWorldStreamed( Eigen::Vector4f *param_1,
     }
     return true;
 }
+
+void MngCarTireSkid::clearSkids() {
+    // FUN_00714a90
+    if ( pCarSkids == nullptr ) {
+        return;
+    }
+
+    for ( int32_t car = 0; car < kMaxCars; car++ ) {
+        // FUN_0042e980
+        CarTireSkid &carSkid = pCarSkids[car];
+        for ( int32_t wheel = 0; wheel < carSkid.NumSkids; wheel++ ) {
+            TireSkid &skid = carSkid.pSkids[wheel];
+            skid.NumPoints = 0;
+            skid.NumLastPoints = 0;
+            skid.StartIndex = 0;
+            skid.EndIndex = 0;
+            skid.pLastAdded = nullptr;
+            skid.pLastLastAdded = nullptr;
+            skid.pCarState = nullptr;
+        }
+    }
+}

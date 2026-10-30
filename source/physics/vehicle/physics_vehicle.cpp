@@ -13,6 +13,7 @@
 #include "physics/gs_physics.h"
 #include "physics/gs_physicsfx.h"
 #include "physics/physics_material.h"
+#include "physics/replay.h"
 #include "database/gs_database.h"
 #include "database/db_aftermarket_pack.h"
 #include "player_data/gs_playerdata.h"
@@ -3102,6 +3103,21 @@ void PhysicsVehicle::destroyBikeRider() {
     pBikeRiderBody = nullptr;
 }
 
+void PhysicsVehicle::resetEjectedBikeRider() {
+    // FUN_00828670
+    PhysicsLock lock;
+    if ( !vehicle.bBike || pRollLimitConstraint == nullptr ||
+         pRollLimitConstraint->GetEnabled() ) {
+        return;
+    }
+    if ( !bPausePhysics ) { // +0xe48
+        pRollLimitConstraint->SetEnabled( true );
+    }
+    if ( pBikeRiderBody != nullptr ) {
+        destroyBikeRider();
+    }
+}
+
 void PhysicsVehicle::publishBikeRider() {
     // FUN_0083bbd0
     bBikeRiderPresent = pBikeRiderBody != nullptr;
@@ -3380,11 +3396,35 @@ void PhysicsVehicle::updateGripModulation( float chassisSpeed ) {
 
 void PhysicsVehicle::forwardDrivingInput( const float deltaTime ) {
     // FUN_0081c7b0 (inlined)
-    if ( pDrivingControl != nullptr ) {
+    if ( pDrivingControl != nullptr && !gReplay.isPlayingBack() ) {
         pDrivingControl->forwardInput( *this, deltaTime );
     }
     if ( pSecondaryDrivingControl != nullptr ) {
         pSecondaryDrivingControl->forwardInput( *this, deltaTime );
+    }
+}
+
+void PhysicsVehicle::updateReplayDriving() {
+    // FUN_0081af70 / FUN_0081b820 (Driving record)
+    ReplayPlayback &replay = replayPlayback;
+    replay.bLatchedGearUp |= bGearUpRequest;
+    replay.bLatchedGearDown |= bGearDownRequest;
+    if ( replay.pInputSlot != nullptr ) {
+        ReplayDriving driving = captureReplayDriving();
+        driving.bGearUp = replay.bLatchedGearUp;
+        driving.bGearDown = replay.bLatchedGearDown;
+        driving.BackOnTrack = replay.bTeleported ? 1 : 0;
+        driving.bBackView = 0;
+        driving.bChangeView = 0;
+        Replay::PackDriving( driving, replay.pInputSlot );
+        replay.pInputSlot = nullptr;
+        replay.bLatchedGearUp = false;
+        replay.bLatchedGearDown = false;
+        replay.bTeleported = false;
+    }
+    if ( replay.bDrivingOverride ) {
+        applyReplayDriving( replay.Driving );
+        replay.bDrivingOverride = false;
     }
 }
 
@@ -3403,12 +3443,14 @@ void PhysicsVehicle::OnStep(
     if ( bPausePhysics ) {
         if ( bVirtual ) {
             forwardDrivingInput( dt );
+            updateReplayDriving();
             stepVirtual( dt );
         }
         return;
     }
 
     forwardDrivingInput( dt );
+    updateReplayDriving();
     if ( bKeyframed ) {
         if ( drivingMode == DM_Parked ) {
             applyDrivingMode();
@@ -3803,8 +3845,10 @@ void PhysicsVehicle::setChassisPose( const JPH::RMat44 &world,
     pPhysicsSystem->GetBodyInterface().SetPositionAndRotation(
         pChassisBody->GetID(), world.GetTranslation(),
         world.GetQuaternion().Normalized(),
-        bActivate ? JPH::EActivation::Activate
-                  : JPH::EActivation::DontActivate );
+        ( bActivate &&
+          pPhysicsSystem->GetBodyInterface().IsAdded( pChassisBody->GetID() ) )
+            ? JPH::EActivation::Activate
+            : JPH::EActivation::DontActivate );
 }
 
 void PhysicsVehicle::setPostponedMatrix( const Matrix4x4f_t &worldTransform ) {
@@ -4726,16 +4770,82 @@ PhysicsVehicle::computeDisplayMatrix( const Matrix4x4f_t &sourceMatrix ) const {
     return outMatrix;
 }
 
-void PhysicsVehicle::publishStepPose() {
+void PhysicsVehicle::publishStepPose( const bool bReplayStep ) {
     // FUN_0081dfd0
     physicsMatrix = ( bKeyframed && bForceKeyframeMatrix )
                         ? keyframeMatrix
                         : getChassisShiftedMatrix();
 
-    // TODO: REPLAY
-    displayMatrix = computeDisplayMatrix( physicsMatrix );
+    ReplayPlayback &replay = replayPlayback;
+    if ( gReplay.isPlayingBack() && bInInstantReplay ) {
+        if ( bReplayStep ) {
+            updateReplayPose();
+        }
+    } else {
+        if ( bReplayStep ) {
+            replay.Elapsed = 1.0f;
+            replay.BlendStart = 0.0f;
+            replay.Period = 0.0f;
+        }
+        replay.SourceMatrix = physicsMatrix;
+    }
+
+    displayMatrix = computeDisplayMatrix( replay.SourceMatrix );
     invChassisMatrix = OrthoInvert( physicsMatrix );
     publishBikeRider();
+}
+
+void PhysicsVehicle::updateReplayPose() {
+    // FUN_0081dfd0 (inlined)
+    static constexpr float kMinBlendPeriod = 0.99f; // DAT_00f41a44
+
+    ReplayPlayback &replay = replayPlayback;
+    replay.Mode = ( replay.PoseFlags[1] == 1 ) ? 3 : 2;
+    if ( replay.PoseFlags[0] == 2 || replay.PoseFlags[1] == 2 ||
+         !gReplay.isCursorBeforeLastPose() ||
+         replay.Poses[0].row( 3 ).norm() < 1.0f ||
+         replay.Poses[1].row( 3 ).norm() < 1.0f ) {
+        replay.Mode = 1;
+    }
+    if ( gReplayModeDebugIndex != 0 ) {
+        replay.Mode = gReplayModeDebugIndex;
+    }
+
+    const float curveT =
+        std::clamp( replay.Elapsed / replay.Period, 0.0f, 1.0f );
+    if ( replay.Mode == 2 ) {
+        if ( replay.Elapsed < replay.BlendStart ||
+             replay.Period <= kMinBlendPeriod ) {
+            replay.SourceMatrix = physicsMatrix;
+        } else {
+            const float blendS =
+                std::clamp( ( replay.Elapsed - replay.BlendStart ) /
+                                ( ( replay.Period - gReplay.getTimeScale() ) -
+                                  replay.BlendStart ),
+                            0.0f, 1.0f );
+            blendReplayPose( curveT, blendS );
+        }
+    }
+    if ( replay.Mode == 3 ) {
+        blendReplayPose( curveT, 0.0f );
+        physicsMatrix = replay.SourceMatrix;
+        JPH::RMat44 world = JPH::RMat44::sIdentity();
+        for ( int32_t c = 0; c < 4; c++ ) {
+            world.SetColumn3( c, JPH::Vec3( physicsMatrix( c, 0 ),
+                                            physicsMatrix( c, 1 ),
+                                            physicsMatrix( c, 2 ) ) );
+        }
+        setChassisPose( world, false );
+    }
+    if ( replay.Mode == 1 ) {
+        replay.SourceMatrix = physicsMatrix;
+    }
+
+    if ( gReplay.getSlowDownFactor() < 2 ) {
+        replay.Elapsed += 1.0f;
+    } else {
+        replay.Elapsed += gReplay.getTimeScale();
+    }
 }
 
 static bool ProbeGroundUnder( const Eigen::Vector4f &point,
@@ -4999,6 +5109,25 @@ void PhysicsVehicle::updateKeyframedWheels( float deltaTime ) {
     }
 }
 
+static void SetBodyVelocity( JPH::BodyInterface &bi,
+                             JPH::Body &body,
+                             const JPH::Vec3 &linearVelocity,
+                             const JPH::Vec3 *pAngularVelocity ) {
+    if ( !bi.IsAdded( body.GetID() ) ) {
+        if ( body.IsDynamic() ) {
+            body.SetLinearVelocityClamped( linearVelocity );
+            if ( pAngularVelocity != nullptr ) {
+                body.SetAngularVelocityClamped( *pAngularVelocity );
+            }
+        }
+        return;
+    }
+    bi.SetLinearVelocity( body.GetID(), linearVelocity );
+    if ( pAngularVelocity != nullptr ) {
+        bi.SetAngularVelocity( body.GetID(), *pAngularVelocity );
+    }
+}
+
 void PhysicsVehicle::setVelocity( const Eigen::Vector3f &linearVelocity,
                                   bool bSyncPowertrain,
                                   int32_t preferredGear ) {
@@ -5010,9 +5139,9 @@ void PhysicsVehicle::setVelocity( const Eigen::Vector3f &linearVelocity,
     JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
     const JPH::Vec3 velocity( linearVelocity.x(), linearVelocity.y(),
                               linearVelocity.z() );
-    bi.SetLinearVelocity( pChassisBody->GetID(), velocity );
+    SetBodyVelocity( bi, *pChassisBody, velocity, nullptr );
     for ( const AttachedPart &part : attachedParts ) {
-        bi.SetLinearVelocity( part.pBody->GetID(), velocity );
+        SetBodyVelocity( bi, *part.pBody, velocity, nullptr );
     }
 
     const Matrix4x4f_t chassis = getChassisShiftedMatrix();
@@ -5342,6 +5471,151 @@ Eigen::Vector4f PhysicsVehicle::getChassisAngularVelocity() const {
     const JPH::Vec3 v = pPhysicsSystem->GetBodyInterface().GetAngularVelocity(
         pChassisBody->GetID() );
     return Eigen::Vector4f( v.GetX(), v.GetY(), v.GetZ(), 0.0f );
+}
+
+ReplayDriving PhysicsVehicle::captureReplayDriving() const {
+    ReplayDriving driving;
+    driving.DrivingMode = drivingMode;
+    driving.Accelerate = rawInputThrottle;
+    driving.Brake = rawInputBrake;
+    driving.Handbrake = inputHandbrake;
+    driving.Steer = inputSteer;
+    driving.Lean = inputLean;
+    driving.Clutch = clutchPedal;
+    driving.bIgnition = vehicle.Engine.IgnitionOn;
+    driving.bIgnitionOnce = vehicle.Engine.bIgnitionOnce;
+    driving.bGearUp = bGearUpRequest;
+    driving.bGearDown = bGearDownRequest;
+    driving.bBackView = bBackView;
+    driving.bChangeView = bChangeView;
+    driving.GearSelect = static_cast<uint8_t>( gearSelectRequest );
+    driving.bFlashLights = bLightsRequest;
+    driving.bFlashLightsOnce = bFlashingLightsRequest;
+    driving.OpenWindows = windowsDirection;
+    driving.bHonk = bHonkRequest;
+    // TODO: Reset is carried by CarBodyState (main thread) in the port
+    return driving;
+}
+
+void PhysicsVehicle::applyReplayDriving( const ReplayDriving &driving ) {
+    drivingMode = driving.DrivingMode;
+    rawInputThrottle = driving.Accelerate;
+    rawInputBrake = driving.Brake;
+    inputHandbrake = driving.Handbrake;
+    inputSteer = driving.Steer;
+    inputLean = driving.Lean;
+    clutchPedal = driving.Clutch;
+    setIgnition( driving.bIgnition != 0, driving.bIgnitionOnce != 0 );
+    bGearUpRequest = driving.bGearUp != 0;
+    bGearDownRequest = driving.bGearDown != 0;
+    bBackView = driving.bBackView != 0;
+    bChangeView = driving.bChangeView != 0;
+    bLightsRequest = driving.bFlashLights != 0;
+    bFlashingLightsRequest = driving.bFlashLightsOnce != 0;
+    windowsDirection = driving.OpenWindows;
+    bHonkRequest = driving.bHonk != 0;
+    gearSelectRequest = driving.GearSelect;
+}
+
+void PhysicsVehicle::setReplayBodyVelocities(
+    const Eigen::Vector4f &linearVelocity,
+    const Eigen::Vector4f &angularVelocity ) {
+    if ( pPhysicsSystem == nullptr || pChassisBody == nullptr ) {
+        return;
+    }
+    JPH::BodyInterface &bi = pPhysicsSystem->GetBodyInterface();
+    const JPH::Vec3 linear( linearVelocity.x(), linearVelocity.y(),
+                            linearVelocity.z() );
+    const JPH::Vec3 angular( angularVelocity.x(), angularVelocity.y(),
+                             angularVelocity.z() );
+    if ( bi.IsAdded( pChassisBody->GetID() ) ) {
+        bi.ActivateBody( pChassisBody->GetID() );
+    }
+    SetBodyVelocity( bi, *pChassisBody, linear, &angular );
+    for ( const AttachedPart &part : attachedParts ) {
+        if ( bi.IsAdded( part.pBody->GetID() ) ) {
+            bi.ActivateBody( part.pBody->GetID() );
+        }
+        SetBodyVelocity( bi, *part.pBody, linear, nullptr );
+    }
+}
+
+void PhysicsVehicle::saveReplaySnapshot( uint8_t *pRecord ) const {
+    // FUN_0082f640
+    ReplaySnapshot snapshot;
+    snapshot.Vehicle = vehicle;
+    snapshot.World = getChassisWorldMatrix();
+    snapshot.LinearVelocity = getChassisVelocity();
+    snapshot.AngularVelocity = getChassisAngularVelocity();
+    memcpy( pRecord, static_cast<const void *>( &snapshot ),
+            sizeof( ReplaySnapshot ) );
+}
+
+void PhysicsVehicle::restoreReplaySnapshot( const uint8_t *pRecord ) {
+    // FUN_0083b9b0
+    ReplaySnapshot snapshot;
+    memcpy( static_cast<void *>( &snapshot ), pRecord,
+            sizeof( ReplaySnapshot ) );
+    vehicle = snapshot.Vehicle;
+    setReplayBodyVelocities( snapshot.LinearVelocity,
+                             snapshot.AngularVelocity );
+    setPostponedMatrix( snapshot.World );
+}
+
+void PhysicsVehicle::blendReplayPose( const float curveT, const float blendS ) {
+    // FUN_0082db30
+    ReplayPlayback &replay = replayPlayback;
+    const Eigen::Quaternionf fromRotation =
+        BuildQuaternionFromMatrix( replay.Poses[0] );
+    const Eigen::Quaternionf toRotation =
+        BuildQuaternionFromMatrix( replay.Poses[1] );
+    const Eigen::Quaternionf physicsRotation =
+        BuildQuaternionFromMatrix( physicsMatrix );
+
+    const Eigen::Vector4f shift = GSPhysics::GetShiftOrigin();
+    const Eigen::Vector4f physicsPosition =
+        physicsMatrix.row( 3 ).transpose() + shift;
+
+    // FUN_0043c850
+    const float invT = 1.0f - curveT;
+    const float weight = curveT * 3.0f * invT;
+    Eigen::Vector4f curvePosition =
+        replay.Curves[0][0] * ( invT * invT * invT ) +
+        replay.Curves[0][1] * ( weight * invT ) +
+        replay.Curves[0][2] * ( weight * curveT ) +
+        replay.Curves[0][3] * ( curveT * curveT * curveT );
+    curvePosition.w() = 1.0f;
+
+    // FUN_0041ebd0
+    Eigen::Vector4f blendedPosition( 0.0f, 0.0f, 0.0f, 1.0f );
+    for ( int32_t i = 0; i < 3; i++ ) {
+        const float from = physicsPosition[i];
+        const float to = curvePosition[i];
+        blendedPosition[i] =
+            std::clamp( ( to - from ) * blendS + from, std::min( from, to ),
+                        std::max( from, to ) );
+    }
+
+    const Eigen::Quaternionf recordedRotation =
+        QuaternionSlerpShortest( fromRotation, toRotation, curveT );
+    replay.CurveT = curveT;
+    replay.BlendS = blendS;
+    const Eigen::Quaternionf rotation =
+        QuaternionSlerpShortest( physicsRotation, recordedRotation, blendS );
+
+    if ( replay.Mode == 1 ) {
+        replay.SourceMatrix = physicsMatrix;
+    } else if ( replay.Mode == 2 ) {
+        replay.SourceMatrix = BuildRotationMatrix( rotation );
+        replay.SourceMatrix.row( 3 ) = Eigen::Vector4f(
+            blendedPosition.x() - shift.x(), blendedPosition.y() - shift.y(),
+            blendedPosition.z() - shift.z(), 1.0f );
+    } else if ( replay.Mode == 3 ) {
+        replay.SourceMatrix = BuildRotationMatrix( recordedRotation );
+        replay.SourceMatrix.row( 3 ) = Eigen::Vector4f(
+            curvePosition.x() - shift.x(), curvePosition.y() - shift.y(),
+            curvePosition.z() - shift.z(), 1.0f );
+    }
 }
 
 float PhysicsVehicle::getEngineAngularVelocity() const {

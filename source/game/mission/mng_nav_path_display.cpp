@@ -5,6 +5,7 @@
 #include "core/maths_helper.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
+#include "physics/replay.h"
 #include "render/gs_render.h"
 #include "render/material.h"
 #include "render/render_scene.h"
@@ -129,8 +130,8 @@ void MngNavPathDisplay::terminate() {
 
 void MngNavPathDisplay::draw() {
     // FUN_006b32a0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc == 5 hides the path)
-    if ( bEnabled && drawList.getNumPrimitives() > 0 ) {
+    if ( !gReplay.isPlayingBack() && bEnabled &&
+         drawList.getNumPrimitives() > 0 ) {
         gpRender->getRenderPass<eRenderPass::RP_Near>()
             .pScene->enqueueDynamicDrawList( &drawList );
     }
@@ -189,7 +190,9 @@ void MngNavPathDisplay::tick( float deltaTime, float totalTime ) {
         return;
     }
     drawList.reset();
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc == 5 hides the path)
+    if ( gReplay.isPlayingBack() ) {
+        return;
+    }
 
     CarState *pCar = gpScenaric->getLocalPlayer().getCarState();
     if ( pCar == nullptr || pCar->getAIController() == nullptr ) {

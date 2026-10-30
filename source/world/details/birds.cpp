@@ -4,6 +4,7 @@
 #include "audio/gs_ambiance.h"
 #include "core/color.h"
 
+#include "physics/replay.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
 #include "render/gs_render.h"
@@ -213,8 +214,7 @@ void Birds::updateBirds( float deltaTime ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (will use frame dt in the meantime)
-    const float scaledDt = deltaTime;
+    const float scaledDt = gReplay.getTimeScale() * deltaTime;
 
     nextSpawnTime -= scaledDt;
     int32_t spawnCount;

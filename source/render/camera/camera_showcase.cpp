@@ -642,7 +642,7 @@ void CameraShowcase::updateRadialBlurCenter() {
         return;
     }
 
-    const Matrix4x4f_t carMatrix = pVehicle->getPhysicsMatrix();
+    const Matrix4x4f_t carMatrix = pVehicle->getReplaySourceMatrix();
 
     Matrix4x4f_t camToWorld;
     MakeWorldToCamMatrix( camToWorld, worldPosition.head<3>(),

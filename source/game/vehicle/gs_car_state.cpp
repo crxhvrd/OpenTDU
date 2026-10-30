@@ -25,6 +25,8 @@
 #include "game/scenaric/entity/entity_driver.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "physics/gs_physics.h" // TDUSurface
+#include "physics/replay.h"
+#include "world/otdu_lights.h"
 #include "physics/physics_material.h"
 #include "physics/physics_config.h"
 #include "car_state.h"
@@ -289,52 +291,6 @@ static void RefreshVehiclePartsDisplay( const PhysicsVehicle &vehicle,
     }
 }
 
-static void TickReplayFadeSequencer() {
-    // FUN_0081c330
-    static constexpr float kFadeDuration = 0.5f; // DAT_00f8a660
-    static bool sbStepStarted = false;           // DAT_010e7c1c
-
-    if ( gpTestDriveInstance->getActiveGameMode() == GM_DriveIn ) {
-        return;
-    }
-    if ( gpMngFade == nullptr ||
-         ( gpMngFade->getTransitionFlags() & 1 ) != 0 ) {
-        return;
-    }
-
-    eFadeRequest request = GSPhysics::peekFadeRequest();
-    if ( sbStepStarted ) {
-        if ( request == eFadeRequest::FR_FadeOut ) {
-            gpMngFade->setTransitionFlags( gpMngFade->getTransitionFlags() |
-                                           8 );
-        }
-        request = GSPhysics::popFadeRequest();
-        sbStepStarted = false;
-    }
-
-    switch ( request ) {
-    case eFadeRequest::FR_ReplayPlayback:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: Replay
-        break;
-    case eFadeRequest::FR_FadeIn:
-        gpMngFade->restartTransition(
-            ( gpMngFade->getTransitionFlags() & ~8u ) | 5, kFadeDuration );
-        gpMngFade->setRenderLogo( false );
-        sbStepStarted = true;
-        break;
-    case eFadeRequest::FR_FadeOut:
-        gpMngFade->restartTransition(
-            ( gpMngFade->getTransitionFlags() & ~0xcu ) | 1, kFadeDuration );
-        gpMngFade->setRenderLogo( true );
-        sbStepStarted = true;
-        break;
-    default:
-        break;
-    }
-
-    OTDU_UNIMPLEMENTED; // TODO: replay manager
-}
-
 void GSCarState::tick( float totalTime, float deltaTime ) {
     // FUN_008adcd0
     while ( !carToDeinstanciate.empty() ) {
@@ -430,8 +386,8 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 pPhysicsVehicle->getPhysicsMatrix();
             body.PhysicsWorldMatrix = physicsMatrix;
 
-            const Matrix4x4f_t shiftedMatrix =
-                pPhysicsVehicle->computeDisplayMatrix( physicsMatrix );
+            const Matrix4x4f_t &shiftedMatrix =
+                pPhysicsVehicle->getDisplayMatrix();
             body.OffsetedWorldMatrix = shiftedMatrix;
 
             body.PreviousWorldMatrix = body.WorldMatrix;
@@ -443,6 +399,25 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             body.WorldMatrix = worldMatrix;
             body.AngularVelocity = pPhysicsVehicle->getChassisAngularVelocity();
             body.LinearVelocity = pPhysicsVehicle->getChassisVelocity();
+
+            // FUN_0083bbd0 (inlined)
+            pPhysicsVehicle->updateFlashingLightsRequest();
+            const AiVehicle *pAIController =
+                static_cast<const AiVehicle *>( carState.getAIController() );
+            if ( pAIController == nullptr ||
+                 pAIController->getCategory() ==
+                     eAiVehicleCategory::AVC_Network ) {
+                body.bHonking = pPhysicsVehicle->isHonkRequested();
+                // OTDU_ADDITION: headlights stay on at night
+                body.bHeadlightsOn = pPhysicsVehicle->isLightsRequested() ||
+                                     AreOTDUHeadlightsOn();
+                body.bFlashingLights =
+                    pPhysicsVehicle->isFlashingLightsRequested();
+                body.bIndicatingLeft = false;
+                body.bIndicatingRight = false;
+                body.bPoliceGyroEnabled = false;
+            }
+            body.WindowState = pPhysicsVehicle->getWindowsDirection();
 
             body.bBackOnTracked = pPhysicsVehicle->consumeBackOnTrackPlaced();
             if ( body.bBackOnTracked ) {
@@ -649,6 +624,19 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             audioScratch[i].NumWheels = physNumWheels;
             audioScratch[i].bSampled = true;
         }
+
+        for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
+            if ( ( bUsedSlot >> i ) & 1u ) {
+                carStates[i].updateBackOnTrack( deltaTime );
+            }
+        }
+
+        notifyListeners( deltaTime );
+        if ( !gpCamera->isLocked() ) {
+            gpCamera->tickActiveCamera( deltaTime );
+            gpCamera->setActiveCameraAsDefault();
+            gpCamera->bindToRender();
+        }
     }
 
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
@@ -667,23 +655,6 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
              carState.getVehicleSound() == nullptr ) {
             carState.setVehicleSound(
                 gpVehicleSound->createInstance( &carState ) );
-        }
-    }
-
-    {
-        PhysicsLock physLock;
-
-        for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
-            if ( ( bUsedSlot >> i ) & 1u ) {
-                carStates[i].updateBackOnTrack( deltaTime );
-            }
-        }
-
-        notifyListeners( deltaTime );
-        if ( !gpCamera->isLocked() ) {
-            gpCamera->tickActiveCamera( deltaTime );
-            gpCamera->setActiveCameraAsDefault();
-            gpCamera->bindToRender();
         }
     }
 
@@ -713,11 +684,7 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             phantoms.dispatchEvents();
             phantoms.clearEvents();
         }
-        TickReplayFadeSequencer();
-
-        OTDU_UNIMPLEMENTED; // TODO: Rest of FUN_0081c330 (camera target
-                            // position, GM actor 0x2ad flag, replay camera
-                            // restore branch)
+        gReplay.tick();
     }
 
     for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {

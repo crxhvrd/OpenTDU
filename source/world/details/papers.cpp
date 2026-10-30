@@ -3,6 +3,7 @@
 
 #include "audio/gs_ambiance.h"
 #include "physics/gs_cloth_system.h"
+#include "physics/replay.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_base.h"
@@ -157,8 +158,7 @@ void Papers::updatePapers( float deltaTime ) {
         gpWeather->updateActiveConfig();
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (will use frame dt in the meantime)
-    const float scaledDt = deltaTime;
+    const float scaledDt = gReplay.getTimeScale() * deltaTime;
 
     const Matrix4x4f_t &camToWorld =
         gpCamera->getDefaultCamera()->getCamToWorld();

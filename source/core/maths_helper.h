@@ -357,6 +357,46 @@ BuildRotationMatrix( const Eigen::Quaternionf &param_1 ) {
     return param_2;
 }
 
+static Eigen::Quaternionf
+BuildQuaternionFromMatrix( const Matrix4x4f_t &matrix ) {
+    // FUN_00501ac0
+    Eigen::Quaternionf quat;
+    const float trace = matrix( 0, 0 ) + matrix( 2, 2 ) + matrix( 1, 1 );
+    if ( 0.0f < trace ) {
+        const float root = sqrtf( trace + 1.0f );
+        const float scale = 0.5f / root;
+        quat.w() = root * 0.5f;
+        quat.x() = ( matrix( 2, 1 ) - matrix( 1, 2 ) ) * scale;
+        quat.y() = ( matrix( 0, 2 ) - matrix( 2, 0 ) ) * scale;
+        quat.z() = ( matrix( 1, 0 ) - matrix( 0, 1 ) ) * scale;
+        return quat;
+    }
+
+    int32_t i = 2;
+    int32_t j = 0;
+    int32_t k = 1;
+    if ( matrix( 0, 0 ) <= matrix( 1, 1 ) ) {
+        if ( matrix( 2, 2 ) < matrix( 1, 1 ) ) {
+            i = 1;
+            j = 2;
+            k = 0;
+        }
+    } else if ( matrix( 2, 2 ) < matrix( 0, 0 ) ) {
+        i = 0;
+        j = 1;
+        k = 2;
+    }
+
+    const float root =
+        sqrtf( matrix( i, i ) - matrix( j, j ) - matrix( k, k ) + 1.0f );
+    const float scale = 0.5f / root;
+    quat.coeffs()[i] = root * 0.5f;
+    quat.w() = ( matrix( k, j ) - matrix( j, k ) ) * scale;
+    quat.coeffs()[j] = ( matrix( j, i ) + matrix( i, j ) ) * scale;
+    quat.coeffs()[k] = ( matrix( k, i ) + matrix( i, k ) ) * scale;
+    return quat;
+}
+
 static bool IntersectSegmentWithPlane( const Eigen::Vector4f &pointA,
                                        const TDUPlane &plane,
                                        Eigen::Vector4f &outPoint,

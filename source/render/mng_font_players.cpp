@@ -19,6 +19,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
+#include "online/p2p_game_service.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/gs_playerdata.h"
 #include "world/gs_mng_resources.h"
@@ -114,7 +115,11 @@ void MngFontPlayers::draw() {
     if ( fontResources.areFontsLoaded() ) {
         pDrawList->reset();
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        const CP2PFreeRideMgr &freeRideMgr = gpCP2PGameService->FreeRideMgr;
+        if ( !freeRideMgr.bUnknownBool1 || !freeRideMgr.bUnknownBool2 ||
+             !freeRideMgr.bUnknownBool3 ) {
+            return;
+        }
 
         pDrawList->setIdentityTransform();
         pDrawList->setActiveMaterial(
@@ -363,17 +368,7 @@ void MngFontPlayers::drawPlayerNames() {
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
 }
 
-// CP2PGameService FreeRideMgr+0x4be0
-struct BotNameLabel {
-    float X;
-    float Y;
-    float Width;
-    float Height;
-    float Distance;
-    int32_t Index;
-};
-
-static std::array<BotNameLabel, AiVehicleList::kCapacity> gBotNameLabels = {};
+static_assert( CP2PFreeRideMgr::kNumBotNameLabels == AiVehicleList::kCapacity );
 
 static constexpr float kBotNameHeightOffset = 2.0f; // DAT_00f416b0
 static constexpr float kBotNameLowResScale = 1.3f;  // DAT_00f41dfc
@@ -431,7 +426,9 @@ void MngFontPlayers::drawBotNames() {
         return;
     }
 
-    for ( BotNameLabel &label : gBotNameLabels ) {
+    std::array<BotNameLabel, CP2PFreeRideMgr::kNumBotNameLabels>
+        &botNameLabels = gpCP2PGameService->FreeRideMgr.BotNameLabels;
+    for ( BotNameLabel &label : botNameLabels ) {
         label.Index = -1;
     }
 
@@ -461,18 +458,18 @@ void MngFontPlayers::drawBotNames() {
                 Eigen::Vector4f( position.x(), position.y(), position.z(),
                                  1.0f ) -
                 referencePosition;
-            gBotNameLabels[i].Distance = delta.norm();
-            gBotNameLabels[i].Index = i;
+            botNameLabels[i].Distance = delta.norm();
+            botNameLabels[i].Index = i;
         }
     }
 
     for ( int32_t i = 0; i < AiVehicleList::kCapacity - 1; i++ ) {
         for ( int32_t j = i + 1; j < AiVehicleList::kCapacity; j++ ) {
-            const int32_t index = gBotNameLabels[i].Index;
-            if ( index != -1 && gBotNameLabels[j].Index != -1 &&
-                 gBotNameLabels[i].Distance > gBotNameLabels[j].Distance ) {
-                gBotNameLabels[i].Index = gBotNameLabels[j].Index;
-                gBotNameLabels[j].Index = index;
+            const int32_t index = botNameLabels[i].Index;
+            if ( index != -1 && botNameLabels[j].Index != -1 &&
+                 botNameLabels[i].Distance > botNameLabels[j].Distance ) {
+                botNameLabels[i].Index = botNameLabels[j].Index;
+                botNameLabels[j].Index = index;
             }
         }
     }
@@ -482,7 +479,7 @@ void MngFontPlayers::drawBotNames() {
     char pText[256];
 
     for ( int32_t i = 0; i < pList->Count; i++ ) {
-        const int32_t index = gBotNameLabels[i].Index;
+        const int32_t index = botNameLabels[i].Index;
         if ( index == -1 ) {
             continue;
         }
@@ -562,11 +559,11 @@ void MngFontPlayers::drawBotNames() {
         uint8_t alpha = 0xff;
         float numOverlaps = 0.0f;
         for ( int32_t j = 0; j < i; j++ ) {
-            const int32_t otherIndex = gBotNameLabels[j].Index;
+            const int32_t otherIndex = botNameLabels[j].Index;
             if ( otherIndex == -1 ) {
                 continue;
             }
-            const BotNameLabel &other = gBotNameLabels[otherIndex];
+            const BotNameLabel &other = botNameLabels[otherIndex];
             const float gapX =
                 std::abs( other.X - x ) - width * 0.5f - other.Width * 0.5f;
             const float gapY = std::abs( other.Y - y ) -
@@ -582,7 +579,7 @@ void MngFontPlayers::drawBotNames() {
             }
         }
 
-        BotNameLabel &label = gBotNameLabels[index];
+        BotNameLabel &label = botNameLabels[index];
         label.X = x;
         label.Y = y;
         label.Width = width;

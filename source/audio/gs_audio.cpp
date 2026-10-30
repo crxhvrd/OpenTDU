@@ -14,6 +14,7 @@
 #include "game/cinematic/gs_cinematics.h"
 #include "game/cinematic/mng_cinematics.h"
 
+#include "physics/replay.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
 
@@ -854,23 +855,9 @@ void GSAudio::tick( float totalTime, float deltaTime ) {
 
 void GSAudio::updateReplayPitch() {
     // FUN_009b1a60
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc/e8/ec)
-    constexpr int32_t replayState = 0;
-    constexpr int32_t replaySlowDownFactor = 0;
-    constexpr int32_t replaySpeedUpFactor = 0;
-
     float pitch = 1.0f;
-    if ( replayState == 5 ) {
-        float speedRatio = 1.0f;
-        if ( replaySlowDownFactor >= 2 ) {
-            speedRatio = 1.0f / 1.0f; // float( replaySlowDownFactor ); // TODO:
-                                      // Apparently MSVC is too retarded to
-                                      // statically evaluate the branch and
-                                      // flags a divide by zero here
-        } else if ( replaySpeedUpFactor >= 2 ) {
-            speedRatio = float( replaySpeedUpFactor );
-        }
-
+    if ( gReplay.isPlayingBack() ) {
+        const float speedRatio = gReplay.getTimeScale();
         if ( speedRatio < 1.0f ) {
             pitch = ( speedRatio + 1.0f ) * 0.5f * 0.1f +
                     ReplayPitch * 0.9f; // FLOAT_00f41674, FLOAT_00f41668,

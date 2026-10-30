@@ -575,10 +575,10 @@ bool AiPool::togglePlayerAutopilot( const bool bOpponent ) {
         pVehicle->initialize( eAiVehicleCategory::AVC_Autopilot, pCar, location,
                               lane, AiVehicle::kBehaviourNone, 8, 1, 1, true );
     }
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (AiVehicle +0xc2 = GSAI config +0xe2,
-                        // +0x200 = 0)
-    pVehicle->setRemovable( false ); // +0x22e4
-    pVehicle->setPlayerCar( true );  // +0x22f2
+    OTDU_UNIMPLEMENTED; // TODO: GSAI (AiVehicle +0xc2 = GSAI config +0xe2)
+    pVehicle->getSignals().bHeadlightActivated = false; // +0x200
+    pVehicle->setRemovable( false );                    // +0x22e4
+    pVehicle->setPlayerCar( true );                     // +0x22f2
     if ( pVehicle->getNavigationType() == 1 ) {
         pVehicle->getOpponentNavigation().requestState(
             AiVehNavOpponent::NS_LineEnded );

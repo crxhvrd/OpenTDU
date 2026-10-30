@@ -39,6 +39,7 @@
 #include "game/vehicle/gs_car_display.h"
 #include "game/vehicle/vehicle_controller.h"
 #include "audio/vehicle/gs_vehicle_sound.h"
+#include "physics/gs_physicsfx.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/gs_playerdata.h"
@@ -2269,6 +2270,11 @@ void *CinResCollection::loadSourceByName( const char *pName,
             pGhostBikeNode = pModel->pHiearchNode;
         }
     }
+    if ( gpPhysicsFX != nullptr ) {
+        gpPhysicsFX->stopAllEffects();
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: +0x1d70 = local player driver (when the
+                             // cinematic +0xa4 bit 4 is clear)
 
     ParsedBankEntry entry;
     pBank->getEntry( const_cast<char *>( pName ), entry );

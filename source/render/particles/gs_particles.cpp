@@ -3,6 +3,7 @@
 
 #include "config/gs_config.h"
 
+#include "physics/replay.h"
 #include "render/camera/camera_base.h"
 #include "render/frustum.h"
 #include "render/gs_render.h"
@@ -355,7 +356,7 @@ Particle *GSParticles::createParticleType( const std::string &name,
 
 void GSParticles::simulateParticle( Particle *pParticle, float deltaTime ) {
     // FUN_0080cd50
-    const float timeScale = 1.0f; // TODO: Read time scale for replay!
+    const float timeScale = gReplay.getTimeScale();
 
     if ( pParticle->drawList.isInitialized() ) {
         pParticle->drawList.reset();

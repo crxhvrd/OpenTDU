@@ -177,6 +177,7 @@ public:
     inline void setOwner( GameModeWorld *pGameMode ) { pOwner = pGameMode; }
     inline GameModeWorld *getOwner() const { return pOwner; }
     inline GameSession *getGameSession() const { return pGameSession; }
+    inline void requestReplayExit() { bReplayExitPending = true; }
     inline bool getUnknown75C() const { return bUnknown75C; }
     inline EntityCinematic *getCinematic() const { return pCinematic; }
     inline GameMechComponent *getComponent( const eComponentSlot slot ) const {
@@ -309,7 +310,7 @@ protected:
     GameParticipant *pScoreRankingHead;
     EntityCinematic *pCinematic;
     bool bAutopilotFadeStarted;
-    bool bAutopilotPending;
+    bool bReplayExitPending;
     bool bAutopilotRequested;
     bool field_0x7ef;
     uint32_t rankingStartTick;

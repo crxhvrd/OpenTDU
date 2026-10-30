@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "gs_cloth_system.h"
 
+#include "replay.h"
 #include "render/gs_render.h"
 #include "render/material.h"
 #include "render/render_scene.h"
@@ -188,9 +189,7 @@ void GSClothSystem::tick( float totalTime, float deltaTime ) {
     clothDrawList.reset();
     clothDrawList.setIdentityTransform();
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY
-
-    float scaledDt = deltaTime;
+    float scaledDt = gReplay.getTimeScale() * deltaTime;
     if ( scaledDt > kClothMaxTimestep ) {
         scaledDt = kClothMaxTimestep;
     }

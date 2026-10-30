@@ -300,6 +300,13 @@ public:
     static void pushFadeRequest( const eFadeRequest request );
     static eFadeRequest peekFadeRequest();
     static eFadeRequest popFadeRequest();
+    static void ClearFadeRequests();
+
+    void clearInstantReplayVehicles();
+    void markInstantReplayVehicles();
+    inline int32_t getNumVehiclesInInstantReplay() const {
+        return numVehiclesInInstantReplay;
+    }
 
     RigidBody_t createSphere( uint32_t collisionGroup,
                               const Eigen::Vector4f &worldPosition,
@@ -421,6 +428,7 @@ private:
     PhysicsVehicle *pPhysicsVehicles;
     PhysicsVehicle *pPhysicsVehiclesBegin;
     PhysicsVehicle *pPhysicsVehiclesEnd;
+    int32_t numVehiclesInInstantReplay;
     void *field_0x2cc;
 
     std::array<PhysFactory, kMaxNumPhysicsFactory> pFactories;
@@ -513,6 +521,7 @@ private:
     void initializeJolt();
     void buildProcessPendingProps();
     void physicsStep( float dt, float accTime );
+    void updateReplayVehicleModes();
     void updateForceFeedback( float dt );
     void createGraph();
     void drawGraph();

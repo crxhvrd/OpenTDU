@@ -8,6 +8,7 @@
 
 #include "config/gs_config.h"
 #include "input/input_device.h"
+#include "physics/replay.h"
 #include "render/camera/gs_camera.h"
 #include "flash/gs_flash.h"
 #include "flash/mng_flash.h"
@@ -437,7 +438,9 @@ bool MngInGameMenu::canOpenMenu() {
         return false;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: REPLAY (DAT_00fa97dc == 5 blocks the menu)
+    if ( gReplay.isPlayingBack() ) {
+        return false;
+    }
 
     if ( gpMngRental != nullptr && gpMngRental->isRespawnPending() ) {
         return false;

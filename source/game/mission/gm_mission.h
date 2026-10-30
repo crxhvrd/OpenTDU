@@ -83,6 +83,7 @@ private:
 class GMMission : public GameModeWorld, public AiRaceDescriptor {
 public:
     inline const Matrix4x4f_t &getSpawnFrame() const { return spawnFrame; }
+    inline bool getSavedFreeRideBool3() const { return bSavedFreeRideBool3; }
     inline MissionInfo &getMissionInfo() { return missionInfo; }
     inline GameSession *getGameSession() const { return pGameSession; }
     inline void setRankingShown( const bool bShown ) { bRankingShown = bShown; }
@@ -142,6 +143,7 @@ private:
     AudioClient *pOffroadWarningClient;
     edAudioStreamEntry *pOffroadWarningEntry;
     bool bRestartRequested;
+    bool bSavedFreeRideBool3;
     bool bQuitRequested;
     bool bLastPlayerPromptShown;
     bool bRankingShown;

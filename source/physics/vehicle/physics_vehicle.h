@@ -24,6 +24,29 @@ struct DBEntryCarPhysicsData;
 struct DBEntryAftermarketPack;
 class PhysicsVehicle;
 
+struct ReplayDriving {
+    uint8_t DrivingMode = 0;
+    float Accelerate = 0.0f;
+    float Brake = 0.0f;
+    float Handbrake = 0.0f;
+    float Steer = 0.0f;
+    float Lean = 0.0f;
+    float Clutch = 0.0f;
+    uint8_t bIgnition = 0;
+    uint8_t bIgnitionOnce = 0;
+    uint8_t bGearUp = 0;
+    uint8_t bGearDown = 0;
+    uint8_t bReset = 0;
+    uint8_t BackOnTrack = 0;
+    uint8_t bFlashLights = 0;
+    uint8_t bFlashLightsOnce = 0;
+    int8_t OpenWindows = 0;
+    uint8_t bBackView = 0;
+    uint8_t bChangeView = 0;
+    uint8_t bHonk = 0;
+    uint8_t GearSelect = 1;
+};
+
 class PhysicsDrivingControl {
 public:
     virtual ~PhysicsDrivingControl() = default;
@@ -262,6 +285,19 @@ public:
     bool isBackViewRequested() const { return bBackView; }
     void setChangeView( bool bValue ) { bChangeView = bValue; }
     bool isChangeViewRequested() const { return bChangeView; }
+    void setLightsRequest( bool bValue ) { bLightsRequest = bValue; }
+    bool isLightsRequested() const { return bLightsRequest; }
+    bool isFlashingLightsRequested() const { return bFlashingLightsRequest; }
+    void setWindowsDirection( int8_t direction ) {
+        windowsDirection = direction;
+    }
+    int8_t getWindowsDirection() const { return windowsDirection; }
+    void setHonkRequest( bool bValue ) { bHonkRequest = bValue; }
+    bool isHonkRequested() const { return bHonkRequest; }
+    void updateFlashingLightsRequest() {
+        // FUN_0083bbd0 (inlined, +0xef2 is never written)
+        bFlashingLightsRequest = bLightsRequest;
+    }
     uint8_t getDrivingMode() const { return drivingMode; }
     int32_t getElectronicIndex() const { return vehicle.ElectronicIndex; }
     bool areElectronicsEnabled() const { return vehicle.bElectronicsEnabled; }
@@ -300,6 +336,10 @@ public:
     int32_t getOdometerTenMeters() const { return odometerTenMeters; }
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
     bool isTrafficBody() const { return bTrafficBody; }
+    void setInInstantReplay( const bool bInReplay ) {
+        bInInstantReplay = bInReplay;
+    }
+    bool isInInstantReplay() const { return bInInstantReplay; }
     void setPostponedPause( uint8_t request ) { postponedPause = request; }
     uint8_t getPostponedPause() const { return postponedPause; }
     bool isAnyWheelOnSurface( const uint32_t surface ) const {
@@ -316,6 +356,7 @@ public:
         bBikeCrashRecovery = bPending;
     }
     bool hasBikeRider() const { return bBikeRiderPresent; }
+    void resetEjectedBikeRider();
     const Matrix4x4f_t &getBikeRiderMatrix() const { return bikeRiderMatrix; }
     const Eigen::Vector4f &getBikeRiderVelocity() const {
         return bikeRiderVelocity;
@@ -456,13 +497,58 @@ public:
 
     void OnStep( const JPH::PhysicsStepListenerContext &inContext ) override;
     void forwardDrivingInput( const float deltaTime );
+    void updateReplayDriving();
 
     Matrix4x4f_t getChassisWorldMatrix() const;
     Matrix4x4f_t getChassisShiftedMatrix() const;
     Matrix4x4f_t computeDisplayMatrix( const Matrix4x4f_t &sourceMatrix ) const;
 
-    void publishStepPose();
+    void publishStepPose( const bool bReplayStep = false );
     void onWorldShifted( const Eigen::Vector3f &worldShift );
+
+    struct ReplayPlayback {
+        float Period = 0.0f;                                  // +0x8e4
+        float BlendStart = 0.0f;                              // +0x8e8
+        float Elapsed = 1.0f;                                 // +0x8ec
+        float CurveT = 0.0f;                                  // +0x8f0
+        float BlendS = 0.0f;                                  // +0x8f4
+        Matrix4x4f_t SourceMatrix = Matrix4x4f_t::Identity(); // +0x900
+        Matrix4x4f_t Poses[3] = { Matrix4x4f_t::Zero(),       // +0x940
+                                  Matrix4x4f_t::Zero(), Matrix4x4f_t::Zero() };
+        Eigen::Vector4f Velocities[3] = { Eigen::Vector4f::Zero(), // +0xa00
+                                          Eigen::Vector4f::Zero(),
+                                          Eigen::Vector4f::Zero() };
+        uint8_t PoseFlags[3] = { 0, 0, 0 }; // +0xa30
+        uint8_t PendingFlag = 0;            // +0xa34
+        int32_t Mode = -1;                  // +0xa38
+        Eigen::Vector4f Curves[2][4];       // +0xa50
+        ReplayDriving Driving;
+        bool bDrivingOverride = false;
+        bool bTeleported = false;      // +0xe34
+        bool bLatchedGearUp = false;   // +0xe38
+        bool bLatchedGearDown = false; // +0xe3c
+        uint8_t *pInputSlot = nullptr;
+    };
+
+    struct ReplaySnapshot {
+        PhysicsVehicleState Vehicle;
+        Matrix4x4f_t World;
+        Eigen::Vector4f LinearVelocity;
+        Eigen::Vector4f AngularVelocity;
+    };
+
+    inline ReplayPlayback &getReplayPlayback() { return replayPlayback; }
+    inline const Matrix4x4f_t &getReplaySourceMatrix() const {
+        return replayPlayback.SourceMatrix;
+    }
+    ReplayDriving captureReplayDriving() const;
+    void applyReplayDriving( const ReplayDriving &driving );
+    void setReplayBodyVelocities( const Eigen::Vector4f &linearVelocity,
+                                  const Eigen::Vector4f &angularVelocity );
+    void saveReplaySnapshot( uint8_t *pRecord ) const;
+    void restoreReplaySnapshot( const uint8_t *pRecord );
+    void blendReplayPose( float curveT, float blendS );
+    void updateReplayPose();
 
     uint32_t getNumWheels() const;
     WheelReadout getWheelReadout( uint32_t index ) const;
@@ -638,6 +724,8 @@ private:
     bool bLowSpeedLatAssist = false;  // FIXME
     bool bIsBike = false;
     bool bTrafficBody = false;
+    bool bInInstantReplay = false;
+    ReplayPlayback replayPlayback;
     bool bRollLimitRestoreRequest = false;          // +0xd31
     bool bBackOnTrackPlaced = false;                // +0xd32
     JPH::Ref<JPH::Constraint> pRollLimitConstraint; // +0x3f1c
@@ -688,6 +776,10 @@ private:
     PhysicsDrivingControl *pSecondaryDrivingControl = nullptr;
     bool bBackView = false;
     bool bChangeView = false;
+    bool bLightsRequest = false;         // +0xe22
+    bool bFlashingLightsRequest = false; // +0xe23
+    int8_t windowsDirection = 0;         // +0xe24
+    bool bHonkRequest = false;           // +0xe27
     float prevInputThrottle;
     float prevInputBrake;
     float prevInputSteer;

@@ -127,6 +127,23 @@ public:
         applyCinematicOverride( defaultCamera );
     }
 
+    inline void requestCameraMode( const int32_t mode, const float time ) {
+        nextCameraMode = mode;
+        pNextCamera = nullptr;
+        transitionTime = time;
+    }
+
+    inline void setReplayMode( const bool bReplay ) {
+        FUN_008e1e80( false, bReplay );
+    }
+
+    inline void forceReplayCameraSwitch() { bForceSwitch = true; }
+
+    inline int32_t getActiveModeOverride() const { return activeModeOverride; }
+    inline int32_t getActiveModeVehicleOverride() const {
+        return activeModeVehicleOverride;
+    }
+
     inline void setNextCamera( CameraGame *pCamera,
                                const int32_t transition,
                                const float time ) {
@@ -199,6 +216,8 @@ public:
     void bindCamera( CameraGame *param_1, int32_t transition, float param_3 );
 
     void tickActiveCamera( float param_2 );
+    bool cycleReplayModeOverride();
+    void lockReplayModeOverride( const bool bLock );
     bool updateActiveCamera( float deltaTime, float accTime );
     void bindToRender();
 
@@ -260,6 +279,7 @@ private:
     uint8_t bChangeCamTrigger : 1;
     uint8_t bDisableInteriorView : 1;
     uint8_t bNeedSwitch : 1;
+    uint8_t bForceSwitch : 1;
     uint8_t bUpdatedView : 1;
     uint8_t field_0x954 : 1;
     uint8_t bHeadTracking : 1;
@@ -337,6 +357,7 @@ private:
 
     void loadCameraDB( uint8_t *param_1 );
     void FUN_008e4840( int32_t transition, float param_2 );
+    void updateReplayCameraSwitch( const float deltaTime );
     bool FUN_008e1e80( bool param_1, bool param_3 );
     void editActiveCamera();
     void updateCameraInput( struct DeviceAction *peVar5,

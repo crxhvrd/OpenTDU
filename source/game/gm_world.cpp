@@ -34,6 +34,7 @@
 #include "world/gs_world_streaming.h"
 #include "world/otdu_lights.h"
 #include "physics/gs_physics.h"
+#include "physics/replay.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "database/gs_database.h"
 #include "database/db_aftermarket_pack.h"
@@ -598,6 +599,9 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
          !pPlayerPhysicsVehicle->isInputControllerAttached() ) {
         return;
     }
+    if ( gReplay.isPlayingBack() ) {
+        return;
+    }
     CarState *pCar = ( gpScenaric != nullptr )
                          ? gpScenaric->getLocalPlayer().getCarState()
                          : nullptr;
@@ -711,8 +715,8 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
     // OTDU_ADDITION: at night the headlights are on by default and the light
     // key switches to high beams
     gbOTDUPlayerHighBeams = IsActionDown( pCfg->pCarLight );
-    pBody->bHeadlightsOn = gbOTDUPlayerHighBeams || AreOTDUHeadlightsOn();
-    pBody->bHonking = IsActionDown( pCfg->pCarHorn );
+    const bool bLightsRequest = gbOTDUPlayerHighBeams;
+    const bool bHonkRequest = IsActionDown( pCfg->pCarHorn );
 
     const bool bViewSwitchAllowed = IsVehicleViewSwitchAllowed();
     const bool bChangeViewRequest =
@@ -731,9 +735,10 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         gCamViewLockHoldTime = 0.0f;
     }
 
-    if ( gpMngInGameMenu != nullptr ) {
-        pBody->WindowState = gpMngInGameMenu->getWindowsDirection();
-    }
+    const int8_t windowsDirection =
+        ( gpMngInGameMenu != nullptr )
+            ? static_cast<int8_t>( gpMngInGameMenu->getWindowsDirection() )
+            : pPlayerPhysicsVehicle->getWindowsDirection();
 
     pBody->Throttle = throttle;
     pBody->Brake = brake;
@@ -752,6 +757,9 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
         pPlayerPhysicsVehicle->setClutchInput( pBody->Clutch );
         pPlayerPhysicsVehicle->setChangeView( bChangeViewRequest );
         pPlayerPhysicsVehicle->setBackView( bBackViewRequest );
+        pPlayerPhysicsVehicle->setLightsRequest( bLightsRequest );
+        pPlayerPhysicsVehicle->setHonkRequest( bHonkRequest );
+        pPlayerPhysicsVehicle->setWindowsDirection( windowsDirection );
         pPlayerPhysicsVehicle->setGearRequests(
             !bShiftRequestsBlocked && pBody->bGearUpEdge,
             !bShiftRequestsBlocked && pBody->bGearDownEdge,

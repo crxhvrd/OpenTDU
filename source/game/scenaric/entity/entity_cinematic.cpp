@@ -38,6 +38,7 @@
 #include "physics/vehicle/physics_vehicle.h"
 #include "world/gs_world.h"
 #include "world/mng_world.h"
+#include "online/p2p_game_service.h"
 #include "tdu_instance.h"
 
 static constexpr float kMillisecondsToSeconds = 0.001f; // FLOAT_00f4167c
@@ -163,6 +164,7 @@ EntityCinematic::EntityCinematic()
       savedMutedVehicleCategories( 0 ),
       bDetachPlayerCarInput( true ),
       bPauseMenuLockedBefore( false ),
+      bFreeRideBool2Before( true ),
       bPlayerCarInputWasAttached( false ),
       bDisableStreamingOnCarBefore( false ),
       pStreamCenterBefore( nullptr ),
@@ -290,6 +292,11 @@ void EntityCinematic::applyForegroundCine() {
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
 
+    if ( gpCP2PGameService != nullptr ) {
+        bFreeRideBool2Before = gpCP2PGameService->FreeRideMgr.bUnknownBool2;
+        gpCP2PGameService->FreeRideMgr.bUnknownBool2 = false;
+    }
+
     if ( gpActiveGM != nullptr ) {
         bPauseMenuLockedBefore = gpActiveGM->isPauseMenuLocked(); // +0x26e5
         gpActiveGM->setBlockPauseByStart( true );
@@ -377,6 +384,10 @@ void EntityCinematic::restoreForegroundCine() {
 
     if ( gpActiveGM != nullptr ) {
         gpActiveGM->setBlockPauseByStart( bPauseMenuLockedBefore );
+    }
+
+    if ( gpCP2PGameService != nullptr ) {
+        gpCP2PGameService->FreeRideMgr.bUnknownBool2 = bFreeRideBool2Before;
     }
 
     if ( gpMngWorld != nullptr ) {

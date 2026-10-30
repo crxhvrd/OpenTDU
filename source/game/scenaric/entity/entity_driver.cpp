@@ -1801,6 +1801,7 @@ void EntityDriver::updateAnimChannels( float deltaTime ) {
 }
 
 float EntityDriver::updateSteerValue( float deltaTime ) {
+    // FUN_007efef0 (inlined)
     static constexpr float kSteerStackScale = 0.25f;      // DAT_00f416dc
     static constexpr float kSteerSmoothRate = 0.3f;       // FLOAT_00f416bc
     static constexpr float kSteerSmoothMaxStep = 0.05f;   // DAT_00f41778
@@ -1821,9 +1822,7 @@ float EntityDriver::updateSteerValue( float deltaTime ) {
         SteerStackIndex = 0;
     }
 
-    const CarState::eOwner owner = pCarState->getOwner();
-    if ( owner == CarState::eOwner::CSO_Bot ||
-         owner == CarState::eOwner::CSO_Traffic ) {
+    if ( pCarState->getAIController() != nullptr ) {
         return SteerSM * kSteerStackScale;
     }
 
