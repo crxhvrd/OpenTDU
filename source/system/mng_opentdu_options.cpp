@@ -261,6 +261,8 @@ void MngOpenTDUOptions::open() {
     categoryCursor = 0;
     bBackLatched = true;
 
+    pMovie->setVariableValueNonLinked( kListOwnerVariable, "" );
+
     // Done here rather than on bind: the movie's first frame resets every
     // string to its placeholder
     uint32_t localizationIndex = 0;
