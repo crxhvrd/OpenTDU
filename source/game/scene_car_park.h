@@ -14,7 +14,9 @@ struct VehicleBaseResources;
 class SceneCarPark {
 public:
     static constexpr int32_t kMaxNumCars = 0x80;
-    static constexpr int32_t kNumStreamedCars = 8;
+    static constexpr int32_t kNumStreamedCars =
+        16; // OTDU_ADDITION - Bumped max number of car visible for first person
+            // mode.
 
     enum ePlacementState : int32_t {
         CPPS_None = 0,

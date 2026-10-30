@@ -4,6 +4,7 @@
 #include "config/gs_config.h"
 #include "core/maths_helper.h"
 #include "gs_timer.h"
+#include "system/ed_sys.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
 #include "physics/gs_physics.h"
@@ -201,6 +202,7 @@ bool CameraFirstPerson::tick( float deltaTime, bool param_1, bool param_2 ) {
 
     setPosition( eyePosition );
     setTarget( target );
+    setAspectRatio( float( gWindowWidth ), float( gWindowHeight ) );
 
     return CameraGame::tick( deltaTime, param_1, param_2 );
 }

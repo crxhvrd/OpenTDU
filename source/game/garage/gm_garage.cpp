@@ -20,6 +20,7 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_garage.h"
+#include "render/camera/camera_first_person.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
 #include "render/gs_render.h"
@@ -41,6 +42,9 @@ static constexpr const char *kMenuMessageClip = "/ss_menu/message";
 // Plays /:AfterValid once its "valid" animation is over
 static constexpr const char *kMenuSelectionClip = "/ss_menu/param/sur";
 static constexpr int32_t kSpecsFirstPersonInactive = -2;
+
+// Extra margin to prevent vehicles from being culled in first person mode.
+static constexpr float kFirstPersonStreamMargin = 1.5f;
 
 static inline Garage *GetGarage() {
     return gpPlayerData->getLoadedSave()->getGarage();
@@ -79,7 +83,8 @@ GMGarage::GMGarage()
       innerViewDelay( -1 ),
       specsHoveredCar( kSpecsFirstPersonInactive ),
       pSpecsRestoreCar( nullptr ),
-      bSpecsShowHoveredCar( false ) {
+      bSpecsShowHoveredCar( false ),
+      firstPersonStreamedCar( -1 ) {
     // FUN_00790c50
     setTransitionFlags( 0x27 );
 
@@ -242,11 +247,77 @@ void GMGarage::tick( float deltaTime, float totalTime ) {
     firstPerson.setExtraCollisionBodies( parkedCarBodies );
     firstPerson.updateHoveredCar( sceneGarage.getCarPark() );
     firstPerson.tick( &sceneGarage, pCinematicLoop );
+    updateFirstPersonStreaming();
 
     if ( firstPerson.getClickedCar() != -1 ) {
         selectFirstPersonCar( firstPerson.getClickedCar() );
     }
     updateFirstPersonSpecs();
+}
+
+void GMGarage::updateFirstPersonStreaming() {
+    SceneCarPark &carPark = sceneGarage.getCarPark();
+    if ( !firstPerson.isActive() || firstPerson.getCamera() == nullptr ) {
+        if ( firstPersonStreamedCar != -1 ) {
+            firstPersonStreamedCar = -1;
+
+            const int32_t selected = sceneGarage.getSelectedCar();
+            if ( sceneGarage.isCarOnCurrentPage( selected ) ) {
+                carPark.streamAround( selected );
+            }
+        }
+        return;
+    }
+
+    int32_t numCars = 0;
+    for ( int32_t i = 0; i < carPark.getNumEntries(); i++ ) {
+        if ( carPark.getEntry( i ).ConfigID != -1 ) {
+            numCars++;
+        }
+    }
+    if ( numCars <= SceneCarPark::kNumStreamedCars ) {
+        return;
+    }
+
+    const Eigen::Vector3f eyePosition =
+        firstPerson.getCamera()->getWorldPosition();
+    auto getDistance = [&]( const int32_t index ) {
+        const Matrix4x4f_t &transform = carPark.getEntry( index ).Transform;
+        return ( transform.row( 3 ).head<3>().transpose() - eyePosition )
+            .norm();
+    };
+
+    int32_t nearestCar = -1;
+    float nearestDistance = std::numeric_limits<float>::max();
+    for ( int32_t i = 0; i < carPark.getNumEntries(); i++ ) {
+        if ( carPark.getEntry( i ).ConfigID == -1 ) {
+            continue;
+        }
+
+        const float distance = getDistance( i );
+        if ( distance < nearestDistance ) {
+            nearestDistance = distance;
+            nearestCar = i;
+        }
+    }
+
+    const int32_t streamedCar = ( firstPersonStreamedCar != -1 )
+                                    ? firstPersonStreamedCar
+                                    : sceneGarage.getSelectedCar();
+    if ( nearestCar == -1 || nearestCar == streamedCar ) {
+        return;
+    }
+
+    const bool bStreamedCarValid =
+        streamedCar >= 0 && streamedCar < carPark.getNumEntries() &&
+        carPark.getEntry( streamedCar ).ConfigID != -1;
+    if ( bStreamedCarValid && nearestDistance + kFirstPersonStreamMargin >=
+                                  getDistance( streamedCar ) ) {
+        return;
+    }
+
+    firstPersonStreamedCar = nearestCar;
+    carPark.streamAround( nearestCar );
 }
 
 void GMGarage::selectFirstPersonCar( const int32_t carIndex ) {

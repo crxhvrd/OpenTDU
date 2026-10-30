@@ -68,6 +68,7 @@ private:
     void refreshCarStatus( const bool bSelectedCar );
     void updateFirstPersonSpecs();
     void selectFirstPersonCar( const int32_t carIndex );
+    void updateFirstPersonStreaming();
     void swapCars();
 
 private:
@@ -89,4 +90,5 @@ private:
     int32_t specsHoveredCar;
     CarDesc *pSpecsRestoreCar;
     bool bSpecsShowHoveredCar;
+    int32_t firstPersonStreamedCar;
 };

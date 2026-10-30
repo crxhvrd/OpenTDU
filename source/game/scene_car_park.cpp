@@ -477,7 +477,8 @@ bool SceneCarPark::streamList( const int32_t *pList ) {
 
 void SceneCarPark::streamAround( const int32_t index ) {
     // FUN_00778730
-    int32_t streamedCars[kNumStreamedCars] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+    int32_t streamedCars[kNumStreamedCars];
+    std::fill( std::begin( streamedCars ), std::end( streamedCars ), -1 );
     ListAdd( streamedCars, index );
 
     int32_t forward = index;
