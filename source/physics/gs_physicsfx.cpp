@@ -326,11 +326,11 @@ void GSPhysicsFX::stopAllEffects() {
                 layer.pSound = nullptr;
             }
             for ( ParticleInstance *&pInstance : layer.pParticles ) {
-                if ( pInstance != nullptr ) {
+                if ( pInstance != nullptr && gpParticles != nullptr ) {
                     pInstance->State = eParticleState::PS_Killed;
                     pInstance->stop();
-                    pInstance = nullptr;
                 }
+                pInstance = nullptr;
             }
             layer.bActive = false;
             layer.pRecord = nullptr;
