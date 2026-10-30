@@ -11,6 +11,7 @@
 #include "render/render_context.h"
 #include "render/mng_shadow.h"
 #include "render/render_scene.h"
+#include "render/render_target.h"
 #include "world/gs_mng_resources.h"
 
 static constexpr int32_t kClotheGeometryPoolSize[AC_Count] = { // DAT_010c4508
@@ -1081,6 +1082,55 @@ void RenderAvatar::releaseCurrentPart() {
     releaseRenderData();
 }
 
+static constexpr uint32_t kImpostorWidth = 0x80;
+static constexpr uint32_t kImpostorHeight = 0x100;
+static constexpr uint32_t kImpostorBitmapFlags = 0x210;
+
+static void UploadImpostorBitmap( Render2DB &bitmap ) {
+    Texture *pTexture = bitmap.getFirstBitmap();
+    if ( pTexture != nullptr && pTexture->pTexture == nullptr &&
+         Render2DB::CreateAndUploadTexture( pTexture ) ) {
+        Render2DB::PrepareTexture( pTexture );
+    }
+}
+
+static void BindImpostorRenderTarget( const uint32_t firstPass,
+                                      const int32_t index,
+                                      RenderTarget *pRenderTarget ) {
+    if ( index >= kNumAvtScenes ) {
+        return;
+    }
+
+    RenderScene *pScene =
+        gpRender->getRenderPassAtIndex( firstPass + index ).pScene;
+    if ( pScene != nullptr && pScene->getFramebuffer() != nullptr ) {
+        pScene->getFramebuffer()->pAttachments[0] = pRenderTarget;
+    }
+}
+
+static void BindBitmapToMaterialSlot( Material *pMaterial,
+                                      const uint32_t slotIndex,
+                                      const Render2DB &bitmap ) {
+    // FUN_00410db0
+    if ( pMaterial == nullptr ) {
+        return;
+    }
+
+    MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+    if ( pParameter == nullptr || pParameter->NumLayers == 0 ) {
+        return;
+    }
+
+    MaterialLayerTexture &texture =
+        pParameter->getLayer( 0 )->pLayerTextures[slotIndex];
+    if ( texture.Hashcode == 0ull || bitmap.getBitmapSection() == nullptr ) {
+        return;
+    }
+
+    texture.Hashcode = bitmap.getBitmapHashcode();
+    texture.pTextureSection = bitmap.getBitmapSection();
+}
+
 void AvatarImpostor::initialize( int32_t index,
                                  FileCollection3D *pCollection,
                                  LightSetupNode *pLightSetup,
@@ -1089,19 +1139,102 @@ void AvatarImpostor::initialize( int32_t index,
     RenderAvatarBase::initialize( index, pCollection, pLightSetup,
                                   pShaderSetup );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    pFrontBuffer = TestDrive::AllocAligned(
+        Render2DB::CalcSize( kImpostorWidth, kImpostorHeight, 1, 1, VF_X8R8G8B8,
+                             kImpostorBitmapFlags ),
+        0x10 );
+    if ( pFrontBuffer == nullptr ) {
+        return;
+    }
+
+    Front.create( pFrontBuffer, kImpostorWidth, kImpostorHeight, 1, 1,
+                  VF_X8R8G8B8, kImpostorBitmapFlags, "AVT_FRT" );
+    Front.initialize( pFrontBuffer );
+    UploadImpostorBitmap( Front );
+
+    pBackBuffer = TestDrive::AllocAligned(
+        Render2DB::CalcSize( kImpostorWidth, kImpostorHeight, 1, 1, VF_X8R8G8B8,
+                             kImpostorBitmapFlags ),
+        0x10 );
+    if ( pBackBuffer == nullptr ) {
+        return;
+    }
+
+    Back.create( pBackBuffer, kImpostorWidth, kImpostorHeight, 1, 1,
+                 VF_X8R8G8B8, kImpostorBitmapFlags, "AVT_BCK" );
+    Back.initialize( pBackBuffer );
+    UploadImpostorBitmap( Back );
+
+    pRenderTargetFront = CreateRenderTargetFrom2DB( &Front, 0x20 );
+    BindImpostorRenderTarget( RP_AvtLRFront0, Index, pRenderTargetFront );
+
+    pRenderTargetBack = CreateRenderTargetFrom2DB( &Back, 0x20 );
+    BindImpostorRenderTarget( RP_AvtLRBack0, Index, pRenderTargetBack );
 }
 
 void AvatarImpostor::terminate() {
     // FUN_008f1850
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    if ( Index < kNumAvtScenes ) {
+        RenderScene *pFrontScene =
+            gpRender->getRenderPassAtIndex( RP_AvtLRFront0 + Index ).pScene;
+        if ( pFrontScene != nullptr ) {
+            pFrontScene->setEnabled( false );
+        }
+
+        RenderScene *pBackScene =
+            gpRender->getRenderPassAtIndex( RP_AvtLRBack0 + Index ).pScene;
+        if ( pBackScene != nullptr ) {
+            pBackScene->setEnabled( false );
+        }
+    }
+
+    if ( pRenderTargetBack != nullptr ) {
+        ReleasePooledRenderTarget( pRenderTargetBack );
+        pRenderTargetBack = nullptr;
+    }
+
+    if ( pRenderTargetFront != nullptr ) {
+        ReleasePooledRenderTarget( pRenderTargetFront );
+        pRenderTargetFront = nullptr;
+    }
+
+    Back.destroy();
+    Front.destroy();
+
+    if ( pFrontBuffer != nullptr ) {
+        TestDrive::FreeAligned( pFrontBuffer );
+    }
+
+    if ( pBackBuffer != nullptr ) {
+        TestDrive::FreeAligned( pBackBuffer );
+    }
+
+    pFrontBuffer = nullptr;
+    pBackBuffer = nullptr;
 
     RenderAvatarBase::terminate();
 }
 
 void AvatarImpostor::bindPartTextures() {
     // FUN_008f1b30
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    static const uint64_t kBackHashcode = AvatarCalcHashcode( "BACK" );
+    static const uint64_t kFrontHashcode = AvatarCalcHashcode( "FRONT" );
+
+    const uint32_t numMaterials = Material.getNumMaterials();
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        const uint64_t materialHashcode = Material.getMaterialHashcode( i );
+        if ( materialHashcode == kBackHashcode ) {
+            if ( Back.getHeader() != nullptr ) {
+                BindBitmapToMaterialSlot( Material.getMaterialAtIndex( i ), 0,
+                                          Back );
+            }
+        } else if ( materialHashcode == kFrontHashcode ) {
+            if ( Front.getHeader() != nullptr ) {
+                BindBitmapToMaterialSlot( Material.getMaterialAtIndex( i ), 0,
+                                          Front );
+            }
+        }
+    }
 }
 
 void AvatarImpostor::updateSceneVisibility() {

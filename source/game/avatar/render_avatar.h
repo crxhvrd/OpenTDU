@@ -3,6 +3,7 @@
 #include "shared.h"
 
 #include "core/color.h"
+#include "render/2db.h"
 #include "render/2dm.h"
 #include "render/3dd.h"
 
@@ -11,7 +12,6 @@ struct AvatarEnvMap;
 struct AvatarEyePart;
 struct RenderAvatar;
 class Render2DB;
-class RuntimeRender2DB;
 class Render3DG;
 class RenderTarget;
 struct HiearchyNode;
@@ -147,8 +147,10 @@ struct RenderAvatar : AvatarLOD {
 };
 
 struct AvatarImpostor : AvatarLOD {
-    RuntimeRender2DB *pFront = nullptr;
-    RuntimeRender2DB *pBack = nullptr;
+    Render2DB Front;
+    void *pFrontBuffer = nullptr;
+    Render2DB Back;
+    void *pBackBuffer = nullptr;
     RenderTarget *pRenderTargetFront = nullptr;
     RenderTarget *pRenderTargetBack = nullptr;
     int32_t bDirty = 0;

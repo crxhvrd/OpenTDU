@@ -174,6 +174,22 @@ static void BakeLODPose( void *pSkeletonEntry,
 
     Animation animation;
     animation.initialize( &skeleton, pAnimation->pClip );
+    if ( pAnimation->pClip == nullptr ) {
+        if ( pAnimation->pAnimState == nullptr ) {
+            animation.terminate();
+            return;
+        }
+
+        std::vector<AnimStateBlendEntry> blendSet;
+        pAnimation->pAnimState->getBlendSet( blendSet );
+        blendSet.erase( std::remove_if( blendSet.begin(), blendSet.end(),
+                                        []( const AnimStateBlendEntry &entry ) {
+                                            return entry.pClip == nullptr;
+                                        } ),
+                        blendSet.end() );
+        animation.setBlendSet( blendSet.data(),
+                               static_cast<int32_t>( blendSet.size() ) );
+    }
     animation.update( 1.0f );
 
     const Matrix4x4f_t *pPalette = animation.getPalette();
@@ -1219,11 +1235,6 @@ void GSAvatar::buildLowResBonePalettes() {
         pAnimSet != nullptr
             ? static_cast<EntityAnmSet *>( pAnimSet )->findAnimation( 1 )
             : nullptr;
-
-    if ( pAnimation != nullptr && pAnimation->pClip == nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR (LOD_pose clip resolution)
-        pAnimation = nullptr;
-    }
 
     AvatarBnk &commonBodies = bankManager.getCommonBodies();
     if ( pAnimation != nullptr && commonBodies.isInstallOK() ) {
