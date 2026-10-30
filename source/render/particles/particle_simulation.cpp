@@ -1972,7 +1972,7 @@ void ParticleFile::emitDef( uint8_t *pEmitter,
         streams.UVMap = 1;
         streams.bIndex16 = 1;
         if ( !out.initialize( kMaxSprites, kMaxSprites * 4, kMaxSprites * 6,
-                              false, &streams, "ParticleRList", true ) ) {
+                              true, &streams, "ParticleRList", true ) ) {
             return;
         }
     }

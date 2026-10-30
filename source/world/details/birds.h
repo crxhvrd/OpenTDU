@@ -39,6 +39,17 @@ struct Bird : public MaterialUser {
 // Bird-flock world detail (EURO/BNK/Details/Birds.bnk)
 class Birds : public TDUDetail {
 public:
+    struct VertexCursor {
+        uint32_t Color;
+        Eigen::Vector3f *pPosition;
+        uint32_t *pDiffuse;
+        Eigen::Vector2f *pUV;
+        uint16_t *pIndex;
+        uint16_t NextIndex;
+        uint16_t NumVertex;
+    };
+
+public:
     Birds();
     ~Birds() override;
 
@@ -55,7 +66,7 @@ private:
                                float maxDistance,
                                float mediumDistance,
                                Bird &bird );
-    void appendBirdGeometry( const Bird &bird, const ColorRGBA &diffuseColor );
+    void appendBirdGeometry( const Bird &bird, VertexCursor &cursor );
 
 private:
     static constexpr int32_t kMaxBirds = 12;

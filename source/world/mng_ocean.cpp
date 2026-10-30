@@ -584,7 +584,7 @@ bool MngOcean::loadResources() {
     nmapStreams.Diffuse = 0;
     nmapStreams.UVMap = 1;
     nmapStreams.bIndex16 = 1;
-    if ( !pDrawListNMapHM->initialize( 1, 4, 0, true, &nmapStreams,
+    if ( !pDrawListNMapHM->initialize( 1, 4, 0, false, &nmapStreams,
                                        "MngOceanNMapHM", false ) ) {
         return false;
     }

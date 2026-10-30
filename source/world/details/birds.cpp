@@ -36,7 +36,7 @@ static constexpr float kGroupSpread = 12.0f;           // DAT_00f41850
 static constexpr float kGroupSpreadHalf = 6.0f;        // DAT_00f41840
 static constexpr float kHeightLookAhead = 50.0f;       // DAT_00f41848
 static constexpr uint32_t kBirdVertexCount = 22;
-static constexpr uint32_t kBirdPrimitiveCount = 5;
+static constexpr uint32_t kBirdIndexCount = 32;
 static constexpr float kBirdWingTipU = 0.984375f;   // FLOAT_00f41c64
 static constexpr float kBirdWingPanelU = 0.2f;      // DAT_00f41730
 static constexpr float kBirdWingSpanInner = -0.16f; // _DAT_00f41c60
@@ -107,9 +107,8 @@ bool Birds::initialize() {
     streams.Diffuse = 1;
     streams.UVMap = 1;
     streams.bIndex16 = 1;
-    if ( !drawList.initialize( kMaxBirds * kBirdPrimitiveCount,
-                               kMaxBirds * kBirdVertexCount,
-                               kMaxBirds * kBirdVertexCount, false, &streams,
+    if ( !drawList.initialize( kNumMaterials, kMaxBirds * kBirdVertexCount,
+                               kMaxBirds * kBirdIndexCount, true, &streams,
                                "BirdsRList", true ) ) {
         return true;
     }
@@ -194,16 +193,31 @@ void Birds::tick( float deltaTime ) {
 
     const ColorRGBA diffuseColor = ComputeWeatherSunTintColor();
 
-    // Emit one batch per distinct species material.
     for ( int32_t i = 0; i < kNumMaterials; i++ ) {
         MaterialEntry &entry = materialOT.pEntries[i];
         if ( entry.NumUsers == 0 ) {
             continue;
         }
         drawList.setActiveMaterial( entry.pMaterial );
+        const uint32_t numVertex = entry.NumUsers * kBirdVertexCount;
+        if ( drawList.allocatePrimitive( PT_TriangleStrip, numVertex,
+                                         entry.NumUsers * kBirdIndexCount -
+                                             2 ) == -1 ) {
+            continue;
+        }
+
+        ActivePrimitive &primitive = drawList.getActivePrimitive();
+        VertexCursor cursor;
+        cursor.Color = diffuseColor.Color;
+        cursor.pPosition = primitive.pVertexPosition;
+        cursor.pDiffuse = primitive.pVertexDiffuse[0];
+        cursor.pUV = primitive.pVertexUV[0];
+        cursor.pIndex = primitive.pVertexIndices16;
+        cursor.NextIndex = 0;
+        cursor.NumVertex = static_cast<uint16_t>( numVertex );
         for ( MaterialUser *pUser = entry.pFirst; pUser != nullptr;
               pUser = pUser->pNext ) {
-            appendBirdGeometry( *static_cast<Bird *>( pUser ), diffuseColor );
+            appendBirdGeometry( *static_cast<Bird *>( pUser ), cursor );
         }
     }
 }
@@ -444,8 +458,26 @@ void Birds::computeSpawnPosition( float minDistance,
                                 bird.Position, bird.Direction );
 }
 
-void Birds::appendBirdGeometry( const Bird &bird,
-                                const ColorRGBA &diffuseColor ) {
+static void PushBirdVertex( Birds::VertexCursor &cursor,
+                            const Eigen::Vector3f &position,
+                            const float u,
+                            const float v ) {
+    // FUN_004146d0
+    *cursor.pPosition++ = position;
+    *cursor.pDiffuse++ = cursor.Color;
+    *cursor.pUV++ = Eigen::Vector2f( u, v );
+    *cursor.pIndex++ = cursor.NextIndex++;
+}
+
+static void BreakBirdStrip( Birds::VertexCursor &cursor ) {
+    if ( cursor.NextIndex >= cursor.NumVertex ) {
+        return;
+    }
+    *cursor.pIndex++ = cursor.NextIndex - 1;
+    *cursor.pIndex++ = cursor.NextIndex;
+}
+
+void Birds::appendBirdGeometry( const Bird &bird, VertexCursor &cursor ) {
     // FUN_009d4c30
     const BirdType *pType = bird.pType;
     const float cosFlap = std::cos( bird.WingRotation );
@@ -462,22 +494,18 @@ void Birds::appendBirdGeometry( const Bird &bird,
     const Eigen::Vector3f lift( 0.0f, sinFlap, 0.0f );
     const float height = pType->Height;
 
-    auto pushVertex = [&]( const Eigen::Vector3f &p, float u, float v ) {
-        drawList.setTexCoords( 0, Eigen::Vector2f( u, v ) );
-        drawList.pushVertex( p.x(), p.y(), p.z() );
-    };
-
     // Body: both wings as one flat strip, dihedral given by the flap lift.
-    if ( drawList.beginPrimitive( PT_TriangleStrip, 6 ) ) {
-        drawList.setDiffuse( 0, diffuseColor );
-        pushVertex( position - along - span + lift, kBirdWingTipU, 1.0f );
-        pushVertex( position + along - span + lift, kBirdWingTipU, 0.0f );
-        pushVertex( position - along, 0.0f, 1.0f );
-        pushVertex( position + along, 0.0f, 0.0f );
-        pushVertex( position - along + span + lift, kBirdWingTipU, 1.0f );
-        pushVertex( position + along + span + lift, kBirdWingTipU, 0.0f );
-        drawList.commitPrimitive();
-    }
+    PushBirdVertex( cursor, position - along - span + lift, kBirdWingTipU,
+                    1.0f );
+    PushBirdVertex( cursor, position + along - span + lift, kBirdWingTipU,
+                    0.0f );
+    PushBirdVertex( cursor, position - along, 0.0f, 1.0f );
+    PushBirdVertex( cursor, position + along, 0.0f, 0.0f );
+    PushBirdVertex( cursor, position - along + span + lift, kBirdWingTipU,
+                    1.0f );
+    PushBirdVertex( cursor, position + along + span + lift, kBirdWingTipU,
+                    0.0f );
+    BreakBirdStrip( cursor );
 
     // Four wing panels: top/bottom surfaces at the two spanwise scales.
     static constexpr float kPanelSpan[4] = {
@@ -490,13 +518,10 @@ void Birds::appendBirdGeometry( const Bird &bird,
         const Eigen::Vector3f apex( position.x(),
                                     position.y() + height * kPanelHeight[p],
                                     position.z() );
-        if ( drawList.beginPrimitive( PT_TriangleStrip, 4 ) ) {
-            drawList.setDiffuse( 0, diffuseColor );
-            pushVertex( position - along, 0.0f, 1.0f );
-            pushVertex( tip, kBirdWingPanelU, 0.5f );
-            pushVertex( apex, 0.0f, 0.5f );
-            pushVertex( position + along, 0.0f, 0.0f );
-            drawList.commitPrimitive();
-        }
+        PushBirdVertex( cursor, position - along, 0.0f, 1.0f );
+        PushBirdVertex( cursor, tip, kBirdWingPanelU, 0.5f );
+        PushBirdVertex( cursor, apex, 0.0f, 0.5f );
+        PushBirdVertex( cursor, position + along, 0.0f, 0.0f );
+        BreakBirdStrip( cursor );
     }
 }

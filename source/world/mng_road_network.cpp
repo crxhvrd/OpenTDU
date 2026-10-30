@@ -107,7 +107,7 @@ bool MngRoadNetwork::initialize( TestDriveGameInstance * ) {
     DrawStreams streams;
     streams.Diffuse = 1;
     streams.bIndex16 = 1;
-    if ( !roadList.initialize( kNumStreams, kMaxNumVertex, kMaxNumIndex, false,
+    if ( !roadList.initialize( kNumStreams, kMaxNumVertex, kMaxNumIndex, true,
                                &streams, "MngRoadNetwork", true ) ) {
         return false;
     }

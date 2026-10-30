@@ -68,7 +68,7 @@ bool MngNavPathDisplay::initialize( TestDriveGameInstance * ) {
     DrawStreams streams;
     streams.Diffuse = 1;
     streams.bIndex16 = 1;
-    if ( !drawList.initialize( 1, kMaxNumVertex, kMaxNumVertex, false, &streams,
+    if ( !drawList.initialize( 1, kMaxNumVertex, kMaxNumVertex, true, &streams,
                                "MngNavPathDisplay", true ) ) {
         return false;
     }

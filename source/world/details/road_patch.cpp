@@ -130,8 +130,8 @@ bool RoadPatch::initialize() {
     streams.Diffuse = 1;
     streams.UVMap = 1;
     streams.bIndex16 = 1;
-    if ( drawList.initialize( 420, 0x690, 0x690, false, &streams,
-                              "RoadPatchRList", true ) ) {
+    if ( drawList.initialize( 0xe, 0x690, 0x1a4, true, &streams,
+                              "RoadPatchRList", false ) ) {
         bInitialized = true;
     }
 
@@ -450,7 +450,13 @@ void RoadPatch::draw() {
             }
             drawList.setActiveMaterial( pMat );
 
-            for ( int32_t n = 0; n < bucketCount[col]; n++ ) {
+            const int32_t numItems = bucketCount[col];
+            if ( numItems <= 0 ||
+                 !drawList.beginPrimitive( PT_TriangleStrip, numItems * 4 ) ) {
+                continue;
+            }
+
+            for ( int32_t n = 0; n < numItems; n++ ) {
                 const uint8_t *pItem = bucketItems[col][n];
                 const float *f = reinterpret_cast<const float *>( pItem );
 
@@ -464,9 +470,6 @@ void RoadPatch::draw() {
                     *reinterpret_cast<const uint16_t *>( pItem + 0x4e ) *
                     kWaveScale;
 
-                if ( !drawList.beginPrimitive( PT_TriangleStrip, 4 ) ) {
-                    break;
-                }
                 drawList.setDiffuse( 0, ColorRGBA( diffuse ) );
 
                 // Quad corners (sector-local) with their atlas UV sub-rect.
@@ -478,8 +481,12 @@ void RoadPatch::draw() {
                 drawList.pushVertex( f[6], f[7] + wave, f[8] );
                 drawList.setTexCoords( 0, Eigen::Vector2f( uv[2], uv[3] ) );
                 drawList.pushVertex( f[3], f[4] + wave, f[5] );
-                drawList.commitPrimitive();
+
+                if ( n + 1 < numItems ) {
+                    drawList.breakPrimitive();
+                }
             }
+            drawList.commitPrimitive();
         }
     }
 
