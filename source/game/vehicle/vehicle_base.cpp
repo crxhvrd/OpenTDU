@@ -873,9 +873,6 @@ void VehicleBase::draw() {
         enqueueFlares(
             gpRender->getRenderPass<eRenderPass::RP_NearAfterCarAlpha>().pScene,
             this );
-    } else if ( bShouldDraw && bVisible && bValidPosition ) {
-        enqueueFlares( gpRender->getRenderPass<eRenderPass::RP_Near>().pScene,
-                       this );
     }
 }
 
@@ -3459,22 +3456,18 @@ void VehicleBase::bindFlareUniforms() {
 
     uint32_t uVar6 = bodyResource.Resource2DM.getNumMaterials();
     for ( uint32_t uVar5 = 0; uVar5 < uVar6; uVar5++ ) {
-        RenderFile::Section *peVar2Section =
-            bodyResource.Resource2DM.getMaterial( uVar5 );
-        if ( peVar2Section == nullptr ) {
+        Material *peVar2 = bodyResource.Resource2DM.getMaterialAtIndex( uVar5 );
+        if ( peVar2 == nullptr ) {
             continue;
         }
-        Material *peVar2 = (Material *)( peVar2Section + 1 );
         MaterialShaderParameterArray *peVar3 =
             (MaterialShaderParameterArray *)peVar2->getParameterByIndex( 0 );
         if ( peVar3->Hashcode == 0xfcdaa96bdeadbeef ) {
             uint32_t index = 0;
             void *peVar4 = peVar3->getParameter( 0x7a, &index );
             if ( peVar4 != nullptr ) {
-                MaterialShaderParameter *peVar4 =
-                    peVar3->getParameterByIndex( index );
-
-                float *pfeVar4 = (float *)peVar4;
+                float *pfeVar4 =
+                    (float *)peVar3->getParameterDataByIndex( index );
                 pfeVar4[0] = VehicleBase::FlareScaleStart;
                 pfeVar4[1] = VehicleBase::FlareScaleRatio;
                 pfeVar4[2] = VehicleBase::FlareZBiasRatio;

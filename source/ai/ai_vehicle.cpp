@@ -1394,6 +1394,7 @@ void AiVehicle::initialize( const eAiVehicleCategory newCategory,
     const Eigen::Vector4f position = pCar->getWorldPosition();
     infos.bValid = !position.head<3>().isZero( kPositionEpsilon );
     infos.GroundMatrix = pCar->getWorldMatrix();
+    infos.GroundMatrix( 3, 1 ) -= pPhysics->computeGroundToOriginOffset();
     infos.LastRoadPos = location;
     infos.LastRoadLane = lane;
     if ( location.pRoad != nullptr ) {

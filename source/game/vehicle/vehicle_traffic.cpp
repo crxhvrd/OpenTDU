@@ -652,9 +652,11 @@ void VehicleTraffic::setupMaterials() {
               local_10++ ) {
             bUseDamagedMaterial[local_10] = false;
             if ( pMaterialInstances[local_10] != nullptr ) {
+                pMaterialInstances2[local_10] = nullptr;
                 Material *peVar9 = Render2DM::Create(
                     reinterpret_cast<uint8_t *>( pMemoryPool ) + local_18,
                     0xabcdeffedcbaabcd, 6, 6, 0x60, 1 );
+                pMaterialInstances2[local_10] = peVar9;
 
                 if ( peVar9 != nullptr ) {
                     peVar9->DepthWrite =
