@@ -6,6 +6,7 @@
 #include "achievements_data.h"
 #include "database/gs_database.h"
 #include "driver.h"
+#include "game/avatar/gs_avatar.h"
 #include "game/scenaric/entity/entity_extra_challenge.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/scenaric_bank.h"
@@ -408,12 +409,13 @@ public:
 
     int32_t getProgress( int32_t *pOutTotal ) const override {
         // FUN_0089d490
+        const int32_t numOwned = gpAvatar->getNumOwnedClotheColorsByBrand(
+            gpAvatar->getSavedAvatarGender(), brandTag );
         if ( pOutTotal != nullptr ) {
             *pOutTotal = 0;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
-        return 0;
+        return numOwned;
     }
 
 private:

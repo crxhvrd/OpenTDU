@@ -95,6 +95,8 @@ public:
                       eAvatarBeltSeat seat );
     AvatarClothePart *findClotheByID( uint16_t id );
     int32_t getSavedAvatarGender();
+    int32_t getNumOwnedClotheColorsByBrand( int32_t gender,
+                                            const char *pBrandName );
     void unlockClothe( uint16_t id, uint16_t colorMask );
     void unlockSavedAvatarClothes();
     void savePlayerAvatarConfiguration( const EntityAvatar *pAvatar );

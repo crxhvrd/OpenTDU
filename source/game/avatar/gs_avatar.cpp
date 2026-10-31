@@ -546,6 +546,40 @@ int32_t GSAvatar::getSavedAvatarGender() {
     return ( pStyle != nullptr ) ? pStyle->Gender : kUnknownGender;
 }
 
+int32_t GSAvatar::getNumOwnedClotheColorsByBrand( const int32_t gender,
+                                                  const char *pBrandName ) {
+    // FUN_008f5d50
+    int32_t numOwned = 0;
+
+    AvatarGenericCursor cursor( pClothesDB );
+    cursor.findRange();
+    if ( !cursor.hasRange() ) {
+        return 0;
+    }
+
+    for ( ; !cursor.isAtEnd(); cursor.advance() ) {
+        const AvatarClothePart *pClothe =
+            static_cast<const AvatarClothePart *>( cursor.getResult() );
+        if ( pClothe == nullptr || pClothe->Gender != gender ) {
+            continue;
+        }
+
+        const char *pClotheBrand = pClothe->getBrandName();
+        if ( pClotheBrand == nullptr ||
+             strcmp( pClotheBrand, pBrandName ) != 0 ) {
+            continue;
+        }
+
+        for ( int32_t i = 0; i < pClothe->getNumColors(); i++ ) {
+            if ( pClothe->isColorOwned( uint8_t( i ) ) ) {
+                numOwned++;
+            }
+        }
+    }
+
+    return numOwned;
+}
+
 void GSAvatar::unlockClothe( const uint16_t id, const uint16_t colorMask ) {
     AvatarClothePart *pClothe = findClotheByID( id );
     IPlayerData *pLoadedSave = gpPlayerData->getLoadedSave();
