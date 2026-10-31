@@ -198,6 +198,11 @@ public:
     void pause() override { /* FUN_00841760 (NOP) */ }
     void reset() override { /* FUN_00841850 (NOP) */ }
 
+    float getRenderInterpolationAlpha() const;
+    bool getBodyRenderPose( RigidBody_t body,
+                            Matrix4x4f_t &outMatrix,
+                            bool &outActive );
+
     void FUN_00843b40();
 
     PhysFactory *createFromBinary( void *param_3, int32_t param_2 );
@@ -521,6 +526,7 @@ private:
     void initializeJolt();
     void buildProcessPendingProps();
     void physicsStep( float dt, float accTime );
+    void captureRenderBodyPoses(); // OTDU_ADDITION
     void updateReplayVehicleModes();
     void updateForceFeedback( float dt );
     void createGraph();

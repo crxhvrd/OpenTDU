@@ -842,10 +842,13 @@ bool GSCamera::updateActiveCamera( float deltaTime, float accTime ) {
     const Eigen::Vector3f currentPosition =
         pActiveVehicleCamera->getWorldPositionOffset();
 
+    const bool bInterpolationReset =
+        deltaTime == 0.0f || pActiveVehicleCamera->bInitialized;
     if ( deltaTime == 0.0f || bJumped || pActiveVehicleCamera->bInitialized ) {
         previousPosition = currentPosition;
         pActiveVehicleCamera->bInitialized = false;
     }
+    latchRenderInterpolation( bInterpolationReset );
 
     if ( deltaTime <= 0.0f ) {
         pActiveVehicleCamera->setVelocity( Eigen::Vector4f::Zero() );
@@ -863,6 +866,63 @@ bool GSCamera::updateActiveCamera( float deltaTime, float accTime ) {
     }
 
     return true;
+}
+
+void GSCamera::latchRenderInterpolation( bool bSnap ) {
+    static constexpr float kMaxStepDistance = 5.0f;
+
+    RenderInterpolationPose pose;
+    pose.Position = pActiveVehicleCamera->getWorldPositionOffset();
+    pose.Target = pActiveVehicleCamera->getTargetOffset();
+    pose.Up = pActiveVehicleCamera->getUp();
+
+    if ( !bSnap && pInterpolationCamera == pActiveVehicleCamera &&
+         ( pose.Position - interpolationPoses[1].Position ).squaredNorm() <
+             kMaxStepDistance * kMaxStepDistance ) {
+        interpolationPoses[0] = interpolationPoses[1];
+    } else {
+        interpolationPoses[0] = pose;
+    }
+    interpolationPoses[1] = pose;
+    pInterpolationCamera = pActiveVehicleCamera;
+    bInterpolationValid = true;
+}
+
+void GSCamera::applyRenderInterpolation( float alpha ) {
+    static constexpr float kMatchTolerance = 1.0e-3f;
+
+    if ( alpha >= 1.0f || !bInterpolationValid || bFlyCam ||
+         bCinematicCameraOverride ||
+         pInterpolationCamera != pActiveVehicleCamera ) {
+        return;
+    }
+
+    const RenderInterpolationPose &previous = interpolationPoses[0];
+    const RenderInterpolationPose &current = interpolationPoses[1];
+    if ( ( defaultCamera.getWorldPositionOffset() - current.Position )
+                 .squaredNorm() > kMatchTolerance * kMatchTolerance ||
+         ( defaultCamera.getTargetOffset() - current.Target ).squaredNorm() >
+             kMatchTolerance * kMatchTolerance ) {
+        bInterpolationValid = false;
+        return;
+    }
+
+    const Eigen::Vector3f position =
+        previous.Position + ( current.Position - previous.Position ) * alpha;
+    const Eigen::Vector3f target =
+        previous.Target + ( current.Target - previous.Target ) * alpha;
+    Eigen::Vector3f up = previous.Up + ( current.Up - previous.Up ) * alpha;
+    if ( up.squaredNorm() > 0.0f ) {
+        up.normalize();
+    } else {
+        up = current.Up;
+    }
+
+    defaultCamera.setPositionOffseted(
+        Eigen::Vector4f( position.x(), position.y(), position.z(), 1.0f ) );
+    defaultCamera.setTargetOffseted(
+        Eigen::Vector4f( target.x(), target.y(), target.z(), 1.0f ) );
+    defaultCamera.setUp( Eigen::Vector4f( up.x(), up.y(), up.z(), 0.0f ) );
 }
 
 void GSCamera::tickActiveCamera( float param_2 ) {

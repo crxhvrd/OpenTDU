@@ -223,6 +223,8 @@ public:
 
     void applyCinematicOverride( CameraGame &camera );
     void onWorldOriginStepped();
+
+    void applyRenderInterpolation( float alpha );
     void setCinematicCameraOverride( const Eigen::Vector3f &position,
                                      const Eigen::Vector3f &up,
                                      const Eigen::Vector3f &target,
@@ -350,6 +352,17 @@ private:
     Eigen::Vector3f cinematicCamUp = Eigen::Vector3f::Zero();
     Eigen::Vector3f cinematicCamTarget = Eigen::Vector3f::Zero();
     float cinematicCamFov = 0.0f;
+
+    struct RenderInterpolationPose {
+        Eigen::Vector3f Position = Eigen::Vector3f::Zero();
+        Eigen::Vector3f Target = Eigen::Vector3f::Zero();
+        Eigen::Vector3f Up = Eigen::Vector3f::UnitY();
+    };
+    RenderInterpolationPose interpolationPoses[2];
+    const CameraVehicle *pInterpolationCamera = nullptr;
+    bool bInterpolationValid = false;
+
+    void latchRenderInterpolation( bool bSnap );
 
 private:
     template <typename T>

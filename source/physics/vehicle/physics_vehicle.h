@@ -511,6 +511,24 @@ public:
     void publishStepPose( const bool bReplayStep = false );
     void onWorldShifted( const Eigen::Vector3f &worldShift );
 
+    struct RenderPose {
+        Matrix4x4f_t DisplayMatrix = Matrix4x4f_t::Identity();
+        Matrix4x4f_t BikeRiderMatrix = Matrix4x4f_t::Identity();
+        float Steer = 0.0f;
+        float DisplayRoll = 0.0f;
+        float DisplayPitch = 0.0f;
+        float WheelSteer[PhysicsVehicleState::kMaxWheels] = {};
+        float WheelTravel[PhysicsVehicleState::kMaxWheels] = {};
+        bool bBikeRiderPresent = false;
+    };
+    RenderPose captureRenderPose() const;
+    void beginRenderInterpolationStep() {
+        stepStartRenderPose = captureRenderPose();
+    }
+    void latchRenderInterpolation();
+    void snapRenderInterpolation() { prevRenderPose = captureRenderPose(); }
+    RenderPose getInterpolatedRenderPose( float alpha ) const;
+
     struct ReplayPlayback {
         float Period = 0.0f;                                  // +0x8e4
         float BlendStart = 0.0f;                              // +0x8e8
@@ -892,6 +910,8 @@ private:
     Matrix4x4f_t physicsMatrix = Matrix4x4f_t::Identity();
     Matrix4x4f_t displayMatrix = Matrix4x4f_t::Identity();
     Matrix4x4f_t invChassisMatrix = Matrix4x4f_t::Identity();
+    RenderPose prevRenderPose;
+    RenderPose stepStartRenderPose;
 
     // Aerodynamics (chassis downforce/drag, applied per physics step).
     float aeroDragArea; // 0.5 * A * Cx_drag

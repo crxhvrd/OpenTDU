@@ -529,6 +529,24 @@ inline Eigen::Quaternionf QuaternionSlerpShortest(
         a * from.y() + b * target.y(), a * from.z() + b * target.z() );
 }
 
+// Translation lerp + rotation slerp; both matrices must be rigid (no scale).
+inline Matrix4x4f_t InterpolateRigidTransform( const Matrix4x4f_t &from,
+                                               const Matrix4x4f_t &to,
+                                               float alpha ) {
+    const Eigen::Quaternionf rotationFrom(
+        Eigen::Matrix3f( from.block<3, 3>( 0, 0 ) ) );
+    const Eigen::Quaternionf rotationTo(
+        Eigen::Matrix3f( to.block<3, 3>( 0, 0 ) ) );
+
+    Matrix4x4f_t blended = Matrix4x4f_t::Identity();
+    blended.block<3, 3>( 0, 0 ) =
+        rotationFrom.slerp( alpha, rotationTo ).normalized().toRotationMatrix();
+    blended.row( 3 ).head<3>() =
+        from.row( 3 ).head<3>() +
+        ( to.row( 3 ).head<3>() - from.row( 3 ).head<3>() ) * alpha;
+    return blended;
+}
+
 inline Eigen::Vector4f QuaternionLog( const Eigen::Quaternionf &param_2 ) {
     // FUN_00502260
     if ( fabsf( param_2.w() ) < kOne ) {

@@ -240,10 +240,14 @@ static float PushSpeedSample( float ( &samples )[N], const float sample ) {
 }
 
 static bool GetBodyShiftedPose( const JPH::Body *pBody,
-                                Matrix4x4f_t &outPose ) {
+                                Matrix4x4f_t &outPose,
+                                const bool bRenderPose ) {
     bool bActive = false;
-    if ( !gpPhysics->getBodyPose( const_cast<JPH::Body *>( pBody ), outPose,
-                                  bActive ) ) {
+    RigidBody_t body = const_cast<JPH::Body *>( pBody );
+    const bool bFound =
+        bRenderPose ? gpPhysics->getBodyRenderPose( body, outPose, bActive )
+                    : gpPhysics->getBodyPose( body, outPose, bActive );
+    if ( !bFound ) {
         return false;
     }
     outPose.row( 3 ).head<3>() -= GSPhysics::GetShiftOrigin().head<3>();
@@ -282,7 +286,7 @@ static void RefreshVehiclePartsDisplay( const PhysicsVehicle &vehicle,
             continue;
         }
         Matrix4x4f_t pose;
-        if ( !GetBodyShiftedPose( part.pBody, pose ) ) {
+        if ( !GetBodyShiftedPose( part.pBody, pose, bLoose ) ) {
             continue;
         }
         pNode->Flags |= 1;
@@ -355,6 +359,8 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
 
     {
         PhysicsLock physLock;
+        const float interpolationAlpha =
+            gpPhysics->getRenderInterpolationAlpha(); // OTDU_ADDITION
 
         for ( uint32_t i = 0; i < kMaxNumVehicles; i++ ) {
             CarState &carState = carStates[i];
@@ -386,8 +392,10 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 pPhysicsVehicle->getPhysicsMatrix();
             body.PhysicsWorldMatrix = physicsMatrix;
 
-            const Matrix4x4f_t &shiftedMatrix =
-                pPhysicsVehicle->getDisplayMatrix();
+            const PhysicsVehicle::RenderPose renderPose =
+                pPhysicsVehicle->getInterpolatedRenderPose(
+                    interpolationAlpha );
+            const Matrix4x4f_t &shiftedMatrix = renderPose.DisplayMatrix;
             body.OffsetedWorldMatrix = shiftedMatrix;
 
             body.PreviousWorldMatrix = body.WorldMatrix;
@@ -433,9 +441,13 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             // FUN_0083bbd0 (inlined)
             if ( !pPhysicsVehicle->getAttachedParts().empty() &&
                  carState.getVehicleInstance() != nullptr ) {
-                const Matrix4x4f_t bodyMatrix =
+                Matrix4x4f_t bodyMatrix =
                     pPhysicsVehicle->getChassisShiftedMatrix() *
                     pPhysicsVehicle->getInvChassisMatrix() * physicsMatrix;
+                bodyMatrix =
+                    bodyMatrix *
+                    OrthoInvert( pPhysicsVehicle->getDisplayMatrix() ) *
+                    shiftedMatrix;
                 RefreshVehiclePartsDisplay(
                     *pPhysicsVehicle, bodyMatrix,
                     carState.getVehicleInstance()->getNodeByIndex( 0 ) );
@@ -458,18 +470,20 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
 
             body.SpeedInKmh = pPhysicsVehicle->getReportedSpeed();
 
-            const float publishedSteer = pPhysicsVehicle->getFilteredSteer();
+            const float publishedSteer = renderPose.Steer; // OTDU_ADDITION
             body.SteeringRaw = publishedSteer;
-            body.BikeLeanLateral = pPhysicsVehicle->getDisplayRoll();
+            body.BikeLeanLateral = renderPose.DisplayRoll; // OTDU_ADDITION
             body.BikeLeanInput = pPhysicsVehicle->getBikeLeanSmoothed();
             body.bHasBikeAvatar = pPhysicsVehicle->hasBikeRider();
             body.BikeRiderVelocity = pPhysicsVehicle->getBikeRiderVelocity();
             body.bBikeRiderOnGround = pPhysicsVehicle->isBikeRiderOnGround();
             if ( body.bHasBikeAvatar ) {
-                body.BikeRiderMatrix = pPhysicsVehicle->getBikeRiderMatrix();
+                body.BikeRiderMatrix =
+                    renderPose.BikeRiderMatrix; // OTDU_ADDITION
             }
             body.bBikeRiderMoving = pPhysicsVehicle->isBikeRiderMoving();
-            body.BikeLeanLongitudinal = pPhysicsVehicle->getDisplayPitch();
+            body.BikeLeanLongitudinal =
+                renderPose.DisplayPitch; // OTDU_ADDITION
 
             const float leanScale = std::min(
                 std::max( 1.0f - std::fabs( body.BikeLeanLateral ), 0.0f ),
@@ -507,14 +521,15 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
                 wheel.bInitialized = true;
                 wheel.bGrounded = ro.bGrounded;
                 wheel.Omega = ro.AngularVelocity;
-                wheel.SteerAngle = ro.SteerAngle;
+                wheel.SteerAngle = renderPose.WheelSteer[w]; // OTDU_ADDITION
                 wheel.SlipRatio = ro.LongitudinalSlip;
                 wheel.SlipAngle = ro.LateralSlip;
                 wheel.LongitudinalSpeed = ro.LongitudinalGroundSpeed;
                 wheel.LateralSpeed = ro.LateralGroundSpeed;
                 wheel.Load = ro.SuspensionLoad;
 
-                wheel.SuspensionTravelLength = ro.SuspensionTravel;
+                wheel.SuspensionTravelLength =
+                    renderPose.WheelTravel[w]; // OTDU_ADDITION
                 wheel.WheelRadius = ro.Radius;
                 wheel.RelativeWorldPosition =
                     Eigen::Vector4f( ro.LocalPosition.x(), ro.LocalPosition.y(),
@@ -635,6 +650,8 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
         if ( !gpCamera->isLocked() ) {
             gpCamera->tickActiveCamera( deltaTime );
             gpCamera->setActiveCameraAsDefault();
+            gpCamera->applyRenderInterpolation(
+                interpolationAlpha ); // OTDU_ADDITION
             gpCamera->bindToRender();
         }
     }

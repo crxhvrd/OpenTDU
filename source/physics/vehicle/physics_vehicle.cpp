@@ -1302,6 +1302,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     bRegistered = true;
 
     publishStepPose();
+    snapRenderInterpolation(); // OTDU_ADDITION
     return true;
 }
 
@@ -4737,6 +4738,8 @@ void PhysicsVehicle::onWorldShifted( const Eigen::Vector3f &worldShift ) {
 
     translate( physicsMatrix, worldShift );
     translate( displayMatrix, worldShift );
+    translate( prevRenderPose.DisplayMatrix, worldShift );   // OTDU_ADDITION
+    translate( prevRenderPose.BikeRiderMatrix, worldShift ); // OTDU_ADDITION
     translate( keyframeMatrix, worldShift );
     invChassisMatrix = OrthoInvert( physicsMatrix );
 }
@@ -4822,6 +4825,73 @@ void PhysicsVehicle::publishStepPose( const bool bReplayStep ) {
     displayMatrix = computeDisplayMatrix( replay.SourceMatrix );
     invChassisMatrix = OrthoInvert( physicsMatrix );
     publishBikeRider();
+}
+
+PhysicsVehicle::RenderPose PhysicsVehicle::captureRenderPose() const {
+    RenderPose pose;
+    pose.DisplayMatrix = displayMatrix;
+    pose.BikeRiderMatrix = bikeRiderMatrix;
+    pose.bBikeRiderPresent = bBikeRiderPresent;
+    pose.Steer = filteredSteer;
+    pose.DisplayRoll = displayRoll;
+    pose.DisplayPitch = displayPitch;
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        const WheelReadout readout = getWheelReadout( i );
+        pose.WheelSteer[i] = readout.SteerAngle;
+        pose.WheelTravel[i] = readout.SuspensionTravel;
+    }
+    return pose;
+}
+
+void PhysicsVehicle::latchRenderInterpolation() {
+    const RenderPose &previousPose = stepStartRenderPose;
+    static constexpr float kMaxStepDistance = 5.0f;
+    static constexpr float kMinStepAxisDot = 0.0f;
+
+    const Matrix4x4f_t &previousMatrix = previousPose.DisplayMatrix;
+    const Eigen::Vector3f stepTranslation =
+        displayMatrix.row( 3 ).head<3>() - previousMatrix.row( 3 ).head<3>();
+    const float forwardDot = displayMatrix.row( 2 ).head<3>().dot(
+        previousMatrix.row( 2 ).head<3>() );
+    const float upDot = displayMatrix.row( 1 ).head<3>().dot(
+        previousMatrix.row( 1 ).head<3>() );
+    if ( stepTranslation.squaredNorm() > kMaxStepDistance * kMaxStepDistance ||
+         forwardDot < kMinStepAxisDot || upDot < kMinStepAxisDot ) {
+        snapRenderInterpolation();
+        return;
+    }
+    prevRenderPose = previousPose;
+    if ( !prevRenderPose.bBikeRiderPresent ) {
+        prevRenderPose.BikeRiderMatrix = bikeRiderMatrix;
+    }
+}
+
+PhysicsVehicle::RenderPose
+PhysicsVehicle::getInterpolatedRenderPose( float alpha ) const {
+    RenderPose pose = captureRenderPose();
+    if ( alpha >= 1.0f ) {
+        return pose;
+    }
+
+    const RenderPose &previous = prevRenderPose;
+    auto lerp = [alpha]( float from, float to ) {
+        return from + ( to - from ) * alpha;
+    };
+    pose.DisplayMatrix = InterpolateRigidTransform( previous.DisplayMatrix,
+                                                    pose.DisplayMatrix, alpha );
+    if ( pose.bBikeRiderPresent ) {
+        pose.BikeRiderMatrix = InterpolateRigidTransform(
+            previous.BikeRiderMatrix, pose.BikeRiderMatrix, alpha );
+    }
+    pose.Steer = lerp( previous.Steer, pose.Steer );
+    pose.DisplayRoll = lerp( previous.DisplayRoll, pose.DisplayRoll );
+    pose.DisplayPitch = lerp( previous.DisplayPitch, pose.DisplayPitch );
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        pose.WheelSteer[i] = lerp( previous.WheelSteer[i], pose.WheelSteer[i] );
+        pose.WheelTravel[i] =
+            lerp( previous.WheelTravel[i], pose.WheelTravel[i] );
+    }
+    return pose;
 }
 
 void PhysicsVehicle::updateReplayPose() {
@@ -5080,6 +5150,7 @@ void PhysicsVehicle::resetToTransform( const Matrix4x4f_t &transform,
     OTDU_UNIMPLEMENTED; // TODO: Handbrake hold for manual gearbox
 
     publishStepPose();
+    snapRenderInterpolation(); // OTDU_ADDITION
 }
 
 void PhysicsVehicle::setKeyframed( bool bInKeyframed, bool bForceMatrix ) {
@@ -5353,6 +5424,7 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
         }
 
         publishStepPose();
+        snapRenderInterpolation(); // OTDU_ADDITION
         return;
     }
 
@@ -5383,6 +5455,7 @@ void PhysicsVehicle::moveKeyframed( const Matrix4x4f_t &worldTransform,
         pChassisBody->GetID(), JPH::Vec3::sZero() );
 
     publishStepPose();
+    snapRenderInterpolation(); // OTDU_ADDITION
 }
 
 uint32_t PhysicsVehicle::getNumWheels() const {

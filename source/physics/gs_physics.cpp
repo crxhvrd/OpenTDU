@@ -2,6 +2,7 @@
 #include "gs_physics.h"
 
 #include "config/gs_config.h"
+#include "core/arg_parser.h"
 #include "debug/debug_graph.h"
 #include "gs_timer.h"
 #include "gs_physicsfx.h"
@@ -968,6 +969,24 @@ using PhysicsClock_t = std::chrono::steady_clock;
 // Replaces raw QueryPerformanceCounter calls from the original pcode
 static PhysicsClock_t::time_point gPhysicsLastStepTime = {};
 static bool gbPhysicsLastStepTimeValid = false;
+
+// OTDU_ADDITION: render interpolation of the physics thread state
+static bool gbPhysicsRenderInterpolation = true;
+static CmdLineArg
+    CmdLineArgNoPhysicsInterpolation( "nophysinterp", []( const char *pArg ) {
+        gbPhysicsRenderInterpolation = false;
+    } );
+static PhysicsClock_t::time_point gPhysicsInterpolationStepTimes[2] = {};
+static bool gbPhysicsInterpolationStepped = false;
+
+struct RenderBodyPose {
+    JPH::BodyID ID;
+    JPH::RMat44 Transform = JPH::RMat44::sIdentity();
+    uint32_t StepSerial = 0;
+};
+static std::vector<RenderBodyPose> gRenderBodyPoses;
+static JPH::BodyIDVector gRenderActiveBodies;
+static uint32_t gRenderStepSerial = 0;
 
 void FUN_0081ee50( GSPhysics *pPhysics ) {
     // FUN_0081ee50
@@ -2805,6 +2824,7 @@ void GSPhysics::drawDebug( float ) {
     }
     ImGui::Checkbox( "Vehicle chassis collider (cyan)",
                      &gDrawVehicleCollisionVis );
+    ImGui::Checkbox( "Render interpolation", &gbPhysicsRenderInterpolation );
     ImGui::Checkbox( "Vehicle CoM (magenta = CoM, white = body origin)",
                      &gDrawVehicleCoMVis );
     bool bForceFeedbackGraph = ( debugDrawFlags & 0x400 ) != 0;
@@ -5307,6 +5327,12 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
 
     lockMutex();
 
+    // OTDU_ADDITION
+    gPhysicsInterpolationStepTimes[0] = gPhysicsInterpolationStepTimes[1];
+    gPhysicsInterpolationStepTimes[1] = PhysicsClock_t::now();
+    gbPhysicsInterpolationStepped = false;
+    gRenderStepSerial++;
+
     // Clamp runaway delta times (e.g. after a breakpoint / window focus loss).
     if ( dt > kPhysicsDtClampThreshold )
         dt = kPhysicsMaxDt;
@@ -5349,6 +5375,13 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
                            !bFreezeSimulation && dt > 0.0f && !bReplayHold;
         gReplay.record( bStep );
 
+        // OTDU_ADDITION: OnStep (during Update) and tick() advance the drawn
+        // vehicle state, so capture it before either runs
+        for ( PhysicsVehicle *it = pPhysicsVehiclesBegin;
+              it != pPhysicsVehiclesEnd; ++it ) {
+            it->beginRenderInterpolationStep();
+        }
+
         if ( bStep ) {
             if ( gReplay.isPlayingBack() ) {
                 updateReplayVehicleModes();
@@ -5357,6 +5390,8 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
             // Original: hkpWorld::stepDelta (Havok) — Jolt equivalent.
             // numCollisionSteps=1 matches the original single-pass Havok
             // broadphase.
+            captureRenderBodyPoses(); // OTDU_ADDITION
+            gbPhysicsInterpolationStepped = true;
             pPhysicsSystem->Update( dt, 1, pTempAllocator, pJobSystem );
 
             if ( !gPropConstraints.empty() ) {
@@ -5387,6 +5422,7 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
                 it->tick( dt );
                 if ( it->isActive() ) {
                     it->publishStepPose( bStep );
+                    it->latchRenderInterpolation(); // OTDU_ADDITION
                 }
             }
         }
@@ -5400,6 +5436,101 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
     updateForceFeedback( dt );
 
     unlockMutex();
+}
+
+void GSPhysics::captureRenderBodyPoses() {
+    if ( gRenderBodyPoses.size() != pPhysicsSystem->GetMaxBodies() ) {
+        gRenderBodyPoses.assign( pPhysicsSystem->GetMaxBodies(),
+                                 RenderBodyPose() );
+    }
+
+    pPhysicsSystem->GetActiveBodies( JPH::EBodyType::RigidBody,
+                                     gRenderActiveBodies );
+    const JPH::BodyInterface &bodyInterface =
+        pPhysicsSystem->GetBodyInterfaceNoLock();
+    for ( const JPH::BodyID id : gRenderActiveBodies ) {
+        RenderBodyPose &entry = gRenderBodyPoses[id.GetIndex()];
+        entry.ID = id;
+        entry.Transform = bodyInterface.GetWorldTransform( id );
+        entry.StepSerial = gRenderStepSerial;
+    }
+}
+
+bool GSPhysics::getBodyRenderPose( RigidBody_t body,
+                                   Matrix4x4f_t &outMatrix,
+                                   bool &outActive ) {
+    static constexpr float kMaxStepDistance = 5.0f;
+
+    outActive = false;
+    if ( body == nullptr || pPhysicsSystem == nullptr ) {
+        return false;
+    }
+    JPH::Body *pBody = static_cast<JPH::Body *>( body );
+    lockMutex();
+    const JPH::BodyID id = pBody->GetID();
+    JPH::BodyInterface &bodyInterface = pPhysicsSystem->GetBodyInterface();
+    outActive = bodyInterface.IsActive( id );
+    const JPH::RMat44 current = bodyInterface.GetWorldTransform( id );
+
+    const float alpha = getRenderInterpolationAlpha();
+    const RenderBodyPose *pPrevious =
+        ( id.GetIndex() < gRenderBodyPoses.size() )
+            ? &gRenderBodyPoses[id.GetIndex()]
+            : nullptr;
+    const bool bBlend =
+        alpha < 1.0f && pPrevious != nullptr && pPrevious->ID == id &&
+        pPrevious->StepSerial == gRenderStepSerial &&
+        ( current.GetTranslation() - pPrevious->Transform.GetTranslation() )
+                .LengthSq() < kMaxStepDistance * kMaxStepDistance;
+    const JPH::RMat44 previous =
+        bBlend ? pPrevious->Transform : JPH::RMat44::sIdentity();
+    unlockMutex();
+
+    auto toMatrix = []( const JPH::RMat44 &t ) {
+        Matrix4x4f_t m;
+        for ( int32_t c = 0; c < 4; c++ ) {
+            const JPH::Vec3 v = t.GetColumn3( c );
+            m( c, 0 ) = v.GetX();
+            m( c, 1 ) = v.GetY();
+            m( c, 2 ) = v.GetZ();
+            m( c, 3 ) = ( c == 3 ) ? 1.0f : 0.0f;
+        }
+        return m;
+    };
+    outMatrix = toMatrix( current );
+    if ( bBlend ) {
+        outMatrix =
+            InterpolateRigidTransform( toMatrix( previous ), outMatrix, alpha );
+        // Still settling towards the latest step, even if Jolt put it to sleep
+        outActive = true;
+    }
+
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+    outMatrix( 3, 0 ) += shiftOrigin.x();
+    outMatrix( 3, 1 ) += shiftOrigin.y();
+    outMatrix( 3, 2 ) += shiftOrigin.z();
+    return true;
+}
+
+float GSPhysics::getRenderInterpolationAlpha() const {
+    if ( !gbPhysicsRenderInterpolation || gPhysicsThreadPriority == PTM_Off ||
+         !simulationThread.isValid() || !gbPhysicsInterpolationStepped ) {
+        return 1.0f;
+    }
+
+    const float stepPeriod =
+        std::chrono::duration<float>( gPhysicsInterpolationStepTimes[1] -
+                                      gPhysicsInterpolationStepTimes[0] )
+            .count();
+    if ( stepPeriod <= 0.0f ) {
+        return 1.0f;
+    }
+
+    const float sinceLastStep =
+        std::chrono::duration<float>( PhysicsClock_t::now() -
+                                      gPhysicsInterpolationStepTimes[1] )
+            .count();
+    return std::clamp( sinceLastStep / stepPeriod, 0.0f, 1.0f );
 }
 
 void GSPhysics::updateReplayVehicleModes() {
@@ -5724,6 +5855,7 @@ bool GSPhysics::onWorldStreamed( Eigen::Vector4f *pOffset,
         bodyInterface.SetPosition( id, bodyInterface.GetPosition( id ) + shift,
                                    JPH::EActivation::DontActivate );
     }
+    gRenderStepSerial++; // OTDU_ADDITION: drop the pre-shift body poses
 
     if ( !characters.empty() ) {
         PhysicsLock lock;
