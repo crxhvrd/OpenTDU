@@ -257,6 +257,20 @@ void GSConfig::registerDeviceCommands() {
         gSeatPosition[1] = ParseFloat( argStr, it );
     } );
 
+    registerCommand( "HEADTRACKINGUDP", [&]( const char *pArg ) {
+        // OTDU_ADDITION: HeadTrackingUDP "127.0.0.1" 4242
+        std::string argStr( pArg );
+        size_t it = 0;
+
+        std::string address = ParseString( argStr, it );
+        int32_t port = ParseInteger( argStr, it );
+        if ( port <= 0 || port > 0xffff ) {
+            OTDU_LOG_WARN( "HeadTrackingUDP: invalid port %d\n", port );
+            return;
+        }
+        gpDevice->setHeadTrackingEndpoint( address.c_str(), (uint16_t)port );
+    } );
+
     registerCommand( "ACCELDEADZONE", [&]( const char *pArg ) {
         // FUN_009857c0
         gAccelDeadZone = static_cast<float>( atof( pArg ) );

@@ -632,6 +632,7 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/online/ed_net_gamespy_manager.cpp"
                     "${OTDU_SRC_FOLDER}/input/input_device.cpp"
                     "${OTDU_SRC_FOLDER}/input/input_templates.cpp"
+                    "${OTDU_SRC_FOLDER}/input/head_tracking.cpp"
                     "${OTDU_SRC_FOLDER}/input/devices/mouse.cpp"
                     "${OTDU_SRC_FOLDER}/input/devices/keyboard.cpp" 
                     "${OTDU_SRC_FOLDER}/input/devices/joystick.cpp"
@@ -1211,6 +1212,7 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/online/ed_net_gamespy_manager.h"
                     "${OTDU_SRC_FOLDER}/input/input_device.h"
                     "${OTDU_SRC_FOLDER}/input/input_templates.h"
+                    "${OTDU_SRC_FOLDER}/input/head_tracking.h"
                     "${OTDU_SRC_FOLDER}/input/devices/mouse.h"
                     "${OTDU_SRC_FOLDER}/input/devices/keyboard.h"
                     "${OTDU_SRC_FOLDER}/input/devices/joystick.h"
@@ -1322,6 +1324,8 @@ endif()
 # zlib
 include_directories( "${OTDU_THIRDPARTY_FOLDER}/zlib/" )
 include_directories( "${OTDU_THIRDPARTY_FOLDER}/minimp3/" )
+include_directories( SYSTEM "${OTDU_THIRDPARTY_FOLDER}/asio/asio/include" )
+add_definitions( -DASIO_STANDALONE -DASIO_NO_DEPRECATED )
 if ( WIN32 )
     target_link_libraries(opentdu debug "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Debug/zsd.lib"
                                   optimized "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Release/zs.lib" )
@@ -1501,7 +1505,7 @@ endif()
 
 # System Options
 if ( WIN32 )
-    target_link_libraries( opentdu winmm Pathcch Shlwapi ole32 uuid )
+    target_link_libraries( opentdu winmm Pathcch Shlwapi ole32 uuid ws2_32 mswsock )
     if ( OTDU_TARGET_WIN7 )
         set_target_properties( opentdu PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS,6.01" )
     else()

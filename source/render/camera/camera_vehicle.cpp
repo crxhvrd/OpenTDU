@@ -7,6 +7,7 @@
 #include "gs_timer.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
+#include "input/gs_device.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/gs_playerdata.h"
@@ -123,10 +124,6 @@ static bool gbCamClampedLeft = false;  // DAT_010e74a0
 static bool gbCamClampedRight = false; // DAT_010e74a1
 static bool gbCamClampedUp = false;    // DAT_010e74a2
 static bool gbCamClampedDown = false;  // DAT_010e74a3
-
-// NaturalPoint inputs (unimplemented)
-static float gHeadTrackYaw = 0.0f;
-static float gHeadTrackPitch = 0.0f;
 
 static uint32_t gCameraRandomSeed = 0; // DAT_010e7480
 
@@ -1670,7 +1667,7 @@ void CameraVehicle::applyFreeLook( const Matrix4x4f_t &carDisplayMatrix,
         if ( gpCamera->isHeadTrackingEnabled() ) {
             const float limitH =
                 (float)angleRangeHorizontal * kDegToRad * kHeadTrackRange;
-            angleH = std::min( gHeadTrackYaw, limitH );
+            angleH = std::min( gpDevice->getHeadTrackingYaw(), limitH );
             if ( angleH < -limitH ) {
                 angleH = -limitH;
             }
@@ -1678,7 +1675,7 @@ void CameraVehicle::applyFreeLook( const Matrix4x4f_t &carDisplayMatrix,
                 (float)maxAngleDown * kDegToRad * kHeadTrackRange;
             const float limitUp =
                 -( (float)maxAngleUp * kDegToRad * kHeadTrackRange );
-            angleV = std::min( -gHeadTrackPitch, limitDown );
+            angleV = std::min( -gpDevice->getHeadTrackingPitch(), limitDown );
             if ( angleV < limitUp ) {
                 angleV = limitUp;
             }

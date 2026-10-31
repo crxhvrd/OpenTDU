@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/gs_base.h"
+#include "head_tracking.h"
 
 #include <atomic>
 
@@ -70,6 +71,10 @@ public:
     inline bool isHeadTrackingAvailable() const {
         return bUseNaturalPointHeadTracking;
     }
+    inline float getHeadTrackingYaw() const { return headTrackingYaw; }
+    inline float getHeadTrackingPitch() const { return headTrackingPitch; }
+
+    void setHeadTrackingEndpoint( const char *pAddress, const uint16_t port );
 
     inline void requestReplay( const char *pFilename,
                                const uint32_t size,
@@ -103,6 +108,7 @@ private:
     void createForceFeedbackEffects( DeviceJoystick *pDevice );
     void updateForceFeedbackEffects();
     void releaseForceFeedbackEffects();
+    void updateHeadTracking( const float deltaTime );
 
 private:
     char replayFilename[32];
@@ -110,8 +116,13 @@ private:
     bool bReplayLoading;
     bool bReplaySaving;
     MouseState mouseState;
+    float headTrackingYaw;
+    float headTrackingPitch;
     bool bUseNaturalPointHeadTracking;
     bool field14_0x54;
+
+    HeadTrackingReceiver headTrackingReceiver;
+    float headTrackingIdleTime;
 };
 
 extern GSDevice gDevice;

@@ -5,6 +5,7 @@
 #include "input_device.h"
 #include "devices/joystick.h"
 #include "input_templates.h"
+#include "head_tracking.h"
 #include "system/ed_sys.h"
 
 #include "debug/mng_debug_hud.h"
@@ -20,6 +21,8 @@
 #include "player_data/gs_playerdata.h"
 
 #include "tdu_instance.h"
+
+#include <cmath>
 
 #ifdef OTDU_USE_IMGUI
 #include "debug/gs_imgui.h"
@@ -150,8 +153,12 @@ GSDevice::GSDevice()
       replaySize( 0 ),
       bReplayLoading( false ),
       bReplaySaving( false ),
+      headTrackingYaw( 0.0f ),
+      headTrackingPitch( 0.0f ),
       bUseNaturalPointHeadTracking( false ),
-      field14_0x54( true ) {
+      field14_0x54( true ),
+      headTrackingReceiver(),
+      headTrackingIdleTime( 0.0f ) {
     gpDevice = this;
 }
 
@@ -196,30 +203,10 @@ bool GSDevice::initialize( TestDriveGameInstance *param_1 ) {
         }
     }
 
-    bUseNaturalPointHeadTracking = false;
-
-    // TODO: NaturalPoint SDK support
-    //   RetrieveNPCLocation(auStack_410);
-    //   iVar2 = LoadNPCLibrary(auStack_410);
-    //   if (((iVar2 == 0) && (pHVar5 = GetActiveWindow(),
-    //   gNPFuncPointers[0] != (undefined *)0x0)) &&
-    //      ((iVar2 = (*(code *)gNPFuncPointers[0])(pHVar5), iVar2 == 0 &&
-    //       ((gNPFuncPointers[3] != (undefined *)0x0 &&
-    //        (iVar2 = (*(code *)gNPFuncPointers[3])(&stack0xfffffbe0),
-    //        iVar2 == 0)))))) {
-    //     if (gNPFuncPointers[4] != (undefined *)0x0) {
-    //       (*(code *)gNPFuncPointers[4])(6);
-    //     }
-    //     if (gNPFuncPointers[2] != (undefined *)0x0) {
-    //       (*(code *)gNPFuncPointers[2])(0x3391);
-    //     }
-    //     if ((((gNPFuncPointers[8] != (undefined *)0x0) &&
-    //          (iVar2 = (*(code *)gNPFuncPointers[8])(), iVar2 == 0)) &&
-    //         (gNPFuncPointers[10] != (undefined *)0x0)) &&
-    //        (iVar2 = (*(code *)gNPFuncPointers[10])(), iVar2 == 0)) {
-    //       this->bUseNaturalPointHeadTracking = true;
-    //     }
-    //   }
+    headTrackingYaw = 0.0f;
+    headTrackingPitch = 0.0f;
+    headTrackingIdleTime = 0.0f;
+    bUseNaturalPointHeadTracking = headTrackingReceiver.open();
 
     mouseState.initialize();
 
@@ -305,13 +292,7 @@ void GSDevice::tick( float totalTime, float deltaTime ) {
         }
     }
 
-    // TODO: NaturalPoint SDK (renamed TrackIR) (headtracking 3rdparty lib)
-    // if (((gNPFuncPointers[6] != (undefined *)0x0) &&
-    //     (iVar3 = (*(code *)gNPFuncPointers[6])(&stack0xffffffbc), iVar3 ==
-    //     0)) && (in_stack_ffffffbc == 0)) {
-    //     *(float *)&this->field_0x4c = in_stack_ffffffcc * 0.0001917593;
-    //     *(float *)&this->field_0x50 = in_stack_ffffffc8 * 0.0001917593;
-    // }
+    updateHeadTracking( deltaTime );
 
     for ( uint32_t i = 0; i < gEdDev.NumDevices; i++ ) {
         if ( gEdDev.ppDevices[i] != nullptr ) {
@@ -492,22 +473,13 @@ void GSDevice::releaseForceFeedbackEffects() {
 void GSDevice::terminate() {
     // FUN_00980670
     bUseNaturalPointHeadTracking = false;
+    headTrackingReceiver.close();
 
     // NOTE: DirectInput effects were released with their device; SDL effects
     // must go before the haptic device is closed.
     if ( gbFFBEffectsCreated ) {
         releaseForceFeedbackEffects();
     }
-
-    // TODO: NaturalPoint SDK support
-    // puVar1 = gNPFuncPointers[0xb];
-    // bVar2 = gNPFuncPointers[0xb] != (undefined *)0x0;
-    // if ( bVar2 ) {
-    //     ( *(code *)puVar1 )();
-    // }
-    // if ( gNPFuncPointers[1] != (undefined *)0x0 ) {
-    //     ( *(code *)gNPFuncPointers[1] )();
-    // }
 
     gEdDev.destroy();
 }
@@ -633,4 +605,37 @@ bool MouseState::FUN_00980000() const {
     }
 
     return false;
+}
+
+void GSDevice::setHeadTrackingEndpoint( const char *pAddress,
+                                        const uint16_t port ) {
+    headTrackingReceiver.setEndpoint( pAddress, port );
+    if ( bUseNaturalPointHeadTracking ) {
+        bUseNaturalPointHeadTracking = headTrackingReceiver.open();
+    }
+}
+
+void GSDevice::updateHeadTracking( const float deltaTime ) {
+    static constexpr float kIdleTimeout = 0.5f;
+    static constexpr float kRecenterRate = 4.0f;
+
+    if ( !bUseNaturalPointHeadTracking ) {
+        return;
+    }
+
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    if ( headTrackingReceiver.poll( yaw, pitch ) ) {
+        headTrackingYaw = yaw;
+        headTrackingPitch = pitch;
+        headTrackingIdleTime = 0.0f;
+        return;
+    }
+
+    headTrackingIdleTime += deltaTime;
+    if ( headTrackingIdleTime > kIdleTimeout ) {
+        const float decay = std::exp( -kRecenterRate * deltaTime );
+        headTrackingYaw *= decay;
+        headTrackingPitch *= decay;
+    }
 }
