@@ -3421,6 +3421,10 @@ void PhysicsVehicle::updateGripModulation( float chassisSpeed ) {
 
 void PhysicsVehicle::forwardDrivingInput( const float deltaTime ) {
     // FUN_0081c7b0 (inlined)
+    bGearUpRequest = bPendingGearUpRequest;
+    bGearDownRequest = bPendingGearDownRequest;
+    bPendingGearUpRequest = false;
+    bPendingGearDownRequest = false;
     if ( pDrivingControl != nullptr && !gReplay.isPlayingBack() ) {
         pDrivingControl->forwardInput( *this, deltaTime );
     }

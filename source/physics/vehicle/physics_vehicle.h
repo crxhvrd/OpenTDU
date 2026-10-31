@@ -472,8 +472,8 @@ public:
     void requestDownshift();
     void setClutchInput( float clutch ) { clutchPedal = clutch; }
     void setGearRequests( bool bUp, bool bDown, int32_t select ) {
-        bGearUpRequest = bUp;
-        bGearDownRequest = bDown;
+        bPendingGearUpRequest |= bUp;
+        bPendingGearDownRequest |= bDown;
         gearSelectRequest = select;
     }
     bool isMechanicalGearbox() const { return bMechanicalGearbox; }
@@ -797,6 +797,8 @@ private:
     float clutchPedal = 0.0f;
     bool bGearUpRequest = false;
     bool bGearDownRequest = false;
+    bool bPendingGearUpRequest = false;
+    bool bPendingGearDownRequest = false;
     int32_t gearSelectRequest = 1;
     bool bGearSelectBlocked = false;
     bool bMechanicalGearbox = false;
