@@ -899,8 +899,14 @@ static void OnPoliceCollision( uint8_t collisionType,
                                void *pOtherObject,
                                void *pUserData ) {
     // LAB_008b1620
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: Police (FUN_008b1270, skipped when the
-                             // AI controller +0x224 == 8)
+    CarState *pCarState = static_cast<CarState *>( pUserData );
+    const AiVehicle *pAiVehicle =
+        static_cast<const AiVehicle *>( pCarState->getAIController() );
+    if ( pAiVehicle != nullptr &&
+         pAiVehicle->getCategory() == eAiVehicleCategory::AVC_Autopilot ) {
+        return;
+    }
+    pCarState->getPoliceState().onPoliceCollision( collisionType, pOther );
 }
 
 void GSCarState::setPoliceStateJob( CarState *pCarState,

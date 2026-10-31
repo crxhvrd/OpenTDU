@@ -146,7 +146,7 @@ void VehicleTraffic::tick( float param_2, float param_3 ) {
         }
 
         if ( pMaterialGyro != nullptr ) {
-            updateGyro( param_2 );
+            updateGyro( param_3 );
         }
     }
 

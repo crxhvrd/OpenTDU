@@ -372,7 +372,7 @@ void GameMechanism::reset() {
         pAIPool->removeCops();
         pAIPool->setPoliceScale( 0.0f );
         pAIPool->setForceDensity( true );
-        OTDU_UNIMPLEMENTED; // TODO: AI (cop manager +0x44 / +0x45 = 0)
+        gpAI->getCopManager().setLevel( false, false );
         stateChange( MS_WaitingHUD );
         return;
     }
@@ -400,7 +400,7 @@ void GameMechanism::reset() {
     } else if ( bCops && !gpScenaric->isTrainingLevel() && copsDensity != 0 ) {
         pAIPool->setPoliceScale( 1.0f );
         pAIPool->setForceDensity( false );
-        OTDU_UNIMPLEMENTED; // TODO: AI (cop manager +0x44 / +0x45 = 1)
+        gpAI->getCopManager().setLevel( true, true );
         gpAI->setDisableCops( false );
     } else {
         gpAI->setCopsLevel( 0.0f, false, false );

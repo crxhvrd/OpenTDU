@@ -188,6 +188,8 @@ public:
     void setGoal( CarState *pNewGoal );
     bool isOnTargetRoad( const AiRoadIt &it ) const;
 
+    inline CarState *getTarget() const { return pTarget; }
+
 private:
     AiVehicle *pVehicle;
     std::unique_ptr<AiPath> pPath;
@@ -212,6 +214,45 @@ private:
     void updateChaseRoute();
     void updateGoalRoute();
     void setSingleSegment( const AiRoadIt &from, const AiRoadIt &to );
+};
+
+// Controller type 6: route limited to the road the vehicle is on (arrested
+// player car)
+class AiVehCtrlCurrentRoad : public AiVehController, private AiFsm {
+public:
+    enum eState : int32_t {
+        CRS_Follow = 1,
+    };
+
+public:
+    AiVehCtrlCurrentRoad();
+
+    void attach( AiVehicle *pOwner ) override;
+    void reset( const bool bFull ) override;
+    void tick( const float deltaTime, const float totalTime ) override;
+    void release() override;
+    bool getFront( AiRoadIt &outFrom, AiRoadIt &outTo ) const override;
+    bool getSecond( AiRoadIt &outFrom, AiRoadIt &outTo ) const override;
+    int32_t getCount() const override;
+    void getAt( const int32_t index,
+                AiRoadIt &outFrom,
+                AiRoadIt &outTo ) const override;
+    void popFront() override;
+    void forceNextRoad( const uint32_t roadID ) override;
+    bool chooseNextRoad( const AiRoadIt &last,
+                         AiRoadIt &outFrom,
+                         AiRoadIt &outTo ) override;
+
+private:
+    AiVehicle *pVehicle;
+    AiRoadIt vehicleIt;
+    AiRoadIt frontFrom;
+    AiRoadIt frontTo;
+    AiRoadIt secondFrom;
+    AiRoadIt secondTo;
+
+private:
+    bool handle( const int32_t event, const int32_t state ) override;
 };
 
 bool HasAccessibleExit( const AiRoadIt &it );

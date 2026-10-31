@@ -23,6 +23,7 @@ public:
 
     void instantiate( CarState *pCarState, StreamedInBankVehicle *pExterior );
     void setLogoVariant( const int32_t variant );
+    inline HiearchyNode *getRemorkNode() const { return pRemorkNode; }
 
 private:
     static constexpr int32_t kNumMaterials = 0x1d;

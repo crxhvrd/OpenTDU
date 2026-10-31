@@ -65,6 +65,12 @@ public:
     static constexpr int32_t kMaxNumRemovals = 16;
     static constexpr uint32_t kFirstCarStateSlot = 0x10;
 
+    enum eArrestStep : int32_t {
+        AS_TakeOver = 0,
+        AS_ReleaseAI = 1,
+        AS_RestoreControl = 2,
+    };
+
     enum eVehicleList : int32_t {
         AVL_All = 0,
         AVL_FirstCategory = 1,
@@ -144,6 +150,8 @@ public:
     AiVehicle *requestParked( const Matrix4x4f_t &frame,
                               const int32_t colorIndex,
                               EntityCarPlayer *pOwner );
+    AiVehicle *requestCopDam( const AiRoadIt &roadIt,
+                              const float lateralRatio );
     bool isVehicleSlotUsed( const AiVehicle *pVehicle ) const;
     bool requestTraffic( const Matrix4x4f_t &frame,
                          const AiRoadIt &roadIt,
@@ -159,6 +167,7 @@ public:
     void releaseVehicleSlot( AiVehicle *pVehicle );
     void queueRemoval( AiVehicle *pVehicle, const char *pReason );
     bool togglePlayerAutopilot( const bool bOpponent );
+    void updateArrestedCar( const eArrestStep step, CarState *pCar );
     void removeVehicle( AiVehicle *pVehicle,
                         const char *pReason,
                         const bool bReleaseCar );

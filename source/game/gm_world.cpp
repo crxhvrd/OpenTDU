@@ -4,6 +4,7 @@
 
 #include "ai/ai_pool.h"
 #include "ai/gs_ai.h"
+#include "ai/ai_cop_manager.h"
 #include "ai/ai_road_query.h"
 
 #include "tdu_instance.h"
@@ -1095,12 +1096,14 @@ bool GameModeWorld::onMessage( FlashMessage *pMessage ) {
     case FlashMessage( "pain" ): // pause in
         onMenuPauseEnter();
         return true;
-    case FlashMessage( "skip" ): // skip the running spot cinematic
-        if ( gpMngCinematics != nullptr &&
-             gpMngCinematics->getActiveCinematic() != nullptr ) {
-            gpMngCinematics->getActiveCinematic()->stop( true );
+    case FlashMessage( "skip" ): {
+        EntityCinematic *pArrestCinematic =
+            gpAI->getCopManager().getArrestCinematic();
+        if ( pArrestCinematic != nullptr ) {
+            pArrestCinematic->stop( true );
         }
         return true;
+    }
     default:
         return false;
     }

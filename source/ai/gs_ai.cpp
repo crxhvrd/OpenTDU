@@ -71,7 +71,7 @@ GSAI::GSAI()
       bDisableCops( true ),
       bDisableBots( true ),
       bPauseTraffic( false ),
-      bCopsActive( false ),
+      pCopManager( &gAiCopMng ),
       pBotManager( &gAiBotManager ),
       bLocationsFromCarState( false ),
       pSignalSyncTime( &gSignalSyncTime ),
@@ -141,7 +141,7 @@ bool GSAI::initialize( TestDriveGameInstance * ) {
     pDebugDraw->createBackground();
     pathSolver.initialize( &pathPool );
     floodSolver.initialize( &pathPool );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AiCopMng
+    pCopManager->initialize();
     pBotManager->initialize();
     gAiPathOptimiser.initialize();
     pPathOptimiser = &gAiPathOptimiser;
@@ -163,7 +163,14 @@ void GSAI::tick( float totalTime, float deltaTime ) {
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: Online
     static constexpr bool bOnlineSession = false;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: cop manager active flag (GSAI+0x2a984)
+    const bool bCopsWanted = !bDisableCops && !bOnlineSession && !bPauseTraffic;
+    if ( bCopsWanted ) {
+        pCopManager->setEnabled( true );
+    } else if ( pCopManager->isEnabled() ) {
+        pCopManager->setEnabled( false );
+        pAIPool->removeCops();
+    }
+
     const bool bBotsWanted =
         ( !bDisableBots && !bOnlineSession && !bPauseTraffic ) ||
         gbForceBotsEnabled;
@@ -181,7 +188,7 @@ void GSAI::tick( float totalTime, float deltaTime ) {
     gAiDebugRace.tick();
     OTDU_UNIMPLEMENTED_ONCE; // TODO: online zones, net interpolation
     if ( gpTimer->GameSpeed != 0.0f && dt != 0.0f ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: cop manager tick (FUN_00915010)
+        pCopManager->tick();
         pBotManager->tick();
     }
     if ( ( dt > 0.0f || gbForceOptimWhenPaused ) &&
@@ -204,6 +211,7 @@ void GSAI::terminate() {
         pPathOptimiser = nullptr;
     }
     pedestrianManager.terminate();
+    pCopManager->terminate();
     pDebugDraw->release();
     pDebugDraw->releaseBackground();
     roadBuckets.terminate();
@@ -213,7 +221,11 @@ void GSAI::reset() {
     // FUN_00969c10
     setTrafficCategories( true, 0u );
     pAIPool->setTrafficPaused( true );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AiCopMng reset
+    pCopManager->reset();
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar != nullptr ) {
+        pPlayerCar->clearAILockFlags( CarState::kAILockArrest );
+    }
 }
 
 void GSAI::pause() {
@@ -427,17 +439,14 @@ void GSAI::setCopsLevel( const float scale,
     // FUN_00969540
     if ( scale <= 0.0f ) {
         bDisableCops = true;
-        bCopsActive = false;
+        pCopManager->setEnabled( false );
         pAIPool->removeCops();
     } else {
         bDisableCops = false;
     }
     pAIPool->setPoliceScale( scale );
     pAIPool->setForceDensity( true );
-    OTDU_UNIMPLEMENTED; // TODO: AI (cop manager GSAI+0x2a984 +0x44 / +0x45 =
-                        // bHighLevel / bMaxLevel)
-    (void)bHighLevel;
-    (void)bMaxLevel;
+    pCopManager->setLevel( bHighLevel, bMaxLevel );
 }
 
 void GSAI::setTrafficCategories( const bool bResetPool,
@@ -453,7 +462,7 @@ void GSAI::setTrafficCategories( const bool bResetPool,
         pAIPool->removeAllVehicles( bResetPool );
     } else {
         if ( ( categoryMask & kCategoryCops ) == 0u ) {
-            bCopsActive = false;
+            pCopManager->setEnabled( false );
             pAIPool->removeCops();
             bPauseTraffic = true;
             pAIPool->setField0x85( false );

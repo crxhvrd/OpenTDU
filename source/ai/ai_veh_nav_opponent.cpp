@@ -2,6 +2,7 @@
 #include "ai_veh_nav_opponent.h"
 
 #include "ai/ai_config.h"
+#include "ai/ai_cop_manager.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_road_shape.h"
 #include "ai/ai_vehicle.h"
@@ -46,8 +47,26 @@ static constexpr float kStuckGraceTime = 10.0f;
 static constexpr float kTeleportSpeed = 10.0f;       // DAT_00f4166c
 static constexpr float kTeleportPhantomAlpha = 0.5f; // DAT_00f41674
 static constexpr int32_t kMaxCheckpointMissTicks = 10;
-static constexpr float kCheckpointStepBack = -0.5f;   // 0xbf000000
-static constexpr float kCheckpointWidthFactor = 1.2f; // DAT_00f41dc4
+static constexpr float kCheckpointStepBack = -0.5f;        // 0xbf000000
+static constexpr float kCheckpointWidthFactor = 1.2f;      // DAT_00f41dc4
+static constexpr float kTurnAroundMaxSpeed = 5.0f;         // DAT_00f41750
+static constexpr float kTurnAroundAngleRange = 0.7853982f; // DAT_00f41cb0
+static constexpr float kTurnAroundAlignAngle = 0.1570796f; // DAT_00f41ac8
+static constexpr float kHalfPi = 1.5707964f;               // DAT_00f418a4
+static constexpr float kUTurnMinWidth = 8.0f;              // DAT_00f41ac4
+static constexpr float kUTurnSpanFactor = 4.0f;            // DAT_00f418d4
+static constexpr float kUTurnSplitWidthRatio = 0.5f;       // DAT_00f41674
+static constexpr float kWrongWayBrakeFactor = 1.2f;        // DAT_00f41dc4
+static constexpr float kWrongWayBrakeMargin = 16.0f;       // DAT_00f418d8
+static constexpr float kChaseSnapToleranceFactor = 2.0f;   // DAT_00f416b0
+static constexpr float kChaseSnapSpeed = 10.0f;
+static constexpr float kChaseFollowSpeedFactor = 0.8f;        // DAT_00f416d0
+static constexpr float kChaseOffRoadWidthFactor = 3.0f;       // DAT_00f416b4
+static constexpr float kChaseJunctionGap = 2.0f;              // DAT_00f416b0
+static constexpr float kChaseTargetOffRoadWidthFactor = 2.0f; // DAT_00f416b0
+static constexpr float kChaseCurveMaxSpeed = 20.0f;           // DAT_00f03ee0
+static constexpr float kChaseCurveHandle1 = 0.33f;            // DAT_00f41a0c
+static constexpr float kChaseCurveHandle2 = 0.66f;            // DAT_00f03f00
 
 // FUN_00409440 + CarState slot compare
 static bool IsRoundRobinTurn( const AiVehicle *pVehicle ) {
@@ -59,6 +78,36 @@ static bool gbForceOpponentRebuild = false; // DAT_010e73d1
 
 static float ComputeRoadFraction( const AiRoadIt &it ) {
     return it.pRoad->getShape()->computeRoadFraction( it );
+}
+
+static float ComputeRoadDistanceTo( const AiRoadIt &from, const AiRoadIt &to ) {
+    // FUN_009352c0
+    const AiRoadShape *pShape = from.pRoad->getShape();
+    return fabsf( pShape->computeRoadFraction( to ) -
+                  pShape->computeRoadFraction( from ) ) *
+           pShape->TotalLength;
+}
+
+static bool IsPoliceTargetAhead( const AiVehicle *pCop,
+                                 const CarState *pTarget ) {
+    // FUN_009cba00
+    if ( gpScenaric->getLocalPlayer().getCarState() == nullptr ) {
+        return false;
+    }
+    const ObjectWorldLocation &copLoc = pCop->getCarState()->getWorldLocation();
+    const ObjectWorldLocation &targetLoc = pTarget->getWorldLocation();
+    if ( copLoc.LocationType != ObjectWorldLocation::OWL_Road ||
+         targetLoc.LocationType != ObjectWorldLocation::OWL_Road ||
+         copLoc.LocationRoad.RoadID != targetLoc.LocationRoad.RoadID ) {
+        return false;
+    }
+    const float copU =
+        ( copLoc.LocationRoad.FractionMin + copLoc.LocationRoad.FractionMax ) *
+        0.5f;
+    const float targetU = ( targetLoc.LocationRoad.FractionMin +
+                            targetLoc.LocationRoad.FractionMax ) *
+                          0.5f;
+    return copLoc.bWay ? copU < targetU : targetU < copU;
 }
 
 static const AiRoadMap::Junction *GetEndJunction( const AiRoadIt &it ) {
@@ -100,10 +149,10 @@ static float ComputeHeadingYaw( const Matrix4x4f_t &matrix,
         matrix( 2, 2 ) * direction.z() + matrix( 2, 0 ) * direction.x() );
 }
 
-static void TeleportToRoad( AiVehicle *pVehicle,
-                            const AiRoadIt &it,
-                            const float widthRatio,
-                            const bool bPhantom ) {
+void TeleportToRoad( AiVehicle *pVehicle,
+                     const AiRoadIt &it,
+                     const float widthRatio,
+                     const bool bPhantom ) {
     // FUN_00938d20
     if ( pVehicle == nullptr ) {
         return;
@@ -297,8 +346,9 @@ void AiVehNavOpponent::Situation::updateRoute() {
         return;
     }
     if ( pVehicle->getBehaviourType() == 0 &&
-         pVehicle->getControllerType() == 1 && count == 2 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: cop route check (FUN_00963070)
+         pVehicle->getControllerType() == 1 && count == 2 &&
+         !pVehicle->getChaseController().isOnTargetRoad( NextTo ) ) {
+        bLineMismatch = true;
     }
     LastRouteTo = RouteTo;
     TolRoute = kRouteTolerance / RouteFrom.pRoad->getShape()->TotalLength;
@@ -361,6 +411,14 @@ AiVehNavOpponent::AiVehNavOpponent()
       bObstacleAhead( false ),
       stopTime( -1.0f ),
       finishSpeed( -1.0f ),
+      bTurningAround( false ),
+      field_0x764( -1 ),
+      turnBackDirection( Eigen::Vector4f::Zero() ),
+      turnStartDirection( Eigen::Vector4f::Zero() ),
+      turnAngleLimit( 0.0f ),
+      bTurnLeft( true ),
+      turnPhase( 0 ),
+      turnReturnState( 0 ),
       obstacles(),
       builder() {
     // FUN_00954f90
@@ -404,7 +462,14 @@ void AiVehNavOpponent::reset( const bool bFull ) {
     bGridRevHold = true;
     lastLineRebuildTime = 0.0f;
     bObstacleAhead = false;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: 3-point turn block (nav+0x760)
+    bTurningAround = false;
+    field_0x764 = -1;
+    turnBackDirection = Eigen::Vector4f::Zero();
+    turnStartDirection = Eigen::Vector4f::Zero();
+    turnAngleLimit = 0.0f;
+    bTurnLeft = true;
+    turnPhase = 0;
+    turnReturnState = 0;
     if ( !bFull ) {
         return;
     }
@@ -628,8 +693,9 @@ void AiVehNavOpponent::advanceRoute() {
     situation.updateRoute();
     situation.checkLineMismatch();
     if ( pController->getCount() == 1 && pOwner->getBehaviourType() == 0 &&
-         getCurrentState() != 6 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: police behaviour state 3 test
+         pOwner->getPoliceBehaviour().getState() != AiVehBhvPolice::PS_Search &&
+         getCurrentState() != NS_PoliceWaitRoute ) {
+        goTo( NS_PoliceWaitRoute );
     }
     updateRouteIts();
 }
@@ -972,8 +1038,111 @@ bool AiVehNavOpponent::handle( const int32_t event, const int32_t state ) {
         }
         return event <= FE_Exit;
 
+    case NS_PoliceWaitRoute:
+        if ( event == FE_Enter ) {
+            bGridRevHold = true;
+            resetLine();
+            resetPath();
+            situation.bLineMismatch = false;
+            return true;
+        }
+        if ( event == FE_Update ) {
+            situation.copyGroundMatrix();
+            resetLine();
+            resetPath();
+            resetStuckRefs();
+            const int32_t count = pOwner->getController()->getCount();
+            if ( count != 0 && situation.LastValidRoadIt.pRoad != nullptr ) {
+                const bool bSearching =
+                    pOwner->getPoliceBehaviour().getState() ==
+                    AiVehBhvPolice::PS_Search;
+                goTo( ( count > 1 || bSearching ) ? NS_PoliceRoute
+                                                  : NS_PoliceChase );
+            }
+            return true;
+        }
+        if ( event == FE_Exit ) {
+            exitPoliceWaitRoute();
+            return true;
+        }
+        return false;
+
+    case NS_PoliceRoute:
+        if ( event == FE_Enter ) {
+            pOwner->getInfos().bHandbrake = false;
+            return true;
+        }
+        if ( event == FE_Update ) {
+            if ( isWrongWayOnRoute() ) {
+                updatePoliceWrongWay();
+            } else {
+                updatePoliceRoute();
+            }
+            return true;
+        }
+        return event == FE_Exit;
+
+    case NS_PoliceChase:
+        if ( event == FE_Update ) {
+            updatePoliceChase();
+            return true;
+        }
+        return event <= FE_Exit;
+
+    case NS_Idle4:
+        return event <= FE_Exit;
+
+    case NS_TurnAround: {
+        AiVehLocomotion *pLoco = pOwner->getLocomotion();
+        if ( event == FE_Enter ) {
+            bTurningAround = true;
+            if ( pLoco != nullptr ) {
+                pLoco->setDrivenByNavigation( false );
+            }
+            return true;
+        }
+        if ( event == FE_Update ) {
+            updateTurnAround();
+            return true;
+        }
+        if ( event == FE_Exit ) {
+            bTurningAround = false;
+            if ( pLoco != nullptr ) {
+                pLoco->setDrivenByNavigation( true );
+            }
+            return true;
+        }
+        return false;
+    }
+
+    case NS_UTurn:
+        if ( event == FE_Enter ) {
+            enterUTurn();
+            return true;
+        }
+        if ( event == FE_Update ) {
+            builder.resample();
+            const OptPathElem::eMarker marker =
+                lineA.at( lineA.getCurrentIndex() ).Marker;
+            if ( marker != OptPathElem::EM_BeforeUTurn &&
+                 ( marker != OptPathElem::EM_AfterUTurn ||
+                   path.getNumPoints() <= 2 ) ) {
+                goTo( NS_PoliceWaitRoute );
+            }
+            if ( checkStuck() ) {
+                goTo( NS_Relocate );
+            }
+            return true;
+        }
+        if ( event == FE_Exit ) {
+            resetLine();
+            resetPath();
+            return true;
+        }
+        return false;
+
     default:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: cop / manoeuvre states
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: manoeuvre states
         return false;
     }
 }
@@ -1051,7 +1220,11 @@ void AiVehNavOpponent::updateRelocate() {
     }
 
     if ( pOwner->getBehaviourType() == 0 ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: police states 6 / 7
+        const bool bSearching = pOwner->getPoliceBehaviour().getState() ==
+                                AiVehBhvPolice::PS_Search;
+        goTo( ( pOwner->getController()->getCount() > 1 || bSearching )
+                  ? NS_PoliceRoute
+                  : NS_PoliceWaitRoute );
     } else if ( pOwner->getCategory() == eAiVehicleCategory::AVC_Bot ) {
         goTo( ( pOwner->getControllerType() == 1 &&
                 pOwner->getController()->getCount() <= 1 )
@@ -1476,31 +1649,7 @@ void AiVehNavOpponent::updateBotCruise() {
             return;
         }
 
-        if ( situation.Loc.LocationType == ObjectWorldLocation::OWL_Road ) {
-            if ( situation.RoadIt.pRoad != nullptr &&
-                 situation.RouteFrom.pRoad != nullptr ) {
-                if ( situation.RoadIt.pRoad == situation.RouteTo.pRoad ) {
-                    AiRoadIt current = situation.RoadIt;
-                    current.setWay( situation.RouteTo.bWay );
-                    if ( situation.RouteTo.isBefore( current ) ||
-                         situation.RouteTo.isSamePosition( current, 0.0f ) ) {
-                        advanceRoute();
-                    }
-                } else if ( situation.RoadIt.pRoad == situation.NextTo.pRoad ) {
-                    advanceRoute();
-                }
-            }
-        } else if ( situation.Loc.LocationType ==
-                    ObjectWorldLocation::OWL_Junction ) {
-            if ( situation.LastRouteTo.pRoad != nullptr ) {
-                const AiRoadMap::Junction *pJunction =
-                    GetEndJunction( situation.LastRouteTo );
-                if ( pJunction != nullptr &&
-                     situation.Loc.LocationOther.RoadID == pJunction->ID ) {
-                    advanceRoute();
-                }
-            }
-        }
+        advanceRouteOnLocation();
 
         if ( !situation.bLineMismatch ) {
             if ( situation.RouteFrom.pRoad == nullptr ) {
@@ -1530,6 +1679,37 @@ void AiVehNavOpponent::updateBotCruise() {
         }
     }
     onLineMismatch();
+}
+
+void AiVehNavOpponent::advanceRouteOnLocation() {
+    // FUN_00957f10 / FUN_00958130 (inlined)
+    if ( situation.Loc.LocationType == ObjectWorldLocation::OWL_Road ) {
+        if ( situation.RoadIt.pRoad == nullptr ||
+             situation.RouteFrom.pRoad == nullptr ) {
+            return;
+        }
+        if ( situation.RoadIt.pRoad == situation.RouteTo.pRoad ) {
+            AiRoadIt current = situation.RoadIt;
+            current.setWay( situation.RouteTo.bWay );
+            if ( situation.RouteTo.isBefore( current ) ||
+                 situation.RouteTo.isSamePosition( current, 0.0f ) ) {
+                advanceRoute();
+            }
+        } else if ( situation.RoadIt.pRoad == situation.NextTo.pRoad ) {
+            advanceRoute();
+        }
+    } else if ( situation.Loc.LocationType ==
+                ObjectWorldLocation::OWL_Junction ) {
+        if ( situation.LastRouteTo.pRoad == nullptr ) {
+            return;
+        }
+        const AiRoadMap::Junction *pJunction =
+            GetEndJunction( situation.LastRouteTo );
+        if ( pJunction != nullptr &&
+             situation.Loc.LocationOther.RoadID == pJunction->ID ) {
+            advanceRoute();
+        }
+    }
 }
 
 void AiVehNavOpponent::updateBotFollow() {
@@ -1597,6 +1777,439 @@ void AiVehNavOpponent::onLineMismatch() {
     default:
         break;
     }
+}
+
+void AiVehNavOpponent::exitPoliceWaitRoute() {
+    // FUN_00958f70 (state 6 exit)
+    resetLine();
+    resetPath();
+    situation.updateLocation();
+    if ( situation.RoadIt.pRoad != nullptr ) {
+        lineA.seed( situation.RoadIt, 0, situation.V, false );
+        path.pushRoadPoint( lineA.back().It, situation.V, kDefaultSpeedCap,
+                            false );
+    } else if ( situation.LastValidRoadIt.pRoad != nullptr ) {
+        lineA.seed( situation.LastValidRoadIt, 0, situation.LastV, false );
+        path.pushRoadPoint( lineA.back().It, situation.LastV, kDefaultSpeedCap,
+                            false );
+    }
+    situation.refreshLastPathPoint();
+    situation.refreshLast();
+    resetStuckRefs();
+
+    AiVehController *pController = pOwner->getController();
+    if ( pController->getCount() < 2 ) {
+        return;
+    }
+    AiRoadIt from;
+    AiRoadIt to;
+    pController->getAt( 0, from, to );
+    brakeDistFromMax = pOwner->computeBrakingDistance(
+        pOwner->getInfos().MaxSpeed, 0.0f, 0.0f );
+    updateRouteIts();
+    gGameObjectDico.locate( pOwner->getCarState(), nullptr, false );
+    situation.updateLocation();
+    if ( lineA.getCount() == 0 ) {
+        lineA.seed( from, 0, situation.V, false );
+        path.pushRoadPoint( lineA.at( lineA.getResampleCursor() ).It,
+                            situation.V, kDefaultSpeedCap, false );
+    }
+    situation.refreshLastPathPoint();
+    situation.refreshLast();
+    builder.fillOnly();
+    bGridRevHold = false;
+}
+
+bool AiVehNavOpponent::isWrongWayOnRoute() const {
+    // FUN_00953dc0
+    return situation.Loc.LocationType == ObjectWorldLocation::OWL_Road &&
+           situation.RouteFrom.pRoad != nullptr &&
+           situation.Loc.LocationRoad.RoadID == situation.RouteFrom.pRoad->ID &&
+           situation.Loc.bWay != situation.RouteFrom.bWay;
+}
+
+void AiVehNavOpponent::updatePoliceRoute() {
+    // FUN_00958130
+    if ( !situation.bLineMismatch ) {
+        if ( pOwner->getController()->getCount() < 2 &&
+             pOwner->getPoliceBehaviour().getState() !=
+                 AiVehBhvPolice::PS_Search &&
+             getCurrentState() != NS_PoliceChase ) {
+            if ( getCurrentState() != NS_PoliceWaitRoute ) {
+                goTo( NS_PoliceWaitRoute );
+            }
+            return;
+        }
+
+        advanceRouteOnLocation();
+
+        if ( !situation.bLineMismatch ) {
+            if ( situation.RouteFrom.pRoad == nullptr ) {
+                if ( situation.Loc.LocationType ==
+                     ObjectWorldLocation::OWL_Road ) {
+                    resetPath();
+                    resetLine();
+                    speedCap = 0.0f;
+                    path.pushRoadPoint( situation.LastValidRoadIt,
+                                        situation.LastV, kDefaultSpeedCap,
+                                        false );
+                    lineA.seed( situation.LastValidRoadIt, 0, situation.LastV,
+                                false );
+                    situation.refreshLastPathPoint();
+                    situation.refreshLast();
+                }
+                return;
+            }
+            if ( checkStuck() ) {
+                goTo( NS_Relocate );
+            }
+            updateLine( true );
+            return;
+        }
+    }
+    onLineMismatch();
+}
+
+void AiVehNavOpponent::updatePoliceWrongWay() {
+    // FUN_00958350
+    float widthRatioFrom = 0.0f;
+    float widthRatioTo = 0.0f;
+    float width = 0.0f;
+    builder.computeUTurnWidthRatios( situation.RoadIt, widthRatioFrom,
+                                     widthRatioTo, &width );
+    const bool bNarrow = width < kUTurnMinWidth;
+    if ( situation.CurSpeed <= kTurnAroundMaxSpeed ) {
+        if ( bNarrow ) {
+            updatePoliceRoute();
+        } else {
+            startTurnAround( situation.Loc.bWay );
+        }
+        return;
+    }
+
+    updatePoliceRoute();
+    AiRoadIt exit;
+    exit.setRoadExit( situation.RoadIt.pRoad, situation.RoadIt.bWay );
+    const float distance = ComputeRoadDistanceTo( situation.RoadIt, exit );
+    const float stopDistance =
+        pOwner->computeBrakingDistance( situation.CurSpeed, 0.0f, 0.0f ) *
+            kWrongWayBrakeFactor +
+        kWrongWayBrakeMargin;
+    float maxSpeed = 0.0f;
+    if ( distance > stopDistance ) {
+        if ( bNarrow ) {
+            return;
+        }
+    } else {
+        maxSpeed = kTurnAroundMaxSpeed;
+        if ( speedCap <= maxSpeed ) {
+            return;
+        }
+    }
+    if ( speedCap > maxSpeed ) {
+        speedCap = maxSpeed;
+    }
+}
+
+void AiVehNavOpponent::updatePoliceChase() {
+    // FUN_00958eb0
+    if ( pOwner->getController()->getCount() >= 2 ) {
+        if ( getCurrentState() != NS_PoliceWaitRoute ) {
+            goTo( NS_PoliceWaitRoute );
+        }
+        return;
+    }
+
+    CarState *pTarget = pOwner->getPoliceBehaviour().getTarget();
+    if ( pTarget == nullptr ) {
+        goTo( NS_Idle3 );
+        return;
+    }
+    if ( situation.Loc.LocationType == ObjectWorldLocation::OWL_Road ) {
+        const ObjectWorldLocation &targetLoc = pTarget->getWorldLocation();
+        if ( targetLoc.LocationType == ObjectWorldLocation::OWL_Road ) {
+            if ( targetLoc.LocationRoad.RoadID !=
+                 situation.Loc.LocationRoad.RoadID ) {
+                return;
+            }
+            chaseOnTargetRoad();
+        } else {
+            chaseTargetOffRoad();
+        }
+    } else {
+        chaseOffRoad();
+    }
+    if ( checkStuck() ) {
+        goTo( NS_Relocate );
+    }
+}
+
+void AiVehNavOpponent::chaseOnTargetRoad() {
+    // FUN_00958600
+    CarState *pTarget = pOwner->getPoliceBehaviour().getTarget();
+    const bool bTargetAhead = IsPoliceTargetAhead( pOwner, pTarget );
+    const ObjectWorldLocation &targetLoc = pTarget->getWorldLocation();
+    const ObjectLocationRoad &targetRoad = targetLoc.LocationRoad;
+    const float targetU =
+        ( targetRoad.FractionMin + targetRoad.FractionMax ) * 0.5f;
+    const float targetV =
+        ( targetRoad.LateralMin + targetRoad.LateralMax ) * 0.5f;
+    const bool bSameWay = targetLoc.bWay == situation.Loc.bWay;
+    const float routeToU = ComputeRoadFraction( situation.RouteTo );
+    const float gap =
+        bTargetAhead ? targetU - situation.U : situation.U - targetU;
+    const float absGap = fabsf( gap );
+    const float routeToGap = fabsf( routeToU - situation.U );
+    const float remainingU =
+        situation.Loc.bWay ? 1.0f - situation.U : situation.U;
+    const float remainingDistance = remainingU / situation.TolRoute;
+    const float brakingDistance =
+        pOwner->computeBrakingDistance( situation.CurSpeed, 0.0f, 0.0f );
+
+    if ( absGap <= situation.TolRoute * kChaseSnapToleranceFactor ) {
+        path.reset( true );
+        lineA.setField0x128( -1 );
+        lineA.setResampleCursor( 0 );
+        situation.refreshLastPathPoint();
+        path.pushRoadPoint( situation.RoadIt, situation.V, kChaseSnapSpeed,
+                            false );
+        path.pushRoadPoint( situation.RoadIt, targetV, kChaseSnapSpeed, false );
+        situation.refreshLastPathPoint();
+        return;
+    }
+
+    if ( bTargetAhead ) {
+        if ( lineA.back().Marker == OptPathElem::EM_End &&
+             brakingDistance > remainingDistance ) {
+            speedCap = 0.0f;
+        }
+        if ( gAIConfig.bPoliceCanCollide &&
+             gpAI->getCopManager().canBeAggressive() ) {
+            pTarget->getPoliceState().computeOffenceLevel();
+        }
+        updatePoliceRoute();
+        return;
+    }
+
+    if ( !bSameWay ) {
+        updatePoliceWrongWay();
+        return;
+    }
+
+    updatePoliceRoute();
+    if ( absGap > routeToGap && speedCap > 0.0f ) {
+        speedCap = 0.0f;
+    }
+    const float margin = situation.TolRoute * kChaseSnapToleranceFactor;
+    const bool bPastRouteEnd = situation.Loc.bWay
+                                   ? situation.U + margin > routeToU
+                                   : routeToU > situation.U - margin;
+    if ( bPastRouteEnd && speedCap > 0.0f ) {
+        speedCap = 0.0f;
+    }
+    if ( speedCap != 0.0f ) {
+        speedCap =
+            fabsf( targetLoc.VelocityX ) * routeToGap *
+            ( ( 1.0f / situation.TolRoute ) / fabsf( routeToU - targetU ) ) *
+            kChaseFollowSpeedFactor;
+    }
+}
+
+void AiVehNavOpponent::chaseOffRoad() {
+    // FUN_00958a50
+    CarState *pTarget = pOwner->getPoliceBehaviour().getTarget();
+    const Eigen::Vector4f targetPosition = pTarget->getWorldPosition();
+    const Eigen::Vector4f delta = targetPosition - situation.Position;
+    const float distance = sqrtf( Dot4( delta, delta ) );
+    if ( situation.Loc.LocationType != ObjectWorldLocation::OWL_OffRoad ) {
+        updatePoliceRoute();
+        return;
+    }
+
+    bool bOnCurve = false;
+    if ( situation.LastValidRoadIt.pRoad != nullptr &&
+         situation.LastValidRoadIt.getEntity()->pProfile->InnerWidth *
+                 kChaseOffRoadWidthFactor >
+             distance ) {
+        speedCap = std::min( speedCap, kChaseCurveMaxSpeed );
+        resetPath();
+        path.appendJunctionCurve(
+            nullptr, situation.Position,
+            situation.Position + delta * kChaseCurveHandle1,
+            situation.Position + delta * kChaseCurveHandle2, targetPosition );
+        situation.refreshLastPathPoint();
+        bOnCurve = true;
+    }
+    if ( path.getNumPoints() == 0 &&
+         situation.LastValidRoadIt.pRoad != nullptr ) {
+        AiRoadIt it;
+        ProjectOnRoadShape( pOwner->getInfos().GroundMatrix, it, nullptr, false,
+                            situation.LastValidRoadIt.pRoad->getShape() );
+        path.pushRoadPoint( it, 0.0f, kDefaultSpeedCap, false );
+        situation.refreshLastPathPoint();
+    }
+    if ( !bOnCurve ) {
+        updatePoliceRoute();
+    }
+}
+
+void AiVehNavOpponent::chaseTargetOffRoad() {
+    // FUN_00958c90
+    CarState *pTarget = pOwner->getPoliceBehaviour().getTarget();
+    const Eigen::Vector4f targetPosition = pTarget->getWorldPosition();
+    const Eigen::Vector4f delta = targetPosition - situation.Position;
+    const float distance = sqrtf( Dot4( delta, delta ) );
+    const uint8_t targetType = pTarget->getWorldLocation().LocationType;
+    if ( targetType == ObjectWorldLocation::OWL_Junction ) {
+        updatePoliceRoute();
+        const Eigen::Vector4f &velocity = pTarget->getLinearVelocity();
+        const float targetSpeed = sqrtf( Dot4( velocity, velocity ) );
+        if ( targetSpeed < situation.CurSpeed &&
+             distance - kChaseJunctionGap <
+                 pOwner->computeBrakingDistance( situation.CurSpeed,
+                                                 targetSpeed, 0.0f ) &&
+             speedCap > 0.0f ) {
+            speedCap = 0.0f;
+        }
+    } else if ( targetType == ObjectWorldLocation::OWL_OffRoad ) {
+        if ( distance < situation.RoadIt.getEntity()->pProfile->InnerWidth *
+                            kChaseTargetOffRoadWidthFactor ) {
+            speedCap = std::min( speedCap, kChaseCurveMaxSpeed );
+            resetPath();
+            path.appendJunctionCurve(
+                nullptr, situation.Position,
+                situation.Position + delta * kChaseCurveHandle1,
+                situation.Position + delta * kChaseCurveHandle2,
+                targetPosition );
+            situation.refreshLastPathPoint();
+            return;
+        }
+        updatePoliceRoute();
+    }
+}
+
+void AiVehNavOpponent::startTurnAround( const bool bLeft ) {
+    // FUN_00954350
+    if ( situation.CurSpeed <= kTurnAroundMaxSpeed ) {
+        goTo( NS_UTurn );
+        return;
+    }
+
+    const AiVehicleInfo &infos = pOwner->getInfos();
+    turnStartDirection = infos.GroundMatrix.row( 2 );
+    turnBackDirection = turnStartDirection * -1.0f;
+    turnAngleLimit =
+        ( 1.0f - situation.CurSpeed / infos.MaxSpeed ) * kTurnAroundAngleRange;
+    bTurnLeft = bLeft;
+    if ( bLeft ) {
+        turnAngleLimit = -turnAngleLimit;
+    }
+    turnPhase = 1;
+    turnReturnState = getCurrentState();
+    bTurningAround = true;
+    goTo( NS_TurnAround );
+}
+
+void AiVehNavOpponent::updateTurnAround() {
+    // FUN_00958f70 (state 0xa update)
+    AiVehLocomotion *pLoco = pOwner->getLocomotion();
+    if ( pLoco == nullptr ) {
+        return;
+    }
+
+    const Eigen::Vector4f forward = pOwner->getInfos().GroundMatrix.row( 2 );
+    switch ( turnPhase ) {
+    case 1: {
+        const float angle = -atan2f( forward.z() * turnStartDirection.x() -
+                                         forward.x() * turnStartDirection.z(),
+                                     forward.x() * turnStartDirection.x() +
+                                         forward.z() * turnStartDirection.z() );
+        if ( bTurnLeft == ( angle < turnAngleLimit ) ) {
+            turnPhase = 2;
+            return;
+        }
+        pLoco->setManualInputs( 1.0f, 0.0f, 0.0f, bTurnLeft ? -1.0f : 1.0f,
+                                0.0f );
+        break;
+    }
+    case 2: {
+        const float angle = -atan2f( forward.z() * turnBackDirection.x() -
+                                         forward.x() * turnBackDirection.z(),
+                                     forward.x() * turnBackDirection.x() +
+                                         forward.z() * turnBackDirection.z() );
+        if ( fabsf( angle ) < kHalfPi &&
+             ( bTurnLeft ? angle >= 0.0f : angle <= 0.0f ) ) {
+            turnPhase = 3;
+            return;
+        }
+        const float yawRate =
+            pOwner->getCarState()->getBody()->AngularVelocity.y();
+        const bool bSpinning = bTurnLeft ? yawRate < 1.0f : yawRate > 1.0f;
+        if ( bSpinning && pOwner->isOverSteering() ) {
+            if ( !pOwner->getInfos().bHandbrake ) {
+                pLoco->setManualInputs( 0.0f, 0.0f, 1.0f,
+                                        bTurnLeft ? 1.0f : -1.0f, 0.0f );
+            }
+            return;
+        }
+        pLoco->setManualInputs( 1.0f, 0.0f, 0.0f, bTurnLeft ? 1.0f : -1.0f,
+                                0.0f );
+        break;
+    }
+    case 3: {
+        const Eigen::Vector4f &velocity = situation.Velocity;
+        const float angle =
+            atan2f( forward.x() * velocity.z() - forward.z() * velocity.x(),
+                    forward.x() * velocity.x() + forward.z() * velocity.z() );
+        if ( fabsf( angle ) < kTurnAroundAlignAngle ) {
+            goTo( turnReturnState );
+        }
+        pLoco->setManualInputs( 0.5f, 0.0f, 0.0f, 0.0f, 0.0f );
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+void AiVehNavOpponent::enterUTurn() {
+    // FUN_00958f70 (state 0xb enter)
+    resetLine();
+    lineA.seed( situation.RoadIt, 0, situation.V, true );
+    situation.updateLineIndex();
+    situation.refreshLast();
+    resetPath();
+    situation.refreshLastPathPoint();
+
+    const float span = situation.TolRoute * kUTurnSpanFactor;
+    float fraction =
+        situation.RoadIt.bWay ? situation.U + span : situation.U - span;
+    if ( fraction < 0.0f ) {
+        fraction = 0.0f;
+    } else if ( fraction > 1.0f ) {
+        fraction = 1.0f;
+    }
+    AiRoadIt it;
+    situation.RoadIt.pRoad->getShape()->computeIt( fraction, it );
+    it.setWay( situation.RoadIt.bWay );
+
+    float widthRatioFrom = 0.0f;
+    float widthRatioTo = 0.0f;
+    builder.computeUTurnWidthRatios( it, widthRatioFrom, widthRatioTo,
+                                     nullptr );
+    lineA.pushUTurn( it, 0, 0, widthRatioFrom, widthRatioTo );
+    it.setRoadExit( it.pRoad, situation.RoadIt.bWay );
+
+    float widthRatio = 0.0f;
+    if ( it.pRoad->isOncomingOvertakeForbidden() ) {
+        widthRatio = ( situation.Last.WidthRatio > 0.0f )
+                         ? kUTurnSplitWidthRatio
+                         : -kUTurnSplitWidthRatio;
+    } else if ( pOwner->getDPC().DPCPattern.bRespectWay ) {
+        ComputeOwnSideCentreRatio( it, widthRatio );
+    }
+    const AiRoadIt from = lineA.back().It;
+    lineA.appendRoadStretch( from, it, 0, widthRatio, widthRatio );
 }
 
 void AiVehNavOpponent::avoidObstacles() {

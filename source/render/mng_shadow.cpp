@@ -29,6 +29,7 @@
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/vehicle_base.h"
 #include "game/vehicle/vehicle_car.h"
+#include "game/vehicle/vehicle_traffic.h"
 
 #include "world/weather/gs_weather.h"
 #include "render/camera/gs_camera.h"
@@ -1834,7 +1835,6 @@ void MngShadow::addShadowCaster( Instance *param_2, float intensity ) {
 void MngShadow::addShadowCaster( CarState *param_2 ) {
     // FUN_006f6720
     VehicleBase *pDVar1 = nullptr;
-    VehicleController *pDVar2 = nullptr;
     if ( ( ( ( ( ( bRenderCasters ) && ( bLoadedBankResources ) ) &&
                ( param_2->getVehicleInstance()->setShadowsDisabled( false ),
                  numCaster < kNumMaxCaster ) ) &&
@@ -1846,10 +1846,10 @@ void MngShadow::addShadowCaster( CarState *param_2 ) {
                    0 ) ) ) ) &&
            ( ( pDVar1 = param_2->getVehicleInstance(),
                pDVar1 != nullptr && ( pDVar1->shouldDraw() != false ) ) ) ) &&
-         ( ( param_2->getOwner() != CarState::eOwner::CSO_Traffic ||
-             ( pDVar1->getType() != VehicleBase::eType::VBT_TrafficCar &&
-               ( pDVar2 = (VehicleController *)( pDVar1 ),
-                 !pDVar2->hasValidGaugeSetup() ) ) ) ) ) {
+         ( param_2->getOwner() != CarState::eOwner::CSO_Traffic ||
+           pDVar1->getType() != VehicleBase::eType::VBT_TrafficCar ||
+           static_cast<VehicleTraffic *>( pDVar1 )->getRemorkNode() ==
+               nullptr ) ) {
 
         Eigen::Vector4f local_a0 = param_2->getBody()->WorldMatrix.row( 3 );
         Eigen::Vector4f local_50 =

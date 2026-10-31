@@ -10,6 +10,7 @@
 #include "ai/ai_veh_nav_traffic.h"
 #include "ai/ai_veh_nav_trainer.h"
 #include "core/random/bcpl.h"
+#include "game/police_state.h"
 #include "game/vehicle/vehicle_base.h"
 
 #include "ai/ai_pool_traffic.h"
@@ -92,6 +93,19 @@ struct AiVehSignals {
 };
 
 class AiVehicle final : public CarStateEventListener {
+    // Infringement check of the player car while driven by the AI
+    class InfringementChecker : public PoliceStateJob {
+    public:
+        explicit InfringementChecker( AiVehicle *pOwner ) : pOwner( pOwner ) {}
+
+        void check( CarState *pCar, float deltaTime ) override;
+
+    private:
+        AiVehicle *pOwner;
+    };
+
+    friend class AiVehBhvPolice;
+
 public:
     static constexpr int32_t kRemovalReasonLength = 0x80;
     static constexpr int32_t kLocomotionNone = 3;
@@ -161,6 +175,10 @@ public:
     bool isJunctionOccupied( const uint32_t junctionID ) const;
     bool isCopInPursuit() const;
     void initializeParked( CarState *pCar );
+    void initializeCop( CarState *pCar,
+                        const AiRoadIt &location,
+                        const int32_t lane );
+    void initializeCopDam( CarState *pCar );
     void initializeCinematic( CarState *pCar );
     void initializeOpponent( CarState *pCar,
                              const Matrix4x4f_t &startFrame,
@@ -190,6 +208,10 @@ public:
     inline AiVehCtrlChase &getChaseController() { return ctrlChase; }
     inline AiVehBhvOpponent &getOpponentBehaviour() { return bhvOpponent; }
     inline AiVehBhvBot &getBotBehaviour() { return bhvBot; }
+    inline AiVehBhvPolice &getPoliceBehaviour() { return bhvPolice; }
+    inline const AiVehBhvPolice &getPoliceBehaviour() const {
+        return bhvPolice;
+    }
     bool isLaneFree( const int32_t lane,
                      const AiRoadIt &position,
                      const float timeHorizon,
@@ -225,6 +247,7 @@ private:
     AiVehIndDPC dpc;
     AiVehicleInfo infos;
     AiVehSignals signals;
+    InfringementChecker infringementChecker;
     int32_t carStateIndex;
     CarState *pCarState;
     AiPoolTraffic::Template *pTemplate;
@@ -245,11 +268,13 @@ private:
     AiVehCtrlRoute ctrlRoute;
     AiVehCtrlRacePath ctrlRacePath;
     AiVehCtrlFreeRoam ctrlFreeRoam;
+    AiVehCtrlCurrentRoad ctrlCurrentRoad;
     AiVehController *pController;
     int32_t controllerType;
     AiVehBhvOpponent bhvOpponent;
     AiVehBhvTraffic bhvTraffic;
     AiVehBhvBot bhvBot;
+    AiVehBhvPolice bhvPolice;
     AiVehBhvPassive bhvPassive;
     AiVehBehaviour *pBehaviour;
     int32_t behaviourType;

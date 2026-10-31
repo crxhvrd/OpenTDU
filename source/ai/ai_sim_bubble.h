@@ -121,6 +121,7 @@ private:
                         const PhysicsRoadCurve &curve,
                         const float t,
                         const bool bWay );
+    void spawnCops( const float totalTime );
     void spawnTraffic( const float totalTime );
     void spawnBots( const float deltaTime );
     AiVehicle *pickLeastVisible() const;

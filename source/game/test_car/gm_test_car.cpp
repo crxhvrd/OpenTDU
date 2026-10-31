@@ -155,8 +155,7 @@ void GMTestCar::reset() {
     AiPool *pAIPool = gpAI->getAIPool();
     pAIPool->setPoliceScale( 1.0f );
     pAIPool->setForceDensity( false );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI (police manager +0x44/+0x45 = 1;
-                             // FUN_00910cb0 is not ported)
+    gpAI->getCopManager().setLevel( true, true );
     gpAI->setDisableCops( false );
 }
 

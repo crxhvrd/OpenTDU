@@ -299,7 +299,7 @@ void GMFreeride::reset() {
         pAIPool->setPoliceScale( 0.0f );
         pAIPool->setForceDensity( false );
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (pursuit manager +0x44/+0x45)
+    gpAI->getCopManager().setLevel( true, true );
 
     int32_t spawnMode = 6;
     switch ( gpTestDriveInstance->getPreviousGameMode() ) {

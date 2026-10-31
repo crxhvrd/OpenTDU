@@ -325,6 +325,11 @@ void SavedExtraChallenges::countCarRented() {
     addCounter( CounterIndex( 0xf110 ), 1 );
 }
 
+void SavedExtraChallenges::countArrest() {
+    // FUN_00887ec0
+    addCounter( CounterIndex( 0xf10c ), 1 );
+}
+
 void SavedExtraChallenges::countClotheBought() {
     // FUN_00887b40
     addCounter( CounterIndex( 0xf12c ), 1 );

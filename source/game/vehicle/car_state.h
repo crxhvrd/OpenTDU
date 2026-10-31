@@ -212,6 +212,8 @@ public:
         CSAM_InstantChallengePostLobby = 8
     };
 
+    static constexpr uint32_t kAILockArrest = 1u;
+
     using CollisionCallback_t = void ( * )( uint8_t collisionType,
                                             CarState *pOther,
                                             void *pOtherObject,
@@ -245,6 +247,19 @@ public:
     void setPhysicsVehicle( PhysicsVehicle *pVehicle );
 
     inline void *getP2POwner() const { return field_0x39d4; }
+
+    inline bool hasAILockFlags() const {
+        // FUN_008ae2d0
+        return aiLockFlags != 0;
+    }
+    inline void clearAILockFlags( const uint32_t mask ) {
+        // FUN_008ae2e0
+        aiLockFlags &= ~mask;
+    }
+    inline void setAILockFlags( const uint32_t mask ) {
+        // FUN_008ae300
+        aiLockFlags |= mask;
+    }
 
     inline eOwner getOwner() const { return owner; }
     inline eSimulationType getSimulationType() const { return simulationType; }
@@ -353,7 +368,7 @@ private:
     void *field_0x39cc;
     void *field_0x39d4;
     void *field_0x39d8;
-    void *field_0x39e0;
+    uint32_t aiLockFlags;
     std::array<CollisionCallback, 2> collisionCallbacks;
     void *field_0x39fc;
 

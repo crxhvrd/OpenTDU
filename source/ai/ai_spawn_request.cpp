@@ -4,6 +4,7 @@
 #include "game/vehicle/vehicle_traffic.h"
 
 #include "ai/ai_bot_manager.h"
+#include "ai/ai_cop_manager.h"
 #include "ai/ai_oriented_box.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_vehicle.h"
@@ -77,6 +78,22 @@ void AiSpawnRequest::fillParked( AiVehicle *pVehicle,
     spawnMatrix = matrix;
     colorIndex = newColorIndex;
     pParkedOwner = pOwner;
+    execute();
+}
+
+void AiSpawnRequest::fillCopDam( AiVehicle *pVehicle,
+                                 const Matrix4x4f_t &matrix ) {
+    // FUN_00921da0
+    bPolice = true;
+    if ( state != ASS_Idle ) {
+        gpAI->getAIPool()->releaseVehicleSlot( pVehicle );
+        return;
+    }
+    pAiVehicle = pVehicle;
+    kind = ASK_CopDam;
+    state = ASS_Ready;
+    spawnMatrix = matrix;
+    colorIndex = -1;
     execute();
 }
 
@@ -255,6 +272,43 @@ void AiSpawnRequest::finalizeParked() {
     }
 }
 
+bool AiSpawnRequest::executeCopDam() {
+    // FUN_00922490
+    AiPool *pPool = gpAI->getAIPool();
+    AiPoolTraffic::Template *pTemplate = pPool->getTraffic().findLoadedTemplate(
+        AiPoolTraffic::kMandatoryCarID );
+    pCarState =
+        ( pTemplate != nullptr )
+            ? pPool->installVehicle( pTemplate, pAiVehicle, false, spawnMatrix )
+            : nullptr;
+    bPolice = ( pCarState != nullptr );
+    if ( pCarState == nullptr ) {
+        pPool->releaseVehicleSlot( pAiVehicle );
+        return false;
+    }
+    return true;
+}
+
+void AiSpawnRequest::finalizeCopDam() {
+    // FUN_009227d0
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: spawn height lift
+    PhysicsVehicle *pPhysics = pCarState->getPhysicsVehicle();
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (cop dam
+                             // mass/inertia scale)
+    pPhysics->setTrafficBody( false );
+    {
+        PhysicsLock lock;
+        pPhysics->resetToTransform( spawnMatrix, true );
+    }
+    pCarState->getWorldMatrix() = spawnMatrix;
+    pAiVehicle->initializeCopDam( pCarState );
+    gpAI->getAIPool()->addVehicle( pAiVehicle );
+    if ( pCarState != nullptr && pAiVehicle != nullptr ) {
+        pCarState->setAIController( pAiVehicle );
+    }
+    gAiCopMng.incrementNumPoliceDams();
+}
+
 void AiSpawnRequest::execute() {
     // FUN_00922740
     if ( state != ASS_Ready ) {
@@ -273,9 +327,11 @@ void AiSpawnRequest::execute() {
     case ASK_Bot:
         bSuccess = executeBot();
         break;
-    case ASK_Network:
     case ASK_CopDam:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00922540 / 00922490
+        bSuccess = executeCopDam();
+        break;
+    case ASK_Network:
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_00922540)
         break;
     default:
         state = ASS_Idle;
@@ -308,7 +364,7 @@ bool AiSpawnRequest::executeTraffic() {
         }
         bPolice = ( pCarState != nullptr );
         if ( pCarState != nullptr ) {
-            OTDU_UNIMPLEMENTED_ONCE;
+            pCarState->getPhysicsVehicle()->setTrafficBody( false );
         }
     }
 
@@ -417,8 +473,11 @@ void AiSpawnRequest::finalize() {
     case ASK_Bot:
         finalizeBot();
         break;
+    case ASK_CopDam:
+        finalizeCopDam();
+        break;
     default:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00922b50 / 009227d0
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_00922b50)
         break;
     }
 }
@@ -431,9 +490,7 @@ void AiSpawnRequest::finalizeTraffic() {
     pCarState->getWorldMatrix() = spawnMatrix;
 
     if ( bPolice ) {
-        pAiVehicle->initialize( eAiVehicleCategory::AVC_Cop, pCarState, roadIt,
-                                lane, 0, 0, 0, 0, false );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: police
+        pAiVehicle->initializeCop( pCarState, roadIt, lane );
     } else {
         pAiVehicle->initialize( eAiVehicleCategory::AVC_Traffic, pCarState,
                                 roadIt, lane, 2, 0, 0, 0, false );

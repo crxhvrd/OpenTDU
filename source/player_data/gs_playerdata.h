@@ -89,6 +89,9 @@ public:
     inline IPlayerData *getLoadedSave() const { return pLoadedSave2; }
     inline void setOnline( const bool bOnline ) { bIsOnline = bOnline; }
     inline float getLastArrestedTime() const { return LastArrestedTime; }
+    inline void setLastArrestedTime( const float time ) {
+        LastArrestedTime = time;
+    }
     inline void resetArrestState( const float lastArrestedTime ) {
         LastArrestedTime = lastArrestedTime;
         OffenceRepetitionFactor = 1u;

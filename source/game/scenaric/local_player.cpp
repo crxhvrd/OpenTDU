@@ -8,7 +8,7 @@
 void LocalPlayerInfringementCheck::check( CarState *pCarState,
                                           float deltaTime ) {
     // FUN_00805db0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: Police (FUN_008b1650)
+    pCarState->getPoliceState().checkInfringements( pCarState, deltaTime );
 }
 
 LocalPlayer::LocalPlayer()

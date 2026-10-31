@@ -2,6 +2,7 @@
 #include "ai_veh_behaviour.h"
 
 #include "ai/ai_config.h"
+#include "ai/ai_cop_manager.h"
 #include "ai/ai_path.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_road_shape.h"
@@ -10,7 +11,10 @@
 #include "ai/ai_bot_manager.h"
 #include "ai/gs_ai.h"
 #include "core/random/bcpl.h"
+#include "debug/ed_debug_text.h"
+#include "game/game_mechanism.h"
 #include "game/gm_base.h"
+#include "game/gm_world.h"
 #include "game/mission/gm_mission.h"
 #include "game/scenaric/game_intro_tutorial.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -18,6 +22,7 @@
 #include "game/vehicle/vehicle_base.h"
 #include "gs_timer.h"
 #include "physics/collision_event.h"
+#include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/achievements_data.h"
 #include "player_data/gs_playerdata.h"
@@ -631,4 +636,840 @@ void AiVehBhvBot::removeTooFar() {
     // FUN_0092c150 (states 2 / 4 update)
     pVehicle->setRemovable( true );
     gpAI->getAIPool()->removeVehicle( pVehicle, "bot too far", true );
+}
+
+static constexpr float kPoliceNoDistance = -2000.0f;         // DAT_00f421d8
+static constexpr float kPoliceNoTime = -1.0f;                // FLOAT_00f41664
+static constexpr float kPoliceRandomRange = 0.9f;            // DAT_00f416a0
+static constexpr float kPoliceMinAltitude = -50.0f;          // DAT_00f41cb8
+static constexpr float kPoliceScanInterval = 0.5f;           // FLOAT_00f41674
+static constexpr float kPoliceSearchReachRatio = 0.5f;       // FLOAT_00f41674
+static constexpr float kPoliceLoseTargetRatio = 1.2f;        // DAT_00f41dc4
+static constexpr float kPoliceMaxViewAngle = 1.5707964f;     // DAT_00f418a4
+static constexpr float kPoliceViewAngleFalloff = 0.7853982f; // DAT_00f41cb0
+static constexpr float kPoliceBlinkOnTime = 0.05f;           // DAT_00f41778
+static constexpr float kPoliceBlinkOffTime = 0.25f;          // DAT_00f416dc
+
+static bool gbDisableCopViewingAngle = false; // DAT_010e73d7
+
+static bool IsPoliceAllowedByGameMech() {
+    if ( gpActiveGM == nullptr || gpActiveGM->getGameMech() == nullptr ) {
+        return true;
+    }
+    return gpActiveGM->getGameMech()->getCurrentState() ==
+           GameMechanism::MS_Running;
+}
+
+AiVehBhvPolice::AiVehBhvPolice()
+    : AiVehBehaviour(),
+      AiFsm(),
+      pVehicle( nullptr ),
+      randomFactor( 0.0f ),
+      distanceToTarget( kPoliceNoTime ),
+      pTarget( nullptr ),
+      pSearchedCar( nullptr ),
+      field_0x3c( 0 ),
+      captureStartTime( kPoliceNoTime ),
+      lastTargetScanTime( 0.0f ) {}
+
+void AiVehBhvPolice::attach( AiVehicle *pOwner ) {
+    // FUN_009cbc00
+    pVehicle = pOwner;
+    randomFactor = RandomUnit( pOwner->getRandom() ) * kPoliceRandomRange;
+    initialize();
+}
+
+void AiVehBhvPolice::reset( const bool bFull ) {
+    // FUN_00614df0
+}
+
+void AiVehBhvPolice::tick( const float deltaTime, const float totalTime ) {
+    // FUN_009cbbf0
+    process( FE_Update );
+}
+
+void AiVehBhvPolice::release() {
+    // FUN_0063f2b0
+}
+
+void AiVehBhvPolice::debugDraw( DrawList *pDrawList ) {
+    // FUN_009cba90
+    static constexpr const char *kStateNames[] = {
+        "Lost",  "Init",       "Patrol", "Search",
+        "Chase", "Aggressive", "Arrest", "Police Dam" };
+
+    gEdDebugText.drawText( "Behavior : Police" );
+    const int32_t state = getCurrentState();
+    if ( state >= PS_Lost && state <= PS_PoliceDam ) {
+        gEdDebugText.drawText( "Behavior State : %s", kStateNames[state] );
+    }
+}
+
+void AiVehBhvPolice::onCollision( CarState *pCarA,
+                                  CarState *pCarB,
+                                  const CollisionEvent &event ) {
+    // FUN_0049cd30
+}
+
+void AiVehBhvPolice::initialize() {
+    // FUN_009cbb90
+    distanceToTarget = kPoliceNoTime;
+    captureStartTime = kPoliceNoTime;
+    field_0x3c = 0;
+    lastTargetScanTime = gpTimer->GameTotalTime;
+    pTarget = nullptr;
+    pSearchedCar = nullptr;
+    restart( PS_Init );
+}
+
+bool AiVehBhvPolice::handle( const int32_t event, const int32_t state ) {
+    // FUN_009ccc80
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    AiVehIndDPC &dpc = pVehicle->getDPC();
+    switch ( state ) {
+    case PS_Init:
+        if ( event == FE_Update ) {
+            checkRemoval();
+            return true;
+        }
+        return event <= FE_Exit;
+
+    case PS_Lost:
+    case PS_Arrest:
+        if ( event == FE_Update ) {
+            if ( pPlayerCar != nullptr ) {
+                checkRemoval();
+            }
+            return true;
+        }
+        return event <= FE_Exit;
+
+    case PS_Patrol:
+        if ( event == FE_Enter ) {
+            pVehicle->setRemovable( false );
+            if ( pVehicle->getControllerType() != 0 ||
+                 pVehicle->getController() == nullptr ) {
+                setRouteController();
+            }
+            if ( pVehicle->getNavigationType() != 0 ||
+                 pVehicle->getNavigation() == nullptr ) {
+                setTrafficNavigation();
+            }
+            if ( pVehicle->getLocomotionType() != 0 ||
+                 pVehicle->getLocomotion() == nullptr ) {
+                setTrafficLocomotion();
+            }
+            distanceToTarget = kPoliceNoDistance;
+            captureStartTime = kPoliceNoTime;
+            return true;
+        }
+        if ( event == FE_Update ) {
+            if ( pPlayerCar == nullptr ) {
+                return true;
+            }
+            checkRemoval();
+            if ( pVehicle->getControllerType() != 0 ||
+                 pVehicle->getController() == nullptr ) {
+                setRouteController();
+            } else if ( pVehicle->getNavigationType() != 0 ||
+                        pVehicle->getNavigation() == nullptr ) {
+                setTrafficNavigation();
+            } else if ( pVehicle->getLocomotionType() == 0 &&
+                        pVehicle->getLocomotion() != nullptr ) {
+                updatePatrolOrSearch();
+            } else {
+                setTrafficLocomotion();
+            }
+            return true;
+        }
+        return event == FE_Exit;
+
+    case PS_Search:
+        if ( event == FE_Enter ) {
+            pVehicle->setRemovable( false );
+            setOpponentNavigation();
+            pVehicle->applyBotPersonality( 0, 0, 2 );
+            dpc.DPCPattern.bRespectWay = true;
+            return true;
+        }
+        if ( event == FE_Update ) {
+            if ( pPlayerCar == nullptr ) {
+                return true;
+            }
+            checkRemoval();
+            if ( pSearchedCar == nullptr ||
+                 !pSearchedCar->getPoliceState().isWanted() ) {
+                pSearchedCar = nullptr;
+                goTo( PS_Patrol );
+                return true;
+            }
+            if ( pVehicle->getControllerType() == 1 ) {
+                bool bReached = true;
+                AiRoadIt from;
+                AiRoadIt to;
+                if ( pVehicle->getController()->getFront( from, to ) &&
+                     to.pRoad != nullptr ) {
+                    const Eigen::Vector4f goalPosition =
+                        to.computeOffsetPosition( 0.0f, 0.0f );
+                    const float reachDistance = gAIConfig.PoliceSearchDistance *
+                                                kPoliceSearchReachRatio;
+                    const Eigen::Vector4f delta =
+                        goalPosition -
+                        pVehicle->getCarState()->getWorldPosition();
+                    bReached =
+                        delta.squaredNorm() < reachDistance * reachDistance;
+                }
+                if ( bReached ) {
+                    setRouteController();
+                    if ( pVehicle->getNavigationType() == 1 ) {
+                        AiVehNavOpponent &nav =
+                            pVehicle->getOpponentNavigation();
+                        if ( nav.getState() !=
+                             AiVehNavOpponent::NS_PoliceWaitRoute ) {
+                            nav.requestState(
+                                AiVehNavOpponent::NS_PoliceWaitRoute );
+                        }
+                    }
+                }
+            }
+            updatePatrolOrSearch();
+            if ( distanceToTarget > gAIConfig.PoliceDeleteDistance ) {
+                pSearchedCar = nullptr;
+                goTo( PS_Patrol );
+            }
+            return true;
+        }
+        return event == FE_Exit;
+
+    case PS_Chase:
+        if ( event == FE_Enter ) {
+            pVehicle->setRemovable( false );
+            enableSirens();
+            captureStartTime = kPoliceNoTime;
+            setOpponentNavigation();
+            setOpponentLocomotion();
+            pVehicle->applyBotPersonality( 1, 0, 2 );
+            dpc.DPCPattern.bRespectWay = true;
+            return true;
+        }
+        if ( event == FE_Update ) {
+            updatePursuit();
+            return true;
+        }
+        if ( event == FE_Exit ) {
+            AiVehSignals &signals = pVehicle->getSignals();
+            if ( signals.bIsCops ) {
+                signals.bHornOn = false;
+                signals.bFlashlightOn = false;
+                signals.bHeadlightBlinking = false;
+            }
+            distanceToTarget = kPoliceNoDistance;
+            captureStartTime = kPoliceNoTime;
+            return true;
+        }
+        return false;
+
+    case PS_Aggressive:
+        if ( event == FE_Enter ) {
+            pVehicle->setRemovable( false );
+            pVehicle->applyBotPersonality( 2, 0, 2 );
+            dpc.DPCPattern.bRespectWay = true;
+            return true;
+        }
+        if ( event == FE_Update ) {
+            updatePursuit();
+            return true;
+        }
+        return event == FE_Exit;
+
+    case PS_PoliceDam:
+        if ( event == FE_Enter ) {
+            pVehicle->setRemovable( false );
+            AiVehSignals &signals = pVehicle->getSignals();
+            if ( signals.bIsCops ) {
+                signals.bHornOn = true;
+                signals.bFlashlightOn = true;
+            }
+            pTarget = gAiCopMng.getPoliceDamTarget();
+            return true;
+        }
+        if ( event == FE_Update ) {
+            if ( pPlayerCar == nullptr ) {
+                return true;
+            }
+            checkRemoval();
+            pTarget = gAiCopMng.getPoliceDamTarget();
+            const Eigen::Vector4f targetPosition =
+                ( pTarget != nullptr ) ? pTarget->getWorldPosition()
+                                       : pPlayerCar->getWorldPosition();
+            const Eigen::Vector4f delta =
+                targetPosition - pVehicle->getCarState()->getWorldPosition();
+            const float deleteDistance = gAIConfig.PoliceDeleteDistance;
+            if ( delta.squaredNorm() > deleteDistance * deleteDistance ) {
+                pVehicle->setRemovable( true );
+                pVehicle->requestRemoval( kPoliceNoTime,
+                                          "police vehicle too far" );
+                return true;
+            }
+            if ( pTarget != nullptr ) {
+                bool bArrestPending = false;
+                checkArrest( bArrestPending );
+                if ( bArrestPending ) {
+                    pTarget->getPoliceState().setArrestAfterBackOnTrack( true );
+                }
+            }
+            return true;
+        }
+        return event == FE_Exit;
+
+    default:
+        return false;
+    }
+}
+
+bool AiVehBhvPolice::checkRemoval() {
+    // FUN_009cbea0
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar == nullptr ) {
+        return false;
+    }
+
+    const char *pReason = nullptr;
+    const Eigen::Vector4f position =
+        pVehicle->getCarState()->getWorldPosition();
+    if ( gpScenaric->getIntroTutorial().isActive() ) {
+        pReason = "no police during tutorial";
+    } else if ( position.y() < kPoliceMinAltitude ) {
+        pReason = "police vehicle below sea level";
+    } else {
+        Eigen::Vector4f delta = pPlayerCar->getWorldPosition() - position;
+        delta.y() = 0.0f;
+        const float deleteDistance = gAIConfig.PoliceDeleteDistance;
+        if ( delta.squaredNorm() <= deleteDistance * deleteDistance ) {
+            return false;
+        }
+        pReason = "police vehicle too far 2";
+    }
+    pVehicle->setRemovable( true );
+    pVehicle->requestRemoval( kPoliceNoTime, pReason );
+    return true;
+}
+
+bool AiVehBhvPolice::canSeeCar( CarState *pCar ) const {
+    // FUN_009cbd00
+    if ( pCar == nullptr || gAIConfig.PoliceSearchDistance <= 0.0f ) {
+        return false;
+    }
+
+    // FUN_009cbc50
+    const Eigen::Vector4f copPosition =
+        pVehicle->getCarState()->getWorldPosition();
+    const float distance = ( pCar->getWorldPosition() - copPosition ).norm();
+    if ( distance <= gAIConfig.PoliceCaptureDistance ) {
+        return true;
+    }
+    if ( distance > gAIConfig.PoliceSearchDistance ) {
+        return false;
+    }
+    if ( gbDisableCopViewingAngle ) {
+        return true;
+    }
+
+    const float maxAngle =
+        kPoliceMaxViewAngle - ( ( distance - gAIConfig.PoliceCaptureDistance ) /
+                                ( gAIConfig.PoliceSearchDistance -
+                                  gAIConfig.PoliceCaptureDistance ) ) *
+                                  kPoliceViewAngleFalloff;
+    const Eigen::Vector4f forward =
+        pVehicle->getCarState()->getWorldMatrix().row( 2 );
+    const Eigen::Vector4f delta = pCar->getWorldPosition() - copPosition;
+    const float angle =
+        std::atan2( delta.z() * forward.x() - delta.x() * forward.z(),
+                    delta.z() * forward.z() + delta.x() * forward.x() );
+    return std::abs( angle ) < maxAngle;
+}
+
+void AiVehBhvPolice::checkTargetVisibility( CarState *pCar,
+                                            bool &bOutVisible,
+                                            bool &bOutEligible ) const {
+    // FUN_009cbe10
+    bOutVisible = true;
+    bOutEligible = true;
+    if ( pCar == nullptr ) {
+        bOutVisible = false;
+        bOutEligible = false;
+        return;
+    }
+
+    const AiVehicle *pCarVehicle =
+        static_cast<const AiVehicle *>( pCar->getAIController() );
+    const bool bTargetable =
+        pCarVehicle == nullptr ||
+        ( pCarVehicle->getBehaviourType() != 0 &&
+          pCar->getOwner() != CarState::eOwner::CSO_Traffic );
+    const eGameMode gameMode = gpActiveGameMode->getCurrentGameMode();
+    const bool bGameModeAllowed = gameMode == GM_FreeRide ||
+                                  gameMode == GM_TestCar ||
+                                  IsPoliceAllowedByGameMech();
+    if ( bTargetable &&
+         pCar->getPoliceState().getAfterCaptureGraceTime() <=
+             gpTimer->GameTotalTime &&
+         bGameModeAllowed ) {
+        if ( !canSeeCar( pCar ) ) {
+            bOutVisible = false;
+        }
+        return;
+    }
+    bOutVisible = false;
+    bOutEligible = false;
+}
+
+void AiVehBhvPolice::onTargetWitnessed( CarState *pCar ) const {
+    // FUN_009cc0c0
+    if ( !gAIConfig.Unknown0x5B || pCar == nullptr ) {
+        return;
+    }
+
+    PoliceState &policeState = pCar->getPoliceState();
+    const float now = gpTimer->GameTotalTime;
+    if ( now - policeState.getLastInfTimeWitness() >=
+         gAIConfig.WitnessedOffenceTime ) {
+        return;
+    }
+
+    const bool bWasWanted = policeState.isWanted();
+    policeState.setWitnessedOffence( gAIConfig.WitnessedOffenceValue );
+    policeState.setLastInfTimeWitness( 0.0f );
+    gAiCopMng.onVoiceEvent( eCopVoiceEvent::CVE_WitnessedOffence );
+    if ( !bWasWanted && policeState.isWanted() ) {
+        const float malus = policeState.getMinTimeToStopSearchMalus();
+        policeState.setMinTimeToStopSearch(
+            now + malus + gAIConfig.PoliceSearchMinTime,
+            gAIConfig.PoliceSearchMinTimeStep + malus );
+    }
+}
+
+bool AiVehBhvPolice::shouldChase( CarState *pCar, bool &bOutWanted ) const {
+    // FUN_009cc180
+    bOutWanted = false;
+    if ( pCar == nullptr ) {
+        return false;
+    }
+
+    PoliceState &policeState = pCar->getPoliceState();
+    if ( policeState.isChased() ) {
+        return policeState.getNumChasers() < policeState.getNumWantedChaser();
+    }
+
+    bool bVisible = true;
+    bool bEligible = true;
+    checkTargetVisibility( pCar, bVisible, bEligible );
+    if ( bVisible ) {
+        const Eigen::Vector4f delta =
+            pCar->getWorldPosition() -
+            Eigen::Vector4f( pVehicle->getInfos().GroundMatrix.row( 3 ) );
+        const float searchDistance = gAIConfig.PoliceSearchDistance;
+        if ( delta.squaredNorm() < searchDistance * searchDistance ) {
+            if ( !policeState.isWanted() ) {
+                onTargetWitnessed( pCar );
+            }
+            if ( policeState.isWanted() ) {
+                return policeState.getNumChasers() <
+                       policeState.getNumWantedChaser();
+            }
+        }
+    }
+    if ( bEligible && policeState.isWanted() ) {
+        bOutWanted = true;
+    }
+    return false;
+}
+
+void AiVehBhvPolice::findTarget( CarState *&pOutWantedCar ) {
+    // FUN_009cc350
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar == nullptr ) {
+        return;
+    }
+    pOutWantedCar = nullptr;
+
+    bool bWanted = false;
+    if ( shouldChase( pPlayerCar, bWanted ) ) {
+        pTarget = pPlayerCar;
+        return;
+    }
+    if ( bWanted ) {
+        pOutWantedCar = pPlayerCar;
+    }
+}
+
+void AiVehBhvPolice::updateDistanceToTarget() {
+    // FUN_009cc000
+    if ( pTarget == nullptr ) {
+        distanceToTarget = 0.0f;
+        return;
+    }
+    distanceToTarget = ( pTarget->getWorldPosition() -
+                         pVehicle->getCarState()->getWorldPosition() )
+                           .norm();
+}
+
+void AiVehBhvPolice::loseTarget() {
+    // FUN_009cb9c0
+    if ( getCurrentState() == PS_Patrol ) {
+        return;
+    }
+    if ( !pVehicle->isSoftCollision() ) {
+        pTarget = nullptr;
+        goTo( PS_Patrol );
+    }
+    captureStartTime = kPoliceNoTime;
+}
+
+void AiVehBhvPolice::startArrest() {
+    // FUN_009cc3b0
+    if ( pTarget == nullptr ) {
+        return;
+    }
+
+    CarState *pArrestedCar = pTarget;
+    captureStartTime = kPoliceNoTime;
+    pTarget = nullptr;
+    const AiVehicle *pArrestedVehicle =
+        static_cast<const AiVehicle *>( pArrestedCar->getAIController() );
+    if ( pArrestedVehicle == nullptr ) {
+        gpAI->getAIPool()->updateArrestedCar( AiPool::AS_TakeOver,
+                                              pArrestedCar );
+        if ( !pVehicle->isSoftCollision() ) {
+            goTo( PS_Arrest );
+        }
+    } else if ( pArrestedVehicle->isPlayerCar() &&
+                !pVehicle->isSoftCollision() ) {
+        goTo( PS_Patrol );
+    }
+}
+
+bool AiVehBhvPolice::checkArrest( bool &bOutArrestPending ) {
+    // FUN_009cc430
+    bOutArrestPending = false;
+    if ( GSPhysics::peekFadeRequest() != eFadeRequest::FR_Idle ||
+         pTarget == nullptr ) {
+        return false;
+    }
+    PoliceState &policeState = pTarget->getPoliceState();
+    if ( policeState.computeOffenceLevel() < gAIConfig.InfLimit ) {
+        return false;
+    }
+
+    const eGameMode gameMode = gpActiveGameMode->getCurrentGameMode();
+    if ( gameMode == GM_FreeRide ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMFreeride +0x104c04 (non-null
+                                 // blocks the arrest)
+    } else if ( gameMode != GM_TestCar && !IsPoliceAllowedByGameMech() ) {
+        return false;
+    }
+
+    const bool bBackOnTrack = pTarget->getBody()->BackOnTrackState != 0;
+    if ( !bBackOnTrack && policeState.isArrestAfterBackOnTrack() ) {
+        startArrest();
+        return true;
+    }
+
+    const float now = gpTimer->GameTotalTime;
+    bool bOffRoadCapture = false;
+    bool bCaptured = false;
+    if ( pTarget->getWorldLocation().LocationType ==
+             ObjectWorldLocation::OWL_OffRoad &&
+         !gAIConfig.bPoliceOutsideAllowed ) {
+        bOffRoadCapture = true;
+        if ( captureStartTime < 0.0f ) {
+            captureStartTime = now;
+        } else if ( now - captureStartTime >= gAIConfig.PoliceCaptureTime ) {
+            bCaptured = true;
+        }
+    }
+
+    if ( !bCaptured ) {
+        updateDistanceToTarget();
+        const float loseDistance =
+            gAIConfig.PoliceSearchDistance * kPoliceLoseTargetRatio;
+        if ( distanceToTarget > loseDistance ) {
+            if ( gAiCopMng.getPlayerToCopMinDistance() > loseDistance &&
+                 !bOffRoadCapture ) {
+                loseTarget();
+            }
+            return false;
+        }
+        if ( distanceToTarget >= gAIConfig.PoliceCaptureDistance ) {
+            if ( !bOffRoadCapture ) {
+                captureStartTime = kPoliceNoTime;
+            }
+            return false;
+        }
+        if ( bBackOnTrack ) {
+            bOutArrestPending = true;
+            return false;
+        }
+
+        if ( gAiCopMng.canPlayWarnVoice() ) {
+            gAiCopMng.onVoiceEvent( eCopVoiceEvent::CVE_WarnChased );
+        }
+        bool bTimeElapsed = false;
+        if ( gAIConfig.bNeedSpeedAndTime || gAIConfig.bCaptureByTime ) {
+            if ( captureStartTime <= 0.0f ) {
+                captureStartTime = now;
+            } else if ( gAIConfig.PoliceCaptureTime <=
+                        now - captureStartTime ) {
+                bTimeElapsed = true;
+            }
+        }
+        const bool bSlowEnough =
+            gAIConfig.bCaptureBySpeed &&
+            pTarget->getLinearVelocity().norm() < gAIConfig.PoliceCaptureSpeed;
+        if ( gAIConfig.bNeedSpeedAndTime ) {
+            if ( ( gAIConfig.bCaptureByTime && !bTimeElapsed ) ||
+                 ( gAIConfig.bCaptureBySpeed && !bSlowEnough ) ) {
+                return false;
+            }
+        } else if ( !bTimeElapsed && !bSlowEnough ) {
+            return false;
+        }
+    }
+
+    if ( pTarget->getBody()->BackOnTrackState == 0 ) {
+        startArrest();
+        return true;
+    }
+    bOutArrestPending = true;
+    return false;
+}
+
+void AiVehBhvPolice::updatePatrolOrSearch() {
+    // FUN_009cc700
+    if ( gpScenaric->getLocalPlayer().getCarState() == nullptr ) {
+        return;
+    }
+
+    distanceToTarget = kPoliceNoDistance;
+    captureStartTime = kPoliceNoTime;
+    const ObjectWorldLocation &copLocation =
+        pVehicle->getCarState()->getWorldLocation();
+    CarState *pWantedCar = nullptr;
+    if ( gpTimer->GameTotalTime - lastTargetScanTime > kPoliceScanInterval ) {
+        if ( !gAIConfig.bPoliceForceChase ) {
+            findTarget( pWantedCar );
+        } else {
+            CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+            if ( pPlayerCar != nullptr &&
+                 pPlayerCar->getWorldLocation().LocationType ==
+                     ObjectWorldLocation::OWL_Road ) {
+                pTarget = pPlayerCar;
+            }
+        }
+    }
+
+    if ( pTarget == nullptr ) {
+        if ( pSearchedCar != nullptr || pWantedCar == nullptr ) {
+            return;
+        }
+        if ( pWantedCar->getWorldLocation().LocationType !=
+             ObjectWorldLocation::OWL_Road ) {
+            pSearchedCar = nullptr;
+            return;
+        }
+        setChaseController();
+        pSearchedCar = pWantedCar;
+        pVehicle->getChaseController().setGoal( pWantedCar );
+        pWantedCar->getPoliceState().setSearched( true );
+        goTo( PS_Search );
+        return;
+    }
+
+    const ObjectWorldLocation &targetLocation = pTarget->getWorldLocation();
+    bool bCanChase = false;
+    if ( targetLocation.LocationType == ObjectWorldLocation::OWL_Road &&
+         copLocation.LocationType == ObjectWorldLocation::OWL_Road ) {
+        bool bSameWay = false;
+        if ( copLocation.LocationRoad.RoadID !=
+             targetLocation.LocationRoad.RoadID ) {
+            AiRoadMap &roadMap = gpAI->getRoadMap();
+            AiRoadMap::Road *pCopRoad =
+                roadMap.getRoad( copLocation.LocationRoad.RoadID );
+            AiRoadMap::Road *pTargetRoad =
+                roadMap.getRoad( targetLocation.LocationRoad.RoadID );
+            if ( pCopRoad != nullptr && pTargetRoad != nullptr ) {
+                AiRoadIt copIt;
+                pCopRoad->getShape()->computeIt(
+                    ( copLocation.LocationRoad.FractionMin +
+                      copLocation.LocationRoad.FractionMax ) *
+                        0.5f,
+                    copIt );
+                AiRoadIt targetIt;
+                pTargetRoad->getShape()->computeIt(
+                    ( targetLocation.LocationRoad.FractionMin +
+                      targetLocation.LocationRoad.FractionMax ) *
+                        0.5f,
+                    targetIt );
+
+                AiPath path;
+                path.setStart( copIt, 0 );
+                path.setEnd( targetIt );
+                path.solve( true );
+                bSameWay =
+                    path.getTail() != nullptr &&
+                    path.getTail()->To.getWay() == ( targetLocation.bWay != 0 );
+                path.clear();
+            }
+        }
+        bCanChase = bSameWay || gAIConfig.bPoliceCanChaseFromAhead;
+    }
+
+    PoliceState &policeState = pTarget->getPoliceState();
+    if ( bCanChase &&
+         policeState.getNumChasers() < policeState.getNumWantedChaser() ) {
+        setChaseController();
+        pVehicle->getChaseController().setTarget( pTarget );
+        pSearchedCar = nullptr;
+        policeState.setChased( true );
+        policeState.stopSearch();
+        goTo( PS_Chase );
+        gAiCopMng.onVoiceEvent( eCopVoiceEvent::CVE_SearchToChase );
+        return;
+    }
+
+    bool bArrestPending = false;
+    checkArrest( bArrestPending );
+    if ( bArrestPending ) {
+        pTarget->getPoliceState().setArrestAfterBackOnTrack( true );
+    }
+    pTarget = nullptr;
+}
+
+void AiVehBhvPolice::updatePursuit() {
+    // FUN_009ccc80 (states 4 / 5 update)
+    if ( gpScenaric->getLocalPlayer().getCarState() == nullptr ) {
+        return;
+    }
+    checkRemoval();
+    if ( pVehicle->getControllerType() != 1 ||
+         pVehicle->getController() == nullptr ) {
+        setChaseController();
+    } else if ( pVehicle->getNavigationType() != 1 ||
+                pVehicle->getNavigation() == nullptr ) {
+        setOpponentNavigation();
+    } else if ( pVehicle->getLocomotionType() == 1 &&
+                pVehicle->getLocomotion() != nullptr ) {
+        // FUN_009cca60
+        if ( pTarget != nullptr ) {
+            PoliceState &policeState = pTarget->getPoliceState();
+            if ( policeState.computeOffenceLevel() >= gAIConfig.InfLimit ) {
+                const AiVehicle *pTargetVehicle =
+                    static_cast<const AiVehicle *>(
+                        pTarget->getAIController() );
+                if ( policeState.getAfterCaptureGraceTime() >
+                     gpTimer->GameTotalTime ) {
+                    loseTarget();
+                    return;
+                }
+                if ( pTargetVehicle != nullptr &&
+                     pTargetVehicle->isPlayerCar() &&
+                     policeState.isArrested() ) {
+                    policeState.reset();
+                    loseTarget();
+                    return;
+                }
+                if ( gAiCopMng.canDoPoliceDams() &&
+                     policeState.computeOffenceLevel() >=
+                         gAIConfig.InfPoliceDamLimit &&
+                     gAiCopMng.getNumPoliceDams() == 0 &&
+                     !gAiCopMng.canSpawnPoliceDam() &&
+                     !gpScenaric->getIntroTutorial().isActive() ) {
+                    gAiCopMng.requestPoliceDam( pTarget );
+                    gAiCopMng.onVoiceEvent(
+                        eCopVoiceEvent::CVE_AskForPoliceDam );
+                }
+                if ( gAIConfig.bPoliceForceChase ) {
+                    updateDistanceToTarget();
+                    if ( distanceToTarget > 0.0f &&
+                         distanceToTarget > gAIConfig.PoliceSearchDistance *
+                                                kPoliceLoseTargetRatio &&
+                         distanceToTarget > gAIConfig.PoliceDeleteDistance ) {
+                        loseTarget();
+                    }
+                    return;
+                }
+                if ( pVehicle->getControllerType() ==
+                     AiVehicle::kControllerNone ) {
+                    loseTarget();
+                    return;
+                }
+                bool bArrestPending = false;
+                checkArrest( bArrestPending );
+                if ( bArrestPending ) {
+                    pTarget->getPoliceState().setArrestAfterBackOnTrack( true );
+                }
+                return;
+            }
+        }
+        if ( getCurrentState() == PS_Patrol ) {
+            return;
+        }
+        if ( !pVehicle->isSoftCollision() ) {
+            pTarget = nullptr;
+            goTo( PS_Patrol );
+        }
+        captureStartTime = kPoliceNoTime;
+    } else {
+        setOpponentLocomotion();
+    }
+}
+
+void AiVehBhvPolice::setRouteController() {
+    // FUN_00923a10 (EDI = 0)
+    pVehicle->setController( 0 );
+}
+
+void AiVehBhvPolice::setChaseController() {
+    // FUN_00923a10 (EDI = 1)
+    pVehicle->setController( 1 );
+}
+
+void AiVehBhvPolice::setTrafficNavigation() {
+    // FUN_009ccc80 (FUN_009236b0 inlined, type 0)
+    pVehicle->setNavigation( 0 );
+}
+
+void AiVehBhvPolice::setOpponentNavigation() {
+    // FUN_009ccc80 (FUN_009236b0 inlined, type 1)
+    pVehicle->setNavigation( 1 );
+}
+
+void AiVehBhvPolice::setTrafficLocomotion() {
+    // FUN_009ccc80 (FUN_009235b0 inlined, type 0)
+    pVehicle->setLocomotion( 0, true, true );
+}
+
+void AiVehBhvPolice::setOpponentLocomotion() {
+    // FUN_009ccc80 (FUN_009235b0 inlined, type 1)
+    pVehicle->setLocomotion( 1, true, true );
+}
+
+void AiVehBhvPolice::enableSirens() {
+    // FUN_009ccc80 (state 4 enter)
+    AiVehSignals &signals = pVehicle->getSignals();
+    if ( !signals.bIsCops ) {
+        return;
+    }
+    signals.bHornOn = true;
+    signals.bFlashlightOn = true;
+    float *pQueue = signals.HeadlightCommandQueue;
+    for ( int32_t i = 0; i < 5; i++ ) {
+        pQueue[i] = kPoliceBlinkOnTime;
+    }
+    pQueue[5] = kPoliceBlinkOffTime;
+    signals.HeadlightCommandIndex = 0;
+    signals.bHeadlightsActivated = true;
+    signals.bHeadlightOn = true;
+    signals.HeadlightLastTime = gpTimer->GameTotalTime;
+    signals.bHeadlightBlinking = true;
 }

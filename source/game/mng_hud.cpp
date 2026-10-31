@@ -23,6 +23,7 @@
 #include "game/vehicle/vehicle_base.h"
 #include "ai/gs_ai.h"
 #include "ai/ai_vehicle.h"
+#include "ai/ai_pool.h"
 #include "game/vehicle/gs_car_state.h"
 #include "physics/replay.h"
 #include "player_data/driver.h"
@@ -40,6 +41,7 @@
 #include "render/camera/gs_camera.h"
 #include "system/system_shared.h"
 #include "tdu_instance.h"
+#include "gs_timer.h"
 #include "core/maths_helper.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
@@ -364,6 +366,8 @@ static constexpr float kSpotIconHalfHeight = 29.925f; // DAT_00f42154
 static constexpr float kSpotIconAlpha = 191.0f;       // DAT_00f41838
 static constexpr float kMarkerHalfWidth = 16.0f;      // DAT_00f418d8
 static constexpr float kMarkerHalfHeight = 21.28f;    // DAT_00f41eac
+static constexpr uint32_t kCopMarkerColorRed = 0xffff0025u;
+static constexpr uint32_t kCopMarkerColorBlue = 0xff0013feu;
 
 static constexpr int32_t kNumNetPlayerMarkerColors = 12;
 static constexpr uint32_t kNetPlayerMarkerColors[kNumNetPlayerMarkerColors] = {
@@ -1408,14 +1412,24 @@ void HudMinimap::drawVehicleMarkers() {
                 if ( pAiVehicle->getBehaviour() == nullptr ) {
                     continue;
                 }
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (cops)
-                continue;
+                const AiVehBhvPolice &police = pAiVehicle->getPoliceBehaviour();
+                const int32_t policeState = police.getState();
+                if ( policeState == AiVehBhvPolice::PS_Patrol ||
+                     policeState == AiVehBhvPolice::PS_Lost ||
+                     policeState == AiVehBhvPolice::PS_Arrest ) {
+                    continue;
+                }
+                const int32_t blinkPhase = static_cast<int32_t>(
+                    police.getRandomFactor() + gpTimer->GameTotalTime );
+                color = ( blinkPhase % 2 == 0 ) ? kCopMarkerColorRed
+                                                : kCopMarkerColorBlue;
+            } else {
+                if ( !gEnableMinimapAI ) {
+                    continue;
+                }
+                color =
+                    pAiVehicle->getInfos().bVisible ? 0xff00ff00u : 0xff000000u;
             }
-
-            if ( !gEnableMinimapAI ) {
-                continue;
-            }
-            color = pAiVehicle->getInfos().bVisible ? 0xff00ff00u : 0xff000000u;
         }
 
         Markers[numMarkers].X = position.x();
@@ -2010,10 +2024,10 @@ MngHud::MngHud()
       pGaugesFileBuffer( nullptr ),
       pMovieFilter( nullptr ) {
     // FUN_006eabf0
-    unknown11F0[0] = 0;
-    unknown11F0[1] = 0;
-    unknown11F0[2] = 0;
-    bUnknown11FC = false;
+    copShieldStates[0] = 0;
+    copShieldStates[1] = 0;
+    copShieldStates[2] = 0;
+    bCopHudOnline = false;
 
     needleMaterialBackup = FlashMaterial{};
     needleMaterialActive = FlashMaterial{};
@@ -2258,7 +2272,7 @@ void MngHud::tick( float deltaTime, float totalTime ) {
 
     gps.tick( deltaTime, totalTime );
     minimap.tick( deltaTime );
-    FUN_006ed810();
+    updateCopHud();
 
     messageLog.CurrentTime = totalTime;
     if ( messageLog.LastScrollTime < 0.0f ) {
@@ -3267,9 +3281,267 @@ void MngHud::showCustomGauges() {
     }
 }
 
-void MngHud::FUN_006ed810() {
+static constexpr float kCopShieldTwinkleRatio = 0.5f; // FLOAT_00f41674
+static constexpr float kCopHudRangeFactor = 2.0f;     // DAT_00f416b0
+static constexpr float kCopRearAngle = 2.3561945f;    // DAT_00f41e14
+static constexpr float kCopFrontAngle = 0.7853982f;   // DAT_00f41cb0
+static constexpr float kCopGaugeFrameScale = 100.0f;  // DAT_00f41708
+static constexpr int32_t kCopGaugeLastFrame = 100;
+static constexpr int32_t kCopGaugeMaxOffset = 99;
+static constexpr int32_t kNumCopHudSlots = 16;
+
+enum eCopShieldState : int32_t {
+    CSS_Off = 0,
+    CSS_Twinkle = 1,
+    CSS_On = 2,
+};
+
+enum eCopDirection : int32_t {
+    CD_Front = 0,
+    CD_Right = 1,
+    CD_Rear = 2,
+    CD_Left = 3,
+};
+
+static void UpdateCopShield( FlashPlayer *pPlayer,
+                             const char *pPath,
+                             int32_t &currentState,
+                             const int32_t newState ) {
+    if ( currentState == newState ) {
+        return;
+    }
+
+    switch ( newState ) {
+    case CSS_Off:
+        pPlayer->showFrame( "off", pPath, true );
+        currentState = CSS_Off;
+        break;
+    case CSS_Twinkle:
+        pPlayer->showFrame( "twinkle", pPath, true );
+        currentState = CSS_Twinkle;
+        break;
+    case CSS_On:
+        pPlayer->showFrame( "on", pPath, true );
+        currentState = CSS_On;
+        break;
+    default:
+        break;
+    }
+}
+
+static bool AreMissionCopsEnabled() {
+    return gpScenaric->getSelectedEventParameters().getCops().getValue() > 0;
+}
+
+void MngHud::updateCopHudOnlineFrame() {
+    if ( !gpAI->areCopsActive() ) {
+        if ( !bCopHudOnline ) {
+            pHudPlayer->showFrame( "online", "HUD/cop", false );
+            bCopHudOnline = true;
+        }
+    } else if ( bCopHudOnline ) {
+        pHudPlayer->showFrame( "default", "HUD/cop", false );
+        bCopHudOnline = false;
+    }
+}
+
+void MngHud::updateCopHud() {
     // FUN_006ed810
-    OTDU_UNIMPLEMENTED; // TODO: AI (police infraction state, GSAI+0x1394)
+    if ( pHudPlayer == nullptr ) {
+        return;
+    }
+
+    FlashClip copClip;
+    if ( !pHudPlayer->getClipPlayer( "HUD/cop", &copClip ) ) {
+        return;
+    }
+
+    FlashClip clip;
+    if ( !pHudPlayer->getClipPlayer( "HUD/cop/distance/gauge", &clip ) ||
+         !pHudPlayer->spriteExists( "HUD/cop/distance/d_right" ) ||
+         !pHudPlayer->spriteExists( "HUD/cop/distance/d_left" ) ||
+         !pHudPlayer->spriteExists( "HUD/cop/distance/d_rear" ) ||
+         !pHudPlayer->spriteExists( "HUD/cop/distance/d_front" ) ||
+         !pHudPlayer->getClipPlayer( "HUD/cop/shield_01", &clip ) ||
+         !pHudPlayer->getClipPlayer( "HUD/cop/shield_02", &clip ) ||
+         !pHudPlayer->getClipPlayer( "HUD/cop/shield_03", &clip ) ) {
+        return;
+    }
+
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar == nullptr ) {
+        return;
+    }
+
+    updateCopHudOnlineFrame();
+
+    const float thirdCopTwinkleLevel =
+        ( gAIConfig.InfThirdCopLimit - gAIConfig.InfSecondCopLimit ) *
+            kCopShieldTwinkleRatio +
+        gAIConfig.InfSecondCopLimit;
+    const float secondCopTwinkleLevel =
+        ( gAIConfig.InfSecondCopLimit - gAIConfig.InfLimit ) *
+            kCopShieldTwinkleRatio +
+        gAIConfig.InfLimit;
+    const float firstCopTwinkleLevel =
+        gAIConfig.InfLimit * kCopShieldTwinkleRatio;
+
+    if ( !copClip.getProperty( eFlashProperty::FP_Visible ) ) {
+        pHudPlayer->showFrame( "default", "HUD/cop", false );
+        copShieldStates[0] = CSS_Off;
+        copShieldStates[1] = CSS_Off;
+        copShieldStates[2] = CSS_Off;
+        bCopHudOnline = false;
+    } else {
+        const eGameMode gameMode = gpActiveGameMode->getCurrentGameMode();
+        if ( gameMode != GM_FreeRide && gameMode != GM_Mission &&
+             gameMode != GM_TestCar ) {
+            copClip.setProperty( eFlashProperty::FP_Visible, false );
+            return;
+        }
+        if ( gameMode == GM_Mission && !AreMissionCopsEnabled() ) {
+            copClip.setProperty( eFlashProperty::FP_Visible, false );
+            return;
+        }
+    }
+
+    const float offenceLevel =
+        pPlayerCar->getPoliceState().computeOffenceLevel();
+    pHudPlayer->setVariableValue(
+        "/:IsUnderArrest", ( gAIConfig.InfLimit <= offenceLevel ) ? 1 : 0 );
+
+    int32_t shield1State = CSS_Off;
+    int32_t shield2State = CSS_Off;
+    int32_t shield3State = CSS_Off;
+    if ( gAIConfig.InfThirdCopLimit <= offenceLevel ) {
+        shield1State = CSS_On;
+        shield2State = CSS_On;
+        shield3State = CSS_On;
+    } else if ( thirdCopTwinkleLevel <= offenceLevel ) {
+        shield1State = CSS_On;
+        shield2State = CSS_On;
+        shield3State = CSS_Twinkle;
+    } else if ( gAIConfig.InfSecondCopLimit <= offenceLevel ) {
+        shield1State = CSS_On;
+        shield2State = CSS_On;
+    } else if ( secondCopTwinkleLevel <= offenceLevel ) {
+        shield1State = CSS_On;
+        shield2State = CSS_Twinkle;
+    } else if ( gAIConfig.InfLimit <= offenceLevel ) {
+        shield1State = CSS_On;
+    } else if ( firstCopTwinkleLevel <= offenceLevel ) {
+        shield1State = CSS_Twinkle;
+    }
+
+    UpdateCopShield( pHudPlayer, "HUD/cop/shield_01", copShieldStates[0],
+                     shield1State );
+    UpdateCopShield( pHudPlayer, "HUD/cop/shield_02", copShieldStates[1],
+                     shield2State );
+    UpdateCopShield( pHudPlayer, "HUD/cop/shield_03", copShieldStates[2],
+                     shield3State );
+
+    if ( shield1State == CSS_Off ) {
+        if ( copClip.getProperty( eFlashProperty::FP_Visible ) ) {
+            copClip.setProperty( eFlashProperty::FP_Visible, false );
+        }
+        return;
+    }
+
+    updateCopHudOnlineFrame();
+
+    if ( !copClip.getProperty( eFlashProperty::FP_Visible ) ) {
+        if ( gpActiveGameMode->getCurrentGameMode() == GM_FreeRide ) {
+            copClip.setProperty( eFlashProperty::FP_Visible, true );
+        }
+        if ( gpActiveGameMode->getCurrentGameMode() == GM_TestCar ) {
+            copClip.setProperty( eFlashProperty::FP_Visible, true );
+        }
+        if ( gpActiveGameMode->getCurrentGameMode() == GM_Mission &&
+             AreMissionCopsEnabled() ) {
+            copClip.setProperty( eFlashProperty::FP_Visible, true );
+        }
+    }
+
+    struct CopHudTarget {
+        int32_t Index;
+        float Distance;
+        float Angle;
+    };
+    CopHudTarget targets[kNumCopHudSlots];
+
+    AiVehicleList &cops = gpAI->getAIPool()->getList(
+        AiPool::AVL_FirstCategory +
+        static_cast<int32_t>( eAiVehicleCategory::AVC_Cop ) );
+    const int32_t numCops = cops.Count;
+    for ( int32_t i = 0; i < kNumCopHudSlots; i++ ) {
+        CopHudTarget &target = targets[i];
+        target.Index = -1;
+        target.Distance = 0.0f;
+        target.Angle = 0.0f;
+
+        AiVehicle *pCop = ( i < numCops ) ? cops.Items[i] : nullptr;
+        if ( pCop == nullptr || pCop->getCarState() == nullptr ) {
+            continue;
+        }
+
+        const Eigen::Vector4f delta = pCop->getCarState()->getWorldPosition() -
+                                      pPlayerCar->getWorldPosition();
+        const Eigen::Vector4f forward = pPlayerCar->getWorldMatrix().row( 2 );
+
+        target.Index = i;
+        target.Distance = delta.norm();
+        target.Angle =
+            -std::atan2( delta.z() * forward.x() - forward.z() * delta.x(),
+                         delta.x() * forward.x() + delta.z() * forward.z() );
+    }
+
+    float closestDistance = gAIConfig.PoliceDeleteDistance * kCopHudRangeFactor;
+    int32_t closestIndex = -1;
+    for ( int32_t i = 0; i < kNumCopHudSlots; i++ ) {
+        if ( targets[i].Index != -1 && targets[i].Distance < closestDistance ) {
+            closestDistance = targets[i].Distance;
+            closestIndex = i;
+        }
+    }
+
+    if ( closestIndex == -1 ) {
+        pHudPlayer->goToFrameAndPlay( 1, "HUD/cop/distance/gauge", false );
+        pHudPlayer->showFrame( "off", "HUD/cop/distance/d_front", false );
+        pHudPlayer->showFrame( "off", "HUD/cop/distance/d_rear", false );
+        pHudPlayer->showFrame( "off", "HUD/cop/distance/d_right", false );
+        pHudPlayer->showFrame( "off", "HUD/cop/distance/d_left", false );
+        return;
+    }
+
+    const CopHudTarget &closestCop = targets[closestIndex];
+    const float absAngle = std::abs( closestCop.Angle );
+    eCopDirection direction = CD_Front;
+    if ( kCopRearAngle < absAngle ) {
+        direction = CD_Rear;
+    } else if ( kCopFrontAngle < absAngle ) {
+        direction = ( 0.0f < closestCop.Angle ) ? CD_Right : CD_Left;
+    }
+
+    int32_t gaugeFrame = kCopGaugeLastFrame;
+    if ( gAIConfig.PoliceCaptureDistance < closestCop.Distance ) {
+        int32_t gaugeOffset = static_cast<int32_t>(
+            ( closestCop.Distance - gAIConfig.PoliceCaptureDistance ) /
+            ( gAIConfig.PoliceSearchDistance -
+              gAIConfig.PoliceCaptureDistance ) *
+            kCopGaugeFrameScale );
+        gaugeOffset = std::clamp( gaugeOffset, 0, kCopGaugeMaxOffset );
+        gaugeFrame = kCopGaugeLastFrame - gaugeOffset;
+    }
+    pHudPlayer->goToFrameAndPlay( gaugeFrame, "HUD/cop/distance/gauge", false );
+
+    pHudPlayer->showFrame( ( direction == CD_Front ) ? "on" : "off",
+                           "HUD/cop/distance/d_front", false );
+    pHudPlayer->showFrame( ( direction == CD_Rear ) ? "on" : "off",
+                           "HUD/cop/distance/d_rear", false );
+    pHudPlayer->showFrame( ( direction == CD_Right ) ? "on" : "off",
+                           "HUD/cop/distance/d_right", false );
+    pHudPlayer->showFrame( ( direction == CD_Left ) ? "on" : "off",
+                           "HUD/cop/distance/d_left", false );
 }
 
 void MngHud::setCarName( const char *pName ) {

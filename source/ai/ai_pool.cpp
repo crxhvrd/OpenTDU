@@ -3,6 +3,7 @@
 
 #include "ai/ai_bot_manager.h"
 #include "ai/ai_config.h"
+#include "ai/ai_cop_manager.h"
 #include "ai/ai_road_buckets.h"
 #include "ai/ai_sim_bubble.h"
 #include "ai/gs_ai.h"
@@ -11,6 +12,7 @@
 #include "ai/ai_veh_nav_opponent.h"
 #include "ai/ai_road_query.h"
 #include "core/arg_parser.h"
+#include "core/maths_helper.h"
 #include "database/gs_database.h"
 #include "game/game_object.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -397,7 +399,7 @@ int32_t AiPool::getMaxTraffic() const {
 
 int32_t AiPool::getMaxPolice() const {
     // FUN_0091dad0
-    // TODO: police manager flag (DAT_013d1a74)
+    // TODO: ONLINE (GSAI bOnlineSession DAT_013d1a74)
     if ( !field_0x85 ) {
         return 0;
     }
@@ -518,9 +520,8 @@ bool AiPool::togglePlayerAutopilot( const bool bOpponent ) {
                             // from the local player data)
         PhysicsVehicle *pPhysics = pCar->getPhysicsVehicle();
         pPhysics->setDrivingControl( gpPhysics ); // +0x4388
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS (driving control index +0xe40 =
-                            // +0xa3c, GSPhysics control flag +0x20 = 1)
-        pPhysics->setAIDriven( false ); // +0xd34
+        OTDU_UNIMPLEMENTED;                       // TODO: PHYSICS
+        pPhysics->setAIDriven( false );           // +0xd34
         pPhysics->setVirtualFlag( false );
         pPhysics->setAutoReverseAllowed( true ); // +0x335
         {
@@ -584,6 +585,87 @@ bool AiPool::togglePlayerAutopilot( const bool bOpponent ) {
             AiVehNavOpponent::NS_LineEnded );
     }
     return true;
+}
+
+void AiPool::updateArrestedCar( const eArrestStep step, CarState *pCar ) {
+    // FUN_0091ebe0
+    static constexpr int32_t kArrestControllerType = 6;
+
+    switch ( step ) {
+    case AS_TakeOver: {
+        pCar->setAILockFlags( CarState::kAILockArrest );
+        AiVehicle *pVehicle = allocVehicleSlot();
+        if ( pVehicle == nullptr ) {
+            return;
+        }
+        addVehicle( pVehicle );
+        PhysicsVehicle *pPhysics = pCar->getPhysicsVehicle();
+        pPhysics->setDrivingControl( nullptr ); // +0x4388
+        OTDU_UNIMPLEMENTED_ONCE;                // TODO: PHYSICS
+        pPhysics->setSteerControlUsed( false ); // +0x550
+        pCar->setAIController( pVehicle );
+        const Matrix4x4f_t startFrame = pCar->getBody()->OffsetedWorldMatrix;
+        pVehicle->initializeOpponent( pCar, startFrame, kArrestControllerType,
+                                      AiRoadIt() );
+        {
+            // Postponed velocity request
+            PhysicsLock lock;
+            pPhysics->setVelocity( Eigen::Vector3f::Zero(), true, 0 );
+        }
+        pVehicle->setRemovable( false );
+        pCar->getPoliceState().setArrested( true );
+        pVehicle->getLocomotion()->setManualInputs( 0.0f, 0.0f, 1.0f, 0.0f,
+                                                    0.0f );
+
+        AiVehicleList &cops =
+            lists[AVL_FirstCategory +
+                  static_cast<int32_t>( eAiVehicleCategory::AVC_Cop )];
+        for ( int32_t i = 0; i < cops.Count; i++ ) {
+            AiVehBhvPolice &police = cops.Items[i]->getPoliceBehaviour();
+            if ( police.getTarget() == pCar ) {
+                police.requestState( AiVehBhvPolice::PS_Patrol );
+            }
+        }
+        gpAI->getCopManager().startArrestFade();
+        pCar->getPoliceState().setPlayingArrestCinematic( true );
+        return;
+    }
+    case AS_ReleaseAI: {
+        AiVehicle *pVehicle =
+            static_cast<AiVehicle *>( pCar->getAIController() );
+        if ( pVehicle == nullptr ) {
+            return;
+        }
+        removeFromLists( pVehicle );
+        pVehicle->release();
+        pVehicle->detachCarState();
+        releaseVehicleSlot( pVehicle );
+        pCar->setAIController( nullptr );
+        return;
+    }
+    case AS_RestoreControl: {
+        pCar->getPoliceState().setArrested( false );
+        PhysicsVehicle *pPhysics = pCar->getPhysicsVehicle();
+        if ( pPhysics != nullptr ) {
+            gpPlayerData->applyDrivingOptions();
+            pPhysics->setDrivingControl( gpPhysics ); // +0x4388
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (driving control index
+                                     // +0xe40 = +0xa3c, GSPhysics control flag
+                                     // +0x20 = 1)
+            pPhysics->setVirtualFlag( false ); // +0xdd4
+            {
+                PhysicsLock lock;
+                pPhysics->setPostponedPause( 2 );
+            }
+            pCar->getPoliceState().setAfterCaptureGraceTime(
+                gAIConfig.InfACGraceDelay + gpTimer->GameTotalTime );
+        }
+        pCar->clearAILockFlags( CarState::kAILockArrest );
+        return;
+    }
+    default:
+        return;
+    }
 }
 
 void AiPool::removeVehicle( AiVehicle *pVehicle,
@@ -1022,6 +1104,43 @@ AiVehicle *AiPool::requestParked( const Matrix4x4f_t &frame,
     }
     spawnRequest.fillParked( pVehicle, frame, colorIndex, pOwner );
     return isVehicleSlotUsed( pVehicle ) ? pVehicle : nullptr;
+}
+
+AiVehicle *AiPool::requestCopDam( const AiRoadIt &roadIt,
+                                  const float lateralRatio ) {
+    // FUN_0091e670
+    static constexpr float kMaxYawJitter = 0.4f; // 0x3ecccccd
+
+    if ( !spawnRequest.isIdle() || traffic.getNumLoadedTemplates() <= 0 ) {
+        return nullptr;
+    }
+    AiVehicle *pVehicle = allocVehicleSlot();
+    if ( pVehicle == nullptr || roadIt.pRoad == nullptr ) {
+        return nullptr;
+    }
+
+    pVehicle->getInfos().LastRoadPos = roadIt;
+    float lateral = 0.0f;
+    float height = 0.0f;
+    roadIt.getEntity()->pProfile->computeWidthOffset( lateralRatio, lateral,
+                                                      height );
+    const Eigen::Vector4f position =
+        roadIt.computeOffsetPosition( lateral, height );
+    const Eigen::Vector4f side = roadIt.computeSideDirection();
+    float yaw = std::atan2( -side.x(), side.z() );
+    if ( random.getRandomUint32() < 0x7fffffffu ) {
+        yaw += RandomUnit( random ) * kMaxYawJitter;
+    } else {
+        yaw -= RandomUnit( random ) * kMaxYawJitter;
+    }
+
+    Matrix4x4f_t frame = Matrix4x4f_t::Identity();
+    MatrixRotateY( frame, -yaw );
+    frame( 3, 0 ) = position.x();
+    frame( 3, 1 ) = position.y();
+    frame( 3, 2 ) = position.z();
+    spawnRequest.fillCopDam( pVehicle, frame );
+    return pVehicle;
 }
 
 bool AiPool::isVehicleSlotUsed( const AiVehicle *pVehicle ) const {

@@ -89,6 +89,82 @@ private:
     AiVehicle *pVehicle;
 };
 
+// Behaviour type 0: police patrol, search, chase and arrest
+class AiVehBhvPolice : public AiVehBehaviour, private AiFsm {
+public:
+    enum eState : int32_t {
+        PS_Lost = 0,
+        PS_Init = 1,
+        PS_Patrol = 2,
+        PS_Search = 3,
+        PS_Chase = 4,
+        PS_Aggressive = 5,
+        PS_Arrest = 6,
+        PS_PoliceDam = 7,
+    };
+
+public:
+    inline int32_t getState() const { return getCurrentState(); }
+    inline bool isPursuing() const {
+        return getCurrentState() == PS_Chase ||
+               getCurrentState() == PS_Aggressive;
+    }
+    inline float getRandomFactor() const { return randomFactor; }
+    inline CarState *getTarget() const { return pTarget; }
+    inline CarState *getSearchedCar() const { return pSearchedCar; }
+    inline void setSearchedCar( CarState *pCar ) { pSearchedCar = pCar; }
+    inline float getDistanceToTarget() const { return distanceToTarget; }
+    inline void requestState( const int32_t state ) { goTo( state ); }
+
+public:
+    AiVehBhvPolice();
+
+    void attach( AiVehicle *pOwner ) override;
+    void reset( const bool bFull ) override;
+    void tick( const float deltaTime, const float totalTime ) override;
+    void release() override;
+    void debugDraw( DrawList *pDrawList ) override;
+    void onCollision( CarState *pCarA,
+                      CarState *pCarB,
+                      const CollisionEvent &event ) override;
+    void initialize();
+
+private:
+    AiVehicle *pVehicle;
+    float randomFactor;
+    float distanceToTarget;
+    CarState *pTarget;
+    CarState *pSearchedCar;
+    int32_t field_0x3c;
+    float captureStartTime;
+    float lastTargetScanTime;
+
+private:
+    bool handle( const int32_t event, const int32_t state ) override;
+
+    bool checkRemoval();
+    bool canSeeCar( CarState *pCar ) const;
+    void checkTargetVisibility( CarState *pCar,
+                                bool &bOutVisible,
+                                bool &bOutEligible ) const;
+    void onTargetWitnessed( CarState *pCar ) const;
+    bool shouldChase( CarState *pCar, bool &bOutWanted ) const;
+    void findTarget( CarState *&pOutWantedCar );
+    void updateDistanceToTarget();
+    void loseTarget();
+    void startArrest();
+    bool checkArrest( bool &bOutArrestPending );
+    void updatePatrolOrSearch();
+    void updatePursuit();
+    void setRouteController();
+    void setChaseController();
+    void setTrafficNavigation();
+    void setOpponentNavigation();
+    void setTrafficLocomotion();
+    void setOpponentLocomotion();
+    void enableSirens();
+};
+
 // Behaviour type 3: free ride bot, cruises and chases the local player
 class AiVehBhvBot : public AiVehBehaviour, private AiFsm {
 public:

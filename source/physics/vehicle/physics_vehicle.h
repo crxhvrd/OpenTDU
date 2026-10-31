@@ -332,6 +332,7 @@ public:
     int32_t getOdometerTenMeters() const { return odometerTenMeters; }
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
     bool isTrafficBody() const { return bTrafficBody; }
+    void setTrafficBody( const bool bTraffic ) { bTrafficBody = bTraffic; }
     void setInInstantReplay( const bool bInReplay ) {
         bInInstantReplay = bInReplay;
     }
@@ -416,6 +417,9 @@ public:
     inline float getFilteredSteer() const { return filteredSteer; }
     inline float getSteerDeadZone() const { return steerDeadZone; }
     inline bool isSteerControlUsed() const { return bUseSteerControl; }
+    inline void setSteerControlUsed( const bool bUsed ) {
+        bUseSteerControl = bUsed;
+    }
 
 public:
     PhysicsVehicle();

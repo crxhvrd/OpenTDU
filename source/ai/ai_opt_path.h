@@ -242,6 +242,10 @@ public:
     void optimise();
     void resample();
     void extendAlongRoadSide();
+    void computeUTurnWidthRatios( const AiRoadIt &it,
+                                  float &outWidthRatioFrom,
+                                  float &outWidthRatioTo,
+                                  float *pOutWidth ) const;
 
 private:
     AiPathOptimiserSlot localSlot;
@@ -278,10 +282,6 @@ private:
     bool isCarInJunctionOf( const AiRoadIt &from ) const;
     float computeDefaultWidthRatio( const AiRoadIt &it ) const;
     float computeRoadSideWidthRatio( const AiRoadIt &it ) const;
-    void computeUTurnWidthRatios( const AiRoadIt &it,
-                                  float &outWidthRatioFrom,
-                                  float &outWidthRatioTo,
-                                  float *pOutWidth ) const;
     void pickNextRoadEntry( AiRoadIt &outEntry, float &outLength );
     void appendTurnAround( const AiRoadIt &last, const int32_t routeIndex );
 };

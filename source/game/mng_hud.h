@@ -384,7 +384,8 @@ private:
     void drawSimulationOverlay();
 
     void installGaugeFaceCallbacks( bool bInterior );
-    void FUN_006ed810();
+    void updateCopHud();
+    void updateCopHudOnlineFrame();
 
     void setCarName( const char *pName );
     void clearCarName();
@@ -408,8 +409,8 @@ protected:
     HudFlashNumber odometerDecimal;
     HudFlashGauge minimapCursor;
     HudMinimap minimap;
-    int32_t unknown11F0[3];
-    bool bUnknown11FC;
+    int32_t copShieldStates[3];
+    bool bCopHudOnline;
     MngGPS gps;
     HudMessageLog messageLog;
     float carNameTimer;

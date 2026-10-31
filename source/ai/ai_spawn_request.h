@@ -44,6 +44,7 @@ public:
                      const Matrix4x4f_t &matrix,
                      const int32_t newColorIndex,
                      EntityCarPlayer *pOwner );
+    void fillCopDam( AiVehicle *pVehicle, const Matrix4x4f_t &matrix );
     bool fillBot( AiVehicle *pVehicle,
                   const Matrix4x4f_t &matrix,
                   const AiRoadIt &spawnRoadIt,
@@ -71,6 +72,8 @@ private:
     bool executeTraffic();
     bool executeParked();
     void finalizeParked();
+    bool executeCopDam();
+    void finalizeCopDam();
     void finalize();
     void finalizeTraffic();
     bool loadBotResource();

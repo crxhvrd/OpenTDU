@@ -185,6 +185,7 @@ AiVehicle::AiVehicle()
     : dpc(),
       infos(),
       signals(),
+      infringementChecker( this ),
       carStateIndex( -1 ),
       pCarState( nullptr ),
       pTemplate( nullptr ),
@@ -203,11 +204,13 @@ AiVehicle::AiVehicle()
       ctrlRoute(),
       ctrlRacePath(),
       ctrlFreeRoam(),
+      ctrlCurrentRoad(),
       pController( nullptr ),
       controllerType( kControllerNone ),
       bhvOpponent(),
       bhvTraffic(),
       bhvBot(),
+      bhvPolice(),
       pBehaviour( nullptr ),
       behaviourType( kBehaviourNone ),
       bRemovable( false ),
@@ -888,8 +891,7 @@ bool AiVehicle::isCopInPursuit() const {
     if ( behaviourType != 0 || navType != 1 ) {
         return false;
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: police behaviour state (+0xc == 4 || 5)
-    return false;
+    return bhvPolice.isPursuing();
 }
 
 int32_t CollectRoadObjects( const uint32_t roadID,
@@ -1090,6 +1092,35 @@ void AiVehicle::initializeParked( CarState *pCar ) {
                 kBehaviourNone, kControllerNone, kNavigationNone, 2, false );
     bRemovable = false;
     signals.bHeadlightActivated = false;
+}
+
+void AiVehicle::initializeCop( CarState *pCar,
+                               const AiRoadIt &location,
+                               const int32_t lane ) {
+    // FUN_009229c0 (inlined)
+    initialize( eAiVehicleCategory::AVC_Cop, pCar, location, lane, 0, 0, 0, 0,
+                false );
+    bhvPolice.requestState( AiVehBhvPolice::PS_Patrol );
+    bRemovable = false;
+}
+
+void AiVehicle::initializeCopDam( CarState *pCar ) {
+    // FUN_009287a0
+    const AiRoadIt location = infos.LastRoadPos;
+    initialize( eAiVehicleCategory::AVC_CopDam, pCar, location, 0, 0,
+                kControllerNone, kNavigationNone, 2, false );
+    bSoftCollision = true;
+    bhvPolice.requestState( AiVehBhvPolice::PS_PoliceDam );
+    locoParked.startParked();
+    bRemovable = false;
+    signals.bHeadlightActivated = false;
+}
+
+void AiVehicle::InfringementChecker::check( CarState *pCar, float deltaTime ) {
+    // FUN_00927e90
+    if ( pOwner->bPlayerCar ) {
+        pCar->getPoliceState().checkInfringements( pCar, deltaTime );
+    }
 }
 
 void AiVehicle::initializeCinematic( CarState *pCar ) {
@@ -1301,6 +1332,8 @@ void AiVehicle::setController( const int32_t type ) {
         pController = &ctrlChase;
     } else if ( type == 2 ) {
         pController = &ctrlRacePath;
+    } else if ( type == 6 ) {
+        pController = &ctrlCurrentRoad;
     } else if ( type == 7 ) {
         pController = &ctrlFreeRoam;
     } else {
@@ -1324,7 +1357,9 @@ void AiVehicle::setBehaviour( const int32_t type ) {
         return;
     }
 
-    if ( type == 1 ) {
+    if ( type == 0 ) {
+        pBehaviour = &bhvPolice;
+    } else if ( type == 1 ) {
         pBehaviour = &bhvOpponent;
     } else if ( type == 2 ) {
         pBehaviour = &bhvTraffic;
@@ -1364,7 +1399,7 @@ void AiVehicle::initialize( const eAiVehicleCategory newCategory,
 
     CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
     if ( pLocalCar != nullptr && pCar == pLocalCar ) {
-        OTDU_UNIMPLEMENTED_ONCE;
+        gpCarState->setPoliceStateJob( pCar, &infringementChecker );
     }
 
     removalTime = -1.0f;
@@ -1476,6 +1511,7 @@ void AiVehicle::release() {
             pCarState->getPhysicsVehicle()->setAutoReverseAllowed( true );
         }
         gpCarState->unregisterCallback( pCarState, this );
+        gpCarState->setPoliceStateJob( pCarState, nullptr );
     }
     if ( pLoco != nullptr ) {
         pLoco->detach();

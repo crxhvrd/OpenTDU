@@ -5,6 +5,7 @@
 #include "ai/ai_bot_manager.h"
 #include "ai/ai_bot_personality.h"
 #include "ai/ai_config.h"
+#include "ai/ai_cop_manager.h"
 #include "ai/ai_game_session.h"
 #include "ai/ai_path.h"
 #include "ai/ai_race.h"
@@ -47,7 +48,9 @@ public:
         bDisableBots = bDisable;
     }
     inline void setPauseTraffic( const bool bPause ) { bPauseTraffic = bPause; }
-    inline void setCopsActive( const bool bActive ) { bCopsActive = bActive; }
+    inline void setCopsActive( const bool bActive ) {
+        pCopManager->setEnabled( bActive );
+    }
     void setCopsLevel( const float scale,
                        const bool bHighLevel,
                        const bool bMaxLevel );
@@ -55,8 +58,13 @@ public:
         pBotManager->setActive( bActive );
     }
     inline AiBotManager &getBotManager() { return *pBotManager; }
+    inline AiCopMng &getCopManager() { return *pCopManager; }
     inline AiPathFloodSolver &getFloodSolver() { return floodSolver; }
     inline bool areBotsDisabled() const { return bDisableBots; }
+    inline bool areCopsActive() const {
+        // FUN_00968cf0
+        return pCopManager->isEnabled() && !bDisableCops;
+    }
     inline bool isTrafficPaused() const { return bPauseTraffic; }
     inline bool areLocationsFromCarState() const {
         return bLocationsFromCarState;
@@ -131,7 +139,7 @@ private:
     bool bDisableBots;
     bool bPauseTraffic;
 
-    bool bCopsActive;
+    AiCopMng *pCopManager;
     AiBotManager *pBotManager;
     bool bLocationsFromCarState; // Object locations are updated by GSCarState
                                  // instead

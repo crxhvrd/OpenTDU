@@ -9,6 +9,11 @@
 
 class AiVehicle;
 
+void TeleportToRoad( AiVehicle *pVehicle,
+                     const AiRoadIt &it,
+                     const float widthRatio,
+                     const bool bPhantom );
+
 // Navigation type 1: race opponents and bots
 class AiVehNavOpponent : public AiVehNavigation, private AiFsm {
 public:
@@ -18,6 +23,12 @@ public:
         NS_Grid = 2,
         NS_Race = 3,
         NS_Stopped = 5,
+        NS_PoliceWaitRoute = 6,
+        NS_PoliceRoute = 7,
+        NS_PoliceChase = 8,
+        NS_Idle4 = 9,
+        NS_TurnAround = 0xa,
+        NS_UTurn = 0xb,
         NS_RaceOver = 0xc,
         NS_Idle2 = 0xd,
         NS_Idle3 = 0xe,
@@ -131,6 +142,14 @@ private:
     bool bObstacleAhead;
     float stopTime;
     float finishSpeed;
+    bool bTurningAround;
+    int32_t field_0x764;
+    Eigen::Vector4f turnBackDirection;
+    Eigen::Vector4f turnStartDirection;
+    float turnAngleLimit;
+    bool bTurnLeft;
+    int32_t turnPhase;
+    int32_t turnReturnState;
     AiVehObstacles obstacles;
     OptPathBuilder builder;
 
@@ -162,6 +181,18 @@ private:
     void updateLineFinished();
     void updateBotCruise();
     void updateBotFollow();
+    void advanceRouteOnLocation();
+    void exitPoliceWaitRoute();
+    bool isWrongWayOnRoute() const;
+    void updatePoliceRoute();
+    void updatePoliceWrongWay();
+    void updatePoliceChase();
+    void chaseOnTargetRoad();
+    void chaseOffRoad();
+    void chaseTargetOffRoad();
+    void startTurnAround( const bool bLeft );
+    void updateTurnAround();
+    void enterUTurn();
     void onLineMismatch();
     void avoidObstacles();
     bool checkStuck();

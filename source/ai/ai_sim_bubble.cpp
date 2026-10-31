@@ -3,10 +3,12 @@
 
 #include "ai/ai_bot_manager.h"
 #include "ai/ai_config.h"
+#include "ai/ai_cop_manager.h"
 #include "ai/ai_opt_path.h"
 #include "ai/ai_pool.h"
 #include "ai/gs_ai.h"
 #include "core/cubic_bezier.h"
+#include "database/gs_database.h"
 #include "gs_timer.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
@@ -272,7 +274,7 @@ void AiSimBubble::tick( const float deltaTime, const float totalTime ) {
          pPool->getNextOpponentIndex() == -1 ) {
         buildCandidates();
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: cop spawn (FUN_0091a290)
+    spawnCops( totalTime );
     spawnTraffic( totalTime );
     spawnBots( deltaTime );
 }
@@ -666,6 +668,144 @@ void AiSimBubble::cullLeastVisible( const float totalTime,
          IsLocallyOwned( pVehicle->getCarState() ) ) {
         gpAI->getAIPool()->queueRemoval( pVehicle, pReason );
         lastVisibleCullTime = totalTime;
+    }
+}
+
+void AiSimBubble::spawnCops( const float totalTime ) {
+    // FUN_0091a290
+    static constexpr float kWideRoadDamRatio = -0.66f;    // DAT_00f42148
+    static constexpr float kMediumRoadDamRatio = -0.5f;   // DAT_00f4186c
+    static constexpr float kMillimetersToMeters = 0.001f; // FLOAT_00f4167c
+    static constexpr float kWideRoadCarLengths = 3.0f;    // DAT_00f416b4
+    static constexpr float kMediumRoadCarLengths = 2.0f;  // DAT_00f416b0
+    static constexpr int32_t kPoliceCarID = 0x7f0;
+    static constexpr const char *kCullReason =
+        "least visible traffic, need cop";
+
+    static constexpr bool bOnlineSession = false;
+    if ( bOnlineSession ) {
+        return;
+    }
+
+    AiCopMng &copManager = gpAI->getCopManager();
+    AiPool *pPool = gpAI->getAIPool();
+    const bool bNeedPoliceDam = copManager.isEnabled() &&
+                                copManager.isPoliceDamNeeded() &&
+                                pPool->getMaxPolice() > 0;
+    const bool bNeedChaser = copManager.needsMoreChasers();
+    if ( !bNeedPoliceDam && !bNeedChaser ) {
+        return;
+    }
+
+    const int32_t numWithTemplate =
+        pPool->getList( AiPool::AVL_WithTemplate ).Count;
+    const int32_t maxVehicles = gAIConfig.MaxNumVehicle;
+    const int32_t numLocalTraffic =
+        pPool->getList( AiPool::AVL_LocalTraffic ).Count;
+    if ( bNeedPoliceDam ) {
+        if ( numWithTemplate >
+             int32_t( copManager.getNumPoliceDams() ) - 3 + maxVehicles ) {
+            if ( numLocalTraffic > 0 ) {
+                cullLeastVisible( totalTime, kCullReason );
+            }
+            return;
+        }
+        if ( numWithTemplate >= maxVehicles ) {
+            return;
+        }
+    } else if ( numWithTemplate >= maxVehicles ) {
+        if ( numLocalTraffic > 0 ) {
+            cullLeastVisible( totalTime, kCullReason );
+        }
+        return;
+    }
+
+    const int32_t numCops =
+        pPool
+            ->getList( AiPool::AVL_FirstCategory +
+                       static_cast<int32_t>( eAiVehicleCategory::AVC_Cop ) )
+            .Count;
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( bubbleIt.pRoad == nullptr || pLocalCar == nullptr ) {
+        return;
+    }
+
+    AiRoadIt it;
+    if ( bNeedPoliceDam ) {
+        const int32_t numPoliceDams =
+            pPool
+                ->getList(
+                    AiPool::AVL_FirstCategory +
+                    static_cast<int32_t>( eAiVehicleCategory::AVC_CopDam ) )
+                .Count;
+        if ( numPoliceDams >= gAIConfig.MaxNumPoliceDam ) {
+            return;
+        }
+
+        float lateralRatio = 0.0f;
+        if ( copManager.getDamRoadIt( it ) ) {
+            lateralRatio = copManager.getNextDamLateralRatio();
+        } else if ( pickBotCandidate( it, false, true ) ) {
+            const float roadWidth = it.getEntity()->pProfile->InnerWidth;
+            const DBEntryCarPhysicsData *pPoliceCar =
+                gpDatabase->getCarDBEntry( kPoliceCarID );
+            const float policeCarLength =
+                static_cast<float>( pPoliceCar->Length ) * kMillimetersToMeters;
+            if ( roadWidth > policeCarLength * kWideRoadCarLengths ) {
+                spawnInterval = spawnConfig[1];
+                lateralRatio = kWideRoadDamRatio;
+            } else if ( roadWidth > policeCarLength * kMediumRoadCarLengths ) {
+                spawnInterval = spawnConfig[1];
+                lateralRatio = kMediumRoadDamRatio;
+            }
+            copManager.startPoliceDam( it );
+        }
+
+        if ( it.pRoad == nullptr ) {
+            return;
+        }
+        if ( numWithTemplate >
+             int32_t( copManager.getNumPoliceDams() ) -
+                 int32_t( copManager.getNumWantedPoliceDams() ) +
+                 maxVehicles ) {
+            if ( numLocalTraffic > 0 ) {
+                cullLeastVisible( totalTime, kCullReason );
+            }
+            return;
+        }
+        pPool->requestCopDam( it, lateralRatio );
+        return;
+    }
+
+    if ( numCops >= pPool->getMaxPolice() ) {
+        return;
+    }
+    if ( !pLocalCar->getPoliceState().isChased() ) {
+        if ( !pLocalCar->getPoliceState().isWanted() ||
+             !( gAIConfig.PoliceSearchSpawnProba >
+                RandomUnit( pPool->getRandom() ) ) ) {
+            return;
+        }
+    }
+
+    bool bBehind = false;
+    bool bAhead = false;
+    switch ( RandomRange( gpAI->getRandom(), 0, 2 ) ) {
+    case 0:
+        bBehind = true;
+        break;
+    case 1:
+        bAhead = true;
+        break;
+    case 2:
+        bBehind = true;
+        bAhead = true;
+        break;
+    default:
+        return;
+    }
+    if ( pickBotCandidate( it, bBehind, bAhead ) ) {
+        pPool->spawnTrafficOnRoad( it, true );
     }
 }
 

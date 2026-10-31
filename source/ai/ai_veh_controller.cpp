@@ -15,6 +15,7 @@
 #include "core/random/bcpl.h"
 #include "core/color.h"
 #include "game/vehicle/car_state.h"
+#include "gs_timer.h"
 #include "render/draw_list.h"
 #include "world/gs_world.h"
 #include "world/sector_manager.h"
@@ -1061,8 +1062,10 @@ void AiVehCtrlChase::tick( const float deltaTime, const float totalTime ) {
             break;
         }
     } else if ( pGoal != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: police search location
-                                 // (CarState+0xb8 = goalIt, +0xcc = now)
+        PoliceState &goalState = pGoal->getPoliceState();
+        if ( goalState.getLastSearchPos().pRoad == nullptr ) {
+            goalState.setLastSearch( goalIt, gpTimer->GameTotalTime );
+        }
     }
     process( FE_Update );
 }
@@ -1342,4 +1345,131 @@ void AiVehCtrlChase::updateGoalRoute() {
     pPath->setEnd( goalIt );
     pPath->solve( true );
     count = pPath->getNumElems();
+}
+
+AiVehCtrlCurrentRoad::AiVehCtrlCurrentRoad()
+    : AiVehController(),
+      AiFsm(),
+      pVehicle( nullptr ),
+      vehicleIt(),
+      frontFrom(),
+      frontTo(),
+      secondFrom(),
+      secondTo() {
+    // FUN_00962fd0
+}
+
+void AiVehCtrlCurrentRoad::attach( AiVehicle *pOwner ) {
+    // FUN_00962f80
+    pVehicle = pOwner;
+    restart( CRS_Follow );
+}
+
+void AiVehCtrlCurrentRoad::reset( const bool bFull ) {
+    // FUN_00962dd0
+    frontFrom = AiRoadIt();
+    frontTo = AiRoadIt();
+    secondFrom = AiRoadIt();
+    secondTo = AiRoadIt();
+    vehicleIt = AiRoadIt();
+}
+
+void AiVehCtrlCurrentRoad::tick( const float deltaTime,
+                                 const float totalTime ) {
+    // FUN_00963d40
+    CarState *pCar = pVehicle->getCarState();
+    const ObjectWorldLocation &location = pCar->getWorldLocation();
+    if ( location.LocationType == ObjectWorldLocation::OWL_Road ) {
+        ComputeLocationRoadIt( location, vehicleIt );
+        vehicleIt.setWay( location.bWay != 0 );
+    } else if ( pCar->getPoliceState().getLastValidRoadIt().pRoad == nullptr ) {
+        ProjectOnNearestRoad( pCar, vehicleIt );
+    } else {
+        vehicleIt = pCar->getPoliceState().getLastValidRoadIt();
+    }
+
+    if ( vehicleIt.pRoad != nullptr ) {
+        process( FE_Update );
+    }
+}
+
+void AiVehCtrlCurrentRoad::release() {
+    // FUN_00962da0
+    reset( true );
+}
+
+bool AiVehCtrlCurrentRoad::getFront( AiRoadIt &outFrom,
+                                     AiRoadIt &outTo ) const {
+    // FUN_00962ee0
+    outFrom = frontFrom;
+    outTo = frontTo;
+    return frontFrom.pRoad != nullptr && frontTo.pRoad != nullptr;
+}
+
+bool AiVehCtrlCurrentRoad::getSecond( AiRoadIt &outFrom,
+                                      AiRoadIt &outTo ) const {
+    // FUN_00962e70
+    outFrom = secondFrom;
+    outTo = secondTo;
+    return secondFrom.pRoad != nullptr && secondTo.pRoad != nullptr;
+}
+
+int32_t AiVehCtrlCurrentRoad::getCount() const {
+    // FUN_00962f50
+    if ( frontFrom.pRoad == nullptr || frontTo.pRoad == nullptr ) {
+        return 0;
+    }
+    if ( secondFrom.pRoad == nullptr || secondTo.pRoad == nullptr ) {
+        return 1;
+    }
+    return 2;
+}
+
+void AiVehCtrlCurrentRoad::getAt( const int32_t index,
+                                  AiRoadIt &outFrom,
+                                  AiRoadIt &outTo ) const {
+    // FUN_00962cc0
+    if ( index == 0 ) {
+        outFrom = frontFrom;
+        outTo = frontTo;
+    } else if ( index == 1 ) {
+        outFrom = secondFrom;
+        outTo = secondTo;
+    } else {
+        outFrom = AiRoadIt();
+        outTo = AiRoadIt();
+    }
+}
+
+void AiVehCtrlCurrentRoad::popFront() {
+    // FUN_00962cb0
+}
+
+void AiVehCtrlCurrentRoad::forceNextRoad( const uint32_t roadID ) {
+    // FUN_00923360
+}
+
+bool AiVehCtrlCurrentRoad::chooseNextRoad( const AiRoadIt &last,
+                                           AiRoadIt &outFrom,
+                                           AiRoadIt &outTo ) {
+    // Not in the retail vtable (0xf0d384 stops at forceNextRoad)
+    return false;
+}
+
+bool AiVehCtrlCurrentRoad::handle( const int32_t event, const int32_t state ) {
+    // FUN_00963190
+    if ( state != CRS_Follow ) {
+        return false;
+    }
+    if ( event == FE_Enter ) {
+        return true;
+    }
+    if ( event == FE_Update ) {
+        if ( vehicleIt.pRoad != nullptr ) {
+            frontFrom.setRoadEntry( vehicleIt.pRoad, vehicleIt.bWay );
+            frontTo.setRoadExit( vehicleIt.pRoad, vehicleIt.bWay );
+        }
+        return true;
+    }
+    return event == FE_Exit;
 }

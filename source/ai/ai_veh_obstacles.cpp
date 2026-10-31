@@ -64,11 +64,11 @@ static float GetMidLateral( const ObjectWorldLocation &location ) {
            0.5f;
 }
 
-static GameObject *
-GetBehaviourTarget( [[maybe_unused]] const AiVehicle *pVehicle ) {
-    // TODO: behaviour 1 target object (AiVehicle+0x2200 -> +0xb4)
-    OTDU_UNIMPLEMENTED_ONCE;
-    return nullptr;
+static GameObject *GetChaseTarget( AiVehicle *pVehicle ) {
+    if ( pVehicle->getControllerType() != 1 ) {
+        return nullptr;
+    }
+    return pVehicle->getChaseController().getTarget();
 }
 
 static float
@@ -425,10 +425,7 @@ void AiVehObstacles::collectRoad( const int32_t index ) {
 
 bool AiVehObstacles::isTargetObjectIgnored( GameObject *pObject,
                                             AiObstacleSlot *pSlot ) const {
-    if ( pVehicle->getBehaviourType() != 1 ) {
-        return false;
-    }
-    GameObject *pTarget = GetBehaviourTarget( pVehicle );
+    GameObject *pTarget = GetChaseTarget( pVehicle );
     if ( pTarget == nullptr || pObject->getType() != 0 || pObject != pTarget ) {
         return false;
     }

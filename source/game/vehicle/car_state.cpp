@@ -57,7 +57,7 @@ CarState::CarState()
       field_0x39cc( nullptr ),
       field_0x39d4( nullptr ),
       field_0x39d8( nullptr ),
-      field_0x39e0( nullptr ),
+      aiLockFlags( 0 ),
       collisionCallbacks{},
       field_0x39fc( nullptr ),
       bInstanceAlive( false ),
@@ -164,7 +164,7 @@ void CarState::reset() {
     field_0x39cc = nullptr;
     field_0x39fc = nullptr;
     field_0x39d4 = nullptr;
-    field_0x39e0 = nullptr;
+    aiLockFlags = 0;
 
     name = "UNKNOWN";
 }
@@ -451,7 +451,7 @@ void CarState::updateBackOnTrack( float deltaTime ) {
         if ( pVehicle->isBackOnTrackForced() || pVehicle->isRespawnForced() ) {
             bAllowed = true;
         }
-        if ( field_0x39e0 != nullptr ) {
+        if ( hasAILockFlags() ) {
             bAllowed = false;
         }
         if ( !gpCamera->isInReplayMode() && bLocal && body.bHasBikeAvatar ) {

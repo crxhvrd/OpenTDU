@@ -13,10 +13,72 @@ public:
 
 public:
     inline bool isArrested() const { return bArrested; }
+    inline void setArrested( const bool bValue ) { bArrested = bValue; }
+    inline bool isPlayingArrestCinematic() const {
+        return bPlayingArrestCinematic;
+    }
+    inline void setPlayingArrestCinematic( const bool bValue ) {
+        bPlayingArrestCinematic = bValue;
+    }
+    inline void setAfterCaptureGraceTime( const float time ) {
+        AfterCaptureGraceTime = time;
+    }
+    inline const AiRoadIt &getLastValidRoadIt() const {
+        return LastValidRoadIT;
+    }
+    inline int32_t getNumCollisionCar() const { return NumCollisionCar; }
+    inline int32_t getNumCollisionSettings() const {
+        return NumCollisionSettings;
+    }
     inline bool isChased() const { return bIsChased; }
     inline float getWasHitLastTime() const { return WasHitLastTime; }
     inline int32_t getJunctionNotRespected() const {
         return JunctionNotRespected;
+    }
+    inline bool isSearched() const { return bIsSearched; }
+    inline void setSearched( const bool bSearched ) { bIsSearched = bSearched; }
+    inline void setChased( const bool bChased ) { bIsChased = bChased; }
+    inline int32_t getNumChasers() const { return NumChasers; }
+    inline void setNumChasers( const int32_t numChasers ) {
+        NumChasers = numChasers;
+    }
+    inline int32_t getNumWantedChaser() const { return NumWantedChaser; }
+    inline void setNumWantedChaser( const int32_t numWantedChaser ) {
+        NumWantedChaser = numWantedChaser;
+    }
+    inline void stopSearch() {
+        bIsSearched = false;
+        LastSearchPos = AiRoadIt();
+        LastSearchRefresh = 0.0f;
+    }
+    inline float getAfterCaptureGraceTime() const {
+        return AfterCaptureGraceTime;
+    }
+    inline float getLastInfTimeWitness() const { return LastInfTimeWitness; }
+    inline void setLastInfTimeWitness( const float time ) {
+        LastInfTimeWitness = time;
+    }
+    inline void setWitnessedOffence( const float value ) {
+        WitnessedOffence = value;
+    }
+    inline float getMinTimeToStopSearchMalus() const {
+        return MinTimeToStopSearchMalus;
+    }
+    inline void setMinTimeToStopSearch( const float time, const float malus ) {
+        MinTimeToStopSearch = time;
+        MinTimeToStopSearchMalus = malus;
+    }
+    inline bool isArrestAfterBackOnTrack() const {
+        return bArrestAfterBackOnTrack;
+    }
+    inline void setArrestAfterBackOnTrack( const bool bArrest ) {
+        bArrestAfterBackOnTrack = bArrest;
+    }
+    inline const AiRoadIt &getLastSearchPos() const { return LastSearchPos; }
+    inline float getLastSearchRefresh() const { return LastSearchRefresh; }
+    inline void setLastSearch( const AiRoadIt &position, const float time ) {
+        LastSearchPos = position;
+        LastSearchRefresh = time;
     }
 
 public:
@@ -26,6 +88,19 @@ public:
     void reset();
     bool isRecentCarCollision( const void *pCar ) const;
     bool checkRecentCollision( const void *pCar, const void *pObject );
+    float computeOffenceLevel();
+    bool isWanted();
+    void updateAllTimeCounters();
+    void checkInfringements( class CarState *pOwner, const float deltaTime );
+    void onPoliceCollision( const uint8_t collisionType,
+                            class CarState *pOther );
+
+private:
+    void updateLastValidRoadIt( AiRoadMap::Road *pRoad,
+                                const float fraction,
+                                const bool bWay );
+    bool checkYield( class CarState *pOwner, const uint32_t junctionID );
+    void reduceOffences( class CarState *pOwner );
 
 private:
     int32_t NumPoliceDamForced = 0;
