@@ -333,6 +333,10 @@ public:
     float getForwardSpeed() const { return vehicle.ForwardSpeed; }
     bool isTrafficBody() const { return bTrafficBody; }
     void setTrafficBody( const bool bTraffic ) { bTrafficBody = bTraffic; }
+    void setCopDam( const bool bInCopDam ) { bCopDam = bInCopDam; }
+    void setCopDamMassExponent( const int32_t exponent ) {
+        copDamMassExponent = exponent;
+    }
     void setInInstantReplay( const bool bInReplay ) {
         bInInstantReplay = bInReplay;
     }
@@ -397,6 +401,7 @@ public:
     void setBackOnTrackPlaced( bool bPlaced ) { bBackOnTrackPlaced = bPlaced; }
     void requestRollLimitRestore() { bRollLimitRestoreRequest = true; }
     bool requestCollisionInertia();
+    float getCollisionInertiaScale() const;
     bool isRollLimitActive() const {
         return pRollLimitConstraint != nullptr &&
                pRollLimitConstraint->GetEnabled();
@@ -724,6 +729,9 @@ private:
     bool bLowSpeedLatAssist = false;  // FIXME
     bool bIsBike = false;
     bool bTrafficBody = false;
+    bool bCopDam = false;           // +0xd36
+    int32_t copDamMassExponent = 0; // +0x3f14
+    float baseMass = 0.0f;          // +0x2d4
     bool bInInstantReplay = false;
     ReplayPlayback replayPlayback;
     bool bRollLimitRestoreRequest = false;          // +0xd31

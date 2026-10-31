@@ -26,6 +26,14 @@
 static constexpr int32_t kMinTrafficColor = 1;
 static constexpr int32_t kMaxTrafficColor = 11;
 
+static inline Matrix4x4f_t LiftSpawnMatrix( const CarState *pCarState,
+                                            const Matrix4x4f_t &matrix ) {
+    Matrix4x4f_t lifted = matrix;
+    lifted( 3, 1 ) += pCarState->getBody()->BodyDimensions.y() * 0.5f +
+                      pCarState->getWheel( 0 ).WheelRadius;
+    return lifted;
+}
+
 AiSpawnRequest::AiSpawnRequest()
     : kind( ASK_Traffic ),
       state( ASS_Idle ),
@@ -257,11 +265,12 @@ bool AiSpawnRequest::executeParked() {
 void AiSpawnRequest::finalizeParked() {
     // FUN_009228d0
     applyRandomTrafficColor();
+    const Matrix4x4f_t frame = LiftSpawnMatrix( pCarState, spawnMatrix );
     {
         PhysicsLock lock;
-        pCarState->getPhysicsVehicle()->resetToTransform( spawnMatrix, true );
+        pCarState->getPhysicsVehicle()->resetToTransform( frame, true );
     }
-    pCarState->getWorldMatrix() = spawnMatrix;
+    pCarState->getWorldMatrix() = frame;
     pAiVehicle->initializeParked( pCarState );
     gpAI->getAIPool()->addVehicle( pAiVehicle );
     if ( pCarState != nullptr && pAiVehicle != nullptr ) {
@@ -291,16 +300,15 @@ bool AiSpawnRequest::executeCopDam() {
 
 void AiSpawnRequest::finalizeCopDam() {
     // FUN_009227d0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: spawn height lift
+    const Matrix4x4f_t frame = LiftSpawnMatrix( pCarState, spawnMatrix );
     PhysicsVehicle *pPhysics = pCarState->getPhysicsVehicle();
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (cop dam
-                             // mass/inertia scale)
+    pPhysics->setCopDam( true );
     pPhysics->setTrafficBody( false );
     {
         PhysicsLock lock;
-        pPhysics->resetToTransform( spawnMatrix, true );
+        pPhysics->resetToTransform( frame, true );
     }
-    pCarState->getWorldMatrix() = spawnMatrix;
+    pCarState->getWorldMatrix() = frame;
     pAiVehicle->initializeCopDam( pCarState );
     gpAI->getAIPool()->addVehicle( pAiVehicle );
     if ( pCarState != nullptr && pAiVehicle != nullptr ) {

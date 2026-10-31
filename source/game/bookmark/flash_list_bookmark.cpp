@@ -2,16 +2,10 @@
 #include "flash_list_bookmark.h"
 
 #include "mng_bookmark.h"
+#include "ai/ai_cop_manager.h"
+#include "ai/gs_ai.h"
 #include "flash/flash_callbacks_register.h"
 #include "flash/implementation/flash_player.h"
-
-// TODO: Move to right cpp
-static bool FUN_00914cf0( const FlashMessage message,
-                          FlashListBookmark *pList ) {
-    // FUN_00914cf0
-    OTDU_UNIMPLEMENTED; // TODO: AI (deferred bookmark action)
-    return false;
-}
 
 // TODO: Move to right cpp
 static void EditorGoToBookmark( const Eigen::Vector3f &position ) {
@@ -29,7 +23,7 @@ FlashListBookmark::FlashListBookmark() : FlashList(), pParent( nullptr ) {
 bool FlashListBookmark::onMessage( FlashMessage *pMessage,
                                    FlashPlayer *pPlayer ) {
     // FUN_0070cfa0
-    const int32_t bookmarkIndex = firstLine + selectedLineIndex;
+    const int32_t bookmarkIndex = getSelectedBookmarkIndex();
 
     switch ( *pMessage ) {
     case kDelete:
@@ -37,7 +31,7 @@ bool FlashListBookmark::onMessage( FlashMessage *pMessage,
         return true;
 
     case kGoto:
-        if ( !FUN_00914cf0( kGoto, this ) ) {
+        if ( !gpAI->getCopManager().interceptBookmarkAction( kGoto, this ) ) {
             pParent->goTo( bookmarkIndex );
         }
         return true;

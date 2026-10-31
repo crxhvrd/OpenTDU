@@ -25,6 +25,8 @@ class CameraGame;
 class CarState;
 
 class GMFreeride : public GameModeWorld {
+    friend class AiCopMng;
+
 public:
     GMFreeride();
     ~GMFreeride();
@@ -54,6 +56,9 @@ public:
     inline bool isNextIntroActive() const { return nextIntro.bIsActive; }
     inline EntityExtraChallenge *getNearestExtraChallenge() const {
         return pNearestExtraChallenge;
+    }
+    inline const MngFRMeetingIC &getMngFRMeetingIC() const {
+        return mngFRMeetingIC;
     }
 
     static void OnGPSFlyUpEnd( void *pUnused, void *pTargetGameMode );
@@ -99,6 +104,7 @@ private:
     void acquireSpotIntroCine( struct SpotMap *pSpot );
     void startMapFlyDown();
     static void OnSpotIntroFadeOut( void *pData, void *pSource );
+    static bool GoHome();
 
     void populateEnterSpotPrompt( class FlashPlayer *pPlayer );
     void refreshChallengeLockState( class FlashPlayer *pPlayer );

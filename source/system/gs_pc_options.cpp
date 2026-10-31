@@ -1,11 +1,15 @@
 #include "shared.h"
 #include "gs_pc_options.h"
 
+#include "ai/ai_cop_manager.h"
+#include "ai/gs_ai.h"
 #include "audio/gs_audio.h"
 #include "config/gs_config.h"
+#include "core/format.h"
 #include "flash/gs_flash.h"
 #include "flash/flash_mouse.h"
 #include "flash/mng_fade.h"
+#include "flash/mng_flash_localize.h"
 #include "flash/mng_flash_counter.h"
 #include "flash/modal_message_box.h"
 #include "flash/implementation/flash_player.h"
@@ -14,11 +18,15 @@
 #include "game/gm_base.h"
 #include "game/gs_tutorial.h"
 #include "game/login/gm_login.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_display.h"
 #include "gs_timer.h"
 #include "input/input_device.h"
+#include "online/mng_chat.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/achievements_data.h"
+#include "player_data/driver.h"
 #include "player_data/player_save.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/save_game_manager.h"
@@ -33,6 +41,9 @@ GSPCOptions *gpPCOptions = nullptr; // DAT_01416130
 static constexpr uint64_t kClearCurrentGameHashcode = 0x3acf5fa;
 static constexpr uint64_t kReturnToWindowsHashcode = 0x39db3ba;
 static constexpr uint64_t kChangeProfileHashcode = 0x35475ba;
+static constexpr uint64_t kConfirmPoliceFineHashcode = 0x3454994;
+static constexpr uint64_t kConfirmPoliceFineChasedHashcode = 0x3360754;
+static constexpr int32_t kConfirmPoliceFineDatabaseIndex = 0xb;
 static constexpr uint64_t kInvalidNicknameHashcode = 0x380b5da;
 static constexpr uint64_t kInvalidEmailHashcode = 0x39f3a5a;
 static constexpr uint64_t kInvalidPasswordHashcode = 0x38ff81a;
@@ -642,14 +653,49 @@ void GSPCOptions::onMainMenuSelection( eMainMenuOption selection ) {
         }
         return;
 
-    case MMO_Quit:
-        settlePoliceFine();
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND
+    case MMO_Quit: {
+        CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+        int32_t fine = 0;
+        if ( pPlayerCar != nullptr &&
+             pPlayerCar->getPoliceState().isWanted() ) {
+            AiCopMng &copMng = gpAI->getCopManager();
+            copMng.computeFine( pPlayerCar );
+            fine = copMng.getCurrentFine().TotalValue;
+        }
+
+        const int32_t money = static_cast<int32_t>(
+            gpPlayerData->getLoadedSave()->getDriver()->getMoney() );
+        if ( money <= fine ) {
+            fine = money;
+        }
+
+        if ( 0 < fine ) {
+            char fineString[32];
+            FormatMoneyString( fineString, fine );
+            gpMngFlashLocalize->setSysVar( "FINE", fineString );
+
+            const bool bChased =
+                pPlayerCar != nullptr &&
+                0 < gpAI->getCopManager().countChasers( pPlayerCar );
+            const uint64_t messageHashcode =
+                bChased ? kConfirmPoliceFineChasedHashcode
+                        : kConfirmPoliceFineHashcode;
+            if ( gpMngChat != nullptr ) {
+                gpMngChat->closeInputPopupIfOpen();
+            }
+            TestDrive::DisplayModalPrompt(
+                true, messageHashcode, kConfirmPoliceFineDatabaseIndex, nullptr,
+                this, nullptr, 4, "_Confirm Police Fine ?", true, false,
+                MPT_Default, gpFlashMessageBox );
+            gpMngFlashLocalize->clearAllSysVar();
+            return;
+        }
 
         onMainMenuSelection( ( pendingMenuAction == MA_QuitToDesktop )
                                  ? MMO_QuitToDesktop
                                  : MMO_ChangeProfile );
         return;
+    }
 
     default:
         return;
@@ -1205,5 +1251,14 @@ void GSPCOptions::switchToLoginGameMode() {
 
 void GSPCOptions::settlePoliceFine() {
     // FUN_007c5570
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI/POLICE (infringement settlement)
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar == nullptr || !pPlayerCar->getPoliceState().isWanted() ) {
+        return;
+    }
+
+    AiCopMng &copMng = gpAI->getCopManager();
+    copMng.computeFine( pPlayerCar );
+    if ( 0 < copMng.getCurrentFine().TotalValue ) {
+        copMng.applyFine( pPlayerCar, false, true, true, false );
+    }
 }

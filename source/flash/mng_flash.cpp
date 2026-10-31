@@ -2,6 +2,8 @@
 #include "mng_flash.h"
 #include "gs_flash.h"
 
+#include "ai/ai_cop_manager.h"
+#include "ai/gs_ai.h"
 #include "database/gs_database.h"
 #include "game/gm_base.h"
 #include "game/gm_scene.h"
@@ -59,13 +61,6 @@ static constexpr FlashMessage kWidget = 0x67646977u;    // widg
 // TODO: Move to right cpp
 static ShowCasePhysControl &GetShowcasePhysControl() {
     return gpActiveGMScene->getShowcaseCarControl().getPhysicsControl();
-}
-
-// TODO: Move to right cpp
-static bool FUN_00914df0() {
-    // FUN_00914df0
-    OTDU_UNIMPLEMENTED;
-    return false;
 }
 
 // TODO: Move to right cpp
@@ -200,7 +195,7 @@ bool RequestMapGameMode( FlashPlayer *param_1 ) {
 }
 
 // TODO: Move to right cpp
-static bool FUN_00718730() {
+bool RequestEditorGameMode() {
     // FUN_00718730
     OTDU_UNIMPLEMENTED;
     return false;
@@ -292,7 +287,8 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     case kGoMap: {
         if ( gpActiveGameMode->getCurrentGameMode() == GM_FreeRide ||
              gpActiveGameMode->getCurrentGameMode() == GM_TestCar ) {
-            bool bVar6 = FUN_00914df0();
+            bool bVar6 = gpAI->getCopManager().interceptFlashAction( *pMessage,
+                                                                     pPlayer );
             if ( bVar6 ) {
                 return true;
             }
@@ -326,12 +322,13 @@ bool MngFlash::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     case kGoEditor: {
         if ( gpActiveGameMode->getCurrentGameMode() == GM_FreeRide ||
              gpActiveGameMode->getCurrentGameMode() == GM_TestCar ) {
-            bool bVar6 = FUN_00914df0();
+            bool bVar6 = gpAI->getCopManager().interceptFlashAction( kGoEditor,
+                                                                     pPlayer );
             if ( bVar6 ) {
                 return true;
             }
         }
-        return FUN_00718730();
+        return RequestEditorGameMode();
     }
 
     case kGoHome: {

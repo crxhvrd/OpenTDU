@@ -10,6 +10,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/scenaric/spots.h"
+#include "ai/ai_cop_manager.h"
 #include "ai/ai_game_session.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_vehicle.h"
@@ -432,8 +433,12 @@ void GameMechanism::restart() {
     // FUN_00735c30
     bRestarted = true;
     field_0x7d8 = true;
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (FUN_00969b50(0, 1), GSAI +0x2a984:
-                        // +0x30 = 0, +0x14/+0x15 = 0, +0x38 = DAT_00f417f8)
+    gpAI->setTrafficCategories( false, 1u );
+    AiCopMng &copMng = gpAI->getCopManager();
+    copMng.setNumWantedPoliceDams( 0u );
+    copMng.setPoliceDamNeeded( false );
+    copMng.setPoliceDamRequested( false );
+    copMng.setNextDamLateralRatio( AiCopMng::kNoDamLateralRatio );
     resetRaceState();
     if ( pCinematic != nullptr ) {
         pCinematic->stop( true );
@@ -455,7 +460,7 @@ void GameMechanism::restart() {
         }
     }
     if ( gpScenaric->getLocalPlayer().getCarState() != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AI (CarState AiInfringement reset)
+        gpScenaric->getLocalPlayer().getCarState()->getPoliceState().reset();
     }
     pGameSession->sendRaceMessage( AiRaceMessage{ 0, ARM_Restart } );
     stateChange( MS_WaitingHUD );

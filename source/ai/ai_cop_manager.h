@@ -1,6 +1,8 @@
 #pragma once
 
 #include "ai/ai_road_iterator.h"
+#include "core/popup_callback.h"
+#include "flash/entities/flash_entity.h"
 #include "game/police_state.h"
 #include "game/scenaric/gs_scenaric.h"
 
@@ -9,6 +11,7 @@ class CarState;
 class edAudioSample;
 class edAudioStreamEntry;
 class EntityCinematic;
+class FlashListBookmark;
 class FlashPlayer;
 class ScenaricBank;
 
@@ -27,7 +30,7 @@ enum class eCopVoiceEvent : int32_t {
 };
 
 // Police manager (wanted level, chasers, police dams and arrest)
-class AiCopMng : public CinematicPlayer {
+class AiCopMng : public CinematicPlayer, public PopupCallback {
 public:
     static constexpr int32_t kNumCopVoices = 94;
     static constexpr float kNoDamLateralRatio = -1024.0f; // DAT_00f417f8
@@ -60,6 +63,9 @@ public:
     inline uint32_t getNumWantedPoliceDams() const {
         return numWantedPoliceDams;
     }
+    inline void setNumWantedPoliceDams( const uint32_t numDams ) {
+        numWantedPoliceDams = numDams;
+    }
     inline CarState *getPoliceDamTarget() const { return pPoliceDamTarget; }
     inline void setPoliceDamTarget( CarState *pTarget ) {
         pPoliceDamTarget = pTarget;
@@ -84,6 +90,7 @@ public:
     }
     inline float getLastWarnTime() const { return lastWarnTime; }
     inline const Fine &getCurrentFine() const { return currentFine; }
+    inline bool isInfringementSaved() const { return bInfringementSaved; }
 
     // Police dam request (FUN_009cca60 inlined)
     inline void requestPoliceDam( CarState *pTarget ) {
@@ -108,14 +115,24 @@ public:
     int32_t computeNumWantedChasers( CarState *pTarget ) const;
     bool canPlayWarnVoice() const;
     void onVoiceEvent( const eCopVoiceEvent event );
+    void saveInfringement();
+    void restoreInfringement();
 
     bool startArrestFade();
+    void computeFine( CarState *pCar );
     void applyFine( CarState *pCar,
                     const bool bShowInstantFine,
                     const bool bChargeFine,
                     const bool bResetInfringement,
                     const bool bShowFine );
     bool executeAction( int32_t action, void *pSource, void *pData ) override;
+    void onClose( ePopupAnswer answer, void *pData, int32_t userData ) override;
+
+    bool interceptBookmarkAction( const FlashMessage message,
+                                  FlashListBookmark *pBookmarkList );
+    bool interceptFlashAction( const FlashMessage message,
+                               FlashPlayer *pPlayer );
+    bool interceptFreerideAction( const FlashMessage message );
 
     inline EntityCinematic *getArrestCinematic() const {
         return pArrestCinematic;
@@ -157,9 +174,9 @@ private:
     std::array<float, kNumCopVoices> copVoicesTime;
 
     FlashPlayer *pInstantFinePlayer;
-    uint32_t interceptedMessage;
+    FlashMessage interceptedMessage;
     FlashPlayer *pInterceptedPlayer;
-    void *pInterceptedBookmark;
+    FlashListBookmark *pInterceptedBookmark;
     Fine currentFine;
     bool bSendPlayerToJail;
 
@@ -189,8 +206,13 @@ private:
     void startVoice( RadioChannel &channel );
     void releaseVoice( RadioChannel &channel, bool bStop );
     void onVoiceFinished();
-    void computeFine( CarState *pCar );
-    void showInstantFine();
+    void chargeCurrentFine();
+    int32_t requestInstantFine( CarState *pCar, const bool bShowPrompt );
+    void showInstantFine( const int32_t fine, const bool bCanPay );
+    void resolveInterceptedAction( const bool bChargeFine,
+                                   const bool bResetInfringement );
+    void cancelInterceptedAction();
+    void clearInterceptedAction();
 };
 
 extern AiCopMng gAiCopMng;

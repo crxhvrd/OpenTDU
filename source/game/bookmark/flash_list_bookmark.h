@@ -23,5 +23,9 @@ public:
 
     using FlashList::reset;
 
+    inline int32_t getSelectedBookmarkIndex() const {
+        return firstLine + selectedLineIndex;
+    }
+
     MngBookmark *pParent;
 };

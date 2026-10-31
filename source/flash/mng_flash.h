@@ -52,3 +52,4 @@ private:
 };
 
 bool RequestMapGameMode( FlashPlayer *pPlayer );
+bool RequestEditorGameMode();

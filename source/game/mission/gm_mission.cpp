@@ -423,7 +423,7 @@ void GMMission::pause() {
     }
 
     if ( gpScenaric->getLocalPlayer().getCarState() != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: AI (AiInfringement reset, FUN_008ae790)
+        gpScenaric->getLocalPlayer().getCarState()->getPoliceState().reset();
         ReleasePlayerAutopilot();
     }
 

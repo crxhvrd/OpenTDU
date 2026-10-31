@@ -516,11 +516,12 @@ bool AiPool::togglePlayerAutopilot( const bool bOpponent ) {
         pCar->setAIController( nullptr );
 
         gpPlayerData->applyDrivingOptions();
-        OTDU_UNIMPLEMENTED; // TODO: GSCamera (shake / radial blur intensity
-                            // from the local player data)
+        gpCamera->setDrivingOptions( gpPlayerData->getCameraShake(),
+                                     gpPlayerData->getRadialBlurIntensity() );
         PhysicsVehicle *pPhysics = pCar->getPhysicsVehicle();
         pPhysics->setDrivingControl( gpPhysics ); // +0x4388
-        OTDU_UNIMPLEMENTED;                       // TODO: PHYSICS
+        OTDU_UNIMPLEMENTED; // TODO: PHYSICS (+0xe40 = +0xa3c control argument,
+                            // GSPhysics control phase byte +0x20 = 1)
         pPhysics->setAIDriven( false );           // +0xd34
         pPhysics->setVirtualFlag( false );
         pPhysics->setAutoReverseAllowed( true ); // +0x335
@@ -576,7 +577,7 @@ bool AiPool::togglePlayerAutopilot( const bool bOpponent ) {
         pVehicle->initialize( eAiVehicleCategory::AVC_Autopilot, pCar, location,
                               lane, AiVehicle::kBehaviourNone, 8, 1, 1, true );
     }
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (AiVehicle +0xc2 = GSAI config +0xe2)
+    pVehicle->getDPC().DPCPattern.bRespectWay = gAIConfig.bNavOppRespectLane;
     pVehicle->getSignals().bHeadlightActivated = false; // +0x200
     pVehicle->setRemovable( false );                    // +0x22e4
     pVehicle->setPlayerCar( true );                     // +0x22f2
@@ -601,7 +602,7 @@ void AiPool::updateArrestedCar( const eArrestStep step, CarState *pCar ) {
         addVehicle( pVehicle );
         PhysicsVehicle *pPhysics = pCar->getPhysicsVehicle();
         pPhysics->setDrivingControl( nullptr ); // +0x4388
-        OTDU_UNIMPLEMENTED_ONCE;                // TODO: PHYSICS
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (+0xe40 = 0 control argument)
         pPhysics->setSteerControlUsed( false ); // +0x550
         pCar->setAIController( pVehicle );
         const Matrix4x4f_t startFrame = pCar->getBody()->OffsetedWorldMatrix;
@@ -649,8 +650,8 @@ void AiPool::updateArrestedCar( const eArrestStep step, CarState *pCar ) {
         if ( pPhysics != nullptr ) {
             gpPlayerData->applyDrivingOptions();
             pPhysics->setDrivingControl( gpPhysics ); // +0x4388
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (driving control index
-                                     // +0xe40 = +0xa3c, GSPhysics control flag
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (+0xe40 = +0xa3c control
+                                     // argument, GSPhysics control phase byte
                                      // +0x20 = 1)
             pPhysics->setVirtualFlag( false ); // +0xdd4
             {

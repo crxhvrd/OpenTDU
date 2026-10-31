@@ -19,6 +19,12 @@
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
 #include "flash/mng_fade.h"
+#include "flash/mng_flash.h"
+#include "flash/mng_flash_localize.h"
+#include "flash/modal_message_box.h"
+#include "game/bookmark/flash_list_bookmark.h"
+#include "game/bookmark/mng_bookmark.h"
+#include "game/freeride/gm_freeride.h"
 #include "game/game_mechanism.h"
 #include "game/gm_base.h"
 #include "game/gm_world.h"
@@ -29,6 +35,7 @@
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "gs_timer.h"
+#include "online/mng_chat.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data/achievements_data.h"
@@ -208,6 +215,12 @@ static constexpr float kArrestTeleportMinT = 0.1f; // FLOAT_00f41668
 static constexpr float kArrestTeleportMaxT = 0.9f; // DAT_00f416a0
 static constexpr int32_t kFinesPaidCounter = 0xf0f4;
 
+static constexpr uint64_t kInstantFineHashcode = 0x3454994;
+static constexpr uint64_t kInstantFineChasedHashcode = 0x3360754;
+static constexpr uint64_t kInstantFineNoMoneyHashcode = 0x3548bd4;
+static constexpr uint64_t kInstantFineOnlineHashcode = 0x3bdd4f4;
+static constexpr int32_t kInstantFineDatabaseIndex = 0xb;
+
 static Eigen::Vector4f GetWorldShift() {
     if ( gpWorldStreaming != nullptr && gpWorldStreaming->isEnabled() ) {
         return gpWorldStreaming->getPosition();
@@ -280,6 +293,39 @@ static int32_t ComputeFineLevelFactor() {
     }
 }
 
+static bool IsFineChargedInActiveGM() {
+    return !( gpActiveGM != nullptr &&
+              gpActiveGM->getCurrentGameMode() == GM_Mission &&
+              gpActiveGM->getGameMech() != nullptr &&
+              gpActiveGM->getGameMech()->getUnknown75C() );
+}
+
+static void SetOnlineSessionPaused( const bool bPaused ) {
+    // FUN_009112b0
+    (void)bPaused;
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (P2P pause + weather time sync)
+}
+
+static void PauseForInstantFine() {
+    if ( gpAudio != nullptr ) {
+        gpAudio->changeMixState( gpAudio->getMixFlags( "MixMenu" ) );
+    }
+    if ( gpTimer->PreviousGameSpeed != gpTimer->GameSpeed &&
+         gpTimer->GameSpeed != 0.0f ) {
+        gpTimer->PreviousGameSpeed = gpTimer->GameSpeed;
+    }
+    gpTimer->GameSpeed = 0.0f;
+    SetOnlineSessionPaused( true );
+}
+
+static void ResumeFromInstantFine() {
+    if ( gpAudio != nullptr ) {
+        gpAudio->requestMixStateResync();
+    }
+    gpTimer->GameSpeed = gpTimer->PreviousGameSpeed;
+    SetOnlineSessionPaused( false );
+}
+
 // TODO: Move to right cpp
 static void ShowFineHud( FlashPlayer *pHudPlayer, const AiCopMng::Fine &fine ) {
     // FUN_006ee150
@@ -327,7 +373,7 @@ AiCopMng::AiCopMng()
       lastWarnTime( 0.0f ),
       copVoicesTime{},
       pInstantFinePlayer( nullptr ),
-      interceptedMessage( 0 ),
+      interceptedMessage(),
       pInterceptedPlayer( nullptr ),
       pInterceptedBookmark( nullptr ),
       currentFine(),
@@ -360,8 +406,7 @@ void AiCopMng::initialize() {
             }
         }
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GENERAL flash player (instant fine)
-    pInstantFinePlayer = nullptr;
+    pInstantFinePlayer = gpFlash->getFlashPlayer( "GENERAL" );
 }
 
 void AiCopMng::reset() {
@@ -382,7 +427,7 @@ void AiCopMng::reset() {
     highPriorityRadio.LastVoice = -1;
     lastWarnTime = 0.0f;
     lastGameCounterValue = 0.0f;
-    interceptedMessage = 0;
+    interceptedMessage = FlashMessage();
     pInterceptedPlayer = nullptr;
     pInterceptedBookmark = nullptr;
     bSendPlayerToJail = false;
@@ -456,7 +501,7 @@ void AiCopMng::tick() {
     }
 
     if ( pInstantFinePlayer == nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GENERAL flash player (getFlashPlayer)
+        pInstantFinePlayer = gpFlash->getFlashPlayer( "GENERAL" );
     }
 
     const float totalTime = gpTimer->GameTotalTime;
@@ -1245,6 +1290,27 @@ void AiCopMng::stopVoices() {
     }
 }
 
+void AiCopMng::restoreInfringement() {
+    // FUN_009101b0
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar == nullptr ) {
+        return;
+    }
+    pPlayerCar->getPoliceState() = savedInfringement;
+    bInfringementSaved = false;
+    savedInfringement.reset();
+}
+
+void AiCopMng::saveInfringement() {
+    // FUN_009101e0
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pPlayerCar == nullptr ) {
+        return;
+    }
+    savedInfringement = pPlayerCar->getPoliceState();
+    bInfringementSaved = true;
+}
+
 void AiCopMng::computeFine( CarState *pCar ) {
     // FUN_00910b50
     const int32_t levelFactor = ComputeFineLevelFactor();
@@ -1261,10 +1327,281 @@ void AiCopMng::computeFine( CarState *pCar ) {
         levelFactor;
 }
 
-void AiCopMng::showInstantFine() {
+void AiCopMng::chargeCurrentFine() {
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    const uint32_t money = pSave->getDriver()->getMoney();
+    const uint32_t fine = static_cast<uint32_t>( currentFine.TotalValue );
+    pSave->getExtraChallenges()->countArrest();
+    const uint32_t paid = ( money < fine ) ? money : fine;
+    Driver *pDriver = pSave->getDriver();
+    pSave->getExtraChallenges()->addCounter( CounterIndex( kFinesPaidCounter ),
+                                             static_cast<int32_t>( paid ) );
+    pDriver->setMoneyAndNotify(
+        static_cast<int32_t>( pDriver->getMoney() - paid ) );
+    if ( money < fine ) {
+        bSendPlayerToJail = gAIConfig.bEnableJail;
+    }
+}
+
+int32_t AiCopMng::requestInstantFine( CarState *pCar, const bool bShowPrompt ) {
+    // FUN_00914c10
+    if ( pCar == nullptr ) {
+        pCar = gpScenaric->getLocalPlayer().getCarState();
+        if ( pCar == nullptr ) {
+            return 0;
+        }
+    }
+
+    if ( pCar->getPoliceState().computeOffenceLevel() < gAIConfig.InfLimit ) {
+        return 0;
+    }
+
+    computeFine( pCar );
+    if ( bShowPrompt ) {
+        showInstantFine( currentFine.TotalValue, true );
+    }
+    return currentFine.TotalValue;
+}
+
+void AiCopMng::showInstantFine( const int32_t fine, const bool bCanPay ) {
     // FUN_00914900
-    OTDU_UNIMPLEMENTED; // TODO: instant fine popup (DisplayModalPrompt, popup
-                        // callback vtbl 0xf0ee74 -> FUN_009158c0)
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    bool bCanAfford = true;
+    if ( pPlayerCar != nullptr ) {
+        pPlayerCar->setAILockFlags( CarState::kAILockArrest );
+    }
+    PauseForInstantFine();
+
+    char fineString[32];
+    FormatMoneyString( fineString, fine );
+    gpMngFlashLocalize->setSysVar( "FINE", fineString );
+
+    uint64_t messageHashcode = kInstantFineOnlineHashcode;
+    if ( bCanPay ) {
+        const int32_t money = static_cast<int32_t>(
+            gpPlayerData->getLoadedSave()->getDriver()->getMoney() );
+        bCanAfford = fine <= money;
+        const bool bChased =
+            pPlayerCar != nullptr && countChasers( pPlayerCar ) != 0;
+        if ( bCanAfford ) {
+            messageHashcode =
+                bChased ? kInstantFineChasedHashcode : kInstantFineHashcode;
+        } else {
+            gpMngFlashLocalize->clearAllSysVar();
+            messageHashcode = kInstantFineNoMoneyHashcode;
+        }
+    }
+
+    if ( gpMngChat != nullptr ) {
+        gpMngChat->closeInputPopupIfOpen();
+    }
+    TestDrive::DisplayModalPrompt( bCanPay, messageHashcode,
+                                   kInstantFineDatabaseIndex, nullptr, this,
+                                   nullptr, 0, nullptr, bCanAfford, false,
+                                   MPT_Default, gpFlashMessageBox );
+    gpMngFlashLocalize->clearAllSysVar();
+}
+
+void AiCopMng::onClose( ePopupAnswer answer,
+                        void * /*pData*/,
+                        int32_t /*userData*/ ) {
+    // FUN_009158c0
+    if ( gpMngChat != nullptr ) {
+        gpMngChat->reset();
+    }
+    if ( answer != ePopupAnswer::PA_Accept ) {
+        cancelInterceptedAction();
+        return;
+    }
+    resolveInterceptedAction( IsFineChargedInActiveGM(), true );
+}
+
+void AiCopMng::clearInterceptedAction() {
+    interceptedMessage = FlashMessage();
+    pInterceptedPlayer = nullptr;
+    pInterceptedBookmark = nullptr;
+    currentFine = Fine();
+}
+
+void AiCopMng::resolveInterceptedAction( const bool bChargeFine,
+                                         const bool bResetInfringement ) {
+    // FUN_00915590
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    gpPlayerData->setLastArrestedTime( gpTimer->GameTotalTime );
+    if ( bChargeFine ) {
+        chargeCurrentFine();
+    }
+
+    gpAI->setDisableCops( true );
+    gpAI->setCopsActive( false );
+    gpAI->getAIPool()->removeCops();
+    if ( bResetInfringement ) {
+        pPlayerCar->getPoliceState().reset();
+    }
+
+    if ( interceptedMessage != FlashMessage( "goed" ) &&
+         interceptedMessage != FlashMessage( "goto" ) ) {
+        ResumeFromInstantFine();
+    }
+
+    if ( interceptedMessage.AsInteger != 0u &&
+         ( pInterceptedPlayer == nullptr ||
+           pInterceptedBookmark == nullptr ) ) {
+        if ( gpActiveGameMode == nullptr ) {
+            pPlayerCar->clearAILockFlags( CarState::kAILockArrest );
+            return;
+        }
+
+        if ( pInterceptedPlayer == nullptr &&
+             pInterceptedBookmark == nullptr ) {
+            GMFreeride *pFreeride =
+                static_cast<GMFreeride *>( gpActiveGameMode );
+            switch ( interceptedMessage ) {
+            case FlashMessage( "gosh" ):
+                pFreeride->goToSelectedSpot();
+                break;
+            case FlashMessage( "acex" ):
+                pFreeride->resolveExtraChallengeAnswer();
+                break;
+            case FlashMessage( "goch" ):
+            case FlashMessage( "gosp" ):
+                pFreeride->requestEnterActivity();
+                break;
+            case FlashMessage( "goho" ):
+                pFreeride->enterCurrentHouseSpot();
+                break;
+            case FlashMessage( "home" ):
+                GMFreeride::GoHome();
+                break;
+            case FlashMessage( "info" ):
+                pFreeride->launchCurrentSpotInfo();
+                break;
+            default:
+                break;
+            }
+        } else if ( pInterceptedBookmark != nullptr ) {
+            if ( interceptedMessage == FlashMessage( "goto" ) ) {
+                gpMngHud->getHudPlayer()->showFrame(
+                    "valid_arrested", "menus/ss_menus/array/spots", false );
+                pInterceptedBookmark->pParent->goTo(
+                    pInterceptedBookmark->getSelectedBookmarkIndex() );
+            }
+        } else if ( interceptedMessage == FlashMessage( "goed" ) ) {
+            RequestEditorGameMode();
+        } else if ( interceptedMessage == FlashMessage( "gogp" ) ||
+                    interceptedMessage == FlashMessage( "goma" ) ) {
+            RequestMapGameMode( pInterceptedPlayer );
+        }
+    }
+
+    clearInterceptedAction();
+    pPlayerCar->clearAILockFlags( CarState::kAILockArrest );
+}
+
+void AiCopMng::cancelInterceptedAction() {
+    // FUN_00911690
+    if ( interceptedMessage == FlashMessage( "goed" ) ) {
+        gpMngHud->getHudPlayer()->showFrame( "refresh", "menus", true );
+    } else if ( interceptedMessage == FlashMessage( "goto" ) ) {
+        FlashPlayer *pHudPlayer = gpMngHud->getHudPlayer();
+        pHudPlayer->showFrame( "options_stop", "menus", false );
+        pHudPlayer->showFrame( "default", "menus/ss_menus/array/spots", true );
+    } else {
+        ResumeFromInstantFine();
+    }
+
+    clearInterceptedAction();
+    gpScenaric->getLocalPlayer().getCarState()->clearAILockFlags(
+        CarState::kAILockArrest );
+}
+
+bool AiCopMng::interceptBookmarkAction( const FlashMessage message,
+                                        FlashListBookmark *pBookmarkList ) {
+    // FUN_00914cf0
+    if ( bSendPlayerToJail ) {
+        return true;
+    }
+
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( interceptedMessage.AsInteger != 0u || pInterceptedPlayer != nullptr ||
+         pInterceptedBookmark != nullptr || pPlayerCar == nullptr ) {
+        return false;
+    }
+    if ( GSPhysics::peekFadeRequest() != eFadeRequest::FR_Idle ||
+         pPlayerCar->getBody()->BackOnTrackState != 0 ) {
+        return true;
+    }
+    if ( pPlayerCar->getPoliceState().computeOffenceLevel() <
+         gAIConfig.InfLimit ) {
+        return false;
+    }
+
+    pInterceptedBookmark = pBookmarkList;
+    interceptedMessage = message;
+    requestInstantFine( pPlayerCar, true );
+    if ( message != FlashMessage( "goto" ) ) {
+        PauseForInstantFine();
+    }
+    return true;
+}
+
+bool AiCopMng::interceptFlashAction( const FlashMessage message,
+                                     FlashPlayer *pPlayer ) {
+    // FUN_00914df0
+    if ( bSendPlayerToJail ) {
+        return true;
+    }
+
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( interceptedMessage.AsInteger != 0u || pInterceptedPlayer != nullptr ||
+         pInterceptedBookmark != nullptr || pPlayerCar == nullptr ) {
+        return false;
+    }
+    if ( GSPhysics::peekFadeRequest() != eFadeRequest::FR_Idle ||
+         pPlayerCar->getBody()->BackOnTrackState != 0 ) {
+        return true;
+    }
+    if ( pPlayerCar->getPoliceState().computeOffenceLevel() <
+         gAIConfig.InfLimit ) {
+        return false;
+    }
+
+    interceptedMessage = message;
+    pInterceptedPlayer = pPlayer;
+    requestInstantFine( pPlayerCar, true );
+    if ( interceptedMessage != FlashMessage( "goed" ) &&
+         interceptedMessage != FlashMessage( "goto" ) ) {
+        PauseForInstantFine();
+    }
+    return true;
+}
+
+bool AiCopMng::interceptFreerideAction( const FlashMessage message ) {
+    // FUN_00914f10
+    if ( bSendPlayerToJail ) {
+        return true;
+    }
+
+    CarState *pPlayerCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( interceptedMessage.AsInteger != 0u || pPlayerCar == nullptr ) {
+        return false;
+    }
+    if ( GSPhysics::peekFadeRequest() != eFadeRequest::FR_Idle ||
+         pPlayerCar->getBody()->BackOnTrackState != 0 ) {
+        return true;
+    }
+    if ( pPlayerCar->getPoliceState().computeOffenceLevel() <
+         gAIConfig.InfLimit ) {
+        return false;
+    }
+
+    interceptedMessage = message;
+    requestInstantFine( pPlayerCar, true );
+    if ( interceptedMessage != FlashMessage( "goed" ) &&
+         interceptedMessage != FlashMessage( "goto" ) ) {
+        PauseForInstantFine();
+    }
+    return true;
 }
 
 void AiCopMng::applyFine( CarState *pCar,
@@ -1279,19 +1616,7 @@ void AiCopMng::applyFine( CarState *pCar,
 
     computeFine( pCar );
     if ( bChargeFine ) {
-        IPlayerData *pSave = gpPlayerData->getLoadedSave();
-        const uint32_t money = pSave->getDriver()->getMoney();
-        const uint32_t fine = static_cast<uint32_t>( currentFine.TotalValue );
-        pSave->getExtraChallenges()->countArrest();
-        const uint32_t paid = ( money < fine ) ? money : fine;
-        Driver *pDriver = pSave->getDriver();
-        pSave->getExtraChallenges()->addCounter(
-            CounterIndex( kFinesPaidCounter ), static_cast<int32_t>( paid ) );
-        pDriver->setMoneyAndNotify(
-            static_cast<int32_t>( pDriver->getMoney() - paid ) );
-        if ( money < fine ) {
-            bSendPlayerToJail = gAIConfig.bEnableJail;
-        }
+        chargeCurrentFine();
     }
 
     if ( bShowFine ) {
@@ -1302,7 +1627,7 @@ void AiCopMng::applyFine( CarState *pCar,
         }
     }
     if ( bShowInstantFine ) {
-        showInstantFine();
+        showInstantFine( currentFine.TotalValue, false );
     }
     if ( bResetInfringement ) {
         pCar->getPoliceState().reset();
@@ -1324,14 +1649,8 @@ bool AiCopMng::executeAction( const int32_t action,
         ( gpMngHud != nullptr ) ? gpMngHud->getHudPlayer() : nullptr;
     if ( cinematicName == "C_POLICE_DEFEAT" ) {
         if ( pHudPlayer != nullptr ) {
-            bool bChargeFine = true;
-            if ( gpActiveGM != nullptr &&
-                 gpActiveGM->getCurrentGameMode() == GM_Mission &&
-                 gpActiveGM->getGameMech() != nullptr &&
-                 gpActiveGM->getGameMech()->getUnknown75C() ) {
-                bChargeFine = false;
-            }
-            applyFine( pPlayerCar, false, bChargeFine, false, true );
+            applyFine( pPlayerCar, false, IsFineChargedInActiveGM(), false,
+                       true );
             gpFlash->getMouse()->field12_0x30 = false;
         }
         stopVoices();

@@ -12,6 +12,7 @@
 #include "ai/gs_ai.h"
 #include "core/random/bcpl.h"
 #include "debug/ed_debug_text.h"
+#include "game/freeride/gm_freeride.h"
 #include "game/game_mechanism.h"
 #include "game/gm_base.h"
 #include "game/gm_world.h"
@@ -1163,8 +1164,11 @@ bool AiVehBhvPolice::checkArrest( bool &bOutArrestPending ) {
 
     const eGameMode gameMode = gpActiveGameMode->getCurrentGameMode();
     if ( gameMode == GM_FreeRide ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMFreeride +0x104c04 (non-null
-                                 // blocks the arrest)
+        const GMFreeride *pFreeride =
+            static_cast<const GMFreeride *>( gpActiveGameMode );
+        if ( pFreeride->getMngFRMeetingIC().getState() != ICState_None ) {
+            return false;
+        }
     } else if ( gameMode != GM_TestCar && !IsPoliceAllowedByGameMech() ) {
         return false;
     }

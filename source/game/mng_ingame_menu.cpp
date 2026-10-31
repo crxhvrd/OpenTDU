@@ -6,6 +6,8 @@
 #include "mng_hud.h"
 #include "gs_timer.h"
 
+#include "ai/ai_cop_manager.h"
+#include "ai/gs_ai.h"
 #include "config/gs_config.h"
 #include "input/input_device.h"
 #include "physics/replay.h"
@@ -393,7 +395,9 @@ void MngInGameMenu::updateInput() {
                 gpFlash->getFlashSound()->playFrontEndSound( "wrong", 0,
                                                              false );
             }
-        } else if ( pFlashVariable != nullptr ) {
+        } else if ( pFlashVariable != nullptr &&
+                    !gpAI->getCopManager().interceptFlashAction(
+                        FlashMessage( "goma" ), pFlashVariable ) ) {
             RequestMapGameMode( pFlashVariable );
         }
     }

@@ -17,7 +17,7 @@ enum eMainMenuOption : int32_t {
     MMO_QuitToDesktop = 1, // "return to Windows ?" prompt
     MMO_ChangeProfile = 2,
     MMO_Options = 3, // hand over to the options screen (MngOptions)
-    MMO_Quit = 4,    // quit to the main menu (settles police fines first)
+    MMO_Quit = 4,    // quit to the main menu (police fine confirmation first)
     MMO_HardcoreMode = 5,
 };
 

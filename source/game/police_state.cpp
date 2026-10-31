@@ -14,6 +14,7 @@
 #include "game/vehicle/car_state.h"
 #include "gs_timer.h"
 #include "physics/collision_event.h"
+#include "physics/vehicle/physics_vehicle.h"
 #include "player_data/gs_playerdata.h"
 
 static constexpr float kWitnessDelay = 0.1f;               // FLOAT_00f41668
@@ -691,9 +692,8 @@ void PoliceState::reduceOffences( CarState *pOwner ) {
     if ( NumPoliceDamForced > 0 &&
          now - LastPoliceDamEventTime > kPoliceDamForcedDecayTime ) {
         NumPoliceDamForced--;
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (NumPoliceDamForced, cop dam
-                                 // mass scale)
-        (void)pOwner;
+        pOwner->getPhysicsVehicle()->setCopDamMassExponent(
+            NumPoliceDamForced );
         LastPoliceDamEventTime = now;
     }
 }

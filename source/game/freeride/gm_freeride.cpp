@@ -331,8 +331,8 @@ void GMFreeride::reset() {
         HideLocalPlayerCar( pLocalCar );
     }
 
-    if ( pLocalCar != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (restore pursuit infringements)
+    if ( pLocalCar != nullptr && gpAI->getCopManager().isInfringementSaved() ) {
+        gpAI->getCopManager().restoreInfringement();
     }
 
     pGameMech->stateChange( PlayerGameMech::MS_FR_LoadingMap );
@@ -913,9 +913,10 @@ void GMFreeride::pause() {
 
     gpAI->setDisableBots( true );
     gpAI->setBotsActive( false );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (instant challenge pursuit
-                             // infringement save)
     gpAI->getAIPool()->removeBots();
+    if ( gpTestDriveInstance->getActiveGameMode() == GM_InstantChallenge ) {
+        gpAI->getCopManager().saveInfringement();
+    }
 
     if ( pIntroCine != nullptr ) {
         pIntroCine->stop( true );
@@ -952,8 +953,14 @@ void GMFreeride::destroy() {
     // FUN_00794860
     GameModeWorld::destroy();
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+    if ( gpAI->getBotManager().isActive() &&
+         gpTestDriveInstance->getActiveGameMode() != GM_Map ) {
+        gpAI->setDisableBots( true );
+        gpAI->setBotsActive( false );
+        gpAI->getAIPool()->removeBots();
+    }
     gpAI->setDisableCops( true );
+    gpAI->setCopsActive( false );
     gpAI->getAIPool()->removeCops();
 
     if ( gpScenaric != nullptr ) {
@@ -1849,12 +1856,6 @@ void GMFreeride::OnSpotIntroFadeOut( void *pData, void * /*pSource*/ ) {
     pFreeride->pPendingSpot = nullptr;
 }
 
-static bool DeferActionWhileChased( const FlashMessage & /*message*/ ) {
-    // FUN_00914f10
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
-    return false;
-}
-
 static void SetJoinClipVisible( FlashPlayer *pPlayer, const bool bVisible ) {
     // FUN_00792ce0
     FlashClip clip;
@@ -1869,7 +1870,7 @@ static void ExitToMap() {
     gpTestDriveInstance->setNextGameMode( GM_Map );
 }
 
-static bool GoHome() {
+bool GMFreeride::GoHome() {
     // FUN_00794680
     const uint64_t houseHashcode =
         gpPlayerData->getLoadedSave()->getDriver()->getCurrentHouse();
@@ -1959,33 +1960,33 @@ bool GMFreeride::onMessage( FlashMessage *pMessage ) {
             return true;
         }
         if ( GetTickCountMs() < activityReentryTick ||
-             DeferActionWhileChased( *pMessage ) ) {
+             gpAI->getCopManager().interceptFreerideAction( *pMessage ) ) {
             return true;
         }
         return requestEnterActivity();
     }
     case FlashMessage( "goho" ):
-        if ( DeferActionWhileChased( *pMessage ) ) {
+        if ( gpAI->getCopManager().interceptFreerideAction( *pMessage ) ) {
             return true;
         }
         return enterCurrentHouseSpot();
     case FlashMessage( "home" ):
-        if ( DeferActionWhileChased( *pMessage ) ) {
+        if ( gpAI->getCopManager().interceptFreerideAction( *pMessage ) ) {
             return true;
         }
         return GoHome();
     case FlashMessage( "gosh" ):
-        if ( DeferActionWhileChased( *pMessage ) ) {
+        if ( gpAI->getCopManager().interceptFreerideAction( *pMessage ) ) {
             return true;
         }
         return goToSelectedSpot();
     case FlashMessage( "info" ):
-        if ( DeferActionWhileChased( *pMessage ) ) {
+        if ( gpAI->getCopManager().interceptFreerideAction( *pMessage ) ) {
             return true;
         }
         return launchCurrentSpotInfo();
     case FlashMessage( "acex" ):
-        if ( DeferActionWhileChased( *pMessage ) ) {
+        if ( gpAI->getCopManager().interceptFreerideAction( *pMessage ) ) {
             return true;
         }
         resolveExtraChallengeAnswer();

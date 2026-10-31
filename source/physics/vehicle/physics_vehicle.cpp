@@ -965,11 +965,13 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     bCollisionInertiaRequest.store( false );
     collisionInertiaTimer = 0.0f;
     bTrafficBody = gpDatabase != nullptr && gpDatabase->isTraffic( &db );
+    bCopDam = false;
     initializeElectronics();
     vehicle.NumWheels = numWheels;
     vehicle.bBike = bIsBike;
     vehicle.PowertrainSubsteps = bIsAI ? 5 : ( bIsNetwork ? 1 : 10 );
     vehicle.Mass = mass; // auto shift near-lift traction threshold
+    baseMass = vehicle.Mass;
     const int32_t axleShift = numWheels / 2 - 1;
     for ( int i = 0; i < numWheels; ++i ) {
         PhysicsWheelState &w = vehicle.Wheels[i];
@@ -2996,6 +2998,22 @@ bool PhysicsVehicle::requestCollisionInertia() {
     return bCollisionInertiaRequest.load();
 }
 
+static constexpr int32_t kMaxCopDamMassExponent = 3;
+
+float PhysicsVehicle::getCollisionInertiaScale() const {
+    // FUN_0082e740
+    static constexpr float kCopDamMassBase = 10.0f;   // FLOAT_00f4166c
+    static constexpr float kCopDamMassScale = 100.0f; // DAT_00f41708
+
+    if ( !bCopDam ) {
+        return 1.0f;
+    }
+    const int32_t exponent =
+        std::min( copDamMassExponent, kMaxCopDamMassExponent );
+    return std::pow( kCopDamMassBase, static_cast<float>( exponent ) ) *
+           kCopDamMassScale;
+}
+
 void PhysicsVehicle::updateCollisionInertia( float deltaTime ) {
     // FUN_0082e740
     static constexpr float kInertia = 20000.0f; // DAT_00fab808
@@ -3003,9 +3021,17 @@ void PhysicsVehicle::updateCollisionInertia( float deltaTime ) {
 
     JPH::MotionProperties *pMotion = pChassisBody->GetMotionProperties();
     if ( bCollisionInertiaRequest.exchange( false ) && pMotion != nullptr ) {
+        float inertia = kInertia;
+        if ( bCopDam ) {
+            copDamMassExponent =
+                std::min( copDamMassExponent, kMaxCopDamMassExponent );
+            const float scale = getCollisionInertiaScale();
+            vehicle.Mass = baseMass * scale;
+            inertia *= scale;
+        }
         savedInvInertiaDiagonal = pMotion->GetInverseInertiaDiagonal();
         savedInertiaRotation = pMotion->GetInertiaRotation();
-        pMotion->SetInverseInertia( JPH::Vec3::sReplicate( 1.0f / kInertia ),
+        pMotion->SetInverseInertia( JPH::Vec3::sReplicate( 1.0f / inertia ),
                                     JPH::Quat::sIdentity() );
         collisionInertiaTimer = kDuration;
     }
@@ -3018,6 +3044,7 @@ void PhysicsVehicle::updateCollisionInertia( float deltaTime ) {
                 pMotion->SetInverseInertia( savedInvInertiaDiagonal,
                                             savedInertiaRotation );
             }
+            vehicle.Mass = baseMass;
             collisionInertiaTimer = 0.0f;
         }
     }

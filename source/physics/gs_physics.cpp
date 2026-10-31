@@ -504,7 +504,8 @@ namespace {
             }
         }
 
-        static float ContactInvInertiaScale( const JPH::Body &body ) {
+        static float ContactInvInertiaScale( const JPH::Body &body,
+                                             const float inertiaScale ) {
             static constexpr float kInertia = 20000.0f; // DAT_00fab808
             const JPH::MotionProperties *pMotion = body.GetMotionProperties();
             if ( pMotion == nullptr ) {
@@ -515,7 +516,8 @@ namespace {
             if ( minInvInertia <= 0.0f ) {
                 return 1.0f;
             }
-            return Min( 1.0f, 1.0f / ( kInertia * minInvInertia ) );
+            return Min( 1.0f,
+                        1.0f / ( kInertia * inertiaScale * minInvInertia ) );
         }
 
         static void
@@ -526,7 +528,8 @@ namespace {
             if ( !vehicle.requestCollisionInertia() ) {
                 return;
             }
-            const float scale = ContactInvInertiaScale( body );
+            const float scale = ContactInvInertiaScale(
+                body, vehicle.getCollisionInertiaScale() );
             ( bBody1 ? ioSettings.mInvInertiaScale1
                      : ioSettings.mInvInertiaScale2 ) = scale;
         }
