@@ -21,6 +21,10 @@ struct CachedPSO {
     uint64_t TextureBindingMask; // Combined mask (VS + PS)
 };
 
+// Bits of the D3D9 spec dwords 1 and 2 read by pixel shaders: alpha test
+// function + point sprite (dword1 21..25), alpha test precision (dword2 27..30)
+static constexpr uint32_t kPSSpecDwordMasks[2] = { 0x1fu << 21, 0xfu << 27 };
+
 struct PSOFactory {
     // VS and PS
     GPUShader *pGraphicsShaderStages[2];
@@ -48,6 +52,11 @@ struct PSOFactory {
     uint64_t psoLayoutHashcode;
     uint64_t renderPassHashcode;
     uint32_t VSClipPlaneCount;
+    // D3D9 spec dwords 1 and 2, restricted to the bits pixel shaders read
+    // (kPSSpecDwordMasks)
+    uint32_t PSSpecDwords[2];
+    uint32_t LampsEnabled; // TODO: Might want to make this generic to make
+                           // specicialization available to new render effects
 
     VkPipelineLayout PipelineLayout;
 
@@ -81,9 +90,12 @@ private:
     };
 
 private:
-    uint32_t vsSpecData[2];
-    VkSpecializationMapEntry vsSpecEntries[2];
+    uint32_t vsSpecData[3];
+    VkSpecializationMapEntry vsSpecEntries[3];
     VkSpecializationInfo vsSpecInfo;
+    uint32_t psSpecData[4];
+    VkSpecializationMapEntry psSpecEntries[4];
+    VkSpecializationInfo psSpecInfo;
 
     std::unordered_map<uint64_t, CachedPSO> cache;
     std::vector<uint32_t> hashKey; // Reused between PSO lookups

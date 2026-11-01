@@ -419,6 +419,7 @@ public:
 
     void setClipPlane( int32_t param_1, float *param_2 );
     void resolveMSAA( RenderTarget *param_1, uint32_t param_2 );
+    void setLampsEnabled( const bool bEnabled );
 
     void setDepthCompareFunc( eComparisonFunction param_1 );
     void setDepthStencilEnabled( bool param_1 );
@@ -696,7 +697,8 @@ private:
     std::vector<std::pair<uint64_t, uint64_t>> rehashedPSORecords;
 
     ColorRGBA activeClearColor;
-    VkRect2D activeRenderRegion;
+    std::array<GPUTexture *, kMaxSimultaneousRT> lastPassColorAttachments;
+    GPUTexture *pLastPassDepthStencil;
 
     std::unordered_map<uint64_t, VkFramebuffer>
         framebufferCache; // TODO: MOVE ME TO A SEPARATE CLASS
@@ -817,6 +819,13 @@ private:
         return commandBuffer;
     }
 
+    inline VkCommandBuffer getStateCommandBuffer() {
+        if ( pendingDrawBatch.Count != 0u ) {
+            flushDrawBatch();
+        }
+        return commandBuffer;
+    }
+
     struct PendingClear {
         bool bActive = false;
         bool bColor = false;
@@ -832,6 +841,10 @@ private:
     bool isPendingClearForBoundAttachments() const;
     void flushPendingClear();
     void recordImageClear( const PendingClear &clear );
+    bool isPendingClearForActivePass() const;
+    void recordInPassClear();
+    bool isBoundColorAttachment( const GPUTexture *pTexture ) const;
+    void transitionPreviousPassAttachments();
 
     void endActiveRenderPass();
     void recordIndexedDraw( const VkDrawIndexedIndirectCommand &command );

@@ -56,7 +56,7 @@
       0,
       "Terrain" },
     /* Terrain Shadow Map Rendering */
-    { 0x00d978d0, 0xbeb5678a2ff17c5, eShaderType::ST_Pixel, 0, 0, 0,
+    { 0x00d978d0, 0xbeb5678a2ff17c51, eShaderType::ST_Pixel, 0, 0, 0,
       0,          "Terrain" },
     { 0x00d97a78, 0x3e2d307900dcf64c, eShaderType::ST_Vertex, 1, 0x10, 0,
       0,          "Terrain" },

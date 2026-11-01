@@ -885,6 +885,7 @@ void RenderContext::FUN_00515000() {
                                   ? gEdRender.NumLamps
                                   : 0u;
     const uint32_t numHeadlights = bNightScene ? gEdRender.NumHeadlights : 0u;
+    gEdRender.pRenderDevice->setLampsEnabled( numLamps + numHeadlights != 0 );
     Eigen::Vector4f lampParams( static_cast<float>( numLamps ),
                                 gEdRender.LampParams.x(), 0.0f, 0.0f );
     // The VS only tests for any light to pass the view space varyings.

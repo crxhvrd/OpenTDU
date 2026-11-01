@@ -8,7 +8,7 @@
 static constexpr uint32_t kPSOLibraryMagic = 0x4c50544f; // 'OTPL'
 
 static constexpr uint32_t kPSOLibraryVersion =
-    2; // Bump me whenever a new render change (new shader/renderpass) is added
+    3; // Bump me whenever a new render change (new shader/renderpass) is added
 
 namespace {
     struct RecordWriter {
@@ -90,6 +90,9 @@ namespace {
         writer.push64( record.PSHashcode );
         writer.push( record.PrimitiveType );
         writer.push( record.VSClipPlaneCount );
+        writer.push( record.PSSpecDwords[0] );
+        writer.push( record.PSSpecDwords[1] );
+        writer.push( record.LampsEnabled );
 
         writer.push( static_cast<uint32_t>( record.InputBindings.size() ) );
         for ( const VkVertexInputBindingDescription &binding :
@@ -181,6 +184,9 @@ namespace {
         record.PSHashcode = reader.read64();
         record.PrimitiveType = reader.read();
         record.VSClipPlaneCount = reader.read();
+        record.PSSpecDwords[0] = reader.read();
+        record.PSSpecDwords[1] = reader.read();
+        record.LampsEnabled = reader.read();
         if ( record.PrimitiveType >= ePrimitiveType::PT_Count ) {
             return false;
         }
@@ -416,6 +422,9 @@ void PSOLibrary::record( const PSOFactory &factory,
                             : 0ull;
     record.PrimitiveType = static_cast<uint32_t>( factory.PrimitiveType );
     record.VSClipPlaneCount = factory.VSClipPlaneCount;
+    record.PSSpecDwords[0] = factory.PSSpecDwords[0];
+    record.PSSpecDwords[1] = factory.PSSpecDwords[1];
+    record.LampsEnabled = factory.LampsEnabled;
 
     record.InputBindings = factory.pVertexLayout->InputBindings;
     for ( const GPUVertexLayoutSemantic &semantic :
@@ -486,6 +495,9 @@ void PSOLibrary::ApplyRecord( const PSORecord &record,
     factory.pVertexLayout = pVertexLayout;
     factory.PrimitiveType = static_cast<ePrimitiveType>( record.PrimitiveType );
     factory.VSClipPlaneCount = record.VSClipPlaneCount;
+    factory.PSSpecDwords[0] = record.PSSpecDwords[0];
+    factory.PSSpecDwords[1] = record.PSSpecDwords[1];
+    factory.LampsEnabled = record.LampsEnabled;
 
     factory.RasterState = record.RasterState;
     factory.DepthStencil = record.DepthStencil;

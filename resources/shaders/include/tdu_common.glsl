@@ -4,6 +4,10 @@
 #ifndef TDU_COMMON_GLSL
 #define TDU_COMMON_GLSL
 
+// OTDU_ADDITION: bitfields to conditionally enable new conditional features 
+// (and reduce divergency) 
+layout( constant_id = 13 ) const uint TDU_SPEC_LAMPS = 1u;
+
 #ifdef D3D9_VERTEX_SHADER
 
 #define gFogParametersVS D3D9_C( 107 )
@@ -16,7 +20,9 @@
 #define tdu_cam_to_world( i ) D3D9_CR( 252, i )
 // OTDU_ADDITION: night lamps (kLampParamsRegisterVS): x = lamp count.
 #define tdu_lamp_params D3D9_C( 251 )
-bool tdu_lamps_enabled() { return tdu_lamp_params.x > 0.0; }
+bool tdu_lamps_enabled() {
+    return TDU_SPEC_LAMPS != 0u && tdu_lamp_params.x > 0.0;
+}
 // OTDU_ADDITION: per draw emissive scale (kEmissiveRegisterVS, 0 = none).
 #define tdu_emissive_params D3D9_C( 250 )
 // Unlit materials: the night unlit scale, or the emissive scale for signs.
@@ -108,7 +114,8 @@ vec3 tdu_skin_normal( vec3 normal, ivec4 bones, vec4 weights ) {
 #define tdu_headlight_color( i ) D3D9_CR( 103, 3 * ( i ) )
 
 bool tdu_lamps_enabled() {
-    return tdu_lamp_params.x > 0.0 || tdu_headlight_params.x > 0.0;
+    return TDU_SPEC_LAMPS != 0u &&
+           ( tdu_lamp_params.x > 0.0 || tdu_headlight_params.x > 0.0 );
 }
 
 // OTDU_ADDITION: lit windows (kWindowRegisterPS): c125 = (warm color, lit

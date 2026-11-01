@@ -405,8 +405,7 @@ RenderDevice::RenderDevice()
       frameIndex( 0 ),
       absoluteFrameIndex( 0 ),
       bufferFormatSupport( 0u ),
-      framebufferInfos{
-},
+      framebufferInfos{},
       swapchainImageFormat( VK_FORMAT_UNDEFINED ),
       time( 0.0f ),
       activeColorMask( VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -431,7 +430,8 @@ RenderDevice::RenderDevice()
       hdrHighlightStrength( kDefaultHDRHighlightStrength ),
       activeOutputTransfer( eOutputTransfer::OT_SDR ),
       activeClearColor( gColorBlackNoAlpha ),
-      activeRenderRegion{ { 0, 0 }, { 0, 0 } },
+      lastPassColorAttachments{},
+      pLastPassDepthStencil( nullptr ),
       boundPSO( VK_NULL_HANDLE ),
       activeRenderPass( VK_NULL_HANDLE ),
       activeFramebuffer( VK_NULL_HANDLE ) {
@@ -1244,7 +1244,8 @@ bool RenderDevice::renameDynamicBuffer( GPUBuffer *pBuffer ) {
         return false;
     }
 
-    memcpy( ring.pMapped + start, pBuffer->ShadowCopy.data(), size );
+    memcpy( ring.pMapped + start, pBuffer->ShadowCopy.data(),
+            static_cast<size_t>( size ) );
     vmaFlushAllocation( allocator, ring.Allocation, start, size );
     ring.Head = start + size;
 
@@ -1428,6 +1429,15 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
 }
 
 void RenderDevice::destroyTexture( GPUTexture *pTexture ) {
+    for ( GPUTexture *&pPrevious : lastPassColorAttachments ) {
+        if ( pPrevious == pTexture ) {
+            pPrevious = nullptr;
+        }
+    }
+    if ( pLastPassDepthStencil == pTexture ) {
+        pLastPassDepthStencil = nullptr;
+    }
+
     RetireList &retireList = getRetireList();
     retireList.Textures.push_back(
         { pTexture->Image, pTexture->Allocation, pTexture->ImageView } );
@@ -1679,7 +1689,7 @@ void RenderDevice::setViewport( Viewport &vp ) {
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
-    vkCmdSetViewport( getCommandBuffer(), 0, 1, &viewport );
+    vkCmdSetViewport( getStateCommandBuffer(), 0, 1, &viewport );
 #if OTDU_DEVBUILD
     activeViewport = viewport;
 #endif
@@ -1692,7 +1702,7 @@ void RenderDevice::setViewport( Viewport &vp ) {
     scissor.extent.width = (int32_t)vp.Width;
     scissor.extent.height = (int32_t)vp.Height;
 
-    vkCmdSetScissor( getCommandBuffer(), 0, 1, &scissor );
+    vkCmdSetScissor( getStateCommandBuffer(), 0, 1, &scissor );
 #if OTDU_DEVBUILD
     activeScissor = scissor;
 #endif
@@ -1701,13 +1711,6 @@ void RenderDevice::setViewport( Viewport &vp ) {
     if ( vp.Flags & 1 ) {
         activeClearColor = vp.ClearColor;
     }
-
-    // RenderPass viewport
-    activeRenderRegion.offset.x = (int32_t)vp.X;
-    activeRenderRegion.offset.y = (int32_t)vp.Y;
-
-    activeRenderRegion.extent.width = (int32_t)vp.Width;
-    activeRenderRegion.extent.height = (int32_t)vp.Height;
 }
 
 void RenderDevice::setScissor( Scissor &scissor ) {
@@ -1717,7 +1720,7 @@ void RenderDevice::setScissor( Scissor &scissor ) {
     vkScissor.extent.width = scissor.Width;
     vkScissor.extent.height = scissor.Height;
 
-    vkCmdSetScissor( getCommandBuffer(), 0, 1, &vkScissor );
+    vkCmdSetScissor( getStateCommandBuffer(), 0, 1, &vkScissor );
 #if OTDU_DEVBUILD
     activeScissor = vkScissor;
 #endif
@@ -1763,6 +1766,22 @@ void RenderDevice::clearFramebuffer( const ColorRGBA clearColor,
     clear.pDepthStencil =
         bDepthStencilAttachmentValid ? pDepthStencilAttachment : nullptr;
 
+    if ( pendingClear.bActive && isPendingClearForBoundAttachments() ) {
+        if ( clear.bColor ) {
+            pendingClear.bColor = true;
+            pendingClear.Color = clear.Color;
+        }
+        if ( clear.bDepth ) {
+            pendingClear.bDepth = true;
+            pendingClear.DepthStencil.depth = clear.DepthStencil.depth;
+        }
+        if ( clear.bStencil ) {
+            pendingClear.bStencil = true;
+            pendingClear.DepthStencil.stencil = clear.DepthStencil.stencil;
+        }
+        return;
+    }
+
     if ( pendingClear.bActive ) {
         flushPendingClear();
     }
@@ -1784,6 +1803,11 @@ bool RenderDevice::isPendingClearForBoundAttachments() const {
 }
 
 void RenderDevice::flushPendingClear() {
+    if ( isPendingClearForActivePass() ) {
+        recordInPassClear();
+        return;
+    }
+
     const PendingClear clear = pendingClear;
     pendingClear.bActive = false;
     recordImageClear( clear );
@@ -1826,6 +1850,111 @@ void RenderDevice::recordImageClear( const PendingClear &clear ) {
                                      pDepthStencil->CurrentLayout,
                                      &clear.DepthStencil, 1,
                                      &subresourceRange );
+    }
+}
+
+bool RenderDevice::isPendingClearForActivePass() const {
+    if ( !pendingClear.bActive || activeRenderPass == VK_NULL_HANDLE ) {
+        return false;
+    }
+    for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
+        if ( pendingClear.pColorTargets[i] != lastPassColorAttachments[i] ) {
+            return false;
+        }
+    }
+    return pendingClear.pDepthStencil == pLastPassDepthStencil;
+}
+
+void RenderDevice::recordInPassClear() {
+    std::array<VkClearAttachment, kMaxSimultaneousRT + 1> clears;
+    uint32_t numClears = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+
+    uint32_t colorAttachmentIndex = 0;
+    for ( GPUTexture *pTarget : pendingClear.pColorTargets ) {
+        if ( pTarget == nullptr ) {
+            continue;
+        }
+        width = pTarget->Width;
+        height = pTarget->Height;
+        if ( pendingClear.bColor ) {
+            VkClearAttachment &clear = clears[numClears++];
+            clear.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            clear.colorAttachment = colorAttachmentIndex;
+            clear.clearValue.color = pendingClear.Color;
+        }
+        colorAttachmentIndex++;
+    }
+
+    GPUTexture *pDepthStencil = pendingClear.pDepthStencil;
+    if ( pDepthStencil != nullptr ) {
+        if ( width == 0 ) {
+            width = pDepthStencil->Width;
+            height = pDepthStencil->Height;
+        }
+
+        VkImageAspectFlags aspectMask = 0;
+        if ( pendingClear.bDepth ) {
+            aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+        }
+        if ( pendingClear.bStencil &&
+             HasStencilBits( pDepthStencil->ViewFormat ) ) {
+            aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+        if ( aspectMask != 0 ) {
+            VkClearAttachment &clear = clears[numClears++];
+            clear.aspectMask = aspectMask;
+            clear.colorAttachment = 0;
+            clear.clearValue.depthStencil = pendingClear.DepthStencil;
+        }
+    }
+
+    pendingClear.bActive = false;
+    if ( numClears == 0 ) {
+        return;
+    }
+
+    VkClearRect clearRect = {};
+    clearRect.rect.offset = { 0, 0 };
+    clearRect.rect.extent = { width, height };
+    clearRect.baseArrayLayer = 0;
+    clearRect.layerCount = 1;
+    vkCmdClearAttachments( getCommandBuffer(), numClears, clears.data(), 1,
+                           &clearRect );
+}
+
+bool RenderDevice::isBoundColorAttachment( const GPUTexture *pTexture ) const {
+    for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
+        if ( bFramebufferAttachmentValid[i] &&
+             pFramebufferAttachments[i] == pTexture ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void RenderDevice::transitionPreviousPassAttachments() {
+    for ( GPUTexture *&pPrevious : lastPassColorAttachments ) {
+        GPUTexture *pTexture = pPrevious;
+        pPrevious = nullptr;
+        if ( pTexture == nullptr ||
+             pTexture->SampleCount != VK_SAMPLE_COUNT_1_BIT ||
+             pTexture->CurrentLayout ==
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
+             isBoundColorAttachment( pTexture ) ) {
+            continue;
+        }
+
+        insertImageBarrier( pTexture, pTexture->CurrentLayout,
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                VK_ACCESS_TRANSFER_WRITE_BIT,
+                            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                            VK_ACCESS_SHADER_READ_BIT );
     }
 }
 
@@ -1962,6 +2091,10 @@ void RenderDevice::flushDrawBatch() {
 void RenderDevice::endActiveRenderPass() {
     if ( activeRenderPass == VK_NULL_HANDLE ) {
         return;
+    }
+
+    if ( isPendingClearForActivePass() ) {
+        recordInPassClear();
     }
 
     if ( pendingDrawBatch.Count != 0u ) {
@@ -2327,28 +2460,30 @@ void RenderDevice::bindStencilDynamicState() {
     const bool bValid = recordedBindings.bStencilDynamicStateValid;
 
     if ( !bValid || front.reference != recordedFront.reference ) {
-        vkCmdSetStencilReference( getCommandBuffer(), VK_STENCIL_FACE_FRONT_BIT,
-                                  front.reference );
+        vkCmdSetStencilReference( getStateCommandBuffer(),
+                                  VK_STENCIL_FACE_FRONT_BIT, front.reference );
     }
     if ( !bValid || back.reference != recordedBack.reference ) {
-        vkCmdSetStencilReference( getCommandBuffer(), VK_STENCIL_FACE_BACK_BIT,
-                                  back.reference );
+        vkCmdSetStencilReference( getStateCommandBuffer(),
+                                  VK_STENCIL_FACE_BACK_BIT, back.reference );
     }
     if ( !bValid || front.compareMask != recordedFront.compareMask ) {
-        vkCmdSetStencilCompareMask(
-            getCommandBuffer(), VK_STENCIL_FACE_FRONT_BIT, front.compareMask );
+        vkCmdSetStencilCompareMask( getStateCommandBuffer(),
+                                    VK_STENCIL_FACE_FRONT_BIT,
+                                    front.compareMask );
     }
     if ( !bValid || back.compareMask != recordedBack.compareMask ) {
-        vkCmdSetStencilCompareMask(
-            getCommandBuffer(), VK_STENCIL_FACE_BACK_BIT, back.compareMask );
+        vkCmdSetStencilCompareMask( getStateCommandBuffer(),
+                                    VK_STENCIL_FACE_BACK_BIT,
+                                    back.compareMask );
     }
     if ( !bValid || front.writeMask != recordedFront.writeMask ) {
-        vkCmdSetStencilWriteMask( getCommandBuffer(), VK_STENCIL_FACE_FRONT_BIT,
-                                  front.writeMask );
+        vkCmdSetStencilWriteMask( getStateCommandBuffer(),
+                                  VK_STENCIL_FACE_FRONT_BIT, front.writeMask );
     }
     if ( !bValid || back.writeMask != recordedBack.writeMask ) {
-        vkCmdSetStencilWriteMask( getCommandBuffer(), VK_STENCIL_FACE_BACK_BIT,
-                                  back.writeMask );
+        vkCmdSetStencilWriteMask( getStateCommandBuffer(),
+                                  VK_STENCIL_FACE_BACK_BIT, back.writeMask );
     }
 
     recordedFront.reference = front.reference;
@@ -2375,41 +2510,42 @@ void RenderDevice::bindExtendedDynamicState() {
     const bool bValid = recorded.bExtendedDynamicStateValid;
 
     if ( !bValid || cullMode != recorded.CullMode ) {
-        cmdSetCullMode( getCommandBuffer(), cullMode );
+        cmdSetCullMode( getStateCommandBuffer(), cullMode );
         recorded.CullMode = cullMode;
     }
     if ( !bValid || depthStencil.depthTestEnable != recorded.DepthTestEnable ) {
-        cmdSetDepthTestEnable( getCommandBuffer(),
+        cmdSetDepthTestEnable( getStateCommandBuffer(),
                                depthStencil.depthTestEnable );
         recorded.DepthTestEnable = depthStencil.depthTestEnable;
     }
     if ( !bValid ||
          depthStencil.depthWriteEnable != recorded.DepthWriteEnable ) {
-        cmdSetDepthWriteEnable( getCommandBuffer(),
+        cmdSetDepthWriteEnable( getStateCommandBuffer(),
                                 depthStencil.depthWriteEnable );
         recorded.DepthWriteEnable = depthStencil.depthWriteEnable;
     }
     if ( !bValid || depthStencil.depthCompareOp != recorded.DepthCompareOp ) {
-        cmdSetDepthCompareOp( getCommandBuffer(), depthStencil.depthCompareOp );
+        cmdSetDepthCompareOp( getStateCommandBuffer(),
+                              depthStencil.depthCompareOp );
         recorded.DepthCompareOp = depthStencil.depthCompareOp;
     }
     if ( !bValid ||
          depthStencil.stencilTestEnable != recorded.StencilTestEnable ) {
-        cmdSetStencilTestEnable( getCommandBuffer(),
+        cmdSetStencilTestEnable( getStateCommandBuffer(),
                                  depthStencil.stencilTestEnable );
         recorded.StencilTestEnable = depthStencil.stencilTestEnable;
     }
 
     if ( !bValid ||
          !IsSameStencilOp( depthStencil.front, recorded.StencilFront ) ) {
-        cmdSetStencilOp( getCommandBuffer(), VK_STENCIL_FACE_FRONT_BIT,
+        cmdSetStencilOp( getStateCommandBuffer(), VK_STENCIL_FACE_FRONT_BIT,
                          depthStencil.front.failOp, depthStencil.front.passOp,
                          depthStencil.front.depthFailOp,
                          depthStencil.front.compareOp );
     }
     if ( !bValid ||
          !IsSameStencilOp( depthStencil.back, recorded.StencilBack ) ) {
-        cmdSetStencilOp( getCommandBuffer(), VK_STENCIL_FACE_BACK_BIT,
+        cmdSetStencilOp( getStateCommandBuffer(), VK_STENCIL_FACE_BACK_BIT,
                          depthStencil.back.failOp, depthStencil.back.passOp,
                          depthStencil.back.depthFailOp,
                          depthStencil.back.compareOp );
@@ -2696,6 +2832,17 @@ void RenderDevice::setAlphaTestEnabled( bool param_1 ) {
     } else {
         resourceBinder.setShaderSpecBits( 2, 27, 8, 0xf );
     }
+}
+
+void RenderDevice::setLampsEnabled( const bool bEnabled ) {
+    // TODO: Make this generic to support new effects (strongly typed enum that
+    // toggle a bit per effect)
+    const uint32_t lampsEnabled = bEnabled ? 1u : 0u;
+    if ( psoFactory.LampsEnabled == lampsEnabled ) {
+        return;
+    }
+    psoFactory.LampsEnabled = lampsEnabled;
+    psoFactory.bDirty = true;
 }
 
 void RenderDevice::setAlphaTestFunc( eComparisonFunction param_1 ) {
@@ -3091,6 +3238,8 @@ void RenderDevice::beginScene() {
         OTDU_ASSERT( beginResult == VK_SUCCESS );
         bRecordingCommands = true;
         resetRecordedBindings();
+        lastPassColorAttachments.fill( nullptr );
+        pLastPassDepthStencil = nullptr;
 
         if ( bNeedBackbufferClear ) {
             clearColorRenderTarget( backbuffer.pTexture, gColorBlack,
@@ -3224,12 +3373,12 @@ void RenderDevice::resolveMSAA( RenderTarget *param_1, uint32_t param_2 ) {
                         VK_FILTER_NEAREST );
     }
 
-    insertImageBarrier( pDst, pDst->CurrentLayout, VK_IMAGE_LAYOUT_GENERAL,
-                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                        VK_ACCESS_TRANSFER_WRITE_BIT,
-                        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-                            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                        VK_ACCESS_SHADER_READ_BIT );
+    insertImageBarrier(
+        pDst, pDst->CurrentLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT );
 }
 
 void RenderDevice::setDepthCompareFunc( eComparisonFunction param_1 ) {
@@ -3303,13 +3452,13 @@ void RenderDevice::pushDebugLabel( const char *pLabel ) {
     debugLabel.color[2] = 0.0f;
     debugLabel.color[3] = 0.0f;
 
-    vkCmdBeginDebugUtilsLabelEXT( getCommandBuffer(), &debugLabel );
+    vkCmdBeginDebugUtilsLabelEXT( getStateCommandBuffer(), &debugLabel );
 #endif
 }
 
 void RenderDevice::popDebugLabel() {
 #if OTDU_DEVBUILD
-    vkCmdEndDebugUtilsLabelEXT( getCommandBuffer() );
+    vkCmdEndDebugUtilsLabelEXT( getStateCommandBuffer() );
 #endif
 }
 
@@ -5013,6 +5162,15 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
         psoFactory.bDirty = true;
     }
 
+    for ( uint32_t i = 0; i < 2; i++ ) {
+        const uint32_t psSpecDword =
+            resourceBinder.shaderSpecs[1 + i] & kPSSpecDwordMasks[i];
+        if ( psoFactory.PSSpecDwords[i] != psSpecDword ) {
+            psoFactory.PSSpecDwords[i] = psSpecDword;
+            psoFactory.bDirty = true;
+        }
+    }
+
     // Commands recorded until the render pass begins keep the pending clear
     struct PreparingDrawCallScope {
         bool &bPreparing;
@@ -5024,26 +5182,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
 
     bool bClearOnLoad = false;
     if ( pendingClear.bActive ) {
-        uint32_t targetWidth = 0;
-        uint32_t targetHeight = 0;
-        for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
-            if ( bFramebufferAttachmentValid[i] ) {
-                targetWidth = pFramebufferAttachments[i]->Width;
-                targetHeight = pFramebufferAttachments[i]->Height;
-                break;
-            }
-        }
-        if ( targetWidth == 0 && bDepthStencilAttachmentValid ) {
-            targetWidth = pDepthStencilAttachment->Width;
-            targetHeight = pDepthStencilAttachment->Height;
-        }
-        const bool bFullRenderArea =
-            activeRenderRegion.offset.x == 0 &&
-            activeRenderRegion.offset.y == 0 &&
-            activeRenderRegion.extent.width == targetWidth &&
-            activeRenderRegion.extent.height == targetHeight;
-
-        if ( bFullRenderArea && isPendingClearForBoundAttachments() ) {
+        if ( isPendingClearForBoundAttachments() ) {
             bClearOnLoad = true;
         } else {
             flushPendingClear();
@@ -5052,8 +5191,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
 
     // Create or retrieve cached renderpass for incoming drawcall (do this as
     // late as possible to make sure to capture all framebuffer cmds)
-    bool bNeedRestartRenderPass =
-        ( activeRenderPass == VK_NULL_HANDLE ) || bClearOnLoad;
+    bool bNeedRestartRenderPass = ( activeRenderPass == VK_NULL_HANDLE );
     if ( bDepthStencilAttachmentValid ) {
         if ( pDepthStencilAttachment->CurrentLayout !=
              VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ) {
@@ -5254,12 +5392,13 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass.Instance;
     renderPassInfo.framebuffer = activeFramebuffer;
-    renderPassInfo.renderArea = activeRenderRegion;
+    renderPassInfo.renderArea.offset = { 0, 0 };
+    renderPassInfo.renderArea.extent = { fbWidth, fbHeight };
     renderPassInfo.clearValueCount = 0;
     renderPassInfo.pClearValues = nullptr;
 
     std::array<VkClearValue, kMaxSimultaneousRT + 1> clearValues;
-    if ( bClearOnLoad ) {
+    if ( bClearOnLoad && bNeedRestartRenderPass ) {
         RenderPassDesc clearDesc;
         renderPassManager.captureDesc( clearDesc );
         for ( uint32_t i = 0; i < clearDesc.NumColorAttachments; i++ ) {
@@ -5291,11 +5430,22 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     }
 
     if ( bNeedRestartRenderPass ) {
+        transitionPreviousPassAttachments();
         endActiveRenderPass();
 
         vkCmdBeginRenderPass( getCommandBuffer(), &renderPassInfo,
                               VK_SUBPASS_CONTENTS_INLINE );
         activeRenderPass = renderPass.Instance;
+
+        for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
+            lastPassColorAttachments[i] = bFramebufferAttachmentValid[i]
+                                              ? pFramebufferAttachments[i]
+                                              : nullptr;
+        }
+        pLastPassDepthStencil =
+            bDepthStencilAttachmentValid ? pDepthStencilAttachment : nullptr;
+    } else if ( bClearOnLoad ) {
+        recordInPassClear();
     }
 
     bool bDirtyDescriptorSets = bNeedRestartRenderPass;

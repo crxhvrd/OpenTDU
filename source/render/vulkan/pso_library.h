@@ -16,6 +16,8 @@ struct PSORecord {
     uint64_t PSHashcode; // 0 if no pixel shader is bound
     uint32_t PrimitiveType;
     uint32_t VSClipPlaneCount;
+    uint32_t PSSpecDwords[2];
+    uint32_t LampsEnabled;
 
     std::vector<VkVertexInputBindingDescription> InputBindings;
     struct Semantic {

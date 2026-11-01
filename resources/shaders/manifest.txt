@@ -24,7 +24,7 @@ D89E4A98A6863255 terrain/terrain.frag TERRAIN_DETAIL TERRAIN_FADE
 58061D6B89ABB848 terrain/terrain.vert TERRAIN_SCALED_UV TERRAIN_DETAIL TERRAIN_FADE
 
 # Terrain shadow map rendering
-0BEB5678A2FF17C5 terrain/terrain_shadow.frag
+BEB5678A2FF17C51 terrain/terrain_shadow.frag
 3E2D307900DCF64C terrain/terrain_shadow.vert
 
 # Sky dome (retail UVA shader table, Common category)

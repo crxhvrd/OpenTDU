@@ -316,6 +316,9 @@ void PSOFactory::buildStateKey( std::vector<uint32_t> &key ) const {
                                     : 0ull );
     writer.push64( pVertexLayout->Hashcode );
     writer.push( VSClipPlaneCount );
+    writer.push( PSSpecDwords[0] );
+    writer.push( PSSpecDwords[1] );
+    writer.push( LampsEnabled );
     writer.push( PrimitiveType );
 
     writer.push( RasterState.flags );
@@ -527,9 +530,11 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
     VertexShader.pName = "main";
     vsSpecData[0] = 1u;
     vsSpecData[1] = VSClipPlaneCount << 21;
+    vsSpecData[2] = LampsEnabled;
     vsSpecEntries[0] = { 12, 0, sizeof( uint32_t ) };
     vsSpecEntries[1] = { 5, sizeof( uint32_t ), sizeof( uint32_t ) };
-    vsSpecInfo.mapEntryCount = 2;
+    vsSpecEntries[2] = { 13, 2 * sizeof( uint32_t ), sizeof( uint32_t ) };
+    vsSpecInfo.mapEntryCount = 3;
     vsSpecInfo.pMapEntries = vsSpecEntries;
     vsSpecInfo.dataSize = sizeof( vsSpecData );
     vsSpecInfo.pData = vsSpecData;
@@ -543,7 +548,19 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
         PixelShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
         PixelShader.module = pGraphicsShaderStages[1]->ShaderModule;
         PixelShader.pName = "main";
-        PixelShader.pSpecializationInfo = nullptr; // &spinf;
+        psSpecData[0] = 1u;
+        psSpecData[1] = PSSpecDwords[0];
+        psSpecData[2] = PSSpecDwords[1];
+        psSpecData[3] = LampsEnabled;
+        psSpecEntries[0] = { 12, 0, sizeof( uint32_t ) };
+        psSpecEntries[1] = { 1, sizeof( uint32_t ), sizeof( uint32_t ) };
+        psSpecEntries[2] = { 2, 2 * sizeof( uint32_t ), sizeof( uint32_t ) };
+        psSpecEntries[3] = { 13, 3 * sizeof( uint32_t ), sizeof( uint32_t ) };
+        psSpecInfo.mapEntryCount = 4;
+        psSpecInfo.pMapEntries = psSpecEntries;
+        psSpecInfo.dataSize = sizeof( psSpecData );
+        psSpecInfo.pData = psSpecData;
+        PixelShader.pSpecializationInfo = &psSpecInfo;
         graphicsShaderStages.push_back( PixelShader );
     }
 
@@ -680,6 +697,9 @@ void PSOFactory::setShader( eShaderType stage, GPUShader *pShader ) {
 
 void PSOFactory::reset() {
     VSClipPlaneCount = 0;
+    PSSpecDwords[0] = 0u;
+    PSSpecDwords[1] = 0u;
+    LampsEnabled = 1u;
 
     RasterState = {};
     RasterState.pNext = nullptr;
