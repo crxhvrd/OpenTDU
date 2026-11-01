@@ -8,6 +8,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "render/instance.h"
 #include "render/material.h"
+#include "render/serialized_skinned_model.h"
 #include "system/system_shared.h"
 #include "tdu_instance.h"
 #include "gs_world_streaming.h"
@@ -163,6 +164,15 @@ static inline void InstanciatePMI( SectorGeometry &geometry,
                 Entity *pInstanceEntity =
                     geometry.mngActor.instanciateActor( pTemplate );
                 if ( pInstanceEntity != nullptr ) {
+                    SerializedSkinnedModel *pModel =
+                        static_cast<SerializedSkinnedModel *>(
+                            pInstanceEntity->getGeometryData() );
+                    if ( pModel != nullptr ) {
+                        pModel->MIInpostor.Angle =
+                            pInstance[7] * kRotationFactor;
+                        pModel->MIInpostor.Scale = pInstance[3] * kScaleFactor;
+                    }
+
                     pInstanceEntity->setTransform( transform, true );
 
                     // Bin into the derived 16x16 grid (cellX = short[0] >>
