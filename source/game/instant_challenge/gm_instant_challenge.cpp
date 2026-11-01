@@ -615,7 +615,7 @@ static const GameModeInfo kGameModesInfos[] = {
 static int32_t GetGameModeInfoIndex( const char *pName ) {
     // FUN_009afa70
     for ( const GameModeInfo &info : kGameModesInfos ) {
-        if ( strcasecmp( pName, info.pName ) == 0 ) {
+        if ( StringCmpI( pName, info.pName ) == 0 ) {
             return info.Index;
         }
     }
@@ -631,7 +631,7 @@ static int32_t GetGameModeInfoIndexOrZero( const char *pName ) {
 static uint64_t GetGameModeInfoHashcode( const char *pName ) {
     // FUN_009afb10
     for ( const GameModeInfo &info : kGameModesInfos ) {
-        if ( strcasecmp( pName, info.pName ) == 0 ) {
+        if ( StringCmpI( pName, info.pName ) == 0 ) {
             return info.Hashcode;
         }
     }
