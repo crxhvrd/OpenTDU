@@ -7,12 +7,15 @@
 #include "render/material.h"
 #include "render/postfx/postfx_renderer.h"
 #include "render/render_target.h"
+#include "render/render_context.h"
+#include "render/state_cache.h"
 
 PostFXBlit::PostFXBlit( PostFXNodeBlit *pOwner ) : PostFX( pOwner ) {}
 
 PostFXBlit::~PostFXBlit() {}
 
 bool PostFXBlit::execute() {
+    // FUN_005fa420
     bool bVar1 = PostFX::execute();
     if ( !bVar1 ) {
         return false;
@@ -26,15 +29,9 @@ bool PostFXBlit::execute() {
     }
 
     Render2DB *peVar7 = peStack_e8->getBound2DB();
-    bool bDstIsMSAA = gEdRender.pRenderDevice->isMultisampled(
-        pRenderTargets[0]->getTextureColor() );
-    if ( !bDstIsMSAA || peVar7 == nullptr ) {
-        if ( peVar7 == nullptr ) {
-            gEdRender.pRenderDevice->blit( peStack_e8->getTextureColor(),
-                                           pRenderTargets[0], true );
-        } else {
-            gEdRender.pRenderDevice->blit( peVar7, pRenderTargets[0], true );
-        }
+    if ( peVar7 == nullptr ) {
+        gEdRender.pRenderDevice->blit( peStack_e8->getTextureColor(),
+                                       pRenderTargets[0], true );
     } else {
         gPostFXRenderer.bindShaders( nullptr, nullptr );
 
@@ -54,7 +51,10 @@ bool PostFXBlit::execute() {
 
         gPostFXRenderer.bindRasterState( &eStack_e0 );
 
-        gEdRender.pRenderDevice->bindTexture( peVar7->getFirstBitmap(), 0 );
+        Texture *pSrcTex = peVar7->getFirstBitmap();
+        gpRenderContext->bindTexture( pSrcTex, 0 );
+        SetSamplerFilter( pSrcTex, 0, 5, TF_Linear );
+        SetSamplerFilter( pSrcTex, 0, 6, TF_Linear );
 
         uVar6 = pOwner->getUnknownMask();
         if ( uVar6 != 0xffffffff ) {
@@ -65,6 +65,7 @@ bool PostFXBlit::execute() {
 
         gPostFXRenderer.drawFullscreenQuad( ( uVar6 != 0xffffffff ), false,
                                             false, uVar7 );
+        gStateCache.setSamplerStateMinMagFilter( 0, TF_Point );
         gPostFXRenderer.bindShaders();
 
         gPostFXRenderer.bindRasterState( nullptr );

@@ -2267,8 +2267,8 @@ void RenderDevice::blit( GPUTexture *pSrc,
         region.srcSubresource.baseArrayLayer = 0;
         region.srcSubresource.layerCount = 1;
         region.srcOffsets[0] = { 0, 0, 0 };
-        region.srcOffsets[1].x = pDst->getWidth();
-        region.srcOffsets[1].y = pDst->getHeight();
+        region.srcOffsets[1].x = (int32_t)pSrc->Width;
+        region.srcOffsets[1].y = (int32_t)pSrc->Height;
         region.srcOffsets[1].z = 1;
 
         region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
