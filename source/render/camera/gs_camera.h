@@ -32,6 +32,7 @@ public:
     inline void setViewChangeAllowed( const bool bAllowed ) {
         bViewChangeAllowed = bAllowed;
     }
+
 public:
     const char *getName() const override { return "Camera"; }
     inline void setDeadZone( const float value ) { deadZone = value; }
@@ -355,7 +356,7 @@ private:
     int32_t activeModeVehicle;
     int32_t activeModeOverride;
     int32_t activeModeVehicleOverride;
-    bool bForcePlayerCamCockpit = false; // +0x5d0
+    bool bForcePlayerCamCockpit = false;
 
     bool bFlyCam;
 
