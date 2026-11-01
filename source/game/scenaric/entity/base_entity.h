@@ -112,6 +112,7 @@ public:
     }
     inline bool isShifted() const { return bShifted != 0; }
     inline void setPrimaryInstance( const bool b ) { bPrimaryInstance = b; }
+    inline bool isPrimaryInstance() const { return bPrimaryInstance != 0; }
     inline uint32_t getFlags() const { return flags; }
     inline void setFlags( const uint32_t newFlags ) { flags = newFlags; }
     inline const std::string &getInstanceName() const { return name; }

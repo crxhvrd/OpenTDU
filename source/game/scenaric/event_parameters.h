@@ -48,6 +48,14 @@ public:
     inline int32_t getSpotType() { return int32_t( spotType.getValue() ); }
     inline const char *getName() const { return name.getString(); }
     inline char *getNameBuffer() { return name.getStringBuffer(); }
+    inline char *getDescriptionBuffer() {
+        return description.getStringBuffer();
+    }
+    inline GameParameterBool &getTest() { return test; }
+    inline GameParameterChoice &getVehicleType() { return vehicleType; }
+    inline GameParameterVehicleRestriction &getVehicleRestriction() {
+        return vehicleRestriction;
+    }
     inline GameParameterChoice &getLevel() { return level; }
     inline GameParameterNumber &getRewardMoney() { return rewardMoney; }
     inline GameParameterLaps &getNumLaps() { return numLaps; }
@@ -93,6 +101,9 @@ public:
     EventParameters();
 
     void reset();
+    const char *getDisplayName();
+    const char *getDisplayDescription();
+    void generateFileName();
     bool isParameterAvailable( GameParameter *pParameter,
                                const int32_t parameterCategory );
     char *buildVehicleRestrictionText( char *pOutText,

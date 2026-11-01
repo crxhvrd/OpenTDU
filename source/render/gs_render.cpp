@@ -1992,6 +1992,33 @@ void GSRender::setSceneViewports( const float x,
     }
 }
 
+static void SetViewportRect( Viewport &viewport,
+                             const float x,
+                             const float y,
+                             const float width,
+                             const float height ) {
+    viewport.X = x;
+    viewport.Y = y;
+    viewport.Width = width;
+    viewport.Height = height;
+}
+
+void GSRender::updateViewportDimScalars( const float x,
+                                         const float y,
+                                         const float width,
+                                         const float height ) {
+    // FUN_00993980
+    SetViewportRect( viewportBack, x, y, width, height );
+    SetViewportRect( viewportNear, x, y, width, height );
+    SetViewportRect( viewportParticles, x, y, width, height );
+    SetViewportRect( defaultViewport, x, y, width, height );
+    SetViewportRect( clearColorViewport, x, y, width, height );
+    SetViewportRect( clearViewport, x, y, width, height );
+    SetViewportRect( clearColorDepthViewport, x, y, width, height );
+    SetViewportRect( clearColorStencilViewport, x, y, width, height );
+    SetViewportRect( clearDepthViewport, x, y, width, height );
+}
+
 void GSRender::FUN_00994330() {
     // FUN_00994330
     mainRTwM.destroy();

@@ -1462,3 +1462,43 @@ bool UnknownEntity::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
 
     return false;
 }
+
+void GSFlash::setLevelMoviesFlag( const int32_t levelIndex,
+                                  const int32_t flagType,
+                                  const int32_t bit,
+                                  const bool bEnable ) {
+    // FUN_0099b290
+    const int32_t numMovies = getNumMovies( levelIndex );
+    const uint32_t mask = 1u << ( bit & 0x1f );
+    for ( int32_t movieIndex = 0; movieIndex < numMovies; movieIndex++ ) {
+        MoviePlayer *pMoviePlayer = getMoviePlayer( levelIndex, movieIndex );
+        if ( pMoviePlayer == nullptr ) {
+            continue;
+        }
+        switch ( flagType ) {
+        case 0:
+            pMoviePlayer->Flags = bEnable ? ( pMoviePlayer->Flags & ~mask )
+                                          : ( pMoviePlayer->Flags | mask );
+            break;
+        case 1:
+            pMoviePlayer->field3_0xac8 =
+                bEnable ? ( pMoviePlayer->field3_0xac8 | mask )
+                        : ( pMoviePlayer->field3_0xac8 & ~mask );
+            break;
+        case 2:
+            pMoviePlayer->field5_0xad0 =
+                bEnable ? ( pMoviePlayer->field5_0xad0 & ~mask )
+                        : ( pMoviePlayer->field5_0xad0 | mask );
+            OTDU_UNIMPLEMENTED; // TODO: FLASH (bank +0x2a8 player state = 2
+                                // while field5_0xad0 != 0)
+            break;
+        case 3:
+            pMoviePlayer->IsMoviePaused =
+                bEnable ? ( pMoviePlayer->IsMoviePaused & ~mask )
+                        : ( pMoviePlayer->IsMoviePaused | mask );
+            break;
+        default:
+            break;
+        }
+    }
+}

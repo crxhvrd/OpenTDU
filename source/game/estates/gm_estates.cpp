@@ -903,7 +903,7 @@ void GMEstates::destroy() {
     GameModeWorldBase::destroy();
 }
 
-bool GMEstates::onMessage( FlashMessage *pMessage ) {
+bool GMEstates::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_0079a6c0
     switch ( *pMessage ) {
     case FlashMessage( "rltr" ):

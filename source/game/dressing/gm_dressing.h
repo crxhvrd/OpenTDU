@@ -23,7 +23,7 @@ public:
     void draw( float deltaTime, float totalTime ) override;
     void pause() override;
     void destroy() override;
-    bool onMessage( FlashMessage *pMessage ) override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
 
     void onInteriorReady() override;
 

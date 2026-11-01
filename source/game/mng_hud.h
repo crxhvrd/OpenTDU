@@ -303,6 +303,9 @@ class MngHud : public Manager {
     friend class HudMinimap;
 
 public:
+    inline void setDisplayTrace( const bool bDisplay ) {
+        bDisplayTrace = bDisplay;
+    }
     using MovieFilterCallback_t = bool ( * )( const char *pMovieName );
 
 public:

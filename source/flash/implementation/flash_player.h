@@ -57,6 +57,7 @@ public:
     setVariableValueVariadic( const char *param_1, const char *param_2, ... );
 
     int32_t getVariableAsInt( const char *param_1 );
+    bool getVariableAsFloat( const char *pVariableName, float &outValue );
 
     bool getVariableAsString( const char *param_2, char *param_3 );
     bool getClipPlayer( const char *param_2, FlashClip *param_1 );

@@ -37,7 +37,7 @@ public:
     virtual void pause();
     virtual void tick( float deltaTime, float totalTime );
     virtual void onInteriorReady();
-    virtual bool onMessage( FlashMessage *pMessage );
+    virtual bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer );
     virtual AvatarClotheCursor *createCursor( AvatarPartDB *pDB,
                                               int32_t category,
                                               int32_t gender,

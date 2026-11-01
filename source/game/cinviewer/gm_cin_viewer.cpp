@@ -383,7 +383,7 @@ void GMCinViewer::loadBankCinematics( const char *pBankFolder,
     gpScenaric->unloadBank( &tempBank );
 }
 
-bool GMCinViewer::onMessage( FlashMessage *pMessage ) {
+bool GMCinViewer::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_007b3b00
     switch ( *pMessage ) {
     case FlashMessage( "bnch" ): { // a bank was picked in the bnkl list
@@ -438,7 +438,7 @@ bool GMCinViewer::onMessage( FlashMessage *pMessage ) {
         restartCine();
         return true;
     default:
-        return GameModeWorld::onMessage( pMessage );
+        return GameModeWorld::onMessage( pMessage, pPlayer );
     }
 }
 

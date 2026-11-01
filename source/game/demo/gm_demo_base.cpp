@@ -37,7 +37,7 @@ void GMDemoBase::destroy() {
     GameModeScene::destroy();
 }
 
-bool GMDemoBase::onMessage( FlashMessage *pMessage ) {
+bool GMDemoBase::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_009d8d20
     switch ( *pMessage ) {
     case FlashMessage( "afsc" ):

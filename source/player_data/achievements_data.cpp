@@ -83,6 +83,21 @@ uint32_t AchievementsData::getNumCarsTuned() const {
     return TestDriveTEAReadDword( pNumCarsTuned );
 }
 
+void AchievementsData::addInstantChallengeWonOnline() {
+    // FUN_0042e270
+    TestDriveTEAWriteDword( pNumInstantChallengesWonOnline,
+                            getNumInstantChallengesWonOnline() + 1 );
+}
+
+void AchievementsData::addInstantChallengeWonOffline( const int32_t botIndex ) {
+    // FUN_0042e2c0
+    TestDriveTEAWriteDword( pNumInstantChallengesWonOffline,
+                            getNumInstantChallengesWonOffline() + 1 );
+    if ( botIndex >= 0 && botIndex < kNumAchievementFlags ) {
+        bAchievementFlags[botIndex] = true;
+    }
+}
+
 uint32_t AchievementsData::getNumInstantChallengesWonOnline() const {
     return TestDriveTEAReadDword( pNumInstantChallengesWonOnline );
 }

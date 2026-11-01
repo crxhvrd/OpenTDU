@@ -85,6 +85,13 @@ struct WorkerThreadContext {
           bJobDone( false ) {}
 };
 
+// Modification date of a file found in a save context.
+struct ContextFileDate {
+    uint16_t Year = 0;
+    uint8_t Month = 0;
+    uint8_t Day = 0;
+};
+
 enum eContextState : int32_t {
     CST_Empty = 1, // the profile has no such context yet
     CST_Error = 2, // the context exists but could not be opened
@@ -105,6 +112,9 @@ public:
     inline bool isFilemapActive() const { return bFilemapActive; }
     inline bool hasPendingFileToSave() const {
         return saveQueue.getNumPendingFiles() != 0;
+    }
+    inline eSaveQueueError getLastSaveError() const {
+        return saveQueue.LastError;
     }
     inline void setSaveQueueDelayed( const bool bDelayed ) {
         saveQueue.bDelay = bDelayed;
@@ -204,6 +214,12 @@ public:
                                const int32_t index,
                                char *pOutFilename,
                                const size_t outFilenameSize );
+    bool getFileInfoInContext( const char *pContextName,
+                               const char *pPattern,
+                               const int32_t index,
+                               char *pOutFilename,
+                               const size_t outFilenameSize,
+                               ContextFileDate *pOutDate );
     bool deleteFileInContext( const char *pContextName,
                               const char *pPattern,
                               const int32_t index );

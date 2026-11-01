@@ -210,6 +210,48 @@ int32_t FlashPlayer::getVariableAsInt( const char *param_1 ) {
     return 0;
 }
 
+bool FlashPlayer::getVariableAsFloat( const char *pVariableName,
+                                      float &outValue ) {
+    // FUN_00440a50
+    ScopedMutexLock lock = gpFlash->scopedLock();
+
+    FlashResource *pPreviousResource = gpActiveFlashResource;
+    gpActiveFlashResource = pFlashResource;
+    gpPreviousActiveFlashResource = pFlashResource;
+
+    FlashSprite *pRoot = pFlashResource->getRoot();
+    const char *pResolvedName = nullptr;
+    FlashSprite *pOwner = nullptr;
+    bool bFound = false;
+    outValue = 0.0f;
+    // FUN_00448fd0 (inlined)
+    if ( pRoot->resolveVarPath( pVariableName, &pResolvedName, &pOwner ) ) {
+        ActionScriptVariable *pVariable =
+            pRoot->getVariables()->retrieveVariable( pResolvedName,
+                                                     pOwner->getInstanceID() );
+        if ( pVariable != nullptr ) {
+            bFound = true;
+            switch ( pVariable->Type ) {
+            case eFlashStackVarType::FSVT_String:
+                outValue = FlashResource::StringToFloat( pVariable->pString );
+                break;
+            case eFlashStackVarType::FSVT_LinkedString:
+            case eFlashStackVarType::FSVT_WritableLinkedString:
+                outValue =
+                    FlashResource::StringToFloat( pVariable->pStringPointer );
+                break;
+            default:
+                outValue = pVariable->Float;
+                break;
+            }
+        }
+    }
+
+    gpPreviousActiveFlashResource = pPreviousResource;
+    gpActiveFlashResource = pPreviousResource;
+    return bFound;
+}
+
 bool FlashPlayer::getVariableAsString( const char *param_2, char *param_3 ) {
     // FUN_004409c0
     ScopedMutexLock lock = gpFlash->scopedLock();

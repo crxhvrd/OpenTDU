@@ -488,7 +488,7 @@ bool GMLiving::executeAction( int32_t param_2, void *param_3, void *pData ) {
     return GameModeScene::executeAction( param_2, param_3, pData );
 }
 
-bool GMLiving::onMessage( FlashMessage *pMessage ) {
+bool GMLiving::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_00769c90
     switch ( *pMessage ) {
     case FlashMessage( "gofr" ): { // the "go driving" door

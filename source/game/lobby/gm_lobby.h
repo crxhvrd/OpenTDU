@@ -79,7 +79,7 @@ public:
     void draw( float deltaTime, float totalTime ) override;
     void pause() override;
     void destroy() override;
-    bool onMessage( FlashMessage *pMessage ) override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
 
     void onClose( ePopupAnswer answer, void *pData, int32_t userData ) override;
 

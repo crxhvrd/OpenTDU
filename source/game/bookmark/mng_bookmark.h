@@ -47,6 +47,7 @@ public:
         return "Bookmark";
     }
     inline bool isGME() const { return bGME; }
+    inline void setGME( const bool bEnabled ) { bGME = bEnabled; }
     inline int32_t getNumBookmarks() const { return numBookmarks; }
     inline const Bookmark &getBookmark( const int32_t index ) const {
         return arrayBookmarks[index];

@@ -1,5 +1,7 @@
 #include "shared.h"
 #include "gs_scenaric.h"
+#include "ige_file.h"
+#include "mng_actor.h"
 
 #include "audio/gs_audio.h"
 #include "audio/implementation/audio_dispatcher_playback.h"
@@ -792,6 +794,45 @@ void GSScenaric::releaseIGEBuffer() {
         TestDrive::Free( pIGEBuffer );
         pIGEBuffer = nullptr;
     }
+}
+
+void GSScenaric::releaseTestIGEBuffer() {
+    // FUN_0078fbe0 (inlined)
+    if ( pTestIGEBuffer != nullptr ) {
+        TestDrive::FreeAligned( pTestIGEBuffer );
+        pTestIGEBuffer = nullptr;
+    }
+}
+
+void GSScenaric::requestICIGE( MngActor *pMngActor ) {
+    // FUN_00804010
+    icIGESize = uint32_t( ( pMngActor->getActorCount() + 4 ) * 500 );
+    pICIGEBuffer =
+        static_cast<uint8_t *>( TestDrive::AllocAligned( icIGESize, 16 ) );
+    WriteIGEFile( &gIGEFileRequest, pMngActor, pICIGEBuffer, &icIGESize );
+    selectedEventParameters.setRequestedName( "ic" );
+    selectedEventParameters.setSource( EventParameters::ES_Online );
+    selectedEventParameters.setField124( 0x1ce001ce );
+}
+
+void GSScenaric::releaseICIGEBuffer() {
+    // FUN_00741060 (inlined)
+    if ( pICIGEBuffer != nullptr ) {
+        TestDrive::FreeAligned( pICIGEBuffer );
+        pICIGEBuffer = nullptr;
+    }
+}
+
+void GSScenaric::requestTestIGE( MngActor *pMngActor ) {
+    // FUN_00804080
+    releaseIGEBuffer();
+    testIGESize = uint32_t( ( pMngActor->getActorCount() + 4 ) * 500 );
+    pTestIGEBuffer = static_cast<uint8_t *>(
+        TestDrive::AllocAligned( testIGESize, 16 ) );
+    WriteIGEFile( &gIGEFileRequest, pMngActor, pTestIGEBuffer, &testIGESize );
+    selectedEventParameters.setRequestedName( "test" );
+    selectedEventParameters.setSource( EventParameters::ES_Buffer );
+    selectedEventParameters.setField124( 0x7e577e57 );
 }
 
 bool GSScenaric::loadPackBank( const char *pBankFolder,

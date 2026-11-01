@@ -57,7 +57,7 @@ public:
     }
     void destroy() override;
 
-    bool onMessage( FlashMessage *pMessage ) override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
 
     void watchCar( const int32_t slot );
     void exit();

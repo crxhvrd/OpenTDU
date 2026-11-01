@@ -1,6 +1,12 @@
 #include "shared.h"
 #include "gs_file.h"
 
+#include <filesystem>
+
+#include <ctime>
+
+#include <chrono>
+
 #include "config/gs_config.h"
 #include "core/mutex.h"
 #include "file_direct_access.h"
@@ -1336,6 +1342,54 @@ bool GSFile::getFileNameInContext( const char *pContextName,
                            bFound = true;
                            return false;
                        } );
+    return bFound;
+}
+
+bool GSFile::getFileInfoInContext( const char *pContextName,
+                                   const char *pPattern,
+                                   const int32_t index,
+                                   char *pOutFilename,
+                                   const size_t outFilenameSize,
+                                   ContextFileDate *pOutDate ) {
+    // FUN_009a2e90
+    if ( pOutFilename == nullptr || outFilenameSize == 0u ) {
+        return false;
+    }
+    pOutFilename[0] = '\0';
+    *pOutDate = {};
+
+    bool bFound = false;
+    visitContextFiles(
+        pContextName, pPattern,
+        [&]( FileDirectAccess &fileAccess, const std::string &filename,
+             int32_t fileIndex ) {
+            if ( fileIndex != index ) {
+                return true;
+            }
+            snprintf( pOutFilename, outFilenameSize, "%s", filename.c_str() );
+
+            std::error_code error;
+            const auto fileTime = std::filesystem::last_write_time(
+                std::filesystem::path( fileAccess.FolderName ) / filename,
+                error );
+            if ( !error ) {
+                const std::time_t writeTime =
+                    std::chrono::system_clock::to_time_t(
+                        std::chrono::time_point_cast<
+                            std::chrono::system_clock::duration>(
+                            fileTime -
+                            std::filesystem::file_time_type::clock::now() +
+                            std::chrono::system_clock::now() ) );
+                const std::tm *pTime = std::localtime( &writeTime );
+                if ( pTime != nullptr ) {
+                    pOutDate->Year = uint16_t( pTime->tm_year + 1900 );
+                    pOutDate->Month = uint8_t( pTime->tm_mon + 1 );
+                    pOutDate->Day = uint8_t( pTime->tm_mday );
+                }
+            }
+            bFound = true;
+            return false;
+        } );
     return bFound;
 }
 

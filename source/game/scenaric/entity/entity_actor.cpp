@@ -538,8 +538,8 @@ int32_t EntityActor::refreshMechanismRender(
 
         Matrix4x4f_t pose;
         bool bActive = false;
-        if ( !gpPhysics->getBodyPose( static_cast<RigidBody_t>( member.second ),
-                                      pose, bActive ) ) {
+        if ( !gpPhysics->getBodyRenderPose( // OTDU_ADDITION
+                 static_cast<RigidBody_t>( member.second ), pose, bActive ) ) {
             continue;
         }
         if ( !bShifted ) {

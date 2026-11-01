@@ -516,9 +516,9 @@ void GMIntro::destroy() {
     SpawnDriverAvatar( false, false );
 }
 
-bool GMIntro::onMessage( FlashMessage *pMessage ) {
+bool GMIntro::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_0076cc90
-    if ( GameModeWorld::onMessage( pMessage ) ) {
+    if ( GameModeWorld::onMessage( pMessage, pPlayer ) ) {
         return true;
     }
 

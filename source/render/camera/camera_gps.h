@@ -41,6 +41,10 @@ public:
     inline float getTransitionProgress() const { return transitionProgress; }
     inline float getTransitionBlend() const { return transitionBlend; }
     inline const Eigen::Vector4f &getFocus() const { return focus; }
+    inline float getYawOffset() const { return yawOffset; }
+    inline void setYawOffset( const float value ) { yawOffset = value; }
+    inline float getPitchOffset() const { return pitchOffset; }
+    inline void setPitchOffset( const float value ) { pitchOffset = value; }
     inline float getZoomDistanceToCenter( const int32_t index ) const {
         return zoomDistanceToCenter[index];
     }

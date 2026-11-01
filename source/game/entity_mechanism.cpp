@@ -89,7 +89,7 @@ void EntityMechanism::tick() {
     if ( bDynamicProp && !propBodies.empty() ) {
         Matrix4x4f_t pose;
         bool bActive = false;
-        if ( gpPhysics->getBodyPose(
+        if ( gpPhysics->getBodyRenderPose( // OTDU_ADDITION
                  static_cast<RigidBody_t>( propBodies[0].second ), pose,
                  bActive ) &&
              bActive ) {

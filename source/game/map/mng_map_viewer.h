@@ -61,6 +61,9 @@ public:
 public:
     inline void setState( const eState newState ) { state = newState; }
     inline eState getState() const { return state; }
+    inline void setSyncSpotsFocus( const bool bSync ) {
+        bSyncSpotsFocus = bSync;
+    }
     inline const Eigen::Vector4f &getStreamFocus() const {
         return bPendingFocusMove ? pendingFocusTarget : focusPosition;
     }

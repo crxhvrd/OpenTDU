@@ -333,9 +333,9 @@ void GMGarage::selectFirstPersonCar( const int32_t carIndex ) {
     // Browse to the car (as the menu arrows do)
     pFlashPlayer->setVariableValue( "/:num_car", carIndex + 1 );
     FlashMessage browseMessage( "ccar" );
-    onMessage( &browseMessage );
+    onMessage( &browseMessage, pFlashPlayer );
     FlashMessage changedMessage( "chca" );
-    onMessage( &changedMessage );
+    onMessage( &changedMessage, pFlashPlayer );
 
     // Then validate it (as the menu select button does)
     if ( pCar->state == CarDesc::eState::CDS_PutOnEbay ) {
@@ -603,7 +603,7 @@ void GMGarage::swapCars() {
     carList.reset();
 }
 
-bool GMGarage::onMessage( FlashMessage *pMessage ) {
+bool GMGarage::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_00790e10
     Garage *pGarage = GetGarage();
     SceneCarPark &carPark = sceneGarage.getCarPark();

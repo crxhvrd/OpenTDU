@@ -25,7 +25,7 @@ void MngFlashGM::tick( float param_1, float param_2 ) {
 
 bool MngFlashGM::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_007188a0
-    if ( pGMScene != nullptr && pGMScene->onMessage( pMessage ) ) {
+    if ( pGMScene != nullptr && pGMScene->onMessage( pMessage, pPlayer ) ) {
         return true;
     }
     return MngFlash::onMessage( pMessage, pPlayer );

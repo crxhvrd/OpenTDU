@@ -97,6 +97,10 @@ public:
 
     int32_t getNumMovies( const int32_t param_1 );
     MoviePlayer *getMoviePlayer( int32_t levelIndex, int32_t movieIndex );
+    void setLevelMoviesFlag( const int32_t levelIndex,
+                             const int32_t flagType,
+                             const int32_t bit,
+                             const bool bEnable );
     static int32_t GetUnicodeFontIndex( const int32_t locale );
     FlashPlayer *getLoadedFlashPlayer( const int32_t levelIndex,
                                        const int32_t movieIndex );

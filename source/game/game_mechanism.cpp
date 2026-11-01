@@ -25,6 +25,7 @@
 #include "game/mission/game_mech_speed_gauge.h"
 #include "game/mission/game_mech_speed_radar.h"
 #include "game/mission/game_mech_time.h"
+#include "game/mission/game_mech_instant_challenge.h"
 #include "audio/gs_audio.h"
 #include "flash/audio/flash_sounds.h"
 #include "flash/gs_flash.h"
@@ -63,6 +64,7 @@
 
 static constexpr const char *kNoTime = "--'--\"--";        // 0x00f37758
 static constexpr float kCentisecondsPerSecond = 100.0f;    // DAT_00f41708
+static constexpr float kTestScoreScale = 1000.0f;          // DAT_00f41718
 static constexpr float kNoRankingScore = 4294967296.0f;    // FLOAT_00f41670
 static constexpr float kMetersPerSecondToKmh = 3.6f;       // DAT_00f41768
 static constexpr float kMetersPerSecondToMph = 2.2374146f; // DAT_00f419f4
@@ -306,8 +308,11 @@ bool GameMechanism::initialize() {
             pEventParameters->getCollisions().setValue( 0, false ); // +0x990
         }
         pComponents[CS_SpeedGauge] = new GameMechSpeedGauge( this ); // +0x73c
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (instant challenge FUN_00729260;
-                            // race data FUN_00882c40 + FUN_00882370)
+        if ( gpScenaric->isInstantChallenge() ) {
+            pComponents[CS_InstantChallenge] =
+                new GameMechInstantChallenge( this ); // +0x750
+        }
+
         if ( pEventParameters->getOffRoad().getValue() != 0 ||
              pEventParameters->getCollisions().getValue() != 0 ) {
             GameMechPenalty *pPenalty = new GameMechPenalty( this );
@@ -322,6 +327,8 @@ bool GameMechanism::initialize() {
                 pPenalty->setDisplayMode( GameMechPenalty::DM_Money );
             }
         }
+
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
 
         if ( gpMngGPS != nullptr ) {
             bSavedGPSVoice = gpMngGPS->isVoiceEnabled();
@@ -1411,6 +1418,69 @@ bool GameMechanism::showPlayerRecord( const uint64_t hashcode ) {
     return false;
 }
 
+void GameMechanism::recordTestScore( const int32_t score ) {
+    // FUN_007349e0 (inlined)
+    if ( !gpScenaric->isTestedLevel() ) {
+        gpScenaric->setTestedLevel( true );
+        if ( score != 0 ) {
+            gpScenaric->setTestedScore( score );
+        }
+        return;
+    }
+
+    bool bBetter = false;
+    if ( mechType == MT_TimeAttack ) {
+        bBetter = uint32_t( score ) < uint32_t( gpScenaric->getTestedScore() );
+    } else if ( mechType == MT_Speed ) {
+        bBetter = uint32_t( gpScenaric->getTestedScore() ) < uint32_t( score );
+    } else {
+        return;
+    }
+    gpScenaric->setTestedLevel( true );
+    if ( bBetter && score != 0 ) {
+        gpScenaric->setTestedScore( score );
+    }
+}
+
+void GameMechanism::settleInstantChallengeStake( const int32_t cup ) {
+    // FUN_007349e0 (inlined)
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    const int32_t stake = gpScenaric->getICDatas().Stake;
+    if ( cup == 1 ) {
+        const bool bBot = gpScenaric->getICEChallengers()[0].bBot;
+        if ( !bBot ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_00406f50 P2P session
+                                     // active)
+        }
+        if ( bBot ) {
+            int32_t numParticipants = 0;
+            const GameMechRaceHUD *pRaceHUD =
+                static_cast<const GameMechRaceHUD *>( pComponents[CS_RaceHUD] );
+            for ( GameParticipant *pParticipant = pRaceHUD->getRankingHead();
+                  pParticipant != nullptr;
+                  pParticipant =
+                      pParticipant->getSessionParams().pRankNextPlayer ) {
+                numParticipants++;
+            }
+
+            SavedExtraChallenges *pExtras = pSave->getExtraChallenges();
+            Driver *pDriver = pSave->getDriver();
+            pExtras->addCounter( CounterIndex( 0xf0d4 ), -stake );
+            pDriver->setMoneyAndNotify( int32_t( pDriver->getMoney() ) +
+                                        stake );
+            const int32_t winnings = ( numParticipants - 1 ) * stake;
+            pExtras->addCounter( CounterIndex( 0xf090 ), winnings );
+            pDriver->setMoneyAndNotify( int32_t( pDriver->getMoney() ) +
+                                        winnings );
+        }
+        gpPlayerData->requestSave( 1 );
+    }
+
+    GetHudPlayer()->setVariableValueNonLinked(
+        "/:IsEnoughMoney",
+        ( int32_t( pSave->getDriver()->getMoney() ) < stake ) ? "0" : "1" );
+}
+
 void GameMechanism::showResults() {
     // FUN_007349e0
     FlashPlayer *pPlayer = GetHudPlayer();
@@ -1441,6 +1511,7 @@ void GameMechanism::showResults() {
         pPlayer->setVariableValueNonLinked( "/:PosList", " " );
         pPlayer->setVariableValueNonLinked( "/:IsPenalty", "0" );
         char timeText[0x20];
+        int32_t testScore = 0;
         if ( mechType == MT_TimeAttack ) {
             pPlayer->setVariableValueNonLinked(
                 "/:TimeList_ref1",
@@ -1488,6 +1559,7 @@ void GameMechanism::showResults() {
                         "/:FinalTime", FormatCentiseconds( timeText, time ) );
                 }
             }
+            testScore = int32_t( time );
         } else if ( mechType == MT_Speed ) {
             pPlayer->setVariableValueNonLinked(
                 "/:TimeList_ref1",
@@ -1515,6 +1587,7 @@ void GameMechanism::showResults() {
                                    ->getBaseScore() ) *
                         kMillimetersToMeters; // +0x6c0
             }
+            testScore = int32_t( score * kTestScoreScale );
             const bool bImperial = gpPlayerData->isUsingImperialUnits();
             char scoreText[0x40];
             snprintf( scoreText, sizeof( scoreText ), "%.2f",
@@ -1531,8 +1604,7 @@ void GameMechanism::showResults() {
         pPlayer->setVariableValue( "/:WhatCup", 0u );
         if ( !gpScenaric->isInstantChallenge() ) {
             if ( bUnknown75C && bRaceWon ) {
-                OTDU_UNIMPLEMENTED; // TODO: SCENARIC (gGSScenaric bTestedLevel
-                                    // / TestedScore best editor test score)
+                recordTestScore( testScore );
             }
             int32_t testRank = -2;
             if ( !gpScenaric->isTrainingLevel() ) {
@@ -1626,11 +1698,12 @@ void GameMechanism::showResults() {
                                             pTime->getFinalTime() );
             }
             if ( gpScenaric->isInstantChallenge() ) {
-                OTDU_UNIMPLEMENTED; // TODO: ONLINE (instant challenge stake,
-                                    // /:IsEnoughMoney)
+                settleInstantChallengeStake( cup );
             }
             if ( pComponents[CS_InstantChallenge] != nullptr ) {
-                OTDU_UNIMPLEMENTED; // TODO: ONLINE (FUN_00729740)
+                static_cast<GameMechInstantChallenge *>(
+                    pComponents[CS_InstantChallenge] )
+                    ->rankPlayers();
             }
         }
         if ( cup == 1 ) {
@@ -2277,7 +2350,7 @@ bool GameMechanism::processRanking( const eStateProcess process ) {
         if ( gpScenaric->isTrainingLevel() ) {
             bAutopilotRequested = true;
         }
-        OTDU_UNIMPLEMENTED; // TODO: GSCamera (+0x939 = 0)
+        gpCamera->setViewChangeAllowed( false );
         return true;
     case SP_Update:
         if ( gpScenaric->isFromDriveIn() && !bDriveInMessageShown &&
@@ -2317,7 +2390,7 @@ bool GameMechanism::processRanking( const eStateProcess process ) {
         if ( gpMngInGameMenu != nullptr ) {
             gpMngInGameMenu->setEnabled( true );
         }
-        OTDU_UNIMPLEMENTED; // TODO: GSCamera (+0x939 = 1)
+        gpCamera->setViewChangeAllowed( true );
         static_cast<GMMission *>( pOwner )->setRankingShown( false );
         return true;
     default:

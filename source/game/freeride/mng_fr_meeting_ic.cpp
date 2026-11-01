@@ -1,6 +1,10 @@
 #include "shared.h"
 #include "mng_fr_meeting_ic.h"
 
+#include "ai/ai_bot_manager.h"
+#include "database/gs_database.h"
+#include "game/scenaric/gs_scenaric.h"
+#include "game/vehicle/car_desc.h"
 #include "config/gs_config.h"
 #include "flash/entities/flash_entity.h"
 #include "flash/implementation/flash_player.h"
@@ -10,6 +14,7 @@
 #include "game/mng_ingame_menu.h"
 #include "game/scenaric/local_player.h"
 #include "game/vehicle/car_state.h"
+#include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "system/gs_pc_options.h"
 
@@ -380,6 +385,111 @@ void MngFRMeetingIC::refreshChallengerFrames() {
     }
 
     pFlashVariable->showFrame( "cancel", kHudInstantRelativePath, true );
+}
+
+void GetICEPlayerNickname( const ICEChallenger &player,
+                                  char *pOutName,
+                                  const size_t nameLength ) {
+    // FUN_008039f0
+    pOutName[0] = '\0';
+    if ( player.bBot ) {
+        // FUN_0090c1d0
+        const DBEntryBot *pBot = GetBotDBEntry( int32_t( player.ID ) );
+        if ( pBot != nullptr && nameLength >= 0x20 ) {
+            strncpy( pOutName, pBot->FirstName.pAsString, 0x20 );
+        }
+        return;
+    }
+    if ( player.ID == kLocalICEPlayer ) {
+        strncpy( pOutName, gpScenaric->getLocalPlayer().getDriver()->Nickname,
+                 nameLength );
+        pOutName[nameLength - 1] = '\0';
+        return;
+    }
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (P2P player nickname)
+}
+
+bool IsICEPlayerValid( const ICEChallenger &player ) {
+    // FUN_00803260
+    if ( player.bBot ) {
+        return player.ID != ICEChallenger::kNoChallenger;
+    }
+    if ( player.ID == kLocalICEPlayer ) {
+        return true;
+    }
+    if ( player.ID < 0x10 ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (P2P player slot check)
+    }
+    return false;
+}
+
+void FillICEPlayerInfo( const ICEChallenger &player,
+                        const uint32_t lobbyIndex,
+                        FlashPlayer *pPlayer ) {
+    // FUN_00805260
+    char variable[0x40];
+    char name[100];
+    snprintf( variable, sizeof( variable ), "/:Player%dName", lobbyIndex );
+    GetICEPlayerNickname( player, name, 0x20 );
+    pPlayer->setVariableValueNonLinked( variable, name );
+
+    int32_t rank = 0;
+    if ( player.bBot ) {
+        rank = GetBotTier( int32_t( player.ID ) );
+    } else {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (P2P player rank)
+    }
+
+    const char *pCarName = "";
+    const char *pGroupName = "";
+    int32_t upgradeLevel = 0;
+    if ( player.bBot || player.ID == kLocalICEPlayer ) {
+        int32_t carID = -1;
+        uint64_t packHashcode = 0ull;
+        if ( player.bBot ) {
+            carID = GetBotCarID( int32_t( player.ID ) );
+        } else {
+            const CarDesc *pCar = gpPlayerData->getCurrentCar();
+            if ( pCar != nullptr ) {
+                carID = int32_t( pCar->getCarConfigID() );
+                packHashcode = pCar->packHashcode;
+            }
+        }
+        for ( const CarConfig &car : gpDatabase->getCarList() ) {
+            if ( car.Hash == carID ) {
+                pCarName = car.FullName.c_str();
+                break;
+            }
+        }
+        DBEntryCarPhysicsData *pEntry = gpDatabase->getCarDBEntry( carID );
+        if ( pEntry != nullptr ) {
+            pGroupName = pEntry->CarGroup.pAsString;
+            upgradeLevel = gpDatabase->getPackLevel( pEntry, packHashcode );
+        }
+    } else {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (P2P player car)
+    }
+
+    snprintf( variable, sizeof( variable ), "/:Player%dCar", lobbyIndex );
+    if ( strlen( pCarName ) < 2 ) {
+        pPlayer->setVariableValueNonLinked( variable, pCarName );
+    } else {
+        pPlayer->setVariableValue( variable, pCarName );
+    }
+    snprintf( variable, sizeof( variable ), "/:Player%dGroup", lobbyIndex );
+    if ( strlen( pCarName ) < 2 ) {
+        pPlayer->setVariableValueNonLinked( variable, pGroupName );
+    } else {
+        pPlayer->setVariableValue( variable, pGroupName );
+    }
+    snprintf( variable, sizeof( variable ), "/:Player%dUpgrade", lobbyIndex );
+    pPlayer->setVariableValue( variable, upgradeLevel );
+    snprintf( variable, sizeof( variable ), "/:Player%dRank", lobbyIndex );
+    if ( rank == 0 ) {
+        pPlayer->setVariableValueNonLinked( variable, "--" );
+    } else {
+        pPlayer->setVariableValue( variable, rank );
+    }
 }
 
 void MngFRMeetingIC::showChallengeBox() {

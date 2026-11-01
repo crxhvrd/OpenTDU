@@ -9,6 +9,7 @@ class FlashPlayer;
 class GameMechanism;
 class GameMechTime;
 class GameModeWorld;
+class GMInstantChallenge;
 class GameParticipant;
 class GameSession;
 
@@ -234,6 +235,9 @@ public:
     virtual void initializeDriven();
     virtual void setGameSession( GameSession *pSession );
 
+    bool isGMEChallengeValid( GMInstantChallenge *pEditor ) const;
+    void gmeUpdatePlacement( GMInstantChallenge *pEditor );
+
     bool executeAction( int32_t action, void *pSource, void *pData ) override;
 
     static void OnRankingFadedOut( void *pData, void *pSource );
@@ -257,6 +261,8 @@ protected:
     void gotoResultsFrame();
     void showExtraChallengeResults();
     void showResults();
+    void recordTestScore( const int32_t score );
+    void settleInstantChallengeStake( const int32_t cup );
     void startEndCinematic( const Matrix4x4f_t &pose );
     void startEndCinematicAtPlayerCar();
     int32_t sortParticipantsByScore( const bool bHighestFirst );

@@ -1082,7 +1082,7 @@ void GameModeWorld::onResourceStreamed() {
     mngHudChallenge.initializeFlash();
 }
 
-bool GameModeWorld::onMessage( FlashMessage *pMessage ) {
+bool GameModeWorld::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_007be470
     switch ( *pMessage ) {
     case FlashMessage( "paou" ): // pause out

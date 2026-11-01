@@ -53,6 +53,8 @@ public:
     uint32_t getNumCarsTuned() const;
     uint32_t getNumInstantChallengesWonOnline() const;
     uint32_t getNumInstantChallengesWonOffline() const;
+    void addInstantChallengeWonOnline();
+    void addInstantChallengeWonOffline( const int32_t botIndex );
     uint32_t getNumCustomChallengesUploaded() const;
     uint32_t getNumCustomChallengesWon() const;
     uint32_t getNumETradeTransactions() const;

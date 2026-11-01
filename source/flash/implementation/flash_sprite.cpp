@@ -2858,6 +2858,24 @@ int32_t FlashClip::goToLabelAndPlay( const char *param_1, bool param_2 ) {
     return uVar3;
 }
 
+void FlashClip::goToFrame( const int32_t frameIndex, const bool bPlay ) {
+    // FUN_00441500
+    ScopedMutexLock lock = gpFlash->scopedLock();
+    FlashResource *pPreviousResource = gpActiveFlashResource;
+
+    int32_t targetFrame = frameIndex + 1;
+    if ( targetFrame > 0 ) {
+        const int32_t numFrames =
+            int32_t( *(uint16_t *)( pSprite->pTagsArray + 0xc ) );
+        if ( targetFrame > numFrames ) {
+            targetFrame = numFrames;
+        }
+        pSprite->getDisplayList()->setMaxFrameIndex( targetFrame );
+    }
+    gpPreviousActiveFlashResource = pPreviousResource;
+    pSprite->getDisplayList()->setPlayState( eFlashPlayState( !bPlay + 1 ) );
+}
+
 void FlashClip::setVariable( const char *pName, const int32_t value ) {
     // FUN_00441460
     ScopedMutexLock lock = gpFlash->scopedLock();

@@ -224,6 +224,32 @@ const GameParameterTypeDesc *GameParameter::getTypeDesc() {
     return &kTypeDescs[typeIndex];
 }
 
+const char *GameParameter::onClick( int32_t *pOutCheckBoxState ) {
+    // FUN_00786750
+    const char *pLabel = getTypeDesc()->pLabel;
+    *pOutCheckBoxState = 0;
+    if ( strcmp( pLabel, "input_txt" ) == 0 ) {
+        increment( 0 );
+        *pOutCheckBoxState = 1;
+    } else if ( strcmp( pLabel, "input_txt_disable" ) == 0 ) {
+        decrement( 0 );
+        *pOutCheckBoxState = 1;
+    } else if ( strcmp( pLabel, "chkbox_off" ) == 0 ) {
+        increment( 0 );
+        *pOutCheckBoxState = 1;
+    } else if ( strcmp( pLabel, "chkbox_on" ) == 0 ) {
+        decrement( 0 );
+        *pOutCheckBoxState = 1;
+    } else if ( fileFlags == 1 ) {
+        fileFlags = 2;
+        *pOutCheckBoxState = 2;
+    } else if ( fileFlags == 2 ) {
+        fileFlags = 1;
+        *pOutCheckBoxState = 1;
+    }
+    return getTypeDesc()->pLabel;
+}
+
 uint32_t GameParameter::getSize() {
     // FUN_00423f90
     return sizeof( uint32_t );
@@ -319,6 +345,34 @@ bool GameParameter::registerTo( GameParameterList * /*pList*/ ) {
 
 GameParameterList::GameParameterList()
     : pHead( nullptr ), pTail( nullptr ), count( 0 ) {}
+
+int32_t GameParameterList::serialize( uint8_t **ppCursor ) {
+    // FUN_00423cd0
+    uint8_t *&pCursor = *ppCursor;
+    WriteBigEndian32( pCursor, uint32_t( count ) );
+    pCursor += 4;
+
+    int32_t numWritten = 0;
+    for ( GameParameter *pParameter = pHead; pParameter != nullptr;
+          pParameter = pParameter->pNext ) {
+        numWritten++;
+        WriteBigEndian32( pCursor, pParameter->id );
+        pCursor += 4;
+
+        const uint32_t size = pParameter->getSize();
+        Write<uint16_t>( pCursor, 0,
+                         ReverseEndianness16( uint16_t( pParameter->format ) ) );
+        pCursor += 2;
+        Write<uint16_t>( pCursor, 0, ReverseEndianness16( uint16_t( size ) ) );
+        pCursor += 2;
+        WriteBigEndian32( pCursor, uint32_t( uint8_t( pParameter->fileFlags ) ) );
+        pCursor += 4;
+
+        pParameter->serialize( pCursor );
+        pCursor += size;
+    }
+    return numWritten;
+}
 
 void GameParameterList::deserialize( const uint8_t **ppCursor,
                                      uint32_t *pVersion ) {

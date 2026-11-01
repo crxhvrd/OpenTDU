@@ -229,7 +229,7 @@ void GMTestCar::destroy() {
     ReleaseLocalPlayerCar();
 }
 
-bool GMTestCar::onMessage( FlashMessage *pMessage ) {
+bool GMTestCar::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_007b4a40
     FlashPlayer *pHudPlayer = GetHudFlashPlayer();
 
@@ -241,7 +241,7 @@ bool GMTestCar::onMessage( FlashMessage *pMessage ) {
              FlashMessage( whereTo ) == FlashMessage( "quit" ) ) {
             endTestDrive();
         }
-        return GameModeWorld::onMessage( pMessage );
+        return GameModeWorld::onMessage( pMessage, pPlayer );
     }
     case FlashMessage( "quit" ):
         endTestDrive();
@@ -255,7 +255,7 @@ bool GMTestCar::onMessage( FlashMessage *pMessage ) {
         }
         return false;
     default:
-        return GameModeWorld::onMessage( pMessage );
+        return GameModeWorld::onMessage( pMessage, pPlayer );
     }
 }
 

@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "mng_trac_road.h"
 
+#include "ai/ai_opt_path.h"
 #include "ai/ai_road_query.h"
 #include "database/gs_database.h"
 #include "game/scenaric/event_parameters.h"
@@ -217,6 +218,47 @@ void MngTracRoad::solveLegs( const bool bIgnoreOneWay ) {
     }
 }
 
+bool MngTracRoad::isOnLeg( const int32_t legIndex, const AiRoadIt &it ) const {
+    // FUN_007838a0
+    const AiPath &path = paths[legIndex];
+    if ( path.getHead() == nullptr ) {
+        return false;
+    }
+
+    const AiRoadIt &start = path.getStart();
+    const AiRoadIt &end = path.getEnd();
+    if ( it.pRoad == start.pRoad ) {
+        if ( !IsBeforeInWay( start, it, start.bWay ) ) {
+            return false;
+        }
+        if ( end.pRoad != it.pRoad ) {
+            return true;
+        }
+        return !IsBeforeInWay( end, it, end.bWay );
+    }
+    if ( it.pRoad == end.pRoad ) {
+        return !IsBeforeInWay( end, it, end.bWay );
+    }
+
+    for ( const AiRouteElem *pElem = path.getHead(); pElem != nullptr;
+          pElem = pElem->pNext ) {
+        if ( pElem->From.getRoadID() == it.pRoad->ID ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int32_t MngTracRoad::findLeg( const AiRoadIt &it ) {
+    // FUN_00783950
+    for ( int32_t legIndex = 0; legIndex < getNumWaypoints() - 1; legIndex++ ) {
+        if ( isOnLeg( legIndex, it ) ) {
+            return legIndex;
+        }
+    }
+    return -1;
+}
+
 float MngTracRoad::computeRouteLength( const bool bLoop,
                                        const int32_t loopCheckpointIndex,
                                        const int32_t numLaps ) {
@@ -252,6 +294,23 @@ float ComputeEventRouteLength( EventParameters *pEventParameters,
         numLaps = int32_t( pEventParameters->getNumOpponents().getValue() );
     }
     return pTracRoad->computeRouteLength( bLoop, loopCheckpointIndex, numLaps );
+}
+
+void MngTracRoad::prefetchLegShapes( const int32_t legIndex ) {
+    // FUN_00784a50
+    const AiPath &path = paths[legIndex];
+    if ( path.getStatus() != 3 ) {
+        return;
+    }
+    for ( AiRouteElem *pElem = path.getHead(); pElem != nullptr;
+          pElem = pElem->pNext ) {
+        if ( pElem == path.getHead() || pElem == path.getTail() ) {
+            continue;
+        }
+        AiRoadIt from;
+        pElem->From.unpack( from );
+        from.pRoad->getShape();
+    }
 }
 
 void FormatRouteDistance( const float distanceKm, char *pOutText ) {

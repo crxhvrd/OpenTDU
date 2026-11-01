@@ -817,7 +817,7 @@ void GMMap::onResourceStreamed() {
     mngSpots.setFlashPlayer();
 }
 
-bool GMMap::onMessage( FlashMessage *pMessage ) {
+bool GMMap::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_009c1e60
     OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_006bd120
 

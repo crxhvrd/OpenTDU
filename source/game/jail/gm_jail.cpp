@@ -171,7 +171,7 @@ void GMJail::destroy() {
     GameModeWorldBase::destroy();
 }
 
-bool GMJail::onMessage( FlashMessage *pMessage ) {
+bool GMJail::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_009d2dc0
     if ( *pMessage != FlashMessage( "ende" ) ) {
         return false;

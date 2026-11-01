@@ -10,7 +10,7 @@ public:
     void reset() override;
     void tick( float deltaTime, float totalTime ) override;
     void pause() override;
-    bool onMessage( FlashMessage *pMessage ) override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
 
 protected:
     void changeGameMode() override;

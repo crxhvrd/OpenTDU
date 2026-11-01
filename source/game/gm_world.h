@@ -34,7 +34,7 @@ public:
     void initialize() override;
     void destroy() override;
 
-    bool onMessage( FlashMessage *pMessage ) override {
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override {
         // FUN_004182d0
         return false;
     }
@@ -94,7 +94,7 @@ public:
     void destroy() override;
 
     void onResourceStreamed() override;
-    bool onMessage( FlashMessage *pMessage ) override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
 
     virtual bool restart() {
         // FUN_0042df00

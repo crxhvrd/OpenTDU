@@ -24,7 +24,7 @@ public:
     }
     void destroy() override;
 
-    bool onMessage( FlashMessage *pMessage ) override {
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override {
         // FUN_007bbae0
         return false;
     }

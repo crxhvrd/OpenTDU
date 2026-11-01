@@ -13,6 +13,20 @@ enum eInstantChallengeState : int32_t {
     ICState_GoingInIC = 2
 };
 
+struct ICEChallenger;
+class FlashPlayer;
+
+// Local player slot in the instant challenge lists.
+static constexpr uint32_t kLocalICEPlayer = 999;
+
+void GetICEPlayerNickname( const ICEChallenger &player,
+                           char *pOutName,
+                           const size_t nameLength );
+bool IsICEPlayerValid( const ICEChallenger &player );
+void FillICEPlayerInfo( const ICEChallenger &player,
+                        const uint32_t lobbyIndex,
+                        FlashPlayer *pPlayer );
+
 // FreeRide Meeting Instance Challenge manager.
 class MngFRMeetingIC : public Manager {
 public:

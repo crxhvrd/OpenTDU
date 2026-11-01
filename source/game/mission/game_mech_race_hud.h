@@ -35,6 +35,7 @@ public:
     void restart() override { initialize(); }
     bool terminate() override;
     void printDebug() override;
+    int32_t fillInstantChallengeResults( FlashPlayer *pPlayer );
     int32_t fillResults( FlashPlayer *pPlayer ) override;
     bool onMechStateProcess( const int32_t state,
                              const float deltaTime,

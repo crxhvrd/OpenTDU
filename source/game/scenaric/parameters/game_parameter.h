@@ -55,6 +55,12 @@ public:
     inline uint32_t getGameTypeMask() const { return gameTypeMask; }
     inline uint32_t getField68() const { return field68; }
     inline bool isEnabled() const { return bEnabled; }
+    inline bool isTrackingParent() const { return bTracksParent; }
+    inline int32_t getFileFlags() const { return fileFlags; }
+    inline uint64_t getDescriptionHashcode() const {
+        return uint64_t( descriptionHashcode ) |
+               ( uint64_t( uint32_t( field5c ) ) << 32 );
+    }
     inline void setTracksParent( const bool bTracks ) {
         bTracksParent = bTracks;
     }
@@ -78,6 +84,8 @@ public:
 
 public:
     GameParameter();
+
+    const char *onClick( int32_t *pOutCheckBoxState );
 
     virtual const char *getDisplayText();
     virtual const char *increment( int32_t param_2 );
@@ -176,6 +184,7 @@ public:
     GameParameterList();
 
     void deserialize( const uint8_t **ppCursor, uint32_t *pVersion );
+    int32_t serialize( uint8_t **ppCursor );
 
 private:
     GameParameter *pHead;

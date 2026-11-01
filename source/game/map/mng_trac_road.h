@@ -43,6 +43,12 @@ public:
     virtual int32_t getLoopWaypointCount() const = 0;
 
     void solveLegs( const bool bIgnoreOneWay );
+    bool isOnLeg( const int32_t legIndex, const AiRoadIt &it ) const;
+    inline const AiPath &getLegPath( const int32_t legIndex ) const {
+        return paths[legIndex];
+    }
+    int32_t findLeg( const AiRoadIt &it );
+    void prefetchLegShapes( const int32_t legIndex );
     float computeRouteLength( const bool bLoop,
                               const int32_t loopCheckpointIndex,
                               const int32_t numLaps );
@@ -108,4 +114,5 @@ class EventParameters;
 
 float ComputeEventRouteLength( EventParameters *pEventParameters,
                                MngTracRoad *pTracRoad );
+void FormatRouteDistance( const float distanceKm, char *pOutText );
 void FormatRouteDistance( const float distanceKm, char *pOutText );

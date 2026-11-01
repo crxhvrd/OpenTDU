@@ -448,9 +448,9 @@ void GMDressing::destroy() {
     GameModeScene::destroy();
 }
 
-bool GMDressing::onMessage( FlashMessage *pMessage ) {
+bool GMDressing::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_007a4270
-    AvatarCatalogScene::onMessage( pMessage );
+    AvatarCatalogScene::onMessage( pMessage, pPlayer );
 
     switch ( *pMessage ) {
     case FlashMessage( "came" ): {

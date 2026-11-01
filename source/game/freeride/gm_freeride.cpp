@@ -1930,9 +1930,9 @@ bool GMFreeride::launchCurrentSpotInfo() {
     return true;
 }
 
-bool GMFreeride::onMessage( FlashMessage *pMessage ) {
+bool GMFreeride::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_00796f40
-    if ( GameModeWorld::onMessage( pMessage ) ||
+    if ( GameModeWorld::onMessage( pMessage, pPlayer ) ||
          mngPhotoMode.onMessage( pMessage ) ||
          mngBookmark.onMessage( pMessage ) ) {
         return true;

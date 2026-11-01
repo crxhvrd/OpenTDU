@@ -31,8 +31,7 @@ public:
     void tick( float deltaTime, float totalTime ) override;
     void draw( float deltaTime, float totalTime ) override;
 
-    using GameMode::onMessage;
-    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer );
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
 
 #ifdef OTDU_USE_IMGUI
     void drawDebug( float deltaTime ) override;

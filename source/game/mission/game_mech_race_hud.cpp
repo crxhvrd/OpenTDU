@@ -957,6 +957,92 @@ bool GameMechRaceHUD::onMechStateProcess( const int32_t state,
     }
 }
 
+static constexpr uint64_t kICWonMessageHashcode = 0x394d632;
+static constexpr uint64_t kICLostMessageHashcode = 0x38fcd22;
+static constexpr const char *kICNoTime = "--'--\"--";
+
+int32_t GameMechRaceHUD::fillInstantChallengeResults( FlashPlayer *pPlayer ) {
+    // FUN_0072ece0
+    GameParticipant *pWinner = pRankingHead;
+    GameParticipant *pOther = nullptr;
+    if ( pWinner != nullptr ) {
+        pOther = pWinner->getSessionParams().pRankNextPlayer;
+        if ( pOther != nullptr ) {
+            GameParticipant *pFinished = nullptr;
+            GameParticipant *pUnfinished = nullptr;
+            int32_t numFinished = 0;
+            int32_t numUnfinished = 0;
+            for ( GameParticipant *pParticipant : { pWinner, pOther } ) {
+                if ( pParticipant->getSessionParams().LastCheckpoint ==
+                     numSteps ) {
+                    numFinished++;
+                    pFinished = pParticipant;
+                } else {
+                    numUnfinished++;
+                    pUnfinished = pParticipant;
+                }
+            }
+            if ( numUnfinished == 1 && numFinished == 1 ) {
+                pWinner = pFinished;
+                pOther = pUnfinished;
+            }
+        }
+    }
+
+    int32_t cup = 0;
+    uint64_t messageHashcode = kICLostMessageHashcode;
+    if ( pMech->getGameSession()->getLocalParticipant() == pWinner ) {
+        pPlayer->setVariableValueNonLinked( "/:PlayerRanking", "1" );
+        cup = 1;
+        messageHashcode = kICWonMessageHashcode;
+    } else {
+        pPlayer->setVariableValueNonLinked( "/:PlayerRanking", "2" );
+    }
+    pPlayer->setVariableValue(
+        "/:Message", gpDatabase->getStringByHashcode( 0, messageHashcode ) );
+
+    char timeText[0x20];
+    if ( pWinner != nullptr ) {
+        pPlayer->setVariableValueNonLinked( "/:Player1", pWinner->getName() );
+        if ( pWinner->getSessionParams().LastCheckpoint == numSteps ) {
+            pPlayer->setVariableValueNonLinked(
+                "/:Time1",
+                FormatCentiseconds(
+                    timeText,
+                    pWinner->getSessionParams().LastCheckpointTime ) );
+        } else {
+            pPlayer->setVariableValueNonLinked( "/:Time1", kICNoTime );
+        }
+    } else {
+        pPlayer->setVariableValueNonLinked( "/:Player1", "-" );
+        pPlayer->setVariableValueNonLinked( "/:Time1", kICNoTime );
+    }
+
+    if ( pOther == nullptr ) {
+        pPlayer->setVariableValueNonLinked( "/:Player2", "-" );
+        pPlayer->setVariableValueNonLinked( "/:Time2", kICNoTime );
+        pPlayer->setVariableValueNonLinked( "/:Gap", kICNoTime );
+        return cup;
+    }
+
+    pPlayer->setVariableValueNonLinked( "/:Player2", pOther->getName() );
+    if ( pOther->getSessionParams().LastCheckpoint != numSteps ) {
+        pPlayer->setVariableValueNonLinked( "/:Time2", kICNoTime );
+        pPlayer->setVariableValueNonLinked( "/:Gap", kICNoTime );
+        return cup;
+    }
+    pPlayer->setVariableValueNonLinked(
+        "/:Time2",
+        FormatCentiseconds( timeText,
+                            pOther->getSessionParams().LastCheckpointTime ) );
+    pPlayer->setVariableValueNonLinked(
+        "/:Gap",
+        FormatCentiseconds(
+            timeText, pOther->getSessionParams().LastCheckpointTime -
+                          pWinner->getSessionParams().LastCheckpointTime ) );
+    return cup;
+}
+
 int32_t GameMechRaceHUD::fillResults( FlashPlayer *pPlayer ) {
     // FUN_0072ece0
     char rankText[0x20] = "??";
@@ -977,10 +1063,7 @@ int32_t GameMechRaceHUD::fillResults( FlashPlayer *pPlayer ) {
     }
 
     if ( gpScenaric->isInstantChallenge() ) {
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (instant challenge results:
-                            // /:PlayerRanking, /:Message 0x394d632 /
-                            // 0x38fcd22, /:Player1-2, /:Time1-2, /:Gap)
-        return cup;
+        return fillInstantChallengeResults( pPlayer );
     }
 
     pPlayer->setVariableValueNonLinked( "/:IsPenalty", "0" );

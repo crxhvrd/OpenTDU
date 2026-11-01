@@ -512,7 +512,7 @@ void GMLobby::destroy() {
     GameModeWorldBase::destroy();
 }
 
-bool GMLobby::onMessage( FlashMessage *pMessage ) {
+bool GMLobby::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_0075f340
     if ( *pMessage == kMsgChallengeQuit ) {
         gpScenaric->setFromGameInvite( false );

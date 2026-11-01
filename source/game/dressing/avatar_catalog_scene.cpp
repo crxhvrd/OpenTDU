@@ -258,7 +258,7 @@ void AvatarCatalogScene::setInteriorEnvMap( EntityAvatar *pTargetAvatar ) {
     }
 }
 
-bool AvatarCatalogScene::onMessage( FlashMessage *pMessage ) {
+bool AvatarCatalogScene::onMessage( FlashMessage *pMessage, FlashPlayer * ) {
     // FUN_008f96f0
     switch ( *pMessage ) {
     case FlashMessage( "enav" ):

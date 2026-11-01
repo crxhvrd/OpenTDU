@@ -9,6 +9,7 @@
 #include "game/gm_scene.h"
 #include "render/camera/gs_camera.h"
 #include "tdu_instance.h"
+#include "game/game_cheats.h"
 #include "online/mng_chat.h"
 #include "game/gs_tutorial.h"
 #include "system/mng_options.h"
@@ -197,8 +198,33 @@ bool RequestMapGameMode( FlashPlayer *param_1 ) {
 // TODO: Move to right cpp
 bool RequestEditorGameMode() {
     // FUN_00718730
-    OTDU_UNIMPLEMENTED;
-    return false;
+    if ( gpTestDriveInstance->getActiveGameMode() == GM_GameModeEdit ) {
+        return true;
+    }
+
+    TransitionFromFreerideToMap( gbICESolo ? GM_InstantChallenge
+                                           : GM_GameModeEdit );
+    const Eigen::Vector4f carPosition = gpScenaric->getLocalPlayer()
+                                            .getCarState()
+                                            ->getBody()
+                                            ->WorldMatrix.row( 3 )
+                                            .transpose();
+    gpScenaric->setGMEStartPosition( carPosition );
+    if ( gbICESolo ) {
+        ICEChallenger &opponent = gpScenaric->getICEChallengers()[0];
+        opponent.ID = 0;
+        opponent.bBot = true;
+        opponent.bAcceptedICE = true;
+        opponent.bRefusedICE = false;
+
+        ICRoute &route = gpScenaric->getICDatas();
+        route.StartPosition = carPosition;
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (CP2PGameService vtbl +0x3c
+                                 // local player index, keep-alive tolerance)
+        route.OwnerPlayerIndex = 0;
+        gpScenaric->setInstantChallenge( true );
+    }
+    return true;
 }
 
 MngFlash::MngFlash()

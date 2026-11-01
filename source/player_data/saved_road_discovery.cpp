@@ -130,7 +130,7 @@ void DiscoverSpotRoad( const SpotMap *pSpot ) {
     }
 }
 
-static int32_t GetRoadZone( const uint32_t roadID ) {
+int32_t GetRoadZone( const uint32_t roadID ) {
     // FUN_0092ded0
     switch ( roadID ) {
     case 0x42c:

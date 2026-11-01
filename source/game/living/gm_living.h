@@ -43,7 +43,7 @@ public:
     void pause() override;
     void destroy() override;
 
-    bool onMessage( FlashMessage *pMessage ) override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
     bool executeAction( int32_t param_2,
                         void *param_3,
                         void *pData = nullptr ) override;

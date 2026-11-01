@@ -75,6 +75,7 @@
 
 #include "game/car_showcase/gm_car_showcase.h"
 #include "game/avatar_showcase/gm_avatar_showcase.h"
+#include "game/instant_challenge/gm_instant_challenge.h"
 #include "game/dressing/gm_dressing.h"
 #include "game/first_run_setup/gm_first_run_setup.h"
 #include "game/video_bumper/gm_video_bumper.h"
@@ -660,6 +661,12 @@ void TestDriveGameInstance::mainLoop() {
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMMission ),
                                                       alignof( GMMission ) );
             pGVar6 = new ( pGameModeAlloc ) GMMission();
+            break;
+        case GM_GameModeEdit:
+        case GM_InstantChallenge:
+            pGameModeAlloc = TestDrive::AllocAligned(
+                sizeof( GMInstantChallenge ), alignof( GMInstantChallenge ) );
+            pGVar6 = new ( pGameModeAlloc ) GMInstantChallenge();
             break;
         case GM_Lobby:
             pGameModeAlloc = TestDrive::AllocAligned( sizeof( GMLobby ),

@@ -14,7 +14,7 @@ public:
     void reset() override;
     void tick( float deltaTime, float totalTime ) override;
 
-    bool onMessage( FlashMessage * ) override {
+    bool onMessage( FlashMessage *, FlashPlayer * ) override {
         // FUN_00726e90
         // NOP
         return false;

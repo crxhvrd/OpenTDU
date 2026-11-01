@@ -117,13 +117,13 @@ void GMOutroDemo::pause() {
     localPlayer.setCarState( nullptr );
 }
 
-bool GMOutroDemo::onMessage( FlashMessage *pMessage ) {
+bool GMOutroDemo::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_009bb3e0
     if ( *pMessage == FlashMessage( "afsc" ) ) {
         pictureTimer = kPictureDuration;
     }
 
-    return GMDemoBase::onMessage( pMessage );
+    return GMDemoBase::onMessage( pMessage, pPlayer );
 }
 
 void GMOutroDemo::changeGameMode() {

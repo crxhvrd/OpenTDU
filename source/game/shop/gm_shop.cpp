@@ -370,7 +370,7 @@ void GMShop::selectFirstPersonCar( const int32_t slot ) {
     // Browse to the car (as the menu arrows do)
     pFlashPlayer->setVariableValue( "/:num_car", carIndex + 1 );
     FlashMessage browseMessage( "chca" );
-    onMessage( &browseMessage );
+    onMessage( &browseMessage, pFlashPlayer );
 
     // Then validate it once the menu accepts input again
     pendingValidateTime = kValidateTimeout;
@@ -501,7 +501,7 @@ void GMShop::destroy() {
     }
 }
 
-bool GMShop::onMessage( FlashMessage *pMessage ) {
+bool GMShop::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_00726ba0
     FlashPlayer *pFlashPlayer = gpFlash->getFlashPlayer( "SHOPS" );
     if ( pShopLogic->onMessage( pMessage, pFlashPlayer ) ) {

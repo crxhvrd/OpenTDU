@@ -57,7 +57,7 @@ public:
     void destroy() override;
 
     void onResourceStreamed() override;
-    bool onMessage( FlashMessage *pMessage ) override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
     void drawDebug( float deltaTime ) override;
 
     void enterFreeMode();

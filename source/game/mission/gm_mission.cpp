@@ -25,6 +25,7 @@
 #include "game/scenaric/event_parameters.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/ige_file.h"
+#include "render/camera/gs_camera.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "game/vehicle/car_state.h"
 #include "audio/gs_audio.h"
@@ -209,8 +210,9 @@ void GMMission::initialize() {
             if ( !gpScenaric->isFromDriveIn() ) {
                 bFromLobby = true;
             }
-            OTDU_UNIMPLEMENTED; // TODO: GSScenaric (parse the IGE buffer at
-                                // DAT_0120bde0, size DAT_0120bddc)
+            ParseIGEFile( nullptr, gpScenaric->getTestIGEBuffer(),
+                          &gIGEFileRequest, &mngActor,
+                          gpScenaric->getTestIGESize(), false );
         } else {
             LoadIGEFile( &gIGEFileRequest, eventParameters.getRequestedName(),
                          &mngActor, false, nullptr, false, nullptr, nullptr );
@@ -233,7 +235,12 @@ void GMMission::initialize() {
         }
         break;
     case EventParameters::ES_Online:
-        OTDU_UNIMPLEMENTED; // TODO: ONLINE (instant challenge IGE buffer)
+        ParseIGEFile( nullptr, gpScenaric->getICIGEBuffer(), &gIGEFileRequest,
+                      &mngActor, gpScenaric->getICIGESize(), false );
+        gpScenaric->releaseICIGEBuffer();
+        gpScenaric->setInstantChallenge( true );
+        gameMechType = EventParameters::EGT_Race;
+        gameMechID = gpScenaric->getICEChallengers()[0].bBot ? 0xc0c0 : 0xc0c1;
         break;
     case EventParameters::ES_CustomChallenge:
         OTDU_UNIMPLEMENTED; // TODO: SCENARIC (drive-in custom challenge IGE
@@ -298,8 +305,12 @@ void GMMission::initialize() {
     } else {
         mngBlckRds.setEnabled( false );
     }
-    OTDU_UNIMPLEMENTED; // TODO: HUD (MngHud +0x851 = 0 for game types 0, 3
-                        // and 6)
+    if ( gpMngHud != nullptr &&
+         ( gameMechType == EventParameters::EGT_TimeAttack ||
+           gameMechType == EventParameters::EGT_Race ||
+           gameMechType == GameMechanism::MT_ExtraChallenge ) ) {
+        gpMngHud->setDisplayTrace( false );
+    }
 }
 
 void GMMission::reset() {
@@ -451,8 +462,9 @@ void GMMission::pause() {
 
 void GMMission::destroy() {
     // FUN_007402f0
-    OTDU_UNIMPLEMENTED; // TODO: GSCamera, ONLINE (lobby
-                        // network service listener = null)
+    gpCamera->setViewChangeAllowed( true );
+    OTDU_UNIMPLEMENTED; // TODO: ONLINE (lobby network service listener =
+                        // null)
     if ( pGameSession != nullptr ) {
         pGameSession->onEvent( GameSession::E_Release );
     }
@@ -509,7 +521,7 @@ void GMMission::destroy() {
     gpScenaric->setFromGameInvite( false );
 }
 
-bool GMMission::onMessage( FlashMessage *pMessage ) {
+bool GMMission::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_0073f350
     if ( ( pGameMech == nullptr ||
            pGameMech->getMechType() != GameMechanism::MT_ExtraChallenge ) &&
@@ -526,7 +538,7 @@ bool GMMission::onMessage( FlashMessage *pMessage ) {
 
     if ( *pMessage == kMsgPauseIn ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC ("/:state_club")
-        return GameModeWorld::onMessage( pMessage );
+        return GameModeWorld::onMessage( pMessage, pPlayer );
     }
     if ( *pMessage == kMsgPauseOut ) {
         char whereTo[0x20] = {};
@@ -543,7 +555,7 @@ bool GMMission::onMessage( FlashMessage *pMessage ) {
         } else if ( destination == kMsgRestart ) {
             return true;
         }
-        return GameModeWorld::onMessage( pMessage );
+        return GameModeWorld::onMessage( pMessage, pPlayer );
     }
     if ( *pMessage == kMsgGoChallenge ) {
         gpPhysics->setPlayerSlowDownForced( false );
@@ -661,7 +673,7 @@ bool GMMission::onMessage( FlashMessage *pMessage ) {
 
     OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission (replay "/:IsReplay", online
                              // and instant challenge messages)
-    return GameModeWorld::onMessage( pMessage );
+    return GameModeWorld::onMessage( pMessage, pPlayer );
 }
 
 bool GMMission::restart() {
@@ -792,8 +804,11 @@ void GMMission::exitMission() {
     if ( bFromLobby ) {
         requestExit();
         gpTestDriveInstance->setNextGameMode( GM_GameModeEdit );
-        OTDU_UNIMPLEMENTED; // TODO: SCENARIC (GMEStartPosition = local car
-                            // World row 3)
+        gpScenaric->setGMEStartPosition( gpScenaric->getLocalPlayer()
+                                             .getCarState()
+                                             ->getBody()
+                                             ->WorldMatrix.row( 3 )
+                                             .transpose() );
         return;
     }
 

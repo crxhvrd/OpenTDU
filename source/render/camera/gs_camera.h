@@ -29,6 +29,9 @@ static constexpr int32_t kNumCamerasCameraRegister = 0x10;
 
 class GSCamera : public GameSystem {
 public:
+    inline void setViewChangeAllowed( const bool bAllowed ) {
+        bViewChangeAllowed = bAllowed;
+    }
 public:
     const char *getName() const override { return "Camera"; }
     inline void setDeadZone( const float value ) { deadZone = value; }
@@ -271,7 +274,7 @@ private:
     uint8_t bLookAtPlayerPos : 1;
     uint8_t bFinishedCamTransition : 1;
     uint8_t bMouseCam : 1;
-    uint8_t field_0x939 : 1;
+    uint8_t bViewChangeAllowed : 1; // +0x939
     uint8_t field_0x932 : 1;
     uint8_t bUseBlur : 1;
     uint8_t field_0x955 : 1;

@@ -94,9 +94,9 @@ void GMGoodies::destroy() {
     GameModeWorldBase::destroy();
 }
 
-bool GMGoodies::onMessage( FlashMessage *pMessage ) {
+bool GMGoodies::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_009d3af0
-    AvatarCatalogScene::onMessage( pMessage );
+    AvatarCatalogScene::onMessage( pMessage, pPlayer );
 
     switch ( *pMessage ) {
     case FlashMessage( "sbdd" ):

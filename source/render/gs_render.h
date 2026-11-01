@@ -233,6 +233,10 @@ public:
                             const float y,
                             const float width,
                             const float height );
+    void updateViewportDimScalars( const float x,
+                                   const float y,
+                                   const float width,
+                                   const float height );
     void updateFovVsLOD( float param_2 );
 
     bool notifyConfigListeners( RenderConfigurationChangeListener *param_1 );

@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "event_parameters.h"
 
+#include <ctime>
+
 #include "database/gs_database.h"
 #include "flash/implementation/flash_player.h"
 #include "game/game_cheats.h"
@@ -197,6 +199,70 @@ EventParameters::EventParameters()
     reset();
 
     memcpy( pFileName, kDefaultFileName, sizeof( kDefaultFileName ) );
+}
+
+void EventParameters::generateFileName() {
+    // FUN_00738720
+    switch ( getGameType() ) {
+    case EGT_TimeAttack:
+        pFileName[0] = 'T';
+        break;
+    case EGT_Speed:
+        pFileName[0] = 'S';
+        break;
+    case EGT_Driving:
+        pFileName[0] = 'D';
+        break;
+    case EGT_Race:
+        pFileName[0] = 'R';
+        break;
+    default:
+        pFileName[0] = 'U';
+        break;
+    }
+    switch ( getSpotType() ) {
+    case EST_Solo:
+        pFileName[1] = 'S';
+        break;
+    case EST_Multi:
+        pFileName[1] = 'M';
+        break;
+    case 0xc0c2:
+        pFileName[1] = 'C';
+        break;
+    default:
+        pFileName[1] = 'U';
+        break;
+    }
+    pFileName[2] = '\0';
+
+    // GetLocalTime
+    const std::time_t now = std::time( nullptr );
+    const std::tm *pLocalTime = std::localtime( &now );
+    const uint32_t stamp =
+        ( ( uint32_t( pLocalTime->tm_mday ) * 24 + pLocalTime->tm_hour ) * 60 +
+          pLocalTime->tm_min ) *
+            60 +
+        pLocalTime->tm_sec;
+    char prefix[3] = { pFileName[0], pFileName[1], '\0' };
+    snprintf( pFileName, sizeof( pFileName ), "%s%06X", prefix, stamp );
+    pFileName[8] = '\0';
+}
+
+const char *EventParameters::getDisplayName() {
+    // FUN_00738850
+    if ( int32_t( databaseName.getValue() ) < 0 ) {
+        return name.getString();
+    }
+    return databaseName.getDisplayText();
+}
+
+const char *EventParameters::getDisplayDescription() {
+    // FUN_00738820
+    if ( int32_t( databaseDescription.getValue() ) < 0 ) {
+        return description.getString();
+    }
+    return databaseDescription.getDisplayText();
 }
 
 void EventParameters::reset() {

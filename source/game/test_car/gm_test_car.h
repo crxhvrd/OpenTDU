@@ -25,7 +25,7 @@ public:
     void pause() override;
     void destroy() override;
 
-    bool onMessage( FlashMessage *pMessage ) override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
 
 private:
     void loadPassenger();

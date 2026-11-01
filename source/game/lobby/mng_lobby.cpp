@@ -288,7 +288,8 @@ bool MngLobby::handleMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         return true;
     }
 
-    return ( pOwner != nullptr ) ? pOwner->onMessage( pMessage ) : false;
+    return ( pOwner != nullptr ) ? pOwner->onMessage( pMessage, pPlayer )
+                                 : false;
 }
 
 void MngLobby::resetSessionParams() {

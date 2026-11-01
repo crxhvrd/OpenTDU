@@ -16,7 +16,7 @@ public:
     void initialize() override;
     void tick( float deltaTime, float totalTime ) override;
     void destroy() override;
-    bool onMessage( FlashMessage *pMessage ) override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
 
 protected:
     virtual void changeGameMode() = 0;

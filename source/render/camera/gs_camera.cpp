@@ -97,7 +97,7 @@ GSCamera::GSCamera()
       bLookAtPlayerPos( true ),
       bFinishedCamTransition( true ),
       bMouseCam( 1 ),
-      field_0x939( 0 ),
+      bViewChangeAllowed( 0 ),
       field_0x932( 0 ),
       bUseBlur( false ),
       field_0x955( false ),
@@ -201,7 +201,7 @@ bool GSCamera::initialize( TestDriveGameInstance * ) {
     seatMaxPos = { 0.05f, 0.01f };
     seatPos = { 0.0f, 0.0f };
     field_0x96c = 0;
-    field_0x939 = 1;
+    bViewChangeAllowed = 1;
     bLocked = false;
     bUpdatedView = false;
 
@@ -982,7 +982,7 @@ void GSCamera::tickActiveCamera( float param_2 ) {
         }
 
         int32_t iVar2 = 0;
-        if ( ( field_0x939 != '\0' ) &&
+        if ( ( bViewChangeAllowed != '\0' ) &&
              ( ( ( ( pActiveVehicleCamera->getFlags() >> 0x11 & 1 ) == 0 ||
                    ( iVar2 = pActiveVehicleCamera->getType(), iVar2 == 1 ) ) ||
                  ( ( iVar2 == 2 || ( iVar2 == 0xc ) ) ) ) ) ) {

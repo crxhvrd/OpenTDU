@@ -4,6 +4,7 @@ class DrawList;
 class Manager;
 class TestDriveGameInstance;
 struct FlashMessage;
+class FlashPlayer;
 
 typedef enum eGameMode : int32_t {
     GM_BootMenu = 0,
@@ -92,7 +93,7 @@ public:
     virtual void draw( float deltaTime, float totalTime ) {}
     virtual void pause() {}
     virtual void destroy() {}
-    virtual bool onMessage( FlashMessage *pMessage ) { return false; }
+    virtual bool onMessage( FlashMessage *, FlashPlayer * ) { return false; }
 
     bool initializeAsync();
     void mainLoop( TestDriveGameInstance *param_1 );

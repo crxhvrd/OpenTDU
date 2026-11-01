@@ -19,6 +19,7 @@ public:
         return "MngCamGPS";
     }
 
+    inline void setDrawEarth( const bool bEnabled ) { bDrawEarth = bEnabled; }
     inline void setUpdateStreaming( const bool bEnabled ) {
         bUpdateStreaming = bEnabled;
     }

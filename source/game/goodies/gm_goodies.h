@@ -16,7 +16,7 @@ public:
     void tick( float deltaTime, float totalTime ) override;
     void pause() override;
     void destroy() override;
-    bool onMessage( FlashMessage *pMessage ) override;
+    bool onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) override;
 
     void onInteriorReady() override;
     void stepItem( int32_t clotheSet,
