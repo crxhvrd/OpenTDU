@@ -106,6 +106,7 @@ layout( push_constant, std430 ) uniform D3D9RenderState {
     layout( offset = 40 ) float point_scale_a;
     layout( offset = 44 ) float point_scale_b;
     layout( offset = 48 ) float point_scale_c;
+    layout( offset = 52 ) uint instanced_draw_index;
     // Two 16-bit sampler heap indices per dword (even stage = low bits).
     layout( offset = 64 ) uint sampler_idx[8];
 }

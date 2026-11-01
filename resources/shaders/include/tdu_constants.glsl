@@ -17,7 +17,7 @@ layout( set = 0, binding = 1, std430 ) readonly buffer TDUDrawVSConstants {
     vec4 f[];
 }
 tdu_draw_vs;
-#define TDU_DRAWVS_BASE ( uint( gl_InstanceIndex ) * 32u )
+#define TDU_DRAWVS_BASE ( ( render_state.instanced_draw_index != 0xffffffffu ? render_state.instanced_draw_index : uint( gl_InstanceIndex ) ) * 32u )
 
 layout( set = 0, binding = 2, std140 ) uniform TDUMaterialConstants {
     vec4 f[49];

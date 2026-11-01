@@ -298,7 +298,7 @@ static VertexLayoutAttribute gInstancingVertexLayoutPositionNormalColor[] = {
      0x1                                                                              },
     {3, 0x20, eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
      0x2                                                                              },
-    {3, 0x30, eVertexAttributeFormat::VAF_COLOR_B8G8R8A8_UNORM,            0, 0xa, 0x0},
+    {3, 0x30, eVertexAttributeFormat::VAF_COLOR_B8G8R8A8_UNORM,            0, 0xa, 0x1},
     kVertexLayoutSentinel
 };
 
@@ -310,11 +310,11 @@ static VertexLayoutAttribute gInstancingVertexLayoutPositionNormalUV[] = {
      0x0                                                                              },
     {2, 0,    eVertexAttributeFormat::VAF_TEXCOORD_R32G32_SFLOAT,          0, 0x5, 0x0},
     {3, 0,    eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
-     0x0                                                                              },
-    {3, 0x10, eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
      0x1                                                                              },
-    {3, 0x20, eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
+    {3, 0x10, eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
      0x2                                                                              },
+    {3, 0x20, eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
+     0x3                                                                              },
     {3, 0x30, eVertexAttributeFormat::VAF_COLOR_B8G8R8A8_UNORM,            0, 0xa, 0x0},
     kVertexLayoutSentinel
 };
@@ -328,12 +328,12 @@ static VertexLayoutAttribute gInstancingVertexLayoutPositionNormalColorUV[] = {
     {2, 0,    eVertexAttributeFormat::VAF_COLOR_B8G8R8A8_UNORM,            0, 0xa, 0x0},
     {3, 0,    eVertexAttributeFormat::VAF_TEXCOORD_R32G32_SFLOAT,          0, 0x5, 0x0},
     {4, 0,    eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
-     0x0                                                                              },
-    {4, 0x10, eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
      0x1                                                                              },
-    {4, 0x20, eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
+    {4, 0x10, eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
      0x2                                                                              },
-    {4, 0x30, eVertexAttributeFormat::VAF_COLOR_B8G8R8A8_UNORM,            0, 0xa, 0x0},
+    {4, 0x20, eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT,    0, 0x5,
+     0x3                                                                              },
+    {4, 0x30, eVertexAttributeFormat::VAF_COLOR_B8G8R8A8_UNORM,            0, 0xa, 0x1},
     kVertexLayoutSentinel
 };
 

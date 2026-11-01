@@ -58,6 +58,12 @@ struct GPUBuffer {
     uint32_t LockEnd = 0;
     uint32_t StaleStart[PendingFrameCount] = { ~0u, ~0u, ~0u };
     uint32_t StaleEnd[PendingFrameCount] = { 0u, 0u, 0u };
+
+    bool bDiscardLock = false;
+    uint64_t DiscardSerial = 0ull;
+    uint64_t TransientSerial = 0ull;
+    VkBuffer TransientBuffer = VK_NULL_HANDLE;
+    VkDeviceSize TransientOffset = 0ull;
 };
 
 // dxvk push constants for D3D9 RS emulation (copied from dxvk)
@@ -81,6 +87,10 @@ struct D3D9RenderStateInfo {
     float pointScaleA = 1.0f;
     float pointScaleB = 0.0f;
     float pointScaleC = 0.0f;
+
+    uint32_t instancedDrawIndex = kNoInstancedDrawIndex;
+
+    static constexpr uint32_t kNoInstancedDrawIndex = 0xffffffffu;
 };
 
 struct QueueInfo {
@@ -547,6 +557,8 @@ private:
 #endif
     VkBuffer vertexBuffers[0x10];
     VkDeviceSize vertexBufferOffsets[0x10];
+    GPUBuffer *pBoundVertexBuffers[0x10] = {};
+    uint32_t boundVertexBufferOffsets[0x10] = {};
 
     // Bindings last recorded into the active command buffer (redundant binds
     // are skipped)
@@ -556,6 +568,7 @@ private:
         int32_t NumVertexBuffers;
 
         VkBuffer IndexBuffer;
+        VkDeviceSize IndexBufferOffset;
         VkIndexType IndexType;
 
         D3D9RenderStateInfo RenderStates;
@@ -637,6 +650,15 @@ private:
         uint32_t NumCommands = 0u;
     };
     IndirectDrawBuffer indirectDrawBuffers[PendingFrameCount];
+
+    // Per-frame storage for renamed dynamic buffer locks
+    struct TransientRing {
+        VkBuffer Buffer = VK_NULL_HANDLE;
+        VmaAllocation Allocation = nullptr;
+        uint8_t *pMapped = nullptr;
+        VkDeviceSize Head = 0ull;
+    };
+    TransientRing transientRings[PendingFrameCount];
     bool bDrawBatching = false;
     bool bMultiDrawBatching = false;
 
@@ -828,12 +850,24 @@ private:
     void flushDrawBatch();
     void createIndirectDrawBuffers();
     void destroyIndirectDrawBuffers();
+    void createTransientRings();
+    void destroyTransientRings();
+    bool renameDynamicBuffer( GPUBuffer *pBuffer );
+    void resolveBuffer( GPUBuffer *pBuffer,
+                        VkBuffer &outBuffer,
+                        VkDeviceSize &outBaseOffset );
 
     bool prepareDrawCall( ePrimitiveType primitiveType );
     uint32_t getDrawFirstInstance( const uint32_t instanceCount ) const;
+    bool isInstanceRateLayoutBound() const {
+        return psoFactory.pVertexLayout != nullptr &&
+               psoFactory.pVertexLayout->bHasInstanceRateBinding;
+    }
     VkFramebuffer getOrCreateFramebuffer( const FramebufferKey &key );
     void resetRecordedBindings();
-    void bindIndexBufferToCmdBuffer( VkBuffer buffer, VkIndexType indexType );
+    void bindIndexBufferToCmdBuffer( VkBuffer buffer,
+                                     VkDeviceSize offset,
+                                     VkIndexType indexType );
     void insertMemoryBarrier( GPUTexture *pTexture,
                               const VkImageLayout prevLayout,
                               const VkImageLayout nextLayout,

@@ -75,18 +75,17 @@ void LogBufferPlacement( VmaAllocator allocator,
     VkMemoryPropertyFlags flags = 0;
     vmaGetMemoryTypeProperties( allocator, info.memoryType, &flags );
 
-    OTDU_LOG_DEBUG( "%s buffers placed in memory type %u (%s%s%s)\n", pCategory,
-                   info.memoryType,
-                   ( flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ) ? "device "
-                                                                   : "",
-                   ( flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ) ? "host "
-                                                                   : "",
-                   ( flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT ) ? "cached"
-                                                                  : "" );
+    OTDU_LOG_DEBUG(
+        "%s buffers placed in memory type %u (%s%s%s)\n", pCategory,
+        info.memoryType,
+        ( flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ) ? "device " : "",
+        ( flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ) ? "host " : "",
+        ( flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT ) ? "cached" : "" );
 }
 
 // Per frame slot (VkDrawIndexedIndirectCommand)
 static constexpr uint32_t kMaxIndirectDrawsPerFrame = 32768u;
+static constexpr VkDeviceSize kTransientRingSize = 4ull * 1024ull * 1024ull;
 
 static bool gVulkanEnableValidationLayer = false;
 static CmdLineArg CmdLineArgVulkanValidationLayer(
@@ -478,6 +477,7 @@ RenderDevice::~RenderDevice() {
         vkDestroyCommandPool( device, commands.Pool, nullptr );
     }
     destroyIndirectDrawBuffers();
+    destroyTransientRings();
     vkDestroyImageView( device, fallbackSRVView, nullptr );
     vmaDestroyImage( allocator, fallbackSRVImage, fallbackSRVAllocation );
 
@@ -815,6 +815,7 @@ void RenderDevice::initialize() {
     if ( bMultiDrawBatching ) {
         createIndirectDrawBuffers();
     }
+    createTransientRings();
     OTDU_LOG_DEBUG( "Draw batching: %s (multi draw indirect: %s)\n",
                     bDrawBatching ? "on" : "off",
                     bMultiDrawBatching ? "on" : "off" );
@@ -1117,8 +1118,8 @@ GPUBuffer *RenderDevice::createBuffer( const struct GPUBufferDesc *desc ) {
     VmaAllocationCreateInfo allocInfo = {};
     // TODO: Static buffers should live in device local memory (uploaded
     // through a staging buffer on unlock)
-    allocInfo.usage = desc->bDynamic ? GetPerFrameBufferMemoryUsage()
-                                     : VMA_MEMORY_USAGE_AUTO;
+    allocInfo.usage =
+        desc->bDynamic ? GetPerFrameBufferMemoryUsage() : VMA_MEMORY_USAGE_AUTO;
     allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
     VkBuffer buffer;
@@ -1181,6 +1182,7 @@ void *RenderDevice::lockBuffer( GPUBuffer *pBuffer,
     if ( pBuffer->NumResources > 1 ) {
         pBuffer->LockStart = offset;
         pBuffer->LockEnd = offset + lockSize;
+        pBuffer->bDiscardLock = bDiscardContent && bRecordingCommands;
         return pBuffer->ShadowCopy.data() + offset;
     }
 
@@ -1206,12 +1208,71 @@ void RenderDevice::unlockBuffer( GPUBuffer *pBuffer ) {
                 Max( pBuffer->StaleEnd[i], pBuffer->LockEnd );
         }
     }
+
+    const bool bRenamed = pBuffer->bDiscardLock &&
+                          pBuffer->DiscardSerial == recordingSerial &&
+                          renameDynamicBuffer( pBuffer );
+    if ( pBuffer->bDiscardLock ) {
+        pBuffer->DiscardSerial = recordingSerial;
+    }
+    pBuffer->bDiscardLock = false;
     pBuffer->LockStart = 0;
     pBuffer->LockEnd = 0;
 
-    if ( bRecordingCommands ) {
+    if ( bRecordingCommands && !bRenamed ) {
+        pBuffer->TransientSerial = 0ull;
         syncDynamicBuffer( pBuffer, frameIndex );
     }
+
+    for ( uint32_t i = 0; i < 0x10; i++ ) {
+        if ( pBoundVertexBuffers[i] == pBuffer ) {
+            VkDeviceSize baseOffset = 0ull;
+            resolveBuffer( pBuffer, vertexBuffers[i], baseOffset );
+            vertexBufferOffsets[i] = baseOffset + boundVertexBufferOffsets[i];
+        }
+    }
+}
+
+bool RenderDevice::renameDynamicBuffer( GPUBuffer *pBuffer ) {
+    static constexpr VkDeviceSize kTransientAlignment = 256ull;
+
+    TransientRing &ring = transientRings[frameIndex];
+    const VkDeviceSize size = pBuffer->LockEnd;
+    const VkDeviceSize start =
+        ( ring.Head + kTransientAlignment - 1 ) & ~( kTransientAlignment - 1 );
+    if ( ring.pMapped == nullptr || start + size > kTransientRingSize ) {
+        OTDU_LOG_ERROR( "Transient ring full!\n" );
+        OTDU_TRIGGER_BREAKPOINT;
+        return false;
+    }
+
+    memcpy( ring.pMapped + start, pBuffer->ShadowCopy.data(), size );
+    vmaFlushAllocation( allocator, ring.Allocation, start, size );
+    ring.Head = start + size;
+
+    pBuffer->TransientBuffer = ring.Buffer;
+    pBuffer->TransientOffset = start;
+    pBuffer->TransientSerial = recordingSerial;
+    return true;
+}
+
+void RenderDevice::resolveBuffer( GPUBuffer *pBuffer,
+                                  VkBuffer &outBuffer,
+                                  VkDeviceSize &outBaseOffset ) {
+    if ( pBuffer->NumResources > 1 && bRecordingCommands &&
+         pBuffer->TransientSerial == recordingSerial ) {
+        outBuffer = pBuffer->TransientBuffer;
+        outBaseOffset = pBuffer->TransientOffset;
+        return;
+    }
+
+    const uint32_t resourceIndex =
+        ( pBuffer->NumResources == 1 ) ? 0 : frameIndex;
+    if ( bRecordingCommands ) {
+        syncDynamicBuffer( pBuffer, resourceIndex );
+    }
+    outBuffer = pBuffer->NativeBuffer[resourceIndex];
+    outBaseOffset = 0ull;
 }
 
 void RenderDevice::syncDynamicBuffer( GPUBuffer *pBuffer,
@@ -1838,23 +1899,21 @@ void RenderDevice::bindVertexBuffer( GPUBuffer *pBuffer,
                                      const uint32_t index,
                                      const uint32_t stride,
                                      const uint32_t offset ) {
+    pBoundVertexBuffers[index] = pBuffer;
+    boundVertexBufferOffsets[index] = offset;
     if ( pBuffer == nullptr ) {
         vertexBuffers[index] = VK_NULL_HANDLE;
     } else {
-        uint32_t resourceIndex =
-            ( pBuffer->NumResources == 1 ) ? 0 : frameIndex;
-        if ( bRecordingCommands ) {
-            syncDynamicBuffer( pBuffer, resourceIndex );
-        }
-
-        vertexBuffers[index] = pBuffer->NativeBuffer[resourceIndex];
-        vertexBufferOffsets[index] = offset;
+        VkDeviceSize baseOffset = 0ull;
+        resolveBuffer( pBuffer, vertexBuffers[index], baseOffset );
+        vertexBufferOffsets[index] = baseOffset + offset;
     }
 }
 
 void RenderDevice::recordIndexedDraw(
     const VkDrawIndexedIndirectCommand &command ) {
-    if ( !bDrawBatching || command.instanceCount > 1 ) {
+    if ( !bDrawBatching || command.instanceCount > 1 ||
+         isInstanceRateLayoutBound() ) {
         vkCmdDrawIndexed( getCommandBuffer(), command.indexCount,
                           command.instanceCount, command.firstIndex,
                           command.vertexOffset, command.firstInstance );
@@ -2019,6 +2078,39 @@ void RenderDevice::createIndirectDrawBuffers() {
     }
 }
 
+void RenderDevice::createTransientRings() {
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = kTransientRingSize;
+    bufferInfo.usage =
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = GetPerFrameBufferMemoryUsage();
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                      VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    for ( TransientRing &ring : transientRings ) {
+        VmaAllocationInfo info = {};
+        VkResult result =
+            vmaCreateBuffer( allocator, &bufferInfo, &allocInfo, &ring.Buffer,
+                             &ring.Allocation, &info );
+        OTDU_ASSERT_FATAL( result == VK_SUCCESS );
+        LogBufferPlacement( allocator, ring.Allocation, "Transient VB/IB" );
+        ring.pMapped = static_cast<uint8_t *>( info.pMappedData );
+        ring.Head = 0ull;
+    }
+}
+
+void RenderDevice::destroyTransientRings() {
+    for ( TransientRing &ring : transientRings ) {
+        if ( ring.Buffer != VK_NULL_HANDLE ) {
+            vmaDestroyBuffer( allocator, ring.Buffer, ring.Allocation );
+            ring = {};
+        }
+    }
+}
+
 void RenderDevice::destroyIndirectDrawBuffers() {
     for ( IndirectDrawBuffer &indirect : indirectDrawBuffers ) {
         if ( indirect.Buffer != VK_NULL_HANDLE ) {
@@ -2030,7 +2122,8 @@ void RenderDevice::destroyIndirectDrawBuffers() {
 
 uint32_t
 RenderDevice::getDrawFirstInstance( const uint32_t instanceCount ) const {
-    return resourceBinder.drawVSIndex;
+    // See D3D9RenderStateInfo::instancedDrawIndex
+    return isInstanceRateLayoutBound() ? 0u : resourceBinder.drawVSIndex;
 }
 
 void RenderDevice::draw( ePrimitiveType primitiveType,
@@ -2087,10 +2180,10 @@ void RenderDevice::drawIndexedPrimitive( ePrimitiveType primitiveType,
 
     OTDU_ASSERT( pIndexBuffer != nullptr );
 
-    uint32_t resourceIndex =
-        ( pIndexBuffer->NumResources == 1 ) ? 0 : frameIndex;
-    syncDynamicBuffer( pIndexBuffer, resourceIndex );
-    bindIndexBufferToCmdBuffer( pIndexBuffer->NativeBuffer[resourceIndex],
+    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VkDeviceSize indexBufferOffset = 0ull;
+    resolveBuffer( pIndexBuffer, indexBuffer, indexBufferOffset );
+    bindIndexBufferToCmdBuffer( indexBuffer, indexBufferOffset,
                                 pIndexBuffer->IndexType );
 
     uint32_t indexCount = GetVertexCount( primitiveType, primitiveCount );
@@ -2144,7 +2237,7 @@ void RenderDevice::drawTriangleFanAsList( int32_t baseVertexIndex,
         return;
     }
 
-    bindIndexBufferToCmdBuffer( pFanEmulationIndexBuffer->NativeBuffer[0],
+    bindIndexBufferToCmdBuffer( pFanEmulationIndexBuffer->NativeBuffer[0], 0ull,
                                 pFanEmulationIndexBuffer->IndexType );
 
     uint32_t instanceCount = activeInstanceCount;
@@ -3020,6 +3113,7 @@ void RenderDevice::beginScene() {
         resourceBinder.onFrameBegin( device, frameIndex );
         OTDU_ASSERT( pendingDrawBatch.Count == 0u );
         indirectDrawBuffers[frameIndex].NumCommands = 0u;
+        transientRings[frameIndex].Head = 0ull;
 
         vmaSetCurrentFrameIndex( allocator, absoluteFrameIndex );
 
@@ -4896,6 +4990,7 @@ void RenderDevice::resetRecordedBindings() {
     recordedBindings.NumVertexBuffers = -1;
 
     recordedBindings.IndexBuffer = VK_NULL_HANDLE;
+    recordedBindings.IndexBufferOffset = 0ull;
     recordedBindings.IndexType = VK_INDEX_TYPE_UINT16;
 
     recordedBindings.bRenderStatesValid = false;
@@ -4905,14 +5000,17 @@ void RenderDevice::resetRecordedBindings() {
 }
 
 void RenderDevice::bindIndexBufferToCmdBuffer( VkBuffer buffer,
+                                               VkDeviceSize offset,
                                                VkIndexType indexType ) {
     if ( recordedBindings.IndexBuffer == buffer &&
+         recordedBindings.IndexBufferOffset == offset &&
          recordedBindings.IndexType == indexType ) {
         return;
     }
 
-    vkCmdBindIndexBuffer( getCommandBuffer(), buffer, 0, indexType );
+    vkCmdBindIndexBuffer( getCommandBuffer(), buffer, offset, indexType );
     recordedBindings.IndexBuffer = buffer;
+    recordedBindings.IndexBufferOffset = offset;
     recordedBindings.IndexType = indexType;
 }
 
@@ -5332,6 +5430,10 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
                                  resourceBinder.uboOffsets.data() );
     }
 
+    renderStates.instancedDrawIndex =
+        isInstanceRateLayoutBound()
+            ? resourceBinder.drawVSIndex
+            : D3D9RenderStateInfo::kNoInstancedDrawIndex;
     if ( !recordedBindings.bRenderStatesValid ||
          memcmp( &recordedBindings.RenderStates, &renderStates,
                  sizeof( D3D9RenderStateInfo ) ) != 0 ) {
