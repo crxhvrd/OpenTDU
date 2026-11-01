@@ -135,6 +135,7 @@ public:
     inline void setTickEnabled( const bool b ) {
         flags = b ? ( flags | 2u ) : ( flags & ~2u );
     }
+    inline bool isTileVisible() const { return ( flags & 4u ) != 0; }
     inline void setTileVisible( bool b ) {
         flags = b ? ( flags | 4u ) : ( flags & ~4u );
     }

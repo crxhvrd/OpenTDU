@@ -61,7 +61,6 @@ public:
 
     void setMechanismTransform( const Matrix4x4f_t &transformMatrix );
     void setMechanismPosition( const Eigen::Vector4f &position );
-    void setMechanismInitialTransform( const Matrix4x4f_t &transformMatrix );
     inline void setInitialTransformMatrix( const Matrix4x4f_t &matrix ) {
         initialTransformMatrix = matrix;
     }
@@ -88,10 +87,10 @@ private:
     uint8_t bControlledByAvatar : 1;
     uint8_t bInitialized : 1;
     uint8_t bTransformSet : 1;
-    uint8_t bPlacementTried : 1;
-    uint8_t bDynamicProp : 1; // placed as a simulated body (bStatic == 0)
 
 private:
     const PhysicsDynamicController *getOriginalController() const;
-    void placeCollisionBody( const Matrix4x4f_t &worldTransform );
+    void updateStreaming();
+    void syncEntityTransform();
+    void cloneAndAdd();
 };

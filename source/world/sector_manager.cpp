@@ -5,6 +5,7 @@
 #include "core/maths_helper.h"
 #include "game/scenaric/entity/base_entity.h"
 #include "game/mng_pedestrians.h"
+#include "game/entity_mechanism.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "render/instance.h"
 #include "render/material.h"
@@ -173,7 +174,13 @@ static inline void InstanciatePMI( SectorGeometry &geometry,
                         pModel->MIInpostor.Scale = pInstance[3] * kScaleFactor;
                     }
 
-                    pInstanceEntity->setTransform( transform, true );
+                    pInstanceEntity->propagateTransform( transform, true );
+                    if ( pInstanceEntity->getMechanism() != nullptr ) {
+                        pInstanceEntity->getMechanism()
+                            ->setInitialTransformMatrix( transform );
+                    }
+                    pInstanceEntity->unknownFunc2(
+                        const_cast<uint16_t *>( pInstance + 0x10 ) );
 
                     // Bin into the derived 16x16 grid (cellX = short[0] >>
                     // 12).

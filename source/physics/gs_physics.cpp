@@ -5324,6 +5324,19 @@ void GSPhysics::setBodyPose( RigidBody_t body, const Matrix4x4f_t &matrix ) {
     unlockMutex();
 }
 
+bool GSPhysics::isBodyActive( RigidBody_t body ) {
+    if ( body == nullptr || pPhysicsSystem == nullptr ) {
+        return false;
+    }
+
+    JPH::Body *pBody = static_cast<JPH::Body *>( body );
+    lockMutex();
+    const bool bActive =
+        pPhysicsSystem->GetBodyInterface().IsActive( pBody->GetID() );
+    unlockMutex();
+    return bActive;
+}
+
 static bool IsLocalPlayerStreamedUnder( PhysicsVehicle *pBegin,
                                         PhysicsVehicle *pEnd ) {
     // FUN_00829ee0

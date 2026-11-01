@@ -29,6 +29,7 @@ public:
     void setWorld( const PhysicsDynamicController &source,
                    const Matrix4x4f_t &worldTransform );
     bool getWorldMatrix( Matrix4x4f_t &outMatrix, bool &outActive ) const;
+    bool isActive() const;
 
 private:
     uint64_t templateHashcode;

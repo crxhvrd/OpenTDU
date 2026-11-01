@@ -1107,6 +1107,29 @@ void AchievementsData::deserialize( edStore &stream ) {
     }
 
     deserializeChecks( stream );
+
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    AchievementsData *pLoadedAchievements = pSave->getAchievements();
+    pSave->getExtraChallenges()->PlayerLevel =
+        pLoadedAchievements->getPlayerLevel();
+
+    bSimulationModeUnlocked =
+        !pLoadedAchievements->isRewardLocked( kSimuModeRewardHashcode );
+    bReward0x5912a0Unlocked =
+        !pLoadedAchievements->isRewardLocked( kRewardUnknown0x5912a0 );
+
+    const bool bSimuModeLocked =
+        pLoadedAchievements->isRewardLocked( kSimuModeRewardHashcode );
+    uint32_t movieIndex = 0u;
+    uint32_t movieLayer = 0u;
+    if ( gpFlash->getFlashMovieIndex( &movieIndex, &movieLayer, "CONFIGPC" ) ) {
+        MoviePlayer *pMovie = gpFlash->getMoviePlayer( movieIndex, movieLayer );
+        if ( pMovie != nullptr && pMovie->MovieBank.isLoaded() &&
+             pMovie->MovieBank.getFlashPlayer() != nullptr ) {
+            pMovie->MovieBank.getFlashPlayer()->setVariableValue(
+                "/:IsSimuModeAvailable", int32_t( !bSimuModeLocked ) );
+        }
+    }
 }
 
 void AchievementsData::serialize( edStore &stream ) const {

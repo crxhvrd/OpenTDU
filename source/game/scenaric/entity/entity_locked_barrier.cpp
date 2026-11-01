@@ -61,9 +61,9 @@ void EntityLockedBarrier::tick( GameMechanism *pGameMech,
         if ( bIsLocked ) {
             return;
         }
-        setPosition( OriginalPos, true );
+        propagatePosition( OriginalPos, true );
         if ( pMechanism != nullptr ) {
-            pMechanism->setMechanismInitialTransform( modelMatrix );
+            pMechanism->setInitialTransformMatrix( modelMatrix );
         }
         bIsLocked = true;
         return;
@@ -73,9 +73,9 @@ void EntityLockedBarrier::tick( GameMechanism *pGameMech,
     if ( bIsLocked ) {
         Eigen::Vector4f loweredPos =
             OriginalPos + Eigen::Vector4f( 0.0f, -100.0f, 0.0f, 0.0f );
-        setPosition( loweredPos, true );
+        propagatePosition( loweredPos, true );
         if ( pMechanism != nullptr ) {
-            pMechanism->setMechanismInitialTransform( modelMatrix );
+            pMechanism->setInitialTransformMatrix( modelMatrix );
         }
         bIsLocked = false;
     }

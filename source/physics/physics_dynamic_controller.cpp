@@ -89,6 +89,21 @@ void PhysicsDynamicController::setWorld( const PhysicsDynamicController &source,
     }
 }
 
+bool PhysicsDynamicController::isActive() const {
+    // FUN_00454620
+    if ( gpPhysics == nullptr ) {
+        return false;
+    }
+
+    for ( const std::pair<uint64_t, void *> &member : members ) {
+        if ( gpPhysics->isBodyActive(
+                 static_cast<RigidBody_t>( member.second ) ) ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool PhysicsDynamicController::getWorldMatrix( Matrix4x4f_t &outMatrix,
                                                bool &outActive ) const {
     // FUN_0047a8a0
