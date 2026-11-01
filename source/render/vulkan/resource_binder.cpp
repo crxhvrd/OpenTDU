@@ -389,9 +389,7 @@ uint32_t ResourceBinder::setClipPlaneMask( const uint32_t mask ) {
     return count;
 }
 
-void ResourceBinder::bindTexture( Texture *pTexture,
-                                  const uint32_t frameIndex,
-                                  const uint32_t index ) {
+void ResourceBinder::bindTexture( Texture *pTexture, const uint32_t index ) {
     VkImageView newView = VK_NULL_HANDLE;
     uint64_t newViewId = 0ull;
     GPUTexture *pVulkanTex = nullptr;
@@ -400,13 +398,9 @@ void ResourceBinder::bindTexture( Texture *pTexture,
     uint32_t samplerType = 0u; // SamplerTypeTexture2D
     if ( pTexture != nullptr ) {
         pVulkanTex = pTexture->pTexture;
-        uint32_t resourceIndex = frameIndex;
-        if ( pVulkanTex->NumResources <= frameIndex ) {
-            resourceIndex = ( pVulkanTex->NumResources - 1 );
-        }
-        OTDU_ASSERT( pVulkanTex->ImageView[resourceIndex] != VK_NULL_HANDLE );
-        newView = pVulkanTex->ImageView[resourceIndex];
-        newViewId = pVulkanTex->ViewIds[resourceIndex];
+        OTDU_ASSERT( pVulkanTex->ImageView != VK_NULL_HANDLE );
+        newView = pVulkanTex->ImageView;
+        newViewId = pVulkanTex->ViewId;
 
         const bool bIs3D = ( ( pTexture->Flags >> 0xb ) & 1u ) != 0;
         const bool bIsCube = !bIs3D && ( ( pTexture->Flags >> 6 ) & 1u ) != 0;
@@ -641,7 +635,6 @@ bool LinearAllocator::create( VkDevice device,
         OTDU_ASSERT( false );
         return false;
     }
-    LogBufferPlacement( allocator, Allocations, "Constant ring" );
     opResult = vmaMapMemory( allocator, Allocations, (void **)&pCPUMapping );
     return true;
 }

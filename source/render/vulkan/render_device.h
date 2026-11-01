@@ -109,21 +109,14 @@ void LogBufferPlacement( VmaAllocator allocator,
                          const char *pCategory );
 
 struct GPUTexture {
-    // Allocations for this render target. To get access to the image used for
-    // the current frame, retrieve the internal frame index using
-    // RenderDevice::getInternalFrameIndex().
-    VkImage Image[PendingFrameCount] = { VK_NULL_HANDLE, VK_NULL_HANDLE,
-                                         VK_NULL_HANDLE };
-    VmaAllocation Allocation[PendingFrameCount] = { nullptr, nullptr, nullptr };
+    VkImage Image = VK_NULL_HANDLE;
+    VmaAllocation Allocation = nullptr;
 
     // TODO: For now we assume that RTs will always use its original view
     // format.
-    VkImageView ImageView[PendingFrameCount] = { VK_NULL_HANDLE, VK_NULL_HANDLE,
-                                                 VK_NULL_HANDLE };
-    VkImageLayout CurrentLayout[PendingFrameCount] = {
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_IMAGE_LAYOUT_UNDEFINED };
-    uint64_t ViewIds[PendingFrameCount] = { 0ull, 0ull, 0ull };
+    VkImageView ImageView = VK_NULL_HANDLE;
+    VkImageLayout CurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    uint64_t ViewId = 0ull;
 
     VkFormat ViewFormat;
     VkSampleCountFlagBits SampleCount;
@@ -131,14 +124,8 @@ struct GPUTexture {
     uint32_t Depth;
     uint32_t Width = 0;
     uint32_t Height = 0;
-    uint32_t NumResources = 3;
     uint8_t bNeedMSAAResolve : 1; // If true, resolve the texture the next time
                                   // it's used in a render pass
-
-    inline uint32_t getResourceIndex( const uint32_t frameIndex ) const {
-        return ( frameIndex < NumResources ) ? frameIndex
-                                             : ( NumResources - 1 );
-    }
 };
 
 struct GPUShader {
@@ -483,7 +470,8 @@ private:
 
     VkBuffer createHostVisibleBuffer( const VkDeviceSize size,
                                       const VkBufferUsageFlags usage,
-                                      VmaAllocation &outAllocation );
+                                      VmaAllocation &outAllocation,
+                                      const char *pName );
 #endif
 
 private:
@@ -869,12 +857,8 @@ private:
                                      VkDeviceSize offset,
                                      VkIndexType indexType );
     void insertMemoryBarrier( GPUTexture *pTexture,
-                              const VkImageLayout prevLayout,
-                              const VkImageLayout nextLayout,
-                              const VkPipelineStageFlagBits stageSync,
-                              uint32_t imageIndex );
+                              const VkImageLayout nextLayout );
     void insertImageBarrier( GPUTexture *pTexture,
-                             uint32_t imageIndex,
                              const VkImageLayout prevLayout,
                              const VkImageLayout nextLayout,
                              const VkPipelineStageFlags srcStage,
@@ -906,7 +890,6 @@ private:
     void syncDynamicBuffer( GPUBuffer *pBuffer, const uint32_t resourceIndex );
 
     bool copyRenderTargetToHost( GPUTexture *pTexture,
-                                 const uint32_t imageIndex,
                                  std::vector<uint8_t> &texels );
 
 #ifdef OTDU_DEVBUILD

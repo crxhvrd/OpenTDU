@@ -185,6 +185,24 @@ CachedRenderPass RenderPassManager::getOrCreateRenderPass(
     PassDesc.subpassCount = 1;
     PassDesc.pSubpasses = &subpassDesc;
 
+    static constexpr VkPipelineStageFlags kAttachmentStages =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    VkSubpassDependency dependency = {};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = kAttachmentStages;
+    dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependency.dstStageMask = kAttachmentStages;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    PassDesc.dependencyCount = 1;
+    PassDesc.pDependencies = &dependency;
+
     uint64_t hashcode = CalculateRenderPassHashcode( PassDesc );
 
     CachedRenderPass cachedRP;
@@ -252,10 +270,8 @@ void RenderPassManager::setDepthStencilAttachment( GPUTexture *pTexture ) {
         depthStencilDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     }
 
-    VkImageLayout attachmentLayout =
-        HasStencilBits( pTexture->ViewFormat )
-            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-            : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    const VkImageLayout attachmentLayout =
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     depthStencilDesc.initialLayout = attachmentLayout;
     depthStencilDesc.finalLayout = attachmentLayout;
 

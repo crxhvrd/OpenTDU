@@ -520,6 +520,13 @@ RenderDevice::~RenderDevice() {
     deviceExtensions.clear();
 
     vkDestroySurfaceKHR( instance, surface, nullptr );
+
+#if OTDU_DEVBUILD
+    if ( gVulkanEnableValidationLayer && vkCreateDebugUtilsMessengerEXT ) {
+        vkDestroyDebugUtilsMessengerEXT( instance, debugCallback, nullptr );
+    }
+#endif
+
     vkDestroyInstance( instance, nullptr );
 }
 
@@ -886,11 +893,10 @@ GPUTexture *RenderDevice::createTexture( Texture *pTexture ) {
     allocCreateInfo.priority = 1.0f;
 
     GPUTexture *renderTarget = new GPUTexture();
-    renderTarget->NumResources = 1;
 
     VkResult imageCreationResult = vmaCreateImage(
-        allocator, &imgCreateInfo, &allocCreateInfo, &renderTarget->Image[0],
-        &renderTarget->Allocation[0], nullptr );
+        allocator, &imgCreateInfo, &allocCreateInfo, &renderTarget->Image,
+        &renderTarget->Allocation, nullptr );
     OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
 
 #if OTDU_DEVBUILD
@@ -912,7 +918,7 @@ GPUTexture *RenderDevice::createTexture( Texture *pTexture ) {
     VkDebugUtilsObjectNameInfoEXT nameInfo = {};
     nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
     nameInfo.objectType = VkObjectType::VK_OBJECT_TYPE_IMAGE;
-    nameInfo.objectHandle = (uint64_t)renderTarget->Image[0];
+    nameInfo.objectHandle = (uint64_t)renderTarget->Image;
     nameInfo.pObjectName = objName.data();
     vkSetDebugUtilsObjectNameEXT( device, &nameInfo );
 #endif
@@ -924,7 +930,7 @@ GPUTexture *RenderDevice::createTexture( Texture *pTexture ) {
     renderTarget->Width = pTexture->Width;
     renderTarget->Height = pTexture->Height;
     renderTarget->bNeedMSAAResolve = false;
-    renderTarget->CurrentLayout[0] = VK_IMAGE_LAYOUT_UNDEFINED;
+    renderTarget->CurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     VkImageViewCreateInfo viewInfos = {};
     viewInfos.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -946,12 +952,12 @@ GPUTexture *RenderDevice::createTexture( Texture *pTexture ) {
     viewInfos.subresourceRange.baseArrayLayer = 0;
     viewInfos.subresourceRange.layerCount =
         bTexture2DOrCube ? Max( 1, pTexture->Depth ) : 1;
-    viewInfos.image = renderTarget->Image[0];
+    viewInfos.image = renderTarget->Image;
 
     VkResult imageViewCreationResult = vkCreateImageView(
-        device, &viewInfos, nullptr, &renderTarget->ImageView[0] );
+        device, &viewInfos, nullptr, &renderTarget->ImageView );
     OTDU_ASSERT( imageViewCreationResult == VK_SUCCESS );
-    renderTarget->ViewIds[0] = allocateViewId();
+    renderTarget->ViewId = allocateViewId();
 
     pTexture->bUploaded = false;
     return renderTarget;
@@ -1034,22 +1040,19 @@ RenderDevice::createRenderTarget( const uint32_t width,
 
     GPUTexture *renderTarget = new GPUTexture();
 
-    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        VkResult imageCreationResult = vmaCreateImage(
-            allocator, &imgCreateInfo, &allocCreateInfo,
-            &renderTarget->Image[i], &renderTarget->Allocation[i], nullptr );
-        OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
+    VkResult imageCreationResult = vmaCreateImage(
+        allocator, &imgCreateInfo, &allocCreateInfo, &renderTarget->Image,
+        &renderTarget->Allocation, nullptr );
+    OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
 
 #if OTDU_DEVBUILD
-        std::string objName = "PooledRenderTarget[" + std::to_string( i ) + "]";
-        VkDebugUtilsObjectNameInfoEXT nameInfo = {};
-        nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-        nameInfo.objectType = VkObjectType::VK_OBJECT_TYPE_IMAGE;
-        nameInfo.objectHandle = (uint64_t)renderTarget->Image[i];
-        nameInfo.pObjectName = objName.c_str();
-        vkSetDebugUtilsObjectNameEXT( device, &nameInfo );
+    VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    nameInfo.objectType = VkObjectType::VK_OBJECT_TYPE_IMAGE;
+    nameInfo.objectHandle = (uint64_t)renderTarget->Image;
+    nameInfo.pObjectName = "PooledRenderTarget";
+    vkSetDebugUtilsObjectNameEXT( device, &nameInfo );
 #endif
-    }
 
     renderTarget->ViewFormat = imgCreateInfo.format;
     renderTarget->SampleCount = imgCreateInfo.samples;
@@ -1058,10 +1061,7 @@ RenderDevice::createRenderTarget( const uint32_t width,
     renderTarget->Width = width;
     renderTarget->Height = height;
     renderTarget->bNeedMSAAResolve = false;
-
-    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        renderTarget->CurrentLayout[i] = VK_IMAGE_LAYOUT_UNDEFINED;
-    }
+    renderTarget->CurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     VkImageViewCreateInfo viewInfos = {};
     viewInfos.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -1081,13 +1081,11 @@ RenderDevice::createRenderTarget( const uint32_t width,
     viewInfos.subresourceRange.baseArrayLayer = 0;
     viewInfos.subresourceRange.layerCount = 1;
 
-    for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-        viewInfos.image = renderTarget->Image[i];
-        VkResult imageCreationResult = vkCreateImageView(
-            device, &viewInfos, nullptr, &renderTarget->ImageView[i] );
-        OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
-        renderTarget->ViewIds[i] = allocateViewId();
-    }
+    viewInfos.image = renderTarget->Image;
+    VkResult imageViewCreationResult = vkCreateImageView(
+        device, &viewInfos, nullptr, &renderTarget->ImageView );
+    OTDU_ASSERT( imageViewCreationResult == VK_SUCCESS );
+    renderTarget->ViewId = allocateViewId();
 
     return renderTarget;
 }
@@ -1324,10 +1322,6 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
                                              VkCommandBuffer cmdBuffer ) {
     GPUTexture *pVulkanTex = pTexture->pTexture;
 
-    const uint32_t mipResourceIndex = ( pVulkanTex->NumResources <= frameIndex )
-                                          ? ( pVulkanTex->NumResources - 1 )
-                                          : frameIndex;
-
     uint32_t numTextures = Max( 1, pTexture->Depth );
 
     // Memory barrier for mip0 (for all layers)
@@ -1340,9 +1334,9 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
 
     VkImageMemoryBarrier barrier = {};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = pVulkanTex->CurrentLayout[mipResourceIndex];
+    barrier.oldLayout = pVulkanTex->CurrentLayout;
     barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barrier.image = pVulkanTex->Image[mipResourceIndex];
+    barrier.image = pVulkanTex->Image;
     barrier.subresourceRange = range;
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -1385,9 +1379,9 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
 
             VkImageMemoryBarrier barrier = {};
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barrier.oldLayout = pVulkanTex->CurrentLayout[mipResourceIndex];
+            barrier.oldLayout = pVulkanTex->CurrentLayout;
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.image = pVulkanTex->Image[mipResourceIndex];
+            barrier.image = pVulkanTex->Image;
             barrier.subresourceRange = range;
             barrier.srcAccessMask = 0;
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -1395,9 +1389,9 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
                                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr,
                                   0, nullptr, 1, &barrier );
 
-            vkCmdBlitImage( cmdBuffer, pVulkanTex->Image[mipResourceIndex],
+            vkCmdBlitImage( cmdBuffer, pVulkanTex->Image,
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                            pVulkanTex->Image[mipResourceIndex],
+                            pVulkanTex->Image,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blitInfo,
                             VK_FILTER_LINEAR );
 
@@ -1422,7 +1416,7 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
     srvBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     srvBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     srvBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    srvBarrier.image = pVulkanTex->Image[mipResourceIndex];
+    srvBarrier.image = pVulkanTex->Image;
     srvBarrier.subresourceRange = srvRange;
     srvBarrier.srcAccessMask = 0;
     srvBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -1430,17 +1424,13 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
                           0, nullptr, 1, &srvBarrier );
 
-    pVulkanTex->CurrentLayout[mipResourceIndex] =
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    pVulkanTex->CurrentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
 void RenderDevice::destroyTexture( GPUTexture *pTexture ) {
     RetireList &retireList = getRetireList();
-    for ( uint32_t i = 0; i < pTexture->NumResources; i++ ) {
-        retireList.Textures.push_back( { pTexture->Image[i],
-                                         pTexture->Allocation[i],
-                                         pTexture->ImageView[i] } );
-    }
+    retireList.Textures.push_back(
+        { pTexture->Image, pTexture->Allocation, pTexture->ImageView } );
     delete pTexture;
 }
 
@@ -1741,7 +1731,7 @@ void RenderDevice::setFloatConstants( eShaderType stage,
 }
 
 void RenderDevice::bindTexture( Texture *pTexture, const uint32_t index ) {
-    resourceBinder.bindTexture( pTexture, frameIndex, index );
+    resourceBinder.bindTexture( pTexture, index );
 }
 
 void RenderDevice::clearFramebuffer( const ColorRGBA clearColor,
@@ -1815,16 +1805,10 @@ void RenderDevice::recordImageClear( const PendingClear &clear ) {
             if ( pAttachment == nullptr ) {
                 continue;
             }
-            const uint32_t resourceIndex =
-                pAttachment->getResourceIndex( frameIndex );
-            insertMemoryBarrier(
-                pAttachment, pAttachment->CurrentLayout[resourceIndex],
-                VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                resourceIndex );
-            vkCmdClearColorImage( getCommandBuffer(),
-                                  pAttachment->Image[resourceIndex],
-                                  pAttachment->CurrentLayout[resourceIndex],
-                                  &clear.Color, 1, &subresourceRange );
+            insertMemoryBarrier( pAttachment, VK_IMAGE_LAYOUT_GENERAL );
+            vkCmdClearColorImage( getCommandBuffer(), pAttachment->Image,
+                                  pAttachment->CurrentLayout, &clear.Color, 1,
+                                  &subresourceRange );
         }
     }
 
@@ -1837,14 +1821,11 @@ void RenderDevice::recordImageClear( const PendingClear &clear ) {
     }
     GPUTexture *pDepthStencil = clear.pDepthStencil;
     if ( subresourceRange.aspectMask != 0 && pDepthStencil != nullptr ) {
-        insertMemoryBarrier( pDepthStencil,
-                             pDepthStencil->CurrentLayout[frameIndex],
-                             VK_IMAGE_LAYOUT_GENERAL,
-                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, frameIndex );
-        vkCmdClearDepthStencilImage(
-            getCommandBuffer(), pDepthStencil->Image[frameIndex],
-            pDepthStencil->CurrentLayout[frameIndex], &clear.DepthStencil, 1,
-            &subresourceRange );
+        insertMemoryBarrier( pDepthStencil, VK_IMAGE_LAYOUT_GENERAL );
+        vkCmdClearDepthStencilImage( getCommandBuffer(), pDepthStencil->Image,
+                                     pDepthStencil->CurrentLayout,
+                                     &clear.DepthStencil, 1,
+                                     &subresourceRange );
     }
 }
 
@@ -1877,14 +1858,11 @@ void RenderDevice::clearColorRenderTarget( GPUTexture *pTexture,
     clearColorValue.float32[2] = clearColor.B / 255.0f;
     clearColorValue.float32[3] = clearColor.A / 255.0f;
 
-    const uint32_t resourceIndex = pTexture->getResourceIndex( frameIndex );
-    insertMemoryBarrier( pTexture, pTexture->CurrentLayout[resourceIndex],
-                         VK_IMAGE_LAYOUT_GENERAL,
-                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, resourceIndex );
+    insertMemoryBarrier( pTexture, VK_IMAGE_LAYOUT_GENERAL );
 
-    vkCmdClearColorImage( getCommandBuffer(), pTexture->Image[resourceIndex],
-                          pTexture->CurrentLayout[resourceIndex],
-                          &clearColorValue, 1, &subresourceRange );
+    vkCmdClearColorImage( getCommandBuffer(), pTexture->Image,
+                          pTexture->CurrentLayout, &clearColorValue, 1,
+                          &subresourceRange );
 }
 
 void RenderDevice::bindVertexLayout( GPUVertexLayout *pLayout ) {
@@ -2269,21 +2247,11 @@ void RenderDevice::blit( GPUTexture *pSrc,
 
     endActiveRenderPass();
 
-    uint32_t srcFrameIndex = frameIndex;
-    if ( srcFrameIndex >= pSrc->NumResources ) {
-        srcFrameIndex = ( pSrc->NumResources - 1 );
-    }
-    VkImage srcImage = pSrc->Image[srcFrameIndex];
+    VkImage srcImage = pSrc->Image;
+    VkImage dstImage = pTextureRT->Image;
 
-    const uint32_t dstFrameIndex = pTextureRT->getResourceIndex( frameIndex );
-    VkImage dstImage = pTextureRT->Image[dstFrameIndex];
-
-    insertMemoryBarrier( pSrc, pSrc->CurrentLayout[srcFrameIndex],
-                         VK_IMAGE_LAYOUT_GENERAL,
-                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, srcFrameIndex );
-    insertMemoryBarrier( pTextureRT, pTextureRT->CurrentLayout[dstFrameIndex],
-                         VK_IMAGE_LAYOUT_GENERAL,
-                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, dstFrameIndex );
+    insertMemoryBarrier( pSrc, VK_IMAGE_LAYOUT_GENERAL );
+    insertMemoryBarrier( pTextureRT, VK_IMAGE_LAYOUT_GENERAL );
 
     const bool bSrcMSAA = ( pSrc->SampleCount != VK_SAMPLE_COUNT_1_BIT );
     const bool bDstMSAA = ( pTextureRT->SampleCount != VK_SAMPLE_COUNT_1_BIT );
@@ -2312,9 +2280,8 @@ void RenderDevice::blit( GPUTexture *pSrc,
         region.dstOffsets[1].y = pDst->getHeight();
         region.dstOffsets[1].z = 1;
 
-        vkCmdBlitImage( getCommandBuffer(), srcImage,
-                        pSrc->CurrentLayout[srcFrameIndex], dstImage,
-                        pTextureRT->CurrentLayout[dstFrameIndex], 1, &region,
+        vkCmdBlitImage( getCommandBuffer(), srcImage, pSrc->CurrentLayout,
+                        dstImage, pTextureRT->CurrentLayout, 1, &region,
                         VK_FILTER_NEAREST );
     } else if ( bSrcMSAA && !bDstMSAA ) {
         // Multisampled source into a single-sampled destination: resolve.
@@ -2325,9 +2292,8 @@ void RenderDevice::blit( GPUTexture *pSrc,
         region.dstSubresource.layerCount = 1;
         region.extent = { copyWidth, copyHeight, 1 };
 
-        vkCmdResolveImage(
-            getCommandBuffer(), srcImage, pSrc->CurrentLayout[srcFrameIndex],
-            dstImage, pTextureRT->CurrentLayout[dstFrameIndex], 1, &region );
+        vkCmdResolveImage( getCommandBuffer(), srcImage, pSrc->CurrentLayout,
+                           dstImage, pTextureRT->CurrentLayout, 1, &region );
     } else if ( pSrc->SampleCount == pTextureRT->SampleCount ) {
         // Matching multisampled source and destination: blit/resolve can't
         // target a multisampled image, but a straight copy can when the sample
@@ -2339,9 +2305,8 @@ void RenderDevice::blit( GPUTexture *pSrc,
         region.dstSubresource.layerCount = 1;
         region.extent = { copyWidth, copyHeight, 1 };
 
-        vkCmdCopyImage( getCommandBuffer(), srcImage,
-                        pSrc->CurrentLayout[srcFrameIndex], dstImage,
-                        pTextureRT->CurrentLayout[dstFrameIndex], 1, &region );
+        vkCmdCopyImage( getCommandBuffer(), srcImage, pSrc->CurrentLayout,
+                        dstImage, pTextureRT->CurrentLayout, 1, &region );
     } else {
         OTDU_FATAL_ERROR( "Cannot transfer a single-sampled source into a "
                           "multisampled render target! (bad logic)\n" );
@@ -2937,7 +2902,7 @@ bool RenderDevice::uploadTexture( Texture *pTexture ) {
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.image = pVulkanTex->Image[0];
+    barrier.image = pVulkanTex->Image;
     barrier.subresourceRange = range;
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -2988,7 +2953,7 @@ bool RenderDevice::uploadTexture( Texture *pTexture ) {
     }
 
     vkCmdCopyBufferToImage( cmdBuffer, pBuffer->NativeBuffer[0],
-                            pVulkanTex->Image[0],
+                            pVulkanTex->Image,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                             (uint32_t)copyRegions.size(), copyRegions.data() );
 
@@ -3000,7 +2965,7 @@ bool RenderDevice::uploadTexture( Texture *pTexture ) {
                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
                           0, nullptr, 1, &barrier );
 
-    pVulkanTex->CurrentLayout[0] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    pVulkanTex->CurrentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     // Released once the frame submitting the copy completed
     destroyBuffer( pBuffer );
@@ -3056,7 +3021,7 @@ void RenderDevice::uploadTexels( Texture *pTexture,
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.image = pVulkanTex->Image[0];
+    barrier.image = pVulkanTex->Image;
     barrier.subresourceRange = range;
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -3076,7 +3041,7 @@ void RenderDevice::uploadTexels( Texture *pTexture,
     copyRegion.imageExtent.height = pTexture->Height;
     copyRegion.imageExtent.depth = pTexture->Depth;
     vkCmdCopyBufferToImage(
-        cmdBuffer, pBuffer->NativeBuffer[0], pVulkanTex->Image[0],
+        cmdBuffer, pBuffer->NativeBuffer[0], pVulkanTex->Image,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion );
 
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -3087,7 +3052,7 @@ void RenderDevice::uploadTexels( Texture *pTexture,
                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
                           0, nullptr, 1, &barrier );
 
-    pVulkanTex->CurrentLayout[0] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    pVulkanTex->CurrentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     destroyBuffer( pBuffer );
 }
@@ -3198,31 +3163,21 @@ void RenderDevice::resolveMSAA( RenderTarget *param_1, uint32_t param_2 ) {
 
     endActiveRenderPass();
 
-    uint32_t srcFrameIndex = frameIndex;
-    if ( srcFrameIndex >= pSrc->NumResources ) {
-        srcFrameIndex = ( pSrc->NumResources - 1 );
-    }
-
-    uint32_t dstFrameIndex = frameIndex;
-    if ( dstFrameIndex >= pDst->NumResources ) {
-        dstFrameIndex = ( pDst->NumResources - 1 );
-    }
-
     insertImageBarrier(
-        pSrc, srcFrameIndex, pSrc->CurrentLayout[srcFrameIndex],
-        VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_ACCESS_TRANSFER_READ_BIT );
+        pSrc, pSrc->CurrentLayout, VK_IMAGE_LAYOUT_GENERAL,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT );
     insertImageBarrier(
-        pDst, dstFrameIndex, pDst->CurrentLayout[dstFrameIndex],
-        VK_IMAGE_LAYOUT_GENERAL,
+        pDst, pDst->CurrentLayout, VK_IMAGE_LAYOUT_GENERAL,
         VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_ACCESS_TRANSFER_WRITE_BIT );
 
-    VkImage srcImage = pSrc->Image[srcFrameIndex];
-    VkImage dstImage = pDst->Image[dstFrameIndex];
+    VkImage srcImage = pSrc->Image;
+    VkImage dstImage = pDst->Image;
 
     uint32_t dstWidth = Max( 1u, pDst->Width >> param_2 );
     uint32_t dstHeight = Max( 1u, pDst->Height >> param_2 );
@@ -3241,9 +3196,8 @@ void RenderDevice::resolveMSAA( RenderTarget *param_1, uint32_t param_2 ) {
         region.extent.height = Min( pSrc->Height, dstHeight );
         region.extent.depth = 1;
 
-        vkCmdResolveImage( getCommandBuffer(), srcImage,
-                           pSrc->CurrentLayout[srcFrameIndex], dstImage,
-                           pDst->CurrentLayout[dstFrameIndex], 1, &region );
+        vkCmdResolveImage( getCommandBuffer(), srcImage, pSrc->CurrentLayout,
+                           dstImage, pDst->CurrentLayout, 1, &region );
     } else {
         VkImageBlit region = {};
         region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -3265,14 +3219,13 @@ void RenderDevice::resolveMSAA( RenderTarget *param_1, uint32_t param_2 ) {
         region.dstOffsets[1].z = 1;
 
         // D3DTEXF_POINT in the original StretchRect
-        vkCmdBlitImage( getCommandBuffer(), srcImage,
-                        pSrc->CurrentLayout[srcFrameIndex], dstImage,
-                        pDst->CurrentLayout[dstFrameIndex], 1, &region,
+        vkCmdBlitImage( getCommandBuffer(), srcImage, pSrc->CurrentLayout,
+                        dstImage, pDst->CurrentLayout, 1, &region,
                         VK_FILTER_NEAREST );
     }
 
-    insertImageBarrier( pDst, dstFrameIndex, pDst->CurrentLayout[dstFrameIndex],
-                        VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
+    insertImageBarrier( pDst, pDst->CurrentLayout, VK_IMAGE_LAYOUT_GENERAL,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_ACCESS_TRANSFER_WRITE_BIT,
                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
@@ -4542,7 +4495,6 @@ bool RenderDevice::createBackbufferTexture( const VkFormat format,
     backbuffer.pTexture->Height = extent.height;
     backbuffer.pTexture->NumMips = 1;
     backbuffer.pTexture->Depth = 1;
-    backbuffer.pTexture->NumResources = 1;
     bNeedBackbufferClear = true;
 
     VkImageViewCreateInfo viewInfos = {};
@@ -4553,52 +4505,46 @@ bool RenderDevice::createBackbufferTexture( const VkFormat format,
     viewInfos.subresourceRange.levelCount = 1;
     viewInfos.subresourceRange.layerCount = 1;
 
-    for ( uint32_t i = 0; i < backbuffer.pTexture->NumResources; i++ ) {
-        VkResult imageCreationResult =
-            vmaCreateImage( allocator, &imageInfo, &allocCreateInfo,
-                            &backbuffer.pTexture->Image[i],
-                            &backbuffer.pTexture->Allocation[i], nullptr );
-        if ( imageCreationResult != VK_SUCCESS ) {
-            OTDU_LOG_ERROR( "Failed to allocate the backbuffer (format %u)\n",
-                            format );
-            return false;
-        }
+    VkResult imageCreationResult = vmaCreateImage(
+        allocator, &imageInfo, &allocCreateInfo, &backbuffer.pTexture->Image,
+        &backbuffer.pTexture->Allocation, nullptr );
+    if ( imageCreationResult != VK_SUCCESS ) {
+        OTDU_LOG_ERROR( "Failed to allocate the backbuffer (format %u)\n",
+                        format );
+        return false;
+    }
 
-        backbuffer.pTexture->CurrentLayout[i] = VK_IMAGE_LAYOUT_UNDEFINED;
+    backbuffer.pTexture->CurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-        viewInfos.image = backbuffer.pTexture->Image[i];
-        imageCreationResult = vkCreateImageView(
-            device, &viewInfos, nullptr, &backbuffer.pTexture->ImageView[i] );
-        OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
-        backbuffer.pTexture->ViewIds[i] = allocateViewId();
+    viewInfos.image = backbuffer.pTexture->Image;
+    imageCreationResult = vkCreateImageView( device, &viewInfos, nullptr,
+                                             &backbuffer.pTexture->ImageView );
+    OTDU_ASSERT( imageCreationResult == VK_SUCCESS );
+    backbuffer.pTexture->ViewId = allocateViewId();
 
 #if OTDU_DEVBUILD
-        std::string objName = "Backbuffer[" + std::to_string( i ) + "]";
-        VkDebugUtilsObjectNameInfoEXT nameInfo = {};
-        nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-        nameInfo.objectType = VkObjectType::VK_OBJECT_TYPE_IMAGE;
-        nameInfo.objectHandle = (uint64_t)backbuffer.pTexture->Image[i];
-        nameInfo.pObjectName = objName.c_str();
-        vkSetDebugUtilsObjectNameEXT( device, &nameInfo );
+    VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    nameInfo.objectType = VkObjectType::VK_OBJECT_TYPE_IMAGE;
+    nameInfo.objectHandle = (uint64_t)backbuffer.pTexture->Image;
+    nameInfo.pObjectName = "Backbuffer";
+    vkSetDebugUtilsObjectNameEXT( device, &nameInfo );
 #endif
-    }
 
     return true;
 }
 
 void RenderDevice::presentBackbuffer( FrameSubmission &submission ) {
     GPUTexture *pBackbuffer = backbuffer.pTexture;
-    const uint32_t resourceIndex = pBackbuffer->getResourceIndex( frameIndex );
 
     submission.bGammaRampPass = gammaRampPass.isActive();
-    submission.Backbuffer = pBackbuffer->Image[resourceIndex];
+    submission.Backbuffer = pBackbuffer->Image;
     submission.BackbufferExtent = { backbuffer.Width, backbuffer.Height };
     gammaRampPass.captureFrameParameters( submission.GammaRamp );
 
     if ( submission.bGammaRampPass ) {
         insertImageBarrier(
-            pBackbuffer, resourceIndex,
-            pBackbuffer->CurrentLayout[resourceIndex],
+            pBackbuffer, pBackbuffer->CurrentLayout,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -4606,8 +4552,7 @@ void RenderDevice::presentBackbuffer( FrameSubmission &submission ) {
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT );
     } else {
         insertImageBarrier(
-            pBackbuffer, resourceIndex,
-            pBackbuffer->CurrentLayout[resourceIndex],
+            pBackbuffer, pBackbuffer->CurrentLayout,
             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -5110,11 +5055,10 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     bool bNeedRestartRenderPass =
         ( activeRenderPass == VK_NULL_HANDLE ) || bClearOnLoad;
     if ( bDepthStencilAttachmentValid ) {
-        if ( pDepthStencilAttachment->CurrentLayout[frameIndex] !=
+        if ( pDepthStencilAttachment->CurrentLayout !=
              VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ) {
             insertImageBarrier(
-                pDepthStencilAttachment, frameIndex,
-                pDepthStencilAttachment->CurrentLayout[frameIndex],
+                pDepthStencilAttachment, pDepthStencilAttachment->CurrentLayout,
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                 VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
                     VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
@@ -5149,11 +5093,8 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
         if ( bFramebufferAttachmentValid[i] ) {
             OTDU_ASSERT( pFramebufferAttachments[i] );
-            const uint32_t resourceIndex =
-                pFramebufferAttachments[i]->getResourceIndex( frameIndex );
-            OTDU_ASSERT( pFramebufferAttachments[i]->ImageView[resourceIndex] );
-            attachments[numAttachments] =
-                pFramebufferAttachments[i]->ImageView[resourceIndex];
+            OTDU_ASSERT( pFramebufferAttachments[i]->ImageView );
+            attachments[numAttachments] = pFramebufferAttachments[i]->ImageView;
             numAttachments++;
         }
     }
@@ -5162,14 +5103,12 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     for ( uint32_t i = 0; i < numAttachments; i++ ) {
         if ( bFramebufferAttachmentValid[i] ) {
             OTDU_ASSERT( pFramebufferAttachments[i] );
-            const uint32_t resourceIndex =
-                pFramebufferAttachments[i]->getResourceIndex( frameIndex );
-            OTDU_ASSERT( pFramebufferAttachments[i]->ImageView[resourceIndex] );
-            if ( pFramebufferAttachments[i]->CurrentLayout[resourceIndex] !=
+            OTDU_ASSERT( pFramebufferAttachments[i]->ImageView );
+            if ( pFramebufferAttachments[i]->CurrentLayout !=
                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ) {
                 insertImageBarrier(
-                    pFramebufferAttachments[i], resourceIndex,
-                    pFramebufferAttachments[i]->CurrentLayout[resourceIndex],
+                    pFramebufferAttachments[i],
+                    pFramebufferAttachments[i]->CurrentLayout,
                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
@@ -5217,8 +5156,7 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     }
 
     if ( bDepthStencilAttachmentValid && numAttachments < kMaxSimultaneousRT ) {
-        attachments[numAttachments] =
-            pDepthStencilAttachment->ImageView[frameIndex];
+        attachments[numAttachments] = pDepthStencilAttachment->ImageView;
         numAttachments++;
     }
     psoFactory.BlendState.pAttachments = blendOpAttachments.data();
@@ -5292,18 +5230,14 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
             continue;
         }
 
-        uint32_t resourceIndex = frameIndex;
-        if ( resourceBinder.pBoundSRVs[i]->NumResources <= frameIndex ) {
-            resourceIndex = ( resourceBinder.pBoundSRVs[i]->NumResources - 1 );
-        }
-
-        if ( resourceBinder.pBoundSRVs[i]->CurrentLayout[resourceIndex] !=
+        if ( resourceBinder.pBoundSRVs[i]->CurrentLayout !=
              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ) {
             insertImageBarrier(
-                resourceBinder.pBoundSRVs[i], resourceIndex,
-                resourceBinder.pBoundSRVs[i]->CurrentLayout[resourceIndex],
+                resourceBinder.pBoundSRVs[i],
+                resourceBinder.pBoundSRVs[i]->CurrentLayout,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                    VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
                     VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
                     VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
@@ -5472,73 +5406,110 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     return true;
 }
 
-void RenderDevice::insertMemoryBarrier( GPUTexture *pTexture,
-                                        const VkImageLayout callerPrevLayout,
-                                        const VkImageLayout nextLayout,
-                                        const VkPipelineStageFlagBits stageSync,
-                                        uint32_t imageIndex ) {
-    OTDU_ASSERT( bRecordingCommands );
+struct ImageSyncScope {
+    VkPipelineStageFlags Stages;
+    VkAccessFlags Access;
+};
 
-    if ( imageIndex >= pTexture->NumResources ) {
-        imageIndex = ( pTexture->NumResources - 1 );
-    }
-
-    VkImageLayout prevLayout = callerPrevLayout;
-    if ( pendingClear.bActive && !bPreparingDrawCall ) {
-        flushPendingClear();
-        prevLayout = pTexture->CurrentLayout[imageIndex];
-    }
-
-    if ( pTexture->CurrentLayout[imageIndex] != nextLayout ) {
-        endActiveRenderPass();
-
-        bool bIsDepthStencil =
-            IsVulkanDepthStencilFormat( pTexture->ViewFormat );
-        bool bHasStencilBits = HasStencilBits( pTexture->ViewFormat );
-
-        VkImageSubresourceRange range;
-        range.aspectMask = ( !bIsDepthStencil ) ? VK_IMAGE_ASPECT_COLOR_BIT
-                                                : VK_IMAGE_ASPECT_DEPTH_BIT;
-        if ( bIsDepthStencil && bHasStencilBits ) {
-            range.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-        }
-
-        range.baseMipLevel = 0;
-        range.levelCount = pTexture->NumMips;
-        range.baseArrayLayer = 0;
-        range.layerCount = pTexture->Depth;
-
-        VkImageMemoryBarrier barrier = {};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.oldLayout = prevLayout;
-        barrier.newLayout = nextLayout;
-        barrier.image = pTexture->Image[imageIndex];
-        barrier.subresourceRange = range;
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask =
-            !bIsDepthStencil ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-                             : VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-        VkPipelineStageFlags srcStage = stageSync;
-        if ( prevLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL ) {
-            srcStage |= VK_PIPELINE_STAGE_TRANSFER_BIT;
-        } else if ( prevLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ) {
-            srcStage |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        }
-
-        vkCmdPipelineBarrier(
-            getCommandBuffer(), srcStage,
-            !bIsDepthStencil ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-                             : VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                                   VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-            0, 0, nullptr, 0, nullptr, 1, &barrier );
-
-        pTexture->CurrentLayout[imageIndex] = nextLayout;
+static ImageSyncScope GetImageSyncScope( const VkImageLayout layout ) {
+    switch ( layout ) {
+    case VK_IMAGE_LAYOUT_UNDEFINED:
+        return { VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0 };
+    case VK_IMAGE_LAYOUT_GENERAL:
+        // Transfer ops; resolveMSAA also leaves its target in GENERAL for
+        // shader sampling
+        return { VK_PIPELINE_STAGE_TRANSFER_BIT |
+                     VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                 VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT |
+                     VK_ACCESS_SHADER_READ_BIT };
+    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        return { VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT };
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        return { VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT };
+    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+        return { VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                 VK_ACCESS_SHADER_READ_BIT };
+    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+        return { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                 VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                     VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT };
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+        return { VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                     VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                     VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT };
+    default:
+        return { VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                 VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT };
     }
 }
 
+static inline VkAccessFlags GetWriteAccess( const VkAccessFlags access ) {
+    static constexpr VkAccessFlags kWriteAccessMask =
+        VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+        VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_WRITE_BIT |
+        VK_ACCESS_MEMORY_WRITE_BIT;
+    return access & kWriteAccessMask;
+}
+
+static VkImageSubresourceRange
+GetFullSubresourceRange( const GPUTexture *pTexture ) {
+    const bool bIsDepthStencil =
+        IsVulkanDepthStencilFormat( pTexture->ViewFormat );
+
+    VkImageSubresourceRange range;
+    range.aspectMask =
+        bIsDepthStencil ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    if ( bIsDepthStencil && HasStencilBits( pTexture->ViewFormat ) ) {
+        range.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
+    range.baseMipLevel = 0;
+    range.levelCount = pTexture->NumMips;
+    range.baseArrayLayer = 0;
+    range.layerCount = pTexture->Depth;
+    return range;
+}
+
+void RenderDevice::insertMemoryBarrier( GPUTexture *pTexture,
+                                        const VkImageLayout nextLayout ) {
+    OTDU_ASSERT( bRecordingCommands );
+
+    if ( pendingClear.bActive && !bPreparingDrawCall ) {
+        flushPendingClear();
+    }
+
+    const VkImageLayout prevLayout = pTexture->CurrentLayout;
+    if ( prevLayout == nextLayout && nextLayout != VK_IMAGE_LAYOUT_GENERAL ) {
+        return;
+    }
+
+    endActiveRenderPass();
+
+    const ImageSyncScope srcScope = GetImageSyncScope( prevLayout );
+    const ImageSyncScope dstScope = GetImageSyncScope( nextLayout );
+
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = prevLayout;
+    barrier.newLayout = nextLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = pTexture->Image;
+    barrier.subresourceRange = GetFullSubresourceRange( pTexture );
+    barrier.srcAccessMask = GetWriteAccess( srcScope.Access );
+    barrier.dstAccessMask = dstScope.Access;
+
+    vkCmdPipelineBarrier( getCommandBuffer(), srcScope.Stages, dstScope.Stages,
+                          0, 0, nullptr, 0, nullptr, 1, &barrier );
+
+    pTexture->CurrentLayout = nextLayout;
+}
+
 void RenderDevice::insertImageBarrier( GPUTexture *pTexture,
-                                       uint32_t imageIndex,
                                        const VkImageLayout callerPrevLayout,
                                        const VkImageLayout nextLayout,
                                        const VkPipelineStageFlags srcStage,
@@ -5547,31 +5518,13 @@ void RenderDevice::insertImageBarrier( GPUTexture *pTexture,
                                        const VkAccessFlags dstAccess ) {
     OTDU_ASSERT( bRecordingCommands );
 
-    if ( imageIndex >= pTexture->NumResources ) {
-        imageIndex = ( pTexture->NumResources - 1 );
-    }
-
     VkImageLayout prevLayout = callerPrevLayout;
     if ( pendingClear.bActive && !bPreparingDrawCall ) {
         flushPendingClear();
-        prevLayout = pTexture->CurrentLayout[imageIndex];
+        prevLayout = pTexture->CurrentLayout;
     }
 
     endActiveRenderPass();
-
-    bool bIsDepthStencil = IsVulkanDepthStencilFormat( pTexture->ViewFormat );
-    bool bHasStencilBits = HasStencilBits( pTexture->ViewFormat );
-
-    VkImageSubresourceRange range;
-    range.aspectMask = ( !bIsDepthStencil ) ? VK_IMAGE_ASPECT_COLOR_BIT
-                                            : VK_IMAGE_ASPECT_DEPTH_BIT;
-    if ( bIsDepthStencil && bHasStencilBits ) {
-        range.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-    }
-    range.baseMipLevel = 0;
-    range.levelCount = pTexture->NumMips;
-    range.baseArrayLayer = 0;
-    range.layerCount = pTexture->Depth;
 
     VkImageMemoryBarrier barrier = {};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -5579,14 +5532,14 @@ void RenderDevice::insertImageBarrier( GPUTexture *pTexture,
     barrier.newLayout = nextLayout;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = pTexture->Image[imageIndex];
-    barrier.subresourceRange = range;
+    barrier.image = pTexture->Image;
+    barrier.subresourceRange = GetFullSubresourceRange( pTexture );
     barrier.srcAccessMask = srcAccess;
     barrier.dstAccessMask = dstAccess;
     vkCmdPipelineBarrier( getCommandBuffer(), srcStage, dstStage, 0, 0, nullptr,
                           0, nullptr, 1, &barrier );
 
-    pTexture->CurrentLayout[imageIndex] = nextLayout;
+    pTexture->CurrentLayout = nextLayout;
 }
 
 void RenderDevice::recreateSwapchain() {
@@ -5618,18 +5571,16 @@ void RenderDevice::createOutputPassResources() {
 
 void RenderDevice::releaseSwapchain() {
     if ( backbuffer.pTexture != nullptr ) {
-        for ( uint32_t i = 0; i < PendingFrameCount; i++ ) {
-            if ( backbuffer.pTexture->ImageView[i] != VK_NULL_HANDLE ) {
-                vkDestroyImageView( device, backbuffer.pTexture->ImageView[i],
-                                    nullptr );
-                backbuffer.pTexture->ImageView[i] = VK_NULL_HANDLE;
-            }
-            if ( backbuffer.pTexture->Image[i] != VK_NULL_HANDLE ) {
-                vmaDestroyImage( allocator, backbuffer.pTexture->Image[i],
-                                 backbuffer.pTexture->Allocation[i] );
-                backbuffer.pTexture->Image[i] = VK_NULL_HANDLE;
-                backbuffer.pTexture->Allocation[i] = nullptr;
-            }
+        if ( backbuffer.pTexture->ImageView != VK_NULL_HANDLE ) {
+            vkDestroyImageView( device, backbuffer.pTexture->ImageView,
+                                nullptr );
+            backbuffer.pTexture->ImageView = VK_NULL_HANDLE;
+        }
+        if ( backbuffer.pTexture->Image != VK_NULL_HANDLE ) {
+            vmaDestroyImage( allocator, backbuffer.pTexture->Image,
+                             backbuffer.pTexture->Allocation );
+            backbuffer.pTexture->Image = VK_NULL_HANDLE;
+            backbuffer.pTexture->Allocation = nullptr;
         }
     }
 
@@ -5679,12 +5630,7 @@ bool RenderDevice::copyBackbufferToHost( std::vector<uint8_t> &texels,
 
     waitForIdle();
 
-    uint32_t imageIndex = getInternalFrameIndex();
-    if ( imageIndex >= backbuffer.pTexture->NumResources ) {
-        imageIndex = ( backbuffer.pTexture->NumResources - 1 );
-    }
-
-    if ( !copyRenderTargetToHost( backbuffer.pTexture, imageIndex, texels ) ) {
+    if ( !copyRenderTargetToHost( backbuffer.pTexture, texels ) ) {
         return false;
     }
 
@@ -5714,7 +5660,6 @@ bool RenderDevice::copyBackbufferToHost( std::vector<uint8_t> &texels,
 }
 
 bool RenderDevice::copyRenderTargetToHost( GPUTexture *pTexture,
-                                           const uint32_t imageIndex,
                                            std::vector<uint8_t> &texels ) {
     const uint32_t bytesPerTexel =
         GetVulkanFormatTexelSize( pTexture->ViewFormat );
@@ -5769,7 +5714,7 @@ bool RenderDevice::copyRenderTargetToHost( GPUTexture *pTexture,
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer( cmdBuffer, &beginInfo );
 
-    const VkImageLayout previousLayout = pTexture->CurrentLayout[imageIndex];
+    const VkImageLayout previousLayout = pTexture->CurrentLayout;
 
     VkImageSubresourceRange range;
     range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -5782,7 +5727,7 @@ bool RenderDevice::copyRenderTargetToHost( GPUTexture *pTexture,
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = previousLayout;
     barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barrier.image = pTexture->Image[imageIndex];
+    barrier.image = pTexture->Image;
     barrier.subresourceRange = range;
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -5800,7 +5745,7 @@ bool RenderDevice::copyRenderTargetToHost( GPUTexture *pTexture,
     copyRegion.imageSubresource.layerCount = 1;
     copyRegion.imageOffset = { 0, 0, 0 };
     copyRegion.imageExtent = { pTexture->Width, pTexture->Height, 1 };
-    vkCmdCopyImageToBuffer( cmdBuffer, pTexture->Image[imageIndex],
+    vkCmdCopyImageToBuffer( cmdBuffer, pTexture->Image,
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer,
                             1, &copyRegion );
 
@@ -5869,7 +5814,8 @@ static uint16_t FloatToHalf( const float value ) {
 
 VkBuffer RenderDevice::createHostVisibleBuffer( const VkDeviceSize size,
                                                 const VkBufferUsageFlags usage,
-                                                VmaAllocation &outAllocation ) {
+                                                VmaAllocation &outAllocation,
+                                                const char *pName ) {
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = size;
@@ -5913,7 +5859,8 @@ void RenderDevice::snapshotRenderTarget( GPUTexture *pTexture,
     snapshot.Size =
         VkDeviceSize( pTexture->Width ) * pTexture->Height * bytesPerTexel;
     snapshot.Buffer = createHostVisibleBuffer(
-        snapshot.Size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, snapshot.Allocation );
+        snapshot.Size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, snapshot.Allocation,
+        "RTSnapshotReadback" );
     if ( snapshot.Buffer == VK_NULL_HANDLE ) {
         return;
     }
@@ -5922,11 +5869,9 @@ void RenderDevice::snapshotRenderTarget( GPUTexture *pTexture,
         "x" + std::to_string( pTexture->Height ) + "_" +
         std::to_string( uint32_t( pTexture->ViewFormat ) ) + ".raw";
 
-    const uint32_t resourceIndex = pTexture->getResourceIndex( frameIndex );
-    const VkImageLayout previousLayout = pTexture->CurrentLayout[resourceIndex];
+    const VkImageLayout previousLayout = pTexture->CurrentLayout;
     insertImageBarrier(
-        pTexture, resourceIndex, previousLayout,
-        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        pTexture, previousLayout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT );
 
@@ -5934,15 +5879,15 @@ void RenderDevice::snapshotRenderTarget( GPUTexture *pTexture,
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.layerCount = 1;
     region.imageExtent = { pTexture->Width, pTexture->Height, 1 };
-    vkCmdCopyImageToBuffer( getCommandBuffer(), pTexture->Image[resourceIndex],
+    vkCmdCopyImageToBuffer( getCommandBuffer(), pTexture->Image,
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                             snapshot.Buffer, 1, &region );
 
     if ( previousLayout != VK_IMAGE_LAYOUT_UNDEFINED ) {
         insertImageBarrier(
-            pTexture, resourceIndex, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            previousLayout, VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            pTexture, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, previousLayout,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT );
     }
 
@@ -5970,8 +5915,9 @@ void RenderDevice::fillRenderTargetRegion( GPUTexture *pTexture,
 
     PendingRenderTargetSnapshot upload = {};
     upload.Size = VkDeviceSize( clipped.width ) * clipped.height * 8u;
-    upload.Buffer = createHostVisibleBuffer(
-        upload.Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, upload.Allocation );
+    upload.Buffer =
+        createHostVisibleBuffer( upload.Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                 upload.Allocation, "RTFillUpload" );
     if ( upload.Buffer == VK_NULL_HANDLE ) {
         return;
     }
@@ -5986,26 +5932,23 @@ void RenderDevice::fillRenderTargetRegion( GPUTexture *pTexture,
     }
     vmaUnmapMemory( allocator, upload.Allocation );
 
-    const uint32_t resourceIndex = pTexture->getResourceIndex( frameIndex );
-    const VkImageLayout previousLayout = pTexture->CurrentLayout[resourceIndex];
-    insertImageBarrier( pTexture, resourceIndex, previousLayout,
-                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                        VK_ACCESS_TRANSFER_WRITE_BIT );
+    const VkImageLayout previousLayout = pTexture->CurrentLayout;
+    insertImageBarrier(
+        pTexture, previousLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT );
 
     VkBufferImageCopy region = {};
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = { offset.x, offset.y, 0 };
     region.imageExtent = { clipped.width, clipped.height, 1 };
-    vkCmdCopyBufferToImage( getCommandBuffer(), upload.Buffer,
-                            pTexture->Image[resourceIndex],
+    vkCmdCopyBufferToImage( getCommandBuffer(), upload.Buffer, pTexture->Image,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
 
     insertImageBarrier(
-        pTexture, resourceIndex, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        pTexture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         ( previousLayout != VK_IMAGE_LAYOUT_UNDEFINED )
             ? previousLayout
             : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -6049,13 +5992,8 @@ void RenderDevice::processPendingRenderTargetDumps() {
     for ( const PendingRenderTargetDump &dump : pendingRenderTargetDumps ) {
         GPUTexture *pTexture = dump.pTexture;
 
-        uint32_t imageIndex = getInternalFrameIndex();
-        if ( imageIndex >= pTexture->NumResources ) {
-            imageIndex = ( pTexture->NumResources - 1 );
-        }
-
         std::vector<uint8_t> texels;
-        if ( !copyRenderTargetToHost( pTexture, imageIndex, texels ) ) {
+        if ( !copyRenderTargetToHost( pTexture, texels ) ) {
             continue;
         }
 
