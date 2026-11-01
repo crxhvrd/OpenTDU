@@ -21,6 +21,8 @@ public:
         return "SunFlare";
     }
 
+    inline void setDraw( const bool bEnabled ) { bDraw = bEnabled; }
+
 public:
     MngSunFlare();
     ~MngSunFlare();

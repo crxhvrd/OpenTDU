@@ -136,6 +136,15 @@ public:
         transitionTime = time;
     }
 
+    inline void requestCameraMode( const int32_t mode,
+                                   const int32_t transition,
+                                   const float time ) {
+        nextCameraMode = mode;
+        pNextCamera = nullptr;
+        transitionType = transition;
+        transitionTime = time;
+    }
+
     inline void setReplayMode( const bool bReplay ) {
         FUN_008e1e80( false, bReplay );
     }

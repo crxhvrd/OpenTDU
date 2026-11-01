@@ -39,6 +39,7 @@
 #include "physics/vehicle/physics_vehicle.h"
 #include "world/gs_world.h"
 #include "world/mng_world.h"
+#include "world/mng_sector_name.h"
 #include "online/p2p_game_service.h"
 #include "tdu_instance.h"
 
@@ -166,6 +167,7 @@ EntityCinematic::EntityCinematic()
       bDetachPlayerCarInput( true ),
       bPauseMenuLockedBefore( false ),
       bFreeRideBool2Before( true ),
+      bSectorNameEnabledBefore( true ),
       pSavedPlayerDrivingControl( nullptr ),
       bDisableStreamingOnCarBefore( false ),
       pStreamCenterBefore( nullptr ),
@@ -291,7 +293,10 @@ void EntityCinematic::applyForegroundCine() {
         }
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+    if ( gpMngSectorName != nullptr ) {
+        bSectorNameEnabledBefore = gpMngSectorName->bEnabled; // +0x26e8
+        gpMngSectorName->bEnabled = false;
+    }
 
     if ( gpCP2PGameService != nullptr ) {
         bFreeRideBool2Before = gpCP2PGameService->FreeRideMgr.bUnknownBool2;
@@ -386,14 +391,6 @@ void EntityCinematic::restoreForegroundCine() {
         }
     }
 
-    if ( gpActiveGM != nullptr ) {
-        gpActiveGM->setBlockPauseByStart( bPauseMenuLockedBefore );
-    }
-
-    if ( gpCP2PGameService != nullptr ) {
-        gpCP2PGameService->FreeRideMgr.bUnknownBool2 = bFreeRideBool2Before;
-    }
-
     if ( gpMngWorld != nullptr ) {
         gpMngWorld->setDisableStreamingOnCar( bDisableStreamingOnCarBefore );
         if ( bDisableStreamingOnCarBefore && pStreamCenterBefore != nullptr &&
@@ -409,7 +406,17 @@ void EntityCinematic::restoreForegroundCine() {
 
     ShowSpots( true );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+    if ( gpMngSectorName != nullptr ) {
+        gpMngSectorName->bEnabled = bSectorNameEnabledBefore;
+    }
+
+    if ( gpActiveGM != nullptr ) {
+        gpActiveGM->setBlockPauseByStart( bPauseMenuLockedBefore );
+    }
+
+    if ( gpCP2PGameService != nullptr ) {
+        gpCP2PGameService->FreeRideMgr.bUnknownBool2 = bFreeRideBool2Before;
+    }
 
     if ( gpMngShadow != nullptr ) {
         gpMngShadow->setTarget( nullptr );

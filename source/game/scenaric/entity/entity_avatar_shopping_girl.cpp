@@ -39,7 +39,6 @@ EntityAvatarShoppingGirl::EntityAvatarShoppingGirl()
 EntityAvatarShoppingGirl::~EntityAvatarShoppingGirl() {
     // FUN_00424fc0
     voice.destroy();
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: RENDER
     SoundsBank.release();
 }
 

@@ -6,12 +6,10 @@
 EntityAvatarTransporter::EntityAvatarTransporter()
     : EntityAvatarPassenger(), CurrentFreerideAnim( -1 ) {
     // FUN_007f2da0
-    OTDU_UNIMPLEMENTED;
 }
 
 EntityAvatarTransporter::~EntityAvatarTransporter() {
     // FUN_00424900
-    OTDU_UNIMPLEMENTED;
 }
 
 void EntityAvatarTransporter::loadResources( ScenaricBank *param_2 ) {

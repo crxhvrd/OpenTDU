@@ -184,6 +184,8 @@ public:
         return "ElectricalNetworkMng";
     }
 
+    inline void setActivated( const bool bEnabled ) { bActivated = bEnabled; }
+
 public:
     MngElectricalNetwork();
     ~MngElectricalNetwork();

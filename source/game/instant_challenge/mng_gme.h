@@ -29,6 +29,7 @@ public:
         pViewport = pNewViewport;
     }
     inline void setCursorOff( const bool bOff ) { bCursorOff = bOff; }
+    inline bool isCursorOff() const { return bCursorOff; }
     inline bool isKeyLeftDown() const { return bKeyLeft; }
     inline bool isKeyRightDown() const { return bKeyRight; }
     inline bool isKeyUpDown() const { return bKeyUp; }

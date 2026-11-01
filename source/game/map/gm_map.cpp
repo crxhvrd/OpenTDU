@@ -819,7 +819,9 @@ void GMMap::onResourceStreamed() {
 
 bool GMMap::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     // FUN_009c1e60
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_006bd120
+    if ( mngMapViewer.onFlashMessage( pMessage ) ) {
+        return true;
+    }
 
     switch ( *pMessage ) {
     case kMsgFilter1:

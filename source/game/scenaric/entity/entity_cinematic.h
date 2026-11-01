@@ -221,6 +221,7 @@ private:
     bool bDetachPlayerCarInput;
     bool bPauseMenuLockedBefore;
     bool bFreeRideBool2Before;
+    bool bSectorNameEnabledBefore;
     PhysicsDrivingControl *pSavedPlayerDrivingControl;
     bool bDisableStreamingOnCarBefore;
     Eigen::Vector4f *pStreamCenterBefore;

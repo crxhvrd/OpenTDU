@@ -4,6 +4,8 @@
 
 class CameraGame;
 class FlashPlayer;
+struct FlashMessage;
+struct SpotMap;
 
 struct MapView {
 public:
@@ -54,6 +56,7 @@ public:
         MS_Idle = 0,
         MS_Active = 1,
         MS_Leaving = 2,
+        MS_FadingOut = 3,
         MS_FadingIn = 4,
         MS_WaitingForGPSCamera = 5,
     };
@@ -85,8 +88,12 @@ public:
     void pause() override;
     void terminate() override;
 
+    void setSpot( const SpotMap *pNewSpot, FlashPlayer *pPlayer );
+    bool onFlashMessage( const FlashMessage *pMessage );
+
 private:
-    void *pSpot;
+    const SpotMap *pSpot;
+    const SpotMap *pSelectedSpot;
     MapView mapView;
     bool bRestoreFilter;
     uint8_t savedFilter;
@@ -102,6 +109,13 @@ private:
 
 private:
     void leave();
+    void open();
+    void close();
+    void restoreSpotFilter();
+
+    static void OnOpenFadedOut( void *pData, void *pSource );
+    static void OnOpenFadedIn( void *pData, void *pSource );
+    static void OnLeaveFadedOut( void *pData, void *pSource );
 };
 
 extern MngMapViewer *gpMngMapViewer;

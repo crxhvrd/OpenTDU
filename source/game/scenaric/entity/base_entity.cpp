@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "base_entity.h"
 
+#include "audio/implementation/audio_dispatcher_playback.h"
 #include "core/binary_helpers.h"
 
 #include "game/cinematic/cin_res_collection.h"
@@ -150,7 +151,12 @@ void Entity::unloadResources() {
 
     if ( pSound != nullptr && pSound->pSound != nullptr &&
          pSound->pSound->pSoundInstance != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO
+        AudioDispatcherPlaybackSoundInstance *pInstance =
+            pSound->pSound->pSoundInstance;
+        if ( !pInstance->isStopped() ) {
+            pInstance->stop( 0.0f );
+        }
+        pInstance->release();
     }
 }
 

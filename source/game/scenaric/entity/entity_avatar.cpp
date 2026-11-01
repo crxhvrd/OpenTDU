@@ -318,8 +318,7 @@ void EntityAvatar::tick( GameMechanism *pGameMech,
         if ( animation.isValid() && pPooledAvatarEntry != nullptr ) {
             Matrix4x4f_t headMatrix =
                 animation.getNodeWorldMatrix( -1, HeadBoneIndex );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR - FUN_008f1d80 head
-                                     // material up/right shader params
+            pPooledAvatarEntry->Body.tickHeadMaterial( headMatrix );
             headMatrix = headMatrix * getModelMatrix();
             onHeadUpdate( headMatrix );
         }

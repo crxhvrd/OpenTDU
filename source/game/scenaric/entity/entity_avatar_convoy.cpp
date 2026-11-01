@@ -6,7 +6,6 @@
 EntityAvatarConvoy::EntityAvatarConvoy()
     : EntityAvatarPassenger(), CurrentFreerideAnim( -1 ) {
     // FUN_007f6fe0
-    OTDU_UNIMPLEMENTED;
 }
 
 EntityAvatarConvoy::~EntityAvatarConvoy() {

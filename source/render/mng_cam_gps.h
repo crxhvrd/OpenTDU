@@ -26,6 +26,7 @@ public:
     inline void setForceStreaming( const bool bEnabled ) {
         bForceStreaming = bEnabled;
     }
+    inline void setForceDraw( const bool bEnabled ) { bForceDraw = bEnabled; }
     inline void setForceStreamingFlush( const bool bEnabled ) {
         bForceStreamingFlush = bEnabled;
     }

@@ -2,6 +2,7 @@
 #include "avatar_clothes.h"
 
 #include "config/gs_config.h"
+#include "core/maths_helper.h"
 #include "gs_avatar.h"
 #include "game/vehicle/gs_car_common.h"
 #include "render/gs_render.h"
@@ -29,6 +30,8 @@ static constexpr uint32_t kStaticParamSkinTint = 0xd4;
 static constexpr uint32_t kStaticParamEyeUVOffset = 0xd9;
 static constexpr uint32_t kStaticParamLightHeightRange = 0xe6;
 static constexpr uint32_t kStaticParamLightAttenuation = 0xe7;
+static constexpr uint32_t kStaticParamHeadUp = 0xe8;
+static constexpr uint32_t kStaticParamHeadRight = 0xe9;
 static constexpr uint64_t kLightAttenuationShaderHashcodes[] = {
     kEyeShaderHashcode, kOpaqueClotheShaderHashcode, 0xd5013ed0db79eaeaull,
     0xd5013ed0dbaabebeull, 0xd5013ed0dbdededeull };
@@ -2224,6 +2227,36 @@ void RenderAvatarBase::tickBodyMaterial( const float *pSkinTint,
         if ( pMaterial != nullptr ) {
             ApplySkinTintToMaterial( pMaterial, pSkinTint, pBodyHighRes );
         }
+    }
+}
+
+void RenderAvatarBase::tickHeadMaterial( const Matrix4x4f_t &headMatrix ) {
+    // FUN_008f1d80
+    if ( Material.getHeader() == nullptr ) {
+        return;
+    }
+
+    const uint32_t numMaterials = Material.getNumMaterials();
+    for ( uint32_t i = 0; i < numMaterials; i++ ) {
+        ::Material *pMaterial = Material.getMaterialAtIndex( i );
+        if ( pMaterial == nullptr ) {
+            continue;
+        }
+
+        MaterialParameter *pParameter = pMaterial->getParameterByIndex( 0 );
+        if ( pParameter == nullptr || pParameter->Type != MPT_Generic ||
+             pParameter->Hashcode != kEyeShaderHashcode ) {
+            continue;
+        }
+
+        const Eigen::Vector4f up = TDUMat4x4MulVec(
+            headMatrix, Eigen::Vector4f( 0.0f, 1.0f, 0.0f, 0.0f ) );
+        SetMaterialStaticParam( pMaterial, kStaticParamHeadUp, up.data() );
+
+        const Eigen::Vector4f right = TDUMat4x4MulVec(
+            headMatrix, Eigen::Vector4f( 1.0f, 0.0f, 0.0f, 0.0f ) );
+        SetMaterialStaticParam( pMaterial, kStaticParamHeadRight,
+                                right.data() );
     }
 }
 

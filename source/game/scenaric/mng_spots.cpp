@@ -1867,6 +1867,29 @@ void MngSpots::closeInfoCart() {
     bInfoCartShown = false;
 }
 
+void MngSpots::refreshCursorMode() {
+    // FUN_00744a10
+    if ( gMapActiveFilterMode == 0x10 ) {
+        pMapPlayer->setVariableValue( "/:WhatMode", "free" );
+        pMapPlayer->showFrame( "free", "/curseur", false );
+        return;
+    }
+
+    pMapPlayer->setVariableValue( "/:WhatMode", "spot" );
+
+    const CameraGPS *pCameraGPS = FindGPSCamera();
+    if ( pCameraGPS == nullptr ) {
+        return;
+    }
+
+    static constexpr const char *kCursorFrames[CameraGPS::GZL_Count] = {
+        nullptr, "5", "4", "3", "2", "1" };
+    const int32_t zoom = pCameraGPS->getZoom();
+    if ( zoom > CameraGPS::GZL_Fixed && zoom < CameraGPS::GZL_Count ) {
+        pMapPlayer->showFrame( kCursorFrames[zoom], "/curseur", false );
+    }
+}
+
 void MngSpots::refreshSpotInfoPanel() {
     // FUN_00748a60
     resetGaragePanel( pSelectedRecord );

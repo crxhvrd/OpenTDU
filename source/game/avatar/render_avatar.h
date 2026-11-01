@@ -98,6 +98,7 @@ struct RenderAvatarBase {
     void setMeshVisibility( uint64_t meshHashcode, bool bMeshVisible );
     void tickEyeMaterial( const AvatarEyePart *pEyeResource );
     void tickBodyMaterial( const float *pSkinTint, RenderAvatar *pBodyHighRes );
+    void tickHeadMaterial( const Matrix4x4f_t &headMatrix );
     void setEnvMap( const AvatarEnvMap *pEnvMap );
 
 protected:

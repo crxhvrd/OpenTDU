@@ -189,6 +189,7 @@ public:
     void refreshSelectionCart();
     void openInfoCart();
     void closeInfoCart();
+    void refreshCursorMode();
 
     bool isInsideMapRect( const Eigen::Vector4f &position ) const;
     bool isCursorOverRecord( const MapSpotRecord *pRecord,

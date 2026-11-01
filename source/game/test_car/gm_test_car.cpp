@@ -4,13 +4,11 @@
 #include "ai/ai_pool.h"
 #include "ai/gs_ai.h"
 #include "database/gs_database.h"
-#include "flash/gs_flash.h"
 #include "flash/entities/flash_entity.h"
-#include "flash/implementation/flash_display_list.h"
 #include "flash/implementation/flash_player.h"
-#include "flash/implementation/flash_sprite.h"
 #include "flash/mng_flash_localize.h"
 #include "game/avatar/avatar_configuration.h"
+#include "game/game_mechanism.h"
 #include "game/mng_hud.h"
 #include "game/scenaric/avatar_manager.h"
 #include "game/scenaric/entity/entity_avatar_passenger.h"
@@ -63,17 +61,6 @@ static void ReleaseLocalPlayerCar() {
     gpCarState->unloadVehicle( pLocalCar, false, false );
     localPlayer.setCarState( nullptr );
     gpCamera->setBoundCarState( nullptr );
-}
-
-static bool ShowHudClip( FlashPlayer *pPlayer, const char *pClipPath ) {
-    FlashClip clip;
-    if ( !pPlayer->getClipPlayer( pClipPath, &clip ) ) {
-        return false;
-    }
-
-    ScopedMutexLock lock = gpFlash->scopedLock();
-    clip.pSprite->getDisplayList()->getFlagsRW() |= 1;
-    return true;
 }
 
 void GMTestCar::SetTestCar( const int32_t carID,
@@ -201,10 +188,10 @@ void GMTestCar::tick( float deltaTime, float totalTime ) {
     updateOdometer();
 }
 
-void GMTestCar::draw( float deltaTime, float totalTime ) {
+void GMTestCar::draw( float /*deltaTime*/, float /*totalTime*/ ) {
     // FUN_007b46a0
     if ( pGameMech != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GameLogic
+        pGameMech->draw();
     }
 }
 
@@ -312,7 +299,9 @@ void GMTestCar::releasePassenger() {
 
 void GMTestCar::endTestDrive() {
     // FUN_007b4960
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+    if ( gpAI->getCopManager().isSendingPlayerToJail() ) {
+        return;
+    }
 
     SpotMap *pSpot = gpScenaric->getSpotList().getWorldSpotChecked(
         gpScenaric->getCurrentSpotIndex() );

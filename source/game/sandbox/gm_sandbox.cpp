@@ -35,16 +35,14 @@ void GMSandbox::initialize() {
     GameModeWorld::initialize();
 
     // Sandbox keeps streaming pinned: never restream when the car moves, force
-    // a single update of the player sector only and stop drawing the sector
-    // grid.
+    // a single update of the sector/area grids and stop drawing them.
     mngWorld.setDisableStreamingOnCar( true );
 
     StreamingManager *pStreaming = gpWorld->getStreamingManager();
     pStreaming->sectorManager.bNeedStreamUpdate = true;
     pStreaming->sectorManager.bDrawSector = false;
-
-    OTDU_UNIMPLEMENTED; // TODO: SECTOR
-
+    pStreaming->areaGrid.bNeedStreamUpdate = true;
+    pStreaming->areaGrid.bDrawArea = false;
     pStreaming->setActiveRenderLayers( 1 );
 }
 

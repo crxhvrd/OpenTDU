@@ -5,17 +5,29 @@
 #include "flash/gs_flash.h"
 #include "flash/implementation/ed_flash.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/mng_fade.h"
 #include "flash/movie_player.h"
+#include "game/gm_scene.h"
+#include "game/instant_challenge/mng_gme.h"
+#include "game/lobby/gm_lobby.h"
+#include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/game_intro_tutorial.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/scenaric/mng_spots.h"
+#include "game/scenaric/spots.h"
+#include "physics/gs_physics.h"
+#include "tdu_instance.h"
 #include "input/gs_device.h"
 #include "input/input_device.h"
 #include "render/camera/camera_gps.h"
 #include "render/camera/gs_camera.h"
 #include "render/mng_cam_gps.h"
 #include "world/gs_world.h"
+#include "world/mng_electrical_network.h"
+#include "world/mng_sun_flare.h"
+#include "world/mng_tall_grass.h"
 #include "world/streaming_manager.h"
+#include "world/gs_world_streaming.h"
 
 MngMapViewer *gpMngMapViewer = nullptr; // DAT_010e801c
 MapView *gpMapView = nullptr;           // DAT_010e8020
@@ -39,12 +51,38 @@ static constexpr float kPanMaxZ = 54912.0f;                // DAT_00f41b28
 static constexpr float kPanDefaultMaxXSectorScale = 10.5f; // DAT_00f41b2c
 static constexpr float kPanDefaultMaxZSectorScale = 8.5f;  // DAT_00f41b24
 
+static constexpr float kFadeDuration = 0.5f;         // FLOAT_00f41674
+static constexpr float kCameraTransitionTime = 1.0f; // FLOAT_00f4165c
+static constexpr uint32_t kMapFilterLobbyIntra = 0x1ffdea;
+static constexpr uint32_t kMapFilterLobbyInter = 0x1ff9ea;
+static constexpr uint32_t kMapFilterLobby = 0x1ff5ea;
+static constexpr uint8_t kSpotTypeChallenge = 7;
+
+static constexpr FlashMessage kMsgMapOn = FlashMessage( "maon" );
+static constexpr FlashMessage kMsgMapOff = FlashMessage( "maof" );
+static constexpr FlashMessage kMsgStatsOn = FlashMessage( "ston" );
+static constexpr FlashMessage kMsgStatsOff = FlashMessage( "stof" );
+static constexpr FlashMessage kMsgZoomIn = FlashMessage( "zoin" );
+static constexpr FlashMessage kMsgZoomOut = FlashMessage( "zoou" );
+static constexpr FlashMessage kMsgChooseChallenge = FlashMessage( "chch" );
+static constexpr FlashMessage kMsgBrowseChallengeM = FlashMessage( "cbhm" );
+static constexpr FlashMessage kMsgBrowseChallengeS = FlashMessage( "cbhs" );
+
 static bool gbMapViewSmoothMove = false; // DAT_016a6aa0
 static constexpr uint8_t kMapFilterModeFreeMode = 0x10;
 
 static bool IsMapCursorCaptured() {
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: MngCursor (DAT_010e7cf4)
-    return false;
+    return gpMngCursor != nullptr && gpMngCursor->isCursorOff();
+}
+
+static Eigen::Vector4f GetSpotPosition( const SpotMap *pSpot ) {
+    return Eigen::Vector4f( pSpot->X, pSpot->Y, pSpot->Z, 1.0f );
+}
+
+static void SetSpotStreamActive( const bool bActive ) {
+    SpotStream &spotStream = gpWorld->getStreamingManager()->spotStream;
+    spotStream.bStream = bActive;
+    spotStream.bDraw = bActive;
 }
 
 static CameraGPS *FindGPSCamera() {
@@ -52,7 +90,7 @@ static CameraGPS *FindGPSCamera() {
         kGPSCameraMode, gpCamera->getBoundCarState() ) );
 }
 
-static FlashPlayer *GetHudFlashPlayer() {
+static FlashPlayer *GetMovieHudFlashPlayer() {
     MoviePlayer *pMoviePlayer =
         ( gpFlash != nullptr ) ? gpFlash->getMoviePlayer( 1, 0 ) : nullptr;
     if ( pMoviePlayer == nullptr ||
@@ -255,7 +293,7 @@ void MapView::startMove( const Eigen::Vector4f &target, const float duration ) {
     MoveTarget = target;
     MoveVelocity = ( target - MoveStart ) / duration;
 
-    FlashPlayer *pHudPlayer = GetHudFlashPlayer();
+    FlashPlayer *pHudPlayer = GetMovieHudFlashPlayer();
     if ( pHudPlayer != nullptr ) {
         pHudPlayer->setVariableValue( "/:IsMapQuit", 0 );
     }
@@ -283,7 +321,7 @@ void MapView::updateMove( const float deltaTime ) {
         MoveTime = -1.0f;
         *pFocus = MoveTarget;
 
-        FlashPlayer *pHudPlayer = GetHudFlashPlayer();
+        FlashPlayer *pHudPlayer = GetMovieHudFlashPlayer();
         if ( pHudPlayer != nullptr &&
              !gpScenaric->getIntroTutorial().isActive() ) {
             pHudPlayer->setVariableValue( "/:IsMapQuit", 1 );
@@ -389,6 +427,7 @@ void MapView::screenToWorld( const Eigen::Vector4f &cursor,
 MngMapViewer::MngMapViewer()
     : Manager(),
       pSpot( nullptr ),
+      pSelectedSpot( nullptr ),
       mapView(),
       bRestoreFilter( false ),
       savedFilter( 0 ),
@@ -457,6 +496,10 @@ void MngMapViewer::pause() {
 
 void MngMapViewer::terminate() {
     // FUN_006bce20
+    restoreSpotFilter();
+}
+
+void MngMapViewer::restoreSpotFilter() {
     if ( bRestoreFilter ) {
         gpMngSpots->setWasFreeMode( gMapActiveFilterMode ==
                                     kMapFilterModeFreeMode );
@@ -468,7 +511,260 @@ void MngMapViewer::terminate() {
     }
 }
 
+void MngMapViewer::setSpot( const SpotMap *pNewSpot, FlashPlayer *pPlayer ) {
+    // FUN_006bd6e0
+    pMapPlayer = pPlayer;
+    pSpot = pNewSpot;
+    focusPosition = ( pNewSpot != nullptr )
+                        ? GetSpotPosition( pNewSpot )
+                        : Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f );
+    gpMngSpots->setFocus( focusPosition );
+    mapView.pFocus = &focusPosition;
+    gpMngSpots->setIconsEnabled( false );
+    gpMngSpots->setPadNavigationEnabled( false );
+
+    CameraGPS *pCameraGPS = FindGPSCamera();
+    if ( pCameraGPS != nullptr ) {
+        const auto isOverviewZoom = [pCameraGPS]() {
+            return pCameraGPS->getZoom() == CameraGPS::GZL_Space ||
+                   pCameraGPS->getZoom() == CameraGPS::GZL_Fixed;
+        };
+        if ( isOverviewZoom() ) {
+            pCameraGPS->startZoom( pCameraGPS->getPreviousZoom(),
+                                   pCameraGPS->getPreviousZoom() );
+        }
+        if ( isOverviewZoom() ) {
+            pCameraGPS->startZoom( CameraGPS::GZL_Island,
+                                   CameraGPS::GZL_Island );
+        }
+        pCameraGPS->updateFlashZoom( pPlayer );
+    }
+    gpMngSpots->setFlashPlayer();
+}
+
+bool MngMapViewer::onFlashMessage( const FlashMessage *pMessage ) {
+    // FUN_006bd120
+    if ( pMapPlayer == nullptr ) {
+        return false;
+    }
+
+    switch ( *pMessage ) {
+    case kMsgMapOn:
+        state = MS_FadingIn;
+        gpMngFade->startTransition(
+            ( gpMngFade->getTransitionFlags() & ~0xcu ) | 1u, kFadeDuration,
+            &MngMapViewer::OnOpenFadedOut, nullptr, this ); // LAB_006bd110
+        gpMngSpots->setShowCursor( false );
+        return true;
+    case kMsgMapOff:
+        if ( state == MS_Active ) {
+            state = MS_Leaving;
+            gpMngMapViewer->setFocus( GetSpotPosition( pSpot ) );
+            gpMngCamGPS->setForceStreaming( true );
+            gpMngSpots->setPadNavigationEnabled( false );
+            gpMngSpots->closeInfoCart();
+            gpMngSpots->setInfoCartRequested( false );
+            SetSpotStreamActive( true );
+        }
+        return true;
+    case kMsgStatsOff:
+        if ( gpMapView != nullptr ) {
+            gpMapView->bEnabled = false;
+        }
+        gpMngSpots->setPadNavigationEnabled( false );
+        bPlayerListOpen = true;
+        return true;
+    case kMsgStatsOn:
+        if ( gpMapView != nullptr ) {
+            gpMapView->bEnabled = true;
+        }
+        gpMngSpots->setPadNavigationEnabled( true );
+        bPlayerListOpen = false;
+        return true;
+    case kMsgZoomIn:
+    case kMsgZoomOut:
+        return true;
+    case kMsgChooseChallenge: {
+        const SpotMap *pSelected = gpMngSpots->getSelectedSpot();
+        if ( pSelected != nullptr ) {
+            pSelectedSpot = pSelected;
+            pSpot = pSelected;
+        }
+        return true;
+    }
+    case kMsgBrowseChallengeM:
+    case kMsgBrowseChallengeS: {
+        const SpotMap *pSelected = gpMngSpots->getSelectedSpot();
+        if ( pSelected != nullptr ) {
+            pSelectedSpot = pSelected;
+        }
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+void MngMapViewer::OnOpenFadedOut( void *pData, void * /*pSource*/ ) {
+    // LAB_006bd110
+    static_cast<MngMapViewer *>( pData )->open();
+}
+
+void MngMapViewer::open() {
+    // FUN_006bce80
+    state = MS_WaitingForGPSCamera;
+    if ( !bRestoreFilter ) {
+        savedFilter = gMapActiveFilterMode;
+        savedSpotMask = static_cast<int32_t>( gMapChallengeFilterMask );
+        bRestoreFilter = true;
+    }
+    gpMngSpots->setWasFreeMode( gMapActiveFilterMode ==
+                                kMapFilterModeFreeMode );
+    gMapActiveFilterMode = 1;
+    gpMngSpots->refreshDensityMap();
+    gpMngSpots->requestResort();
+
+    char gameType[76] = {};
+    pMapPlayer->getVariableAsString( "/:GameType", gameType );
+    if ( strcmp( gameType, "host_intra" ) == 0 ||
+         gpScenaric->getClubChallengeKind() == 1 ) {
+        gMapChallengeFilterMask = kMapFilterLobbyIntra;
+    } else if ( strcmp( gameType, "host_inter" ) == 0 ||
+                gpScenaric->getClubChallengeKind() == 2 ) {
+        gMapChallengeFilterMask = kMapFilterLobbyInter;
+    } else if ( gpTestDriveInstance->getActiveGameMode() == GM_Lobby ) {
+        gMapChallengeFilterMask = kMapFilterLobby;
+    }
+
+    if ( gpMngSunFlare != nullptr ) {
+        gpMngSunFlare->setDraw( false );
+    }
+    if ( gpMngTallGrass != nullptr ) {
+        gbGrassEnabled = false;
+    }
+    if ( gpMngElectricalNetwork != nullptr ) {
+        gpMngElectricalNetwork->setActivated( false );
+    }
+
+    CameraGPS *pCameraGPS = FindGPSCamera();
+    if ( pCameraGPS != nullptr ) {
+        pCameraGPS->setFocus( ( pSpot != nullptr )
+                                  ? GetSpotPosition( pSpot )
+                                  : Eigen::Vector4f( 0.0f, 0.0f, 0.0f, 1.0f ) );
+        if ( pCameraGPS->getZoom() == CameraGPS::GZL_Space ) {
+            pCameraGPS->startZoom( CameraGPS::GZL_Island,
+                                   CameraGPS::GZL_Island );
+        } else if ( pCameraGPS->getZoom() == CameraGPS::GZL_Fixed ) {
+            pCameraGPS->startZoom( CameraGPS::GZL_Medium,
+                                   CameraGPS::GZL_Medium );
+        }
+    }
+
+    pPreviousCamera = gpCamera->getActiveCamera();
+    gpCamera->requestCameraMode( kGPSCameraMode, 0, kCameraTransitionTime );
+    EntityCinematic *pCinematicLoop = gpActiveGMScene->getCinematicLoop();
+    if ( pCinematicLoop != nullptr ) {
+        pCinematicLoop->stop( true );
+    }
+
+    gpMngMapViewer->setFocus( GetSpotPosition( pSpot ) );
+    gpMngCamGPS->setForceStreaming( false );
+    gpMngCamGPS->setForceDraw( false );
+    gpMngSpots->setInfoCartRequested( true );
+    SetSpotStreamActive( false );
+    gpMngFade->startTransition( ( gpMngFade->getTransitionFlags() & ~0x8u ) |
+                                    5u,
+                                kFadeDuration, &MngMapViewer::OnOpenFadedIn );
+}
+
+void MngMapViewer::OnOpenFadedIn( void * /*pData*/, void * /*pSource*/ ) {
+    // LAB_006bcdc0
+    gpMngSpots->setShowCursor( true );
+    gpMngSpots->refreshCursorMode();
+    gpMngSpots->setShowCursor( true );
+}
+
 void MngMapViewer::leave() {
     // FUN_006bd4e0
-    OTDU_UNIMPLEMENTED;
+    const Eigen::Vector4f spotPosition = GetSpotPosition( pSpot );
+    if ( !gpWorld->isStreamedAround( &spotPosition, true, false ) ) {
+        return;
+    }
+
+    state = MS_FadingOut;
+    gpMngFade->startTransition(
+        ( gpMngFade->getTransitionFlags() & ~0xcu ) | 1u, kFadeDuration,
+        &MngMapViewer::OnLeaveFadedOut, nullptr, this ); // FUN_006bd4d0
+    gpMngSpots->setShowCursor( false );
+    gpMngSpots->setPadNavigationEnabled( false );
+    if ( gpMngCamGPS != nullptr ) {
+        gpMngCamGPS->setUpdateStreaming( false );
+    }
+
+    StreamingManager *pStreaming = gpWorld->getStreamingManager();
+    SectorManager &sectors = pStreaming->sectorManager;
+    AreaGrid &areas = pStreaming->areaGrid;
+    sectors.bNeedStreamUpdate = true;
+    sectors.bDrawSector = false;
+    areas.bNeedStreamUpdate = true;
+    areas.bDrawArea = false;
+    pStreaming->setActiveRenderLayers( 1 );
+    sectors.bStreamSector = true;
+    gpWorldStreaming->updateStreaming();
+    areas.bStreamArea = true;
+}
+
+void MngMapViewer::OnLeaveFadedOut( void *pData, void * /*pSource*/ ) {
+    // FUN_006bd4d0
+    static_cast<MngMapViewer *>( pData )->close();
+}
+
+void MngMapViewer::close() {
+    // FUN_006bd350
+    switch ( gpTestDriveInstance->getActiveGameMode() ) {
+    case GM_Lobby:
+        pMapPlayer->showFrame( "open", "title", true );
+        pMapPlayer->showFrame( "lobby", "/", true );
+        break;
+    case GM_Club:
+        pMapPlayer->showFrame( "map_back", "ss_menus", false );
+        break;
+    default:
+        break;
+    }
+
+    restoreSpotFilter();
+
+    if ( gpMngTallGrass != nullptr ) {
+        gbGrassEnabled = true;
+    }
+    if ( gpMngSunFlare != nullptr ) {
+        gpMngSunFlare->setDraw( true );
+    }
+    if ( gpMngElectricalNetwork != nullptr ) {
+        gpMngElectricalNetwork->setActivated( true );
+    }
+    gpMngSpots->setIconsEnabled( false );
+    gpMngSpots->setPadNavigationEnabled( false );
+
+    if ( pPreviousCamera != nullptr ) {
+        gpCamera->setNextCamera( pPreviousCamera, 0, kCameraTransitionTime );
+    }
+
+    EntityCinematic *pCinematicLoop = gpActiveGMScene->getCinematicLoop();
+    if ( pCinematicLoop != nullptr ) {
+        pCinematicLoop->launchSpotCine( const_cast<SpotMap *>( pSpot ), 0.0f );
+    }
+
+    state = MS_Idle;
+    if ( pSpot->Type == kSpotTypeChallenge ) {
+        if ( gpTestDriveInstance->getActiveGameMode() == GM_Lobby ) {
+            static_cast<GMLobby *>( gpActiveGameMode )->onMapSpotChanged();
+        } else {
+            OTDU_UNIMPLEMENTED; // TODO: ONLINE (GMClub vtable slot 18)
+        }
+    }
+
+    PhysicsLock physLock;
+    gpPhysics->refreshHeightmapCollision();
 }

@@ -344,7 +344,7 @@ void GMLobby::reset() {
     }
 
     gpWorld->getStreamingManager()->setUnderwaterTilesRefined( false );
-    OTDU_UNIMPLEMENTED; // TODO: MngMapViewer::setSpot (FUN_006bd6e0)
+    mngMapViewer.setSpot( pSpot, pFlashPlayer );
 
     bSpectatorMode = false;
     OTDU_UNIMPLEMENTED; // TODO: ONLINE (CP2PGameService +0x26b84 = -1)
@@ -538,10 +538,7 @@ bool GMLobby::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         return false;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_006bd120 (MngMapViewer message
-                             // filter, returns false for now)
-    const bool bMapViewerMessage = false;
-    if ( !bMapViewerMessage ) {
+    if ( !gpMngMapViewer->onFlashMessage( pMessage ) ) {
         return false;
     }
 
