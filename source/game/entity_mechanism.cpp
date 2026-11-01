@@ -70,7 +70,6 @@ void EntityMechanism::loadResources( ScenaricBank *param_2 ) {
                                pPureDynamicController->LinearDamping,
                                pPureDynamicController->AngularDamping,
                                pPureDynamicController->bStatic != 0 );
-    bInitialized = true;
 }
 
 void EntityMechanism::tick() {
@@ -140,6 +139,7 @@ void EntityMechanism::placeCollisionBody( const Matrix4x4f_t &worldTransform ) {
 
     bDynamicProp = !isStaticController();
     pController->cloneAndAdd( *pOriginal, worldTransform );
+    bInitialized = pController->isCloned();
 }
 
 void EntityMechanism::terminate() {
