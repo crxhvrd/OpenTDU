@@ -156,6 +156,13 @@ public:
 
 public:
     inline void setMissionInfo( MissionInfo *pInfo ) { pMissionInfo = pInfo; }
+    inline void setParticipantCounts( const int32_t participants,
+                                      const int32_t players,
+                                      const int32_t opponents ) {
+        numParticipants = participants;
+        numPlayers = players;
+        numOpponents = opponents;
+    }
 
 public:
     explicit GameSessionOffline( GSAI *pOwnerAI );

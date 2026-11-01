@@ -97,7 +97,7 @@ public:
     void parkLocalPlayerCar();
     void restoreLocalPlayerCarControl();
 
-    bool onConfigurationChanged() override {
+    bool onConfigurationChanged( const int32_t ) override {
         // FUN_007bc910
         toggleHDRRadialBlur();
         return true;
@@ -152,6 +152,9 @@ protected:
     EntityCinematic *pCinematicLoop;
     SpotMap *pCurrentSpotWorld;
     PhysicsDrivingControl *pSavedPhysicsControl;
+    Eigen::Vector3f savedCameraPosition;
+    Eigen::Vector3f savedCameraTarget;
+    Eigen::Vector3f savedCameraUp;
 
     uint8_t bWeatherSet : 1;
     uint8_t bWithWorld : 1;

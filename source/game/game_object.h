@@ -3,6 +3,7 @@
 #include "ai/ai_road_map.h"
 
 struct AiRoadIt;
+class DrawList;
 
 struct ObjectLocationRoad {
     uint32_t RoadID = 0;
@@ -74,7 +75,7 @@ public:
                       float inSphereRadius,
                       Eigen::Vector4f *pSpherePos );
 
-    void setRoadLocation( const AiRoadIt &it, const bool bDebug );
+    void setRoadLocation( const AiRoadIt &it, DrawList *pDebugDrawList );
     void setJunctionLocation( const Matrix4x4f_t &worldMatrix,
                               const AiRoadMap::Junction *pJunction );
     void setOffRoadLocation();
@@ -112,10 +113,10 @@ public:
     GameObject *findObject( const uint32_t id ) const;
     inline GameObject *getFirstObject() const { return pFirstObject; }
 
-    void updateLocations( const float deltaTime, const bool bDebug );
+    void updateLocations( const float deltaTime, DrawList *pDebugDrawList );
     void locate( GameObject *pObject,
                  AiRoadMap::Road *pRoadHint,
-                 const bool bDebug );
+                 DrawList *pDebugDrawList );
 
 private:
     uint32_t idCounter;

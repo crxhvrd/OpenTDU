@@ -115,7 +115,7 @@ struct Scissor {
 
 class RenderConfigurationChangeListener {
 public:
-    virtual bool onConfigurationChanged() = 0;
+    virtual bool onConfigurationChanged( const int32_t eventCode ) = 0;
 
 protected:
     RenderConfigurationChangeListener *pNextListener = nullptr;

@@ -21,6 +21,7 @@ struct FlashMessage;
 class Entity;
 class EntityCinematic;
 class EntityExtraChallenge;
+class EntityAvatarPassenger;
 class CameraGame;
 class CarState;
 
@@ -137,7 +138,7 @@ private:
     bool bIntroLevelLaunched;
     bool bIntroCineDone;
 
-    Entity *pExtraChallengeAvatar;
+    EntityAvatarPassenger *pExtraChallengeAvatar;
     int32_t extraChallengeKind;
     ExtraChallengeProp extraChallengeProp;
     bool bCanAcceptExtraChallenge;

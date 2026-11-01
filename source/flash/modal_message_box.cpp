@@ -209,6 +209,21 @@ bool ModalMessageBox::FUN_0099fbe0() {
     return true;
 }
 
+void ModalMessageBox::openTutorialPrompt() {
+    // FUN_0099fc40
+    displayState = eDisplayState::MMBDS_Opening;
+    bHasCancel = true;
+    promptType = MPT_Tutorial;
+    messageHashcode = 0ull;
+    messageDatabaseIndex = 0;
+    pAnswerCallback = nullptr;
+    pDefaultMessage = nullptr;
+    pUserCallback = nullptr;
+    pUserCallbackData = nullptr;
+    userData = 0;
+    answer = ePopupAnswer::PA_Unknown;
+}
+
 void ModalMessageBox::setPlayer( FlashPlayer *pPlayer ) {
     pFlashPlayer = pPlayer;
 }

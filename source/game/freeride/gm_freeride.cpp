@@ -20,6 +20,9 @@
 #include "game/cinematic/mng_cinematics.h"
 #include "game/mng_hud.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "audio/gs_audio.h"
+#include "game/avatar/gs_avatar.h"
+#include "game/scenaric/entity/entity_avatar_passenger.h"
 #include "game/scenaric/entity/entity_cinematic.h"
 #include "game/scenaric/entity/entity_driver.h"
 #include "game/scenaric/entity/entity_convoy.h"
@@ -71,6 +74,33 @@ static constexpr float kSpotIntroFadeInDuration = 0.2f; // DAT_00f41730
 static constexpr float kTransporterFareRatio = 0.1f;    // DAT_00f41668
 static constexpr uint32_t kActivityReentryDelay = 5000u;
 static constexpr uint64_t kRefusalNoPassengerHashcode = 0x560449;
+static constexpr uint64_t kExtraChallengeAvatarHashcode = 0xffa1845bfa4713bcull;
+static constexpr int32_t kNoExtraChallengeAvatarType = 10;
+
+static inline void
+ResetExtraChallengeAvatarPose( EntityAvatarPassenger *pAvatar,
+                               EntityExtraChallenge *pChallenge ) {
+    pAvatar->resetFreerideAnim();
+    Matrix4x4f_t identity = Matrix4x4f_t::Identity();
+    pAvatar->setTransform( identity, true );
+    Matrix4x4f_t challengeMatrix = pChallenge->getModelMatrix();
+    pAvatar->propagateTransform( challengeMatrix, true );
+}
+
+static inline int32_t GetExtraChallengeAvatarType( const Entity *pChallenge ) {
+    switch ( pChallenge->getType() ) {
+    case eEntityType::ET_SHOG:
+        return 5;
+    case eEntityType::ET_HIHI:
+        return 7;
+    case eEntityType::ET_CVOY:
+        return 8;
+    case eEntityType::ET_TRAN:
+        return 9;
+    default:
+        return kNoExtraChallengeAvatarType;
+    }
+}
 static constexpr uint64_t kRefusalNoPassenger2Hashcode = 0x3c3ae62;
 static constexpr uint64_t kRefusalRestrictionHashcode = 0x578ae9;
 static constexpr uint64_t kBikeCategoryHashcode = 0x35da5b5;
@@ -537,8 +567,9 @@ void GMFreeride::updateMapScreenshotProps() {
     if ( pExtraChallengeMarker != nullptr ) {
         if ( IsMapScreenshotCapturing() ) {
             pExtraChallengeMarker->setVisible( false );
-        } else if ( !pExtraChallengeMarker->isVisible() ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+        } else if ( !pExtraChallengeMarker->isVisible() &&
+                    pExtraChallengeIntroCine == nullptr &&
+                    pExtraChallengeLoopCine == nullptr ) {
             pExtraChallengeMarker->setVisible( true );
         }
     }
@@ -940,7 +971,10 @@ void GMFreeride::pause() {
 
 void GMFreeride::releaseExtraChallenges() {
     // FUN_00793680
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+    if ( pExtraChallengeAvatar != nullptr ) {
+        gpScenaric->getAvatarManager().releaseAvatar( pExtraChallengeAvatar );
+        pExtraChallengeAvatar = nullptr;
+    }
     for ( int32_t i = 0; i < numExtraChallenges; i++ ) {
         if ( static_cast<EntityExtraChallenge *>( pExtraChallenges[i] )
                  ->isAvailable() ) {
@@ -1181,8 +1215,7 @@ bool GMFreeride::onExtraChallengeCineMessage( EntityCinematic *pCinematic,
         }
         if ( bQuestion ) {
             pGeneral->showFrame( "extra_q", "/msgCinematik", true );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: FLASH (FUN_0099fc40 on
-                                     // gGSFlash +0xf88)
+            gpFlashMessageBox->openTutorialPrompt();
         } else {
             pGeneral->showFrame( "sgirl", "/msgCinematik", true );
         }
@@ -1360,7 +1393,28 @@ bool GMFreeride::selectExtraChallenge( EntityExtraChallenge *pChallenge ) {
     }
 
     if ( IsMapScreenshotCapturing() ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+        const int32_t avatarType = GetExtraChallengeAvatarType( pChallenge );
+        AvatarManager &avatarManager = gpScenaric->getAvatarManager();
+        if ( pExtraChallengeAvatar != nullptr &&
+             avatarType != pExtraChallengeAvatar->getAvatarType() ) {
+            avatarManager.releaseAvatar( pExtraChallengeAvatar );
+            pExtraChallengeAvatar = nullptr;
+        }
+
+        if ( pExtraChallengeAvatar != nullptr ) {
+            gpAvatar->bakeAvatar( pExtraChallengeAvatar,
+                                  &pChallenge->getAvatarConfig(), 0, true,
+                                  true );
+        } else if ( avatarType != kNoExtraChallengeAvatarType ) {
+            pExtraChallengeAvatar = static_cast<EntityAvatarPassenger *>(
+                avatarManager.createAvatar(
+                    &pChallenge->getAvatarConfig(), 0, false,
+                    kExtraChallengeAvatarHashcode, false, avatarType ) );
+            if ( pExtraChallengeAvatar != nullptr ) {
+                pExtraChallengeAvatar->setBehavior(
+                    EntityAvatarPassenger::PB_Idle );
+            }
+        }
     }
 
     releaseExtraChallengeProp();
@@ -1371,7 +1425,7 @@ bool GMFreeride::selectExtraChallenge( EntityExtraChallenge *pChallenge ) {
 
     if ( extraChallengeKind == PlayerGameMech::SDN_Convoy &&
          IsMapScreenshotCapturing() ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: VEHICLE
+        spawnConvoyCar( pChallenge );
     }
 
     return true;
@@ -1687,8 +1741,8 @@ void GMFreeride::resolveExtraChallengeAnswer() {
         }
         if ( pExtraChallengeAvatar != nullptr &&
              pNearestExtraChallenge != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: AVATAR (spot avatar vtbl +0xcc, pose
-                                // reset to the challenge matrix)
+            ResetExtraChallengeAvatarPose( pExtraChallengeAvatar,
+                                           pNearestExtraChallenge );
         }
         releaseExtraChallengeProp();
         OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_00737ca0)
@@ -1731,7 +1785,7 @@ void GMFreeride::OnExtraChallengeCancelFadeOut( void *pData,
         pFreeride->pExtraChallengeMarker->setVisible( true );
     }
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_00737ca0)
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (bMixStateTransitionSync = true)
+    gpAudio->requestMixStateResync();
     MngFade &fade = pFreeride->mngFade;
     fade.startTransition( ( ( fade.getTransitionFlags() | 4u ) & ~8u ) | 1u,
                           kSpotIntroFadeDuration );
@@ -1756,9 +1810,24 @@ bool GMFreeride::requestEnterActivity() {
 
 void GMFreeride::enterCurrentActivity() {
     // FUN_00796e10
-    if ( getPlayerGameMech()->enterCurrentActivity() ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+    if ( !getPlayerGameMech()->enterCurrentActivity() ) {
+        return;
     }
+
+    GameSessionOffline &session = gpAI->getGameSession();
+    session.setParticipantCounts( 2, 1, 1 );
+
+    GameParticipantOffline *pLocal =
+        static_cast<GameParticipantOffline *>( session.getParticipant( 0 ) );
+    pLocal->bIsLocalPlayer = true;
+
+    GameParticipantOffline *pOpponent =
+        static_cast<GameParticipantOffline *>( session.getParticipant( 1 ) );
+    strcpy( pOpponent->getName(), "IA 1" );
+    pOpponent->bIsLocalPlayer = false;
+    pOpponent->CarDBID = 0x3f4;
+    pOpponent->CarPaintIndex = -1;
+    pOpponent->AILevel = 100;
 }
 
 bool GMFreeride::enterSpot( SpotMap *pSpot ) {
@@ -1998,8 +2067,8 @@ bool GMFreeride::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         gpScenaric->setActiveExtraChallenge( nullptr );
         if ( pExtraChallengeAvatar != nullptr &&
              pNearestExtraChallenge != nullptr ) {
-            OTDU_UNIMPLEMENTED; // TODO: AVATAR (spot avatar vtbl +0xcc, pose
-                                // reset to the challenge matrix)
+            ResetExtraChallengeAvatarPose( pExtraChallengeAvatar,
+                                           pNearestExtraChallenge );
         }
         FlashPlayer *pHudPlayer = mngHudChallenge.getHudPlayer();
         if ( pHudPlayer != nullptr ) {

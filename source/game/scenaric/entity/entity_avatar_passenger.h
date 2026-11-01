@@ -128,6 +128,7 @@ public:
     bool isShadowCaster() override;
 
     virtual void resetVoice() { /* NOP */ }
+    virtual void resetFreerideAnim() { /* NOP */ }
 
     void setCarState( CarState *pNewCarState );
     void requestStandAnim( RenderAnm *pAnim );

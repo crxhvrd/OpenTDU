@@ -21,7 +21,7 @@ public:
 
     PooledAvatarEntry *allocateInstance();
 
-    bool onConfigurationChanged() override;
+    bool onConfigurationChanged( const int32_t eventCode ) override;
 
 private:
     PooledAvatarEntry pInstances[kNumInstances];

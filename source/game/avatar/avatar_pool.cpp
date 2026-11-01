@@ -72,12 +72,12 @@ void AvatarPool::terminate() {
     }
 }
 
-bool AvatarPool::onConfigurationChanged() {
+bool AvatarPool::onConfigurationChanged( const int32_t eventCode ) {
     // FUN_008ee7e0
-    OTDU_UNIMPLEMENTED;
-
-    for ( PooledAvatarEntry &instance : pInstances ) {
-        instance.Impostor.bDirty = 2;
+    if ( eventCode == 0 ) {
+        for ( PooledAvatarEntry &instance : pInstances ) {
+            instance.Impostor.bDirty = 2;
+        }
     }
 
     return true;

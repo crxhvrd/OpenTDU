@@ -328,6 +328,7 @@ public:
         minimap.pGameMech = pMech;
     }
     inline GameMechanism *getGameMech() const { return minimap.pGameMech; }
+    inline HudMinimap &getMinimap() { return minimap; }
 
     inline float getMinimapViewportU() const { return minimap.ViewportU; }
     inline float getMinimapViewportV() const { return minimap.ViewportV; }

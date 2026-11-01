@@ -41,6 +41,7 @@
 #include "game/scenaric/entity/entity_transporter.h"
 #include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
+#include "game/vehicle/gs_car_state.h"
 #include "online/p2p_game_service.h"
 #include "physics/gs_physics.h"
 #include "physics/replay.h"
@@ -58,6 +59,7 @@
 #include "player_data/saved_extra_challenges.h"
 #include "player_data/saved_item_table.h"
 #include "player_data/saved_ranking.h"
+#include "player_data/saved_road_discovery.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "gs_timer.h"
@@ -404,7 +406,7 @@ void GameMechanism::reset() {
             std::clamp( float( copsDensity ) * kCopsDensityScale, 0.0f, 1.0f );
         gpAI->setCopsLevel( copsScale, copsDensity > kHighCopsDensity,
                             copsDensity > kMaxCopsDensity );
-        OTDU_UNIMPLEMENTED; // TODO: GSAI
+        gpAI->setOnlineSession( false );
     } else if ( bCops && !gpScenaric->isTrainingLevel() && copsDensity != 0 ) {
         pAIPool->setPoliceScale( 1.0f );
         pAIPool->setForceDensity( false );
@@ -506,7 +508,11 @@ bool GameMechanism::terminate() {
         gpScenaric->getObjective( 4 ).Type = "";
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSCamera, CarState
+    gpCamera->setForcePlayerCamCockpit( false );
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar != nullptr ) {
+        pLocalCar->getPoliceState().reset();
+    }
     return true;
 }
 
@@ -688,9 +694,16 @@ static Eigen::Vector4f GetWorldShift() {
     return Eigen::Vector4f::Zero();
 }
 
-static bool GetCarStateFlagDD( CarState * /*pCarState*/ ) {
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: VEHICLE (CarState +0xdd)
-    return false;
+static bool GetCarStateFlagDD( CarState *pCarState ) {
+    return pCarState->getPoliceState().isArrested();
+}
+
+static void DiscoverLocalCarRoad() {
+    // FUN_007be5b0
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( gpCarState != nullptr && pLocalCar != nullptr ) {
+        DiscoverCarRoad( pLocalCar );
+    }
 }
 
 static FlashPlayer *GetHudPlayer() {
@@ -1120,9 +1133,8 @@ void GameMechanism::showExtraChallengeResults() {
     static constexpr float kPerfectBonusRatio = 0.5f;    // FLOAT_00f41674
 
     FlashPlayer *pHud = GetHudPlayer();
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI (DAT_013d1a54 +0x290 flag)
-    const bool bBotFlag = false;
-    pHud->setVariableValue( "/:IsRetry", int32_t( !bBotFlag ) );
+    const bool bSentToJail = gpAI->getCopManager().isSendingPlayerToJail();
+    pHud->setVariableValue( "/:IsRetry", int32_t( !bSentToJail ) );
     pHud->setVariableValue( "/:IsReward", 0 );
     pHud->setVariableValue( "/:IsPerfect", 0 );
 
@@ -1222,7 +1234,7 @@ void GameMechanism::showExtraChallengeResults() {
             pDriver->setPendingMoneyOperation(
                 pDriver->getPendingMoneyOperation() -
                 int32_t( deposit ) ); // FUN_00430c50
-            if ( pDriver->getMoney() < deposit || bBotFlag ) {
+            if ( pDriver->getMoney() < deposit || bSentToJail ) {
                 pHud->setVariableValue( "/:IsRetry", 0 );
             }
             break;
@@ -1957,7 +1969,11 @@ void GameMechanism::resetRaceState() {
     countdownDelay = kDefaultCountdownDelay;
     gpScenaric->getObjective( 3 ).Type = "";
     gpScenaric->getObjective( 4 ).Type = "";
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (stop the GPS voice instance)
+    edAudioStreamEntry *pGPSVoiceInstance =
+        gpFlash->getFlashSound()->getGPSVoice()->getSoundInstance();
+    if ( pGPSVoiceInstance != nullptr ) {
+        pGPSVoiceInstance->stop( 0.0f );
+    }
 
     MngActor &mngActor = pOwner->getActorManager();
     for ( int32_t i = 0; i < mngActor.getActorCount(); i++ ) {
@@ -2041,7 +2057,7 @@ bool GameMechanism::processWaitingHUD( const eStateProcess process ) {
         pGameSession->onEvent( kSessionEventWaitingHUD );
         gpPhysics->setPlayerSlowDownForced( true );
         gpPhysics->setPlayerParkedForced( true );
-        OTDU_UNIMPLEMENTED; // TODO: GSCamera
+        gpCamera->setForcePlayerCamCockpit( false );
         if ( pUnknown1C != nullptr ) {
             OTDU_UNIMPLEMENTED; // TODO: ONLINE (leaderboards FUN_00883760)
         }
@@ -2192,9 +2208,8 @@ bool GameMechanism::processWaitingStart( const eStateProcess process ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_00854760)
         if ( bCountdownGo ) {
             if ( pOwner->getMissionDescription()->getCockpitView().getValue() ==
-                 1 ) {              // Cock +0x1500
-                OTDU_UNIMPLEMENTED; // TODO: GSCamera
-                                    // (_force_player_cam_cockpit = 1)
+                 1 ) { // Cock +0x1500
+                gpCamera->setForcePlayerCamCockpit( true );
             }
             stateChange( MS_Running );
             return true;
@@ -2238,10 +2253,10 @@ bool GameMechanism::processRunning( const eStateProcess process ) {
             pAIPool->setField0x7C( true );
             pAIPool->setField0x85( true );
         }
-        OTDU_UNIMPLEMENTED; // TODO: GSAI (DAT_013d1a77 = 0)
+        gpAI->setPauseTraffic( false );
         pGameSession->onRaceStarted();
         if ( mechType == MT_ExtraChallenge ) {
-            OTDU_UNIMPLEMENTED; // TODO: GMMission (DAT_013d1a75 = 0)
+            gpAI->setDisableCops( false );
         }
         gpPhysics->setForceFeedbackAllowed( true );
         return false;
@@ -2251,12 +2266,11 @@ bool GameMechanism::processRunning( const eStateProcess process ) {
         const bool bCarFlagDD =
             ( pLocalCar != nullptr ) && GetCarStateFlagDD( pLocalCar );
         const bool bArrested = isLocalPlayerArrested();
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI (DAT_013d1a54 +0x290 flag)
-        const bool bBotFlag = false;
+        const bool bBotFlag = gpAI->getCopManager().isSendingPlayerToJail();
         checkTimeOut();
 
-        if ( false /* DAT_01214741 */ ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission (FUN_007be5b0)
+        if ( gpScenaric->areChallengeRoadsDelocked() ) {
+            DiscoverLocalCarRoad();
         }
         pOwner->updateOdometerAutosave();
         pOwner->updateOdometer();
@@ -2591,7 +2605,7 @@ bool GameMechanism::processFinished( const eStateProcess process ) {
     switch ( process ) {
     case SP_Init:
         pOwner->setBlockPauseByStart( true );
-        OTDU_UNIMPLEMENTED; // TODO: GSCamera (_force_player_cam_cockpit = 0)
+        gpCamera->setForcePlayerCamCockpit( false );
         if ( false /* DAT_011ecfe0 spectator */ ) {
             OTDU_UNIMPLEMENTED; // TODO: ONLINE (FUN_0085f540, /:IsSpectator)
         }
@@ -2643,8 +2657,8 @@ bool GameMechanism::processFinished( const eStateProcess process ) {
         } else {
             pHud->setVariableValueNonLinked( "/:m_WaitingForPlayers", " " );
         }
-        if ( false /* DAT_01214741 */ ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission (FUN_007be5b0)
+        if ( gpScenaric->areChallengeRoadsDelocked() ) {
+            DiscoverLocalCarRoad();
         }
         pOwner->updateOdometerAutosave();
         pOwner->updateOdometer();

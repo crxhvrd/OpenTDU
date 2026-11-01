@@ -44,7 +44,7 @@ public:
     void tick( float totalTime, float deltaTime ) override;
 
     bool FUN_00808f70();
-    bool onConfigurationChanged() override;
+    bool onConfigurationChanged( const int32_t eventCode ) override;
 
     Texture *retrieveRadialBlurBitmap( const eRadialBlurBitmask resourceIndex );
     PooledPostFXRT *allocatePooledRT( const uint32_t param_2,

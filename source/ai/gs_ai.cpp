@@ -183,7 +183,11 @@ void GSAI::tick( float totalTime, float deltaTime ) {
 
     pAIPool->tick( dt, totalTime );
     TickAiDebugOverlay( dt, totalTime );
-    gGameObjectDico.updateLocations( dt, false );
+    DrawList *pGameObjectsDebugDrawList = nullptr;
+    if ( gDistributionZoneDebugDraw && gDisplayGameObjects ) {
+        pGameObjectsDebugDrawList = pDebugDraw->pDrawList;
+    }
+    gGameObjectDico.updateLocations( dt, pGameObjectsDebugDrawList );
     pSimBubble->tick( dt, totalTime );
     gAiDebugRace.tick();
     OTDU_UNIMPLEMENTED_ONCE; // TODO: online zones, net interpolation

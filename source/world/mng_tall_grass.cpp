@@ -759,7 +759,7 @@ bool MngTallGrass::onWorldStreamed( Eigen::Vector4f *param_1,
     return true;
 }
 
-bool MngTallGrass::onConfigurationChanged() {
+bool MngTallGrass::onConfigurationChanged( const int32_t ) {
     // FUN_006f9470
     int32_t quality = 0;
     if ( gpRender->getLODQuality() == 0 ) {

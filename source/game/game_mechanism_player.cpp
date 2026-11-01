@@ -393,7 +393,11 @@ bool PlayerGameMech::processPlaying( const eStateProcess process ) {
 bool PlayerGameMech::terminate() {
     // FUN_00737970
     gpCamera->resetVehicleCameraSelection();
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC (driver avatar +0x1c18 counter)
+    EntityAvatar *pDriverAvatar =
+        gpScenaric->getAvatarManager().getDriverAvatar();
+    if ( pDriverAvatar != nullptr ) {
+        pDriverAvatar->removeInstanceReference();
+    }
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (spectator reset, free ride
                              // session scan, unregister the P2P listener)
     gpCamera->setMouseCam( true );

@@ -1916,7 +1916,18 @@ bool PooledAvatarEntry::stepLoadingCompletion() {
         Body.LoadingState = AVT_Ready;
         bChanged = true;
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AVATAR
+        AvatarDBEntry *pBodyPart = Body.getAvatarPart();
+        const char *pBodyName =
+            ( pBodyPart != nullptr ) ? pBodyPart->getMeshName() : nullptr;
+        if ( pBodyName != nullptr ) {
+            void *pEntry =
+                gpAvatar->getBnkManager().getCommonBodies().getSkeleton(
+                    pBodyName );
+            pSkeleton = ( pEntry != nullptr )
+                            ? static_cast<uint8_t *>( pEntry ) +
+                                  kAvatarSkeletonDataOffset
+                            : nullptr;
+        }
     }
 
     for ( AvatarClothe &slot : Slots ) {

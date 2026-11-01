@@ -66,7 +66,11 @@ public:
                  int32_t carID,
                  const Matrix4x4f_t &spawn );
     void removeCar( EntityCarPlayer *pSpawnPoint );
+    void reserveSlots( const int32_t numSlots );
     inline void setSuspended( const bool bState ) { bSuspended = bState; }
+
+private:
+    void destroyFarthestCar();
 
 private:
     std::array<BrandCar, kMaxNumBrandCar> cars;

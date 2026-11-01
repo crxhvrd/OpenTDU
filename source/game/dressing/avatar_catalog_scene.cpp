@@ -530,16 +530,53 @@ int32_t AvatarCatalogScene::countItems( AvatarPartDB *pDB,
                                         int32_t clotheSet,
                                         int32_t *pOutNumPlaceholders ) {
     // FUN_008f7f60
-    OTDU_UNIMPLEMENTED; // TODO: GMGoodies
-    return 0;
+    if ( pOutNumPlaceholders != nullptr ) {
+        *pOutNumPlaceholders = 0;
+    }
+    if ( pBrand == nullptr ) {
+        return 0;
+    }
+
+    AvatarBrandClotheCursor cursor(
+        pDB, gender, static_cast<eAvatarCustomizable>( category ), clotheSet,
+        pBrand );
+    cursor.findRange();
+    if ( pDB->getCount() <= 0 || !cursor.hasRange() ) {
+        return 0;
+    }
+
+    int32_t numItems = 0;
+    while ( !cursor.isAtEnd() ) {
+        if ( pOutNumPlaceholders != nullptr &&
+             IsPlaceholderMesh( cursor.getResult()->getMeshName() ) ) {
+            ( *pOutNumPlaceholders )++;
+        }
+        numItems++;
+        cursor.next();
+    }
+    return numItems;
 }
 
 int32_t AvatarCatalogScene::indexOfItem( AvatarPartDB *pDB,
                                          const AvatarClothePart *pPart,
                                          int32_t clotheSet ) {
     // FUN_008f7ea0
-    OTDU_UNIMPLEMENTED; // TODO: GMGoodies
-    return 0;
+    AvatarBrandClotheCursor cursor( pDB, pPart->Gender, pPart->Category,
+                                    clotheSet, pPart->getBrandName() );
+    cursor.findRange();
+    if ( pDB->getCount() <= 0 || !cursor.hasRange() ) {
+        return 0;
+    }
+
+    int32_t index = 0;
+    do {
+        index++;
+        if ( cursor.getResult() == pPart ) {
+            break;
+        }
+        cursor.next();
+    } while ( !cursor.isAtEnd() );
+    return index;
 }
 
 bool AvatarCatalogScene::resetColor( const AvatarClothePart *pPart,

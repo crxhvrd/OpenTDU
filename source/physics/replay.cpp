@@ -853,7 +853,7 @@ void Replay::tick() {
         return;
     }
     if ( gpAI->areLocationsFromCarState() ) {
-        gGameObjectDico.updateLocations( gpTimer->GameDeltaTime, false );
+        gGameObjectDico.updateLocations( gpTimer->GameDeltaTime, nullptr );
     }
     if ( state == eReplayState::RS_Playback && pRemotePlayer != nullptr &&
          pTargetVehicle != nullptr ) {

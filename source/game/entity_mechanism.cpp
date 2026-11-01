@@ -6,6 +6,7 @@
 #include "game/scenaric/entity/entity_traffic_light.h"
 #include "render/serialized_skinned_model.h"
 #include "physics/gs_physics.h"
+#include "physics/physics_dynamic_controller.h"
 
 EntityMechanism::EntityMechanism()
     : initialTransformMatrix( Matrix4x4f_t::Identity() ),
@@ -20,7 +21,6 @@ EntityMechanism::EntityMechanism()
       pParent( nullptr ),
       numInstance( 0u ),
       propCollisionHashcode( 0u ),
-      primaryLocalInv( Matrix4x4f_t::Identity() ),
       bControlledByAvatar( false ),
       bInitialized( false ),
       bTransformSet( false ),
@@ -34,17 +34,14 @@ void EntityMechanism::setEntity( Entity *pEntityInstance ) {
     pEntity = pEntityInstance;
 
     if ( pParent == nullptr && !bTransformSet && !bControlledByAvatar ) {
-        Matrix4x4f_t *pTVar3 = &initialTransformMatrix;
-        const Matrix4x4f_t &pTVar2 = pEntityInstance->getModelMatrix();
-        Matrix4x4f_t *pTVar4 = pTVar3;
-
         initialTransformMatrix = pEntityInstance->getModelMatrix();
         transformMatrix = initialTransformMatrix;
 
         Matrix4x4f_t local_50 = initialTransformMatrix.inverse();
 
-        OTDU_UNIMPLEMENTED; // TODO: implement setWorldMatrix
-        // pController->setWorldMatrix(local_50);
+        if ( pController != nullptr ) {
+            pController->setWorld( *pController, local_50 );
+        }
 
         bTransformSet = true;
     }
@@ -68,6 +65,11 @@ void EntityMechanism::loadResources( ScenaricBank *param_2 ) {
     }
 
     propCollisionHashcode = pPureDynamicController->Hashcode;
+    pController = new PhysicsDynamicController();
+    pController->bindTemplate( propCollisionHashcode,
+                               pPureDynamicController->LinearDamping,
+                               pPureDynamicController->AngularDamping,
+                               pPureDynamicController->bStatic != 0 );
     bInitialized = true;
 }
 
@@ -86,29 +88,28 @@ void EntityMechanism::tick() {
         placeCollisionBody( pEntity->getWorldMatrix() );
     }
 
-    if ( bDynamicProp && !propBodies.empty() ) {
+    if ( bDynamicProp && pController != nullptr && pController->isCloned() ) {
         Matrix4x4f_t pose;
         bool bActive = false;
-        if ( gpPhysics->getBodyRenderPose( // OTDU_ADDITION
-                 static_cast<RigidBody_t>( propBodies[0].second ), pose,
-                 bActive ) &&
-             bActive ) {
-            Matrix4x4f_t entityPose = primaryLocalInv * pose;
+        if ( pController->getWorldMatrix( pose, bActive ) && bActive ) {
+            Matrix4x4f_t entityPose =
+                pController->getPrimaryLocalInverse() * pose;
             pEntity->setTransform( entityPose, true );
         }
 
-        pEntity->refreshMechanismRender( propBodies );
+        pEntity->refreshMechanismRender( pController->getMembers() );
     }
 }
 
 int32_t EntityMechanism::getBrokenJointCount() const {
     // FUN_00843140
-    if ( gpPhysics == nullptr ) {
+    if ( gpPhysics == nullptr || pController == nullptr ) {
         return 0;
     }
 
     int32_t numBroken = 0;
-    for ( const std::pair<uint64_t, void *> &member : propBodies ) {
+    for ( const std::pair<uint64_t, void *> &member :
+          pController->getMembers() ) {
         if ( member.second == nullptr ) {
             continue;
         }
@@ -122,49 +123,38 @@ int32_t EntityMechanism::getBrokenJointCount() const {
     return numBroken;
 }
 
+const PhysicsDynamicController *EntityMechanism::getOriginalController() const {
+    if ( pParent != nullptr ) {
+        return pParent->pController;
+    }
+    return pParentController != nullptr ? pParentController : pController;
+}
+
 void EntityMechanism::placeCollisionBody( const Matrix4x4f_t &worldTransform ) {
-    // FUN_004563a0
-    if ( propCollisionHashcode == 0 || gpPhysics == nullptr ) {
+    // FUN_007d8c40
+    const PhysicsDynamicController *pOriginal = getOriginalController();
+    if ( pController == nullptr || pOriginal == nullptr ||
+         gpPhysics == nullptr ) {
         return;
     }
-    for ( const auto &member : propBodies ) {
-        gpPhysics->destroyRigidBody(
-            static_cast<RigidBody_t>( member.second ) );
-    }
-    propBodies.clear();
 
     bDynamicProp = !isStaticController();
-
-    primaryLocalInv = Matrix4x4f_t::Identity();
-    std::vector<std::pair<uint64_t, RigidBody_t>> placedBodies;
-    gpPhysics->placeProp( propCollisionHashcode, worldTransform, bDynamicProp,
-                          pPureDynamicController != nullptr
-                              ? pPureDynamicController->LinearDamping
-                              : linearDamping,
-                          pPureDynamicController != nullptr
-                              ? pPureDynamicController->AngularDamping
-                              : angularDamping,
-                          placedBodies, &primaryLocalInv );
-    for ( const auto &placed : placedBodies ) {
-        propBodies.emplace_back( placed.first,
-                                 static_cast<void *>( placed.second ) );
-    }
+    pController->cloneAndAdd( *pOriginal, worldTransform );
 }
 
 void EntityMechanism::terminate() {
     // FUN_007d8930
-    if ( bInitialized || !propBodies.empty() ) {
+    if ( bInitialized ||
+         ( pController != nullptr && pController->isCloned() ) ) {
         removeAndDestroy();
     }
 
     if ( pController != nullptr ) {
-        // TODO: destroy the physics controller (vtable destructor) once ported.
-        OTDU_UNIMPLEMENTED;
+        delete pController;
         pController = nullptr;
     }
     if ( pParentController != nullptr ) {
-        // TODO: destroy the original physics controller once ported.
-        OTDU_UNIMPLEMENTED;
+        delete pParentController;
         pParentController = nullptr;
     }
 }
@@ -219,7 +209,6 @@ void EntityMechanism::instanciate( EntityMechanism *pInstance ) {
     pInstance->initialTransformMatrix = initialTransformMatrix;
     pInstance->propCollisionHashcode = propCollisionHashcode;
     pInstance->bPlacementTried = false;
-    pInstance->propBodies.clear();
 }
 
 void EntityMechanism::initInstance() {
@@ -228,8 +217,7 @@ void EntityMechanism::initInstance() {
         pParentController = pController;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: PHYSICS
-    pController = nullptr;
+    pController = new PhysicsDynamicController();
 
     if ( pParent != nullptr ) {
         int32_t instance = ( pParent->numInstance + 1 ) & 0x3ff;
@@ -242,13 +230,9 @@ void EntityMechanism::initInstance() {
 
 void EntityMechanism::removeAndDestroy() {
     // FUN_007d8810
-    if ( gpPhysics != nullptr ) {
-        for ( const auto &member : propBodies ) {
-            gpPhysics->destroyRigidBody(
-                static_cast<RigidBody_t>( member.second ) );
-        }
+    if ( pController != nullptr ) {
+        pController->destroyAsClone();
     }
-    propBodies.clear();
     bInitialized = false;
 }
 

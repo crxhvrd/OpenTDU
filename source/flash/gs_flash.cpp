@@ -947,7 +947,7 @@ void GSFlash::drawFrontEndSoundDebug() {
 }
 #endif
 
-bool GSFlash::onConfigurationChanged() {
+bool GSFlash::onConfigurationChanged( const int32_t ) {
     // FUN_0099b1d0
     gpFlash->FUN_0099a740();
     return true;

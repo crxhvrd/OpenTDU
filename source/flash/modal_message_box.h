@@ -76,6 +76,7 @@ public:
     void FUN_009a0110();
     void FUN_0099fc80();
     bool FUN_0099fbe0();
+    void openTutorialPrompt();
 
     static constexpr FlashMessage kCloseMessageBox =
         FlashMessage( 0x756f6567u );

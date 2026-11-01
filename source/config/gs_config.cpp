@@ -617,7 +617,7 @@ void GSConfig::parseLeaderboardIni() {
     parseIniFile( leaderboardFilePath.c_str() );
 }
 
-bool GSConfig::onConfigurationChanged() {
+bool GSConfig::onConfigurationChanged( const int32_t ) {
     // FUN_00986bf0
     if ( ( 0.0f < (float)gWindowWidth ) && ( 0.0f < (float)gWindowHeight ) ) {
         float fVar1 = (float)gWindowWidth / (float)gWindowHeight;

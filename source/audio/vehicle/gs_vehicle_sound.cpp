@@ -417,7 +417,8 @@ void GSVehicleSound::tickInstances( const Eigen::Vector3f &listenerPosition ) {
             continue;
         }
 
-        instance.Wrapper.refresh( *pCarState );
+        instance.Wrapper.refresh( *pCarState,
+                                  instance.bIsCar && instance.bTrackDoors );
         instance.Wrapper.computeEvents();
         instance.Model.update( instance.Wrapper.getSettings(),
                                instance.Wrapper.getPanelVolumeFactors(),

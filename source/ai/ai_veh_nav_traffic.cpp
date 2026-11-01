@@ -2132,7 +2132,7 @@ bool AiVehNavTraffic::isBackOvertakePossible() {
 
     AiVehicle *pOwner = pVehicle;
     CarState *pCarState = pOwner->getCarState();
-    gGameObjectDico.locate( pCarState, pRoad, false );
+    gGameObjectDico.locate( pCarState, pRoad, nullptr );
     const ObjectLocationRoad &road = pCarState->getWorldLocation().LocationRoad;
     const float fractionMin = road.FractionMin;
     const float fractionMax = road.FractionMax;

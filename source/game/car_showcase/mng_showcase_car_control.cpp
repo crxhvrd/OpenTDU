@@ -10,6 +10,7 @@
 #include "input/input_device.h"
 #include "physics/gs_physics.h"
 #include "render/camera/gs_camera.h"
+#include "audio/vehicle/gs_vehicle_sound.h"
 
 MngShowCaseCarControl gDbgMngShowCaseCarControl = {}; // DAT_016a8f80
 
@@ -30,6 +31,13 @@ static constexpr uint64_t kConvertibleBodyHashcodeB = 0x57fcad;
 static constexpr uint64_t kNoWindowsTypeHashcode = 0x4a1475b;
 
 static constexpr float kCloseShowcaseDuration = 2.0f; // DAT_00f416b0
+
+static inline void SetDoorSoundTracking( const CarState *pCarState,
+                                         const bool bEnabled ) {
+    if ( pCarState != nullptr && pCarState->getVehicleSound() != nullptr ) {
+        pCarState->getVehicleSound()->bTrackDoors = bEnabled;
+    }
+}
 
 static float EaseDoorPosition( float progress, bool bOpening ) {
     // FUN_0076fc80
@@ -466,7 +474,7 @@ void MngShowCaseCarControl::closeLeftDoor() {
     moveDoor( true, false, true, 0.0f );
     pCar->setLeftDoorOpen( 0.0f, true );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (vehicle sound +0x323e = 1)
+    SetDoorSoundTracking( pCar->getCarState(), true );
 }
 
 void MngShowCaseCarControl::openLeftDoor( VehicleBase *pVehicleBase ) {
@@ -477,7 +485,7 @@ void MngShowCaseCarControl::openLeftDoor( VehicleBase *pVehicleBase ) {
         return;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AUDIO (vehicle sound +0x323e = 0)
+    SetDoorSoundTracking( pVehicle->getCarState(), false );
 
     restartWindows();
     moveDoor( true, true, true, 0.0f );

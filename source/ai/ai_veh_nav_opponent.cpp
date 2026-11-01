@@ -507,7 +507,7 @@ void AiVehNavOpponent::tick( const float deltaTime, const float totalTime ) {
 
     if ( path.getNumPoints() == 0 || path.getTotalLength() <= 1.0f ||
          getCurrentState() == NS_Stopped ) {
-        gGameObjectDico.locate( pOwner->getCarState(), nullptr, false );
+        gGameObjectDico.locate( pOwner->getCarState(), nullptr, nullptr );
         targetDirection = pOwner->getInfos().GroundMatrix.row( 2 );
         targetSpeed = 0.0f;
         situation.update();
@@ -943,7 +943,7 @@ bool AiVehNavOpponent::handle( const int32_t event, const int32_t state ) {
 
     case NS_Stopped:
         if ( event == FE_Enter ) {
-            gGameObjectDico.locate( pOwner->getCarState(), nullptr, false );
+            gGameObjectDico.locate( pOwner->getCarState(), nullptr, nullptr );
             targetDirection = pOwner->getInfos().GroundMatrix.row( 2 );
             speedCap = 0.0f;
             targetSpeed = 0.0f;
@@ -1260,7 +1260,7 @@ bool AiVehNavOpponent::seedPathFromRoute() {
     }
 
     updateRouteIts();
-    gGameObjectDico.locate( pOwner->getCarState(), nullptr, false );
+    gGameObjectDico.locate( pOwner->getCarState(), nullptr, nullptr );
     situation.updateLocation();
     lineA.seed( from, 0, situation.V, false );
     path.pushRoadPoint( from, situation.V, kDefaultSpeedCap, false );
@@ -1333,7 +1333,7 @@ void AiVehNavOpponent::exitLineEnded() {
     AiRoadIt to;
     pController->getAt( 0, from, to );
     updateRouteIts();
-    gGameObjectDico.locate( pOwner->getCarState(), nullptr, false );
+    gGameObjectDico.locate( pOwner->getCarState(), nullptr, nullptr );
     situation.updateLocation();
     if ( lineA.getCount() == 0 ) {
         lineA.seed( from, 0, situation.V, false );
@@ -1351,7 +1351,8 @@ void AiVehNavOpponent::exitLineEnded() {
 
 void AiVehNavOpponent::enterPostFinish() {
     // FUN_00958f70 (state 0x14 enter)
-    pOwner->getCarState()->setRoadLocation( situation.LastValidRoadIt, false );
+    pOwner->getCarState()->setRoadLocation( situation.LastValidRoadIt,
+                                            nullptr );
     pOwner->applyBotPersonality( 0, 0, 2 );
     finishSpeed = situation.CurSpeed;
     stopTime = gpTimer->GameTotalTime + kPostFinishStopDelay;
@@ -1807,7 +1808,7 @@ void AiVehNavOpponent::exitPoliceWaitRoute() {
     brakeDistFromMax = pOwner->computeBrakingDistance(
         pOwner->getInfos().MaxSpeed, 0.0f, 0.0f );
     updateRouteIts();
-    gGameObjectDico.locate( pOwner->getCarState(), nullptr, false );
+    gGameObjectDico.locate( pOwner->getCarState(), nullptr, nullptr );
     situation.updateLocation();
     if ( lineA.getCount() == 0 ) {
         lineA.seed( from, 0, situation.V, false );

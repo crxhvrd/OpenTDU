@@ -1433,7 +1433,7 @@ void AiVehicle::initialize( const eAiVehicleCategory newCategory,
     infos.LastRoadPos = location;
     infos.LastRoadLane = lane;
     if ( location.pRoad != nullptr ) {
-        pCar->setRoadLocation( location, false );
+        pCar->setRoadLocation( location, nullptr );
     }
 
     const DBEntryCarPhysicsData *pCarData =

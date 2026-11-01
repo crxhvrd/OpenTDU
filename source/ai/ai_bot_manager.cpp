@@ -10,6 +10,9 @@
 #include "game/scenaric/game_intro_tutorial.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
+#include "player_data/achievements_data.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
 #include "player_data/saved_road_discovery.h"
 #include "world/gs_world.h"
 #include "world/sector_manager.h"
@@ -189,6 +192,26 @@ int32_t GetBotTier( const int32_t botIndex ) {
         }
     }
     return 1;
+}
+
+int32_t GetBotMaxStake( const int32_t botIndex ) {
+    // FUN_0090c6b0
+    const AchievementsData *pAchievements =
+        gpPlayerData->getLoadedSave()->getAchievements();
+    if ( pAchievements->getAchievementFlag( botIndex ) ) {
+        return 0;
+    }
+
+    switch ( GetBotTier( botIndex ) ) {
+    case 0:
+        return 100;
+    case 1:
+        return 1000;
+    case 2:
+        return 10000;
+    default:
+        return 0;
+    }
 }
 
 int32_t FindBotOwningCar( const int32_t carID ) {

@@ -18,7 +18,6 @@ LocalPlayer::LocalPlayer()
       pCarState( nullptr ),
       lastPosition( 0.0f, 0.0f, 0.0f, 1.0f ) {
     // FUN_004238e0
-    OTDU_UNIMPLEMENTED;
 }
 
 LocalPlayer::~LocalPlayer() = default;

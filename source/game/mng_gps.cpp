@@ -10,6 +10,7 @@
 #include "flash/implementation/flash_sprite.h"
 #include "game/gm_base.h"
 #include "game/mng_hud.h"
+#include "game/mission/gm_mission.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
 #include "player_data/gs_playerdata.h"
@@ -248,7 +249,9 @@ void MngGPS::tick( float deltaTime, float ) {
     int32_t numPlayers = 1;
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
     if ( activeGameMode == GM_Mission ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission
+        if ( gpMissionInfo != nullptr ) {
+            numPlayers = GetNumOpponents( gpMissionInfo ) + 1;
+        }
     } else {
         numPlayers = gpAI->getAIPool()->getNumBots() + 1;
     }

@@ -568,7 +568,7 @@ void MngSunFlare::onWeatherConfigChange( WeatherConfig *pConfig ) {
     pSunHaloMaterial->EmissiveColor = emissiveColor;
 }
 
-bool MngSunFlare::onConfigurationChanged() {
+bool MngSunFlare::onConfigurationChanged( const int32_t ) {
     // FUN_00430310
     MaterialParameter *pParameter =
         pExtractMarkerMaterial->getParameterByIndex( 0 );

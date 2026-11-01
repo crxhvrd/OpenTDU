@@ -134,7 +134,9 @@ GSScenaric::GSScenaric()
         bank.setSpotBank( true );
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: GAME (IGE/GME/IC/DriveIn state)
+    selectedEventParameters.setRequestedName( "onlineracetest" );
+    selectedEventParameters.setSource( EventParameters::ES_HardcodedMission );
+    selectedEventParameters.setField124( 0x04ba0bab );
     gpScenaric = this;
 }
 
@@ -145,7 +147,11 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
     pGameInstance = pInstance;
     bPaused = false;
 
-    OTDU_UNIMPLEMENTED; // TODO: GAME (default IGE EventParameters)
+    if ( !defaultIGE.empty() ) {
+        selectedEventParameters.setRequestedName( defaultIGE.c_str() );
+        selectedEventParameters.setSource( EventParameters::ES_IGEFile );
+        selectedEventParameters.setField124( 0xc0c0c0c0 );
+    }
 
     LoadScenaricBank( "scenarics/Missions", "scworld", &worldScenaricBank );
     LoadScenaricBank( "scenarics/Missions/packs", "pack_cinematiks",
@@ -458,7 +464,7 @@ void GSScenaric::updateWooshVoices( float listenerSpeed ) {
 void GSScenaric::terminate() {
     // FUN_00805c80
     unloadBank( &avatarManager.getBank() );
-    OTDU_UNIMPLEMENTED; // TODO: GAME (GME level buffer)
+    releaseIGEBuffer();
     terminateWoosh();
     unloadBank( &cinematicPackBank );
     unloadBank( &worldScenaricBank );

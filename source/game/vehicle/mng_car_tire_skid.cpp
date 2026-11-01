@@ -636,3 +636,26 @@ void MngCarTireSkid::clearSkids() {
         }
     }
 }
+
+void MngCarTireSkid::resetSkids() {
+    // FUN_00714ac0
+    if ( pCarSkids == nullptr ) {
+        return;
+    }
+
+    for ( int32_t car = 0; car < kMaxCars; car++ ) {
+        // FUN_0042e940
+        CarTireSkid &carSkid = pCarSkids[car];
+        for ( int32_t wheel = 0; wheel < carSkid.NumSkids; wheel++ ) {
+            TireSkid &skid = carSkid.pSkids[wheel];
+            skid.NumPoints = 0;
+            skid.NumLastPoints = 0;
+            skid.NumPointsMax = 0;
+            skid.StartIndex = 0;
+            skid.EndIndex = 0;
+            skid.pLastAdded = nullptr;
+            skid.pLastLastAdded = nullptr;
+            skid.pCarState = nullptr;
+        }
+    }
+}

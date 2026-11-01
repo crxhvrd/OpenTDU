@@ -1020,7 +1020,7 @@ void GameModeWorld::pause() {
              gpTestDriveInstance->getActiveGameMode() != GM_OutroDemo ) {
             if ( pLocalCar->getPhysicsVehicle() != nullptr ) {
                 PhysicsLock lock;
-                OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (postponed pause = 1)
+                pLocalCar->getPhysicsVehicle()->setPostponedPause( 1 );
             }
         } else {
             if ( pLocalCar->getPhysicsVehicle() != nullptr ) {
@@ -1048,14 +1048,14 @@ void GameModeWorld::pause() {
         }
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: AI
+    gpAI->getCopManager().stopVoices();
 }
 
 void GameModeWorld::destroy() {
     // FUN_007be670
     if ( gpActiveGM != nullptr &&
          gpActiveGM->getMissionDescription() != nullptr ) {
-        OTDU_UNIMPLEMENTED; // TODO: SCENARIC
+        OTDU_UNIMPLEMENTED; // TODO: ONLINE (FUN_008726c0 "TIME" r_logstat)
     }
 
     GameModeWorldBase::destroy();
@@ -1167,9 +1167,14 @@ void GameModeWorld::pauseMenuActivated() {
 
 void GameModeWorld::onMenuPauseAnimOver() {
     // FUN_007be3b0
-    if ( gpTestDriveInstance->getActiveGameMode() == GM_Mission ) {
-        OTDU_UNIMPLEMENTED; // TODO: SCENARIC (no save for 0xc0c1/0xc0c2
-                            // missions outside training levels)
+    if ( gpTestDriveInstance != nullptr &&
+         gpTestDriveInstance->getActiveGameMode() == GM_Mission &&
+         getMissionDescription() != nullptr &&
+         !gpScenaric->isTrainingLevel() ) {
+        const int32_t spotType = getMissionDescription()->getSpotType();
+        if ( spotType == 0xc0c1 || spotType == 0xc0c2 ) {
+            return;
+        }
     }
 
     gpPlayerData->requestSave( 1 );
@@ -1247,7 +1252,9 @@ bool GameModeWorld::canEnterSpot() const {
                               ? gpScenaric->getLocalPlayer().getCarState()
                               : nullptr;
     if ( pLocalCar != nullptr && pLocalCar->getPhysicsVehicle() != nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS
+        const PhysicsVehicle *pVehicle = pLocalCar->getPhysicsVehicle();
+        bVehicleBusy = pVehicle->isBike() && !pVehicle->isVirtual() &&
+                       pVehicle->hasBikeRider();
     }
 
     return pGameMech != nullptr && getPlayerGameMech()->hasCurrentActivity() &&

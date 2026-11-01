@@ -165,6 +165,7 @@ public:
                                           void *param_3 ) override;
 
     Matrix4x4f_t getWorldMatrix() const;
+    void setTransformFromDesc();
 
     // TODO: Some entries in the vtable are never implemented (children inherit
     // the parent no-op) and therefore remain unknown for now
@@ -234,7 +235,6 @@ protected:
     int32_t defaultTileIndex;
 
 protected:
-    void setTransformFromDesc();
     void resolveSoundReference();
 
     static int32_t GMEControlAttribute( SerializedAttribute *pAttribute,

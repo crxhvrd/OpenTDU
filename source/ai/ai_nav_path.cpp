@@ -981,9 +981,9 @@ void NavPath::updateProgress( const Matrix4x4f_t &groundMatrix ) {
         t = 0.0f;
         progress = 0.0f;
         if ( bestDistanceSq > 1.0f || nearestPoint.Type != PT_Road ) {
-            gGameObjectDico.locate( pCarState, nearestPoint.It.pRoad, false );
+            gGameObjectDico.locate( pCarState, nearestPoint.It.pRoad, nullptr );
         } else {
-            pCarState->setRoadLocation( nearestPoint.It, false );
+            pCarState->setRoadLocation( nearestPoint.It, nullptr );
             pOwner->getInfos().LastRoadPos = nearestPoint.It;
         }
     }
@@ -1015,7 +1015,7 @@ void NavPath::updateProgress( const Matrix4x4f_t &groundMatrix ) {
         pCarState->setOffRoadLocation();
     } else if ( a.Type == PT_Road && b.Type == PT_Road ) {
         const AiRoadIt it = AiRoadIt::Lerp( a.It, b.It, t );
-        pCarState->setRoadLocation( it, false );
+        pCarState->setRoadLocation( it, nullptr );
         pOwner->getInfos().LastRoadPos = it;
     } else if ( a.Type == PT_Road && b.Type == PT_Junction ) {
         AiRoadIt exit = a.It;
@@ -1032,7 +1032,7 @@ void NavPath::updateProgress( const Matrix4x4f_t &groundMatrix ) {
             // Original pcode quirk: lerps from the road exit back to the point
             const AiRoadIt it = AiRoadIt::Lerp(
                 exit, a.It, std::clamp( t / roadFraction, 0.0f, 1.0f ) );
-            pCarState->setRoadLocation( it, false );
+            pCarState->setRoadLocation( it, nullptr );
             pOwner->getInfos().LastRoadPos = it;
         }
     } else if ( a.Type == PT_Junction && b.Type == PT_Road ) {
@@ -1052,7 +1052,7 @@ void NavPath::updateProgress( const Matrix4x4f_t &groundMatrix ) {
                 entry, b.It,
                 std::clamp( t - junctionFraction / ( 1.0f - junctionFraction ),
                             0.0f, 1.0f ) );
-            pCarState->setRoadLocation( it, false );
+            pCarState->setRoadLocation( it, nullptr );
             pOwner->getInfos().LastRoadPos = it;
         }
     } else if ( a.Type == PT_Junction && b.Type == PT_Junction ) {

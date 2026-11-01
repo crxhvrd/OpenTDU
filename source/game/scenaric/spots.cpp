@@ -3,7 +3,9 @@
 
 #include "tdu_instance.h"
 
+#include "ai/ai_pool.h"
 #include "ai/ai_road_query.h"
+#include "ai/gs_ai.h"
 
 #include "filesystem/bank.h"
 #include "world/gs_world.h"
@@ -32,6 +34,7 @@
 #include "game/vehicle/car_desc.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/achievements_data.h"
+#include "player_data/driver.h"
 #include "player_data/saved_garage.h"
 #include "player_data/saved_ranking.h"
 #include "flash/mng_flash_localize.h"
@@ -608,22 +611,50 @@ void GetChallengeCarAvailability( const SpotMap *pSpot,
                                   bool *pOutHasEligibleCar ) {
     // FUN_007d7900
     *pOutLevelTooLow = false;
-    *pOutHasEligibleCar = true;
+    *pOutHasEligibleCar = false;
 
     if ( pSpot == nullptr || gpPlayerData == nullptr ||
          gpPlayerData->getLoadedSave() == nullptr ) {
         return;
     }
 
-    AchievementsData *pAchievements =
-        gpPlayerData->getLoadedSave()->getAchievements();
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    AchievementsData *pAchievements = pSave->getAchievements();
     if ( pAchievements != nullptr ) {
         const int32_t playerLevel = pAchievements->getPlayerLevel();
         *pOutLevelTooLow = pSpot->MinLevelRequired != 0 &&
                            ( playerLevel + 1 ) < pSpot->MinLevelRequired;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYER_DATA
+    Garage *pGarage = pSave->getGarage();
+    const uint16_t currentCar = pSave->getDriver()->CurrentCar;
+    if ( IsCarAllowedOnSpot( &pGarage->pCars[currentCar], pSpot ) ) {
+        *pOutHasEligibleCar = true;
+        return;
+    }
+
+    for ( int32_t carIndex = 0; carIndex < pGarage->getNumCars(); carIndex++ ) {
+        int32_t validIndex =
+            ( carIndex < 0 || carIndex > Garage::kNumSavedCarSlots ) ? 0
+                                                                     : carIndex;
+
+        const CarDesc *pCar = &pGarage->pCars[0];
+        for ( int32_t slot = 0; slot < Garage::kNumCarSlots; slot++ ) {
+            if ( !pGarage->pCars[slot].isValid() ) {
+                continue;
+            }
+            if ( validIndex == 0 ) {
+                pCar = &pGarage->pCars[slot];
+                break;
+            }
+            validIndex--;
+        }
+
+        if ( IsCarAllowedOnSpot( pCar, pSpot ) ) {
+            *pOutHasEligibleCar = true;
+            return;
+        }
+    }
 }
 
 // DAT_00f941d8
@@ -718,7 +749,9 @@ static constexpr float kSpotApproachDistance = 10.0f;
 
 bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
     // FUN_007d8050
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GSAI
+    gpAI->setDisableCops( true );
+    gpAI->setCopsActive( false );
+    gpAI->getAIPool()->removeCops();
 
     const eGameMode previousGM = gpTestDriveInstance->getActiveGameMode();
     bool bJoiningLobby = false;
@@ -749,7 +782,7 @@ bool LaunchSpotLevel( SpotMap *pSpot, const bool bAllowFreeRide ) {
         gpTestDriveInstance->setNextGameMode( GM_Club );
         break;
     case ST_DriveIn:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC
+        gpScenaric->getDriveInData().pSpot = pSpot;
         gpTestDriveInstance->setNextGameMode( GM_DriveIn );
         break;
     case ST_Challenge:

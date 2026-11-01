@@ -77,6 +77,9 @@ public:
     inline bool isInteriorView() const { return bInterior; }
     inline void setInteriorView( const bool value ) { bInterior = value; }
     inline void setMouseCam( const bool value ) { bMouseCam = value; }
+    inline void setForcePlayerCamCockpit( const bool value ) {
+        bForcePlayerCamCockpit = value;
+    }
     inline void setUseBlur( const bool value ) { bUseBlur = value; }
     inline float getCameraShake() const { return cameraShake; }
     inline float getRadialBlurIntensity() const { return radialBlurIntensity; }
@@ -352,6 +355,7 @@ private:
     int32_t activeModeVehicle;
     int32_t activeModeOverride;
     int32_t activeModeVehicleOverride;
+    bool bForcePlayerCamCockpit = false; // +0x5d0
 
     bool bFlyCam;
 

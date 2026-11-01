@@ -92,6 +92,24 @@ struct WooshVoice {
     const void *pOwner = nullptr;
 };
 
+// Drive-in challenge selected from a drive-in spot.
+struct DriveInData {
+    bool bIsValid = false;
+    bool bIsValidToo = false;
+    SpotMap *pSpot = nullptr;
+    int32_t ID = -1;
+    int32_t Fee = 0;
+    char pName[65] = {};
+    int32_t Pop = 0;
+    uint32_t Duration = 0u;
+    uint32_t Score = 0u;
+    uint32_t CurrentScore = 0u;
+    uint32_t Car = 0u;
+    uint32_t Driver = 0u;
+    uint32_t Theme = 0u;
+    uint32_t pCheckpoints[100] = {};
+};
+
 class GSScenaric : public GameSystem {
 public:
     const char *getName() const override { return "Service : Scenaric"; }
@@ -262,6 +280,7 @@ public:
     inline void setDemoModeActive( const bool value ) { bDemoMode = value; }
     inline bool isFromDriveIn() const { return bIsFromDriveIn; }
     inline void setFromDriveIn( const bool value ) { bIsFromDriveIn = value; }
+    inline DriveInData &getDriveInData() { return driveInData; }
     inline void setTrainingLevel( const bool value ) { bTrainingLevel = value; }
     inline bool isTrainingLevel() const { return bTrainingLevel; }
     inline bool isInstantChallenge() const { return bInstantChallenge; }
@@ -312,6 +331,9 @@ public:
     inline void setWasMapExited( const bool value ) { bWasMapExited = value; }
     void startDemoMode();
     void delockChallengeRoads( const bool bDelocked );
+    inline bool areChallengeRoadsDelocked() const {
+        return bDelockChallengesRoad;
+    }
     void setTraceSize( uint32_t param_1 );
     void setDefaultIGE( const char *param_1 );
     void releaseIGEBuffer();
@@ -343,6 +365,7 @@ private:
     bool bWasMapExited;                                         // DAT_01214740
     int32_t currentSpotIndex;                                   // DAT_01214744
     bool bIsFromDriveIn;                                        // DAT_012162c4
+    DriveInData driveInData;                                    // 0x12162c8
     bool bMailboxUpdated = false;                               // DAT_012164de
     bool bTrainingLevel = false;                                // DAT_01214748
     bool bInstantChallenge = false;                             // DAT_01214750
@@ -360,7 +383,7 @@ private:
     int32_t testedScore = 0;                 // DAT_0121474c
     uint32_t icIGESize = 0u;                 // DAT_0120bde4
     uint8_t *pICIGEBuffer = nullptr;         // DAT_0120bde8
-    int32_t iceLocalPlayerIndex = 0;         // DAT_01214920
+    int32_t iceLocalPlayerIndex = -1;        // DAT_01214920
     NextIntroInfo nextIntro;
     Entity *pActiveExtraChallenge; // DAT_01214948
     int32_t numExtraChallenges;    // DAT_0121494c

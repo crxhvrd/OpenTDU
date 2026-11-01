@@ -457,7 +457,7 @@ void GSRender::setLODQuality( const uint32_t qualityIndex ) {
 
     gpPlayerData->setLODQuality( activeLODQuality );
     if ( bDirtyLODQuality ) {
-        notifyConfigListeners( pLODListeners );
+        notifyConfigListeners( pLODListeners, kLODListenersEventCode );
     }
 }
 
@@ -684,7 +684,8 @@ bool GSRender::resize( uint32_t width,
         if ( bVar1 ) {
             bVar1 = linkPostFXNodes();
             if ( bVar1 ) {
-                bVar1 = notifyConfigListeners( pListeners );
+                bVar1 = notifyConfigListeners( pListeners,
+                                               kConfigListenersEventCode );
             }
         }
 
@@ -2058,7 +2059,7 @@ bool GSRender::linkPostFXNodes() {
 }
 
 bool GSRender::notifyConfigListeners(
-    RenderConfigurationChangeListener *param_1 ) {
+    RenderConfigurationChangeListener *param_1, const int32_t eventCode ) {
     // FUN_00993b30
     RenderConfigurationChangeListener *puVar1 = param_1;
     bool cVar1 = true;
@@ -2066,7 +2067,7 @@ bool GSRender::notifyConfigListeners(
         if ( puVar1 == nullptr ) {
             return cVar1;
         }
-        cVar1 = puVar1->onConfigurationChanged();
+        cVar1 = puVar1->onConfigurationChanged( eventCode );
         puVar1 = puVar1->pNextListener;
     } while ( cVar1 != false );
 

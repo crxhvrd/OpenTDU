@@ -84,8 +84,6 @@ private:
     int32_t numInstance;
 
     uint64_t propCollisionHashcode;
-    std::vector<std::pair<uint64_t, void *>> propBodies;
-    Matrix4x4f_t primaryLocalInv;
 
     uint8_t bControlledByAvatar : 1;
     uint8_t bInitialized : 1;
@@ -94,5 +92,6 @@ private:
     uint8_t bDynamicProp : 1; // placed as a simulated body (bStatic == 0)
 
 private:
+    const PhysicsDynamicController *getOriginalController() const;
     void placeCollisionBody( const Matrix4x4f_t &worldTransform );
 };

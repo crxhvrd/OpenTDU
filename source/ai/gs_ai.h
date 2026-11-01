@@ -48,6 +48,9 @@ public:
         bDisableBots = bDisable;
     }
     inline void setPauseTraffic( const bool bPause ) { bPauseTraffic = bPause; }
+    inline void setOnlineSession( const bool bOnline ) {
+        bOnlineSession = bOnline;
+    }
     inline void setCopsActive( const bool bActive ) {
         pCopManager->setEnabled( bActive );
     }
@@ -135,6 +138,7 @@ private:
     void *pUpgradedRoadMap;
     void *pUpgradedRoadDetails;
 
+    bool bOnlineSession = false; // +0x2a9a4
     bool bDisableCops;
     bool bDisableBots;
     bool bPauseTraffic;

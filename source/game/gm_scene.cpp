@@ -43,6 +43,7 @@
 #include "flash/movie_player.h"
 #include "render/mng_shadow.h"
 #include "render/mng_reflection.h"
+#include "render/camera/gs_camera.h"
 #include "render/render_scene.h"
 #include "render/gs_render.h"
 #include "world/details/gs_details.h"
@@ -123,7 +124,10 @@ GameModeScene::GameModeScene()
       onlineWidget(),
       rentalWidget(),
       carInfosWidget(),
-      bank() {
+      bank(),
+      savedCameraPosition( Eigen::Vector3f::Zero() ),
+      savedCameraTarget( Eigen::Vector3f::Zero() ),
+      savedCameraUp( Eigen::Vector3f::Zero() ) {
     // FUN_007bc3e0
     registerManager( &mngFlash );
     registerManager( &mngShadow );
@@ -829,7 +833,10 @@ bool GameModeScene::executeAction( int32_t param_2,
             }
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA
+        CameraVehicle *pVehicleCamera = gpCamera->getActiveVehicleCamera();
+        savedCameraPosition = pVehicleCamera->getWorldPosition();
+        savedCameraTarget = pVehicleCamera->getTarget();
+        savedCameraUp = pVehicleCamera->getUp();
         break;
     }
 

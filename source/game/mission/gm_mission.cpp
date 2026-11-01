@@ -8,6 +8,7 @@
 #include "flash/flash_mouse.h"
 #include "flash/gs_flash.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/implementation/flash_resource.h"
 #include "flash/movie_player.h"
 #include "ai/ai_road_map.h"
 #include "ai/ai_road_shape.h"
@@ -28,6 +29,8 @@
 #include "render/camera/gs_camera.h"
 #include "game/scenaric/scenaric_bank.h"
 #include "game/vehicle/car_state.h"
+#include "game/vehicle/mng_car_tire_skid.h"
+#include "filesystem/gs_file.h"
 #include "audio/gs_audio.h"
 #include "audio/implementation/ed_audio_stream_entry.h"
 #include "game/scenaric/entity/entity_sound_emitter.h"
@@ -35,11 +38,16 @@
 #include "physics/gs_physics.h"
 #include "physics/replay.h"
 #include "physics/vehicle/physics_vehicle.h"
+#include "player_data/driver.h"
+#include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
+#include "player_data/saved_extra_challenges.h"
 #include "render/particles/gs_particles.h"
 #include "tdu_instance.h"
 #include "world/mng_panel.h"
 #include "system/gs_pc_options.h"
 #include "world/gs_world.h"
+#include "world/streaming_manager.h"
 #include "world/mng_ocean.h"
 #include "world/mng_sector_name.h"
 
@@ -65,6 +73,8 @@ static constexpr FlashMessage kMsgEndRace = FlashMessage( "endr" );
 static constexpr FlashMessage kMsgUnknownRfhd = FlashMessage( "rfhd" );
 static constexpr FlashMessage kMsgUnknownRewa = FlashMessage( "rewa" );
 static constexpr FlashMessage kMsgUnknownVgcd = FlashMessage( "vgcd" );
+static constexpr FlashMessage kMsgUnknownPlgc = FlashMessage( "plgc" );
+static constexpr FlashMessage kMsgUnknownPlre = FlashMessage( "plre" );
 
 static void SetConfigPCChallengeState( const int32_t state ) {
     uint32_t levelIndex = 0;
@@ -331,7 +341,7 @@ void GMMission::reset() {
     GameModeWorld::reset();
 
     gpAI->setDisableBots( true );
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (bot manager +1 = 0)
+    gpAI->setBotsActive( false );
     gpAI->getAIPool()->removeBots();
 
     spawnFrame = mngActor.placePlayerVehicle( kMissionSpawnMode, bApplySpawn );
@@ -349,7 +359,14 @@ void GMMission::reset() {
     mngInGameMenu.refreshDrivingHelpLabel();
 
     if ( gpScenaric->isFromDriveIn() ) {
-        OTDU_UNIMPLEMENTED; // TODO: SCENARIC (drive-in fee and stats)
+        const int32_t fee = gpScenaric->getDriveInData().Fee;
+        SavedExtraChallenges *pCounters =
+            gpPlayerData->getLoadedSave()->getExtraChallenges();
+        pCounters->addCounter( CounterIndex( 0xf1dc ), 1 );
+        pCounters->addCounter( CounterIndex( 0xf0d8 ), fee );
+        Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+        pDriver->setMoney( pDriver->getMoney() - fee );
+        OTDU_UNIMPLEMENTED; // TODO: ONLINE (FUN_00883b50 drive-in stats)
     }
 
     if ( gpMngSectorName != nullptr ) {
@@ -439,11 +456,12 @@ void GMMission::pause() {
     }
 
     gReplay.resetSession();
-    OTDU_UNIMPLEMENTED; // TODO: AI (DAT_013d1a77 = 0)
+    OTDU_UNIMPLEMENTED; // TODO: REPLAY (GSAI +0x2a98d = 0)
     AiPool *pAIPool = gpAI->getAIPool();
     pAIPool->setTrafficPaused( false ); // +0xc
     pAIPool->setField0x7C( true );
     pAIPool->setField0x85( true );
+    gpAI->setPauseTraffic( false );
     pAIPool->setTrafficScale( 1.0f );       // +0x78
     pAIPool->setIgnoreZoneDensity( false ); // +0x7d
     if ( gpScenaric->getActiveExtraChallenge() != nullptr ) {
@@ -537,7 +555,9 @@ bool GMMission::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
     }
 
     if ( *pMessage == kMsgPauseIn ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: SCENARIC ("/:state_club")
+        pPlayer->setVariableValue(
+            "/:state_club",
+            int32_t( gpScenaric->getClubChallengeKind() != 0 ) );
         return GameModeWorld::onMessage( pMessage, pPlayer );
     }
     if ( *pMessage == kMsgPauseOut ) {
@@ -671,8 +691,14 @@ bool GMMission::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         return false;
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission (replay "/:IsReplay", online
-                             // and instant challenge messages)
+    if ( *pMessage == kMsgUnknownPlgc || *pMessage == kMsgUnknownPlre ) {
+        pPlayer->getVariableAsInt( "/:num_player" );
+        return false;
+    }
+
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE ("frre", "cont", "sppr", "spne",
+                             // instant challenge "btic"/"caic"/"revg") and
+                             // race data ("lead", "your")
     return GameModeWorld::onMessage( pMessage, pPlayer );
 }
 
@@ -695,9 +721,19 @@ bool GMMission::restart() {
     if ( pHudPlayer != nullptr ) {
         pHudPlayer->goToFrameAndPlay( 0, "/", true );
     }
-    OTDU_UNIMPLEMENTED; // TODO: HUD
-    OTDU_UNIMPLEMENTED; // TODO: WORLD (FUN_007047e0, streaming position =
-                        // previous transform, streaming tick, file flush)
+    HudMinimap &minimap = getHudChallenge().getMinimap();
+    minimap.TraceWrite = 0;
+    minimap.TraceCount = 0;
+    minimap.bDistanceDotsInitialized = false;
+    StreamingManager *pStreamingManager = gpWorld->getStreamingManager();
+    if ( pStreamingManager != nullptr ) {
+        Eigen::Vector4f streamingPosition =
+            gpWorld->getPreviousTransform().row( 3 ).transpose();
+        gpWorld->setStreamingPosition( &streamingPosition );
+        pStreamingManager->tick( gpWorld->getStreamingPositionPtr(), 0.0f,
+                                 0.0f );
+        gpFile->flushPendingAsync();
+    }
 
     if ( isPaused() ) {
         bPaused = false;
@@ -706,13 +742,13 @@ bool GMMission::restart() {
     if ( pGameMech != nullptr ) {
         pGameMech->restart();
     }
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (FUN_0091f730 AiPool)
+    gpAI->getAIPool()->removeTraffic();
 
     MngActor &mngActor = getActorManager();
     for ( int32_t i = 0; i < mngActor.getActorCount(); i++ ) {
         mngActor.getActor( i )->reset();
     }
-    OTDU_UNIMPLEMENTED; // TODO: RENDER (FUN_0042e940 tire skids reset)
+    gpMngCarTireSkid->resetSkids();
     if ( gpMngPanel != nullptr ) {
         gpMngPanel->pause();
         gpMngPanel->reset();
@@ -720,10 +756,21 @@ bool GMMission::restart() {
     gpParticles->stopAllParticleSystems();
 
     if ( gpScenaric->isFromDriveIn() ) {
-        OTDU_UNIMPLEMENTED; // TODO: GMMission (drive-in fee: return false when
-                            // the player cannot pay, else charge it)
+        const int32_t fee = gpScenaric->getDriveInData().Fee;
+        Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+        if ( pDriver->getMoney() < uint32_t( fee ) ) {
+            return false;
+        }
+        OTDU_UNIMPLEMENTED; // TODO: ONLINE (FUN_00883860 drive-in stats when
+                            // the game mech +0x72c is set)
+        SavedExtraChallenges *pCounters =
+            gpPlayerData->getLoadedSave()->getExtraChallenges();
+        pCounters->addCounter( CounterIndex( 0xf1dc ), 1 );
+        pCounters->addCounter( CounterIndex( 0xf0d8 ), fee );
+        pDriver->setMoney( pDriver->getMoney() - fee );
+        OTDU_UNIMPLEMENTED; // TODO: ONLINE (FUN_00883b50 drive-in stats)
     }
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (FUN_009100d0)
+    gpAI->getCopManager().stopVoices();
     return true;
 }
 
@@ -832,9 +879,19 @@ void GMMission::exitMission() {
 void GMMission::startRestartFade() {
     // FUN_0073d530
     bRestartRequested = false;
-    OTDU_UNIMPLEMENTED; // TODO: FLASH (movie draw mode |= 2)
     bSavedFreeRideBool3 = gpCP2PGameService->FreeRideMgr.bUnknownBool3;
     gpCP2PGameService->FreeRideMgr.bUnknownBool3 = false;
+    const int32_t numMovies = gpFlash->getNumMovies( 1 );
+    for ( int32_t i = 0; i < numMovies; i++ ) {
+        MoviePlayer *pMovie = gpFlash->getMoviePlayer( 1, i );
+        if ( pMovie == nullptr ) {
+            continue;
+        }
+        pMovie->field5_0xad0 |= 2;
+        pMovie->MovieBank.getFlashPlayer()
+            ->getBoundFlashResource()
+            ->setDrawMode( pMovie->field5_0xad0 ? 2 : 0 );
+    }
     mngFade.startTransition(
         ( ( mngFade.getTransitionFlags() | 2u ) & ~0xcu ) | 1u,
         kRestartFadeDuration, &GMMission::OnRestartFadedOut, nullptr, this );

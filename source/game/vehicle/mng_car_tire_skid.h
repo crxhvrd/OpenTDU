@@ -60,6 +60,7 @@ public:
                           Eigen::Vector4f *param_3 ) override;
 
     void clearSkids();
+    void resetSkids();
 
 private:
     // Per-frame skid-point generation from the physics wheel state.

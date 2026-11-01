@@ -16,7 +16,7 @@ public:
 public:
     VSTPhysicsWrapper() = default;
 
-    void refresh( const CarState &carState );
+    void refresh( const CarState &carState, const bool bTrackDoors );
     void computeEvents();
 
 private:

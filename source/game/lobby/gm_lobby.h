@@ -6,6 +6,7 @@
 #include "game/map/map_screenshot_bank.h"
 #include "game/map/mng_map_viewer.h"
 #include "game/map/mng_trac_road.h"
+#include "game/mission/map_cursor.h"
 #include "game/mng_logo_display.h"
 #include "game/scenaric/mng_spots.h"
 #include "online/mng_chat.h"
@@ -149,6 +150,7 @@ private:
     MngChat mngChat;
     MngSpots mngSpots;
     MngMapViewer mngMapViewer;
+    MapCursor mapCursor;
     MapScreenshotBank lurePictureBank;
 
     ScenaricBank *pCheckpointBank;

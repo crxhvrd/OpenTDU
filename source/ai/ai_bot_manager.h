@@ -44,6 +44,7 @@ const DBEntryBot *GetBotDBEntry( const int32_t botIndex );
 int32_t GetBotColorIndex( const int32_t botIndex );
 int32_t GetBotCarID( const int32_t botIndex );
 int32_t GetBotTier( const int32_t botIndex );
+int32_t GetBotMaxStake( const int32_t botIndex );
 int32_t FindBotOwningCar( const int32_t carID );
 int32_t PickRandomBotInZone( const int32_t zone );
 

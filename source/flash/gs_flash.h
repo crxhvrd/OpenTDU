@@ -140,7 +140,7 @@ private:
 public:
 #endif
 
-    bool onConfigurationChanged() override;
+    bool onConfigurationChanged( const int32_t eventCode ) override;
 
     bool FUN_0099b1e0( const int32_t param_1, const int32_t param_2 );
     bool FUN_0099b240( const char *param_2, const int32_t param_3 );

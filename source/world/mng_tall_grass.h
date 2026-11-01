@@ -90,7 +90,7 @@ public:
                           Eigen::Vector4f *param_2,
                           Eigen::Vector4f *param_3 ) override;
 
-    bool onConfigurationChanged() override;
+    bool onConfigurationChanged( const int32_t eventCode ) override;
 
     void uninstallSector( Sector *pSector );
 

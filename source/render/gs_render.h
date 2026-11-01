@@ -239,9 +239,12 @@ public:
                                    const float height );
     void updateFovVsLOD( float param_2 );
 
-    bool notifyConfigListeners( RenderConfigurationChangeListener *param_1 );
+    bool notifyConfigListeners( RenderConfigurationChangeListener *param_1,
+                                const int32_t eventCode );
 
 private:
+    static constexpr int32_t kConfigListenersEventCode = 0; // +0xa694
+    static constexpr int32_t kLODListenersEventCode = 3;    // +0xa69c
     static constexpr int32_t kNumSunRT = 8;
     static constexpr int32_t kNumSunDownscaleRT = 3;
 

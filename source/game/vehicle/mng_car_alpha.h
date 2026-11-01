@@ -81,7 +81,7 @@ public:
     eRenderPass bindAndGetRenderPassForAlpha( eRenderPass opaquePass,
                                               uint32_t slot );
 
-    bool onConfigurationChanged() override;
+    bool onConfigurationChanged( const int32_t eventCode ) override;
 
 private:
     static constexpr const uint32_t kNumAlphaElements = 31;

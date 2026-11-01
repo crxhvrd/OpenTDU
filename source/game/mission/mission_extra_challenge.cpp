@@ -167,7 +167,7 @@ void MissionExtraChallenge::configureTrafficAndCops() {
     pEventParameters->getTraffic().setValue( 1, false );
     pEventParameters->getTrafficDensity().setValue( -1, false );
     gpAI->setDisableCops( false );
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (DAT_013d1a75 = 0)
+    OTDU_UNIMPLEMENTED; // TODO: ONLINE (GSAI bOnlineSession DAT_013d1a74 = 0)
 }
 
 bool MissionExtraChallenge::findRouteEntities() {
@@ -328,7 +328,7 @@ void MissionExtraChallenge::start() {
     gAIConfig.bInfAllButCollision = bInfAllButCollision;
     field_0x7d = false;
     gpAI->setDisableBots( true );
-    OTDU_UNIMPLEMENTED; // TODO: GSAI (bot manager +1 = 0)
+    gpAI->setBotsActive( false );
     gpAI->getAIPool()->removeBots();
 
     if ( pChallenge->getType() == eEntityType::ET_TRAN ) {

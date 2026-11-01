@@ -15,6 +15,8 @@ public:
     }
 
     inline float *getFocaleInfosRW() { return focalInfos; }
+    inline float getFocale() const { return unknown.x(); }
+    inline void setFocale( const float focale ) { unknown.x() = focale; }
 
     inline void setfield_0x26c( bool value ) { field_0x26c = value; }
 

@@ -77,7 +77,8 @@ namespace {
     }
 } // namespace
 
-void VSTPhysicsWrapper::refresh( const CarState &carState ) {
+void VSTPhysicsWrapper::refresh( const CarState &carState,
+                                 const bool bTrackDoors ) {
     // FUN_007d4c20
     const CarBodyState *pBody = carState.getBody();
     const PhysicsVehicle *pVehicle = carState.getPhysicsVehicle();
@@ -142,8 +143,6 @@ void VSTPhysicsWrapper::refresh( const CarState &carState ) {
     settings.bCurrentHornDown = bHorn;
     settings.bCurrentEngineIgnition = bCranking;
     settings.bCurrentViewInternal = bViewInternal;
-    settings.bCurrentDoorLeftOpened = doorLeft != 0.0f;
-    settings.bCurrentDoorRightOpened = doorRight != 0.0f;
 
     float *pValues = settings.PhysicsValues;
 
@@ -178,6 +177,11 @@ void VSTPhysicsWrapper::refresh( const CarState &carState ) {
     pValues[VSTPC_LandingImpact] = 0.0f;
 
     refreshWheels( carState, bIsPlayer );
+
+    if ( bTrackDoors ) {
+        settings.bCurrentDoorLeftOpened = doorLeft != 0.0f;
+        settings.bCurrentDoorRightOpened = doorRight != 0.0f;
+    }
 }
 
 void VSTPhysicsWrapper::refreshWheels( const CarState &carState,

@@ -913,7 +913,8 @@ bool AiVehLocoParked::handle( const int32_t event, const int32_t state ) {
             return false;
         }
         gGameObjectDico.locate( pVehicle->getCarState(),
-                                pVehicle->getInfos().LastRoadPos.pRoad, false );
+                                pVehicle->getInfos().LastRoadPos.pRoad,
+                                nullptr );
         return true;
     default:
         return false;

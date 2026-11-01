@@ -6,12 +6,7 @@
 #include "ai/gs_ai.h"
 #include "flash/flash_callbacks_register.h"
 #include "flash/implementation/flash_player.h"
-
-// TODO: Move to right cpp
-static void EditorGoToBookmark( const Eigen::Vector3f &position ) {
-    // FUN_0078bfe0
-    OTDU_UNIMPLEMENTED; // TODO: GAME (GME is not ported yet)
-}
+#include "game/instant_challenge/gm_instant_challenge.h"
 
 FlashListBookmark::FlashListBookmark() : FlashList(), pParent( nullptr ) {
     // FUN_0070b430 (inlined)
@@ -38,8 +33,9 @@ bool FlashListBookmark::onMessage( FlashMessage *pMessage,
 
     case kImportBookmark:
         if ( pParent->isGME() ) {
-            EditorGoToBookmark(
-                pParent->getBookmark( bookmarkIndex ).Position );
+            static_cast<GMInstantChallenge *>( gpActiveGameMode )
+                ->goToBookmark(
+                    pParent->getBookmark( bookmarkIndex ).Position );
         }
         return true;
 

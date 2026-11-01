@@ -12,6 +12,10 @@ public:
     void
     tick( GameMechanism *pGameMech, float deltaTime, float totalTime ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
+    void resetFreerideAnim() override {
+        // FUN_007f65e0
+        CurrentFreerideAnim = -1;
+    }
     void resetVoice() override;
 
     void initializeVoice( const uint32_t voiceType );

@@ -4,6 +4,8 @@
 #include "core/binary_helpers.h"
 #include "core/format.h"
 #include "database/gs_database.h"
+#include "game/instant_challenge/gm_instant_challenge.h"
+#include "game/scenaric/event_parameters.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_garage.h"
@@ -489,8 +491,8 @@ const char *GameParameterTeamCount::increment( int32_t /*param_2*/ ) {
     // FUN_00787b50
     const char *pText = GameParameter::increment( 0 );
     if ( gpTestDriveInstance->getActiveGameMode() == GM_GameModeEdit ) {
-        OTDU_UNIMPLEMENTED; // TODO: GAME EDITOR (FUN_0078bd80, FUN_0078cbc0,
-                            // FUN_0078cf20: team setup refresh)
+        static_cast<GMInstantChallenge *>( gpActiveGameMode )
+            ->refreshEditorState();
     }
     if ( pParent != nullptr ) {
         pParent->onChildChanged( this );
@@ -503,8 +505,8 @@ const char *GameParameterTeamCount::decrement( int32_t /*param_2*/ ) {
     // FUN_00787ac0
     const char *pText = GameParameter::decrement( 0 );
     if ( gpTestDriveInstance->getActiveGameMode() == GM_GameModeEdit ) {
-        OTDU_UNIMPLEMENTED; // TODO: GAME EDITOR (FUN_0078bd80, FUN_0078cbc0,
-                            // FUN_0078cf20: team setup refresh)
+        static_cast<GMInstantChallenge *>( gpActiveGameMode )
+            ->refreshEditorState();
     }
     if ( pParent != nullptr ) {
         pParent->onChildChanged( this );
@@ -683,8 +685,10 @@ const char *GameParameterLaps::getDisplayText() {
 const char *GameParameterLaps::decrementLaps() {
     // FUN_00785d00
     if ( gpTestDriveInstance->getActiveGameMode() == GM_GameModeEdit ) {
-        OTDU_UNIMPLEMENTED; // TODO: GAME EDITOR (min = 1 unless the edited
-                            // mission is a race)
+        EventParameters *pMission =
+            static_cast<GameModeWorld *>( gpActiveGameMode )
+                ->getMissionDescription();
+        min = int32_t( pMission->getGameType() != EventParameters::EGT_Race );
     }
     value -= step;
     if ( value < min ) {

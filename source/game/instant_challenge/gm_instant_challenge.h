@@ -68,6 +68,9 @@ public:
     void drawDebug( float deltaTime ) override;
     void onResourceStreamed() override;
 
+    void goToBookmark( const Eigen::Vector3f &position );
+    void refreshEditorState();
+
 public:
     static constexpr int32_t kEditorStateEditing = 2;
 
@@ -101,7 +104,6 @@ private:
                              const char *&pDeroulFrame );
     bool updateGhostCursorScale();
     void updatePendingExit();
-    void refreshEditorState();
     void findLastCheckpoint();
     void updateChallengeValidity();
     void updateEditorFlashVars();

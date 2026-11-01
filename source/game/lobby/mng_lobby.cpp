@@ -216,7 +216,11 @@ bool MngLobby::handleMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
 
         pOwner->releasePreviewCamera();
         pOwner->snapStreamingToPlayerSpawn();
-        OTDU_UNIMPLEMENTED; // TODO: EventParameters ("CUSTOMCHA", type 5)
+        EventParameters &eventParameters =
+            gpScenaric->getSelectedEventParameters();
+        eventParameters.setRequestedName( "CUSTOMCHA" );
+        eventParameters.setSource( EventParameters::ES_CustomChallenge );
+        eventParameters.setField124( 0x1020304 );
         pOwner->requestExit();
         gpTestDriveInstance->setNextGameMode( GM_Mission );
         return true;

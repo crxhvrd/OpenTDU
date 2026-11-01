@@ -145,7 +145,7 @@ public:
 
     bool loadResources() override;
     void unloadResources() override;
-    bool onConfigurationChanged() override;
+    bool onConfigurationChanged( const int32_t eventCode ) override;
 
 private:
     static constexpr int32_t kNumOceanBitmaps = 2;
@@ -404,7 +404,7 @@ public:
 
     bool loadResources() override;
     void unloadResources() override;
-    bool onConfigurationChanged() override;
+    bool onConfigurationChanged( const int32_t eventCode ) override;
 
 private:
     RuntimeRender2DBWithRT cubemap2DB;

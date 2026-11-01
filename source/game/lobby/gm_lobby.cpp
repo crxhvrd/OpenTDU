@@ -28,6 +28,7 @@
 #include "game/scenaric/spots.h"
 #include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
+#include "game/vehicle/gs_brand_car.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_base.h"
 #include "physics/gs_physics.h"
@@ -179,6 +180,7 @@ GMLobby::GMLobby()
       mngChat(),
       mngSpots(),
       mngMapViewer(),
+      mapCursor(),
       lurePictureBank(),
       pCheckpointBank( nullptr ),
       gameType( EGT_TimeAttack ),
@@ -245,8 +247,9 @@ void GMLobby::initialize() {
         gpScenaric->loadPackBank( "Scenarics/Packs", "pack_cp_virtual",
                                   pCheckpointBank );
         if ( eventParameters.getSource() == EventParameters::ES_Buffer ) {
-            OTDU_UNIMPLEMENTED; // TODO: GSScenaric (parse the IGE buffer at
-                                // DAT_0120bde0, size DAT_0120bddc)
+            ParseIGEFile( nullptr, gpScenaric->getTestIGEBuffer(),
+                          &gIGEFileRequest, &mngActor,
+                          gpScenaric->getTestIGESize(), false );
         } else {
             LoadIGEFile( &gIGEFileRequest, eventParameters.getRequestedName(),
                          &mngActor, false, &eventParameters, false, nullptr,
@@ -458,7 +461,7 @@ void GMLobby::draw( float /*deltaTime*/, float /*totalTime*/ ) {
     // FUN_0075f8d0
     if ( !bExitRequested &&
          gpMngMapViewer->getState() == MngMapViewer::MS_Active ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00741d30 (map cursor update)
+        mapCursor.update( pFlashPlayer, gpTimer->GameDeltaTime );
     }
 }
 
@@ -480,7 +483,7 @@ void GMLobby::pause() {
     gpMngWorld->setDisableStreamingOnCar( false );
     ShowLocalPlayerCar( true );
     gpScenaric->setLobbyMapOpened( false );
-    OTDU_UNIMPLEMENTED; // TODO: GSPhysics (+0x8674 = 0)
+    gpPhysics->setPlayerSlowDownForced( false );
 
     GameModeScene::pause();
 }
@@ -544,7 +547,7 @@ bool GMLobby::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
 
     switch ( *pMessage ) {
     case kMsgZoomIn:
-        OTDU_UNIMPLEMENTED; // TODO: FUN_00741a50 (map cursor zoom in)
+        mapCursor.zoomIn( pFlashPlayer );
         return true;
     case kMsgMapOff:
         gpScenaric->setLobbyMapOpened( false );
@@ -554,7 +557,7 @@ bool GMLobby::onMessage( FlashMessage *pMessage, FlashPlayer *pPlayer ) {
         PauseLocalPlayerCarPhysics();
         return true;
     case kMsgZoomOut:
-        OTDU_UNIMPLEMENTED; // TODO: FUN_007419c0 (map cursor zoom out)
+        mapCursor.zoomOut( pFlashPlayer );
         return true;
     default:
         return true;
@@ -847,7 +850,7 @@ bool GMLobby::loadPlayerCar() {
     CarDesc *pCurrentCar = gpPlayerData->getCurrentCar();
     const int32_t carID = int32_t( pCurrentCar->getCarConfigID() );
     OTDU_LOG_DEBUG( "in LoadPlayerCar_Justine_time()" );
-    OTDU_UNIMPLEMENTED; // TODO: GSBrandCar (FUN_008b5860, evict one brand car)
+    gpBrandCar->reserveSlots( 1 );
 
     LocalPlayer &localPlayer = gpScenaric->getLocalPlayer();
     CarState *pLocalCar = localPlayer.getCarState();
@@ -924,7 +927,7 @@ void GMLobby::placeLocalPlayerCar() {
     }
 
     PhysicsVehicle *pPhysicsVehicle = pLocalCar->getPhysicsVehicle();
-    OTDU_UNIMPLEMENTED; // TODO: GSPhysics (+0x8674 = 1)
+    gpPhysics->setPlayerSlowDownForced( true );
 
     const Eigen::Vector4f streamOrigin = gpWorldStreaming->isEnabled()
                                              ? gpWorldStreaming->getPosition()

@@ -15,6 +15,9 @@ public:
 
 public:
     inline void setMemoryPool( void *pMemory ) { pMemoryPool = pMemory; }
+    inline edAudioStreamEntry *getSoundInstance() const {
+        return pSoundInstance.get();
+    }
 
 public:
     GPSVoice();

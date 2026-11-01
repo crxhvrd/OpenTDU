@@ -311,8 +311,9 @@ void MngMapScreenshot::applyEntryCamera( const Entry &entry ) {
     pCamera->setPosition( position );
     pCamera->setTarget( target );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: CAMERA (copy 0xb0 from the
-                             // previous camera)
+    if ( pOldCamera != nullptr ) {
+        pCamera->setFocale( pOldCamera->getFocale() );
+    }
     pCamera->setFOV( entry.FOV );
     if ( entry.FarPlane >= 0.0f ) {
         pCamera->setNearPlane( entry.NearPlane );

@@ -282,6 +282,7 @@ public:
 
     bool
     getBodyPose( RigidBody_t body, Matrix4x4f_t &outMatrix, bool &outActive );
+    void setBodyPose( RigidBody_t body, const Matrix4x4f_t &matrix );
 
     PhysicsVehicle *
     createVehicle( PhysFactory *pFactory,

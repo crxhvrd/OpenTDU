@@ -14,6 +14,10 @@ public:
     void deserialize( BinaryReader *param_2 ) override;
     void instanciate( MngActor *pMngActor, Entity *param_1 ) override;
     void resetVoice() override;
+    void resetFreerideAnim() override {
+        // FUN_007f2fe0
+        CurrentFreerideAnim = -1;
+    }
 
     void initializeVoice( const uint32_t voiceType );
     void reactToPenalty( const float pendingRatio );
@@ -38,4 +42,5 @@ protected:
     int32_t ChatterSoundIndex;
     bool bLastChatterPlayed;
     int32_t DrivingSoundIndex;
+    int32_t CurrentFreerideAnim;
 };

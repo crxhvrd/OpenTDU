@@ -54,6 +54,21 @@ LobbyListVehiclesNotifier::LobbyListVehiclesNotifier(
     LobbyListVehicles *pOwner )
     : FlashPanel(), pList( pOwner ) {}
 
+static bool IsCarAllowedByEventParameters( const CarDesc *pCar ) {
+    // FUN_0075d4e0
+    EventParameters &eventParameters = gpScenaric->getSelectedEventParameters();
+    GameParameterVehicleRestriction &restriction =
+        eventParameters.getVehicleRestriction();
+    return IsCarAllowedByRestriction(
+        pCar, int32_t( eventParameters.getVehicleType().getValue() ),
+        int32_t( restriction.getValue() ),
+        restriction.getBrand().getBrandHashcode(),
+        uint32_t( restriction.getModel().getValue() ),
+        int32_t( restriction.getCategory().getValue() ),
+        int32_t( restriction.getCategoryFrom().getValue() ),
+        int32_t( restriction.getCategoryTo().getValue() ) );
+}
+
 void LobbyListVehiclesNotifier::tick() {
     // FUN_00759080
     pList->onGarageUpdated();
@@ -103,9 +118,7 @@ void LobbyListVehicles::populate() {
 
         bool bAllowed = false;
         if ( gpScenaric->isFromDriveIn() ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: EventParameters (FUN_0075d4e0,
-                                     // drive-in vehicle restriction)
-            bAllowed = true;
+            bAllowed = IsCarAllowedByEventParameters( pCar );
         } else if ( IsSpotRestrictedToSolo( pOwner->getOwner()->getSpot() ) ) {
             bAllowed =
                 IsCarAllowedOnSpot( pCar, pOwner->getOwner()->getSpot() );

@@ -199,7 +199,7 @@ public:
     void parseLeaderboardIni();
     void parseDeviceIni();
 
-    bool onConfigurationChanged() override;
+    bool onConfigurationChanged( const int32_t eventCode ) override;
 
     // Helpers to parse complex format
     // ArgStr: the value

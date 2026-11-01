@@ -244,7 +244,9 @@ void GameMode::mainLoop( TestDriveGameInstance *param_1 ) {
 }
 
 void GameMode::stepLogic( float param_1, float deltaTime, float totalTime ) {
-    // TODO: Debug stuff? Never seen those called at runtime...
+    // FUN_0097e860
+    // TODO: gSaveReplay / gLoadReplay debug replay recording (edDev replay
+    // buffer, GSAI::SerializeForReplay) is not ported.
     if ( DAT_00fa4031 ) {
         OTDU_UNIMPLEMENTED;
     } else if ( DAT_00fa4030 ) {
@@ -258,15 +260,10 @@ void GameMode::submitDrawCommands( float deltaTime, float totalTime ) {
     // FUN_0097e7c0
     gpTestDriveInstance->drawServices( deltaTime );
     this->draw( deltaTime, totalTime );
-    if ( DAT_010e72fb ) {
-        OTDU_UNIMPLEMENTED;
-    } else {
-        DAT_010e72fb = false;
-        for ( Manager *pMVar1 : registeredManagers ) {
-            pMVar1->draw();
-        }
-        gpTestDriveInstance->updateFileInstanciation();
+    for ( Manager *pMVar1 : registeredManagers ) {
+        pMVar1->draw();
     }
+    gpTestDriveInstance->updateFileInstanciation();
 }
 
 void GameMode::registerManager( Manager *pManager ) {
@@ -595,13 +592,10 @@ void GameMode::tickManagers( float param_2,
                              uint32_t param_4,
                              bool param_5 ) {
     // FUN_0097e630
-    if ( param_5 ) {
-        OTDU_UNIMPLEMENTED;
-    } else {
-        for ( Manager *manager : registeredManagers ) {
-            if ( manager->getIndex() == param_4 ) {
-                manager->tick( param_2, param_3 );
-            }
+    (void)param_5;
+    for ( Manager *manager : registeredManagers ) {
+        if ( manager->getIndex() == param_4 ) {
+            manager->tick( param_2, param_3 );
         }
     }
 }

@@ -228,7 +228,7 @@ bool GSPostFX::FUN_00808f70() {
     return bVar1;
 }
 
-bool GSPostFX::onConfigurationChanged() {
+bool GSPostFX::onConfigurationChanged( const int32_t ) {
     // FUN_004232e0
     return gpPostFX->FUN_00808f70();
 }

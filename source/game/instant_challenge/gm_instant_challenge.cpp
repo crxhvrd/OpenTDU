@@ -28,6 +28,7 @@
 #include "game/map/gm_map.h"
 #include "game/scenaric/mng_actor.h"
 #include "database/gs_database.h"
+#include "debug/ed_debug_text.h"
 #include "world/mng_sector_name.h"
 #include "game/mng_music.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -468,7 +469,7 @@ void GMInstantChallenge::tick( float deltaTime, float totalTime ) {
     }
 
     if ( gbGMEDesigner ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: DEBUG (FUN_00457290 at 10,10)
+        gEdDebugText.drawTextAt( 10, 10, "%s", gGMESelectedFileName );
     }
 
     if ( bZoomPending && pGPSCamera->zoomIn() ) {
@@ -2812,6 +2813,22 @@ void GMInstantChallenge::onNewChallenge() {
     onEraseChallenge();
     rebuildWaypointsFromActors();
     refreshEditorState();
+}
+
+void GMInstantChallenge::goToBookmark( const Eigen::Vector3f &position ) {
+    // FUN_0078bfe0
+    const Eigen::Vector4f bookmarkPosition( position.x(), position.y(),
+                                            position.z(), 1.0f );
+    if ( editorState == 0 ) {
+        Eigen::Vector4f screenPosition;
+        GetScreenCoords( screenPosition, bookmarkPosition );
+        screenPosition.y() = 1.0f - screenPosition.y();
+        mngCursor.setScreenPosition( screenPosition );
+    } else if ( 0 < editorState && editorState < 3 ) {
+        mngCursor.setScreenPosition(
+            Eigen::Vector4f( 0.5f, 0.5f, 0.5f, 1.0f ) );
+        mngMapViewer.setFocus( bookmarkPosition );
+    }
 }
 
 void GMInstantChallenge::requestSave() {

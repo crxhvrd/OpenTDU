@@ -31,7 +31,8 @@ EntityAvatarShoppingGirl::EntityAvatarShoppingGirl()
       CumulatedProba( 0.0f ),
       ChatterSoundIndex( -1 ),
       bLastChatterPlayed( true ),
-      DrivingSoundIndex( -1 ) {
+      DrivingSoundIndex( -1 ),
+      CurrentFreerideAnim( -1 ) {
     // FUN_007f38f0
     Random.setSeed( kVoiceRandomSeed );
 }

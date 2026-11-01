@@ -2,11 +2,13 @@
 #include "ai/ai_vehicle.h"
 #include "game_object.h"
 
+#include "ai/ai_debug_draw.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_road_shape.h"
 #include "ai/gs_ai.h"
 #include "game/vehicle/car_state.h"
 #include "render/camera/camera_base.h"
+#include "render/draw_list.h"
 
 GameObjectDico gGameObjectDico; // DAT_01449428
 
@@ -143,7 +145,8 @@ Eigen::Vector4f &GameObject::getLinearVelocity() {
     return kDefaultVelocity;
 }
 
-void GameObject::setRoadLocation( const AiRoadIt &it, const bool bDebug ) {
+void GameObject::setRoadLocation( const AiRoadIt &it,
+                                  DrawList *pDebugDrawList ) {
     // FUN_0096b1b0
     const AiRoadShape *pShape = it.pRoad->getShape();
     Matrix4x4f_t box;
@@ -227,8 +230,30 @@ void GameObject::setRoadLocation( const AiRoadIt &it, const bool bDebug ) {
     worldLocation.VelocityX = velocity.y();
     worldLocation.VelocityZ = velocity.x();
 
-    if ( bDebug ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: DEBUG (road frame axes)
+    if ( pDebugDrawList != nullptr ) {
+        Matrix4x4f_t debugFrame = roadFrame;
+        debugFrame.row( 3 ) =
+            ( center + Eigen::Vector4f( 0.0f, 2.0f, 0.0f, 0.0f ) ).transpose();
+        pDebugDrawList->setActiveTransformMatrix( debugFrame );
+        pDebugDrawList->setActiveMaterial( nullptr );
+        if ( pDebugDrawList->beginPrimitive( PT_Line, 10 ) ) {
+            pDebugDrawList->setDiffuse( 0, ToDiffuse( 0xffff0000 ) );
+            pDebugDrawList->pushVertex( 0.0f, 0.0f, 0.0f );
+            pDebugDrawList->pushVertex( 1.0f, 0.0f, 0.0f );
+            pDebugDrawList->setDiffuse( 0, ToDiffuse( 0xff00ff00 ) );
+            pDebugDrawList->pushVertex( 0.0f, 0.0f, 0.0f );
+            pDebugDrawList->pushVertex( 0.0f, 1.0f, 0.0f );
+            pDebugDrawList->setDiffuse( 0, ToDiffuse( 0xff0000ff ) );
+            pDebugDrawList->pushVertex( 0.0f, 0.0f, 0.0f );
+            pDebugDrawList->pushVertex( 0.0f, 0.0f, 1.0f );
+            pDebugDrawList->setDiffuse( 0, ToDiffuse( 0xffff00ff ) );
+            pDebugDrawList->pushVertex( 0.0f, 0.0f, 1.0f );
+            pDebugDrawList->pushVertex( 0.0f, worldLocation.VelocityX, 1.0f );
+            pDebugDrawList->setDiffuse( 0, ToDiffuse( 0xffffff00 ) );
+            pDebugDrawList->pushVertex( 0.0f, 0.0f, 1.0f );
+            pDebugDrawList->pushVertex( worldLocation.VelocityZ, 0.0f, 1.0f );
+            pDebugDrawList->commitPrimitive();
+        }
     }
 }
 
@@ -311,7 +336,7 @@ GameObject *GameObjectDico::findObject( const uint32_t id ) const {
 }
 
 void GameObjectDico::updateLocations( const float deltaTime,
-                                      const bool bDebug ) {
+                                      DrawList *pDebugDrawList ) {
     // FUN_0096c640
     if ( deltaTime <= 0.0f ) {
         return;
@@ -338,14 +363,14 @@ void GameObjectDico::updateLocations( const float deltaTime,
                 continue;
             }
         }
-        locate( pObject, nullptr, bDebug );
+        locate( pObject, nullptr, pDebugDrawList );
     }
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
 }
 
 void GameObjectDico::locate( GameObject *pObject,
                              AiRoadMap::Road *pRoadHint,
-                             const bool bDebug ) {
+                             DrawList *pDebugDrawList ) {
     // FUN_0096b9b0
     AiRoadMap &roadMap = gpAI->getRoadMap();
     if ( pRoadHint == nullptr && pObject->parentID != 0 ) {
@@ -426,7 +451,7 @@ void GameObjectDico::locate( GameObject *pObject,
     }
 
     if ( bFound ) {
-        pObject->setRoadLocation( it, bDebug );
+        pObject->setRoadLocation( it, pDebugDrawList );
         return;
     }
 

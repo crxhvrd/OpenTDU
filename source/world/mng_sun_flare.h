@@ -36,7 +36,7 @@ public:
     void onTimeOfDayChange( int32_t param_1 ) override;
     void onWeatherConfigChange( WeatherConfig *pConfig ) override;
 
-    bool onConfigurationChanged() override;
+    bool onConfigurationChanged( const int32_t eventCode ) override;
 
 private:
     bool bInitialized;

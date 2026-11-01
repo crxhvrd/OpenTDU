@@ -969,7 +969,7 @@ void GSCamera::tickActiveCamera( float param_2 ) {
         }
     }
     if ( ( nextCameraMode < 0 ) && ( pNextCamera == nullptr ) ) {
-        if ( bInterior != false ) {
+        if ( bForcePlayerCamCockpit ) {
             CameraGame *pBVar3 = nullptr;
             uint32_t uVar1 = pActiveVehicleCamera->getFlags();
             if ( ( ( ( ( uVar1 >> 0x11 & 1 ) == 0 ) &&

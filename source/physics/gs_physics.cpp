@@ -5302,6 +5302,28 @@ bool GSPhysics::getBodyPose( RigidBody_t body,
     return true;
 }
 
+void GSPhysics::setBodyPose( RigidBody_t body, const Matrix4x4f_t &matrix ) {
+    if ( body == nullptr || pPhysicsSystem == nullptr ) {
+        return;
+    }
+
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+    const Eigen::Matrix3f rotation =
+        matrix.block<3, 3>( 0, 0 ).transpose().eval();
+    const Eigen::Quaternionf q( rotation );
+    const JPH::RVec3 position( matrix( 3, 0 ) - shiftOrigin.x(),
+                               matrix( 3, 1 ) - shiftOrigin.y(),
+                               matrix( 3, 2 ) - shiftOrigin.z() );
+
+    JPH::Body *pBody = static_cast<JPH::Body *>( body );
+    lockMutex();
+    pPhysicsSystem->GetBodyInterface().SetPositionAndRotation(
+        pBody->GetID(), position,
+        JPH::Quat( q.x(), q.y(), q.z(), q.w() ).Normalized(),
+        JPH::EActivation::Activate );
+    unlockMutex();
+}
+
 static bool IsLocalPlayerStreamedUnder( PhysicsVehicle *pBegin,
                                         PhysicsVehicle *pEnd ) {
     // FUN_00829ee0

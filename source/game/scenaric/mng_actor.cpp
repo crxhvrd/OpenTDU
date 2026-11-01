@@ -280,7 +280,7 @@ Matrix4x4f_t MngActor::placePlayerVehicle( const int32_t spawnMode,
             ? spots.getWorldSpotChecked( gpScenaric->getCurrentSpotIndex() )
             : nullptr;
     if ( pSpot == nullptr ) {
-        const Entity *pCarPark = findSpawnCarPark( spawnMode );
+        Entity *pCarPark = findSpawnCarPark( spawnMode );
         if ( pCarPark == nullptr ) {
             frame = BuildSpawnFrame( gpScenaric->hasDefaultStartPosition()
                                          ? gpScenaric->getDefaultStartPosition()
@@ -289,7 +289,10 @@ Matrix4x4f_t MngActor::placePlayerVehicle( const int32_t spawnMode,
             return frame;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: EventParameters
+        if ( gpScenaric->getSelectedEventParameters().getSource() ==
+             EventParameters::ES_HardcodedMission ) {
+            pCarPark->setTransformFromDesc();
+        }
         frame = pCarPark->getModelMatrix();
         frame.row( 3 ).head<3>() += Eigen::Vector3f( 0.0f, 1.0f, 0.0f );
         applyPlayerVehicleFrame( frame, bApply );

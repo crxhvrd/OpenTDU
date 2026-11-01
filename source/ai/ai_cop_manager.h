@@ -117,6 +117,7 @@ public:
     void onVoiceEvent( const eCopVoiceEvent event );
     void saveInfringement();
     void restoreInfringement();
+    void stopVoices();
 
     bool startArrestFade();
     void computeFine( CarState *pCar );
@@ -197,7 +198,6 @@ private:
     bool startArrestCinematic();
     bool startArrestLoopCinematic();
     void computeArrestCinematicFrame( Matrix4x4f_t &outFrame ) const;
-    void stopVoices();
     float computeVoiceElapsedTime( int32_t voice );
     void playVoice( int32_t voice, bool bHighPriority );
     void playInfLimitVoice( CarState *pPlayerCar );

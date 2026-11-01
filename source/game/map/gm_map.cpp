@@ -1723,7 +1723,8 @@ void GMMap::updateCursor( const float deltaTime ) {
         } else {
             float x = 0.0f;
             float y = 0.0f;
-            if ( ProjectToMapScreen( zoomOutCursorPosition, nullptr, x, y ) ) {
+            if ( ProjectToMapScreen( zoomOutCursorPosition, pCameraGPS, x,
+                                     y ) ) {
                 cursorX = x;
                 cursorY = y;
             }

@@ -41,6 +41,7 @@ struct VehicleSoundInstance {
 
     bool bIsCar = true;
     bool bEngineBuilt = false;
+    bool bTrackDoors = true;
     float ReverbOpening = 0.0f;
     bool bReverbPresetDirty = false;
 };

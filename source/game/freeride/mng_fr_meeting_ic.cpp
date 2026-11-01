@@ -2,6 +2,9 @@
 #include "mng_fr_meeting_ic.h"
 
 #include "ai/ai_bot_manager.h"
+#include "ai/ai_pool.h"
+#include "ai/ai_vehicle.h"
+#include "ai/gs_ai.h"
 #include "database/gs_database.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_desc.h"
@@ -16,6 +19,7 @@
 #include "game/vehicle/car_state.h"
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
+#include "player_data/player_data_interface.h"
 #include "system/gs_pc_options.h"
 
 MngFRMeetingIC *gpMngFRMeetingIC = nullptr;
@@ -220,9 +224,26 @@ void MngFRMeetingIC::tick( float deltaTime, float ) {
     if ( bOverWLAN ) {
         OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
     } else {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+        AiVehicleList &bots = gpAI->getAIPool()->getList(
+            AiPool::AVL_FirstCategory +
+            static_cast<int32_t>( eAiVehicleCategory::AVC_Bot ) );
+        for ( AiVehicle *pBot : bots ) {
+            if ( pBot == nullptr || pBot->getCarState() == nullptr ) {
+                continue;
+            }
+
+            const float distance = GetSquaredDistanceInICZone(
+                localWorld, pBot->getCarState()
+                                ->getBody()
+                                ->WorldMatrix.row( 3 )
+                                .transpose() );
+            if ( distance < bestDistance ) {
+                BotWaitingTime = 0.0f;
+                bestBotID = pBot->getDPC().BotID;
+                bestDistance = distance;
+            }
+        }
     }
-    (void)localWorld;
 
     if ( bestDistance == kICZoneNoCandidate ) {
         return;
@@ -230,11 +251,16 @@ void MngFRMeetingIC::tick( float deltaTime, float ) {
 
     bInitializing = true;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
-    Stake = 0;
+    const LocalPlayerData &localData = gpPlayerData->getLocalPlayerData();
+    Stake = localData.bStakeEnabled ? int32_t( localData.StakeValue ) : 0;
+    const uint32_t money =
+        gpPlayerData->getLoadedSave()->getDriver()->getMoney();
+    if ( money < uint32_t( Stake ) ) {
+        Stake = int32_t( money );
+    }
 
     if ( !bOverWLAN ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: AI
+        Stake = std::min( GetBotMaxStake( bestBotID ), Stake );
         setBotChallenger( bestBotID );
     } else {
         fillChallengersFromLobby( pBestOpponent );

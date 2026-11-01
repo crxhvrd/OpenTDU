@@ -425,7 +425,7 @@ eRenderPass MngCarAlpha::bindAndGetRenderPassForAlpha( eRenderPass opaquePass,
     return GVar1;
 }
 
-bool MngCarAlpha::onConfigurationChanged() {
+bool MngCarAlpha::onConfigurationChanged( const int32_t ) {
     // FUN_00432620
     // FUN_006b8ff0 (inlined)
     for ( AlphaElement &ppeVar5 : elements ) {

@@ -12,6 +12,7 @@
 #include "database/gs_database.h"
 #include "filesystem/gs_file.h"
 #include "game/scenaric/entity/entity_car_player.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "world/gs_world_streaming.h"
@@ -122,6 +123,56 @@ void GSBrandCar::removeCar( EntityCarPlayer *pSpawnPoint ) {
             car.destroy();
             return;
         }
+    }
+}
+
+void GSBrandCar::reserveSlots( const int32_t numSlots ) {
+    // FUN_008b5860
+    int32_t numActive = 0;
+    for ( const BrandCar &car : cars ) {
+        if ( car.pSpawnPoint != nullptr ) {
+            numActive++;
+        }
+    }
+
+    const int32_t numFree = 10 - numActive;
+    for ( int32_t i = numFree; i < numSlots; i++ ) {
+        destroyFarthestCar();
+    }
+}
+
+void GSBrandCar::destroyFarthestCar() {
+    // FUN_008b5720
+    BrandCar *pFarthest = nullptr;
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( pLocalCar == nullptr ) {
+        for ( BrandCar &car : cars ) {
+            if ( car.pSpawnPoint != nullptr ) {
+                pFarthest = &car;
+                break;
+            }
+        }
+    } else {
+        const Matrix4x4f_t &localMatrix = pLocalCar->getBody()->WorldMatrix;
+        float maxDistanceSq = 0.0f;
+        for ( BrandCar &car : cars ) {
+            if ( car.pSpawnPoint == nullptr ) {
+                continue;
+            }
+
+            const float dx = localMatrix( 3, 0 ) - car.spawnMatrix( 3, 0 );
+            const float dz = localMatrix( 3, 2 ) - car.spawnMatrix( 3, 2 );
+            const float dw = localMatrix( 3, 3 ) - car.spawnMatrix( 3, 3 );
+            const float distanceSq = dx * dx + 0.0f + dz * dz + dw * dw;
+            if ( maxDistanceSq < distanceSq ) {
+                maxDistanceSq = distanceSq;
+                pFarthest = &car;
+            }
+        }
+    }
+
+    if ( pFarthest != nullptr ) {
+        pFarthest->destroy();
     }
 }
 

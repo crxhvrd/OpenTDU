@@ -683,7 +683,7 @@ void WaterResources::unloadResources() {
     gpRender->unregisterConfigListener( this );
 }
 
-bool WaterResources::onConfigurationChanged() {
+bool WaterResources::onConfigurationChanged( const int32_t ) {
     // FUN_008a1830
     if ( gpRender->wasHDRToggled() ) {
         releaseOceanResources();
@@ -1692,7 +1692,7 @@ void CubemapResources::unloadResources() {
     envmap2DB.destroy();
 }
 
-bool CubemapResources::onConfigurationChanged() {
+bool CubemapResources::onConfigurationChanged( const int32_t ) {
     // FUN_008a0520
     if ( gpRender->wasHDRToggled() ) {
         unloadResources();
