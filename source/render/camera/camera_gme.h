@@ -2,7 +2,7 @@
 
 #include "camera_game.h"
 
-class GameMode;
+class GMInstantChallenge;
 
 class CameraGME : public CameraGame {
 public:
@@ -12,6 +12,8 @@ public:
     void initialize() override;
     bool tick( float deltaTime, bool param_1, bool param_2 ) override;
     void destroy() override;
+
+    void setMode( const int32_t mode );
 
 private:
     void updatePan( float deltaTime );
@@ -25,9 +27,11 @@ private:
     float yaw;
     float panSpeedX;
     float panSpeedZ;
+    float field_0x198;
+    float field_0x19c;
     bool bAutoZoom;
     bool bField0x1a1;
     float autoPitchTimer;
     int32_t gmeMode;
-    GameMode *pGameModeEditor;
+    GMInstantChallenge *pGameModeEditor;
 };

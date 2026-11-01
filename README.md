@@ -69,10 +69,10 @@ Progress is tracked on a game mode basis:
 | 2| Map|**Done**|
 | 3| Home|**Done**|
 | 4| Shop|**Done**|
-| 5| Mission|**In Progress**|
-| 6| GameModeEdit|**In Progress**|
+| 5| Mission|**Done**|
+| 6| GameModeEdit|**Done**|
 | 7| CarShowCase|**Done**|
-| 8| InstantChallenge|**In Progress**|
+| 8| InstantChallenge|**Done**|
 | 9| TestCar|**Done**|
 | 10| Garage|**Done**|
 | 11| Living|**Done**|

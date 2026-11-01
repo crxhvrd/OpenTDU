@@ -47,6 +47,7 @@ public:
     inline const AiPath &getLegPath( const int32_t legIndex ) const {
         return paths[legIndex];
     }
+    inline void setHeight( const float newHeight ) { height = newHeight; }
     int32_t findLeg( const AiRoadIt &it );
     void prefetchLegShapes( const int32_t legIndex );
     float computeRouteLength( const bool bLoop,

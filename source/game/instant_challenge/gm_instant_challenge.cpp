@@ -272,9 +272,12 @@ GMInstantChallenge::GMInstantChallenge()
       pCursorProfile( nullptr ),
       hoveredLeg( -1 ),
       bChallengeValid( false ),
-      field_0x114e9c{},
+      cameraPanInputs{},
+      cameraPitchInputs{},
+      cameraYawInputs{},
       field_0x114ebc{},
-      field_0x114ec0{},
+      bKeyZoomIn( false ),
+      bKeyZoomOut( false ),
       bKeyPitchDown( false ),
       bKeyPitchUp( false ),
       bKeyRotateLeft( false ),
@@ -1124,7 +1127,9 @@ bool GMInstantChallenge::isLocalPlayerRouteOwner() const {
 
 void GMInstantChallenge::clearEditorKeys() {
     // FUN_0078bc00
-    memset( field_0x114e9c, 0, sizeof( field_0x114e9c ) );
+    memset( cameraPanInputs, 0, sizeof( cameraPanInputs ) );
+    memset( cameraPitchInputs, 0, sizeof( cameraPitchInputs ) );
+    memset( cameraYawInputs, 0, sizeof( cameraYawInputs ) );
     memset( field_0x114ebc, 0, sizeof( field_0x114ebc ) );
     bKeyPitchDown = false;
     bKeyPitchUp = false;
@@ -1225,8 +1230,8 @@ static bool SnapAwayFromDeadEnd( AiRoadLocation &location,
     return false;
 }
 
-static bool GetScreenCoords( Eigen::Vector4f &outRelative,
-                             const Eigen::Vector4f &position ) {
+bool GetScreenCoords( Eigen::Vector4f &outRelative,
+                      const Eigen::Vector4f &position ) {
     // FUN_007819f0
     const Frustum &frustum =
         gpRender->getRenderPass<RP_Near>().pScene->getFrustumWrite();

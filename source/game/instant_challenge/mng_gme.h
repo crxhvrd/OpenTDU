@@ -17,6 +17,8 @@ struct Viewport;
 
 // Editor cursor (GPS map pointer used to place checkpoints).
 class MngCursor : public Manager {
+    friend class CameraGME;
+
 public:
     const char *getName() const override {
         // FUN_0042c6c0

@@ -18,8 +18,12 @@ class FlashPlayer;
 
 // Challenge editor (GME). Shared by GM_GameModeEdit (challenge creation) and
 // GM_InstantChallenge
+bool GetScreenCoords( Eigen::Vector4f &outRelative,
+                      const Eigen::Vector4f &position );
+
 class GMInstantChallenge : public GameModeWorld {
     friend class GameMechanism;
+    friend class CameraGME;
 
 public:
     static constexpr int32_t kMaxNumWaypoints = MngTracRoad::kMaxNumLegs;
@@ -205,9 +209,12 @@ private:
     AiRoadProfile *pCursorProfile;              // +0x114e90
     int32_t hoveredLeg;                         // +0x114e94
     bool bChallengeValid;                       // +0x114e98
-    int32_t field_0x114e9c[8];                  // +0x114e9c
+    float cameraPanInputs[4];                   // +0x114e9c (L, R, D, U)
+    float cameraPitchInputs[2];                 // +0x114eac (down, up)
+    float cameraYawInputs[2];                   // +0x114eb4 (left, right)
     bool field_0x114ebc[4];                     // +0x114ebc
-    bool field_0x114ec0[2];                     // +0x114ec0
+    bool bKeyZoomIn;                            // +0x114ec0
+    bool bKeyZoomOut;                           // +0x114ec1
     bool bKeyPitchDown;                         // +0x114ec2
     bool bKeyPitchUp;                           // +0x114ec3
     bool bKeyRotateLeft;                        // +0x114ec4
