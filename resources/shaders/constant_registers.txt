@@ -1,0 +1,47 @@
+# View / pass constants (RenderContext::FUN_00515000, uploadLightsToCbuffer)
+VS Pass 0 7
+VS Pass 12 15
+VS Pass 24 31
+VS Pass 36 39
+VS Pass 48 55
+VS Pass 107 107
+VS Pass 123 123
+VS Pass 225 225
+VS Pass 247 247
+VS Pass 251 255
+
+# Per draw (SceneRenderer::bindConstantsToGPU, uploadDirectionalLight,
+# RenderContext::FUN_005146b0, BindOTDUEmissiveConstants)
+VS DrawVS 8 11
+VS DrawVS 16 23
+VS DrawVS 40 43
+VS DrawVS 84 87
+VS DrawVS 93 96
+VS DrawVS 101 104
+VS DrawVS 118 119
+VS DrawVS 238 238
+VS DrawVS 250 250
+
+# Skinning matrices (RenderContext::drawIndexedPrimitive)
+VS Bones 129 224
+
+# Material parameters (Material::bindParameter, bindMaterialParameters)
+VS Material 56 58
+VS Material 76 83
+VS Material 88 91
+VS Material 98 98
+VS Material 109 109
+VS Material 114 117
+VS Material 120 122
+VS Material 124 128
+VS Material 226 237
+VS Material 239 246
+
+# Pixel shader: postfx loops index c8..c14 and c15..c30, so c0..c32 stays
+# in one range
+PS DrawPS 0 32
+PS DrawPS 125 127
+
+# Lamps (c33 + 2 * i), headlights (c100, c101 + 3 * i), night / moon
+PS Pass 33 124
+PS Pass 221 223
