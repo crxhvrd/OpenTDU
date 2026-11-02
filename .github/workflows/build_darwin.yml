@@ -61,4 +61,6 @@ jobs:
       with:
         name: "nightly_${{ env.sha_short }}"
         tag_name: "nightly_${{ env.sha_short }}"
+        prerelease: true
+        make_latest: "false"
         files: ${{ github.workspace }}/build/opentdu_release_macos_vulkan.zip
