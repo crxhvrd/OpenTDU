@@ -5,7 +5,7 @@
 #include "render/render_api.h"
 #include "volk.h"
 
-static constexpr uint32_t kSamplerHeapCapacity = 32u;
+static constexpr uint32_t kSamplerHeapCapacity = 48;
 
 struct SamplerHeapManager {
     struct SamplerEntry {
