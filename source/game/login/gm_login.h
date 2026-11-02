@@ -53,6 +53,11 @@ private:
     void resumeSavedGame();
     void startNewGame();
 
+    void onConnectionFailed();
+    void onProxyFailed();
+    void onLoginFailed( const bool bSuccess );
+    void connectToGameServer();
+
 private:
     MngFade fade;
     MngFlashLocalize flashLocalize;

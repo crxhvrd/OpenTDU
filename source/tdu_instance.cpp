@@ -108,6 +108,8 @@
 
 #include <filesystem>
 
+static constexpr const char *kDefaultORBAddress = "orb.testdriveunlimited.com";
+
 const char **gpCmdLineArgs = nullptr;
 int32_t gCmdLineArgCount = 0;
 TestDriveGameInstance *gpTestDriveInstance = nullptr;
@@ -122,11 +124,7 @@ bool DAT_010e723c = false;
 bool DAT_010e723d = false;
 bool DAT_010e7245 = false;
 
-// TODO: Move those to the right cpp/h
-static char gORBAddress[128];
 uint64_t gAvailableMemory = 0; // DAT_01041a2c
-
-static constexpr const char *kDefaultORBAddress = "orb.testdriveunlimited.com";
 
 bool gBreakOnAssertFailure = false; // DAT_00f47931
 bool gDisableAssert = false;
@@ -167,14 +165,6 @@ static CmdLineArg CmdLineArgNoFocusPause( "nofocuspause",
                                               gbIgnoreFocusLoss = true;
                                           } );
 #endif
-
-static CmdLineArg CmdLineArgORB( "orb", []( const char *pArg ) {
-    // FUN_00406520
-    strncpy( gORBAddress, pArg, 127 );
-    gORBAddress[127] = '\0';
-
-    OTDU_LOG_INFO( "ORB set to '%s'\n", gORBAddress );
-} );
 
 eGameMode gGameModeOverride = GM_Invalid;
 static CmdLineArg CmdLineArgGameMode( "gm", []( const char *pArg ) {

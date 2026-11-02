@@ -423,8 +423,9 @@ void GameModeScene::onResourceStreamed() {
 
         pPlayer->setVariableValue(
             "/:player_level", pSave->getAchievements()->getPlayerLevel() + 1 );
-        pPlayer->setVariableValue( "/:player_reputation",
-                                   int32_t( pSave->getDriver()->getLevel() ) );
+        pPlayer->setVariableValue(
+            "/:player_reputation",
+            int32_t( pSave->getDriver()->getReputation() ) );
 
         pPlayer->setVariableValue( "/:state_Cha", 0 );
     }

@@ -19,7 +19,9 @@
 #include "gs_timer.h"
 #include "input/ed_dev.h"
 #include "input/input_device.h"
+#include "online/ed_net_gamespy_manager.h"
 #include "online/gs_online.h"
+#include "online/p2p_game_service.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "game/vehicle/gs_car_display.h"
 #include "game/gs_intro_pool.h"
@@ -206,7 +208,6 @@ void GMLogin::reset() {
     pConfigPCFlashPlayer = gpFlash->getFlashPlayer( "CONFIGPC" );
     pLoginFlashPlayer = gpFlash->getFlashPlayer( "LOG_IN" );
 
-
     // Original game returns version only (i.e. for 'MC 1.66 A' => '1.66 A')
     pGeneralFlashPlayer->setVariableValue( "/:BetaVersion",
                                            TestDrive::GetVersionID() );
@@ -247,7 +248,7 @@ void GMLogin::reset() {
     state = GLS_Signing;
     idleTime = gpTimer->SystemTotalTime;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+    gpOnline->resetLoginState();
 
     AchievementsData *pAchievements =
         gpPlayerData->getLoadedSave()->getAchievements();
@@ -261,7 +262,8 @@ void GMLogin::reset() {
 
     gpTestDriveInstance->clearGMChangeInProgressFlag();
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+    gpOnline->clearFieldA713();
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (CP2PFreeRideMgr +0x154ac = 1)
 
     gpFlash->setLocalizedStrings();
 
@@ -359,7 +361,7 @@ void GMLogin::onClose( ePopupAnswer answer, void *param_2, int32_t param_3 ) {
         }
 
         if ( answer == ePopupAnswer::PA_Accept ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+            SDL_OpenURL( gpOnline->getProxyHostInterface().getUpdateURL() );
             TestDrive::RequestGameExit();
             return;
         }
@@ -577,6 +579,7 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
             return;
         }
 
+        gpEdNetGamespyManager->resetConnect();
         if ( gpPlayerData->isOnline() ) {
             gpPlayerData->setOnline( false );
             gpPlayerData->notify( 0u );
@@ -609,35 +612,111 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         }
         return;
 
-    case GLS_WaitForLoad:
+    case GLS_WaitForLoad: {
         if ( gpFlashMessageBox->getInputState() !=
              ModalMessageBox::eInputState::MMBIS_None ) {
             return;
         }
 
-        OTDU_UNIMPLEMENTED; // TODO: PLAYERSAVE / ONLINE
+        LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
+        Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
+        // FUN_0088fed0
+        strncpy( pDriver->Nickname, localPlayerData.Nickname,
+                 sizeof( pDriver->Nickname ) - 1 );
+        pDriver->notify( 0u );
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (copy the nickname to the
+                                 // local P2PPlayer +0x20ec)
+
+        gpEdNetGamespyManager->setNick( localPlayerData.Nickname );
+        gpEdNetGamespyManager->setEmail( localPlayerData.Email );
+        gpEdNetGamespyManager->setPassword( localPlayerData.Password );
+        gpEdNetGamespyManager->setCDKey( gpCDKey->getGameKey() );
+        if ( localPlayerData.bOffline ) {
+            gpEdNetGamespyManager->resetConnectNewAccount();
+        } else {
+            gpEdNetGamespyManager->resetConnect();
+        }
 
         gpFlashMessageBox->display( kConnectingHashcode, 10.0f, 0xb, nullptr,
                                     nullptr, false );
         state = GLS_DeletingBadSaves;
         return;
+    }
 
-    case GLS_DeletingBadSaves:
-        OTDU_UNIMPLEMENTED; // TODO: ONLINE
+    case GLS_DeletingBadSaves: {
+        LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
+        if ( localPlayerData.bOffline ) {
+            const int32_t result =
+                gpEdNetGamespyManager->pollConnectCreateAccount();
+            if ( result == edNetGamespyManager::kPollCreateFailed ) {
+                onConnectionFailed();
+                state = GLS_MainMenu;
+                return;
+            }
+            if ( result != edNetGamespyManager::kPollCreateOK ) {
+                return;
+            }
+            localPlayerData.bOffline = false;
+        } else {
+            const int32_t result = gpEdNetGamespyManager->pollConnect();
+            if ( result == edNetGamespyManager::kPollConnectFailed ) {
+                onConnectionFailed();
+                state = GLS_MainMenu;
+                return;
+            }
+            if ( result != edNetGamespyManager::kPollConnectOK ) {
+                return;
+            }
+        }
 
+        gpOnline->startProxy();
         state = GLS_WaitForSave;
         return;
+    }
 
     case GLS_WaitForSave:
-        OTDU_UNIMPLEMENTED; // TODO: ONLINE
+        if ( gpCP2PGameService->getProxy().getResult() ==
+             edNetProxy::R_Failed ) {
+            onProxyFailed();
+            state = GLS_MainMenu;
+            return;
+        }
 
-        state = GLS_MainMenu;
+        if ( !gpOnline->getServices().getDiscovery().isDone() ) {
+            return;
+        }
+
+        state = GLS_NewContinueQuestion;
+        connectToGameServer();
         return;
 
     case GLS_NewContinueQuestion:
-        OTDU_UNIMPLEMENTED; // TODO: ONLINE
+        if ( !gpOnline->isLoginAnswered() ) {
+            return;
+        }
 
-        state = GLS_MainMenu;
+        if ( !gpOnline->isLoggedIn() ) {
+            onLoginFailed( false );
+            state = GLS_MainMenu;
+            return;
+        }
+
+        if ( !gpPlayerData->isOnline() ) {
+            gpPlayerData->setOnline( true );
+            gpPlayerData->notify( 0u );
+        }
+        gpFlashMessageBox->close();
+        gpPCOptions->setMainMenuAllowed( true );
+        gpPCOptions->openMainMenu( false );
+
+        gpOnline->getServices().requestNetConfig( "netconfig.xml" );
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (stats summary upload
+                                 // FUN_0087cc40, Savegame::r_check
+                                 // FUN_00871ac0 + FUN_008983f0 summary;
+                                 // neither blocks login)
+
+        waitExitStartTicks = GetTickCountMs();
+        state = GLS_WaitExit;
         return;
 
     case GLS_WaitExit:
@@ -646,7 +725,8 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
             return;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (SavegameCheck result +0xc
+                                 // and SavegameSave vtbl+8, SecuROM payload)
         return;
 
     case GLS_MainMenu: {
@@ -767,9 +847,7 @@ void GMLogin::startNewGame() {
 
     gpOnline->notifyCheatDetected( pDriver );
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (drop the lobby, server and GPS
-                             // tracker endpoints, then FUN_008768d0 /
-                             // FUN_00876970)
+    gpOnline->resetForNewGame();
 
     if ( gpScenaric != nullptr ) {
         gpScenaric->getIntroTutorial().reset();
@@ -837,7 +915,136 @@ void GMLogin::ChangeProfile( const uint64_t profileHashcode ) {
     gpTestDriveInstance->setNextGameMode( GM_Login );
     gpTestDriveInstance->setGMChangeInProgressFlag();
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_0087c520)
+    gpOnline->resetForProfileChange();
+}
+
+void GMLogin::onConnectionFailed() {
+    // FUN_0074e660
+    if ( gpPlayerData->isOnline() ) {
+        gpPlayerData->setOnline( false );
+        gpPlayerData->notify( 0u );
+    }
+    gpFlashMessageBox->close();
+
+    LocalPlayerData &localPlayerData = gpPlayerData->getLocalPlayerData();
+    auto prompt = [this]( const uint64_t hashcode, const char *pMessage,
+                          const int32_t userData, const int32_t dbIndex ) {
+        TestDrive::DisplayModalPrompt( false, hashcode, dbIndex, nullptr, this,
+                                       nullptr, userData, pMessage, true, false,
+                                       MPT_Warning, gpFlashMessageBox );
+    };
+
+    switch ( int32_t( gpEdNetGamespyManager->getLastError() ) ) {
+    case 2:
+        prompt( 0x371739a, "_Gamespy service temporarily unavailable!!", 1, 0 );
+        break;
+    case 3:
+        prompt( 0x362315a, "_Gamespy service unavailable!!", 1, 0 );
+        break;
+    case 4:
+        prompt( 0x3bc383a, "_Gamespy Friends service unavailable!!", 1, 0 );
+        break;
+    case 5:
+        prompt( 0x3346a9a, "_Login timeout!!", 1, 0 );
+        break;
+    case 6:
+    case 0x14:
+    case 0x16:
+        prompt( 0x380b5da, "_Invalid Nick!!", 0, 0 );
+        localPlayerData.bOffline = true;
+        break;
+    case 7:
+        prompt( 0x39f3a5a, "_Invalid Email!!", 0, 0 );
+        localPlayerData.bOffline = true;
+        break;
+    case 8:
+    case 0x17:
+        prompt( 0x38ff81a, "_Invalid Password!!", 0, 0 );
+        localPlayerData.bOffline = true;
+        break;
+    case 9:
+        prompt( 0x3ae7c9a, "_Invalid Profile!!", 0, 0 );
+        localPlayerData.bOffline = true;
+        break;
+    case 0xc:
+        prompt( 0x335f13a, "_Nick already in use!!", 0, 0 );
+        localPlayerData.bOffline = true;
+        break;
+    case 10:
+    case 0x15:
+        prompt( 0x343acda, "_Login failed!!", 1, 0 );
+        break;
+    case 0x18:
+        prompt( 0x5b0b0c,
+                "_Someone is already logged on with this account. If you "
+                "have just been disconnected, please wait a minute and try "
+                "again.",
+                1, 0xb );
+        break;
+    case 0x1f:
+        prompt( 0x352ef1a, "_Invalid CD Key!!", 1, 0 );
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (DAT_00fa9884 = 2 when set:
+                                 // invalidate the cached CD key state)
+        break;
+    default:
+        prompt( 0x345337a, "_Connection failed.", 1, 0 );
+        break;
+    }
+
+    gpPCOptions->setMainMenuAllowed( true );
+    gpPCOptions->openMainMenu( false );
+}
+
+void GMLogin::onProxyFailed() {
+    // FUN_0074e570
+    if ( gpPlayerData->isOnline() ) {
+        gpPlayerData->setOnline( false );
+        gpPlayerData->notify( 0u );
+    }
+    gpFlashMessageBox->close();
+
+    if ( gpOnline->getProxyHostInterface().getLastError() ==
+         edNetProxyProtocol::IE_Rejected ) {
+        TestDrive::DisplayModalPrompt( true, 0x36b802a, 0, nullptr, this,
+                                       nullptr, 2, "_Download update", true,
+                                       false, MPT_Warning, gpFlashMessageBox );
+    } else {
+        TestDrive::DisplayModalPrompt( false, 0x345337a, 0, nullptr, this,
+                                       nullptr, 1, "_Connection failed.", true,
+                                       false, MPT_Warning, gpFlashMessageBox );
+    }
+
+    gpPCOptions->setMainMenuAllowed( true );
+    gpPCOptions->openMainMenu( false );
+}
+
+void GMLogin::onLoginFailed( const bool bSuccess ) {
+    // FUN_0074e9a0
+    gpPlayerData->setOnline( bSuccess );
+    gpPlayerData->notify( 0u );
+    gpFlashMessageBox->close();
+
+    if ( !bSuccess ) {
+        TestDrive::DisplayModalPrompt( false, 0x345337a, 0, nullptr, this,
+                                       nullptr, 1, "_Connection failed.", true,
+                                       false, MPT_Warning, gpFlashMessageBox );
+    }
+
+    gpPCOptions->setMainMenuAllowed( true );
+    gpPCOptions->openMainMenu( false );
+}
+
+void GMLogin::connectToGameServer() {
+    // FUN_0074ea40
+    const OnlineServices &services = gpOnline->getServices();
+    if ( services.getDiscovery().isSuccess() &&
+         services.UserDatabase.IP != 0u ) {
+        gpOnline->connectGameServer( 0 );
+        return;
+    }
+
+    onLoginFailed( false );
+    state = GLS_MainMenu;
 }
 
 void GMLogin::pause() {

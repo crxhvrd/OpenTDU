@@ -599,11 +599,12 @@ bool PlayerSave::deserialize( const void *pSaveData,
     }
     nextCarUniqueID++;
 
-    OTDU_LOG_DEBUG( "Save loaded: driver '%s' (id %u, level %.1f), %u credits, "
-                    "%.1f km, car %u, %d car(s) in garage, next car id %u\n",
-                    driver.Nickname, driver.ID, driver.getLevel(),
-                    driver.getMoney(), driver.getOdometerKms(),
-                    driver.CurrentCar, garage.getNumCars(), nextCarUniqueID );
+    OTDU_LOG_DEBUG(
+        "Save loaded: driver '%s' (id %u, reputation %.1f), %u credits, "
+        "%.1f km, car %u, %d car(s) in garage, next car id %u\n",
+        driver.Nickname, driver.ID, driver.getReputation(), driver.getMoney(),
+        driver.getOdometerKms(), driver.CurrentCar, garage.getNumCars(),
+        nextCarUniqueID );
 
     ranking.deserialize( saveStream );
     mailbox.deserialize( saveStream );

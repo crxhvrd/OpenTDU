@@ -17,7 +17,7 @@ Driver::Driver() : Notifiable() {
     memset( pMoneyOP, 0, sizeof( pMoneyOP ) );
     memset( pCurrentHouse, 0, sizeof( pCurrentHouse ) );
     memset( pLocale, 0, sizeof( pLocale ) );
-    memset( pLevel, 0, sizeof( pLevel ) );
+    memset( pReputation, 0, sizeof( pReputation ) );
     memset( ClubName, 0, sizeof( ClubName ) );
     memset( pOdometerKms, 0, sizeof( pOdometerKms ) );
 
@@ -54,7 +54,7 @@ void Driver::clear() {
     field28_0x78 = 0u;
 
     setLocale( 0u );
-    setLevel( 0.0f );
+    setReputation( 0.0f );
     setOdometerKms( 0.0f );
 
     ClubName[0] = '\0';
@@ -162,7 +162,7 @@ void Driver::initialize( const char *pNickname,
     field4_0x24 = param_9;
 
     setLocale( 0u ); // TODO: PLAYERSAVE (FUN_00879ec0)
-    setLevel( 0.0f );
+    setReputation( 0.0f );
 
     notify( 0u );
 }
@@ -295,10 +295,12 @@ void Driver::setLocale( const uint32_t value ) {
     TestDriveTEAWriteDword( pLocale, value );
 }
 
-float Driver::getLevel() const { return TestDriveTEAReadFloat( pLevel ); }
+float Driver::getReputation() const {
+    return TestDriveTEAReadFloat( pReputation );
+}
 
-void Driver::setLevel( const float value ) {
-    TestDriveTEAWriteFloat( pLevel, value );
+void Driver::setReputation( const float value ) {
+    TestDriveTEAWriteFloat( pReputation, value );
 }
 
 float Driver::getOdometerKms() const {

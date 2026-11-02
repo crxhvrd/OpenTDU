@@ -6,6 +6,9 @@ public:
     inline uint32_t getWrittenSize() const { return bufferSize; }
     inline uint32_t getReadCursor() const { return bufferOffset; }
     inline void setWrittenSize( const uint32_t size ) { bufferSize = size; }
+    inline const uint8_t *getBuffer() const {
+        return static_cast<const uint8_t *>( pBuffer );
+    }
 
 public:
     edStore();

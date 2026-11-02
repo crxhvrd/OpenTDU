@@ -52,8 +52,8 @@ public:
     uint32_t getLocale() const;
     void setLocale( const uint32_t value );
 
-    float getLevel() const;
-    void setLevel( const float value );
+    float getReputation() const;
+    void setReputation( const float value );
 
     float getOdometerKms() const;
     void setOdometerKms( const float value );
@@ -74,8 +74,8 @@ public:
     uint32_t pCurrentHouse[2] = {}; // TEA encrypted
     char Nickname[kNicknameLength] = {};
     uint32_t field28_0x78 = 0u;
-    uint32_t pLocale[2] = {}; // TEA encrypted
-    uint32_t pLevel[2] = {};  // TEA encrypted
+    uint32_t pLocale[2] = {};     // TEA encrypted
+    uint32_t pReputation[2] = {}; // TEA encrypted
     char ClubName[kClubNameLength + 1] = {};
     uint32_t pOdometerKms[2] = {}; // TEA encrypted
     bool bCheatDetected = false;

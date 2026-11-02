@@ -490,8 +490,13 @@ void GSConfig::registerGameCommands() {
     } );
 
     registerCommand( "ORB", [&]( const char *pArg ) {
-        // FUN_0098459
-        // NOP
+        // FUN_00984590
+        std::string argStr( pArg );
+        size_t it = 0;
+
+        std::string orbAddress = ParseString( argStr, it );
+        int32_t orbPort = ParseInteger( argStr, it );
+        gpOnline->setORBAddressFromIni( orbAddress.c_str(), orbPort );
     } );
 
     registerCommand( "DEFAULTLOGIN", [&]( const char *pArg ) {

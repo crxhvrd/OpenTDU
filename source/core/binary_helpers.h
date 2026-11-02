@@ -79,3 +79,16 @@ static inline int32_t FloatToInt( float value ) {
 static float UIntToFloat( const int32_t value ) {
     return static_cast<float>( static_cast<uint32_t>( value ) );
 }
+
+static inline uint32_t ReadUint32LittleEndian( const uint8_t *pSrc ) {
+    return uint32_t( pSrc[0] ) | ( uint32_t( pSrc[1] ) << 8 ) |
+           ( uint32_t( pSrc[2] ) << 16 ) | ( uint32_t( pSrc[3] ) << 24 );
+}
+
+static inline void WriteUint32LittleEndian( uint8_t *pDst,
+                                            const uint32_t value ) {
+    pDst[0] = uint8_t( value );
+    pDst[1] = uint8_t( value >> 8 );
+    pDst[2] = uint8_t( value >> 16 );
+    pDst[3] = uint8_t( value >> 24 );
+}
