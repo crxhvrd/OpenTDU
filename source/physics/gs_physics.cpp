@@ -39,6 +39,16 @@
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/streaming_manager.h"
+#include "world/gs_boat.h"
+#include "world/gs_aircraft.h"
+#include "world/details/gs_details.h"
+#include "flash/gs_flash.h"
+#include "online/gs_online.h"
+#include "game/avatar/gs_avatar.h"
+#include "ai/gs_ai.h"
+#include "ai/ai_config.h"
+#include "audio/vehicle/gs_vehicle_sound.h"
+#include "debug/ed_debug_text.h"
 
 #include "imgui.h"
 
@@ -1617,8 +1627,7 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
         gGMeterAvailableBits |= 1;
     }
 
-    OTDU_UNIMPLEMENTED; // TODO: car tester state machine (DAT_010e7654 /
-                        // DAT_010e7658, writes CarData.txt)
+    tickCarTester( deltaTime );
 
     updateGMeterToggle();
 
@@ -1628,6 +1637,789 @@ void GSPhysics::tick( float totalTime, float deltaTime ) {
 
     updateSecretIslandTeleporter();
 }
+
+struct CarTesterResult {
+    char Name[32];
+    float Cx;
+    int32_t CoefAccel; // percent
+    int32_t CoefBrake; // percent
+    float AccelTime;   // s
+    float BrakeDistance;
+    int32_t CarID;
+    int32_t PackSlot;
+};
+
+static constexpr int32_t kMaxCarTesterResults = 256;
+static CarTesterResult gCarTesterResults[kMaxCarTesterResults]; // DAT_016a2d68
+
+static int32_t gCarTesterState = 0;           // DAT_010e7654
+static int32_t gCarTesterSequence = 0;        // DAT_010e7658
+static bool gbCarTesterMeasureOnly = false;   // DAT_010e7650
+static bool gbCarTester3DEnabled = true;      // DAT_00f87fe8
+static int32_t gCarTesterLastCarID = -1;      // DAT_00fab51c
+static int32_t gCarTesterCxSettleTicks = 500; // DAT_00fab510
+static float gCarTesterCxStep = 0.1f;         // DAT_00fab518
+static float gCarTesterPlaneHeight = 1.0f;    // DAT_00fab514
+static bool gbCarTesterNextCar = false;       // DAT_016a2d5c
+static bool gbCarTesterNextPack = false;      // DAT_016a2d58
+static int32_t gCarTesterPackSlot = 0;        // DAT_016a2d4c
+static int32_t gCarTesterPackIndex = 0;       // DAT_016a2d50
+static int32_t gCarTesterNumResults = 0;      // DAT_016a2d60
+static uint32_t gCarTesterPlaneBodyID =
+    JPH::BodyID::cInvalidBodyID;              // DAT_016a696c
+static int32_t gCarTesterTickCounter = 0;     // DAT_016a6968
+static float gCarTesterCoefStep = 0.0f;       // DAT_016a97e4
+static float gCarTesterPrevError = 0.0f;      // DAT_016a97e0
+static float gCarTesterCx = 0.0f;             // DAT_016a97dc
+static float gCarTesterOmegaError = 0.0f;     // DAT_016a97d8
+static float gCarTesterPrevOmegaError = 0.0f; // DAT_016a97d4
+static Matrix4x4f_t gCarTesterReturnMatrix =
+    Matrix4x4f_t::Zero();                                   // DAT_0168cdf0
+static CarState *gpCarTesterCarState = nullptr;             // DAT_016a6974
+static PhysicsVehicle *gpCarTesterVehicle = nullptr;        // DAT_016a6978
+static DBEntryCarPhysicsData *gpCarTesterCarData = nullptr; // DAT_016a6970
+
+static constexpr float kCarTesterPlaneHalfExtent = 60000.0f; // 0x476a6000
+static const Eigen::Vector4f
+    kCarTesterTrackStart( 9200.0f, 20.0f, 9800.0f, 0.0f );
+static constexpr float kCarTesterAccelTolerance = 0.025f; // DAT_00f41734
+static constexpr float kCarTesterBrakeTolerance = 0.25f;  // DAT_00f416dc
+static constexpr float kCarTesterSixtyMphMs = 27.263611f; // DAT_00f421f4
+static constexpr float kCarTesterStoppedSpeed = 0.01f;    // DAT_00f416d4
+static constexpr float kCarTesterBrakeTargetMph = 60.0f;  // FLOAT_00f41744
+static constexpr float kCarTesterBrakeStartSpeed = -45.141388f;
+static constexpr float kCarTesterStepDecay = 0.5f;       // FLOAT_00f41674
+static constexpr float kCarTesterInitialCoefStep = 0.1f; // FLOAT_00f41668
+static constexpr float kCarTesterCxOmegaRatio = 0.9f;    // FLOAT_00f8a26c
+static constexpr float kCarTesterCxRestartSpeedRatio = 0.99f;
+static constexpr int32_t kCarTesterCxSpinUpTicks = 50;
+static constexpr float kCarTesterCxOmegaTolerance = 1.0f;     // FLOAT_00f4165c
+static constexpr float kCarTesterRealBrakeScale = 1.6666666f; // DAT_00f421c8
+static constexpr float kCarTesterRadPerSecToRpm = 9.549296f;  // DAT_00f41698
+static constexpr float kCarTesterMsToMph = 2.2374146f;        // DAT_00f419f4
+static constexpr float kCarTesterCoefToPercent = 100.0f;      // DAT_00f41708
+
+bool IsCarTesterActive() { return gCarTesterState != 0; }
+
+static int32_t CountCarPacks( const int32_t carID ) {
+    // FUN_00846500
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    int32_t numPacks = 0;
+    for ( uint32_t i = 0; i < gameDB.pNumItems[0xd]; i++ ) {
+        DBEntryCarPack *pCarPack = &gameDB.DBCarPack[i];
+        if ( gpDatabase->isCarPackAvailable( pCarPack ) &&
+             IsCarInPack( pCarPack, carID ) ) {
+            numPacks++;
+        }
+    }
+    return numPacks;
+}
+
+static DBEntryCarPack *FindCarPack( const int32_t carID, int32_t index ) {
+    // FUN_00846470
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    for ( uint32_t i = 0; i < gameDB.pNumItems[0xd]; i++ ) {
+        DBEntryCarPack *pCarPack = &gameDB.DBCarPack[i];
+        if ( !gpDatabase->isCarPackAvailable( pCarPack ) ||
+             !IsCarInPack( pCarPack, carID ) ) {
+            continue;
+        }
+        if ( index == 0 ) {
+            return pCarPack;
+        }
+        index--;
+    }
+    return nullptr;
+}
+
+static void ResetCarTesterVehicle( PhysicsVehicle *pVehicle,
+                                   const Matrix4x4f_t &transform ) {
+    // FUN_0083d830
+    PhysicsLock lock;
+    pVehicle->resetToTransform( transform, true );
+}
+
+static void SetCarTesterPostponedPause( PhysicsVehicle *pVehicle,
+                                        const uint8_t request ) {
+    PhysicsLock lock;
+    pVehicle->setPostponedPause( request );
+}
+
+static float GetCarTesterSpeed( const PhysicsVehicle *pVehicle ) {
+    // FUN_00829b20
+    return pVehicle->getChassisVelocity().head<3>().norm();
+}
+
+static CarTesterResult &GetCarTesterResult( const int32_t index ) {
+    return gCarTesterResults[std::clamp( index, 0, kMaxCarTesterResults - 1 )];
+}
+
+static CarTesterResult &RecordCarTesterName() {
+    CarTesterResult &result = GetCarTesterResult( gCarTesterNumResults );
+    const char *pName = gpCarTesterCarData->CarResourceFilename.pAsString;
+    strncpy( result.Name, pName != nullptr ? pName : "",
+             sizeof( result.Name ) - 1 );
+    result.Name[sizeof( result.Name ) - 1] = '\0';
+    return result;
+}
+
+static void NextCarTesterResult() {
+    gCarTesterNumResults =
+        std::min( gCarTesterNumResults + 1, kMaxCarTesterResults - 1 );
+}
+
+static void SetCarTesterServicesPaused( const bool bPaused ) {
+    GameSystem *pServices[] = { gpBoat,     gpAircraft, gpFlash,
+                                gpOnline,   gpAvatar,   gpAI,
+                                gpScenaric, gpDetails,  gpVehicleSound };
+    for ( GameSystem *pService : pServices ) {
+        if ( pService != nullptr ) {
+            pService->setPaused( bPaused );
+        }
+    }
+}
+
+static void WriteCarTesterCarData() {
+    FILE *pFile = fopen( "CarData.txt", "w+" );
+    if ( pFile == nullptr ) {
+        return;
+    }
+    fprintf( pFile, " %20s, %4s, %7s, %3s, %3s\n", "Name", "id", "cx", "acc",
+             "brk" );
+    for ( int32_t i = 0; i < gCarTesterNumResults; i++ ) {
+        const CarTesterResult &result = gCarTesterResults[i];
+        fprintf( pFile, " %20s, %4d, %2.4f, %3d, %3d\n", result.Name,
+                 result.CarID, result.Cx, result.CoefAccel, result.CoefBrake );
+    }
+    fclose( pFile );
+}
+
+static void WriteCarTesterCarPackData() {
+    FILE *pFile = fopen( "CarPackData.txt", "w+" );
+    if ( pFile == nullptr ) {
+        return;
+    }
+    fprintf( pFile, " %20s, %4s, %7s, %7s, %7s\n", "Name pack", "id", "0to60",
+             "60to0", "real60to0" );
+    for ( int32_t i = 0; i < gCarTesterNumResults; i++ ) {
+        const CarTesterResult &result = gCarTesterResults[i];
+        fprintf( pFile, " %20s T%d, %4d, %2.4f, %2.4f, %2.4f\n", result.Name,
+                 result.PackSlot, result.CarID, result.AccelTime,
+                 result.BrakeDistance * kCarTesterRealBrakeScale,
+                 result.BrakeDistance );
+    }
+    fclose( pFile );
+}
+
+uint32_t GSPhysics::addCarTesterPlane( const float planeHeight,
+                                       const float halfExtent ) {
+    // FUN_00844b50
+    if ( pPhysicsSystem == nullptr ) {
+        return JPH::BodyID::cInvalidBodyID;
+    }
+
+    const Eigen::Vector4f shiftOrigin = GetShiftOrigin();
+    JPH::BodyCreationSettings settings(
+        new JPH::BoxShapeSettings(
+            JPH::Vec3( halfExtent, 1.0f, halfExtent ),
+            JPH::cDefaultConvexRadius,
+            TDUPhysicsMaterials::get(
+                static_cast<uint32_t>( eMaterialType::MT_Asphalt ) ) ),
+        JPH::RVec3( 0.0f, planeHeight - 1.0f - shiftOrigin.y(), 0.0f ),
+        JPH::Quat::sIdentity(), JPH::EMotionType::Static,
+        TDUPhysLayers::NON_MOVING );
+    settings.mFriction = 1.0f; // FLOAT_00f4165c
+    settings.mUserData = TDUSurface::Paved;
+
+    lockMutex();
+    const JPH::BodyID id = pPhysicsSystem->GetBodyInterface().CreateAndAddBody(
+        settings, JPH::EActivation::DontActivate );
+    unlockMutex();
+    return id.GetIndexAndSequenceNumber();
+}
+
+void GSPhysics::reloadCarTesterVehicle() {
+    // FUN_0084de60
+    CarState *pCarState = gpCarTesterCarState;
+    if ( pCarState == nullptr ) {
+        gbCarTesterNextCar = false;
+        gbCarTesterNextPack = false;
+        return;
+    }
+
+    const int32_t carID = pCarState->getCarID();
+    const Matrix4x4f_t transform = pCarState->getBody()->WorldMatrix;
+    gpCarState->unloadVehicle( pCarState, false, false );
+    gpScenaric->getLocalPlayer().setCarState( nullptr );
+    gpCarTesterCarState = nullptr;
+
+    int32_t nextCarID = carID;
+    uint64_t packHashcode = 0xffffffffffffffffull;
+    bool bPackFound = false;
+    if ( gbCarTesterNextPack ) {
+        const int32_t numPacks = CountCarPacks( carID );
+        for ( ; !bPackFound && gCarTesterPackIndex < numPacks;
+              gCarTesterPackIndex++ ) {
+            DBEntryCarPack *pCarPack =
+                FindCarPack( carID, gCarTesterPackIndex );
+            for ( ; pCarPack != nullptr && gCarTesterPackSlot < 3;
+                  gCarTesterPackSlot++ ) {
+                DBEntryAftermarketPack *pPack =
+                    reinterpret_cast<DBEntryAftermarketPack *>(
+                        pCarPack->Upgrades[gCarTesterPackSlot].PackHashcode );
+                void *pPackID = pPack != nullptr
+                                    ? reinterpret_cast<void *>( pPack->PackID )
+                                    : nullptr;
+                if ( pPackID != nullptr &&
+                     strcmp( static_cast<const char *>( pPackID ), "None" ) !=
+                         0 ) {
+                    packHashcode = gpDatabase->getGameDB()
+                                       .Databases[0xc]
+                                       .getHashcodeForPointer( pPackID );
+                    bPackFound = true;
+                    break;
+                }
+            }
+            if ( bPackFound ) {
+                break;
+            }
+            gCarTesterPackSlot = 0;
+        }
+    }
+    if ( !bPackFound ) {
+        gCarTesterPackIndex = 0;
+        gCarTesterPackSlot = -1;
+        nextCarID = GetNextAvailableCarID( carID );
+    }
+
+    if ( nextCarID > 0 ) {
+        VehicleSpawnParams params;
+        params.Transform = transform;
+        params.bSetPosition = true;
+        params.bCastToGround = true;
+        params.bAddPhysicsPaused = true;
+        params.bResetCar = true;
+        params.PhantomMode = 1;
+        CarState *pNewCarState = gpCarState->spawnVehicle(
+            nextCarID, 0, 0, packHashcode, params, -1, 0, VIT_Player );
+
+        gpCarTesterCarState = pNewCarState;
+        gpScenaric->getLocalPlayer().setCarState( pNewCarState );
+        gpCarTesterVehicle = pNewCarState != nullptr
+                                 ? pNewCarState->getPhysicsVehicle()
+                                 : nullptr;
+        gpCarTesterCarData =
+            pNewCarState != nullptr
+                ? gpDatabase->getCarDBEntry( pNewCarState->getCarID() )
+                : nullptr;
+        if ( gpCarTesterVehicle != nullptr ) {
+            SetCarTesterPostponedPause( gpCarTesterVehicle, 2 );
+        }
+    } else {
+        gpCarTesterVehicle = nullptr;
+        gpCarTesterCarData = nullptr;
+    }
+
+    gCarTesterPackSlot++;
+    gbCarTesterNextCar = false;
+    gbCarTesterNextPack = false;
+}
+
+void GSPhysics::updateCarTester3DToggle() {
+    // FUN_0084de60
+    if ( gpActiveGameMode == nullptr ) {
+        return;
+    }
+    StreamingManager *pStreaming =
+        gpWorld != nullptr ? gpWorld->getStreamingManager() : nullptr;
+
+    if ( !gbCarTester3DEnabled ) {
+        if ( gpActiveGameMode->isDrawEnabled() ) {
+            SetCarTesterServicesPaused( true );
+            gpActiveGameMode->setDrawEnabled( false );
+            if ( pStreaming != nullptr ) {
+                pStreaming->sectorManager.bDrawSector = true;
+                pStreaming->setActiveRenderLayers( 0 );
+            }
+            OTDU_UNIMPLEMENTED; // TODO: sector 6 actor flag (+0x245) and
+                                // WorldStreaming +0x8a3b4
+        }
+    } else if ( !gpActiveGameMode->isDrawEnabled() ) {
+        SetCarTesterServicesPaused( false );
+        gpActiveGameMode->setDrawEnabled( true );
+        if ( pStreaming != nullptr ) {
+            pStreaming->sectorManager.bNeedStreamUpdate = true;
+            pStreaming->sectorManager.bDrawSector = false;
+            pStreaming->setActiveRenderLayers( 1 );
+        }
+        OTDU_UNIMPLEMENTED; // TODO: sector 6 actor flags (+0x244 / +0x245)
+                            // and WorldStreaming +0x8a3b4
+    }
+}
+
+void GSPhysics::tickCarTester( const float deltaTime ) {
+    // FUN_0084de60
+    CarState *pLocalCar = gpScenaric != nullptr
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    gpCarTesterCarState = pLocalCar;
+    CameraVehicle *pCamera =
+        gpCamera != nullptr ? gpCamera->getActiveVehicleCamera() : nullptr;
+    if ( ( pCamera == nullptr || pCamera->getType() != 0xc ) &&
+         pLocalCar != nullptr ) {
+        gpCarTesterVehicle = pLocalCar->getPhysicsVehicle();
+        gpCarTesterCarData = gpDatabase->getCarDBEntry( pLocalCar->getCarID() );
+    }
+
+    if ( gCarTesterState == 0 ) {
+        return;
+    }
+    if ( gbCarTesterNextCar || gbCarTesterNextPack ) {
+        reloadCarTesterVehicle();
+    }
+
+    PhysicsVehicle *pVehicle = gpCarTesterVehicle;
+    DBEntryCarPhysicsData *pCarData = gpCarTesterCarData;
+    if ( pVehicle == nullptr || pCarData == nullptr ) {
+        return;
+    }
+    const int32_t rearWheel = 1 << ( pVehicle->getNumWheels() / 2 - 1 );
+
+    updateCarTester3DToggle();
+
+    if ( !pVehicle->isActive() ) {
+        return;
+    }
+
+    pVehicle->setElectronicMode( 2 );
+    pVehicle->clearLean();
+
+    Matrix4x4f_t trackStart = Matrix4x4f_t::Identity();
+    MatrixRotateY( trackStart, 3.1415927f );
+    trackStart.row( 3 ) += kCarTesterTrackStart.transpose();
+
+    PhysicsLock lock;
+
+    gEdDebugText.setColor( DDC_White_NoAlpha );
+    gEdDebugText.setPosition( 60, 70 );
+    gEdDebugText.drawText( " 0 - Exit Physics Trainer" );
+    gEdDebugText.drawText( " 1 - Accel Test" );
+    gEdDebugText.drawText( " 2 - Brake Test" );
+    gEdDebugText.drawText( " 3 - Cx Test" );
+    gEdDebugText.drawText( " 4 - Car All Test" );
+    gEdDebugText.drawText( " 7 - All Car All Test" );
+    gEdDebugText.drawText( " 8 - Accel/Brake All CarPack" );
+    gEdDebugText.drawText( " 9 - Disable/Enable 3D( for very fast test)" );
+    gEdDebugText.setPosition( 400, 70 );
+    for ( int32_t i = 0; i <= gCarTesterNumResults; i++ ) {
+        const CarTesterResult &result = gCarTesterResults[i];
+        gEdDebugText.drawText(
+            " %20s T%d, %4d, accel: %2.2fs[%3d], brake: %2.2fft[%3d], cx: "
+            "%2.4f",
+            result.Name, result.PackSlot, result.CarID, result.AccelTime,
+            result.CoefAccel, result.BrakeDistance, result.CoefBrake,
+            result.Cx );
+    }
+    gEdDebugText.setColor( DDC_Yellow );
+    gEdDebugText.drawText(
+        " %20s , %4d, accel: %2.2fs[%3d], brake: %2.2fft[%3d], cx: %2.4f",
+        pCarData->CarResourceFilename.pAsString, pCarData->CarID,
+        pCarData->AccelerationKMH, pCarData->CoefAccel,
+        pCarData->BrakingDistFeet, pCarData->CoefBrake, pCarData->CxLength );
+
+    const bool bIdle = gCarTesterState == 4;
+    switch ( gCarTesterSequence ) {
+    case 0:
+        bDrawDebugInfos = true;
+        break;
+    case 1: // Accel test
+        if ( bIdle ) {
+            gCarTesterState = 5;
+            gCarTesterSequence = 0;
+            gbCarTesterMeasureOnly = false;
+        }
+        break;
+    case 2: // Brake test
+        if ( bIdle ) {
+            gCarTesterState = 8;
+            gCarTesterSequence = 0;
+            gbCarTesterMeasureOnly = false;
+        }
+        break;
+    case 3: // Cx test
+    case 6:
+        if ( bIdle ) {
+            gCarTesterState = 0xb;
+            gCarTesterSequence = 0;
+            gbCarTesterMeasureOnly = false;
+        }
+        break;
+    case 4: // Car all test
+        if ( bIdle ) {
+            gCarTesterState = 5;
+            gCarTesterSequence = 5;
+            gbCarTesterMeasureOnly = false;
+        }
+        break;
+    case 5:
+        if ( bIdle ) {
+            gCarTesterState = 8;
+            gCarTesterSequence = 6;
+            gbCarTesterMeasureOnly = false;
+        }
+        break;
+    case 7: // All car all test
+        if ( bIdle ) {
+            gCarTesterState = 5;
+            gCarTesterSequence = 8;
+            gbCarTesterMeasureOnly = false;
+        }
+        break;
+    case 8:
+        if ( bIdle ) {
+            gCarTesterState = 8;
+            gCarTesterSequence = 9;
+            gbCarTesterMeasureOnly = false;
+        }
+        break;
+    case 9:
+        if ( bIdle ) {
+            gCarTesterState = 0xb;
+            gCarTesterSequence = 10;
+            gbCarTesterMeasureOnly = false;
+        }
+        break;
+    case 10:
+        if ( bIdle ) {
+            NextCarTesterResult();
+            gbCarTesterNextCar = true;
+            gCarTesterSequence = 0xb;
+            WriteCarTesterCarData();
+        }
+        break;
+    case 0xb:
+        if ( bIdle ) {
+            if ( gCarTesterLastCarID == pCarData->CarID ) {
+                gCarTesterSequence = 0;
+            } else {
+                gCarTesterSequence = 7;
+                CarTesterResult &result = RecordCarTesterName();
+                result.CarID = pCarData->CarID;
+                result.PackSlot = gCarTesterPackSlot;
+            }
+        }
+        break;
+    case 0xc: // Accel/brake all car packs
+        if ( bIdle ) {
+            gCarTesterState = 5;
+            gCarTesterSequence = 0xd;
+            gbCarTesterMeasureOnly = true;
+        }
+        break;
+    case 0xd:
+        if ( bIdle ) {
+            gCarTesterState = 8;
+            gCarTesterSequence = 0xe;
+            gbCarTesterMeasureOnly = true;
+        }
+        break;
+    case 0xe:
+        if ( bIdle ) {
+            NextCarTesterResult();
+            gbCarTesterNextPack = true;
+            gCarTesterSequence = 0xf;
+            WriteCarTesterCarPackData();
+        }
+        break;
+    case 0xf:
+        if ( bIdle ) {
+            gCarTesterSequence = 0xc;
+            CarTesterResult &result = RecordCarTesterName();
+            result.CarID = pCarData->CarID;
+            result.PackSlot = gCarTesterPackSlot;
+        }
+        break;
+    default:
+        break;
+    }
+
+    // Shared tail of the accel (7) / brake (10) tuning: keep the coefficient
+    // when within tolerance (or when only measuring), else retry.
+    const auto adjustCoef = [&]( float error, float tolerance, float coef,
+                                 int32_t retryState ) -> float {
+        if ( ( gCarTesterPrevError > 0.0f && error < 0.0f ) ||
+             ( gCarTesterPrevError < 0.0f && error > 0.0f ) ) {
+            gCarTesterCoefStep *= kCarTesterStepDecay;
+        }
+        gCarTesterPrevError = error;
+
+        if ( !gbCarTesterMeasureOnly ) {
+            if ( error > tolerance ) {
+                coef -= gCarTesterCoefStep;
+            } else if ( error < -tolerance ) {
+                coef += gCarTesterCoefStep;
+            } else {
+                gCarTesterState = 4;
+                ResetCarTesterVehicle( pVehicle, trackStart );
+                pVehicle->resetChrono();
+                return coef;
+            }
+            gCarTesterState = retryState;
+            return coef;
+        }
+
+        gCarTesterState = 4;
+        ResetCarTesterVehicle( pVehicle, trackStart );
+        pVehicle->resetChrono();
+        return coef;
+    };
+
+    const auto computeCxTestSpeed = [&]( const float omegaTarget ) {
+        const int32_t topGear = pVehicle->getNumGears() - 1;
+        return pVehicle->getWheelRadius( rearWheel ) * omegaTarget /
+               pVehicle->getGearRatio( topGear );
+    };
+    const auto getForward = [&]() -> Eigen::Vector3f {
+        return pVehicle->getPhysicsMatrix().row( 2 ).head<3>().transpose();
+    };
+
+    switch ( gCarTesterState ) {
+    case 1: // Teleport to the test track
+        ResetCarTesterVehicle( pVehicle, trackStart );
+        SetCarTesterPostponedPause( pVehicle, 1 );
+        gCarTesterState = 2;
+        break;
+    case 2: {
+        const Eigen::Vector4f position = trackStart.row( 3 ).transpose();
+        if ( gpWorld->isStreamedAround( &position, false, false ) ) {
+            gCarTesterPlaneBodyID = addCarTesterPlane(
+                gCarTesterPlaneHeight, kCarTesterPlaneHalfExtent );
+            ResetCarTesterVehicle( pVehicle, trackStart );
+            SetCarTesterPostponedPause( pVehicle, 2 );
+            gCarTesterState = 4;
+        }
+    } break;
+    case 3: { // Exit: back to where the trainer was started
+        const Eigen::Vector4f position =
+            gCarTesterReturnMatrix.row( 3 ).transpose();
+        if ( gpWorld->isStreamedAround( &position, false, false ) ) {
+            bDrawDebugInfos = false;
+            ResetCarTesterVehicle( pVehicle, gCarTesterReturnMatrix );
+            SetCarTesterPostponedPause( pVehicle, 2 );
+            gCarTesterState = 0;
+        }
+    } break;
+    case 4: // Idle
+        gCarTesterCoefStep = kCarTesterInitialCoefStep;
+        gCarTesterPrevError = 0.0f;
+        break;
+    case 5: // Accel: standing start
+        pVehicle->setRawThrottle( 0.0f );
+        ResetCarTesterVehicle( pVehicle, trackStart );
+        pVehicle->armChrono();
+        pVehicle->setEngineState( eEngineState::ES_Running );
+        gCarTesterState = 6;
+        break;
+    case 6: // Accel: brake-torque launch until peak torque
+        pVehicle->setRawThrottle( 1.0f );
+        pVehicle->setRawBrake( 1.0f );
+        if ( pVehicle->getEngineOmega() >
+             pVehicle->getEnginePeakTorqueOmega() ) {
+            pVehicle->clearBrakeAndSteer();
+            gCarTesterState = 7;
+        }
+        break;
+    case 7: // Accel: run to 60 mph
+        pVehicle->setRawThrottle( 1.0f );
+        if ( GetCarTesterSpeed( pVehicle ) > kCarTesterSixtyMphMs ) {
+            const float accelTime = pVehicle->getChrono().T60mph;
+            CarTesterResult &result = RecordCarTesterName();
+            result.CarID = pCarData->CarID;
+            result.AccelTime = accelTime;
+            result.CoefAccel = static_cast<int32_t>( pVehicle->getAccelCoef() *
+                                                     kCarTesterCoefToPercent );
+            pVehicle->setRawThrottle( 0.0f );
+
+            const float coef = adjustCoef(
+                pCarData->AccelerationKMH - accelTime, kCarTesterAccelTolerance,
+                pVehicle->getAccelCoef(), 5 );
+            if ( gCarTesterState == 5 ) {
+                pVehicle->setAccelCoef( coef );
+                pVehicle->rebuildGripCalibration();
+                pVehicle->resetChrono();
+            }
+        }
+        break;
+    case 8: // Brake: launch at speed
+        pVehicle->setRawThrottle( 0.0f );
+        ResetCarTesterVehicle( pVehicle, trackStart );
+        pVehicle->armBrakeChrono( kCarTesterBrakeTargetMph );
+        pVehicle->setEngineState( eEngineState::ES_Running );
+        pVehicle->setVelocity(
+            Eigen::Vector3f( 0.0f, 0.0f, kCarTesterBrakeStartSpeed ), true,
+            -1 );
+        gCarTesterState = 10;
+        break;
+    case 10: // Brake: full stop
+        pVehicle->setRawThrottle( 0.0f );
+        pVehicle->setRawBrake( 1.0f );
+        if ( GetCarTesterSpeed( pVehicle ) < kCarTesterStoppedSpeed ) {
+            const float brakeDistance =
+                pVehicle->getChrono().Brake60mphDistance;
+            CarTesterResult &result = RecordCarTesterName();
+            result.BrakeDistance = brakeDistance;
+            result.CoefBrake = static_cast<int32_t>( pVehicle->getBrakeCoef() *
+                                                     kCarTesterCoefToPercent );
+
+            const float coef = adjustCoef(
+                pCarData->BrakingDistFeet - brakeDistance,
+                kCarTesterBrakeTolerance, pVehicle->getBrakeCoef(), 8 );
+            if ( gCarTesterState == 8 ) {
+                pVehicle->setBrakeCoef( coef );
+                pVehicle->rebuildGripCalibration();
+                pVehicle->resetChrono();
+            }
+        }
+        break;
+    case 0xb: { // Cx: top gear near the redline
+        const float omegaTarget =
+            pVehicle->getEngineOmegaMax() * kCarTesterCxOmegaRatio;
+        const int32_t topGear = pVehicle->getNumGears() - 1;
+        pVehicle->setVelocity( getForward() * computeCxTestSpeed( omegaTarget ),
+                               true, topGear );
+        pVehicle->setEngineOmega( omegaTarget );
+        pVehicle->setEngineState( eEngineState::ES_Running );
+        gCarTesterCx = pVehicle->getCx();
+        pVehicle->setRawThrottle( 1.0f );
+        gCarTesterTickCounter = 0;
+        gCarTesterState = 0xc;
+        pVehicle->setRawBrake( 0.0f );
+        gCarTesterOmegaError = 0.0f;
+        gCarTesterPrevOmegaError = 0.0f;
+    } break;
+    case 0xc: { // Cx: spin up
+        const float omegaTarget =
+            pVehicle->getEngineOmegaMax() * kCarTesterCxOmegaRatio;
+        gCarTesterTickCounter++;
+        if ( gCarTesterTickCounter > kCarTesterCxSpinUpTicks ) {
+            gCarTesterState = 0xd;
+            pVehicle->setVelocity( getForward() *
+                                       computeCxTestSpeed( omegaTarget ) *
+                                       kCarTesterCxRestartSpeedRatio,
+                                   true, pVehicle->getNumGears() - 1 );
+            pVehicle->setEngineState( eEngineState::ES_Running );
+            pVehicle->setEngineOmega( omegaTarget );
+            gCarTesterTickCounter = 0;
+        }
+        gEdDebugText.setPosition( 50, 300 );
+        gEdDebugText.drawText( "Omega %2.4f MaxOmega %2.4f  ",
+                               pVehicle->getEngineOmega() *
+                                   kCarTesterRadPerSecToRpm,
+                               omegaTarget * kCarTesterRadPerSecToRpm );
+    } break;
+    case 0xd: { // Cx: tune until the engine holds 90% of the redline
+        const float omegaTarget =
+            pVehicle->getEngineOmegaMax() * kCarTesterCxOmegaRatio;
+        const float speed = computeCxTestSpeed( omegaTarget );
+        gCarTesterOmegaError = pVehicle->getEngineOmega() - omegaTarget;
+        const float errorDelta =
+            ( gCarTesterPrevOmegaError - gCarTesterOmegaError ) / deltaTime;
+        gEdDebugText.setPosition( 50, 300 );
+        gEdDebugText.drawText( "Adjusting CX  : %2.6f", gCarTesterCx );
+        gEdDebugText.drawText( "Omega %2.4f MaxOmega %2.4f  ",
+                               pVehicle->getEngineOmega() *
+                                   kCarTesterRadPerSecToRpm,
+                               omegaTarget * kCarTesterRadPerSecToRpm );
+        gEdDebugText.drawText( "error %2.4f delta %2.4f  ",
+                               gCarTesterOmegaError, errorDelta );
+        gEdDebugText.drawText( "Max Speed  : %2.4f",
+                               speed * kCarTesterMsToMph );
+
+        // Retail also writes the lean-scaled drag pair (Cx * 0.7 and
+        // Cx * 1.4286), which the port's aero model does not have.
+        pVehicle->setCx( gCarTesterCx );
+        gCarTesterTickCounter++;
+        GetCarTesterResult( gCarTesterNumResults ).Cx = gCarTesterCx;
+        if ( gCarTesterTickCounter <= gCarTesterCxSettleTicks ) {
+            break;
+        }
+
+        gCarTesterTickCounter = 0;
+        if ( gCarTesterOmegaError > kCarTesterCxOmegaTolerance &&
+             gCarTesterPrevOmegaError > -kCarTesterCxOmegaTolerance ) {
+            gCarTesterCx += gCarTesterCxStep;
+        } else if ( gCarTesterOmegaError < -kCarTesterCxOmegaTolerance &&
+                    gCarTesterPrevOmegaError < kCarTesterCxOmegaTolerance ) {
+            gCarTesterCx -= gCarTesterCxStep;
+        } else {
+            if ( std::fabs( gCarTesterOmegaError ) >=
+                 kCarTesterCxOmegaTolerance ) {
+                gCarTesterCxStep *= kCarTesterStepDecay;
+            } else {
+                RecordCarTesterName().Cx = gCarTesterCx;
+                gCarTesterState = 4;
+                ResetCarTesterVehicle( pVehicle, trackStart );
+                pVehicle->setRawThrottle( 0.0f );
+                pVehicle->setRawBrake( 0.0f );
+            }
+            gCarTesterPrevOmegaError = gCarTesterOmegaError;
+            break;
+        }
+
+        gCarTesterState = 0xc;
+        const Eigen::Vector3f velocity =
+            getForward() * speed * kCarTesterCxRestartSpeedRatio;
+        ResetCarTesterVehicle( pVehicle, trackStart );
+        pVehicle->setVelocity( velocity, true, pVehicle->getNumGears() - 1 );
+        pVehicle->setEngineState( eEngineState::ES_Running );
+        pVehicle->setEngineOmega( omegaTarget );
+        gCarTesterPrevOmegaError = gCarTesterOmegaError;
+    } break;
+    default:
+        break;
+    }
+}
+
+#if OTDU_DEVBUILD
+void GSPhysics::startCarTester() {
+    CarState *pLocalCar = gpScenaric != nullptr
+                              ? gpScenaric->getLocalPlayer().getCarState()
+                              : nullptr;
+    if ( pLocalCar == nullptr || gCarTesterState != 0 ) {
+        return;
+    }
+    gCarTesterReturnMatrix = pLocalCar->getBody()->WorldMatrix;
+    gCarTesterSequence = 0;
+    gCarTesterState = 1;
+}
+
+void GSPhysics::selectCarTesterMenuEntry( const int32_t menuKey ) {
+    if ( gCarTesterState == 0 ) {
+        return;
+    }
+    switch ( menuKey ) {
+    case 0:
+        gCarTesterSequence = 0;
+        gCarTesterState = 3;
+        break;
+    case 1:
+    case 2:
+    case 3:
+    case 4:
+    case 7:
+        gCarTesterSequence = menuKey;
+        break;
+    case 8:
+        gCarTesterSequence = 0xc;
+        break;
+    case 9:
+        gbCarTester3DEnabled = !gbCarTester3DEnabled;
+        break;
+    default:
+        break;
+    }
+}
+#endif
 
 static bool gbSecretIslandTeleporterEnabled = true;       // DAT_00fab50c
 static constexpr float kSecretIslandTriggerRadius = 5.0f; // DAT_00f41750
@@ -2905,6 +3697,39 @@ void GSPhysics::drawDebug( float ) {
     ImGui::SameLine();
     ImGui::RadioButton( "/sqrt##dli", &gVehicleDrivelineInertiaMode, 2 );
     ImGui::Checkbox( "Hardcore mode", &gbSimuModeEnabled );
+
+#if OTDU_DEVBUILD
+    ImGui::SeparatorText( "Physics trainer (car tester)" );
+    if ( gCarTesterState == 0 ) {
+        if ( ImGui::Button( "Start (teleports to the test track)" ) ) {
+            startCarTester();
+        }
+    } else {
+        ImGui::Text( "State %d   Sequence %d   Results %d", gCarTesterState,
+                     gCarTesterSequence, gCarTesterNumResults );
+        static constexpr struct {
+            int32_t Key;
+            const char *pLabel;
+        } kMenuEntries[] = {
+            {1, "1 - Accel"        },
+            {2, "2 - Brake"        },
+            {3, "3 - Cx"           },
+            {4, "4 - Car all"      },
+            {7, "7 - All car all"  },
+            {8, "8 - All car packs"},
+            {9, "9 - Toggle 3D"    },
+            {0, "0 - Exit"         },
+        };
+        for ( size_t i = 0; i < std::size( kMenuEntries ); i++ ) {
+            if ( i % 4 != 0 ) {
+                ImGui::SameLine();
+            }
+            if ( ImGui::Button( kMenuEntries[i].pLabel ) ) {
+                selectCarTesterMenuEntry( kMenuEntries[i].Key );
+            }
+        }
+    }
+#endif
 
     ImGui::Separator();
 

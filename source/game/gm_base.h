@@ -82,6 +82,8 @@ public:
     inline uint32_t getTransitionFlags() const { return transitionFlags; }
     inline float getTransitionTime() const { return transitionTime; }
     inline bool hasRequestedExit() const { return bExitRequested; }
+    inline bool isDrawEnabled() const { return bDraw; }
+    inline void setDrawEnabled( const bool bEnabled ) { bDraw = bEnabled; }
 
 public:
     GameMode();

@@ -600,7 +600,7 @@ void GameModeWorld::updateLocalPlayerDrivingInput( float deltaTime ) {
          pPlayerPhysicsVehicle->getDrivingControl() == nullptr ) {
         return;
     }
-    if ( gReplay.isPlayingBack() ) {
+    if ( gReplay.isPlayingBack() || IsCarTesterActive() ) {
         return;
     }
     CarState *pCar = ( gpScenaric != nullptr )
@@ -836,6 +836,10 @@ void GameModeWorld::tick( float deltaTime, float totalTime ) {
     CarState *pCar = ( gpScenaric != nullptr )
                          ? gpScenaric->getLocalPlayer().getCarState()
                          : nullptr;
+    if ( IsCarTesterActive() ) {
+        pPlayerPhysicsVehicle =
+            ( pCar != nullptr ) ? pCar->getPhysicsVehicle() : nullptr;
+    }
     if ( pPlayerPhysicsVehicle != nullptr &&
          pPlayerPhysicsVehicle->isActive() && pCar != nullptr ) {
         updateLocalPlayerDrivingInput( deltaTime );

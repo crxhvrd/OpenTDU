@@ -401,6 +401,11 @@ public:
 
     RoadPhantomManager &getRoadPhantomManager() { return roadPhantomManager; }
 
+#if OTDU_DEVBUILD
+    void startCarTester();
+    void selectCarTesterMenuEntry( int32_t menuKey );
+#endif
+
 private:
     static constexpr int32_t kMaxNumTireProfiles = 16;
     static constexpr int32_t kMaxNumPhysicsVehicles = 32;
@@ -542,6 +547,10 @@ private:
     void drawCollisionShapes();
     void drawVehicleShapes();
     void updateGMeterToggle();
+    void tickCarTester( float deltaTime );
+    void reloadCarTesterVehicle();
+    void updateCarTester3DToggle();
+    uint32_t addCarTesterPlane( float planeHeight, float halfExtent );
     void updateSecretIslandTeleporter();
     bool
     hasCollisionBelow( float worldX, float worldZ, float startY, float depth );
@@ -554,6 +563,9 @@ private:
 };
 
 extern GSPhysics *gpPhysics;
+
+// True if Physics trainer ("car tester") is running
+bool IsCarTesterActive();
 extern bool gDrawCollisionVis;
 extern bool gDrawCollisionVisTerrain;
 extern bool gDrawVehicleCollisionVis;
