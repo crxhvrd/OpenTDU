@@ -1,0 +1,150 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  CMAKE_RELEASE_ARGS: -DCMAKE_BUILD_TYPE=Release -DOTDU_DEVBUILD=OFF -DOTDU_CRASH_REPORTER=ON
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        platform_name: [Win32, x64]
+        flavor_name: [latest, Win7]
+
+    env:
+      PACKAGE_NAME: opentdu_${{ inputs.version }}_windows_${{ matrix.platform_name }}_${{ matrix.flavor_name }}_vulkan
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Vulkan SDK
+      uses: humbletim/install-vulkan-sdk@v1.2
+      with:
+        version: 1.4.309.0
+        cache: true
+
+    - name: Configure cityhash
+      shell: bash
+      run: ./third_party/cityhash/configure
+
+    - name: Build third-party dependencies
+      shell: cmd
+      run: |
+        pushd third_party
+        call build_thirdparty.bat ${{ matrix.platform_name }}
+        popd
+
+    - name: Configure
+      shell: bash
+      run: >
+        cmake -S . -B build -A ${{ matrix.platform_name }} ${{ env.CMAKE_RELEASE_ARGS }}
+        ${{ matrix.flavor_name == 'Win7' && '-DOTDU_TARGET_WIN7=ON' || '' }}
+
+    - name: Build
+      run: cmake --build build --parallel --config Release --target opentdu
+
+    - name: Verify Windows 7 compatibility
+      if: matrix.flavor_name == 'Win7'
+      run: python tools/check_win7_imports.py ${{ github.workspace }}/build/bin
+
+    - name: Package
+      run: |
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/dist | Out-Null
+        Compress-Archive -Destination ${{ github.workspace }}/dist/${{ env.PACKAGE_NAME }}.zip -Path ${{ github.workspace }}/build/bin/*
+        Compress-Archive -Destination ${{ github.workspace }}/dist/${{ env.PACKAGE_NAME }}_symbols.zip -Path ${{ github.workspace }}/build/symbols/*
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE_NAME }}
+        path: ${{ github.workspace }}/dist/*.zip
+
+  unix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-latest
+            platform_name: macos
+          - os: ubuntu-latest
+            platform_name: linux
+
+    env:
+      PACKAGE_NAME: opentdu_${{ inputs.version }}_${{ matrix.platform_name }}_vulkan
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Vulkan SDK
+      uses: humbletim/install-vulkan-sdk@v1.2
+      with:
+        version: 1.4.309.0
+        cache: true
+
+    - name: Install X11, audio and libudev dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libudev-dev xorg-dev libx11-dev libxrandr-dev libxi-dev libglu1-mesa-dev \
+                                libasound2-dev libpulse-dev libpipewire-0.3-dev
+
+    - name: Build third-party dependencies
+      working-directory: third_party
+      run: ./build_thirdparty.sh
+
+    - name: Configure
+      run: cmake -S . -B build ${{ env.CMAKE_RELEASE_ARGS }}
+
+    - name: Build
+      run: cmake --build build --parallel 4 --config Release --target opentdu
+
+    - name: Package
+      run: |
+        mkdir -p dist
+        (cd build/bin && zip -r "${{ github.workspace }}/dist/${{ env.PACKAGE_NAME }}.zip" .)
+        (cd build/symbols && zip -r "${{ github.workspace }}/dist/${{ env.PACKAGE_NAME }}_symbols.zip" .)
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE_NAME }}
+        path: ${{ github.workspace }}/dist/*.zip
+
+  publish:
+    needs: [windows, unix]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        path: dist
+        merge-multiple: true
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: ${{ inputs.version }}
+        tag_name: ${{ inputs.version }}
+        target_commitish: ${{ github.sha }}
+        prerelease: ${{ inputs.prerelease }}
+        files: dist/*.zip
+        body: |
+          PLACEHOLDER.

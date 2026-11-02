@@ -1156,10 +1156,12 @@ void GSCamera::drawDebug( float deltaTime ) {
     ImGui::DragFloat( "Indoor Far Plane", &farPlaneInterior, 5.0f, 0.05f,
                       50000.0f );
 
+#ifdef OTDU_DEVBUILD
     bool bFlyCamUI = bFlyCam;
     if ( ImGui::Checkbox( "Free-fly camera (debug)", &bFlyCamUI ) ) {
         toggleFreeCam();
     }
+#endif
 
     if ( numCameraRegistered > 0 ) {
         ImGui::SeparatorText( "Force Camera (debug)" );

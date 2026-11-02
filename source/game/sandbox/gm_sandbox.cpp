@@ -212,5 +212,7 @@ void GMSandbox::setWorldViewerEnabled( const bool state ) {
         }
     }
 
+#ifdef OTDU_DEVBUILD
     gpCamera->toggleFreeCam();
+#endif
 }

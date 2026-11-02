@@ -225,6 +225,7 @@ void GMLiving::drawDebug( float deltaTime ) {
                  (int32_t)pInterior->getState(),
                  (void *)pInterior->getRootNode() );
 
+#ifdef OTDU_DEVBUILD
     ImGui::SeparatorText( "Jump to house" );
     if ( ImGui::BeginChild( "HouseList", ImVec2( 0.0f, 200.0f ),
                             ImGuiChildFlags_Borders ) ) {
@@ -257,6 +258,7 @@ void GMLiving::drawDebug( float deltaTime ) {
         }
     }
     ImGui::EndChild();
+#endif
 
     ImGui::SeparatorText( "Camera" );
 
@@ -378,11 +380,13 @@ void GMLiving::reset() {
 
 void GMLiving::tick( float deltaTime, float totalTime ) {
     // FUN_0076abe0
+#ifdef OTDU_DEVBUILD
     if ( pendingHouseSpotIndex >= 0 ) {
         const int32_t spotIndex = pendingHouseSpotIndex;
         pendingHouseSpotIndex = -1;
         switchHouse( spotIndex );
     }
+#endif
 
     if ( !tradingMenu.isOpen() && bSceneResumeAllowed &&
          gpTestDriveInstance != nullptr ) {

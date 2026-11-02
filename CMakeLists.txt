@@ -29,6 +29,13 @@ set( OTDU_USE_IMGUI ON CACHE BOOL "Use imgui for debug gui" )
 set( OTDU_USE_JOLT ON CACHE BOOL "Use Jolt for physics" )
 set( OTDU_TARGET_WIN7 OFF CACHE BOOL "Target legacy Windows 7 (Win32/x64) API level" )
 
+if ( ${OTDU_DEVBUILD} )
+    set( OTDU_CRASH_REPORTER_DEFAULT OFF )
+else()
+    set( OTDU_CRASH_REPORTER_DEFAULT ON )
+endif()
+set( OTDU_CRASH_REPORTER ${OTDU_CRASH_REPORTER_DEFAULT} CACHE BOOL "Enable crash dump and generate separate debug symbols at compile time" )
+
 set( OTDU_GFX_API "OTDU_VULKAN" CACHE STRING "Graphics backend to target" )
 set_property(CACHE OTDU_GFX_API PROPERTY STRINGS OTDU_VULKAN )
 add_definitions( -D"${OTDU_GFX_API}" )
@@ -147,6 +154,9 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/audio/implementation/audio_sound_resource.cpp"
                     "${OTDU_SRC_FOLDER}/core/arg_parser.cpp"
                     "${OTDU_SRC_FOLDER}/core/logger.cpp"
+                    "${OTDU_SRC_FOLDER}/core/crash_reporter.cpp"
+                    "${OTDU_SRC_FOLDER}/core/crash_reporter_unix.cpp"
+                    "${OTDU_SRC_FOLDER}/core/crash_reporter_win32.cpp"
                     "${OTDU_SRC_FOLDER}/core/event.cpp"
                     "${OTDU_SRC_FOLDER}/core/mutex.cpp"
                     "${OTDU_SRC_FOLDER}/core/thread.cpp"
@@ -725,6 +735,8 @@ file( GLOB OTDU_INC "${OTDU_SRC_FOLDER}/tdu_instance.h"
                     "${OTDU_SRC_FOLDER}/audio/implementation/audio_sound_resource.h"
                     "${OTDU_SRC_FOLDER}/core/arg_parser.h"
                     "${OTDU_SRC_FOLDER}/core/logger.h"
+                    "${OTDU_SRC_FOLDER}/core/crash_reporter.h"
+                    "${OTDU_SRC_FOLDER}/core/crash_reporter_internal.h"
                     "${OTDU_SRC_FOLDER}/core/event.h"
                     "${OTDU_SRC_FOLDER}/core/mutex.h"
                     "${OTDU_SRC_FOLDER}/core/thread.h"
@@ -1549,6 +1561,34 @@ elseif( ${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU" )
     add_definitions( -DOTDU_GCC )
 else()
     message("WARNING: Unknown compiler; project might fail to compile!")
+endif()
+
+if ( ${OTDU_CRASH_REPORTER} )
+    target_compile_definitions( opentdu PRIVATE OTDU_CRASH_REPORTER )
+    set( OTDU_SYMBOLS_FOLDER "${OTDU_BASE_FOLDER}/build/symbols" )
+
+    if ( MSVC )
+        target_link_libraries( opentdu dbghelp )
+        target_compile_options( opentdu PRIVATE /Zi )
+        target_link_options( opentdu PRIVATE /DEBUG:FULL /INCREMENTAL:NO /OPT:REF /OPT:ICF )
+        set_target_properties( opentdu PROPERTIES
+                               PDB_OUTPUT_DIRECTORY "${OTDU_SYMBOLS_FOLDER}"
+                               PDB_OUTPUT_DIRECTORY_RELEASE "${OTDU_SYMBOLS_FOLDER}"
+                               PDB_OUTPUT_DIRECTORY_RELWITHDEBINFO "${OTDU_SYMBOLS_FOLDER}" )
+    elseif ( APPLE )
+        target_compile_options( opentdu PRIVATE -g )
+        add_custom_command( TARGET opentdu POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_SYMBOLS_FOLDER}"
+            COMMAND dsymutil "$<TARGET_FILE:opentdu>" -o "${OTDU_SYMBOLS_FOLDER}/$<TARGET_FILE_NAME:opentdu>.dSYM"
+            COMMENT "Generating debug symbols..." )
+    else()
+        target_compile_options( opentdu PRIVATE -g )
+        add_custom_command( TARGET opentdu POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OTDU_SYMBOLS_FOLDER}"
+            COMMAND ${CMAKE_OBJCOPY} --only-keep-debug "$<TARGET_FILE:opentdu>" "${OTDU_SYMBOLS_FOLDER}/$<TARGET_FILE_NAME:opentdu>.debug"
+            COMMAND ${CMAKE_OBJCOPY} --strip-debug "--add-gnu-debuglink=${OTDU_SYMBOLS_FOLDER}/$<TARGET_FILE_NAME:opentdu>.debug" "$<TARGET_FILE:opentdu>"
+            COMMENT "Splitting debug symbols..." )
+    endif()
 endif()
 
 if( ${OTDU_USE_SDL} )

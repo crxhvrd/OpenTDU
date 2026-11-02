@@ -3,6 +3,7 @@
 
 #include "core/arg_parser.h"
 #include "core/assert.h"
+#include "core/crash_reporter.h"
 #include "core/event.h"
 #include "core/locale.h"
 #include "core/logger.h"
@@ -427,6 +428,9 @@ int32_t TestDrive::InitAndRun( const char **pCmdLineArgs,
     if ( gLogFilePath[0] != '\0' ) {
         StartLogFile();
     }
+
+    CrashReporter::ProcessPendingReports();
+    CrashReporter::Install( gLogFilePath, gpCmdLineArgs, gCmdLineArgCount );
 
     TestDriveGameInstance gameInstance( pCmdLineArgs, argCount );
     gSavegameManager.create();

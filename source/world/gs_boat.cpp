@@ -32,7 +32,7 @@ static constexpr float kHornClipFar = 2000.0f;
 static constexpr float kHornMinVolume = 0.8f;
 static constexpr float kMaxHornDistanceSq = 4000000.0f; // DAT_00f41fe4
 
-#ifdef OTDU_DEVBUILD
+#ifdef OTDU_USE_IMGUI
 #include "world/gs_world.h"
 #include "world/streaming_manager.h"
 

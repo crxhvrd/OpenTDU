@@ -71,9 +71,13 @@ extern bool gBreakOnAssertFailure; // DAT_00f47931
         OTDU_FATAL_ERROR( "Assertion failure: '%s'\n", #condition );           \
     }
 
+#ifdef OTDU_DEVBUILD
 #define OTDU_FATAL_ERROR( fmt, ... )                                           \
     OTDU_LOG_ERROR( "Fatal: " fmt, ##__VA_ARGS__ );                            \
     if ( gBreakOnAssertFailure ) {                                             \
         OTDU_TRIGGER_BREAKPOINT;                                               \
     }                                                                          \
     OnFatalError();
+#else
+#define OTDU_FATAL_ERROR( fmt, ... ) OnFatalError();
+#endif
