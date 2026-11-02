@@ -154,7 +154,59 @@ constexpr float kPackLatFrictionBoostSimu = 1.01f; // DAT_00fab5ac
 constexpr float kAeroLiftCoef = 0.2f;     // DAT_00f41730
 constexpr float kAeroSimuLiftMult = 2.0f; // DAT_00f416b0, simu only
 constexpr float kAeroDensityFallback = 2.0f;
-bool gbSimuModeEnabled = false; // DAT_010e777c
+bool gbSimuModeEnabled = false;        // DAT_010e777c
+float gAIRadiusBlendStartScale = 1.0f; // DAT_00f7c3c4
+float gAIBrakingDistanceScale = 1.0f;  // DAT_00f7c3c8
+
+// DAT_00faa66c
+static constexpr float kSimuTireBlock[15] = { 5.0f, 5.0f, 0.5f, 0.1f, 1.5f,
+                                              0.8f, 1.0f, 0.8f, 0.1f, 0.0f,
+                                              0.0f, 0.0f, 1.0f, 1.0f, 1.0f };
+
+bool IsSimuVehicle( const bool bIsAI, const bool bIsNetwork ) {
+    // FUN_008345e0 (inlined)
+    return gbSimuModeEnabled && !bIsAI && !bIsNetwork;
+}
+
+float GetCGHeightCoef( const bool bSimuMode, const bool bBike ) {
+    // FUN_008345e0 (inlined)
+    if ( !bSimuMode ) {
+        return ( bBike ? gBikePhysicsConfig : gPhysicsConfig ).CGHeightCoef;
+    }
+    return bBike ? 0.0f : 0.75f; // DAT_00f416a4
+}
+
+static void ApplySimuConfigOverrides( PhysicsConfig &c ) {
+    // FUN_008345e0 (inlined)
+    c.GravityCoeff = 1.0f; // DAT_00f8a1ec
+    c.MassCoef = 1.0f;     // DAT_00f8a1f8
+    c.InertiaCoef = 1.0f;  // DAT_00f8a1fc
+
+    const float *t = kSimuTireBlock;
+    c.WheelMaxSlipRatioFront = c.WheelMaxSlipRatioRear = t[0];
+    c.WheelMaxSlipAngleFront = c.WheelMaxSlipAngleRear = t[1];
+    c.SlipRatioStartLooseLateralFront = c.SlipRatioStartLooseLateralRear = t[2];
+    c.MaxLateralLossFront = c.MaxLateralLossRear = t[3];
+    c.FrontFrictionCoef = c.RearFrictionCoef = t[4];
+    c.FrontLateralFrictionCoef = c.RearLateralFrictionCoef = t[5];
+    c.FrontLngBrakeFrictionCoef = c.RearLngBrakeFrictionCoef = t[6];
+    c.ResistiveCoefFront = c.ResistiveCoefRear = t[7];
+    c.ResistiveLateralCoefFront = c.ResistiveLateralCoefRear = t[8];
+    c.FrontLatBrakeFrictionCoefSlow = c.RearLatBrakeFrictionCoefSlow = t[12];
+    c.FrontLatBrakeFrictionCoefFast = c.RearLatBrakeFrictionCoefFast = t[14];
+
+    c.AeroDensity[0] = 1.7f;    // DAT_00f417d4
+    c.AeroSpeeds[0] = 400.0f;   // DAT_00f41ca0
+    c.AeroSpeeds[1] = 10000.0f; // DAT_00f416c4
+    c.AeroLength[0] = 5.0f;     // DAT_00f41750
+    c.AeroLength[1] = 50.0f;    // DAT_00f41848
+    c.AeroWidth[0] = 2.0f;      // DAT_00f416b0
+    c.AeroWidth[1] = 7.5f;      // DAT_00f41994
+    c.AeroWidth[2] = 35.0f;     // DAT_00f41f48
+    c.AeroDensity[1] = 0.7f;    // DAT_00f41828
+
+    c.EngineBrakePower *= 0.5f; // DAT_00f41674
+}
 
 float gVehicleAeroDragScale = 1.0f;   // debug: aero drag multiplier
 bool gVehicleStartChronopack = false; // debug: arm the chronopack (ImGui)
@@ -430,14 +482,15 @@ inline Eigen::Vector4f ToVec4( JPH::Vec3Arg v ) {
 }
 
 static void ApplyHandbrakeAbsOverride( PhysicsVehicleState &vehicle,
-                                       float handbrake ) {
+                                       float handbrake,
+                                       bool bSimuMode ) {
     // FUN_0083db70
     constexpr float kHandbrakeAbsGate = 0.1f;   // FLOAT_00f41668
     constexpr float kHandbrakeAbsSimu = 100.0f; // DAT_00f41708
     if ( handbrake <= kHandbrakeAbsGate ) {
         return;
     }
-    if ( gbSimuModeEnabled ) {
+    if ( bSimuMode ) {
         vehicle.AbsMagRear = kHandbrakeAbsSimu;
         return;
     }
@@ -678,9 +731,15 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     bIsAI = bIsAIDriven;
     bIsNetwork = bIsNetworkDriven;
 
-    pConfig = ( gpDatabase != nullptr && gpDatabase->isBike( &db ) )
-                  ? &gBikePhysicsConfig
-                  : &gPhysicsConfig;
+    const bool bBike = gpDatabase != nullptr && gpDatabase->isBike( &db );
+    config = bBike ? gBikePhysicsConfig : gPhysicsConfig;
+    bSimuMode = IsSimuVehicle( bIsAIDriven, bIsNetworkDriven );
+    if ( bSimuMode ) {
+        ApplySimuConfigOverrides( config );
+        gAIRadiusBlendStartScale = 1.0f;
+        gAIBrakingDistanceScale = 1.4f; // DAT_00f41f2c
+    }
+    pConfig = &config;
 
     const PerfPackCoefs pack = BuildPerfPackCoefs( pPack );
     if ( pack.bInstalled ) {
@@ -713,7 +772,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     bLowSpeedGripState = false;
     bLowSpeedLongAssist = false;
     bLowSpeedLatAssist = false;
-    bIsBike = ( pConfig == &gBikePhysicsConfig );
+    bIsBike = bBike;
     const int32_t numWheels = bIsBike ? 2 : 4;
 
     resetAutomaticGearbox();
@@ -836,7 +895,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     const float frontalArea = Max( 0.0f, bodyWidth * dbBodyHeight );
     const float cxDrag = Max( 0.0f, db.CxLength ) * pack.Cx;
     const float czLift = Max( 0.0f, db.CxHeight ) * kAeroLiftCoef *
-                         ( gbSimuModeEnabled ? kAeroSimuLiftMult : 1.0f );
+                         ( bSimuMode ? kAeroSimuLiftMult : 1.0f );
     aeroDragArea = 0.5f * frontalArea * cxDrag;
     aeroDownArea = 0.5f * frontalArea * czLift;
     aeroDensity = pConfig->AeroDensity[0] > 0.0f ? pConfig->AeroDensity[0]
@@ -859,12 +918,10 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         ( db.Weight > 0 ? static_cast<float>( db.Weight ) : 1200.0f ) *
         pack.Weight;
     const float massPerWheel = mass * 0.25f;
-    // FUN_008345e0 @0x008349bb-0x00834a05, 0x0083507a-0x0083522c and
-    // 0x00835342-0x008353ea
     float BrakeBalance =
         db.BrakeBalance > 0 ? db.BrakeBalance * 0.01f : kBrakeBalance;
     float brakeCoef = ( bFWD || bRWD ) ? 1.0f : kAWDBrakeCoef;
-    if ( gbSimuModeEnabled ) {
+    if ( bSimuMode ) {
         gBrakeTorquePerMass = bIsBike ? 20.0f : 10.0f; // DAT_00fab594/598
         BrakeBalance = bFWD ? 0.75f : ( bRWD ? 0.70f : 0.72f );
         brakeCoef = 1.0f;
@@ -915,7 +972,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                         clearance, hullBottomY, groundY );
     }
 
-    steerLockRad = ( db.SteerLock > 0 ? db.SteerLock : 30.0f ) * kDegToRad;
+    const float steerLockDeg =
+        bSimuMode ? 45.0f : ( db.SteerLock > 0 ? db.SteerLock : 30.0f );
+    steerLockRad = steerLockDeg * kDegToRad;
 
     {
         const PhysicsConfig &c = *pConfig;
@@ -1028,8 +1087,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                 : ( c.RearLateralFrictionCoef > 0 ? c.RearLateralFrictionCoef
                                                   : 1.4f );
         if ( pack.bInstalled ) {
-            lateralCoef *= gbSimuModeEnabled ? kPackLatFrictionBoostSimu
-                                             : kPackLatFrictionBoost;
+            lateralCoef *=
+                bSimuMode ? kPackLatFrictionBoostSimu : kPackLatFrictionBoost;
         }
         const float lngBrakeCoef = bFront ? ( c.FrontLngBrakeFrictionCoef > 0
                                                   ? c.FrontLngBrakeFrictionCoef
@@ -1059,10 +1118,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         w.BaseGripLat = w.GripLat;
         w.BrakeGripLong = lngBrakeCoef * ( 1.0f / gripPerMille ) *
                           ( 1.0f / gripCal ) * brakeCal;
-        w.BrakeGripLatSlow = latBrakeCoef / gripCal;
-        w.BrakeGripLatFast = latBrakeCoefFast / gripCal;
-        w.BrakeGripLat = w.BrakeGripLatSlow;
-        // @0x00833122
+        w.BrakeGripLatSlow = latBrakeCoef;
+        w.BrakeGripLatFast = latBrakeCoefFast;
+        w.BrakeGripLat = latBrakeCoef / gripCal;
         w.ReactionScale =
             ( bFront
                   ? ( c.ResistiveCoefFront > 0 ? c.ResistiveCoefFront : 1.0f )
@@ -1132,7 +1190,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         finalDriveRatio = gb.FinalDrive;
     }
 
-    const float simInertiaScale = gbSimuModeEnabled ? 0.5f : 1.0f;
+    const float simInertiaScale = bSimuMode ? 0.5f : 1.0f;
     gb.BaseInertia =
         ( db.GearboxIntertia != 0 ? db.GearboxIntertia * 0.01f : 0.25f ) *
         simInertiaScale;
@@ -1279,6 +1337,10 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         vehicle.DiffCenter.SplitRatio =
             Clamp( db.TransmissionPrimacy * 0.01f, 0.0f, 1.0f );
     }
+    if ( bSimuMode && !bFWD && !bRWD ) {
+        vehicle.DiffCenter.SplitRatio =
+            std::min( vehicle.DiffCenter.SplitRatio, 0.4f );
+    }
     vehicle.DiffFront.RatioThreshold = 5.0f;  // unused for spool
     vehicle.DiffRear.RatioThreshold = 3.0f;   // unused for spool
     vehicle.DiffCenter.RatioThreshold = 2.0f; // unused for spool
@@ -1286,7 +1348,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     vehicle.DiffRear.LockCoef = vehicle.bRearDrive ? 10.0f : 0.0f;
 
     vehicle.BrakeTorque = BrakeTorque;
-    vehicle.HandbrakeTorque = gbSimuModeEnabled ? 1000.0f : 0.0f;
+    vehicle.HandbrakeTorque = bSimuMode ? 1000.0f : 0.0f;
 
     bRollLimitRestoreRequest = false;
     if ( bIsBike ) {
@@ -1565,7 +1627,7 @@ void PhysicsVehicle::arbitrateAutomaticGearbox( float deltaTime,
 
     vehicle.bThrottleFloored = true;
     vehicle.bBrakeFloored = true;
-    if ( !gbSimuModeEnabled ) {
+    if ( !bSimuMode ) {
         vehicle.bThrottleFloored = !( kPedalFlooredThreshold > accel );
         vehicle.bBrakeFloored = !( kPedalFlooredThreshold > brake );
     }
@@ -1579,7 +1641,7 @@ void PhysicsVehicle::arbitrateAutomaticGearbox( float deltaTime,
         return;
     }
 
-    if ( !gbSimuModeEnabled ) {
+    if ( !bSimuMode ) {
         accel = Clamp( accel / kPedalGain, 0.0f, 1.0f );
         brake = Clamp( brake / kPedalGain, 0.0f, 1.0f );
     }
@@ -2193,7 +2255,7 @@ float PhysicsVehicle::filterSteering( float rawSteer,
     const float targetPreSlew = target;
 
     bool bFrontSlipFrozen = false;
-    if ( gbSimuModeEnabled && steerHelpState == 0 ) {
+    if ( bSimuMode && steerHelpState == 0 ) {
         const PhysicsWheelState *pWheels = vehicle.Wheels;
         const float frontSlip =
             ( pWheels[vehicle.NumWheels / 4].NormLatClamped +
@@ -3532,13 +3594,13 @@ void PhysicsVehicle::OnStep(
         electronics.Throttle = inputThrottle;
         electronics.FilteredSteer = filteredSteer;
         electronics.DeltaTime = dt;
-        electronics.bSimuMode = gbSimuModeEnabled;
+        electronics.bSimuMode = bSimuMode;
         electronics.bBike = bIsBike;
         StepElectronics( vehicle, electronics );
         vehicle.HandbrakeAbsInput = inputHandbrake;
-        ApplyHandbrakeAbsOverride( vehicle, inputHandbrake );
+        ApplyHandbrakeAbsOverride( vehicle, inputHandbrake, bSimuMode );
     }
-    if ( !gbSimuModeEnabled ) {
+    if ( !bSimuMode ) {
         updateGripModulation( chassisVel.Length() );
     }
 
@@ -3591,9 +3653,8 @@ void PhysicsVehicle::OnStep(
         PhysicsWheelState &w = vehicle.Wheels[i];
         const bool hit = w.bGroundContact;
 
-        const float antiFlyCoef =
-            gbSimuModeEnabled ? 0.0f : kAntiFlyGravityCoef;
-        const float antiFlyMaxGap = gbSimuModeEnabled ? 0.0f : kAntiFlyMaxGap;
+        const float antiFlyCoef = bSimuMode ? 0.0f : kAntiFlyGravityCoef;
+        const float antiFlyMaxGap = bSimuMode ? 0.0f : kAntiFlyMaxGap;
         const float antiFlyAccel = antiFlyCoef * -kGravityAccel;
         const float ramp =
             ( ( wheelGroundGap[i] - kAntiFlyGapDeadband ) * antiFlyAccel ) /
@@ -3683,7 +3744,7 @@ void PhysicsVehicle::OnStep(
         bi.AddForce( id, aeroForce, JPH::EActivation::DontActivate );
     }
 
-    if ( !bIsBike && !gbSimuModeEnabled ) {
+    if ( !bIsBike && !bSimuMode ) {
         applyGroundAlignment( system, chassis, bi, dt );
     }
     if ( bIsBike ) {
@@ -4587,7 +4648,7 @@ void PhysicsVehicle::initializeElectronics() {
     for ( int32_t i = 0; i < kMaxElectronicValues; i++ ) {
         vehicle.ElectronicValues[i] = c.ElectronicParamsValue[i];
     }
-    if ( gbSimuModeEnabled ) {
+    if ( bSimuMode ) {
         for ( int32_t i = 0; i < 3; i++ ) {
             vehicle.ElectronicValues[i] *= kSimuElectronicScale;
         }

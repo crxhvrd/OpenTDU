@@ -266,6 +266,7 @@ public:
     void setAIDriven( const bool bAIDriven ) { bIsAI = bAIDriven; }
     bool areWheelsActive() const { return bWheelsActive; }
     bool isBike() const { return bIsBike; }
+    bool isSimuMode() const { return bSimuMode; }
     float getVirtualSpeed() const { return virtualSpeed; }
     void setVirtualSpeed( float speed ) { virtualSpeed = speed; }
     void resetAutomaticGearbox();
@@ -700,6 +701,7 @@ private:
     bool bRegistered;
 
     PhysicsVehicleState vehicle;
+    PhysicsConfig config;
     const PhysicsConfig *pConfig = &gPhysicsConfig;
 
     Eigen::Vector3f
@@ -841,6 +843,7 @@ private:
     bool bDrivingInputScripted;
     bool bIsAI;
     bool bIsNetwork;
+    bool bSimuMode = false;
     bool bCinematicMode;
     bool bPausePhysics;
     bool bVirtual;
@@ -944,3 +947,8 @@ private:
 };
 
 extern bool gbSimuModeEnabled;
+extern float gAIRadiusBlendStartScale;
+extern float gAIBrakingDistanceScale;
+
+bool IsSimuVehicle( const bool bIsAI, const bool bIsNetwork );
+float GetCGHeightCoef( const bool bSimuMode, const bool bBike );

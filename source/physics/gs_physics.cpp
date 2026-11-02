@@ -2577,9 +2577,10 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     }
     const float gcLengthFrac =
         db.GravityCenterLength > 0 ? db.GravityCenterLength * 0.01f : 0.5f;
-    constexpr float kCGHeightCarCoef = 0.75f; // DAT_00f416a4
+    const float cgHeightCoef =
+        GetCGHeightCoef( IsSimuVehicle( bIsAI, bIsNetwork ), bBike );
     const float gcHeightFrac =
-        static_cast<float>( db.GravityCenterHeight ) * 0.01f * kCGHeightCarCoef;
+        static_cast<float>( db.GravityCenterHeight ) * 0.01f * cgHeightCoef;
     const float bodyLengthM = ( db.Length > 0 ? db.Length : 4000 ) * 0.001f;
     const float comOffsetY = -( 1.0f - gcHeightFrac ) * bodyHeightM * 0.5f;
     const float comOffsetZ = ( gcLengthFrac - 0.5f ) * bodyLengthM;
@@ -5693,7 +5694,7 @@ void GSPhysics::updateForceFeedback( float dt ) {
     const float loadFactor =
         EvalFFBCurve( longitudinalG, gFFBLoadFromAccel, gFFBLoadFactor );
     const float modeScale =
-        gbSimuModeEnabled ? kSimuTorqueScale : kArcadeTorqueScale;
+        pVehicle->isSimuMode() ? kSimuTorqueScale : kArcadeTorqueScale;
     const float torqueDivisor = RemapClamped(
         strength, 0.0f, 1.0f, kTorqueDivisorMinStr, kTorqueDivisorMaxStr );
     const float slipFactor =

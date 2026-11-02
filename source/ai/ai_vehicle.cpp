@@ -242,7 +242,6 @@ float AiVehicle::computeTurningSpeed( const float radius ) const {
     // FUN_009243c0
     static constexpr float kRadiusBlendStart = 30.0f;        // DAT_00faa9b4
     static constexpr float kRadiusBlendEnd = 100.0f;         // DAT_00faa9b0
-    static constexpr float kRadiusBlendStartScale = 1.0f;    // DAT_00f7c3c4
     static constexpr float kTrafficTurningSpeedScale = 0.8f; // DAT_00faa9ac
 
     if ( radius < 0.0f ) {
@@ -250,11 +249,11 @@ float AiVehicle::computeTurningSpeed( const float radius ) const {
     }
 
     const float scale = std::clamp(
-        ( radius - kRadiusBlendStart ) * ( 1.0f - kRadiusBlendStartScale ) /
+        ( radius - kRadiusBlendStart ) * ( 1.0f - gAIRadiusBlendStartScale ) /
                 ( kRadiusBlendEnd - kRadiusBlendStart ) +
-            kRadiusBlendStartScale,
-        std::min( kRadiusBlendStartScale, 1.0f ),
-        std::max( kRadiusBlendStartScale, 1.0f ) );
+            gAIRadiusBlendStartScale,
+        std::min( gAIRadiusBlendStartScale, 1.0f ),
+        std::max( gAIRadiusBlendStartScale, 1.0f ) );
     const float scaledRadius = scale * radius;
     float speed = sqrtf( scaledRadius ) * infos.TurningSpeedC1 +
                   scaledRadius * infos.TurningSpeedC2;
@@ -311,14 +310,12 @@ float AiVehicle::computeBrakingDistance( const float speedFrom,
                                          const float speedTo,
                                          const float slope ) const {
     // FUN_00924200
-    static constexpr float kBrakingDistanceScale = 1.0f; // DAT_00f7c3c8
-
     if ( speedTo > speedFrom ) {
         return -computeBrakingDistance( speedTo, speedFrom, slope );
     }
     return ComputeBrakingDistance( infos.BrakingDistC1, infos.BrakingDistC2,
                                    speedFrom, speedTo, slope ) *
-           dpc.BrakingDistanceFactor * kBrakingDistanceScale;
+           dpc.BrakingDistanceFactor * gAIBrakingDistanceScale;
 }
 
 void AiVehicle::getAxleSlipRatios( float &outRear,
