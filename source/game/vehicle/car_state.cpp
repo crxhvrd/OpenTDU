@@ -1215,6 +1215,7 @@ void CarBodyState::reset() {
     PhysicsWorldMatrix = Matrix4x4f_t::Identity();
     AngularVelocity = Eigen::Vector4f::Zero();
     LinearVelocity = Eigen::Vector4f::Zero();
+    LocalLinearVelocity = Eigen::Vector4f::Zero();
     Accel = Eigen::Vector4f::Zero();
     AccelDiff = Eigen::Vector4f::Zero();
     SpeedInKmh = 0.0f;

@@ -8,6 +8,7 @@
 #include "ai/ai_pool.h"
 #include "ai/gs_ai.h"
 #include "core/cubic_bezier.h"
+#include "core/maths_helper.h"
 #include "database/gs_database.h"
 #include "gs_timer.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -17,6 +18,8 @@
 #include "player_data/saved_road_discovery.h"
 #include "render/camera/camera_game.h"
 #include "render/camera/gs_camera.h"
+#include "render/gs_render.h"
+#include "render/mng_env_map.h"
 
 AiSimBubble gAiSimBubble; // DAT_01476a30
 
@@ -30,6 +33,8 @@ static constexpr float kCullVisibilityMax = 1.5f;         // DAT_00f416b8
 static constexpr float kLeastVisibleScoreMax = 1000.0f;   // DAT_00f41718
 static constexpr float kIgnoredZoneDensity = 4.0f;        // DAT_00f418d4
 static constexpr float kPerLaneKm = 0.001f;               // DAT_00f4167c
+static constexpr float kOcclusionCornerExtent = 0.55f;    // DAT_00faa9dc
+static constexpr float kNoRayHit = -99999.99f;            // DAT_00f418fc
 
 static float
 RandomFloat( RandomGen &random, const float min, const float max ) {
@@ -189,11 +194,44 @@ AiSimBubble::AiSimBubble()
       lastVisibleCullTime( 0.0f ),
       bCullFromCamera( false ),
       bOcclusionRaycasts( false ),
+      estimatedVisibility(),
+      realVisibility(),
       currentZoneIndex( 0 ),
       pCurrentZone( &gAIConfig.Zones[0] ) {
     // FUN_00917020
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: stats history
     random.setSeed( 0x3039 );
+}
+
+void AiSimBubble::StatsHistory::push( const float value, const float time ) {
+    // FUN_00907fe0
+    if ( LastSampleTime >= 0.0f && time >= LastSampleTime &&
+         time < LastSampleTime + 1.0f ) {
+        return;
+    }
+
+    LastSampleTime = time;
+    if ( NumSamples == kCapacity ) {
+        std::copy( Samples + 1, Samples + kCapacity, Samples );
+        Samples[kCapacity - 1] = value;
+    } else {
+        Samples[NumSamples] = value;
+        NumSamples++;
+    }
+
+    Instant = value;
+    ShortAverage = 0.0f;
+    LongAverage = 0.0f;
+
+    const int32_t numShort = std::min( NumSamples, kShortWindow );
+    const int32_t numLong = std::min( NumSamples, kCapacity );
+    for ( int32_t i = 0; i < numShort; i++ ) {
+        ShortAverage += Samples[i];
+    }
+    ShortAverage /= static_cast<float>( numShort );
+    for ( int32_t i = 0; i < numLong; i++ ) {
+        LongAverage += Samples[i];
+    }
+    LongAverage /= static_cast<float>( numLong );
 }
 
 void AiSimBubble::initialize() {
@@ -302,19 +340,29 @@ void AiSimBubble::selectZone() {
 
 void AiSimBubble::updateCameras() {
     // FUN_00918690
-    CameraGame *pActiveCamera =
-        ( gpCamera != nullptr ) ? gpCamera->getActiveCamera() : nullptr;
-    OTDU_UNIMPLEMENTED; // TODO: camera modes 1/2
-    pCamera = pActiveCamera;
+    CameraVehicle *pActiveCamera =
+        ( gpCamera != nullptr ) ? gpCamera->getActiveVehicleCamera() : nullptr;
+    if ( pActiveCamera == nullptr ) {
+        pCamera = nullptr;
+        pRearCamera = nullptr;
+        return;
+    }
+
+    const int32_t mode = pActiveCamera->getType();
+    if ( ( mode != 1 && mode != 2 ) || pCamera == nullptr ) {
+        pCamera = pActiveCamera;
+    }
+
+    const uint32_t flags = pCamera->getFlags();
+    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+    if ( ( ( flags >> 18 ) & 1 ) != 0 && gpMngEnvMap != nullptr &&
+         pLocalCar != nullptr ) {
+        rearCamera = gpRender->getRenderPass<eRenderPass::RP_EnvMap>().pCamera;
+        pRearCamera = &rearCamera;
+        return;
+    }
 
     pRearCamera = nullptr;
-    CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
-    if ( pActiveCamera != nullptr && pLocalCar != nullptr ) {
-        const uint32_t flags = pActiveCamera->getFlags();
-        if ( ( ( flags >> 18 ) & 1 ) != 0 || ( ( flags >> 1 ) & 1 ) != 0 ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: rear / mirror culling camera
-        }
-    }
 }
 
 float AiSimBubble::computeVisibility( AiVehicle *pVehicle,
@@ -360,6 +408,36 @@ float AiSimBubble::computeVisibility( AiVehicle *pVehicle,
            visibility;
 }
 
+bool AiSimBubble::isVisibleFromCamera( AiVehicle *pVehicle ) const {
+    // FUN_009180c0
+    if ( pCamera == nullptr || pVehicle == nullptr ||
+         pVehicle->getCarState() == nullptr ) {
+        return false;
+    }
+
+    const Eigen::Vector4f eyePosition = *pCamera->getWorldPositionRW();
+    Matrix4x4f_t boundingBox;
+    pVehicle->getCarState()->retrieveBoundingBox( boundingBox );
+
+    const float e = kOcclusionCornerExtent;
+    const Eigen::Vector4f corners[8] = {
+        Eigen::Vector4f( -e, -e, -e, 1.0f ), Eigen::Vector4f( e, -e, -e, 1.0f ),
+        Eigen::Vector4f( -e, -e, e, 1.0f ),  Eigen::Vector4f( e, -e, e, 1.0f ),
+        Eigen::Vector4f( -e, e, -e, 1.0f ),  Eigen::Vector4f( e, e, -e, 1.0f ),
+        Eigen::Vector4f( -e, e, e, 1.0f ),   Eigen::Vector4f( e, e, e, 1.0f ) };
+    for ( const Eigen::Vector4f &corner : corners ) {
+        Eigen::Vector4f point = TDUMat4x4MulVec( boundingBox, corner );
+        if ( pCamera->sphereInFrustum( &point, 0.0f ) == 0 ) {
+            continue;
+        }
+        if ( gpPhysics->castWorldRay( eyePosition, point - eyePosition,
+                                      1.0f ) == kNoRayHit ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void AiSimBubble::updateTrafficVisibility( const float deltaTime,
                                            const float totalTime ) {
     // FUN_009182f0
@@ -373,13 +451,30 @@ void AiSimBubble::updateTrafficVisibility( const float deltaTime,
     AiVehicleList &trafficList =
         pPool->getList( AiPool::AVL_FirstLocomotion + 0 );
     numTraffic = trafficList.Count;
+    float numReallyVisible = 0.0f;
     for ( AiVehicle *pVehicle : trafficList ) {
         pVehicle->getInfos().Visibility =
             computeVisibility( pVehicle, totalTime );
         if ( bOcclusionRaycasts ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: occlusion raycasts (FUN_009180c0)
+            const bool bVisible = isVisibleFromCamera( pVehicle );
+            pVehicle->getInfos().bVisible = bVisible;
+            numReallyVisible += bVisible ? 1.0f : 0.0f;
+        } else {
+            pVehicle->getInfos().bVisible = true;
         }
-        pVehicle->getInfos().bVisible = true;
+    }
+
+    estimatedVisibility.push( ( numTraffic > 0 )
+                                  ? static_cast<float>( numVisibleHits ) /
+                                        static_cast<float>( numTraffic )
+                                  : 0.0f,
+                              totalTime );
+    if ( bOcclusionRaycasts ) {
+        realVisibility.push( ( numTraffic > 0 )
+                                 ? numReallyVisible /
+                                       static_cast<float>( numTraffic )
+                                 : 0.0f,
+                             totalTime );
     }
     OTDU_UNIMPLEMENTED_ONCE; // TODO: online zone update (FUN_00917d90)
 }

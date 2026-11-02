@@ -1201,7 +1201,8 @@ void AiVehicle::reset( const bool bFull, const bool bKeepSecondary ) {
     netReceiveTime = netSendTime;
     bFadeActive = false;
     bFadeByDistance = false;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AiVehicle+0x2308 holder release
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (net interpolation slot +0x2308
+                             // release, FUN_00927a10 allocates it)
     if ( !bFull ) {
         return;
     }
@@ -1337,8 +1338,9 @@ void AiVehicle::setController( const int32_t type ) {
     } else if ( type == 7 ) {
         pController = &ctrlFreeRoam;
     } else {
-        if ( type != 0 && type != 3 && type != 4 && type != 5 ) {
-            OTDU_UNIMPLEMENTED_ONCE;
+        if ( type == 8 ) {
+            OTDU_UNIMPLEMENTED_ONCE; // TODO: GPS autopilot controller
+                                     // (AiVehicle+0x2160, vtable 0xf0d300)
         }
         pController = &ctrlRoute;
     }
@@ -1365,12 +1367,8 @@ void AiVehicle::setBehaviour( const int32_t type ) {
         pBehaviour = &bhvTraffic;
     } else if ( type == 3 ) {
         pBehaviour = &bhvBot;
-    } else if ( type == 4 ) {
-        pBehaviour = &bhvPassive;
     } else {
-        OTDU_UNIMPLEMENTED_ONCE;
-        pBehaviour = nullptr;
-        return;
+        pBehaviour = &bhvPassive;
     }
     pBehaviour->attach( this );
     pBehaviour->tick( 0.0f, 0.0f );

@@ -220,7 +220,9 @@ public:
                                 int32_t numTileZ = 0 );
     void removeHeightfield( const void *pKey );
     void refreshHeightmapCollision();
-    void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) override;
+    void forwardInput( PhysicsVehicle &vehicle,
+                       float deltaTime,
+                       int32_t argument ) override;
 
     void addSectorCollision( const void *pKey,
                              void *pBlob,
@@ -302,6 +304,10 @@ public:
     }
     inline PhysicsVehicle *getVehiclesEnd() const {
         return pPhysicsVehiclesEnd;
+    }
+    // PhysicsVehicle +0xa3c
+    inline int32_t getVehicleSlotIndex( const PhysicsVehicle *pVehicle ) const {
+        return static_cast<int32_t>( pVehicle - pPhysicsVehiclesBegin );
     }
 
     static void pushFadeRequest( const eFadeRequest request );

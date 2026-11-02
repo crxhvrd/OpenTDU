@@ -101,6 +101,7 @@ public:
     void reset( const bool bFull ) override;
     void tick( const float deltaTime, const float totalTime ) override;
     void detach() override;
+    void debugText() override;
     void debugDraw( DrawList *pDrawList ) override;
     bool getTarget( Eigen::Vector4f &outDirection,
                     float &outSpeed ) const override;

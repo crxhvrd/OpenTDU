@@ -26,6 +26,8 @@ static constexpr float kJunctionPointA = 0.33f;             // 0x3ea8f5c3
 static constexpr float kJunctionPointB = 0.67f;             // 0x3f2b851f
 static constexpr float kUTurnAngleMin = 175.0f;             // DAT_00f42150
 static constexpr float kUTurnAngleMax = 185.0f;             // DAT_00f4214c
+static constexpr float kJunctionThroughAngle = 0.1f;        // FLOAT_00f41668
+static constexpr float kJunctionUTurnAngle = 3.0f;          // DAT_00f416b4
 static constexpr float kJunctionCurveSpeed = 100.0f;        // 0x42c80000
 static constexpr float kDriftHorizonFactor = 0.2f;          // DAT_00f41730
 static constexpr float kQuarterPi = 0.785398185f;           // DAT_00f41cb0
@@ -160,8 +162,7 @@ bool OptPathSituation::isBikeRiderDown() const {
     if ( !bBike ) {
         return false;
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: CarState+0x3a0 (bike rider ejected)
-    return false;
+    return pVehicle->getCarState()->getBody()->bHasBikeAvatar;
 }
 
 void OptPathSituation::refreshLast() {
@@ -811,6 +812,18 @@ static void GetJunctionMouthCorners( const AiRoadMap::Junction *pJunction,
                           ( bFirstMouth ? 8 : 6 );
     outCornerA = GetJunctionPoint( pJunction, first );
     outCornerB = GetJunctionPoint( pJunction, first + 1 );
+}
+
+static Eigen::Vector4f
+GetJunctionMouthCentre( const AiRoadMap::Junction *pJunction,
+                        const int32_t side,
+                        const bool bFirstMouth ) {
+    Eigen::Vector2f cornerA;
+    Eigen::Vector2f cornerB;
+    GetJunctionMouthCorners( pJunction, side, bFirstMouth, cornerA, cornerB );
+    const Eigen::Vector2f centre = ( cornerB - cornerA ) * 0.5f + cornerA;
+    return Eigen::Vector4f( centre.x(), pJunction->Position.Y, centre.y(),
+                            1.0f );
 }
 
 static Eigen::Vector2f SearchJunctionEdge( const AiRoadMap::Junction *pJunction,
@@ -2104,33 +2117,86 @@ bool OptPathBuilder::appendJunction( const AiRoadIt &last,
 
     Eigen::Vector4f pointA;
     Eigen::Vector4f pointB;
-    const bool bStraight =
-        pJunction->Flags == 2 || ( fabsf( turnAngle ) > kUTurnAngleMin &&
-                                   fabsf( turnAngle ) < kUTurnAngleMax );
-    if ( pJunction->Flags != 0 && pJunction->Flags != 2 ) {
-        // TODO: junction Flags 1
+    bool bJunctionUTurn = false;
+    bool bMouthPoints = false;
+    if ( pJunction->Flags == 1 ) {
+        const Eigen::Vector4f directionLast = last.computeDirection();
+        const Eigen::Vector4f directionNext = next.computeDirection();
+        const float angle =
+            fabsf( atan2f( directionNext.z() * directionLast.x() -
+                               directionLast.z() * directionNext.x(),
+                           directionNext.z() * directionLast.z() +
+                               directionNext.x() * directionLast.x() ) );
+        if ( angle < kJunctionThroughAngle ) {
+            const int32_t startSide = pJunction->computeSideOfLine(
+                Eigen::Vector2f( start.x(), start.z() ) );
+            const Eigen::Vector4f firstMid =
+                GetJunctionMouthCentre( pJunction, startSide, true );
+            const Eigen::Vector4f secondMid =
+                GetJunctionMouthCentre( pJunction, startSide, false );
+            if ( ( secondMid - startPosition ).norm() >
+                 ( firstMid - startPosition ).norm() ) {
+                pointA = firstMid;
+                pointB = secondMid;
+            } else {
+                const int32_t endSide = pJunction->computeSideOfLine(
+                    Eigen::Vector2f( end.x(), end.z() ) );
+                if ( endSide == startSide ) {
+                    pointA = secondMid;
+                    pointB = firstMid;
+                } else {
+                    pointA =
+                        GetJunctionMouthCentre( pJunction, endSide, false );
+                    pointB = GetJunctionMouthCentre( pJunction, endSide, true );
+                }
+            }
+            bMouthPoints = true;
+        } else if ( angle > kJunctionUTurnAngle ) {
+            bJunctionUTurn = true;
+            pointA = GetJunctionMouthCentre(
+                pJunction,
+                pJunction->computeSideOfLine(
+                    Eigen::Vector2f( start.x(), start.z() ) ),
+                false );
+            pointB = GetJunctionMouthCentre(
+                pJunction,
+                pJunction->computeSideOfLine(
+                    Eigen::Vector2f( end.x(), end.z() ) ),
+                false );
+            bMouthPoints = true;
+        }
+    }
+    if ( !bMouthPoints && pJunction->Flags != 0 && pJunction->Flags != 2 ) {
         OTDU_UNIMPLEMENTED_ONCE;
     }
-    if ( bStraight ) {
-        pointA = start + ( end - start ) * kJunctionPointA;
-        pointB = start + ( end - start ) * kJunctionPointB;
-    } else {
-        const float handleLength = ( end - start ).norm() * kOneThird;
-        const Eigen::Vector4f directionIn =
-            ScaleFlat( tailIt.computeDirection(), handleLength );
-        const Eigen::Vector4f directionOut =
-            ScaleFlat( next.computeDirection() * -1.0f, handleLength );
-        CubicBezier curve;
-        curve.ControlPoints[0] = start;
-        curve.ControlPoints[1] = start + directionIn;
-        curve.ControlPoints[2] = end + directionOut;
-        curve.ControlPoints[3] = end;
-        pointA = curve.evaluate( kJunctionPointA );
-        pointB = curve.evaluate( kJunctionPointB );
+    if ( !bMouthPoints ) {
+        const bool bStraight =
+            pJunction->Flags == 2 || ( fabsf( turnAngle ) > kUTurnAngleMin &&
+                                       fabsf( turnAngle ) < kUTurnAngleMax );
+        if ( bStraight ) {
+            pointA = start + ( end - start ) * kJunctionPointA;
+            pointB = start + ( end - start ) * kJunctionPointB;
+        } else {
+            const float handleLength = ( end - start ).norm() * kOneThird;
+            const Eigen::Vector4f directionIn =
+                ScaleFlat( tailIt.computeDirection(), handleLength );
+            const Eigen::Vector4f directionOut =
+                ScaleFlat( next.computeDirection() * -1.0f, handleLength );
+            CubicBezier curve;
+            curve.ControlPoints[0] = start;
+            curve.ControlPoints[1] = start + directionIn;
+            curve.ControlPoints[2] = end + directionOut;
+            curve.ControlPoints[3] = end;
+            pointA = curve.evaluate( kJunctionPointA );
+            pointB = curve.evaluate( kJunctionPointB );
+        }
     }
 
     OptPathElem elem;
     elem.Type = OptPathElem::ET_Junction;
+    if ( bJunctionUTurn ) {
+        elem.Marker = OptPathElem::EM_JunctionUTurn;
+    }
     elem.Position = Eigen::Vector4f( pointA.x(), pointA.y(), pointA.z(), 1.0f );
     elem.pJunction = pJunction;
     elem.JunctionLocalX = pointA.x() - pJunction->Position.X;

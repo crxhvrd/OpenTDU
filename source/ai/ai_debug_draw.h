@@ -32,6 +32,14 @@ void DrawDebugLine( const Eigen::Vector4f &start,
                     const Eigen::Vector4f &end,
                     const uint32_t color,
                     DrawList &drawList );
+// FUN_009baa70
+void DrawDebugArc( const Matrix4x4f_t &matrix,
+                   const float radius,
+                   const bool bSpokes,
+                   const uint32_t color,
+                   DrawList &drawList,
+                   const float angleStart,
+                   const float angleEnd );
 void DrawDebugBox( const Matrix4x4f_t &matrix,
                    const uint32_t color,
                    DrawList &drawList,
@@ -54,6 +62,9 @@ void DrawDebugText3D( const char *pText,
 // FUN_00972fe0
 void SelectNextHandmadeJunction();
 
+// FUN_0096d270 (called by AiPool::removeVehicle)
+void RecordRemovedAiVehicle( const AiVehicle *pVehicle, const char *pReason );
+
 extern bool gDistributionZoneDebugDraw; // DAT_010e7384
 extern bool gDisplayRoadMap;            // DAT_010e7385
 extern int32_t gProjectOnRoad;          // DAT_010e7388
@@ -70,9 +81,16 @@ extern bool gDisplaySimGroups;          // DAT_010e73a0
 extern bool gDisplayNetInterp;          // DAT_010e73a1
 extern bool gDisplayTrafficLights;      // DAT_010e73a2
 extern int32_t gDebugAiVehicleState;    // DAT_010e73a4
+extern int32_t gDisplayCarStatus;       // DAT_010e7390
 extern bool gDisplayCollisionRisks;     // DAT_010e73a8
 extern bool gDisplayScenaricCarPos;     // DAT_010e73a9
 extern bool gDisplayRemovedVehicles;    // DAT_010e73ab
+extern bool gbDebugObstacleParser;      // DAT_010e73b0
+extern bool gbDebugNavPath;             // DAT_010e73b1
+extern bool gbDebugOptimizedPath;       // DAT_010e73b2
+extern bool gbDisplayVehicleLocInfo;    // DAT_010e73b3
+extern bool gbForceParsingWhenPaused;   // DAT_010e73b4
+extern bool gbForceOptimWhenPaused;     // DAT_010e73c5
 extern bool gDisplayJunctionsID;        // DAT_010e7398
 extern bool gDisplayEntitiesNames;      // DAT_010e7399
 extern bool gbDebugFirstOpponent;       // DAT_010e73d5

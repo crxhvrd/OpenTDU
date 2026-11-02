@@ -5,6 +5,7 @@
 #include "ai/ai_debug_draw.h"
 #include "ai/ai_vehicle.h"
 #include "core/maths_helper.h"
+#include "debug/ed_debug_text.h"
 #include "game/game_object.h"
 #include "game/scenaric/entity/entity_car_player.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -105,8 +106,11 @@ void AiVehLocomotion::attach( AiVehicle *pOwner ) {
                 matrix.row( 2 ) * pVehicle->getInfos().Speed;
             pPhysics->resetToTransform( matrix, true );
             pPhysics->setVelocity( velocity.head<3>(), true, -1 );
+            pPhysics->setEngineState( eEngineState::ES_Running );
             pPhysics->setVirtualSpeed( pVehicle->getInfos().Speed );
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: CarState body LinearVelocity
+            pCarState->getBody()->LinearVelocity = velocity;
+            pCarState->getBody()->LocalLinearVelocity =
+                Eigen::Vector4f( 0.0f, 0.0f, pVehicle->getInfos().Speed, 1.0f );
         }
     }
 
@@ -219,7 +223,7 @@ void AiVehLocomotion::setPhysicsActive( const bool bActive,
         pPhysics->setVirtual( false );
         pPhysics->resetToTransform( matrix, true );
         pPhysics->setVelocity( velocity.head<3>(), true, -1 );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: gearbox state 2
+        pPhysics->setEngineState( eEngineState::ES_Running );
         bPhysicsPaused = false;
     } else {
         pPhysics->setVirtual( true );
@@ -400,7 +404,7 @@ void AiVehLocomotion::writeInputs( PhysicsVehicle &vehicle,
     const eAiVehicleCategory category = pVehicle->getCategory();
     if ( category != eAiVehicleCategory::AVC_Traffic &&
          category != eAiVehicleCategory::AVC_Cop ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: input headlights flag
+        vehicle.setLightsRequest( true );
     }
 
     float throttle;
@@ -544,7 +548,8 @@ void AiVehLocoTraffic::detach() {
 }
 
 void AiVehLocoTraffic::forwardInput( PhysicsVehicle &vehicle,
-                                     float deltaTime ) {
+                                     float deltaTime,
+                                     int32_t ) {
     // FUN_00936cd0
     if ( bDrivenByNavigation && deltaTime > 0.0f ) {
         computeControls( vehicle, deltaTime );
@@ -725,7 +730,8 @@ void AiVehLocoOpponent::detach() {
 }
 
 void AiVehLocoOpponent::forwardInput( PhysicsVehicle &vehicle,
-                                      float deltaTime ) {
+                                      float deltaTime,
+                                      int32_t ) {
     // FUN_009d7920
     if ( bDrivenByNavigation && deltaTime > 0.0f ) {
         computeControls( vehicle, deltaTime );
@@ -870,7 +876,9 @@ void AiVehLocoParked::debugDraw( DrawList *pDrawList ) {
     (void)pDrawList;
 }
 
-void AiVehLocoParked::forwardInput( PhysicsVehicle &vehicle, float deltaTime ) {
+void AiVehLocoParked::forwardInput( PhysicsVehicle &vehicle,
+                                    float deltaTime,
+                                    int32_t ) {
     // FUN_00937280
     (void)deltaTime;
     vehicle.setInput( 0.0f, 0.0f, 0.0f );
@@ -918,5 +926,20 @@ bool AiVehLocoParked::handle( const int32_t event, const int32_t state ) {
         return true;
     default:
         return false;
+    }
+}
+
+void AiVehLocoParked::debugText() {
+    // FUN_009372c0
+    switch ( getCurrentState() ) {
+    case PS_Inactive:
+        gEdDebugText.drawText( "state INACTIVE" );
+        break;
+    case PS_Active:
+        gEdDebugText.drawText( "state ACTIVE" );
+        break;
+    default:
+        gEdDebugText.drawText( "unknown state" );
+        break;
     }
 }

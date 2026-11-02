@@ -27,7 +27,9 @@ struct WindowState {
 // Driving input while seated in a showcase car
 class ShowCasePhysControl : public PhysicsDrivingControl {
 public:
-    void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) override;
+    void forwardInput( PhysicsVehicle &vehicle,
+                       float deltaTime,
+                       int32_t argument ) override;
 
 public:
     bool bRev = false;      // 'star' / 'stao'

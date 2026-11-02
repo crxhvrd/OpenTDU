@@ -205,10 +205,7 @@ void GameParticipantOffline::installDriver() {
          !gpAvatar->applyPNJConfiguration( config, *pPNJ ) ) {
         config = gpAvatar->getDefaultConfiguration( 0 );
     }
-    if ( pPNJName[0] != '\0' ) {
-        OTDU_UNIMPLEMENTED; // TODO: AVATAR (FUN_008f61d0 PNJ configuration
-                            // by name; never set offline)
-    }
+    gpAvatar->applyPNJConfigurationByName( config, pPNJName );
 
     EntityAvatar *pAvatar = gpScenaric->getAvatarManager().createAvatar(
         &config, clotheSet, true, ~0ull, false, kOpponentAvatarType );
@@ -238,8 +235,14 @@ bool GameParticipantOffline::instantiate( const int32_t missionType ) {
                         gpAI->getAIPool()->addTrainingDriver( StartPositionMat,
                                                               startHint ) );
                 } else if ( gAIConfig.bAIReplacePlayer ) {
-                    OTDU_UNIMPLEMENTED; // TODO: GSAI (AddOpponent on the
-                                        // player car, IAREPLACEPLAYER)
+                    AiRoadIt startHint;
+                    gpAI->getRace()->getCheckpointRoadLocation( 1, startHint );
+                    pCarState->setAIController( gpAI->getAIPool()->addOpponent(
+                        pCarState, StartPositionMat, startHint, missionType ) );
+                    // +0x334 is write-only in retail
+                    pVehicle->setSteerControlUsed( false );
+                    pVehicle->setAIDriven( true );
+                    pVehicle->setElectronicMode( 2 );
                 }
             }
         } else {
@@ -322,9 +325,12 @@ bool GameParticipantOffline::release() {
     BotID = -1;
     OpponentIndex = -1;
     if ( bIsLocalPlayer ) {
-        if ( gAIConfig.bAIReplacePlayer ) {
-            OTDU_UNIMPLEMENTED; // TODO: GSAI (give the player car back,
-                                // phys +0x550 / +0x334 / +0xd34)
+        PhysicsVehicle *pVehicle =
+            ( pCarState != nullptr ) ? pCarState->getPhysicsVehicle() : nullptr;
+        if ( gAIConfig.bAIReplacePlayer && pVehicle != nullptr ) {
+            // +0x334 is write-only in retail
+            pVehicle->setSteerControlUsed( true );
+            pVehicle->setAIDriven( false );
         }
         pCarState = nullptr;
         pVehicleRsc = nullptr;

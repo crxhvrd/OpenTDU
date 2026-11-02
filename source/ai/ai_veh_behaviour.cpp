@@ -16,6 +16,7 @@
 #include "game/game_mechanism.h"
 #include "game/gm_base.h"
 #include "game/gm_world.h"
+#include "game/mission/game_mech_penalty.h"
 #include "game/mission/gm_mission.h"
 #include "game/scenaric/game_intro_tutorial.h"
 #include "game/scenaric/gs_scenaric.h"
@@ -190,7 +191,14 @@ void AiVehBhvOpponent::onRaceMessage( const AiRaceMessage &message ) {
             pLoco->setDrivenByNavigation( false );
             pLoco->setManualInputs( 0.0f, 1.0f, 1.0f, 0.0f, 0.0f );
         }
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: physics and engine restart fields
+        if ( PhysicsVehicle *pPhysics = pCarState->getPhysicsVehicle();
+             pPhysics != nullptr ) {
+            {
+                PhysicsLock lock;
+                pPhysics->setVelocity( Eigen::Vector3f::Zero(), false, -1 );
+            }
+            pPhysics->setEngineState( eEngineState::ES_Off );
+        }
         if ( pNav != nullptr ) {
             pNav->requestState( AiVehNavOpponent::NS_RaceOver );
         }
@@ -211,15 +219,22 @@ void AiVehBhvOpponent::onRaceMessage( const AiRaceMessage &message ) {
     }
 }
 
+static bool IsCollisionPenaltyOnlyRace( const GMMission &mission ) {
+    // FUN_00801030
+    const GameMechPenalty *pPenalty = static_cast<const GameMechPenalty *>(
+        mission.getGameMech()->getComponent( GameMechanism::CS_Penalty ) );
+    return pPenalty != nullptr &&
+           pPenalty->getPenaltyFlags() == GameMechPenalty::kPenaltyCollisions;
+}
+
 void AiVehBhvOpponent::prepareRace() {
     // FUN_009cd880 (message 0)
-    const bool bMissionRace =
-        gpActiveGameMode != nullptr &&
-        gpActiveGameMode->getCurrentGameMode() == eGameMode::GM_Mission;
-    if ( bMissionRace ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission race flag (FUN_00801030)
+    bool bMissionFlag = false;
+    if ( gpActiveGameMode != nullptr &&
+         gpActiveGameMode->getCurrentGameMode() == eGameMode::GM_Mission ) {
+        bMissionFlag = IsCollisionPenaltyOnlyRace(
+            *static_cast<GMMission *>( gpActiveGameMode ) );
     }
-    const bool bMissionFlag = false;
 
     raceStartTime = gpTimer->GameTotalTime;
     CarState *pCarState = pVehicle->getCarState();
@@ -693,7 +708,7 @@ void AiVehBhvPolice::release() {
     // FUN_0063f2b0
 }
 
-void AiVehBhvPolice::debugDraw( DrawList *pDrawList ) {
+void AiVehBhvPolice::debugText() {
     // FUN_009cba90
     static constexpr const char *kStateNames[] = {
         "Lost",  "Init",       "Patrol", "Search",

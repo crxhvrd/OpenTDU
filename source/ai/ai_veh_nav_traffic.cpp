@@ -2,6 +2,7 @@
 #include "ai_veh_nav_traffic.h"
 
 #include "ai/ai_config.h"
+#include "ai/ai_debug_draw.h"
 #include "ai/ai_oriented_box.h"
 #include "ai/ai_road_shape.h"
 #include "ai/ai_veh_controller.h"
@@ -9,10 +10,14 @@
 #include "ai/ai_vehicle.h"
 #include "ai/gs_ai.h"
 #include "core/maths_helper.h"
+#include "core/color.h"
 #include "core/random/bcpl.h"
+#include "debug/ed_debug_text.h"
 #include "game/game_object.h"
+#include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
 #include "gs_timer.h"
+#include "render/draw_list.h"
 
 static constexpr float kDefaultFollowSpeed = 150.0f; // DAT_00f4182c
 static constexpr uint32_t kSignalRed = 1;
@@ -467,10 +472,317 @@ void AiVehNavTraffic::detach() {
     path.release();
 }
 
+static int32_t ClassifyCullingZone( const AiCullingShape &shape,
+                                    const Matrix4x4f_t &matrix,
+                                    const Eigen::Vector4f &position ) {
+    // FUN_009201a0
+    const float deltaX = position.x() - matrix( 3, 0 );
+    const float deltaZ = position.z() - matrix( 3, 2 );
+    const float deltaW = position.w() - matrix( 3, 3 );
+    const float distanceSq =
+        deltaX * deltaX + 0.0f + deltaZ * deltaZ + deltaW * deltaW;
+    if ( distanceSq > shape.SecondRadiusSq ) {
+        return 3;
+    }
+    if ( distanceSq <= shape.FirstRadiusSq ) {
+        return 0;
+    }
+    if ( distanceSq <= shape.FovDistanceSq ) {
+        const float heading = atan2f( matrix( 0, 2 ), matrix( 2, 2 ) );
+        const float bearing = atan2f( deltaX, deltaZ );
+        if ( fabsf( heading - bearing ) <= shape.FovHalfAngle ||
+             fabsf( bearing + heading ) <= shape.FovHalfAngle ) {
+            return 1;
+        }
+    }
+    return 2;
+}
+
+static float FindZoneVehicleFrequency( const AIZone &zone,
+                                       const int32_t carID ) {
+    // FUN_00976120
+    for ( const AIZoneVehicle &vehicle : zone.Vehicles ) {
+        if ( vehicle.DatabaseId == carID ) {
+            return vehicle.Frequency;
+        }
+    }
+    return 0.0f;
+}
+
+static const char *GetNavStateLabel( const int32_t state,
+                                     const int32_t waitReason ) {
+    switch ( state ) {
+    case AiVehNavTraffic::NS_Lost:
+        return "LOST";
+    case AiVehNavTraffic::NS_OnRoad:
+        return "ON ROAD";
+    case AiVehNavTraffic::NS_UrgentBrake:
+        return "URGENT BRAKE";
+    case AiVehNavTraffic::NS_JunctionApproach:
+        return "JUNC APPROACH";
+    case AiVehNavTraffic::NS_JunctionWait:
+        switch ( waitReason ) {
+        case AiVehNavTraffic::WR_Continue:
+            return "JUNC WAIT: CONTINUE";
+        case AiVehNavTraffic::WR_VehicleAhead:
+            return "JUNC WAIT: VEH AHEAD";
+        case AiVehNavTraffic::WR_JunctionOccupied:
+            return "JUNC WAIT: JUNC OCC.";
+        case AiVehNavTraffic::WR_DestinationOccupied:
+            return "JUNC WAIT: DEST OCC.";
+        case AiVehNavTraffic::WR_Priority:
+            return "JUNC WAIT: PRIORITY";
+        case AiVehNavTraffic::WR_RedLight:
+            return "JUNC WAIT: RED LIGHT";
+        case AiVehNavTraffic::WR_Courtesy:
+            return "JUNC WAIT: COURTESY";
+        default:
+            return "";
+        }
+    case AiVehNavTraffic::NS_OnJunction:
+        return "ON JUNCTION";
+    case AiVehNavTraffic::NS_NoPlan:
+        return "NO PLANE";
+    case AiVehNavTraffic::NS_LaneChange:
+        return "LANE CHANGE";
+    case AiVehNavTraffic::NS_BackOvertakeStop:
+        return "ON BACK-OVERTAKE1";
+    case AiVehNavTraffic::NS_BackOvertakeReverse:
+        return "ON BACK-OVERTAKE2";
+    case AiVehNavTraffic::NS_BackOvertakeForward:
+        return "ON BACK-OVERTAKE3";
+    case AiVehNavTraffic::NS_BackOvertakePass:
+        return "ON BACK-OVERTAKE4";
+    case AiVehNavTraffic::NS_CancelBackOvertake:
+        return "CANCEL BACK-OTK";
+    case AiVehNavTraffic::NS_UrgentTurn:
+        return "URGENT TURN";
+    case AiVehNavTraffic::NS_UrgentTurn2:
+        return "URGENT TURN 2";
+    default:
+        return "unknown state";
+    }
+}
+
 void AiVehNavTraffic::debugDraw( DrawList *pDrawList ) {
     // FUN_0093b910
+    static constexpr const char *kCullingZoneLabels[4] = {
+        "IN SPHERE 1\n", "IN FOV\n", "IN SPHERE 2\n", "OUTSIDE\n" };
+    static constexpr float kTextHeight = 2.0f; // DAT_00f416b0
+
+    AiVehicle *pOwner = pVehicle;
+    Eigen::Vector4f textPosition =
+        pOwner->getInfos().GroundMatrix.row( 3 ).transpose();
+    textPosition.w() = 1.0f;
+    textPosition.y() += kTextHeight;
+
+    char text[768];
+    sprintf( text, "#%03d ", pOwner->getCarStateIndex() );
+
+    // TODO: ONLINE (color of the owner player, DAT_00faa888)
+    const ColorRGBA ownerColor( 0xff, 0x00, 0x00, 0xff );
+    ColorRGBA color;
+    bool bDrawText = true;
+    switch ( gDisplayCarStatus ) {
+    case 1: {
+        if ( !pOwner->isRemovalPending() ) {
+            CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+            if ( pLocalCar != nullptr ) {
+                const int32_t zone = ClassifyCullingZone(
+                    gpAI->getCullingShape(), pLocalCar->getWorldMatrix(),
+                    pOwner->getInfos().GroundMatrix.row( 3 ).transpose() );
+                strcat( text, kCullingZoneLabels[zone] );
+            }
+        } else {
+            char removal[256];
+            const float removalTime = pOwner->getRemovalTime();
+            if ( removalTime < 0.0f ) {
+                sprintf( removal, "TO BE REMOVED\n" );
+            } else {
+                const float remaining = removalTime - gpTimer->GameTotalTime;
+                sprintf( removal, "TO REMOVE IN %0.1f s\n",
+                         static_cast<double>( std::max( remaining, 0.0f ) ) );
+            }
+            strcat( text, removal );
+        }
+        strcat( text, GetNavStateLabel( getCurrentState(), waitReason ) );
+        sprintf( text + strlen( text ), "\nTTC: %.2f",
+                 static_cast<double>( obstacleContactTime ) );
+        color = ownerColor;
+        break;
+    }
+    case 2:
+    case 3: {
+        char visibility[256];
+        CarState *pCarState = pOwner->getCarState();
+        sprintf( visibility, "VIS: %0.2f, GOID: %04x",
+                 static_cast<double>( pOwner->getInfos().Visibility ),
+                 pCarState->getNetID() );
+        strcat( text, visibility );
+        // TODO: ONLINE (mode 3 appends "\nRVIS: %2d = %f" per remote player)
+        color = ownerColor;
+        break;
+    }
+    case 4:
+        if ( bPullOver ) {
+            strcat( text, "AVOID POLICE" );
+        }
+        color = ColorRGBA( 0xff, 0x00, 0xff, 0xff );
+        break;
+    case 5: {
+        const AiRoadIt &position = pOwner->getInfos().LastRoadPos;
+        CarState *pCarState = pOwner->getCarState();
+        const int32_t carID =
+            ( pCarState != nullptr ) ? pCarState->getCarID() : -1;
+        if ( position.pRoad == nullptr || carID == -1 ) {
+            strcat( text, "ZONE UNKNOWN" );
+            color = ColorRGBA( 0xff, 0x00, 0x00, 0xff );
+            break;
+        }
+
+        const AIZone &zone =
+            gAIConfig.Zones[position.getEntity()->DensityZoneIndice];
+        const bool bAllowedInZone =
+            FindZoneVehicleFrequency( zone, carID ) > 0.0f ||
+            pOwner->getBehaviourType() == 0;
+        const bool bZoneHasTraffic = zone.TrafficPerLaneKm > 0.0f;
+        if ( bAllowedInZone && bZoneHasTraffic ) {
+            strcat( text, "ZONE OK" );
+            color = ColorRGBA( 0x00, 0xff, 0x00, 0xff );
+            break;
+        }
+        if ( !bAllowedInZone && bZoneHasTraffic ) {
+            strcat( text, "INCOR. ZONE" );
+        } else {
+            strcat( text, "EMPTY ZONE" );
+        }
+        color = ColorRGBA( 0xff, 0x7f, 0x00, 0xff );
+        break;
+    }
+    default:
+        bDrawText = false;
+        break;
+    }
+    if ( bDrawText ) {
+        DrawDebugText3D( text, textPosition, color );
+    }
+
     (void)pDrawList;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: DEBUG
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: NavPath debug draw (FUN_0095f000)
+}
+
+void AiVehNavTraffic::debugText() {
+    // FUN_00939fc0
+    gEdDebugText.drawText( "nav     Max Speed    : %.2f",
+                           static_cast<double>( followSpeed ) );
+    gEdDebugText.drawText( "nav     Target Speed : %.2f",
+                           static_cast<double>( targetSpeed ) );
+    gEdDebugText.drawText( "nav     Real Speed   : %.2f",
+                           static_cast<double>( pVehicle->getInfos().Speed ) );
+    gEdDebugText.drawText( "nav     Speed Coef   : %.2f",
+                           static_cast<double>( speedDistribCoef ) );
+    gEdDebugText.drawText( "nav     Sec Dist Coef: %.2f",
+                           static_cast<double>( secDistCoef ) );
+    gEdDebugText.drawText( "traffic TTC : %.2f",
+                           static_cast<double>( obstacleContactTime ) );
+
+    const int32_t state = getCurrentState();
+    if ( state == NS_JunctionWait &&
+         ( waitReason < WR_Continue || waitReason > WR_Courtesy ) ) {
+        return;
+    }
+    switch ( state ) {
+    case NS_Lost:
+        gEdDebugText.drawText( "state LOST" );
+        break;
+    case NS_OnRoad:
+        gEdDebugText.drawText( "state ON ROAD" );
+        break;
+    case NS_UrgentBrake:
+        gEdDebugText.drawText( "state URGENT BRAKE" );
+        break;
+    case NS_JunctionApproach:
+        gEdDebugText.drawText( "state JUNC APPROACH" );
+        break;
+    case NS_JunctionWait: {
+        static constexpr const char *kWaitReasonLabels[7] = {
+            "state JUNC WAIT: CONTINUE",
+            "state JUNC WAIT: VEHICLE AHEAD",
+            "state JUNC WAIT: JUNCTION OCCUPIED",
+            "state JUNC WAIT: DESTINATION OCCUPIED",
+            "state JUNC WAIT: RIGHT PRIORITY",
+            "state JUNC WAIT: TRAFFIC LIGHT",
+            "state JUNC WAIT: COURTESY" };
+        gEdDebugText.drawText( "%s", kWaitReasonLabels[waitReason] );
+        break;
+    }
+    case NS_OnJunction:
+        gEdDebugText.drawText( "state ON JUNCTION" );
+        break;
+    case NS_NoPlan:
+        gEdDebugText.drawText( "state NO PLANE" );
+        break;
+    case NS_LaneChange:
+        gEdDebugText.drawText( "state LANE CHANGE" );
+        break;
+    case NS_BackOvertakeStop:
+        gEdDebugText.drawText( "state ON BACK-OVERTAKE1" );
+        break;
+    case NS_BackOvertakeReverse:
+        gEdDebugText.drawText( "state ON BACK-OVERTAKE2" );
+        break;
+    case NS_BackOvertakeForward:
+        gEdDebugText.drawText( "state ON BACK-OVERTAKE3" );
+        break;
+    case NS_BackOvertakePass:
+        gEdDebugText.drawText( "state ON BACK-OVERTAKE4" );
+        break;
+    case NS_CancelBackOvertake:
+        gEdDebugText.drawText( "state BACK-OVERTAKE CANCEL" );
+        break;
+    case NS_UrgentTurn:
+        gEdDebugText.drawText( "state URGENT TURN" );
+        break;
+    case NS_UrgentTurn2:
+        gEdDebugText.drawText( "state URGENT TURN 2" );
+        break;
+    default:
+        gEdDebugText.drawText( "unknown state" );
+        break;
+    }
+}
+
+void AiVehNavTraffic::drawCollisionRisk( DrawList *pDrawList ) {
+    // FUN_0093de70
+    static constexpr uint32_t kRiskColors[4] = {
+        0x7f00ff00, // none
+        0x7f00ffff, // far
+        0x7f007fff, // blocked
+        0x7f0000ff, // slow passable
+    };
+
+    float contactTime = 0.0f;
+    const int32_t obstacle =
+        checkObstacle( pContextVehicle, contactTime, secDistCoef );
+    const uint32_t color = ( obstacle >= NO_Far && obstacle <= NO_SlowPassable )
+                               ? kRiskColors[obstacle]
+                               : kRiskColors[NO_None];
+
+    Matrix4x4f_t boundingBox;
+    pVehicle->getCarState()->retrieveBoundingBox( boundingBox );
+    boundingBox.row( 3 ) -= GetShiftWorldPosition().transpose();
+    DrawDebugBox( boundingBox, color, *pDrawList, 2 );
+
+    if ( obstacle == NO_Blocked || obstacle == NO_SlowPassable ) {
+        computeUrgentTurnSteer( pDrawList );
+    }
+}
+
+void AiVehNavTraffic::drawFollowing( DrawList *pDrawList ) {
+    // FUN_0093df70
+    float followSpeedUnused = 0.0f;
+    float speedCoefUnused = 0.0f;
+    computeFollowing( followSpeedUnused, speedCoefUnused, pDrawList );
 }
 
 bool AiVehNavTraffic::getTarget( Eigen::Vector4f &outDirection,
@@ -532,7 +844,7 @@ bool AiVehNavTraffic::updateFollowing( const int32_t lane ) {
     (void)lane;
     float newFollowSpeed = 0.0f;
     float newSpeedCoef = 0.0f;
-    computeFollowing( newFollowSpeed, newSpeedCoef, false );
+    computeFollowing( newFollowSpeed, newSpeedCoef, nullptr );
     followSpeed = newFollowSpeed;
     speedCoef = newSpeedCoef;
     if ( newFollowSpeed == 0.0f && newSpeedCoef == 1.0f ) {
@@ -1237,9 +1549,93 @@ GameObject *AiVehNavTraffic::findLeader( float *pOutGap,
     return nullptr;
 }
 
+void AiVehNavTraffic::drawFollowGapBars( DrawList &drawList,
+                                         GameObject *pLeader,
+                                         const float gap,
+                                         const float minGap,
+                                         const float followDistance,
+                                         const float slowDownDistance ) {
+    // FUN_0093d5b0 (debug section)
+    static constexpr uint32_t kGapColors[5] = {
+        0x7fffff00, // cyan
+        0x7f00ff00, // green
+        0x7f00ffff, // yellow
+        0x7f007fff, // orange
+        0x7f0000ff, // red
+    };
+    static constexpr float kRoadDetailSurelevation = 1.0f; // DAT_00f7a110
+    static constexpr float kVehicleBarHeight = 2.0f;       // DAT_00f416b0
+
+    const Eigen::Vector4f shift = GetShiftWorldPosition();
+    Matrix4x4f_t leaderBox;
+    pLeader->retrieveBoundingBox( leaderBox );
+    leaderBox.row( 3 ) -= shift.transpose();
+    DrawDebugBox( leaderBox, kGapColors[2], drawList, 2 );
+
+    const AiRoadIt &position = pVehicle->getInfos().LastRoadPos;
+    if ( position.pRoad == nullptr ) {
+        return;
+    }
+
+    AiRoadIt leaderIt = position;
+    leaderIt.advanceByDistance( gap, true );
+    AiRoadIt slowDownIt = leaderIt;
+    AiRoadIt followIt = leaderIt;
+    AiRoadIt minGapIt = leaderIt;
+    slowDownIt.advanceByDistance( -slowDownDistance, true );
+    followIt.advanceByDistance( -followDistance, true );
+    minGapIt.advanceByDistance( -minGap, true );
+
+    const int32_t lane = pVehicle->computeCurrentLane();
+    float ratioStart = 0.0f;
+    float ratioEnd = 0.0f;
+    position.getEntity()->pProfile->computeLaneWidthRatios(
+        lane, position.bWay, ratioStart, ratioEnd );
+
+    Eigen::Vector4f points[10] = {
+        position.computeWidthPosition( ratioStart ),
+        position.computeWidthPosition( ratioEnd ),
+        slowDownIt.computeWidthPosition( ratioStart ),
+        slowDownIt.computeWidthPosition( ratioEnd ),
+        followIt.computeWidthPosition( ratioStart ),
+        followIt.computeWidthPosition( ratioEnd ),
+        minGapIt.computeWidthPosition( ratioStart ),
+        minGapIt.computeWidthPosition( ratioEnd ),
+        leaderIt.computeWidthPosition( ratioStart ),
+        leaderIt.computeWidthPosition( ratioEnd ),
+    };
+    for ( Eigen::Vector4f &point : points ) {
+        point.y() += kRoadDetailSurelevation;
+        point -= shift;
+    }
+
+    auto pushPoint = [&drawList]( const Eigen::Vector4f &point ) {
+        drawList.pushVertex( point.x(), point.y(), point.z() );
+    };
+
+    drawList.setActiveMaterial( nullptr );
+    for ( int32_t i = 0; i < 3; i++ ) {
+        drawList.setDiffuse( 0, ToDiffuse( kGapColors[2 + i] ) );
+        drawList.beginPrimitive( PT_TriangleStrip, 4 );
+        for ( int32_t j = 0; j < 4; j++ ) {
+            pushPoint( points[2 + i * 2 + j] );
+        }
+        drawList.commitPrimitive();
+    }
+
+    const Eigen::Vector4f barHeight( 0.0f, kVehicleBarHeight, 0.0f, 0.0f );
+    drawList.setDiffuse( 0, ToDiffuse( kGapColors[0] ) );
+    drawList.beginPrimitive( PT_TriangleStrip, 4 );
+    pushPoint( points[0] );
+    pushPoint( points[1] );
+    pushPoint( points[0] + barHeight );
+    pushPoint( points[1] + barHeight );
+    drawList.commitPrimitive();
+}
+
 void AiVehNavTraffic::computeFollowing( float &outFollowSpeed,
                                         float &outSpeedCoef,
-                                        const bool bDebug ) {
+                                        DrawList *pDebugDrawList ) {
     // FUN_0093d5b0
     static constexpr float kMinGapLow = 4.0f;            // DAT_00faa880
     static constexpr float kMinGapHigh = 10.0f;          // DAT_00faa878
@@ -1323,8 +1719,9 @@ void AiVehNavTraffic::computeFollowing( float &outFollowSpeed,
             outSpeedCoef = 0.0f;
         }
 
-        if ( bDebug ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: DEBUG (follow gap bars)
+        if ( pDebugDrawList != nullptr ) {
+            drawFollowGapBars( *pDebugDrawList, pLeader, gap, minGap,
+                               followDistance, slowDownDistance );
         }
     }
 
@@ -1853,7 +2250,8 @@ bool AiVehNavTraffic::abortBlockedLaneChange() {
 bool AiVehNavTraffic::checkLaneChangeGap( const int32_t laneFrom,
                                           const int32_t laneTo,
                                           const bool bWay,
-                                          float distance ) const {
+                                          float distance,
+                                          DrawList *pDebugDrawList ) const {
     // FUN_00939750
     static constexpr float kMinDistanceFromEntry = 10.0f; // DAT_00faa934
     static constexpr float kRoadEndMargin = 1.0f;         // DAT_00faa930
@@ -1911,6 +2309,17 @@ bool AiVehNavTraffic::checkLaneChangeGap( const int32_t laneFrom,
 
     const float invLength = 1.0f / pShape->TotalLength;
     const float changeTime = invLength * distance / speed;
+    auto drawTestedObject = [pDebugDrawList]( GameObject *pObject,
+                                              const bool bClear ) {
+        if ( pDebugDrawList == nullptr ) {
+            return;
+        }
+        Matrix4x4f_t boundingBox;
+        pObject->retrieveBoundingBox( boundingBox );
+        boundingBox.row( 3 ) -= GetShiftWorldPosition().transpose();
+        DrawDebugBox( boundingBox, bClear ? 0x7f00ff00 : 0x7f0000ff,
+                      *pDebugDrawList, 2 );
+    };
     bool bAheadClear = true;
     bool bTargetBehindClear = true;
     bool bTargetAheadClear = true;
@@ -1921,6 +2330,7 @@ bool AiVehNavTraffic::checkLaneChangeGap( const int32_t laneFrom,
         bAheadClear =
             !IntervalsMeetInWindow( front, otherRear, 0.0f, changeTime * 0.5f,
                                     invLength, other.VelocityX, speed );
+        drawTestedObject( pAhead, bAheadClear );
     }
     if ( pTargetBehind != nullptr ) {
         const ObjectWorldLocation &other = pTargetBehind->getWorldLocation();
@@ -1930,6 +2340,7 @@ bool AiVehNavTraffic::checkLaneChangeGap( const int32_t laneFrom,
             rear, otherFront, 0.0f, changeTime,
             kMarginBehind / pShape->TotalLength,
             other.VelocityX * kBehindSpeedScale, speed * kOwnSpeedScale );
+        drawTestedObject( pTargetBehind, bTargetBehindClear );
     }
     if ( pTargetAhead != nullptr ) {
         const ObjectWorldLocation &other = pTargetAhead->getWorldLocation();
@@ -1939,8 +2350,8 @@ bool AiVehNavTraffic::checkLaneChangeGap( const int32_t laneFrom,
             !IntervalsMeetInWindow( front, otherRear, 0.0f, changeTime,
                                     kMarginBehind / pShape->TotalLength,
                                     other.VelocityX * kAheadSpeedScale, speed );
+        drawTestedObject( pTargetAhead, bTargetAheadClear );
     }
-    // Retail draws the three tests when given a debug render list
     return bAheadClear && bTargetBehindClear && bTargetAheadClear;
 }
 
@@ -2195,7 +2606,7 @@ bool AiVehNavTraffic::isBackOvertakePossible() {
     return true;
 }
 
-float AiVehNavTraffic::computeUrgentTurnSteer( const bool bDebug ) {
+float AiVehNavTraffic::computeUrgentTurnSteer( DrawList *pDebugDrawList ) {
     // FUN_0093cca0
     static constexpr float kMaxObstacleDrift = 0.34906587f;   // DAT_00faa85c
     static constexpr float kObstacleSideAngle = -0.02617994f; // DAT_00faa858
@@ -2207,8 +2618,12 @@ float AiVehNavTraffic::computeUrgentTurnSteer( const bool bDebug ) {
     AiVehicle *pOwner = pVehicle;
     CarState *pCarState = pOwner->getCarState();
     const Matrix4x4f_t &selfMatrix = pCarState->getWorldMatrix();
-    if ( bDebug ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: DEBUG (FUN_009baa70 arc)
+    const Eigen::Vector4f debugUp( 0.0f, 0.25f, 0.0f, 0.0f );
+    if ( pDebugDrawList != nullptr ) {
+        Matrix4x4f_t arcMatrix = pOwner->getInfos().GroundMatrix;
+        arcMatrix.row( 3 ) += ( debugUp - GetShiftWorldPosition() ).transpose();
+        DrawDebugArc( arcMatrix, 5.0f, true, 0x80e28350, *pDebugDrawList, 0.0f,
+                      kHalfPI - kObstacleSideAngle );
     }
 
     GameObject *pObstacle = nullptr;
@@ -2244,8 +2659,20 @@ float AiVehNavTraffic::computeUrgentTurnSteer( const bool bDebug ) {
                  fromObstacle.x() * obstacleVelocity.x() +
                      fromObstacle.z() * obstacleVelocity.z() );
 
-    if ( bDebug ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: DEBUG (obstacle/velocity lines)
+    if ( pDebugDrawList != nullptr ) {
+        const Eigen::Vector4f shift = GetShiftWorldPosition();
+        const Eigen::Vector4f selfPosition =
+            pOwner->getInfos().GroundMatrix.row( 3 ).transpose() + debugUp -
+            shift;
+        const Eigen::Vector4f obstaclePosition =
+            obstacleMatrix.row( 3 ).transpose() + debugUp - shift;
+        const float distance = ( selfPosition - obstaclePosition ).norm();
+        const Eigen::Vector4f velocityEnd =
+            obstacleVelocity.normalized() * distance + obstaclePosition;
+        DrawDebugLine( selfPosition, obstaclePosition, 0xff0000ff,
+                       *pDebugDrawList );
+        DrawDebugLine( obstaclePosition, velocityEnd, 0xffff00ff,
+                       *pDebugDrawList );
     }
 
     if ( fabsf( obstacleDrift ) > kMaxObstacleDrift ) {
@@ -2257,8 +2684,30 @@ float AiVehNavTraffic::computeUrgentTurnSteer( const bool bDebug ) {
         return 0.0f;
     }
 
-    if ( bDebug ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: DEBUG (avoidance quad)
+    if ( pDebugDrawList != nullptr ) {
+        const Eigen::Vector4f side =
+            bObstacleOnLeft
+                ? selfMatrix.row( 0 ).transpose()
+                : Eigen::Vector4f( -selfMatrix.row( 0 ).transpose() );
+        const Eigen::Vector4f forward = selfMatrix.row( 2 ).transpose() * 1.5f;
+        const Eigen::Vector4f center =
+            pOwner->getInfos().GroundMatrix.row( 3 ).transpose() -
+            GetShiftWorldPosition() + selfMatrix.row( 1 ).transpose() * 0.25f;
+        const Eigen::Vector4f nearRight = center + side * 1.0f - forward;
+        const Eigen::Vector4f nearLeft = center + side * 1.0f + forward;
+        const Eigen::Vector4f farRight = nearRight + side * 2.0f;
+        const Eigen::Vector4f farLeft = nearLeft + side * 2.0f;
+        if ( pDebugDrawList->beginPrimitive( PT_TriangleStrip, 4 ) ) {
+            pDebugDrawList->setIdentityTransform();
+            pDebugDrawList->setActiveMaterial( nullptr );
+            pDebugDrawList->setDiffuse( 0, ColorRGBA( 0x80ff0000u ) );
+            for ( const Eigen::Vector4f *pPoint :
+                  { &nearRight, &nearLeft, &farRight, &farLeft } ) {
+                pDebugDrawList->pushVertex( pPoint->x(), pPoint->y(),
+                                            pPoint->z() );
+            }
+            pDebugDrawList->commitPrimitive();
+        }
     }
 
     if ( pCarState->getWorldLocation().LocationType ==
@@ -2296,8 +2745,28 @@ float AiVehNavTraffic::computeUrgentTurnSteer( const bool bDebug ) {
         (void)numFreeAbove;
     }
 
-    if ( bDebug ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: DEBUG (steer triangle)
+    if ( pDebugDrawList != nullptr ) {
+        const Eigen::Vector4f side =
+            bObstacleOnLeft
+                ? Eigen::Vector4f( -selfMatrix.row( 0 ).transpose() )
+                : selfMatrix.row( 0 ).transpose();
+        const Eigen::Vector4f up = selfMatrix.row( 1 ).transpose();
+        const Eigen::Vector4f forward = selfMatrix.row( 2 ).transpose();
+        const Eigen::Vector4f base =
+            pOwner->getInfos().GroundMatrix.row( 3 ).transpose() -
+            GetShiftWorldPosition() + up * 0.25f + forward * 1.0f;
+        const Eigen::Vector4f wing =
+            base + side * 2.0f + forward * 2.0f + up * 0.5f;
+        const Eigen::Vector4f tip = base + side * 2.0f + forward * 3.5f;
+        if ( pDebugDrawList->beginPrimitive( PT_Triangle, 3 ) ) {
+            pDebugDrawList->setIdentityTransform();
+            pDebugDrawList->setActiveMaterial( nullptr );
+            pDebugDrawList->setDiffuse( 0, ColorRGBA( 0x8000ff00u ) );
+            pDebugDrawList->pushVertex( base.x(), base.y(), base.z() );
+            pDebugDrawList->pushVertex( wing.x(), wing.y(), wing.z() );
+            pDebugDrawList->pushVertex( tip.x(), tip.y(), tip.z() );
+            pDebugDrawList->commitPrimitive();
+        }
     }
     return bObstacleOnLeft ? -1.0f : 1.0f;
 }
@@ -2684,7 +3153,7 @@ bool AiVehNavTraffic::handle( const int32_t event, const int32_t state ) {
         if ( event == FE_Enter ) {
             followSpeed = 0.0f;
             speedCoef = 1.0f;
-            const float steer = computeUrgentTurnSteer( false );
+            const float steer = computeUrgentTurnSteer( nullptr );
             if ( pLoco != nullptr ) {
                 const float throttle =
                     std::clamp( pLoco->getPadThrottle(), 0.0f, 1.0f );

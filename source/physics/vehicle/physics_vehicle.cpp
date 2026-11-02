@@ -3427,10 +3427,12 @@ void PhysicsVehicle::forwardDrivingInput( const float deltaTime ) {
     bPendingGearUpRequest = false;
     bPendingGearDownRequest = false;
     if ( pDrivingControl != nullptr && !gReplay.isPlayingBack() ) {
-        pDrivingControl->forwardInput( *this, deltaTime );
+        pDrivingControl->forwardInput( *this, deltaTime,
+                                       drivingControlArgument );
     }
     if ( pSecondaryDrivingControl != nullptr ) {
-        pSecondaryDrivingControl->forwardInput( *this, deltaTime );
+        pSecondaryDrivingControl->forwardInput(
+            *this, deltaTime, secondaryDrivingControlArgument );
     }
 }
 

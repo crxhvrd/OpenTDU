@@ -33,7 +33,7 @@ static constexpr float kWheelOffsetBias = 0.1f;           // FLOAT_00f41668
 // Driving input of every parked car (DAT_00fa9540)
 class ParkedPhysControl : public PhysicsDrivingControl {
 public:
-    void forwardInput( PhysicsVehicle &vehicle, float ) override {
+    void forwardInput( PhysicsVehicle &vehicle, float, int32_t ) override {
         // FUN_00828240
         vehicle.setInput( 0.0f, 0.0f, 0.0f );
         vehicle.setHandbrake( 1.0f );

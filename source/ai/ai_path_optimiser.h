@@ -85,6 +85,7 @@ public:
     void initialize();
     void release();
     void tick();
+    void drawStats();
 
     int32_t allocSlot();
     void freeSlot( const int32_t slot );
@@ -102,8 +103,10 @@ private:
     bool bEnabled;
     int32_t statsBudget[kNumStats];
     int32_t statsUsed[kNumStats];
+    float statsCompletion[kNumStats];
     int32_t numStats;
     int32_t statIndex;
+    float occupation;
 
 private:
     inline AiPathOptimiserSlot &getBackSlot( const int32_t slot ) {

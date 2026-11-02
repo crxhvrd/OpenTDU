@@ -1,5 +1,6 @@
 #include "shared.h"
 #include "ai_pool.h"
+#include "ai/ai_debug_draw.h"
 
 #include "ai/ai_bot_manager.h"
 #include "ai/ai_config.h"
@@ -520,9 +521,10 @@ bool AiPool::togglePlayerAutopilot( const bool bOpponent ) {
                                      gpPlayerData->getRadialBlurIntensity() );
         PhysicsVehicle *pPhysics = pCar->getPhysicsVehicle();
         pPhysics->setDrivingControl( gpPhysics ); // +0x4388
-        OTDU_UNIMPLEMENTED; // TODO: PHYSICS (+0xe40 = +0xa3c control argument,
-                            // GSPhysics control phase byte +0x20 = 1)
-        pPhysics->setAIDriven( false );           // +0xd34
+        pPhysics->setDrivingControlArgument(
+            gpPhysics->getVehicleSlotIndex( pPhysics ) );
+        gpPhysics->setPhase( 1 );
+        pPhysics->setAIDriven( false ); // +0xd34
         pPhysics->setVirtualFlag( false );
         pPhysics->setAutoReverseAllowed( true ); // +0x335
         {
@@ -602,7 +604,7 @@ void AiPool::updateArrestedCar( const eArrestStep step, CarState *pCar ) {
         addVehicle( pVehicle );
         PhysicsVehicle *pPhysics = pCar->getPhysicsVehicle();
         pPhysics->setDrivingControl( nullptr ); // +0x4388
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (+0xe40 = 0 control argument)
+        pPhysics->setDrivingControlArgument( 0 );
         pPhysics->setSteerControlUsed( false ); // +0x550
         pCar->setAIController( pVehicle );
         const Matrix4x4f_t startFrame = pCar->getBody()->OffsetedWorldMatrix;
@@ -650,9 +652,9 @@ void AiPool::updateArrestedCar( const eArrestStep step, CarState *pCar ) {
         if ( pPhysics != nullptr ) {
             gpPlayerData->applyDrivingOptions();
             pPhysics->setDrivingControl( gpPhysics ); // +0x4388
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: PHYSICS (+0xe40 = +0xa3c control
-                                     // argument, GSPhysics control phase byte
-                                     // +0x20 = 1)
+            pPhysics->setDrivingControlArgument(
+                gpPhysics->getVehicleSlotIndex( pPhysics ) );
+            gpPhysics->setPhase( 1 );
             pPhysics->setVirtualFlag( false ); // +0xdd4
             {
                 PhysicsLock lock;
@@ -684,6 +686,7 @@ void AiPool::removeVehicle( AiVehicle *pVehicle,
         return;
     }
 
+    RecordRemovedAiVehicle( pVehicle, pReason );
     OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
 
     removeFromLists( pVehicle );

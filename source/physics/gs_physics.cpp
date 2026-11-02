@@ -823,8 +823,8 @@ namespace {
 
             if ( !gpPhysicsFX->hasEffectFor( fxMaterialA, fxMaterialB,
                                              kind ) ) {
-                OTDU_LOG_ERROR( "No entry: mat %d/%d -> fx %d/%d kind %d "
-                                "(userData %llu/%llu)!!\n",
+                OTDU_LOG_DEBUG( "No entry: mat %d/%d -> fx %d/%d kind %d "
+                                "(userData %llu/%llu)\n",
                                 materialA, materialB, fxMaterialA, fxMaterialB,
                                 int32_t( kind ),
                                 (unsigned long long)inBody1.GetUserData(),
@@ -3770,7 +3770,9 @@ float GSPhysics::getGroundHeight( float x, float z ) {
     return kTop - kLength * hit.mFraction;
 }
 
-void GSPhysics::forwardInput( PhysicsVehicle &vehicle, float /*deltaTime*/ ) {
+void GSPhysics::forwardInput( PhysicsVehicle &vehicle,
+                              float /*deltaTime*/,
+                              int32_t /*argument*/ ) {
     // FUN_00849380
     if ( vehicle.isInCinematicMode() ) {
         return;

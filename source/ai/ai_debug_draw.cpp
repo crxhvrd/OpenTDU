@@ -2,6 +2,7 @@
 #include "ai_debug_draw.h"
 
 #include "ai/ai_config.h"
+#include "ai/ai_path_optimiser.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_road_shape.h"
 #include "ai/ai_sim_bubble.h"
@@ -15,6 +16,7 @@
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
 #include "render/camera/camera_focus_object.h"
+#include "render/camera/camera_mouse.h"
 #include "render/camera/camera_vehicle.h"
 #include "render/camera/gs_camera.h"
 #include "render/draw_list.h"
@@ -45,9 +47,15 @@ bool gDisplaySimGroups = false;          // DAT_010e73a0
 bool gDisplayNetInterp = false;          // DAT_010e73a1
 bool gDisplayTrafficLights = false;      // DAT_010e73a2
 int32_t gDebugAiVehicleState = 0;        // DAT_010e73a4
+int32_t gDisplayCarStatus = 0;           // DAT_010e7390
 bool gDisplayCollisionRisks = false;     // DAT_010e73a8
 bool gDisplayScenaricCarPos = false;     // DAT_010e73a9
 bool gDisplayRemovedVehicles = false;    // DAT_010e73ab
+bool gbDebugObstacleParser = false;      // DAT_010e73b0
+bool gbDebugNavPath = false;             // DAT_010e73b1
+bool gbDebugOptimizedPath = false;       // DAT_010e73b2
+bool gbDisplayVehicleLocInfo = false;    // DAT_010e73b3
+bool gbForceParsingWhenPaused = false;   // DAT_010e73b4
 bool gbDebugFirstOpponent = false;       // DAT_010e73d5
 bool gDisplayPedestrians = false;        // DAT_010e73da
 bool gbAiDebugPageOpen = false;          // DAT_010e73db
@@ -297,6 +305,48 @@ static void DrawDebugIndexedShape( const Matrix4x4f_t &matrix,
         drawList.commitPrimitive();
     }
     drawList.setIdentityTransform();
+}
+
+void DrawDebugArc( const Matrix4x4f_t &matrix,
+                   const float radius,
+                   const bool bSpokes,
+                   const uint32_t color,
+                   DrawList &drawList,
+                   const float angleStart,
+                   const float angleEnd ) {
+    // FUN_009baa70
+    static constexpr int32_t kMaxSegments = 24;
+
+    const int32_t numSegments =
+        ComputeDebugLOD( matrix.row( 3 ).transpose(), radius, kMaxSegments );
+
+    Eigen::Vector3f points[kMaxSegments + 1];
+    for ( int32_t i = 0; i <= numSegments; i++ ) {
+        const float angle =
+            static_cast<float>( i ) * ( ( angleEnd - angleStart ) /
+                                        static_cast<float>( numSegments ) ) +
+            angleStart;
+        points[i] = Eigen::Vector3f( cosf( angle ) * radius, 0.0f,
+                                     sinf( angle ) * radius );
+    }
+
+    Matrix4x4f_t transform = matrix;
+    drawList.setActiveTransformMatrix( transform );
+    drawList.setActiveMaterial( nullptr );
+    drawList.setDiffuse( 0, ToDiffuse( color ) );
+    if ( bSpokes && drawList.beginPrimitive( PT_Line, numSegments * 2 ) ) {
+        for ( int32_t i = 0; i < numSegments; i++ ) {
+            drawList.pushVertex( 0.0f, 0.0f, 0.0f );
+            drawList.pushVertex( points[i].x(), points[i].y(), points[i].z() );
+        }
+        drawList.commitPrimitive();
+    }
+    if ( drawList.beginPrimitive( PT_LineStrip, numSegments + 1 ) ) {
+        for ( int32_t i = 0; i <= numSegments; i++ ) {
+            drawList.pushVertex( points[i].x(), points[i].y(), points[i].z() );
+        }
+        drawList.commitPrimitive();
+    }
 }
 
 void DrawDebugBox( const Matrix4x4f_t &matrix,
@@ -580,13 +630,12 @@ static void UpdateCameraOnTrafficCar() {
 
     PhysicsVehicle *pPhysicsVehicle =
         pVehicle->getCarState()->getPhysicsVehicle();
-    if ( pPhysicsVehicle == nullptr ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: fallback target DAT_012147a0
-        return;
-    }
+    const float *pFocusPosition =
+        ( pPhysicsVehicle != nullptr )
+            ? pPhysicsVehicle->getPhysicsMatrix().row( 3 ).data()
+            : gpScenaric->getLocalPlayer().getLastPosition().data();
     static_cast<CameraFocusObject *>( pFocusCamera )
-        ->setObjectPosition(
-            pPhysicsVehicle->getPhysicsMatrix().row( 3 ).data() );
+        ->setObjectPosition( pFocusPosition );
 }
 
 void SetDebuggedAiVehicle( AiVehicle *pVehicle ) {
@@ -1058,9 +1107,141 @@ static void DrawDebuggedAiVehicleState( AiDebugDraw &debugDraw,
     if ( pVehicle == nullptr ) {
         return;
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: states 1 (lane ribbon), 2 (look-ahead
-                             // path, FUN_00939750) and 3 (obstacles,
-                             // FUN_0093df70) read AiVehicle internals
+
+    const AiRoadIt position = pVehicle->getInfos().LastRoadPos;
+    if ( position.pRoad == nullptr ) {
+        return;
+    }
+
+    static constexpr uint32_t kColorFree = 0x7f00ff00;    // green
+    static constexpr uint32_t kColorPartial = 0x7f00ffff; // yellow
+    static constexpr uint32_t kColorBlocked = 0x7f0000ff; // red
+    static constexpr float kLaneCheckDistance = 20.0f;    // DAT_00faa73c
+    static constexpr float kRibbonHeight = 4.0f;          // DAT_00faa74c
+    static constexpr float kMinLookSpeed = 1.0f;          // DAT_00faa730
+    static constexpr float kMaxLookSpeed = 75.0f;         // DAT_00faa72c
+    static constexpr float kMinLookDistance = 10.0f;      // DAT_00faa738
+    static constexpr float kMaxLookDistance = 200.0f;     // DAT_00faa734
+
+    DrawList &drawList = *debugDraw.pDrawList;
+    const int32_t lane = pVehicle->computeCurrentLane();
+    float ratioStart = 0.0f;
+    float ratioEnd = 0.0f;
+    position.getEntity()->pProfile->computeLaneWidthRatios(
+        lane, position.bWay, ratioStart, ratioEnd );
+    const Eigen::Vector4f shift = GetShiftWorldPosition();
+    auto pushPoint = [&drawList, &shift]( const Eigen::Vector4f &point ) {
+        const Eigen::Vector4f shifted = point - shift;
+        drawList.pushVertex( shifted.x(), shifted.y(), shifted.z() );
+    };
+
+    if ( state == 1 ) {
+        AiRoadIt back = position;
+        AiRoadIt front = position;
+        const bool bBackValid =
+            back.advanceByDistance( -kLaneCheckDistance, true );
+        const bool bFrontValid =
+            front.advanceByDistance( kLaneCheckDistance, true );
+        uint32_t color = kColorPartial;
+        if ( pVehicle->isLaneFree( lane, position, 0.0f, -kLaneCheckDistance,
+                                   kLaneCheckDistance ) ) {
+            color = kColorFree;
+        } else if ( bBackValid && bFrontValid ) {
+            color = kColorBlocked;
+        }
+
+        const Eigen::Vector4f ribbonUp( 0.0f, kRibbonHeight, 0.0f, 0.0f );
+        const Eigen::Vector4f laneStart =
+            position.computeWidthPosition( ratioStart );
+        const Eigen::Vector4f laneEnd =
+            position.computeWidthPosition( ratioEnd );
+        drawList.setActiveMaterial( nullptr );
+        drawList.setIdentityTransform();
+        drawList.setDiffuse( 0, ToDiffuse( kColorFree ) );
+        drawList.beginPrimitive( PT_TriangleStrip, 4 );
+        pushPoint( laneStart );
+        pushPoint( laneEnd );
+        pushPoint( laneStart + ribbonUp );
+        pushPoint( laneEnd + ribbonUp );
+        drawList.commitPrimitive();
+
+        Eigen::Vector4f backStart = back.computeWidthPosition( ratioStart );
+        Eigen::Vector4f backEnd = back.computeWidthPosition( ratioEnd );
+        const Eigen::Vector4f frontStart =
+            front.computeWidthPosition( ratioStart );
+        const Eigen::Vector4f frontEnd = front.computeWidthPosition( ratioEnd );
+        backStart.y() += kRoadFrameHeight;
+        backEnd.y() += kRoadFrameHeight;
+        drawList.setDiffuse( 0, ToDiffuse( color ) );
+        drawList.beginPrimitive( PT_TriangleStrip, 6 );
+        pushPoint( backStart );
+        pushPoint( backEnd );
+        pushPoint( laneStart );
+        pushPoint( laneEnd );
+        pushPoint( frontStart );
+        pushPoint( frontEnd );
+        drawList.commitPrimitive();
+        return;
+    }
+
+    if ( state == 2 ) {
+        if ( pVehicle->getNavigationType() != 0 ) {
+            return;
+        }
+
+        int32_t targetLane = lane - 1;
+        if ( targetLane < 0 ) {
+            const AiRoadProfile *pProfile = position.getEntity()->pProfile;
+            if ( pProfile->NumLeftLanes + pProfile->NumRightLanes < 2 ) {
+                return;
+            }
+            targetLane = lane + 1;
+        }
+
+        const float lookDistance =
+            std::clamp( ( pVehicle->getInfos().Speed - kMinLookSpeed ) *
+                                ( kMaxLookDistance - kMinLookDistance ) /
+                                ( kMaxLookSpeed - kMinLookSpeed ) +
+                            kMinLookDistance,
+                        kMinLookDistance, kMaxLookDistance );
+        AiRoadIt ahead = position;
+        const bool bAheadValid = ahead.advanceByDistance( lookDistance, true );
+        float targetRatioStart = 0.0f;
+        float targetRatioEnd = 0.0f;
+        ahead.getEntity()->pProfile->computeLaneWidthRatios(
+            targetLane, ahead.bWay, targetRatioStart, targetRatioEnd );
+        const bool bGapFree =
+            pVehicle->getTrafficNavigation().checkLaneChangeGap(
+                lane, targetLane, position.bWay, lookDistance, &drawList );
+
+        Eigen::Vector4f points[4] = {
+            position.computeWidthPosition( ratioStart ),
+            position.computeWidthPosition( ratioEnd ),
+            ahead.computeWidthPosition( targetRatioStart ),
+            ahead.computeWidthPosition( targetRatioEnd ),
+        };
+        for ( Eigen::Vector4f &point : points ) {
+            point.y() += kRoadFrameHeight;
+        }
+
+        uint32_t color = kColorPartial;
+        if ( bAheadValid ) {
+            color = bGapFree ? kColorFree : kColorBlocked;
+        }
+        drawList.setActiveMaterial( nullptr );
+        drawList.setIdentityTransform();
+        drawList.setDiffuse( 0, ToDiffuse( color ) );
+        drawList.beginPrimitive( PT_TriangleStrip, 4 );
+        for ( const Eigen::Vector4f &point : points ) {
+            pushPoint( point );
+        }
+        drawList.commitPrimitive();
+        return;
+    }
+
+    if ( state == 3 && pVehicle->getNavigationType() == 0 ) {
+        pVehicle->getTrafficNavigation().drawFollowing( &drawList );
+    }
 }
 
 static void DrawAiMemoryPage() {
@@ -1124,10 +1305,15 @@ static void DrawAiMemoryPage() {
 
 static void DrawAiOptimPage() {
     // FUN_0096d6d0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: "Force Parsing" (DAT_010e73b4) and "Force
-                             // Optim" (DAT_010e73c5) states while the game
-                             // is paused, then the path optimiser stats
-                             // (FUN_009415e0)
+    if ( gpTimer->GameSpeed == 0.0f ) {
+        gEdDebugText.drawText( gbForceParsingWhenPaused
+                                   ? "Force Parsing is Active"
+                                   : "Force Parsing is Inactive" );
+        gEdDebugText.drawText( gbForceOptimWhenPaused
+                                   ? "Force Optim is Active"
+                                   : "Force Optim is Inactive" );
+    }
+    gAiPathOptimiser.drawStats();
 }
 
 static void DrawAiPolicePage() {
@@ -1232,16 +1418,100 @@ static void DrawAiSimBubblePage( const AiSimBubble &bubble ) {
     }
     gEdDebugText.drawText( "Online: no" );
     gEdDebugText.drawText( "----------------------------------" );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: traffic visibility stats (+0x684 test
-                             // count, +0x1c8 estimated and +0x68c real
-                             // visibility, +0x1c1 flag) are not ported
+
+    static constexpr float kSecondsToMinutes = 1.0f / 60.0f; // FLOAT_00f41998
+    static constexpr float kPercent = 100.0f;                // DAT_00f41708
+    const AiSimBubble::StatsHistory &estimated =
+        bubble.getEstimatedVisibility();
+    gEdDebugText.drawText(
+        "(tested %3.1f min.) inst.  1 min.  5 min.",
+        static_cast<double>( static_cast<float>( estimated.NumSamples ) *
+                             kSecondsToMinutes ) );
+    gEdDebugText.drawText(
+        "%s: %3d %%  %3d %%   %3d %%", "Estim. Traffic Visib.",
+        static_cast<int32_t>( estimated.Instant * kPercent ),
+        static_cast<int32_t>( estimated.ShortAverage * kPercent ),
+        static_cast<int32_t>( estimated.LongAverage * kPercent ) );
+    if ( !bubble.isOcclusionRaycastEnabled() ) {
+        gEdDebugText.drawText( "No Real Visibility Computation" );
+        return;
+    }
+    const AiSimBubble::StatsHistory &real = bubble.getRealVisibility();
+    gEdDebugText.drawText(
+        "%s: %3d %%  %3d %%   %3d %%", "Real Traffic Visib.   ",
+        static_cast<int32_t>( real.Instant * kPercent ),
+        static_cast<int32_t>( real.ShortAverage * kPercent ),
+        static_cast<int32_t>( real.LongAverage * kPercent ) );
+}
+
+struct RemovedVehicleRecord {
+    char Reason[AiVehicle::kRemovalReasonLength];
+    int32_t CarStateIndex;
+    int32_t NetID;
+    float Lifetime;
+    Matrix4x4f_t Matrix;
+};
+
+static constexpr int32_t kMaxRemovedVehicleRecords = 16;
+static RemovedVehicleRecord
+    gRemovedVehicles[kMaxRemovedVehicleRecords]; // DAT_01442620
+static int32_t gNumRemovedVehicles = 0;          // DAT_010e73e4
+
+void RecordRemovedAiVehicle( const AiVehicle *pVehicle, const char *pReason ) {
+    // FUN_0096d270
+    if ( gNumRemovedVehicles == kMaxRemovedVehicleRecords ) {
+        std::copy( gRemovedVehicles + 1,
+                   gRemovedVehicles + kMaxRemovedVehicleRecords,
+                   gRemovedVehicles );
+    } else {
+        gNumRemovedVehicles++;
+    }
+
+    RemovedVehicleRecord &record = gRemovedVehicles[gNumRemovedVehicles - 1];
+    CarState *pCarState = pVehicle->getCarState();
+    if ( pCarState == nullptr ) {
+        record.CarStateIndex = -pVehicle->getCarStateIndex();
+        record.NetID = 0;
+        record.Matrix = pVehicle->getInfos().GroundMatrix;
+        record.Matrix.row( 3 ) = pVehicle->computeCenterPosition().transpose();
+    } else {
+        record.CarStateIndex = pCarState->getCarInstanceID();
+        record.NetID = pCarState->getNetID();
+        record.Matrix = pCarState->getWorldMatrix();
+    }
+    record.Lifetime = gpTimer->GameTotalTime -
+                      ( pVehicle->getFadeInEndTime() - gAIConfig.FadeInTime );
+    strncpy( record.Reason, pReason, AiVehicle::kRemovalReasonLength );
+    record.Reason[AiVehicle::kRemovalReasonLength - 1] = '\0';
 }
 
 static void DrawRemovedVehiclesPage() {
     // FUN_0096d430
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: removed-vehicle log (DAT_010e73e4,
-                             // DAT_01442620) recorded by FUN_0096d270 from
-                             // AiPool::removeVehicle
+    for ( int32_t i = 0; i < gNumRemovedVehicles; i++ ) {
+        const RemovedVehicleRecord &record = gRemovedVehicles[i];
+        gEdDebugText.drawText( "%02d. CS%02d GO%04X %s (lifetime: %.2f s)", i,
+                               record.CarStateIndex, record.NetID,
+                               record.Reason,
+                               static_cast<double>( record.Lifetime ) );
+    }
+}
+
+static void DrawRemovedVehicles( AiDebugDraw &debugDraw ) {
+    // FUN_00973c20
+    static constexpr uint32_t kBoxColor = 0x50ff00ff;
+    static constexpr float kLabelHeight = 2.5f; // DAT_00f416c0
+
+    const Eigen::Vector4f labelOffset( 0.0f, kLabelHeight, 0.0f, 0.0f );
+    for ( int32_t i = 0; i < gNumRemovedVehicles; i++ ) {
+        const RemovedVehicleRecord &record = gRemovedVehicles[i];
+        DrawAiDebugCarBox( debugDraw, record.Matrix, kBoxColor );
+
+        char label[44];
+        sprintf( label, "%02d", i );
+        DrawDebugText3D( label,
+                         record.Matrix.row( 3 ).transpose() + labelOffset,
+                         ColorRGBA( 0xc8, 0x00, 0xc8, 0xff ) );
+    }
 }
 
 static void DrawAiVehicleText( AiVehicle *pVehicle ) {
@@ -1301,9 +1571,18 @@ static void DrawAiVehicleText( AiVehicle *pVehicle ) {
         gEdDebugText.drawText(
             "Alpha: %.3f", static_cast<double>( pVehicleBase->getAlpha() ) );
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: debug text virtual (vtable +0x10) of the
-                             // behaviour, controller, navigation and
-                             // locomotion
+    if ( pVehicle->getBehaviour() != nullptr ) {
+        pVehicle->getBehaviour()->debugText();
+    }
+    if ( pVehicle->getController() != nullptr ) {
+        pVehicle->getController()->debugText();
+    }
+    if ( pVehicle->getNavigation() != nullptr ) {
+        pVehicle->getNavigation()->debugText();
+    }
+    if ( pVehicle->getLocomotion() != nullptr ) {
+        pVehicle->getLocomotion()->debugText();
+    }
 }
 
 void SelectNextHandmadeJunction() {
@@ -1340,8 +1619,20 @@ void SelectNextHandmadeJunction() {
     }
 
     gHandmadeJunctionID = pNext->ID;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: move the free camera (mode 1) 100m
-                             // above the junction, looking down
+
+    static constexpr float kCameraHeight = 100.0f; // DAT_00f41708
+    CameraMouse *pFreeCamera = static_cast<CameraMouse *>(
+        gpCamera->findCameraWithMode( 1, gpCamera->getBoundCarState() ) );
+    pFreeCamera->setFollowPlayer( false );
+    const Eigen::Vector4f target = pNext->Position.toVector4();
+    Eigen::Vector4f position = target;
+    position.y() += kCameraHeight;
+    pFreeCamera->setPosition( position );
+    pFreeCamera->setTarget( target );
+    pFreeCamera->updateMatrix( position.head<3>(),
+                               Eigen::Vector3f( 0.0f, 1.0f, 0.0f ),
+                               target.head<3>() );
+    gpCamera->requestCameraMode( 1, 0, 1.0f );
 }
 
 static void DrawHandmadeJunctionPage() {
@@ -1625,14 +1916,23 @@ void TickAiDebugOverlay( float deltaTime, float time ) {
                                         gpDebuggedAiVehicle );
         }
         if ( gDisplayCollisionRisks ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_0093de70
+            for ( AiVehicle *pVehicle :
+                  pPool->getList( AiPool::AVL_FirstCategory +
+                                  static_cast<int32_t>(
+                                      eAiVehicleCategory::AVC_Traffic ) ) ) {
+                if ( pVehicle != nullptr &&
+                     pVehicle->getNavigationType() == 0 ) {
+                    pVehicle->getTrafficNavigation().drawCollisionRisk(
+                        debugDraw.pDrawList );
+                }
+            }
         }
         if ( gDisplayScenaricCarPos ) {
             OTDU_UNIMPLEMENTED_ONCE; // TODO: iterate the streamed sectors
                                      // ET_CARP entities (DrawAiDebugCarBox)
         }
         if ( gDisplayRemovedVehicles ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_00973c20
+            DrawRemovedVehicles( debugDraw );
         }
     }
     if ( gDisplayPedestrians ) {

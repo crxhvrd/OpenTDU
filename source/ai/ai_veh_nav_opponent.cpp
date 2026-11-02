@@ -3,12 +3,14 @@
 
 #include "ai/ai_config.h"
 #include "ai/ai_cop_manager.h"
+#include "ai/ai_debug_draw.h"
 #include "ai/ai_pool.h"
 #include "ai/ai_road_shape.h"
 #include "ai/ai_vehicle.h"
 #include "ai/gs_ai.h"
 #include "core/maths_helper.h"
 #include "core/random/bcpl.h"
+#include "debug/ed_debug_text.h"
 #include "game/gm_base.h"
 #include "game/scenaric/gs_scenaric.h"
 #include "game/vehicle/car_state.h"
@@ -17,6 +19,7 @@
 #include "physics/gs_physics.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "game/mission/gm_mission.h"
+#include "game/mission/game_mech_penalty.h"
 #include "game/mission/game_mech_race_hud.h"
 #include "game/game_mechanism.h"
 #include "ai/ai_game_session.h"
@@ -130,15 +133,13 @@ static void ComputeOuterLaneRatios( const AiRoadProfile *pProfile,
         pProfile->computeLaneWidthRatios( 0, false, start, end );
         outLow = std::min( start, end );
     } else {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_0092ece0
-        outLow = 0.0f;
+        outLow = pProfile->computeCenterLineRatio();
     }
     if ( pProfile->NumRightLanes != 0 ) {
         pProfile->computeLaneWidthRatios( 0, true, start, end );
         outHigh = std::max( start, end );
     } else {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: FUN_0092ece0
-        outHigh = 0.0f;
+        outHigh = pProfile->computeCenterLineRatio();
     }
 }
 
@@ -176,7 +177,7 @@ void TeleportToRoad( AiVehicle *pVehicle,
             pPhysics->setVelocity(
                 Eigen::Vector3f( 0.0f, 0.0f, kTeleportSpeed ), false, -1 );
         }
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: engine +0x94 = 2
+        pPhysics->setEngineState( eEngineState::ES_Running );
         if ( bPhantom && pPhysics->getPhantomMode() != 5 ) {
             pPhysics->requestPhantomMode( 2, 1.0f );
             VehicleBase *pDisplay =
@@ -485,8 +486,9 @@ void AiVehNavOpponent::reset( const bool bFull ) {
     stackSize = 0;
     if ( pOwner->getBehaviourType() == 0 ) {
         currentState = 6;
+    } else if ( pOwner->getCarState()->getPoliceState().isArrested() ) {
+        currentState = NS_Idle2;
     } else {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: CarState+0xdd autopilot (state 0xd)
         currentState = NS_Idle;
     }
     bTransitionPending = false;
@@ -964,7 +966,11 @@ bool AiVehNavOpponent::handle( const int32_t event, const int32_t state ) {
     case NS_RaceOver:
         if ( event == FE_Update &&
              pOwner->getCategory() != eAiVehicleCategory::AVC_Network ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: engine +0x94 (2 => 0)
+            PhysicsVehicle *pPhysics =
+                pOwner->getCarState()->getPhysicsVehicle();
+            if ( pPhysics->getEngineState() == eEngineState::ES_Running ) {
+                pPhysics->setEngineState( eEngineState::ES_Off );
+            }
         }
         return event <= FE_Exit;
 
@@ -1142,7 +1148,6 @@ bool AiVehNavOpponent::handle( const int32_t event, const int32_t state ) {
         return false;
 
     default:
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: manoeuvre states
         return false;
     }
 }
@@ -2270,7 +2275,10 @@ void AiVehNavOpponent::avoidObstacles() {
 
 bool AiVehNavOpponent::checkStuck() {
     // FUN_00956e00
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: engine +0x94 (0 => 2)
+    PhysicsVehicle *pPhysics = pOwner->getCarState()->getPhysicsVehicle();
+    if ( pPhysics->getEngineState() == eEngineState::ES_Off ) {
+        pPhysics->setEngineState( eEngineState::ES_Running );
+    }
     float timeout = kStuckDefaultTimeout;
     bool bStuck = false;
     if ( situation.isBikeRiderDown() ) {
@@ -2305,7 +2313,19 @@ bool AiVehNavOpponent::checkStuck() {
         bool bTimedRace = false;
         if ( gpActiveGameMode != nullptr &&
              gpActiveGameMode->getCurrentGameMode() == eGameMode::GM_Mission ) {
-            OTDU_UNIMPLEMENTED_ONCE; // TODO: GMMission timed race type
+            const GMMission *pMission =
+                static_cast<GMMission *>( gpActiveGameMode )
+                    ->getMissionInfo()
+                    .pOwner;
+            if ( pMission->getGameMechType() == GameMechanism::MT_Race ) {
+                const GameMechanism *pMech = pMission->getGameMech();
+                const GameMechPenalty *pPenalty =
+                    static_cast<const GameMechPenalty *>(
+                        pMech->getComponent( GameMechanism::CS_Penalty ) );
+                bTimedRace = pPenalty != nullptr &&
+                             pPenalty->getPenaltyFlags() ==
+                                 GameMechPenalty::kPenaltyCollisions;
+            }
         }
         if ( path.getNumPoints() != 0 &&
              path.current().Type != NavPath::PT_End ) {
@@ -2492,4 +2512,15 @@ void AiVehNavOpponent::resetOnCheckpointRoad() {
     }
     checkpointMissTicks = 0;
     goTo( NS_Relocate );
+}
+
+void AiVehNavOpponent::debugText() {
+    // FUN_009556e0
+    if ( gbDisplayVehicleLocInfo ) {
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: car name, DB/CarState IDs, path
+                                 // speed/length stats and road location
+    }
+    if ( pOwner->getBehaviourType() == 0 ) {
+        gEdDebugText.drawText( "NAV_OPPONENT => IN_CHASE" );
+    }
 }

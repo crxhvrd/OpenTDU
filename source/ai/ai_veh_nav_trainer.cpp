@@ -420,7 +420,7 @@ void AiVehNavTrainer::placeVehicle( const Matrix4x4f_t &matrix, float speed ) {
         // sic: world Z axis, not the start heading
         pPhysics->setVelocity( Eigen::Vector3f( 0.0f, 0.0f, speed ), true, -1 );
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: gearbox (phys+0x42d0)+0x94 = 2
+    pPhysics->setEngineState( eEngineState::ES_Running );
 }
 
 float AiVehNavTrainer::accumulateStableTime() {

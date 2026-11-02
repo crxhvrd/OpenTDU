@@ -61,6 +61,7 @@ class GameObject {
 public:
     inline uint32_t getID() const { return objectID; }
     inline uint32_t getParentID() const { return parentID; }
+    inline uint16_t getNetID() const { return netID; }
     inline GameObject *getNextInDico() const { return pNextDico; }
     inline GameObject *getNextInBucket() const { return pNextInBucket; }
     inline const ObjectWorldLocation &getWorldLocation() const {

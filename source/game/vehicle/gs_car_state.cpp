@@ -407,6 +407,11 @@ void GSCarState::tick( float totalTime, float deltaTime ) {
             body.WorldMatrix = worldMatrix;
             body.AngularVelocity = pPhysicsVehicle->getChassisAngularVelocity();
             body.LinearVelocity = pPhysicsVehicle->getChassisVelocity();
+            body.LocalLinearVelocity = Eigen::Vector4f(
+                body.LinearVelocity.dot( worldMatrix.row( 0 ).transpose() ),
+                body.LinearVelocity.dot( worldMatrix.row( 1 ).transpose() ),
+                body.LinearVelocity.dot( worldMatrix.row( 2 ).transpose() ),
+                0.0f );
 
             // FUN_0083bbd0 (inlined)
             pPhysicsVehicle->updateFlashingLightsRequest();

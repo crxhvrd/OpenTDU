@@ -20,6 +20,7 @@ public:
     virtual void tick( const float deltaTime, const float totalTime ) = 0;
     virtual void detach() = 0;
     virtual void debugDraw( DrawList *pDrawList ) {}
+    virtual void debugText() {}
     virtual bool getTarget( Eigen::Vector4f &outDirection,
                             float &outSpeed ) const = 0;
     virtual void getHeightAndTwist( float &outHeight,
@@ -82,9 +83,18 @@ public:
     void tick( const float deltaTime, const float totalTime ) override;
     void detach() override;
     void debugDraw( DrawList *pDrawList ) override;
+    void debugText() override;
     bool getTarget( Eigen::Vector4f &outDirection,
                     float &outSpeed ) const override;
     void getHeightAndTwist( float &outHeight, float &outTwist ) const override;
+
+    void drawCollisionRisk( DrawList *pDrawList );
+    void drawFollowing( DrawList *pDrawList );
+    bool checkLaneChangeGap( const int32_t laneFrom,
+                             const int32_t laneTo,
+                             const bool bWay,
+                             float distance,
+                             DrawList *pDebugDrawList = nullptr ) const;
 
 private:
     AiVehicle *pVehicle;
@@ -159,19 +169,21 @@ private:
     GameObject *findLeader( float *pOutGap, float *pOutLeaderSpeed ) const;
     void computeFollowing( float &outFollowSpeed,
                            float &outSpeedCoef,
-                           const bool bDebug );
+                           DrawList *pDebugDrawList );
+    void drawFollowGapBars( DrawList &drawList,
+                            GameObject *pLeader,
+                            const float gap,
+                            const float minGap,
+                            const float followDistance,
+                            const float slowDownDistance );
     void updatePullOver();
     bool isBackOvertakeWanted();
     bool isLaneChangeWanted();
     bool abortBlockedLaneChange();
-    bool checkLaneChangeGap( const int32_t laneFrom,
-                             const int32_t laneTo,
-                             const bool bWay,
-                             float distance ) const;
     bool isOnLane( const int32_t lane ) const;
     bool mustWaitAtJunction( int32_t &outReason, const bool bUpdate );
     bool isBackOvertakePossible();
-    float computeUrgentTurnSteer( const bool bDebug );
+    float computeUrgentTurnSteer( DrawList *pDebugDrawList );
     void moveToTurnLane( const AiRoadIt &position, const int32_t lane );
     bool isLaneFree( const int32_t lane,
                      const AiRoadIt &position,

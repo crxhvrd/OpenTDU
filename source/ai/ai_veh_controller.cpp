@@ -16,6 +16,7 @@
 #include "core/color.h"
 #include "game/vehicle/car_state.h"
 #include "gs_timer.h"
+#include "player_data/saved_road_discovery.h"
 #include "render/draw_list.h"
 #include "world/gs_world.h"
 #include "world/sector_manager.h"
@@ -28,13 +29,6 @@ static constexpr float kMinWeightSum = 0.001f;      // DAT_00f4167c
 static constexpr float kDebugLineEpsilon = 1.0e-5f; // DAT_00f41710
 
 static float gNavPathSurelevation = 1.5f; // DAT_00f7a114
-
-static bool IsRoadAccessible( const AiRoadMap::Road *pRoad ) {
-    // FUN_0088d4b0
-    (void)pRoad;
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: Locked zone logic
-    return true;
-}
 
 static AiRoadMap::Junction *GetEndJunction( const AiRoadIt &it ) {
     return it.bWay ? it.pRoad->pJunctionEnd : it.pRoad->pJunctionBegin;
@@ -54,7 +48,7 @@ bool HasAccessibleExit( const AiRoadIt &it ) {
         if ( pRoad == nullptr || pRoad->ID == it.pRoad->ID ) {
             continue;
         }
-        if ( IsRoadAccessible( pRoad ) ) {
+        if ( IsRoadAvailable( pRoad->ID ) ) {
             return true;
         }
     }
@@ -619,7 +613,7 @@ bool AiVehCtrlFreeRoam::chooseNextRoad( const AiRoadIt &last,
         const AiRoadMap::Junction *pFarJunction =
             ( pRoad->pJunctionBegin == pJunction ) ? pRoad->pJunctionEnd
                                                    : pRoad->pJunctionBegin;
-        if ( pFarJunction == nullptr || !IsRoadAccessible( pRoad ) ) {
+        if ( pFarJunction == nullptr || !IsRoadAvailable( pRoad->ID ) ) {
             scores[i] = kExcludedRoadScore;
             continue;
         }

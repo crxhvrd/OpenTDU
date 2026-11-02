@@ -106,7 +106,9 @@ MoveWindow( WindowState &window, bool bOpening, float duration ) {
     window.bPaused = false;
 }
 
-void ShowCasePhysControl::forwardInput( PhysicsVehicle &vehicle, float ) {
+void ShowCasePhysControl::forwardInput( PhysicsVehicle &vehicle,
+                                        float,
+                                        int32_t ) {
     // FUN_00770030
     PlayerConfiguration *pCfg = gpConfig->pPlayerConfig;
 

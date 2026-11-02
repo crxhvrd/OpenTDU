@@ -48,7 +48,9 @@ void AiRoadShape::init( AiRoadMap::Road *pOwnerRoad ) {
         NumCurves += pEntity->getNumCurves();
     }
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ListPhantoms init (GSAI road buckets)
+    pFirstPhantom = nullptr;
+    pLastPhantom = nullptr;
+    NumPhantoms = 0;
     buildCurveList();
 }
 

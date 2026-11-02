@@ -2,11 +2,12 @@
 
 #include "ai/ai_road_iterator.h"
 #include "core/random/bcpl.h"
+#include "render/camera/camera_base.h"
 
 struct AIZone;
 struct PhysicsRoadCurve;
 class AiVehicle;
-class Camera;
+class CameraGame;
 
 // Traffic simulation bubble
 class AiSimBubble {
@@ -22,6 +23,21 @@ public:
         Eigen::Vector4f WorldPos;
         Eigen::Vector4f Direction;
         int32_t ZoneIndex;
+    };
+
+    // One sample per second; averages over the first 60 / 300 samples
+    struct StatsHistory {
+        static constexpr int32_t kCapacity = 300;
+        static constexpr int32_t kShortWindow = 60;
+
+        float LastSampleTime = -1.0f;
+        float Instant = 0.0f;
+        float ShortAverage = 0.0f;
+        float LongAverage = 0.0f;
+        float Samples[kCapacity] = {};
+        int32_t NumSamples = 0;
+
+        void push( const float value, const float time );
     };
 
 public:
@@ -48,6 +64,13 @@ public:
     inline int32_t getTargetVisible() const { return targetVisible; }
     inline float getLaneLengthInside() const { return laneLengthInside; }
     inline bool isCullingFromCamera() const { return bCullFromCamera; }
+    inline bool isOcclusionRaycastEnabled() const { return bOcclusionRaycasts; }
+    inline const StatsHistory &getEstimatedVisibility() const {
+        return estimatedVisibility;
+    }
+    inline const StatsHistory &getRealVisibility() const {
+        return realVisibility;
+    }
     inline void setCullFromCamera( const bool bEnabled ) {
         bCullFromCamera = bEnabled;
     }
@@ -84,8 +107,9 @@ private:
     Eigen::Vector4f velocity;
     bool bInitialized;
     AiRoadIt bubbleIt;
-    Camera *pCamera;
+    CameraGame *pCamera;
     Camera *pRearCamera;
+    Camera rearCamera; // +0x60
     std::vector<Candidate> candidates;
     float altWeightSum;
     float roadLengthInside;
@@ -107,12 +131,15 @@ private:
     float lastVisibleCullTime;
     bool bCullFromCamera;
     bool bOcclusionRaycasts;
+    StatsHistory estimatedVisibility;
+    StatsHistory realVisibility;
     int32_t currentZoneIndex;
     const AIZone *pCurrentZone;
 
 private:
     void updateCameras();
     float computeVisibility( AiVehicle *pVehicle, const float totalTime );
+    bool isVisibleFromCamera( AiVehicle *pVehicle ) const;
     void updateTrafficVisibility( const float deltaTime,
                                   const float totalTime );
     void updateOtherVisibility( const float totalTime );

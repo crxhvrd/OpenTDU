@@ -136,8 +136,8 @@ bool GSAI::initialize( TestDriveGameInstance * ) {
     pAIPool->initialize();
     pathPool.initialize( kNumPathNodes, kNumRouteElems );
     roadBuckets.initialize( &roadMap, &gpPhysics->getRoadPhantomManager() );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: culling shape +0x64 array (FUN_0040b990)
-                             // and +0x70 = -1
+    pLODSorter->Nodes.fill( AiLODSorter::Node{ nullptr, 0.0f, nullptr } );
+    pLODSorter->LastLODTime = -1.0f;
     pDebugDraw->createBackground();
     pathSolver.initialize( &pathPool );
     floodSolver.initialize( &pathPool );
@@ -146,9 +146,9 @@ bool GSAI::initialize( TestDriveGameInstance * ) {
     gAiPathOptimiser.initialize();
     pPathOptimiser = &gAiPathOptimiser;
     pSimBubble->initialize();
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (distribution zones +0x1390,
+                             // net interpolation FUN_00921310)
     pedestrianManager.initialize();
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: distribution zones, net interpolation,
-                             // MngFontPlayers lists
     return true;
 }
 
@@ -430,7 +430,7 @@ void GSAI::resumeTraffic( const Eigen::Vector4f *pBubblePosition ) {
     pAIPool->setTrafficPaused( false );
     pAIPool->setField0x7C( true );
     pAIPool->setField0x85( true );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: AI (GSAI+0x2a9a7 flag)
+    bPauseTraffic = false;
 
     if ( pBubblePosition != nullptr ) {
         pSimBubble->setPosition( *pBubblePosition );

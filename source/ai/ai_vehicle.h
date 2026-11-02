@@ -204,6 +204,7 @@ public:
     inline const AiVehNavTraffic &getTrafficNavigation() const {
         return navTraffic;
     }
+    inline AiVehNavTraffic &getTrafficNavigation() { return navTraffic; }
     inline float getFadeInEndTime() const { return fadeInEndTime; }
     inline AiVehCtrlChase &getChaseController() { return ctrlChase; }
     inline AiVehBhvOpponent &getOpponentBehaviour() { return bhvOpponent; }

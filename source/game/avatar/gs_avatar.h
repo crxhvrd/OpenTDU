@@ -62,6 +62,8 @@ public:
 
     bool applyPNJConfiguration( AvatarConfiguration &outConfig,
                                 const DBEntryPNJ &pnjEntry );
+    bool applyPNJConfigurationByName( AvatarConfiguration &outConfig,
+                                      const char *pPNJName );
     void bakeAvatar( EntityAvatar *pAvatar,
                      const AvatarConfiguration *pConfig,
                      int32_t clotheSet,

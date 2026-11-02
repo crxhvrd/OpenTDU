@@ -499,6 +499,23 @@ bool GSAvatar::applyPNJConfiguration( AvatarConfiguration &outConfig,
     return true;
 }
 
+bool GSAvatar::applyPNJConfigurationByName( AvatarConfiguration &outConfig,
+                                            const char *pPNJName ) {
+    // FUN_008f61d0
+    static constexpr int32_t kPNJDatabaseIndex = 0x10;
+
+    const GameDatabase &gameDB = gpDatabase->getGameDB();
+    const int32_t numPNJ =
+        static_cast<int32_t>( gameDB.pNumItems[kPNJDatabaseIndex] );
+    for ( int32_t i = 0; i < numPNJ; i++ ) {
+        const DBEntryPNJ &pnjEntry = gameDB.DBPNJ[i];
+        if ( strcmp( pnjEntry.ConfigID.pAsString, pPNJName ) == 0 ) {
+            return applyPNJConfiguration( outConfig, pnjEntry );
+        }
+    }
+    return false;
+}
+
 void GSAvatar::installStyleResource( EntityAvatar *pAvatar,
                                      const AvatarConfiguration *pConfig ) {
     // FUN_008f6610

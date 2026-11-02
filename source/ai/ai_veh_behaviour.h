@@ -17,6 +17,7 @@ public:
     virtual void tick( const float deltaTime, const float totalTime ) = 0;
     virtual void release() = 0;
     virtual void debugDraw( DrawList *pDrawList ) {}
+    virtual void debugText() {}
     virtual void onCollision( CarState *pCarA,
                               CarState *pCarB,
                               const CollisionEvent &event ) = 0;
@@ -123,7 +124,7 @@ public:
     void reset( const bool bFull ) override;
     void tick( const float deltaTime, const float totalTime ) override;
     void release() override;
-    void debugDraw( DrawList *pDrawList ) override;
+    void debugText() override;
     void onCollision( CarState *pCarA,
                       CarState *pCarB,
                       const CollisionEvent &event ) override;

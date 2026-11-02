@@ -27,6 +27,7 @@ public:
     inline float getMaxPenalty() const { return maxPenalty; }
     inline float getPenaltyRatio() const { return penalty / maxPenalty; }
     inline void setMaxPenalty( const float value ) { maxPenalty = value; }
+    inline uint32_t getPenaltyFlags() const { return penaltyFlags; }
     inline void setPenaltyFlags( const uint32_t flags ) {
         penaltyFlags = flags;
     }

@@ -39,6 +39,7 @@ public:
     virtual void tick( const float deltaTime, const float totalTime );
     virtual void detach();
     virtual void debugDraw( DrawList *pDrawList );
+    virtual void debugText() {}
     virtual void setPhysicsActive( const bool bActive, const bool bForce );
     virtual void setDrivenByNavigation( const bool bDriven );
     virtual void setManualInputs( const float accel,
@@ -92,7 +93,9 @@ public:
     void reset( const bool bFull ) override;
     void tick( const float deltaTime, const float totalTime ) override;
     void detach() override;
-    void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) override;
+    void forwardInput( PhysicsVehicle &vehicle,
+                       float deltaTime,
+                       int32_t argument ) override;
 
 private:
     float targetAngle;
@@ -121,7 +124,9 @@ public:
     void reset( const bool bFull ) override;
     void tick( const float deltaTime, const float totalTime ) override;
     void detach() override;
-    void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) override;
+    void forwardInput( PhysicsVehicle &vehicle,
+                       float deltaTime,
+                       int32_t argument ) override;
 
 private:
     PIDCtrl steerControl;
@@ -158,7 +163,10 @@ public:
     void tick( const float deltaTime, const float totalTime ) override;
     void detach() override;
     void debugDraw( DrawList *pDrawList ) override;
-    void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) override;
+    void debugText() override;
+    void forwardInput( PhysicsVehicle &vehicle,
+                       float deltaTime,
+                       int32_t argument ) override;
 
 private:
     EntityCarPlayer *pOwnerEntity;

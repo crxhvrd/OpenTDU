@@ -2,6 +2,7 @@
 #include "ai_path_optimiser.h"
 
 #include "ai/ai_config.h"
+#include "debug/ed_debug_text.h"
 
 static constexpr float kStraightAngle = 3.14159274f;    // DAT_00f41940
 static constexpr float kInvPi = 0.318309873f;           // DAT_00f41738
@@ -291,8 +292,10 @@ AiPathOptimiser::AiPathOptimiser()
       bEnabled( false ),
       statsBudget{},
       statsUsed{},
+      statsCompletion{},
       numStats( 0 ),
-      statIndex( 0 ) {}
+      statIndex( 0 ),
+      occupation( 0.0f ) {}
 
 void AiPathOptimiser::initialize() {
     // FUN_009419f0
@@ -426,4 +429,54 @@ AiPathOptimiserSlot &AiPathOptimiser::lockSlotForRead( const int32_t slot ) {
         return getBackSlot( slot );
     }
     return buffers[currentBuffer][slot];
+}
+
+void AiPathOptimiser::drawStats() {
+    // FUN_009415e0
+    static constexpr float kPercent = 100.0f;     // DAT_00f41708
+    static constexpr float kMetersToMm = 1000.0f; // DAT_00f41718
+
+    if ( numStats <= 0 ) {
+        return;
+    }
+
+    float maxMove = 0.0f;
+    float sumCompletion = 0.0f;
+    int32_t numUsedSlots = 0;
+    const std::vector<AiPathOptimiserSlot> &slots = buffers[currentBuffer & 1];
+    for ( int32_t i = 0; i < kNumSlots; i++ ) {
+        if ( !bSlotUsed[i] ) {
+            continue;
+        }
+        if ( maxMove <= slots[i].Residual ) {
+            maxMove = slots[i].Residual;
+        }
+        numUsedSlots++;
+    }
+    float meanCompletion = 0.0f;
+    if ( numUsedSlots > 0 ) {
+        meanCompletion = sumCompletion / static_cast<float>( numUsedSlots );
+    }
+    statsCompletion[statIndex] = meanCompletion;
+
+    int32_t totalBudget = 0;
+    int32_t totalUsed = 0;
+    float totalCompletion = 0.0f;
+    for ( int32_t i = 0; i < numStats; i++ ) {
+        totalCompletion += statsCompletion[i];
+        totalBudget += statsBudget[i];
+        totalUsed += statsUsed[i];
+    }
+    occupation =
+        static_cast<float>( totalUsed ) / static_cast<float>( totalBudget );
+    totalCompletion /= static_cast<float>( numStats );
+
+    gEdDebugText.drawText( "Nb Passes Permitted: %d", totalBudget );
+    gEdDebugText.drawText( "Nb Passes Done: %d", totalUsed );
+    gEdDebugText.drawText( "Occupation: %d",
+                           static_cast<int32_t>( occupation * kPercent ) );
+    gEdDebugText.drawText( "Max Move: %.2f mm",
+                           static_cast<double>( maxMove * kMetersToMm ) );
+    gEdDebugText.drawText( "Mean Completion: %d",
+                           static_cast<int32_t>( totalCompletion * kPercent ) );
 }

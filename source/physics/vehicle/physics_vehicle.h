@@ -50,7 +50,16 @@ struct ReplayDriving {
 class PhysicsDrivingControl {
 public:
     virtual ~PhysicsDrivingControl() = default;
-    virtual void forwardInput( PhysicsVehicle &vehicle, float deltaTime ) = 0;
+    virtual void forwardInput( PhysicsVehicle &vehicle,
+                               float deltaTime,
+                               int32_t argument ) = 0;
+
+    // 0 = physics step (FUN_0081dfd0), 1 = GSCarState::Tick
+    inline void setPhase( const uint8_t value ) { phase = value; }
+    inline uint8_t getPhase() const { return phase; }
+
+protected:
+    uint8_t phase = 0; // +0x4
 };
 
 class PhysicsVehicle final : public JPH::PhysicsStepListener {
@@ -273,6 +282,12 @@ public:
         pDrivingControl = pControl;
     }
     PhysicsDrivingControl *getDrivingControl() const { return pDrivingControl; }
+    void setDrivingControlArgument( const int32_t argument ) {
+        drivingControlArgument = argument;
+    }
+    void setSecondaryDrivingControlArgument( const int32_t argument ) {
+        secondaryDrivingControlArgument = argument;
+    }
     void setSecondaryDrivingControl( PhysicsDrivingControl *pControl ) {
         // FUN_00827cf0
         pSecondaryDrivingControl = pControl;
@@ -800,6 +815,8 @@ private:
     uint8_t drivingMode;
     PhysicsDrivingControl *pDrivingControl = nullptr;
     PhysicsDrivingControl *pSecondaryDrivingControl = nullptr;
+    int32_t drivingControlArgument = 0;          // +0xe40
+    int32_t secondaryDrivingControlArgument = 0; // +0xe44
     bool bBackView = false;
     bool bChangeView = false;
     bool bLightsRequest = false;         // +0xe22

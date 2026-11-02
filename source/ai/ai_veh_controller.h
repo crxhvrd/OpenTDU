@@ -19,6 +19,7 @@ public:
     virtual void tick( const float deltaTime, const float totalTime ) = 0;
     virtual void release() = 0;
     virtual void debugDraw( DrawList *pDrawList ) {}
+    virtual void debugText() {}
     virtual bool getFront( AiRoadIt &outFrom, AiRoadIt &outTo ) const = 0;
     virtual bool getSecond( AiRoadIt &outFrom, AiRoadIt &outTo ) const = 0;
     virtual int32_t getCount() const = 0;
