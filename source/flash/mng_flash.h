@@ -53,3 +53,4 @@ private:
 
 bool RequestMapGameMode( FlashPlayer *pPlayer );
 bool RequestEditorGameMode();
+void TransitionFromFreerideToMap( int32_t targetGameMode );

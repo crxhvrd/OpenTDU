@@ -80,7 +80,7 @@ static void PauseFrontEndMovie( const char *pMovieName ) {
 }
 
 // TODO: Move to right cpp
-static void TransitionFromFreerideToMap( int32_t targetGameMode ) {
+void TransitionFromFreerideToMap( int32_t targetGameMode ) {
     // FUN_007183f0
     const NextIntroInfo &nextIntro = gpScenaric->getNextIntro();
     if ( gpTestDriveInstance->getActiveGameMode() == nextIntro.NextGameMode &&
