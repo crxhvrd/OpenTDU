@@ -398,6 +398,7 @@ private:
 
     float rentalTimer;    // DAT_01214928
     SpotMap *pRentalSpot; // DAT_0121492c
+    int32_t selectedPadIndex;
     uint64_t objectiveSpotHashcode;
     ObjectiveMarker objectives[6];
 

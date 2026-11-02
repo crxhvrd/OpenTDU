@@ -103,6 +103,8 @@ static constexpr int32_t kNumBikeStandDriveRatios = 8;
 
 void BuildCarIKPoints( SCIKPoint ( &points )[kNumCarIKPoints],
                        CarState *pCarState );
+void BuildBikeIKPoints( SCIKPoint ( &points )[kNumBikeIKPoints],
+                        CarState *pCarState );
 
 class EntityDriver : public EntityAvatar, public CarStateEventListener {
 public:

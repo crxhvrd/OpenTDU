@@ -3,6 +3,7 @@
 #include "ige_file.h"
 #include "mng_actor.h"
 
+#include "ai/ai_debug_draw.h"
 #include "audio/gs_audio.h"
 #include "audio/implementation/audio_dispatcher_playback.h"
 #include "audio/implementation/ed_audio_sample.h"
@@ -21,6 +22,7 @@
 #include "game/vehicle/car_desc.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
+#include "game/vehicle/vehicle_controller.h"
 #include "game/mng_hud.h"
 #include "render/animation/skeleton.h"
 #include "render/animation/clip.h"
@@ -34,11 +36,15 @@
 #include "player_data/player_data_interface.h"
 #include "player_data/saved_extra_challenges.h"
 #include "player_data/saved_item_table.h"
+#include "input/ed_dev.h"
+#include "input/input_device.h"
+#include "render/draw_list.h"
 #include "render/gs_render.h"
 #include "render/heightmap_renderer.h"
 #include "render/hiearchy_node.h"
 #include "render/instance.h"
 #include "render/render_scene.h"
+#include "render/serialized_skinned_model.h"
 #include "tdu_instance.h"
 
 GSScenaric *gpScenaric = nullptr;
@@ -113,6 +119,7 @@ GSScenaric::GSScenaric()
       numExtraChallenges( 0 ),
       rentalTimer( -1.0f ),
       pRentalSpot( nullptr ),
+      selectedPadIndex( 0 ),
       objectiveSpotHashcode( 0 ),
       bDelockChallengesRoad( true ),
       bInstantChallengeEnabled( false ) {
@@ -198,6 +205,281 @@ bool GSScenaric::initialize( TestDriveGameInstance *pInstance ) {
     return true;
 }
 
+enum eIKEditMode : int32_t {
+    IEM_CarIK = 0,
+    IEM_BikeIK = 1,
+    IEM_BikeSettings = 2,
+    IEM_HandSize = 3,
+    IEM_SeatFrontBack = 4,
+    IEM_SeatHeight = 5,
+    IEM_PassengerSeatFrontBack = 6,
+    IEM_PassengerSeatHeight = 7,
+    IEM_PassengerIK = 8,
+};
+
+// DAT_01697c48
+struct IKEditorPoints {
+    SCIKPoint Car[kNumCarIKPoints];
+    SCIKPoint Bike[kNumBikeIKPoints];
+    SCIKPoint Passenger[kNumPassengerIKOffsets];
+};
+
+static const char *kPassengerIKPointNames[kNumPassengerIKOffsets] = {
+    // DAT_00f8b1b8
+    "Body_HR",    "Fork_FL",    "Fork_FR",  "Fork_RL", "Fork_RR", "Plate",
+    "DvrSeat_HR", "PsgSeat_HR", "Steer_HR", "Door_R",  "Door_L" };
+
+static constexpr float kIKEditorRepeatDelay = 0.1f; // FLOAT_00f41668
+static constexpr float kIKEditorAxisLength = 0.1f;
+static constexpr int32_t kIKEditorNumAxis = 6;
+
+static IKEditorPoints gIKEditorPoints = {};    // DAT_01697c48
+static DrawList *gpIKEditorDrawList = nullptr; // DAT_01697da0
+static bool gbIKEditorActive = false;          // DAT_010e7f28
+static bool gbDrawCurrentIk = false;
+static eIKEditMode gIKEditMode = IEM_CarIK;
+static int32_t gIKEditCarPointIndex = 0;        // DAT_010e7f04
+static int32_t gIKEditBikePointIndex = 0;       // DAT_010e7f08
+static int32_t gIKEditPassengerPointIndex = 0;  // DAT_010e7f0c
+static int32_t gIKEditAxis = 0;                 // DAT_010e7f10
+static float gIKEditIncreaseRepeatTimer = 0.0f; // DAT_016a6a68
+static float gIKEditDecreaseRepeatTimer = 0.0f; // DAT_016a6a64
+
+static void
+BuildPassengerIKPoints( SCIKPoint ( &points )[kNumPassengerIKOffsets],
+                        CarState *pCarState,
+                        const bool bIsBike ) {
+    // FUN_008006b0
+    for ( SCIKPoint &point : points ) {
+        point.pNode = nullptr;
+        point.pOffset = nullptr;
+    }
+
+    if ( pCarState == nullptr ) {
+        return;
+    }
+
+    SCIKOffsetDB &ikOffsetDB = gpScenaric->getIKOffsetDB();
+    const SCIKOffset *pOffsets = nullptr;
+    SCIKBikeOffsets *pBikeOffsets =
+        ikOffsetDB.findBikeOffsets( pCarState->getCarID(), true );
+    if ( pBikeOffsets != nullptr ) {
+        pOffsets = pBikeOffsets->PassengerOffsets;
+    } else {
+        SCIKCarOffsets *pCarOffsets =
+            ikOffsetDB.findCarOffsets( pCarState->getCarID(), true );
+        if ( pCarOffsets != nullptr ) {
+            pOffsets = pCarOffsets->PassengerOffsets;
+        }
+    }
+    if ( pOffsets != nullptr ) {
+        for ( int32_t i = 0; i < kNumPassengerIKOffsets; i++ ) {
+            points[i].pOffset = &pOffsets[i];
+        }
+    }
+
+    HiearchyNode *pRoot = nullptr;
+    HiearchyNode *pFallbackRoot = nullptr;
+    if ( !bIsBike ) {
+        VehicleBase *pDisplay = pCarState->getVehicleInstance();
+        if ( pDisplay == nullptr ||
+             pDisplay->getType() != VehicleBase::eType::VBT_Car ) {
+            return;
+        }
+
+        if ( !pDisplay->shouldUnstream() ) {
+            pRoot = pDisplay->getNodeByIndex( 0 );
+        }
+        pFallbackRoot = static_cast<VehicleController *>( pDisplay )
+                            ->getInstantiatedInteriorNode();
+    } else {
+        Entity *pGhostBike = gpScenaric->getCinematicPackBank().findEntity(
+            eEntityType::ET__ACT, "GHOST_BIKE" );
+        if ( pGhostBike != nullptr &&
+             pGhostBike->getType() == eEntityType::ET__ACT ) {
+            SerializedSkinnedModel *pModel =
+                static_cast<SerializedSkinnedModel *>(
+                    pGhostBike->getGeometryData() );
+            if ( pModel != nullptr ) {
+                pRoot = pModel->pHiearchNode;
+            }
+        }
+    }
+
+    if ( pRoot == nullptr ) {
+        return;
+    }
+
+    for ( int32_t i = 0; i < kNumPassengerIKOffsets; i++ ) {
+        const uint64_t hashcode =
+            GetIdentifier64bit( kPassengerIKPointNames[i] );
+        HiearchyNode *pNode = pRoot->findChild( hashcode );
+        if ( pNode == nullptr && pFallbackRoot != nullptr ) {
+            pNode = pFallbackRoot->findChild( hashcode );
+        }
+        points[i].pNode = pNode;
+    }
+}
+
+static void IncreaseIKOffset() {
+    // FUN_00711be0
+    OTDU_UNIMPLEMENTED;
+}
+
+static void DecreaseIKOffset() {
+    // FUN_00711fd0
+    OTDU_UNIMPLEMENTED;
+}
+
+static inline bool IsIKEditorChannelHeld( const InputChannel *pChannel ) {
+    return pChannel != nullptr && ( pChannel->Flags & 0x10u ) != 0;
+}
+
+static void DrawIKPointAxis( const Matrix4x4f_t &matrix,
+                             const SCIKOffset *pOffset ) {
+    Eigen::Vector4f position = matrix.row( 3 ).transpose();
+    if ( pOffset != nullptr ) {
+        position += TDUMat4x4MulVec( matrix, pOffset->Offset );
+    }
+
+    const Eigen::Vector4f axisX = TDUMat4x4MulVec(
+        matrix, Eigen::Vector4f( kIKEditorAxisLength, 0.0f, 0.0f, 0.0f ) );
+    const Eigen::Vector4f axisY = TDUMat4x4MulVec(
+        matrix, Eigen::Vector4f( 0.0f, kIKEditorAxisLength, 0.0f, 0.0f ) );
+    const Eigen::Vector4f axisZ = TDUMat4x4MulVec(
+        matrix, Eigen::Vector4f( 0.0f, 0.0f, kIKEditorAxisLength, 0.0f ) );
+
+    DrawDebugLine( position - axisX, position + axisX, 0xff0000ff,
+                   *gpIKEditorDrawList );
+    DrawDebugLine( position - axisY, position + axisY, 0xff00ff00,
+                   *gpIKEditorDrawList );
+    DrawDebugLine( position - axisZ, position + axisZ, 0xffff0000,
+                   *gpIKEditorDrawList );
+}
+
+static void DrawIKPoint( const SCIKPoint &point ) {
+    if ( point.pNode == nullptr || point.pNode->pInstance == nullptr ) {
+        return;
+    }
+
+    DrawIKPointAxis( point.pNode->pInstance->getModelMatrix(), point.pOffset );
+}
+
+static void TickIKOffsetEditor( const int32_t padIndex,
+                                const float deltaTime ) {
+    // FUN_007123f0
+    if ( !gbIKEditorActive ) {
+        return;
+    }
+
+    Device *pPad = gEdDev.getDevice( eDeviceType::DT_Other, padIndex );
+    if ( pPad != nullptr ) {
+        InputChannel *pPovUp = pPad->getChannel( "POV_0_UP" );
+        InputChannel *pPovDown = pPad->getChannel( "POV_0_DOWN" );
+        InputChannel *pPreviousAxis = pPad->getChannel( "BUTTON_2" );
+        InputChannel *pNextAxis = pPad->getChannel( "BUTTON_0" );
+
+        if ( IsChannelJustPressed( pNextAxis ) ) {
+            gIKEditAxis =
+                ( gIKEditAxis < kIKEditorNumAxis - 1 ) ? gIKEditAxis + 1 : 0;
+        }
+        if ( IsChannelJustPressed( pPreviousAxis ) ) {
+            gIKEditAxis =
+                ( gIKEditAxis < 1 ) ? kIKEditorNumAxis - 1 : gIKEditAxis - 1;
+        }
+
+        gIKEditIncreaseRepeatTimer =
+            IsIKEditorChannelHeld( pPovUp )
+                ? gIKEditIncreaseRepeatTimer + deltaTime
+                : 0.0f;
+        gIKEditDecreaseRepeatTimer =
+            IsIKEditorChannelHeld( pPovDown )
+                ? gIKEditDecreaseRepeatTimer + deltaTime
+                : 0.0f;
+
+        if ( kIKEditorRepeatDelay < gIKEditIncreaseRepeatTimer ||
+             IsChannelJustPressed( pPovUp ) ) {
+            gIKEditIncreaseRepeatTimer -= kIKEditorRepeatDelay;
+            IncreaseIKOffset();
+        }
+        if ( kIKEditorRepeatDelay < gIKEditDecreaseRepeatTimer ||
+             IsChannelJustPressed( pPovDown ) ) {
+            gIKEditDecreaseRepeatTimer -= kIKEditorRepeatDelay;
+            DecreaseIKOffset();
+        }
+    }
+
+    if ( !gbDrawCurrentIk ) {
+        return;
+    }
+
+    if ( gpIKEditorDrawList == nullptr ) {
+        gpIKEditorDrawList = new DrawList();
+        gpIKEditorDrawList->initialize( 3, 6, 0, true, nullptr,
+                                        "DbgScenaric_carIK", false );
+    }
+    gpIKEditorDrawList->reset();
+
+    CarState *pPlayerCarState = nullptr;
+    CarState *pCarStates = gpCarState->getCarStates();
+    for ( int32_t i = 0; i < static_cast<int32_t>( kMaxNumVehicles ); i++ ) {
+        CarState *pCarState = &pCarStates[i];
+        if ( !gpCarState->isCarStateUsed( i ) ||
+             pCarState->getOwner() != CarState::eOwner::CSO_LocalPlayer ) {
+            continue;
+        }
+
+        pPlayerCarState = pCarState;
+        DBEntryCarPhysicsData *pCarData =
+            gpDatabase->getCarDBEntry( pCarState->getCarID() );
+        if ( pCarData != nullptr ) {
+            const bool bIsBike = gpDatabase->isBike( pCarData );
+            if ( !bIsBike ) {
+                BuildCarIKPoints( gIKEditorPoints.Car, pCarState );
+            } else {
+                BuildBikeIKPoints( gIKEditorPoints.Bike, pCarState );
+            }
+            BuildPassengerIKPoints( gIKEditorPoints.Passenger, pCarState,
+                                    bIsBike );
+        }
+        break;
+    }
+
+    switch ( gIKEditMode ) {
+    case IEM_CarIK:
+        if ( gIKEditCarPointIndex < 0 ||
+             kNumCarIKPoints <= gIKEditCarPointIndex ) {
+            return;
+        }
+        DrawIKPoint( gIKEditorPoints.Car[gIKEditCarPointIndex] );
+        break;
+    case IEM_BikeIK:
+        if ( gIKEditBikePointIndex < 0 ||
+             kNumBikeIKPoints <= gIKEditBikePointIndex ) {
+            return;
+        }
+        DrawIKPoint( gIKEditorPoints.Bike[gIKEditBikePointIndex] );
+        break;
+    case IEM_PassengerIK: {
+        const SCIKPoint &point =
+            gIKEditorPoints.Passenger[gIKEditPassengerPointIndex];
+        if ( point.pNode == nullptr || point.pNode->pInstance == nullptr ) {
+            return;
+        }
+
+        Matrix4x4f_t matrix = point.pNode->TransformMatrix;
+        if ( pPlayerCarState != nullptr &&
+             pPlayerCarState->getPhysicsVehicle() != nullptr ) {
+            OTDU_UNIMPLEMENTED; // TODO FUN_00404660
+        }
+        DrawIKPointAxis( matrix, point.pOffset );
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 static void UpdatePlayTime( const float deltaTime ) {
     // FUN_00423850
     IPlayerData *pSave = gpPlayerData->getLoadedSave();
@@ -222,8 +504,7 @@ void GSScenaric::tick( float totalTime, float deltaTime ) {
     }
 
     UpdatePlayTime( deltaTime );
-
-    OTDU_UNIMPLEMENTED; // TODO: DEBUG (FUN_007123f0 IK offset editor)
+    TickIKOffsetEditor( selectedPadIndex, deltaTime );
 
     float listenerXZ[2] = { 0.0f, 0.0f };
     float listenerSpeed = kWooshNoListener;
@@ -477,7 +758,11 @@ void GSScenaric::terminate() {
     unloadBank( &spotMeshBank );
     extraChallengesCineBank.unload();
     ikOffsetDB.terminate();
-    OTDU_UNIMPLEMENTED; // TODO: DEBUG (FUN_007123f0 IK offset editor)
+    if ( gpIKEditorDrawList != nullptr ) {
+        gpIKEditorDrawList->destroy();
+        delete gpIKEditorDrawList;
+        gpIKEditorDrawList = nullptr;
+    }
 }
 
 void GSScenaric::unloadBank( ScenaricBank *pBank ) {
@@ -833,8 +1118,8 @@ void GSScenaric::requestTestIGE( MngActor *pMngActor ) {
     // FUN_00804080
     releaseIGEBuffer();
     testIGESize = uint32_t( ( pMngActor->getActorCount() + 4 ) * 500 );
-    pTestIGEBuffer = static_cast<uint8_t *>(
-        TestDrive::AllocAligned( testIGESize, 16 ) );
+    pTestIGEBuffer =
+        static_cast<uint8_t *>( TestDrive::AllocAligned( testIGESize, 16 ) );
     WriteIGEFile( &gIGEFileRequest, pMngActor, pTestIGEBuffer, &testIGESize );
     selectedEventParameters.setRequestedName( "test" );
     selectedEventParameters.setSource( EventParameters::ES_Buffer );

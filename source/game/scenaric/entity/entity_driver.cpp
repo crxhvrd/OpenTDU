@@ -478,9 +478,10 @@ void EntityDriver::buildCarIKPoints() {
     BuildCarIKPoints( CarIKPoints, pCarState );
 }
 
-void EntityDriver::buildBikeIKPoints() {
+void BuildBikeIKPoints( SCIKPoint ( &points )[kNumBikeIKPoints],
+                        CarState *pCarState ) {
     // FUN_008004b0
-    for ( SCIKPoint &point : BikeIKPoints ) {
+    for ( SCIKPoint &point : points ) {
         point.pNode = nullptr;
         point.pOffset = nullptr;
     }
@@ -494,7 +495,7 @@ void EntityDriver::buildBikeIKPoints() {
             pCarState->getCarID(), true );
         if ( pOffsets != nullptr ) {
             for ( int32_t i = 0; i < kNumBikeIKPoints; i++ ) {
-                BikeIKPoints[i].pOffset = &pOffsets->Offsets[i];
+                points[i].pOffset = &pOffsets->Offsets[i];
             }
         }
     }
@@ -512,9 +513,14 @@ void EntityDriver::buildBikeIKPoints() {
     }
 
     for ( int32_t i = 0; i < kNumBikeIKPoints; i++ ) {
-        BikeIKPoints[i].pNode =
+        points[i].pNode =
             pRoot->findChild( GetIdentifier64bit( kBikeIKPointNames[i] ) );
     }
+}
+
+void EntityDriver::buildBikeIKPoints() {
+    // FUN_008004b0
+    BuildBikeIKPoints( BikeIKPoints, pCarState );
 }
 
 void EntityDriver::setSeatModel( HiearchyNode *pNode ) {
