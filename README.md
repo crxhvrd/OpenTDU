@@ -14,7 +14,9 @@ The goal of this project is to create a new client fixing various issues encount
 Regular updates/screenshots can be found in this [thread](https://github.com/opentestdriveunlimited/OpenTestDriveUnlimited/discussions/175).
 
 ## Download
-Nightly binaries are available here: [https://github.com/opentestdriveunlimited/opentestdriveunlimited/releases](https://github.com/opentestdriveunlimited/opentestdriveunlimited/releases). 
+Latest stable binary can be found here: [https://github.com/opentestdriveunlimited/OpenTestDriveUnlimited/releases/tag/v0.1](https://github.com/opentestdriveunlimited/OpenTestDriveUnlimited/releases/tag/v0.1).
+
+Nightly binaries are also available here: [https://github.com/opentestdriveunlimited/opentestdriveunlimited/releases](https://github.com/opentestdriveunlimited/opentestdriveunlimited/releases). 
 
 ## Installation
 Extract the archive to your TestDriveUnlimited folder.
