@@ -718,8 +718,8 @@ static void SetupBundledVulkanDriver() {
     SDL_setenv_unsafe( "VK_DRIVER_FILES", manifest.c_str(), 0 );
     SDL_setenv_unsafe( "VK_ICD_FILENAMES", manifest.c_str(),
                        0 ); // Loaders older than 1.3.207
-    OTDU_LOG_INFO( "Using bundled Vulkan driver manifest '%s'\n",
-                   manifest.c_str() );
+    OTDU_LOG_DEBUG( "Using bundled Vulkan driver manifest '%s'\n",
+                    manifest.c_str() );
 }
 #endif
 

@@ -350,8 +350,8 @@ bool BinkMovieAudio::initialize( BinkHandle &handle, const char *pDebugName ) {
         return false;
     }
 
-    OTDU_LOG_INFO( "Movie '%s' audio track: %d channel(s) at %d Hz\n",
-                   pDebugName, channelCount, sampleRate );
+    OTDU_LOG_DEBUG( "Movie '%s' audio track: %d channel(s) at %d Hz\n",
+                    pDebugName, channelCount, sampleRate );
 
     return true;
 }

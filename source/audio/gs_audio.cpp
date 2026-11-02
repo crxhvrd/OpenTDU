@@ -835,8 +835,8 @@ void GSAudio::tick( float totalTime, float deltaTime ) {
             }
         }
 
-        OTDU_LOG_INFO( "Audio mix state for game mode %d is 0x%08x\n", GameMode,
-                       GameModeMixState[GameMode] );
+        OTDU_LOG_DEBUG( "Audio mix state for game mode %d is 0x%08x\n",
+                        GameMode, GameModeMixState[GameMode] );
     }
 
     updateReplayPitch();
@@ -1171,9 +1171,9 @@ void GSAudio::addReverb( ParsedAudioReverb &reverb ) {
 
     pReverbPool[slot] = pReverb;
 
-    OTDU_LOG_INFO( "Reverb '%s' inserted between '%s' and '%s'\n",
-                   reverb.Name.c_str(), pOutput->getDescription(),
-                   pInput->getDescription() );
+    OTDU_LOG_DEBUG( "Reverb '%s' inserted between '%s' and '%s'\n",
+                    reverb.Name.c_str(), pOutput->getDescription(),
+                    pInput->getDescription() );
 }
 
 edAudioReverb *GSAudio::findReverbModule( const char *pName ) {

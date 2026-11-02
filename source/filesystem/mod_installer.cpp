@@ -143,11 +143,11 @@ void ModInstaller::onAddVehicle( const char *pLanguage,
         return;
     }
 
-    OTDU_LOG_INFO( "OnAddVehicule(env=%s,id=%u,lang=%s)\n", pEnvName,
-                   databaseId, pLanguage );
+    OTDU_LOG_DEBUG( "OnAddVehicule(env=%s,id=%u,lang=%s)\n", pEnvName,
+                    databaseId, pLanguage );
 
     if ( findCarSlot( databaseId, pEnvName ) != nullptr ) {
-        OTDU_LOG_INFO( "==>Already Added\n" );
+        OTDU_LOG_DEBUG( "==>Already Added\n" );
         return;
     }
 
@@ -172,8 +172,8 @@ void ModInstaller::onUnlockVehicle( const char *pLanguage,
         return;
     }
 
-    OTDU_LOG_INFO( "OnUnlockVehicule(env=%s,id=%u,lang=%s)\n", pEnvName,
-                   databaseId, pLanguage );
+    OTDU_LOG_DEBUG( "OnUnlockVehicule(env=%s,id=%u,lang=%s)\n", pEnvName,
+                    databaseId, pLanguage );
 
     FoundCar *pCar = findCarSlot( databaseId, pEnvName );
     if ( pCar == nullptr ) {
@@ -195,7 +195,7 @@ void ModInstaller::onPostNews( const char *pEnvName,
                                const char *pText,
                                const int32_t moneyReward ) {
     // FUN_008a3bf0
-    OTDU_LOG_INFO( "OnPostNews(text=%s,mon=%d)\n", pText, moneyReward );
+    OTDU_LOG_DEBUG( "OnPostNews(text=%s,mon=%d)\n", pText, moneyReward );
 
     IPlayerData *pSave = gpPlayerData->getLoadedSave();
     if ( pEnvName == nullptr || pSave == nullptr || !pSave->isReady() ) {
@@ -285,8 +285,8 @@ int32_t ModInstaller::onAddRadioStation( const char *pEnvName,
     for ( RadioStation *&pStation : radioSlots[radioSlot].pStations ) {
         if ( pStation == nullptr ) {
             pStation = gpRadio->addStation( stationFile, workingDir );
-            OTDU_LOG_INFO( "OnAddRadioStation(%s) => %s\n", stationFile,
-                           ( pStation != nullptr ) ? "OK" : "FAILED" );
+            OTDU_LOG_DEBUG( "OnAddRadioStation(%s) => %s\n", stationFile,
+                            ( pStation != nullptr ) ? "OK" : "FAILED" );
             return radioSlot;
         }
     }
@@ -328,7 +328,7 @@ void ModInstaller::onAddDBRow( const EnumerateContextItem &item,
         return;
     }
 
-    OTDU_LOG_INFO( "OnAddDBRow(table=%s,row=%.64s)\n", pTable, pRow );
+    OTDU_LOG_DEBUG( "OnAddDBRow(table=%s,row=%.64s)\n", pTable, pRow );
     getInjectionSlot( item, pTable ).Rows.push_back( pRow );
 }
 
@@ -445,10 +445,10 @@ void ModInstaller::onAddDBString( const EnumerateContextItem &item,
         string.Value = string.resolve( "us" );
     }
 
-    OTDU_LOG_INFO( "OnAddDBString(table=%s,id=%llu,value=%.64s,"
-                   "translations=%zu)\n",
-                   pTable, string.Hashcode, string.Value.c_str(),
-                   string.Translations.size() );
+    OTDU_LOG_DEBUG( "OnAddDBString(table=%s,id=%llu,value=%.64s,"
+                    "translations=%zu)\n",
+                    pTable, string.Hashcode, string.Value.c_str(),
+                    string.Translations.size() );
     getInjectionSlot( item, pTable ).Strings.push_back( string );
 }
 
@@ -490,7 +490,7 @@ eContentDescResult ModInstaller::loadFromMem( const uint32_t licenceFlags,
     uint32_t actionMask = 0;
     eContentDescResult result = CDR_NoVehicle;
 
-    OTDU_LOG_INFO(
+    OTDU_LOG_DEBUG(
         "=====In CXmlInstaller::LoadFromMem(licence_flags_in=%u)=======\n",
         licenceFlags );
 
@@ -521,17 +521,17 @@ eContentDescResult ModInstaller::loadFromMem( const uint32_t licenceFlags,
             bHasLicenceFlags ? (uint32_t)atoi( licenceFlagsText.c_str() ) : 0;
         const int32_t moneyReward = atoi( moneyText.c_str() );
 
-        OTDU_LOG_INFO( " found ACTION %s , envname=%s database_id=%u "
-                       "licenceflags(%s=%u)  mon=%u\n",
-                       bHasName ? pActionName : "NULL",
-                       bHasEnvName ? pEnvName : "NULL", databaseId,
-                       bHasLicenceFlags ? "yes" : "no", actionLicenceFlags,
-                       moneyReward );
+        OTDU_LOG_DEBUG( " found ACTION %s , envname=%s database_id=%u "
+                        "licenceflags(%s=%u)  mon=%u\n",
+                        bHasName ? pActionName : "NULL",
+                        bHasEnvName ? pEnvName : "NULL", databaseId,
+                        bHasLicenceFlags ? "yes" : "no", actionLicenceFlags,
+                        moneyReward );
 
         if ( !bHasName ||
              ( bHasLicenceFlags &&
                ( actionLicenceFlags & licenceFlags ) != actionLicenceFlags ) ) {
-            OTDU_LOG_INFO( "=>Action Skipped\n" );
+            OTDU_LOG_DEBUG( "=>Action Skipped\n" );
             continue;
         }
 
@@ -564,7 +564,7 @@ eContentDescResult ModInstaller::loadFromMem( const uint32_t licenceFlags,
                     strncpy( pDescription, desc.c_str(),
                              kMaxContentDescriptionLength - 1 );
                     pDescription[kMaxContentDescriptionLength - 1] = '\0';
-                    OTDU_LOG_INFO( "OnDesc(%s)\n", pDescription );
+                    OTDU_LOG_DEBUG( "OnDesc(%s)\n", pDescription );
                 }
             }
         } else if ( StringCmpI( pActionName, "ADDRADIOSTATION" ) == 0 ) {
@@ -584,7 +584,7 @@ eContentDescResult ModInstaller::loadFromMem( const uint32_t licenceFlags,
     }
     reader.outOfElem();
 
-    OTDU_LOG_INFO(
+    OTDU_LOG_DEBUG(
         "==============================================================\n" );
     addInstalledContent( item.DisplayName, actionMask );
 

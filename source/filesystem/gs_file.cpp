@@ -724,8 +724,8 @@ void GSFile::initCarPacks( bool bApplyContent ) {
 
         if ( pack.bDescriptorOnly ) {
             pack.Status.clear();
-            OTDU_LOG_INFO( "  -Loaded '%S' (content descriptor only)\n",
-                           pack.DisplayName.c_str() );
+            OTDU_LOG_DEBUG( "  -Loaded '%S' (content descriptor only)\n",
+                            pack.DisplayName.c_str() );
             continue;
         }
 
@@ -754,9 +754,9 @@ void GSFile::initCarPacks( bool bApplyContent ) {
         pack.Status.clear();
         numMounted++;
 
-        OTDU_LOG_INFO( "  -Mounted '%S' on map %d: %u entries\n",
-                       pack.DisplayName.c_str(), filemapIndex,
-                       pack.NumEntries );
+        OTDU_LOG_DEBUG( "  -Mounted '%S' on map %d: %u entries\n",
+                        pack.DisplayName.c_str(), filemapIndex,
+                        pack.NumEntries );
     }
 
     gpModManager->setPendingChanges( false );

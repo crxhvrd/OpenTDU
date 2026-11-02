@@ -636,7 +636,7 @@ MoviePlayer *GSFlash::getMoviePlayer( int32_t levelIndex, int32_t movieIndex ) {
             }
         }
     }
-    OTDU_LOG_WARN(
+    OTDU_LOG_DEBUG(
         "Could not find movie player with level index %i and movie index %i\n",
         levelIndex, movieIndex );
     return nullptr;
