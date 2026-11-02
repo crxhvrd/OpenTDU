@@ -166,7 +166,8 @@ void GameMode::mainLoop( TestDriveGameInstance *param_1 ) {
         drawLoadingScreen();
     }
 
-    if ( gpMngChat != nullptr ) {
+    static bool sbDrawOnce = false;
+    if ( gpMngChat != nullptr && !sbDrawOnce ) {
         gpMngChat->addLine( "Work In Progress Build", TestDrive::GetVersion(),
                             0 );
 #ifdef OTDU_DEVBUILD
@@ -174,6 +175,7 @@ void GameMode::mainLoop( TestDriveGameInstance *param_1 ) {
             "(F1) Debug Menu / (F2) Freeze Time / (F3) GM Debug Menu",
             "Devbuild shortcuts", 2 );
 #endif
+        sbDrawOnce = true;
     }
 
     while ( ( bExitRequested != true || ( bMessageBoxVisible != false ) ) ) {

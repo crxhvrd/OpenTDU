@@ -449,9 +449,10 @@ int32_t TestDrive::InitAndRun( const char **pCmdLineArgs,
     return 1;
 }
 
-const char *TestDrive::GetVersion() { return "OpenTDU " OTDU_COMMIT_HASH; }
-
-const char *TestDrive::GetVersionID() { return OTDU_COMMIT_HASH; }
+#define OTDU_VERSION "v0.1"
+#define OTDU_VERSION_ID OTDU_VERSION " " OTDU_COMMIT_HASH
+const char *TestDrive::GetVersion() { return "OpenTDU " OTDU_VERSION_ID; }
+const char *TestDrive::GetVersionID() { return OTDU_VERSION_ID; }
 
 bool TestDrive::IsBetaVersion() { return false; }
 
