@@ -11,6 +11,7 @@
 #include "config/gs_config.h"
 #include "flash/entities/flash_entity.h"
 #include "flash/implementation/flash_player.h"
+#include "flash/mng_flash.h"
 #include "flash/modal_message_box.h"
 #include "game/gm_scene.h"
 #include "game/mng_hud.h"
@@ -300,7 +301,23 @@ bool MngFRMeetingIC::onMessage( FlashMessage *pMessage ) {
     }
 
     case FlashMessage( "goic" ): { // everyone agreed, start the challenge
-        OTDU_UNIMPLEMENTED_ONCE;   // TODO: ONLINE
+        gpScenaric->removeRefusedICEChallengers();
+
+        ICRoute &route = gpScenaric->getICDatas();
+        route.field_0x10 = 0;
+        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (FUN_008032b0 route owner
+                                 // pick, P2P keep alive + tolerance)
+        route.OwnerPlayerIndex = 0;
+
+        CarState *pLocalCar = gpScenaric->getLocalPlayer().getCarState();
+        if ( pLocalCar != nullptr ) {
+            route.StartPosition =
+                pLocalCar->getBody()->WorldMatrix.row( 3 ).transpose();
+        }
+        route.Stake = Stake;
+
+        gpScenaric->setInstantChallenge( true );
+        TransitionFromFreerideToMap( GM_InstantChallenge );
         return true;
     }
 
@@ -531,8 +548,7 @@ void MngFRMeetingIC::showChallengeBox() {
         }
 
         numPlayers++;
-
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        FillICEPlayerInfo( pICEPlayers[i], numPlayers, pFlashVariable );
     }
 
     pFlashVariable->setVariableValue( "/:nb_players", numPlayers );

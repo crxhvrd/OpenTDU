@@ -160,6 +160,14 @@ public:
                        SpotMap *pSpot );
     inline NextIntroInfo &getNextIntro() { return nextIntro; }
     inline ICEChallenger *getICEChallengers() { return iceChallengers; }
+    inline void removeRefusedICEChallengers() {
+        // FUN_00803050
+        for ( ICEChallenger &challenger : iceChallengers ) {
+            if ( challenger.bRefusedICE ) {
+                challenger.ID = ICEChallenger::kNoChallenger;
+            }
+        }
+    }
     inline AvatarManager &getAvatarManager() { return avatarManager; }
     inline SCIKOffsetDB &getIKOffsetDB() { return ikOffsetDB; }
     inline ScenaricBank &getPedestrianBank() { return pedestrianBank; }
