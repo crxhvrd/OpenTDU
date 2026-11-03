@@ -3372,7 +3372,10 @@ PhysicsVehicle *GSPhysics::createVehicle( PhysFactory *pFactory,
     const float cgHeightCoef =
         GetCGHeightCoef( IsSimuVehicle( bIsAI, bIsNetwork ), bBike );
     const float gcHeightFrac =
-        static_cast<float>( db.GravityCenterHeight ) * 0.01f * cgHeightCoef;
+        ( db.GravityCenterHeight != 0
+              ? static_cast<float>( db.GravityCenterHeight ) * 0.01f
+              : 0.4f ) *
+        cgHeightCoef;
     const float bodyLengthM = ( db.Length > 0 ? db.Length : 4000 ) * 0.001f;
     const float comOffsetY = -( 1.0f - gcHeightFrac ) * bodyHeightM * 0.5f;
     const float comOffsetZ = ( gcLengthFrac - 0.5f ) * bodyLengthM;
@@ -6255,6 +6258,7 @@ void GSPhysics::physicsStep( float dt, float accTime ) {
             // broadphase.
             captureRenderBodyPoses(); // OTDU_ADDITION
             gbPhysicsInterpolationStepped = true;
+            RetailReplayPeekDeltaTime( dt ); // OTDU_ADDITION
             pPhysicsSystem->Update( dt, 1, pTempAllocator, pJobSystem );
 
             if ( !gPropConstraints.empty() ) {

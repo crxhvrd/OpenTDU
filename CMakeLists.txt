@@ -691,6 +691,7 @@ file( GLOB OTDU_SRC "${OTDU_SRC_FOLDER}/tdu_instance.cpp"
                     "${OTDU_SRC_FOLDER}/debug/mng_debug_hud.cpp"
                     "${OTDU_SRC_FOLDER}/physics/road_phantom_manager.cpp"
                     "${OTDU_SRC_FOLDER}/physics/vehicle/physics_vehicle.cpp"
+                    "${OTDU_SRC_FOLDER}/physics/vehicle/physics_vehicle_replay.cpp"
                     "${OTDU_SRC_FOLDER}/physics/vehicle/vehicle_simulation.cpp"
                     "${OTDU_SRC_FOLDER}/physics/vehicle/bike_roll_limit_constraint.cpp")
 

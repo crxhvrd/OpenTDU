@@ -441,6 +441,44 @@ public:
     inline void setSteerControlUsed( const bool bUsed ) {
         bUseSteerControl = bUsed;
     }
+    float getEngineOmega() const { return vehicle.Engine.Omega; }
+    void setEngineOmega( const float omega ) { vehicle.Engine.Omega = omega; }
+    float getEnginePeakTorqueOmega() const {
+        return vehicle.Engine.PeakTorqueOmega;
+    }
+    int32_t getNumGears() const { return vehicle.GearBox.NumGears; }
+    float getGearRatio( const int32_t gear ) const {
+        if ( gear < 0 || gear >= vehicle.GearBox.NumGears ) {
+            return 0.0f;
+        }
+        return vehicle.GearBox.Ratios[gear] * vehicle.GearBox.FinalDrive;
+    }
+    float getWheelRadius( const int32_t wheel ) const {
+        return vehicle.Wheels[wheel].Radius;
+    }
+    void setRawThrottle( const float throttle ) { rawInputThrottle = throttle; }
+    void setRawBrake( const float brake ) { rawInputBrake = brake; }
+    void clearBrakeAndSteer() {
+        rawInputBrake = 0.0f;
+        inputHandbrake = 0.0f;
+        inputSteer = 0.0f;
+        inputLean = 0.0f;
+    }
+    void clearLean() {
+        inputLean = 0.0f;
+        bikeLeanSmoothed = 0.0f;
+        displayRoll = 0.0f;
+    }
+    float getAccelCoef() const { return gripAccelCoef; }
+    void setAccelCoef( const float coef ) { gripAccelCoef = coef; }
+    float getBrakeCoef() const { return gripBrakeCoef; }
+    void setBrakeCoef( const float coef ) { gripBrakeCoef = coef; }
+    void rebuildGripCalibration();
+    float getCx() const { return aeroCx; }
+    void setCx( const float cx ) {
+        aeroCx = cx;
+        aeroDragArea = 0.5f * aeroFrontalArea * cx;
+    }
 
 public:
     PhysicsVehicle();
@@ -604,6 +642,20 @@ public:
         return localAccelerationG;
     }
     float computeWheelSteerAngle( const PhysicsWheelState &w ) const;
+    bool retailReplayBeginStep( float &deltaTime );
+    void retailReplayOverrideInputs();
+    bool retailReplayGroundHit( int i,
+                                const JPH::RVec3 &rayOrigin,
+                                const JPH::Vec3 &rayDirection,
+                                JPH::RVec3 &outPosition,
+                                JPH::Vec3 &outNormal ) const;
+    void retailReplayEndStep();
+    void retailReplayLogFree( int32_t window );
+    int32_t retailReplayIndex = -1;
+    int32_t retailReplayStep = 0;
+    bool bRetailReplayFree = false;
+    JPH::Vec3 retailReplayPreLinVel = JPH::Vec3::sZero();
+    JPH::Vec3 retailReplayPreAngVel = JPH::Vec3::sZero();
 
     void updateChrono( float dt );
     void updateChronoDiagnostics( float speed, float dt );
@@ -934,9 +986,23 @@ private:
     RenderPose stepStartRenderPose;
 
     // Aerodynamics (chassis downforce/drag, applied per physics step).
-    float aeroDragArea; // 0.5 * A * Cx_drag
-    float aeroDownArea; // 0.5 * A * Cz_lift
-    float aeroDensity;  // air density (mode-gated: 1.7 simu / 1.2 arcade)
+    float aeroDragArea;  // 0.5 * A * Cx_drag
+    float aeroDownArea;  // 0.5 * A * Cz_lift
+    float aeroDensity;   // air density (mode-gated: 1.7 simu / 1.2 arcade)
+    float aeroCx = 0.0f; // +0xae8
+    float aeroFrontalArea = 0.0f;  // m^2
+    float gripAccelCoef = 1.0f;    // +0xc50, DB CoefAccel / 100 + pack
+    float gripBrakeCoef = 1.0f;    // +0xc54, DB CoefBrake / 100 * pack
+    float gripAxleBalance = 1.0f;  // +0xc58, DB CoefOverturning / 100
+    float gripCoefPerMille = 1.0f; // +0xd74 * 0.001, DB CoefGrip
+    struct AxleGripCoefs {
+        float Friction = 1.0f;  // +0x4130
+        float Lateral = 1.0f;   // +0x380
+        float LngBrake = 1.0f;  // +0x384
+        float LatBrake = 1.0f;  // +0x39c
+        float Resistive = 1.0f; // +0x388
+    };
+    std::array<AxleGripCoefs, 2> axleGripCoefs;
 
     // G-meter accel tracking
     float prevWorldVelocity[3];
@@ -952,3 +1018,4 @@ extern float gAIBrakingDistanceScale;
 
 bool IsSimuVehicle( const bool bIsAI, const bool bIsNetwork );
 float GetCGHeightCoef( const bool bSimuMode, const bool bBike );
+bool RetailReplayPeekDeltaTime( float &deltaTime );

@@ -65,7 +65,7 @@ static constexpr float kClutchThrottleDrop = 0.1f;  // FLOAT_00f41668
 static constexpr float kThousandRpmRad = 104.72f;   // FLOAT_00f41894 (1000rpm)
 static constexpr float kFreeRollBrakeTorque = 0.1f; // FLOAT_00f41668
 static constexpr float kFreeRollDriveTorque = 1.0f; // FLOAT_00f4165c
-static constexpr float kHandbrakeInputThreshold = 0.1f; // FLOAT_00f41668
+static constexpr float kEspMinClutchEngagement = 0.99f; // DAT_00fabf80
 
 bool gVehicleEngineStateMachine = true;
 static constexpr float kEngineOmegaFloor = 0.1f; // FLOAT_00f41668
@@ -1397,8 +1397,6 @@ static void StepWheelSubstep( PhysicsVehicleState &v,
     const float espMag = ( w.AxleIndex == 0 ) ? v.EspMagFront : v.EspMagRear;
 
     const bool bHandbrakeWheel = !w.bSteered;
-    const bool bHandbraked =
-        bHandbrakeWheel && ( in.Handbrake > kHandbrakeInputThreshold );
 
     const float brakeSign = ( w.AngularVel > 0.0f ) ? 1.0f : -1.0f;
     w.BrakeCmdTorque = -brakeSign * in.Brake * w.BrakeTorque;
@@ -1419,12 +1417,12 @@ static void StepWheelSubstep( PhysicsVehicleState &v,
     const float driveBase = w.DriveTorque;
     const float reactTorque = ComputeWheelReactionTorque( w, h );
 
-    ApplyBrakeAndABS( w, v.bAbsEnabled && !bHandbraked, absMag, reactTorque,
-                      driveBase, h );
+    ApplyBrakeAndABS( w, v.bAbsEnabled, absMag, reactTorque, driveBase, h );
     w.DriveTorque =
         ApplyEngineDragControl( w, v.bEdcEnabled, reactTorque, driveBase, h );
-    ApplyESP( w, in.bEspEnabled && v.bEspEnabled && w.bDriven, espMag,
-              reactTorque, w.DriveTorque, h );
+    const bool bEspWheel = in.bEspEnabled && v.bEspEnabled && w.bDriven &&
+                           v.Clutch.Engagement > kEspMinClutchEngagement;
+    ApplyESP( w, bEspWheel, espMag, reactTorque, w.DriveTorque, h );
 
     IntegrateWheel( w, h );
 }

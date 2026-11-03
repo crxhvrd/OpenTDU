@@ -20,6 +20,7 @@
 #include "game/vehicle/gs_car_state.h"
 #include "ai/ai_vehicle.h"
 #include "core/mutex.h"
+#include "core/arg_parser.h"
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -148,6 +149,10 @@ constexpr float kSteerCurveYDefault[PhysicsVehicle::SC_Count][3] = {
 
 // A performance pack lifts lateral friction on both axles; the multiplier is
 // smaller in simu mode.
+constexpr float kGripIndexPowerLo = 0.15f;         // DAT_00fab56c
+constexpr float kGripIndexPowerHi = 0.30f;         // DAT_00fab568
+constexpr float kGripIndexFloor = 0.7f;            // FLOAT_00f41828
+constexpr float kGripIndexSpan = 0.3f;             // FLOAT_00f416bc
 constexpr float kPackLatFrictionBoost = 1.05f;     // DAT_00fab5b0
 constexpr float kPackLatFrictionBoostSimu = 1.01f; // DAT_00fab5ac
 
@@ -896,6 +901,8 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
     const float cxDrag = Max( 0.0f, db.CxLength ) * pack.Cx;
     const float czLift = Max( 0.0f, db.CxHeight ) * kAeroLiftCoef *
                          ( bSimuMode ? kAeroSimuLiftMult : 1.0f );
+    aeroCx = cxDrag;
+    aeroFrontalArea = frontalArea;
     aeroDragArea = 0.5f * frontalArea * cxDrag;
     aeroDownArea = 0.5f * frontalArea * czLift;
     aeroDensity = pConfig->AeroDensity[0] > 0.0f ? pConfig->AeroDensity[0]
@@ -1009,8 +1016,11 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         ( db.CoefAccel > 0 ? db.CoefAccel * kDBHundredths : 1.0f ) + pack.Accel;
     const float brakeCal =
         ( db.CoefBrake > 0 ? db.CoefBrake * kDBHundredths : 1.0f ) * pack.Brake;
-    const float axleBalance =
+    gripAxleBalance =
         db.CoefOverturning > 0 ? db.CoefOverturning * kDBHundredths : 1.0f;
+    gripAccelCoef = gripCal;
+    gripBrakeCoef = brakeCal;
+    gripCoefPerMille = gripPerMille;
 
     // Vehicle + per-wheel setup
     vehicle = PhysicsVehicleState();
@@ -1075,11 +1085,20 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
         const PhysicsConfig &c = *pConfig;
         w.AxleIndex = bFront ? 0 : 1;
-        const float local70 = bFront ? axleBalance : ( 1.0f / axleBalance );
+        const float local70 =
+            bFront ? gripAxleBalance : ( 1.0f / gripAxleBalance );
 
+        const float powerToWeight =
+            static_cast<float>( db.BHP ) * pack.BHP / mass;
+        const float gripIndex =
+            JPH::Clamp( ( powerToWeight - kGripIndexPowerLo ) * kGripIndexSpan /
+                                ( kGripIndexPowerHi - kGripIndexPowerLo ) +
+                            kGripIndexFloor,
+                        kGripIndexFloor, kGripIndexFloor + kGripIndexSpan );
         const float frictionCoef =
-            bFront ? ( c.FrontFrictionCoef > 0 ? c.FrontFrictionCoef : 1.7f )
-                   : ( c.RearFrictionCoef > 0 ? c.RearFrictionCoef : 1.7f );
+            gripIndex *
+            ( bFront ? ( c.FrontFrictionCoef > 0 ? c.FrontFrictionCoef : 1.7f )
+                     : ( c.RearFrictionCoef > 0 ? c.RearFrictionCoef : 1.7f ) );
         float lateralCoef =
             bFront
                 ? ( c.FrontLateralFrictionCoef > 0 ? c.FrontLateralFrictionCoef
@@ -1112,6 +1131,12 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
                            ? c.RearLatBrakeFrictionCoefFast
                            : 1.0f );
 
+        AxleGripCoefs &axleCoefs = axleGripCoefs[w.AxleIndex];
+        axleCoefs.Friction = frictionCoef;
+        axleCoefs.Lateral = lateralCoef;
+        axleCoefs.LngBrake = lngBrakeCoef;
+        axleCoefs.LatBrake = latBrakeCoef;
+
         w.GripLong = frictionCoef * local70 * gripCal * gripPerMille;
         w.GripLat = lateralCoef / gripCal;
         w.BaseGripLong = w.GripLong;
@@ -1121,11 +1146,10 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         w.BrakeGripLatSlow = latBrakeCoef;
         w.BrakeGripLatFast = latBrakeCoefFast;
         w.BrakeGripLat = latBrakeCoef / gripCal;
-        w.ReactionScale =
-            ( bFront
-                  ? ( c.ResistiveCoefFront > 0 ? c.ResistiveCoefFront : 1.0f )
-                  : ( c.ResistiveCoefRear > 0 ? c.ResistiveCoefRear : 1.0f ) ) /
-            gripCal;
+        axleCoefs.Resistive =
+            bFront ? ( c.ResistiveCoefFront > 0 ? c.ResistiveCoefFront : 1.0f )
+                   : ( c.ResistiveCoefRear > 0 ? c.ResistiveCoefRear : 1.0f );
+        w.ReactionScale = axleCoefs.Resistive / gripCal;
         w.ReactionSlipCoef =
             bFront ? c.ResistiveLateralCoefFront : c.ResistiveLateralCoefRear;
 
@@ -1243,8 +1267,7 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
 
     const float bhp = ( db.BHP > 0 ? (float)db.BHP : 200.0f ) * pack.BHP;
 
-    const float engBrakeScale =
-        0.1f * 2.0f; // = 0.2 (FLOAT_00f41668*DAT_00f416b0)
+    const float engBrakeScale = bIsBike ? 0.1f * 2.0f : 1.0f;
     const float frictionCoef =
         ( pConfig->EngineBrakePower > 0 ? pConfig->EngineBrakePower : 1.0f ) *
         engBrakeScale;
@@ -1333,10 +1356,9 @@ bool PhysicsVehicle::create( JPH::PhysicsSystem *pSystem,
         d->SplitRatio = 0.5f;
         d->LockCoef = 0.0f;
     }
-    if ( db.TransmissionPrimacy > 0 ) {
-        vehicle.DiffCenter.SplitRatio =
-            Clamp( db.TransmissionPrimacy * 0.01f, 0.0f, 1.0f );
-    }
+
+    vehicle.DiffCenter.SplitRatio =
+        static_cast<float>( db.TransmissionPrimacy ) * 0.01f;
     if ( bSimuMode && !bFWD && !bRWD ) {
         vehicle.DiffCenter.SplitRatio =
             std::min( vehicle.DiffCenter.SplitRatio, 0.4f );
@@ -2321,6 +2343,19 @@ bool PhysicsVehicle::castWheel( JPH::PhysicsSystem &system,
                                  kAcceptAnySlope );
     system.GetNarrowPhaseQueryNoLock().CastRay(
         ray, settings, collector, bpFilter, objFilter, bodyFilter );
+    if ( retailReplayIndex >= 0 ) {
+        JPH::RVec3 hitPosition;
+        JPH::Vec3 hitNormal;
+        collector.mbIgnored = false;
+        collector.mHit = retailReplayGroundHit( i, ray.mOrigin, ray.mDirection,
+                                                hitPosition, hitNormal );
+        if ( collector.mHit ) {
+            collector.mPosition = hitPosition;
+            collector.mNormal = hitNormal;
+            collector.mSurface = TDUSurface::RoadGround;
+            collector.mMaterial = TDUMaterialValue::kDefault;
+        }
+    }
 
     const auto setAirborne = [&]() {
         w.bGroundContact = false;
@@ -2594,7 +2629,9 @@ bool PhysicsVehicle::applyWheelContact( const JPH::Body &chassis,
     const JPH::Vec3 up = world.GetColumn3( 1 );
     const JPH::Vec3 forward = world.GetColumn3( 2 );
     const float droopStop = suspDroopStop[i];
-    const JPH::Vec3 contact( hitPosition - JPH::RVec3::sZero() );
+
+    const JPH::RVec3 contactW = attachW - up * hitDist;
+    const JPH::Vec3 contact( contactW - JPH::RVec3::sZero() );
 
     const float suspLength =
         JPH::Clamp( hitDist - w.Radius, suspMinLength[i], droopStop );
@@ -2603,7 +2640,7 @@ bool PhysicsVehicle::applyWheelContact( const JPH::Body &chassis,
     const JPH::RVec3 comPos = chassis.GetCenterOfMassPosition();
     const JPH::Vec3 linVel = chassis.GetLinearVelocity();
     const JPH::Vec3 angVel = chassis.GetAngularVelocity();
-    const JPH::Vec3 rContact( hitPosition - comPos );
+    const JPH::Vec3 rContact( contactW - comPos );
     const JPH::Vec3 contactVel = linVel + angVel.Cross( rContact );
 
     JPH::Vec3 normal = hitNormal.NormalizedOr( up );
@@ -2650,7 +2687,9 @@ bool PhysicsVehicle::applyWheelContact( const JPH::Body &chassis,
     longAxis = longAxis.NormalizedOr( steeredFwd );
     const JPH::Vec3 latAxis = normal.Cross( longAxis ).NormalizedOr( right );
 
-    const float vLong = contactVel.Dot( longAxis );
+    const JPH::Vec3 rCentre( contactW + up * w.Radius - comPos );
+    const JPH::Vec3 centreVel = linVel + angVel.Cross( rCentre );
+    const float vLong = centreVel.Dot( longAxis );
 
     const float longSlip = ( w.AngularVel * w.Radius - vLong ) /
                            std::max( std::fabs( vLong ), kSlipDenom );
@@ -2660,7 +2699,7 @@ bool PhysicsVehicle::applyWheelContact( const JPH::Body &chassis,
     w.ContactLongAxis = ToVec4( longAxis );
     w.ContactLatAxis = ToVec4( latAxis );
     w.ForwardDir = w.ContactNormal * longSlip;
-    w.WheelLinVel = ToVec4( contactVel );
+    w.WheelLinVel = ToVec4( centreVel );
     w.ContactVelLong = vLong;
     w.ContactPoint =
         Eigen::Vector4f( contact.GetX(), contact.GetY(), contact.GetZ(), 1.0f );
@@ -2701,6 +2740,9 @@ void PhysicsVehicle::updateBikeLean( float deltaTime ) {
     static constexpr float kRatePerSecond = 100.0f; // DAT_00f41708
     bikeLeanSmoothed += ( inputLean - bikeLeanSmoothed ) *
                         ( 1.0f - kLeanInputKeep ) * deltaTime * kRatePerSecond;
+    if ( IsCarTesterActive() ) {
+        bikeLeanSmoothed = 0.0f;
+    }
 
     // FUN_0041c470
     static constexpr float kLeanRateMax = 100.0f;              // DAT_00fab6dc
@@ -3528,7 +3570,7 @@ void PhysicsVehicle::OnStep(
         return;
     }
     JPH::PhysicsSystem &system = *inContext.mPhysicsSystem;
-    const float dt = inContext.mDeltaTime;
+    float dt = inContext.mDeltaTime;
     if ( dt <= 0.0f ) {
         return;
     }
@@ -3545,6 +3587,7 @@ void PhysicsVehicle::OnStep(
 
     forwardDrivingInput( dt );
     updateReplayDriving();
+    retailReplayBeginStep( dt );
     if ( bKeyframed ) {
         if ( drivingMode == DM_Parked ) {
             applyDrivingMode();
@@ -3563,6 +3606,7 @@ void PhysicsVehicle::OnStep(
         arbitrateAutomaticGearbox(
             dt, JPH::Vec3( v.GetX(), 0.0f, v.GetZ() ).Length() );
     }
+    retailReplayOverrideInputs();
 
     const JPH::RMat44 world = chassis.GetWorldTransform();
 
@@ -3648,6 +3692,7 @@ void PhysicsVehicle::OnStep(
         solveInput.bEspEnabled = gVehicleESPEnabled;
         StepVehicleSolve( vehicle, vehicleMatrix, solveInput, dt );
     }
+    retailReplayEndStep();
 
     for ( int i = 0; i < vehicle.NumWheels; ++i ) {
         PhysicsWheelState &w = vehicle.Wheels[i];
@@ -4438,6 +4483,28 @@ void PhysicsVehicle::reportStuckClutch( float dt ) {
     }
     const int gg = vehicle.GearBox.CurrentGear;
     const float k = vehicle.GearBox.Ratios[gg] * vehicle.GearBox.FinalDrive;
+}
+
+void PhysicsVehicle::rebuildGripCalibration() {
+    // FUN_00842cc0
+    const float axleBalanceCoef[2] = { gripAxleBalance,
+                                       1.0f / gripAxleBalance };
+    const float invAccelCoef = 1.0f / gripAccelCoef;
+    const float invGripPerMille = 1.0f / gripCoefPerMille;
+    for ( int32_t i = 0; i < vehicle.NumWheels; i++ ) {
+        PhysicsWheelState &wheel = vehicle.Wheels[i];
+        const AxleGripCoefs &axle = axleGripCoefs[wheel.AxleIndex];
+
+        wheel.GripLong = axle.Friction * axleBalanceCoef[wheel.AxleIndex] *
+                         gripCoefPerMille * gripAccelCoef;
+        wheel.BaseGripLong = wheel.GripLong;
+        wheel.GripLat = axle.Lateral * invAccelCoef;
+        wheel.BaseGripLat = wheel.GripLat;
+        wheel.BrakeGripLong =
+            axle.LngBrake * gripBrakeCoef * invGripPerMille * invAccelCoef;
+        wheel.BrakeGripLat = axle.LatBrake * invAccelCoef;
+        wheel.ReactionScale = axle.Resistive * invAccelCoef;
+    }
 }
 
 void PhysicsVehicle::resetChrono() {
