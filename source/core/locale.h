@@ -226,6 +226,148 @@ static eLocale GetLocaleFromSystem() {
 }
 #endif
 
+#if OTDU_WIN32
+static uint32_t GetCountryCodeFromSystem() {
+    char pCountryCode[8] = {};
+    if ( GetLocaleInfoA( LOCALE_USER_DEFAULT, LOCALE_ICOUNTRY, pCountryCode,
+                         sizeof( pCountryCode ) ) > 0 ) {
+        return uint32_t( atoi( pCountryCode ) );
+    }
+    return 0u;
+}
+#elif OTDU_UNIX
+// Unix has no LOCALE_ICOUNTRY: map the locale region (ll_RR) to the dialing
+// code Windows reports for it.
+static uint32_t GetCountryCodeFromSystem() {
+    struct RegionCountryCode {
+        const char *pRegion;
+        uint32_t CountryCode;
+    };
+    static constexpr RegionCountryCode kRegions[] = {
+        {"AE", 971},
+        {"AL", 355},
+        {"AM", 374},
+        {"AR", 54 },
+        {"AT", 43 },
+        {"AU", 61 },
+        {"AZ", 994},
+        {"BE", 32 },
+        {"BG", 359},
+        {"BH", 973},
+        {"BN", 673},
+        {"BO", 591},
+        {"BR", 55 },
+        {"BY", 375},
+        {"BZ", 501},
+        {"CA", 2  },
+        {"CH", 41 },
+        {"CL", 56 },
+        {"CN", 86 },
+        {"CO", 57 },
+        {"CR", 506},
+        {"CZ", 420},
+        {"DE", 49 },
+        {"DK", 45 },
+        {"DZ", 213},
+        {"EC", 593},
+        {"EE", 372},
+        {"EG", 20 },
+        {"ES", 34 },
+        {"FI", 358},
+        {"FO", 298},
+        {"FR", 33 },
+        {"GB", 44 },
+        {"GE", 995},
+        {"GR", 30 },
+        {"GT", 502},
+        {"HK", 852},
+        {"HN", 504},
+        {"HR", 385},
+        {"HU", 36 },
+        {"ID", 62 },
+        {"IE", 353},
+        {"IL", 972},
+        {"IN", 91 },
+        {"IQ", 964},
+        {"IR", 981},
+        {"IS", 354},
+        {"IT", 39 },
+        {"JO", 962},
+        {"JP", 81 },
+        {"KE", 254},
+        {"KG", 996},
+        {"KR", 82 },
+        {"KW", 965},
+        {"KZ", 7  },
+        {"LB", 961},
+        {"LI", 41 },
+        {"LT", 370},
+        {"LU", 352},
+        {"LV", 371},
+        {"LY", 218},
+        {"MA", 212},
+        {"MC", 33 },
+        {"MK", 389},
+        {"MN", 976},
+        {"MO", 853},
+        {"MV", 960},
+        {"MX", 52 },
+        {"MY", 60 },
+        {"NI", 505},
+        {"NL", 31 },
+        {"NO", 47 },
+        {"NZ", 64 },
+        {"OM", 968},
+        {"PA", 507},
+        {"PE", 51 },
+        {"PH", 63 },
+        {"PK", 92 },
+        {"PL", 48 },
+        {"PR", 1  },
+        {"PT", 351},
+        {"PY", 595},
+        {"QA", 974},
+        {"RO", 40 },
+        {"RU", 7  },
+        {"SA", 966},
+        {"SE", 46 },
+        {"SG", 65 },
+        {"SI", 386},
+        {"SK", 421},
+        {"SV", 503},
+        {"SY", 963},
+        {"TH", 66 },
+        {"TN", 216},
+        {"TR", 90 },
+        {"TT", 1  },
+        {"TW", 886},
+        {"UA", 380},
+        {"US", 1  },
+        {"UY", 598},
+        {"VE", 58 },
+        {"VN", 84 },
+        {"YE", 967},
+        {"ZA", 27 },
+        {"ZW", 263},
+    };
+
+    setlocale( LC_ALL, "" );
+    const char *pLocale = setlocale( LC_ALL, NULL );
+    const char *pSeparator =
+        ( pLocale != nullptr ) ? strchr( pLocale, '_' ) : nullptr;
+    if ( pSeparator == nullptr ) {
+        return 0u;
+    }
+
+    for ( const RegionCountryCode &region : kRegions ) {
+        if ( strncmp( pSeparator + 1, region.pRegion, 2 ) == 0 ) {
+            return region.CountryCode;
+        }
+    }
+    return 0u;
+}
+#endif
+
 static inline int32_t GetUTF8CodepointLength( const char *pStr ) {
     const uint8_t byte = (uint8_t)*pStr;
     if ( ( byte & 0x80u ) == 0 ) {

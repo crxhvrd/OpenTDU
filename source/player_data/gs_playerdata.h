@@ -87,6 +87,7 @@ public:
         return localPlayerData;
     }
     inline IPlayerData *getLoadedSave() const { return pLoadedSave2; }
+    inline PlayerSave *getPlayerSave() const { return pLoadedSave; }
     inline void setOnline( const bool bOnline ) { bIsOnline = bOnline; }
     inline float getLastArrestedTime() const { return LastArrestedTime; }
     inline void setLastArrestedTime( const float time ) {

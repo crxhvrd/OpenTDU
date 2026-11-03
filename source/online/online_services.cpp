@@ -246,7 +246,7 @@ void OnlineServices::refresh() {
             gpPlayerData->setOnline( true );
             gpPlayerData->notify( 0u );
         }
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
+        gpPlayerData->prepareActiveProfile();
         lastDiscoveryTick = 0u;
         discovery.reset();
     }
@@ -284,7 +284,7 @@ void OnlineServices::onORBLost() {
         gpPlayerData->setOnline( false );
         gpPlayerData->notify( 0u );
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (PrepareActiveProfile)
+    gpPlayerData->prepareActiveProfile();
 
     bReconnectPending = true;
 }

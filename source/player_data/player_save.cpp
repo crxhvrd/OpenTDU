@@ -49,6 +49,7 @@ PlayerSave::PlayerSave()
       numPendingOperations( 0 ),
       bInitialized( false ),
       bProfilePromptPending( false ),
+      serverTime( 0u ),
       saveIndex( -1 ) {
     // FUN_0089ac90
     OTDU_UNIMPLEMENTED_ONCE; // TODO: EBAY (eBay car) / ONLINE (radio and
@@ -127,8 +128,12 @@ void PlayerSave::newGameWithCheats() {
     nextCarUniqueID = 1u;
 
     uint32_t driverID = 0u;
+    uint32_t teamID = 0u;
+    uint64_t teamSpotHash = 0ull;
     if ( gpPlayerData != nullptr && gpPlayerData->isOnline() ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+        driverID = gpOnline->getUserID();
+        teamID = gpOnline->getTeamID();
+        teamSpotHash = gpOnline->getTeamSpotHash();
     } else {
         const uint32_t timeMs = uint32_t( MonotonicToMs( GetTimeMonotonic() ) );
         driverID = ( timeMs * 0x7ff8a3edu + 0x2aa01d31u ) % 1000000u + 1000000u;
@@ -140,7 +145,9 @@ void PlayerSave::newGameWithCheats() {
         gbScenarioTutorialEnabled ? kStarterNumCoupons : 0u;
 
     driver.initialize( ( gpOnline != nullptr ) ? gpOnline->getUsername() : "",
-                       driverID, money, numCoupons, 0u, 0u, 0u, 0u );
+                       driverID, money, numCoupons, 0u, teamID,
+                       uint32_t( teamSpotHash ),
+                       uint32_t( teamSpotHash >> 32 ) );
 
     installCheatCars();
 
@@ -276,7 +283,7 @@ void PlayerSave::newGame( const bool bInstallCheats ) {
 
     uint32_t driverID = 0u;
     if ( gpPlayerData != nullptr && gpPlayerData->isOnline() ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (GSOnline's player id)
+        driverID = gpOnline->getUserID();
     } else {
         const uint32_t timeMs = uint32_t( MonotonicToMs( GetTimeMonotonic() ) );
         driverID = ( timeMs * 0x7ff8a3edu + 0x2aa01d31u ) % 1000000u + 1000000u;

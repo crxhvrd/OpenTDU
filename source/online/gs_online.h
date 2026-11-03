@@ -181,6 +181,8 @@ private:
     void parseLoginIdentity( edStore &stream );
 };
 
+uint32_t GetCountryIndex();
+
 extern GSOnline gOnline;
 extern GSOnline *gpOnline;
 extern char gORBAddress[128];

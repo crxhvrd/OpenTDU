@@ -182,6 +182,9 @@ public:
 
     uint8_t Version;
 
+    bool bEnableOnline = false;
+    bool bEnableMatchmaking = false;
+
 public:
     GSConfig();
     ~GSConfig();

@@ -6,6 +6,7 @@
 #include "flash/audio/flash_sounds.h"
 #include "flash/gs_flash.h"
 #include "game/scenaric/gs_scenaric.h"
+#include "online/gs_online.h"
 #include "gs_playerdata.h"
 #include "player_data_interface.h"
 #include "saved_extra_challenges.h"
@@ -161,7 +162,7 @@ void Driver::initialize( const char *pNickname,
     TeamSpotID = teamSpotID;
     field4_0x24 = param_9;
 
-    setLocale( 0u ); // TODO: PLAYERSAVE (FUN_00879ec0)
+    setLocale( GetCountryIndex() );
     setReputation( 0.0f );
 
     notify( 0u );

@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "gs_online.h"
 
+#include "config/gs_config.h"
 #include "core/ed_store.h"
 #include "core/time.h"
 #include "ed_net_gamespy_manager.h"
@@ -11,6 +12,8 @@
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
+#include "player_data/player_save.h"
+#include "player_data/saved_garage.h"
 #include "tdu_instance.h"
 #include "core/arg_parser.h"
 
@@ -131,8 +134,8 @@ GSOnline::~GSOnline() {}
 
 void GSOnline::initConnectionInfos() {
     // FUN_0087bba0
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (+0x740/+0x741 from gGSConfig
-                             // bEnableMatchmaking / bEnableOnline)
+    bOnlineEnabled = gpConfig->bEnableOnline;
+    bMatchmakingEnabled = gpConfig->bEnableMatchmaking;
 
     if ( pLobbyAddress[0] != '\0' && strncmp( pLobbyAddress, "none", 4 ) ) {
         edNetAddress::Resolve( pLobbyAddress, lobbyPort, services.GameMaster );
@@ -345,10 +348,132 @@ bool GSOnline::connectGameServer( const int32_t param ) {
     return true;
 }
 
-static uint32_t GetCountryIndex() {
-    // FUN_00879ec0 (cached in INT_00fa9500)
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (FUN_008797c0 table)
+static constexpr uint32_t kIdentityNetBufferMode = 5u;
+
+static uint32_t CountryCodeToCountryIndex( const uint32_t countryCode ) {
+    // FUN_008797c0
+    struct CountryIndex {
+        uint32_t CountryCode;
+        uint32_t Index;
+    };
+    static constexpr CountryIndex kCountries[] = {
+        {1,   103},
+        {2,   16 },
+        {7,   88 },
+        {20,  30 },
+        {27,  109},
+        {30,  37 },
+        {31,  74 },
+        {32,  8  },
+        {33,  34 },
+        {34,  31 },
+        {36,  42 },
+        {39,  50 },
+        {40,  87 },
+        {41,  18 },
+        {43,  5  },
+        {44,  35 },
+        {45,  25 },
+        {46,  90 },
+        {47,  75 },
+        {48,  82 },
+        {49,  24 },
+        {51,  79 },
+        {52,  71 },
+        {54,  4  },
+        {55,  13 },
+        {56,  19 },
+        {57,  21 },
+        {58,  106},
+        {60,  72 },
+        {61,  6  },
+        {62,  43 },
+        {63,  80 },
+        {64,  76 },
+        {65,  91 },
+        {66,  97 },
+        {81,  53 },
+        {82,  56 },
+        {84,  107},
+        {86,  20 },
+        {90,  99 },
+        {91,  46 },
+        {92,  81 },
+        {212, 65 },
+        {213, 27 },
+        {216, 98 },
+        {218, 64 },
+        {254, 54 },
+        {263, 110},
+        {298, 33 },
+        {351, 84 },
+        {352, 62 },
+        {353, 44 },
+        {354, 49 },
+        {355, 2  },
+        {358, 32 },
+        {359, 9  },
+        {370, 61 },
+        {371, 63 },
+        {372, 29 },
+        {374, 3  },
+        {375, 14 },
+        {380, 102},
+        {385, 41 },
+        {386, 92 },
+        {389, 67 },
+        {420, 23 },
+        {421, 93 },
+        {501, 15 },
+        {502, 38 },
+        {503, 95 },
+        {504, 40 },
+        {505, 73 },
+        {506, 22 },
+        {507, 78 },
+        {591, 12 },
+        {593, 28 },
+        {595, 85 },
+        {598, 104},
+        {673, 11 },
+        {852, 39 },
+        {853, 69 },
+        {886, 101},
+        {960, 70 },
+        {961, 59 },
+        {962, 52 },
+        {963, 96 },
+        {964, 47 },
+        {965, 57 },
+        {966, 89 },
+        {967, 108},
+        {968, 77 },
+        {971, 1  },
+        {972, 45 },
+        {973, 10 },
+        {974, 86 },
+        {976, 68 },
+        {981, 48 },
+        {994, 7  },
+        {995, 36 },
+        {996, 55 },
+    };
+
+    for ( const CountryIndex &country : kCountries ) {
+        if ( country.CountryCode == countryCode ) {
+            return country.Index;
+        }
+    }
     return 0u;
+}
+
+uint32_t GetCountryIndex() {
+    // FUN_00879ec0
+    static uint32_t gCountryIndex = 0xffffffff;
+    if ( gCountryIndex == 0xffffffff ) {
+        gCountryIndex = CountryCodeToCountryIndex( GetCountryCodeFromSystem() );
+    }
+    return gCountryIndex;
 }
 
 bool GSOnline::sendLogin( const uint8_t param ) {
@@ -362,8 +487,9 @@ bool GSOnline::sendLogin( const uint8_t param ) {
         int64_t( int32_t( gpEdNetGamespyManager->getProfileID() ) ) ) );
     request.writeByte( param );
     request.writeString( gpCDKey->getGameKey() );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (optional Addon CD key string,
-                             // GSCDKey+0x34 read from Addon.txt)
+    if ( gpCDKey->getAddonKey()[0] != '\0' ) {
+        request.writeString( gpCDKey->getAddonKey() );
+    }
 
     gpCP2PGameService->getActionClient().callAction(
         services.UserDatabase, request,
@@ -400,8 +526,7 @@ void GSOnline::onLoginComplete( const edNetActionClient::Reply &reply ) {
     }
 
     serverTime = pReply->readUInteger();
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (LoadedSave+0x66bf0 =
-                             // serverTime)
+    gpPlayerData->getPlayerSave()->setServerTime( serverTime );
     gpCP2PGameService->setNetClock( serverTime );
 
     if ( pReply->readByte() == 0 ) {
@@ -434,11 +559,12 @@ void GSOnline::onIdentityDownloaded( const bool bSuccess ) {
     } else {
         OTDU_LOG_WARN( "in edNetServiceNetBufferGarage::OnTransferComplete "
                        "transfer failed\n" );
-        gpPlayerData->notify( 0u );
+        gpPlayerData->getLoadedSave()->getGarage()->notify( 0u );
         bLoggedIn = false;
     }
 
     bLoginAnswered = true;
+    gpPlayerData->requestSave( 2 );
 }
 
 void GSOnline::parseLoginIdentity( edStore &stream ) {
@@ -467,8 +593,9 @@ void GSOnline::parseLoginIdentity( edStore &stream ) {
     teamID = newTeamID;
     teamSpotHash = newTeamSpotHash;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE
-    gpPlayerData->notify( 0u );
+    Garage *pGarage = gpPlayerData->getLoadedSave()->getGarage();
+    pGarage->refreshNumCars();
+    pGarage->notify( kIdentityNetBufferMode );
 
     OTDU_LOG_INFO( "Logged in to the game server as '%s' (user %u)\n", nickname,
                    newUserID );
@@ -494,8 +621,7 @@ void GSOnline::resetForProfileChange() {
         gpPlayerData->setOnline( false );
         gpPlayerData->notify( 0u );
     }
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: PLAYERSAVE (PrepareActiveProfile
-                             // FUN_008982a0)
+    gpPlayerData->prepareActiveProfile();
 }
 
 int32_t GSOnline::notifyCheatDetected( Driver *pDriver ) {

@@ -131,22 +131,23 @@ void GSCDKey::updateGameKey( const char *param_1 ) {
 }
 
 bool GSCDKey::checkAddonKey() {
+    // FUN_007bf900
+    memset( pAddonCDKey, 0, sizeof( char ) * kKeyLength );
+
     std::wstring pathToKeyCache = gpFile->getSaveFolder();
     pathToKeyCache += L"Addon.txt";
 
     std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
     std::string narrowFilename = converter.to_bytes( pathToKeyCache );
 
-    char pvStack_e84[kKeyLength];
-    memset( pvStack_e84, 0, sizeof( char ) * kKeyLength );
-
+    void *pAddonKey = pAddonCDKey;
     FileDirectAccess directFileAccess;
-    bool bVar1 = directFileAccess.loadContentIntoMemory(
-        narrowFilename.c_str(), kKeyLength, 0, (void **)&pvStack_e84, nullptr );
-
-    if ( bVar1 ) {
-        return isValidKey( pvStack_e84 );
+    if ( directFileAccess.loadContentIntoMemory( narrowFilename.c_str(), 0x13,
+                                                 0, &pAddonKey, nullptr ) &&
+         isValidKey( pAddonCDKey ) ) {
+        return true;
     }
 
+    pAddonCDKey[0] = '\0';
     return false;
 }

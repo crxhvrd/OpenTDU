@@ -43,6 +43,7 @@ public:
         return numPendingOperations == 0 && bInitialized;
     }
     inline void resetPendingOperations() { numPendingOperations = 0; }
+    inline void setServerTime( const uint32_t time ) { serverTime = time; }
     inline bool hasValidGarage() const { return nextCarUniqueID != 0; }
 
 public:
@@ -98,5 +99,6 @@ private:
     int32_t numPendingOperations;
     bool bInitialized;
     bool bProfilePromptPending;
+    uint32_t serverTime;
     int32_t saveIndex;
 };
