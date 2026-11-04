@@ -106,6 +106,54 @@ static inline void GetCameraMouseInputValues( uint32_t *pMode,
     *pMode = mode;
 }
 
+static constexpr float kGamepadDeadZone = 0.15f;
+static constexpr float kGamepadLookSpeed = 2.5f; // rad/s at full deflection
+
+static inline float
+ReadGamepadAxis( Device *pPad, const char *pNegative, const char *pPositive ) {
+    InputChannel *pNeg = pPad->getChannel( pNegative );
+    InputChannel *pPos = pPad->getChannel( pPositive );
+    float neg = ( pNeg != nullptr )
+                    ? ApplyInputDeadZone( pNeg->InputValue, kGamepadDeadZone )
+                    : 0.0f;
+    float pos = ( pPos != nullptr )
+                    ? ApplyInputDeadZone( pPos->InputValue, kGamepadDeadZone )
+                    : 0.0f;
+    return pos - neg;
+}
+
+static inline float ReadGamepadTrigger( Device *pPad, const char *pName ) {
+    InputChannel *pCh = pPad->getChannel( pName );
+    return ( pCh != nullptr )
+               ? ApplyInputDeadZone( pCh->InputValue, kGamepadDeadZone )
+               : 0.0f;
+}
+
+static inline bool IsGamepadButtonJustPressed( Device *pPad,
+                                               const char *pName ) {
+    return IsChannelJustPressed( pPad->getChannel( pName ) );
+}
+
+static inline float WrapAngle( float angle ) {
+    if ( angle > DAT_00f416f8 ) {
+        return angle - 2.0f * DAT_00f416f8;
+    }
+    if ( angle < DAT_00f417e0 ) {
+        return angle - 2.0f * DAT_00f417e0;
+    }
+    return angle;
+}
+
+static inline float ClampSensitivity( float value ) {
+    if ( value > DAT_00f41750 ) {
+        return DAT_00f41750;
+    }
+    if ( value < FLOAT_00f4167c ) {
+        return FLOAT_00f4167c;
+    }
+    return value;
+}
+
 CameraMouse::CameraMouse()
     : CameraGame(),
       mouseIndex( -1 ),
@@ -134,6 +182,23 @@ bool CameraMouse::tick( float deltaTime, bool param_1, bool param_2 ) {
     uint32_t mode;
     float dx, dy, scroll;
     GetCameraMouseInputValues( &mode, &dx, &dy, &scroll );
+
+    // OTDU_ADDITION: LB/RB scale sensitivity, right stick click resets
+    Device *pPad = gEdDev.getDevice( eDeviceType::DT_Other,
+                                     eDeviceSpecialization::DS_Gamepad, 0 );
+    if ( pPad != nullptr && pPad->isEnabled() ) {
+        if ( IsGamepadButtonJustPressed( pPad, "BUTTON_5" ) ) {
+            sensitivity = ClampSensitivity( sensitivity * DAT_00f4174c );
+        }
+        if ( IsGamepadButtonJustPressed( pPad, "BUTTON_4" ) ) {
+            sensitivity = ClampSensitivity( sensitivity * DAT_00f417e4 );
+        }
+        if ( IsGamepadButtonJustPressed( pPad, "BUTTON_9" ) ) {
+            mode = 7;
+        }
+    } else {
+        pPad = nullptr;
+    }
 
     // Scroll wheel adjusts sensitivity
     if ( scroll != 0.0f ) {
@@ -265,6 +330,27 @@ bool CameraMouse::tick( float deltaTime, bool param_1, bool param_2 ) {
             local_70.y() = savedY - keyStep;
             savedY = local_70.y();
         }
+    }
+
+    if ( pPad != nullptr ) {
+        float lookX = ReadGamepadAxis( pPad, "STICK_1_LEFT", "STICK_1_RIGHT" );
+        float lookY = ReadGamepadAxis( pPad, "STICK_1_UP", "STICK_1_DOWN" );
+        float lookStep = kGamepadLookSpeed * deltaTime;
+        angle[1] = WrapAngle( angle[1] + lookX * lookStep );
+        angle[0] = std::clamp( angle[0] + lookY * lookStep, DAT_00f417e0,
+                               DAT_00f416f8 );
+
+        float strafe = ReadGamepadAxis( pPad, "LEFT", "RIGHT" );
+        float forward = -ReadGamepadAxis( pPad, "UP", "DOWN" );
+        float lift = ReadGamepadTrigger( pPad, "WHEEL_DOWN" ) -
+                     ReadGamepadTrigger( pPad, "WHEEL_UP" );
+
+        float sinYaw = sinf( angle[1] );
+        float cosYaw = cosf( angle[1] );
+        local_70.x() += ( sinYaw * forward + cosYaw * strafe ) * keyStep;
+        local_70.z() += ( -cosYaw * forward + sinYaw * strafe ) * keyStep;
+        local_70.y() += ( -sinf( angle[0] ) * forward + lift ) * keyStep;
+        savedY = local_70.y();
     }
 
     setPosition( local_70 );
