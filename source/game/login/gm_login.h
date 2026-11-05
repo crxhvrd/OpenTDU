@@ -9,6 +9,7 @@
 #include "mng_flash_login.h"
 
 class FlashPanelOnline;
+class LoginWorldScene;
 
 typedef enum eGMLoginState : int32_t {
     GLS_LegalDisplay = 0,
@@ -65,6 +66,7 @@ private:
     MngFlashCounter flashCounter;
 
     FlashPanelOnline *pPanelOnline;
+    LoginWorldScene *pWorldScene; // OTDU_ADDITION
 
     FlashPlayer *pGeneralFlashPlayer;
     FlashPlayer *pConfigPCFlashPlayer;

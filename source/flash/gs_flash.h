@@ -127,6 +127,7 @@ public:
     void FUN_0099bd60();
 
     void pushMovie( FlashMovie &movie );
+    bool setMovieRootPath( const char *pMovieName, const char *pRootPath );
     void setLocalizedStrings();
 
     void bindPlayerEntity( FlashEntity *param_1, const char *param_2 );

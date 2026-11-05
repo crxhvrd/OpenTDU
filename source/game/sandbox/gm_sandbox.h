@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/gm_world.h"
+#include "camera_path_editor.h"
 
 class FlashPlayer;
 
@@ -32,6 +33,8 @@ private:
     // will override the active camera on reset (right after the game mode has
     // been reset).
     bool bWorldViewerPending;
+
+    CameraPathEditor cameraPathEditor; // OTDU_ADDITION
 
 private:
     void setWorldViewerEnabled( const bool state );

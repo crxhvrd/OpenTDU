@@ -1,5 +1,6 @@
 #include "shared.h"
 #include "gm_login.h"
+#include "login_world_scene.h"
 
 #include "game/game_cheats.h"
 #include "game/living/gm_living.h"
@@ -159,6 +160,7 @@ GMLogin::GMLogin()
       flashCounter(),
       pPanelOnline( new( TestDrive::Alloc( sizeof( FlashPanelOnline ) ) )
                         FlashPanelOnline() ),
+      pWorldScene( nullptr ),
       pGeneralFlashPlayer( nullptr ),
       pConfigPCFlashPlayer( nullptr ),
       pLoginFlashPlayer( nullptr ),
@@ -168,6 +170,14 @@ GMLogin::GMLogin()
       waitExitStartTicks( 0u ),
       state( GLS_LegalDisplay ) {
     // FUN_0074e140
+    // OTDU_ADDITION
+    if ( LoginWorldScene::SelectLoginMovie() ) {
+        pWorldScene = new LoginWorldScene();
+        for ( Manager *pManager : pWorldScene->getManagers() ) {
+            registerManager( pManager );
+        }
+    }
+
     registerManager( &fade );
     registerManager( &flashLocalize );
     registerManager( &flashLogin );
@@ -188,6 +198,9 @@ GMLogin::GMLogin()
 GMLogin::~GMLogin() {
     // FUN_0074e080
 
+    delete pWorldScene; // OTDU_ADDITION
+    pWorldScene = nullptr;
+
     if ( pPanelOnline != nullptr ) {
         pPanelOnline->~FlashPanelOnline();
         TestDrive::Free( pPanelOnline );
@@ -207,6 +220,10 @@ void GMLogin::reset() {
     pGeneralFlashPlayer = gpFlash->getFlashPlayer( "GENERAL" );
     pConfigPCFlashPlayer = gpFlash->getFlashPlayer( "CONFIGPC" );
     pLoginFlashPlayer = gpFlash->getFlashPlayer( "LOG_IN" );
+
+    if ( pWorldScene != nullptr ) {
+        pWorldScene->reset( pLoginFlashPlayer ); // OTDU_ADDITION
+    }
 
     // Original game returns version only (i.e. for 'MC 1.66 A' => '1.66 A')
     pGeneralFlashPlayer->setVariableValue( "/:BetaVersion",
@@ -429,6 +446,9 @@ bool GMLogin::HasInputActivity() {
 
 void GMLogin::tick( float deltaTime, float totalTime ) {
     // FUN_0074f030
+    if ( pWorldScene != nullptr ) {
+        pWorldScene->tick(); // OTDU_ADDITION
+    }
 
     switch ( state ) {
     case GLS_Signing:

@@ -836,6 +836,17 @@ void GSFlash::FUN_0099bd60() {
 
 void GSFlash::pushMovie( FlashMovie &movie ) { flashMovies.push_back( movie ); }
 
+bool GSFlash::setMovieRootPath( const char *pMovieName,
+                                const char *pRootPath ) {
+    for ( FlashMovie &movie : flashMovies ) {
+        if ( StringCmpI( movie.Filename.c_str(), pMovieName ) == 0 ) {
+            movie.RootPath = pRootPath;
+            return true;
+        }
+    }
+    return false;
+}
+
 void GSFlash::setLocalizedStrings() {
     // FUN_016adfed (inlined)
     uint32_t validGM = 0;

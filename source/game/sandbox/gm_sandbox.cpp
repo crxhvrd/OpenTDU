@@ -2,6 +2,7 @@
 #include "gm_sandbox.h"
 
 #include "flash/gs_flash.h"
+#include "gs_timer.h"
 #include "world/gs_world.h"
 #include "world/gs_world_streaming.h"
 #include "world/streaming_manager.h"
@@ -94,11 +95,15 @@ void GMSandbox::reset() {
     gpWorld->setStreamingPositionPtr( pCamChase->getWorldPositionRW() );
 
     bWorldViewerPending = gbEnableWorldViewer;
+
+    cameraPathEditor.reset(); // OTDU_ADDITION
 }
 
 void GMSandbox::tick( float deltaTime, float totalTime ) {
     // FUN_00726f80
     GameModeWorld::tick( deltaTime, totalTime );
+
+    cameraPathEditor.tick( gpTimer->SystemDeltaTime ); // OTDU_ADDITION
 
     if ( bWorldViewerPending ) {
         bWorldViewerPending = false;
@@ -197,6 +202,8 @@ void GMSandbox::drawDebug( float deltaTime ) {
         gpCamera->getMouseCamera()->setPosition(
             { 31846.57f, 20.22f, 37179.66f, 1.0f } );
     }
+
+    cameraPathEditor.drawDebug(); // OTDU_ADDITION
 }
 #endif
 

@@ -22,6 +22,7 @@ public:
 public:
     inline eInstanciateState getState() const { return state; }
     inline const EntityCarPlayer *getSpawnPoint() const { return pSpawnPoint; }
+    inline CarState *getCarState() const { return pCarState; }
 
 public:
     BrandCar() = default;
@@ -34,6 +35,7 @@ public:
                const Matrix4x4f_t &spawn );
     void destroy();
     void refreshTransform();
+    void tickInstanciation();
 
 private:
     friend class GSBrandCar;

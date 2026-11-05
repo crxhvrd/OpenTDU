@@ -25,6 +25,8 @@
 #include "world/mng_panel.h"
 
 class PhysicsDrivingControl;
+
+void ApplyWeatherToPostFX( const float saturationCoef );
 class EntityCinematic;
 
 // Game Mode running with an active scene (not part of the world).

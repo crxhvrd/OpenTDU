@@ -435,12 +435,8 @@ void GameModeScene::onResourceStreamed() {
     bFlashInstalled = true;
 }
 
-bool GameModeScene::updatePostFX() {
+void ApplyWeatherToPostFX( const float saturationCoef ) {
     // FUN_007bccd0
-    if ( isPaused() ) {
-        return true;
-    }
-
     if ( gpWeather->isConfigDirty() ) {
         gpWeather->updateActiveConfig();
     }
@@ -493,7 +489,15 @@ bool GameModeScene::updatePostFX() {
             pHDRI->getStarModulate()->setCoefficient1( middleGray );
         }
     }
+}
 
+bool GameModeScene::updatePostFX() {
+    // FUN_007bccd0
+    if ( isPaused() ) {
+        return true;
+    }
+
+    ApplyWeatherToPostFX( saturationCoef );
     return true;
 }
 

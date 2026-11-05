@@ -47,23 +47,28 @@ void GSBrandCar::pause() {
 void GSBrandCar::tick( float, float ) {
     // FUN_008b5640
     for ( BrandCar &car : cars ) {
-        if ( car.state == BrandCar::IS_Done ) {
-            if ( car.pCarState != nullptr &&
-                 car.pCarState->getPhysicsVehicle() == nullptr ) {
-                car.refreshTransform();
-            }
-            continue;
+        car.tickInstanciation();
+    }
+}
+
+void BrandCar::tickInstanciation() {
+    // FUN_008b5640 (inlined)
+    if ( state == IS_Done ) {
+        if ( pCarState != nullptr &&
+             pCarState->getPhysicsVehicle() == nullptr ) {
+            refreshTransform();
         }
-        if ( car.state != BrandCar::IS_ToDo || car.pResource == nullptr ) {
-            continue;
-        }
-        if ( !car.pResource->bInitialized ) {
-            continue;
-        }
-        car.state = BrandCar::IS_WaitingCallback;
-        if ( gpTestDriveInstance != nullptr ) {
-            gpTestDriveInstance->pushResourceToStream( &car );
-        }
+        return;
+    }
+    if ( state != IS_ToDo || pResource == nullptr ) {
+        return;
+    }
+    if ( !pResource->bInitialized ) {
+        return;
+    }
+    state = IS_WaitingCallback;
+    if ( gpTestDriveInstance != nullptr ) {
+        gpTestDriveInstance->pushResourceToStream( this );
     }
 }
 

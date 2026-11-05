@@ -35,6 +35,7 @@
 #include "game/scenaric/spots.h"
 #include "game/scenaric/mng_actor.h"
 #include "game/vehicle/car_desc.h"
+#include "debug/debug_car_picker.h"
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_base.h"
@@ -2134,228 +2135,42 @@ void GMFreeride::drawDebug( float deltaTime ) {
         }
     }
 
-    if ( gpDatabase != nullptr ) {
-        const GameDatabase &gdb = gpDatabase->getGameDB();
-        const int32_t numCars = static_cast<int32_t>( gdb.pNumItems[1] );
-        if ( numCars > 0 && gdb.DBCarData != nullptr ) {
-            auto &carList = gpDatabase->getCarList();
+    {
+        CarState *pPaintTarget =
+            ( gpScenaric != nullptr )
+                ? gpScenaric->getLocalPlayer().getCarState()
+                : nullptr;
+        VehicleBase *pPaintVehicle = ( pPaintTarget != nullptr )
+                                         ? pPaintTarget->getVehicleInstance()
+                                         : nullptr;
+        const bool bCanRepaint =
+            ( pPaintVehicle != nullptr &&
+              pPaintTarget->getCarID() == gRequestedPlayerCarID );
 
-            CarState *pPaintTarget =
-                ( gpScenaric != nullptr )
-                    ? gpScenaric->getLocalPlayer().getCarState()
-                    : nullptr;
-            VehicleBase *pPaintVehicle =
-                ( pPaintTarget != nullptr ) ? pPaintTarget->getVehicleInstance()
-                                            : nullptr;
-            const bool bCanRepaint =
-                ( pPaintVehicle != nullptr &&
-                  pPaintTarget->getCarID() == gRequestedPlayerCarID );
+        // Kept across frames for the deluxe colors
+        static CarDesc desc;
+        if ( !desc.isValid() ||
+             int32_t( desc.getCarConfigID() ) != gRequestedPlayerCarID ) {
+            desc.setArchetype( uint32_t( gRequestedPlayerCarID ) );
+        }
+        desc.paintIndex = gRequestedPlayerCarColorID;
+        desc.rimID = gRequestedPlayerCarRimID;
+        desc.interiorID = gRequestedPlayerCarInteriorID;
 
-            static int32_t deluxeType = 0;
-            static float deluxeMain[4] = { 0.8f, 0.1f, 0.1f, 1.0f };
-            static float deluxeSecond[4] = { 0.1f, 0.1f, 0.8f, 1.0f };
-            static float deluxeLogo[4] = { 0.9f, 0.9f, 0.9f, 1.0f };
-            static float deluxeSecond2[4] = { 0.1f, 0.6f, 0.2f, 1.0f };
-            const bool bDeluxe = ( deluxeType != 0 );
+        const uint32_t result =
+            TestDrive::DrawCarPicker( desc, pPaintVehicle, nullptr );
 
-            auto applySelection = [&]() {
-                if ( !bCanRepaint ) {
-                    return;
-                }
-
-                auto toColor = []( const float *pRGBA ) {
-                    return ColorRGBA( (uint8_t)( pRGBA[0] * 255.0f ),
-                                      (uint8_t)( pRGBA[1] * 255.0f ),
-                                      (uint8_t)( pRGBA[2] * 255.0f ),
-                                      (uint8_t)( pRGBA[3] * 255.0f ) );
-                };
-
-                const ColorRGBA mainColor = toColor( deluxeMain );
-                const ColorRGBA secondColor = toColor( deluxeSecond );
-                const ColorRGBA logoColor = toColor( deluxeLogo );
-                const ColorRGBA secondColor2 = toColor( deluxeSecond2 );
-
-                pPaintVehicle->applyPaint(
-                    (uint32_t)gRequestedPlayerCarID, (ePaintType)deluxeType,
-                    gRequestedPlayerCarColorID, gRequestedPlayerCarRimID,
-                    gRequestedPlayerCarInteriorID,
-                    bDeluxe ? &mainColor : nullptr,
-                    bDeluxe ? &secondColor : nullptr,
-                    bDeluxe && pPaintVehicle->shouldUseDeluxeTwoTones()
-                        ? &logoColor
-                        : nullptr,
-                    bDeluxe && pPaintVehicle->shouldUseDeluxeTwoTones()
-                        ? &secondColor2
-                        : nullptr );
-            };
-
-            ImGui::SeparatorText( "Vehicle" );
-            if ( ImGui::BeginListBox( "##DbgVehicleList" ) ) {
-                for ( auto &car : carList ) {
-                    const bool bSelected =
-                        ( car.Hash == gRequestedPlayerCarID );
-
-                    std::string carIDAndName = std::to_string( car.Hash );
-                    carIDAndName += " - ";
-                    carIDAndName += car.FullName;
-
-                    if ( ImGui::Selectable( carIDAndName.c_str(),
-                                            bSelected ) ) {
-                        gRequestedPlayerCarID = car.Hash;
-                        gRequestedPlayerCarColorID = 0;
-                        gRequestedPlayerCarRimID = -1;
-                        gRequestedPlayerCarInteriorID = 0;
-                        gRequestedCarChange =
-                            ( pPaintTarget == nullptr ||
-                              pPaintTarget->getCarID() != car.Hash );
-                    }
-
-                    if ( bSelected )
-                        ImGui::SetItemDefaultFocus();
-                }
-                ImGui::EndListBox();
-            }
-
-            const int32_t numColors =
-                gpDatabase->getNumColors( gRequestedPlayerCarID );
-            if ( gRequestedPlayerCarColorID >= numColors ) {
-                gRequestedPlayerCarColorID = 0;
-            }
-
-            ImGui::SeparatorText( "Paint" );
-            if ( ImGui::BeginListBox( "##DbgPaintList" ) ) {
-                if ( ImGui::Selectable( "Deluxe Paint",
-                                        gRequestedPlayerCarColorID == -1 ) ) {
-                    gRequestedPlayerCarColorID = -1;
-                    deluxeType = 1;
-                    applySelection();
-                }
-                if ( gRequestedPlayerCarColorID == -1 )
-                    ImGui::SetItemDefaultFocus();
-
-                for ( int32_t i = 0; i < numColors; i++ ) {
-                    auto color =
-                        gpDatabase->getColorByIndex( gRequestedPlayerCarID, i );
-
-                    const bool bSelected = ( gRequestedPlayerCarColorID == i );
-
-                    const char *pName = color->ColorName.pAsString;
-                    if ( ImGui::Selectable( ( pName != nullptr ) ? pName
-                                                                 : "<unnamed>",
-                                            bSelected ) ) {
-                        deluxeType = 0;
-                        gRequestedPlayerCarColorID = i;
-
-                        applySelection();
-                    }
-
-                    if ( bSelected )
-                        ImGui::SetItemDefaultFocus();
-                }
-                ImGui::EndListBox();
-            }
-
-            if ( gRequestedPlayerCarColorID == -1 ) {
-                static const char *kPaintTypeNames[] = { "None", "Default",
-                                                         "Metal" };
-
-                ImGui::SeparatorText( "Deluxe paint" );
-                if ( ImGui::Combo( "##DbgDeluxePaintType", &deluxeType,
-                                   kPaintTypeNames,
-                                   IM_ARRAYSIZE( kPaintTypeNames ) ) ) {
-                    applySelection();
-                }
-
-                if ( bDeluxe ) {
-                    bool bColorChanged = false;
-                    bColorChanged |= ImGui::ColorEdit4( "Primary", deluxeMain );
-                    bColorChanged |=
-                        ImGui::ColorEdit4( "Highlights", deluxeSecond );
-                    if ( pPaintVehicle->shouldUseDeluxeTwoTones() ) {
-                        bColorChanged |=
-                            ImGui::ColorEdit4( "Secondary", deluxeLogo );
-                        bColorChanged |= ImGui::ColorEdit4(
-                            "Secondary Hightlights", deluxeSecond2 );
-                    }
-
-                    if ( bColorChanged ) {
-                        applySelection();
-                    }
-                }
-            }
-
-            DBEntryCarColor *pSelectedColor =
-                ( numColors > 0 && gRequestedPlayerCarColorID >= 0 )
-                    ? gpDatabase->getColorByIndex( gRequestedPlayerCarID,
-                                                   gRequestedPlayerCarColorID )
-                    : nullptr;
-
-            int32_t numInteriors = 0;
-            while ( gpDatabase->getInteriorByIndex(
-                        pSelectedColor, numInteriors ) != nullptr ) {
-                numInteriors++;
-            }
-            if ( gRequestedPlayerCarInteriorID >= numInteriors ) {
-                gRequestedPlayerCarInteriorID = 0;
-            }
-
-            ImGui::SeparatorText( "Interior" );
-            if ( numInteriors == 0 ) {
-                ImGui::TextDisabled( "No interior for this paint." );
-            } else if ( ImGui::BeginListBox( "##DbgInteriorList" ) ) {
-                for ( int32_t i = 0; i < numInteriors; i++ ) {
-                    DBEntryInterior *pInterior =
-                        gpDatabase->getInteriorByIndex( pSelectedColor, i );
-
-                    const bool bSelected =
-                        ( gRequestedPlayerCarInteriorID == i );
-                    const char *pName = pInterior->InteriorName.pAsString;
-
-                    if ( ImGui::Selectable( ( pName != nullptr ) ? pName
-                                                                 : "<unnamed>",
-                                            bSelected ) ) {
-                        gRequestedPlayerCarInteriorID = i;
-                        applySelection();
-                    }
-
-                    if ( bSelected )
-                        ImGui::SetItemDefaultFocus();
-                }
-                ImGui::EndListBox();
-            }
-
-            ImGui::SeparatorText( "Rims" );
-            if ( ImGui::BeginListBox( "##DbgRimList" ) ) {
-                if ( ImGui::Selectable( "Default",
-                                        gRequestedPlayerCarRimID == -1 ) )
-                    gRequestedPlayerCarRimID = -1;
-                if ( gRequestedPlayerCarRimID == -1 )
-                    ImGui::SetItemDefaultFocus();
-
-                const int32_t numRims =
-                    gpDatabase->getNumRims( gRequestedPlayerCarID );
-                for ( int32_t i = 0; i < numRims; i++ ) {
-                    DBEntryRim *pRim =
-                        gpDatabase->getRim( gRequestedPlayerCarID, i );
-                    if ( pRim == nullptr ) {
-                        continue;
-                    }
-
-                    const bool bSelected = ( gRequestedPlayerCarRimID == i );
-                    const char *pName = pRim->FriendlyName.pAsString;
-
-                    if ( ImGui::Selectable( ( pName != nullptr ) ? pName
-                                                                 : "<unnamed>",
-                                            bSelected ) ) {
-                        gRequestedPlayerCarRimID = i;
-                        applySelection();
-                    }
-
-                    if ( bSelected )
-                        ImGui::SetItemDefaultFocus();
-                }
-                ImGui::EndListBox();
-            }
+        gRequestedPlayerCarID = int32_t( desc.getCarConfigID() );
+        gRequestedPlayerCarColorID = desc.paintIndex;
+        gRequestedPlayerCarRimID = desc.rimID;
+        gRequestedPlayerCarInteriorID = desc.interiorID;
+        if ( ( result & TestDrive::CPR_CarChanged ) != 0 ) {
+            gRequestedCarChange =
+                ( pPaintTarget == nullptr ||
+                  pPaintTarget->getCarID() != gRequestedPlayerCarID );
+        }
+        if ( ( result & TestDrive::CPR_PaintChanged ) != 0 && bCanRepaint ) {
+            pPaintVehicle->applyGaragePaint( desc );
         }
     }
 
