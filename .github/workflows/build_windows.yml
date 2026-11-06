@@ -46,6 +46,8 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
+        fetch-depth: 0
+        fetch-tags: true
 
     - name: Set reusable strings
       id: strings
@@ -76,6 +78,10 @@ jobs:
     - name: Compress
       run: Compress-Archive -Destination ${{ github.workspace }}/build/opentdu_release_windows_${{ matrix.platform_name }}_${{ matrix.flavor_name }}_vulkan.zip -Path ${{ github.workspace }}/build/bin/*
 
+    - name: Generate changelog
+      shell: bash
+      run: bash tools/ci/nightly_changelog.sh build/nightly_changelog.md
+
     - name: Tag
       run: |
         git tag "nightly_${{ env.sha_short }}"
@@ -88,4 +94,5 @@ jobs:
         tag_name: "nightly_${{ env.sha_short }}"
         prerelease: true
         make_latest: "false"
+        body_path: ${{ github.workspace }}/build/nightly_changelog.md
         files: ${{ github.workspace }}/build/opentdu_release_windows_${{ matrix.platform_name }}_${{ matrix.flavor_name }}_vulkan.zip
