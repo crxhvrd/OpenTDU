@@ -297,6 +297,70 @@ public:
         return error == expected;
     }
 
+    bool runSavegame( const uint32_t userID,
+                      const uint16_t requestCRC,
+                      const uint16_t replyCRC ) {
+        edStore request;
+        request.updateCRC( requestCRC );
+        request.writeInteger( int32_t( userID ) );
+        request.writeInteger( 7 );
+        request.writeInteger( 42 );
+        request.writeInteger( 123456 );
+        request.writeInteger( 1 );
+        request.writeInteger( 3 );
+        request.writeInteger( 0x3e7 );
+        request.writeULongLong( 0xffffffffffffffffull );
+        for ( uint16_t carID : { 0x3e7, 0x5dc, 0x123 } ) {
+            request.writeUShort( carID );
+        }
+
+        bool bDone = false;
+        bool bAccepted = false;
+        Actions.callAction(
+            Proxy.getCoreAddress(), request,
+            [&]( const edNetActionClient::Reply &reply ) {
+                bAccepted = reply.Result == edNetActionClient::CR_Success &&
+                            reply.pReply != nullptr &&
+                            reply.pReply->getStreamCRC() == replyCRC &&
+                            reply.pReply->readByte() > 0;
+                bDone = true;
+            },
+            GetTimeMs(), 500, 6 );
+        if ( !pumpUntil( "Savegame request", [&]() { return bDone; } ) ) {
+            return false;
+        }
+
+        OTDU_LOG_ALWAYS( "Savegame %04X: %s\n", requestCRC,
+                         bAccepted ? "accepted" : "refused" );
+        return bAccepted;
+    }
+
+    bool runNewGame( const uint32_t newGameUserID, const bool bExpectReply ) {
+        edStore request;
+        request.updateCRC( edNetRPC::RNewGame() );
+        request.writeInteger( int32_t( newGameUserID ) );
+
+        bool bDone = false;
+        bool bAcked = false;
+        Actions.callAction(
+            Proxy.getCoreAddress(), request,
+            [&]( const edNetActionClient::Reply &reply ) {
+                bAcked = reply.Result == edNetActionClient::CR_Success &&
+                         reply.pReply != nullptr &&
+                         reply.pReply->getStreamCRC() == edNetRPC::RNewGame();
+                bDone = true;
+            },
+            GetTimeMs(), 500, bExpectReply ? 6 : 2 );
+        if ( !pumpUntil( "r_newgame", [&]() { return bDone; } ) ) {
+            return false;
+        }
+
+        OTDU_LOG_ALWAYS( "r_newgame(%u): %s (expected %s)\n", newGameUserID,
+                         bAcked ? "acked" : "no reply",
+                         bExpectReply ? "acked" : "no reply" );
+        return bAcked == bExpectReply;
+    }
+
     // GSOnline::sendLogin -> a_login + identity NetBuffer, then the
     // netconfig.xml download (OnlineServices::requestNetConfig).
     bool runFullLogin() {
@@ -359,6 +423,18 @@ public:
                          userID, nick, teamID, (unsigned long long)teamSpot,
                          serverTime );
         if ( userID != ProfileID || gIdentityNick.size() != strlen( nick ) ) {
+            return false;
+        }
+
+        if ( !runNewGame( userID, true ) ||
+             !runNewGame( userID + 1u, false ) ) {
+            return false;
+        }
+
+        if ( !runSavegame( userID, edNetRPC::SavegameRCheck(),
+                           edNetRPC::SavegameACheck() ) ||
+             !runSavegame( userID, edNetRPC::SavegameRSave(),
+                           edNetRPC::SavegameASave() ) ) {
             return false;
         }
 

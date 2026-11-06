@@ -21,6 +21,21 @@ private:
     SavedExtraChallenges *pExtraChallenges;
 };
 
+// Four best cars of the garage for one criterion, sent with the online stats
+struct StatisticsTopCars {
+    static constexpr int32_t kNumEntries = 4;
+
+    uint32_t CarConfigIDs[kNumEntries];
+    double Values[kNumEntries];
+    int32_t PackLevels[kNumEntries] = {};
+    bool bKeepHighest;
+
+    void reset( const bool bHighest );
+    void submit( const uint32_t carConfigID,
+                 const int32_t packLevel,
+                 const double value );
+};
+
 class SavedExtraChallenges {
 public:
     static constexpr int32_t kNumCounters = 17;
@@ -105,6 +120,7 @@ public:
                               const bool bETrade );
     void deserialize( edStore &stream );
     void serialize( edStore &stream ) const;
+    void writeOnlineSummary( edStore &stream ) const;
 
     uint32_t getFlagBlock( const int32_t blockIndex ) const;
     void setFlagBlock( const int32_t blockIndex, const uint32_t value );

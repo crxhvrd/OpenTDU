@@ -78,5 +78,5 @@ public:
     uint32_t pReputation[2] = {}; // TEA encrypted
     char ClubName[kClubNameLength + 1] = {};
     uint32_t pOdometerKms[2] = {}; // TEA encrypted
-    bool bCheatDetected = false;
+    bool bNewGamePending = false;
 };

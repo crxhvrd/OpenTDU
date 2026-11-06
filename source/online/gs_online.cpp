@@ -13,6 +13,8 @@
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
 #include "player_data/player_save.h"
+#include "player_data/achievements_data.h"
+#include "player_data/saved_extra_challenges.h"
 #include "player_data/saved_garage.h"
 #include "tdu_instance.h"
 #include "core/arg_parser.h"
@@ -296,10 +298,10 @@ void GSOnline::setORBAddressFromIni( const char *pAddress,
 }
 
 bool GSOnline::isORBConfigured() const {
-    static constexpr const char *kBlockedAddresses[] = { "83.145.75.75" };
+    static constexpr const char *kBlockedAddresses[] = {
+        "orb.testdriveunlimited.com", "83.145.75.75" };
 
-    if ( pORBAddress[0] == '\0' || strcmp( pORBAddress, "none" ) == 0 ||
-         strcmp( pORBAddress, gORBAddress ) == 0 ) {
+    if ( pORBAddress[0] == '\0' || strcmp( pORBAddress, "none" ) == 0 ) {
         return false;
     }
 
@@ -624,17 +626,76 @@ void GSOnline::resetForProfileChange() {
     gpPlayerData->prepareActiveProfile();
 }
 
-int32_t GSOnline::notifyCheatDetected( Driver *pDriver ) {
+int32_t GSOnline::sendNewGame( const uint32_t newGameUserID ) {
     // FUN_00884c00
-    if ( pDriver == nullptr || !pDriver->isValid() ) {
+    if ( newGameUserID == 0xffffffffu ) {
         return -1;
     }
 
-    gpPlayerData->getLoadedSave()->getDriver()->bCheatDetected = true;
+    gpPlayerData->getLoadedSave()->getDriver()->bNewGamePending = true;
 
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (gpCP2PGameService)
+    edStore request;
+    request.updateCRC( edNetRPC::RNewGame() );
+    request.writeInteger( int32_t( newGameUserID ) );
 
-    return -1;
+    return int32_t( gpCP2PGameService->getActionClient().callAction(
+        services.UserDatabase, request,
+        [this]( const edNetActionClient::Reply &reply ) {
+            onNewGameComplete( reply );
+        },
+        uint64_t( MonotonicToMs( GetTimeMonotonic() ) ) ) );
+}
+
+void GSOnline::uploadUserStatistics() {
+    // FUN_0087cc40
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    if ( pSave == nullptr || !pSave->isReady() ) {
+        return;
+    }
+
+    Driver *pDriver = pSave->getDriver();
+    Garage *pGarage = pSave->getGarage();
+
+    uint8_t statisticsBuffer[0x578];
+    edStore statistics;
+    statistics.bindExternalBuffer( statisticsBuffer,
+                                   sizeof( statisticsBuffer ) );
+
+    uint8_t extraDatasBuffer[0x578];
+    edStore extraDatas;
+    extraDatas.bindExternalBuffer( extraDatasBuffer,
+                                   sizeof( extraDatasBuffer ) );
+    extraDatas.updateCRC( edNetRPC::UserStatisticsExtraDatasV1() );
+
+    SavedExtraChallenges *pExtraChallenges = pSave->getExtraChallenges();
+    pExtraChallenges->serialize( extraDatas );
+    pExtraChallenges->writeOnlineSummary( extraDatas );
+
+    // FUN_004179c0
+    statistics.updateCRC( edNetRPC::UserStatisticsV1() );
+    statistics.writeInteger( int32_t( pDriver->ID ) );
+    statistics.writeInteger( pSave->getAchievements()->getPlayerLevel() );
+    statistics.writeInteger(
+        int32_t( pGarage->pCars[pDriver->CurrentCar].getCarConfigID() ) );
+    if ( extraDatas.getWrittenSize() > 0 ) {
+        statistics.writeObject( extraDatas );
+    }
+
+    services.sendUserStatistics( statistics );
+}
+
+void GSOnline::onNewGameComplete( const edNetActionClient::Reply &reply ) {
+    // FUN_008854a0
+    if ( reply.Result != edNetActionClient::CR_Success ||
+         reply.pReply == nullptr ||
+         reply.pReply->getStreamCRC() != edNetRPC::RNewGame() ) {
+        return;
+    }
+
+    gpPlayerData->getLoadedSave()->getDriver()->bNewGamePending = false;
+    if ( gpPlayerData->isSaveEnabled() && gbSaveAllowed ) {
+        gpPlayerData->flushSaveRequest();
+    }
 }
 
 void GSOnline::addChallengeLeaderboard( const eChallengeLeaderboard kind,

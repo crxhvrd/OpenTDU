@@ -77,6 +77,8 @@ public:
     inline uint32_t getTeamID() const { return teamID; }
     inline uint64_t getTeamSpotHash() const { return teamSpotHash; }
     inline OnlineServices &getServices() { return services; }
+    inline SavegameRequest &getSavegameSave() { return savegameSave; }
+    inline SavegameRequest &getSavegameCheck() { return savegameCheck; }
     inline edNetProxyHostInterfaceTDU &getProxyHostInterface() {
         return proxyHostInterface;
     }
@@ -126,7 +128,8 @@ public:
     void setORBAddressFromIni( const char *pAddress, const int32_t port );
     bool isORBConfigured() const;
 
-    int32_t notifyCheatDetected( Driver *pDriver );
+    int32_t sendNewGame( const uint32_t newGameUserID );
+    void uploadUserStatistics();
     void addChallengeLeaderboard( const eChallengeLeaderboard kind,
                                   const uint64_t spotHashcode,
                                   const int32_t leaderboardID );
@@ -139,30 +142,32 @@ private:
     edNetProxyHostInterfaceTDU proxyHostInterface;
     OnlineServices services;
 
-    char pServerAddress[40];   // +0x660
-    uint16_t serverPort;       // +0x688
-    char pORBAddress[128];     // +0x68a
-    uint16_t orbPort;          // +0x70a
-    uint16_t lobbyPort;        // +0x70c
-    char pLogin[20];           // +0x70e
-    char pPassword[20];        // +0x722
-    eLoginState loginState;    // +0x73c
-    bool bMatchmakingEnabled;  // +0x740
-    bool bOnlineEnabled;       // +0x741
-    char pLobbyAddress[30];    // +0x742
-    char pDbgCOM[30];          // +0x760
-    char pGPSTracker[30];      // +0x77e
-    char pUsername[16];        // +0x79c
-    bool bServicesActive;      // +0x7cc
-    bool bLoggedIn;            // +0xa711
-    bool bLoginAnswered;       // +0xa712
-    bool field_0xa713;         // +0xa713
-    bool bInitialized;         // +0xaec1
-    char pFreerideVersion[32]; // +0xaec2
-    int32_t natType;           // +0xaee4
-    uint32_t userID;           // +0x7ac
-    uint32_t teamID;           // +0x7b0
-    uint64_t teamSpotHash;     // +0x7b8
+    char pServerAddress[40];       // +0x660
+    uint16_t serverPort;           // +0x688
+    char pORBAddress[128];         // +0x68a
+    uint16_t orbPort;              // +0x70a
+    uint16_t lobbyPort;            // +0x70c
+    char pLogin[20];               // +0x70e
+    char pPassword[20];            // +0x722
+    eLoginState loginState;        // +0x73c
+    bool bMatchmakingEnabled;      // +0x740
+    bool bOnlineEnabled;           // +0x741
+    char pLobbyAddress[30];        // +0x742
+    char pDbgCOM[30];              // +0x760
+    char pGPSTracker[30];          // +0x77e
+    char pUsername[16];            // +0x79c
+    bool bServicesActive;          // +0x7cc
+    SavegameRequest savegameSave;  // +0xa6d4
+    SavegameRequest savegameCheck; // +0xa6e4
+    bool bLoggedIn;                // +0xa711
+    bool bLoginAnswered;           // +0xa712
+    bool field_0xa713;             // +0xa713
+    bool bInitialized;             // +0xaec1
+    char pFreerideVersion[32];     // +0xaec2
+    int32_t natType;               // +0xaee4
+    uint32_t userID;               // +0x7ac
+    uint32_t teamID;               // +0x7b0
+    uint64_t teamSpotHash;         // +0x7b8
     uint32_t serverTime;
     std::vector<uint8_t> identityBuffer;
     bool bORBFromIni;
@@ -177,6 +182,7 @@ private:
     void initConnectionInfos();
     bool sendLogin( const uint8_t param );
     void onLoginComplete( const edNetActionClient::Reply &reply );
+    void onNewGameComplete( const edNetActionClient::Reply &reply );
     void onIdentityDownloaded( const bool bSuccess );
     void parseLoginIdentity( edStore &stream );
 };

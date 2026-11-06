@@ -730,10 +730,21 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
         gpPCOptions->openMainMenu( false );
 
         gpOnline->getServices().requestNetConfig( "netconfig.xml" );
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (stats summary upload
-                                 // FUN_0087cc40, Savegame::r_check
-                                 // FUN_00871ac0 + FUN_008983f0 summary;
-                                 // neither blocks login)
+        gpOnline->uploadUserStatistics();
+
+        {
+            PlayerSaveDescriptor descriptor;
+            descriptor.Trailer = gSaveStreamTrailer;
+            descriptor.Revision = gSaveStreamRevision;
+            gpPlayerData->fillSaveDescriptor( &descriptor );
+            if ( gpOnline->getServices().Savegame.IP != 0u ) {
+                gpOnline->getSavegameCheck().reset();
+                gpOnline->getServices().sendSavegameCheck(
+                    gpOnline->getSavegameCheck(),
+                    gpPlayerData->getLoadedSave()->getDriver()->ID,
+                    descriptor );
+            }
+        }
 
         waitExitStartTicks = GetTickCountMs();
         state = GLS_WaitExit;
@@ -745,8 +756,10 @@ void GMLogin::tick( float deltaTime, float totalTime ) {
             return;
         }
 
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (SavegameCheck result +0xc
-                                 // and SavegameSave vtbl+8, SecuROM payload)
+        if ( gpOnline->getSavegameCheck().isDone() &&
+             gpOnline->getSavegameCheck().bReplied ) {
+            state = GLS_MainMenu;
+        }
         return;
 
     case GLS_MainMenu: {
@@ -852,8 +865,8 @@ void GMLogin::resumeSavedGame() {
         EnableWorldSpotStreaming();
     }
 
-    if ( pDriver->bCheatDetected ) {
-        gpOnline->notifyCheatDetected( pDriver );
+    if ( pDriver->bNewGamePending ) {
+        gpOnline->sendNewGame( pDriver->ID );
     }
 
     gpTestDriveInstance->setNextGameMode( GM_Living );
@@ -865,7 +878,7 @@ void GMLogin::startNewGame() {
     // FUN_0074ea80
     Driver *pDriver = gpPlayerData->getLoadedSave()->getDriver();
 
-    gpOnline->notifyCheatDetected( pDriver );
+    gpOnline->sendNewGame( pDriver->ID );
 
     gpOnline->resetForNewGame();
 

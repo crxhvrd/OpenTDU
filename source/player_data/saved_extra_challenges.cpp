@@ -17,6 +17,12 @@
 #include "driver.h"
 #include "physics/vehicle/physics_vehicle.h"
 #include "player_data_interface.h"
+#include "ai/gs_ai.h"
+#include "game/scenaric/spots.h"
+#include "saved_garage.h"
+#include "saved_road_discovery.h"
+
+#include <cfloat>
 
 SavedExtraChallenges::SavedExtraChallenges() {
     // FUN_00889260
@@ -96,6 +102,117 @@ void SavedExtraChallenges::serialize( edStore &stream ) const {
     }
 
     stream.writeInteger( 0xc103 );
+}
+
+void StatisticsTopCars::reset( const bool bHighest ) {
+    // FUN_00887a20
+    bKeepHighest = bHighest;
+    for ( int32_t i = 0; i < kNumEntries; i++ ) {
+        CarConfigIDs[i] = 0xffffffffu;
+        Values[i] = bKeepHighest ? double( -FLT_MAX ) : double( FLT_MAX );
+    }
+}
+
+void StatisticsTopCars::submit( const uint32_t carConfigID,
+                                const int32_t packLevel,
+                                const double value ) {
+    // FUN_00887940
+    int32_t index = 0;
+    if ( bKeepHighest ) {
+        for ( int32_t i = 1; i < kNumEntries; i++ ) {
+            if ( Values[i] < Values[index] ) {
+                index = i;
+            }
+        }
+        if ( !( Values[index] < value ) ) {
+            return;
+        }
+    } else {
+        for ( int32_t i = 1; i < kNumEntries; i++ ) {
+            if ( Values[index] < Values[i] ) {
+                index = i;
+            }
+        }
+        if ( Values[index] <= value ) {
+            return;
+        }
+    }
+
+    CarConfigIDs[index] = carConfigID;
+    Values[index] = value;
+    PackLevels[index] = packLevel;
+}
+
+void SavedExtraChallenges::writeOnlineSummary( edStore &stream ) const {
+    // FUN_0088a940
+    StatisticsTopCars topPlayTime;
+    topPlayTime.reset( true );
+    StatisticsTopCars topDistance;
+    topDistance.reset( true );
+
+    IPlayerData *pSave = gpPlayerData->getLoadedSave();
+    Garage *pGarage = pSave->getGarage();
+    for ( int32_t i = 0; i < Garage::kNumSavedCarSlots; i++ ) {
+        GarageSlot &car = pGarage->pCars[i];
+        if ( !car.isValid() ) {
+            continue;
+        }
+
+        topPlayTime.submit( car.getCarConfigID(), car.getPackLevel(),
+                            car.playTime );
+        topDistance.submit( car.getCarConfigID(), car.getPackLevel(),
+                            double( car.odometerKms ) );
+    }
+
+    for ( const StatisticsTopCars *pTop : { &topPlayTime, &topDistance } ) {
+        for ( int32_t i = 0; i < StatisticsTopCars::kNumEntries; i++ ) {
+            stream.writeInteger( int32_t( pTop->CarConfigIDs[i] ) );
+            stream.writeDouble( pTop->Values[i] );
+            stream.writeInteger( pTop->PackLevels[i] );
+        }
+    }
+
+    Driver *pDriver = pSave->getDriver();
+    stream.writeULongLong( pDriver->getCurrentHouse() );
+    stream.writeInteger( int32_t( pDriver->getMoney() ) );
+    stream.writeInteger( int32_t( pDriver->getNumCoupons() ) );
+
+    GarageSlot &currentCar = pGarage->pCars[pDriver->CurrentCar];
+    if ( currentCar.isValid() ) {
+        stream.writeInteger( int32_t( currentCar.getCarConfigID() ) );
+        stream.writeDouble( currentCar.playTime );
+        stream.writeFloat( currentCar.odometerKms );
+        stream.writeInteger( currentCar.getPackLevel() );
+    } else {
+        stream.writeInteger( -1 );
+        stream.writeFloat( 0.0f );
+        stream.writeFloat( 0.0f );
+        stream.writeInteger( 0 );
+    }
+
+    stream.writeFloat( GetRoadNetworkLength( &gpAI->getRoadMap(), false ) );
+
+    // Retail reads type 8 spots of subtype 5..8 as EntityExtraChallenge
+    // (road at +0x160/+0x164); the world spot list holds none of them.
+    const SavedRoadDiscovery *pRoads = pSave->getRoadDiscovery();
+    Spots &spotList = gpScenaric->getSpotList();
+    const int32_t numSpots = int32_t( spotList.getNumWorldSpots() );
+    int32_t numReachableSpots = 0;
+    for ( int32_t i = 0; i < numSpots; i++ ) {
+        const SpotMap *pSpot = spotList.getWorldSpot( i );
+        if ( pSpot == nullptr ) {
+            continue;
+        }
+
+        if ( !pRoads->isRoadLocked( pSpot->RoadID, pSpot->RoadSegment ) &&
+             IsRoadAvailable( pSpot->RoadID ) ) {
+            numReachableSpots++;
+        }
+    }
+    stream.writeInteger( numReachableSpots );
+
+    stream.writeInteger( pGarage->getNumOwnedHouses() );
+    stream.writeInteger( pGarage->getNumCars() );
 }
 
 void SavedExtraChallenges::deserialize( edStore &stream ) {

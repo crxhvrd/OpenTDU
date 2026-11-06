@@ -5,6 +5,8 @@
 #include "user_profile.h"
 
 #include "core/crypto/tea.h"
+#include "core/ed_store.h"
+#include "online/gs_online.h"
 #include "filesystem/gs_file.h"
 #include "gs_playerdata.h"
 #include "player_data_interface.h"
@@ -131,9 +133,10 @@ void SavegameManager::create() {
 
 void SavegameManager::refreshService() {
     // FUN_0097c6e0
-    if ( gpPlayerData != nullptr && gpPlayerData->isOnline() ) {
-        OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (flush the pending online
-                                 // savegame notification)
+    SavegameRequest &savegameSave = gpOnline->getSavegameSave();
+    if ( gpPlayerData != nullptr && gpPlayerData->isOnline() &&
+         savegameSave.isDone() && savegameSave.bReplied ) {
+        savegameSave.reset();
     }
 
     if ( BOOL_010e7364 || bUnknownBool4 ) {
@@ -144,7 +147,9 @@ void SavegameManager::refreshService() {
         return;
     }
 
-    const bool bOnlineOperationPending = false;
+    const bool bOnlineOperationPending = gpPlayerData != nullptr &&
+                                         gpPlayerData->isOnline() &&
+                                         savegameSave.bInFlight;
 
     IPlayerData *pSave =
         ( gpPlayerData != nullptr ) ? gpPlayerData->getLoadedSave() : nullptr;
@@ -163,6 +168,12 @@ void SavegameManager::refreshService() {
     }
 
     bUnknownBool3 = buildPlayerSaveBuffer();
+    if ( gpPlayerData->isOnline() && bUnknownBool3 &&
+         gpOnline->getServices().Savegame.IP != 0u ) {
+        savegameSave.reset();
+        gpOnline->getServices().sendSavegameSave(
+            savegameSave, pSave->getDriver()->ID, gPlayerSaveDescriptor );
+    }
 
     if ( BOOL_010e7364 ) {
         // The dead threaded path: the save thread would be woken up here
@@ -187,6 +198,22 @@ bool PlayerSaveDescriptor::isSameAs( const PlayerSaveDescriptor &other ) const {
     }
 
     return bSame;
+}
+
+void PlayerSaveDescriptor::serialize( edStore &stream ) const {
+    // FUN_004178e0
+    stream.writeInteger( Trailer );
+    stream.writeInteger( Revision );
+    stream.writeInteger( int32_t( Money ) );
+    stream.writeInteger( NumHouses );
+    stream.writeInteger( NumCars );
+    stream.writeInteger( int32_t( CurrentCarConfigID ) );
+    stream.writeULongLong( CurrentCarPackHashcode );
+
+    const int32_t numCars = Min( NumCars, kMaxCars );
+    for ( int32_t i = 0; i < numCars; i++ ) {
+        stream.writeUShort( CarConfigIDs[i] );
+    }
 }
 
 bool SavegameManager::buildPlayerSaveBuffer() {

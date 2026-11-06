@@ -44,6 +44,7 @@ namespace edNetRPC {
         RLoginPC,
         "Database::r_login_pc(string,string,uint,ulonglong,byte,string)" )
     OTDU_NET_MESSAGE_ID( ALogin, "Database::a_login(byte,uint,uint)" )
+    OTDU_NET_MESSAGE_ID( RNewGame, "Database::r_newgame(uint)" )
 
     OTDU_NET_MESSAGE_ID(
         ROpenFile,
@@ -66,6 +67,10 @@ namespace edNetRPC {
     OTDU_NET_MESSAGE_ID( UserStatisticsV1, "Stats::user_statistics_v1()" )
     OTDU_NET_MESSAGE_ID( SavegameRCheck, "Savegame::r_check()" )
     OTDU_NET_MESSAGE_ID( SavegameACheck, "Savegame::a_check()" )
+    OTDU_NET_MESSAGE_ID( SavegameRSave, "Savegame::r_save()" )
+    OTDU_NET_MESSAGE_ID( SavegameASave, "Savegame::a_save()" )
+    OTDU_NET_MESSAGE_ID( UserStatisticsExtraDatasV1,
+                         "Stats::user_statistics_extra_datas_v1()" )
 
     OTDU_NET_MESSAGE_ID( REcho, "edNetServiceHandlerEcho::r_echo()" )
     OTDU_NET_MESSAGE_ID( AEcho, "edNetServiceHandlerEcho::a_echo()" )

@@ -20,6 +20,22 @@ struct GetRPCHandlersRequest {
     inline bool isDone() const { return bDone; }
 };
 
+struct PlayerSaveDescriptor;
+
+// CSysMessageMgr Savegame request status (vtables 0xf1c3f4 / 0xf1c40c)
+struct SavegameRequest {
+    bool bDone = false;     // +0x4
+    bool bSuccess = false;  // +0x5
+    bool bInFlight = false; // +0x8
+    bool bReplied = false;  // +0xc
+    bool bAccepted = false; // +0xd
+
+    void reset();
+    inline bool isDone() const { return bDone; }
+    void onActionComplete( const edNetActionClient::Reply &reply,
+                           const uint16_t replyCRC );
+};
+
 // Online services handlers
 class OnlineServices {
 public:
@@ -41,6 +57,13 @@ public:
     void resetConnection();
     void clear();
     void requestNetConfig( const char *pFileName );
+    bool sendUserStatistics( edStore &statistics );
+    bool sendSavegameCheck( SavegameRequest &request,
+                            const uint32_t userID,
+                            const PlayerSaveDescriptor &descriptor );
+    bool sendSavegameSave( SavegameRequest &request,
+                           const uint32_t userID,
+                           const PlayerSaveDescriptor &descriptor );
 
 public:
     edNetAddress Core;
@@ -80,4 +103,10 @@ private:
     void onNetConfigDownloaded( const bool bSuccess );
     bool sendGetRPCHandlersEx( const uint32_t userID,
                                const uint32_t sessionID );
+    bool sendSavegameRequest( SavegameRequest &request,
+                              const char *pName,
+                              const uint16_t requestCRC,
+                              const uint16_t replyCRC,
+                              const uint32_t userID,
+                              const PlayerSaveDescriptor &descriptor );
 };

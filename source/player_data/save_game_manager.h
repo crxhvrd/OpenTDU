@@ -4,6 +4,7 @@
 #include "core/mutex.h"
 
 struct LocalPlayerData;
+class edStore;
 
 struct PlayerSaveDescriptor {
     static constexpr int32_t kMaxCars = 500;
@@ -18,6 +19,7 @@ struct PlayerSaveDescriptor {
     uint16_t CarConfigIDs[kMaxCars] = {};
 
     bool isSameAs( const PlayerSaveDescriptor &other ) const;
+    void serialize( edStore &stream ) const;
 };
 
 class SavegameManager {

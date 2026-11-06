@@ -26,6 +26,7 @@ namespace edNetRPC {
     // Database (USERDATABASE handler): login
     uint16_t RLoginPC();
     uint16_t ALogin();
+    uint16_t RNewGame();
 
     // edNetResourceORB (PTS/PUS storage handlers): file transfer
     uint16_t ROpenFile();
@@ -38,6 +39,9 @@ namespace edNetRPC {
     uint16_t UserStatisticsV1();
     uint16_t SavegameRCheck();
     uint16_t SavegameACheck();
+    uint16_t SavegameRSave();
+    uint16_t SavegameASave();
+    uint16_t UserStatisticsExtraDatasV1();
 
     static constexpr uint32_t kMaxRequestHandlers = 128;
 

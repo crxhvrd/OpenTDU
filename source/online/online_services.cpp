@@ -5,11 +5,18 @@
 #include "core/time.h"
 #include "online/net/ed_net_config.h"
 #include "ed_net_gamespy_manager.h"
+#include "flash/implementation/flash_player.h"
+#include "flash/modal_message_box.h"
+#include "system/gs_pc_options.h"
 #include "gs_online.h"
 #include "p2p_game_service.h"
 #include "player_data/driver.h"
 #include "player_data/gs_playerdata.h"
 #include "player_data/player_data_interface.h"
+#include "player_data/save_game_manager.h"
+
+static constexpr uint64_t kORBLostMessageHashcode = 0x5d5114ull;
+static constexpr int32_t kORBLostMessageDatabaseIndex = 0xb;
 
 static uint32_t GetTickCountMs() {
     return uint32_t( MonotonicToMs( GetTimeMonotonic() ) );
@@ -20,6 +27,36 @@ void GetRPCHandlersRequest::reset() {
     bDone = false;
     bSuccess = false;
     memset( CRCs, 0, sizeof( CRCs ) );
+}
+
+void SavegameRequest::reset() {
+    // FUN_00871c20 / FUN_00871da0
+    bSuccess = false;
+    bDone = false;
+    bInFlight = false;
+    bReplied = false;
+    bAccepted = false;
+}
+
+void SavegameRequest::onActionComplete( const edNetActionClient::Reply &reply,
+                                        const uint16_t replyCRC ) {
+    // FUN_00871bb0 / FUN_00871d30
+    const bool bActionSucceeded = reply.Result == edNetActionClient::CR_Success;
+    bReplied = false;
+    bAccepted = false;
+    bDone = true;
+    bSuccess = bActionSucceeded;
+    bInFlight = false;
+
+    if ( bActionSucceeded ) {
+        if ( reply.pReply != nullptr &&
+             reply.pReply->getStreamCRC() == replyCRC ) {
+            bAccepted = reply.pReply->readByte() > 0;
+        } else {
+            bSuccess = false;
+        }
+    }
+    bReplied = true;
 }
 
 OnlineServices::OnlineServices()
@@ -266,8 +303,18 @@ void OnlineServices::refresh() {
 void OnlineServices::onORBLost() {
     // FUN_00879380
     OTDU_LOG_WARN( "** OnORBLost() !! \n" );
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: FRONTEND (connection lost prompt
-                             // FUN_5d5114 when the "/avert" clip is closed)
+
+    FlashPlayer *pMessageBoxPlayer = gpFlashMessageBox->getFlashPlayer();
+    if ( pMessageBoxPlayer != nullptr &&
+         pMessageBoxPlayer->spriteExists( "/avert" ) &&
+         gpFlashMessageBox->getDisplayState() ==
+             ModalMessageBox::MMBDS_Closed &&
+         !gpPCOptions->isMainMenuOpened() ) {
+        TestDrive::DisplayModalPrompt( false, kORBLostMessageHashcode,
+                                       kORBLostMessageDatabaseIndex, nullptr,
+                                       nullptr, nullptr, 0, nullptr, true,
+                                       false, MPT_Warning, gpFlashMessageBox );
+    }
 
     gpOnline->setOnlineEnabled( false );
     GameMaster.IP = 0u;
@@ -299,7 +346,9 @@ void OnlineServices::resetConnection() {
     lastDiscoveryTick = 0u;
     lastSuccessTick = GetTickCountMs();
     discovery.reset();
-    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE
+    OTDU_UNIMPLEMENTED_ONCE; // TODO: ONLINE (reset the 18 other per-request
+                             // status records, +0x72f0..+0x8150, and the
+                             // e_update_user timers +0x72d0/+0x72d4)
 }
 
 void OnlineServices::clear() {
@@ -322,4 +371,74 @@ void OnlineServices::clear() {
     Ranking.IP = 0u;
     Check.IP = 0u;
     Savegame.IP = 0u;
+}
+
+bool OnlineServices::sendUserStatistics( edStore &statistics ) {
+    // FUN_00872850
+    if ( Stats.IP == 0u ) {
+        return false;
+    }
+
+    uint8_t buffer[0x578];
+    edStore request;
+    request.bindExternalBuffer( buffer, sizeof( buffer ) );
+    request.updateCRC( edNetRPC::EUserStatisticsUpdateV2() );
+    request.writeObject( statistics );
+
+    gpCP2PGameService->getActionClient().callAction(
+        Stats, request, nullptr, GetTickCountMs(),
+        uint32_t( gNetConfig.getFloat( "CLUB_STATS_TIMEOUT" ) * 1000.0f ),
+        uint32_t( gNetConfig.getInt( "CLUB_STATS_MAXTRETRY" ) ) );
+    return true;
+}
+
+bool OnlineServices::sendSavegameCheck(
+    SavegameRequest &request,
+    const uint32_t userID,
+    const PlayerSaveDescriptor &descriptor ) {
+    // FUN_00871ac0
+    return sendSavegameRequest(
+        request, "SavegameCheck", edNetRPC::SavegameRCheck(),
+        edNetRPC::SavegameACheck(), userID, descriptor );
+}
+
+bool OnlineServices::sendSavegameSave(
+    SavegameRequest &request,
+    const uint32_t userID,
+    const PlayerSaveDescriptor &descriptor ) {
+    // FUN_00871c40
+    return sendSavegameRequest( request, "SavegameSave",
+                                edNetRPC::SavegameRSave(),
+                                edNetRPC::SavegameASave(), userID, descriptor );
+}
+
+bool OnlineServices::sendSavegameRequest(
+    SavegameRequest &request,
+    const char *pName,
+    const uint16_t requestCRC,
+    const uint16_t replyCRC,
+    const uint32_t userID,
+    const PlayerSaveDescriptor &descriptor ) {
+    if ( Savegame.IP == 0u ) {
+        OTDU_LOG_DEBUG( "CSysMessageMgr::%s() =>IsSavegameServerAvailable = "
+                        "False\n",
+                        pName );
+        request.bDone = true;
+        request.bSuccess = false;
+        return false;
+    }
+
+    edStore message;
+    message.updateCRC( requestCRC );
+    message.writeInteger( int32_t( userID ) );
+    descriptor.serialize( message );
+
+    request.bInFlight = true;
+    gpCP2PGameService->getActionClient().callAction(
+        Savegame, message,
+        [&request, replyCRC]( const edNetActionClient::Reply &reply ) {
+            request.onActionComplete( reply, replyCRC );
+        },
+        GetTickCountMs() );
+    return true;
 }

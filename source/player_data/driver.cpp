@@ -64,7 +64,7 @@ void Driver::clear() {
     TeamSpotID = 0u;
     field4_0x24 = 0u;
 
-    bCheatDetected = false;
+    bNewGamePending = false;
 }
 
 void Driver::deserialize( edStore &stream ) {
@@ -90,7 +90,7 @@ void Driver::deserialize( edStore &stream ) {
     TutorialState = int32_t( stream.readUInteger() );
     TutorialUserParam = int32_t( stream.readUInteger() );
 
-    bCheatDetected = stream.readInteger() != 0;
+    bNewGamePending = stream.readInteger() != 0;
 
     stream.readStringNoAlloc( ClubName, kClubNameLength );
 
@@ -123,7 +123,7 @@ void Driver::serialize( edStore &stream, const uint16_t garageCurrentCar ) {
 
     stream.writeInteger( TutorialState );
     stream.writeInteger( TutorialUserParam );
-    stream.writeInteger( bCheatDetected ? 1 : 0 );
+    stream.writeInteger( bNewGamePending ? 1 : 0 );
 
     stream.writeString( ClubName );
 }
