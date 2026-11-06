@@ -52,6 +52,20 @@ static constexpr uint64_t kGPUExpandedVertexShaderHashcode =
     0xf4a1e0f1a0000002ull;
 static constexpr uint32_t kGPUSpriteSize = 3 * sizeof( Eigen::Vector4f );
 static constexpr uint64_t kCullComputeShaderHashcode = 0xf4a1e0f1c0000001ull;
+static constexpr uint32_t kCullGroupSize = 64; // local_size_x
+
+// Push constants of far_impostor_cull.comp
+struct CullParameters {
+    Eigen::Vector4f Origin;
+    Eigen::Vector4f Camera;
+    Eigen::Vector4f Right;
+    Eigen::Vector4f Up;
+    uint32_t NumJobs;
+    uint32_t NumThreads;
+    uint32_t Padding[2] = { 0u, 0u };
+};
+static_assert( sizeof( CullParameters ) == 80,
+               "must match Parameters in far_impostor_cull.comp" );
 
 static constexpr uint32_t kGPUScaleShift = 5; // 1/16384 -> 1/512
 static constexpr uint32_t kGPUScaleMask = 0x7ff;
@@ -119,6 +133,8 @@ FarImpostorField::FarImpostorField()
       pTypeParamBuffers{ nullptr, nullptr, nullptr },
       pExpandedVertexLayout( nullptr ),
       gpuJobs(),
+      sortedGPUJobs(),
+      segmentJobCursors(),
       segmentCounts(),
       segmentArguments(),
       typeParams(),
@@ -545,7 +561,7 @@ bool FarImpostorField::createComputeResources() {
         return false;
     }
     pCullPipeline = pDevice->createComputePipeline(
-        pCullSPIRV, cullSPIRVSize, 7, 4 * sizeof( Eigen::Vector4f ) );
+        pCullSPIRV, cullSPIRVSize, 7, sizeof( CullParameters ) );
     pExpandedVertexLayout =
         pDevice->createVertexLayout( gFarImpostorExpandedVertexLayout );
     if ( pCullPipeline == nullptr || pExpandedVertexLayout == nullptr ) {
@@ -627,6 +643,8 @@ bool FarImpostorField::createComputeResources() {
     segmentArguments.assign( numSegments, DrawIndexedIndirectCommand() );
     typeParams.assign( numSegments, Eigen::Vector4f::Zero() );
     gpuJobs.reserve( kMaxGPUJobs );
+    sortedGPUJobs.reserve( kMaxGPUJobs );
+    segmentJobCursors.assign( numSegments, 0u );
     beginSceneCallback =
         pDevice->addBeginSceneCallback( [this]() { recordCompute(); } );
     return true;
@@ -665,6 +683,7 @@ void FarImpostorField::releaseComputeResources() {
     pHeightBuffer = nullptr;
     pExpandedVertexLayout = nullptr;
     gpuJobs.clear();
+    sortedGPUJobs.clear();
     bComputePending = false;
 }
 
@@ -689,7 +708,33 @@ void FarImpostorField::prepareComputeFrame( const float distanceScaleSq ) {
         typeParams[t * 2 + 1] =
             Eigen::Vector4f( type.SphereCenter.y(), sphereRadius, 0.0f, 0.0f );
     }
+    sortJobsBySegment();
     bComputePending = !gpuJobs.empty();
+}
+
+void FarImpostorField::sortJobsBySegment() {
+    // Counting sort: the threads of a segment end up contiguous, starting at
+    // the segment first sprite slot (FirstInstance)
+    std::fill( segmentJobCursors.begin(), segmentJobCursors.end(), 0u );
+    for ( const GPUJob &job : gpuJobs ) {
+        segmentJobCursors[job.Segment]++;
+    }
+    uint32_t firstJob = 0u;
+    for ( uint32_t &cursor : segmentJobCursors ) {
+        const uint32_t numJobs = cursor;
+        cursor = firstJob;
+        firstJob += numJobs;
+    }
+    sortedGPUJobs.resize( gpuJobs.size() );
+    for ( const GPUJob &job : gpuJobs ) {
+        sortedGPUJobs[segmentJobCursors[job.Segment]++] = job;
+    }
+    uint32_t firstThread = 0u;
+    for ( GPUJob &job : sortedGPUJobs ) {
+        job.FirstThread = firstThread;
+        firstThread += job.NumInstances;
+    }
+    gpuJobs.swap( sortedGPUJobs );
 }
 
 void FarImpostorField::recordCompute() {
@@ -742,10 +787,16 @@ void FarImpostorField::recordCompute() {
         pInstanceBuffer, pJobBuffers[slot], pTypeParamBuffers[slot],
         pSpriteBuffer,   pArgumentBuffer,   pTerrainBuffers[slot],
         pHeightBuffer };
-    const Eigen::Vector4f parameters[4] = { gpuOrigin, gpuCamera, gpuRight,
-                                            gpuUp };
-    pDevice->dispatchCompute( pCullPipeline, pBuffers, parameters,
-                              static_cast<uint32_t>( gpuJobs.size() ), 1, 1 );
+    CullParameters parameters;
+    parameters.Origin = gpuOrigin;
+    parameters.Camera = gpuCamera;
+    parameters.Right = gpuRight;
+    parameters.Up = gpuUp;
+    parameters.NumJobs = static_cast<uint32_t>( gpuJobs.size() );
+    parameters.NumThreads = numJobInstances;
+    pDevice->dispatchCompute(
+        pCullPipeline, pBuffers, &parameters,
+        ( numJobInstances + kCullGroupSize - 1u ) / kCullGroupSize, 1, 1 );
 
     GPUTexture *pMainTarget = nullptr;
     const RenderPass &nearPass =

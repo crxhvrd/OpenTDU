@@ -10,7 +10,8 @@ layout( std430, set = 0, binding = 0 ) readonly buffer Instances {
     vec4 instances[]; // position, packed angle (8 bits) | scale (11 bits) | grey (5 bits)
 };
 layout( std430, set = 0, binding = 1 ) readonly buffer Jobs {
-    uvec4 jobs[]; // (first instance, instance count, segment = type * 2 + pass, -)
+    uvec4 jobs[]; // (first instance, instance count, segment = type * 2 + pass,
+                  //  first thread), sorted by segment
 };
 layout( std430, set = 0, binding = 2 ) readonly buffer Types {
     vec4 typeParams[];  // Per type: (cut-off, fade start, size delta, stretch UV),
@@ -41,6 +42,7 @@ layout( push_constant ) uniform Parameters {
     vec4 camera; // Camera (stream frame)
     vec4 right;  // Billboard right axis
     vec4 up;     // Billboard up axis
+    uvec4 counts; // (number of jobs, number of threads, -, -)
 }
 params;
 
@@ -150,16 +152,54 @@ float terrainHeight( vec2 position, float fallback ) {
     return fallback;
 }
 
-void main() {
-    uvec4 job = jobs[gl_WorkGroupID.x];
-    uint type = job.z >> 1u;
-    bool bFadePass = ( job.z & 1u ) != 0u;
-    vec4 type0 = typeParams[type * 2u];
-    vec4 type1 = typeParams[type * 2u + 1u];
-    uint segmentBase = arguments[job.z * 5u + 4u];
+shared uint sRunCounts[64];
+shared uint sRunBases[64];
 
-    for ( uint i = gl_LocalInvocationID.x; i < job.y; i += 64u ) {
-        vec4 instance = instances[job.x + i];
+uint findJob( uint thread ) {
+    uint lo = 0u;
+    uint hi = params.counts.x - 1u;
+    while ( lo < hi ) {
+        uint mid = ( lo + hi + 1u ) >> 1u;
+        if ( jobs[mid].w <= thread ) {
+            lo = mid;
+        } else {
+            hi = mid - 1u;
+        }
+    }
+    return lo;
+}
+
+// One thread per job instance. Jobs are sorted by segment, so the threads of
+// a segment are contiguous: each run of a segment inside the workgroup is
+// compacted in shared memory, then reserves its slots with a single global
+// atomic.
+void main() {
+    uint localIndex = gl_LocalInvocationID.x;
+    uint thread = gl_GlobalInvocationID.x;
+    sRunCounts[localIndex] = 0u;
+
+    bool bEmit = false;
+    uint segment = 0u;
+    uint runStart = 0u;
+    vec3 center;
+    vec3 right;
+    vec3 up;
+    float uMin;
+    float vTop;
+    float color;
+    if ( thread < params.counts.y ) {
+        uvec4 job = jobs[findJob( thread )];
+        segment = job.z;
+        uint type = segment >> 1u;
+        bool bFadePass = ( segment & 1u ) != 0u;
+        vec4 type0 = typeParams[type * 2u];
+        vec4 type1 = typeParams[type * 2u + 1u];
+
+        // The segment threads start at its first sprite slot
+        uint groupStart = gl_WorkGroupID.x * 64u;
+        runStart = max( arguments[segment * 5u + 4u], groupStart ) - groupStart;
+
+        vec4 instance = instances[job.x + thread - job.w];
         instance.y = terrainHeight( instance.xz, instance.y );
         uint packed = uint( instance.w + 0.5 );
         float scale = float( ( packed >> 8u ) & 0x7ffu ) * ( 1.0 / 512.0 );
@@ -172,51 +212,68 @@ void main() {
         float projectedSize = dot( toSphere, toSphere ) * params.origin.w /
                               max( scale * scale, 1e-6 );
         float fade = spriteFade( projectedSize, type0.y, type0.x );
-        if ( !( projectedSize < type0.x && fade > 0.0 &&
-                bFadePass == ( fade < 1.0 ) ) ) {
-            continue;
-        }
+        bEmit = projectedSize < type0.x && fade > 0.0 &&
+                bFadePass == ( fade < 1.0 );
 
-        float angle = float( packed & 0xffu ) * ( kTwoPi / 256.0 );
-        float grey = float( packed >> 19u ) * ( 1.0 / 31.0 );
+        if ( bEmit ) {
+            float angle = float( packed & 0xffu ) * ( kTwoPi / 256.0 );
+            float grey = float( packed >> 19u ) * ( 1.0 / 31.0 );
 
-        // CalcSpriteIndex (FUN_0070e130): 15 side views + the top view
-        vec3 view = origin - params.camera.xyz;
-        int spriteIndex = 15;
-        if ( view.y * view.y <= view.z * view.z + view.x * view.x ) {
-            float orientation = mod( atan( view.z, view.x ) + angle, kTwoPi );
-            spriteIndex = int( orientation * ( 1.0 / kTwoPi ) * 15.0 + 0.5 );
-            if ( spriteIndex > 14 ) {
-                spriteIndex = 0;
+            // CalcSpriteIndex (FUN_0070e130): 15 side views + the top view
+            vec3 view = origin - params.camera.xyz;
+            int spriteIndex = 15;
+            if ( view.y * view.y <= view.z * view.z + view.x * view.x ) {
+                float orientation =
+                    mod( atan( view.z, view.x ) + angle, kTwoPi );
+                spriteIndex =
+                    int( orientation * ( 1.0 / kTwoPi ) * 15.0 + 0.5 );
+                if ( spriteIndex > 14 ) {
+                    spriteIndex = 0;
+                }
             }
-        }
 
-        // MngImpostor::pushSprite (FUN_0070e2e0)
-        float halfSize = ( type1.y + type0.z ) * scale;
-        vec3 center;
-        vec3 right;
-        vec3 up;
-        float vTop;
-        if ( spriteIndex == 15 ) {
-            center = origin +
-                     vec3( 0.0, type1.x * scale + halfSize * 0.5, 0.0 );
-            right = vec3( cos( angle ), 0.0, -sin( angle ) ) * halfSize;
-            up = vec3( sin( angle ), 0.0, cos( angle ) ) * halfSize;
-            vTop = 1.0;
-        } else {
-            float invStretchX = type0.w > 1.0 ? 1.0 / type0.w : 1.0;
-            float invStretchY = type0.w < -1.0 ? 1.0 / -type0.w : 1.0;
-            center = origin + vec3( 0.0, type1.x * scale, 0.0 );
-            right = params.right.xyz * ( halfSize * invStretchX );
-            up = params.up.xyz * ( halfSize * invStretchY );
-            vTop = 0.0;
-        }
+            // MngImpostor::pushSprite (FUN_0070e2e0)
+            float halfSize = ( type1.y + type0.z ) * scale;
+            if ( spriteIndex == 15 ) {
+                center = origin +
+                         vec3( 0.0, type1.x * scale + halfSize * 0.5, 0.0 );
+                right = vec3( cos( angle ), 0.0, -sin( angle ) ) * halfSize;
+                up = vec3( sin( angle ), 0.0, cos( angle ) ) * halfSize;
+                vTop = 1.0;
+            } else {
+                float invStretchX = type0.w > 1.0 ? 1.0 / type0.w : 1.0;
+                float invStretchY = type0.w < -1.0 ? 1.0 / -type0.w : 1.0;
+                center = origin + vec3( 0.0, type1.x * scale, 0.0 );
+                right = params.right.xyz * ( halfSize * invStretchX );
+                up = params.up.xyz * ( halfSize * invStretchY );
+                vTop = 0.0;
+            }
+            uMin = float( spriteIndex ) * kSpriteWidth;
 
-        float alphaByte = bFadePass ? floor( fade * 255.0 ) : 255.0;
-        uint slot = atomicAdd( arguments[job.z * 5u + 1u], 1u );
-        uint sprite = ( segmentBase + slot ) * 3u;
-        sprites[sprite] = vec4( center, float( spriteIndex ) * kSpriteWidth );
+            float alphaByte = bFadePass ? floor( fade * 255.0 ) : 255.0;
+            color = grey + 2.0 * alphaByte;
+        }
+    }
+    barrier();
+
+    uint runSlot = 0u;
+    if ( bEmit ) {
+        runSlot = atomicAdd( sRunCounts[runStart], 1u );
+    }
+    barrier();
+
+    if ( localIndex == runStart && sRunCounts[localIndex] != 0u ) {
+        sRunBases[localIndex] =
+            atomicAdd( arguments[segment * 5u + 1u], sRunCounts[localIndex] );
+    }
+    barrier();
+
+    if ( bEmit ) {
+        uint sprite = ( arguments[segment * 5u + 4u] + sRunBases[runStart] +
+                        runSlot ) *
+                      3u;
+        sprites[sprite] = vec4( center, uMin );
         sprites[sprite + 1u] = vec4( right, vTop );
-        sprites[sprite + 2u] = vec4( up, grey + 2.0 * alphaByte );
+        sprites[sprite + 2u] = vec4( up, color );
     }
 }

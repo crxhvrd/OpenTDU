@@ -94,6 +94,7 @@ private:
     void uploadTerrainHeights();
     void releaseComputeResources();
     void prepareComputeFrame( float distanceScaleSq );
+    void sortJobsBySegment();
     void recordCompute();
     void submitGPUCells( const SectorInfo &info,
                          Frustum &frustum,
@@ -136,7 +137,7 @@ private:
         uint32_t FirstInstance;
         uint32_t NumInstances;
         uint32_t Segment;
-        uint32_t Padding;
+        uint32_t FirstThread;
     };
     GPUComputePipeline *pCullPipeline;
     GPUBuffer *pSpriteBuffer;
@@ -145,6 +146,8 @@ private:
     GPUBuffer *pTypeParamBuffers[PendingFrameCount];
     GPUVertexLayout *pExpandedVertexLayout;
     std::vector<GPUJob> gpuJobs;
+    std::vector<GPUJob> sortedGPUJobs;
+    std::vector<uint32_t> segmentJobCursors;
     std::vector<uint32_t> segmentCounts;
     std::vector<DrawIndexedIndirectCommand> segmentArguments;
     std::vector<Eigen::Vector4f> typeParams;
