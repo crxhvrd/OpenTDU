@@ -493,7 +493,7 @@ static bool BuildScene( const std::vector<uint8_t> &templateScene,
     const size_t cameraStart = sceneData.size();
     sceneData.insert( sceneData.end(), pCamera, pCamera + propOffset );
     sceneData.insert( sceneData.end(), properties.begin(), properties.end() );
-    Write<uint32_t>( sceneData.data(), cameraStart,
+    Write<uint32_t>( sceneData.data(), (uint32_t)cameraStart,
                      uint32_t( sceneData.size() - cameraStart ) );
 
     outScene.clear();
@@ -558,7 +558,8 @@ static bool BuildCinematic( const std::vector<uint8_t> &templateCin,
 
     const size_t dataSize = size_t( pController + controllerSize - pData );
     outCin.resize( data.Offset + dataSize );
-    Write<uint32_t>( outCin.data(), data.Offset - sizeof( uint32_t ),
+    Write<uint32_t>( outCin.data(),
+                     (uint32_t)( data.Offset - sizeof( uint32_t ) ),
                      uint32_t( dataSize ) );
     return true;
 }
@@ -633,7 +634,8 @@ bool CinBuilder::BuildCameraBank( const std::vector<CinCameraKey> &keys,
     }
     std::string sceneName;
     const uint8_t *pRef = templateCin.data() + refs.Offset + 4;
-    for ( int32_t i = 0; i < Read<int32_t>( templateCin.data(), refs.Offset );
+    for ( int32_t i = 0;
+          i < Read<int32_t>( templateCin.data(), (uint32_t)refs.Offset );
           i++ ) {
         const uint8_t type = pRef[0];
         const uint8_t flags = pRef[1];
