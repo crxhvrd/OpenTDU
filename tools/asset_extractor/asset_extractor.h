@@ -33,4 +33,12 @@ namespace AssetExtractor {
     // (see flash/vmf/vmf_movie_builder.h). A bank is only rewritten when its
     // content changed. Returns false if a source bank could not be used.
     bool BuildGeneratedMovies( const char *pOutputPath );
+    // True when every generated movie exists (built by an earlier run)
+    bool AreGeneratedMoviesBuilt( const char *pOutputPath );
+
+    // Far impostor pack (world/far_impostor_pack.h), baked from the sector
+    // banks of the level found under pOutputPath.
+    bool BuildFarImpostors( const char *pOutputPath );
+    // True when the pack exists and matches the current format version
+    bool AreFarImpostorsBuilt( const char *pOutputPath );
 } // namespace AssetExtractor

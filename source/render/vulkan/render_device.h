@@ -15,6 +15,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <thread>
 
@@ -91,6 +92,18 @@ struct D3D9RenderStateInfo {
     uint32_t instancedDrawIndex = kNoInstancedDrawIndex;
 
     static constexpr uint32_t kNoInstancedDrawIndex = 0xffffffffu;
+};
+
+static_assert( sizeof( DrawIndexedIndirectCommand ) ==
+                   sizeof( VkDrawIndexedIndirectCommand ),
+               "DrawIndexedIndirectCommand must match Vulkan" );
+
+struct GPUComputePipeline {
+    VkPipeline Pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout Layout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout SetLayout = VK_NULL_HANDLE;
+    uint32_t NumStorageBuffers = 0u;
+    uint32_t PushConstantSize = 0u;
 };
 
 struct QueueInfo {
@@ -339,6 +352,38 @@ public:
                                uint32_t numVertices,
                                uint32_t startIndex,
                                uint32_t primitiveCount );
+
+    void drawIndexedIndirectBuffer( ePrimitiveType primitiveType,
+                                    GPUBuffer *pArguments,
+                                    uint32_t offset,
+                                    uint32_t numDraws );
+    GPUComputePipeline *createComputePipeline( const uint32_t *pSPIRV,
+                                               size_t spirvSize,
+                                               uint32_t numStorageBuffers,
+                                               uint32_t pushConstantSize );
+    void destroyComputePipeline( GPUComputePipeline *pPipeline );
+    void dispatchCompute( GPUComputePipeline *pPipeline,
+                          GPUBuffer *const *ppStorageBuffers,
+                          const void *pPushConstants,
+                          uint32_t numGroupsX,
+                          uint32_t numGroupsY,
+                          uint32_t numGroupsZ );
+    void updateBuffer( GPUBuffer *pBuffer,
+                       uint32_t offset,
+                       const void *pData,
+                       uint32_t size );
+    void insertMemoryBarrier( VkPipelineStageFlags srcStages,
+                              VkAccessFlags srcAccess,
+                              VkPipelineStageFlags dstStages,
+                              VkAccessFlags dstAccess );
+    void deferMemoryBarrier( GPUTexture *pTarget,
+                             VkPipelineStageFlags srcStages,
+                             VkAccessFlags srcAccess,
+                             VkPipelineStageFlags dstStages,
+                             VkAccessFlags dstAccess );
+    uint32_t addBeginSceneCallback( std::function<void()> callback );
+    void removeBeginSceneCallback( uint32_t handle );
+    inline uint32_t getFrameIndex() const { return frameIndex; }
 
     void
     blit( Render2DB *pSrc, RenderTarget *pDst, const bool bLinearFiltering );
@@ -649,6 +694,22 @@ private:
     };
     TransientRing transientRings[PendingFrameCount];
     bool bDrawBatching = false;
+
+    static constexpr uint32_t kMaxComputeSetsPerFrame = 64u;
+    static constexpr uint32_t kMaxComputeBuffersPerSet = 8u;
+    VkDescriptorPool computeDescriptorPools[PendingFrameCount] = {
+        VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE };
+    std::vector<std::pair<uint32_t, std::function<void()>>> beginSceneCallbacks;
+    struct DeferredMemoryBarrier {
+        GPUTexture *pTarget;
+        VkPipelineStageFlags SrcStages;
+        VkAccessFlags SrcAccess;
+        VkPipelineStageFlags DstStages;
+        VkAccessFlags DstAccess;
+    };
+    std::vector<DeferredMemoryBarrier> deferredBarriers;
+    void flushDeferredBarriers( const GPUTexture *pTarget );
+    uint32_t nextBeginSceneCallback = 1u;
     bool bMultiDrawBatching = false;
 
     VkCommandPool presentPools[PendingFrameCount];

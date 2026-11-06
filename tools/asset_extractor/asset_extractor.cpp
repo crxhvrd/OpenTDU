@@ -44,6 +44,9 @@ namespace {
         std::vector<GeneratedFrameLabels> FrameLabels;
         // Movie specific additions, run last
         bool ( *pBuildExtras )( VMFMovieBuilder &builder );
+        // Set for a full copy of the source movie: edits it in place (the
+        // fields above are then ignored)
+        bool ( *pPatchCopy )( VMFDocument &movie ) = nullptr;
     };
 
     // OPENTDU settings page: the controls page shell (panel, tabs, scrollbar,
@@ -191,6 +194,110 @@ namespace {
         return builder.setPlacement( "keymap", "open", list.Depth, &list );
     }
 
+    constexpr uint32_t kTagFrameLabel = 0x2b;
+    constexpr uint32_t kTagDoAction = 0x0c;
+    constexpr uint32_t kTagRemoveObject2 = 0x1c;
+
+    // LOG_IN 'boot' frame: the backdrop (a stage-sized fill at depth 0 and the
+    // background picture at depth 1) moves into a sprite named 'otdu_bg' at
+    // depth 1, so LoginWorldScene can hide it and show the world through
+    constexpr const char *kLoginBootLabel = "boot";
+    constexpr const char *kLoginBackdropName = "otdu_bg";
+    constexpr uint16_t kLoginFillDepth = 0;
+    constexpr uint16_t kLoginPictureDepth = 1;
+
+    bool PatchLoginMovie( VMFDocument &movie ) {
+        std::vector<VMFTag> &children = movie.Root.Children;
+
+        auto bootIt = std::find_if(
+            children.begin(), children.end(), []( const VMFTag &tag ) {
+                return tag.TagId == kTagFrameLabel &&
+                       strncmp( (const char *)tag.Payload.data(),
+                                kLoginBootLabel, tag.Payload.size() ) == 0;
+            } );
+        if ( bootIt == children.end() ) {
+            OTDU_LOG_ALWAYS( "LOG_IN has no '%s' label\n", kLoginBootLabel );
+            return false;
+        }
+
+        size_t fillIndex = 0;
+        size_t pictureIndex = 0;
+        VMFPlacement fill;
+        VMFPlacement picture;
+        for ( size_t i = size_t( bootIt - children.begin() );
+              i < children.size() && children[i].TagId != kVMFTagShowFrame;
+              i++ ) {
+            VMFPlacement placement;
+            if ( children[i].TagId != kVMFTagPlaceObject2 ||
+                 !placement.decode( children[i].Payload ) ||
+                 ( placement.Flags & VMFPlacement::PF_HasCharacter ) == 0 ) {
+                continue;
+            }
+            if ( placement.Depth == kLoginFillDepth ) {
+                fillIndex = i;
+                fill = placement;
+            } else if ( placement.Depth == kLoginPictureDepth ) {
+                pictureIndex = i;
+                picture = placement;
+            }
+        }
+        // The fill replaces the legal screens' one (a move); the picture is a
+        // new placement
+        if ( fillIndex == 0 || pictureIndex == 0 ||
+             ( fill.Flags & VMFPlacement::PF_Move ) == 0 ||
+             ( picture.Flags & VMFPlacement::PF_Move ) != 0 ) {
+            OTDU_LOG_ALWAYS( "LOG_IN '%s' frame does not have the expected "
+                             "backdrop placements\n",
+                             kLoginBootLabel );
+            return false;
+        }
+
+        fill.Flags = VMFPlacement::PF_HasCharacter | VMFPlacement::PF_HasMatrix;
+        fill.Trailing.clear();
+        picture.Trailing.clear();
+
+        VMFTag backdrop;
+        backdrop.TagId = kVMFTagDefineSprite;
+        backdrop.CharacterIndex = movie.computeNumCharacters();
+        backdrop.NumDepths = kLoginPictureDepth + 1;
+        for ( const VMFPlacement *pPiece : { &fill, &picture } ) {
+            VMFTag tag;
+            tag.TagId = kVMFTagPlaceObject2;
+            tag.Payload = pPiece->encode();
+            backdrop.Children.push_back( std::move( tag ) );
+        }
+        VMFTag stop;
+        stop.TagId = kTagDoAction;
+        stop.Payload = { 0x07, 0x00, 0x00, 0x00 }; // Stop, End
+        backdrop.Children.push_back( std::move( stop ) );
+        VMFTag showFrame;
+        showFrame.TagId = kVMFTagShowFrame;
+        backdrop.Children.push_back( std::move( showFrame ) );
+
+        VMFPlacement wrapper;
+        wrapper.Depth = kLoginPictureDepth;
+        wrapper.Flags = VMFPlacement::PF_HasCharacter |
+                        VMFPlacement::PF_HasMatrix | VMFPlacement::PF_HasName;
+        wrapper.CharacterIndex = uint16_t( backdrop.CharacterIndex );
+        wrapper.Name = kLoginBackdropName;
+        children[pictureIndex].Payload = wrapper.encode();
+
+        VMFTag removeFill;
+        removeFill.TagId = kTagRemoveObject2;
+        removeFill.Payload = { uint8_t( kLoginFillDepth & 0xff ),
+                               uint8_t( kLoginFillDepth >> 8 ), 0x00, 0x00 };
+        children[fillIndex] = std::move( removeFill );
+
+        // Defined before the frame that places it
+        children.insert( bootIt, std::move( backdrop ) );
+
+        movie.NumCharacters =
+            std::max( movie.NumCharacters, movie.computeNumCharacters() );
+        movie.NumDisplayList += 2;
+        movie.NumSprites += 1;
+        return true;
+    }
+
     // OPENTDU (see MngOpenTDUOptions): a validated options list entry sends
     // 'ss_menus' and 'help' to the label '<list owner>_<entry>' (and plays).
     // The OpenTDU list owner gets labels that leave the list in place and
@@ -207,6 +314,7 @@ namespace {
             { "menus/ss_menus", "options_stop", -1, "opentdu_", 5, 12 },
             { "help", "options_2", 0, "opentdu_", 1, 12 } },
          BuildOpenTDUSettingsPage },
+        { "LOG_IN.bnk", "LOG_IN.bnk", {}, {}, {}, nullptr, PatchLoginMovie },
     };
 
     // Generated movies go to OpenTDU's own data, never next to the retail
@@ -229,6 +337,47 @@ namespace {
         }
         outData.assign( std::istreambuf_iterator<char>( file ),
                         std::istreambuf_iterator<char>() );
+        return true;
+    }
+
+    bool BuildMovie( const std::string &sourcePath,
+                     const VMFDocument &sourceMovie,
+                     const GeneratedMovie &movie,
+                     std::vector<uint8_t> &outMovie ) {
+        VMFMovieBuilder builder( sourceMovie );
+        for ( const char *pInstance : movie.RootInstances ) {
+            if ( !builder.addRootInstance( pInstance ) ) {
+                OTDU_LOG_ALWAYS( "'%s': %s\n", sourcePath.c_str(),
+                                 builder.getError().c_str() );
+                return false;
+            }
+        }
+
+        for ( const uint16_t frame : movie.RootScriptFrames ) {
+            builder.addRootFrameActions( frame );
+        }
+
+        for ( const GeneratedFrameLabels &labels : movie.FrameLabels ) {
+            for ( int32_t i = labels.First; i <= labels.Last; i++ ) {
+                const std::string label =
+                    labels.pLabelPrefix + std::to_string( i );
+                if ( !builder.addFrameLabel(
+                         labels.pSpritePath, labels.pExistingLabel,
+                         labels.FrameOffset, label.c_str() ) ) {
+                    OTDU_LOG_ALWAYS( "'%s': %s\n", sourcePath.c_str(),
+                                     builder.getError().c_str() );
+                    return false;
+                }
+            }
+        }
+
+        if ( movie.pBuildExtras != nullptr && !movie.pBuildExtras( builder ) ) {
+            OTDU_LOG_ALWAYS( "'%s': %s\n", sourcePath.c_str(),
+                             builder.getError().c_str() );
+            return false;
+        }
+
+        outMovie = builder.build().serialize();
         return true;
     }
 
@@ -273,51 +422,36 @@ namespace {
             return false;
         }
 
-        VMFMovieBuilder builder( sourceMovie );
-        for ( const char *pInstance : movie.RootInstances ) {
-            if ( !builder.addRootInstance( pInstance ) ) {
-                OTDU_LOG_ALWAYS( "'%s': %s\n", sourcePath.c_str(),
-                                 builder.getError().c_str() );
+        std::vector<uint8_t> generatedMovie;
+        if ( movie.pPatchCopy != nullptr ) {
+            VMFDocument copy = sourceMovie;
+            if ( !movie.pPatchCopy( copy ) ) {
+                OTDU_LOG_ALWAYS( "Cannot patch the movie of '%s'\n",
+                                 sourcePath.c_str() );
                 return false;
             }
-        }
-
-        for ( const uint16_t frame : movie.RootScriptFrames ) {
-            builder.addRootFrameActions( frame );
-        }
-
-        for ( const GeneratedFrameLabels &labels : movie.FrameLabels ) {
-            for ( int32_t i = labels.First; i <= labels.Last; i++ ) {
-                const std::string label =
-                    labels.pLabelPrefix + std::to_string( i );
-                if ( !builder.addFrameLabel(
-                         labels.pSpritePath, labels.pExistingLabel,
-                         labels.FrameOffset, label.c_str() ) ) {
-                    OTDU_LOG_ALWAYS( "'%s': %s\n", sourcePath.c_str(),
-                                     builder.getError().c_str() );
-                    return false;
-                }
-            }
-        }
-
-        if ( movie.pBuildExtras != nullptr && !movie.pBuildExtras( builder ) ) {
-            OTDU_LOG_ALWAYS( "'%s': %s\n", sourcePath.c_str(),
-                             builder.getError().c_str() );
+            generatedMovie = copy.serialize();
+        } else if ( !BuildMovie( sourcePath, sourceMovie, movie,
+                                 generatedMovie ) ) {
             return false;
         }
 
         std::vector<uint8_t> bank;
         std::string error;
-        if ( !ReplaceBankEntry( sourceBank, entryIndex,
-                                builder.build().serialize(), bank, error ) ) {
+        if ( !ReplaceBankEntry( sourceBank, entryIndex, generatedMovie, bank,
+                                error ) ) {
             OTDU_LOG_ALWAYS( "Cannot rewrite '%s': %s\n", sourcePath.c_str(),
                              error.c_str() );
             return false;
         }
 
-        // Written next to the retail banks by earlier builds
+        // Written next to the retail banks by earlier builds (never the
+        // retail bank a copy is made from)
         std::error_code errorCode;
-        std::filesystem::remove( sourceFolder + movie.pBankName, errorCode );
+        if ( strcmp( movie.pBankName, movie.pSourceBank ) != 0 ) {
+            std::filesystem::remove( sourceFolder + movie.pBankName,
+                                     errorCode );
+        }
 
         const std::string outputPath = outputFolder + movie.pBankName;
         std::filesystem::create_directories( outputFolder, errorCode );
@@ -983,6 +1117,21 @@ namespace AssetExtractor {
             }
         }
         return bSuccess;
+    }
+
+    bool AreGeneratedMoviesBuilt( const char *pOutputPath ) {
+        const std::string root = std::string( pOutputPath ) + "/";
+        for ( const GeneratedMovieFolders &folders : kGeneratedMovieFolders ) {
+            for ( const GeneratedMovie &movie : kGeneratedMovies ) {
+                std::error_code errorCode;
+                if ( !std::filesystem::exists( root + folders.pOutputFolder +
+                                                   movie.pBankName,
+                                               errorCode ) ) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     bool AreIniFilesExtracted( const char *pOutputPath ) {

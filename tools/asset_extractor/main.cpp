@@ -119,5 +119,7 @@ int main( int argc, char *argv[] ) {
     AssetExtractor::ExtractionResult result = AssetExtractor::Run( params );
     const bool bMoviesBuilt =
         AssetExtractor::BuildGeneratedMovies( gpOutputPath );
-    return ( result.bSuccess && bMoviesBuilt ) ? 0 : 1;
+    const bool bFarImpostorsBuilt =
+        AssetExtractor::BuildFarImpostors( gpOutputPath );
+    return ( result.bSuccess && bMoviesBuilt && bFarImpostorsBuilt ) ? 0 : 1;
 }

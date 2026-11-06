@@ -15,6 +15,8 @@
 #include "render/camera/gs_camera.h"
 #include "render/mng_env_map.h"
 #include "world/gs_mng_resources.h"
+#include "world/gs_world.h"
+#include "world/streaming_manager.h"
 #endif
 
 #include "postfx/effects/postfx_blit.h"
@@ -234,6 +236,7 @@ GSRender::GSRender()
       fovVsLodFactor( 1.0f ),
       fovVsLodFactorStart( 0.4f ),
       fovVsLodFactorEnd( 0.1f ),
+      impostorFarDistanceScale( 1.0f ),
       lineMipBias( 0.1f ),
       vegetationUVAFactor( 0.1f ),
       vegetationFactor( 0.015f ),
@@ -791,6 +794,14 @@ void GSRender::drawDebug( float deltaTime ) {
 
     ImGui::SeparatorText( "Geometry" );
     ImGui::SliderFloat( "LOD factor", &DebugLODFactor, 0.01f, 1.0f, "%.2f" );
+    ImGui::SliderFloat( "Impostor far distance", &impostorFarDistanceScale,
+                        1.0f, 12.0f, "x%.2f" );
+    if ( gpWorld != nullptr && gpWorld->getStreamingManager() != nullptr ) {
+        const FarImpostorField &farImpostors =
+            gpWorld->getStreamingManager()->getFarImpostors();
+        ImGui::Text( "Far impostor candidates: %u",
+                     farImpostors.getNumSprites() );
+    }
     if ( ImGui::SliderInt( "LOD Quality", (int32_t *)&activeLODQuality, 0,
                            2 ) ) {
         setLODQuality( activeLODQuality );

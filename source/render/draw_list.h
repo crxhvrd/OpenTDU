@@ -49,6 +49,14 @@ struct ActivePrimitive {
     ActivePrimitive();
 };
 
+// Standin to support GPU driven dispatch/draw calls from high level code.
+// TODO: Cleanup to avoid adding extra noise to the drawlist API
+class DrawListCustomDraw {
+public:
+    virtual ~DrawListCustomDraw() = default;
+    virtual void draw( Primitive *pPrimitive ) = 0;
+};
+
 class DrawList {
 public:
     inline bool isInitialized() const { return bInitialized; }
@@ -118,6 +126,10 @@ public:
     DrawPrimitive &getPrimitiveAtIndex( const uint32_t index ) {
         return pMemPrimsList[index];
     }
+
+    void setLastPrimitiveCustomDraw( DrawListCustomDraw *pCustomDraw );
+    DrawListCustomDraw *findCustomDraw( const Primitive *pPrimitive ) const;
+
     inline uint32_t getMaxNumVertices() const { return maxNumVertices; }
     inline uint32_t getMaxNumPrimitives() const { return maxNumPrimitives; }
     inline uint32_t getMaxNumIndex() const { return maxNumIndex; }
@@ -170,6 +182,7 @@ private:
     Matrix4x4f_t *pMatrices;
     Material **ppMaterials;
     SetupGraph **ppSetups;
+    std::vector<DrawListCustomDraw *> customDraws; // OTDU_ADDITION
 
     DrawList *pCopy;
     uint32_t flags;

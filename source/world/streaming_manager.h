@@ -6,6 +6,7 @@
 #include "sector_manager.h"
 #include "spot_stream.h"
 #include "world_level.h"
+#include "far_impostors.h"
 
 class RenderScene;
 struct HiearchyNode;
@@ -64,6 +65,7 @@ public:
     void *getSectorNameStream() const { return level.getSectorNameStream(); }
 
     bool isFirstInitDone() const { return bFirstInitDone; }
+    const FarImpostorField &getFarImpostors() const { return farImpostors; }
 
 public:
     StreamingManager( uint32_t numSubSectors,
@@ -143,6 +145,8 @@ private:
     Eigen::Vector4f debugJumpPos = Eigen::Vector4f::Zero();
 
     Level level;
+
+    FarImpostorField farImpostors; // OTDU_ADDITION
 
 private:
     void centerUpdate( Eigen::Vector4f *pStreamPosition );

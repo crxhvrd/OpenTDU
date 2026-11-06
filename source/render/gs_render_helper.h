@@ -41,6 +41,13 @@ static bool IsBlockCompressedFormat( eViewFormat format ) {
 static constexpr uint32_t
 GetVertexAttributeSize( const eVertexAttributeFormat attribute ) {
     // FUN_005072f0
+
+    // TODO: extend LUT to include special VF
+    if ( attribute ==
+         eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT ) {
+        return 4 * sizeof( float );
+    }
+
     return kVertexComponentStrideLUT[attribute] *
            kVertexComponentSizeLUT[attribute];
 }
@@ -70,12 +77,18 @@ struct GPUBufferDesc {
     };
 
     uint8_t bDynamic : 1;
+    uint8_t bStorage : 1;     // Readable/writable by compute shaders
+    uint8_t bIndirect : 1;    // Source of indirect draw arguments
+    uint8_t bDeviceLocal : 1; // GPU only (not lockable)
 
     GPUBufferDesc()
         : BufferType( GPUBufferDesc::Type::BT_Unknown ),
           Size( 0u ),
           Stride( 0u ),
-          bDynamic( false ) {}
+          bDynamic( false ),
+          bStorage( false ),
+          bIndirect( false ),
+          bDeviceLocal( false ) {}
 };
 
 struct GPUBackbuffer {

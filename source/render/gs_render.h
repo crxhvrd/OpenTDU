@@ -146,6 +146,9 @@ public:
     inline void setFovVsLodFactor( const float value ) {
         fovVsLodFactor = value;
     }
+    inline float getImpostorFarDistanceScale() const {
+        return impostorFarDistanceScale;
+    }
 
     inline RenderPass &getRenderPassAtIndex( uint32_t index ) {
         return renderPasses.at( index );
@@ -471,6 +474,7 @@ private:
     float fovVsLodFactor;
     float fovVsLodFactorStart;
     float fovVsLodFactorEnd;
+    float impostorFarDistanceScale;
     float lineMipBias;
 
     float vegetationUVAFactor;

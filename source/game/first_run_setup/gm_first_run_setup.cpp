@@ -8,7 +8,11 @@
 #include "render/text_renderer.h"
 
 #include <chrono>
-static constexpr const char *kGeneratedMoviesFolder = "/opentdu_data/flash/";
+static bool AreGeneratedMoviesBuilt() {
+    char pWorkingDir[OTDU_MAX_PATH];
+    TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
+    return AssetExtractor::AreGeneratedMoviesBuilt( pWorkingDir );
+}
 
 // Frame time spent building PSOs (keeps the window responsive)
 static constexpr double kPSOBuildBudgetMs = 33.0;
@@ -17,8 +21,14 @@ static constexpr float kDisplayDelay = 0.5f;
 static constexpr ColorRGBA kProgressBarBackground( 0x30, 0x30, 0x30, 0xff );
 static constexpr ColorRGBA kProgressBarFill( 0xd0, 0xd0, 0xd0, 0xff );
 
+static bool AreFarImpostorsBuilt() {
+    char pWorkingDir[OTDU_MAX_PATH];
+    TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
+    return AssetExtractor::AreFarImpostorsBuilt( pWorkingDir );
+}
+
 bool GMFirstRunSetup::IsRequired() {
-    return !gpFile->fileExists( kGeneratedMoviesFolder ) ||
+    return !AreGeneratedMoviesBuilt() || !AreFarImpostorsBuilt() ||
            gEdRender.pRenderDevice->getNumRecordedPSOs() != 0;
 }
 
@@ -47,12 +57,19 @@ void GMFirstRunSetup::tick( float deltaTime, float totalTime ) {
     elapsedTime += deltaTime;
 
     if ( !bGeneratedMoviesBuilt ) {
-        if ( !gpFile->fileExists( kGeneratedMoviesFolder ) ) {
+        if ( !AreGeneratedMoviesBuilt() ) {
             char pWorkingDir[OTDU_MAX_PATH];
             TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
             if ( !AssetExtractor::BuildGeneratedMovies( pWorkingDir ) ) {
                 OTDU_LOG_WARN(
                     "Failed to generate the OpenTDU front-end movies\n" );
+            }
+        }
+        if ( !AreFarImpostorsBuilt() ) {
+            char pWorkingDir[OTDU_MAX_PATH];
+            TestDrive::GetWorkingDir( pWorkingDir, OTDU_MAX_PATH );
+            if ( !AssetExtractor::BuildFarImpostors( pWorkingDir ) ) {
+                OTDU_LOG_WARN( "Failed to bake the far impostor pack\n" );
             }
         }
         bGeneratedMoviesBuilt = true;

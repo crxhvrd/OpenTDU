@@ -277,6 +277,15 @@ static constexpr const VkFormat
         VK_FORMAT_R16G16B16A16_SNORM,
         VK_FORMAT_R16G16B16A16_SNORM };
 
+static VkFormat GetVertexAttributeVkFormat( eVertexAttributeFormat type ) {
+    if ( type == eVertexAttributeFormat::VAF_INSTANCE_R32G32B32A32_SFLOAT ) {
+        return VK_FORMAT_R32G32B32A32_SFLOAT;
+    }
+    return ( type < eVertexAttributeFormat::VAF_Count )
+               ? kVertexAttributeFormats[type]
+               : VK_FORMAT_UNDEFINED;
+}
+
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 VulkanDebugCallback( VkDebugUtilsMessageSeverityFlagBitsEXT severity,
                      VkDebugUtilsMessageTypeFlagsEXT,
@@ -478,6 +487,12 @@ RenderDevice::~RenderDevice() {
     }
     destroyIndirectDrawBuffers();
     destroyTransientRings();
+    for ( VkDescriptorPool &pool : computeDescriptorPools ) {
+        if ( pool != VK_NULL_HANDLE ) {
+            vkDestroyDescriptorPool( device, pool, nullptr );
+            pool = VK_NULL_HANDLE;
+        }
+    }
     vkDestroyImageView( device, fallbackSRVView, nullptr );
     vmaDestroyImage( allocator, fallbackSRVImage, fallbackSRVAllocation );
 
@@ -1112,6 +1127,12 @@ GPUBuffer *RenderDevice::createBuffer( const struct GPUBufferDesc *desc ) {
         OTDU_UNIMPLEMENTED;
         break;
     };
+    if ( desc->bStorage ) {
+        bufferInfo.usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    }
+    if ( desc->bIndirect ) {
+        bufferInfo.usage |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+    }
 
     VmaAllocationCreateInfo allocInfo = {};
     // TODO: Static buffers should live in device local memory (uploaded
@@ -1119,6 +1140,11 @@ GPUBuffer *RenderDevice::createBuffer( const struct GPUBufferDesc *desc ) {
     allocInfo.usage =
         desc->bDynamic ? GetPerFrameBufferMemoryUsage() : VMA_MEMORY_USAGE_AUTO;
     allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    if ( desc->bDeviceLocal ) {
+        OTDU_ASSERT( !desc->bDynamic );
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        allocInfo.flags = 0;
+    }
 
     VkBuffer buffer;
     VmaAllocation allocation;
@@ -2312,6 +2338,276 @@ void RenderDevice::drawIndexedPrimitive( ePrimitiveType primitiveType,
     recordIndexedDraw( command );
 }
 
+void RenderDevice::drawIndexedIndirectBuffer( ePrimitiveType primitiveType,
+                                              GPUBuffer *pArguments,
+                                              uint32_t offset,
+                                              uint32_t numDraws ) {
+    if ( numDraws == 0u || pArguments == nullptr ||
+         !prepareDrawCall( primitiveType ) ) {
+        return;
+    }
+    OTDU_ASSERT( pIndexBuffer != nullptr );
+
+    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VkDeviceSize indexBufferOffset = 0ull;
+    resolveBuffer( pIndexBuffer, indexBuffer, indexBufferOffset );
+    bindIndexBufferToCmdBuffer( indexBuffer, indexBufferOffset,
+                                pIndexBuffer->IndexType );
+    activeInstanceCount = 1;
+
+    VkBuffer argumentBuffer = VK_NULL_HANDLE;
+    VkDeviceSize argumentOffset = 0ull;
+    resolveBuffer( pArguments, argumentBuffer, argumentOffset );
+
+    const uint32_t stride = sizeof( VkDrawIndexedIndirectCommand );
+    const uint32_t maxDrawCount =
+        deviceCaps.bMultiDrawIndirect ? deviceCaps.MaxDrawIndirectCount : 1u;
+    VkCommandBuffer cmdBuffer = getCommandBuffer();
+    for ( uint32_t i = 0u; i < numDraws; i += maxDrawCount ) {
+        vkCmdDrawIndexedIndirect( cmdBuffer, argumentBuffer,
+                                  argumentOffset + offset +
+                                      VkDeviceSize( i ) * stride,
+                                  Min( numDraws - i, maxDrawCount ), stride );
+    }
+}
+
+GPUComputePipeline *
+RenderDevice::createComputePipeline( const uint32_t *pSPIRV,
+                                     size_t spirvSize,
+                                     uint32_t numStorageBuffers,
+                                     uint32_t pushConstantSize ) {
+    OTDU_ASSERT( numStorageBuffers <= kMaxComputeBuffersPerSet );
+
+    if ( computeDescriptorPools[0] == VK_NULL_HANDLE ) {
+        VkDescriptorPoolSize poolSize = {};
+        poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        poolSize.descriptorCount =
+            kMaxComputeSetsPerFrame * kMaxComputeBuffersPerSet;
+        VkDescriptorPoolCreateInfo poolInfo = {};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.maxSets = kMaxComputeSetsPerFrame;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+        for ( VkDescriptorPool &pool : computeDescriptorPools ) {
+            VkResult result =
+                vkCreateDescriptorPool( device, &poolInfo, nullptr, &pool );
+            OTDU_ASSERT_FATAL( result == VK_SUCCESS );
+        }
+    }
+
+    GPUComputePipeline *pPipeline = new GPUComputePipeline();
+    pPipeline->NumStorageBuffers = numStorageBuffers;
+    pPipeline->PushConstantSize = pushConstantSize;
+
+    VkDescriptorSetLayoutBinding bindings[kMaxComputeBuffersPerSet] = {};
+    for ( uint32_t i = 0; i < numStorageBuffers; i++ ) {
+        bindings[i].binding = i;
+        bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    VkDescriptorSetLayoutCreateInfo setLayoutInfo = {};
+    setLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    setLayoutInfo.bindingCount = numStorageBuffers;
+    setLayoutInfo.pBindings = bindings;
+    VkResult result = vkCreateDescriptorSetLayout(
+        device, &setLayoutInfo, nullptr, &pPipeline->SetLayout );
+    OTDU_ASSERT_FATAL( result == VK_SUCCESS );
+
+    VkPushConstantRange pushConstantRange = {};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pushConstantRange.size = pushConstantSize;
+    VkPipelineLayoutCreateInfo layoutInfo = {};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &pPipeline->SetLayout;
+    layoutInfo.pushConstantRangeCount = pushConstantSize != 0u ? 1 : 0;
+    layoutInfo.pPushConstantRanges = &pushConstantRange;
+    result = vkCreatePipelineLayout( device, &layoutInfo, nullptr,
+                                     &pPipeline->Layout );
+    OTDU_ASSERT_FATAL( result == VK_SUCCESS );
+
+    VkShaderModuleCreateInfo moduleInfo = {};
+    moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    moduleInfo.codeSize = spirvSize;
+    moduleInfo.pCode = pSPIRV;
+    VkShaderModule module = VK_NULL_HANDLE;
+    result = vkCreateShaderModule( device, &moduleInfo, nullptr, &module );
+    OTDU_ASSERT_FATAL( result == VK_SUCCESS );
+
+    VkComputePipelineCreateInfo pipelineInfo = {};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    pipelineInfo.stage.module = module;
+    pipelineInfo.stage.pName = "main";
+    pipelineInfo.layout = pPipeline->Layout;
+    result = vkCreateComputePipelines( device, psoCache, 1, &pipelineInfo,
+                                       nullptr, &pPipeline->Pipeline );
+    vkDestroyShaderModule( device, module, nullptr );
+    if ( result != VK_SUCCESS ) {
+        OTDU_LOG_ERROR( "Failed to create compute pipeline (%d)\n", result );
+        destroyComputePipeline( pPipeline );
+        return nullptr;
+    }
+    return pPipeline;
+}
+
+void RenderDevice::destroyComputePipeline( GPUComputePipeline *pPipeline ) {
+    if ( pPipeline == nullptr ) {
+        return;
+    }
+    waitForIdle();
+    if ( pPipeline->Pipeline != VK_NULL_HANDLE ) {
+        vkDestroyPipeline( device, pPipeline->Pipeline, nullptr );
+    }
+    if ( pPipeline->Layout != VK_NULL_HANDLE ) {
+        vkDestroyPipelineLayout( device, pPipeline->Layout, nullptr );
+    }
+    if ( pPipeline->SetLayout != VK_NULL_HANDLE ) {
+        vkDestroyDescriptorSetLayout( device, pPipeline->SetLayout, nullptr );
+    }
+    delete pPipeline;
+}
+
+void RenderDevice::dispatchCompute( GPUComputePipeline *pPipeline,
+                                    GPUBuffer *const *ppStorageBuffers,
+                                    const void *pPushConstants,
+                                    uint32_t numGroupsX,
+                                    uint32_t numGroupsY,
+                                    uint32_t numGroupsZ ) {
+    if ( !bRecordingCommands || pPipeline == nullptr ) {
+        return;
+    }
+    endActiveRenderPass();
+
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = computeDescriptorPools[frameIndex];
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &pPipeline->SetLayout;
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    if ( vkAllocateDescriptorSets( device, &allocInfo, &descriptorSet ) !=
+         VK_SUCCESS ) {
+        OTDU_LOG_ERROR( "Out of compute descriptor sets\n" );
+        return;
+    }
+
+    VkDescriptorBufferInfo bufferInfos[kMaxComputeBuffersPerSet] = {};
+    VkWriteDescriptorSet writes[kMaxComputeBuffersPerSet] = {};
+    for ( uint32_t i = 0; i < pPipeline->NumStorageBuffers; i++ ) {
+        GPUBuffer *pBuffer = ppStorageBuffers[i];
+        resolveBuffer( pBuffer, bufferInfos[i].buffer, bufferInfos[i].offset );
+        bufferInfos[i].range = pBuffer->ByteSize;
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = descriptorSet;
+        writes[i].dstBinding = i;
+        writes[i].descriptorCount = 1;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[i].pBufferInfo = &bufferInfos[i];
+    }
+    vkUpdateDescriptorSets( device, pPipeline->NumStorageBuffers, writes, 0,
+                            nullptr );
+
+    VkCommandBuffer cmdBuffer = getCommandBuffer();
+    vkCmdBindPipeline( cmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                       pPipeline->Pipeline );
+    vkCmdBindDescriptorSets( cmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                             pPipeline->Layout, 0, 1, &descriptorSet, 0,
+                             nullptr );
+    if ( pPipeline->PushConstantSize != 0u && pPushConstants != nullptr ) {
+        vkCmdPushConstants( cmdBuffer, pPipeline->Layout,
+                            VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                            pPipeline->PushConstantSize, pPushConstants );
+    }
+    vkCmdDispatch( cmdBuffer, numGroupsX, numGroupsY, numGroupsZ );
+
+    resetRecordedBindings(); // TODO: Invalidate device state (this SUCKS big
+                             // time and should be reworked)
+}
+
+void RenderDevice::updateBuffer( GPUBuffer *pBuffer,
+                                 uint32_t offset,
+                                 const void *pData,
+                                 uint32_t size ) {
+    if ( !bRecordingCommands || size == 0u ) {
+        return;
+    }
+    OTDU_ASSERT( size <= 65536u && ( size & 3u ) == 0u );
+    endActiveRenderPass();
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceSize bufferOffset = 0ull;
+    resolveBuffer( pBuffer, buffer, bufferOffset );
+    vkCmdUpdateBuffer( getCommandBuffer(), buffer, bufferOffset + offset, size,
+                       pData );
+}
+
+void RenderDevice::insertMemoryBarrier( VkPipelineStageFlags srcStages,
+                                        VkAccessFlags srcAccess,
+                                        VkPipelineStageFlags dstStages,
+                                        VkAccessFlags dstAccess ) {
+    if ( !bRecordingCommands ) {
+        return;
+    }
+    endActiveRenderPass();
+    VkMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = srcAccess;
+    barrier.dstAccessMask = dstAccess;
+    vkCmdPipelineBarrier( getCommandBuffer(), srcStages, dstStages, 0, 1,
+                          &barrier, 0, nullptr, 0, nullptr );
+}
+
+void RenderDevice::deferMemoryBarrier( GPUTexture *pTarget,
+                                       VkPipelineStageFlags srcStages,
+                                       VkAccessFlags srcAccess,
+                                       VkPipelineStageFlags dstStages,
+                                       VkAccessFlags dstAccess ) {
+    if ( !bRecordingCommands ) {
+        return;
+    }
+    if ( pTarget == nullptr ) {
+        insertMemoryBarrier( srcStages, srcAccess, dstStages, dstAccess );
+        return;
+    }
+    deferredBarriers.push_back(
+        { pTarget, srcStages, srcAccess, dstStages, dstAccess } );
+}
+
+void RenderDevice::flushDeferredBarriers( const GPUTexture *pTarget ) {
+    // Outside of any render pass
+    auto it = deferredBarriers.begin();
+    while ( it != deferredBarriers.end() ) {
+        if ( pTarget != nullptr && it->pTarget != pTarget ) {
+            ++it;
+            continue;
+        }
+        VkMemoryBarrier barrier = {};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.srcAccessMask = it->SrcAccess;
+        barrier.dstAccessMask = it->DstAccess;
+        vkCmdPipelineBarrier( getCommandBuffer(), it->SrcStages, it->DstStages,
+                              0, 1, &barrier, 0, nullptr, 0, nullptr );
+        it = deferredBarriers.erase( it );
+    }
+}
+
+uint32_t RenderDevice::addBeginSceneCallback( std::function<void()> callback ) {
+    const uint32_t handle = nextBeginSceneCallback++;
+    beginSceneCallbacks.emplace_back( handle, std::move( callback ) );
+    return handle;
+}
+
+void RenderDevice::removeBeginSceneCallback( uint32_t handle ) {
+    beginSceneCallbacks.erase( std::remove_if( beginSceneCallbacks.begin(),
+                                               beginSceneCallbacks.end(),
+                                               [handle]( const auto &entry ) {
+                                                   return entry.first == handle;
+                                               } ),
+                               beginSceneCallbacks.end() );
+}
+
 #if defined( OTDU_MACOS )
 void RenderDevice::drawTriangleFanAsList( int32_t baseVertexIndex,
                                           uint32_t primitiveCount ) {
@@ -3248,6 +3544,16 @@ void RenderDevice::beginScene() {
         }
 
         resourceBinder.dirtyStates = 0xffffffff;
+
+        if ( computeDescriptorPools[frameIndex] != VK_NULL_HANDLE ) {
+            vkResetDescriptorPool( device, computeDescriptorPools[frameIndex],
+                                   0 );
+        }
+
+        flushDeferredBarriers( nullptr );
+        for ( const auto &callback : beginSceneCallbacks ) {
+            callback.second();
+        }
     }
 }
 
@@ -3617,7 +3923,7 @@ RenderDevice::createVertexLayout( VertexLayoutAttribute *pAttributes,
         GPUVertexLayoutSemantic semantic = {};
         semantic.Binding = streamIdx;
         semantic.Offset = layoutAttribute.Offset;
-        semantic.Format = kVertexAttributeFormats[layoutAttribute.Type];
+        semantic.Format = GetVertexAttributeVkFormat( layoutAttribute.Type );
         semantic.Usage = layoutAttribute.Usage;
         semantic.UsageIndex = layoutAttribute.UsageIndex;
         pLayout->Semantics.push_back( semantic );
@@ -5432,6 +5738,15 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
     if ( bNeedRestartRenderPass ) {
         transitionPreviousPassAttachments();
         endActiveRenderPass();
+
+        if ( !deferredBarriers.empty() ) {
+            for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
+                if ( bFramebufferAttachmentValid[i] &&
+                     pFramebufferAttachments[i] != nullptr ) {
+                    flushDeferredBarriers( pFramebufferAttachments[i] );
+                }
+            }
+        }
 
         vkCmdBeginRenderPass( getCommandBuffer(), &renderPassInfo,
                               VK_SUBPASS_CONTENTS_INLINE );

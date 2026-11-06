@@ -70,7 +70,7 @@ static CmdLineArg CmdLineArgUnpack( "unpack", []( const char *pArg ) {
         "         module is the compiled permutation ('<id>.vert.spv').\n"
         "-input:  Folder holding the compiled permutations.\n"
         "-output: Pack to write (or, with -unpack, the folder receiving one\n"
-        "         '<HASHCODE>.<vert|frag>.spv' per entry, as\n"
+        "         '<HASHCODE>.<vert|frag|comp>.spv' per entry, as\n"
         "         tools/shader_lifter/verify.py expects).\n"
         "-unpack: Pack to extract.\n" );
     exit( 1 );
@@ -183,10 +183,13 @@ static int Unpack( const std::vector<ListEntry> &entries ) {
     // The stage only lives in the module name of the list.
     std::unordered_map<uint64_t, const char *> extensions;
     for ( const ListEntry &entry : entries ) {
-        extensions[entry.Hashcode] =
-            ( entry.Module.find( ".vert." ) != std::string::npos )
-                ? ".vert.spv"
-                : ".frag.spv";
+        if ( entry.Module.find( ".vert." ) != std::string::npos ) {
+            extensions[entry.Hashcode] = ".vert.spv";
+        } else if ( entry.Module.find( ".comp." ) != std::string::npos ) {
+            extensions[entry.Hashcode] = ".comp.spv";
+        } else {
+            extensions[entry.Hashcode] = ".frag.spv";
+        }
     }
 
     std::error_code errorCode;

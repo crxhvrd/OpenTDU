@@ -266,6 +266,14 @@ enum eVertexAttributeFormat : uint8_t {
     VAF_Invalid = 0xff
 };
 
+struct DrawIndexedIndirectCommand {
+    uint32_t IndexCount = 0u;
+    uint32_t InstanceCount = 1u;
+    uint32_t FirstIndex = 0u;
+    int32_t VertexOffset = 0;
+    uint32_t FirstInstance = 0u;
+};
+
 enum ePrimitiveType : uint8_t {
     PT_Point = 0,
     PT_Line = 1,

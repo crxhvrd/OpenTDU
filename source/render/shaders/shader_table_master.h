@@ -56,6 +56,10 @@ static constexpr ShaderTableEntry kMasterShaderTable[] = {
 #include "shader_table_shadow.inl"
 /* debug font */
 #include "shader_table_debug_font.inl"
+    /* OTDU_ADDITION: far impostors (UNLIT_FAR_IMPOSTOR_EXPANDED), same flags
+       as the retail sprite VS 0xbb39b0f319a8b9f3 */
+    {0,          0xf4a1e0f1a0000002, eShaderType::ST_Vertex, 0x80082011, 0, 0,          0,
+     "FarImpostor"                                                                                },
     /* imgui */
     {0,          0xf123445d9d1d1fe4, eShaderType::ST_Vertex, 1,          0, 0,          0, "imgui"},
     {0,          0x71bb13aeb23095f9, eShaderType::ST_Pixel,  0,          0, 0,          0, "imgui"},

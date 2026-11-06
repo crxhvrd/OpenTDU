@@ -212,6 +212,7 @@ bool DrawList::initialize( uint32_t newNumPrimitives,
     maxNumPrimitives = newNumPrimitives;
     maxNumVertices = newNumVertices;
     bDynamic = param_7;
+    customDraws.assign( maxNumPrimitives, nullptr );
 
     if ( param_10 ) {
         maxNumIndex = numIndices;
@@ -454,6 +455,31 @@ int32_t DrawList::commitPrimitive() {
     return numPrimitives - 1;
 }
 
+void DrawList::setLastPrimitiveCustomDraw( DrawListCustomDraw *pCustomDraw ) {
+    OTDU_ASSERT( numPrimitives != 0 );
+    if ( numPrimitives != 0 ) {
+        customDraws[numPrimitives - 1] = pCustomDraw;
+    }
+}
+
+DrawListCustomDraw *
+DrawList::findCustomDraw( const Primitive *pPrimitive ) const {
+    const uint8_t *pBase = reinterpret_cast<const uint8_t *>( pMemPrimsList );
+    const uint8_t *pPrimitiveBytes =
+        reinterpret_cast<const uint8_t *>( pPrimitive ) -
+        offsetof( DrawPrimitive, PrimitiveInstance );
+    if ( pMemPrimsList == nullptr || pPrimitiveBytes < pBase ) {
+        return nullptr;
+    }
+    const size_t index = static_cast<size_t>( pPrimitiveBytes - pBase ) /
+                         sizeof( DrawPrimitive );
+    if ( index >= numPrimitives || index >= customDraws.size() ||
+         &pMemPrimsList[index].PrimitiveInstance != pPrimitive ) {
+        return nullptr;
+    }
+    return customDraws[index];
+}
+
 int32_t DrawList::allocatePrimitive( ePrimitiveType type,
                                      uint32_t numVertex,
                                      uint32_t numIndices ) {
@@ -690,6 +716,7 @@ bool DrawList::initializePrimitive( ePrimitiveType param_2,
         ppMaterials[numPrimitives] = activeCommand.pMaterial;
         pMatrices[numPrimitives] = activeCommand.TransformMat;
         ppSetups[numPrimitives] = &activeCommand.Setup;
+        customDraws[numPrimitives] = nullptr;
 
         activePrimitive.pPrimitive =
             &pMemPrimsList[numPrimitives].PrimitiveInstance;

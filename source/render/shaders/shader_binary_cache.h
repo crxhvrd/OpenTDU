@@ -122,6 +122,7 @@ public:
     ~ShaderBinaryCache();
 
     ShaderBytecode_t getOrLoadBytecode( const ShaderTableEntry *pTableEntry );
+    ShaderBytecode_t getComputeBytecode( uint64_t hashcode );
     ShaderMetadataSPIRVRuntime *
     getMetadataSPIRV( const ShaderTableEntry *pTableEntry );
 
@@ -131,6 +132,7 @@ private:
     std::unordered_map<uint64_t, ShaderBytecode_t> shaderBinaries;
 
 private:
+    void loadRebuiltPack( const std::string &packPath );
     bool loadShaderTable(
         const std::string &shaderTablePath,
         std::unordered_map<uint64_t, ShaderBytecode_t> &outBinaries );

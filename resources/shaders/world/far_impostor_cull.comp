@@ -1,0 +1,222 @@
+#version 450
+
+// Far impostor culling and expansion (world/far_impostors.cpp).
+// GPU rewrite of the CPU side impostor culling for far distance sprites.
+// Hashcode 0xF4A1E0F1C0000001
+
+layout( local_size_x = 64 ) in;
+
+layout( std430, set = 0, binding = 0 ) readonly buffer Instances {
+    vec4 instances[]; // position, packed angle (8 bits) | scale (11 bits) | grey (5 bits)
+};
+layout( std430, set = 0, binding = 1 ) readonly buffer Jobs {
+    uvec4 jobs[]; // (first instance, instance count, segment = type * 2 + pass, -)
+};
+layout( std430, set = 0, binding = 2 ) readonly buffer Types {
+    vec4 typeParams[];  // Per type: (cut-off, fade start, size delta, stretch UV),
+                        //           (bounding sphere center y, radius, -, -)
+};
+layout( std430, set = 0, binding = 3 ) writeonly buffer Sprites {
+    vec4 sprites[]; // Per sprite: (center, u min), (right, v top), (up, grey + 2 * alpha byte)
+};
+layout( std430, set = 0, binding = 4 ) buffer Arguments {
+    uint arguments[]; // indirect draw args
+};
+struct TerrainMap {
+    vec4 origin;
+    uvec4 info;
+    uint lods[84];
+};
+layout( std430, set = 0, binding = 5 ) readonly buffer Terrain {
+    uvec4 terrainHeader; // (number of maps, -, -, -)
+    TerrainMap maps[];
+};
+// 257 x 257 heights per map slot
+layout( std430, set = 0, binding = 6 ) readonly buffer Heights {
+    float heights[];
+};
+
+layout( push_constant ) uniform Parameters {
+    vec4 origin; // Stream origin, hide distance unit
+    vec4 camera; // Camera (stream frame)
+    vec4 right;  // Billboard right axis
+    vec4 up;     // Billboard up axis
+}
+params;
+
+const float kTwoPi = 6.2831853;
+const float kSpriteWidth = 0.0625;
+
+// Sprite fade band (inlined in ComputeImpostorBillboardVisible, FUN_0070ee60)
+float spriteFade( float projectedSize, float fadeStart, float farDist ) {
+    float threshold = fadeStart + ( farDist - fadeStart ) * 0.66;
+    if ( projectedSize <= threshold ) {
+        return 2.0;
+    }
+    float fade = ( farDist - projectedSize ) / ( farDist - threshold );
+    if ( fade >= 1.0 ) {
+        return 2.0;
+    }
+    return max( fade, 0.0 );
+}
+
+const int kGridSize = 257;
+const int kQuadsPerTile = 16;
+const uint kLODFlat = 0xfeu;
+
+// Sinks the sprites a bit (seam strips are approximated)
+const float kTerrainBias = 0.5;
+
+float gridHeight( uint base, ivec2 vertex ) {
+    vertex = clamp( vertex, ivec2( 0 ), ivec2( kGridSize - 1 ) );
+    return heights[base + uint( vertex.y * kGridSize + vertex.x )];
+}
+
+uint tileLOD( uint map, ivec2 tile ) {
+    // kHeightmapNumRealTile = 18 (one border tile on each side)
+    uint index = uint( ( tile.y + 1 ) * 18 + tile.x + 1 );
+    return ( maps[map].lods[index >> 2u] >> ( ( index & 3u ) * 8u ) ) & 0xffu;
+}
+
+float coarseHeight( uint base, vec2 grid, int step, bool bAnyDiagonal ) {
+    ivec2 corner = clamp( ivec2( floor( grid / float( step ) ) ) * step,
+                          ivec2( 0 ), ivec2( kGridSize - 1 - step ) );
+    vec2 f = clamp( ( grid - vec2( corner ) ) / float( step ), 0.0, 1.0 );
+    float h00 = gridHeight( base, corner );
+    float h10 = gridHeight( base, corner + ivec2( step, 0 ) );
+    float h01 = gridHeight( base, corner + ivec2( 0, step ) );
+    float h11 = gridHeight( base, corner + ivec2( step, step ) );
+    float diagonal = f.x >= f.y
+                         ? h00 + f.x * ( h10 - h00 ) + f.y * ( h11 - h10 )
+                         : h00 + f.y * ( h01 - h00 ) + f.x * ( h11 - h01 );
+    if ( !bAnyDiagonal ) {
+        return diagonal;
+    }
+    float antiDiagonal =
+        f.x + f.y <= 1.0
+            ? h00 + f.x * ( h10 - h00 ) + f.y * ( h01 - h00 )
+            : h11 + ( 1.0 - f.x ) * ( h01 - h11 ) + ( 1.0 - f.y ) * ( h10 - h11 );
+    return min( diagonal, antiDiagonal );
+}
+
+float terrainHeight( vec2 position, float fallback ) {
+    for ( uint map = 0u; map < terrainHeader.x; map++ ) {
+        vec4 origin = maps[map].origin;
+        vec2 grid = ( position - origin.xy ) * origin.w;
+        if ( any( lessThan( grid, vec2( 0.0 ) ) ) ||
+             any( greaterThan( grid, vec2( float( kGridSize - 1 ) ) ) ) ) {
+            continue;
+        }
+        uint base = maps[map].info.x;
+        ivec2 tile = min( ivec2( grid ) / kQuadsPerTile, ivec2( 15 ) );
+        uint lod = tileLOD( map, tile );
+        if ( lod >= kLODFlat ) {
+            // Not drawn (culled, masked or sea): finest surface
+            return coarseHeight( base, grid, 1, true );
+        }
+
+        int step = 1 << int( lod );
+        vec2 local = grid - vec2( tile * kQuadsPerTile );
+        float height = coarseHeight( base, grid, step, false );
+        if ( step < kQuadsPerTile ) {
+            // Seam ring (DrawHmapPatch): stitched to the coarser of this tile
+            // and its neighbour
+            ivec2 side = ivec2( local.x < float( step )   ? -1
+                                : local.x > float( kQuadsPerTile - step ) ? 1
+                                                                          : 0,
+                                local.y < float( step )   ? -1
+                                : local.y > float( kQuadsPerTile - step ) ? 1
+                                                                          : 0 );
+            if ( side != ivec2( 0 ) ) {
+                height = coarseHeight( base, grid, step, true );
+                for ( int axis = 0; axis < 2; axis++ ) {
+                    if ( side[axis] == 0 ) {
+                        continue;
+                    }
+                    ivec2 neighbour = tile;
+                    neighbour[axis] += side[axis];
+                    uint neighbourLOD = tileLOD( map, neighbour );
+                    if ( neighbourLOD < kLODFlat && neighbourLOD > lod ) {
+                        height = min( height,
+                                      coarseHeight( base, grid,
+                                                    1 << int( neighbourLOD ),
+                                                    true ) );
+                    }
+                }
+            }
+        }
+        return height - kTerrainBias;
+    }
+    return fallback;
+}
+
+void main() {
+    uvec4 job = jobs[gl_WorkGroupID.x];
+    uint type = job.z >> 1u;
+    bool bFadePass = ( job.z & 1u ) != 0u;
+    vec4 type0 = typeParams[type * 2u];
+    vec4 type1 = typeParams[type * 2u + 1u];
+    uint segmentBase = arguments[job.z * 5u + 4u];
+
+    for ( uint i = gl_LocalInvocationID.x; i < job.y; i += 64u ) {
+        vec4 instance = instances[job.x + i];
+        instance.y = terrainHeight( instance.xz, instance.y );
+        uint packed = uint( instance.w + 0.5 );
+        float scale = float( ( packed >> 8u ) & 0x7ffu ) * ( 1.0 / 512.0 );
+        vec3 origin = instance.xyz - params.origin.xyz;
+
+        // ComputeImpostorBillboardVisible: projected size of the bounding
+        // sphere
+        vec3 toSphere =
+            origin + vec3( 0.0, type1.x * scale, 0.0 ) - params.camera.xyz;
+        float projectedSize = dot( toSphere, toSphere ) * params.origin.w /
+                              max( scale * scale, 1e-6 );
+        float fade = spriteFade( projectedSize, type0.y, type0.x );
+        if ( !( projectedSize < type0.x && fade > 0.0 &&
+                bFadePass == ( fade < 1.0 ) ) ) {
+            continue;
+        }
+
+        float angle = float( packed & 0xffu ) * ( kTwoPi / 256.0 );
+        float grey = float( packed >> 19u ) * ( 1.0 / 31.0 );
+
+        // CalcSpriteIndex (FUN_0070e130): 15 side views + the top view
+        vec3 view = origin - params.camera.xyz;
+        int spriteIndex = 15;
+        if ( view.y * view.y <= view.z * view.z + view.x * view.x ) {
+            float orientation = mod( atan( view.z, view.x ) + angle, kTwoPi );
+            spriteIndex = int( orientation * ( 1.0 / kTwoPi ) * 15.0 + 0.5 );
+            if ( spriteIndex > 14 ) {
+                spriteIndex = 0;
+            }
+        }
+
+        // MngImpostor::pushSprite (FUN_0070e2e0)
+        float halfSize = ( type1.y + type0.z ) * scale;
+        vec3 center;
+        vec3 right;
+        vec3 up;
+        float vTop;
+        if ( spriteIndex == 15 ) {
+            center = origin +
+                     vec3( 0.0, type1.x * scale + halfSize * 0.5, 0.0 );
+            right = vec3( cos( angle ), 0.0, -sin( angle ) ) * halfSize;
+            up = vec3( sin( angle ), 0.0, cos( angle ) ) * halfSize;
+            vTop = 1.0;
+        } else {
+            float invStretchX = type0.w > 1.0 ? 1.0 / type0.w : 1.0;
+            float invStretchY = type0.w < -1.0 ? 1.0 / -type0.w : 1.0;
+            center = origin + vec3( 0.0, type1.x * scale, 0.0 );
+            right = params.right.xyz * ( halfSize * invStretchX );
+            up = params.up.xyz * ( halfSize * invStretchY );
+            vTop = 0.0;
+        }
+
+        float alphaByte = bFadePass ? floor( fade * 255.0 ) : 255.0;
+        uint slot = atomicAdd( arguments[job.z * 5u + 1u], 1u );
+        uint sprite = ( segmentBase + slot ) * 3u;
+        sprites[sprite] = vec4( center, float( spriteIndex ) * kSpriteWidth );
+        sprites[sprite + 1u] = vec4( right, vTop );
+        sprites[sprite + 2u] = vec4( up, grey + 2.0 * alphaByte );
+    }
+}

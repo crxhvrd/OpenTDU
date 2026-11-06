@@ -741,10 +741,16 @@ void StreamingManager::initialize( Eigen::Vector4f *pInitialPosition ) {
 void StreamingManager::loadActiveLevel() {
     // FUN_009b95f0
     level.loadBanks();
+
+    farImpostors.initialize( level, gpConfig->pLevelName,
+                             sectorManager.numSectors,
+                             sectorManager.numSubSectors );
 }
 
 void StreamingManager::shutdown() {
     // FUN_009b99b0
+    farImpostors.release();
+
     // FUN_0070a040 (inlined)
     level.unload();
 
@@ -788,6 +794,7 @@ void StreamingManager::tick( Eigen::Vector4f *pStreamPosition,
 
     spotStream.tick();
     tickSectors( totalTime, deltaTime );
+    farImpostors.tick( sectorManager );
 
     submitAreaHeightmaps();
     submitLevelHeightmap();
@@ -798,6 +805,7 @@ void StreamingManager::tick( Eigen::Vector4f *pStreamPosition,
     stitchSectorsToArea();
     stitchAreaToAreaSeams();
     stitchActiveAreaSeams();
+    farImpostors.gatherTerrain( areaGrid, level.getHeightmapGeometry() );
 }
 
 void StreamingManager::tickSectors( float totalTime, float deltaTime ) {
@@ -880,6 +888,13 @@ static void ComputeImpostorBillboardCamera( Camera &activeCamera,
                                   position.head<3>() );
 }
 
+// Projected sizes scale with distance^2.
+static float ImpostorFarDistanceScaleSq() {
+    const float scale =
+        gpRender != nullptr ? gpRender->getImpostorFarDistanceScale() : 1.0f;
+    return scale * scale;
+}
+
 bool ComputeImpostorBillboardVisible( MngImpostor *pMng,
                                       MassInstanceImpostor &inst ) {
     // FUN_0070ee60
@@ -905,7 +920,8 @@ bool ComputeImpostorBillboardVisible( MngImpostor *pMng,
         return true; // projected-size culling disabled -> always a billboard
     }
 
-    const float farDist = pInstance->getLOD( numLOD - 1 ).Distances[0];
+    const float farDist = pInstance->getLOD( numLOD - 1 ).Distances[0] *
+                          ImpostorFarDistanceScaleSq();
     if ( farDist <= projectedSize ) {
         return false; // beyond the last LOD -> full mesh / culled
     }
@@ -1004,6 +1020,7 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
     const float originX = sector.heightmap.worldOriginX - streamPos.x();
     const float originZ = sector.heightmap.worldOriginZ - streamPos.z();
 
+    const float farDistanceScaleSq = ImpostorFarDistanceScaleSq();
     ImpostorGrid &grid = sector.geometry.impostorGrids[0];
     for ( uint32_t cellIndex = 0; cellIndex < ImpostorGrid::kNumCells;
           cellIndex++ ) {
@@ -1025,7 +1042,8 @@ void StreamingManager::updateSectorImpostors( Sector &sector,
 
         bool bTooSmall = false;
         for ( MassInstanceImpostor *pInstance : cell ) {
-            if ( !bTooSmall && pInstance->MaxLODDist < cellLODThreshold ) {
+            if ( !bTooSmall && pInstance->MaxLODDist * farDistanceScaleSq <
+                                   cellLODThreshold ) {
                 bTooSmall = true;
             }
             if ( bTooSmall || !ComputeImpostorBillboardVisible( gpMngImpostor,
@@ -3026,6 +3044,8 @@ void StreamingManager::render() {
         areaGrid.bNeedStreamUpdate = false;
         areaGrid.bDrawArea = false;
     }
+
+    farImpostors.submit();
 
     if ( activeRenderLayers != 0 ) {
         // FUN_007099c0

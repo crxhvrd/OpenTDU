@@ -348,12 +348,7 @@ ShaderBinaryCache::getOrLoadBytecode( const ShaderTableEntry *pTableEntry ) {
     std::string packPath = kShadersRootFolder;
     packPath += kShadersRebuiltPack;
     packPath += kShaderTableExtension;
-
-    if ( shaderTableBinary.find( packPath ) == shaderTableBinary.end() &&
-         !loadShaderTable( packPath, shaderBinaries ) ) {
-        // Keeps the failed load from being retried for every shader.
-        shaderTableBinary.insert( std::make_pair( packPath, nullptr ) );
-    }
+    loadRebuiltPack( packPath );
 
     // Cache shader (note that we do not create the shader yet; this will be
     // done on its first use)
@@ -380,6 +375,30 @@ ShaderBinaryCache::getOrLoadBytecode( const ShaderTableEntry *pTableEntry ) {
             std::make_pair( pTableEntry->Hashcode, metadata ) );
     }
 #endif
+    return it->second;
+}
+
+void ShaderBinaryCache::loadRebuiltPack( const std::string &packPath ) {
+    if ( shaderTableBinary.find( packPath ) == shaderTableBinary.end() &&
+         !loadShaderTable( packPath, shaderBinaries ) ) {
+        // Keeps the failed load from being retried for every shader.
+        shaderTableBinary.insert( std::make_pair( packPath, nullptr ) );
+    }
+}
+
+ShaderBytecode_t ShaderBinaryCache::getComputeBytecode( uint64_t hashcode ) {
+    std::string packPath = kShadersRootFolder;
+    packPath += kShadersRebuiltPack;
+    packPath += kShaderTableExtension;
+    loadRebuiltPack( packPath );
+
+    auto it = shaderBinaries.find( hashcode );
+    if ( it == shaderBinaries.end() ) {
+        OTDU_LOG_ERROR( "Failed to load compute shader 0x%016llx: missing "
+                        "from '%s'\n",
+                        hashcode, packPath.c_str() );
+        return std::make_tuple( nullptr, 0ull );
+    }
     return it->second;
 }
 

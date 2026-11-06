@@ -337,7 +337,15 @@ void TransformMatrixCommand::execute( uint32_t isHeightmap,
     BindOTDUEmissiveConstants();
 
     if ( isHeightmap == 0 ) {
-        gpRenderContext->drawIndexedPrimitive( param_3 );
+        // OTDU_ADDITION: draw list primitives drawn by their owner
+        DrawListCustomDraw *pCustomDraw =
+            ( pDrawList != nullptr ) ? pDrawList->findCustomDraw( param_3 )
+                                     : nullptr;
+        if ( pCustomDraw != nullptr ) {
+            pCustomDraw->draw( param_3 );
+        } else {
+            gpRenderContext->drawIndexedPrimitive( param_3 );
+        }
     } else if ( isHeightmap == 1 ) {
         gpRenderContext->drawHeightmap( param_3, param_4 );
     }

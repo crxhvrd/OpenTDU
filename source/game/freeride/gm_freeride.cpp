@@ -2157,8 +2157,7 @@ void GMFreeride::drawDebug( float deltaTime ) {
         desc.rimID = gRequestedPlayerCarRimID;
         desc.interiorID = gRequestedPlayerCarInteriorID;
 
-        const uint32_t result =
-            TestDrive::DrawCarPicker( desc, pPaintVehicle, nullptr );
+        const uint32_t result = TestDrive::DrawCarPicker( desc, pPaintVehicle );
 
         gRequestedPlayerCarID = int32_t( desc.getCarConfigID() );
         gRequestedPlayerCarColorID = desc.paintIndex;

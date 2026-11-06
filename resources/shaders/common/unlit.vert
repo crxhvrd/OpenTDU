@@ -10,6 +10,11 @@
 //   UNLIT_TEXCOORD      forwards UV set 0
 //   UNLIT_BILLBOARD     camera facing quad: Normal0 holds the corner offset
 //                       in view space
+//   UNLIT_FAR_IMPOSTOR_EXPANDED  OTDU_ADDITION: far impostor sprite
+//                       (world/far_impostors.cpp) culled and built by
+//                       world/shaders/far_impostor_cull.comp: Position0.xy is
+//                       the quad corner, Texcoord1..3 = (center, u min),
+//                       (right, v top), (up, grey + 2 * alpha byte).
 
 #define D3D9_VERTEX_SHADER
 #include "d3d9_abi.glsl"
@@ -23,6 +28,28 @@
 #define gVSLightAmbient0 D3D9_C( 94 )
 #define gVSLightAmbient1 D3D9_C( 247 )
 
+#ifdef UNLIT_FAR_IMPOSTOR_EXPANDED
+layout( location = D3D9_IN_POSITION0 ) in vec4 in_Corner;
+layout( location = D3D9_IN_TEXCOORD( 1 ) ) in vec4 in_Sprite0;
+layout( location = D3D9_IN_TEXCOORD( 2 ) ) in vec4 in_Sprite1;
+layout( location = D3D9_IN_TEXCOORD( 3 ) ) in vec4 in_Sprite2;
+vec4 in_Position0;
+vec4 in_Color0;
+vec4 in_Texcoord0;
+
+void farImpostorExpandedVertex() {
+    in_Position0 = vec4( in_Sprite0.xyz + in_Corner.x * in_Sprite1.xyz +
+                             in_Corner.y * in_Sprite2.xyz,
+                         1.0 );
+    float uMin = in_Sprite0.w;
+    float vTop = in_Sprite1.w;
+    in_Texcoord0 = vec4( in_Corner.x < 0.0 ? uMin : uMin + 0.0625,
+                         in_Corner.y > 0.0 ? vTop : 1.0 - vTop, 0.0, 0.0 );
+    float alphaByte = floor( in_Sprite2.w * 0.5 );
+    float grey = in_Sprite2.w - 2.0 * alphaByte;
+    in_Color0 = vec4( vec3( grey ), alphaByte * ( 1.0 / 255.0 ) );
+}
+#else
 layout( location = D3D9_IN_POSITION0 ) in vec4 in_Position0;
 #ifdef UNLIT_BILLBOARD
 layout( location = D3D9_IN_NORMAL0 ) in vec4 in_Normal0;
@@ -32,6 +59,7 @@ layout( location = D3D9_IN_COLOR( 0 ) ) in vec4 in_Color0;
 #endif
 #ifdef UNLIT_TEXCOORD
 layout( location = D3D9_IN_TEXCOORD( 0 ) ) in vec4 in_Texcoord0;
+#endif
 #endif
 layout( location = D3D9_SLOT_COLOR0 ) out vec4 out_Color0;
 layout( location = D3D9_SLOT_COLOR1 ) out vec4 out_Color1;
@@ -43,6 +71,9 @@ layout( location = D3D9_SLOT_TEXCOORD1 ) out vec4 out_Texcoord1;
 #endif
 
 void main() {
+#ifdef UNLIT_FAR_IMPOSTOR_EXPANDED
+    farImpostorExpandedVertex();
+#endif
 #ifdef UNLIT_BILLBOARD
     vec3 corner = vec3( d3d9_dot( in_Normal0.xyz, gVSM4InvView( 0 ).xyz ),
                         d3d9_dot( in_Normal0.xyz, gVSM4InvView( 1 ).xyz ),
