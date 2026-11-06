@@ -44,7 +44,7 @@ void UpdateOTDULights();
 void DrawOTDULightGlows();
 void ReleaseOTDULightGlows();
 
-// How many lamp glows are drawn and how far (user setting, OpenTDU.ini).
+// How many lamp glows are drawn and how far (set by SetDrawDistance).
 enum eOTDUGlowQuality : int32_t {
     GQ_Low = 0,
     GQ_Default,

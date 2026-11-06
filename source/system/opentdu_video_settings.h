@@ -17,7 +17,7 @@ private:
     struct ImmediateSettings {
         int32_t MaxFrameRate = 0;
         bool bDenseReflections = false;
-        int32_t NightLights = 0;
+        int32_t DrawDistance = 0;
         uint32_t LODQuality = 0;
         float Gamma = 0.0f;
         float HDRPaperWhite = 0.0f;

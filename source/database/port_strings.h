@@ -12,7 +12,7 @@ enum ePortString : uint32_t {
     PS_Unlimited,
     PS_High,
     PS_Default,
-    PS_NightLights,
+    PS_DrawDistance,
     PS_Low,
     PS_Ultra,
     PS_HDRDisplay,

@@ -49,7 +49,7 @@ static constexpr float kLightFadeDistance = 20.0f;
 static constexpr uint64_t kGlowShaderGUID = 0xfcdaa96bdeadbeef;
 static constexpr uint32_t kGlowParameterType = 0x7a;
 static constexpr const char *kGlowBitmapName = "O_HALO_2";
-// Glow count / distance per quality level (eOTDUGlowQuality, Options > Video).
+// Glow count / distance per quality level (eOTDUGlowQuality, SetDrawDistance).
 struct OTDUGlowQualityDesc {
     uint32_t MaxNumGlows;
     float MaxDistance;

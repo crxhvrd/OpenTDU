@@ -149,6 +149,9 @@ public:
     inline float getImpostorFarDistanceScale() const {
         return impostorFarDistanceScale;
     }
+    inline void setImpostorFarDistanceScale( const float scale ) {
+        impostorFarDistanceScale = scale;
+    }
 
     inline RenderPass &getRenderPassAtIndex( uint32_t index ) {
         return renderPasses.at( index );
@@ -529,3 +532,18 @@ private:
 };
 
 extern GSRender *gpRender;
+
+// OTDU_ADDITION: draw distance setting (Options > Video > Quality,
+// OpenTDU.ini): impostor far distance scale (far impostor field) and lamp glow
+// quality.
+enum eDrawDistance : int32_t {
+    DD_Low = 0, // Retail impostor distance
+    DD_Default,
+    DD_High,
+    DD_Ultra,
+
+    DD_Count
+};
+
+void SetDrawDistance( eDrawDistance level );
+eDrawDistance GetDrawDistance();

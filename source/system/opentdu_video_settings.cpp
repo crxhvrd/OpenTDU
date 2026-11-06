@@ -10,7 +10,6 @@
 #include "render/gs_render.h"
 #include "render/mng_env_map.h"
 #include "render/postfx/effects/postfx_hdri.h"
-#include "world/otdu_lights.h"
 
 static constexpr int32_t kFrameRateCaps[] = { 0, 30, 60, 120, 144, 240 };
 // kAutoHDRPeakNits first
@@ -81,9 +80,10 @@ bool OpenTDUVideoSettings::ImmediateSettings::operator==(
     const ImmediateSettings &other ) const {
     return MaxFrameRate == other.MaxFrameRate &&
            bDenseReflections == other.bDenseReflections &&
-           NightLights == other.NightLights && LODQuality == other.LODQuality &&
-           Gamma == other.Gamma && HDRPaperWhite == other.HDRPaperWhite &&
-           HDRPeak == other.HDRPeak && HDRHighlights == other.HDRHighlights &&
+           DrawDistance == other.DrawDistance &&
+           LODQuality == other.LODQuality && Gamma == other.Gamma &&
+           HDRPaperWhite == other.HDRPaperWhite && HDRPeak == other.HDRPeak &&
+           HDRHighlights == other.HDRHighlights &&
            bSoftHighlights == other.bSoftHighlights;
 }
 
@@ -97,7 +97,7 @@ OpenTDUVideoSettings::CaptureImmediateSettings() {
     ImmediateSettings settings;
     settings.MaxFrameRate = GetMaxFrameRate();
     settings.bDenseReflections = gbDebugEnvMapDenseReflection;
-    settings.NightLights = int32_t( GetOTDUGlowQuality() );
+    settings.DrawDistance = int32_t( GetDrawDistance() );
     settings.LODQuality = gpRender->getLODQuality();
     settings.Gamma = gpPlayerData->getGamma();
     settings.HDRPaperWhite = GetDevice()->getHDRPaperWhiteNits();
@@ -111,7 +111,7 @@ void OpenTDUVideoSettings::RestoreImmediateSettings(
     const ImmediateSettings &settings ) {
     SetMaxFrameRate( settings.MaxFrameRate );
     gbDebugEnvMapDenseReflection = settings.bDenseReflections;
-    SetOTDUGlowQuality( eOTDUGlowQuality( settings.NightLights ) );
+    SetDrawDistance( eDrawDistance( settings.DrawDistance ) );
     gpRender->setLODQuality( settings.LODQuality );
     SetGamma( settings.Gamma );
     GetDevice()->setHDROutput( GetDevice()->isHDROutputEnabled(),
@@ -123,7 +123,7 @@ void OpenTDUVideoSettings::RestoreImmediateSettings(
 
 std::vector<OptionsTab>
 OpenTDUVideoSettings::buildTabs( FlashPlayer *pPlayer ) {
-    static constexpr ePortString kQualityLabels[GQ_Count] = {
+    static constexpr ePortString kQualityLabels[DD_Count] = {
         PS_Low, PS_Default, PS_High, PS_Ultra };
 
     // Retail labels, localized on the movie root
@@ -261,13 +261,13 @@ OpenTDUVideoSettings::buildTabs( FlashPlayer *pPlayer ) {
 
     row = OptionsRow();
     row.Type = eOptionsRowType::ORT_Arrows;
-    row.GetLabel = portLabel( PS_NightLights );
+    row.GetLabel = portLabel( PS_DrawDistance );
     row.GetValue = []() -> std::string {
-        return GetPortString( kQualityLabels[GetOTDUGlowQuality()] );
+        return GetPortString( kQualityLabels[GetDrawDistance()] );
     };
     row.Step = [saveImmediate]( int32_t direction ) {
-        SetOTDUGlowQuality( eOTDUGlowQuality(
-            Wrap( int32_t( GetOTDUGlowQuality() ) + direction, GQ_Count ) ) );
+        SetDrawDistance( eDrawDistance(
+            Wrap( int32_t( GetDrawDistance() ) + direction, DD_Count ) ) );
         saveImmediate();
     };
     tabs[1].Rows.push_back( row );

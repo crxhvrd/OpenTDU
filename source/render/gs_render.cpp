@@ -43,6 +43,7 @@
 #include "text_renderer.h"
 
 #include "world/mng_background.h"
+#include "world/otdu_lights.h"
 #include "world/mng_clouds_plane.h"
 #include "world/mng_ocean.h"
 
@@ -50,6 +51,25 @@
 
 GSRender gRender = {};
 GSRender *gpRender = nullptr;
+
+// Impostor far distance scale per draw distance level (x1 = retail)
+static constexpr float kDrawDistanceImpostorScales[DD_Count] = { 1.0f, 2.0f,
+                                                                 4.0f, 10.0f };
+static_assert( int32_t( DD_Count ) == int32_t( GQ_Count ),
+               "one lamp glow quality per draw distance level" );
+static eDrawDistance gDrawDistance = DD_Default;
+
+void SetDrawDistance( const eDrawDistance level ) {
+    gDrawDistance =
+        eDrawDistance( Clamp( int32_t( level ), 0, int32_t( DD_Count ) - 1 ) );
+    SetOTDUGlowQuality( eOTDUGlowQuality( gDrawDistance ) );
+    if ( gpRender != nullptr ) {
+        gpRender->setImpostorFarDistanceScale(
+            kDrawDistanceImpostorScales[gDrawDistance] );
+    }
+}
+
+eDrawDistance GetDrawDistance() { return gDrawDistance; }
 
 eViewFormat gDepthStencilFormat = eViewFormat::VF_D24S8F; // DAT_00fac8e4
 GPUTexture *gpMainDepthBuffer = nullptr;                  // DAT_00f47920
@@ -236,7 +256,7 @@ GSRender::GSRender()
       fovVsLodFactor( 1.0f ),
       fovVsLodFactorStart( 0.4f ),
       fovVsLodFactorEnd( 0.1f ),
-      impostorFarDistanceScale( 1.0f ),
+      impostorFarDistanceScale( kDrawDistanceImpostorScales[gDrawDistance] ),
       lineMipBias( 0.1f ),
       vegetationUVAFactor( 0.1f ),
       vegetationFactor( 0.015f ),

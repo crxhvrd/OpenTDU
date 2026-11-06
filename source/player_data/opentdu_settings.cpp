@@ -12,7 +12,6 @@
 #include "render/postfx/effects/postfx_hdri.h"
 #include "system/ed_sys.h"
 #include "system/mng_options.h"
-#include "world/otdu_lights.h"
 
 #include "config/gs_config.h"
 
@@ -29,8 +28,8 @@ static float gHDRHighlightStrength = kDefaultHDRHighlightStrength;
 
 static constexpr const char *kDisplayModeNames[int32_t(
     eDisplayMode::DM_Count )] = { "Windowed", "Fullscreen", "Borderless" };
-static constexpr const char *kGlowQualityNames[GQ_Count] = { "Low", "Default",
-                                                             "High", "Ultra" };
+static constexpr const char *kDrawDistanceNames[DD_Count] = { "Low", "Default",
+                                                              "High", "Ultra" };
 
 static bool GetSettingsPath( std::filesystem::path &outPath ) {
     const std::string &profileName =
@@ -73,15 +72,17 @@ static void ApplySetting( const std::string &key, const std::string &value ) {
         }
     } else if ( StringCmpI( key.c_str(), "DenseReflections" ) == 0 ) {
         gbDebugEnvMapDenseReflection = atoi( value.c_str() ) != 0;
-    } else if ( StringCmpI( key.c_str(), "NightLights" ) == 0 ) {
-        for ( int32_t i = 0; i < int32_t( GQ_Count ); i++ ) {
-            if ( StringCmpI( value.c_str(), kGlowQualityNames[i] ) == 0 ) {
-                SetOTDUGlowQuality( eOTDUGlowQuality( i ) );
+    } else if ( StringCmpI( key.c_str(), "DrawDistance" ) == 0 ||
+                StringCmpI( key.c_str(), "NightLights" ) == 0 ) {
+        // NightLights: same levels, written before the draw distance setting
+        for ( int32_t i = 0; i < int32_t( DD_Count ); i++ ) {
+            if ( StringCmpI( value.c_str(), kDrawDistanceNames[i] ) == 0 ) {
+                SetDrawDistance( eDrawDistance( i ) );
                 return;
             }
         }
-        OTDU_LOG_WARN( "%s: unknown night lights quality '%s'\n",
-                       kSettingsFilename, value.c_str() );
+        OTDU_LOG_WARN( "%s: unknown draw distance '%s'\n", kSettingsFilename,
+                       value.c_str() );
     } else if ( StringCmpI( key.c_str(), "CalibratedCustomPaint" ) == 0 ) {
         VehicleBase::bCalibratedDeluxePaint = atoi( value.c_str() ) != 0;
     } else if ( StringCmpI( key.c_str(), "SoftHighlights" ) == 0 ) {
@@ -116,7 +117,7 @@ namespace OpenTDUSettings {
         }
 
         gProfileMaxFrameRate = IsMaxFrameRateForced() ? 0 : GetMaxFrameRate();
-        SetOTDUGlowQuality( GQ_Default );
+        SetDrawDistance( DD_Default );
         VehicleBase::bCalibratedDeluxePaint = false;
         InputTemplates::ResetSettings();
         gbHDROutput = false;
@@ -200,7 +201,7 @@ namespace OpenTDUSettings {
                << "\n";
         stream << "DenseReflections = "
                << ( gbDebugEnvMapDenseReflection ? 1 : 0 ) << "\n";
-        stream << "NightLights = " << kGlowQualityNames[GetOTDUGlowQuality()]
+        stream << "DrawDistance = " << kDrawDistanceNames[GetDrawDistance()]
                << "\n";
         stream << "CalibratedCustomPaint = "
                << ( VehicleBase::bCalibratedDeluxePaint ? 1 : 0 ) << "\n";

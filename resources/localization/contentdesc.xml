@@ -108,16 +108,16 @@
         <po>Nielimitowane</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000008">
-        <us>NIGHT LIGHTS</us>
-        <fr>ÉCLAIRAGE NOCTURNE</fr>
-        <it>LUCI NOTTURNE</it>
-        <ge>NACHTBELEUCHTUNG</ge>
-        <sp>LUCES NOCTURNAS</sp>
-        <ja>夜間照明</ja>
-        <ko>야간 조명</ko>
-        <ch>夜間照明</ch>
-        <ru>Ночные огни</ru>
-        <po>Oświetlenie nocne</po>
+        <us>DRAW DISTANCE</us>
+        <fr>DISTANCE D'AFFICHAGE</fr>
+        <it>DISTANZA VISIVA</it>
+        <ge>SICHTWEITE</ge>
+        <sp>DISTANCIA DE DIBUJADO</sp>
+        <ja>描画距離</ja>
+        <ko>시야 거리</ko>
+        <ch>繪製距離</ch>
+        <ru>Прорисовка</ru>
+        <po>Zasięg rysowania</po>
     </ACTION>
     <ACTION name="ADDDBSTRING" table="TDU_Menus" id="2026000009">
         <us>ULTRA</us>

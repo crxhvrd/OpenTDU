@@ -22,7 +22,7 @@ static constexpr PortStringDesc kPortStrings[PS_Count] = {
     {2026000007ull, "UNLIMITED"                                             },
     {63275810ull,   "HIGH"                                                  },
     {63075810ull,   "DEFAULT"                                               },
-    {2026000008ull, "NIGHT LIGHTS"                                          },
+    {2026000008ull, "DRAW DISTANCE"                                         },
     {57385810ull,   "LOW"                                                   },
     {2026000009ull, "ULTRA"                                                 },
     {2026000010ull, "HDR DISPLAY"                                           },
