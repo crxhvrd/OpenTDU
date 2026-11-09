@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <mutex>
 #include <unordered_set>
+#include <chrono>
+#include <thread>
 #include "render_device.h"
 #include "core/arg_parser.h"
 #include "filesystem/gs_file.h"
@@ -6011,9 +6013,36 @@ void RenderDevice::recreateSwapchain() {
     int32_t width = 0;
     int32_t height = 0;
 
+    bool bMinimized = false;
 #if defined( OTDU_USE_SDL )
-    SDL_GetWindowSize( (SDL_Window *)gEdSys.getWindow(), &width, &height );
+    SDL_Window *pWindow = (SDL_Window *)gEdSys.getWindow();
+    SDL_GetWindowSize( pWindow, &width, &height );
+    bMinimized =
+        ( SDL_GetWindowFlags( pWindow ) & SDL_WINDOW_MINIMIZED ) != 0 ||
+        width <= 0 || height <= 0;
 #endif
+
+    // OTDU_ADDITION: a minimized window (e.g. alt-tab out of fullscreen) has a
+    // 0x0 surface. Recreating at that size fails after the current swapchain
+    // and backbuffer have already been released, and the next frame then
+    // renders to a destroyed image (driver crash). Keep the current swapchain
+    // instead: acquire/present fail gracefully (frames are dropped) and the
+    // recreation is retried once the window is restored.
+    if ( surface != VK_NULL_HANDLE ) {
+        VkSurfaceCapabilitiesKHR capabilities = {};
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR( physicalDevice, surface,
+                                                   &capabilities );
+        if ( capabilities.currentExtent.width == 0 ||
+             capabilities.currentExtent.height == 0 ) {
+            bMinimized = true;
+        }
+    }
+    if ( bMinimized ) {
+        bSwapchainOutOfDate.store( true, std::memory_order_release );
+        // Do not spin while nothing can be presented
+        std::this_thread::sleep_for( std::chrono::milliseconds( 16 ) );
+        return;
+    }
 
     waitForIdle();
     bSwapchainOutOfDate.store( false, std::memory_order_release );
