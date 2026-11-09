@@ -118,10 +118,17 @@ WriteImpl( const bool bWriteToDisk, const char *pFormat, va_list argList ) {
     int32_t bufferOutputSize =
         vsnprintf( pBuffer, sizeof( pBuffer ), pFormat, argList );
 
-    // Bad format/buffer overrun; early exit to avoid hard crash.
-    if ( bufferOutputSize == -1 ) {
-        OTDU_TRIGGER_BREAKPOINT;
-        return;
+    // OTDU_ADDITION: vsnprintf returns -1 on an encoding error, e.g. a %S
+    // argument holding characters the C locale cannot convert (a save folder
+    // under a non-ASCII Documents path). Breaking into the debugger here is a
+    // hard crash when none is attached: log the raw format string instead.
+    if ( bufferOutputSize < 0 ) {
+        bufferOutputSize =
+            snprintf( pBuffer, sizeof( pBuffer ),
+                      "(unprintable log arguments) %s", pFormat );
+        if ( bufferOutputSize < 0 ) {
+            return;
+        }
     }
 
 #ifdef OTDU_LOG_STDOUT
