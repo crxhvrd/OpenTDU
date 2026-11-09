@@ -494,13 +494,44 @@ TestDriveGameInstance::TestDriveGameInstance( const char **argv,
 TestDriveGameInstance::~TestDriveGameInstance() {
     bRequestedExit = true;
 
+    auto terminateService = []( GameSystem *pService ) {
+        pService->terminate();
+        if ( !pService->isStaticallyAllocated() ) {
+            delete pService;
+        }
+    };
+
+    // OTDU_ADDITION: services are terminated in reverse init order, but
+    // GSAmbiance and GSMngResources are registered after GSWorld although the
+    // world (and the entities streamed into it) release their emitters,
+    // materials and instances back into them. Terminating them first made the
+    // sector reset in GSWorld::terminate() lock the deleted ambiance mutex and
+    // read freed terrain resources (crash on quit). Defer both until GSWorld is
+    // done; everything they depend on (render, file, audio, ...) is still alive
+    // at that point since it was registered before GSWorld.
+    GameSystem *const pDeferredProviders[] = { gpAmbiance, gpMngResources };
+    std::vector<GameSystem *> deferred;
     while ( !servicesInitOrder.empty() ) {
         GameSystem *pIt = servicesInitOrder.back();
-        pIt->terminate();
-        if ( !pIt->isStaticallyAllocated() ) {
-            delete pIt;
-        }
         servicesInitOrder.pop_back();
+        bool bDefer = false;
+        for ( GameSystem *pProvider : pDeferredProviders ) {
+            bDefer |= ( pProvider != nullptr && pIt == pProvider );
+        }
+        if ( bDefer ) {
+            deferred.push_back( pIt );
+            continue;
+        }
+        terminateService( pIt );
+        if ( pIt == gpWorld ) {
+            for ( GameSystem *pDeferred : deferred ) {
+                terminateService( pDeferred );
+            }
+            deferred.clear();
+        }
+    }
+    for ( GameSystem *pDeferred : deferred ) {
+        terminateService( pDeferred );
     }
     registeredServices.clear();
 }
