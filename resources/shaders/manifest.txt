@@ -17500,6 +17500,13 @@ CC2722D0B59B33EC lighting/skinning.vert SKIN_SKINNED SKIN_AMBIENT SKIN_DIFFUSE S
 953AC8DB5CB8E36A postfx/eye_adaptation.frag
 15A29F2873956977 postfx/eye_adaptation.vert
 6C6CDC43D02BC9DA postfx/radial_blur.frag
+# OTDU_ADDITION: motion blur (postfx_motion_blur.cpp)
+0D7B4D4200000001 postfx/motion_blur_velocity.frag
+0D7B4D4200000002 postfx/motion_blur_gather.frag
+0D7B4D4200000003 postfx/motion_blur_velocity.frag MB_DEPTH_MSAA
+# OTDU_ADDITION: wheel spin blur composite (render/wheel_blur.cpp)
+0D7B4D4200000004 postfx/wheel_blur_composite.frag
+0D7B4D4200000005 postfx/wheel_blur_composite.frag WB_MSAA
 6C6CDC43D72BC9DA postfx/blend.frag BLEND_COLOR_RAMP
 6C6CDC43D42BC9DA postfx/blend.frag BLEND_INVERT
 6C6CDC43D82BC9DA postfx/blend.frag BLEND_COLOR_RAMP_LERP

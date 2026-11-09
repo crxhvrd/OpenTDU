@@ -15,6 +15,7 @@
 #include "render/scene_renderer.h"
 #include "render/setup_node.h"
 #include "render/shaders/shader_binary_cache.h"
+#include "render/wheel_blur.h" // OTDU_ADDITION
 #include "world/otdu_lights.h"
 
 // Default (or global) Light Setup?
@@ -284,6 +285,7 @@ void DrawCommandMaterial::execute() {
 void SceneSetupCommand::execute() {
     // FUN_005f2150
     pLightSetupNode->execute(); // FUN_00513950 (inlined)
+    WheelBlur::OnSceneSetup( pLightSetupNode ); // OTDU_ADDITION
 
     for ( DrawCommandMaterial &materialCmd : MaterialCommands ) {
         materialCmd.execute();
@@ -315,6 +317,12 @@ void TransformMatrixCommand::execute( uint32_t isHeightmap,
                                       Primitive *param_3,
                                       InstanceLOD *param_4 ) {
     // FUN_005f17d0
+    // OTDU_ADDITION: a spinning wheel's parts are drawn turned at the scene's
+    // end (render/wheel_blur.cpp)
+    if ( isHeightmap == 0 && WheelBlur::Defer( *this, param_3, param_4 ) ) {
+        return;
+    }
+
     gSceneRenderer.pActiveInstance = pInstance;
     gSceneRenderer.pActiveDrawList = pDrawList;
     gSceneRenderer.pActiveTransform = this;

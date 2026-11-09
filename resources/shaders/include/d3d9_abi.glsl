@@ -107,6 +107,10 @@ layout( push_constant, std430 ) uniform D3D9RenderState {
     layout( offset = 44 ) float point_scale_b;
     layout( offset = 48 ) float point_scale_c;
     layout( offset = 52 ) uint instanced_draw_index;
+    // OTDU_ADDITION: wheel spin blur accumulation (render/wheel_blur.cpp),
+    // inside dxvk's padding before the samplers. 0 = a normal draw.
+    layout( offset = 56 ) float otdu_accum_weight;
+    layout( offset = 60 ) uint otdu_accum_flags; // 1: clamp to 1 (8 bit scene)
     // Two 16-bit sampler heap indices per dword (even stage = low bits).
     layout( offset = 64 ) uint sampler_idx[8];
 }
@@ -229,7 +233,7 @@ vec4 d3d9_ps_texcoord( vec4 texcoord ) {
 }
 
 // Fixed function alpha test (dxvk _DoFixedFunctionAlphaTest).
-void d3d9_ps_alpha_test( vec4 color ) {
+void d3d9_ps_alpha_test_fn( vec4 color ) {
     uint alphaFunc = bitfieldExtract( D3D9_SPEC_DWORD( 1 ), 21, 3 );
     if ( alphaFunc == 7u ) {
         return;
@@ -280,6 +284,29 @@ void d3d9_ps_alpha_test( vec4 color ) {
         demote;
     }
 }
+
+// OTDU_ADDITION: wheel spin blur (render/wheel_blur.cpp). A spinning wheel is
+// drawn several times, turned through the arc it covers during the exposure,
+// and the copies are summed: while otdu_accum_weight > 0 a draw outputs its
+// colour in linear light times the weight, and the weight as its alpha (the
+// coverage). The alpha test above still decides on the material's own alpha.
+vec4 otdu_accum_output( vec4 color ) {
+    vec3 c = max( color.rgb, vec3( 0.0 ) );
+    if ( ( render_state.otdu_accum_flags & 1u ) != 0u ) {
+        c = min( c, vec3( 1.0 ) );
+    }
+    float weight = render_state.otdu_accum_weight;
+    return vec4( pow( c, vec3( 2.2 ) ) * weight, weight );
+}
+
+// Every pixel shader ends with d3d9_ps_alpha_test( oC0 )
+#define d3d9_ps_alpha_test( c )                                                \
+    {                                                                          \
+        d3d9_ps_alpha_test_fn( c );                                            \
+        if ( render_state.otdu_accum_weight > 0.0 ) {                          \
+            c = otdu_accum_output( c );                                        \
+        }                                                                      \
+    }
 
 #endif // D3D9_PIXEL_SHADER
 

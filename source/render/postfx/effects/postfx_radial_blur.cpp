@@ -1,6 +1,7 @@
 #include "shared.h"
 #include "postfx_radial_blur.h"
 
+#include "postfx_motion_blur.h"
 #include "postfx_texture_sample.h"
 #include "render/gs_render.h"
 
@@ -46,6 +47,13 @@ PostFXRadialBlur::~PostFXRadialBlur() {
 
 bool PostFXRadialBlur::execute() {
     // FUN_005f8760
+    // OTDU_ADDITION: the motion blur (postfx_motion_blur.cpp) replaces the
+    // radial speed blur, world and cockpit. The node itself stays enabled: the
+    // player's car is drawn in RP_CarPlayer only while it is.
+    if ( MotionBlur::IsActive() ) {
+        return true;
+    }
+
     bool bVar1 = PostFX::execute();
     if ( !bVar1 ) {
         return false;

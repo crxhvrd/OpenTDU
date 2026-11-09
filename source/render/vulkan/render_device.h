@@ -91,8 +91,15 @@ struct D3D9RenderStateInfo {
 
     uint32_t instancedDrawIndex = kNoInstancedDrawIndex;
 
+    // OTDU_ADDITION: wheel spin blur accumulation (render/wheel_blur.cpp),
+    // in dxvk's padding before the samplers (offset 56). 0 = a normal draw.
+    float otduAccumWeight = 0.0f;
+    uint32_t otduAccumFlags = 0u;
+
     static constexpr uint32_t kNoInstancedDrawIndex = 0xffffffffu;
 };
+static_assert( sizeof( D3D9RenderStateInfo ) == 64,
+               "D3D9RenderStateInfo must end where the samplers start" );
 
 static_assert( sizeof( DrawIndexedIndirectCommand ) ==
                    sizeof( VkDrawIndexedIndirectCommand ),
@@ -464,6 +471,18 @@ public:
 
     void setClipPlane( int32_t param_1, float *param_2 );
     void resolveMSAA( RenderTarget *param_1, uint32_t param_2 );
+
+    // OTDU_ADDITION: wheel spin blur (render/wheel_blur.cpp)
+    // Pixel shaders output (linear colour x weight, weight) while weight > 0
+    void setAccumulationWeight( float weight, uint32_t flags );
+    // Copies a rectangle of a depth-stencil image into another of the same
+    // format, size and sample count (outside any render pass)
+    void copyDepthStencilRegion( GPUTexture *pSrc,
+                                 GPUTexture *pDst,
+                                 int32_t x,
+                                 int32_t y,
+                                 uint32_t width,
+                                 uint32_t height );
     void setLampsEnabled( const bool bEnabled );
 
     void setDepthCompareFunc( eComparisonFunction param_1 );

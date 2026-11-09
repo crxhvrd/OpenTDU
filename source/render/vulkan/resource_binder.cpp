@@ -8,6 +8,9 @@
 #include "render/shaders/shader_binary_cache.h"
 #include "render_device.h"
 
+#include <mutex>
+#include <unordered_map>
+
 static constexpr uint32_t kVulkanBindingSlotVSClipPlanes = 3;
 static constexpr uint32_t kVulkanBindingSlotPSTextures = 13;
 static constexpr uint32_t kVulkanBindingSlotShaderSpec = 31;
@@ -21,6 +24,69 @@ static constexpr uint32_t kVulkanNumAllocsPerFrame = 4096;
 static constexpr uint32_t kNumFramesUnusedBeforeSetDestroyed =
     32; // Num of frames before a descriptor set is considered unused and can
         // be released
+
+// OTDU_ADDITION: depth-stencil textures bound for sampling (motion blur reads
+// the scene depth). Their own view covers depth AND stencil, which Vulkan
+// cannot sample; a depth-only view is made on first use and retired with the
+// texture (RenderDevice::destroyTexture -> TakeDepthSampleView).
+static VkDevice gDepthSampleViewDevice = VK_NULL_HANDLE;
+static std::unordered_map<const GPUTexture *, VkImageView> gDepthSampleViews;
+static std::mutex gDepthSampleViewsMutex;
+static constexpr uint64_t kDepthSampleViewIdBit = 1ull << 62;
+
+static bool IsDepthFormatForSampling( VkFormat format ) {
+    return format == VK_FORMAT_D16_UNORM || format == VK_FORMAT_D32_SFLOAT ||
+           format == VK_FORMAT_D16_UNORM_S8_UINT ||
+           format == VK_FORMAT_D24_UNORM_S8_UINT ||
+           format == VK_FORMAT_D32_SFLOAT_S8_UINT ||
+           format == VK_FORMAT_X8_D24_UNORM_PACK32;
+}
+
+static VkImageView GetDepthSampleView( const GPUTexture *pTexture ) {
+    std::lock_guard<std::mutex> lock( gDepthSampleViewsMutex );
+    auto it = gDepthSampleViews.find( pTexture );
+    if ( it != gDepthSampleViews.end() ) {
+        return it->second;
+    }
+
+    VkImageViewCreateInfo viewInfo = {};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = pTexture->Image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = pTexture->ViewFormat;
+    viewInfo.components = { VK_COMPONENT_SWIZZLE_IDENTITY,
+                            VK_COMPONENT_SWIZZLE_IDENTITY,
+                            VK_COMPONENT_SWIZZLE_IDENTITY,
+                            VK_COMPONENT_SWIZZLE_IDENTITY };
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    VkImageView view = VK_NULL_HANDLE;
+    if ( gDepthSampleViewDevice == VK_NULL_HANDLE ||
+         vkCreateImageView( gDepthSampleViewDevice, &viewInfo, nullptr,
+                            &view ) != VK_SUCCESS ) {
+        OTDU_LOG_ERROR( "Failed to create a depth-only view for sampling\n" );
+        return VK_NULL_HANDLE;
+    }
+    gDepthSampleViews.emplace( pTexture, view );
+    return view;
+}
+
+// Called by RenderDevice::destroyTexture (declared there): the view to retire
+// along with the texture, or VK_NULL_HANDLE.
+VkImageView TakeDepthSampleView( const GPUTexture *pTexture ) {
+    std::lock_guard<std::mutex> lock( gDepthSampleViewsMutex );
+    auto it = gDepthSampleViews.find( pTexture );
+    if ( it == gDepthSampleViews.end() ) {
+        return VK_NULL_HANDLE;
+    }
+    VkImageView view = it->second;
+    gDepthSampleViews.erase( it );
+    return view;
+}
 
 enum eDirtyStates : uint32_t {
     DS_VSClipPlanes = 1 << 3,
@@ -116,6 +182,8 @@ inline static void FillGlobalDescriptorLayout(
 void ResourceBinder::initialize( VkDevice device,
                                  VmaAllocator allocator,
                                  VkDeviceSize uboAlignment ) {
+    gDepthSampleViewDevice = device; // OTDU_ADDITION (GetDepthSampleView)
+
     std::vector<VkDescriptorSetLayoutBinding> bindings;
     FillGlobalDescriptorLayout( bindings );
 
@@ -401,6 +469,16 @@ void ResourceBinder::bindTexture( Texture *pTexture, const uint32_t index ) {
         OTDU_ASSERT( pVulkanTex->ImageView != VK_NULL_HANDLE );
         newView = pVulkanTex->ImageView;
         newViewId = pVulkanTex->ViewId;
+
+        // OTDU_ADDITION: sample a depth-stencil texture through a depth-only
+        // view (see GetDepthSampleView)
+        if ( IsDepthFormatForSampling( pVulkanTex->ViewFormat ) ) {
+            VkImageView depthView = GetDepthSampleView( pVulkanTex );
+            if ( depthView != VK_NULL_HANDLE ) {
+                newView = depthView;
+                newViewId = pVulkanTex->ViewId | kDepthSampleViewIdBit;
+            }
+        }
 
         const bool bIs3D = ( ( pTexture->Flags >> 0xb ) & 1u ) != 0;
         const bool bIsCube = !bIs3D && ( ( pTexture->Flags >> 6 ) & 1u ) != 0;

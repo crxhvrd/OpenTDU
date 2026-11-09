@@ -28,6 +28,7 @@
 #include "shaders/shader_types.h"
 #include "state_cache.h"
 #include "uva.h"
+#include "wheel_blur.h" // OTDU_ADDITION
 
 #include "core/maths_helper.h"
 
@@ -225,6 +226,9 @@ void RenderContextBase::renderScene() {
             gRenderBucketDatas[i].SceneSetupCommands.clear();
         }
     }
+
+    // OTDU_ADDITION: the held spinning wheels (render/wheel_blur.cpp)
+    WheelBlur::FlushScene();
 }
 
 void RenderContextBase::bindBucket( RenderBucket *param_2 ) {

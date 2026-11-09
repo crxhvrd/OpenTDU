@@ -385,3 +385,9 @@
       0,
       "PostFX",
       1 },
+    /* OTDU_ADDITION: motion blur (postfx_motion_blur.cpp) */
+    { 0x0, 0x0d7b4d4200000001, eShaderType::ST_Pixel, 0, 0, 0, 0, "PostFX", 1 },
+    { 0x0, 0x0d7b4d4200000002, eShaderType::ST_Pixel, 0, 0, 0, 0, "PostFX", 1 },
+    { 0x0, 0x0d7b4d4200000003, eShaderType::ST_Pixel, 0, 0, 0, 0, "PostFX", 1 },
+    { 0x0, 0x0d7b4d4200000004, eShaderType::ST_Pixel, 0, 0, 0, 0, "PostFX", 1 },
+    { 0x0, 0x0d7b4d4200000005, eShaderType::ST_Pixel, 0, 0, 0, 0, "PostFX", 1 },

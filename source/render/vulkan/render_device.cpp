@@ -1467,6 +1467,16 @@ void RenderDevice::destroyTexture( GPUTexture *pTexture ) {
     }
 
     RetireList &retireList = getRetireList();
+
+    // OTDU_ADDITION: the depth-only view made for sampling (resource_binder.cpp),
+    // retired before its image
+    extern VkImageView TakeDepthSampleView( const GPUTexture *pTexture );
+    VkImageView depthSampleView = TakeDepthSampleView( pTexture );
+    if ( depthSampleView != VK_NULL_HANDLE ) {
+        retireList.Textures.push_back(
+            { VK_NULL_HANDLE, nullptr, depthSampleView } );
+    }
+
     retireList.Textures.push_back(
         { pTexture->Image, pTexture->Allocation, pTexture->ImageView } );
     delete pTexture;
@@ -2925,6 +2935,48 @@ bool RenderDevice::isFramebufferUsingMSAA() const { return bIsMainRTUsingMSAA; }
 
 void RenderDevice::setMSAAState( bool param_1 ) {
     bIsMainRTUsingMSAA = param_1;
+}
+
+// OTDU_ADDITION: wheel spin blur (render/wheel_blur.cpp)
+void RenderDevice::setAccumulationWeight( float weight, uint32_t flags ) {
+    renderStates.otduAccumWeight = weight;
+    renderStates.otduAccumFlags = flags;
+}
+
+void RenderDevice::copyDepthStencilRegion( GPUTexture *pSrc,
+                                           GPUTexture *pDst,
+                                           int32_t x,
+                                           int32_t y,
+                                           uint32_t width,
+                                           uint32_t height ) {
+    if ( !bRecordingCommands || pSrc == nullptr || pDst == nullptr ||
+         pSrc == pDst || width == 0u || height == 0u ) {
+        return;
+    }
+    OTDU_ASSERT( pSrc->ViewFormat == pDst->ViewFormat &&
+                 pSrc->SampleCount == pDst->SampleCount );
+
+    endActiveRenderPass();
+    insertMemoryBarrier( pSrc, VK_IMAGE_LAYOUT_GENERAL );
+    insertMemoryBarrier( pDst, VK_IMAGE_LAYOUT_GENERAL );
+
+    VkImageAspectFlags aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+    if ( HasStencilBits( pSrc->ViewFormat ) ) {
+        aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
+
+    VkImageCopy region = {};
+    region.srcSubresource.aspectMask = aspect;
+    region.srcSubresource.mipLevel = 0;
+    region.srcSubresource.baseArrayLayer = 0;
+    region.srcSubresource.layerCount = 1;
+    region.dstSubresource = region.srcSubresource;
+    region.srcOffset = { x, y, 0 };
+    region.dstOffset = { x, y, 0 };
+    region.extent = { width, height, 1u };
+
+    vkCmdCopyImage( getCommandBuffer(), pSrc->Image, pSrc->CurrentLayout,
+                    pDst->Image, pDst->CurrentLayout, 1, &region );
 }
 
 void RenderDevice::bumpInternalFrameIndex() {

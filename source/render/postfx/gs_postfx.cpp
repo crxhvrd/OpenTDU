@@ -14,6 +14,8 @@
 #include "effects/postfx_glow_pause.h"
 #include "effects/postfx_hdri.h"
 #include "effects/postfx_desaturate.h"
+#include "effects/postfx_motion_blur.h"
+#include "render/wheel_blur.h" // OTDU_ADDITION
 
 #include "world/gs_world.h"
 
@@ -506,6 +508,8 @@ bool GSPostFX::initializeEffects() {
         pHDRI->FUN_006d5df0();
     }
 
+    MotionBlur::Initialize(); // OTDU_ADDITION
+
     return true;
 }
 
@@ -522,6 +526,9 @@ void GSPostFX::releaseBankResources() {
 
 void GSPostFX::releaseEffects() {
     // FUN_00808fa0
+    MotionBlur::Destroy(); // OTDU_ADDITION
+    WheelBlur::Destroy();  // OTDU_ADDITION
+
     for ( int32_t iVar2 = 0; iVar2 < PFXS_Count; iVar2++ ) {
         if ( effects[iVar2] != nullptr ) {
             effects[iVar2]->destroy();
