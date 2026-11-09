@@ -1,6 +1,8 @@
 #include "shared.h"
 #include "tdu_instance.h"
 
+#include <clocale>
+
 #ifdef OTDU_WIN32
 HINSTANCE gHINSTANCE = nullptr;
 int32_t gNCmdShow = 0;
@@ -11,6 +13,12 @@ int __stdcall WinMain( HINSTANCE hInstance,
              int nCmdShow ) {
     gHINSTANCE = hInstance;
     gNCmdShow = nCmdShow;
+
+    // OTDU_ADDITION: paths travel as UTF-8 std::string (see
+    // FileDirectAccess). The process code page is UTF-8 (opentdu.manifest) so
+    // narrow file APIs accept them; LC_CTYPE makes %S/%ls conversions UTF-8
+    // too. LC_NUMERIC stays "C" so config float parsing is unaffected.
+    setlocale( LC_CTYPE, ".UTF8" );
 
     int32_t argCount = 1;
     char *pCmdLineArgs[32];

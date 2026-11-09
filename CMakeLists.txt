@@ -1327,6 +1327,8 @@ set( OTDU_SOURCES ${OTDU_SOURCES} )
 add_executable( opentdu ${GUI_TYPE} ${OTDU_SOURCES} )
 
 if ( MSVC )
+    # OTDU_ADDITION: UTF-8 process code page (see source/win32/opentdu.manifest)
+    target_sources( opentdu PRIVATE "${OTDU_SRC_FOLDER}/win32/opentdu.manifest" )
     set_source_files_properties( "${OTDU_SRC_FOLDER}/physics/vehicle/bike_roll_limit_constraint.cpp"
                                  PROPERTIES COMPILE_OPTIONS "/GR-" SKIP_PRECOMPILE_HEADERS ON )
 else()
