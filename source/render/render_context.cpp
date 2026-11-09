@@ -1,5 +1,6 @@
 #include "shared.h"
 #include "render_context.h"
+#include "core/arg_parser.h" // OTDU_ADDITION
 
 #ifdef OTDU_USE_IMGUI
 #include "debug/debug_object_picker.h"
@@ -113,6 +114,12 @@ constexpr int32_t kCellsPerTile = 16;
 bool gbHeightmapRefineUnderwaterTiles = false; // DAT_010e7f90
 bool gbDebugWireframeHmap = false;
 bool gbDebugHmapDisableFootprintCull = false; // skip FUN_007022f0 iVar5==2 cull
+// OTDU_ADDITION: -nofootprintcull (pop-in A/B)
+static CmdLineArg CmdLineArgNoFootprintCull( "nofootprintcull",
+                                            []( const char * ) {
+                                                gbDebugHmapDisableFootprintCull =
+                                                    true;
+                                            } );
 bool gbDebugHmapDisableStitchMask = false; // skip area/sector seam-stitch mask
 bool gbDebugHmapForceFinestLOD = false;    // force every drawn tile to LOD 0
 bool gbDebugHmapDisableSeams = false;      // skip the 4 inter-tile seam draws

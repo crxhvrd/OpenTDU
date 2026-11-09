@@ -1,5 +1,6 @@
 #include "shared.h"
 #include "mng_impostor.h"
+#include "render/pop_tracer.h" // OTDU_ADDITION
 
 #include "core/maths_helper.h"
 
@@ -62,6 +63,10 @@ void MngImpostor::addInstance( Instance *pInstance,
                                Material *pMaterial,
                                bool bFade ) {
     // FUN_0042ed10
+    PopTracer::gImpostorFrame.Added[0]++; // OTDU_ADDITION (-poptrace)
+    if ( PopTracer::IsEnabled() ) {
+        PopTracer::OnSprite( pInstance );
+    }
     // Reuse an existing batch for this material if it still has room.
     for ( int32_t i = 0; i < MaterialBatches.LastIndex; i++ ) {
         MaterialBatch &batch = MaterialBatches.pMaterialBatch[i];
@@ -79,6 +84,7 @@ void MngImpostor::addInstance( Instance *pInstance,
     }
 
     if ( MaterialBatches.LastIndex >= kMaxMaterials ) {
+        PopTracer::gImpostorFrame.DroppedAtAdd[0]++; // OTDU_ADDITION
         return;
     }
 
@@ -225,6 +231,8 @@ void MngImpostor::tick( float, float ) {
         if ( entry.Used > 0 ) {
             spriteBudget -= entry.Used;
             if ( spriteBudget < 1 ) {
+                PopTracer::gImpostorFrame.DroppedAtDraw[0] +=
+                    uint32_t( 1 - spriteBudget ); // OTDU_ADDITION
                 entry.Used += spriteBudget;
                 spriteBudget = 0;
                 bBudgetExhausted = true;
@@ -249,6 +257,8 @@ void MngImpostor::tick( float, float ) {
         if ( entry.UsedAlpha > 0 ) {
             spriteBudget -= entry.UsedAlpha;
             if ( spriteBudget < 1 ) {
+                PopTracer::gImpostorFrame.DroppedAtDraw[0] +=
+                    uint32_t( 1 - spriteBudget ); // OTDU_ADDITION
                 entry.UsedAlpha += spriteBudget;
                 spriteBudget = 0;
                 bBudgetExhausted = true;
@@ -524,6 +534,8 @@ void MngImpostorSimple::tick( float, float ) {
             if ( spriteBudget < 0 ) {
                 // Out of budget: the original clamps the batch and returns
                 // without drawing it nor clearing the list.
+                PopTracer::gImpostorFrame.DroppedAtDraw[1] +=
+                    uint32_t( -spriteBudget ); // OTDU_ADDITION
                 entry.Used += spriteBudget;
                 return;
             }
@@ -566,11 +578,13 @@ bool MngImpostorSimple::addInstance( Instance *pInstance,
     if ( delta.squaredNorm() >= farPlane * farPlane ) {
         return false;
     }
+    PopTracer::gImpostorFrame.Added[1]++; // OTDU_ADDITION (-poptrace)
 
     for ( int32_t i = 0; i < MaterialBatches.Last; i++ ) {
         MaterialBatch &batch = MaterialBatches.pMaterialBatch[i];
         if ( batch.Used != 0 && batch.pMaterial == pMaterial ) {
             if ( batch.Used >= kMaxInstancesPerMaterial ) {
+                PopTracer::gImpostorFrame.DroppedAtAdd[1]++; // OTDU_ADDITION
                 return false;
             }
             batch.pInstances[batch.Used] = { pInstance, scale, deltaXZ,
@@ -581,6 +595,7 @@ bool MngImpostorSimple::addInstance( Instance *pInstance,
     }
 
     if ( MaterialBatches.Last >= kMaxMaterials ) {
+        PopTracer::gImpostorFrame.DroppedAtAdd[1]++; // OTDU_ADDITION
         return false;
     }
     MaterialBatch &batch = MaterialBatches.pMaterialBatch[MaterialBatches.Last];

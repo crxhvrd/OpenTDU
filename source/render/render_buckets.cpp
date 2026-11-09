@@ -16,6 +16,7 @@
 #include "render/setup_node.h"
 #include "render/shaders/shader_binary_cache.h"
 #include "render/wheel_blur.h" // OTDU_ADDITION
+#include "render/pop_tracer.h" // OTDU_ADDITION
 #include "world/otdu_lights.h"
 
 // Default (or global) Light Setup?
@@ -247,6 +248,9 @@ void DrawCommand::execute( bool param_2, uint32_t param_3 ) {
                 size_t uVar2 = Matrices.size();
                 size_t iVar3 = 0ull;
                 for ( TransformMatrixCommand &puVar1 : Matrices ) {
+                    if ( PopTracer::IsEnabled() ) { // OTDU_ADDITION
+                        PopTracer::OnDraw( puVar1.pInstance, puVar1.ModelMatrix );
+                    }
                     bool bVar1 = gInstanceRenderer.uploadInstance(
                         puVar1.pInstance, &puVar1, iVar3 == uVar2 - 1 );
                     if ( !bVar1 ) {
@@ -317,6 +321,10 @@ void TransformMatrixCommand::execute( uint32_t isHeightmap,
                                       Primitive *param_3,
                                       InstanceLOD *param_4 ) {
     // FUN_005f17d0
+    // OTDU_ADDITION: -poptrace (render/pop_tracer.cpp)
+    if ( PopTracer::IsEnabled() && isHeightmap == 0 ) {
+        PopTracer::OnDraw( pInstance, ModelMatrix );
+    }
     // OTDU_ADDITION: a spinning wheel's parts are drawn turned at the scene's
     // end (render/wheel_blur.cpp)
     if ( isHeightmap == 0 && WheelBlur::Defer( *this, param_3, param_4 ) ) {

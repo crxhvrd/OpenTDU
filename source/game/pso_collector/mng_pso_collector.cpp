@@ -32,6 +32,15 @@ static CmdLineArg CmdLineArgPSOCollector( "psocollect", []( const char *pArg ) {
     gbPSOCollectorEnabled = true;
 } );
 
+// OTDU_ADDITION: -autodrive: the autopilot just keeps driving the player's car
+// along the road network (no teleports, no stops), to test streaming / LOD
+// at speed without a driver
+static bool gbAutoDriveOnly = false;
+static CmdLineArg CmdLineArgAutoDrive( "autodrive", []( const char *pArg ) {
+    gbPSOCollectorEnabled = true;
+    gbAutoDriveOnly = true;
+} );
+
 // Lets the world and the player car settle before the first teleport
 static constexpr float kStartDelay = 5.0f;
 
@@ -195,6 +204,8 @@ void MngPSOCollector::tick( float deltaTime, float totalTime ) {
     switch ( state ) {
     case eState::CS_Start:
         if ( stateTime >= kStartDelay ) {
+            // -autodrive too: onto a road first (free ride starts at the
+            // house, off the road), then CS_Settle starts the drive
             setState( eState::CS_Teleport );
         }
         break;
@@ -244,6 +255,19 @@ void MngPSOCollector::tick( float deltaTime, float totalTime ) {
 
     case eState::CS_Drive: {
         steerAutopilot( pCar );
+        if ( gbAutoDriveOnly ) {
+            if ( pCar->getAIController() == nullptr ) {
+                setAutopilotEnabled( pCar, true );
+            }
+            // Stuck at the start of a drive: another road
+            if ( stateTime >= kStuckTime &&
+                 ( carPosition - driveStartPosition ).head<3>().norm() <
+                     kStuckDisplacement ) {
+                OTDU_LOG_INFO( "Autodrive stuck, next road\n" );
+                setState( eState::CS_Teleport );
+            }
+            break;
+        }
 
         if ( elapsedTime >= nextCameraCycleTime ) {
             nextCameraCycleTime = elapsedTime + kCameraCycleInterval;

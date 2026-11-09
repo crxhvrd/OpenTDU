@@ -1,5 +1,8 @@
 #include "shared.h"
 #include "render_scene.h"
+#include "render/pop_tracer.h" // OTDU_ADDITION
+#include "render/hiearchy_node.h"
+#include <intrin.h>
 
 #include "render/2dm.h"
 #include "render/3dd.h"
@@ -98,18 +101,35 @@ void RenderScene::enqueueDynamicDrawList( DrawList *pDrawList ) {
 
 void RenderScene::enqueueDynamicInstance( Instance *pInstance ) {
     // FUN_00413b30
+    if ( PopTracer::IsEnabled() ) { // OTDU_ADDITION
+        PopTracer::TagCaller( pInstance, _ReturnAddress() );
+    }
     ScopedMutexLock lock( &gDynamicInstancesMutex );
     pDrawCommands->DynamicInstances.push_front( pInstance );
 }
 
 void RenderScene::enqueueDynamicHiearchy( HiearchyNode *pNode ) {
     // FUN_00411200
+    if ( PopTracer::IsEnabled() && pNode != nullptr ) { // OTDU_ADDITION
+        HiearchyNode *pIt = pNode;
+        for ( uint32_t n = 0; n <= pNode->NumChildren && pIt != nullptr;
+              n++, pIt = pIt->pNext ) {
+            PopTracer::TagCaller( pIt->pInstance, _ReturnAddress() );
+        }
+    }
     ScopedMutexLock lock( &gDynamicHiearchyMutex );
     pDrawCommands->DynamicHiearchies.push_front( pNode );
 }
 
 void RenderScene::enqueueStaticHiearchy( HiearchyNode *pNode ) {
     // FUN_00410d80
+    if ( PopTracer::IsEnabled() && pNode != nullptr ) { // OTDU_ADDITION
+        HiearchyNode *pIt = pNode;
+        for ( uint32_t n = 0; n <= pNode->NumChildren && pIt != nullptr;
+              n++, pIt = pIt->pNext ) {
+            PopTracer::TagCaller( pIt->pInstance, _ReturnAddress() );
+        }
+    }
     ScopedMutexLock lock( &gDynamicHiearchyMutex );
     pDrawCommands->StaticHiearchies.push_front( pNode );
 }

@@ -1,5 +1,6 @@
 #include "shared.h"
 #include "streaming_manager.h"
+#include "render/pop_tracer.h" // OTDU_ADDITION
 
 #include "config/gs_config.h"
 #include "core/maths_helper.h"
@@ -2539,6 +2540,19 @@ void StreamingManager::submitSectorImpostors( Sector &sector,
                 MassInstanceImpostor *pImpostor = cellList[idx];
                 if ( numSubmitted >= kImpostorSubmitCap ||
                      pImpostor->MaxLODDist * extendSq <= cellLODThreshold ) {
+                    if ( PopTracer::IsEnabled() ) { // OTDU_ADDITION
+                        if ( numSubmitted >= kImpostorSubmitCap ) {
+                            PopTracer::gImpostorFrame.SubmitCapHits++;
+                        } else {
+                            for ( size_t rest = idx + 1; rest < cellList.size();
+                                  rest++ ) {
+                                if ( cellList[rest]->MaxLODDist * extendSq >
+                                     cellLODThreshold ) {
+                                    PopTracer::gImpostorFrame.HeldByBreak++;
+                                }
+                            }
+                        }
+                    }
                     break;
                 }
                 if ( pImpostor->pInstance == nullptr ) {
