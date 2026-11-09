@@ -524,7 +524,10 @@ void GSCamera::terminate() {
         if ( pCamera != nullptr ) {
             pCamera->destroy();
             pCamera->~CameraGame();
-            TestDrive::Free( pCamera );
+            // OTDU_ADDITION: registerCamera() placement-news the cameras into
+            // TestDrive::AllocAligned memory; free() on that pointer corrupts
+            // the heap (0xC0000374 on quit).
+            TestDrive::FreeAligned( pCamera );
             pCamera = nullptr;
         }
     }
