@@ -24,6 +24,8 @@
 #include "world/pst.h"
 #include "physics/gs_physics.h"
 
+#include <algorithm>
+
 constexpr uint32_t kPMIMagic = 0x494d502e; // ".PMI"
 
 // ".PMI" prop-instance decode constants (the original packs each transform
@@ -899,6 +901,23 @@ static void BuildImpostorGrid( SectorGeometry &geometry,
         }
 
         pType = pInstance;
+    }
+
+    // OTDU_ADDITION: every reader walks a cell's list until an instance's
+    // MaxLODDist falls below the cell's distance and then BREAKS
+    // (submitSectorImpostors, gatherSectorEnvImpostors, the impostor update),
+    // so the list must run from the farthest-visible instance down. The file
+    // order is by type, and MaxLODDist also scales with each instance's own
+    // size: unsorted, a small clutter object at the head of a cell held back
+    // the signs, rails, walls and rocks behind it until the cell was close
+    // enough for the clutter, and they popped in from nothing at speed
+    // (-poptrace: 38..642 instances held back per frame).
+    for ( std::vector<MassInstanceImpostor *> &cell : grid.cells ) {
+        std::stable_sort( cell.begin(), cell.end(),
+                          []( const MassInstanceImpostor *pA,
+                              const MassInstanceImpostor *pB ) {
+                              return pA->MaxLODDist > pB->MaxLODDist;
+                          } );
     }
 
     grid.bBuilt = true;

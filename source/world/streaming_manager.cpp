@@ -2287,7 +2287,8 @@ void StreamingManager::tickWoosh( const float *pListenerXZ,
 static bool ImpostorGatherVisible( Frustum &frustum,
                                    const Matrix4x4f_t &worldToCam,
                                    const float tanHalfFov,
-                                   MassInstanceImpostor &impostor ) {
+                                   MassInstanceImpostor &impostor,
+                                   const float lastLODExtendSq = 1.0f ) {
     // FUN_007003c0
     Instance *pInstance = impostor.pInstance;
 
@@ -2324,6 +2325,14 @@ static bool ImpostorGatherVisible( Frustum &frustum,
             }
             if ( i == numLOD ) {
                 lodIndex = kMaxNumLOD; // past the last LOD
+                // OTDU_ADDITION: sprite-less objects keep their last LOD
+                // further out (GetObjectDistanceScale)
+                if ( lastLODExtendSq > 1.0f &&
+                     lodDistance < pInstance->getLOD( numLOD - 1 ).Distances[0] *
+                                       lastLODExtendSq ) {
+                    bVisible = true;
+                    lodIndex = numLOD - 1;
+                }
             }
 
             pInstance->setActiveLODIndex( lodIndex );
@@ -2501,6 +2510,8 @@ void StreamingManager::submitSectorImpostors( Sector &sector,
     // Second pass: per cell (near->far) compute the projected LOD-distance
     // threshold, then LOD-cull + frustum-cull each instance of both grids.
     uint32_t numSubmitted = 0;
+    const float objectScale = GetObjectDistanceScale();
+    const float objectScaleSq = objectScale * objectScale;
     for ( const CellDistance &entry : visibleCells ) {
         if ( numSubmitted >= kImpostorSubmitCap ) {
             break;
@@ -2516,10 +2527,18 @@ void StreamingManager::submitSectorImpostors( Sector &sector,
         const float cellLODThreshold =
             ( dx * dx + dz * dz - tierBias ) * hideDistanceUnit;
 
-        for ( ImpostorGrid &grid : sector.geometry.impostorGrids ) {
-            for ( MassInstanceImpostor *pImpostor : grid.cells[entry.cell] ) {
+        for ( uint32_t gridIndex = 0; gridIndex < 2u; gridIndex++ ) {
+            ImpostorGrid &grid = sector.geometry.impostorGrids[gridIndex];
+            // OTDU_ADDITION: grid 1 has no sprite stand-in: its objects keep
+            // their last LOD further out instead of popping in at the retail
+            // range (grid 0 hands over to its sprites)
+            const float extendSq = ( gridIndex == 1 ) ? objectScaleSq : 1.0f;
+            const std::vector<MassInstanceImpostor *> &cellList =
+                grid.cells[entry.cell];
+            for ( size_t idx = 0; idx < cellList.size(); idx++ ) {
+                MassInstanceImpostor *pImpostor = cellList[idx];
                 if ( numSubmitted >= kImpostorSubmitCap ||
-                     pImpostor->MaxLODDist <= cellLODThreshold ) {
+                     pImpostor->MaxLODDist * extendSq <= cellLODThreshold ) {
                     break;
                 }
                 if ( pImpostor->pInstance == nullptr ) {
@@ -2528,7 +2547,7 @@ void StreamingManager::submitSectorImpostors( Sector &sector,
 
                 if ( ( pImpostor->DrawFlags & 1 ) != 0 &&
                      ImpostorGatherVisible( frustum, worldToCam, tanHalfFov,
-                                            *pImpostor ) ) {
+                                            *pImpostor, extendSq ) ) {
                     pScene->enqueueDynamicInstance( pImpostor->pInstance );
                     numSubmitted++;
                 }

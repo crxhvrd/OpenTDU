@@ -71,6 +71,14 @@ void SetDrawDistance( const eDrawDistance level ) {
 
 eDrawDistance GetDrawDistance() { return gDrawDistance; }
 
+// OTDU_ADDITION: sprite-less sector objects pop in from nothing at their
+// retail range; real meshes, so milder than the sprites' scale
+static constexpr float kDrawDistanceObjectScales[DD_Count] = { 1.0f, 1.5f,
+                                                               2.0f, 3.0f };
+float GetObjectDistanceScale() {
+    return kDrawDistanceObjectScales[gDrawDistance];
+}
+
 eViewFormat gDepthStencilFormat = eViewFormat::VF_D24S8F; // DAT_00fac8e4
 GPUTexture *gpMainDepthBuffer = nullptr;                  // DAT_00f47920
 static float gUVATime = 0.0f;                             // DAT_016a2c14

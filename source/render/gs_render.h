@@ -547,3 +547,6 @@ enum eDrawDistance : int32_t {
 
 void SetDrawDistance( eDrawDistance level );
 eDrawDistance GetDrawDistance();
+// OTDU_ADDITION: how far past their retail range the sector's sprite-less
+// objects (rails, walls, rocks...) keep their last LOD (x1 = retail)
+float GetObjectDistanceScale();
