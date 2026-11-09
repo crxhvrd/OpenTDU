@@ -131,7 +131,11 @@ void EntitySoundDensity::uninstallSoundBank() {
     if ( State != SDS_Installing ) {
         sampleStorage.reset();
         if ( pBankData != nullptr ) {
-            TestDrive::FreeAligned( pBankData );
+            // OTDU_ADDITION: GSFile::loadBank allocates the bank with
+            // TestDrive::Alloc; _aligned_free on that block reads a bogus
+            // header and corrupts the heap (0xC0000374 when a cinematic with
+            // a sound density entity is unloaded, e.g. entering a house).
+            TestDrive::Free( pBankData );
         }
         pBankData = nullptr;
         bankDataSize = 0;
