@@ -1389,7 +1389,13 @@ endif()
 # zlib
 include_directories( "${OTDU_THIRDPARTY_FOLDER}/zlib/" )
 include_directories( "${OTDU_THIRDPARTY_FOLDER}/minimp3/" )
-include_directories( SYSTEM "${OTDU_THIRDPARTY_FOLDER}/asio/asio/include" )
+# OTDU_ADDITION: asio/asio/include is a git symlink to ../include; checkouts
+# without symlink support (Windows default) get a plain text file instead.
+if ( EXISTS "${OTDU_THIRDPARTY_FOLDER}/asio/include/asio.hpp" )
+    include_directories( SYSTEM "${OTDU_THIRDPARTY_FOLDER}/asio/include" )
+else()
+    include_directories( SYSTEM "${OTDU_THIRDPARTY_FOLDER}/asio/asio/include" )
+endif()
 add_definitions( -DASIO_STANDALONE -DASIO_NO_DEPRECATED )
 if ( WIN32 )
     target_link_libraries(opentdu debug "${OTDU_THIRDPARTY_FOLDER}/zlib/lib/Debug/zsd.lib"
