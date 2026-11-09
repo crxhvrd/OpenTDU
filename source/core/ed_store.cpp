@@ -95,8 +95,8 @@ int32_t edStore::reserve_buffer( int32_t sizeToReserve ) {
 
     uint32_t iVar2 = bufferSize + sizeToReserve;
     if ( bufferSizeWithPadding < iVar2 ) {
-        void *puVar1 =
-            realloc( pBuffer, bufferSizeWithPadding + 0x200 + sizeToReserve );
+        void *puVar1 = TestDrive::Realloc(
+            pBuffer, bufferSizeWithPadding + 0x200 + sizeToReserve );
         pBuffer = puVar1;
         if ( puVar1 == nullptr ) {
             bufferSizeWithPadding = 0;
