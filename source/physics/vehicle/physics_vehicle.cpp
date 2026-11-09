@@ -39,6 +39,22 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 
+#include <Jolt/Core/FPException.h>
+
+namespace {
+    // OTDU_ADDITION: the game's (P-code) math relies on IEEE semantics (x/0 =
+    // inf, 0/0 = NaN, clamped afterwards). Jolt's job threads unmask FP
+    // exceptions when JPH_FLOATING_POINT_EXCEPTIONS_ENABLED is defined (the
+    // default in Release), so e.g. EvaluateAutoShift dividing by
+    // (PeakPowerOmega - redline) == 0 crashed with STATUS_FLOAT_DIVIDE_BY_ZERO.
+    // Mask them while game callbacks run there.
+    struct GameFPExceptionMask {
+        JPH::FPExceptionDisableInvalid Invalid;
+        JPH::FPExceptionDisableDivByZero DivByZero;
+        JPH::FPExceptionDisableOverflow Overflow;
+    };
+} // namespace
+
 constexpr float kMmToM = 0.001f;
 constexpr float kSlipDenom = 3.0f;
 constexpr float kSuspDampingScale = 1.0f;
@@ -3566,6 +3582,7 @@ void PhysicsVehicle::updateReplayDriving() {
 
 void PhysicsVehicle::OnStep(
     const JPH::PhysicsStepListenerContext &inContext ) {
+    GameFPExceptionMask fpMask;
     if ( pChassisBody == nullptr || pPhysicsSystem == nullptr ) {
         return;
     }

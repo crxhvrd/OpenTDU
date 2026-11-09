@@ -94,6 +94,22 @@
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 
+#include <Jolt/Core/FPException.h>
+
+namespace {
+    // OTDU_ADDITION: the game's (P-code) math relies on IEEE semantics (x/0 =
+    // inf, 0/0 = NaN, clamped afterwards). Jolt's job threads unmask FP
+    // exceptions when JPH_FLOATING_POINT_EXCEPTIONS_ENABLED is defined (the
+    // default in Release), so e.g. EvaluateAutoShift dividing by
+    // (PeakPowerOmega - redline) == 0 crashed with STATUS_FLOAT_DIVIDE_BY_ZERO.
+    // Mask them while game callbacks run there.
+    struct GameFPExceptionMask {
+        JPH::FPExceptionDisableInvalid Invalid;
+        JPH::FPExceptionDisableDivByZero DivByZero;
+        JPH::FPExceptionDisableOverflow Overflow;
+    };
+} // namespace
+
 class PhysicsCharacter {
 public:
     JPH::Ref<JPH::CharacterVirtual> pCharacter;
@@ -371,6 +387,7 @@ namespace {
             const JPH::Body &inBody2,
             JPH::RVec3Arg,
             const JPH::CollideShapeResult &inCollisionResult ) override {
+            GameFPExceptionMask fpMask;
             // FUN_00833BA0
             if ( inBody1.IsSensor() || inBody2.IsSensor() ) {
                 return JPH::ValidateResult::AcceptContact;
@@ -411,6 +428,7 @@ namespace {
                              const JPH::Body &inBody2,
                              const JPH::ContactManifold &inManifold,
                              JPH::ContactSettings &ioSettings ) override {
+            GameFPExceptionMask fpMask;
             if ( inBody1.IsSensor() || inBody2.IsSensor() ) {
                 onSensorContactAdded( inBody1, inBody2 );
                 return;
@@ -443,6 +461,7 @@ namespace {
                                  const JPH::Body &inBody2,
                                  const JPH::ContactManifold &inManifold,
                                  JPH::ContactSettings &ioSettings ) override {
+            GameFPExceptionMask fpMask;
             // A contact that survives across steps is a scrape/slide, which is
             // what the original's looping kind describes.
             if ( inBody1.IsSensor() || inBody2.IsSensor() ) {
