@@ -268,9 +268,17 @@ void GammaRampPass::uploadRamp( VkCommandBuffer cmdBuffer,
         return;
     }
 
-    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
-                          nullptr, 0, nullptr );
+    // OTDU_ADDITION: also orders the previous upload's write (write after
+    // write needs a memory dependency)
+    VkMemoryBarrier previousUpload = {};
+    previousUpload.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    previousUpload.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    previousUpload.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier( cmdBuffer,
+                          VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                              VK_PIPELINE_STAGE_TRANSFER_BIT,
+                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &previousUpload,
+                          0, nullptr, 0, nullptr );
 
     vkCmdUpdateBuffer( cmdBuffer, rampBuffer, 0,
                        sizeof( parameters.ControlPoints ),

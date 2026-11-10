@@ -427,6 +427,9 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
     // to a vertex layout semantic (Usage + UsageIndex). This mirrors DXVK's
     // runtime approach and assigns the correct SPIRV location per attribute.
     std::vector<VkVertexInputAttributeDescription> inputAttribs;
+    std::vector<VkVertexInputBindingDescription> inputBindings =
+        pVertexLayout->InputBindings;
+    bool bUsesNullBinding = false;
     const ShaderMetadataSPIRVRuntime *pVSMeta =
         pGraphicsShaderStages[0] ? pGraphicsShaderStages[0]->pMetadata
                                  : nullptr;
@@ -448,7 +451,17 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
                     break;
                 }
             }
-#ifdef OTDU_MACOS
+#ifndef OTDU_MACOS
+            if ( !bFound ) {
+                VkVertexInputAttributeDescription attrib = {};
+                attrib.location = isgnElem.Location;
+                attrib.binding = kNullVertexBinding;
+                attrib.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+                attrib.offset = 0;
+                inputAttribs.push_back( attrib );
+                bUsesNullBinding = true;
+            }
+#else
             // Use dummy attribute for unbound stream (only required on Apple
             // platforms)
             if ( !bFound && !pVertexLayout->InputBindings.empty() ) {
@@ -507,15 +520,22 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
         }
     }
 
+    if ( bUsesNullBinding ) {
+        VkVertexInputBindingDescription nullBinding = {};
+        nullBinding.binding = kNullVertexBinding;
+        nullBinding.stride = 0;
+        nullBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        inputBindings.push_back( nullBinding );
+    }
+
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo.pNext = nullptr;
     vertexInputInfo.flags = 0;
-    vertexInputInfo.pVertexBindingDescriptions =
-        pVertexLayout->InputBindings.data();
+    vertexInputInfo.pVertexBindingDescriptions = inputBindings.data();
     vertexInputInfo.vertexBindingDescriptionCount =
-        static_cast<uint32_t>( pVertexLayout->InputBindings.size() );
+        static_cast<uint32_t>( inputBindings.size() );
     vertexInputInfo.pVertexAttributeDescriptions = inputAttribs.data();
     vertexInputInfo.vertexAttributeDescriptionCount =
         static_cast<uint32_t>( inputAttribs.size() );
@@ -567,7 +587,7 @@ CachedPSO &PSOFactory::getOrBuildPSO( VkDevice device,
     psoInfos.pStages = graphicsShaderStages.data();
 
     BuildPSOHashKey( hashKey, psoInfos, pGraphicsShaderStages,
-                     pVertexLayout->InputBindings, inputAttribs,
+                     inputBindings, inputAttribs,
                      psoLayoutHashcode, renderPassHashcode, VSClipPlaneCount,
                      bExtendedDynamicState );
     const uint64_t psoHashcode = CityHash64(

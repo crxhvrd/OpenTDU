@@ -765,13 +765,21 @@ void FarImpostorField::recordCompute() {
     pDevice->unlockBuffer( pJobBuffers[slot] );
     pDevice->unlockBuffer( pTypeParamBuffers[slot] );
 
+    // Last frame's writes (argument reset, culling atomics, sprites) must land
+    // before this frame's: a memory dependency, not just an execution one
+    // (sync validation WRITE_AFTER_WRITE on the argument buffer; a late atomic
+    // after the reset left a stale instance count = sprites from an old frame)
     pDevice->insertMemoryBarrier( VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
                                       VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
-                                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                  0,
+                                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                      VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                  VK_ACCESS_SHADER_WRITE_BIT |
+                                      VK_ACCESS_TRANSFER_WRITE_BIT,
                                   VK_PIPELINE_STAGE_TRANSFER_BIT |
                                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                  0 );
+                                  VK_ACCESS_TRANSFER_WRITE_BIT |
+                                      VK_ACCESS_SHADER_READ_BIT |
+                                      VK_ACCESS_SHADER_WRITE_BIT );
     uploadTerrainHeights();
     pDevice->updateBuffer(
         pArgumentBuffer, 0, segmentArguments.data(),

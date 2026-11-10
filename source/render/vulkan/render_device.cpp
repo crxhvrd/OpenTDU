@@ -94,6 +94,15 @@ static CmdLineArg CmdLineArgVulkanValidationLayer(
     "vk_enable_validation_layer",
     []( const char *pArg ) { gVulkanEnableValidationLayer = true; } );
 
+// OTDU_ADDITION: -vk_sync_validation: the validation layer also reports
+// synchronization hazards (missing barriers); implies the validation layer
+static bool gVulkanEnableSyncValidation = false;
+static CmdLineArg CmdLineArgVulkanSyncValidation(
+    "vk_sync_validation", []( const char *pArg ) {
+        gVulkanEnableValidationLayer = true;
+        gVulkanEnableSyncValidation = true;
+    } );
+
 #ifdef OTDU_MACOS
 static constexpr const VkFormat kDepth24Stencil8 =
     VK_FORMAT_D32_SFLOAT_S8_UINT; // VF_D24S8
@@ -298,8 +307,58 @@ VulkanDebugCallback( VkDebugUtilsMessageSeverityFlagBitsEXT severity,
         return VK_TRUE;
     }
 
-    OTDU_LOG_ERROR( "%s\n", callbackData->pMessage );
-    if ( ( severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT ) != 0 ) {
+    // OTDU_ADDITION: each distinct message (handles and numbers aside) at
+    // most twice and each message id at most 40 times (a sweep stays
+    // readable), and break only under a debugger (else the first error ends
+    // the run)
+    const char *pMessage =
+        ( callbackData->pMessage != nullptr ) ? callbackData->pMessage : "";
+    std::string normalized;
+    for ( const char *pChar = pMessage; *pChar != '\0'; pChar++ ) {
+        if ( pChar[0] == '0' && pChar[1] == 'x' ) {
+            pChar += 2;
+            while ( isxdigit( static_cast<unsigned char>( *pChar ) ) ) {
+                pChar++;
+            }
+            pChar--;
+            normalized += '#';
+        } else if ( isdigit( static_cast<unsigned char>( *pChar ) ) ) {
+            if ( normalized.empty() || normalized.back() != '#' ) {
+                normalized += '#';
+            }
+        } else {
+            normalized += *pChar;
+        }
+    }
+    static std::mutex sLock;
+    static std::unordered_map<std::string, uint32_t> sTextCounts;
+    static std::unordered_map<int32_t, uint32_t> sIdCounts;
+    {
+        std::lock_guard<std::mutex> lock( sLock );
+        if ( ++sTextCounts[normalized] > 2 ||
+             ++sIdCounts[callbackData->messageIdNumber] > 40 ) {
+            return VK_FALSE;
+        }
+    }
+
+    OTDU_LOG_ERROR(
+        "%s%s\n",
+        ( severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT ) != 0
+            ? ""
+            : "(warning) ",
+        pMessage );
+    // The named objects (render targets carry their names)
+    for ( uint32_t i = 0; i < callbackData->objectCount; i++ ) {
+        const VkDebugUtilsObjectNameInfoEXT &object =
+            callbackData->pObjects[i];
+        if ( object.pObjectName != nullptr ) {
+            OTDU_LOG_ERROR( "    object %u: type %d '%s'\n", i,
+                            static_cast<int32_t>( object.objectType ),
+                            object.pObjectName );
+        }
+    }
+    if ( ( severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT ) != 0 &&
+         IsDebuggerPresent() ) {
         OTDU_TRIGGER_BREAKPOINT;
     }
 
@@ -319,10 +378,13 @@ struct ValidationSettings {
     VkBool32 unique_handles{ VK_TRUE };
     VkBool32 object_lifetime{ VK_TRUE };
     VkBool32 stateless_param{ VK_TRUE };
+    VkBool32 validate_sync{ VK_FALSE };
     std::vector<const char *> debug_action{
         "VK_DBG_LAYER_ACTION_LOG_MSG" }; // "VK_DBG_LAYER_ACTION_DEBUG_OUTPUT",
                                          // "VK_DBG_LAYER_ACTION_BREAK"
-    std::vector<const char *> report_flags{ "error" };
+    // OTDU_ADDITION: warnings too (e.g. a fragment shader input no vertex
+    // shader output writes)
+    std::vector<const char *> report_flags{ "error", "warn" };
 
     VkBaseInStructure *buildPNextChain() {
         layerSettings = std::vector<VkLayerSettingEXT>{
@@ -352,6 +414,8 @@ struct ValidationSettings {
              uint32_t( debug_action.size() ),                                         debug_action.data()   },
             {layerName, "report_flags",          VK_LAYER_SETTING_TYPE_STRING_EXT,
              uint32_t( report_flags.size() ),                                         report_flags.data()   },
+            {layerName, "validate_sync", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1,
+             &validate_sync},
         };
         layerSettingsCreateInfo.sType =
             VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT;
@@ -526,6 +590,10 @@ RenderDevice::~RenderDevice() {
         pFanEmulationIndexBuffer = nullptr;
     }
 #endif
+    if ( pNullVertexBuffer != nullptr ) {
+        destroyBuffer( pNullVertexBuffer );
+        pNullVertexBuffer = nullptr;
+    }
     releaseRetireList( pendingRetire );
     releaseRetireList( nextFrameRetire );
 
@@ -1361,15 +1429,21 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
     range.baseArrayLayer = 0;
     range.layerCount = numTextures;
 
+    // OTDU_ADDITION: real dependencies (sync validation: the barriers waited
+    // on nothing, TOP_OF_PIPE / no access). Mip 0 waits for whatever wrote
+    // it (a render pass for the ocean normal map, rebuilt every frame) and
+    // each level for last frame's sampling; each blit then waits for the one
+    // writing its source level, else the small mips were filtered from half
+    // written data.
     VkImageMemoryBarrier barrier = {};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = pVulkanTex->CurrentLayout;
     barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     barrier.image = pVulkanTex->Image;
     barrier.subresourceRange = range;
-    barrier.srcAccessMask = 0;
-    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
                           nullptr, 1, &barrier );
 
@@ -1412,9 +1486,9 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             barrier.image = pVulkanTex->Image;
             barrier.subresourceRange = range;
-            barrier.srcAccessMask = 0;
+            barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr,
                                   0, nullptr, 1, &barrier );
 
@@ -1426,8 +1500,9 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
 
             barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr,
                                   0, nullptr, 1, &barrier );
         }
@@ -1447,11 +1522,12 @@ void RenderDevice::recordMipchainGeneration( Texture *pTexture,
     srvBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     srvBarrier.image = pVulkanTex->Image;
     srvBarrier.subresourceRange = srvRange;
-    srvBarrier.srcAccessMask = 0;
+    srvBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     srvBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     vkCmdPipelineBarrier( cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                          VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
-                          0, nullptr, 1, &srvBarrier );
+                          VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                          0, 0, nullptr, 0, nullptr, 1, &srvBarrier );
 
     pVulkanTex->CurrentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
@@ -3970,6 +4046,7 @@ RenderDevice::createVertexLayout( VertexLayoutAttribute *pAttributes,
             pAttributeIt->Type != eVertexAttributeFormat::VAF_Count ) {
         const VertexLayoutAttribute &layoutAttribute = *pAttributeIt;
         const uint16_t streamIdx = layoutAttribute.Stream;
+        OTDU_ASSERT( streamIdx < kNullVertexBinding );
 
         // Semantic — always added, one per attribute.
         // SPIRV location is resolved at PSO-build time by matching
@@ -4121,6 +4198,8 @@ bool RenderDevice::createVulkanInstance() {
     if ( gVulkanEnableValidationLayer ) {
         instanceLayers.push_back( "VK_LAYER_KHRONOS_validation" );
         validationSettings.validate_core = VK_TRUE;
+        validationSettings.validate_sync =
+            gVulkanEnableSyncValidation ? VK_TRUE : VK_FALSE;
     }
 
     VkInstanceCreateInfo instanceCreateInfo;
@@ -5442,6 +5521,7 @@ void RenderDevice::resetRecordedBindings() {
         recordedBindings.VertexBufferOffsets[i] = 0;
     }
     recordedBindings.NumVertexBuffers = -1;
+    recordedBindings.bNullVertexBuffer = false;
 
     recordedBindings.IndexBuffer = VK_NULL_HANDLE;
     recordedBindings.IndexBufferOffset = 0ull;
@@ -5679,6 +5759,23 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
         fbHeight = pDepthStencilAttachment->Height;
     }
 
+    // OTDU_ADDITION: never larger than any attachment (D3D9 required the depth
+    // buffer to cover the render target). A swapchain recreated at a new
+    // window size meets the game's old size depth buffer until the resize
+    // settles (edRender::flushDrawCommands); sized from the color alone, the
+    // framebuffer let the GPU write past the depth image (device lost seen in
+    // the login menu).
+    for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
+        if ( bFramebufferAttachmentValid[i] && pFramebufferAttachments[i] ) {
+            fbWidth = Min( fbWidth, pFramebufferAttachments[i]->Width );
+            fbHeight = Min( fbHeight, pFramebufferAttachments[i]->Height );
+        }
+    }
+    if ( bDepthStencilAttachmentValid && pDepthStencilAttachment ) {
+        fbWidth = Min( fbWidth, pDepthStencilAttachment->Width );
+        fbHeight = Min( fbHeight, pDepthStencilAttachment->Height );
+    }
+
     VkSampleCountFlagBits activeSampleCount = VK_SAMPLE_COUNT_1_BIT;
     bool bFoundColorAttachment = false;
     for ( uint32_t i = 0; i < kMaxSimultaneousRT; i++ ) {
@@ -5857,6 +5954,31 @@ bool RenderDevice::prepareDrawCall( ePrimitiveType primitiveType ) {
                 sizeof( VkDeviceSize ) * numVertexBuffers );
         recordedBindings.NumVertexBuffers = numVertexBuffers;
     }
+
+#ifndef OTDU_MACOS
+    // OTDU_ADDITION: zero stream for vertex shader inputs the layout lacks
+    // (PSOFactory::getOrBuildPSO)
+    if ( !recordedBindings.bNullVertexBuffer ) {
+        if ( pNullVertexBuffer == nullptr ) {
+            GPUBufferDesc desc;
+            desc.BufferType = GPUBufferDesc::Type::BT_VertexBuffer;
+            desc.Size = 4 * sizeof( float );
+            desc.Stride = 4 * sizeof( float );
+            desc.bDynamic = false;
+            pNullVertexBuffer = createBuffer( &desc );
+
+            void *pZeros = lockBuffer( pNullVertexBuffer, 0, 0, true );
+            memset( pZeros, 0, desc.Size );
+            unlockBuffer( pNullVertexBuffer );
+        }
+
+        const VkDeviceSize nullOffset = 0ull;
+        vkCmdBindVertexBuffers( getCommandBuffer(), kNullVertexBinding, 1,
+                                &pNullVertexBuffer->NativeBuffer[0],
+                                &nullOffset );
+        recordedBindings.bNullVertexBuffer = true;
+    }
+#endif
 
     VkDescriptorSet activeSet = resourceBinder.DescriptorSet;
 #ifdef OTDU_DEVBUILD

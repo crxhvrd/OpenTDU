@@ -25,6 +25,13 @@ struct CachedPSO {
 // function + point sprite (dword1 21..25), alpha test precision (dword2 27..30)
 static constexpr uint32_t kPSSpecDwordMasks[2] = { 0x1fu << 21, 0xfu << 27 };
 
+// OTDU_ADDITION: vertex shader inputs missing from the vertex layout read this
+// binding, a zero stride stream of zeros (what D3D9 drivers, Wine and DXVK
+// return for elements missing from the declaration; Vulkan leaves them
+// undefined). The device binds it in every command buffer. D3D9 streams stay
+// below it (the spec guarantees 16 bindings).
+static constexpr uint32_t kNullVertexBinding = 15u;
+
 struct PSOFactory {
     // VS and PS
     GPUShader *pGraphicsShaderStages[2];

@@ -610,6 +610,8 @@ private:
 #endif
     VkBuffer vertexBuffers[0x10];
     VkDeviceSize vertexBufferOffsets[0x10];
+    // OTDU_ADDITION: zero stream at kNullVertexBinding (pso_factory.h)
+    GPUBuffer *pNullVertexBuffer = nullptr;
     GPUBuffer *pBoundVertexBuffers[0x10] = {};
     uint32_t boundVertexBufferOffsets[0x10] = {};
 
@@ -619,6 +621,7 @@ private:
         VkBuffer VertexBuffers[0x10];
         VkDeviceSize VertexBufferOffsets[0x10];
         int32_t NumVertexBuffers;
+        bool bNullVertexBuffer; // kNullVertexBinding bound
 
         VkBuffer IndexBuffer;
         VkDeviceSize IndexBufferOffset;
