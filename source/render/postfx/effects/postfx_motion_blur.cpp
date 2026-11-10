@@ -22,6 +22,9 @@
 // handed to the shaders relative to this frame's camera.
 
 #include "core/arg_parser.h"
+#ifdef OTDU_USE_IMGUI
+#include "imgui.h"
+#endif
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_base.h"
@@ -71,15 +74,19 @@ static_assert( kWheelBase + kMaxWheels * 3 <= kDataWidth * kDataHeight,
 // exposure (the frame's motion scaled by exposure / frame time), capped at a
 // share of the screen height.
 // Tuned in game: 22.4 ms, cap 3.92 % of the height.
-float gShutterSeconds = 0.0224f; // -mbshutter <seconds>
-constexpr float kMaxRadiusShare = 0.0392f; // of the screen height (42 px at 1080p)
-constexpr float kMaxExposureScale = 12.0f; // exposure / frame time
+constexpr float kDefaultShutterSeconds = 0.0224f;
+constexpr float kDefaultMaxRadiusShare = 0.0392f;
+constexpr float kDefaultMaxExposureScale = 12.0f;
+constexpr float kDefaultRotationShare = 0.3f;
+float gShutterSeconds = kDefaultShutterSeconds; // -mbshutter <seconds>
+float gMaxRadiusShare = kDefaultMaxRadiusShare; // of the screen height (42 px at 1080p)
+float gMaxExposureScale = kDefaultMaxExposureScale; // exposure / frame time
 
 // Share of the CAMERA'S ROTATION kept in the blur (the world's and other cars'
 // pixels; the player's car always keeps its true motion, the camera follows
 // it): the full rotation blur was too strong next to the speed blur, which
 // keeps all of the camera's movement. -mbrotation <0..1>
-float gRotationShare = 0.3f;
+float gRotationShare = kDefaultRotationShare;
 
 // A camera that jumps further than this in one frame is a cut: no blur.
 constexpr double kCutDistance = 25.0;
@@ -390,7 +397,7 @@ bool BuildFrameState() {
     // covers deltaTime. c14.y (the cap in pixels) is set per pass.
     const float exposureScale =
         ( deltaTime > 1e-4f )
-            ? Min( gShutterSeconds / deltaTime, kMaxExposureScale )
+            ? Min( gShutterSeconds / deltaTime, gMaxExposureScale )
             : 0.0f;
     c[14][0] = bHistory ? exposureScale * 0.5f : 0.0f;
     c[15][0] = static_cast<float>( cameraForward.x() );
@@ -655,7 +662,7 @@ public:
         c[13][0] = ( pass == ePass::World ) ? 0.0f : 1.0f;
         c[13][1] = static_cast<float>( data.NumVehicles );
         c[13][2] = static_cast<float>( data.NumWheels );
-        c[14][1] = kMaxRadiusShare * height;
+        c[14][1] = gMaxRadiusShare * height;
 
         RenderDevice *pDevice = gEdRender.pRenderDevice;
 
@@ -821,3 +828,49 @@ void MotionBlur::Destroy() {
 }
 
 bool MotionBlur::IsActive() { return gbEnabled && gbWorking; }
+
+void MotionBlur::DrawDebugMenu() {
+#ifdef OTDU_USE_IMGUI
+    ImGui::PushID( "MotionBlur" );
+    ImGui::Checkbox( "Motion blur", &gbEnabled );
+    ImGui::SameLine();
+    ImGui::TextDisabled( ( gbEnabled && gbWorking ) ? "(drawing)" : "(idle)" );
+
+    static const char *const kDebugViews[] = {
+        "Off", "Blur vectors", "Vehicles (blue) / wheels (red)" };
+    ImGui::Combo( "Debug view", &gDebugView, kDebugViews,
+                  IM_ARRAYSIZE( kDebugViews ) );
+
+    float shutterMs = gShutterSeconds * 1000.0f;
+    if ( ImGui::SliderFloat( "Exposure", &shutterMs, 0.0f, 100.0f,
+                             "%.1f ms" ) ) {
+        gShutterSeconds = Max( shutterMs, 0.0f ) * 0.001f;
+    }
+    ImGui::SetItemTooltip( "Streak length is a fixed time, at any frame rate.\n"
+                           "180 degree shutter: 8.3 ms at 60 fps, 16.7 ms at "
+                           "30 fps." );
+    ImGui::SliderFloat( "Camera rotation share", &gRotationShare, 0.0f, 1.0f,
+                        "%.2f" );
+    ImGui::SetItemTooltip( "Share of the camera's turning kept in the blur "
+                           "(speed blur always keeps all of it)." );
+
+    float radiusPercent = gMaxRadiusShare * 100.0f;
+    if ( ImGui::SliderFloat( "Max streak", &radiusPercent, 0.5f, 10.0f,
+                             "%.2f %% of height" ) ) {
+        gMaxRadiusShare = Max( radiusPercent, 0.0f ) * 0.01f;
+    }
+    ImGui::SliderFloat( "Max exposure / frame", &gMaxExposureScale, 1.0f, 32.0f,
+                        "x%.1f" );
+    ImGui::SetItemTooltip( "Caps the exposure at low frame rates (in frames)." );
+
+    if ( ImGui::Button( "Reset motion blur" ) ) {
+        gbEnabled = true;
+        gDebugView = 0;
+        gShutterSeconds = kDefaultShutterSeconds;
+        gRotationShare = kDefaultRotationShare;
+        gMaxRadiusShare = kDefaultMaxRadiusShare;
+        gMaxExposureScale = kDefaultMaxExposureScale;
+    }
+    ImGui::PopID();
+#endif
+}

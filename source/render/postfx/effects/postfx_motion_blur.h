@@ -12,4 +12,6 @@ void Destroy();
 // skip their draw (their nodes stay enabled, the player's car render pass
 // selection depends on that).
 bool IsActive();
+// The settings in the F1 debug menu (GSRender::drawDebug)
+void DrawDebugMenu();
 } // namespace MotionBlur

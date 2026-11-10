@@ -22,6 +22,8 @@
 #include "postfx/effects/postfx_blit.h"
 #include "postfx/effects/postfx_downscale.h"
 #include "postfx/effects/postfx_hdri.h"
+#include "postfx/effects/postfx_motion_blur.h"
+#include "wheel_blur.h"
 #include "postfx/effects/postfx_texture_sample.h"
 #include "postfx/postfx_renderer.h"
 #include "postfx/postfx_stack.h"
@@ -819,6 +821,12 @@ void GSRender::drawDebug( float deltaTime ) {
             ( std::string( "hdr_" ) + hdrCaptureName ).c_str() );
     }
 #endif
+
+    // OTDU_ADDITION
+    ImGui::SeparatorText( "Motion blur" );
+    MotionBlur::DrawDebugMenu();
+    ImGui::Spacing();
+    WheelBlur::DrawDebugMenu();
 
     ImGui::SeparatorText( "Geometry" );
     ImGui::SliderFloat( "LOD factor", &DebugLODFactor, 0.01f, 1.0f, "%.2f" );

@@ -23,4 +23,7 @@ void FlushScene();
 
 // GSPostFX::releaseEffects
 void Destroy();
+
+// The settings in the F1 debug menu (GSRender::drawDebug)
+void DrawDebugMenu();
 } // namespace WheelBlur

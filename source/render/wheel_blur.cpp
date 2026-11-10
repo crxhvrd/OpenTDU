@@ -27,6 +27,9 @@
 // Alpha blended wheel parts (decals) are drawn as usual after the composite.
 
 #include "core/arg_parser.h"
+#ifdef OTDU_USE_IMGUI
+#include "imgui.h"
+#endif
 #include "game/vehicle/car_state.h"
 #include "game/vehicle/gs_car_state.h"
 #include "game/vehicle/vehicle_base.h"
@@ -66,19 +69,27 @@ constexpr uint64_t kCompositeMSAAPSHashcode = 0x0d7b4d4200000005ull; // WB_MSAA
 constexpr float kFullTurn = 6.2831853f;
 constexpr uint32_t kMaxCars = 32;
 // Copies about this far apart along the arc at the tyre, at most gMaxCopies
-constexpr float kCopySpacingPx = 6.0f;
+constexpr float kDefaultCopySpacingPx = 6.0f;
+float gCopySpacingPx = kDefaultCopySpacingPx;
 // Wheels smaller than this on screen are drawn as they are
 constexpr float kMinRadiusPx = 6.0f;
 // A longer gap between two frames is no travel
 constexpr float kMaxTravelGapSeconds = 0.25f;
 // Slower wheels (rad/s, ~2.5 km/h) are drawn as they are
-constexpr float kMinOmega = 2.0f;
+constexpr float kDefaultMinOmega = 2.0f;
+float gMinOmega = kDefaultMinOmega;
 
 bool gbEnabled = true;
-// The wheels' exposure: the ring of copies reaches a full turn (spokes gone)
-// from ~40 km/h, so the spokes vanish
-float gWheelShutterSeconds = 0.2f;
-uint32_t gMaxCopies = 24;
+// The wheels' exposure, and the most a wheel turns during it: the arc grows
+// with speed until ~7 mph (a 0.33 m wheel turns 1.9 rad = 109 deg in 0.2 s)
+// and stays there; a longer arc (up to a full turn) blurred the wheel into a
+// flat disc, too strong. -mbwheel <seconds>, -wheelarc <degrees>
+constexpr float kDefaultWheelShutterSeconds = 0.2f;
+constexpr float kDefaultMaxWheelArc = 1.9f;
+constexpr uint32_t kDefaultMaxCopies = 24;
+float gWheelShutterSeconds = kDefaultWheelShutterSeconds;
+float gMaxWheelArc = kDefaultMaxWheelArc;
+uint32_t gMaxCopies = kDefaultMaxCopies;
 
 static CmdLineArg CmdLineArgNoWheelBlur( "nowheelblur", []( const char * ) {
     gbEnabled = false;
@@ -89,7 +100,13 @@ static CmdLineArg CmdLineArgWheelShutter( "mbwheel", []( const char *pArg ) {
             Clamp( static_cast<float>( atof( pArg ) ), 0.0f, 1.0f );
     }
 } );
-// Every wheel turns a full turn per exposure (to check the path parked)
+static CmdLineArg CmdLineArgWheelArc( "wheelarc", []( const char *pArg ) {
+    if ( pArg != nullptr ) {
+        gMaxWheelArc = Clamp( static_cast<float>( atof( pArg ) ), 5.0f, 360.0f ) *
+                       ( kFullTurn / 360.0f );
+    }
+} );
+// Every wheel turns its longest arc per exposure (to check the path parked)
 bool gbTest = false;
 static CmdLineArg CmdLineArgWheelBlurTest( "wheelblurtest", []( const char * ) {
     gbTest = true;
@@ -105,7 +122,7 @@ struct Wheel {
     Matrix4x4f_t DiscInverse;
     Eigen::Vector3f Hub;
     float Radius;
-    float Arc; // rad turned during the exposure (up to a full turn)
+    float Arc; // rad turned during the exposure (up to gMaxWheelArc)
     uint32_t Copies;
 };
 
@@ -246,11 +263,12 @@ void BuildFrame() {
                 Max( std::abs( wheelState.Omega ),
                      static_cast<float>( travelSpeed / radius ) );
             // A standing car's physics jitter (settling) is no spin
-            if ( omega < kMinOmega && !gbTest ) {
+            if ( omega < gMinOmega && !gbTest ) {
                 continue;
             }
-            const float arc =
-                gbTest ? kFullTurn : Min( omega * gWheelShutterSeconds, kFullTurn );
+            const float arc = gbTest ? gMaxWheelArc
+                                     : Min( omega * gWheelShutterSeconds,
+                                            gMaxWheelArc );
 
             const Matrix4x4f_t &disc = pDisc->pInstance->getModelMatrix();
             const Eigen::Vector3f hub( disc( 3, 0 ), disc( 3, 1 ), disc( 3, 2 ) );
@@ -264,7 +282,8 @@ void BuildFrame() {
             }
             const uint32_t copies = Min(
                 gMaxCopies, static_cast<uint32_t>(
-                                std::ceil( arc * radiusPx / kCopySpacingPx ) ) );
+                                std::ceil( arc * radiusPx /
+                                           Max( gCopySpacingPx, 1.0f ) ) ) );
             if ( copies < 2u ) {
                 continue;
             }
@@ -750,4 +769,51 @@ void WheelBlur::Destroy() {
     gState.Entries.clear();
     gState.Wheels.clear();
     gState.WheelOfInstance.clear();
+}
+
+void WheelBlur::DrawDebugMenu() {
+#ifdef OTDU_USE_IMGUI
+    ImGui::PushID( "WheelBlur" );
+    ImGui::Checkbox( "Wheel blur", &gbEnabled );
+
+    float shutterMs = gWheelShutterSeconds * 1000.0f;
+    if ( ImGui::SliderFloat( "Wheel exposure", &shutterMs, 0.0f, 1000.0f,
+                             "%.0f ms" ) ) {
+        gWheelShutterSeconds = Max( shutterMs, 0.0f ) * 0.001f;
+    }
+    float arcDegrees = gMaxWheelArc * ( 360.0f / kFullTurn );
+    if ( ImGui::SliderFloat( "Max wheel arc", &arcDegrees, 5.0f, 360.0f,
+                             "%.0f deg" ) ) {
+        gMaxWheelArc = Clamp( arcDegrees, 5.0f, 360.0f ) * ( kFullTurn / 360.0f );
+    }
+    // Speed at which a 0.33 m wheel reaches the cap (the blur stops growing)
+    if ( gWheelShutterSeconds > 0.0f ) {
+        const float capSpeed = gMaxWheelArc / gWheelShutterSeconds * 0.33f;
+        ImGui::TextDisabled( "Full blur from %.1f km/h (%.1f mph)",
+                             capSpeed * 3.6f, capSpeed * 2.23694f );
+    }
+
+    int32_t maxCopies = static_cast<int32_t>( gMaxCopies );
+    if ( ImGui::SliderInt( "Max copies", &maxCopies, 2, 64 ) ) {
+        gMaxCopies = static_cast<uint32_t>( Clamp( maxCopies, 2, 64 ) );
+    }
+    ImGui::SliderFloat( "Copy spacing", &gCopySpacingPx, 1.0f, 16.0f,
+                        "%.1f px" );
+    ImGui::SetItemTooltip( "Distance between turned copies along the arc at "
+                           "the tyre (smaller = smoother, more draws)." );
+    ImGui::SliderFloat( "Min spin", &gMinOmega, 0.0f, 10.0f, "%.1f rad/s" );
+    ImGui::SetItemTooltip( "Slower wheels are drawn as they are." );
+    ImGui::Checkbox( "Test: every wheel at max arc", &gbTest );
+
+    if ( ImGui::Button( "Reset wheel blur" ) ) {
+        gbEnabled = true;
+        gbTest = false;
+        gWheelShutterSeconds = kDefaultWheelShutterSeconds;
+        gMaxWheelArc = kDefaultMaxWheelArc;
+        gMaxCopies = kDefaultMaxCopies;
+        gCopySpacingPx = kDefaultCopySpacingPx;
+        gMinOmega = kDefaultMinOmega;
+    }
+    ImGui::PopID();
+#endif
 }
