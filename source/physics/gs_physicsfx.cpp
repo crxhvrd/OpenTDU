@@ -1,5 +1,8 @@
 #include "shared.h"
 #include "gs_physicsfx.h"
+#include <algorithm>
+#include <string>
+#include <vector>
 
 #include "audio/gs_audio.h"
 #include "audio/implementation/audio_dispatcher_playback.h"
@@ -549,12 +552,23 @@ void GSPhysicsFX::startEffect( const PhysicsFXEvent &event ) {
                 if ( pRecord->ParticleName[p][0] == '\0' ) {
                     continue;
                 }
-                ParticleInstance *pInstance = gpParticles->activateParticles(
-                    GetIdentifier64bit( pRecord->ParticleName[p] ), true );
+                // OTDU_ADDITION: by name, case-insensitively (the records
+                // and particles.bnk spell some names differently)
+                ParticleInstance *pInstance =
+                    gpParticles->activateParticlesByName(
+                        pRecord->ParticleName[p], true );
                 layer.pParticles[p] = pInstance;
                 if ( pInstance == nullptr ) {
-                    OTDU_LOG_ERROR( "Particle '%s' is not registered\n",
-                                    pRecord->ParticleName[p] );
+                    // Some records name particles the game data never had
+                    // (prt_metal): report each one once
+                    static std::vector<std::string> sReported;
+                    const std::string name = pRecord->ParticleName[p];
+                    if ( std::find( sReported.begin(), sReported.end(),
+                                    name ) == sReported.end() ) {
+                        sReported.push_back( name );
+                        OTDU_LOG_WARN( "Particle '%s' is not registered\n",
+                                       name.c_str() );
+                    }
                 }
                 if ( pInstance != nullptr ) {
                     pInstance->Density = pRecord->ParticleDensity[p];

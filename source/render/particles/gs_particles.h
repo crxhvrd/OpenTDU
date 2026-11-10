@@ -35,6 +35,9 @@ public:
 
     ParticleInstance *activateParticles( eParticleType id, bool bReset );
     ParticleInstance *activateParticles( uint64_t hashcode, bool bReset );
+    // OTDU_ADDITION: data asks for names in another case than the bank's file
+    // names (physics FX "prt_smokeCol" vs particles.bnk "prt_SmokeCol")
+    ParticleInstance *activateParticlesByName( const char *pName, bool bReset );
 
     void stopAllParticleSystems();
     void resetInstancesInState( eParticleState state );

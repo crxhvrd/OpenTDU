@@ -171,6 +171,24 @@ void GSParticles::resetInstancesInState( eParticleState state ) {
     }
 }
 
+ParticleInstance *GSParticles::activateParticlesByName( const char *pName,
+                                                        bool bReset ) {
+    if ( pName == nullptr || pName[0] == '\0' ) {
+        return nullptr;
+    }
+    Particle *pParticle = findByHashcode( GetIdentifier64bit( pName ) );
+    if ( pParticle == nullptr ) {
+        for ( Particle *pCandidate : particles ) {
+            if ( _stricmp( pCandidate->Name.c_str(), pName ) == 0 ) {
+                pParticle = pCandidate;
+                break;
+            }
+        }
+    }
+    return ( pParticle != nullptr ) ? pParticle->activateParticles( bReset )
+                                    : nullptr;
+}
+
 Particle *GSParticles::findByID( eParticleType id ) {
     for ( Particle *pParticle : particles ) {
         if ( pParticle->Type == id ) {
